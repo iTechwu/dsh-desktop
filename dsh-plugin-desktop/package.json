@@ -47,6 +47,14 @@
       "types": "./lib/types/terminal.d.ts",
       "default": "./lib/terminal.js"
     },
+    "./browser-tools": {
+      "types": "./lib/types/browser-tools.d.ts",
+      "default": "./lib/browser-tools.js"
+    },
+    "./ci-tools": {
+      "types": "./lib/types/ci-tools.d.ts",
+      "default": "./lib/ci-tools.js"
+    },
     "./pnpm": {
       "types": "./lib/types/pnpm.d.ts",
       "default": "./lib/pnpm.js"

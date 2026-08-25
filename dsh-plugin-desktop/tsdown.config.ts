@@ -24,6 +24,8 @@ export default defineConfig([
       'desktop-terminal': 'src/desktop-terminal.ts',
       'desktop-cli': 'src/desktop-cli.ts',
       terminal: 'src/terminal.ts',
+      'browser-tools': 'src/browser-tools.ts',
+      'ci-tools': 'src/ci-tools.ts',
       'update-checker': 'src/update-checker.ts',
       'update-download': 'src/update-download.ts',
       updates: 'src/updates.ts',
