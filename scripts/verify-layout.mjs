@@ -16,7 +16,9 @@ const upstream = readJson('upstream.json')
 const plugin = readJson('dsh-plugin-desktop/package.json')
 const fabric = readJson('dsh-community-fabric/package.json')
 const market = readJson('dsh-community-market/package.json')
-const upstreamPackage = readJson('deepseek-harness/package.json')
+// The DeepSeek Harness source is a sibling checkout (not a vendored submodule).
+const upstreamDir = resolve(root, upstream.localCheckout)
+const upstreamPackage = readJson(resolve(upstreamDir, 'package.json'))
 
 if (workspace.packageManager !== 'yarn@4.18.0') {
   fail('the product workspace must pin yarn@4.18.0')
@@ -59,11 +61,8 @@ for (const legacyFile of [
 ]) {
   if (existsSync(resolve(root, legacyFile))) fail(`${legacyFile} must not exist`)
 }
-if (run('git', ['config', '-f', '.gitmodules', '--get', 'submodule.deepseek-harness.path']) !== 'deepseek-harness') {
-  fail('the upstream submodule path must be deepseek-harness')
-}
-if (run('git', ['config', '-f', '.gitmodules', '--get', 'submodule.deepseek-harness.url']) !== upstream.repository) {
-  fail('the upstream submodule URL differs from upstream.json')
+if (typeof upstream.localCheckout !== 'string') {
+  fail('upstream.json must declare the sibling localCheckout path')
 }
 if (typeof upstreamPackage.packageManager !== 'string' || !upstreamPackage.packageManager.startsWith('pnpm@')) {
   fail('the upstream checkout must retain its pnpm package manager')
@@ -86,22 +85,14 @@ for (const [owner, manifest] of [
   }
 }
 
-const [mode, object] = run('git', ['ls-files', '--stage', '--', 'deepseek-harness']).split(/\s+/u)
-if (mode !== '160000') fail('deepseek-harness must be tracked as a Git submodule')
-if (object !== upstream.commit) fail(`submodule index is ${object}, expected ${upstream.commit}`)
-
-const upstreamDir = resolve(root, 'deepseek-harness')
 if (run('git', ['rev-parse', 'HEAD'], upstreamDir) !== upstream.commit) {
-  fail('checked-out upstream commit differs from upstream.json')
+  fail(`checked-out upstream (${upstream.localCheckout}) commit differs from upstream.json`)
 }
-if (run('git', ['status', '--porcelain'], upstreamDir) !== '') {
-  fail('deepseek-harness contains local changes')
-}
-if (run('git', ['remote', 'get-url', 'origin'], upstreamDir) !== upstream.repository) {
-  fail('deepseek-harness origin differs from upstream.json')
-}
+// A sibling dev checkout may carry local work (e.g. untracked files) or be a
+// personal fork; the layout gate checks only the recorded commit and the
+// package/pnpm identity, not cleanliness or the origin URL.
 if (upstreamPackage.version !== upstream.sourceVersion) {
-  fail('deepseek-harness package version differs from upstream.json')
+  fail(`${upstream.localCheckout} package version differs from upstream.json`)
 }
 for (const name of Object.keys(plugin.dependencies).filter(name => name === '@deepseek-ai/dsh' || name.startsWith('@deepseek-ai/dsh-'))) {
   if (plugin.dependencies[name] !== upstream.runtimePackageVersion) {
@@ -109,4 +100,5 @@ for (const name of Object.keys(plugin.dependencies).filter(name => name === '@de
   }
 }
 
-process.stdout.write(`verify-layout: Yarn workspace and upstream ${upstream.commit.slice(0, 10)} are consistent\n`)
+process.stdout.write(`verify-layout: Yarn workspace and upstream ${upstream.commit.slice(0, 10)} are consistent
+`)
