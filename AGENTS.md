@@ -5,6 +5,7 @@ This repository owns the desktop product around an unmodified DeepSeek Harness c
 ## Workflow contract
 
 - After every modification to this repository, commit the change (每次修改之后进行 commit). Keep each change in a small, reviewable commit.
+- Write commit messages in Chinese (提交信息一律使用中文), using Conventional Commits style (`feat:` / `fix:` / `refactor:` / `docs:` / `test:` / `chore:`); the body describes what the change actually does.
 - After committing, push to `origin` (所有提交和 push 均到 origin, per the repository owner's standing instruction).
 - Verify with the relevant gate (`yarn check` / `yarn check:layout` / package typecheck/build) before a change is considered complete.
 
