@@ -97,4 +97,17 @@ describe('DeepSeek streaming tool calls', () => {
       reason: { kind: 'tool-calls' },
     })
   })
+
+  it('restores image input for the built-in vision model in legacy catalog settings', () => {
+    const connection = resolveAdapterOptions({
+      models: [{ id: 'deepseek-v4-flash-vision-exp' }],
+    })
+
+    expect(connection.models).toEqual([{
+      id: 'deepseek-v4-flash-vision-exp',
+      inputModalities: ['text', 'image'],
+      imagePixelBudget: expect.any(Number),
+      imageMaxBytes: expect.any(Number),
+    }])
+  })
 })

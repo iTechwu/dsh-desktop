@@ -1,5 +1,5 @@
 diff --git a/lib/index.js b/lib/index.js
-index 74fcc55..98ab7fb 100644
+index 74fcc55..a7c4f4d 100644
 --- a/lib/index.js
 +++ b/lib/index.js
 @@ -1060,8 +1060,8 @@ async function* translate(payloads) {
@@ -13,3 +13,10 @@ index 74fcc55..98ab7fb 100644
  				const fragment = call.function?.arguments ?? "";
  				block.text += fragment;
  				yield {
+@@ -1661,3 +1661,5 @@ function resolveModels(models) {
+ 		if (model.contextWindow !== void 0 && (!Number.isInteger(model.contextWindow) || model.contextWindow <= 0)) throw new Error(`llm-deepseek: catalog model "${model.id}" contextWindow must be a positive integer`);
+ 		if (model.maxTokens !== void 0 && (!Number.isInteger(model.maxTokens) || model.maxTokens <= 0)) throw new Error(`llm-deepseek: catalog model "${model.id}" maxTokens must be a positive integer`);
+-		const inputModalities = model.inputModalities ?? ["text"];
++		// Preserve the built-in vision capability for older user settings that
++		// stored this model before the inputModalities field was introduced.
++		const inputModalities = model.inputModalities ?? (model.id === "deepseek-v4-flash-vision-exp" ? ["text", "image"] : ["text"]);
