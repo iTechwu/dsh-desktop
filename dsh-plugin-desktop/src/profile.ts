@@ -10,7 +10,6 @@ import {
   composeEntries,
   healProfilesModuleFallback,
   initProfile,
-  loadOptionalPatches,
   loadOverlayPatches,
   PROFILE_PATCH_FILENAME,
   PROFILE_TEMPLATES,
@@ -85,6 +84,12 @@ const SETTINGS_FILE_PACKAGE = '@deepseek-ai/dsh-settings-file'
 const DESKTOP_SETTINGS_NAMESPACE = 'dsh-desktop'
 const DEEPSEEK_SETTINGS_NAMESPACE = 'llm-deepseek'
 const DEEPSEEK_VISION_MODEL_ID = 'deepseek-v4-flash-vision-exp'
+
+function loadProfilePatches(path: string): PatchOptions[] {
+  const source = readFileSync(path, 'utf8')
+  if (parseDocument(source).contents === null) return []
+  return loadOverlayPatches(BIN_NAME, path)
+}
 const UI_LAYOUT_PACKAGE = '@deepseek-ai/dsh-client-ui-layout'
 const UI_SIDEBAR_PACKAGE = '@deepseek-ai/dsh-client-ui-sidebar'
 const UI_CONVERSATION_PACKAGE = '@deepseek-ai/dsh-client-ui-conversation'
@@ -524,7 +529,7 @@ function loadRecoveryFilteredProfile(
       dir: profileDir,
       layers,
       patchPath,
-      patches: existsSync(patchPath) ? loadOverlayPatches(BIN_NAME, patchPath) : [],
+      patches: existsSync(patchPath) ? loadProfilePatches(patchPath) : [],
     },
     ...(dshMarketFailure === undefined ? {} : { dshMarketFailure }),
   }
@@ -799,7 +804,8 @@ export function prepareDesktopProfile(
     throw new Error(`${BIN_NAME}: desktop profile is missing @deepseek-ai/dsh-web-app`)
   }
 
-  const loadedHomePatches = loadOptionalPatches(BIN_NAME, join(home, PROFILE_PATCH_FILENAME)) ?? []
+  const homePatchPath = join(home, PROFILE_PATCH_FILENAME)
+  const loadedHomePatches = existsSync(homePatchPath) ? loadProfilePatches(homePatchPath) : []
   const { patches: homePatches, skipped: skippedOptionalEntries } = omitUnresolvedOptionalEntries(
     loadedHomePatches,
     bareModuleBaseUrl,

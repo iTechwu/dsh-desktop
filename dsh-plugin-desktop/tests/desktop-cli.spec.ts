@@ -43,7 +43,7 @@ describe('packaged dsh bootstrap', () => {
         'desktop',
         '--dump-config',
       ])
-      expect(url).toMatch(/\/node_modules\/@deepseek-ai\/dsh\/lib\/bin\.js$/u)
+      expect(url).toMatch(/(?:\/node_modules\/@deepseek-ai\/dsh|\/deepseek-harness\/apps\/cli)\/lib\/bin\.js$/u)
     })
 
     await runDesktopDshCli(environment, load, argv)
