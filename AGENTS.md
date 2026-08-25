@@ -2,6 +2,12 @@
 
 This repository owns the desktop product around an unmodified DeepSeek Harness checkout.
 
+## Workflow contract
+
+- After every modification to this repository, commit the change (每次修改之后进行 commit). Keep each change in a small, reviewable commit.
+- After committing, push to `origin` (所有提交和 push 均到 origin, per the repository owner's standing instruction).
+- Verify with the relevant gate (`yarn check` / `yarn check:layout` / package typecheck/build) before a change is considered complete.
+
 ## Prerequisites and setup
 
 - Use Node.js `^22.19.0` or `>=24.0.0` and the root Yarn `4.18.0` release through Corepack.
