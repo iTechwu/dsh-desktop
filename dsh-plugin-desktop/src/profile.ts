@@ -25,7 +25,7 @@ import FileSettingsProvider, {
   resolveSpec as resolveSettingsFileSpec,
   type Config as SettingsFileConfig,
 } from '@deepseek-ai/dsh-settings-file'
-import { parseDocument } from 'yaml'
+import { parseDocument, stringify } from 'yaml'
 import { unpackedAsarPath } from './packaged-runtime-path.ts'
 import { findOverlayPackage, resolveOverlayPackage } from './package-overlay.ts'
 import { DESKTOP_DEFAULT_WEB_PORT } from './desktop-port.ts'
@@ -83,6 +83,8 @@ const DESKTOP_WEB_SERVER_ROW_ID = 'desktop-webserver'
 const DESKTOP_WEB_SERVER_PACKAGE = 'dsh-plugin-desktop/webserver'
 const SETTINGS_FILE_PACKAGE = '@deepseek-ai/dsh-settings-file'
 const DESKTOP_SETTINGS_NAMESPACE = 'dsh-desktop'
+const DEEPSEEK_SETTINGS_NAMESPACE = 'llm-deepseek'
+const DEEPSEEK_VISION_MODEL_ID = 'deepseek-v4-flash-vision-exp'
 const UI_LAYOUT_PACKAGE = '@deepseek-ai/dsh-client-ui-layout'
 const UI_SIDEBAR_PACKAGE = '@deepseek-ai/dsh-client-ui-sidebar'
 const UI_CONVERSATION_PACKAGE = '@deepseek-ai/dsh-client-ui-conversation'
@@ -161,6 +163,41 @@ export function desktopStartupSettingsFromSettings(document: unknown): DesktopSt
 /** Read only the shell mode from one parsed settings document. */
 export function desktopShellModeFromSettings(document: unknown): DesktopShellMode {
   return desktopStartupSettingsFromSettings(document).mode
+}
+
+/** Restore the built-in Vision model's image capability in legacy settings. */
+export function restoreLegacyVisionModelInput(document: unknown): boolean {
+  if (typeof document !== 'object' || document === null || Array.isArray(document)) return false
+  const section = (document as Record<string, unknown>)[DEEPSEEK_SETTINGS_NAMESPACE]
+  if (typeof section !== 'object' || section === null || Array.isArray(section)) return false
+  const models = (section as Record<string, unknown>).models
+  if (!Array.isArray(models)) return false
+  let changed = false
+  for (const model of models) {
+    if (typeof model !== 'object' || model === null || Array.isArray(model)) continue
+    const entry = model as Record<string, unknown>
+    if (entry.id !== DEEPSEEK_VISION_MODEL_ID) continue
+    const modalities = entry.inputModalities
+    if (Array.isArray(modalities) && modalities.includes('image')) continue
+    entry.inputModalities = ['text', 'image']
+    changed = true
+  }
+  return changed
+}
+
+/** Persist the compatibility migration before the settings plugin reads the file. */
+function migrateLegacyVisionModelSettings(filename: string, format: 'json' | 'yaml'): void {
+  if (!existsSync(filename)) return
+  const text = readFileSync(filename, 'utf8')
+  if (format === 'json') {
+    const document: unknown = text.trim().length === 0 ? {} : JSON.parse(text)
+    if (restoreLegacyVisionModelInput(document)) writeFileSync(filename, `${JSON.stringify(document, undefined, 2)}\n`)
+    return
+  }
+  const document = parseDocument(text, { prettyErrors: true })
+  if (document.errors.length > 0) return
+  const value = document.toJS() ?? {}
+  if (restoreLegacyVisionModelInput(value)) writeFileSync(filename, stringify(value))
 }
 
 /**
@@ -828,8 +865,10 @@ export function prepareDesktopProfile(
     dshHome: home,
     ...rowConfig(settings),
   } as SettingsFileConfig)
-  const settingsDocument = resolveSettingsFileSpec(settingsConfig).filename
+  const settingsSpec = resolveSettingsFileSpec(settingsConfig)
+  const settingsDocument = settingsSpec.filename
   hooks.onSettingsDocumentResolved?.(settingsDocument)
+  migrateLegacyVisionModelSettings(settingsDocument, settingsSpec.format)
   const { mode, port, macosMaterial, windowsMaterial } = readDesktopStartupSettings(settingsConfig)
   patches.push({
     id: 'settings',

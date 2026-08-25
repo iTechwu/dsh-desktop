@@ -13,6 +13,7 @@ import {
   prepareDesktopProfile,
   readDesktopShellMode,
   shippedPresetRoot,
+  restoreLegacyVisionModelInput,
   validateDshMarketBundlePatches,
 } from '../src/profile.ts'
 import { DESKTOP_MARKET_IDENTITIES } from '../src/desktop-market.ts'
@@ -106,6 +107,38 @@ describe('desktop profile composition', {
       'cordis-plugin-development',
       'SKILL.md',
     ), 'utf8')).toBe('# Cordis plugin development\n')
+  })
+
+  it('restores image input for the built-in Vision model in legacy settings', () => {
+    const document = {
+      'llm-deepseek': {
+        models: [
+          { id: 'deepseek-v4-flash-vision-exp', inputModalities: ['text'] },
+          { id: 'deepseek-v4-flash', inputModalities: ['text'] },
+        ],
+      },
+    }
+
+    expect(restoreLegacyVisionModelInput(document)).toBe(true)
+    expect(document['llm-deepseek'].models[0]?.inputModalities).toEqual(['text', 'image'])
+    expect(document['llm-deepseek'].models[1]?.inputModalities).toEqual(['text'])
+    expect(restoreLegacyVisionModelInput(document)).toBe(false)
+  })
+
+  it('persists the Vision model migration before profile boot', () => {
+    const home = temporaryHome()
+    writeFileSync(join(home, 'settings.yaml'), [
+      'llm-deepseek:',
+      '  models:',
+      '    - id: deepseek-v4-flash-vision-exp',
+      '      inputModalities: [text]',
+      '',
+    ].join('\n'))
+
+    prepareDesktopProfile(undefined, home, 'darwin')
+
+    expect(readFileSync(join(home, 'settings.yaml'), 'utf8')).toContain('inputModalities:')
+    expect(readFileSync(join(home, 'settings.yaml'), 'utf8')).toContain('- image')
   })
 
   it('adds the Web surface before third-party bundles and removes the launcher bundle duplicate', () => {
