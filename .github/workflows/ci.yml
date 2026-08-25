@@ -73,19 +73,19 @@ jobs:
           node-version: 22.23.2
       - if: needs.changes.outputs.product == 'true'
         run: corepack enable
-      - name: Resolve Yarn cache folder
+      - name: Resolve pnpm store path
         if: needs.changes.outputs.product == 'true'
-        id: yarn-cache
-        run: echo "dir=$(yarn config get cacheFolder)" >> "$GITHUB_OUTPUT"
+        id: pnpm-store
+        run: echo "dir=$(pnpm store path)" >> "$GITHUB_OUTPUT"
       - uses: actions/cache@v6
         if: needs.changes.outputs.product == 'true'
         with:
-          path: ${{ steps.yarn-cache.outputs.dir }}
-          key: yarn-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('yarn.lock', '.yarnrc.yml') }}
+          path: ${{ steps.pnpm-store.outputs.dir }}
+          key: pnpm-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml', 'pnpm-workspace.yaml') }}
       - if: needs.changes.outputs.product == 'true'
-        run: yarn install --immutable
+        run: pnpm install --frozen-lockfile
       - if: needs.changes.outputs.product == 'true'
-        run: yarn check
+        run: pnpm check
 
   # Windows-only logic and unsigned NSIS/portable builds on a real Windows runner:
   # updates, window options, pwsh sandbox, volume diagnostics, and packaging.
@@ -103,23 +103,23 @@ jobs:
         with:
           node-version: 22.23.2
       - run: corepack enable
-      - name: Resolve Yarn cache folder
-        id: yarn-cache
-        run: echo "dir=$(yarn config get cacheFolder)" >> "$env:GITHUB_OUTPUT"
+      - name: Resolve pnpm store path
+        id: pnpm-store
+        run: echo "dir=$(pnpm store path)" >> "$env:GITHUB_OUTPUT"
       - uses: actions/cache@v6
         with:
-          path: ${{ steps.yarn-cache.outputs.dir }}
-          key: yarn-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('yarn.lock', '.yarnrc.yml') }}
-      - run: yarn install --immutable
-      - run: yarn workspace dsh-plugin-desktop check:win-package
+          path: ${{ steps.pnpm-store.outputs.dir }}
+          key: pnpm-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml', 'pnpm-workspace.yaml') }}
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter dsh-plugin-desktop check:win-package
       - name: Build Windows installer
         env:
           DSH_PACKAGE_CHECK_ALREADY_RAN: '1'
-        run: yarn workspace dsh-plugin-desktop dist:win
+        run: pnpm --filter dsh-plugin-desktop dist:win
       - name: Build Windows portable archive
         env:
           DSH_PACKAGE_CHECK_ALREADY_RAN: '1'
-        run: yarn workspace dsh-plugin-desktop dist:win-portable
+        run: pnpm --filter dsh-plugin-desktop dist:win-portable
 
   # macOS-only universal packaging smoke on a real macOS runner: the signed
   # release is built manually on a credentialed machine, so an unsigned DMG
@@ -139,22 +139,22 @@ jobs:
         with:
           node-version: 22.23.2
       - run: corepack enable
-      - name: Resolve Yarn cache folder
-        id: yarn-cache
-        run: echo "dir=$(yarn config get cacheFolder)" >> "$GITHUB_OUTPUT"
+      - name: Resolve pnpm store path
+        id: pnpm-store
+        run: echo "dir=$(pnpm store path)" >> "$GITHUB_OUTPUT"
       - uses: actions/cache@v6
         with:
-          path: ${{ steps.yarn-cache.outputs.dir }}
-          key: yarn-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('yarn.lock', '.yarnrc.yml') }}
-      - run: yarn install --immutable
-      - run: yarn workspace dsh-plugin-desktop check:mac-package
+          path: ${{ steps.pnpm-store.outputs.dir }}
+          key: pnpm-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml', 'pnpm-workspace.yaml') }}
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter dsh-plugin-desktop check:mac-package
       - name: Build macOS smoke artifact
         env:
           DSH_PACKAGE_CHECK_ALREADY_RAN: '1'
-        run: yarn workspace dsh-plugin-desktop dist:mac-smoke
+        run: pnpm --filter dsh-plugin-desktop dist:mac-smoke
 
   # Upstream toolchain smoke: the portable-shell scripts must resolve the
-  # pinned submodule's own Yarn/pnpm release on Windows.
+  # pinned submodule's own pnpm/pnpm release on Windows.
   upstream-command-windows:
     needs: changes
     if: needs.changes.outputs.product == 'true'
@@ -168,5 +168,5 @@ jobs:
         with:
           node-version: 22.23.2
       - run: corepack enable
-      - run: yarn check:layout
-      - run: yarn upstream:version
+      - run: pnpm check:layout
+      - run: pnpm upstream:version

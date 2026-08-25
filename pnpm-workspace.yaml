@@ -1,0 +1,18 @@
+packages:
+  - dsh-plugin-desktop
+  - dsh-community-fabric
+  - dsh-community-market
+  - deepseek-harness/apps/**
+  - deepseek-harness/packages/**
+  - deepseek-harness/native/**
+  - deepseek-harness/vendor/**
+
+allowBuilds:
+  electron-winstaller: set this to true or false
+  koffi: set this to true or false
+
+linkWorkspacePackages: true
+
+patchedDependencies:
+  app-builder-lib@26.15.7: patches/app-builder-lib@26.15.7.patch
+  dshmarket@1.17.1: patches/dshmarket-npm-1.17.1.patch

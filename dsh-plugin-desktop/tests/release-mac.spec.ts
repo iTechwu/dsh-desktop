@@ -61,13 +61,13 @@ describe('macOS release command boundary', () => {
     expect(identityEnvironments).toEqual([{ PATH: '/usr/bin', SAFE_BUILD_VALUE: 'kept' }])
     expect(calls).toHaveLength(3)
     expect(calls[0]).toEqual({
-      command: 'yarn',
+      command: 'pnpm',
       args: ['run', 'check'],
       cwd: resolve('/repo/dsh-plugin-desktop', '..'),
       env: { PATH: '/usr/bin', SAFE_BUILD_VALUE: 'kept' },
     })
     expect(calls[1]).toEqual({
-      command: 'yarn',
+      command: 'pnpm',
       args: [
         'exec', 'electron-builder', '--mac', 'dmg', '--universal',
         '--config.forceCodeSigning=true', '--config.mac.notarize=true',

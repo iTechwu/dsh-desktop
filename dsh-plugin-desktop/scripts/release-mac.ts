@@ -92,10 +92,10 @@ export function releaseMac(options: MacReleaseOptions = defaultReleaseOptions())
 
   // The workspace check includes the package build and repository-layout gate. Signing
   // material is withheld from every build, test, Loader smoke, and layout subprocess.
-  options.run('yarn', ['run', 'check'], resolve(options.desktopRoot, '..'), buildEnvironment)
+  options.run('pnpm', ['run', 'check'], resolve(options.desktopRoot, '..'), buildEnvironment)
   options.resetOutput()
   options.prepareRuntime()
-  options.run('yarn', [
+  options.run('pnpm', [
     'exec', 'electron-builder', '--mac', 'dmg', '--universal',
     '--config.forceCodeSigning=true', '--config.mac.notarize=true',
     '--config.npmRebuild=false',

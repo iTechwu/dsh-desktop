@@ -20,22 +20,19 @@ const market = readJson('dsh-community-market/package.json')
 const upstreamDir = resolve(root, upstream.localCheckout)
 const upstreamPackage = readJson(resolve(upstreamDir, 'package.json'))
 
-if (workspace.packageManager !== 'yarn@4.18.0') {
-  fail('the product workspace must pin yarn@4.18.0')
+if (workspace.packageManager !== 'pnpm@11.7.0') {
+  fail('the product workspace must pin pnpm@11.7.0')
 }
-if (JSON.stringify(workspace.workspaces) !== JSON.stringify([
-  'dsh-plugin-desktop',
-  'dsh-community-fabric',
-  'dsh-community-market',
-])) {
-  fail('the root Yarn workspace must contain the desktop, community-fabric, and community-market packages')
+const workspaceFile = readFileSync(resolve(root, 'pnpm-workspace.yaml'), 'utf8')
+for (const entry of ['dsh-plugin-desktop', 'dsh-community-fabric', 'dsh-community-market', 'deepseek-harness/packages/**']) {
+  if (!workspaceFile.includes(`- ${entry}`)) fail(`pnpm-workspace.yaml must include ${entry}`)
 }
 for (const [name, manifest] of [
   ['dsh-plugin-desktop', plugin],
   ['dsh-community-fabric', fabric],
   ['dsh-community-market', market],
 ]) {
-  if (manifest.packageManager !== undefined) fail(`${name} must inherit the root Yarn release`)
+  if (manifest.packageManager !== undefined) fail(`${name} must inherit the root pnpm release`)
 }
 if (fabric.name !== 'dsh-community-fabric') fail('the Fabric workspace must own dsh-community-fabric')
 if (market.name !== 'dsh-community-market') fail('the market workspace must own dsh-community-market')
@@ -49,23 +46,15 @@ const claudeTarget = claudeStat.isSymbolicLink()
 if (claudeTarget !== 'AGENTS.md') {
   fail('CLAUDE.md must link to the outer repository AGENTS.md')
 }
-for (const legacyFile of [
-  'pnpm-lock.yaml',
-  'pnpm-workspace.yaml',
-  'dsh-plugin-desktop/pnpm-lock.yaml',
-  'dsh-plugin-desktop/pnpm-workspace.yaml',
-  'dsh-community-fabric/pnpm-lock.yaml',
-  'dsh-community-fabric/pnpm-workspace.yaml',
-  'dsh-community-market/pnpm-lock.yaml',
-  'dsh-community-market/pnpm-workspace.yaml',
-]) {
-  if (existsSync(resolve(root, legacyFile))) fail(`${legacyFile} must not exist`)
-}
+if (!existsSync(resolve(root, 'pnpm-lock.yaml'))) fail('pnpm-lock.yaml must exist')
 if (typeof upstream.localCheckout !== 'string') {
   fail('upstream.json must declare the sibling localCheckout path')
 }
 if (typeof upstreamPackage.packageManager !== 'string' || !upstreamPackage.packageManager.startsWith('pnpm@')) {
   fail('the upstream checkout must retain its pnpm package manager')
+}
+if (!lstatSync(resolve(root, 'deepseek-harness')).isSymbolicLink()) {
+  fail('deepseek-harness must be a symlink to the sibling checkout')
 }
 
 for (const [owner, manifest] of [
@@ -77,9 +66,8 @@ for (const [owner, manifest] of [
   for (const field of ['dependencies', 'devDependencies', 'optionalDependencies', 'peerDependencies', 'resolutions']) {
     for (const [name, range] of Object.entries(manifest[field] ?? {})) {
       if (typeof range !== 'string') continue
-      if (/^(?:workspace|portal|link):/u.test(range)
-        || (range.startsWith('file:') && range.includes('deepseek-harness'))) {
-        fail(`${owner} ${field}.${name} bypasses the published DSH package boundary`)
+      if (name.startsWith('@deepseek-ai/dsh-') || name === '@deepseek-ai/cordis' || name === '@deepseek-ai/schemastery') {
+        if (range !== 'workspace:*') fail(`${owner} ${field}.${name} must link the sibling workspace with workspace:*`)
       }
     }
   }
@@ -94,11 +82,4 @@ if (run('git', ['rev-parse', 'HEAD'], upstreamDir) !== upstream.commit) {
 if (upstreamPackage.version !== upstream.sourceVersion) {
   fail(`${upstream.localCheckout} package version differs from upstream.json`)
 }
-for (const name of Object.keys(plugin.dependencies).filter(name => name === '@deepseek-ai/dsh' || name.startsWith('@deepseek-ai/dsh-'))) {
-  if (plugin.dependencies[name] !== upstream.runtimePackageVersion) {
-    fail(`${name} must use the recorded DSH runtime package family`)
-  }
-}
-
-process.stdout.write(`verify-layout: Yarn workspace and upstream ${upstream.commit.slice(0, 10)} are consistent
-`)
+process.stdout.write(`verify-layout: pnpm workspace and upstream ${upstream.commit.slice(0, 10)} are consistent\n`)

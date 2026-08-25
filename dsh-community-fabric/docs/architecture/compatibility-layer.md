@@ -202,12 +202,12 @@ my-fabric-plugin/
 ### 6.2 Workflow
 
 ```sh
-yarn dlx dsh-community-fabric init
-yarn fabric validate       # schema, ID, entrypoint, capability versions
-yarn fabric generate       # exact context types from the manifest
-yarn fabric test           # fake Host, lifecycle, capability fixtures
-yarn fabric dev --host web # connect to an explicit development Host integration
-yarn fabric pack           # static manifest and inspectable package
+pnpm dlx dsh-community-fabric init
+pnpm fabric validate       # schema, ID, entrypoint, capability versions
+pnpm fabric generate       # exact context types from the manifest
+pnpm fabric test           # fake Host, lifecycle, capability fixtures
+pnpm fabric dev --host web # connect to an explicit development Host integration
+pnpm fabric pack           # static manifest and inspectable package
 ```
 
 Names are not frozen. The invariant is that one manifest drives validation, generated types, market compatibility, and Host negotiation without duplicated configuration.

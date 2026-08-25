@@ -153,15 +153,14 @@ DSH Desktop 是基于 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek
 
 ## 开发
 
-桌面端代码位于 `dsh-plugin-desktop/`，外层仓库使用 Yarn，固定的 `deepseek-harness/` 子模块继续使用自己的 pnpm workspace。从仓库根目录执行：
+桌面端代码位于 `dsh-plugin-desktop/`，根 workspace 通过 `deepseek-harness` 符号链接直接纳入 `../deepseek-harness` 的 pnpm workspace。从仓库根目录执行：
 
 ```sh
-git submodule update --init --recursive
-corepack yarn install --immutable
-corepack yarn dev
+corepack pnpm install --frozen-lockfile
+corepack pnpm dev
 ```
 
-headless 检查使用 `corepack yarn check`；完整的构建、测试和发布边界见[架构说明](docs/architecture.md)和包级 [`README`](dsh-plugin-desktop/README.md)。如何参与贡献见 [CONTRIBUTING.md](CONTRIBUTING.md)。
+headless 检查使用 `corepack pnpm check`；完整的构建、测试和发布边界见[架构说明](docs/architecture.md)和包级 [`README`](dsh-plugin-desktop/README.md)。如何参与贡献见 [CONTRIBUTING.md](CONTRIBUTING.md)。
 
 ## 社区交流
 
