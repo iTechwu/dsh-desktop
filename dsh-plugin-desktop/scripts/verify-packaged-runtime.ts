@@ -3,13 +3,16 @@
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
-import { isAbsolute, join, relative, sep } from 'node:path'
+import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { Worker } from 'node:worker_threads'
 import { listPackage } from '@electron/asar'
 import AdmZip from 'adm-zip'
 import {
   FORBIDDEN_MACOS_UNIVERSAL_ENTRIES,
+  hydratePackagedMacRuntime,
   MACOS_UNIVERSAL_NATIVE_ENTRIES,
+  type MacUniversalArch,
 } from './mac-universal.ts'
 
 /** AfterPack fields consumed without importing Electron Builder's incomplete declaration graph. */
@@ -148,6 +151,27 @@ export type PackagedDiagnosticWorkerLauncher = (
   workerPath: string,
   workerData: PackagedDiagnosticWorkerData,
 ) => Promise<string>
+
+/** Injectable native-runtime hydration seam used before static verification. */
+export type PackagedRuntimeHydrator = (context: PackagedRuntimeContext) => void
+
+function macArchesForElectronBuilder(arch: number | undefined): readonly MacUniversalArch[] {
+  if (arch === 1) return ['x86_64']
+  if (arch === 3) return ['arm64']
+  if (arch === 4) return ['arm64', 'x86_64']
+  throw new Error(`dsh-plugin-desktop: unsupported macOS Electron Builder arch ${String(arch)}`)
+}
+
+/** Restore native optional dependencies omitted by Electron Builder's npm collector. */
+export function hydratePackagedRuntime(context: PackagedRuntimeContext): void {
+  if (context.electronPlatformName !== 'darwin') return
+  const desktopRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
+  hydratePackagedMacRuntime({
+    desktopRoot,
+    unpackedRoot: resolvePackagedUnpackedRoot(context),
+    arches: macArchesForElectronBuilder(context.arch),
+  })
+}
 
 /** Injectable smoke seam used to verify afterPack ordering. */
 export type PackagedDiagnosticWorkerSmoke = (unpackedRoot: string) => Promise<void>
@@ -402,9 +426,11 @@ export function verifyPackagedRuntime(
  */
 export async function afterPack(
   context: PackagedRuntimeContext,
+  hydrate: PackagedRuntimeHydrator = hydratePackagedRuntime,
   verify: typeof verifyPackagedRuntime = verifyPackagedRuntime,
   smoke: PackagedDiagnosticWorkerSmoke = smokePackagedDiagnosticWorker,
 ): Promise<void> {
+  hydrate(context)
   verify(context)
   await smoke(resolvePackagedUnpackedRoot(context))
 }

@@ -506,6 +506,9 @@ importers:
       '@deepseek-ai/dsh-web-app':
         specifier: workspace:*
         version: link:../deepseek-harness/packages/bundle/web-app
+      '@deepseek-ai/dsh-web-frontend':
+        specifier: workspace:*
+        version: link:../deepseek-harness/apps/web
       '@deepseek-ai/dsh-workflow':
         specifier: workspace:*
         version: link:../deepseek-harness/packages/workflow/workflow

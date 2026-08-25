@@ -165,6 +165,7 @@ describe('published package surface', () => {
       ['@deepseek-ai/dsh', 'apps/cli'],
       ['@deepseek-ai/dsh-llm', 'packages/llm/llm'],
       ['@deepseek-ai/dsh-web-app', 'packages/bundle/web-app'],
+      ['@deepseek-ai/dsh-web-frontend', 'apps/web'],
     ] as const) {
       expect(manifest.dependencies?.[specifier]).toBe('workspace:*')
       const installedManifest = fileURLToPath(new URL(`node_modules/${specifier}/package.json`, packageRoot))
