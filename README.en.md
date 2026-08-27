@@ -1,15 +1,23 @@
+<p align="center">
+  <a href="https://dshdesktop.cn"><img src="assets/desktop-hero-en.png" alt="DSH Desktop, an open-source desktop client built on DeepSeek Harness" width="100%"></a>
+</p>
+
 <h1 align="center">DSH Desktop</h1>
 
 <p align="center">
-  <strong>An open-source desktop client for Windows and macOS, built on DeepSeek Harness.</strong><br>
-  One-click download, ready to use out of the box.<br>
+  <strong>An open-source desktop client for Windows and macOS, built on DeepSeek Harness.</strong>
+</p>
+
+<h3 align="center"><a href="https://dshdesktop.cn">One-click download, ready to use out of the box.</a></h3>
+
+<p align="center">
   Everything is a plugin — the desktop itself is a plugin.
 </p>
 
 <p align="center"><sub>An independent community project, not affiliated with, authorized by, or endorsed by DeepSeek.<br>No DeepSeek employee or official upstream DeepSeek Harness team member currently participates in this repository; upstream contributors shown by GitHub are inherited from synchronized fork history.<br><a href="README.md">中文</a> · English</sub></p>
 
 <p align="center">
-  <img src="assets/desktop-hero-en.png" alt="DSH Desktop, an open-source desktop client built on DeepSeek Harness" width="100%">
+  <img src="assets/desktop-chat-en.png" alt="DSH Desktop chat interface in English" width="100%">
 </p>
 
 <p align="center">
@@ -19,10 +27,6 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-2EA44F?style=flat" alt="MIT License"></a>
   <a href="https://discord.gg/TJeGqKRNM"><img src="https://img.shields.io/badge/Discord-5865F2?style=flat&amp;logo=discord&amp;logoColor=white" alt="Join Discord"></a>
   <img src="https://img.shields.io/badge/macOS%20%7C%20Windows-4493F8?style=flat-square" alt="Supported platforms: macOS and Windows">
-</p>
-
-<p align="center">
-  <img src="assets/desktop-preview.png" alt="DSH Desktop preview" width="100%">
 </p>
 
 DSH Desktop integrates the local Web UI, Host service, and plugin system from [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) into a native desktop application. It runs a pinned upstream version unchanged, while DSH Desktop provides the window, tray, terminal, updates, and work profiles through the plugin mechanism provided by DeepSeek Harness.
@@ -70,6 +74,7 @@ Ordinary users can start with the [user guide](docs/user-guide.en.md); the devel
 | --- | --- |
 | Install and use the application | [User guide](docs/user-guide.en.md) |
 | Check platforms, prerequisites, and product boundaries | [FAQ](docs/faq.en.md) |
+| Understand data processing and privacy choices | [Privacy Policy](PRIVACY.md) |
 | Understand why the project exists | [Why DSH Desktop](docs/why-desktop.en.md) |
 | See the full documentation and README map | [Documentation index](docs/README.en.md) |
 
@@ -110,6 +115,16 @@ Ordinary users can start with the [user guide](docs/user-guide.en.md); the devel
     </td>
   </tr>
 </table>
+
+### First-run setup, browser access, and LAN exposure
+
+On the normal first launch of each uninitialized profile, Desktop shows its native Setup Wizard first. It can configure the window mode and system material, plugin marketplace, notifications, whether to open the system default browser automatically, and the Web access scope; it can also be skipped. The Host and main DSH window do not start until the wizard is completed or skipped. Completion or skip state is recorded separately for each profile; an explicit recovery launch still enters Recovery Assistant first.
+
+The Web service listens on the local loopback interface by default. When **Open in browser** is enabled, Desktop hands the page to the system default browser after the Web service is actually ready; this preference does not change the listener exposure. **Desktop settings** shows the actual local URL below the control. LAN access is a separate opt-in setting and exposes the currently available LAN URLs when enabled.
+
+> **Danger:** LAN exposure has no authentication. Anyone on the same local network can open DSH and directly operate your computer. Enable it only on a fully trusted network and with great care.
+
+The automatic updater's fixed version-check request sends a locally generated, persistently stored random UUID in the `X-DSH-Desktop-Installation-Id` header; the value is not derived from hardware information. Package download requests and their download redirects do not receive this header.
 
 ## Plugin Ecosystem
 

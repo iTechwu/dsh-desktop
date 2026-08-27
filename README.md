@@ -1,15 +1,23 @@
+<p align="center">
+  <a href="https://dshdesktop.cn"><img src="assets/desktop-hero-zh.png" alt="DSH Desktop：基于 DeepSeek Harness 构建的开源桌面客户端" width="100%"></a>
+</p>
+
 <h1 align="center">DSH Desktop</h1>
 
 <p align="center">
-  <strong>基于 DeepSeek Harness 构建的 Windows 和 macOS 开源桌面客户端。</strong><br>
-  一键下载，开箱即用。<br>
+  <strong>基于 DeepSeek Harness 构建的 Windows 和 macOS 开源桌面客户端。</strong>
+</p>
+
+<h3 align="center"><a href="https://dshdesktop.cn">一键下载，开箱即用。</a></h3>
+
+<p align="center">
   万物皆「插件」，桌面本身也是「插件」。
 </p>
 
 <p align="center"><sub>独立的社区开源项目，与深度求索不存在隶属、合作、授权或背书关系。<br>本仓库目前无深度求索员工或 DeepSeek Harness 上游官方团队成员参与；GitHub Contributors 中显示的上游贡献者来自 fork 继承和同步的提交历史。<br>中文 · <a href="README.en.md">English</a></sub></p>
 
 <p align="center">
-  <img src="assets/desktop-hero-zh.png" alt="DSH Desktop：基于 DeepSeek Harness 构建的开源桌面客户端" width="100%">
+  <img src="assets/desktop-chat-zh.png" alt="DSH Desktop 中文对话界面" width="100%">
 </p>
 
 <p align="center">
@@ -19,10 +27,6 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-2EA44F?style=flat" alt="MIT License"></a>
   <a href="https://discord.gg/TJeGqKRNM"><img src="https://img.shields.io/badge/Discord-5865F2?style=flat&amp;logo=discord&amp;logoColor=white" alt="Join Discord"></a>
   <img src="https://img.shields.io/badge/macOS%20%7C%20Windows-4493F8?style=flat-square" alt="Supported platforms: macOS and Windows">
-</p>
-
-<p align="center">
-  <img src="assets/desktop-preview.png" alt="DSH Desktop 界面预览" width="100%">
 </p>
 
 DSH Desktop 将 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 的本地 Web UI、Host 服务和插件系统集成到原生桌面应用中。项目固定并原样运行特定上游版本；DSH Desktop 提供窗口、托盘、终端、更新和工作配置，并通过 DeepSeek Harness 提供的插件机制与上游能力组合。
@@ -70,6 +74,7 @@ DSH Desktop 将 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harne
 | --- | --- |
 | 安装和日常使用 | [用户指南](docs/user-guide.md) |
 | 快速确认平台、环境和使用边界 | [常见问题](docs/faq.md) |
+| 了解数据处理与隐私选择 | [隐私政策](PRIVACY.zh.md) |
 | 了解项目为什么存在 | [为什么做 DSH Desktop](docs/why-desktop.md) |
 | 查看全部文档与 README 分工 | [文档索引](docs/README.md) |
 
@@ -110,6 +115,16 @@ DSH Desktop 将 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harne
     </td>
   </tr>
 </table>
+
+### 首次设置、浏览器与局域网访问
+
+每个尚未初始化的 profile 正常首次启动时，会先显示由 Desktop 自己提供的原生 Setup Wizard。它可以设置窗口模式与系统材质、插件市场、通知、是否用系统默认浏览器自动打开，以及 Web 访问范围；也可以直接跳过。向导完成或跳过以前，Host 和主 DSH 窗口都不会启动。完成或跳过状态按 profile 分别记录；显式恢复启动仍优先进入恢复助手。
+
+Web 服务默认仅监听本机回环地址。开启“用浏览器打开”后，Desktop 会在 Web 服务实际就绪时交给系统默认浏览器打开；这个选项不会改变网络暴露范围。“桌面设置”会在选项下显示实际的本机 URL。局域网访问是一个独立的可选设置，开启后还会显示当前可用的局域网 URL。
+
+> **危险：** 向局域网开放不提供鉴权；所有与你处于同一局域网的人都能直接打开 DSH 并操作你的电脑。请只在完全信任的网络中谨慎开启。
+
+自动更新的固定版本检查请求会在 `X-DSH-Desktop-Installation-Id` header 中携带一个由本机生成并持久保存的随机 UUID；它不是从硬件信息推导出的标识。安装包下载请求及其下载重定向不会携带这个 header。
 
 ## 插件生态
 

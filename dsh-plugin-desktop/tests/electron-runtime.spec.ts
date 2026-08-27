@@ -1,3 +1,4 @@
+import { unlinkSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { DesktopShellSpec } from '../src/runtime.ts'
@@ -39,6 +40,16 @@ const childProcess = vi.hoisted(() => {
   }
 })
 
+const MAIN_WINDOW_STATE_PATH = '/tmp/dsh-desktop-user-data/main-window-state.json'
+
+function clearMainWindowState(): void {
+  try {
+    unlinkSync(MAIN_WINDOW_STATE_PATH)
+  } catch (cause) {
+    if ((cause as NodeJS.ErrnoException).code !== 'ENOENT') throw cause
+  }
+}
+
 vi.mock('../src/desktop-terminal.ts', async (importOriginal) => ({
   ...await importOriginal<typeof import('../src/desktop-terminal.ts')>(),
   openDesktopTerminal: terminal.open,
@@ -72,6 +83,7 @@ const electron = vi.hoisted(() => {
   const browserWindowOn = vi.fn()
   const browserWindowOff = vi.fn()
   const loadURL = vi.fn(async (_url: string) => {})
+  const webRequest = { onBeforeSendHeaders: vi.fn() }
   const applicationMenuTemplates: unknown[][] = []
   const menuTemplates: unknown[][] = []
   const notifications: Notification[] = []
@@ -96,6 +108,8 @@ const electron = vi.hoisted(() => {
     setTemplateImage: vi.fn(),
   }
   const webContents = {
+    id: 73,
+    session: { webRequest },
     closeDevTools: vi.fn(() => { devToolsOpened = false }),
     executeJavaScript: vi.fn(async (_code: string, _userGesture?: boolean) => null as string | null),
     getZoomLevel: vi.fn(() => zoomLevel),
@@ -127,6 +141,7 @@ const electron = vi.hoisted(() => {
     readonly isVisible = vi.fn(() => false)
     readonly isMinimized = vi.fn(() => false)
     readonly isFullScreen = vi.fn(() => false)
+    readonly getNormalBounds = vi.fn(() => ({ x: 120, y: 80, width: 1280, height: 840 }))
     readonly flashFrame = vi.fn()
     readonly restore = vi.fn()
     readonly show = vi.fn()
@@ -223,6 +238,11 @@ const electron = vi.hoisted(() => {
     notifications,
     resetZoomLevel: () => { zoomLevel = 0 },
     resetDevTools: () => { devToolsOpened = false },
+    screen: {
+      getDisplayMatching: vi.fn(() => ({
+        workArea: { x: 0, y: 0, width: 1920, height: 1080 },
+      })),
+    },
     shell: {
       openExternal: vi.fn(async () => {}),
       openPath: vi.fn(async () => ''),
@@ -232,6 +252,7 @@ const electron = vi.hoisted(() => {
     Tray,
     trays,
     webContents,
+    webRequest,
   }
 })
 
@@ -257,6 +278,7 @@ vi.mock('electron', () => ({
   nativeTheme: electron.nativeTheme,
   net: electron.net,
   Notification: electron.Notification,
+  screen: electron.screen,
   shell: electron.shell,
   Tray: electron.Tray,
 }))
@@ -271,6 +293,10 @@ const spec: DesktopShellSpec = {
   minWidth: 900,
   minHeight: 640,
   url: 'http://127.0.0.1:43120/',
+  rendererAccessHeader: {
+    name: 'x-dsh-desktop-renderer',
+    value: Buffer.alloc(32, 9).toString('base64url'),
+  },
   productName: 'DSH Desktop',
   windowTitle: 'DeepSeek Harness Desktop',
   iconPath: '/tmp/app-icon.png',
@@ -286,6 +312,7 @@ const spec: DesktopShellSpec = {
 
 describe('Electron desktop runtime', () => {
   beforeEach(() => {
+    clearMainWindowState()
     electron.app.isPackaged = false
     electron.browserWindowOptions.length = 0
     electron.browserWindowThemeSources.length = 0
@@ -323,6 +350,7 @@ describe('Electron desktop runtime', () => {
   })
 
   afterEach(() => {
+    clearMainWindowState()
     vi.useRealTimers()
     vi.restoreAllMocks()
   })
@@ -352,6 +380,7 @@ describe('Electron desktop runtime', () => {
         nodeIntegration: false,
         sandbox: true,
         webSecurity: true,
+        partition: 'persist:dsh-desktop-renderer',
       },
     }))
     expect(options).not.toHaveProperty('autoHideMenuBar')
@@ -382,6 +411,241 @@ describe('Electron desktop runtime', () => {
     await release()
     expect(electron.browserWindowOff).toHaveBeenCalledWith('page-title-updated', titleListener)
     expect(electron.trays[0]?.off).toHaveBeenCalledWith('click', expect.any(Function))
+  })
+
+  it('attaches the renderer capability to same-origin HTTP and WebSocket requests only', async () => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('darwin')
+    const { ElectronDesktopRuntime } = await import('../src/electron-runtime.ts')
+    const runtime = new ElectronDesktopRuntime(async () => {})
+    const release = runtime.schedule(spec)
+
+    await runtime.mountScheduled()
+
+    const registration = electron.webRequest.onBeforeSendHeaders.mock.calls
+      .find(call => call.length === 2)
+    expect(registration).toBeDefined()
+    expect(registration?.[0]).toEqual({ urls: ['<all_urls>'] })
+    expect(electron.webRequest.onBeforeSendHeaders.mock.invocationCallOrder[0])
+      .toBeLessThan(electron.loadURL.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY)
+    const listener = registration?.[1] as (
+      details: {
+        id: number
+        url: string
+        method: string
+        webContentsId?: number
+        webContents?: { id: number }
+        frame?: {
+          detached: boolean
+          origin: string
+          parent: unknown
+          top: { detached: boolean; origin: string } | null
+        } | null
+        resourceType: string
+        referrer: string
+        timestamp: number
+        requestHeaders: Record<string, string>
+      },
+      callback: (response: { requestHeaders?: Record<string, string | string[]> }) => void,
+    ) => void
+
+    const assetCallback = vi.fn()
+    const mainFrame = {
+      detached: false,
+      origin: 'http://127.0.0.1:43120',
+      parent: null,
+      top: null,
+    }
+    listener({
+      id: 1,
+      url: 'http://127.0.0.1:43120/assets/index.js',
+      method: 'GET',
+      webContentsId: 73,
+      frame: mainFrame,
+      resourceType: 'script',
+      referrer: 'http://127.0.0.1:43120/',
+      timestamp: 1,
+      requestHeaders: {
+        Accept: '*/*',
+        'X-DSH-DESKTOP-RENDERER': 'spoofed',
+      },
+    }, assetCallback)
+    expect(assetCallback).toHaveBeenCalledWith({
+      requestHeaders: {
+        Accept: '*/*',
+        [spec.rendererAccessHeader.name]: spec.rendererAccessHeader.value,
+      },
+    })
+
+    const socketCallback = vi.fn()
+    listener({
+      id: 2,
+      url: 'ws://127.0.0.1:43120/api/events.websocket',
+      method: 'GET',
+      webContents: { id: 73 },
+      frame: mainFrame,
+      resourceType: 'webSocket',
+      referrer: 'http://127.0.0.1:43120/',
+      timestamp: 2,
+      requestHeaders: { Upgrade: 'websocket' },
+    }, socketCallback)
+    expect(socketCallback).toHaveBeenCalledWith({
+      requestHeaders: {
+        Upgrade: 'websocket',
+        [spec.rendererAccessHeader.name]: spec.rendererAccessHeader.value,
+      },
+    })
+
+    for (const details of [
+      {
+        id: 3,
+        url: 'https://example.com/asset.js',
+        method: 'GET',
+        webContentsId: 73,
+        frame: mainFrame,
+        resourceType: 'script',
+        referrer: 'http://127.0.0.1:43120/',
+        timestamp: 3,
+        requestHeaders: {
+          Accept: 'text/javascript',
+          [spec.rendererAccessHeader.name]: spec.rendererAccessHeader.value,
+        },
+      },
+      {
+        id: 4,
+        url: 'http://127.0.0.1:43120/api/private',
+        method: 'GET',
+        webContentsId: 74,
+        frame: mainFrame,
+        resourceType: 'xhr',
+        referrer: 'http://127.0.0.1:43120/',
+        timestamp: 4,
+        requestHeaders: {
+          Accept: 'application/json',
+          [spec.rendererAccessHeader.name]: spec.rendererAccessHeader.value,
+        },
+      },
+    ]) {
+      const callback = vi.fn()
+      listener(details, callback)
+      expect(callback).toHaveBeenCalledWith({
+        requestHeaders: Object.fromEntries(
+          Object.entries(details.requestHeaders)
+            .filter(([name]) => name !== spec.rendererAccessHeader.name),
+        ),
+      })
+    }
+
+    for (const details of [
+      {
+        id: 5,
+        url: 'http://127.0.0.1:43120/api/private',
+        method: 'GET',
+        resourceType: 'xhr',
+        referrer: 'http://127.0.0.1:43120/',
+        timestamp: 5,
+        requestHeaders: {},
+      },
+      {
+        id: 6,
+        url: 'http://127.0.0.1:43120/api/private',
+        method: 'GET',
+        webContentsId: 73,
+        frame: {
+          detached: false,
+          origin: 'https://untrusted.example',
+          parent: mainFrame,
+          top: mainFrame,
+        },
+        resourceType: 'xhr',
+        referrer: 'https://untrusted.example/',
+        timestamp: 6,
+        requestHeaders: {},
+      },
+      {
+        id: 7,
+        url: 'http://127.0.0.1:43120/api/private',
+        method: 'GET',
+        webContentsId: 73,
+        webContents: { id: 74 },
+        frame: mainFrame,
+        resourceType: 'xhr',
+        referrer: 'http://127.0.0.1:43120/',
+        timestamp: 7,
+        requestHeaders: {},
+      },
+    ]) {
+      const callback = vi.fn()
+      listener(details, callback)
+      expect(callback).toHaveBeenCalledWith({ requestHeaders: {} })
+    }
+
+    await release()
+    expect(electron.webRequest.onBeforeSendHeaders).toHaveBeenLastCalledWith(null)
+  })
+
+  it('restores, debounces, and flushes main-window bounds across shell generations', async () => {
+    vi.useFakeTimers()
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
+    const { FileMainWindowStateStore } = await import('../src/main-window-state.ts')
+    const store = new FileMainWindowStateStore('/tmp/dsh-desktop-user-data')
+    store.write({ x: 260, y: 140, width: 1440, height: 900 })
+    const { ElectronDesktopRuntime } = await import('../src/electron-runtime.ts')
+    const runtime = new ElectronDesktopRuntime(async () => {})
+    const release = runtime.schedule(spec)
+
+    await runtime.mountScheduled()
+
+    expect(electron.browserWindowOptions[0]).toEqual(expect.objectContaining({
+      x: 260,
+      y: 140,
+      width: 1440,
+      height: 900,
+    }))
+    const window = electron.browserWindows[0]
+    const move = electron.browserWindowOn.mock.calls.find(([event]) => event === 'move')?.[1]
+    const close = electron.browserWindowOn.mock.calls.find(([event]) => event === 'close')?.[1]
+    expect(move).toEqual(expect.any(Function))
+    expect(close).toEqual(expect.any(Function))
+
+    window?.getNormalBounds.mockReturnValue({ x: 320, y: 180, width: 1500, height: 920 })
+    move()
+    expect(store.read()).toEqual({ x: 260, y: 140, width: 1440, height: 900 })
+    await vi.advanceTimersByTimeAsync(250)
+    expect(store.read()).toEqual({ x: 320, y: 180, width: 1500, height: 920 })
+
+    window?.getNormalBounds.mockReturnValue({ x: 360, y: 220, width: 1520, height: 940 })
+    close({ preventDefault: vi.fn() })
+    expect(store.read()).toEqual({ x: 360, y: 220, width: 1520, height: 940 })
+
+    await release()
+    expect(electron.browserWindowOff).toHaveBeenCalledWith('move', move)
+    expect(electron.browserWindowOff).toHaveBeenCalledWith('resize', expect.any(Function))
+  })
+
+  it('fits stale saved bounds into the current display work area', async () => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('darwin')
+    const { FileMainWindowStateStore } = await import('../src/main-window-state.ts')
+    const store = new FileMainWindowStateStore('/tmp/dsh-desktop-user-data')
+    const stale = { x: 5_000, y: -2_000, width: 2_000, height: 1_400 }
+    store.write(stale)
+    electron.screen.getDisplayMatching.mockReturnValueOnce({
+      workArea: { x: 0, y: 24, width: 1440, height: 876 },
+    })
+    const { ElectronDesktopRuntime } = await import('../src/electron-runtime.ts')
+    const runtime = new ElectronDesktopRuntime(async () => {})
+    const release = runtime.schedule(spec)
+
+    await runtime.mountScheduled()
+
+    expect(electron.screen.getDisplayMatching).toHaveBeenCalledWith(stale)
+    expect(electron.browserWindowOptions[0]).toEqual(expect.objectContaining({
+      x: 0,
+      y: 24,
+      width: 1440,
+      height: 876,
+    }))
+
+    await release()
   })
 
   it('reloads the renderer and toggles Developer Tools only for a mounted generation', async () => {
@@ -863,9 +1127,14 @@ describe('Electron desktop runtime', () => {
     expect(trayClick).toEqual(expect.any(Function))
     expect(close).toEqual(expect.any(Function))
 
-    window?.isMinimized.mockReturnValueOnce(true)
+    expect(window?.show).toHaveBeenCalledOnce()
+    expect(window?.focus).toHaveBeenCalledOnce()
+
+    window?.isVisible.mockReturnValue(true)
     ready()
+    window?.isMinimized.mockReturnValue(true)
     activate()
+    window?.isMinimized.mockReturnValue(false)
     trayClick()
     expect(window?.restore).toHaveBeenCalledOnce()
     expect(window?.show).toHaveBeenCalledTimes(3)
@@ -881,6 +1150,29 @@ describe('Electron desktop runtime', () => {
     close(quittingCloseEvent)
     expect(quittingCloseEvent.preventDefault).not.toHaveBeenCalled()
     expect(window?.hide).toHaveBeenCalledOnce()
+
+    await release()
+  })
+
+  it('reveals the startup surface before ready-to-show and does not re-show a visible window', async () => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('darwin')
+    const { ElectronDesktopRuntime } = await import('../src/electron-runtime.ts')
+    const runtime = new ElectronDesktopRuntime(async () => {})
+    const release = runtime.schedule(spec)
+
+    await runtime.mountScheduled()
+
+    const window = electron.browserWindows[0]
+    const ready = window?.once.mock.calls.find(([event]) => event === 'ready-to-show')?.[1]
+    expect(ready).toEqual(expect.any(Function))
+    expect(window?.show).toHaveBeenCalledOnce()
+    expect(window?.focus).toHaveBeenCalledOnce()
+
+    window?.isVisible.mockReturnValue(true)
+    ready()
+
+    expect(window?.show).toHaveBeenCalledOnce()
+    expect(window?.focus).toHaveBeenCalledOnce()
 
     await release()
   })
@@ -906,8 +1198,8 @@ describe('Electron desktop runtime', () => {
     expect(click).toEqual(expect.any(Function))
     click()
     expect(electron.app.setBadgeCount).toHaveBeenLastCalledWith(0)
-    expect(window?.show).toHaveBeenCalledOnce()
-    expect(window?.focus).toHaveBeenCalledOnce()
+    expect(window?.show).toHaveBeenCalledTimes(2)
+    expect(window?.focus).toHaveBeenCalledTimes(2)
 
     window?.isFocused.mockReturnValue(true)
     runtime.notifyAttention({ title: 'Ignored', body: 'Focused window' })
@@ -947,8 +1239,8 @@ describe('Electron desktop runtime', () => {
     window?.isFullScreen.mockReturnValue(false)
     runtime.show()
     expect(window?.setFullScreen.mock.calls).toEqual([[false], [true]])
-    expect(window?.show).toHaveBeenCalledOnce()
-    expect(window?.focus).toHaveBeenCalledOnce()
+    expect(window?.show).toHaveBeenCalledTimes(2)
+    expect(window?.focus).toHaveBeenCalledTimes(2)
 
     await release()
   })
@@ -972,8 +1264,8 @@ describe('Electron desktop runtime', () => {
 
     expect(window?.hide).not.toHaveBeenCalled()
     expect(window?.setFullScreen.mock.calls).toEqual([[false], [true]])
-    expect(window?.show).toHaveBeenCalledOnce()
-    expect(window?.focus).toHaveBeenCalledOnce()
+    expect(window?.show).toHaveBeenCalledTimes(2)
+    expect(window?.focus).toHaveBeenCalledTimes(2)
 
     await release()
   })
@@ -1015,10 +1307,13 @@ describe('Electron desktop runtime', () => {
 
     electron.app.isHidden.mockReturnValue(true)
     window?.isVisible.mockReturnValue(false)
+    const appShowCount = electron.app.show.mock.calls.length
+    const focusCountBeforeReveal = window?.focus.mock.calls.length ?? 0
     didBecomeActive()
-    expect(electron.app.show).toHaveBeenCalledOnce()
-    expect(electron.app.show.mock.invocationCallOrder[0]).toBeLessThan(window?.show.mock.invocationCallOrder[0] ?? Infinity)
-    expect(window?.focus).toHaveBeenCalledOnce()
+    expect(electron.app.show).toHaveBeenCalledTimes(appShowCount + 1)
+    expect((electron.app.show.mock.invocationCallOrder.at(-1) ?? Infinity))
+      .toBeLessThan(window?.show.mock.invocationCallOrder.at(-1) ?? Infinity)
+    expect(window?.focus).toHaveBeenCalledTimes(focusCountBeforeReveal + 1)
 
     electron.app.isHidden.mockReturnValue(false)
     window?.isVisible.mockReturnValue(true)
@@ -1240,7 +1535,6 @@ describe('Electron desktop runtime', () => {
         productVersion: '2.0.3',
         profileDir: expect.stringMatching(/profiles[\\/]+desktop$/u),
         homeDir: expect.stringContaining('dsh-desktop-user-data'),
-        installRecoveryStatePath: expect.stringMatching(/[\\/]plugin-install-recovery[\\/]state\.json$/u),
         spawn: expect.any(Function),
         onLaunchError: expect.any(Function),
       }))
@@ -1404,8 +1698,8 @@ describe('Electron desktop runtime', () => {
     expect(electron.dialog.showMessageBox).toHaveBeenCalledOnce()
     expect(electron.dialog.showMessageBox).toHaveBeenCalledWith(expect.objectContaining({
       type: 'error',
-      title: 'Plugin Recovery',
-      message: 'DSH Desktop could not load all plugins.',
+      title: 'Plugin Load Failed',
+      message: 'Some plugins could not be loaded.',
       detail: expect.stringContaining('dsh-vision-router'),
       buttons: ['Open DSH Terminal', 'Restart DSH Desktop', 'Dismiss'],
     }))
@@ -1626,8 +1920,8 @@ describe('Electron desktop runtime', () => {
     expect(notification?.once).toHaveBeenCalledWith('click', expect.any(Function))
     const click = notification?.once.mock.calls.find(([event]) => event === 'click')?.[1]
     click()
-    expect(activeWindow?.show).toHaveBeenCalledOnce()
-    expect(activeWindow?.focus).toHaveBeenCalledOnce()
+    expect(activeWindow?.show).toHaveBeenCalledTimes(2)
+    expect(activeWindow?.focus).toHaveBeenCalledTimes(2)
 
     await release()
   })
@@ -1653,7 +1947,7 @@ describe('Electron desktop runtime', () => {
         detached: true,
         stdio: 'ignore',
         shell: false,
-        windowsHide: false,
+        windowsHide: true,
       },
     )
     expect(requestQuit).not.toHaveBeenCalled()
@@ -1904,8 +2198,40 @@ describe('Electron desktop runtime', () => {
     expect(windowsAcrylic.set).toHaveBeenCalledOnce()
     expect(windowsAcrylic.set).toHaveBeenCalledWith(electron.browserWindows[0], true, true)
     expect(electron.menuTemplates[0]).toEqual(expect.arrayContaining([
-      expect.objectContaining({ label: 'Switch to Advanced Mode', enabled: true }),
+      expect.objectContaining({ label: 'Switch to Enhanced Mode', enabled: true }),
     ]))
+
+    await release()
+  })
+
+  it('uses the Windows 11 system Acrylic backdrop without the legacy transparent helper', async () => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
+    electron.nativeTheme.themeSource = 'light'
+    const { ElectronDesktopRuntime } = await import('../src/electron-runtime.ts')
+    const runtime = new ElectronDesktopRuntime(async () => {})
+    const release = runtime.schedule({
+      ...spec,
+      mode: 'extended',
+      material: 'acrylic',
+      windowsBuild: 22_621,
+      readThemeSource: () => 'dark',
+    })
+
+    await runtime.mountScheduled()
+
+    expect(electron.browserWindowOptions[0]).toEqual(expect.objectContaining({
+      backgroundMaterial: 'acrylic',
+      roundedCorners: true,
+      thickFrame: true,
+    }))
+    expect(electron.browserWindowOptions[0]).not.toHaveProperty('transparent')
+    expect(windowsAcrylic.set).not.toHaveBeenCalled()
+
+    const window = electron.browserWindows[0]
+    window?.setBackgroundMaterial.mockClear()
+    runtime.setThemeSource('light')
+    expect(window?.setBackgroundMaterial).toHaveBeenCalledOnce()
+    expect(window?.setBackgroundMaterial).toHaveBeenCalledWith('acrylic')
 
     await release()
   })
@@ -1929,6 +2255,7 @@ describe('Electron desktop runtime', () => {
       rendererBoot,
     ])).rejects.toThrow('renderer unavailable')
     expect(electron.nativeTheme.themeSource).toBe('dark')
+    expect(electron.webRequest.onBeforeSendHeaders).toHaveBeenLastCalledWith(null)
     await expect(release()).rejects.toThrow('renderer unavailable')
     expect(electron.nativeTheme.themeSource).toBe('light')
   })
