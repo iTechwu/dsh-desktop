@@ -8,8 +8,16 @@ packages:
   - deepseek-harness/vendor/**
 
 allowBuilds:
-  electron-winstaller: set this to true or false
-  koffi: set this to true or false
+  '@deepseek-ai/dsh-subprocess-local': true
+  '@google/genai': false
+  electron: true
+  electron-winstaller: false
+  esbuild: true
+  koffi: true
+  lefthook: true
+  node-addon-require-builtin: false
+  node-pty: true
+  protobufjs: false
 
 linkWorkspacePackages: true
 

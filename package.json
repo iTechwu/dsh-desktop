@@ -8,32 +8,6 @@
   "engines": {
     "node": "^22.19.0 || >=24.0.0"
   },
-  "dependenciesMeta": {
-    "@deepseek-ai/dsh-subprocess-local": {
-      "built": true
-    },
-    "@google/genai": {
-      "built": false
-    },
-    "electron": {
-      "built": true
-    },
-    "electron-winstaller": {
-      "built": false
-    },
-    "esbuild": {
-      "built": true
-    },
-    "koffi": {
-      "built": true
-    },
-    "node-pty": {
-      "built": true
-    },
-    "protobufjs": {
-      "built": false
-    }
-  },
   "scripts": {
     "build": "pnpm --filter dsh-community-market build && pnpm --filter dsh-plugin-desktop build",
     "typecheck": "pnpm --filter dsh-plugin-desktop typecheck && pnpm --filter dsh-community-market typecheck",
