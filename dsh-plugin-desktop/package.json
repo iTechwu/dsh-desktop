@@ -89,6 +89,8 @@
     "build/app-icon.png",
     "build/app-icon-mac.png",
     "build/brand-logo.png",
+    "build/hero-brand.png",
+    "build/sidebar-brand.png",
     "build/tray-icon*.png",
     "cordis.patch.yml",
     "docs/**",
@@ -122,7 +124,7 @@
     }
   },
   "scripts": {
-    "build": "node scripts/generate-brand-assets.mjs && node scripts/generate-mac-app-icon.mjs && node scripts/generate-tray-icons.mjs && node scripts/clean.mjs && tsdown && vite build --config vite.native-ui.config.ts && tsc -p tsconfig.json --emitDeclarationOnly && tsc -p tsconfig.client.json --emitDeclarationOnly",
+    "build": "node scripts/generate-brand-assets.mjs && node scripts/generate-client-brand-module.mjs && node scripts/generate-mac-app-icon.mjs && node scripts/generate-tray-icons.mjs && node scripts/clean.mjs && tsdown && vite build --config vite.native-ui.config.ts && tsc -p tsconfig.json --emitDeclarationOnly && tsc -p tsconfig.client.json --emitDeclarationOnly",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.client.json --noEmit && tsc -p tsconfig.native-ui.json --noEmit && tsc -p tsconfig.tests.json --noEmit && tsc -p tsconfig.tests.client.json --noEmit",
     "test": "vitest run",
     "verify:closure": "node --test scripts/runtime-closure.spec.mjs && node scripts/verify-runtime-closure.mjs",

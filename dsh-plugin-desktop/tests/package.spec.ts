@@ -254,6 +254,20 @@ describe('published package surface', () => {
     expect(client).not.toMatch(/\bprocess(?:\.|\[)/u)
   })
 
+  it('packages the confirmed Yootun hero headline in the conversation client', () => {
+    const workspaceRequire = createRequire(new URL('package.json', packageRoot))
+    const conversationManifest = workspaceRequire.resolve(
+      '@deepseek-ai/dsh-client-ui-conversation/package.json',
+    )
+    const conversationClient = readFileSync(
+      join(dirname(conversationManifest), 'lib', 'client.js'),
+      'utf8',
+    )
+
+    expect(conversationClient).toContain('青年人卖车就到优惠豚')
+    expect(conversationClient).not.toContain('年轻人的第一辆车')
+  })
+
   it('installs Host command PATHs after the launch snapshot and before profile boot', () => {
     const main = readFileSync(new URL('src/main.ts', packageRoot), 'utf8')
     const recover = main.indexOf('await resolveDesktopShellEnvironment')

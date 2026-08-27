@@ -1,4 +1,6 @@
 import { readFileSync } from 'node:fs'
+import { createElement, type ComponentType } from 'react'
+import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it, vi } from 'vitest'
 import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
 import { apply } from '../src/client/index.ts'
@@ -33,6 +35,84 @@ describe('desktop client environment', () => {
       expect(parseDesktopClientEnvironment('')).toBeUndefined()
       apply({ effect } as unknown as ClientContext)
       expect(effect).not.toHaveBeenCalled()
+    }
+    finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('fills the desktop brand slots with the Yootun lockup and hero artwork', () => {
+    let brandCss = ''
+    const registrations: Array<{
+      options: Record<string, unknown>
+      occupant: ComponentType<Record<string, unknown>>
+    }> = []
+    const slots = {
+      inject: vi.fn((_name: string, mount: () => unknown) => {
+        const result = mount()
+        if (result !== null && typeof result === 'object' && Symbol.iterator in result) {
+          Array.from(result as Iterable<unknown>)
+        }
+        return () => {}
+      }),
+      register: vi.fn((options: Record<string, unknown>, occupant: ComponentType<Record<string, unknown>>) => {
+        registrations.push({ options, occupant })
+        return () => {}
+      }),
+    }
+    const ctx = {
+      effect: vi.fn((mount: () => void, description: string) => {
+        if (description === 'dsh-plugin-desktop: brand layout styles') mount()
+      }),
+      locale: {
+        bind: vi.fn(() => () => ''),
+        register: vi.fn(() => () => {}),
+      },
+      settingsScope: {
+        bind: vi.fn(() => ({ set: vi.fn(async () => {}) })),
+      },
+      slots,
+    } as unknown as ClientContext
+    vi.stubGlobal('window', {
+      location: {
+        search: '?dsh-desktop-mode=compatibility&dsh-desktop-platform=darwin&dsh-desktop-version=2.0.3&dsh-desktop-material=transparent',
+      },
+    })
+    vi.stubGlobal('document', {
+      createElement: vi.fn(() => ({
+        dataset: {},
+        remove: vi.fn(),
+        get textContent() { return brandCss },
+        set textContent(value: string) { brandCss = value },
+      })),
+      head: { appendChild: vi.fn() },
+    })
+
+    try {
+      apply(ctx)
+      const brands = registrations.filter(({ options }) =>
+        typeof options.name === 'string' && options.name.includes('brand'))
+      expect(brands.map(({ options }) => options.name)).toEqual([
+        'sidebar.brand.mark',
+        'sidebar.brand.name',
+        'conversation.hero.brand.mark',
+      ])
+
+      const sidebar = renderToStaticMarkup(createElement(brands[0]!.occupant, { size: 24 }))
+      expect(sidebar).toMatch(/data-dsh-yootun-brand="sidebar"/)
+      expect(sidebar).toMatch(/src="data:image\/png;base64,[^"]+"/)
+      expect(sidebar).toContain('width="200"')
+      expect(sidebar).toContain('height="36"')
+      expect(brandCss).toMatch(/button:has\(\[data-dsh-yootun-brand="sidebar"\]\) > \[aria-hidden="true"\] \{ height: 36px;/)
+
+      expect(renderToStaticMarkup(createElement(brands[1]!.occupant))).toBe('')
+
+      const hero = renderToStaticMarkup(createElement(brands[2]!.occupant, { size: 34, className: 'hero-mark' }))
+      expect(hero).toMatch(/data-dsh-yootun-brand="hero"/)
+      expect(hero).toMatch(/src="data:image\/png;base64,[^"]+"/)
+      expect(hero).toContain('width="34"')
+      expect(hero).toContain('height="34"')
+      expect(hero).toContain('class="hero-mark"')
     }
     finally {
       vi.unstubAllGlobals()

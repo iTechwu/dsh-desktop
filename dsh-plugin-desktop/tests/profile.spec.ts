@@ -366,6 +366,10 @@ virtualStoreDirMaxLength: 60
       expect(matching[0]).toEqual(expect.objectContaining({ name }))
       expect(matching[0]?.disabled).toBeFalsy()
     }
+    expect(rows.find(row => row.id === 'ui-brand-official')).toEqual(expect.objectContaining({
+      name: '@deepseek-ai/dsh-client-ui-brand-official',
+      disabled: true,
+    }))
     expect(rows.find(row => row.id === 'directory-picker')).toEqual(expect.objectContaining({
       name: '@deepseek-ai/dsh-host-directory-picker-auto',
     }))
