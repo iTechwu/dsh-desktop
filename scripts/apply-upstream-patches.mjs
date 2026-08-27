@@ -14,9 +14,8 @@
 // - BSD patch 对"已应用"的补丁正/反向 dry-run 都退出 0(反向还会交互
 //   提问),退出码不可信,幂等判定改用内容指纹(见 isApplied)。
 import { spawnSync, execFileSync } from 'node:child_process'
-import { createRequire } from 'node:module'
-import { realpathSync, readFileSync } from 'node:fs'
-import { dirname, resolve } from 'node:path'
+import { readdirSync, readFileSync } from 'node:fs'
+import { isAbsolute, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
   GENERATED_CSS_MODULE_PATCH,
@@ -94,19 +93,39 @@ function checkPatch(patchText, packageDir) {
   return result.status === 0
 }
 
-const require = createRequire(resolve(repoRoot, 'dsh-plugin-desktop/package.json'))
+function discoverWorkspacePackages(workspaceRoot) {
+  const packages = new Map()
+  const pending = [workspaceRoot]
+  while (pending.length > 0) {
+    const directory = pending.pop()
+    const entries = readdirSync(directory, { withFileTypes: true })
+    const manifestEntry = entries.find((entry) => entry.isFile() && entry.name === 'package.json')
+    if (directory !== workspaceRoot && manifestEntry !== undefined) {
+      const manifest = JSON.parse(readFileSync(resolve(directory, manifestEntry.name), 'utf8'))
+      if (typeof manifest.name === 'string') packages.set(manifest.name, directory)
+      continue
+    }
+    for (const entry of entries) {
+      if (entry.isDirectory() && !['.git', 'node_modules', 'lib', 'dist'].includes(entry.name)) {
+        pending.push(resolve(directory, entry.name))
+      }
+    }
+  }
+  return packages
+}
+
 const upstreamRoot = resolve(repoRoot, upstream.localCheckout)
+const workspacePackages = discoverWorkspacePackages(upstreamRoot)
 let applied = 0
 let skipped = 0
 for (const [file, packageName] of Object.entries(PATCH_MANIFEST)) {
   let patchText = readFileSync(resolve(repoRoot, 'patches', file), 'utf8')
-  let packageDir
-  try {
-    packageDir = realpathSync(dirname(require.resolve(`${packageName}/package.json`)))
-  } catch {
-    throw new Error(`apply-upstream-patches: cannot resolve ${packageName}; run corepack pnpm install first`)
+  const packageDir = workspacePackages.get(packageName)
+  if (packageDir === undefined) {
+    throw new Error(`apply-upstream-patches: cannot find ${packageName} in the pinned upstream checkout`)
   }
-  if (!packageDir.startsWith(`${upstreamRoot}/`)) {
+  const packageRelativePath = relative(upstreamRoot, packageDir)
+  if (packageRelativePath.startsWith('..') || isAbsolute(packageRelativePath)) {
     throw new Error(`apply-upstream-patches: ${packageName} resolved outside ${upstream.localCheckout}: ${packageDir}`)
   }
   if (file === GENERATED_CSS_MODULE_PATCH) {
