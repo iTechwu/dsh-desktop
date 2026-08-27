@@ -756,6 +756,16 @@ describe('published package surface', () => {
     expect(subprocessRuntime.match(/windowsHide: true/gu)).toHaveLength(3)
   })
 
+  it('keeps the attachment runtime patch compatible with GNU patch', () => {
+    const attachmentPatch = readFileSync(
+      new URL('./patches/dsh-client-ui-attachment@0.1.1-rc.2.patch', workspaceRoot),
+      'utf8',
+    )
+
+    expect(attachmentPatch).toContain('@@ -225,8 +225,11 @@')
+    expect(attachmentPatch).toContain('@@ -537,12 +540,18 @@')
+  })
+
   it('resolves electron-builder through the pinned app-builder-lib keychain patch', () => {
     const lockfile = readFileSync(new URL('pnpm-lock.yaml', workspaceRoot), 'utf8')
     const patch = readFileSync(new URL('patches/app-builder-lib@26.15.7.patch', workspaceRoot), 'utf8')
