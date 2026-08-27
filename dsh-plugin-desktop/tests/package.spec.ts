@@ -264,7 +264,8 @@ describe('published package surface', () => {
       'utf8',
     )
 
-    expect(conversationClient).toContain('青年人卖车就到优惠豚')
+    expect(conversationClient).toContain('青年人买车就到优惠豚')
+    expect(conversationClient).not.toContain('青年人卖车就到优惠豚')
     expect(conversationClient).not.toContain('年轻人的第一辆车')
   })
 
