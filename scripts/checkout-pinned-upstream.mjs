@@ -1,13 +1,15 @@
 /** Materialize the pinned sibling checkout on ephemeral CI runners. */
 
 import { spawnSync } from 'node:child_process'
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, lstatSync, readFileSync, symlinkSync, unlinkSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
+const script = fileURLToPath(import.meta.url)
+const root = resolve(dirname(script), '..')
 const upstream = JSON.parse(readFileSync(resolve(root, 'upstream.json'), 'utf8'))
 const checkout = resolve(root, upstream.localCheckout)
+const workspaceLink = resolve(root, 'deepseek-harness')
 
 if (
   upstream.localCheckout !== '../deepseek-harness'
@@ -24,14 +26,49 @@ function git(args) {
   return result.stdout.trim()
 }
 
-if (existsSync(checkout)) {
-  const current = git(['-C', checkout, 'rev-parse', 'HEAD'])
-  if (current !== upstream.commit) {
-    throw new Error(`checkout-pinned-upstream: existing checkout is ${current}, expected ${upstream.commit}`)
+/** Replace Git's Unix symlink representation with a Windows directory junction. */
+export function materializeWindowsWorkspaceLink({
+  platform = process.platform,
+  link = workspaceLink,
+  target = checkout,
+} = {}) {
+  if (platform !== 'win32') return false
+
+  let entry
+  try {
+    entry = lstatSync(link)
+  } catch (error) {
+    if (error?.code !== 'ENOENT') throw error
   }
-} else {
-  git(['clone', '--filter=blob:none', '--no-checkout', upstream.repository, checkout])
-  git(['-C', checkout, 'checkout', '--detach', upstream.commit])
+
+  if (entry?.isFile()) {
+    const recordedTarget = readFileSync(link, 'utf8').trim()
+    if (recordedTarget !== '../deepseek-harness') {
+      throw new Error(`checkout-pinned-upstream: refusing to replace unexpected file at ${link}`)
+    }
+  } else if (entry && !entry.isSymbolicLink()) {
+    throw new Error(`checkout-pinned-upstream: refusing to replace non-link directory at ${link}`)
+  }
+
+  if (entry) unlinkSync(link)
+  symlinkSync(target, link, 'junction')
+  return true
 }
 
-console.log(`checkout-pinned-upstream: ready at ${upstream.commit.slice(0, 10)}`)
+export function main() {
+  if (existsSync(checkout)) {
+    const current = git(['-C', checkout, 'rev-parse', 'HEAD'])
+    if (current !== upstream.commit) {
+      throw new Error(`checkout-pinned-upstream: existing checkout is ${current}, expected ${upstream.commit}`)
+    }
+  } else {
+    git(['clone', '--filter=blob:none', '--no-checkout', upstream.repository, checkout])
+    git(['-C', checkout, 'checkout', '--detach', upstream.commit])
+  }
+
+  materializeWindowsWorkspaceLink()
+
+  console.log(`checkout-pinned-upstream: ready at ${upstream.commit.slice(0, 10)}`)
+}
+
+if (process.argv[1] && resolve(process.argv[1]) === script) main()
