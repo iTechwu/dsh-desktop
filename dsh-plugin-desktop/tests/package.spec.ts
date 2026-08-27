@@ -72,6 +72,12 @@ describe('published package surface', () => {
       .toBe('pnpm --filter dsh-plugin-desktop test && pnpm --filter dsh-community-market test')
   })
 
+  it('cleans generated upstream output before rebuilding and applying desktop patches', () => {
+    expect(workspaceManifest.scripts?.['upstream:build']).toBe(
+      'cd ../deepseek-harness && corepack pnpm run clean && corepack pnpm run build && cd ../dsh-desktop && node scripts/apply-upstream-patches.mjs',
+    )
+  })
+
   it('registers both npm launcher names', () => {
     expect(manifest.name).toBe('dsh-plugin-desktop')
     expect(manifest.bin).toEqual({

@@ -27,6 +27,6 @@
     "dist:win-portable": "pnpm --filter dsh-community-market build && pnpm --filter dsh-plugin-desktop dist:win-portable",
     "upstream:version": "cd ../deepseek-harness && corepack pnpm --version",
     "upstream:install": "cd ../deepseek-harness && corepack pnpm install --frozen-lockfile",
-    "upstream:build": "cd ../deepseek-harness && corepack pnpm run build && cd ../dsh-desktop && node scripts/apply-upstream-patches.mjs"
+    "upstream:build": "cd ../deepseek-harness && corepack pnpm run clean && corepack pnpm run build && cd ../dsh-desktop && node scripts/apply-upstream-patches.mjs"
   }
 }
