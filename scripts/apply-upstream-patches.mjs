@@ -26,6 +26,9 @@ const upstream = JSON.parse(readFileSync(resolve(repoRoot, 'upstream.json'), 'ut
 // 由 pnpm-workspace.yaml 的 patchedDependencies 处理,不在此列。
 // patches/dsh-client-ui-settings-models@0.1.1-rc.2.patch 已被
 // 5348824733 版本补丁取代(候选搜索特性已并入),不再应用。
+// dsh-web-app 补丁原含的 cordis.patch.yml 段已被上游提交吸收
+// (openBrowser: false),该过时段会使 BSD patch 跳过整个补丁并连带
+// lib/index.js 段永不落盘,已从补丁中剥离。
 const PATCH_MANIFEST = {
   'dsh@0.1.1-rc.2.patch': '@deepseek-ai/dsh',
   'dsh-agent-loop@0.1.1-rc.2.patch': '@deepseek-ai/dsh-agent-loop',
