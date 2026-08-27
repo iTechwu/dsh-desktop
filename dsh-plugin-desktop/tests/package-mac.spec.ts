@@ -78,6 +78,8 @@ describe('macOS DMG smoke packaging', () => {
         PATH: '/usr/bin:/bin',
         SAFE_VALUE: 'kept',
         CSC_IDENTITY_AUTO_DISCOVERY: 'false',
+        npm_config_user_agent: 'npm',
+        npm_execpath: '',
       },
     })
     expect(calls[2]).toEqual({

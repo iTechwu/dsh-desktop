@@ -11,7 +11,7 @@
  */
 
 import { createRequire } from 'node:module'
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -54,7 +54,7 @@ function resolvePackageManifest(name, fromManifestPath) {
   const segments = name.split('/')
   const folder = name.startsWith('@') ? segments.slice(0, 2).join('/') : segments[0]
   const entry = name.startsWith('@') ? segments.slice(2).join('/') : segments.slice(1).join('/')
-  let dir = dirname(fromManifestPath)
+  let dir = dirname(realpathSync(fromManifestPath))
   for (;;) {
     const candidate = join(dir, 'node_modules', folder, entry, 'package.json')
     if (existsSync(candidate)) return candidate
