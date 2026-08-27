@@ -14,7 +14,7 @@
     "test": "pnpm --filter dsh-plugin-desktop test && pnpm --filter dsh-community-market test",
     "test:bilingual-docs": "node --test scripts/bilingual-docs.test.mjs",
     "check:bilingual-docs": "pnpm test:bilingual-docs && node scripts/verify-bilingual-docs.mjs",
-    "test:architecture-gates": "node --test scripts/market-dependency-direction.test.mjs scripts/upstream-patch-specialization.test.mjs",
+    "test:architecture-gates": "node --test scripts/market-dependency-direction.test.mjs",
     "check:architecture": "pnpm test:architecture-gates && node scripts/verify-market-dependency-direction.mjs",
     "check:layout": "pnpm check:bilingual-docs && pnpm check:architecture && node scripts/verify-layout.mjs",
     "check": "pnpm check:layout && pnpm --filter dsh-community-fabric check && pnpm --filter dsh-community-market check && pnpm --filter dsh-plugin-desktop check",
