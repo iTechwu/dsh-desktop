@@ -1,4 +1,4 @@
-/** Durable bounds for the one DSH Desktop main window. */
+/** Durable bounds for the one Yootun-Agent main window. */
 
 import { randomUUID } from 'node:crypto'
 import {

@@ -1,4 +1,4 @@
-/** Private installation identity used only by DSH Desktop update checks. */
+/** Private installation identity used only by Yootun-Agent update checks. */
 
 import { randomUUID } from 'node:crypto'
 import { chmod, lstat, mkdir, open } from 'node:fs/promises'
@@ -6,7 +6,7 @@ import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { withFileLock, writeFileAtomic } from '@deepseek-ai/dsh-atomic-write'
 
 /** Header carrying the pseudonymous Desktop installation identity. */
-export const DESKTOP_INSTALLATION_ID_HEADER = 'X-DSH-Desktop-Installation-Id'
+export const DESKTOP_INSTALLATION_ID_HEADER = 'X-Yootun-Agent-Installation-Id'
 
 /** Relative state location below Electron's userData directory. */
 export const DESKTOP_INSTALLATION_ID_RELATIVE_PATH = join('identity', 'installation-id')

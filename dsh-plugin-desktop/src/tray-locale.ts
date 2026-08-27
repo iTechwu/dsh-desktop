@@ -23,7 +23,7 @@ const labels: Record<DesktopLocale, Record<DesktopTrayLabelKey, (value: string) 
     addProfile: () => 'New Profile…',
     checkForUpdates: () => 'Check for Updates…',
     checkingForUpdates: () => 'Checking for Updates…',
-    downloadingUpdate: version => `Downloading DSH Desktop ${version}…`,
+    downloadingUpdate: version => `Downloading Yootun-Agent ${version}…`,
     exportDiagnostics: () => 'Export Diagnostics…',
     openDesktop: productName => `Open ${productName}`,
     openTerminal: () => 'Open DSH Terminal',
@@ -33,13 +33,13 @@ const labels: Record<DesktopLocale, Record<DesktopTrayLabelKey, (value: string) 
     switchToCompatibility: () => 'Switch to Compatibility Mode',
     switchToExtended: () => 'Switch to Extended Window',
     unavailableForDesktop: profileName => `${profileName} (Unavailable for Desktop)`,
-    updateAvailable: version => `DSH Desktop ${version} Available`,
+    updateAvailable: version => `Yootun-Agent ${version} Available`,
   },
   zh: {
     addProfile: () => '新建 Profile…',
     checkForUpdates: () => '检查更新…',
     checkingForUpdates: () => '正在检查更新…',
-    downloadingUpdate: version => `正在下载 DSH Desktop ${version}…`,
+    downloadingUpdate: version => `正在下载 Yootun-Agent ${version}…`,
     exportDiagnostics: () => '导出诊断信息…',
     openDesktop: productName => `打开 ${productName}`,
     openTerminal: () => '打开 DSH 终端',
@@ -49,7 +49,7 @@ const labels: Record<DesktopLocale, Record<DesktopTrayLabelKey, (value: string) 
     switchToCompatibility: () => '切换到兼容模式',
     switchToExtended: () => '切换到扩展窗口',
     unavailableForDesktop: profileName => `${profileName}（不可用于桌面端）`,
-    updateAvailable: version => `DSH Desktop ${version} 可用`,
+    updateAvailable: version => `Yootun-Agent ${version} 可用`,
   },
 }
 
@@ -72,15 +72,15 @@ export interface DesktopRestartConfirmationCopy {
 const restartConfirmationCopy: Record<DesktopLocale, Record<'normal' | 'recovery', DesktopRestartConfirmationCopy>> = {
   en: {
     normal: {
-      title: 'Restart DSH Desktop',
-      message: 'Restart DSH Desktop now?',
+      title: 'Restart Yootun-Agent',
+      message: 'Restart Yootun-Agent now?',
       detail: 'Running operations and unsent input may be interrupted. Saved settings will not be lost.',
       confirm: 'Restart',
       cancel: 'Cancel',
     },
     recovery: {
       title: 'Restart in Recovery Mode',
-      message: 'Restart DSH Desktop in Recovery Mode?',
+      message: 'Restart Yootun-Agent in Recovery Mode?',
       detail: 'The next launch opens the recovery assistant before the Profile and plugin Host start. Running operations and unsent input may be interrupted.',
       confirm: 'Restart in Recovery Mode',
       cancel: 'Cancel',
@@ -88,15 +88,15 @@ const restartConfirmationCopy: Record<DesktopLocale, Record<'normal' | 'recovery
   },
   zh: {
     normal: {
-      title: '重启 DSH Desktop',
-      message: '现在重启 DSH Desktop？',
+      title: '重启 Yootun-Agent',
+      message: '现在重启 Yootun-Agent？',
       detail: '正在运行的操作和未发送的输入可能会中断，已保存的设置不会丢失。',
       confirm: '重启',
       cancel: '取消',
     },
     recovery: {
       title: '重启到恢复模式',
-      message: '重启 DSH Desktop 并进入恢复模式？',
+      message: '重启 Yootun-Agent 并进入恢复模式？',
       detail: '下次启动会在 Profile 和插件 Host 运行前打开恢复助手。正在运行的操作和未发送的输入可能会中断。',
       confirm: '重启到恢复模式',
       cancel: '取消',

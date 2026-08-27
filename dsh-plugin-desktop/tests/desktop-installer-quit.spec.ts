@@ -10,12 +10,12 @@ describe('Desktop installer quit request', () => {
   it('accepts only the dedicated flag on Windows', () => {
     expect(DESKTOP_INSTALLER_QUIT_FLAG).toBe('--dsh-installer-quit')
     expect(isDesktopInstallerQuitRequest(
-      ['DSH Desktop.exe', DESKTOP_INSTALLER_QUIT_FLAG],
+      ['Yootun-Agent.exe', DESKTOP_INSTALLER_QUIT_FLAG],
       'win32',
     )).toBe(true)
-    expect(isDesktopInstallerQuitRequest(['DSH Desktop.exe', '--quit'], 'win32')).toBe(false)
+    expect(isDesktopInstallerQuitRequest(['Yootun-Agent.exe', '--quit'], 'win32')).toBe(false)
     expect(isDesktopInstallerQuitRequest(
-      ['DSH Desktop', DESKTOP_INSTALLER_QUIT_FLAG],
+      ['Yootun-Agent', DESKTOP_INSTALLER_QUIT_FLAG],
       'darwin',
     )).toBe(false)
   })

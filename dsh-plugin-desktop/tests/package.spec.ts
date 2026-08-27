@@ -476,8 +476,8 @@ describe('published package surface', () => {
 
   it('fixes the installed application identity', () => {
     expect(manifest.version).toBe(workspaceManifest.version)
-    expect(manifest.build?.productName).toBe('DSH Desktop')
-    expect(manifest.build?.appId).toBe('ai.deepseek.dsh.desktop')
+    expect(manifest.build?.productName).toBe('Yootun-Agent')
+    expect(manifest.build?.appId).toBe('ai.yootun.agent')
     expect(manifest.build?.asarUnpack).toEqual([
       'package.json',
       'cordis.patch.yml',
@@ -512,7 +512,7 @@ describe('published package surface', () => {
       target: 'nsis',
       arch: ['x64'],
     }])
-    expect(manifest.build?.win?.artifactName).toBe('DSH-Desktop-${version}-${arch}-Portable.${ext}')
+    expect(manifest.build?.win?.artifactName).toBe('Yootun-Agent-${version}-${arch}-Portable.${ext}')
     expect(manifest.build?.nsis).toEqual({
       include: 'installer.nsh',
       license: 'THIRD_PARTY_NOTICES.md',
@@ -523,9 +523,9 @@ describe('published package surface', () => {
       createDesktopShortcut: true,
       createStartMenuShortcut: true,
       differentialPackage: false,
-      shortcutName: 'DSH Desktop',
+      shortcutName: 'Yootun-Agent',
       useZip: false,
-      artifactName: 'DSH-Desktop-${version}-${arch}-Setup.${ext}',
+      artifactName: 'Yootun-Agent-${version}-${arch}-Setup.${ext}',
     })
     expect(manifest.build?.linux?.icon).toBe('build/app-icon.png')
   })
@@ -534,6 +534,7 @@ describe('published package surface', () => {
     const packageDir = readFileSync(new URL('scripts/package-dir.mjs', packageRoot), 'utf8')
 
     expect(manifest.scripts?.build).toContain('node scripts/generate-mac-app-icon.mjs')
+    expect(manifest.scripts?.build).toContain('node scripts/generate-brand-assets.mjs')
     expect(manifest.scripts?.['package:dir']).toBe('pnpm run build && node scripts/package-dir.mjs')
     expect(packageDir).toContain("CSC_IDENTITY_AUTO_DISCOVERY: 'false'")
     expect(manifest.scripts?.['dist:mac']).toBe('node scripts/release-mac.ts')
@@ -655,12 +656,12 @@ describe('published package surface', () => {
       .digest('hex')
 
     expect(digestOf('build/app-icon.png'))
-      .toBe('3169a6b666b3e65759ade38f20f2209f9bc5682905cc6900a1c952d8bbabb344')
+      .toBe('6f6ce9ae30ffe5b9c410c0044f21202ba1255ee154e913d131e9c84a493a5ca3')
     expect(digestOf('build/brand-logo.png'))
-      .toBe('f83192e059d0054eb29adda67beabeb5a6b69ecdff1c082446f75815a4876174')
+      .toBe('09d698cfc2d89aa77812e40ee0476a2e315bcc7f9f132be01ce53c2c9919771e')
   })
 
-  it('generates a centered macOS icon with a 100-pixel visual inset', async () => {
+  it('generates a centered macOS icon with at least a 100-pixel visual inset', async () => {
     const source = await sharp(readFileSync(new URL('build/app-icon.png', packageRoot))).metadata()
     const icon = sharp(readFileSync(new URL('build/app-icon-mac.png', packageRoot)))
     const metadata = await icon.metadata()
@@ -679,12 +680,15 @@ describe('published package surface', () => {
       hasAlpha: true,
     }))
     expect(metadata.icc).toEqual(source.icc)
-    expect(info).toEqual(expect.objectContaining({
-      width: 824,
-      height: 824,
-      trimOffsetLeft: -100,
-      trimOffsetTop: -100,
-    }))
+    expect(info.width).toBeLessThanOrEqual(824)
+    expect(info.height).toBeLessThanOrEqual(824)
+    const left = -info.trimOffsetLeft
+    const top = -info.trimOffsetTop
+    const right = 1024 - left - info.width
+    const bottom = 1024 - top - info.height
+    expect(Math.min(left, top, right, bottom)).toBeGreaterThanOrEqual(100)
+    expect(Math.abs(left - right)).toBeLessThanOrEqual(1)
+    expect(Math.abs(top - bottom)).toBeLessThanOrEqual(1)
   })
 
   it('keeps Electron out of production dependencies consumed by electron-builder', () => {

@@ -24,9 +24,9 @@ const windowsPowerShell = 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\power
 const adaptation: WindowsAclTerminalAdaptation = {
   platform: 'win32',
   electron: true,
-  execPath: 'C:\\Program Files\\DSH Desktop\\DSH Desktop.exe',
-  upstreamRunner: 'C:\\Program Files\\DSH Desktop\\resources\\app.asar\\runner.js',
-  trampoline: 'C:\\Program Files\\DSH Desktop\\resources\\app.asar\\windows-acl-runner.js',
+  execPath: 'C:\\Program Files\\Yootun-Agent\\Yootun-Agent.exe',
+  upstreamRunner: 'C:\\Program Files\\Yootun-Agent\\resources\\app.asar\\runner.js',
+  trampoline: 'C:\\Program Files\\Yootun-Agent\\resources\\app.asar\\windows-acl-runner.js',
   env: { SystemRoot: 'C:\\Windows' },
   isFile: path => path === commandPath,
 }

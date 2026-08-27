@@ -1,4 +1,4 @@
-/** DSH Desktop executable: minimal Electron bootstrap around the Host Cordis root. */
+/** Yootun-Agent executable: minimal Electron bootstrap around the Host Cordis root. */
 
 import { app, crashReporter, shell } from 'electron'
 import { randomUUID } from 'node:crypto'
@@ -137,7 +137,7 @@ import {
 import { windowsSupportsMica } from './window-material.ts'
 
 const BIN_NAME = 'dsh-plugin-desktop'
-const PRODUCT_NAME = 'DSH Desktop'
+const PRODUCT_NAME = 'Yootun-Agent'
 
 class RendererStartupFailure extends Error {
   constructor(
@@ -431,7 +431,7 @@ async function start(): Promise<void> {
     await app.whenReady()
     startupStage = 'shell-environment'
     lifecycleRecorder.transitionStartupStage(startupStage)
-    if (process.platform === 'win32') app.setAppUserModelId('ai.deepseek.dsh.desktop')
+    if (process.platform === 'win32') app.setAppUserModelId('ai.yootun.agent')
     if (app.isPackaged && process.cwd() === '/') process.chdir(app.getPath('home'))
     const shellEnvironmentResolution = await resolveDesktopShellEnvironment({
       environment: process.env,

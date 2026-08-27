@@ -8,7 +8,7 @@ import {
 
 describe('Desktop relaunch arguments', () => {
   const argv = [
-    '/Applications/DSH Desktop.app/Contents/MacOS/DSH Desktop',
+    '/Applications/Yootun-Agent.app/Contents/MacOS/Yootun-Agent',
     'desktop-main.cjs',
     '--profile=work',
     DESKTOP_RECOVERY_MODE_ARGUMENT,
