@@ -66,7 +66,9 @@ jobs:
         if: needs.changes.outputs.product == 'true'
         with:
           persist-credentials: false
-          submodules: recursive
+      - name: Checkout pinned upstream sibling
+        if: needs.changes.outputs.product == 'true'
+        run: node scripts/checkout-pinned-upstream.mjs
       - uses: actions/setup-node@v6
         if: needs.changes.outputs.product == 'true'
         with:
@@ -98,7 +100,8 @@ jobs:
       - uses: actions/checkout@v6
         with:
           persist-credentials: false
-          submodules: recursive
+      - name: Checkout pinned upstream sibling
+        run: node scripts/checkout-pinned-upstream.mjs
       - uses: actions/setup-node@v6
         with:
           node-version: 22.23.2
@@ -143,7 +146,8 @@ jobs:
       - uses: actions/checkout@v6
         with:
           persist-credentials: false
-          submodules: recursive
+      - name: Checkout pinned upstream sibling
+        run: node scripts/checkout-pinned-upstream.mjs
       - uses: actions/setup-node@v6
         with:
           node-version: 22.23.2
@@ -170,7 +174,7 @@ jobs:
           retention-days: 7
 
   # Upstream toolchain smoke: the portable-shell scripts must resolve the
-  # pinned submodule's own pnpm/pnpm release on Windows.
+  # pinned sibling checkout's own pnpm release on Windows.
   upstream-command-windows:
     needs: changes
     if: needs.changes.outputs.product == 'true'
@@ -179,7 +183,8 @@ jobs:
       - uses: actions/checkout@v6
         with:
           persist-credentials: false
-          submodules: recursive
+      - name: Checkout pinned upstream sibling
+        run: node scripts/checkout-pinned-upstream.mjs
       - uses: actions/setup-node@v6
         with:
           node-version: 22.23.2
