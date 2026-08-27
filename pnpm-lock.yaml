@@ -11,7 +11,24 @@ patchedDependencies:
 
 importers:
 
-  .: {}
+  .:
+    dependenciesMeta:
+      '@deepseek-ai/dsh-subprocess-local':
+        built: true
+      '@google/genai':
+        built: false
+      electron:
+        built: true
+      electron-winstaller:
+        built: false
+      esbuild:
+        built: true
+      koffi:
+        built: true
+      node-pty:
+        built: true
+      protobufjs:
+        built: false
 
   dsh-community-fabric: {}
 
