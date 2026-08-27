@@ -682,6 +682,9 @@ describe('published package surface', () => {
     expect(metadata.icc).toEqual(source.icc)
     expect(info.width).toBeLessThanOrEqual(824)
     expect(info.height).toBeLessThanOrEqual(824)
+    if (info.trimOffsetLeft === undefined || info.trimOffsetTop === undefined) {
+      throw new Error('trimmed macOS icon is missing its canvas offsets')
+    }
     const left = -info.trimOffsetLeft
     const top = -info.trimOffsetTop
     const right = 1024 - left - info.width
