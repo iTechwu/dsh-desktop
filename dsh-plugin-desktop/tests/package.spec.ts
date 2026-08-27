@@ -490,14 +490,14 @@ describe('published package surface', () => {
     expect(manifest.files).toEqual(expect.arrayContaining([
       'build/app-icon.png',
       'build/app-icon-mac.png',
-      'build/tray-icon.svg',
+      'build/brand-logo.png',
       'build/tray-icon*.png',
       'docs/**',
     ]))
     expect(manifest.build?.files).toEqual([
       'build/app-icon.png',
       'build/app-icon-mac.png',
-      'build/tray-icon.svg',
+      'build/brand-logo.png',
       'build/tray-icon*.png',
       'cordis.patch.yml',
       'lib/**',
@@ -633,11 +633,10 @@ describe('published package surface', () => {
     expect(ciWorkflow).toContain('Documentation-only change; product build and tests are not required.')
   })
 
-  it('keeps one fixed brand-blue tray source for generated native assets', () => {
-    const source = readFileSync(new URL('build/tray-icon.svg', packageRoot), 'utf8')
+  it('derives every native tray bitmap from the brand logo master', () => {
+    const master = readFileSync(new URL('build/brand-logo.png', packageRoot))
 
-    expect(source.match(/#4D6BFE/gu)).toHaveLength(1)
-    expect(source).not.toMatch(/<style\b|prefers-color-scheme/iu)
+    expect(master.byteLength).toBeGreaterThan(0)
     for (const filename of [
       'tray-iconTemplate.png',
       'tray-iconTemplate@2x.png',
@@ -650,12 +649,15 @@ describe('published package surface', () => {
     }
   })
 
-  it('keeps the iOS Default source icon unmodified', () => {
-    const digest = createHash('sha256')
-      .update(readFileSync(new URL('build/app-icon.png', packageRoot)))
+  it('keeps the brand icon sources unmodified', () => {
+    const digestOf = (relative: string): string => createHash('sha256')
+      .update(readFileSync(new URL(relative, packageRoot)))
       .digest('hex')
 
-    expect(digest).toBe('315fbc6e57ff1f34894f21f66fb7f9f26deccf78333c71fad21a6cec64e7de80')
+    expect(digestOf('build/app-icon.png'))
+      .toBe('3169a6b666b3e65759ade38f20f2209f9bc5682905cc6900a1c952d8bbabb344')
+    expect(digestOf('build/brand-logo.png'))
+      .toBe('f83192e059d0054eb29adda67beabeb5a6b69ecdff1c082446f75815a4876174')
   })
 
   it('generates a centered macOS icon with a 100-pixel visual inset', async () => {
