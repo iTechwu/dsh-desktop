@@ -10,6 +10,15 @@ diff --git a/lib/client.js b/lib/client.js
  			"hero.preview": "预览版",
  			"hero.chooseWorkspace": "选择工作区",
  			"session.hierarchy": "会话层级",
+@@ -7271,6 +7271,8 @@ window.__ModuleLoader__.load({
+ 			});
+ 			return (0, react_jsx_runtime.jsxs)("div", {
+ 				className: ConversationRoot_module_css_default.root,
++				"data-dsh-conversation-drop-target": "",
++				style: { position: "relative" },
+ 				"data-phase": phase,
+ 				children: [renderSlot("conversation.session.header", {}), (0, react_jsx_runtime.jsxs)("div", {
+ 					className: ConversationRoot_module_css_default.scrollBody,
 diff --git a/lib/types/client/locales.js b/lib/types/client/locales.js
 --- a/lib/types/client/locales.js
 +++ b/lib/types/client/locales.js

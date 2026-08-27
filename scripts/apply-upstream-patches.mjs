@@ -33,6 +33,7 @@ const PATCH_MANIFEST = {
   'dsh-agent-loop@0.1.1-rc.2.patch': '@deepseek-ai/dsh-agent-loop',
   'dsh-app-boot@0.1.1-rc.2.patch': '@deepseek-ai/dsh-app-boot',
   'dsh-client-runtime@0.1.1-rc.2.patch': '@deepseek-ai/dsh-client-runtime',
+  'dsh-client-ui-attachment@0.1.1-rc.2.patch': '@deepseek-ai/dsh-client-ui-attachment',
   'dsh-client-ui-conversation@0.1.1-rc.2.patch': '@deepseek-ai/dsh-client-ui-conversation',
   'dsh-client-ui-directory-picker-browse@0.1.1-rc.2.patch': '@deepseek-ai/dsh-client-ui-directory-picker-browse',
   '@deepseek-ai-dsh-client-ui-settings-general-npm-0.1.1-rc.2-ef120ba0cf.patch': '@deepseek-ai/dsh-client-ui-settings-general',
