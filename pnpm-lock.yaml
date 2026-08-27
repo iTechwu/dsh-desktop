@@ -8940,6 +8940,9 @@ importers:
       node-addon-require-builtin:
         specifier: ^0.1.4
         version: 0.1.5
+      node-pty:
+        specifier: 1.2.0-beta.15
+        version: 1.2.0-beta.15
       pnpm:
         specifier: 11.8.0
         version: 11.8.0
@@ -9031,6 +9034,37 @@ importers:
       vitest:
         specifier: 4.1.8
         version: 4.1.8(@opentelemetry/api@1.9.1)(@types/node@22.20.1)(jsdom@29.1.1(@noble/hashes@2.3.0))(vite@8.2.1(@types/node@22.20.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.12)(yaml@2.9.0))
+    optionalDependencies:
+      '@img/sharp-darwin-arm64':
+        specifier: 0.35.3
+        version: 0.35.3
+      '@img/sharp-darwin-x64':
+        specifier: 0.35.3
+        version: 0.35.3
+      '@img/sharp-libvips-darwin-arm64':
+        specifier: 1.3.2
+        version: 1.3.2
+      '@img/sharp-libvips-darwin-x64':
+        specifier: 1.3.2
+        version: 1.3.2
+      '@koromix/koffi-darwin-arm64':
+        specifier: 3.1.5
+        version: 3.1.5
+      '@koromix/koffi-darwin-x64':
+        specifier: 3.1.5
+        version: 3.1.5
+      '@vscode/ripgrep-darwin-arm64':
+        specifier: 1.18.0
+        version: 1.18.0
+      '@vscode/ripgrep-darwin-x64':
+        specifier: 1.18.0
+        version: 1.18.0
+      node-addon-require-builtin-darwin-arm64:
+        specifier: 0.1.5
+        version: 0.1.5
+      node-addon-require-builtin-darwin-x64:
+        specifier: 0.1.5
+        version: 0.1.5
 
 packages:
 

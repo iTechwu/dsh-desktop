@@ -21,6 +21,14 @@ allowBuilds:
 
 linkWorkspacePackages: true
 
+supportedArchitectures:
+  os:
+    - current
+    - darwin
+  cpu:
+    - x64
+    - arm64
+
 patchedDependencies:
   app-builder-lib@26.15.7: patches/app-builder-lib@26.15.7.patch
   dshmarket@1.17.1: patches/dshmarket-npm-1.17.1.patch
