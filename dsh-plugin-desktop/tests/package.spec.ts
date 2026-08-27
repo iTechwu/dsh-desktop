@@ -4,6 +4,7 @@ import {
   copyFileSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   realpathSync,
   rmSync,
@@ -714,16 +715,14 @@ describe('published package surface', () => {
     expect(lockfile).not.toContain('@koromix/koffi-win32-x64@3.1.4')
   })
 
-  // yarn 时代的 resolutions 补丁在 pnpm 工作区直连设计中尚未接入,
-  // windowsHide 行为当前由上游源码约定承载,接入补丁后恢复该测试。
-  it.skip('hides official plugin-manager and general subprocess consoles on Windows', () => {
-    const dshPatchPath = './patches/dsh@0.1.1-rc.2.patch'
-    const subprocessPatchPath = './patches/dsh-subprocess-local@0.1.1-rc.2.patch'
-    const dshPatchResolution = `patch:@deepseek-ai/dsh@npm%3A0.1.1-rc.2#${dshPatchPath}`
-    const subprocessPatchResolution = `patch:@deepseek-ai/dsh-subprocess-local@npm%3A0.1.1-rc.2#${subprocessPatchPath}`
-    const lockfile = readFileSync(new URL('yarn.lock', workspaceRoot), 'utf8')
-    const dshPatch = readFileSync(new URL(dshPatchPath, workspaceRoot), 'utf8')
-    const subprocessPatch = readFileSync(new URL(subprocessPatchPath, workspaceRoot), 'utf8')
+  it('hides official plugin-manager and general subprocess consoles on Windows', () => {
+    const dshPatchName = 'dsh@0.1.1-rc.2.patch'
+    const subprocessPatchName = 'dsh-subprocess-local@0.1.1-rc.2.patch'
+    const dshPatch = readFileSync(new URL(`./patches/${dshPatchName}`, workspaceRoot), 'utf8')
+    const subprocessPatch = readFileSync(new URL(`./patches/${subprocessPatchName}`, workspaceRoot), 'utf8')
+    // pnpm 的 patchedDependencies 不覆盖 workspace 链接包,行为补丁由
+    // scripts/apply-upstream-patches.mjs 在上游构建后统一应用到兄弟目录。
+    const applyScript = readFileSync(new URL('./scripts/apply-upstream-patches.mjs', workspaceRoot), 'utf8')
     const workspaceRequire = createRequire(new URL('package.json', packageRoot))
     const dshManifest = workspaceRequire.resolve('@deepseek-ai/dsh/package.json')
     const dshPluginRuntime = readdirSync(join(dirname(dshManifest), 'lib'))
@@ -733,14 +732,8 @@ describe('published package surface', () => {
     const subprocessManifest = workspaceRequire.resolve('@deepseek-ai/dsh-subprocess-local/package.json')
     const subprocessRuntime = readFileSync(join(dirname(subprocessManifest), 'lib/index.js'), 'utf8')
 
-    expect(workspaceManifest.resolutions).toMatchObject({
-      '@deepseek-ai/dsh@npm:0.1.1-rc.2': dshPatchResolution,
-      '@deepseek-ai/dsh@npm:^0.1.1-rc.2': dshPatchResolution,
-      '@deepseek-ai/dsh-subprocess-local@npm:0.1.1-rc.2': subprocessPatchResolution,
-      '@deepseek-ai/dsh-subprocess-local@npm:^0.1.1-rc.2': subprocessPatchResolution,
-    })
-    expect(lockfile).toContain('@deepseek-ai/dsh@patch:@deepseek-ai/dsh@npm%3A0.1.1-rc.2#./patches/dsh@0.1.1-rc.2.patch')
-    expect(lockfile).toContain('@deepseek-ai/dsh-subprocess-local@patch:@deepseek-ai/dsh-subprocess-local@npm%3A0.1.1-rc.2#./patches/dsh-subprocess-local@0.1.1-rc.2.patch')
+    expect(applyScript).toContain(`'${dshPatchName}': '@deepseek-ai/dsh',`)
+    expect(applyScript).toContain(`'${subprocessPatchName}': '@deepseek-ai/dsh-subprocess-local',`)
     expect(dshPatch).toContain('+\t\twindowsHide: true')
     expect(dshPluginRuntime).toMatch(/spawnSync\("pnpm"[\s\S]*?shell: process\.platform === "win32",\s+windowsHide: true/u)
     expect(subprocessPatch.match(/^\+\s*windowsHide: true\r?$/gmu)).toHaveLength(3)

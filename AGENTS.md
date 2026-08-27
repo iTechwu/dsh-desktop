@@ -22,7 +22,7 @@ This repository owns the desktop product around an unmodified DeepSeek Harness c
 - Run unit tests with `corepack pnpm test`.
 - Run type checking with `corepack pnpm typecheck`.
 - Run the complete headless gate with `corepack pnpm check`.
-- Run upstream operations through the root scripts, such as `corepack pnpm upstream:build`.
+- Run upstream operations through the root scripts, such as `corepack pnpm upstream:build`. That build also applies the desktop-owned behavior patches in `patches/` to the sibling checkout's built `lib/` output (see `scripts/apply-upstream-patches.mjs`); upstream-behavior tests in `dsh-plugin-desktop/tests` depend on those patches being applied.
 
 - `../deepseek-harness/` is the DeepSeek Harness source (a sibling checkout, not vendored). Never edit files inside it from a desktop feature branch.
 - `dsh-plugin-desktop/` owns the Cordis Host and Client faces, Electron bootstrap, packaging, and release tests.

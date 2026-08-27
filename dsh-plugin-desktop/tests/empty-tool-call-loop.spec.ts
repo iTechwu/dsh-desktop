@@ -1,6 +1,5 @@
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
-import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -56,7 +55,9 @@ afterEach(() => {
 async function loadExecuteToolCalls(): Promise<ExecuteToolCalls> {
   const original = readFileSync(agentLoopLibPath, 'utf8')
   const patched = `${original}\nexport { executeToolCalls };\n`
-  const tempDir = mkdtempSync(join(tmpdir(), 'dsh-agent-loop-'))
+  // 临时模块必须放在本包 node_modules 下:产物里的裸 import(如
+  // @deepseek-ai/cordis)要从包内向上解析,系统 tmpdir 解析不到。
+  const tempDir = mkdtempSync(join(dirname(agentLoopPackageJson), 'lib', '.empty-tool-call-spec.'))
   cleanupPaths.add(tempDir)
   const tempFile = join(tempDir, 'index.mjs')
   writeFileSync(tempFile, patched)
@@ -65,9 +66,7 @@ async function loadExecuteToolCalls(): Promise<ExecuteToolCalls> {
 }
 
 describe('empty tool-call handling', () => {
-  // 该行为源于 yarn resolutions 补丁 dsh-agent-loop@0.1.1-rc.2.patch;
-  // pnpm 工作区直连上游源码后补丁未接入,待接入后恢复此测试。
-  it.skip('fails once with a clear terminal result instead of entering the unknown-tool dispatch path', async () => {
+  it('fails once with a clear terminal result instead of entering the unknown-tool dispatch path', async () => {
     const executeToolCalls = await loadExecuteToolCalls()
     const session = new SessionRecorder()
     const prepare = vi.fn(async (exec: { name: string }) => ({

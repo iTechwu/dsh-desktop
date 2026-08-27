@@ -132,9 +132,7 @@ describe('client runtime startup restore', () => {
     delete (globalThis as { window?: unknown }).window
   })
 
-  // 该行为源于 yarn resolutions 补丁 dsh-client-runtime@0.1.1-rc.2.patch;
-  // pnpm 工作区直连上游源码后补丁未接入,待接入后恢复此测试。
-  it.skip('keeps a persisted selection while the authoritative session baseline is still pending', async () => {
+  it('keeps a persisted selection while the authoritative session baseline is still pending', async () => {
     const { SessionRuntime, WorkspaceRuntime } = await loadClientRuntime()
     const storage = new Map<string, string>([
       ['dsh.sessions.current', JSON.stringify({ sessionId: 's-restored' })],

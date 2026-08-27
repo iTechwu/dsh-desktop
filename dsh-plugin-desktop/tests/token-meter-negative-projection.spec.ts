@@ -31,9 +31,7 @@ function replaceEvent(seq: number, start: number, end: number, text = '.'): Sess
 }
 
 describe('token-meter negative projection recovery', () => {
-  // 负投影钳制行为源于 yarn resolutions 补丁 dsh-token-meter@0.1.1-rc.2.patch;
-  // pnpm 工作区直连上游源码后补丁未接入,待接入后恢复以下测试。
-  it.skip('invalidates pre-fix negative checkpoint rows via stateVersion mismatch', async () => {
+  it('invalidates pre-fix negative checkpoint rows via stateVersion mismatch', async () => {
     const ctx = await harness()
 
     expect(contextBreakdownProjectionDefinition.stateVersion).toBe(3)
@@ -75,7 +73,7 @@ describe('token-meter negative projection recovery', () => {
     })
   })
 
-  it.skip('clamps drifted replacement deltas before they can persist negative state', () => {
+  it('clamps drifted replacement deltas before they can persist negative state', () => {
     const replacement = replaceEvent(38482, 100, 200)
 
     const breakdown = contextBreakdownProjectionDefinition.apply({

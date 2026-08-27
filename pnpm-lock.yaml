@@ -7,6 +7,7 @@ settings:
 patchedDependencies:
   app-builder-lib@26.15.7: 65acc83e31466f6c82c73ec761885da83f2b309a4ac75952d2640d0700ba1dd1
   dshmarket@1.17.1: 948ad1b0df28a2f55a043eb1a902f17bbd53ff76eb8cf222729cc68aacb8588c
+  open@11.0.1: 383484d0b84b1bb856145936155333d024f1dfc5d6eaf86104b2a00bac8e8612
 
 importers:
 
@@ -218,6 +219,9 @@ importers:
       '@deepseek-ai/dsh-agent-default-model':
         specifier: workspace:*
         version: link:../deepseek-harness/packages/core/agent-default-model
+      '@deepseek-ai/dsh-agent-loop':
+        specifier: workspace:*
+        version: link:../deepseek-harness/packages/core/agent-loop
       '@deepseek-ai/dsh-agent-presets':
         specifier: workspace:*
         version: link:../deepseek-harness/packages/preset/agent-presets
@@ -293,6 +297,12 @@ importers:
       '@deepseek-ai/dsh-client-ui-settings':
         specifier: workspace:*
         version: link:../deepseek-harness/packages/client/ui-settings
+      '@deepseek-ai/dsh-client-ui-settings-general':
+        specifier: workspace:*
+        version: link:../deepseek-harness/packages/client/ui-settings-general
+      '@deepseek-ai/dsh-client-ui-settings-models':
+        specifier: workspace:*
+        version: link:../deepseek-harness/packages/client/ui-settings-models
       '@deepseek-ai/dsh-client-ui-sidebar':
         specifier: workspace:*
         version: link:../deepseek-harness/packages/client/ui-sidebar
@@ -305,6 +315,9 @@ importers:
       '@deepseek-ai/dsh-client-ui-tool':
         specifier: workspace:*
         version: link:../deepseek-harness/packages/client/ui-tool
+      '@deepseek-ai/dsh-client-ui-trajectory':
+        specifier: workspace:*
+        version: link:../deepseek-harness/packages/client/ui-trajectory
       '@deepseek-ai/dsh-client-ui-workspace':
         specifier: workspace:*
         version: link:../deepseek-harness/packages/client/ui-workspace
@@ -350,6 +363,9 @@ importers:
       '@deepseek-ai/dsh-host-apiproxy':
         specifier: workspace:*
         version: link:../deepseek-harness/packages/host/apiproxy
+      '@deepseek-ai/dsh-host-directory-picker-auto':
+        specifier: workspace:*
+        version: link:../deepseek-harness/packages/host/directory-picker-auto
       '@deepseek-ai/dsh-host-directory-picker-browse':
         specifier: workspace:*
         version: link:../deepseek-harness/packages/host/directory-picker-browse
@@ -374,6 +390,9 @@ importers:
       '@deepseek-ai/dsh-llm':
         specifier: workspace:*
         version: link:../deepseek-harness/packages/llm/llm
+      '@deepseek-ai/dsh-llm-deepseek':
+        specifier: workspace:*
+        version: link:../deepseek-harness/packages/llm/llm-deepseek
       '@deepseek-ai/dsh-llm-retry':
         specifier: workspace:*
         version: link:../deepseek-harness/packages/llm/llm-retry
@@ -6923,7 +6942,7 @@ snapshots:
     dependencies:
       mimic-function: 5.0.1
 
-  open@11.0.1:
+  open@11.0.1(patch_hash=383484d0b84b1bb856145936155333d024f1dfc5d6eaf86104b2a00bac8e8612):
     dependencies:
       default-browser: 5.5.1
       define-lazy-prop: 3.0.0
@@ -7372,7 +7391,7 @@ snapshots:
       fs-extra: 11.4.0
       fuzzysort: 3.1.0
       kleur: 4.1.5
-      open: 11.0.1
+      open: 11.0.1(patch_hash=383484d0b84b1bb856145936155333d024f1dfc5d6eaf86104b2a00bac8e8612)
       ora: 8.2.0
       postcss: 8.5.26
       postcss-selector-parser: 7.1.5
