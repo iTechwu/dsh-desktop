@@ -120,6 +120,15 @@ jobs:
         env:
           DSH_PACKAGE_CHECK_ALREADY_RAN: '1'
         run: pnpm --filter dsh-plugin-desktop dist:win-portable
+      - name: Upload Windows applications
+        uses: actions/upload-artifact@v7
+        with:
+          name: yootun-agent-windows-x64
+          path: |
+            dsh-plugin-desktop/dist/Yootun-Agent-*-Setup.exe
+            dsh-plugin-desktop/dist/Yootun-Agent-*-Portable.zip
+          if-no-files-found: error
+          retention-days: 7
 
   # macOS-only universal packaging smoke on a real macOS runner: the signed
   # release is built manually on a credentialed machine, so an unsigned DMG
@@ -152,6 +161,13 @@ jobs:
         env:
           DSH_PACKAGE_CHECK_ALREADY_RAN: '1'
         run: pnpm --filter dsh-plugin-desktop dist:mac-smoke
+      - name: Upload macOS application
+        uses: actions/upload-artifact@v7
+        with:
+          name: yootun-agent-macos-universal
+          path: dsh-plugin-desktop/dist/mac-smoke/*.dmg
+          if-no-files-found: error
+          retention-days: 7
 
   # Upstream toolchain smoke: the portable-shell scripts must resolve the
   # pinned submodule's own pnpm/pnpm release on Windows.
