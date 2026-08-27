@@ -7,7 +7,7 @@ test('specializes every generated CSS Modules class to the target build prefix',
     '+"nativePickerButton": "_3Crdra_nativePickerButton"',
     '+className: _3Crdra_nativePickerButton',
   ].join('\n')
-  const target = '"dialog": "_Qx9-Z_dialog"'
+  const target = 'const css = "._Qx9-Z_dialog._Qx9-Z_dialog{gap:0}";'
 
   assert.equal(
     specializeGeneratedCssModulePatch(patch, target),
@@ -20,7 +20,7 @@ test('specializes every generated CSS Modules class to the target build prefix',
 
 test('rejects inputs without both generated class prefixes', () => {
   assert.throws(
-    () => specializeGeneratedCssModulePatch('+unrelated patch', '"dialog": "_Qx9-Z_dialog"'),
+    () => specializeGeneratedCssModulePatch('+unrelated patch', 'const css = "._Qx9-Z_dialog{gap:0}";'),
     /cannot resolve generated CSS Modules class prefixes/u,
   )
 })
