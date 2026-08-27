@@ -18,6 +18,10 @@ import { createRequire } from 'node:module'
 import { realpathSync, readFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import {
+  GENERATED_CSS_MODULE_PATCH,
+  specializeGeneratedCssModulePatch,
+} from './upstream-patch-specialization.mjs'
 
 const repoRoot = fileURLToPath(new URL('..', import.meta.url))
 const upstream = JSON.parse(readFileSync(resolve(repoRoot, 'upstream.json'), 'utf8'))
@@ -95,7 +99,7 @@ const upstreamRoot = resolve(repoRoot, upstream.localCheckout)
 let applied = 0
 let skipped = 0
 for (const [file, packageName] of Object.entries(PATCH_MANIFEST)) {
-  const patchText = readFileSync(resolve(repoRoot, 'patches', file), 'utf8')
+  let patchText = readFileSync(resolve(repoRoot, 'patches', file), 'utf8')
   let packageDir
   try {
     packageDir = realpathSync(dirname(require.resolve(`${packageName}/package.json`)))
@@ -104,6 +108,10 @@ for (const [file, packageName] of Object.entries(PATCH_MANIFEST)) {
   }
   if (!packageDir.startsWith(`${upstreamRoot}/`)) {
     throw new Error(`apply-upstream-patches: ${packageName} resolved outside ${upstream.localCheckout}: ${packageDir}`)
+  }
+  if (file === GENERATED_CSS_MODULE_PATCH) {
+    const targetText = readFileSync(resolve(packageDir, 'lib/client.js'), 'utf8')
+    patchText = specializeGeneratedCssModulePatch(patchText, targetText)
   }
   if (isApplied(patchText, packageDir)) {
     skipped += 1
