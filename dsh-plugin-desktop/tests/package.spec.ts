@@ -535,7 +535,7 @@ describe('published package surface', () => {
 
     expect(manifest.scripts?.build).toContain('node scripts/generate-mac-app-icon.mjs')
     expect(manifest.scripts?.build).toContain('node scripts/generate-brand-assets.mjs')
-    expect(manifest.scripts?.['package:dir']).toBe('pnpm run build && node scripts/package-dir.mjs')
+    expect(manifest.scripts?.['package:dir']).toBe('corepack pnpm run build && node scripts/package-dir.mjs')
     expect(packageDir).toContain("CSC_IDENTITY_AUTO_DISCOVERY: 'false'")
     expect(manifest.scripts?.['dist:mac']).toBe('node scripts/release-mac.ts')
     expect(manifest.scripts?.['dist:mac-smoke']).toBe('node scripts/package-mac.ts')
