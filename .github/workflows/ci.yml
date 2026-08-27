@@ -87,6 +87,8 @@ jobs:
       - if: needs.changes.outputs.product == 'true'
         run: pnpm install --frozen-lockfile
       - if: needs.changes.outputs.product == 'true'
+        run: pnpm upstream:install
+      - if: needs.changes.outputs.product == 'true'
         run: pnpm upstream:build
       - if: needs.changes.outputs.product == 'true'
         run: pnpm check
@@ -116,6 +118,7 @@ jobs:
           path: ${{ steps.pnpm-store.outputs.dir }}
           key: pnpm-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml', 'pnpm-workspace.yaml') }}
       - run: pnpm install --frozen-lockfile
+      - run: pnpm upstream:install
       - run: pnpm upstream:build
       - run: pnpm --filter dsh-plugin-desktop check:win-package
       - name: Build Windows installer
@@ -163,6 +166,7 @@ jobs:
           path: ${{ steps.pnpm-store.outputs.dir }}
           key: pnpm-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml', 'pnpm-workspace.yaml') }}
       - run: pnpm install --frozen-lockfile
+      - run: pnpm upstream:install
       - run: pnpm upstream:build
       - run: pnpm --filter dsh-plugin-desktop check:mac-package
       - name: Build macOS smoke artifact
