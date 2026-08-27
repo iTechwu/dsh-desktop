@@ -71,6 +71,8 @@ describe('universal macOS native runtime preparation', () => {
       'koffi-darwin-arm64',
       'darwin_arm64',
     )
+    const aliasedKoffiX64 = join(installedModules, 'koffi-darwin-x64-3-1-1')
+    const aliasedKoffiX64Native = join(aliasedKoffiX64, 'darwin_x64')
     const sharpNative = join(installedModules, '@img', 'sharp-darwin-arm64', 'lib')
 
     try {
@@ -80,6 +82,7 @@ describe('universal macOS native runtime preparation', () => {
       mkdirSync(installedKoffiNative, { recursive: true })
       mkdirSync(versionedKoffi, { recursive: true })
       mkdirSync(versionedKoffiNative, { recursive: true })
+      mkdirSync(aliasedKoffiX64Native, { recursive: true })
       mkdirSync(sharpNative, { recursive: true })
       writeFileSync(
         join(installedKoffi, 'package.json'),
@@ -94,6 +97,11 @@ describe('universal macOS native runtime preparation', () => {
       writeFileSync(join(installedKoffiNative, 'koffi.node'), 'koffi-3.1.5-arm64')
       writeFileSync(join(versionedKoffi, 'package.json'), '{"name":"koffi","version":"3.1.1"}')
       writeFileSync(join(versionedKoffiNative, 'koffi.node'), 'koffi-3.1.1-arm64')
+      writeFileSync(
+        join(aliasedKoffiX64, 'package.json'),
+        '{"name":"@koromix/koffi-darwin-x64","version":"3.1.1"}',
+      )
+      writeFileSync(join(aliasedKoffiX64Native, 'koffi.node'), 'koffi-3.1.1-x64')
       writeFileSync(join(sharpNative, 'sharp.node'), 'sharp-arm64')
       mkdirSync(join(packagedModules, '@img'), { recursive: true })
       symlinkSync(
@@ -101,7 +109,7 @@ describe('universal macOS native runtime preparation', () => {
         join(packagedModules, '@img', 'sharp-darwin-arm64'),
       )
 
-      hydratePackagedMacRuntime({ desktopRoot, unpackedRoot, arches: ['arm64'] })
+      hydratePackagedMacRuntime({ desktopRoot, unpackedRoot, arches: ['arm64', 'x86_64'] })
 
       expect(existsSync(join(
         packagedModules,
@@ -120,6 +128,16 @@ describe('universal macOS native runtime preparation', () => {
         'darwin_arm64',
         'koffi.node',
       ), 'utf8')).toBe('koffi-3.1.1-arm64')
+      expect(readFileSync(join(
+        packagedModules,
+        '@deepseek-ai',
+        'consumer',
+        'node_modules',
+        '@koromix',
+        'koffi-darwin-x64',
+        'darwin_x64',
+        'koffi.node',
+      ), 'utf8')).toBe('koffi-3.1.1-x64')
       expect(lstatSync(join(packagedModules, '@img', 'sharp-darwin-arm64')).isSymbolicLink())
         .toBe(false)
       expect(existsSync(join(

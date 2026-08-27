@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from 'vitest'
 import AdmZip from 'adm-zip'
 import {
   afterPack,
+  macArchesForElectronBuilder,
   REQUIRED_PACKAGED_RUNTIME_ENTRIES,
   REQUIRED_MACOS_UNIVERSAL_ENTRIES,
   REQUIRED_UNPACKED_PACKAGE_SPECIFIERS,
@@ -42,6 +43,17 @@ function completeArchiveEntries(separator = '/'): string[] {
 function completePackageResolver(unpackedRoot: string): PackageResolver {
   return specifier => join(unpackedRoot, 'resolved', `${specifier.replaceAll('/', '-')}.js`)
 }
+
+describe('macOS universal runtime hydration', () => {
+  it.each([1, 3, 4])('hydrates both CPU package trees for Electron Builder arch %i', (arch) => {
+    expect(macArchesForElectronBuilder(arch)).toEqual(['arm64', 'x86_64'])
+  })
+
+  it('rejects unsupported Electron Builder architectures', () => {
+    expect(() => macArchesForElectronBuilder(undefined))
+      .toThrow('unsupported macOS Electron Builder arch undefined')
+  })
+})
 
 describe('packaged desktop runtime verification', () => {
   it('fails the diagnostic Worker smoke when its archive omits the crash dump', async () => {

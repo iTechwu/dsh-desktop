@@ -184,6 +184,23 @@ function resolveInstalledKoffi(
   )
 }
 
+function resolveInstalledKoffiNative(
+  desktopRoot: string,
+  installedKoffi: string,
+  arch: MacUniversalArch,
+): string {
+  const packageName = `koffi-darwin-${packageArch(arch)}`
+  const adjacent = join(dirname(installedKoffi), '@koromix', packageName)
+  if (existsSync(adjacent)) return adjacent
+
+  const version = JSON.parse(readFileSync(join(installedKoffi, 'package.json'), 'utf8')).version as string
+  const aliasName = `${packageName}-${version.replaceAll('.', '-')}`
+  const alias = join(desktopRoot, 'node_modules', aliasName)
+  if (existsSync(alias)) return alias
+
+  throw new Error(`cannot resolve installed ${packageName} ${version} source`)
+}
+
 /**
  * Restore optional native packages that Electron Builder's npm dependency
  * collector omits across pnpm workspace and nested-version boundaries.
@@ -206,11 +223,13 @@ export function hydratePackagedMacRuntime(
 
   for (const packagedKoffi of findNestedKoffiPackages(packagedModules)) {
     const installedKoffi = resolveInstalledKoffi(desktopRoot, unpackedRoot, packagedKoffi)
-    const installedScope = join(dirname(installedKoffi), '@koromix')
     const packagedScope = join(dirname(packagedKoffi), '@koromix')
     for (const arch of options.arches) {
       const packageName = `koffi-darwin-${packageArch(arch)}`
-      copyPackage(join(installedScope, packageName), join(packagedScope, packageName))
+      copyPackage(
+        resolveInstalledKoffiNative(desktopRoot, installedKoffi, arch),
+        join(packagedScope, packageName),
+      )
     }
   }
 }

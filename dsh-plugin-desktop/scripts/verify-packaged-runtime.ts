@@ -163,10 +163,9 @@ export type PackagedDiagnosticWorkerLauncher = (
 /** Injectable native-runtime hydration seam used before static verification. */
 export type PackagedRuntimeHydrator = (context: PackagedRuntimeContext) => void
 
-function macArchesForElectronBuilder(arch: number | undefined): readonly MacUniversalArch[] {
-  if (arch === 1) return ['x86_64']
-  if (arch === 3) return ['arm64']
-  if (arch === 4) return ['arm64', 'x86_64']
+export function macArchesForElectronBuilder(arch: number | undefined): readonly MacUniversalArch[] {
+  // Universal's thin inputs must have identical paths before their Mach-O files can be merged.
+  if (arch === 1 || arch === 3 || arch === 4) return ['arm64', 'x86_64']
   throw new Error(`dsh-plugin-desktop: unsupported macOS Electron Builder arch ${String(arch)}`)
 }
 

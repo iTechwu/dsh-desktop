@@ -21,6 +21,9 @@ allowBuilds:
 
 linkWorkspacePackages: true
 
+overrides:
+  app-builder-lib>@electron/get: 5.1.0
+
 supportedArchitectures:
   os:
     - current

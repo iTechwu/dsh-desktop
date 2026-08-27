@@ -268,7 +268,7 @@
     "koffi": "3.1.5",
     "node-addon-require-builtin": "^0.1.4",
     "node-pty": "1.2.0-beta.15",
-    "pnpm": "11.8.0",
+    "pnpm": "11.7.0",
     "react": "18.3.1",
     "semver": "^7.8.5",
     "sonner": "^2.0.8",
@@ -283,6 +283,8 @@
     "@koromix/koffi-darwin-x64": "3.1.5",
     "@vscode/ripgrep-darwin-arm64": "1.18.0",
     "@vscode/ripgrep-darwin-x64": "1.18.0",
+    "koffi-darwin-arm64-3-1-1": "npm:@koromix/koffi-darwin-arm64@3.1.1",
+    "koffi-darwin-x64-3-1-1": "npm:@koromix/koffi-darwin-x64@3.1.1",
     "node-addon-require-builtin-darwin-arm64": "0.1.5",
     "node-addon-require-builtin-darwin-x64": "0.1.5"
   },
@@ -346,6 +348,7 @@
       "cordis.patch.yml",
       "lib/**",
       "package.json",
+      "!node_modules/koffi-darwin-*-3-1-1/**",
       "!node_modules/node-pty/build/**"
     ],
     "mac": {
