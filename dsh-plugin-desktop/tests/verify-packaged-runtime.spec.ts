@@ -79,6 +79,15 @@ describe('packaged desktop runtime verification', () => {
       'koffi-win32-x64',
       'win32_x64',
     )
+    const installedRootKoffi = join(desktopRoot, 'node_modules', 'koffi')
+    const installedNestedKoffi = join(
+      desktopRoot,
+      'node_modules',
+      '@deepseek-ai',
+      'consumer',
+      'node_modules',
+      'koffi',
+    )
     const installedNestedNative = join(
       desktopRoot,
       'node_modules',
@@ -89,17 +98,18 @@ describe('packaged desktop runtime verification', () => {
     try {
       mkdirSync(packagedRootKoffi, { recursive: true })
       mkdirSync(packagedNestedKoffi, { recursive: true })
+      mkdirSync(installedRootKoffi, { recursive: true })
+      mkdirSync(installedNestedKoffi, { recursive: true })
       mkdirSync(installedRootNative, { recursive: true })
       mkdirSync(installedNestedNative, { recursive: true })
       writeFileSync(join(packagedRootKoffi, 'package.json'), '{"name":"koffi","version":"3.1.5"}')
       writeFileSync(join(packagedNestedKoffi, 'package.json'), '{"name":"koffi","version":"3.1.1"}')
+      writeFileSync(join(installedRootKoffi, 'package.json'), '{"name":"koffi","version":"3.1.5"}')
+      writeFileSync(join(installedNestedKoffi, 'package.json'), '{"name":"koffi","version":"3.1.1"}')
       writeFileSync(join(installedRootNative, 'koffi.node'), 'koffi-3.1.5-win32-x64')
       writeFileSync(join(installedNestedNative, 'koffi.node'), 'koffi-3.1.1-win32-x64')
 
-      ;(hydratePackagedRuntime as unknown as (
-        context: PackagedRuntimeContext,
-        options: { readonly desktopRoot: string },
-      ) => void)(runtimeContext, { desktopRoot })
+      hydratePackagedRuntime(runtimeContext, { desktopRoot })
 
       expect(readFileSync(join(
         unpackedRoot,

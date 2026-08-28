@@ -14,6 +14,7 @@ import {
   MACOS_UNIVERSAL_NATIVE_ENTRIES,
   type MacUniversalArch,
 } from './mac-universal.ts'
+import { hydratePackagedWindowsKoffiRuntime } from './windows-koffi-runtime.ts'
 
 /** AfterPack fields consumed without importing Electron Builder's incomplete declaration graph. */
 export interface PackagedRuntimeContext {
@@ -99,6 +100,7 @@ export const REQUIRED_UNPACKED_RUNTIME_ENTRIES = [
   'node_modules/@deepseek-ai/dsh-subprocess-local/lib/index.js',
   'node_modules/@deepseek-ai/dsh-app-boot/lib/index.js',
   'node_modules/@deepseek-ai/dsh-web-frontend/dist/index.html',
+  'node_modules/koffi/package.json',
   'node_modules/open/index.js',
   'node_modules/pnpm/bin/pnpm.mjs',
 ] as const
@@ -163,6 +165,11 @@ export type PackagedDiagnosticWorkerLauncher = (
 /** Injectable native-runtime hydration seam used before static verification. */
 export type PackagedRuntimeHydrator = (context: PackagedRuntimeContext) => void
 
+export interface PackagedRuntimeHydrationOptions {
+  /** Override the source package root for focused verification. */
+  readonly desktopRoot?: string
+}
+
 export function macArchesForElectronBuilder(arch: number | undefined): readonly MacUniversalArch[] {
   // Universal's thin inputs must have identical paths before their Mach-O files can be merged.
   if (arch === 1 || arch === 3 || arch === 4) return ['arm64', 'x86_64']
@@ -170,14 +177,22 @@ export function macArchesForElectronBuilder(arch: number | undefined): readonly 
 }
 
 /** Restore native optional dependencies omitted by Electron Builder's npm collector. */
-export function hydratePackagedRuntime(context: PackagedRuntimeContext): void {
-  if (context.electronPlatformName !== 'darwin') return
-  const desktopRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-  hydratePackagedMacRuntime({
-    desktopRoot,
-    unpackedRoot: resolvePackagedUnpackedRoot(context),
-    arches: macArchesForElectronBuilder(context.arch),
-  })
+export function hydratePackagedRuntime(
+  context: PackagedRuntimeContext,
+  options: PackagedRuntimeHydrationOptions = {},
+): void {
+  const desktopRoot = options.desktopRoot
+    ?? resolve(dirname(fileURLToPath(import.meta.url)), '..')
+  const unpackedRoot = resolvePackagedUnpackedRoot(context)
+  if (context.electronPlatformName === 'darwin') {
+    hydratePackagedMacRuntime({
+      desktopRoot,
+      unpackedRoot,
+      arches: macArchesForElectronBuilder(context.arch),
+    })
+  } else if (context.electronPlatformName === 'win32') {
+    hydratePackagedWindowsKoffiRuntime({ desktopRoot, unpackedRoot })
+  }
 }
 
 /** Injectable smoke seam used to verify afterPack ordering. */
@@ -403,7 +418,20 @@ export function verifyPackagedRuntime(
   const archiveEntries = verifyPackagedAsar(resolvePackagedAsarPath(context), list)
   const unpackedRoot = resolvePackagedUnpackedRoot(context)
   const requiredPhysicalEntries = context.electronPlatformName === 'win32'
-    ? [...REQUIRED_UNPACKED_RUNTIME_ENTRIES, ...REQUIRED_WINDOWS_X64_NODE_PTY_ENTRIES]
+    ? [
+        ...REQUIRED_UNPACKED_RUNTIME_ENTRIES,
+        ...REQUIRED_WINDOWS_X64_NODE_PTY_ENTRIES,
+        ...[...archiveEntries]
+          .filter(entry => entry.endsWith('/node_modules/koffi/package.json')
+            || entry === 'node_modules/koffi/package.json')
+          .map(entry => join(
+            dirname(dirname(entry)),
+            '@koromix',
+            'koffi-win32-x64',
+            'win32_x64',
+            'koffi.node',
+          )),
+      ]
     : context.electronPlatformName === 'darwin' && context.arch === 4
       ? [...REQUIRED_UNPACKED_RUNTIME_ENTRIES, ...REQUIRED_MACOS_UNIVERSAL_ENTRIES]
       : REQUIRED_UNPACKED_RUNTIME_ENTRIES

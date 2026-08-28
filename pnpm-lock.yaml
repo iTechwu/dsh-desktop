@@ -9056,6 +9056,9 @@ importers:
       '@koromix/koffi-darwin-x64':
         specifier: 3.1.5
         version: 3.1.5
+      '@koromix/koffi-win32-x64':
+        specifier: 3.1.5
+        version: 3.1.5
       '@vscode/ripgrep-darwin-arm64':
         specifier: 1.18.0
         version: 1.18.0
@@ -9068,6 +9071,9 @@ importers:
       koffi-darwin-x64-3-1-1:
         specifier: npm:@koromix/koffi-darwin-x64@3.1.1
         version: '@koromix/koffi-darwin-x64@3.1.1'
+      koffi-win32-x64-3-1-1:
+        specifier: npm:@koromix/koffi-win32-x64@3.1.1
+        version: '@koromix/koffi-win32-x64@3.1.1'
       node-addon-require-builtin-darwin-arm64:
         specifier: 0.1.5
         version: 0.1.5
