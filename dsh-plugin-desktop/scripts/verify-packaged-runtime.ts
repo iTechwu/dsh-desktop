@@ -14,7 +14,10 @@ import {
   MACOS_UNIVERSAL_NATIVE_ENTRIES,
   type MacUniversalArch,
 } from './mac-universal.ts'
-import { hydratePackagedWindowsKoffiRuntime } from './windows-koffi-runtime.ts'
+import {
+  hydratePackagedWindowsKoffiRuntime,
+  smokePackagedWindowsKoffiRuntime,
+} from './windows-koffi-runtime.ts'
 
 /** AfterPack fields consumed without importing Electron Builder's incomplete declaration graph. */
 export interface PackagedRuntimeContext {
@@ -197,6 +200,9 @@ export function hydratePackagedRuntime(
 
 /** Injectable smoke seam used to verify afterPack ordering. */
 export type PackagedDiagnosticWorkerSmoke = (unpackedRoot: string) => Promise<void>
+
+/** Injectable Windows Koffi load seam used after static verification. */
+export type PackagedWindowsKoffiSmoke = (unpackedRoot: string) => void
 
 /** Result posted by the bundled diagnostics Worker. */
 type PackagedDiagnosticWorkerResult =
@@ -464,9 +470,13 @@ export async function afterPack(
   hydrate: PackagedRuntimeHydrator = hydratePackagedRuntime,
   verify: typeof verifyPackagedRuntime = verifyPackagedRuntime,
   smoke: PackagedDiagnosticWorkerSmoke = smokePackagedDiagnosticWorker,
+  smokeWindowsKoffi: PackagedWindowsKoffiSmoke = smokePackagedWindowsKoffiRuntime,
 ): Promise<void> {
   hydrate(context)
   verify(context)
+  if (context.electronPlatformName === 'win32') {
+    smokeWindowsKoffi(resolvePackagedUnpackedRoot(context))
+  }
   await smoke(resolvePackagedUnpackedRoot(context))
 }
 

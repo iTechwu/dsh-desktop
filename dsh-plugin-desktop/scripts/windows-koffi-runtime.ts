@@ -18,6 +18,12 @@ export interface PackagedWindowsKoffiHydrationOptions {
   readonly unpackedRoot: string
 }
 
+export interface LoadedKoffiModule {
+  readonly version?: unknown
+}
+
+export type PackagedKoffiLoader = (koffiRoot: string) => LoadedKoffiModule
+
 function copyPackage(source: string, target: string): void {
   if (!existsSync(source)) {
     throw new Error(`cannot find installed Windows Koffi package at ${source}`)
@@ -121,5 +127,31 @@ export function hydratePackagedWindowsKoffiRuntime(
       resolveInstalledWindowsNative(desktopRoot, installedKoffi),
       join(dirname(packagedKoffi), '@koromix', 'koffi-win32-x64'),
     )
+  }
+}
+
+function loadPackagedKoffi(koffiRoot: string): LoadedKoffiModule {
+  const require = createRequire(join(koffiRoot, 'package.json'))
+  return require('koffi') as LoadedKoffiModule
+}
+
+/** Load every packaged Windows Koffi instance and verify its native version. */
+export function smokePackagedWindowsKoffiRuntime(
+  unpackedRoot: string,
+  load: PackagedKoffiLoader = loadPackagedKoffi,
+): void {
+  for (const koffiRoot of findPackagedKoffiPackages(join(unpackedRoot, 'node_modules'))) {
+    const expectedVersion = packageVersion(koffiRoot)
+    let loaded: LoadedKoffiModule
+    try {
+      loaded = load(koffiRoot)
+    } catch (cause) {
+      throw new Error(`failed to load packaged Koffi at ${koffiRoot}`, { cause })
+    }
+    if (loaded.version !== expectedVersion) {
+      throw new Error(
+        `packaged Koffi at ${koffiRoot} loaded native version ${String(loaded.version)}; expected ${expectedVersion}`,
+      )
+    }
   }
 }
