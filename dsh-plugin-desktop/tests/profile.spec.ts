@@ -760,7 +760,7 @@ virtualStoreDirMaxLength: 60
       mode: 'advanced',
       port: 43_189,
       macosMaterial: 'transparent',
-      windowsMaterial: 'acrylic',
+      windowsMaterial: 'off',
       openBrowser: false,
       networkExposure: 'loopback',
     })
@@ -768,7 +768,7 @@ virtualStoreDirMaxLength: 60
       mode: 'advanced',
       port: 43_120,
       macosMaterial: 'transparent',
-      windowsMaterial: 'acrylic',
+      windowsMaterial: 'off',
       openBrowser: false,
       networkExposure: 'loopback',
     })

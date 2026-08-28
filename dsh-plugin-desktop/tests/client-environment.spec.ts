@@ -126,6 +126,8 @@ describe('desktop client environment', () => {
       .toEqual({ version: '2.0.3', mode: 'compatibility', platform: 'win32', material: 'off', micaSupported: false })
     expect(parseDesktopClientEnvironment('?dsh-desktop-mode=extended&dsh-desktop-platform=win32&dsh-desktop-version=2.0.3&dsh-desktop-material=mica&dsh-desktop-mica=1'))
       .toEqual({ version: '2.0.3', mode: 'extended', platform: 'win32', material: 'mica', micaSupported: true })
+    expect(parseDesktopClientEnvironment('?dsh-desktop-mode=extended&dsh-desktop-platform=win32&dsh-desktop-version=2.0.3&dsh-desktop-material=acrylic&dsh-desktop-mica=0'))
+      .toEqual({ version: '2.0.3', mode: 'extended', platform: 'win32', material: 'off', micaSupported: false })
   })
 
   it.each([
@@ -347,14 +349,14 @@ describe('advanced desktop layout', () => {
     expect(Object.isFrozen(mac.safeAreaInsets)).toBe(true)
     expect(Object.isFrozen(mac.dragRegion)).toBe(true)
     expect(desktopWindowService({
-      version: '2.0.3', mode: 'advanced', platform: 'win32', material: 'acrylic', micaSupported: false,
+      version: '2.0.3', mode: 'advanced', platform: 'win32', material: 'off', micaSupported: false,
     })).toEqual({
       version: '2.0.3',
       mode: 'advanced',
       platform: 'win32',
-      material: 'acrylic',
+      material: 'off',
       micaSupported: false,
-      availableMaterials: ['off', 'acrylic'],
+      availableMaterials: ['off'],
       safeAreaInsets: { top: ADVANCED_WINDOWS_TITLEBAR_HEIGHT, right: 0, bottom: 0, left: 0 },
       dragRegion: {
         height: ADVANCED_WINDOWS_TITLEBAR_HEIGHT,
@@ -370,7 +372,7 @@ describe('advanced desktop layout', () => {
       platform: 'win32',
       material: 'mica',
       micaSupported: true,
-      availableMaterials: ['off', 'acrylic', 'mica'],
+      availableMaterials: ['off', 'mica'],
       safeAreaInsets: { top: DESKTOP_FRAME_HEIGHT, right: 0, bottom: 0, left: 0 },
       dragRegion: {
         height: DESKTOP_FRAME_HEIGHT,
@@ -537,7 +539,7 @@ describe('independent Desktop frame', () => {
         version: '2.0.3',
         mode: 'extended',
         platform: 'win32',
-        material: 'acrylic',
+        material: 'off',
         micaSupported: false,
       })
       expect(registrations[0]).toMatchObject({
@@ -563,7 +565,7 @@ describe('independent Desktop frame', () => {
       expect(registrations[1]).not.toHaveProperty('children')
       expect(registrations[1]?.inject).toBeTypeOf('function')
       expect((registrations[1]?.inject as () => Record<string, unknown>)()).toMatchObject({
-        environment: { mode: 'extended', platform: 'win32', material: 'acrylic' },
+        environment: { mode: 'extended', platform: 'win32', material: 'off' },
         api: expect.any(Object),
         setMode: expect.any(Function),
       })
@@ -571,7 +573,7 @@ describe('independent Desktop frame', () => {
       expect(dataset).toMatchObject({
         dshDesktopMode: 'extended',
         dshDesktopPlatform: 'win32',
-        dshDesktopMaterial: 'acrylic',
+        dshDesktopMaterial: 'off',
       })
       expect(rootDataset).toEqual({ dshDesktopContentViewport: '' })
       disposers.forEach(dispose => { dispose() })
