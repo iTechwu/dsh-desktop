@@ -1,9 +1,11 @@
-import { existsSync, mkdirSync, readFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import AdmZip from 'adm-zip'
 import {
   afterPack,
+  hydratePackagedRuntime,
   macArchesForElectronBuilder,
   REQUIRED_PACKAGED_RUNTIME_ENTRIES,
   REQUIRED_MACOS_UNIVERSAL_ENTRIES,
@@ -56,6 +58,73 @@ describe('macOS universal runtime hydration', () => {
 })
 
 describe('packaged desktop runtime verification', () => {
+  it('hydrates every packaged Windows Koffi version with its matching x64 native module', () => {
+    const root = mkdtempSync(join(tmpdir(), 'dsh-windows-koffi-'))
+    const desktopRoot = join(root, 'desktop')
+    const runtimeContext = context(join(root, 'win-unpacked'), 'win32')
+    const unpackedRoot = resolvePackagedUnpackedRoot(runtimeContext)
+    const packagedRootKoffi = join(unpackedRoot, 'node_modules', 'koffi')
+    const packagedNestedKoffi = join(
+      unpackedRoot,
+      'node_modules',
+      '@deepseek-ai',
+      'consumer',
+      'node_modules',
+      'koffi',
+    )
+    const installedRootNative = join(
+      desktopRoot,
+      'node_modules',
+      '@koromix',
+      'koffi-win32-x64',
+      'win32_x64',
+    )
+    const installedNestedNative = join(
+      desktopRoot,
+      'node_modules',
+      'koffi-win32-x64-3-1-1',
+      'win32_x64',
+    )
+
+    try {
+      mkdirSync(packagedRootKoffi, { recursive: true })
+      mkdirSync(packagedNestedKoffi, { recursive: true })
+      mkdirSync(installedRootNative, { recursive: true })
+      mkdirSync(installedNestedNative, { recursive: true })
+      writeFileSync(join(packagedRootKoffi, 'package.json'), '{"name":"koffi","version":"3.1.5"}')
+      writeFileSync(join(packagedNestedKoffi, 'package.json'), '{"name":"koffi","version":"3.1.1"}')
+      writeFileSync(join(installedRootNative, 'koffi.node'), 'koffi-3.1.5-win32-x64')
+      writeFileSync(join(installedNestedNative, 'koffi.node'), 'koffi-3.1.1-win32-x64')
+
+      ;(hydratePackagedRuntime as unknown as (
+        context: PackagedRuntimeContext,
+        options: { readonly desktopRoot: string },
+      ) => void)(runtimeContext, { desktopRoot })
+
+      expect(readFileSync(join(
+        unpackedRoot,
+        'node_modules',
+        '@koromix',
+        'koffi-win32-x64',
+        'win32_x64',
+        'koffi.node',
+      ), 'utf8')).toBe('koffi-3.1.5-win32-x64')
+      expect(readFileSync(join(
+        unpackedRoot,
+        'node_modules',
+        '@deepseek-ai',
+        'consumer',
+        'node_modules',
+        '@koromix',
+        'koffi-win32-x64',
+        'win32_x64',
+        'koffi.node',
+      ), 'utf8')).toBe('koffi-3.1.1-win32-x64')
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
   it('fails the diagnostic Worker smoke when its archive omits the crash dump', async () => {
     const unpackedRoot = resolvePackagedUnpackedRoot(context('/build', 'win32'))
     const launch = vi.fn<PackagedDiagnosticWorkerLauncher>(async (_workerPath, workerData) => {
@@ -124,6 +193,24 @@ describe('packaged desktop runtime verification', () => {
       'node_modules/node-pty/prebuilds/win32-x64/conpty/OpenConsole.exe',
       'node_modules/node-pty/prebuilds/win32-x64/conpty/conpty.dll',
     ])
+  })
+
+  it('rejects a Windows package that omits the native module beside nested Koffi', () => {
+    const runtimeContext = context('/build', 'win32')
+    const unpackedRoot = resolvePackagedUnpackedRoot(runtimeContext)
+    const nestedKoffiManifest = 'node_modules/@deepseek-ai/consumer/node_modules/koffi/package.json'
+    const missingNative = 'node_modules/@deepseek-ai/consumer/node_modules/@koromix/koffi-win32-x64/win32_x64/koffi.node'
+    const archiveEntries = [
+      ...completeArchiveEntries('\\'),
+      `\\${nestedKoffiManifest.replaceAll('/', '\\')}`,
+    ]
+
+    expect(() => verifyPackagedRuntime(
+      runtimeContext,
+      () => archiveEntries,
+      filename => filename !== join(unpackedRoot, missingNative),
+      completePackageResolver(unpackedRoot),
+    )).toThrow(`missing required physical entries: ${missingNative}`)
   })
 
   it.each([
