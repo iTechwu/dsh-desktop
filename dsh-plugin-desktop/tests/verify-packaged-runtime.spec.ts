@@ -24,6 +24,7 @@ import {
   type PackagedDiagnosticWorkerLauncher,
 } from '../scripts/verify-packaged-runtime.ts'
 import { FORBIDDEN_MACOS_UNIVERSAL_ENTRIES } from '../scripts/mac-universal.ts'
+import { smokePackagedWindowsKoffiRuntime } from '../scripts/windows-koffi-runtime.ts'
 
 function context(
   appOutDir: string,
@@ -191,9 +192,35 @@ describe('packaged desktop runtime verification', () => {
       () => { calls.push('hydrate') },
       () => { calls.push('static') },
       async (unpackedRoot) => { calls.push(unpackedRoot) },
+      () => { calls.push('windows-koffi') },
     )
 
-    expect(calls).toEqual(['hydrate', 'static', resolvePackagedUnpackedRoot(runtimeContext)])
+    expect(calls).toEqual([
+      'hydrate',
+      'static',
+      'windows-koffi',
+      resolvePackagedUnpackedRoot(runtimeContext),
+    ])
+  })
+
+  it('rejects a packaged Windows Koffi module whose loaded native version is wrong', () => {
+    const root = mkdtempSync(join(tmpdir(), 'dsh-windows-koffi-smoke-'))
+    const rootKoffi = join(root, 'node_modules', 'koffi')
+    const nestedKoffi = join(root, 'node_modules', 'consumer', 'node_modules', 'koffi')
+
+    try {
+      mkdirSync(rootKoffi, { recursive: true })
+      mkdirSync(nestedKoffi, { recursive: true })
+      writeFileSync(join(rootKoffi, 'package.json'), '{"name":"koffi","version":"3.1.5"}')
+      writeFileSync(join(nestedKoffi, 'package.json'), '{"name":"koffi","version":"3.1.1"}')
+
+      expect(() => smokePackagedWindowsKoffiRuntime(
+        root,
+        koffiRoot => ({ version: koffiRoot === nestedKoffi ? '3.1.5' : '3.1.5' }),
+      )).toThrow(`packaged Koffi at ${nestedKoffi} loaded native version 3.1.5; expected 3.1.1`)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
   })
 
   it('tracks the ConPTY-only native surface shipped by node-pty 1.2', () => {
