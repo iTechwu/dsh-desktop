@@ -10228,6 +10228,11 @@ packages:
     cpu: [ia32]
     os: [win32]
 
+  '@koromix/koffi-win32-x64@3.1.1':
+    resolution: {integrity: sha512-KqHPmvj6QILhNyI/To8QSihHsijeVGIYYPBOUnXEpcnH2LuLbargY4Hd6dDeTN3Z90uUUxN+1FWz1UnhVzFOiA==}
+    cpu: [x64]
+    os: [win32]
+
   '@koromix/koffi-win32-x64@3.1.5':
     resolution: {integrity: sha512-Pyo1WEHEP6Ek2NEn2pquwJzSPLOdY4vymoPSz0an1DgvFWSkOyBYYkGVoxL1ajfj5I1pPdXysYqixtVTzAtOfQ==}
     cpu: [x64]
@@ -15383,6 +15388,9 @@ snapshots:
     optional: true
 
   '@koromix/koffi-win32-ia32@3.1.5':
+    optional: true
+
+  '@koromix/koffi-win32-x64@3.1.1':
     optional: true
 
   '@koromix/koffi-win32-x64@3.1.5':
