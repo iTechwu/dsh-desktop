@@ -247,7 +247,7 @@ describe('packaged desktop runtime verification', () => {
       () => archiveEntries,
       filename => filename !== join(unpackedRoot, missingNative),
       completePackageResolver(unpackedRoot),
-    )).toThrow(`missing required physical entries: ${missingNative}`)
+    )).toThrow(`missing required physical entries: ${join(...missingNative.split('/'))}`)
   })
 
   it.each([
