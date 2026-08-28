@@ -59,6 +59,61 @@ describe('macOS universal runtime hydration', () => {
 })
 
 describe('packaged desktop runtime verification', () => {
+  it('hydrates every packaged Windows Sharp instance with its complete x64 platform package', () => {
+    const root = mkdtempSync(join(tmpdir(), 'dsh-windows-sharp-'))
+    const desktopRoot = join(root, 'desktop')
+    const runtimeContext = context(join(root, 'win-unpacked'), 'win32')
+    const unpackedRoot = resolvePackagedUnpackedRoot(runtimeContext)
+    const packagedRootSharp = join(unpackedRoot, 'node_modules', 'sharp')
+    const packagedNestedSharp = join(
+      unpackedRoot,
+      'node_modules',
+      '@deepseek-ai',
+      'consumer',
+      'node_modules',
+      'sharp',
+    )
+    const installedWindowsSharp = join(
+      desktopRoot,
+      'node_modules',
+      '@img',
+      'sharp-win32-x64',
+    )
+
+    try {
+      mkdirSync(packagedRootSharp, { recursive: true })
+      mkdirSync(packagedNestedSharp, { recursive: true })
+      mkdirSync(join(installedWindowsSharp, 'lib'), { recursive: true })
+      writeFileSync(join(packagedRootSharp, 'package.json'), '{"name":"sharp","version":"0.35.3"}')
+      writeFileSync(join(packagedNestedSharp, 'package.json'), '{"name":"sharp","version":"0.35.3"}')
+      writeFileSync(
+        join(installedWindowsSharp, 'package.json'),
+        '{"name":"@img/sharp-win32-x64","version":"0.35.3"}',
+      )
+      writeFileSync(join(installedWindowsSharp, 'lib', 'sharp-win32-x64-0.35.3.node'), 'sharp-node')
+      writeFileSync(join(installedWindowsSharp, 'lib', 'libvips-42.dll'), 'libvips')
+      writeFileSync(join(installedWindowsSharp, 'lib', 'libvips-cpp-8.18.3.dll'), 'libvips-cpp')
+
+      hydratePackagedRuntime(runtimeContext, { desktopRoot })
+
+      for (const sharpRoot of [packagedRootSharp, packagedNestedSharp]) {
+        const packagedWindowsSharp = join(sharpRoot, '..', '@img', 'sharp-win32-x64')
+        expect(readFileSync(
+          join(packagedWindowsSharp, 'lib', 'sharp-win32-x64-0.35.3.node'),
+          'utf8',
+        )).toBe('sharp-node')
+        expect(readFileSync(join(packagedWindowsSharp, 'lib', 'libvips-42.dll'), 'utf8'))
+          .toBe('libvips')
+        expect(readFileSync(
+          join(packagedWindowsSharp, 'lib', 'libvips-cpp-8.18.3.dll'),
+          'utf8',
+        )).toBe('libvips-cpp')
+      }
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
   it('hydrates every packaged Windows Koffi version with its matching x64 native module', () => {
     const root = mkdtempSync(join(tmpdir(), 'dsh-windows-koffi-'))
     const desktopRoot = join(root, 'desktop')
@@ -193,12 +248,14 @@ describe('packaged desktop runtime verification', () => {
       () => { calls.push('static') },
       async (unpackedRoot) => { calls.push(unpackedRoot) },
       () => { calls.push('windows-koffi') },
+      () => { calls.push('windows-sharp') },
     )
 
     expect(calls).toEqual([
       'hydrate',
       'static',
       'windows-koffi',
+      'windows-sharp',
       resolvePackagedUnpackedRoot(runtimeContext),
     ])
   })

@@ -756,6 +756,18 @@ describe('published package surface', () => {
     expect(lockfile).not.toContain('@koromix/koffi-win32-x64@3.1.4')
   })
 
+  it('packages the native-compiled Sharp Windows runtime', () => {
+    const lockfile = readFileSync(new URL('pnpm-lock.yaml', workspaceRoot), 'utf8')
+    const parsedLockfile = parseYaml(lockfile) as {
+      readonly packages?: Record<string, unknown>
+      readonly snapshots?: Record<string, unknown>
+    }
+
+    expect(manifest.optionalDependencies?.['@img/sharp-win32-x64']).toBe('0.35.3')
+    expect(parsedLockfile.packages?.['@img/sharp-win32-x64@0.35.3']).toBeDefined()
+    expect(parsedLockfile.snapshots?.['@img/sharp-win32-x64@0.35.3']).toBeDefined()
+  })
+
   it('hides official plugin-manager and general subprocess consoles on Windows', () => {
     const dshPatchName = 'dsh@0.1.1-rc.2.patch'
     const subprocessPatchName = 'dsh-subprocess-local@0.1.1-rc.2.patch'
