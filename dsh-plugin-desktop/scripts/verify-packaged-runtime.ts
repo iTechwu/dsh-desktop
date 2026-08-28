@@ -18,6 +18,10 @@ import {
   hydratePackagedWindowsKoffiRuntime,
   smokePackagedWindowsKoffiRuntime,
 } from './windows-koffi-runtime.ts'
+import {
+  hydratePackagedWindowsSharpRuntime,
+  smokePackagedWindowsSharpRuntime,
+} from './windows-sharp-runtime.ts'
 
 /** AfterPack fields consumed without importing Electron Builder's incomplete declaration graph. */
 export interface PackagedRuntimeContext {
@@ -106,6 +110,7 @@ export const REQUIRED_UNPACKED_RUNTIME_ENTRIES = [
   'node_modules/koffi/package.json',
   'node_modules/open/index.js',
   'node_modules/pnpm/bin/pnpm.mjs',
+  'node_modules/sharp/package.json',
 ] as const
 
 /** Prebuilt Node-API modules required when the Windows package skips native source rebuilds. */
@@ -195,6 +200,7 @@ export function hydratePackagedRuntime(
     })
   } else if (context.electronPlatformName === 'win32') {
     hydratePackagedWindowsKoffiRuntime({ desktopRoot, unpackedRoot })
+    hydratePackagedWindowsSharpRuntime({ desktopRoot, unpackedRoot })
   }
 }
 
@@ -203,6 +209,9 @@ export type PackagedDiagnosticWorkerSmoke = (unpackedRoot: string) => Promise<vo
 
 /** Injectable Windows Koffi load seam used after static verification. */
 export type PackagedWindowsKoffiSmoke = (unpackedRoot: string) => void
+
+/** Injectable Windows Sharp load seam used after static verification. */
+export type PackagedWindowsSharpSmoke = (unpackedRoot: string) => void
 
 /** Result posted by the bundled diagnostics Worker. */
 type PackagedDiagnosticWorkerResult =
@@ -471,11 +480,13 @@ export async function afterPack(
   verify: typeof verifyPackagedRuntime = verifyPackagedRuntime,
   smoke: PackagedDiagnosticWorkerSmoke = smokePackagedDiagnosticWorker,
   smokeWindowsKoffi: PackagedWindowsKoffiSmoke = smokePackagedWindowsKoffiRuntime,
+  smokeWindowsSharp: PackagedWindowsSharpSmoke = smokePackagedWindowsSharpRuntime,
 ): Promise<void> {
   hydrate(context)
   verify(context)
   if (context.electronPlatformName === 'win32') {
     smokeWindowsKoffi(resolvePackagedUnpackedRoot(context))
+    smokeWindowsSharp(resolvePackagedUnpackedRoot(context))
   }
   await smoke(resolvePackagedUnpackedRoot(context))
 }

@@ -25,6 +25,7 @@ import {
 } from '../scripts/verify-packaged-runtime.ts'
 import { FORBIDDEN_MACOS_UNIVERSAL_ENTRIES } from '../scripts/mac-universal.ts'
 import { smokePackagedWindowsKoffiRuntime } from '../scripts/windows-koffi-runtime.ts'
+import { smokePackagedWindowsSharpRuntime } from '../scripts/windows-sharp-runtime.ts'
 
 function context(
   appOutDir: string,
@@ -275,6 +276,23 @@ describe('packaged desktop runtime verification', () => {
         root,
         koffiRoot => ({ version: koffiRoot === nestedKoffi ? '3.1.5' : '3.1.5' }),
       )).toThrow(`packaged Koffi at ${nestedKoffi} loaded native version 3.1.5; expected 3.1.1`)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('rejects a packaged Windows Sharp module whose loaded native version is wrong', () => {
+    const root = mkdtempSync(join(tmpdir(), 'dsh-windows-sharp-smoke-'))
+    const sharpRoot = join(root, 'node_modules', 'sharp')
+
+    try {
+      mkdirSync(sharpRoot, { recursive: true })
+      writeFileSync(join(sharpRoot, 'package.json'), '{"name":"sharp","version":"0.35.3"}')
+
+      expect(() => smokePackagedWindowsSharpRuntime(
+        root,
+        () => ({ versions: { sharp: '0.34.5' } }),
+      )).toThrow(`packaged Sharp at ${sharpRoot} loaded native version 0.34.5; expected 0.35.3`)
     } finally {
       rmSync(root, { recursive: true, force: true })
     }
