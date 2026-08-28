@@ -16,6 +16,7 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import sharp from 'sharp'
 import { describe, expect, it } from 'vitest'
+import { parse as parseYaml } from 'yaml'
 
 const packageRoot = new URL('../', import.meta.url)
 const workspaceRoot = new URL('../', packageRoot)
@@ -738,13 +739,18 @@ describe('published package surface', () => {
 
   it('packages the native-compiled Koffi Windows runtime', () => {
     const lockfile = readFileSync(new URL('pnpm-lock.yaml', workspaceRoot), 'utf8')
+    const parsedLockfile = parseYaml(lockfile) as {
+      readonly packages?: Record<string, unknown>
+      readonly snapshots?: Record<string, unknown>
+    }
 
     expect(manifest.dependencies?.koffi).toBe('3.1.5')
     expect(manifest.optionalDependencies?.['@koromix/koffi-win32-x64']).toBe('3.1.5')
     expect(manifest.optionalDependencies?.['koffi-win32-x64-3-1-1'])
       .toBe('npm:@koromix/koffi-win32-x64@3.1.1')
     expect(lockfile).toContain('koffi@3.1.5:')
-    expect(lockfile).toContain('@koromix/koffi-win32-x64@3.1.1')
+    expect(parsedLockfile.packages?.['@koromix/koffi-win32-x64@3.1.1']).toBeDefined()
+    expect(parsedLockfile.snapshots?.['@koromix/koffi-win32-x64@3.1.1']).toBeDefined()
     expect(lockfile).toContain('@koromix/koffi-win32-x64@3.1.5')
     expect(lockfile).not.toContain('koffi@3.1.4:')
     expect(lockfile).not.toContain('@koromix/koffi-win32-x64@3.1.4')
