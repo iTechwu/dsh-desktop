@@ -144,6 +144,9 @@ try {
         port: 43120,
         register() { return () => {} },
       })
+      host.provide('connection', {
+        authenticatedUrl(url) { return url },
+      })
       host.provide('webRuntime', {})
       host.provide('appExit', () => {})
       host.provide('settings', {
