@@ -62,7 +62,6 @@ the package names, versions, and licenses for transparency.
 | @deepseek-ai/dsh-client-hmr | 0.1.1-rc.2 | MIT |
 | @deepseek-ai/dsh-client-locale | 0.1.1-rc.2 | MIT |
 | @deepseek-ai/dsh-client-modules | 0.1.1-rc.2 | MIT |
-| @deepseek-ai/dsh-client-runtime | 0.1.1-rc.2 | MIT |
 | @deepseek-ai/dsh-client-ui-agent-preset | 0.1.1-rc.2 | MIT |
 | @deepseek-ai/dsh-client-ui-attachment | 0.1.1-rc.2 | MIT |
 | @deepseek-ai/dsh-client-ui-brand-official | 0.1.1-rc.2 | MIT |
