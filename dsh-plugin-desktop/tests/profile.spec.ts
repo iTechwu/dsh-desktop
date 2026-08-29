@@ -231,6 +231,7 @@ describe('desktop profile composition', {
           bundles: [
             '@deepseek-ai/dsh-base',
             '@deepseek-ai/dsh-web-app',
+            '@linxin666/dsh-web-ui-all',
             '@dofe/dsh-geo-mcp',
             '@dofe/dsh-openmontage-mcp',
             '@dofe/dsh-tools-mcp',

@@ -71,6 +71,9 @@ const REQUIRED_BUNDLES = requiredWebBundles()
 const REQUIRED_BUNDLE_SET = new Set(REQUIRED_BUNDLES)
 const OBSOLETE_DESKTOP_BUNDLE_SET = new Set([
   '@deepseek-ai/dsh-desktop-app',
+  // This legacy aggregate depends on the removed client-runtime module and
+  // makes the Web loader replace the usable client with its failure surface.
+  '@linxin666/dsh-web-ui-all',
   // The Desktop distribution owns these routes through dofe-managed. Keep
   // historical direct MCP bundles out of the composed graph to prevent
   // duplicate serverName registrations after an app upgrade.
