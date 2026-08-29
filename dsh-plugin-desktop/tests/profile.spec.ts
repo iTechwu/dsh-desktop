@@ -219,6 +219,36 @@ describe('desktop profile composition', {
     ])
   })
 
+  it('removes historical direct DoFe MCP bundles from the Desktop profile', () => {
+    const home = temporaryHome()
+    const dir = ensureDesktopProfile(home)
+    const path = join(dir, 'package.json')
+    const manifest = JSON.parse(readFileSync(path, 'utf8')) as Record<string, unknown>
+    writeFileSync(path, JSON.stringify({
+      ...manifest,
+      dsh: {
+        profile: {
+          bundles: [
+            '@deepseek-ai/dsh-base',
+            '@deepseek-ai/dsh-web-app',
+            '@dofe/dsh-geo-mcp',
+            '@dofe/dsh-openmontage-mcp',
+            '@dofe/dsh-tools-mcp',
+          ],
+        },
+      },
+    }, undefined, 2) + '\n')
+
+    expect(() => prepareDesktopProfile(undefined, home, 'darwin')).not.toThrow()
+    const repaired = JSON.parse(readFileSync(path, 'utf8')) as {
+      dsh: { profile: { bundles: string[] } }
+    }
+    expect(repaired.dsh.profile.bundles).toEqual([
+      '@deepseek-ai/dsh-base',
+      '@deepseek-ai/dsh-web-app',
+    ])
+  })
+
   it('marks legacy isolated Profile dependencies for one-time migration', () => {
     const home = temporaryHome()
     const dir = ensureDesktopProfile(home)

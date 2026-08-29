@@ -67,5 +67,5 @@ function DofeAccessOnboardingReady({ credentials, t, complete }: DofeAccessInjec
     })
   }, [complete, credentials])
   if (!ready) return null
-  return <DofeOnboardingModal title={t('onboardingTitle')}><AccessForm credentials={credentials} t={t} onboarding onDone={complete} /><Button onClick={complete}>{t('later')}</Button></DofeOnboardingModal>
+  return <DofeOnboardingModal title={t('onboardingTitle')}><AccessForm credentials={credentials} t={t} onboarding onDone={complete} /></DofeOnboardingModal>
 }

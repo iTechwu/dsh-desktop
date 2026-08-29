@@ -32,7 +32,7 @@ export async function apply(ctx: Context): Promise<void> {
   ctx.systemPrompt.section({
     name: 'dofe:managed-access',
     order: 4,
-    text: 'DoFe 托管能力：模型请求统一使用 CI Model Router；涉及 GEO、商业工具或视频生成时，优先使用已加载的 mcp__geoflow__、mcp__georank__、mcp__tools-* 与 mcp__openmontage__ 工具。不要要求用户再次提供模型或插件 API key。',
+    text: 'DoFe 托管能力：模型请求统一使用 CI Model Router；涉及 GEO、商业工具或视频生成时，优先使用已加载的 mcp__geoflow__、mcp__georank__、mcp__tools-* 与 mcp__openmontage__ 工具。启动引导会收集一次 model_api_key，之后不要要求用户再次提供。',
   })
   let clients: { dispose(): void | Promise<void> }[] = []
   let activeKey: string | undefined
