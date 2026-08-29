@@ -22,6 +22,26 @@
       name: dsh-plugin-desktop/browser-tools
     - id: desktop-ci-tools
       name: dsh-plugin-desktop/ci-tools
+    - id: dofe-managed
+      name: dsh-plugin-desktop/dofe-managed
+
+# DoFe owns the model route in the Desktop distribution. The upstream adapter
+# remains in place, but it resolves the single managed key and CI-only Router.
+- id: llm-deepseek
+  config:
+    apiKeyEnv: MODELS_API_KEY
+    baseURL: https://ixicai.cn/ai/v1
+    models:
+      - id: dofe-auto
+        name: DoFe Auto
+        description: DoFe CI Model Router managed model
+        contextWindow: 1000000
+        inputModalities: [text, image]
+
+- id: agent-default-model
+  config:
+    provider: deepseek-official
+    model: dofe-auto
 
 # Desktop supplies the Yootun occupants for the shared browser-brand slots.
 - id: ui-brand-official

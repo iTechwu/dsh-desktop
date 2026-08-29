@@ -55,6 +55,10 @@
       "types": "./lib/types/ci-tools.d.ts",
       "default": "./lib/ci-tools.js"
     },
+    "./dofe-managed": {
+      "types": "./lib/types/dofe-managed.d.ts",
+      "default": "./lib/dofe-managed.js"
+    },
     "./pnpm": {
       "types": "./lib/types/pnpm.d.ts",
       "default": "./lib/pnpm.js"
@@ -197,6 +201,7 @@
     "@deepseek-ai/dsh-compaction": "workspace:*",
     "@deepseek-ai/dsh-cordis-client-runner": "workspace:*",
     "@deepseek-ai/dsh-cordis-host-runner": "workspace:*",
+    "@deepseek-ai/dsh-mcp-client": "workspace:*",
     "@deepseek-ai/dsh-credentials": "workspace:*",
     "@deepseek-ai/dsh-file-reference": "workspace:*",
     "@deepseek-ai/dsh-fs": "workspace:*",
