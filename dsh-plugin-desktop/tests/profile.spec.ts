@@ -973,6 +973,64 @@ virtualStoreDirMaxLength: 60
     expect(desktop.skippedOptionalEntries).toEqual([])
   })
 
+  it('skips the legacy remote UI when the pinned Harness has no ApiProxy package', () => {
+    const home = temporaryHome()
+    const packageName = 'legacy-web-bundle'
+    installBundle(home, packageName, [
+      '- insert:',
+      '    - id: legacy-remote-web-ui',
+      "      name: '@linxin666/dsh-remote-web-ui'",
+      '',
+    ].join('\n'))
+    writeFileSync(join(home, 'profiles', 'desktop', 'package.json'), JSON.stringify({
+      name: 'dsh-profile-desktop',
+      private: true,
+      dependencies: {},
+      dsh: { profile: { bundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app', packageName] } },
+    }) + '\n')
+
+    const prepared = prepareDesktopProfile(undefined, home, 'darwin')
+    const rows = composeEntries([prepared.patches])
+
+    expect(rows.map(row => row.id)).not.toContain('legacy-remote-web-ui')
+    expect(prepared.skippedOptionalEntries).toContainEqual({
+      id: 'legacy-remote-web-ui',
+      name: '@linxin666/dsh-remote-web-ui',
+    })
+  })
+
+  it('keeps the legacy remote UI when an ApiProxy package is available', () => {
+    const home = temporaryHome()
+    const packageName = 'legacy-web-bundle'
+    installBundle(home, packageName, [
+      '- insert:',
+      '    - id: legacy-remote-web-ui',
+      "      name: '@linxin666/dsh-remote-web-ui'",
+      '',
+    ].join('\n'))
+    const apiProxyDir = join(home, 'profiles', 'desktop', 'node_modules', '@deepseek-ai', 'dsh-host-apiproxy')
+    mkdirSync(apiProxyDir, { recursive: true })
+    writeFileSync(join(apiProxyDir, 'package.json'), JSON.stringify({
+      name: '@deepseek-ai/dsh-host-apiproxy',
+      version: '0.1.1-rc.2',
+    }) + '\n')
+    writeFileSync(join(home, 'profiles', 'desktop', 'package.json'), JSON.stringify({
+      name: 'dsh-profile-desktop',
+      private: true,
+      dependencies: {},
+      dsh: { profile: { bundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app', packageName] } },
+    }) + '\n')
+
+    const prepared = prepareDesktopProfile(undefined, home, 'darwin')
+    const rows = composeEntries([prepared.patches])
+
+    expect(rows).toContainEqual(expect.objectContaining({
+      id: 'legacy-remote-web-ui',
+      name: '@linxin666/dsh-remote-web-ui',
+    }))
+    expect(prepared.skippedOptionalEntries).toEqual([])
+  })
+
   it('does not treat ordinary array config as nested Loader entries', () => {
     const home = temporaryHome()
     const packageName = '@example/whale-song-theme'

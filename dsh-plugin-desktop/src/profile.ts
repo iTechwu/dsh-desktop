@@ -115,6 +115,8 @@ const MARKET_PACKAGE_NAMES: ReadonlySet<string> = new Set([
   DESKTOP_MARKET_IDENTITIES.community.packageName,
   DESKTOP_MARKET_IDENTITIES.dshMarket.packageName,
 ])
+const LEGACY_REMOTE_WEB_UI_PACKAGE = '@linxin666/dsh-remote-web-ui'
+const LEGACY_API_PROXY_PACKAGE = '@deepseek-ai/dsh-host-apiproxy'
 
 /**
  * Parse desktop presentation state and reject corrupted values.
@@ -665,6 +667,37 @@ function omitUnresolvedOptionalEntries(
   }
 }
 
+/** Drop the legacy remote UI when the pinned Harness no longer ships ApiProxy. */
+function omitLegacyRemoteWebUi(
+  patches: PatchOptions[],
+  profilePackageUrl: string,
+): { patches: PatchOptions[], skipped: SkippedOptionalEntry[] } {
+  const installPackageUrl = pathToFileURL(INSTALL_ANCHOR).href
+  if (findOverlayPackage(LEGACY_API_PROXY_PACKAGE, { installPackageUrl, profilePackageUrl }) !== undefined) {
+    return { patches, skipped: [] }
+  }
+  const skipped: SkippedOptionalEntry[] = []
+  const filterRows = (rows: EntryOptions[]): EntryOptions[] => rows.flatMap((row) => {
+    if (row.name === LEGACY_REMOTE_WEB_UI_PACKAGE) {
+      skipped.push({
+        ...(typeof row.id === 'string' ? { id: row.id } : {}),
+        name: LEGACY_REMOTE_WEB_UI_PACKAGE,
+      })
+      return []
+    }
+    if (row.group === true && Array.isArray(row.config)) {
+      return [{ ...row, config: filterRows(row.config) }]
+    }
+    return [row]
+  })
+  return {
+    patches: patches.map((patch) => Array.isArray(patch.insert)
+      ? { ...patch, insert: filterRows(patch.insert) }
+      : patch),
+    skipped,
+  }
+}
+
 interface MarketPatchFilter {
   readonly patches: PatchOptions[]
   readonly removedProviderReference: boolean
@@ -834,7 +867,11 @@ export function prepareDesktopProfile(
     loadedHomePatches,
     bareModuleBaseUrl,
   )
-  const filteredBundles = filterMarketProviderPatches(bundlePatches)
+  const { patches: compatibleBundlePatches, skipped: skippedLegacyEntries } = omitLegacyRemoteWebUi(
+    bundlePatches,
+    bareModuleBaseUrl,
+  )
+  const filteredBundles = filterMarketProviderPatches(compatibleBundlePatches)
   const filteredProfile = filterMarketProviderPatches(profile.patches)
   const filteredHome = filterMarketProviderPatches(homePatches)
   const hasProviderConflict = filteredBundles.removedProviderReference
@@ -1083,7 +1120,7 @@ export function prepareDesktopProfile(
     rootConfig,
     bareModuleBaseUrl,
     patches: structuredClone(patches),
-    skippedOptionalEntries,
+    skippedOptionalEntries: [...skippedOptionalEntries, ...skippedLegacyEntries],
     mode,
     port,
     macosMaterial,
