@@ -250,6 +250,8 @@ describe('published package surface', () => {
     expect(config).toContain("terminal: 'src/terminal.ts'")
     expect(config).toContain("'update-download': 'src/update-download.ts'")
     expect(config).toContain("updates: 'src/updates.ts'")
+    expect(readFileSync(new URL('src/openmontage-window.ts', packageRoot), 'utf8'))
+      .toContain("export const OPENMONTAGE_URL = 'https://ixicai.cn/montage/'")
   })
 
   it('builds the browser client without Node process globals', () => {

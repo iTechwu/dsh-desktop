@@ -204,6 +204,9 @@ export interface DesktopRuntime {
   /** Open a native terminal containing packaged DSH command shims. */
   openTerminal(): void
 
+  /** Open the managed OpenMontage Web View after exchanging the DoFe key for a session cookie. */
+  openOpenMontage(apiKey: string): Promise<void>
+
   /** Reload the mounted renderer without restarting the Host. */
   reloadRenderer(): void
 

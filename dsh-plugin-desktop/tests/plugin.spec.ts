@@ -100,6 +100,7 @@ function createHarness(
     notifyAttention: () => {},
     registerTrayItem: () => ({ refresh: () => {}, dispose: () => {} }),
     openTerminal: () => {},
+    openOpenMontage: async () => {},
     reloadRenderer: () => {},
     toggleDeveloperTools: () => {},
     exportDiagnostics: async () => {},

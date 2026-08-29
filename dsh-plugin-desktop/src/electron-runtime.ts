@@ -60,6 +60,7 @@ import {
 } from './windows-volume-diagnostics.ts'
 import { ElectronWorkspaceAdmission } from './workspace-admission.ts'
 import { ProfileCreateWindow, type ProfileCreateWindowOptions } from './profile-create-window.ts'
+import { OpenMontageWindow } from './openmontage-window.ts'
 import { windowsBuildNumber } from './window-material.ts'
 import { desktopNativeCopy } from './native-dialog-copy.ts'
 import {
@@ -123,6 +124,7 @@ export class ElectronDesktopRuntime implements DesktopRuntime {
   private updateCleanupTask: Promise<void> | undefined
   private rendererHealthGate: DesktopRendererHealthGate | undefined
   private profileCreateWindow: ProfileCreateWindow | undefined
+  private openMontageWindow: OpenMontageWindow | undefined
   private restartRequest: Promise<void> | undefined
 
   constructor(
@@ -216,6 +218,8 @@ export class ElectronDesktopRuntime implements DesktopRuntime {
         try {
           this.profileCreateWindow?.close()
           this.profileCreateWindow = undefined
+          this.openMontageWindow?.close()
+          this.openMontageWindow = undefined
           await this.generation?.release()
         } finally {
           this.generation = undefined
@@ -356,6 +360,30 @@ export class ElectronDesktopRuntime implements DesktopRuntime {
       })
     } catch (cause) {
       this.reportTerminalLaunchError(cause)
+    }
+  }
+
+  /** @inheritdoc */
+  async openOpenMontage(apiKey: string): Promise<void> {
+    if (apiKey.trim() === '') throw new Error('dsh-plugin-desktop: OpenMontage requires the managed DoFe key')
+    if (this.openMontageWindow === undefined) this.openMontageWindow = new OpenMontageWindow()
+    try {
+      await this.openMontageWindow.open(apiKey)
+    } catch (cause) {
+      const detail = cause instanceof Error ? cause.message : String(cause)
+      this.logError(`dsh-plugin-desktop: failed to open OpenMontage: ${detail}`)
+      await this.showDesktopMessageBox({
+        type: 'error',
+        title: 'OpenMontage',
+        message: this.locale === 'zh' ? '无法打开 OpenMontage' : 'Could not open OpenMontage',
+        detail: this.locale === 'zh'
+          ? '请检查 Model API Key 和网络连接后重试。'
+          : 'Check the Model API key and network connection, then try again.',
+        buttons: [this.locale === 'zh' ? '确定' : 'OK'],
+        defaultId: 0,
+        cancelId: 0,
+      })
+      throw cause
     }
   }
 

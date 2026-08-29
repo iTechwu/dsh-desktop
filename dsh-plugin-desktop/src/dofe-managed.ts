@@ -6,7 +6,7 @@ import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import type {} from '@deepseek-ai/dsh-system-prompt'
 
 export const name = 'dofe-managed'
-export const inject = ['credentials', 'tools', 'systemPrompt']
+export const inject = ['credentials', 'tools', 'systemPrompt', 'desktopRuntime']
 
 export const MODELS_API_KEY = 'MODELS_API_KEY'
 const MODELS_API_KEY_REF = credentialRef(MODELS_API_KEY)
@@ -35,11 +35,15 @@ export async function apply(ctx: Context): Promise<void> {
     text: 'DoFe 托管能力：模型请求统一使用 CI Model Router；涉及 GEO、商业工具或视频生成时，优先使用已加载的 mcp__geoflow__、mcp__georank__、mcp__tools-* 与 mcp__openmontage__ 工具。不要要求用户再次提供模型或插件 API key。',
   })
   let clients: { dispose(): void | Promise<void> }[] = []
+  let activeKey: string | undefined
+  let tray: { refresh(): void; dispose(): void } | undefined
   let reload: Promise<void> = Promise.resolve()
 
   const reconcile = async (): Promise<void> => {
     const resolved = await ctx.credentials.resolve(MODELS_API_KEY_REF)
     const next = resolved?.value
+    activeKey = next
+    tray?.refresh()
     const old = clients
     clients = []
     await Promise.all(old.map(client => client.dispose()))
@@ -74,10 +78,21 @@ export async function apply(ctx: Context): Promise<void> {
   }
 
   schedule()
+  tray = ctx.desktopRuntime.registerTrayItem({
+    group: 'tools',
+    order: 5,
+    label: () => 'OpenMontage',
+    enabled: () => activeKey !== undefined,
+    invoke: async () => {
+      if (activeKey !== undefined) await ctx.desktopRuntime.openOpenMontage(activeKey)
+    },
+  })
   ctx.on('credentials/reference-updated', ref => {
     if (ref === MODELS_API_KEY) schedule()
   })
   ctx.effect(() => () => {
+    tray?.dispose()
+    tray = undefined
     const current = clients
     clients = []
     void Promise.all(current.map(client => client.dispose()))
