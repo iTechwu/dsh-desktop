@@ -6,6 +6,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
   boot,
+  healProfilesModuleFallback,
   installFailLoud,
   loadLayeredEnv,
   PROFILE_PATCH_FILENAME,
@@ -804,6 +805,11 @@ async function start(): Promise<void> {
         `${BIN_NAME}: requested Market provider ${prepared.market.requested} was disabled for this generation: ${prepared.marketFailure}`,
       )
     }
+    await healProfilesModuleFallback({
+      installAnchor: desktopInstallAnchor(),
+      profile: prepared.profile,
+      home: homeDir,
+    })
     const browserAccess = createDesktopBrowserAccess(
       prepared.mode === 'compatibility' && prepared.openBrowser,
     )

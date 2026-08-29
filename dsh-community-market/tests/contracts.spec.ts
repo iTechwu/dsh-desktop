@@ -36,13 +36,15 @@ describe('package integration contract', () => {
     }
 
     expect(manifest.dsh?.client?.inject).toEqual([
-      '@deepseek-ai/dsh-client-runtime',
+      '@deepseek-ai/dsh-client-ui-renderer',
       '@deepseek-ai/dsh-client-locale',
       '@deepseek-ai/dsh-client-ui-layout',
       '@deepseek-ai/dsh-client-ui-settings',
       '@deepseek-ai/dsh-client-ui-sidebar',
     ])
     expect(manifest.peerDependencies).toHaveProperty('@deepseek-ai/dsh-client-ui-layout', 'workspace:*')
+    expect(manifest.peerDependencies).toHaveProperty('@deepseek-ai/dsh-client-store', 'workspace:*')
+    expect(manifest.peerDependencies).toHaveProperty('@deepseek-ai/dsh-client-ui-renderer', 'workspace:*')
     expect(manifest.peerDependencies).toHaveProperty('@deepseek-ai/dsh-client-ui-settings', 'workspace:*')
     expect(manifest.peerDependencies).toHaveProperty('@deepseek-ai/dsh-client-ui-sidebar', 'workspace:*')
   })

@@ -140,10 +140,10 @@ describe('published package surface', () => {
         '@deepseek-ai/dsh-api-remotes',
         '@deepseek-ai/dsh-client-connection',
         '@deepseek-ai/dsh-client-locale',
-        '@deepseek-ai/dsh-client-runtime',
         '@deepseek-ai/dsh-client-ui-renderer',
         '@deepseek-ai/dsh-client-ui-settings',
         '@deepseek-ai/dsh-client-ui-theme',
+        '@deepseek-ai/dsh-client-ui-workspace',
       ],
     })
     expect(readFileSync(new URL('cordis.patch.yml', packageRoot), 'utf8')).toContain('name: dsh-plugin-desktop')
@@ -775,11 +775,32 @@ describe('published package surface', () => {
     expect(parsedLockfile.snapshots?.['@img/sharp-win32-x64@0.35.3']).toBeDefined()
   })
 
+  it('declares every first-party Web bundle dependency at the Desktop root', () => {
+    const workspaceRequire = createRequire(new URL('package.json', packageRoot))
+    const bundleDependencies = ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app']
+      .flatMap((packageName) => {
+        const bundleManifest = JSON.parse(readFileSync(
+          workspaceRequire.resolve(`${packageName}/package.json`),
+          'utf8',
+        )) as { readonly dependencies?: Record<string, string> }
+        return Object.keys(bundleManifest.dependencies ?? {})
+      })
+      .filter(packageName => packageName.startsWith('@deepseek-ai/'))
+    const rootDependencies = new Set(Object.keys(manifest.dependencies ?? {}))
+    const missing = [...new Set(bundleDependencies)]
+      .filter(packageName => !rootDependencies.has(packageName))
+      .sort()
+
+    expect(missing).toEqual([])
+  })
+
   it('hides official plugin-manager and general subprocess consoles on Windows', () => {
     const dshPatchName = 'dsh@0.1.1-rc.2.patch'
     const subprocessPatchName = 'dsh-subprocess-local@0.1.1-rc.2.patch'
+    const win32ProcessPatchName = 'dsh-win32-process@0.1.2-alpha.1.patch'
     const dshPatch = readFileSync(new URL(`./patches/${dshPatchName}`, workspaceRoot), 'utf8')
     const subprocessPatch = readFileSync(new URL(`./patches/${subprocessPatchName}`, workspaceRoot), 'utf8')
+    const win32ProcessPatch = readFileSync(new URL(`./patches/${win32ProcessPatchName}`, workspaceRoot), 'utf8')
     // pnpm 的 patchedDependencies 不覆盖 workspace 链接包,行为补丁由
     // scripts/apply-upstream-patches.mjs 在上游构建后统一应用到兄弟目录。
     const applyScript = readFileSync(new URL('./scripts/apply-upstream-patches.mjs', workspaceRoot), 'utf8')
@@ -791,13 +812,20 @@ describe('published package surface', () => {
       .join('\n')
     const subprocessManifest = workspaceRequire.resolve('@deepseek-ai/dsh-subprocess-local/package.json')
     const subprocessRuntime = readFileSync(join(dirname(subprocessManifest), 'lib/index.js'), 'utf8')
+    const windowsSandboxManifest = workspaceRequire.resolve('@deepseek-ai/dsh-sandbox-windows-acl/package.json')
+    const windowsSandboxRequire = createRequire(windowsSandboxManifest)
+    const win32ProcessManifest = windowsSandboxRequire.resolve('@deepseek-ai/dsh-win32-process/package.json')
+    const win32ProcessRuntime = readFileSync(join(dirname(win32ProcessManifest), 'lib/index.js'), 'utf8')
 
     expect(applyScript).toContain(`'${dshPatchName}': '@deepseek-ai/dsh',`)
     expect(applyScript).toContain(`'${subprocessPatchName}': '@deepseek-ai/dsh-subprocess-local',`)
+    expect(applyScript).toContain(`'${win32ProcessPatchName}': '@deepseek-ai/dsh-win32-process',`)
     expect(dshPatch).toContain('+\t\twindowsHide: true')
     expect(dshPluginRuntime).toMatch(/spawnSync\("pnpm"[\s\S]*?shell: process\.platform === "win32",\s+windowsHide: true/u)
     expect(subprocessPatch.match(/^\+\s*windowsHide: true\r?$/gmu)).toHaveLength(3)
     expect(subprocessRuntime.match(/windowsHide: true/gu)).toHaveLength(3)
+    expect(win32ProcessPatch.match(/^\+\s*wShowWindow: 0,\r?$/gmu)).toHaveLength(2)
+    expect(win32ProcessRuntime.match(/wShowWindow: 0/gu)).toHaveLength(2)
   })
 
   it('keeps the attachment runtime patch compatible with GNU patch', () => {

@@ -1,33 +1,22 @@
 diff --git a/lib/client.js b/lib/client.js
 --- a/lib/client.js
 +++ b/lib/client.js
-@@ -6185,7 +6185,7 @@
- 			"access.confirm.acknowledge": "我已了解风险，并愿意继续",
- 			"access.confirm.cancel": "取消",
- 			"access.confirm.enable": "启用 Full access",
+@@ -13196,3 +13196,3 @@
+ 			"access.fullLabel": "Full access",
 -			"hero.headline": "探索未至之境",
 +			"hero.headline": "青年人买车就到优惠豚",
  			"hero.preview": "预览版",
- 			"hero.chooseWorkspace": "选择工作区",
- 			"session.hierarchy": "会话层级",
-@@ -7271,6 +7271,8 @@ window.__ModuleLoader__.load({
- 			});
- 			return (0, react_jsx_runtime.jsxs)("div", {
+@@ -14269,3 +14269,5 @@ window.__ModuleLoader__.load({
+ 				ref: rootResizeRef,
  				className: ConversationRoot_module_css_default.root,
 +				"data-dsh-conversation-drop-target": "",
 +				style: { position: "relative" },
  				"data-phase": phase,
- 				children: [renderSlot("conversation.session.header", {}), (0, react_jsx_runtime.jsxs)("div", {
- 					className: ConversationRoot_module_css_default.scrollBody,
 diff --git a/lib/types/client/locales.js b/lib/types/client/locales.js
 --- a/lib/types/client/locales.js
 +++ b/lib/types/client/locales.js
-@@ -68,7 +68,7 @@
-     'access.confirm.acknowledge': '我已了解风险，并愿意继续',
-     'access.confirm.cancel': '取消',
-     'access.confirm.enable': '启用 Full access',
+@@ -61,3 +61,3 @@
+     'access.fullLabel': 'Full access',
 -    'hero.headline': '探索未至之境',
 +    'hero.headline': '青年人买车就到优惠豚',
      'hero.preview': '预览版',
-     'hero.chooseWorkspace': '选择工作区',
-     'session.hierarchy': '会话层级',

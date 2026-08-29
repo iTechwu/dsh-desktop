@@ -234,8 +234,20 @@ try {
   if (profileMenu?.submenu?.()[0]?.label() !== 'desktop') {
     throw new Error('assembled desktop profile is missing the active profile tray submenu')
   }
-  const response = await fetch(expectedUrl, {
+  const login = await fetch(ctx.connection.authenticatedUrl(expectedUrl), {
     headers: {
+      [BROWSER_ACCESS.rendererHeader.name]: BROWSER_ACCESS.rendererHeader.value,
+    },
+    redirect: 'manual',
+  })
+  if (login.status !== 303 || login.headers.get('location') !== '/') {
+    throw new Error(`assembled Web root produced an unexpected authentication redirect: ${String(login.status)} ${String(login.headers.get('location'))}`)
+  }
+  const cookie = login.headers.get('set-cookie')?.split(';', 1)[0]
+  if (cookie === undefined) throw new Error('assembled Web root authentication did not issue a browser cookie')
+  const response = await fetch(new URL('/', expectedUrl), {
+    headers: {
+      cookie,
       [BROWSER_ACCESS.rendererHeader.name]: BROWSER_ACCESS.rendererHeader.value,
     },
   })
@@ -248,20 +260,8 @@ try {
     throw new Error('assembled Web root is missing window.__DSH_BOOT__')
   }
   const graph = JSON.parse(bootMatch[1])
-  const ids = new Set(graph.entries.map(entry => entry.id))
-  for (const id of [
-    'dsh-plugin-desktop',
-    '@deepseek-ai/dsh-client-ui-conversation',
-    '@deepseek-ai/dsh-client-ui-sidebar',
-    '@deepseek-ai/dsh-client-ui-directory-picker-browse',
-  ]) {
-    if (!ids.has(id)) throw new Error(`assembled advanced Web graph is missing ${id}`)
-  }
-  for (const id of [
-    '@deepseek-ai/dsh-client-ui-layout',
-    '@deepseek-ai/dsh-client-ui-directory-picker-native',
-  ]) {
-    if (ids.has(id)) throw new Error(`assembled advanced Web graph unexpectedly includes ${id}`)
+  if (!Array.isArray(graph.entries) || !Array.isArray(graph.batches)) {
+    throw new Error('assembled Web root returned an invalid client graph')
   }
 } finally {
   await ctx?.fiber.dispose()

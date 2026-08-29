@@ -76,6 +76,7 @@ import {
   type PersistedWindowsWindowMaterial,
   windowsSupportsMica,
 } from './window-material.ts'
+import { desktopLocaleFromLanguageTag } from './tray-locale.ts'
 
 /** Stable Cordis plugin name. */
 export const name = 'desktop-shell'
@@ -367,7 +368,10 @@ export function apply(ctx: Context, config: Config): void {
   }
   ctx.on('settings/updated', (namespace, next) => {
     if (namespace !== UI_LOCALE_SETTINGS_NAMESPACE) return
-    runtime.setLocalePreference((next as LocaleSettings).preference)
+    const preference = (next as LocaleSettings).preference
+    runtime.setLocalePreference(preference === undefined
+      ? undefined
+      : desktopLocaleFromLanguageTag(preference))
   })
   ctx.effect(
     () => {
@@ -383,12 +387,12 @@ export function apply(ctx: Context, config: Config): void {
         material,
         ...(runtime.windowsBuild === undefined ? {} : { windowsBuild: runtime.windowsBuild }),
         url: desktopRendererUrl(
-          ctx.webServer.port,
-          config.mode,
-          runtime.platform,
-          runtime.updates.currentVersion,
-          material,
-          runtime.windowsBuild,
+            ctx.webServer.port,
+            config.mode,
+            runtime.platform,
+            runtime.updates.currentVersion,
+            material,
+            runtime.windowsBuild,
         ),
         rendererAccessHeader: browserAccess.rendererHeader,
         productName: 'Yootun-Agent',
@@ -396,7 +400,8 @@ export function apply(ctx: Context, config: Config): void {
         iconPath,
         trayIcons,
         readLocalePreference: () => {
-          return (ctx.settings.get(UI_LOCALE_SETTINGS_NAMESPACE) as LocaleSettings | undefined)?.preference
+          const preference = (ctx.settings.get(UI_LOCALE_SETTINGS_NAMESPACE) as LocaleSettings | undefined)?.preference
+          return preference === undefined ? undefined : desktopLocaleFromLanguageTag(preference)
         },
         readThemeSource: () => {
           const theme = ctx.settings.get(UI_THEME_SETTINGS_NAMESPACE) as ThemeSettings | undefined

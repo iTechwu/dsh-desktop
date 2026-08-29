@@ -1,7 +1,6 @@
-diff --git a/lib/plugin-9h8shc4d.js b/lib/plugin-9h8shc4d.js
-index 1d7b74d19fd0fc4d3d577b2254d5fabf6349eabc..c5607e0de9e9b59b763e0bf29d4011dd14cbf2bf 100644
---- a/lib/plugin-9h8shc4d.js
-+++ b/lib/plugin-9h8shc4d.js
+diff --git a/lib/plugin-F7ZVfRyo.js b/lib/plugin-F7ZVfRyo.js
+--- a/lib/plugin-F7ZVfRyo.js
++++ b/lib/plugin-F7ZVfRyo.js
 @@ -108,7 +108,8 @@ function runPlugin(profile, args) {
  	const result = spawnSync("pnpm", args.map((argument) => anchorPathSpec(argument, process.cwd())), {
  		cwd: dir,

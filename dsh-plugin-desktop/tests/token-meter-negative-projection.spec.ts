@@ -1,8 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
-import type { SessionEvent } from '@deepseek-ai/dsh-session'
-import SessionStore from '@deepseek-ai/dsh-session'
+import SessionStore, { SessionId, type SessionEvent, type SessionHeader } from '@deepseek-ai/dsh-session'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import TokenMeter from '@deepseek-ai/dsh-token-meter'
 import { contextBreakdownProjectionDefinition } from '../node_modules/@deepseek-ai/dsh-token-meter/lib/types/breakdown-projection.js'
@@ -53,7 +52,11 @@ describe('token-meter negative projection recovery', () => {
           sampledSurfaceTokens: 36_309,
         },
       },
-    }, [], 0)
+    }, [], 0, {
+      version: 0,
+      id: SessionId('negative-projection-restore'),
+      createdAt: 0,
+    } satisfies SessionHeader)
 
     expect(restored.snapshot.values.contextBreakdown).toEqual({
       systemTokens: 0,

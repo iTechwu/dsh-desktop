@@ -8,7 +8,7 @@ import { evaluate, isJsExpr, type EntryOptions } from '@deepseek-ai/cordis-plugi
 import type { PatchOptions } from '@deepseek-ai/cordis-plugin-include'
 import {
   composeEntries,
-  healProfilesModuleFallback,
+  DEFAULT_PROFILE_PATCH_RELOAD,
   initProfile,
   loadOverlayPatches,
   PROFILE_PATCH_FILENAME,
@@ -264,11 +264,11 @@ export function readDesktopShellMode(config: SettingsFileConfig): DesktopShellMo
 
 /** Resolve the public Web template once and reject an incompatible DSH release. */
 function requiredWebBundles(): string[] {
-  const bundles = PROFILE_TEMPLATES.web
-  if (bundles === undefined) {
+  const template = PROFILE_TEMPLATES.web
+  if (template === undefined) {
     throw new Error(`${BIN_NAME}: installed dsh-app-boot has no web profile template`)
   }
-  return [...bundles]
+  return [...template.bundles]
 }
 
 /** Prepared profile inputs consumed by app-boot. */
@@ -495,7 +495,7 @@ function loadRecoveryFilteredProfile(
     if (template === undefined) {
       throw new Error(`${BIN_NAME}: profile ${JSON.stringify(profileName)} does not exist`)
     }
-    initProfile(profileDir, template)
+    initProfile(profileDir, template.bundles, template.patchReload)
   }
   const manifest = readProfileManifest(BIN_NAME, profileDir)
   const rawBundles = (manifest.dsh?.profile as { bundles?: unknown } | undefined)?.bundles
@@ -504,6 +504,13 @@ function loadRecoveryFilteredProfile(
     throw new Error(`${BIN_NAME}: dsh.profile.bundles must be an array of package names`)
   }
   const bundles = (rawBundles ?? []) as string[]
+  const rawPatchReload: unknown = (manifest.dsh?.profile as { patchReload?: unknown } | undefined)?.patchReload
+  if (rawPatchReload !== undefined && rawPatchReload !== 'live' && rawPatchReload !== 'startup') {
+    throw new Error(
+      `${BIN_NAME}: profile manifest ${join(profileDir, 'package.json')} dsh.profile.patchReload must be "live" or "startup"`,
+    )
+  }
+  const patchReload = rawPatchReload ?? DEFAULT_PROFILE_PATCH_RELOAD
   const selectedBundles = bundles.filter(packageName =>
     packageName !== DESKTOP_MARKET_IDENTITIES.community.packageName
     && (marketProvider === DESKTOP_MARKET_IDENTITIES.dshMarket.provider
@@ -557,6 +564,7 @@ function loadRecoveryFilteredProfile(
       layers,
       patchPath,
       patches: existsSync(patchPath) ? loadProfilePatches(patchPath) : [],
+      patchReload,
     },
     ...(dshMarketFailure === undefined ? {} : { dshMarketFailure }),
   }
@@ -566,7 +574,7 @@ function loadRecoveryFilteredProfile(
 export function shippedPresetRoot(moduleUrl: string = import.meta.url): string {
   const require = createRequire(moduleUrl)
   return unpackedAsarPath(
-    join(dirname(require.resolve('@deepseek-ai/dsh/package.json')), 'config', 'agent-presets'),
+    join(dirname(require.resolve('@deepseek-ai/dsh-agent-presets/package.json')), 'presets'),
   )
 }
 
@@ -778,7 +786,6 @@ export function prepareDesktopProfile(
     : resolveProfileDir(profileName, home)
   const workspaceChanged = reconcileProfilePnpmWorkspace(profileDir)
   const requiresDependencyMigration = profileDependencyMigrationRequired(profileDir, workspaceChanged, platform)
-  healProfilesModuleFallback(INSTALL_ANCHOR, home)
   // `plugin-management` remains the community market's user-facing scope.
   // Recovery mode no longer reads or writes an independent disable policy:
   // package removal goes through the provider-neutral `dsh plugin remove`.

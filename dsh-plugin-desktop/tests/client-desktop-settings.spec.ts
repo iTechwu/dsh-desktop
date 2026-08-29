@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from 'vitest'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
-import type { ClientContext, SettingsScope } from '@deepseek-ai/dsh-client-runtime/client'
+import type { Context as ClientContext } from '@deepseek-ai/cordis'
+import type { SettingsScope } from '@deepseek-ai/dsh-client-ui-settings/client'
 import {
   DesktopDeveloperMenuItems,
   DesktopNativeActions,
@@ -407,6 +408,7 @@ describe('Desktop settings Slot registration', () => {
         mode: 'host' as const,
       }),
       subscribe: () => () => {},
+      mutate: vi.fn(async () => {}),
       set: vi.fn(async () => {}),
       unset: vi.fn(async () => {}),
     } satisfies SettingsScope<unknown>

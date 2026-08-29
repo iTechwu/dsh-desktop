@@ -1,4 +1,4 @@
-import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
+import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/cordis-plugin-loader'
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
@@ -6,6 +6,7 @@ import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type {} from '@deepseek-ai/dsh-client-ui-theme/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
+import type {} from '@deepseek-ai/dsh-client-ui-workspace/client'
 import { applyAdvancedShell } from './advanced-shell.ts'
 import { applyDesktopBrand } from './brand.tsx'
 import { startRendererBootReporter } from './boot-health.ts'
@@ -15,7 +16,7 @@ import { parseDesktopClientEnvironment } from './environment.ts'
 import { applyExtendedShell, applyFramedShell } from './extended-shell.ts'
 import { installWorkspaceFolderDrop } from './workspace-folder-drop.ts'
 import { desktopWindowService, provideDesktopWindow } from './window-service.ts'
-import { DofeAccessOnboarding, DofeAccessSection } from './DofeAccessSection.tsx'
+import { DofeAccessOnboarding, DofeAccessSection, installDofeAccessStyles } from './DofeAccessSection.tsx'
 import { DOFE_ACCESS_COPY, type DofeAccessLocaleKey } from './dofe-access.ts'
 
 export { applyAdvancedShell } from './advanced-shell.ts'
@@ -95,6 +96,7 @@ export function apply(ctx: ClientContext): void {
   const desktopSettings = applyDesktopSettings(ctx, environment)
   const dofeT = ctx.locale.bind('dofe.access') as (key: DofeAccessLocaleKey) => string
   ctx.effect(() => ctx.locale.register('dofe.access', DOFE_ACCESS_COPY), 'dofe: access dictionaries')
+  ctx.effect(() => installDofeAccessStyles(), 'dofe: access styles')
   ctx.slots.inject('settings.section', () => ctx.slots.register({
     name: 'settings.section', id: 'dofe-access', order: 20, label: () => dofeT('nav'), locale: 'dofe.access',
     inject: () => ({ credentials: ctx.remote.credentials, t: dofeT }),
@@ -110,7 +112,7 @@ export function apply(ctx: ClientContext): void {
   ctx.effect(
     () => installWorkspaceFolderDrop({
       create: input => ctx.workspaces.create(input),
-      startSession: workspaceId => { ctx.workspaces.startSession(workspaceId) },
+      startSession: workspaceId => { ctx.uiWorkspace.startSession(workspaceId) },
       ...(environment.platform === 'win32'
         ? { validateDirectory: (path: string) => requestDesktopDirectoryValidation(path) }
         : {}),

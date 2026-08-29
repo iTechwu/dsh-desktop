@@ -442,7 +442,7 @@ describe('packaged desktop runtime verification', () => {
     'lib/diagnostic-export-worker.js',
     'lib/update-download.js',
     'node_modules/@deepseek-ai/dsh/lib/bin.js',
-    'node_modules/@deepseek-ai/dsh/lib/plugin-9h8shc4d.js',
+    'node_modules/@deepseek-ai/dsh/lib/plugin-F7ZVfRyo.js',
     'node_modules/@deepseek-ai/dsh-subprocess-local/lib/index.js',
     'node_modules/open/index.js',
     'node_modules/pnpm/bin/pnpm.mjs',
@@ -464,9 +464,9 @@ describe('packaged desktop runtime verification', () => {
     const runtimeContext = context('/build', 'win32')
     const unpackedRoot = resolvePackagedUnpackedRoot(runtimeContext)
     const requiredPresetEntries = [
-      'node_modules/@deepseek-ai/dsh/config/agent-presets/cordis/agent.cordis.yml',
-      'node_modules/@deepseek-ai/dsh/config/agent-presets/cordis/skills/cordis-plugin-development/SKILL.md',
-      'node_modules/@deepseek-ai/dsh/config/agent-presets/cordis/skills/editing-cordis-compositions/SKILL.md',
+      'node_modules/@deepseek-ai/dsh-agent-presets/presets/cordis/agent.cordis.yml',
+      'node_modules/@deepseek-ai/dsh-agent-presets/presets/cordis/skills/cordis-plugin-development/SKILL.md',
+      'node_modules/@deepseek-ai/dsh-agent-presets/presets/cordis/skills/editing-cordis-compositions/SKILL.md',
     ]
 
     for (const missing of requiredPresetEntries) {

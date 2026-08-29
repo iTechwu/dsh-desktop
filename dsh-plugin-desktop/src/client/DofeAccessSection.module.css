@@ -1,7 +1,0 @@
-.section { display: grid; gap: 16px; max-width: 640px; }
-.intro { color: var(--dsw-alias-text-secondary); line-height: 1.5; margin: 0; }
-.field { display: grid; gap: 8px; }
-.label { color: var(--dsw-alias-text-primary); font-weight: 600; }
-.actions { display: flex; gap: 8px; align-items: center; }
-.status { color: var(--dsw-alias-text-secondary); font-size: 13px; }
-.error { color: var(--dsw-alias-text-danger); margin: 0; }
