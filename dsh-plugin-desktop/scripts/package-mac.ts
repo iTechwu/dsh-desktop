@@ -100,9 +100,9 @@ export function packageMacSmoke(options: MacSmokePackageOptions = defaultOptions
   const versionMatch = /^(\d+)\.(\d+)\./u.exec(options.nodeVersion)
   const major = Number(versionMatch?.[1])
   const minor = Number(versionMatch?.[2])
-  if (!((major === 22 && minor >= 19) || major === 24)) {
+  if (!((major === 22 && minor >= 19) || major >= 24)) {
     throw new Error(
-      `macOS DMG smoke requires Node 22.19+ or Node 24.x with bundled Corepack; received ${options.nodeVersion}`,
+      `macOS DMG smoke requires Node 22.19+ or Node 24+ with bundled Corepack; received ${options.nodeVersion}`,
     )
   }
 

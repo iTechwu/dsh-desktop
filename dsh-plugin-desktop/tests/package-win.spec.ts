@@ -150,7 +150,7 @@ describe('Windows x64 installer packaging', () => {
   it.each([
     ['darwin', 'x64', '22.23.2', 'native Windows host'],
     ['win32', 'arm64', '22.23.2', 'requires x64 Node'],
-    ['win32', 'x64', '25.0.0', 'Node 22.19+ or Node 24.x'],
+    ['win32', 'x64', '23.0.0', 'Node 22.19+ or Node 24+'],
   ] as const)(
     'rejects unsupported host %s/%s with Node %s before running commands',
     (platform, arch, nodeVersion, message) => {
