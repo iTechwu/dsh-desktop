@@ -16,17 +16,34 @@ export interface RendererBootLoader {
 }
 
 const ACTIVE_FIBER_STATE = 2
+const LOADER_SETTLEMENT_GRACE_MS = 5_000
 
-/** Wait for client Loader settlement and summarize entries that did not activate. */
+/**
+ * Wait briefly for client Loader settlement and summarize entries that did not activate.
+ *
+ * Some optional connection plugins keep retrying after the base UI is ready. Waiting
+ * indefinitely for those fibers would prevent the desktop shell from becoming usable,
+ * so a pending Loader is treated as healthy when no settled fiber has failed.
+ */
 export async function rendererBootReport(loader: RendererBootLoader): Promise<RendererBootReport> {
   let error: string | undefined
+  let timeout: ReturnType<typeof setTimeout> | undefined
   try {
-    await loader.await()
+    await Promise.race([
+      loader.await(),
+      new Promise<void>(resolve => {
+        timeout = setTimeout(() => {
+          resolve()
+        }, LOADER_SETTLEMENT_GRACE_MS)
+      }),
+    ])
   } catch (cause) {
     error = cause instanceof Error ? cause.message : String(cause)
+  } finally {
+    if (timeout !== undefined) clearTimeout(timeout)
   }
   const plugins = [...loader.entries()]
-    .filter(entry => entry.fiber?.state !== ACTIVE_FIBER_STATE)
+    .filter(entry => entry.fiber !== undefined && entry.fiber.state !== ACTIVE_FIBER_STATE)
     .map(entry => entry.options.name)
   return error === undefined && plugins.length === 0
     ? { status: 'healthy' }

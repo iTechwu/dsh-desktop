@@ -46,6 +46,22 @@ describe('desktop renderer boot health', () => {
     })
   })
 
+  it('does not block the shell on optional Loader retries', async () => {
+    vi.useFakeTimers()
+    const loader = {
+      await: vi.fn(() => new Promise<void>(() => {})),
+      * entries() {
+        yield { options: { name: 'dsh-plugin-desktop' }, fiber: { state: 2 } }
+      },
+    }
+
+    const report = rendererBootReport(loader)
+    await vi.advanceTimersByTimeAsync(5_000)
+
+    await expect(report).resolves.toEqual({ status: 'healthy' })
+    expect(loader.await).toHaveBeenCalledOnce()
+  })
+
   it('posts the terminal boot report to the same-origin desktop Host', async () => {
     const loader = {
       await: vi.fn(async () => {}),
