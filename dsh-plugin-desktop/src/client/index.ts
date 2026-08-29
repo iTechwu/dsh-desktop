@@ -18,6 +18,7 @@ import { installWorkspaceFolderDrop } from './workspace-folder-drop.ts'
 import { desktopWindowService, provideDesktopWindow } from './window-service.ts'
 import { DofeAccessOnboarding, DofeAccessSection, installDofeAccessStyles } from './DofeAccessSection.tsx'
 import { DOFE_ACCESS_COPY, type DofeAccessLocaleKey } from './dofe-access.ts'
+import { DOFE_ACCESS_SETTINGS_NAMESPACE, type DofeAccessSettings } from '../dofe-plugins.ts'
 
 export { applyAdvancedShell } from './advanced-shell.ts'
 export { applyDesktopSettings } from './desktop-settings.ts'
@@ -99,11 +100,11 @@ export function apply(ctx: ClientContext): void {
   ctx.effect(() => installDofeAccessStyles(), 'dofe: access styles')
   ctx.slots.inject('settings.section', () => ctx.slots.register({
     name: 'settings.section', id: 'dofe-access', order: 20, label: () => dofeT('nav'), locale: 'dofe.access',
-    inject: () => ({ credentials: ctx.remote.credentials, t: dofeT }),
+    inject: () => ({ credentials: ctx.remote.credentials, settingsScope: ctx.settingsScope.bind<DofeAccessSettings>({ namespace: DOFE_ACCESS_SETTINGS_NAMESPACE }), t: dofeT }),
   }, DofeAccessSection))
   ctx.slots.inject('settings.onboarding', () => ctx.slots.register({
     name: 'settings.onboarding', id: 'dofe-access', order: -50, locale: 'dofe.access',
-    inject: () => ({ credentials: ctx.remote.credentials, t: dofeT }),
+    inject: () => ({ credentials: ctx.remote.credentials, settingsScope: ctx.settingsScope.bind<DofeAccessSettings>({ namespace: DOFE_ACCESS_SETTINGS_NAMESPACE }), t: dofeT }),
   }, DofeAccessOnboarding))
   ctx.effect(
     () => startRendererBootReporter(ctx.loader),

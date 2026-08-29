@@ -24,6 +24,8 @@
       name: dsh-plugin-desktop/ci-tools
     - id: dofe-managed
       name: dsh-plugin-desktop/dofe-managed
+    - id: dofe-opencli
+      name: dsh-plugin-desktop/dofe-opencli
 
 # DoFe owns the model route in the Desktop distribution. The upstream adapter
 # remains in place, but it resolves the single managed key and CI-only Router.

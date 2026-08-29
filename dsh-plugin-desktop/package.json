@@ -59,6 +59,10 @@
       "types": "./lib/types/dofe-managed.d.ts",
       "default": "./lib/dofe-managed.js"
     },
+    "./dofe-opencli": {
+      "types": "./lib/types/dofe-opencli.d.ts",
+      "default": "./lib/dofe-opencli.js"
+    },
     "./pnpm": {
       "types": "./lib/types/pnpm.d.ts",
       "default": "./lib/pnpm.js"

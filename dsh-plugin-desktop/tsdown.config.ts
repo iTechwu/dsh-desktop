@@ -27,6 +27,7 @@ export default defineConfig([
       'browser-tools': 'src/browser-tools.ts',
       'ci-tools': 'src/ci-tools.ts',
       'dofe-managed': 'src/dofe-managed.ts',
+      'dofe-opencli': 'src/dofe-opencli.ts',
       'update-checker': 'src/update-checker.ts',
       'update-download': 'src/update-download.ts',
       updates: 'src/updates.ts',

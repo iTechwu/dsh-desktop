@@ -4,23 +4,31 @@ import { apply as applyMcpClient, name as mcpClientName, inject as mcpClientInje
 import type { Config as McpConfig } from '@deepseek-ai/dsh-mcp-client'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import type {} from '@deepseek-ai/dsh-system-prompt'
+import z from '@deepseek-ai/schemastery'
+import { settingsNamespace } from '@deepseek-ai/dsh-settings'
+import {
+  DEFAULT_DOFE_PLUGIN_IDS,
+  DOFE_ACCESS_SETTINGS_NAMESPACE,
+  type DofeAccessSettings,
+  type DofePluginId,
+} from './dofe-plugins.ts'
 
 export const name = 'dofe-managed'
-export const inject = ['credentials', 'tools', 'systemPrompt', 'desktopRuntime']
+export const inject = ['credentials', 'tools', 'systemPrompt', 'desktopRuntime', 'settings']
 
 export const MODELS_API_KEY = 'MODELS_API_KEY'
 const MODELS_API_KEY_REF = credentialRef(MODELS_API_KEY)
 const McpClient = { name: mcpClientName, inject: mcpClientInject, apply: applyMcpClient }
 export const DOFE_MCP_BASE_URL = 'https://ixicai.cn/mcp'
 
-const ROUTES: readonly { serverName: string; path: string; timeoutMs: number }[] = [
-  { serverName: 'geoflow', path: 'geoflow', timeoutMs: 60_000 },
-  { serverName: 'georank', path: 'georank', timeoutMs: 120_000 },
-  { serverName: 'openmontage', path: 'montage', timeoutMs: 600_000 },
+const ROUTES: readonly { plugin: Exclude<DofePluginId, 'opencli'>; serverName: string; path: string; timeoutMs: number }[] = [
+  { plugin: 'geoflow', serverName: 'geoflow', path: 'geoflow', timeoutMs: 60_000 },
+  { plugin: 'georank', serverName: 'georank', path: 'georank', timeoutMs: 120_000 },
+  { plugin: 'openmontage', serverName: 'openmontage', path: 'montage', timeoutMs: 600_000 },
   ...[
     'platform', 'supply-chain', 'talent-discovery', 'lead-discovery', 'lead-monitor',
     'hotspot-discovery', 'custom-car-monitoring', 'viral-video', 'browser-intelligence',
-  ].map(path => ({ serverName: `tools-${path}`, path: `tools/${path}`, timeoutMs: 60_000 })),
+  ].map(path => ({ plugin: 'tools' as const, serverName: `tools-${path}`, path: `tools/${path}`, timeoutMs: 60_000 })),
 ]
 
 /**
@@ -29,6 +37,20 @@ const ROUTES: readonly { serverName: string; path: string; timeoutMs: number }[]
  * is the narrowest way to keep its transport aligned with the credential seam.
  */
 export async function apply(ctx: Context): Promise<void> {
+  const access = ctx.settings.register<DofeAccessSettings>(
+    settingsNamespace(DOFE_ACCESS_SETTINGS_NAMESPACE),
+    z.object({
+      setupComplete: z.boolean().default(false),
+      enabledPlugins: z.array(z.string()).default(DEFAULT_DOFE_PLUGIN_IDS),
+    }),
+    {
+      validate: value => {
+        if (!value.enabledPlugins.every(plugin => DEFAULT_DOFE_PLUGIN_IDS.includes(plugin as DofePluginId))) {
+          throw new Error('dofe-managed: enabledPlugins contains an unknown built-in plugin')
+        }
+      },
+    },
+  )
   ctx.systemPrompt.section({
     name: 'dofe:managed-access',
     order: 4,
@@ -42,16 +64,19 @@ export async function apply(ctx: Context): Promise<void> {
   const reconcile = async (): Promise<void> => {
     const resolved = await ctx.credentials.resolve(MODELS_API_KEY_REF)
     const next = resolved?.value
+    const accessSettings = access.get()
     activeKey = next
     tray?.refresh()
     const old = clients
     clients = []
     await Promise.all(old.map(client => client.dispose()))
-    if (!next) return
+    if (!next || !accessSettings.setupComplete) return
 
     const created: { dispose(): void | Promise<void> }[] = []
     try {
+      const enabled = new Set(accessSettings.enabledPlugins)
       for (const route of ROUTES) {
+        if (!enabled.has(route.plugin)) continue
         const config: McpConfig = {
           transport: 'streamable-http',
           serverName: route.serverName,
@@ -90,6 +115,7 @@ export async function apply(ctx: Context): Promise<void> {
   ctx.on('credentials/reference-updated', ref => {
     if (ref === MODELS_API_KEY) schedule()
   })
+  access.watch(() => schedule())
   ctx.effect(() => () => {
     tray?.dispose()
     tray = undefined
