@@ -8475,9 +8475,6 @@ importers:
       '@deepseek-ai/dsh-cordis-host-runner':
         specifier: workspace:*
         version: link:../deepseek-harness/packages/extensions/cordis-host-runner
-      '@deepseek-ai/dsh-mcp-client':
-        specifier: workspace:*
-        version: link:../deepseek-harness/packages/mcp/mcp-client
       '@deepseek-ai/dsh-credentials':
         specifier: workspace:*
         version: link:../deepseek-harness/packages/credentials/credentials
@@ -8775,6 +8772,9 @@ importers:
       '@deepseek-ai/dsh-launch-environment':
         specifier: workspace:*
         version: link:../deepseek-harness/packages/util/launch-environment
+      '@deepseek-ai/dsh-mcp-client':
+        specifier: workspace:*
+        version: link:../deepseek-harness/packages/mcp/mcp-client
       '@deepseek-ai/dsh-llm':
         specifier: workspace:*
         version: link:../deepseek-harness/packages/llm/llm
