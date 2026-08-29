@@ -32,16 +32,16 @@
     apiKeyEnv: MODELS_API_KEY
     baseURL: https://ixicai.cn/api/v1
     models:
-      - id: dofe-auto
-        name: DoFe Auto
-        description: DoFe CI Model Router managed model
+      - id: deepseek-v4-flash
+        name: DeepSeek V4 Flash
+        description: DoFe managed DeepSeek model
         contextWindow: 1000000
         inputModalities: [text, image]
 
 - id: agent-default-model
   config:
     provider: deepseek-official
-    model: dofe-auto
+    model: deepseek-v4-flash
 
 # The DoFe Access page is the only model configuration surface in Desktop.
 # Users can still manage the key, but cannot select another provider, endpoint,

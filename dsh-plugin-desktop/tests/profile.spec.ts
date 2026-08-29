@@ -14,6 +14,7 @@ import {
   readDesktopShellMode,
   shippedPresetRoot,
   restoreLegacyVisionModelInput,
+  restoreDesktopDefaultModel,
   validateDshMarketBundlePatches,
 } from '../src/profile.ts'
 import { DESKTOP_MARKET_IDENTITIES } from '../src/desktop-market.ts'
@@ -148,6 +149,22 @@ describe('desktop profile composition', {
 
     expect(readFileSync(join(home, 'settings.yaml'), 'utf8')).toContain('inputModalities:')
     expect(readFileSync(join(home, 'settings.yaml'), 'utf8')).toContain('- image')
+  })
+
+  it('migrates a stale persisted default model to the managed gateway model', () => {
+    const document = {
+      'agent-default-model': {
+        provider: 'deepseek-official',
+        model: 'deepseek-v4-flash-vision-exp',
+      },
+    }
+
+    expect(restoreDesktopDefaultModel(document)).toBe(true)
+    expect(document['agent-default-model']).toEqual({
+      provider: 'deepseek-official',
+      model: 'deepseek-v4-flash',
+    })
+    expect(restoreDesktopDefaultModel(document)).toBe(false)
   })
 
   it('adds the Web surface before third-party bundles and removes the launcher bundle duplicate', () => {

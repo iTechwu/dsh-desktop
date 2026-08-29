@@ -103,6 +103,8 @@ const DESKTOP_WEB_SERVER_PACKAGE = 'dsh-plugin-desktop/webserver'
 const SETTINGS_FILE_PACKAGE = '@deepseek-ai/dsh-settings-file'
 const DESKTOP_SETTINGS_NAMESPACE = 'dsh-desktop'
 const DEEPSEEK_SETTINGS_NAMESPACE = 'llm-deepseek'
+const AGENT_DEFAULT_MODEL_NAMESPACE = 'agent-default-model'
+const DESKTOP_DEFAULT_MODEL_ID = 'deepseek-v4-flash'
 const DEEPSEEK_VISION_MODEL_ID = 'deepseek-v4-flash-vision-exp'
 
 function loadProfilePatches(path: string): PatchOptions[] {
@@ -231,19 +233,33 @@ export function restoreLegacyVisionModelInput(document: unknown): boolean {
   return changed
 }
 
+/** Keep the persisted desktop default on a model that the managed gateway serves. */
+export function restoreDesktopDefaultModel(document: unknown): boolean {
+  if (typeof document !== 'object' || document === null || Array.isArray(document)) return false
+  const section = (document as Record<string, unknown>)[AGENT_DEFAULT_MODEL_NAMESPACE]
+  if (typeof section !== 'object' || section === null || Array.isArray(section)) return false
+  const values = section as Record<string, unknown>
+  if (values.model === DESKTOP_DEFAULT_MODEL_ID && values.provider === 'deepseek-official') return false
+  values.provider = 'deepseek-official'
+  values.model = DESKTOP_DEFAULT_MODEL_ID
+  return true
+}
+
 /** Persist the compatibility migration before the settings plugin reads the file. */
 function migrateLegacyVisionModelSettings(filename: string, format: 'json' | 'yaml'): void {
   if (!existsSync(filename)) return
   const text = readFileSync(filename, 'utf8')
   if (format === 'json') {
     const document: unknown = text.trim().length === 0 ? {} : JSON.parse(text)
-    if (restoreLegacyVisionModelInput(document)) writeFileSync(filename, `${JSON.stringify(document, undefined, 2)}\n`)
+    if (restoreLegacyVisionModelInput(document) || restoreDesktopDefaultModel(document)) {
+      writeFileSync(filename, `${JSON.stringify(document, undefined, 2)}\n`)
+    }
     return
   }
   const document = parseDocument(text, { prettyErrors: true })
   if (document.errors.length > 0) return
   const value = document.toJS() ?? {}
-  if (restoreLegacyVisionModelInput(value)) writeFileSync(filename, stringify(value))
+  if (restoreLegacyVisionModelInput(value) || restoreDesktopDefaultModel(value)) writeFileSync(filename, stringify(value))
 }
 
 /**
