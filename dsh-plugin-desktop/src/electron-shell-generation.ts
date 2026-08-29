@@ -410,6 +410,12 @@ export class ElectronShellGeneration {
       )
       revealStartupSurface()
       await window.loadURL(spec.url)
+      if (spec.rendererUrl !== undefined && window.webContents.getURL() !== spec.rendererUrl) {
+        // BrowserAuth redirects the token URL to a clean `/`, dropping the
+        // desktop markers. Reload the marker-bearing URL after the cookie
+        // handshake so the client plugin can activate native presentation.
+        await window.loadURL(spec.rendererUrl)
+      }
       tray = new Tray(prepareTrayIcon(spec.trayIcons, platform.platform))
       this.tray = tray
       tray.setToolTip(spec.productName)

@@ -188,25 +188,6 @@ export function desktopRendererUrl(
 }
 
 /**
- * Add desktop renderer markers after browser authentication.
- *
- * BrowserAuth deliberately normalizes an authenticated URL to `/` and replaces
- * its query with the launch token. Preserve the desktop-only markers separately
- * so the client plugin can still select the native presentation at startup.
- */
-export function authenticatedDesktopRendererUrl(
-  authenticatedUrl: string,
-  rendererUrl: string,
-): string {
-  const authenticated = new URL(authenticatedUrl)
-  const renderer = new URL(rendererUrl)
-  for (const [key, value] of renderer.searchParams) {
-    authenticated.searchParams.set(key, value)
-  }
-  return authenticated.href
-}
-
-/**
  * Register the Electron shell from active Web carrier values.
  * @param ctx - Host context carrying the Electron adapter and Web carrier.
  * @param config - validated native window values.
@@ -406,20 +387,22 @@ export function apply(ctx: Context, config: Config): void {
         ...config,
         material,
         ...(runtime.windowsBuild === undefined ? {} : { windowsBuild: runtime.windowsBuild }),
-        url: (() => {
-          const rendererUrl = desktopRendererUrl(
-            ctx.webServer.port,
-            config.mode,
-            runtime.platform,
-            runtime.updates.currentVersion,
-            material,
-            runtime.windowsBuild,
-          )
-          return authenticatedDesktopRendererUrl(
-            ctx.connection.authenticatedUrl(rendererUrl),
-            rendererUrl,
-          )
-        })(),
+        url: ctx.connection.authenticatedUrl(desktopRendererUrl(
+          ctx.webServer.port,
+          config.mode,
+          runtime.platform,
+          runtime.updates.currentVersion,
+          material,
+          runtime.windowsBuild,
+        )),
+        rendererUrl: desktopRendererUrl(
+          ctx.webServer.port,
+          config.mode,
+          runtime.platform,
+          runtime.updates.currentVersion,
+          material,
+          runtime.windowsBuild,
+        ),
         rendererAccessHeader: browserAccess.rendererHeader,
         productName: 'Yootun-Agent',
         windowTitle: 'Yootun-Agent',
