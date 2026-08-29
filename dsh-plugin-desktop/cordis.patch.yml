@@ -30,7 +30,7 @@
 - id: llm-deepseek
   config:
     apiKeyEnv: MODELS_API_KEY
-    baseURL: https://ixicai.cn/ai/v1
+    baseURL: https://ixicai.cn/api/v1
     models:
       - id: dofe-auto
         name: DoFe Auto
