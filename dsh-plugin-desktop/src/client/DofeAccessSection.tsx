@@ -9,6 +9,7 @@ const STYLE_ID = 'dsh-dofe-access-styles'
 const CSS = `
 .dshDofeAccess { display: grid; gap: 16px; max-width: 640px; }
 .dshDofeAccessIntro { color: var(--dsw-alias-text-secondary); line-height: 1.5; margin: 0; }
+.dshDofeAccessHelp { color: var(--dsw-alias-text-secondary); line-height: 1.5; margin: -8px 0 0; }
 .dshDofeAccessField { display: grid; gap: 8px; }
 .dshDofeAccessLabel { color: var(--dsw-alias-text-primary); font-weight: 600; }
 .dshDofeAccessActions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
@@ -34,6 +35,7 @@ function AccessForm({ credentials, t, onboarding, onDone }: DofeAccessInjected &
   return <div className="dshDofeAccess">
     {!onboarding && <h2>{t('title')}</h2>}
     <p className="dshDofeAccessIntro">{onboarding ? t('onboardingIntro') : t('intro')}</p>
+    {onboarding && <p className="dshDofeAccessHelp">{t('onboardingHelp')}</p>}
     <div className="dshDofeAccessField"><label className="dshDofeAccessLabel" htmlFor="dofe-model-api-key">{t('key')}</label><Input id="dofe-model-api-key" type="password" autoComplete="off" value={draft} placeholder={configured ? t('configured') : t('placeholder')} onChange={event => setDraft(event.currentTarget.value)} onKeyDown={event => { if (event.key === 'Enter') void save() }} /></div>
     {error !== undefined && <p className="dshDofeAccessError" role="alert">{error}</p>}
     <div className="dshDofeAccessActions"><Button variant="primary" disabled={busy || !draft.trim()} onClick={() => void save()}>{busy ? t('saving') : t('save')}</Button>{!onboarding && <Button disabled={busy || configured !== true} onClick={() => void remove()}>{busy ? t('removing') : t('remove')}</Button>}<span className="dshDofeAccessStatus" role="status">{configured === true ? t('configured') : configured === false ? t('missing') : ''}</span></div>

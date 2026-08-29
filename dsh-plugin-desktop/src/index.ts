@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type {} from '@deepseek-ai/dsh-cmdline'
+import type {} from '@deepseek-ai/dsh-client-connection'
 import {
   LOCALE_SETTINGS_NAMESPACE,
   type LocaleSettings,
@@ -83,7 +84,7 @@ export const name = 'desktop-shell'
 
 /** Services required before the shell can register its renderer generation. */
 /** Services required by the desktop shell; `desktopRuntime` is probed, not required. */
-export const inject = ['webServer', 'webRuntime', 'appExit', 'settings']
+export const inject = ['webServer', 'webRuntime', 'appExit', 'settings', 'connection']
 
 /** Standard settings namespace shared by tray and configuration surfaces. */
 export const DESKTOP_SETTINGS_NAMESPACE = settingsNamespace('dsh-desktop')
@@ -386,14 +387,14 @@ export function apply(ctx: Context, config: Config): void {
         ...config,
         material,
         ...(runtime.windowsBuild === undefined ? {} : { windowsBuild: runtime.windowsBuild }),
-        url: desktopRendererUrl(
-            ctx.webServer.port,
-            config.mode,
-            runtime.platform,
-            runtime.updates.currentVersion,
-            material,
-            runtime.windowsBuild,
-        ),
+        url: ctx.connection.authenticatedUrl(desktopRendererUrl(
+          ctx.webServer.port,
+          config.mode,
+          runtime.platform,
+          runtime.updates.currentVersion,
+          material,
+          runtime.windowsBuild,
+        )),
         rendererAccessHeader: browserAccess.rendererHeader,
         productName: 'Yootun-Agent',
         windowTitle: 'Yootun-Agent',

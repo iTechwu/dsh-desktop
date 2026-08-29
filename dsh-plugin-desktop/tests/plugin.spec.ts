@@ -140,6 +140,7 @@ function createHarness(
   }
   const ctx = {
     desktopRuntime: runtime,
+    connection: { authenticatedUrl: (value: string) => `${value}&token=${'a'.repeat(43)}` },
     webServer: {
       host: '127.0.0.1',
       port: 43120,
@@ -271,6 +272,7 @@ describe('desktop Host plugin', () => {
     apply(harness.ctx, config)
 
     expect(inject).toContain('settings')
+    expect(inject).toContain('connection')
     expect(inject).not.toContain('loader')
     const register = vi.mocked(harness.ctx.settings.register)
     expect(register.mock.calls[0]?.[2]).toEqual(expect.objectContaining({ applies: 'restart' }))
@@ -278,7 +280,7 @@ describe('desktop Host plugin', () => {
     expect(loaderAwait).not.toHaveBeenCalled()
     expect(harness.shell()).toEqual(expect.objectContaining({
       mode: 'compatibility',
-      url: 'http://127.0.0.1:43120/?dsh-desktop-mode=compatibility&dsh-desktop-platform=darwin&dsh-desktop-version=2.0.0&dsh-desktop-material=transparent&dsh-desktop-titlebar-inset=36',
+      url: 'http://127.0.0.1:43120/?dsh-desktop-mode=compatibility&dsh-desktop-platform=darwin&dsh-desktop-version=2.0.0&dsh-desktop-material=transparent&dsh-desktop-titlebar-inset=36&token=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
       productName: 'Yootun-Agent',
       windowTitle: 'Yootun-Agent',
       rendererAccessHeader: {
