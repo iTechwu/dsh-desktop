@@ -980,6 +980,8 @@ virtualStoreDirMaxLength: 60
       '- insert:',
       '    - id: legacy-remote-web-ui',
       "      name: '@linxin666/dsh-remote-web-ui'",
+      '    - id: legacy-task-board',
+      "      name: '@linxin666/dsh-client-ui-task-board'",
       '',
     ].join('\n'))
     writeFileSync(join(home, 'profiles', 'desktop', 'package.json'), JSON.stringify({
@@ -993,9 +995,14 @@ virtualStoreDirMaxLength: 60
     const rows = composeEntries([prepared.patches])
 
     expect(rows.map(row => row.id)).not.toContain('legacy-remote-web-ui')
+    expect(rows.map(row => row.id)).not.toContain('legacy-task-board')
     expect(prepared.skippedOptionalEntries).toContainEqual({
       id: 'legacy-remote-web-ui',
       name: '@linxin666/dsh-remote-web-ui',
+    })
+    expect(prepared.skippedOptionalEntries).toContainEqual({
+      id: 'legacy-task-board',
+      name: '@linxin666/dsh-client-ui-task-board',
     })
   })
 
