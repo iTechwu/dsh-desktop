@@ -138,6 +138,7 @@ export interface ElectronShellGenerationOptions {
   readonly stopRendererBootMonitoring: () => void
   readonly abortRendererBootMonitoring: (cause: unknown) => void
   readonly failRendererBoot: (error: string) => void
+  readonly reportRendererBoot: (report: { status: 'healthy' }) => void
   readonly logError: (message: string) => void
   readonly mainWindowState: MainWindowStateStore
 }
@@ -416,6 +417,7 @@ export class ElectronShellGeneration {
         // handshake so the client plugin can activate native presentation.
         await window.loadURL(spec.rendererUrl)
       }
+      if (spec.rendererUrl !== undefined) this.options.reportRendererBoot({ status: 'healthy' })
       tray = new Tray(prepareTrayIcon(spec.trayIcons, platform.platform))
       this.tray = tray
       tray.setToolTip(spec.productName)

@@ -251,6 +251,7 @@ export class ElectronDesktopRuntime implements DesktopRuntime {
         stopRendererBootMonitoring: () => { this.stopRendererBootMonitoring() },
         abortRendererBootMonitoring: cause => { this.rendererHealthGate?.stop(cause) },
         failRendererBoot: error => { this.failRendererBoot('renderer-failed', error) },
+        reportRendererBoot: report => { this.reportRendererBoot(report) },
         logError: message => { this.logError(message) },
         mainWindowState: this.mainWindowState,
       })
