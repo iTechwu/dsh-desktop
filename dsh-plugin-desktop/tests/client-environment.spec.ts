@@ -157,6 +157,14 @@ describe('advanced desktop layout', () => {
     expect(caption).toBeLessThan(overlay)
   })
 
+  it('binds the strict details slot through the framework SessionProvider', () => {
+    const frame = readFileSync(new URL('../src/client/AdvancedFrame.tsx', import.meta.url), 'utf8')
+    const details = frame.indexOf('className="dshDesktopDetailsSurface"')
+    const provider = frame.indexOf('<SessionProvider>{renderSlot(\'details\', {})}</SessionProvider>')
+    expect(details).toBeGreaterThan(-1)
+    expect(provider).toBeGreaterThan(details)
+  })
+
   it('owns native caption geometry with one fixed macOS drag strip above page content', () => {
     expect(ADVANCED_MACOS_CONTENT_INSET).toBe(20)
     expect(ADVANCED_MACOS_DRAG_REGION_HEIGHT).toBe(32)
