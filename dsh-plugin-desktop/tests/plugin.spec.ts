@@ -8,6 +8,7 @@ import { settingsNamespace } from '@deepseek-ai/dsh-settings'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   apply,
+  authenticatedDesktopRendererUrl,
   Config,
   DESKTOP_SETTINGS_NAMESPACE,
   desktopRendererUrl,
@@ -262,6 +263,21 @@ describe('desktop Host plugin', () => {
       'linux',
       '2.0.3',
     )).searchParams)).not.toHaveProperty('dsh-desktop-titlebar-inset')
+  })
+
+  it('preserves desktop markers when authentication normalizes the URL query', () => {
+    const rendererUrl = desktopRendererUrl(43120, 'advanced', 'darwin', '2.0.3', 'transparent')
+    const authenticated = authenticatedDesktopRendererUrl(
+      'http://127.0.0.1:43120/?dsh-token=launch-token',
+      rendererUrl,
+    )
+    expect(Object.fromEntries(new URL(authenticated).searchParams)).toEqual({
+      'dsh-token': 'launch-token',
+      'dsh-desktop-mode': 'advanced',
+      'dsh-desktop-platform': 'darwin',
+      'dsh-desktop-version': '2.0.3',
+      'dsh-desktop-material': 'transparent',
+    })
   })
 
   it('registers settings and the active Web port without re-entering Loader settlement', async () => {
