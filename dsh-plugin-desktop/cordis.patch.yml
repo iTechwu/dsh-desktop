@@ -43,6 +43,12 @@
     provider: deepseek-official
     model: dofe-auto
 
+# The DoFe Access page is the only model configuration surface in Desktop.
+# Users can still manage the key, but cannot select another provider, endpoint,
+# or catalog through the upstream Models editor.
+- id: ui-settings-models
+  disabled: true
+
 # Desktop supplies the Yootun occupants for the shared browser-brand slots.
 - id: ui-brand-official
   disabled: true

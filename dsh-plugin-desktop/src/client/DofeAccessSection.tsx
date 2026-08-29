@@ -1,0 +1,50 @@
+import { useEffect, useState, type ReactNode } from 'react'
+import type { ClientRemote } from '@deepseek-ai/dsh-api-remotes/client'
+import type { InjectFace, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+import { Button, Input } from '@deepseek-ai/dsh-client-ui-primitives'
+import { DofeOnboardingModal } from './DofeOnboardingModal.tsx'
+import { DOFE_ACCESS_COPY, DOFE_ACCESS_KEY, type DofeAccessLocaleKey } from './dofe-access.ts'
+import styles from './DofeAccessSection.module.css'
+
+type Credentials = Pick<ClientRemote['credentials'], 'describe' | 'set' | 'unset'>
+export interface DofeAccessInjected { credentials: Credentials; t: (key: DofeAccessLocaleKey) => string }
+export type DofeAccessSectionProps = PropsRuntime<'settings.section'> & InjectFace<DofeAccessInjected>
+export type DofeAccessOnboardingProps = PropsRuntime<'settings.onboarding'> & InjectFace<DofeAccessInjected>
+
+declare module '@deepseek-ai/dsh-client-ui-slots' { interface LocaleNamespaceMap { 'dofe.access': DofeAccessLocaleKey } }
+
+function AccessForm({ credentials, t, onboarding, onDone }: DofeAccessInjected & { onboarding?: boolean; onDone?: () => void }): ReactNode {
+  const [configured, setConfigured] = useState<boolean | undefined>()
+  const [draft, setDraft] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string>()
+  useEffect(() => { void credentials.describe([DOFE_ACCESS_KEY]).then(result => { if (result.ok) setConfigured(result.value[DOFE_ACCESS_KEY]?.configured === true); else setError(t('loadError')) }) }, [credentials, t])
+  const save = async (): Promise<void> => { if (!draft.trim()) return; setBusy(true); setError(undefined); const result = await credentials.set(DOFE_ACCESS_KEY, draft.trim()); setBusy(false); if (!result.ok) { setError(t('saveError')); return }; setDraft(''); setConfigured(true); onDone?.() }
+  const remove = async (): Promise<void> => { setBusy(true); setError(undefined); const result = await credentials.unset(DOFE_ACCESS_KEY); setBusy(false); if (!result.ok) { setError(t('removeError')); return }; setConfigured(false) }
+  return <div className={styles.section}>
+    {!onboarding && <h2>{t('title')}</h2>}
+    <p className={styles.intro}>{onboarding ? t('onboardingIntro') : t('intro')}</p>
+    <div className={styles.field}><label className={styles.label} htmlFor="dofe-model-api-key">{t('key')}</label><Input id="dofe-model-api-key" type="password" autoComplete="off" value={draft} placeholder={configured ? t('configured') : t('placeholder')} onChange={event => setDraft(event.currentTarget.value)} onKeyDown={event => { if (event.key === 'Enter') void save() }} /></div>
+    {error !== undefined && <p className={styles.error} role="alert">{error}</p>}
+    <div className={styles.actions}><Button variant="primary" disabled={busy || !draft.trim()} onClick={() => void save()}>{busy ? t('saving') : t('save')}</Button>{!onboarding && <Button disabled={busy || configured !== true} onClick={() => void remove()}>{busy ? t('removing') : t('remove')}</Button>}<span className={styles.status} role="status">{configured === true ? t('configured') : configured === false ? t('missing') : ''}</span></div>
+  </div>
+}
+
+export function DofeAccessSection(props: DofeAccessSectionProps): ReactNode { if (props.credentials === undefined || props.t === undefined) return null; return <AccessForm credentials={props.credentials} t={props.t} /> }
+export function DofeAccessOnboarding(props: DofeAccessOnboardingProps): ReactNode {
+  const { credentials, t, complete } = props
+  if (credentials === undefined || t === undefined) return null
+  return <DofeAccessOnboardingReady credentials={credentials} t={t} complete={complete} />
+}
+
+function DofeAccessOnboardingReady({ credentials, t, complete }: DofeAccessInjected & { complete: () => void }): ReactNode {
+  const [ready, setReady] = useState(false)
+  useEffect(() => {
+    void credentials.describe([DOFE_ACCESS_KEY]).then(result => {
+      if (result.ok && result.value[DOFE_ACCESS_KEY]?.configured === true) complete()
+      else setReady(true)
+    })
+  }, [complete, credentials])
+  if (!ready) return null
+  return <DofeOnboardingModal title={t('onboardingTitle')}><AccessForm credentials={credentials} t={t} onboarding onDone={complete} /><Button onClick={complete}>{t('later')}</Button></DofeOnboardingModal>
+}

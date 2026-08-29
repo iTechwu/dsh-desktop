@@ -14,6 +14,8 @@ import { parseDesktopClientEnvironment } from './environment.ts'
 import { applyExtendedShell, applyFramedShell } from './extended-shell.ts'
 import { installWorkspaceFolderDrop } from './workspace-folder-drop.ts'
 import { desktopWindowService, provideDesktopWindow } from './window-service.ts'
+import { DofeAccessOnboarding, DofeAccessSection } from './DofeAccessSection.tsx'
+import { DOFE_ACCESS_COPY, type DofeAccessLocaleKey } from './dofe-access.ts'
 
 export { applyAdvancedShell } from './advanced-shell.ts'
 export { applyDesktopSettings } from './desktop-settings.ts'
@@ -77,6 +79,7 @@ export const inject = [
   'theme',
   'workspaces',
   'uiRenderer',
+  'remote.credentials',
 ]
 
 /** Register desktop-owned client surfaces for the current BrowserWindow mode. @param ctx - browser Cordis context. */
@@ -89,6 +92,16 @@ export function apply(ctx: ClientContext): void {
     'dsh-plugin-desktop: native window geometry service',
   )
   const desktopSettings = applyDesktopSettings(ctx, environment)
+  const dofeT = ctx.locale.bind('dofe.access') as (key: DofeAccessLocaleKey) => string
+  ctx.effect(() => ctx.locale.register('dofe.access', DOFE_ACCESS_COPY), 'dofe: access dictionaries')
+  ctx.slots.inject('settings.section', () => ctx.slots.register({
+    name: 'settings.section', id: 'dofe-access', order: 20, label: () => dofeT('nav'), locale: 'dofe.access',
+    inject: () => ({ credentials: ctx.remote.credentials, t: dofeT }),
+  }, DofeAccessSection))
+  ctx.slots.inject('settings.onboarding', () => ctx.slots.register({
+    name: 'settings.onboarding', id: 'dofe-access', order: -50, locale: 'dofe.access',
+    inject: () => ({ credentials: ctx.remote.credentials, t: dofeT }),
+  }, DofeAccessOnboarding))
   ctx.effect(
     () => startRendererBootReporter(ctx.loader),
     'dsh-plugin-desktop: renderer boot health report',
