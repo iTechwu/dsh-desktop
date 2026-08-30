@@ -78,6 +78,10 @@ import {
   windowsSupportsMica,
 } from './window-material.ts'
 import { desktopLocaleFromLanguageTag } from './tray-locale.ts'
+import {
+  DOFE_ACCESS_VALIDATE_PATH,
+  handleDofeAccessValidationRequest,
+} from './dofe-access-route.ts'
 
 /** Stable Cordis plugin name. */
 export const name = 'desktop-shell'
@@ -279,6 +283,14 @@ export function apply(ctx: Context, config: Config): void {
       )
     }
   }
+  ctx.effect(
+    () => ctx.webServer.register({
+      kind: 'exact',
+      path: DOFE_ACCESS_VALIDATE_PATH,
+      handler: (req, res) => handleDofeAccessValidationRequest(req, res, rendererOrigin),
+    }),
+    'dsh-plugin-desktop: model_api_key validation route',
+  )
   ctx.effect(
     () => ctx.webServer.register({
       kind: 'exact',

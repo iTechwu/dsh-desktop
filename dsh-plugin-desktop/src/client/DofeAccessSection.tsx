@@ -5,7 +5,8 @@ import { Button, Input } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { SettingsScope } from '@deepseek-ai/dsh-client-ui-settings/client'
 import { DofeOnboardingModal } from './DofeOnboardingModal.tsx'
 import { DOFE_ACCESS_KEY, type DofeAccessLocaleKey } from './dofe-access.ts'
-import { DOFE_PLUGIN_CATALOG, type DofeAccessSettings, type DofePluginId, DEFAULT_DOFE_PLUGIN_IDS } from '../dofe-plugins.ts'
+import { DOFE_PLUGIN_CATALOG, DOFE_ACCESS_VALIDATION_VERSION, type DofeAccessSettings, type DofePluginId, DEFAULT_DOFE_PLUGIN_IDS } from '../dofe-plugins.ts'
+import { DOFE_ACCESS_VALIDATE_PATH } from '../dofe-access-route.ts'
 
 const STYLE_ID = 'dsh-dofe-access-styles'
 const CSS = `
@@ -24,15 +25,18 @@ const CSS = `
 .dshDofeAccessPluginDescription { color: var(--dsw-alias-text-secondary); font-size: 13px; margin-top: 2px; }
 `
 
-const DOFE_MODEL_GATEWAY = 'https://ixicai.cn/api/v1/models'
-
 async function validateModelApiKey(key: string): Promise<boolean> {
   try {
-    const response = await fetch(DOFE_MODEL_GATEWAY, {
-      headers: { Authorization: `Bearer ${key}` },
-      signal: AbortSignal.timeout(10_000),
+    const response = await fetch(DOFE_ACCESS_VALIDATE_PATH, {
+      method: 'POST',
+      credentials: 'same-origin',
+      redirect: 'error',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({ key }),
     })
-    return response.ok
+    if (!response.ok) return false
+    const value = await response.json() as unknown
+    return typeof value === 'object' && value !== null && (value as { valid?: unknown }).valid === true
   } catch {
     return false
   }
@@ -74,6 +78,7 @@ function AccessForm({ credentials, settingsScope, t, onboarding, onDone }: DofeA
     try {
       await settingsScope.mutate([
         { op: 'set', path: ['setupComplete'], value: true },
+        { op: 'set', path: ['validationVersion'], value: DOFE_ACCESS_VALIDATION_VERSION },
         { op: 'set', path: ['enabledPlugins'], value: enabledPlugins },
       ])
     } catch {
@@ -91,7 +96,10 @@ function AccessForm({ credentials, settingsScope, t, onboarding, onDone }: DofeA
     setError(undefined)
     const result = await credentials.unset(DOFE_ACCESS_KEY)
     if (!result.ok) { setBusy(false); setError(t('removeError')); return }
-    try { await settingsScope.mutate([{ op: 'set', path: ['setupComplete'], value: false }]) } catch { /* key removal still succeeded */ }
+    try { await settingsScope.mutate([
+      { op: 'set', path: ['setupComplete'], value: false },
+      { op: 'set', path: ['validationVersion'], value: 0 },
+    ]) } catch { /* key removal still succeeded */ }
     setBusy(false)
     setConfigured(false)
   }
@@ -127,10 +135,13 @@ function DofeAccessOnboardingReady({ credentials, settingsScope, t, complete }: 
   const [ready, setReady] = useState(false)
   useEffect(() => {
     void credentials.describe([DOFE_ACCESS_KEY]).then(result => {
-      if (result.ok && result.value[DOFE_ACCESS_KEY]?.configured === true && settings.value?.setupComplete === true) complete()
+      if (result.ok
+        && result.value[DOFE_ACCESS_KEY]?.configured === true
+        && settings.value?.setupComplete === true
+        && settings.value.validationVersion === DOFE_ACCESS_VALIDATION_VERSION) complete()
       else setReady(true)
     })
-  }, [complete, credentials, settings.value?.setupComplete])
+  }, [complete, credentials, settings.value?.setupComplete, settings.value?.validationVersion])
   if (!ready) return null
   return <DofeOnboardingModal title={t('onboardingTitle')}><AccessForm credentials={credentials} settingsScope={settingsScope} t={t} onboarding onDone={complete} /></DofeOnboardingModal>
 }

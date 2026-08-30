@@ -2,7 +2,7 @@
 import { execFile } from 'node:child_process'
 import type { Context } from '@deepseek-ai/cordis'
 import { settingsNamespace } from '@deepseek-ai/dsh-settings'
-import { DOFE_ACCESS_SETTINGS_NAMESPACE, type DofeAccessSettings } from './dofe-plugins.ts'
+import { DOFE_ACCESS_SETTINGS_NAMESPACE, DOFE_ACCESS_VALIDATION_VERSION, type DofeAccessSettings } from './dofe-plugins.ts'
 
 export const name = 'dofe-opencli'
 export const inject = ['tools', 'settings']
@@ -48,7 +48,9 @@ export function apply(ctx: Context): void | (() => void) {
     isConcurrencySafe: () => false,
     async execute(args: { args?: unknown }, exec: { signal: AbortSignal }) {
       const access = ctx.settings.get(settingsNamespace(DOFE_ACCESS_SETTINGS_NAMESPACE)) as DofeAccessSettings | undefined
-      if (access?.setupComplete !== true || !access.enabledPlugins.includes('opencli')) {
+      if (access?.setupComplete !== true
+        || access.validationVersion !== DOFE_ACCESS_VALIDATION_VERSION
+        || !access.enabledPlugins.includes('opencli')) {
         throw new Error('DoFe OpenCLI is not enabled in the startup plugin selection')
       }
       if (!Array.isArray(args.args) || args.args.length === 0 || args.args.some(value => typeof value !== 'string')) {

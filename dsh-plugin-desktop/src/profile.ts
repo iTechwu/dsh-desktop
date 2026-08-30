@@ -80,6 +80,8 @@ const OBSOLETE_DESKTOP_BUNDLE_SET = new Set([
   '@dofe/dsh-geo-mcp',
   '@dofe/dsh-openmontage-mcp',
   '@dofe/dsh-tools-mcp',
+  // HarmonyOS device tooling is not part of the Yootun-Agent desktop product.
+  'dsh-hdc-bridge',
 ])
 const INSTALL_ANCHOR = unpackedAsarPath(fileURLToPath(new URL('../package.json', import.meta.url)))
 const DESKTOP_PATCH_PATH = fileURLToPath(new URL('../cordis.patch.yml', import.meta.url))
@@ -245,13 +247,48 @@ export function restoreDesktopDefaultModel(document: unknown): boolean {
   return true
 }
 
+const LEGACY_MODEL_CONFIGURATION_KEYS = new Set([
+  'baseURL', 'baseUrl', 'base_url', 'apiKey', 'api_key', 'appKey', 'app_key', 'apiKeyEnv',
+])
+
+/** Remove user-owned model endpoints and keys; Desktop supplies one managed route. */
+export function removeLegacyModelConfiguration(document: unknown): boolean {
+  if (typeof document !== 'object' || document === null || Array.isArray(document)) return false
+  let changed = false
+  for (const [namespace, section] of Object.entries(document as Record<string, unknown>)) {
+    if (!namespace.startsWith('llm-') || typeof section !== 'object' || section === null) continue
+    const visit = (value: unknown): void => {
+      if (Array.isArray(value)) {
+        for (const item of value) visit(item)
+        return
+      }
+      if (typeof value !== 'object' || value === null) return
+      const record = value as Record<string, unknown>
+      for (const key of Object.keys(record)) {
+        if (LEGACY_MODEL_CONFIGURATION_KEYS.has(key)) {
+          delete record[key]
+          changed = true
+        } else {
+          visit(record[key])
+        }
+      }
+    }
+    visit(section)
+  }
+  return changed
+}
+
 /** Persist the compatibility migration before the settings plugin reads the file. */
 function migrateLegacyVisionModelSettings(filename: string, format: 'json' | 'yaml'): void {
   if (!existsSync(filename)) return
   const text = readFileSync(filename, 'utf8')
   if (format === 'json') {
     const document: unknown = text.trim().length === 0 ? {} : JSON.parse(text)
-    if (restoreLegacyVisionModelInput(document) || restoreDesktopDefaultModel(document)) {
+    const removedLegacy = removeLegacyModelConfiguration(document)
+    const restoredVision = restoreLegacyVisionModelInput(document)
+    const restoredDefault = restoreDesktopDefaultModel(document)
+    const changed = removedLegacy || restoredVision || restoredDefault
+    if (changed) {
       writeFileSync(filename, `${JSON.stringify(document, undefined, 2)}\n`)
     }
     return
@@ -259,7 +296,11 @@ function migrateLegacyVisionModelSettings(filename: string, format: 'json' | 'ya
   const document = parseDocument(text, { prettyErrors: true })
   if (document.errors.length > 0) return
   const value = document.toJS() ?? {}
-  if (restoreLegacyVisionModelInput(value) || restoreDesktopDefaultModel(value)) writeFileSync(filename, stringify(value))
+  const removedLegacy = removeLegacyModelConfiguration(value)
+  const restoredVision = restoreLegacyVisionModelInput(value)
+  const restoredDefault = restoreDesktopDefaultModel(value)
+  const changed = removedLegacy || restoredVision || restoredDefault
+  if (changed) writeFileSync(filename, stringify(value))
 }
 
 /**
@@ -388,9 +429,22 @@ export function ensureDesktopProfile(home: string = resolveDshHome()): string {
   }
   const current = rawBundles === undefined ? [] : rawBundles as string[]
   const bundles = desktopBundleList(current)
-  if (!sameList(current, bundles)) {
+  const dependencies = manifest.dependencies === undefined
+    ? undefined
+    : { ...manifest.dependencies }
+  let dependenciesChanged = false
+  if (dependencies !== undefined) {
+    for (const packageName of OBSOLETE_DESKTOP_BUNDLE_SET) {
+      if (Object.prototype.hasOwnProperty.call(dependencies, packageName)) {
+        delete dependencies[packageName]
+        dependenciesChanged = true
+      }
+    }
+  }
+  if (!sameList(current, bundles) || dependenciesChanged) {
     writeProfileManifest(dir, {
       ...manifest,
+      ...(dependencies === undefined ? {} : { dependencies }),
       dsh: {
         ...manifest.dsh,
         profile: {

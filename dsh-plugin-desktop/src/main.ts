@@ -50,6 +50,10 @@ import {
 } from './desktop-network.ts'
 import { LogFileSink } from './log-files.ts'
 import { maskSecrets } from './mask-secrets.ts'
+import {
+  removeLegacyModelCredentials,
+  removeModelCredentialEnvironment,
+} from './dofe-credential-migration.ts'
 import { resolveDesktopShellEnvironment } from './shell-environment.ts'
 import { installProfilePackageResolver } from './module-resolution.ts'
 import { packagedDependencyPath } from './packaged-runtime-path.ts'
@@ -442,7 +446,9 @@ async function start(): Promise<void> {
       platform: process.platform,
     })
     for (const [name, value] of Object.entries(shellEnvironmentResolution.updates)) process.env[name] = value
+    removeModelCredentialEnvironment(process.env)
     const homeDir = resolveDshHome()
+    await removeLegacyModelCredentials(homeDir)
     const projectionCacheRecovery = recoverOversizedSessionProjectionCache(homeDir)
     if (projectionCacheRecovery.status === 'quarantined') {
       sessionProjectionCacheRecovery = projectionCacheRecovery

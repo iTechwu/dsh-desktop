@@ -12,6 +12,7 @@ import {
   ensureDesktopProfile,
   prepareDesktopProfile,
   readDesktopShellMode,
+  removeLegacyModelConfiguration,
   shippedPresetRoot,
   restoreLegacyVisionModelInput,
   restoreDesktopDefaultModel,
@@ -167,6 +168,40 @@ describe('desktop profile composition', {
     expect(restoreDesktopDefaultModel(document)).toBe(false)
   })
 
+  it('removes every historical model endpoint and key while preserving model definitions', () => {
+    const document = {
+      'llm-deepseek': {
+        baseURL: 'https://legacy.example/v1',
+        apiKey: 'legacy-secret',
+        nested: {
+          baseUrl: 'https://nested.example/v1',
+          appKey: 'legacy-app-key',
+          models: [{ id: 'deepseek-v4-flash' }],
+        },
+      },
+      'llm-openai': {
+        base_url: 'https://openai.example/v1',
+        api_key: 'legacy-openai-secret',
+        apiKeyEnv: 'OPENAI_API_KEY',
+      },
+      unrelated: {
+        baseURL: 'https://preserved.example',
+        apiKey: 'preserved-secret',
+      },
+    }
+
+    expect(removeLegacyModelConfiguration(document)).toBe(true)
+    expect(document['llm-deepseek']).toEqual({
+      nested: { models: [{ id: 'deepseek-v4-flash' }] },
+    })
+    expect(document['llm-openai']).toEqual({})
+    expect(document.unrelated).toEqual({
+      baseURL: 'https://preserved.example',
+      apiKey: 'preserved-secret',
+    })
+    expect(removeLegacyModelConfiguration(document)).toBe(false)
+  })
+
   it('adds the Web surface before third-party bundles and removes the launcher bundle duplicate', () => {
     expect(desktopBundleList([
       '@deepseek-ai/dsh-base',
@@ -236,13 +271,18 @@ describe('desktop profile composition', {
     ])
   })
 
-  it('removes historical direct DoFe MCP bundles from the Desktop profile', () => {
+  it('removes historical DoFe and HarmonyOS bundles and dependency declarations', () => {
     const home = temporaryHome()
     const dir = ensureDesktopProfile(home)
     const path = join(dir, 'package.json')
     const manifest = JSON.parse(readFileSync(path, 'utf8')) as Record<string, unknown>
     writeFileSync(path, JSON.stringify({
       ...manifest,
+      dependencies: {
+        '@dofe/dsh-geo-mcp': '1.0.0',
+        'dsh-hdc-bridge': '0.8.2',
+        'third-party-plugin': '^1.2.3',
+      },
       dsh: {
         profile: {
           bundles: [
@@ -252,19 +292,24 @@ describe('desktop profile composition', {
             '@dofe/dsh-geo-mcp',
             '@dofe/dsh-openmontage-mcp',
             '@dofe/dsh-tools-mcp',
+            'dsh-hdc-bridge',
+            'third-party-plugin',
           ],
         },
       },
     }, undefined, 2) + '\n')
 
-    expect(() => prepareDesktopProfile(undefined, home, 'darwin')).not.toThrow()
+    expect(() => ensureDesktopProfile(home)).not.toThrow()
     const repaired = JSON.parse(readFileSync(path, 'utf8')) as {
+      dependencies: Record<string, string>
       dsh: { profile: { bundles: string[] } }
     }
     expect(repaired.dsh.profile.bundles).toEqual([
       '@deepseek-ai/dsh-base',
       '@deepseek-ai/dsh-web-app',
+      'third-party-plugin',
     ])
+    expect(repaired.dependencies).toEqual({ 'third-party-plugin': '^1.2.3' })
   })
 
   it('marks legacy isolated Profile dependencies for one-time migration', () => {

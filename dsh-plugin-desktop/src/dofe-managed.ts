@@ -9,6 +9,7 @@ import { settingsNamespace } from '@deepseek-ai/dsh-settings'
 import {
   DEFAULT_DOFE_PLUGIN_IDS,
   DOFE_ACCESS_SETTINGS_NAMESPACE,
+  DOFE_ACCESS_VALIDATION_VERSION,
   type DofeAccessSettings,
   type DofePluginId,
 } from './dofe-plugins.ts'
@@ -41,6 +42,7 @@ export async function apply(ctx: Context): Promise<void> {
     settingsNamespace(DOFE_ACCESS_SETTINGS_NAMESPACE),
     z.object({
       setupComplete: z.boolean().default(false),
+      validationVersion: z.number().step(1).min(0).default(0),
       enabledPlugins: z.array(z.string()).default(DEFAULT_DOFE_PLUGIN_IDS),
     }),
     {
@@ -70,7 +72,9 @@ export async function apply(ctx: Context): Promise<void> {
     const old = clients
     clients = []
     await Promise.all(old.map(client => client.dispose()))
-    if (!next || !accessSettings.setupComplete) return
+    if (!next
+      || !accessSettings.setupComplete
+      || accessSettings.validationVersion !== DOFE_ACCESS_VALIDATION_VERSION) return
 
     const created: { dispose(): void | Promise<void> }[] = []
     try {
