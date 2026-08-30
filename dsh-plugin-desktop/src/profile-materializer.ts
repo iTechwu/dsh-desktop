@@ -27,6 +27,8 @@ export interface ProfileMaterializerOptions {
   readonly maxOutputBytes?: number
   /** Permit a one-time Profile migration to reconcile stale lockfile settings. */
   readonly updateLockfile?: boolean
+  /** Confirm durable migration output before treating a non-exiting pnpm process as complete. */
+  readonly completionCheck?: () => boolean
   /** Injectable only for headless tests; production uses node:child_process.spawn. */
   readonly spawn?: ProfileMaterializerSpawn
 }
@@ -209,7 +211,7 @@ export async function materializeProfile(
 
   return await new Promise<ProfileMaterializationResult>((resolve, reject) => {
     const terminate = (cause: Error): void => {
-      if (failure !== undefined) return
+      if (settled || failure !== undefined) return
       failure = cause
       killProcessTree(child)
       terminationTimer = setTimeout(() => { killProcessTree(child, true) }, TERMINATION_GRACE_MS)
@@ -229,6 +231,28 @@ export async function materializeProfile(
     child.once('error', (cause) => { terminate(cause instanceof Error ? cause : new Error(String(cause))) })
     options.signal?.addEventListener('abort', onAbort, { once: true })
     timeoutTimer = setTimeout(() => {
+      try {
+        if (options.completionCheck?.() === true) {
+          settled = true
+          options.signal?.removeEventListener('abort', onAbort)
+          stdout.off('data', acceptStdout)
+          stderr.off('data', acceptStderr)
+          killProcessTree(child)
+          terminationTimer = setTimeout(() => { killProcessTree(child, true) }, TERMINATION_GRACE_MS)
+          terminationTimer.unref()
+          resolve({
+            argv,
+            cwd: options.profileDir,
+            exitCode: null,
+            signal: null,
+            stdout: Buffer.concat(stdoutChunks).toString('utf8'),
+            stderr: Buffer.concat(stderrChunks).toString('utf8'),
+          })
+          return
+        }
+      } catch {
+        // The normal timeout failure below preserves the fail-closed behavior.
+      }
       terminate(new ProfileMaterializationError(`profile materializer timed out after ${String(timeoutMs)}ms`))
     }, timeoutMs)
     timeoutTimer.unref()

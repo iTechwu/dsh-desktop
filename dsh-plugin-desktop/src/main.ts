@@ -91,6 +91,7 @@ import { DesktopStartupGeneration } from './startup-generation.ts'
 import {
   desktopInstallAnchor,
   prepareDesktopProfile,
+  profileDependencyMigrationRequired,
   type SkippedOptionalEntry,
 } from './profile.ts'
 import { clearDesktopProfileCheckpoint, DesktopProfileCheckpoint } from './profile-checkpoint.ts'
@@ -786,6 +787,11 @@ async function start(): Promise<void> {
           profileDir: prepared.profile.dir,
           electronVersion,
           updateLockfile: true,
+          completionCheck: () => !profileDependencyMigrationRequired(
+            prepared.profile.dir,
+            false,
+            process.platform,
+          ),
         })
         prepared = prepareDesktopProfile(
           process.env.DSH_TELEMETRY_DISABLED,

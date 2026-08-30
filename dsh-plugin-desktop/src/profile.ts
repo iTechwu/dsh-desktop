@@ -518,7 +518,7 @@ function compatiblePnpmPackageManager(value: unknown): boolean {
 }
 
 /** Detect pnpm state that cannot satisfy the current hoisted Profile contract. */
-function profileDependencyMigrationRequired(
+export function profileDependencyMigrationRequired(
   profileDir: string,
   workspaceChanged: boolean,
   platform: NodeJS.Platform,

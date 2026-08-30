@@ -153,4 +153,46 @@ describe('profile materializer', () => {
     child.emit('close', null, 'SIGTERM')
     await expect(resultPromise).rejects.toThrow('aborted')
   })
+
+  it('accepts a timed-out migration when its durable completion check passes', async () => {
+    vi.useFakeTimers()
+    try {
+      const child = fakeChild()
+      const spawn = vi.fn(() => child as unknown as ChildProcess) as unknown as ProfileMaterializerSpawn
+      const completionCheck = vi.fn(() => true)
+      const resultPromise = materializeProfile({
+        ...options(spawn),
+        timeoutMs: 25,
+        completionCheck,
+      })
+
+      await vi.advanceTimersByTimeAsync(25)
+
+      await expect(resultPromise).resolves.toMatchObject({ exitCode: null, signal: null })
+      expect(completionCheck).toHaveBeenCalledOnce()
+      expect(child.kill).toHaveBeenCalled()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('rejects a timed-out migration when its completion check fails', async () => {
+    vi.useFakeTimers()
+    try {
+      const child = fakeChild()
+      const spawn = vi.fn(() => child as unknown as ChildProcess) as unknown as ProfileMaterializerSpawn
+      const resultPromise = materializeProfile({
+        ...options(spawn),
+        timeoutMs: 25,
+        completionCheck: () => false,
+      })
+
+      await vi.advanceTimersByTimeAsync(25)
+      child.emit('close', null, 'SIGTERM')
+
+      await expect(resultPromise).rejects.toThrow('timed out after 25ms')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
 })
