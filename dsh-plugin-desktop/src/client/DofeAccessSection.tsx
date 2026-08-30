@@ -12,8 +12,8 @@ import { DOFE_ACCESS_VALIDATE_PATH } from '../dofe-access-route.ts'
 
 const STYLE_ID = 'dsh-dofe-access-styles'
 const CSS = `
-#dsh-dofe-access-gate { position: fixed; inset: 0; z-index: 2147483000; }
-.dshDofeGate { position: fixed; inset: 0; display: grid; place-items: center; padding: 32px; background: rgba(14, 18, 24, .58); backdrop-filter: blur(10px) saturate(.8); }
+#dsh-dofe-access-gate { position: fixed; inset: 0; z-index: 2147483000; pointer-events: none; }
+.dshDofeGate { position: fixed; inset: 0; display: grid; place-items: center; padding: 32px; background: rgba(14, 18, 24, .58); backdrop-filter: blur(10px) saturate(.8); pointer-events: auto; }
 .dshDofeModal { width: min(680px, calc(100vw - 64px)); max-height: calc(100vh - 64px); display: grid; grid-template-rows: auto minmax(0, 1fr); overflow: hidden; color: var(--dsw-alias-label-primary, #172033); background: var(--dsw-alias-bg-layer-1, #fff); border: 1px solid var(--dsw-alias-border-l1, #d9dee8); border-radius: 8px; box-shadow: 0 24px 72px rgba(5, 10, 18, .28), 0 2px 8px rgba(5, 10, 18, .12); }
 .dshDofeModalHeader { display: grid; grid-template-columns: 44px 1fr; gap: 16px; padding: 26px 28px 22px; border-bottom: 1px solid var(--dsw-alias-border-l1, #e2e6ed); }
 .dshDofeModalMark { width: 44px; height: 44px; display: grid; place-items: center; color: #fff; background: var(--dsw-alias-brand-primary, #245eea); border-radius: 8px; }
@@ -96,6 +96,19 @@ export function dofeAccessSettingsStore(settingsScope: SettingsScope<DofeAccessS
   return {
     subscribe: (listener: () => void) => settingsScope.subscribe(listener),
     getSnapshot: () => settingsScope.getSnapshot(),
+  }
+}
+
+/** Block the application root while the mandatory gate is visible and restore it exactly once. */
+export function blockDofeApplicationRoot(): () => void {
+  const root = document.getElementById('root')
+  const previousInert = root?.inert
+  const previousOverflow = document.body.style.overflow
+  if (root !== null) root.inert = true
+  document.body.style.overflow = 'hidden'
+  return () => {
+    if (root !== null) root.inert = previousInert ?? false
+    document.body.style.overflow = previousOverflow
   }
 }
 
@@ -184,9 +197,19 @@ export function DofeAccessGate({ credentials, settingsScope, t }: DofeAccessInje
       setCredentialConfigured(result.ok && result.value[DOFE_ACCESS_KEY]?.configured === true)
     })
   }, [credentials, settings.value?.setupComplete, settings.value?.validationVersion])
-  if (credentialConfigured
+  const authorized = credentialConfigured
     && settings.value?.setupComplete === true
-    && settings.value.validationVersion === DOFE_ACCESS_VALIDATION_VERSION) return null
+    && settings.value.validationVersion === DOFE_ACCESS_VALIDATION_VERSION
+  useEffect(() => {
+    if (authorized) {
+      const root = document.getElementById('root')
+      if (root !== null) root.inert = false
+      document.body.style.overflow = ''
+      return
+    }
+    return blockDofeApplicationRoot()
+  }, [authorized])
+  if (authorized) return null
   return <DofeOnboardingModal eyebrow={t('onboardingEyebrow')} title={t('onboardingTitle')} description={t('onboardingIntro')}><AccessForm credentials={credentials} settingsScope={settingsScope} t={t} onboarding onDone={() => setCredentialConfigured(true)} /></DofeOnboardingModal>
 }
 

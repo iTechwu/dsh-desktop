@@ -2,7 +2,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { dofeAccessSettingsStore, installDofeAccessGate } from '../src/client/DofeAccessSection.tsx'
+import { blockDofeApplicationRoot, dofeAccessSettingsStore, installDofeAccessGate, installDofeAccessStyles } from '../src/client/DofeAccessSection.tsx'
 import { DofeOnboardingModal } from '../src/client/DofeOnboardingModal.tsx'
 
 describe('mandatory DoFe access gate', () => {
@@ -45,6 +45,31 @@ describe('mandatory DoFe access gate', () => {
 
     expect(unmount).toHaveBeenCalledOnce()
     expect(document.getElementById('dsh-dofe-access-gate')).toBeNull()
+  })
+
+  it('lets pointer input pass through the empty gate host after activation', () => {
+    const dispose = installDofeAccessStyles()
+    const css = document.getElementById('dsh-dofe-access-styles')?.textContent ?? ''
+
+    expect(css).toMatch(/#dsh-dofe-access-gate\s*\{[^}]*pointer-events:\s*none/)
+    expect(css).toMatch(/\.dshDofeGate\s*\{[^}]*pointer-events:\s*auto/)
+
+    dispose()
+  })
+
+  it('restores root and document interaction when the mandatory gate is released', () => {
+    document.body.innerHTML = '<div id="root"></div>'
+    const root = document.getElementById('root') as HTMLElement
+    root.inert = false
+    document.body.style.overflow = 'auto'
+
+    const release = blockDofeApplicationRoot()
+    expect(root.inert).toBe(true)
+    expect(document.body.style.overflow).toBe('hidden')
+
+    release()
+    expect(root.inert).toBe(false)
+    expect(document.body.style.overflow).toBe('auto')
   })
 
   it('renders a dedicated non-dismissible activation dialog', () => {

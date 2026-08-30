@@ -13,18 +13,7 @@ export function DofeOnboardingModal({
   children: ReactNode
 }): ReactNode {
   const titleRef = useRef<HTMLHeadingElement>(null)
-  useEffect(() => {
-    const root = document.getElementById('root')
-    const previousInert = root?.inert
-    const previousOverflow = document.body.style.overflow
-    if (root !== null) root.inert = true
-    document.body.style.overflow = 'hidden'
-    titleRef.current?.focus()
-    return () => {
-      if (root !== null && previousInert !== undefined) root.inert = previousInert
-      document.body.style.overflow = previousOverflow
-    }
-  }, [])
+  useEffect(() => { titleRef.current?.focus() }, [])
   return <div className="dshDofeGate">
     <section className="dshDofeModal" role="dialog" aria-modal="true" aria-labelledby="dsh-dofe-modal-title" aria-describedby="dsh-dofe-modal-description">
       <header className="dshDofeModalHeader">
