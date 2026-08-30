@@ -1,6 +1,9 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from 'vitest'
+import { createElement } from 'react'
+import { renderToStaticMarkup } from 'react-dom/server'
 import { dofeAccessSettingsStore, installDofeAccessGate } from '../src/client/DofeAccessSection.tsx'
+import { DofeOnboardingModal } from '../src/client/DofeOnboardingModal.tsx'
 
 describe('mandatory DoFe access gate', () => {
   it('preserves the SettingsScope receiver for subscriptions and snapshots', () => {
@@ -42,5 +45,22 @@ describe('mandatory DoFe access gate', () => {
 
     expect(unmount).toHaveBeenCalledOnce()
     expect(document.getElementById('dsh-dofe-access-gate')).toBeNull()
+  })
+
+  it('renders a dedicated non-dismissible activation dialog', () => {
+    const markup = renderToStaticMarkup(createElement(DofeOnboardingModal, {
+      eyebrow: 'Yootun Agent',
+      title: '激活 Yootun-Agent',
+      description: '验证访问凭据并选择能力。',
+      children: createElement('div', null, '表单'),
+    }))
+
+    expect(markup).toContain('role="dialog"')
+    expect(markup).toContain('aria-modal="true"')
+    expect(markup).toContain('dshDofeModalHeader')
+    expect(markup).toContain('dshDofeModalBody')
+    expect(markup).toContain('Yootun Agent')
+    expect(markup).toContain('激活 Yootun-Agent')
+    expect(markup).not.toContain('aria-label="关闭"')
   })
 })
