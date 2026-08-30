@@ -205,6 +205,15 @@ importers:
         specifier: workspace:*
         version: link:../linux-x64
 
+  deepseek-harness/vendor/schemastery:
+    dependencies:
+      '@deepseek-ai/cosmokit':
+        specifier: workspace:^
+        version: link:../cosmokit
+      '@standard-schema/spec':
+        specifier: ^1.1.0
+        version: 1.1.0
+
   dsh-plugin-desktop:
     dependencies:
       '@deepseek-ai/cordis':
