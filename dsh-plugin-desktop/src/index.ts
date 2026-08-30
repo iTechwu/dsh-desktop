@@ -79,8 +79,10 @@ import {
 } from './window-material.ts'
 import { desktopLocaleFromLanguageTag } from './tray-locale.ts'
 import {
+  DOFE_ACCESS_MODELS_PATH,
   DOFE_ACCESS_VALIDATE_PATH,
   handleDofeAccessValidationRequest,
+  handleDofeModelCatalogRequest,
 } from './dofe-access-route.ts'
 
 /** Stable Cordis plugin name. */
@@ -290,6 +292,14 @@ export function apply(ctx: Context, config: Config): void {
       handler: (req, res) => handleDofeAccessValidationRequest(req, res, rendererOrigin),
     }),
     'dsh-plugin-desktop: model_api_key validation route',
+  )
+  ctx.effect(
+    () => ctx.webServer.register({
+      kind: 'exact',
+      path: DOFE_ACCESS_MODELS_PATH,
+      handler: (req, res) => handleDofeModelCatalogRequest(req, res, rendererOrigin),
+    }),
+    'dsh-plugin-desktop: model catalog route',
   )
   ctx.effect(
     () => ctx.webServer.register({

@@ -1,8 +1,9 @@
 /** Same-origin Host route for validating model_api_key without browser CORS. */
 import type { IncomingMessage, ServerResponse } from 'node:http'
+import { DOFE_MODEL_CATALOG_URL, parseDofeModelCatalog } from './dofe-models.ts'
 
 export const DOFE_ACCESS_VALIDATE_PATH = '/api/desktop/dofe/validate'
-const MODEL_GATEWAY = 'https://ixicai.cn/api/v1/models'
+export const DOFE_ACCESS_MODELS_PATH = '/api/desktop/dofe/models'
 const MAX_BODY_BYTES = 16 * 1024
 
 function finish(res: ServerResponse, status: number, value: object): void {
@@ -54,7 +55,7 @@ export async function handleDofeAccessValidationRequest(
   const key = await readKey(req)
   if (key === undefined) return finish(res, 400, { valid: false })
   try {
-    const response = await fetcher(MODEL_GATEWAY, {
+    const response = await fetcher(DOFE_MODEL_CATALOG_URL, {
       headers: { Authorization: `Bearer ${key}` },
       redirect: 'error',
       signal: AbortSignal.timeout(10_000),
@@ -62,5 +63,29 @@ export async function handleDofeAccessValidationRequest(
     finish(res, 200, { valid: response.ok })
   } catch {
     finish(res, 200, { valid: false })
+  }
+}
+
+/** Same-origin model catalog route used after a key is entered in onboarding. */
+export async function handleDofeModelCatalogRequest(
+  req: IncomingMessage,
+  res: ServerResponse,
+  expectedOrigin: string,
+  fetcher: typeof fetch = globalThis.fetch,
+): Promise<void> {
+  if (req.method !== 'POST') return finish(res, 405, { models: [] })
+  if (!permitted(req, expectedOrigin)) return finish(res, 403, { models: [] })
+  const key = await readKey(req)
+  if (key === undefined) return finish(res, 400, { models: [] })
+  try {
+    const response = await fetcher(DOFE_MODEL_CATALOG_URL, {
+      headers: { Authorization: `Bearer ${key}`, Accept: 'application/json' },
+      redirect: 'error',
+      signal: AbortSignal.timeout(10_000),
+    })
+    if (!response.ok) return finish(res, 200, { models: [] })
+    finish(res, 200, { models: parseDofeModelCatalog(await response.json()) })
+  } catch {
+    finish(res, 200, { models: [] })
   }
 }

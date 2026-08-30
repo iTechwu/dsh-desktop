@@ -1,7 +1,7 @@
 /** Built-in DoFe capabilities shipped inside Yootun-Agent. */
 
 export const DOFE_ACCESS_SETTINGS_NAMESPACE = 'dofe-access' as const
-export const DOFE_ACCESS_VALIDATION_VERSION = 2 as const
+export const DOFE_ACCESS_VALIDATION_VERSION = 3 as const
 
 export const DOFE_PLUGIN_CATALOG = [
   {
@@ -40,6 +40,8 @@ export interface DofeAccessSettings {
   validationVersion: number
   /** Built-in capabilities selected by the user. */
   enabledPlugins: string[]
+  /** Model id selected from the validated DoFe catalog. */
+  modelId: string
 }
 
 export const DEFAULT_DOFE_PLUGIN_IDS: DofePluginId[] = DOFE_PLUGIN_CATALOG.map(plugin => plugin.id)

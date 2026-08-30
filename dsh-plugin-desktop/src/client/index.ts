@@ -100,6 +100,7 @@ export function apply(ctx: ClientContext): void {
   ctx.effect(() => installDofeAccessStyles(), 'dofe: access styles')
   const dofeAccess = () => ({
     credentials: ctx.remote.credentials,
+    settingsApi: ctx.remote.settings,
     settingsScope: ctx.settingsScope.bind<DofeAccessSettings>({ namespace: DOFE_ACCESS_SETTINGS_NAMESPACE }),
     t: dofeT,
   })

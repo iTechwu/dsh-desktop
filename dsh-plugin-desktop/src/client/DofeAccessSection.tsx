@@ -8,7 +8,8 @@ import type { SettingsScope } from '@deepseek-ai/dsh-client-ui-settings/client'
 import { DofeOnboardingModal } from './DofeOnboardingModal.tsx'
 import { DOFE_ACCESS_KEY, type DofeAccessLocaleKey } from './dofe-access.ts'
 import { DOFE_PLUGIN_CATALOG, DOFE_ACCESS_VALIDATION_VERSION, type DofeAccessSettings, type DofePluginId, DEFAULT_DOFE_PLUGIN_IDS } from '../dofe-plugins.ts'
-import { DOFE_ACCESS_VALIDATE_PATH } from '../dofe-access-route.ts'
+import { DOFE_ACCESS_MODELS_PATH, DOFE_ACCESS_VALIDATE_PATH } from '../dofe-access-route.ts'
+import type { DofeModel } from '../dofe-models.ts'
 
 const STYLE_ID = 'dsh-dofe-access-styles'
 const CSS = `
@@ -32,6 +33,8 @@ const CSS = `
 .dshDofeAccessInputWrap { position: relative; }
 .dshDofeAccessInput { display: flex; width: 100%; height: 42px; padding-right: 42px; box-sizing: border-box; }
 .dshDofeAccessInput input { width: 100%; }
+.dshDofeAccessModelSelect { width: 100%; min-height: 42px; padding: 0 12px; color: var(--dsw-alias-label-primary, #172033); background: var(--dsw-alias-bg-layer-1, #fff); border: 1px solid var(--dsw-alias-border-l2, #c7ced9); border-radius: 6px; font: inherit; }
+.dshDofeAccessModelSelect:focus-visible { outline: 2px solid var(--dsw-alias-brand-primary, #245eea); outline-offset: 1px; }
 .dshDofeAccessReveal { position: absolute; top: 50%; right: 6px; width: 32px; height: 32px; display: grid; place-items: center; transform: translateY(-50%); color: var(--dsw-alias-label-secondary, #667085); background: transparent; border: 0; border-radius: 6px; cursor: pointer; }
 .dshDofeAccessReveal:hover { color: var(--dsw-alias-label-primary, #172033); background: var(--dsw-alias-interactive-bg-hover, #edf1f7); }
 .dshDofeAccessReveal:focus-visible { outline: 2px solid var(--dsw-alias-brand-primary, #245eea); outline-offset: 1px; }
@@ -80,8 +83,10 @@ async function validateModelApiKey(key: string): Promise<boolean> {
 }
 
 type Credentials = Pick<ClientRemote['credentials'], 'describe' | 'set' | 'unset'>
+type SettingsApi = Pick<ClientRemote['settings'], 'describe' | 'mutate'>
 export interface DofeAccessInjected {
   credentials: Credentials
+  settingsApi: SettingsApi
   settingsScope: SettingsScope<DofeAccessSettings>
   t: (key: DofeAccessLocaleKey) => string
 }
@@ -112,21 +117,63 @@ export function blockDofeApplicationRoot(): () => void {
   }
 }
 
-function AccessForm({ credentials, settingsScope, t, onboarding, onDone }: DofeAccessInjected & { onboarding?: boolean; onDone?: () => void }): ReactNode {
+function AccessForm({ credentials, settingsApi, settingsScope, t, onboarding, onDone }: DofeAccessInjected & { onboarding?: boolean; onDone?: () => void }): ReactNode {
   const [configured, setConfigured] = useState<boolean | undefined>()
   const [draft, setDraft] = useState('')
   const [revealKey, setRevealKey] = useState(false)
   const settingsStore = useMemo(() => dofeAccessSettingsStore(settingsScope), [settingsScope])
   const settings = useSyncExternalStore(settingsStore.subscribe, settingsStore.getSnapshot, settingsStore.getSnapshot)
   const [enabledPlugins, setEnabledPlugins] = useState<DofePluginId[]>(() => (settings.value?.enabledPlugins ?? DEFAULT_DOFE_PLUGIN_IDS) as DofePluginId[])
+  const [models, setModels] = useState<readonly DofeModel[]>([])
+  const [selectedModel, setSelectedModel] = useState('')
+  const [loadingModels, setLoadingModels] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string>()
   useEffect(() => {
     if (settings.value?.enabledPlugins !== undefined) setEnabledPlugins(settings.value.enabledPlugins as DofePluginId[])
   }, [settings.value?.enabledPlugins])
+  useEffect(() => {
+    if (settings.value?.modelId !== undefined) setSelectedModel(settings.value.modelId)
+  }, [settings.value?.modelId])
   useEffect(() => { void credentials.describe([DOFE_ACCESS_KEY]).then(result => { if (result.ok) setConfigured(result.value[DOFE_ACCESS_KEY]?.configured === true); else setError(t('loadError')) }) }, [credentials, t])
+  const loadModels = async (): Promise<void> => {
+    const key = draft.trim()
+    if (!key) return
+    setLoadingModels(true)
+    setError(undefined)
+    try {
+      const response = await fetch(DOFE_ACCESS_MODELS_PATH, {
+        method: 'POST',
+        credentials: 'same-origin',
+        redirect: 'error',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify({ key }),
+      })
+      const payload = await response.json() as unknown
+      const found = typeof payload === 'object' && payload !== null && Array.isArray((payload as { models?: unknown }).models)
+        ? (payload as { models: DofeModel[] }).models
+        : []
+      if (!response.ok || found.length === 0) {
+        setModels([])
+        setSelectedModel('')
+        setError(t('modelsError'))
+        return
+      }
+      setModels(found)
+      setSelectedModel(current => found.some(model => model.id === current) ? current : found[0]!.id)
+    } catch {
+      setModels([])
+      setSelectedModel('')
+      setError(t('modelsError'))
+    } finally {
+      setLoadingModels(false)
+    }
+  }
   const save = async (): Promise<void> => {
-    if (!draft.trim() || enabledPlugins.length === 0) return
+    if (!draft.trim() || enabledPlugins.length === 0 || !selectedModel || models.length === 0) {
+      if (onboarding && !selectedModel) setError(t('modelRequired'))
+      return
+    }
     setBusy(true)
     setError(undefined)
     if (!(await validateModelApiKey(draft.trim()))) {
@@ -134,14 +181,38 @@ function AccessForm({ credentials, settingsScope, t, onboarding, onDone }: DofeA
       setError(t('invalidKey'))
       return
     }
-    const result = await credentials.set(DOFE_ACCESS_KEY, draft.trim())
-    if (!result.ok) { setBusy(false); setError(t('saveError')); return }
     try {
+      const describe = await settingsApi.describe()
+      if (!describe.ok) throw new Error(describe.error.message)
+      const descriptor = describe.value.namespaces
+      const deepseek = descriptor.find(item => item.ns === 'llm-deepseek')
+      if (deepseek !== undefined) {
+        const modelConfig = models.map(model => ({
+          id: model.id,
+          name: model.name,
+          ...(model.description === undefined ? {} : { description: model.description }),
+          ...(model.contextWindow === undefined ? {} : { contextWindow: model.contextWindow }),
+          inputModalities: model.inputModalities === undefined ? ['text'] : [...model.inputModalities],
+        }))
+        const result = await settingsApi.mutate('llm-deepseek', [{ op: 'set', path: ['models'], value: modelConfig }], deepseek.revision)
+        if (!result.ok) throw new Error(result.error.message)
+      }
+      const result = await credentials.set(DOFE_ACCESS_KEY, draft.trim())
+      if (!result.ok) throw new Error(result.error.message)
       await settingsScope.mutate([
         { op: 'set', path: ['setupComplete'], value: true },
         { op: 'set', path: ['validationVersion'], value: DOFE_ACCESS_VALIDATION_VERSION },
         { op: 'set', path: ['enabledPlugins'], value: enabledPlugins },
+        { op: 'set', path: ['modelId'], value: selectedModel },
       ])
+      const defaultModel = descriptor.find(item => item.ns === 'agent-default-model')
+      if (defaultModel !== undefined) {
+        const result = await settingsApi.mutate('agent-default-model', [
+          { op: 'set', path: ['provider'], value: 'deepseek-official' },
+          { op: 'set', path: ['model'], value: selectedModel },
+        ], defaultModel.revision)
+        if (!result.ok) throw new Error(result.error.message)
+      }
     } catch {
       setBusy(false)
       setError(t('saveError'))
@@ -160,6 +231,7 @@ function AccessForm({ credentials, settingsScope, t, onboarding, onDone }: DofeA
     try { await settingsScope.mutate([
       { op: 'set', path: ['setupComplete'], value: false },
       { op: 'set', path: ['validationVersion'], value: 0 },
+      { op: 'set', path: ['modelId'], value: '' },
     ]) } catch { /* key removal still succeeded */ }
     setBusy(false)
     setConfigured(false)
@@ -169,8 +241,10 @@ function AccessForm({ credentials, settingsScope, t, onboarding, onDone }: DofeA
     {!onboarding && <p className="dshDofeAccessIntro">{t('intro')}</p>}
     <div className="dshDofeAccessField">
       <div className="dshDofeAccessFieldHeader"><label className="dshDofeAccessLabel" htmlFor="dofe-model-api-key">{t('key')}</label>{onboarding && <span className="dshDofeAccessHint"><ShieldCheck size={13} aria-hidden="true" /> {t('credentialHint')}</span>}</div>
-      <div className="dshDofeAccessInputWrap"><Input className="dshDofeAccessInput" id="dofe-model-api-key" type={revealKey ? 'text' : 'password'} autoComplete="off" value={draft} placeholder={onboarding ? t('placeholder') : configured ? t('configured') : t('placeholder')} onChange={event => setDraft(event.currentTarget.value)} onKeyDown={event => { if (event.key === 'Enter') void save() }} /><button type="button" className="dshDofeAccessReveal" title={revealKey ? t('hideKey') : t('showKey')} aria-label={revealKey ? t('hideKey') : t('showKey')} onClick={() => setRevealKey(current => !current)}>{revealKey ? <EyeOff size={17} /> : <Eye size={17} />}</button></div>
+      <div className="dshDofeAccessInputWrap"><Input className="dshDofeAccessInput" id="dofe-model-api-key" type={revealKey ? 'text' : 'password'} autoComplete="off" value={draft} placeholder={onboarding ? t('placeholder') : configured ? t('configured') : t('placeholder')} onChange={event => { setDraft(event.currentTarget.value); setModels([]); setSelectedModel('') }} onKeyDown={event => { if (event.key === 'Enter') void loadModels() }} /><button type="button" className="dshDofeAccessReveal" title={revealKey ? t('hideKey') : t('showKey')} aria-label={revealKey ? t('hideKey') : t('showKey')} onClick={() => setRevealKey(current => !current)}>{revealKey ? <EyeOff size={17} /> : <Eye size={17} />}</button></div>
     </div>
+    <div className="dshDofeAccessActions"><Button disabled={loadingModels || !draft.trim()} onClick={() => void loadModels()}>{loadingModels ? t('loadingModels') : t('loadModels')}</Button></div>
+    <div className="dshDofeAccessField"><div className="dshDofeAccessFieldHeader"><label className="dshDofeAccessLabel" htmlFor="dofe-model-select">{t('modelsTitle')}</label></div><select id="dofe-model-select" className="dshDofeAccessModelSelect" value={selectedModel} disabled={models.length === 0 || loadingModels} onChange={event => setSelectedModel(event.currentTarget.value)}><option value="">{models.length === 0 ? t('modelsPlaceholder') : t('modelsEmpty')}</option>{models.map(model => <option key={model.id} value={model.id}>{model.name} ({model.id})</option>)}</select></div>
     {onboarding && <p className="dshDofeAccessHelp"><Phone size={15} aria-hidden="true" /><span>{t('onboardingHelp')}</span></p>}
     {onboarding && <div className="dshDofeAccessField"><div className="dshDofeAccessFieldHeader"><span className="dshDofeAccessLabel">{t('pluginsTitle')}</span><span className="dshDofeAccessCount">{t('selectedCount').replace('{count}', String(enabledPlugins.length))}</span></div><div className="dshDofeAccessPlugins">{DOFE_PLUGIN_CATALOG.map(plugin => { const selected = enabledPlugins.includes(plugin.id); return <label className={`dshDofeAccessPlugin${selected ? ' dshDofeAccessPluginSelected' : ''}`} key={plugin.id}><input type="checkbox" checked={selected} onChange={event => setEnabledPlugins(current => event.currentTarget.checked ? [...new Set([...current, plugin.id])] : current.filter(id => id !== plugin.id))} /><span className="dshDofeAccessPluginCheck" aria-hidden="true"><Check size={14} strokeWidth={2.5} /></span><span><span className="dshDofeAccessPluginName">{plugin.name}</span><span className="dshDofeAccessPluginDescription">{plugin.description}</span></span></label> })}</div></div>}
     {error !== undefined && <p className="dshDofeAccessError" role="alert">{error}</p>}
@@ -187,8 +261,8 @@ export function installDofeAccessStyles(): () => void {
   return () => { style.remove() }
 }
 
-export function DofeAccessSection(props: DofeAccessSectionProps): ReactNode { if (props.credentials === undefined || props.settingsScope === undefined || props.t === undefined) return null; return <AccessForm credentials={props.credentials} settingsScope={props.settingsScope} t={props.t} /> }
-export function DofeAccessGate({ credentials, settingsScope, t }: DofeAccessInjected): ReactNode {
+export function DofeAccessSection(props: DofeAccessSectionProps): ReactNode { if (props.credentials === undefined || props.settingsApi === undefined || props.settingsScope === undefined || props.t === undefined) return null; return <AccessForm credentials={props.credentials} settingsApi={props.settingsApi} settingsScope={props.settingsScope} t={props.t} /> }
+export function DofeAccessGate({ credentials, settingsApi, settingsScope, t }: DofeAccessInjected): ReactNode {
   const settingsStore = useMemo(() => dofeAccessSettingsStore(settingsScope), [settingsScope])
   const settings = useSyncExternalStore(settingsStore.subscribe, settingsStore.getSnapshot, settingsStore.getSnapshot)
   const [credentialConfigured, setCredentialConfigured] = useState(false)
@@ -210,7 +284,7 @@ export function DofeAccessGate({ credentials, settingsScope, t }: DofeAccessInje
     return blockDofeApplicationRoot()
   }, [authorized])
   if (authorized) return null
-  return <DofeOnboardingModal eyebrow={t('onboardingEyebrow')} title={t('onboardingTitle')} description={t('onboardingIntro')}><AccessForm credentials={credentials} settingsScope={settingsScope} t={t} onboarding onDone={() => setCredentialConfigured(true)} /></DofeOnboardingModal>
+  return <DofeOnboardingModal eyebrow={t('onboardingEyebrow')} title={t('onboardingTitle')} description={t('onboardingIntro')}><AccessForm credentials={credentials} settingsApi={settingsApi} settingsScope={settingsScope} t={t} onboarding onDone={() => setCredentialConfigured(true)} /></DofeOnboardingModal>
 }
 
 /** Mount the mandatory credential gate independently of upstream session onboarding. */

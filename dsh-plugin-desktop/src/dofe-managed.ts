@@ -44,11 +44,15 @@ export async function apply(ctx: Context): Promise<void> {
       setupComplete: z.boolean().default(false),
       validationVersion: z.number().step(1).min(0).default(0),
       enabledPlugins: z.array(z.string()).default(DEFAULT_DOFE_PLUGIN_IDS),
+      modelId: z.string().default(''),
     }),
     {
       validate: value => {
         if (!value.enabledPlugins.every(plugin => DEFAULT_DOFE_PLUGIN_IDS.includes(plugin as DofePluginId))) {
           throw new Error('dofe-managed: enabledPlugins contains an unknown built-in plugin')
+        }
+        if (value.setupComplete && value.validationVersion === DOFE_ACCESS_VALIDATION_VERSION && value.modelId.trim().length === 0) {
+          throw new Error('dofe-managed: an active setup must select a model')
         }
       },
     },
