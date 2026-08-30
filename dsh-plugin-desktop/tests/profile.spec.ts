@@ -357,6 +357,32 @@ virtualStoreDirMaxLength: 120
     expect(prepared.requiresDependencyMigration).toBe(false)
   })
 
+  it('migrates a Profile when its lockfile still contains a removed HarmonyOS dependency', () => {
+    const home = temporaryHome()
+    const dir = ensureDesktopProfile(home)
+    const modulesDir = join(dir, 'node_modules')
+    mkdirSync(modulesDir, { recursive: true })
+    writeFileSync(join(modulesDir, '.modules.yaml'), `layoutVersion: 5
+nodeLinker: hoisted
+packageManager: pnpm@11.7.0
+virtualStoreDirMaxLength: 120
+`)
+    writeFileSync(join(dir, 'pnpm-lock.yaml'), `lockfileVersion: '9.0'
+settings:
+  autoInstallPeers: false
+importers:
+  .:
+    dependencies:
+      dsh-hdc-bridge:
+        specifier: 0.8.2
+        version: 0.8.2
+`)
+
+    const prepared = prepareDesktopProfile(undefined, home, 'darwin')
+
+    expect(prepared.requiresDependencyMigration).toBe(true)
+  })
+
   it('migrates a hoisted Profile dependency tree created by pnpm 9', () => {
     const home = temporaryHome()
     const dir = ensureDesktopProfile(home)

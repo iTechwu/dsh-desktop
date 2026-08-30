@@ -1,7 +1,7 @@
 /** Built-in DoFe capabilities shipped inside Yootun-Agent. */
 
 export const DOFE_ACCESS_SETTINGS_NAMESPACE = 'dofe-access' as const
-export const DOFE_ACCESS_VALIDATION_VERSION = 1 as const
+export const DOFE_ACCESS_VALIDATION_VERSION = 2 as const
 
 export const DOFE_PLUGIN_CATALOG = [
   {

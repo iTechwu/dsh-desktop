@@ -207,8 +207,15 @@ try {
   }
 
   const expectedUrl = `http://127.0.0.1:${String(ctx.webServer.port)}/?dsh-desktop-mode=advanced&dsh-desktop-platform=win32&dsh-desktop-version=2.0.0&dsh-desktop-material=off&dsh-desktop-mica=1`
-  if (mountedSpec?.url !== expectedUrl) {
-    throw new Error(`desktop plugin produced an unexpected renderer URL: ${String(mountedSpec?.url)}`)
+  const authenticatedUrl = new URL(String(mountedSpec?.url))
+  if (authenticatedUrl.origin !== `http://127.0.0.1:${String(ctx.webServer.port)}`
+    || authenticatedUrl.pathname !== '/'
+    || authenticatedUrl.searchParams.size !== 1
+    || !authenticatedUrl.searchParams.has('token')) {
+    throw new Error(`desktop plugin produced an unexpected authentication URL: ${authenticatedUrl.origin}${authenticatedUrl.pathname}`)
+  }
+  if (mountedSpec?.rendererUrl !== expectedUrl) {
+    throw new Error(`desktop plugin produced an unexpected post-auth renderer URL: ${String(mountedSpec?.rendererUrl)}`)
   }
   if (mountedSpec?.mode !== 'advanced') {
     throw new Error(`desktop plugin produced an unexpected shell mode: ${String(mountedSpec?.mode)}`)

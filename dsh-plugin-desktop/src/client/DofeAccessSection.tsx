@@ -1,4 +1,5 @@
 import { useEffect, useState, useSyncExternalStore, type ReactNode } from 'react'
+import { createRoot, type Root } from 'react-dom/client'
 import type { ClientRemote } from '@deepseek-ai/dsh-api-remotes/client'
 import type { InjectFace, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import { Button, Input } from '@deepseek-ai/dsh-client-ui-primitives'
@@ -49,7 +50,8 @@ export interface DofeAccessInjected {
   t: (key: DofeAccessLocaleKey) => string
 }
 export type DofeAccessSectionProps = PropsRuntime<'settings.section'> & InjectFace<DofeAccessInjected>
-export type DofeAccessOnboardingProps = PropsRuntime<'settings.onboarding'> & InjectFace<DofeAccessInjected>
+type DofeAccessRoot = Pick<Root, 'render' | 'unmount'>
+type DofeAccessRootFactory = (container: Element | DocumentFragment) => DofeAccessRoot
 
 declare module '@deepseek-ai/dsh-client-ui-slots' { interface LocaleNamespaceMap { 'dofe.access': DofeAccessLocaleKey } }
 
@@ -124,24 +126,33 @@ export function installDofeAccessStyles(): () => void {
 }
 
 export function DofeAccessSection(props: DofeAccessSectionProps): ReactNode { if (props.credentials === undefined || props.settingsScope === undefined || props.t === undefined) return null; return <AccessForm credentials={props.credentials} settingsScope={props.settingsScope} t={props.t} /> }
-export function DofeAccessOnboarding(props: DofeAccessOnboardingProps): ReactNode {
-  const { credentials, settingsScope, t, complete } = props
-  if (credentials === undefined || settingsScope === undefined || t === undefined) return null
-  return <DofeAccessOnboardingReady credentials={credentials} settingsScope={settingsScope} t={t} complete={complete} />
-}
-
-function DofeAccessOnboardingReady({ credentials, settingsScope, t, complete }: DofeAccessInjected & { complete: () => void }): ReactNode {
+export function DofeAccessGate({ credentials, settingsScope, t }: DofeAccessInjected): ReactNode {
   const settings = useSyncExternalStore(settingsScope.subscribe, settingsScope.getSnapshot, settingsScope.getSnapshot)
-  const [ready, setReady] = useState(false)
+  const [credentialConfigured, setCredentialConfigured] = useState(false)
   useEffect(() => {
     void credentials.describe([DOFE_ACCESS_KEY]).then(result => {
-      if (result.ok
-        && result.value[DOFE_ACCESS_KEY]?.configured === true
-        && settings.value?.setupComplete === true
-        && settings.value.validationVersion === DOFE_ACCESS_VALIDATION_VERSION) complete()
-      else setReady(true)
+      setCredentialConfigured(result.ok && result.value[DOFE_ACCESS_KEY]?.configured === true)
     })
-  }, [complete, credentials, settings.value?.setupComplete, settings.value?.validationVersion])
-  if (!ready) return null
-  return <DofeOnboardingModal title={t('onboardingTitle')}><AccessForm credentials={credentials} settingsScope={settingsScope} t={t} onboarding onDone={complete} /></DofeOnboardingModal>
+  }, [credentials, settings.value?.setupComplete, settings.value?.validationVersion])
+  if (credentialConfigured
+    && settings.value?.setupComplete === true
+    && settings.value.validationVersion === DOFE_ACCESS_VALIDATION_VERSION) return null
+  return <DofeOnboardingModal title={t('onboardingTitle')}><AccessForm credentials={credentials} settingsScope={settingsScope} t={t} onboarding onDone={() => setCredentialConfigured(true)} /></DofeOnboardingModal>
+}
+
+/** Mount the mandatory credential gate independently of upstream session onboarding. */
+export function installDofeAccessGate(
+  props: DofeAccessInjected,
+  rootFactory: DofeAccessRootFactory = container => createRoot(container),
+): () => void {
+  document.getElementById('dsh-dofe-access-gate')?.remove()
+  const host = document.createElement('div')
+  host.id = 'dsh-dofe-access-gate'
+  document.body.appendChild(host)
+  const root = rootFactory(host)
+  root.render(<DofeAccessGate {...props} />)
+  return () => {
+    root.unmount()
+    host.remove()
+  }
 }

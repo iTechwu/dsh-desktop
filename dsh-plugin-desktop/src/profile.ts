@@ -546,10 +546,26 @@ function profileDependencyMigrationRequired(
   let lockfileCompatible = !existsSync(lockfilePath) && !hasDependencies
   if (existsSync(lockfilePath)) {
     try {
-      const settings = parseProfileYaml(lockfilePath).value.settings
+      const lockfile = parseProfileYaml(lockfilePath).value
+      const settings = lockfile.settings
+      const importers = lockfile.importers
+      const rootImporter = typeof importers === 'object' && importers !== null && !Array.isArray(importers)
+        ? (importers as Record<string, unknown>)['.']
+        : undefined
+      const lockedDependencies = typeof rootImporter === 'object' && rootImporter !== null && !Array.isArray(rootImporter)
+        ? (rootImporter as Record<string, unknown>).dependencies
+        : undefined
+      const lockedDependencyNames = typeof lockedDependencies === 'object'
+        && lockedDependencies !== null
+        && !Array.isArray(lockedDependencies)
+        ? Object.keys(lockedDependencies as Record<string, unknown>).sort()
+        : []
+      const manifestDependencyNames = Object.keys(manifest.dependencies ?? {}).sort()
       lockfileCompatible = typeof settings === 'object' && settings !== null
         && !Array.isArray(settings)
         && (settings as Record<string, unknown>).autoInstallPeers === false
+        && lockedDependencyNames.length === manifestDependencyNames.length
+        && lockedDependencyNames.every((name, index) => name === manifestDependencyNames[index])
     } catch {
       // A controlled non-frozen install owns lockfile reconciliation below.
     }
