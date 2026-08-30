@@ -1,4 +1,4 @@
-import { useEffect, useState, useSyncExternalStore, type ReactNode } from 'react'
+import { useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import type { ClientRemote } from '@deepseek-ai/dsh-api-remotes/client'
 import type { InjectFace, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
@@ -55,10 +55,19 @@ type DofeAccessRootFactory = (container: Element | DocumentFragment) => DofeAcce
 
 declare module '@deepseek-ai/dsh-client-ui-slots' { interface LocaleNamespaceMap { 'dofe.access': DofeAccessLocaleKey } }
 
+/** Adapt receiver-dependent SettingsScope methods for React's callback contract. */
+export function dofeAccessSettingsStore(settingsScope: SettingsScope<DofeAccessSettings>) {
+  return {
+    subscribe: (listener: () => void) => settingsScope.subscribe(listener),
+    getSnapshot: () => settingsScope.getSnapshot(),
+  }
+}
+
 function AccessForm({ credentials, settingsScope, t, onboarding, onDone }: DofeAccessInjected & { onboarding?: boolean; onDone?: () => void }): ReactNode {
   const [configured, setConfigured] = useState<boolean | undefined>()
   const [draft, setDraft] = useState('')
-  const settings = useSyncExternalStore(settingsScope.subscribe, settingsScope.getSnapshot, settingsScope.getSnapshot)
+  const settingsStore = useMemo(() => dofeAccessSettingsStore(settingsScope), [settingsScope])
+  const settings = useSyncExternalStore(settingsStore.subscribe, settingsStore.getSnapshot, settingsStore.getSnapshot)
   const [enabledPlugins, setEnabledPlugins] = useState<DofePluginId[]>(() => (settings.value?.enabledPlugins ?? DEFAULT_DOFE_PLUGIN_IDS) as DofePluginId[])
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string>()
@@ -127,7 +136,8 @@ export function installDofeAccessStyles(): () => void {
 
 export function DofeAccessSection(props: DofeAccessSectionProps): ReactNode { if (props.credentials === undefined || props.settingsScope === undefined || props.t === undefined) return null; return <AccessForm credentials={props.credentials} settingsScope={props.settingsScope} t={props.t} /> }
 export function DofeAccessGate({ credentials, settingsScope, t }: DofeAccessInjected): ReactNode {
-  const settings = useSyncExternalStore(settingsScope.subscribe, settingsScope.getSnapshot, settingsScope.getSnapshot)
+  const settingsStore = useMemo(() => dofeAccessSettingsStore(settingsScope), [settingsScope])
+  const settings = useSyncExternalStore(settingsStore.subscribe, settingsStore.getSnapshot, settingsStore.getSnapshot)
   const [credentialConfigured, setCredentialConfigured] = useState(false)
   useEffect(() => {
     void credentials.describe([DOFE_ACCESS_KEY]).then(result => {
