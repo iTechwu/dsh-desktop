@@ -78,7 +78,7 @@ function isApplied(patchText, packageDir) {
 
 /** 干跑检查补丁能否干净应用(pristine 产物上)。 */
 function checkPatch(patchText, packageDir) {
-  const result = spawnSync('patch', ['-p1', '-s', '-f', '-F0', '-V', 'none', '-r', '/dev/null', '--dry-run', '-d', packageDir], {
+  const result = spawnSync('patch', ['-p1', '-s', '-f', '-F3', '-V', 'none', '-r', '/dev/null', '--dry-run', '-d', packageDir], {
     input: patchText,
     stdio: ['pipe', 'pipe', 'pipe'],
   })
@@ -87,7 +87,7 @@ function checkPatch(patchText, packageDir) {
 
 /** Apply one patch without allowing BSD patch to prompt or leave reject artifacts. */
 function applyPatch(patchText, packageDir) {
-  const result = spawnSync('patch', ['-p1', '-s', '-f', '-F0', '-V', 'none', '-r', '/dev/null', '-d', packageDir], {
+  const result = spawnSync('patch', ['-p1', '-s', '-f', '-F3', '-V', 'none', '-r', '/dev/null', '-d', packageDir], {
     input: patchText,
     stdio: ['pipe', 'pipe', 'pipe'],
   })
