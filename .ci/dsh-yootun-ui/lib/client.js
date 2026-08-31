@@ -140,7 +140,11 @@ window.__ModuleLoader__.load({
             { op: 'set', path: ['enabledPlugins'], value: enabled },
             { op: 'set', path: ['modelId'], value: modelId },
           ])
-          const defaultModel = namespaces.find(item => item.ns === 'agent-default-model')
+          // Settings namespaces share one document revision. Refresh it after the
+          // model catalog and DoFe scope writes before updating the default model.
+          const refreshed = await settingsApi.describe()
+          if (!refreshed.ok) throw new Error('settings refresh rejected')
+          const defaultModel = refreshed.value.namespaces.find(item => item.ns === 'agent-default-model')
           if (defaultModel) {
             const result = await settingsApi.mutate('agent-default-model', [
               { op: 'set', path: ['provider'], value: 'deepseek-official' },

@@ -38,6 +38,8 @@ test('bundles Yootun branding, settings, and a mandatory credential gate', async
   assert.match(source, /const \[configured, setConfigured\] = useState\(false\)/u)
   assert.match(source, /\.catch\(\(\) => \{ if \(active\) setConfigured\(false\) \}\)/u)
   assert.doesNotMatch(source, /configured === undefined/u)
+  assert.match(source, /const refreshed = await settingsApi\.describe\(\)/u)
+  assert.match(source, /refreshed\.value\.namespaces\.find\(item => item\.ns === 'agent-default-model'\)/u)
 })
 
 test('loads the generated module and registers every owned surface', async () => {
