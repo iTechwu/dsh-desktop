@@ -98,17 +98,35 @@ describe('packaged desktop runtime verification', () => {
     },
   )
 
-  it('runs the static package gate before the diagnostic Worker smoke', async () => {
+  it('hydrates native packages before static and platform-specific smokes', async () => {
     const runtimeContext = context('/build', 'win32')
+    const unpackedRoot = resolvePackagedUnpackedRoot(runtimeContext)
     const calls: string[] = []
+    const runAfterPack = afterPack as unknown as (
+      context: PackagedRuntimeContext,
+      hydrate: (context: PackagedRuntimeContext) => void,
+      verify: (context: PackagedRuntimeContext) => void,
+      smoke: (unpackedRoot: string) => Promise<void>,
+      smokeKoffi: (unpackedRoot: string) => void,
+      smokeSharp: (unpackedRoot: string) => void,
+    ) => Promise<void>
 
-    await afterPack(
+    await runAfterPack(
       runtimeContext,
+      () => { calls.push('hydrate') },
       () => { calls.push('static') },
-      async (unpackedRoot) => { calls.push(unpackedRoot) },
+      async root => { calls.push(`diagnostic:${root}`) },
+      root => { calls.push(`koffi:${root}`) },
+      root => { calls.push(`sharp:${root}`) },
     )
 
-    expect(calls).toEqual(['static', resolvePackagedUnpackedRoot(runtimeContext)])
+    expect(calls).toEqual([
+      'hydrate',
+      'static',
+      `koffi:${unpackedRoot}`,
+      `sharp:${unpackedRoot}`,
+      `diagnostic:${unpackedRoot}`,
+    ])
   })
 
   it('tracks the ConPTY-only native surface shipped by node-pty 1.2', () => {
