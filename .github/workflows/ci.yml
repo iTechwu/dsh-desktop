@@ -75,16 +75,9 @@ jobs:
       - name: Fetch sibling DeepSeek Harness checkout
         if: needs.changes.outputs.product == 'true'
         shell: bash
-        env:
-          SSH_KEY: ${{ secrets.SSH_KEY }}
         run: |
           set -euo pipefail
-          mkdir -p ~/.ssh
-          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ed25519
-          chmod 600 ~/.ssh/id_ed25519
-          ssh-keyscan -H github.com >> ~/.ssh/known_hosts
-          eval "$(ssh-agent -s)" && ssh-add ~/.ssh/id_ed25519
-          git clone --depth 1 --branch dev git@github.com:iTechwu/deepseek-harness.git "$GITHUB_WORKSPACE/../deepseek-harness"
+          git clone --depth 1 --branch dev https://github.com/iTechwu/deepseek-harness.git "$GITHUB_WORKSPACE/../deepseek-harness"
           node scripts/upstream-workspace-link.mjs
       - name: Resolve pnpm store path
         if: needs.changes.outputs.product == 'true'
@@ -121,16 +114,9 @@ jobs:
       - run: corepack enable
       - name: Fetch sibling DeepSeek Harness checkout
         shell: bash
-        env:
-          SSH_KEY: ${{ secrets.SSH_KEY }}
         run: |
           set -euo pipefail
-          mkdir -p ~/.ssh
-          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ed25519
-          chmod 600 ~/.ssh/id_ed25519
-          ssh-keyscan -H github.com >> ~/.ssh/known_hosts
-          eval "$(ssh-agent -s)" && ssh-add ~/.ssh/id_ed25519
-          git clone --depth 1 --branch dev git@github.com:iTechwu/deepseek-harness.git "$GITHUB_WORKSPACE/../deepseek-harness"
+          git clone --depth 1 --branch dev https://github.com/iTechwu/deepseek-harness.git "$GITHUB_WORKSPACE/../deepseek-harness"
           node scripts/upstream-workspace-link.mjs
       - name: Resolve pnpm store path
         id: pnpm-store
@@ -180,16 +166,9 @@ jobs:
       - run: corepack enable
       - name: Fetch sibling DeepSeek Harness checkout
         shell: bash
-        env:
-          SSH_KEY: ${{ secrets.SSH_KEY }}
         run: |
           set -euo pipefail
-          mkdir -p ~/.ssh
-          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ed25519
-          chmod 600 ~/.ssh/id_ed25519
-          ssh-keyscan -H github.com >> ~/.ssh/known_hosts
-          eval "$(ssh-agent -s)" && ssh-add ~/.ssh/id_ed25519
-          git clone --depth 1 --branch dev git@github.com:iTechwu/deepseek-harness.git "$GITHUB_WORKSPACE/../deepseek-harness"
+          git clone --depth 1 --branch dev https://github.com/iTechwu/deepseek-harness.git "$GITHUB_WORKSPACE/../deepseek-harness"
           node scripts/upstream-workspace-link.mjs
       - name: Resolve pnpm store path
         id: pnpm-store
@@ -231,16 +210,9 @@ jobs:
       - run: corepack enable
       - name: Fetch sibling DeepSeek Harness checkout
         shell: bash
-        env:
-          SSH_KEY: ${{ secrets.SSH_KEY }}
         run: |
           set -euo pipefail
-          mkdir -p ~/.ssh
-          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ed25519
-          chmod 600 ~/.ssh/id_ed25519
-          ssh-keyscan -H github.com >> ~/.ssh/known_hosts
-          eval "$(ssh-agent -s)" && ssh-add ~/.ssh/id_ed25519
-          git clone --depth 1 --branch dev git@github.com:iTechwu/deepseek-harness.git "$GITHUB_WORKSPACE/../deepseek-harness"
+          git clone --depth 1 --branch dev https://github.com/iTechwu/deepseek-harness.git "$GITHUB_WORKSPACE/../deepseek-harness"
           node scripts/upstream-workspace-link.mjs
       - name: Probe the materialized workspace link
         shell: bash
