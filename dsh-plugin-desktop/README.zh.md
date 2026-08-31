@@ -61,7 +61,7 @@ Cordis row 会在 profile 激活期间登记原生窗口参数。Launcher 只在
 
 本次 alpha runtime 迁移不再携带 Desktop 自有的工作区文件夹拖放行为或聊天附件拖放隔离补丁。在按 alpha Client UI 重新评估这些交互前，请使用普通工作区选择流程。
 
-在所有呈现模式下，Windows PowerShell 都会保留上游 `pwsh-sandbox` 行为与 Windows ACL confinement。Launcher generation 只会把该 Host provider 替换为同一 package 中的 `dsh-plugin-desktop/windows-pwsh-sandbox` 子路径。对于与上游 ACL runner 完全匹配的 argv，adapter 会让打包后的 Electron executable 通过私有 trampoline 以 Node 模式启动，在创建受限 PowerShell 进程前移除 Node-mode 环境变量，然后把全部 policy 与失败处理重新委托给上游 runner。Desktop deploy root 还会固定一个 pnpm patch，在两条原生受限进程路径上把 `STARTF_USESHOWWINDOW`、现有的 `STARTF_USESTDHANDLES` 与 `SW_HIDE` 组合起来。这会保留已捕获的 stdio 而不抑制 console 分配，并在 Windows 为 GUI Host 启动的 PowerShell 进程创建首个 console 窗口时，请求使用隐藏的初始显示状态。它不会使用与上游实现不兼容的 `CREATE_NO_WINDOW` 或 `CREATE_NEW_CONSOLE` flag。直接使用 `danger-full-access` 的 PowerShell、macOS 与 Linux 执行路径保持不变；Windows confinement 失败时不会自动回退到不受限执行。
+在所有呈现模式下，Windows PowerShell 都会保留上游 `pwsh-sandbox` 行为与 Windows ACL confinement。Launcher generation 只会把该 Host provider 替换为同一 package 中的 `dsh-plugin-desktop/windows-pwsh-sandbox` 子路径。对于与上游 ACL runner 完全匹配的 argv，adapter 会让打包后的 Electron executable 通过私有 trampoline 以 Node 模式启动，在创建受限 PowerShell 进程前移除 Node-mode 环境变量，然后把全部 policy 与失败处理重新委托给上游 runner。兄弟 fork 已原生应用该行为：其 `win32-process` 包在两条原生受限进程路径上把 `STARTF_USESHOWWINDOW` 与既有 `STARTF_USESTDHANDLES` 组合，并置 `wShowWindow: 0`（`SW_HIDE`）。这会保留已捕获的 stdio 而不抑制 console 分配，并在 Windows 为 GUI Host 启动的 PowerShell 进程创建首个 console 窗口时，请求使用隐藏的初始显示状态。它不会使用与上游实现不兼容的 `CREATE_NO_WINDOW` 或 `CREATE_NEW_CONSOLE` flag。直接使用 `danger-full-access` 的 PowerShell、macOS 与 Linux 执行路径保持不变；Windows confinement 失败时不会自动回退到不受限执行。
 
 ## 扩展窗口模式
 
@@ -91,7 +91,7 @@ desktop sidebar surface 会把上游 sidebar-fill token 局部设为透明，因
 
 ## 开发
 
-该包由仓库根目录的 pnpm workspace 管理。相邻的 `deepseek-harness/` checkout 仍是独立的上游 pnpm 项目，通过根目录 pnpm workspace 直接纳入。请从仓库根目录安装并验证 DSH Desktop：
+该包由仓库根目录的 pnpm workspace 管理。相邻的 `deepseek-harness/` checkout——用户自己的 fork，`dev` 分支——通过 symlink 链接进根 pnpm workspace，fork 提交在 `upstream:build` 后直接生效。请从仓库根目录安装并验证 DSH Desktop：
 
 ```sh
 pnpm install

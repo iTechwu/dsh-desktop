@@ -12,7 +12,7 @@ This repository owns the desktop product around an unmodified DeepSeek Harness c
 ## Prerequisites and setup
 
 - Use Node.js `^22.19.0` or `>=24.0.0` and the root pnpm `11.7.0` release through Corepack.
-- The DeepSeek Harness source is a sibling checkout at `../deepseek-harness`, exposed in this repository through the `deepseek-harness` symlink. Ensure that checkout exists and is at the commit recorded in `upstream.json` before running operations.
+- The DeepSeek Harness source is the user's fork at `../deepseek-harness` (branch `dev`), exposed in this repository through the `deepseek-harness` symlink. Ensure that checkout exists and its root version matches `sourceVersion` in `upstream.json` before running operations.
 - Install the combined root/sibling workspace with `corepack pnpm install --frozen-lockfile`.
 
 ## Build, run, and verify
@@ -22,9 +22,9 @@ This repository owns the desktop product around an unmodified DeepSeek Harness c
 - Run unit tests with `corepack pnpm test`.
 - Run type checking with `corepack pnpm typecheck`.
 - Run the complete headless gate with `corepack pnpm check`.
-- Run upstream operations through the root scripts, such as `corepack pnpm upstream:build`. That build also applies the desktop-owned behavior patches in `patches/` to the sibling checkout's built `lib/` output (see `scripts/apply-upstream-patches.mjs`); upstream-behavior tests in `dsh-plugin-desktop/tests` depend on those patches being applied.
+- Run upstream operations through the root scripts, such as `corepack pnpm upstream:build`. Desktop-owned behaviors are native fork commits on the sibling `dev` branch; `dsh-plugin-desktop/tests` assert those behaviors directly against the fork's sources and built `lib/` output. There is no patch application step.
 
-- `../deepseek-harness/` is the DeepSeek Harness source (a sibling checkout, not vendored). Never edit files inside it from a desktop feature branch.
+- `../deepseek-harness/` is the user's own DeepSeek Harness fork (a sibling checkout, not vendored). Local-use behaviors land as ordinary fork commits on `dev`; the desktop repository never edits the fork from a desktop feature branch.
 - `dsh-plugin-desktop/` owns the Cordis Host and Client faces, Electron bootstrap, packaging, and release tests.
 - `dsh-community-fabric/` owns the community interoperability RFC. Until schemas and a reviewed reference adapter exist, it remains a private documentation scaffold and must not declare loadable DSH or package entry points.
 - `dsh-community-market/` owns the community-market shell. Until its runtime is implemented, it remains a private documentation scaffold and must not declare loadable DSH or package entry points.
@@ -32,5 +32,5 @@ This repository owns the desktop product around an unmodified DeepSeek Harness c
 - The upstream sibling checkout keeps its own pnpm workspace. Run upstream commands through the root `upstream:*` scripts, whose pnpm portable-shell commands `cd ../deepseek-harness` before invoking Corepack.
 - Compatibility mode must run the upstream default client without overrides. Advanced presentation belongs to desktop-owned client plugins and may replace documented slots or services through profile composition.
 - Keep graphical application launch explicit. Builds, typechecks, unit tests, and Loader smokes must remain headless-safe.
-- Commit before major changes of direction and keep the upstream commit update separate from desktop behavior changes.
-- Keep the repository topology and direct sibling workspace boundary consistent with the [owning Agent Note](.agents/notes/implemented/process/2026-08-15-pinned-upstream-and-isolated-pnpm-workspace.md).
+- Commit before major changes of direction; keep a fork `sourceVersion` bump separate from desktop behavior changes.
+- Keep the repository topology and direct sibling workspace boundary consistent with the [owning Agent Note](.agents/notes/implemented/process/2026-08-31-sibling-fork-direct-workspace.md).
