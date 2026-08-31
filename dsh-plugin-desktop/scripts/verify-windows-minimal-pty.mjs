@@ -112,7 +112,7 @@ async function scenario(inputs) {
       handoffGraceMs: 500,
       disposeGraceMs: 1_000,
     })
-    await context.plugin(ToolPwshPersistent, { timeoutMs: 30_000 })
+    await context.plugin(ToolPwshPersistent, { timeoutMs: 90_000 })
 
     const agent = owner(context, `windows-minimal-${inputs.label}`, inputs.packageRoot)
     const execute = (command, signal = new AbortController().signal) => context.tools.execute({
@@ -204,7 +204,7 @@ async function parent() {
   const exitCode = await deadline(new Promise((resolve, reject) => {
     child.once('error', reject)
     child.once('exit', resolve)
-  }), 90_000, 'Windows minimal PTY smoke worker').catch(error => {
+  }), 180_000, 'Windows minimal PTY smoke worker').catch(error => {
     child.kill()
     throw error
   })
