@@ -1,5 +1,6 @@
 const React = require('react')
-const { createElement: h, useEffect, useMemo, useState } = React
+const { createElement: h, useEffect, useMemo, useState, useSyncExternalStore } = React
+const { createRoot } = require('react-dom/client')
 
 const NS = 'dofe.yootun-ui'
 const ACCESS_NS = 'dofe-access'
@@ -219,6 +220,19 @@ function AccessSettings({ credentials, settingsApi, useAccess, t }) {
   return h('section', { className: 'yu-settings' }, h('h2', null, t('nav')), h('p', { className: 'yu-status' }, t('intro')), h(AccessForm, { credentials, settingsApi, useAccess, initialConfigured: configured, onboarding: false, t }))
 }
 
+function installMandatoryGate(props) {
+  document.getElementById('yu-mandatory-gate')?.remove()
+  const host = document.createElement('div')
+  host.id = 'yu-mandatory-gate'
+  document.body.appendChild(host)
+  const root = createRoot(host)
+  root.render(h(AccessOnboarding, { ...props, complete() {} }))
+  return () => {
+    root.unmount()
+    host.remove()
+  }
+}
+
 const inject = ['slots', 'locale', 'remote', 'settingsScope', 'remote.credentials', 'remote.settings']
 
 function apply(ctx) {
@@ -232,21 +246,27 @@ function apply(ctx) {
   }, 'dofe-yootun-ui: styles')
   const t = ctx.locale.bind(NS)
   const access = ctx.settingsScope.bind({ namespace: ACCESS_NS })
+  const useAccess = selector => selector(useSyncExternalStore(
+    access.subscribe.bind(access), access.getSnapshot.bind(access), access.getSnapshot.bind(access),
+  ))
   const injected = () => ({
     credentials: ctx.remote.credentials,
     settingsApi: ctx.remote.settings,
     hooks: { access },
     t,
   })
+  ctx.effect(() => installMandatoryGate({
+    credentials: ctx.remote.credentials,
+    settingsApi: ctx.remote.settings,
+    useAccess,
+    t,
+  }), 'dofe-yootun-ui: mandatory model_api_key gate')
   ctx.slots.inject('sidebar.brand.mark', () => ctx.slots.register({ name: 'sidebar.brand.mark' }, YootunBrandMark))
   ctx.slots.inject('sidebar.brand.name', () => ctx.slots.register({ name: 'sidebar.brand.name' }, YootunBrandName))
   ctx.slots.inject('conversation.hero.brand.mark', () => ctx.slots.register({ name: 'conversation.hero.brand.mark' }, YootunHeroMark))
   ctx.slots.inject('settings.section', () => ctx.slots.register({
     name: 'settings.section', id: 'dofe-access', order: 20, label: () => t('nav'), locale: NS, inject: injected,
   }, AccessSettings))
-  ctx.slots.inject('settings.onboarding', () => ctx.slots.register({
-    name: 'settings.onboarding', id: 'dofe-access', order: -50, locale: NS, inject: injected,
-  }, AccessOnboarding))
 }
 
 exports.apply = apply

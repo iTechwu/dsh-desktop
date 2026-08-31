@@ -8,7 +8,7 @@ const output = [
   '  factory: (require) => {',
   '    var module = { exports: {} };',
   '    var exports = module.exports;',
-  source.split('\n').map(line => `    ${line}`).join('\n'),
+  source.split('\n').map(line => line === '' ? '' : `    ${line}`).join('\n'),
   '    return module.exports;',
   '  },',
   '});',

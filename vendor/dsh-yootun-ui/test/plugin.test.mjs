@@ -23,14 +23,15 @@ test('ships all DoFe capabilities enabled by default', async () => {
   assert.match(source, /const DEFAULT_PLUGIN_IDS = PLUGINS\.map/u)
 })
 
-test('bundles Yootun branding, settings, and mandatory onboarding', async () => {
+test('bundles Yootun branding, settings, and a mandatory credential gate', async () => {
   const bundle = await readFile(new URL('lib/client.js', root), 'utf8')
 
   assert.match(bundle, /window\.__ModuleLoader__\.load/u)
   assert.match(bundle, /sidebar\.brand\.mark/u)
   assert.match(bundle, /conversation\.hero\.brand\.mark/u)
   assert.match(bundle, /settings\.section/u)
-  assert.match(bundle, /settings\.onboarding/u)
+  assert.match(bundle, /yu-mandatory-gate/u)
+  assert.match(bundle, /mandatory model_api_key gate/u)
   assert.match(bundle, /MODELS_API_KEY/u)
   assert.doesNotMatch(bundle, /Set up later|稍后设置/u)
 })
@@ -39,17 +40,21 @@ test('loads the generated module and registers every owned surface', async () =>
   const bundle = await readFile(new URL('lib/client.js', root), 'utf8')
   let plugin
   const registrations = []
+  let renderedGate = false
   const document = {
     createElement: () => ({ dataset: {}, remove() {}, textContent: '' }),
+    getElementById: () => null,
+    body: { appendChild() {} },
     head: { appendChild() {} },
   }
   const window = {
     __ModuleLoader__: {
       load({ factory }) {
         plugin = factory(specifier => {
+          if (specifier === 'react-dom/client') return { createRoot: () => ({ render() { renderedGate = true }, unmount() {} }) }
           assert.equal(specifier, 'react')
           return {
-            createElement() {}, useEffect() {}, useMemo() {}, useState() {},
+            createElement() {}, useEffect() {}, useMemo() {}, useState() {}, useSyncExternalStore() {},
           }
         })
       },
@@ -62,7 +67,7 @@ test('loads the generated module and registers every owned surface', async () =>
     effect(factory) { factory() },
     locale: { bind: () => key => key, register: () => () => {} },
     remote: { credentials: {}, settings: {} },
-    settingsScope: { bind: () => ({}) },
+    settingsScope: { bind: () => ({ subscribe() {}, getSnapshot() {} }) },
     slots: {
       inject(_name, factory) { factory() },
       register(options) { registrations.push(options.name); return () => {} },
@@ -70,6 +75,7 @@ test('loads the generated module and registers every owned surface', async () =>
   })
   assert.deepEqual(registrations, [
     'sidebar.brand.mark', 'sidebar.brand.name', 'conversation.hero.brand.mark',
-    'settings.section', 'settings.onboarding',
+    'settings.section',
   ])
+  assert.equal(renderedGate, true)
 })
