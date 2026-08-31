@@ -13,7 +13,7 @@
     "tests/client-dofe-access-gate.spec.ts",
     "tests/client-desktop-settings.spec.ts",
     "tests/client-environment.spec.ts",
-    "tests/client-workspace-folder-drop.spec.ts",
+    "tests/client-layout-service.spec.ts",
     "tests/theme-presenter.spec.ts"
   ]
 }

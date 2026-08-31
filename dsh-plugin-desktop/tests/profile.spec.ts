@@ -12,10 +12,7 @@ import {
   ensureDesktopProfile,
   prepareDesktopProfile,
   readDesktopShellMode,
-  removeLegacyModelConfiguration,
   shippedPresetRoot,
-  restoreLegacyVisionModelInput,
-  restoreDesktopDefaultModel,
   validateDshMarketBundlePatches,
 } from '../src/profile.ts'
 import { DESKTOP_MARKET_IDENTITIES } from '../src/desktop-market.ts'
@@ -34,9 +31,9 @@ function installWebClient(
   manifest: Record<string, unknown> = {},
 ): string {
   const webDir = join(home, 'profiles', 'web')
-  const bundles = PROFILE_TEMPLATES.web
-  if (bundles === undefined) throw new Error('test requires the shipped Web template')
-  initProfile(webDir, bundles.bundles, bundles.patchReload)
+  const template = PROFILE_TEMPLATES.web
+  if (template === undefined) throw new Error('test requires the shipped Web template')
+  initProfile(webDir, template.bundles, template.patchReload)
   const packageDir = join(webDir, 'node_modules', ...packageName.split('/'))
   mkdirSync(packageDir, { recursive: true })
   writeFileSync(join(packageDir, 'package.json'), JSON.stringify({
@@ -82,7 +79,13 @@ describe('desktop profile composition', {
   it('reads packaged Cordis skills from the physical unpacked preset root', () => {
     const home = temporaryHome()
     const resources = join(home, 'resources')
-    const archivedPresets = join(resources, 'app.asar', 'node_modules', '@deepseek-ai', 'dsh-agent-presets')
+    const archivedPresets = join(
+      resources,
+      'app.asar',
+      'node_modules',
+      '@deepseek-ai',
+      'dsh-agent-presets',
+    )
     const physicalPresetRoot = join(
       resources,
       'app.asar.unpacked',
@@ -118,88 +121,6 @@ describe('desktop profile composition', {
       'cordis-plugin-development',
       'SKILL.md',
     ), 'utf8')).toBe('# Cordis plugin development\n')
-  })
-
-  it('restores image input for the built-in Vision model in legacy settings', () => {
-    const document = {
-      'llm-deepseek': {
-        models: [
-          { id: 'deepseek-v4-flash-vision-exp', inputModalities: ['text'] },
-          { id: 'deepseek-v4-flash', inputModalities: ['text'] },
-        ],
-      },
-    }
-
-    expect(restoreLegacyVisionModelInput(document)).toBe(true)
-    expect(document['llm-deepseek'].models[0]?.inputModalities).toEqual(['text', 'image'])
-    expect(document['llm-deepseek'].models[1]?.inputModalities).toEqual(['text'])
-    expect(restoreLegacyVisionModelInput(document)).toBe(false)
-  })
-
-  it('persists the Vision model migration before profile boot', () => {
-    const home = temporaryHome()
-    writeFileSync(join(home, 'settings.yaml'), [
-      'llm-deepseek:',
-      '  models:',
-      '    - id: deepseek-v4-flash-vision-exp',
-      '      inputModalities: [text]',
-      '',
-    ].join('\n'))
-
-    prepareDesktopProfile(undefined, home, 'darwin')
-
-    expect(readFileSync(join(home, 'settings.yaml'), 'utf8')).toContain('inputModalities:')
-    expect(readFileSync(join(home, 'settings.yaml'), 'utf8')).toContain('- image')
-  })
-
-  it('migrates a stale persisted default model to the managed gateway model', () => {
-    const document = {
-      'agent-default-model': {
-        provider: 'deepseek-official',
-        model: 'deepseek-v4-flash-vision-exp',
-      },
-    }
-
-    expect(restoreDesktopDefaultModel(document)).toBe(true)
-    expect(document['agent-default-model']).toEqual({
-      provider: 'deepseek-official',
-      model: 'deepseek-v4-flash',
-    })
-    expect(restoreDesktopDefaultModel(document)).toBe(false)
-  })
-
-  it('removes every historical model endpoint and key while preserving model definitions', () => {
-    const document = {
-      'llm-deepseek': {
-        baseURL: 'https://legacy.example/v1',
-        apiKey: 'legacy-secret',
-        nested: {
-          baseUrl: 'https://nested.example/v1',
-          appKey: 'legacy-app-key',
-          models: [{ id: 'deepseek-v4-flash' }],
-        },
-      },
-      'llm-openai': {
-        base_url: 'https://openai.example/v1',
-        api_key: 'legacy-openai-secret',
-        apiKeyEnv: 'OPENAI_API_KEY',
-      },
-      unrelated: {
-        baseURL: 'https://preserved.example',
-        apiKey: 'preserved-secret',
-      },
-    }
-
-    expect(removeLegacyModelConfiguration(document)).toBe(true)
-    expect(document['llm-deepseek']).toEqual({
-      nested: { models: [{ id: 'deepseek-v4-flash' }] },
-    })
-    expect(document['llm-openai']).toEqual({})
-    expect(document.unrelated).toEqual({
-      baseURL: 'https://preserved.example',
-      apiKey: 'preserved-secret',
-    })
-    expect(removeLegacyModelConfiguration(document)).toBe(false)
   })
 
   it('adds the Web surface before third-party bundles and removes the launcher bundle duplicate', () => {
@@ -271,47 +192,6 @@ describe('desktop profile composition', {
     ])
   })
 
-  it('removes historical DoFe and HarmonyOS bundles and dependency declarations', () => {
-    const home = temporaryHome()
-    const dir = ensureDesktopProfile(home)
-    const path = join(dir, 'package.json')
-    const manifest = JSON.parse(readFileSync(path, 'utf8')) as Record<string, unknown>
-    writeFileSync(path, JSON.stringify({
-      ...manifest,
-      dependencies: {
-        '@dofe/dsh-geo-mcp': '1.0.0',
-        'dsh-hdc-bridge': '0.8.2',
-        'third-party-plugin': '^1.2.3',
-      },
-      dsh: {
-        profile: {
-          bundles: [
-            '@deepseek-ai/dsh-base',
-            '@deepseek-ai/dsh-web-app',
-            '@linxin666/dsh-web-ui-all',
-            '@dofe/dsh-geo-mcp',
-            '@dofe/dsh-openmontage-mcp',
-            '@dofe/dsh-tools-mcp',
-            'dsh-hdc-bridge',
-            'third-party-plugin',
-          ],
-        },
-      },
-    }, undefined, 2) + '\n')
-
-    expect(() => ensureDesktopProfile(home)).not.toThrow()
-    const repaired = JSON.parse(readFileSync(path, 'utf8')) as {
-      dependencies: Record<string, string>
-      dsh: { profile: { bundles: string[] } }
-    }
-    expect(repaired.dsh.profile.bundles).toEqual([
-      '@deepseek-ai/dsh-base',
-      '@deepseek-ai/dsh-web-app',
-      'third-party-plugin',
-    ])
-    expect(repaired.dependencies).toEqual({ 'third-party-plugin': '^1.2.3' })
-  })
-
   it('marks legacy isolated Profile dependencies for one-time migration', () => {
     const home = temporaryHome()
     const dir = ensureDesktopProfile(home)
@@ -355,32 +235,6 @@ virtualStoreDirMaxLength: 120
     const prepared = prepareDesktopProfile(undefined, home, 'darwin')
 
     expect(prepared.requiresDependencyMigration).toBe(false)
-  })
-
-  it('migrates a Profile when its lockfile still contains a removed HarmonyOS dependency', () => {
-    const home = temporaryHome()
-    const dir = ensureDesktopProfile(home)
-    const modulesDir = join(dir, 'node_modules')
-    mkdirSync(modulesDir, { recursive: true })
-    writeFileSync(join(modulesDir, '.modules.yaml'), `layoutVersion: 5
-nodeLinker: hoisted
-packageManager: pnpm@11.7.0
-virtualStoreDirMaxLength: 120
-`)
-    writeFileSync(join(dir, 'pnpm-lock.yaml'), `lockfileVersion: '9.0'
-settings:
-  autoInstallPeers: false
-importers:
-  .:
-    dependencies:
-      dsh-hdc-bridge:
-        specifier: 0.8.2
-        version: 0.8.2
-`)
-
-    const prepared = prepareDesktopProfile(undefined, home, 'darwin')
-
-    expect(prepared.requiresDependencyMigration).toBe(true)
   })
 
   it('migrates a hoisted Profile dependency tree created by pnpm 9', () => {
@@ -472,6 +326,8 @@ virtualStoreDirMaxLength: 60
     expect(prepared.mode).toBe('compatibility')
     expect(prepared.openBrowser).toBe(false)
     expect(prepared.networkExposure).toBe('loopback')
+    expect(prepared.lanAddresses).toEqual([])
+    expect(Object.isFrozen(prepared.lanAddresses)).toBe(true)
 
     const rows = composeEntries([prepared.patches])
     for (const [id, name] of [
@@ -484,10 +340,6 @@ virtualStoreDirMaxLength: 60
       expect(matching[0]).toEqual(expect.objectContaining({ name }))
       expect(matching[0]?.disabled).toBeFalsy()
     }
-    expect(rows.find(row => row.id === 'ui-brand-official')).toEqual(expect.objectContaining({
-      name: '@deepseek-ai/dsh-client-ui-brand-official',
-      disabled: true,
-    }))
     expect(rows.find(row => row.id === 'directory-picker')).toEqual(expect.objectContaining({
       name: '@deepseek-ai/dsh-host-directory-picker-auto',
     }))
@@ -527,6 +379,67 @@ virtualStoreDirMaxLength: 60
     expect(rows.find(row => row.id === 'desktop-profiles')).toEqual(expect.objectContaining({
       name: 'dsh-plugin-desktop/profiles',
     }))
+  })
+
+  it('merges a frozen LAN IPv4 snapshot into existing Web runtime trust', () => {
+    const home = temporaryHome()
+    writeFileSync(join(home, 'cordis.patch.yml'), [
+      '- id: web-runtime',
+      '  config:',
+      '    trustedHosts:',
+      '      - lab.internal',
+      '      - 192.168.1.5',
+      '      - lab.internal',
+      '',
+    ].join('\n'))
+
+    const prepared = prepareDesktopProfile(
+      undefined,
+      home,
+      'darwin',
+      'desktop',
+      undefined,
+      undefined,
+      { lanAddresses: ['192.168.1.5', '10.0.0.7', '10.0.0.7'] },
+    )
+    const rows = composeEntries([prepared.patches])
+
+    expect(prepared.lanAddresses).toEqual(['192.168.1.5', '10.0.0.7'])
+    expect(Object.isFrozen(prepared.lanAddresses)).toBe(true)
+    expect(rows.find(row => row.id === 'web-runtime')).toEqual(expect.objectContaining({
+      config: expect.objectContaining({
+        openBrowser: false,
+        trustedHosts: ['lab.internal', '192.168.1.5', '10.0.0.7'],
+      }),
+    }))
+    expect(rows.find(row => row.id === 'desktop-webserver')).toEqual(expect.objectContaining({
+      config: { host: '127.0.0.1', port: 43_120 },
+    }))
+  })
+
+  it('rejects malformed Web trust config and non-IPv4 launcher addresses', () => {
+    const malformedHome = temporaryHome()
+    writeFileSync(join(malformedHome, 'cordis.patch.yml'), [
+      '- id: web-runtime',
+      '  config:',
+      '    trustedHosts: lab.internal',
+      '',
+    ].join('\n'))
+
+    expect(() => prepareDesktopProfile(undefined, malformedHome, 'darwin')).toThrow(
+      'web-runtime trustedHosts must be an array of strings',
+    )
+
+    const invalidAddressHome = temporaryHome()
+    expect(() => prepareDesktopProfile(
+      undefined,
+      invalidAddressHome,
+      'darwin',
+      'desktop',
+      undefined,
+      undefined,
+      { lanAddresses: ['desktop.internal'] },
+    )).toThrow('LAN address "desktop.internal" is not an IPv4 literal')
   })
 
   it('keeps both Market providers absent until the user explicitly enables one', () => {
@@ -739,9 +652,9 @@ virtualStoreDirMaxLength: 60
   it('boots a selected Web profile without overriding its compatibility UI rows', () => {
     const home = temporaryHome()
     const webDir = join(home, 'profiles', 'web')
-    const bundles = PROFILE_TEMPLATES.web
-    if (bundles === undefined) throw new Error('test requires the shipped Web template')
-    initProfile(webDir, bundles.bundles, bundles.patchReload)
+    const template = PROFILE_TEMPLATES.web
+    if (template === undefined) throw new Error('test requires the shipped Web template')
+    initProfile(webDir, template.bundles, template.patchReload)
     writeFileSync(join(webDir, 'cordis.patch.yml'), [
       '- id: ui-layout',
       "  name: '@deepseek-ai/dsh-client-ui-layout'",
@@ -811,7 +724,7 @@ virtualStoreDirMaxLength: 60
     expect(rows.find(row => row.id === 'ui-conversation')?.disabled).toBe(false)
   })
 
-  it('allows browser and LAN access when compatibility mode is already selected', () => {
+  it('keeps legacy browser intent but clamps LAN exposure when compatibility mode is selected', () => {
     const home = temporaryHome()
     writeFileSync(join(home, 'settings.yaml'), [
       'dsh-desktop:',
@@ -831,7 +744,7 @@ virtualStoreDirMaxLength: 60
       networkExposure: 'lan',
     })
     expect(rows.find(row => row.id === 'desktop-webserver')).toEqual(expect.objectContaining({
-      config: { host: '0.0.0.0', port: 43_189 },
+      config: { host: '127.0.0.1', port: 43_189 },
     }))
     expect(rows.find(row => row.id === 'web-runtime')).toEqual(expect.objectContaining({
       config: expect.objectContaining({ openBrowser: false }),
@@ -940,22 +853,66 @@ virtualStoreDirMaxLength: 60
     expect(() => readDesktopShellMode({ path })).toThrow('invalid settings document')
   })
 
-  it('treats an empty machine-wide patch file as no desktop patches', () => {
-    for (const content of ['', '# no machine-wide patches\n']) {
+  it('treats only YAML-null machine-wide patch documents as no desktop patches without rewriting them', () => {
+    for (const content of [
+      '',
+      '  \n\t\n',
+      '# no machine-wide patches\n',
+      'null\n',
+      '~\n',
+      '---\n',
+      '---\n# no machine-wide patches\n...\n',
+    ]) {
       const home = temporaryHome()
-      writeFileSync(join(home, 'cordis.patch.yml'), content)
+      const path = join(home, 'cordis.patch.yml')
+      writeFileSync(path, content)
 
       expect(() => prepareDesktopProfile(undefined, home, 'win32')).not.toThrow()
+      expect(readFileSync(path, 'utf8')).toBe(content)
     }
-
-    const invalidHome = temporaryHome()
-    writeFileSync(join(invalidHome, 'cordis.patch.yml'), 'not: a patch list\n')
-    expect(() => prepareDesktopProfile(undefined, invalidHome, 'win32')).toThrow(
-      'must be a top-level YAML array of loader patch entries',
-    )
   })
 
-  it('keeps the Windows browse panel, official agent presets, and desktop pwsh provider', () => {
+  it('keeps non-null and invalid machine-wide patch documents on the strict upstream path', () => {
+    for (const [content, diagnostic] of [
+      ['not: a patch list\n', 'must be a top-level YAML array of loader patch entries'],
+      ['{}\n', 'must be a top-level YAML array of loader patch entries'],
+      ['false\n', 'must be a top-level YAML array of loader patch entries'],
+      ['"null"\n', 'must be a top-level YAML array of loader patch entries'],
+      ['not: [\n', 'failed to parse patches'],
+      ['---\nnull\n---\n[]\n', 'failed to parse patches'],
+    ] as const) {
+      const home = temporaryHome()
+      const path = join(home, 'cordis.patch.yml')
+      writeFileSync(path, content)
+
+      expect(() => prepareDesktopProfile(undefined, home, 'win32')).toThrow(diagnostic)
+      expect(readFileSync(path, 'utf8')).toBe(content)
+    }
+  })
+
+  it('continues to load machine-wide patch arrays with upstream !!js expressions', () => {
+    const home = temporaryHome()
+    const path = join(home, 'cordis.patch.yml')
+    const content = [
+      '- id: web-runtime',
+      '  config:',
+      '    desktopNullNormalizationProbe: !!js process.platform',
+      '',
+    ].join('\n')
+    writeFileSync(path, content)
+
+    const prepared = prepareDesktopProfile(undefined, home, 'win32')
+
+    expect(prepared.patches).toContainEqual(expect.objectContaining({
+      id: 'web-runtime',
+      config: expect.objectContaining({
+        desktopNullNormalizationProbe: { __jsExpr: 'process.platform' },
+      }),
+    }))
+    expect(readFileSync(path, 'utf8')).toBe(content)
+  })
+
+  it('keeps the Windows browse panel, official subprocess and presets, and desktop pwsh provider', () => {
     const home = temporaryHome()
     writeFileSync(join(home, 'cordis.patch.yml'), [
       '- id: pwsh-sandbox',
@@ -986,12 +943,8 @@ virtualStoreDirMaxLength: 60
     expect(rows.find(row => row.id === 'subprocess')).toEqual({
       id: 'subprocess',
       name: '@deepseek-ai/dsh-subprocess-local',
-      disabled: true,
     })
-    expect(rows).toContainEqual(expect.objectContaining({
-      id: 'desktop-windows-subprocess',
-      name: 'dsh-plugin-desktop/windows-subprocess',
-    }))
+    expect(rows.map(row => row.id)).not.toContain('desktop-windows-subprocess')
     expect(rows.find(row => row.id === 'sandbox')).toEqual({
       id: 'sandbox',
       name: '@deepseek-ai/dsh-sandbox-local',
@@ -1090,71 +1043,6 @@ virtualStoreDirMaxLength: 60
     const desktop = prepareDesktopProfile(undefined, home, 'darwin')
     expect(composeEntries([desktop.patches])).toContainEqual({ id: 'optional-theme', name: packageName })
     expect(desktop.skippedOptionalEntries).toEqual([])
-  })
-
-  it('skips the legacy remote UI when the pinned Harness has no ApiProxy package', () => {
-    const home = temporaryHome()
-    const packageName = 'legacy-web-bundle'
-    installBundle(home, packageName, [
-      '- insert:',
-      '    - id: legacy-remote-web-ui',
-      "      name: '@linxin666/dsh-remote-web-ui'",
-      '    - id: legacy-task-board',
-      "      name: '@linxin666/dsh-client-ui-task-board'",
-      '',
-    ].join('\n'))
-    writeFileSync(join(home, 'profiles', 'desktop', 'package.json'), JSON.stringify({
-      name: 'dsh-profile-desktop',
-      private: true,
-      dependencies: {},
-      dsh: { profile: { bundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app', packageName] } },
-    }) + '\n')
-
-    const prepared = prepareDesktopProfile(undefined, home, 'darwin')
-    const rows = composeEntries([prepared.patches])
-
-    expect(rows.map(row => row.id)).not.toContain('legacy-remote-web-ui')
-    expect(rows.map(row => row.id)).not.toContain('legacy-task-board')
-    expect(prepared.skippedOptionalEntries).toContainEqual({
-      id: 'legacy-remote-web-ui',
-      name: '@linxin666/dsh-remote-web-ui',
-    })
-    expect(prepared.skippedOptionalEntries).toContainEqual({
-      id: 'legacy-task-board',
-      name: '@linxin666/dsh-client-ui-task-board',
-    })
-  })
-
-  it('keeps the legacy remote UI when an ApiProxy package is available', () => {
-    const home = temporaryHome()
-    const packageName = 'legacy-web-bundle'
-    installBundle(home, packageName, [
-      '- insert:',
-      '    - id: legacy-remote-web-ui',
-      "      name: '@linxin666/dsh-remote-web-ui'",
-      '',
-    ].join('\n'))
-    const apiProxyDir = join(home, 'profiles', 'desktop', 'node_modules', '@deepseek-ai', 'dsh-host-apiproxy')
-    mkdirSync(apiProxyDir, { recursive: true })
-    writeFileSync(join(apiProxyDir, 'package.json'), JSON.stringify({
-      name: '@deepseek-ai/dsh-host-apiproxy',
-      version: '0.1.1-rc.2',
-    }) + '\n')
-    writeFileSync(join(home, 'profiles', 'desktop', 'package.json'), JSON.stringify({
-      name: 'dsh-profile-desktop',
-      private: true,
-      dependencies: {},
-      dsh: { profile: { bundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app', packageName] } },
-    }) + '\n')
-
-    const prepared = prepareDesktopProfile(undefined, home, 'darwin')
-    const rows = composeEntries([prepared.patches])
-
-    expect(rows).toContainEqual(expect.objectContaining({
-      id: 'legacy-remote-web-ui',
-      name: '@linxin666/dsh-remote-web-ui',
-    }))
-    expect(prepared.skippedOptionalEntries).toEqual([])
   })
 
   it('does not treat ordinary array config as nested Loader entries', () => {

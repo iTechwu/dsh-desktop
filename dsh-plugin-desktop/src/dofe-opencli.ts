@@ -1,7 +1,6 @@
 /** Built-in, read-only OpenCLI bridge shipped with Yootun-Agent. */
 import { execFile } from 'node:child_process'
 import type { Context } from '@deepseek-ai/cordis'
-import { settingsNamespace } from '@deepseek-ai/dsh-settings'
 import { DOFE_ACCESS_SETTINGS_NAMESPACE, DOFE_ACCESS_VALIDATION_VERSION, type DofeAccessSettings } from './dofe-plugins.ts'
 
 export const name = 'dofe-opencli'
@@ -47,7 +46,7 @@ export function apply(ctx: Context): void | (() => void) {
     timeoutMs: TIMEOUT_MS,
     isConcurrencySafe: () => false,
     async execute(args: { args?: unknown }, exec: { signal: AbortSignal }) {
-      const access = ctx.settings.get(settingsNamespace(DOFE_ACCESS_SETTINGS_NAMESPACE)) as DofeAccessSettings | undefined
+      const access = ctx.settings.get(DOFE_ACCESS_SETTINGS_NAMESPACE) as DofeAccessSettings | undefined
       if (access?.setupComplete !== true
         || access.validationVersion !== DOFE_ACCESS_VALIDATION_VERSION
         || !access.enabledPlugins.includes('opencli')) {

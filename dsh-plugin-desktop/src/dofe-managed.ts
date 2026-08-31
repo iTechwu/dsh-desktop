@@ -5,7 +5,6 @@ import type { Config as McpConfig } from '@deepseek-ai/dsh-mcp-client'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import type {} from '@deepseek-ai/dsh-system-prompt'
 import z from '@deepseek-ai/schemastery'
-import { settingsNamespace } from '@deepseek-ai/dsh-settings'
 import {
   DEFAULT_DOFE_PLUGIN_IDS,
   DOFE_ACCESS_SETTINGS_NAMESPACE,
@@ -38,8 +37,8 @@ const ROUTES: readonly { plugin: Exclude<DofePluginId, 'opencli'>; serverName: s
  * is the narrowest way to keep its transport aligned with the credential seam.
  */
 export async function apply(ctx: Context): Promise<void> {
-  const access = ctx.settings.register<DofeAccessSettings>(
-    settingsNamespace(DOFE_ACCESS_SETTINGS_NAMESPACE),
+  const access = ctx.settings.register<'dofe-access', DofeAccessSettings>(
+    DOFE_ACCESS_SETTINGS_NAMESPACE,
     z.object({
       setupComplete: z.boolean().default(false),
       validationVersion: z.number().step(1).min(0).default(0),

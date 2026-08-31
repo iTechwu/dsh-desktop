@@ -2,6 +2,7 @@
 
 import { createRequire } from 'node:module'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { isIP } from 'node:net'
 import { dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { evaluate, isJsExpr, type EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
@@ -9,7 +10,9 @@ import type { PatchOptions } from '@deepseek-ai/cordis-plugin-include'
 import {
   composeEntries,
   DEFAULT_PROFILE_PATCH_RELOAD,
+  healProfilesModuleFallback,
   initProfile,
+  loadOptionalPatches,
   loadOverlayPatches,
   PROFILE_PATCH_FILENAME,
   PROFILE_TEMPLATES,
@@ -18,13 +21,14 @@ import {
   writeProfileManifest,
   type Profile,
   type ProfileManifest,
+  type ProfilePatchReload,
 } from '@deepseek-ai/dsh-app-boot'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import FileSettingsProvider, {
   resolveSpec as resolveSettingsFileSpec,
   type Config as SettingsFileConfig,
 } from '@deepseek-ai/dsh-settings-file'
-import { parseDocument, stringify } from 'yaml'
+import { parseAllDocuments, parseDocument } from 'yaml'
 import { unpackedAsarPath } from './packaged-runtime-path.ts'
 import { findOverlayPackage, resolveOverlayPackage } from './package-overlay.ts'
 import { DESKTOP_DEFAULT_WEB_PORT } from './desktop-port.ts'
@@ -69,20 +73,7 @@ export const DESKTOP_PROFILE_ROOT = 'cordis.yml'
 const BIN_NAME = DESKTOP_PACKAGE_NAME
 const REQUIRED_BUNDLES = requiredWebBundles()
 const REQUIRED_BUNDLE_SET = new Set(REQUIRED_BUNDLES)
-const OBSOLETE_DESKTOP_BUNDLE_SET = new Set([
-  '@deepseek-ai/dsh-desktop-app',
-  // This legacy aggregate depends on the removed client-runtime module and
-  // makes the Web loader replace the usable client with its failure surface.
-  '@linxin666/dsh-web-ui-all',
-  // The Desktop distribution owns these routes through dofe-managed. Keep
-  // historical direct MCP bundles out of the composed graph to prevent
-  // duplicate serverName registrations after an app upgrade.
-  '@dofe/dsh-geo-mcp',
-  '@dofe/dsh-openmontage-mcp',
-  '@dofe/dsh-tools-mcp',
-  // HarmonyOS device tooling is not part of the Yootun-Agent desktop product.
-  'dsh-hdc-bridge',
-])
+const OBSOLETE_DESKTOP_BUNDLE_SET = new Set(['@deepseek-ai/dsh-desktop-app'])
 const INSTALL_ANCHOR = unpackedAsarPath(fileURLToPath(new URL('../package.json', import.meta.url)))
 const DESKTOP_PATCH_PATH = fileURLToPath(new URL('../cordis.patch.yml', import.meta.url))
 const DIRECTORY_PICKER_ROW_ID = 'directory-picker'
@@ -93,10 +84,6 @@ const PWSH_SANDBOX_ROW_ID = 'pwsh-sandbox'
 const UPSTREAM_PWSH_SANDBOX_PACKAGE = '@deepseek-ai/dsh-pwsh-sandbox'
 const DESKTOP_WINDOWS_PWSH_SANDBOX_ROW_ID = 'desktop-windows-pwsh-sandbox'
 const DESKTOP_WINDOWS_PWSH_SANDBOX_PACKAGE = 'dsh-plugin-desktop/windows-pwsh-sandbox'
-const SUBPROCESS_ROW_ID = 'subprocess'
-const UPSTREAM_SUBPROCESS_PACKAGE = '@deepseek-ai/dsh-subprocess-local'
-const DESKTOP_WINDOWS_SUBPROCESS_ROW_ID = 'desktop-windows-subprocess'
-const DESKTOP_WINDOWS_SUBPROCESS_PACKAGE = 'dsh-plugin-desktop/windows-subprocess'
 const AGENT_PRESETS_ROW_ID = 'agent-presets'
 const DEFAULT_DESKTOP_SHELL_MODE: DesktopShellMode = 'compatibility'
 const DEFAULT_DESKTOP_PORT = DESKTOP_DEFAULT_WEB_PORT
@@ -104,16 +91,6 @@ const DESKTOP_WEB_SERVER_ROW_ID = 'desktop-webserver'
 const DESKTOP_WEB_SERVER_PACKAGE = 'dsh-plugin-desktop/webserver'
 const SETTINGS_FILE_PACKAGE = '@deepseek-ai/dsh-settings-file'
 const DESKTOP_SETTINGS_NAMESPACE = 'dsh-desktop'
-const DEEPSEEK_SETTINGS_NAMESPACE = 'llm-deepseek'
-const AGENT_DEFAULT_MODEL_NAMESPACE = 'agent-default-model'
-const DESKTOP_DEFAULT_MODEL_ID = 'deepseek-v4-flash'
-const DEEPSEEK_VISION_MODEL_ID = 'deepseek-v4-flash-vision-exp'
-
-function loadProfilePatches(path: string): PatchOptions[] {
-  const source = readFileSync(path, 'utf8')
-  if (parseDocument(source).contents === null) return []
-  return loadOverlayPatches(BIN_NAME, path)
-}
 const UI_LAYOUT_PACKAGE = '@deepseek-ai/dsh-client-ui-layout'
 const UI_SIDEBAR_PACKAGE = '@deepseek-ai/dsh-client-ui-sidebar'
 const UI_CONVERSATION_PACKAGE = '@deepseek-ai/dsh-client-ui-conversation'
@@ -129,13 +106,6 @@ const MARKET_ROW_IDS: ReadonlySet<string> = new Set([
 const MARKET_PACKAGE_NAMES: ReadonlySet<string> = new Set([
   DESKTOP_MARKET_IDENTITIES.community.packageName,
   DESKTOP_MARKET_IDENTITIES.dshMarket.packageName,
-])
-const LEGACY_REMOTE_WEB_UI_PACKAGE = '@linxin666/dsh-remote-web-ui'
-const LEGACY_TASK_BOARD_PACKAGE = '@linxin666/dsh-client-ui-task-board'
-const LEGACY_API_PROXY_PACKAGE = '@deepseek-ai/dsh-host-apiproxy'
-const LEGACY_API_PROXY_BUNDLE_PACKAGES = new Set([
-  LEGACY_REMOTE_WEB_UI_PACKAGE,
-  LEGACY_TASK_BOARD_PACKAGE,
 ])
 
 /**
@@ -215,94 +185,6 @@ export function desktopShellModeFromSettings(document: unknown): DesktopShellMod
   return desktopStartupSettingsFromSettings(document).mode
 }
 
-/** Restore the built-in Vision model's image capability in legacy settings. */
-export function restoreLegacyVisionModelInput(document: unknown): boolean {
-  if (typeof document !== 'object' || document === null || Array.isArray(document)) return false
-  const section = (document as Record<string, unknown>)[DEEPSEEK_SETTINGS_NAMESPACE]
-  if (typeof section !== 'object' || section === null || Array.isArray(section)) return false
-  const models = (section as Record<string, unknown>).models
-  if (!Array.isArray(models)) return false
-  let changed = false
-  for (const model of models) {
-    if (typeof model !== 'object' || model === null || Array.isArray(model)) continue
-    const entry = model as Record<string, unknown>
-    if (entry.id !== DEEPSEEK_VISION_MODEL_ID) continue
-    const modalities = entry.inputModalities
-    if (Array.isArray(modalities) && modalities.includes('image')) continue
-    entry.inputModalities = ['text', 'image']
-    changed = true
-  }
-  return changed
-}
-
-/** Keep the persisted desktop default on a model that the managed gateway serves. */
-export function restoreDesktopDefaultModel(document: unknown): boolean {
-  if (typeof document !== 'object' || document === null || Array.isArray(document)) return false
-  const section = (document as Record<string, unknown>)[AGENT_DEFAULT_MODEL_NAMESPACE]
-  if (typeof section !== 'object' || section === null || Array.isArray(section)) return false
-  const values = section as Record<string, unknown>
-  if (values.model === DESKTOP_DEFAULT_MODEL_ID && values.provider === 'deepseek-official') return false
-  values.provider = 'deepseek-official'
-  values.model = DESKTOP_DEFAULT_MODEL_ID
-  return true
-}
-
-const LEGACY_MODEL_CONFIGURATION_KEYS = new Set([
-  'baseURL', 'baseUrl', 'base_url', 'apiKey', 'api_key', 'appKey', 'app_key', 'apiKeyEnv',
-])
-
-/** Remove user-owned model endpoints and keys; Desktop supplies one managed route. */
-export function removeLegacyModelConfiguration(document: unknown): boolean {
-  if (typeof document !== 'object' || document === null || Array.isArray(document)) return false
-  let changed = false
-  for (const [namespace, section] of Object.entries(document as Record<string, unknown>)) {
-    if (!namespace.startsWith('llm-') || typeof section !== 'object' || section === null) continue
-    const visit = (value: unknown): void => {
-      if (Array.isArray(value)) {
-        for (const item of value) visit(item)
-        return
-      }
-      if (typeof value !== 'object' || value === null) return
-      const record = value as Record<string, unknown>
-      for (const key of Object.keys(record)) {
-        if (LEGACY_MODEL_CONFIGURATION_KEYS.has(key)) {
-          delete record[key]
-          changed = true
-        } else {
-          visit(record[key])
-        }
-      }
-    }
-    visit(section)
-  }
-  return changed
-}
-
-/** Persist the compatibility migration before the settings plugin reads the file. */
-function migrateLegacyVisionModelSettings(filename: string, format: 'json' | 'yaml'): void {
-  if (!existsSync(filename)) return
-  const text = readFileSync(filename, 'utf8')
-  if (format === 'json') {
-    const document: unknown = text.trim().length === 0 ? {} : JSON.parse(text)
-    const removedLegacy = removeLegacyModelConfiguration(document)
-    const restoredVision = restoreLegacyVisionModelInput(document)
-    const restoredDefault = restoreDesktopDefaultModel(document)
-    const changed = removedLegacy || restoredVision || restoredDefault
-    if (changed) {
-      writeFileSync(filename, `${JSON.stringify(document, undefined, 2)}\n`)
-    }
-    return
-  }
-  const document = parseDocument(text, { prettyErrors: true })
-  if (document.errors.length > 0) return
-  const value = document.toJS() ?? {}
-  const removedLegacy = removeLegacyModelConfiguration(value)
-  const restoredVision = restoreLegacyVisionModelInput(value)
-  const restoredDefault = restoreDesktopDefaultModel(value)
-  const changed = removedLegacy || restoredVision || restoredDefault
-  if (changed) writeFileSync(filename, stringify(value))
-}
-
 /**
  * Read startup settings from the same file resolved by the settings provider.
  * @param config - validated settings-file row config.
@@ -346,6 +228,15 @@ function requiredWebBundles(): string[] {
   return [...template.bundles]
 }
 
+/** User patch lifecycle inherited from the matching upstream Web profile. */
+function requiredWebPatchReload(): ProfilePatchReload {
+  const template = PROFILE_TEMPLATES.web
+  if (template === undefined) {
+    throw new Error(`${BIN_NAME}: installed dsh-app-boot has no web profile template`)
+  }
+  return template.patchReload
+}
+
 /** Prepared profile inputs consumed by app-boot. */
 export interface PreparedDesktopProfile {
   /** Harness home shared by the launcher and generated command environment. */
@@ -372,6 +263,8 @@ export interface PreparedDesktopProfile {
   openBrowser: boolean
   /** Listener scope applied to the Desktop-owned WebServer. */
   networkExposure: DesktopNetworkExposure
+  /** Frozen LAN IPv4 snapshot trusted by this profile generation and its HTTPS edge. */
+  lanAddresses: readonly string[]
   /** Resolved file-backed settings document used by this generation. */
   settingsDocument: string
   /** Requested provider and the fail-closed provider effective for this generation. */
@@ -386,6 +279,8 @@ export interface PreparedDesktopProfile {
 export interface DesktopProfilePreparationHooks {
   /** Receive the trusted settings path before its contents are parsed. */
   onSettingsDocumentResolved?: (path: string) => void
+  /** LAN IPv4 literals sampled once before this profile generation is composed. */
+  lanAddresses?: readonly string[]
 }
 
 /** User patch entry skipped to keep a profile bootable. */
@@ -420,7 +315,9 @@ function sameList(left: readonly string[], right: readonly string[]): boolean {
  */
 export function ensureDesktopProfile(home: string = resolveDshHome()): string {
   const dir = resolveProfileDir(DESKTOP_PROFILE_NAME, home)
-  if (!existsSync(join(dir, 'package.json'))) initProfile(dir, REQUIRED_BUNDLES)
+  if (!existsSync(join(dir, 'package.json'))) {
+    initProfile(dir, REQUIRED_BUNDLES, requiredWebPatchReload())
+  }
   const manifest = readProfileManifest(BIN_NAME, dir)
   const rawBundles = (manifest.dsh?.profile as { bundles?: unknown } | undefined)?.bundles
   if (rawBundles !== undefined
@@ -429,27 +326,16 @@ export function ensureDesktopProfile(home: string = resolveDshHome()): string {
   }
   const current = rawBundles === undefined ? [] : rawBundles as string[]
   const bundles = desktopBundleList(current)
-  const dependencies = manifest.dependencies === undefined
-    ? undefined
-    : { ...manifest.dependencies }
-  let dependenciesChanged = false
-  if (dependencies !== undefined) {
-    for (const packageName of OBSOLETE_DESKTOP_BUNDLE_SET) {
-      if (Object.prototype.hasOwnProperty.call(dependencies, packageName)) {
-        delete dependencies[packageName]
-        dependenciesChanged = true
-      }
-    }
-  }
-  if (!sameList(current, bundles) || dependenciesChanged) {
+  const patchReload = requiredWebPatchReload()
+  if (!sameList(current, bundles) || manifest.dsh?.profile?.patchReload !== patchReload) {
     writeProfileManifest(dir, {
       ...manifest,
-      ...(dependencies === undefined ? {} : { dependencies }),
       dsh: {
         ...manifest.dsh,
         profile: {
           ...manifest.dsh?.profile,
           bundles,
+          patchReload,
         },
       },
     })
@@ -518,7 +404,7 @@ function compatiblePnpmPackageManager(value: unknown): boolean {
 }
 
 /** Detect pnpm state that cannot satisfy the current hoisted Profile contract. */
-export function profileDependencyMigrationRequired(
+function profileDependencyMigrationRequired(
   profileDir: string,
   workspaceChanged: boolean,
   platform: NodeJS.Platform,
@@ -546,26 +432,10 @@ export function profileDependencyMigrationRequired(
   let lockfileCompatible = !existsSync(lockfilePath) && !hasDependencies
   if (existsSync(lockfilePath)) {
     try {
-      const lockfile = parseProfileYaml(lockfilePath).value
-      const settings = lockfile.settings
-      const importers = lockfile.importers
-      const rootImporter = typeof importers === 'object' && importers !== null && !Array.isArray(importers)
-        ? (importers as Record<string, unknown>)['.']
-        : undefined
-      const lockedDependencies = typeof rootImporter === 'object' && rootImporter !== null && !Array.isArray(rootImporter)
-        ? (rootImporter as Record<string, unknown>).dependencies
-        : undefined
-      const lockedDependencyNames = typeof lockedDependencies === 'object'
-        && lockedDependencies !== null
-        && !Array.isArray(lockedDependencies)
-        ? Object.keys(lockedDependencies as Record<string, unknown>).sort()
-        : []
-      const manifestDependencyNames = Object.keys(manifest.dependencies ?? {}).sort()
+      const settings = parseProfileYaml(lockfilePath).value.settings
       lockfileCompatible = typeof settings === 'object' && settings !== null
         && !Array.isArray(settings)
         && (settings as Record<string, unknown>).autoInstallPeers === false
-        && lockedDependencyNames.length === manifestDependencyNames.length
-        && lockedDependencyNames.every((name, index) => name === manifestDependencyNames[index])
     } catch {
       // A controlled non-frozen install owns lockfile reconciliation below.
     }
@@ -608,13 +478,11 @@ function loadRecoveryFilteredProfile(
     throw new Error(`${BIN_NAME}: dsh.profile.bundles must be an array of package names`)
   }
   const bundles = (rawBundles ?? []) as string[]
-  const rawPatchReload: unknown = (manifest.dsh?.profile as { patchReload?: unknown } | undefined)?.patchReload
+  const rawPatchReload: unknown = manifest.dsh?.profile?.patchReload
   if (rawPatchReload !== undefined && rawPatchReload !== 'live' && rawPatchReload !== 'startup') {
-    throw new Error(
-      `${BIN_NAME}: profile manifest ${join(profileDir, 'package.json')} dsh.profile.patchReload must be "live" or "startup"`,
-    )
+    throw new Error(`${BIN_NAME}: dsh.profile.patchReload must be "live" or "startup"`)
   }
-  const patchReload = rawPatchReload ?? DEFAULT_PROFILE_PATCH_RELOAD
+  const patchReload = rawPatchReload ?? PROFILE_TEMPLATES[profileName]?.patchReload ?? DEFAULT_PROFILE_PATCH_RELOAD
   const selectedBundles = bundles.filter(packageName =>
     packageName !== DESKTOP_MARKET_IDENTITIES.community.packageName
     && (marketProvider === DESKTOP_MARKET_IDENTITIES.dshMarket.provider
@@ -667,7 +535,7 @@ function loadRecoveryFilteredProfile(
       dir: profileDir,
       layers,
       patchPath,
-      patches: existsSync(patchPath) ? loadProfilePatches(patchPath) : [],
+      patches: existsSync(patchPath) ? loadOverlayPatches(BIN_NAME, patchPath) : [],
       patchReload,
     },
     ...(dshMarketFailure === undefined ? {} : { dshMarketFailure }),
@@ -688,6 +556,30 @@ function rowConfig(row: EntryOptions | undefined): Record<string, unknown> {
   return config !== null && typeof config === 'object' && !Array.isArray(config)
     ? config as Record<string, unknown>
     : {}
+}
+
+/** Snapshot, validate, and deduplicate the LAN allowlist supplied by the launcher. */
+function preparedLanAddresses(addresses: readonly string[] | undefined): readonly string[] {
+  const unique = new Set<string>()
+  for (const address of addresses ?? []) {
+    if (isIP(address) !== 4) {
+      throw new Error(`${BIN_NAME}: LAN address ${JSON.stringify(address)} is not an IPv4 literal`)
+    }
+    unique.add(address)
+  }
+  return Object.freeze([...unique])
+}
+
+/** Merge launcher-derived LAN literals with a profile's explicit Web trust entries. */
+function webRuntimeTrustedHosts(
+  configured: unknown,
+  lanAddresses: readonly string[],
+): string[] {
+  if (configured === undefined) return [...lanAddresses]
+  if (!Array.isArray(configured) || configured.some(entry => typeof entry !== 'string')) {
+    throw new Error(`${BIN_NAME}: web-runtime trustedHosts must be an array of strings`)
+  }
+  return [...new Set([...configured, ...lanAddresses])]
 }
 
 /** Resolve a Loader row's platform gate without mutating the host process. */
@@ -765,37 +657,6 @@ function omitUnresolvedOptionalEntries(
       const insert = filterRows(patch.insert)
       return [{ ...patch, insert }]
     }),
-    skipped,
-  }
-}
-
-/** Drop optional bundles that require the removed ApiProxy service. */
-function omitLegacyApiProxyBundles(
-  patches: PatchOptions[],
-  profilePackageUrl: string,
-): { patches: PatchOptions[], skipped: SkippedOptionalEntry[] } {
-  const installPackageUrl = pathToFileURL(INSTALL_ANCHOR).href
-  if (findOverlayPackage(LEGACY_API_PROXY_PACKAGE, { installPackageUrl, profilePackageUrl }) !== undefined) {
-    return { patches, skipped: [] }
-  }
-  const skipped: SkippedOptionalEntry[] = []
-  const filterRows = (rows: EntryOptions[]): EntryOptions[] => rows.flatMap((row) => {
-    if (typeof row.name === 'string' && LEGACY_API_PROXY_BUNDLE_PACKAGES.has(row.name)) {
-      skipped.push({
-        ...(typeof row.id === 'string' ? { id: row.id } : {}),
-        name: row.name,
-      })
-      return []
-    }
-    if (row.group === true && Array.isArray(row.config)) {
-      return [{ ...row, config: filterRows(row.config) }]
-    }
-    return [row]
-  })
-  return {
-    patches: patches.map((patch) => Array.isArray(patch.insert)
-      ? { ...patch, insert: filterRows(patch.insert) }
-      : patch),
     skipped,
   }
 }
@@ -898,6 +759,41 @@ function assertEffectiveMarketRows(
 }
 
 /**
+ * Read the Desktop machine-wide patch without relaxing upstream patch parsing.
+ *
+ * A YAML null document is the natural result of an empty, comment-only, or
+ * explicit `null` file. Desktop treats only that machine-wide state as an
+ * empty patch layer; every non-null document still goes through app-boot's
+ * strict parser, including its `!!js` schema and diagnostics.
+ */
+function loadDesktopMachinePatches(home: string): PatchOptions[] {
+  const path = join(home, PROFILE_PATCH_FILENAME)
+  let content: string
+  try {
+    content = readFileSync(path, 'utf8')
+  } catch {
+    return loadOptionalPatches(BIN_NAME, path) ?? []
+  }
+
+  try {
+    const documents = parseAllDocuments(content, { prettyErrors: true })
+    if (documents.length === 0) return []
+    const [document] = documents
+    if (documents.length === 1
+      && document !== undefined
+      && document.errors.length === 0
+      && document.warnings.length === 0
+      && document.toJS() === null) {
+      return []
+    }
+  } catch {
+    // Preserve app-boot's strict parser and user-facing diagnostic below.
+  }
+
+  return loadOptionalPatches(BIN_NAME, path) ?? []
+}
+
+/**
  * Load and compose one desktop profile generation.
  * @param telemetryDisabled - inherited DSH telemetry opt-out value.
  * @param home - Harness home containing profiles and the machine-wide patch.
@@ -916,6 +812,7 @@ export function prepareDesktopProfile(
   marketSelection: DesktopMarketSnapshot = DEFAULT_DESKTOP_MARKET_SNAPSHOT,
   hooks: DesktopProfilePreparationHooks = {},
 ): PreparedDesktopProfile {
+  const lanAddresses = preparedLanAddresses(hooks.lanAddresses)
   const profileDir = profileName === DESKTOP_PROFILE_NAME
     ? ensureDesktopProfile(home)
     : resolveProfileDir(profileName, home)
@@ -963,17 +860,12 @@ export function prepareDesktopProfile(
     throw new Error(`${BIN_NAME}: desktop profile is missing @deepseek-ai/dsh-web-app`)
   }
 
-  const homePatchPath = join(home, PROFILE_PATCH_FILENAME)
-  const loadedHomePatches = existsSync(homePatchPath) ? loadProfilePatches(homePatchPath) : []
+  const loadedHomePatches = loadDesktopMachinePatches(home)
   const { patches: homePatches, skipped: skippedOptionalEntries } = omitUnresolvedOptionalEntries(
     loadedHomePatches,
     bareModuleBaseUrl,
   )
-  const { patches: compatibleBundlePatches, skipped: skippedLegacyEntries } = omitLegacyApiProxyBundles(
-    bundlePatches,
-    bareModuleBaseUrl,
-  )
-  const filteredBundles = filterMarketProviderPatches(compatibleBundlePatches)
+  const filteredBundles = filterMarketProviderPatches(bundlePatches)
   const filteredProfile = filterMarketProviderPatches(profile.patches)
   const filteredHome = filterMarketProviderPatches(homePatches)
   const hasProviderConflict = filteredBundles.removedProviderReference
@@ -1034,10 +926,8 @@ export function prepareDesktopProfile(
     dshHome: home,
     ...rowConfig(settings),
   } as SettingsFileConfig)
-  const settingsSpec = resolveSettingsFileSpec(settingsConfig)
-  const settingsDocument = settingsSpec.filename
+  const settingsDocument = resolveSettingsFileSpec(settingsConfig).filename
   hooks.onSettingsDocumentResolved?.(settingsDocument)
-  migrateLegacyVisionModelSettings(settingsDocument, settingsSpec.format)
   const {
     mode,
     port,
@@ -1054,13 +944,15 @@ export function prepareDesktopProfile(
   if (webRuntime === undefined) {
     throw new Error(`${BIN_NAME}: desktop profile has no web-runtime row`)
   }
+  const webRuntimeConfig = rowConfig(webRuntime)
   patches.push({
     id: 'web-runtime',
     config: {
-      ...rowConfig(webRuntime),
+      ...webRuntimeConfig,
       // Browser access is an advertised Desktop capability, never an
       // instruction to launch the operating system's default browser.
       openBrowser: false,
+      trustedHosts: webRuntimeTrustedHosts(webRuntimeConfig.trustedHosts, lanAddresses),
     },
   })
   if (mode === 'advanced' || mode === 'extended') {
@@ -1114,27 +1006,6 @@ export function prepareDesktopProfile(
         ],
       },
     )
-    const subprocess = rows.get(SUBPROCESS_ROW_ID)
-    if (subprocess?.name === UPSTREAM_SUBPROCESS_PACKAGE
-      && !rowDisabledOnPlatform(subprocess, platform)) {
-      patches.push(
-        {
-          id: SUBPROCESS_ROW_ID,
-          name: UPSTREAM_SUBPROCESS_PACKAGE,
-          disabled: true,
-        },
-        {
-          insert: [
-            {
-              id: DESKTOP_WINDOWS_SUBPROCESS_ROW_ID,
-              name: DESKTOP_WINDOWS_SUBPROCESS_PACKAGE,
-              ...(subprocess.disabled === undefined ? {} : { disabled: subprocess.disabled }),
-              config: rowConfig(subprocess),
-            },
-          ],
-        },
-      )
-    }
     const pwshSandbox = rows.get(PWSH_SANDBOX_ROW_ID)
     if (pwshSandbox?.name === UPSTREAM_PWSH_SANDBOX_PACKAGE
       && !rowDisabledOnPlatform(pwshSandbox, platform)) {
@@ -1222,18 +1093,28 @@ export function prepareDesktopProfile(
     rootConfig,
     bareModuleBaseUrl,
     patches: structuredClone(patches),
-    skippedOptionalEntries: [...skippedOptionalEntries, ...skippedLegacyEntries],
+    skippedOptionalEntries,
     mode,
     port,
     macosMaterial,
     windowsMaterial,
     openBrowser,
     networkExposure,
+    lanAddresses,
     settingsDocument,
     market: desktopMarketSnapshotWithEffective(marketSelection, effectiveMarket),
     requiresDependencyMigration,
     ...(marketFailure === undefined ? {} : { marketFailure }),
   }
+}
+
+/** Maintain the upstream module fallback for one fully resolved Desktop profile. */
+export function healDesktopProfileModuleFallback(home: string, profile?: Profile): Promise<void> {
+  return healProfilesModuleFallback({
+    installAnchor: INSTALL_ANCHOR,
+    home,
+    ...(profile === undefined ? {} : { profile }),
+  })
 }
 
 /** Expose the package anchor for focused resolution tests. */

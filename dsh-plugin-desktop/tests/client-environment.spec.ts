@@ -1,12 +1,12 @@
 import { readFileSync } from 'node:fs'
-import { createElement, type ComponentType } from 'react'
+import { createElement, type ReactNode } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it, vi } from 'vitest'
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import { apply } from '../src/client/index.ts'
-import { AdvancedFrame } from '../src/client/AdvancedFrame.tsx'
+import { AdvancedFrame, type AdvancedFrameProps } from '../src/client/AdvancedFrame.tsx'
 import { applyAdvancedShell } from '../src/client/advanced-shell.ts'
-import { provideDesktopLayout } from '../src/client/layout-service.ts'
+import { claimDesktopLayout } from '../src/client/layout-service.ts'
 import { parseDesktopClientEnvironment } from '../src/client/environment.ts'
 import { ExtendedFrame } from '../src/client/ExtendedFrame.tsx'
 import { applyExtendedShell, applyFramedShell } from '../src/client/extended-shell.ts'
@@ -41,84 +41,6 @@ describe('desktop client environment', () => {
     }
   })
 
-  it('fills the desktop brand slots with the Yootun lockup and hero artwork', () => {
-    let brandCss = ''
-    const registrations: Array<{
-      options: Record<string, unknown>
-      occupant: ComponentType<Record<string, unknown>>
-    }> = []
-    const slots = {
-      inject: vi.fn((_name: string, mount: () => unknown) => {
-        const result = mount()
-        if (result !== null && typeof result === 'object' && Symbol.iterator in result) {
-          Array.from(result as Iterable<unknown>)
-        }
-        return () => {}
-      }),
-      register: vi.fn((options: Record<string, unknown>, occupant: ComponentType<Record<string, unknown>>) => {
-        registrations.push({ options, occupant })
-        return () => {}
-      }),
-    }
-    const ctx = {
-      effect: vi.fn((mount: () => void, description: string) => {
-        if (description === 'dsh-plugin-desktop: brand layout styles') mount()
-      }),
-      locale: {
-        bind: vi.fn(() => () => ''),
-        register: vi.fn(() => () => {}),
-      },
-      settingsScope: {
-        bind: vi.fn(() => ({ set: vi.fn(async () => {}) })),
-      },
-      slots,
-    } as unknown as ClientContext
-    vi.stubGlobal('window', {
-      location: {
-        search: '?dsh-desktop-mode=compatibility&dsh-desktop-platform=darwin&dsh-desktop-version=2.0.3&dsh-desktop-material=transparent',
-      },
-    })
-    vi.stubGlobal('document', {
-      createElement: vi.fn(() => ({
-        dataset: {},
-        remove: vi.fn(),
-        get textContent() { return brandCss },
-        set textContent(value: string) { brandCss = value },
-      })),
-      head: { appendChild: vi.fn() },
-    })
-
-    try {
-      apply(ctx)
-      const brands = registrations.filter(({ options }) =>
-        typeof options.name === 'string' && options.name.includes('brand'))
-      expect(brands.map(({ options }) => options.name)).toEqual([
-        'sidebar.brand.mark',
-        'sidebar.brand.name',
-        'conversation.hero.brand.mark',
-      ])
-
-      const sidebar = renderToStaticMarkup(createElement(brands[0]!.occupant, { size: 24 }))
-      expect(sidebar).toMatch(/data-dsh-yootun-brand="sidebar"/)
-      expect(sidebar).toMatch(/src="data:image\/png;base64,[^"]+"/)
-      expect(sidebar).toContain('width="200"')
-      expect(sidebar).toContain('height="36"')
-      expect(brandCss).toMatch(/button:has\(\[data-dsh-yootun-brand="sidebar"\]\) > \[aria-hidden="true"\] \{ height: 36px;/)
-
-      expect(renderToStaticMarkup(createElement(brands[1]!.occupant))).toBe('')
-
-      const hero = renderToStaticMarkup(createElement(brands[2]!.occupant, { size: 34, className: 'hero-mark' }))
-      expect(hero).toMatch(/data-dsh-yootun-brand="hero"/)
-      expect(hero).toMatch(/src="data:image\/png;base64,[^"]+"/)
-      expect(hero).toContain('width="34"')
-      expect(hero).toContain('height="34"')
-      expect(hero).toContain('class="hero-mark"')
-    }
-    finally {
-      vi.unstubAllGlobals()
-    }
-  })
-
   it('accepts the Electron-owned kebab query markers', () => {
     expect(parseDesktopClientEnvironment('?dsh-desktop-mode=advanced&dsh-desktop-platform=darwin&dsh-desktop-version=2.0.3&dsh-desktop-material=transparent'))
       .toEqual({ version: '2.0.3', mode: 'advanced', platform: 'darwin', material: 'transparent', micaSupported: false })
@@ -144,6 +66,31 @@ describe('desktop client environment', () => {
 })
 
 describe('advanced desktop layout', () => {
+  it.each([
+    ['advanced', AdvancedFrame],
+    ['extended', ExtendedFrame],
+  ] as const)('binds the strict details slot through SessionProvider in %s mode', (_mode, Frame) => {
+    vi.stubGlobal('window', { innerWidth: 1440 })
+    const props = {
+      layout: new DesktopLayoutState(),
+      platform: 'darwin',
+      useSessions: (select: (state: { current?: string; byId: Record<string, { blank: boolean }> }) => unknown) =>
+        select({ byId: {} }),
+      renderSlot: (name: string) => createElement('span', { 'data-slot': name }),
+      SessionProvider: ({ children }: { children: ReactNode }) =>
+        createElement('section', { 'data-session-provider': '' }, children),
+    } as unknown as AdvancedFrameProps
+
+    try {
+      const markup = renderToStaticMarkup(createElement(Frame, props))
+      expect(markup).toContain(
+        '<section data-session-provider=""><span data-slot="details"></span></section>',
+      )
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
   it('orders the Windows drag region after scrollable content and before overlays', () => {
     const frame = readFileSync(new URL('../src/client/AdvancedFrame.tsx', import.meta.url), 'utf8')
     const conversation = frame.indexOf('className="dshDesktopConversationSurface"')
@@ -155,14 +102,6 @@ describe('advanced desktop layout', () => {
     expect(caption).toBeGreaterThan(conversation)
     expect(caption).toBeGreaterThan(details)
     expect(caption).toBeLessThan(overlay)
-  })
-
-  it('binds the strict details slot through the framework SessionProvider', () => {
-    const frame = readFileSync(new URL('../src/client/AdvancedFrame.tsx', import.meta.url), 'utf8')
-    const details = frame.indexOf('className="dshDesktopDetailsSurface"')
-    const provider = frame.indexOf('<SessionProvider>{renderSlot(\'details\', {})}</SessionProvider>')
-    expect(details).toBeGreaterThan(-1)
-    expect(provider).toBeGreaterThan(details)
   })
 
   it('owns native caption geometry with one fixed macOS drag strip above page content', () => {
@@ -234,6 +173,7 @@ describe('advanced desktop layout', () => {
 
   it('releases the Cordis layout service with its owning effect', () => {
     let disposed = false
+    let uninstall: unknown
     const ctx = {
       reflect: {
         provide: (name: string, value: unknown) => {
@@ -242,11 +182,15 @@ describe('advanced desktop layout', () => {
           return () => { disposed = true }
         },
       },
+      // Cordis runs the factory eagerly and registers its result as the
+      // fiber-owned uninstaller; capture that result the same way.
+      effect: (factory: () => unknown) => { uninstall = factory() },
     } as unknown as ClientContext
 
-    const dispose = provideDesktopLayout(ctx, new DesktopLayoutState())
+    expect(claimDesktopLayout(ctx, new DesktopLayoutState())).toBe(true)
     expect(disposed).toBe(false)
-    dispose()
+    expect(typeof uninstall).toBe('function')
+    ;(uninstall as () => void)()
     expect(disposed).toBe(true)
   })
 

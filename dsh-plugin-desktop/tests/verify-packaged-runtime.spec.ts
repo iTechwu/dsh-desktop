@@ -1,12 +1,10 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import AdmZip from 'adm-zip'
 import {
   afterPack,
-  hydratePackagedRuntime,
-  macArchesForElectronBuilder,
+  REQUIRED_DSH_CLI_RUNTIME_ENTRIES,
   REQUIRED_PACKAGED_RUNTIME_ENTRIES,
   REQUIRED_MACOS_UNIVERSAL_ENTRIES,
   REQUIRED_UNPACKED_PACKAGE_SPECIFIERS,
@@ -24,8 +22,6 @@ import {
   type PackagedDiagnosticWorkerLauncher,
 } from '../scripts/verify-packaged-runtime.ts'
 import { FORBIDDEN_MACOS_UNIVERSAL_ENTRIES } from '../scripts/mac-universal.ts'
-import { smokePackagedWindowsKoffiRuntime } from '../scripts/windows-koffi-runtime.ts'
-import { smokePackagedWindowsSharpRuntime } from '../scripts/windows-sharp-runtime.ts'
 
 function context(
   appOutDir: string,
@@ -36,7 +32,7 @@ function context(
     appOutDir,
     electronPlatformName,
     ...(arch === undefined ? {} : { arch }),
-    packager: { appInfo: { productFilename: 'Yootun-Agent' } },
+    packager: { appInfo: { productFilename: 'DSH Desktop' } },
   }
 }
 
@@ -48,148 +44,11 @@ function completePackageResolver(unpackedRoot: string): PackageResolver {
   return specifier => join(unpackedRoot, 'resolved', `${specifier.replaceAll('/', '-')}.js`)
 }
 
-describe('macOS universal runtime hydration', () => {
-  it.each([1, 3, 4])('hydrates both CPU package trees for Electron Builder arch %i', (arch) => {
-    expect(macArchesForElectronBuilder(arch)).toEqual(['arm64', 'x86_64'])
-  })
-
-  it('rejects unsupported Electron Builder architectures', () => {
-    expect(() => macArchesForElectronBuilder(undefined))
-      .toThrow('unsupported macOS Electron Builder arch undefined')
-  })
-})
-
 describe('packaged desktop runtime verification', () => {
-  it('hydrates every packaged Windows Sharp instance with its complete x64 platform package', () => {
-    const root = mkdtempSync(join(tmpdir(), 'dsh-windows-sharp-'))
-    const desktopRoot = join(root, 'desktop')
-    const runtimeContext = context(join(root, 'win-unpacked'), 'win32')
-    const unpackedRoot = resolvePackagedUnpackedRoot(runtimeContext)
-    const packagedRootSharp = join(unpackedRoot, 'node_modules', 'sharp')
-    const packagedNestedSharp = join(
-      unpackedRoot,
-      'node_modules',
-      '@deepseek-ai',
-      'consumer',
-      'node_modules',
-      'sharp',
-    )
-    const installedWindowsSharp = join(
-      desktopRoot,
-      'node_modules',
-      '@img',
-      'sharp-win32-x64',
-    )
-
-    try {
-      mkdirSync(packagedRootSharp, { recursive: true })
-      mkdirSync(packagedNestedSharp, { recursive: true })
-      mkdirSync(join(installedWindowsSharp, 'lib'), { recursive: true })
-      writeFileSync(join(packagedRootSharp, 'package.json'), '{"name":"sharp","version":"0.35.3"}')
-      writeFileSync(join(packagedNestedSharp, 'package.json'), '{"name":"sharp","version":"0.35.3"}')
-      writeFileSync(
-        join(installedWindowsSharp, 'package.json'),
-        '{"name":"@img/sharp-win32-x64","version":"0.35.3"}',
-      )
-      writeFileSync(join(installedWindowsSharp, 'lib', 'sharp-win32-x64-0.35.3.node'), 'sharp-node')
-      writeFileSync(join(installedWindowsSharp, 'lib', 'libvips-42.dll'), 'libvips')
-      writeFileSync(join(installedWindowsSharp, 'lib', 'libvips-cpp-8.18.3.dll'), 'libvips-cpp')
-
-      hydratePackagedRuntime(runtimeContext, { desktopRoot })
-
-      for (const sharpRoot of [packagedRootSharp, packagedNestedSharp]) {
-        const packagedWindowsSharp = join(sharpRoot, '..', '@img', 'sharp-win32-x64')
-        expect(readFileSync(
-          join(packagedWindowsSharp, 'lib', 'sharp-win32-x64-0.35.3.node'),
-          'utf8',
-        )).toBe('sharp-node')
-        expect(readFileSync(join(packagedWindowsSharp, 'lib', 'libvips-42.dll'), 'utf8'))
-          .toBe('libvips')
-        expect(readFileSync(
-          join(packagedWindowsSharp, 'lib', 'libvips-cpp-8.18.3.dll'),
-          'utf8',
-        )).toBe('libvips-cpp')
-      }
-    } finally {
-      rmSync(root, { recursive: true, force: true })
-    }
-  })
-
-  it('hydrates every packaged Windows Koffi version with its matching x64 native module', () => {
-    const root = mkdtempSync(join(tmpdir(), 'dsh-windows-koffi-'))
-    const desktopRoot = join(root, 'desktop')
-    const runtimeContext = context(join(root, 'win-unpacked'), 'win32')
-    const unpackedRoot = resolvePackagedUnpackedRoot(runtimeContext)
-    const packagedRootKoffi = join(unpackedRoot, 'node_modules', 'koffi')
-    const packagedNestedKoffi = join(
-      unpackedRoot,
-      'node_modules',
-      '@deepseek-ai',
-      'consumer',
-      'node_modules',
-      'koffi',
-    )
-    const installedRootNative = join(
-      desktopRoot,
-      'node_modules',
-      '@koromix',
-      'koffi-win32-x64',
-      'win32_x64',
-    )
-    const installedRootKoffi = join(desktopRoot, 'node_modules', 'koffi')
-    const installedNestedKoffi = join(
-      desktopRoot,
-      'node_modules',
-      '@deepseek-ai',
-      'consumer',
-      'node_modules',
-      'koffi',
-    )
-    const installedNestedNative = join(
-      desktopRoot,
-      'node_modules',
-      'koffi-win32-x64-3-1-1',
-      'win32_x64',
-    )
-
-    try {
-      mkdirSync(packagedRootKoffi, { recursive: true })
-      mkdirSync(packagedNestedKoffi, { recursive: true })
-      mkdirSync(installedRootKoffi, { recursive: true })
-      mkdirSync(installedNestedKoffi, { recursive: true })
-      mkdirSync(installedRootNative, { recursive: true })
-      mkdirSync(installedNestedNative, { recursive: true })
-      writeFileSync(join(packagedRootKoffi, 'package.json'), '{"name":"koffi","version":"3.1.5"}')
-      writeFileSync(join(packagedNestedKoffi, 'package.json'), '{"name":"koffi","version":"3.1.1"}')
-      writeFileSync(join(installedRootKoffi, 'package.json'), '{"name":"koffi","version":"3.1.5"}')
-      writeFileSync(join(installedNestedKoffi, 'package.json'), '{"name":"koffi","version":"3.1.1"}')
-      writeFileSync(join(installedRootNative, 'koffi.node'), 'koffi-3.1.5-win32-x64')
-      writeFileSync(join(installedNestedNative, 'koffi.node'), 'koffi-3.1.1-win32-x64')
-
-      hydratePackagedRuntime(runtimeContext, { desktopRoot })
-
-      expect(readFileSync(join(
-        unpackedRoot,
-        'node_modules',
-        '@koromix',
-        'koffi-win32-x64',
-        'win32_x64',
-        'koffi.node',
-      ), 'utf8')).toBe('koffi-3.1.5-win32-x64')
-      expect(readFileSync(join(
-        unpackedRoot,
-        'node_modules',
-        '@deepseek-ai',
-        'consumer',
-        'node_modules',
-        '@koromix',
-        'koffi-win32-x64',
-        'win32_x64',
-        'koffi.node',
-      ), 'utf8')).toBe('koffi-3.1.1-win32-x64')
-    } finally {
-      rmSync(root, { recursive: true, force: true })
-    }
+  it('tracks every generated DSH CLI chunk without pinning one release hash', () => {
+    expect(REQUIRED_DSH_CLI_RUNTIME_ENTRIES).toContain('node_modules/@deepseek-ai/dsh/lib/bin.js')
+    expect(REQUIRED_DSH_CLI_RUNTIME_ENTRIES).toContain('node_modules/@deepseek-ai/dsh/lib/plugin-F7ZVfRyo.js')
+    expect(REQUIRED_DSH_CLI_RUNTIME_ENTRIES).not.toContain('node_modules/@deepseek-ai/dsh/lib/plugin-9h8shc4d.js')
   })
 
   it('fails the diagnostic Worker smoke when its archive omits the crash dump', async () => {
@@ -239,63 +98,17 @@ describe('packaged desktop runtime verification', () => {
     },
   )
 
-  it('hydrates native packages before the static gate and diagnostic Worker smoke', async () => {
+  it('runs the static package gate before the diagnostic Worker smoke', async () => {
     const runtimeContext = context('/build', 'win32')
     const calls: string[] = []
 
     await afterPack(
       runtimeContext,
-      () => { calls.push('hydrate') },
       () => { calls.push('static') },
       async (unpackedRoot) => { calls.push(unpackedRoot) },
-      () => { calls.push('windows-koffi') },
-      () => { calls.push('windows-sharp') },
     )
 
-    expect(calls).toEqual([
-      'hydrate',
-      'static',
-      'windows-koffi',
-      'windows-sharp',
-      resolvePackagedUnpackedRoot(runtimeContext),
-    ])
-  })
-
-  it('rejects a packaged Windows Koffi module whose loaded native version is wrong', () => {
-    const root = mkdtempSync(join(tmpdir(), 'dsh-windows-koffi-smoke-'))
-    const rootKoffi = join(root, 'node_modules', 'koffi')
-    const nestedKoffi = join(root, 'node_modules', 'consumer', 'node_modules', 'koffi')
-
-    try {
-      mkdirSync(rootKoffi, { recursive: true })
-      mkdirSync(nestedKoffi, { recursive: true })
-      writeFileSync(join(rootKoffi, 'package.json'), '{"name":"koffi","version":"3.1.5"}')
-      writeFileSync(join(nestedKoffi, 'package.json'), '{"name":"koffi","version":"3.1.1"}')
-
-      expect(() => smokePackagedWindowsKoffiRuntime(
-        root,
-        koffiRoot => ({ version: koffiRoot === nestedKoffi ? '3.1.5' : '3.1.5' }),
-      )).toThrow(`packaged Koffi at ${nestedKoffi} loaded native version 3.1.5; expected 3.1.1`)
-    } finally {
-      rmSync(root, { recursive: true, force: true })
-    }
-  })
-
-  it('rejects a packaged Windows Sharp module whose loaded native version is wrong', () => {
-    const root = mkdtempSync(join(tmpdir(), 'dsh-windows-sharp-smoke-'))
-    const sharpRoot = join(root, 'node_modules', 'sharp')
-
-    try {
-      mkdirSync(sharpRoot, { recursive: true })
-      writeFileSync(join(sharpRoot, 'package.json'), '{"name":"sharp","version":"0.35.3"}')
-
-      expect(() => smokePackagedWindowsSharpRuntime(
-        root,
-        () => ({ versions: { sharp: '0.34.5' } }),
-      )).toThrow(`packaged Sharp at ${sharpRoot} loaded native version 0.34.5; expected 0.35.3`)
-    } finally {
-      rmSync(root, { recursive: true, force: true })
-    }
+    expect(calls).toEqual(['static', resolvePackagedUnpackedRoot(runtimeContext)])
   })
 
   it('tracks the ConPTY-only native surface shipped by node-pty 1.2', () => {
@@ -307,28 +120,10 @@ describe('packaged desktop runtime verification', () => {
     ])
   })
 
-  it('rejects a Windows package that omits the native module beside nested Koffi', () => {
-    const runtimeContext = context('/build', 'win32')
-    const unpackedRoot = resolvePackagedUnpackedRoot(runtimeContext)
-    const nestedKoffiManifest = 'node_modules/@deepseek-ai/consumer/node_modules/koffi/package.json'
-    const missingNative = 'node_modules/@deepseek-ai/consumer/node_modules/@koromix/koffi-win32-x64/win32_x64/koffi.node'
-    const archiveEntries = [
-      ...completeArchiveEntries('\\'),
-      `\\${nestedKoffiManifest.replaceAll('/', '\\')}`,
-    ]
-
-    expect(() => verifyPackagedRuntime(
-      runtimeContext,
-      () => archiveEntries,
-      filename => filename !== join(unpackedRoot, missingNative),
-      completePackageResolver(unpackedRoot),
-    )).toThrow(`missing required physical entries: ${join(...missingNative.split('/'))}`)
-  })
-
   it.each([
     [
       'darwin',
-      join('/build', 'Yootun-Agent.app', 'Contents', 'Resources', 'app.asar'),
+      join('/build', 'DSH Desktop.app', 'Contents', 'Resources', 'app.asar'),
     ],
     [
       'win32',

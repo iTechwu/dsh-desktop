@@ -10,7 +10,7 @@ import type {
   PersistedWindowsWindowMaterial,
 } from './window-material.ts'
 
-/** Electron platforms supported by the Yootun-Agent native adapter. */
+/** Electron platforms supported by the DSH Desktop native adapter. */
 export type DesktopPlatform = 'darwin' | 'win32' | 'linux'
 
 /** Native presentation modes selected by the desktop-shell Cordis row. */
@@ -139,8 +139,10 @@ export interface DesktopShellSpec extends DesktopWindowConfig {
   windowsBuild?: number
   /** Unmodified Web root served by the active DSH profile. */
   url: string
-  /** Renderer URL with desktop markers, loaded after browser authentication. */
+  /** Optional renderer entry URL that differs from the served Web root. */
   rendererUrl?: string
+  /** Official one-time launch URL used to mint this Electron session's browser cookie. */
+  authenticationUrl: string
   /** Ephemeral capability attached by Electron to this renderer generation's requests. */
   rendererAccessHeader: DesktopRendererAccessHeader
   /** Native application and tray label. */
@@ -206,9 +208,6 @@ export interface DesktopRuntime {
   /** Open a native terminal containing packaged DSH command shims. */
   openTerminal(): void
 
-  /** Open the managed OpenMontage Web View after exchanging the DoFe key for a session cookie. */
-  openOpenMontage(apiKey: string): Promise<void>
-
   /** Reload the mounted renderer without restarting the Host. */
   reloadRenderer(): void
 
@@ -220,6 +219,9 @@ export interface DesktopRuntime {
 
   /** Open the desktop operating system's native workspace-folder chooser. */
   pickDirectory(): Promise<string | null>
+
+  /** Launch the OpenMontage web app with one managed DoFe credential. */
+  openOpenMontage(apiKey: string): Promise<void>
 
   /** Open the isolated native Profile creator, focusing an existing instance. */
   openProfileCreateWindow(options: Omit<ProfileCreateWindowOptions, 'locale'>): void
@@ -248,7 +250,7 @@ export interface DesktopRuntime {
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
-    /** Electron adapter provided by the Yootun-Agent launcher. */
+    /** Electron adapter provided by the DSH Desktop launcher. */
     desktopRuntime: DesktopRuntime
   }
 }
