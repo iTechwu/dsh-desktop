@@ -5,7 +5,7 @@ import { dirname, resolve } from 'node:path'
 
 const root = resolve(import.meta.dirname, '..')
 const sibling = resolve(root, '../docker-helm.dofe.ai/plugins/dsh-yootun-ui')
-const snapshot = resolve(root, 'vendor/dsh-yootun-ui')
+const snapshot = resolve(root, '.ci/dsh-yootun-ui')
 
 if (existsSync(resolve(sibling, 'package.json'))) {
   console.log(`dofe-ui: using sibling plugin at ${sibling}`)
