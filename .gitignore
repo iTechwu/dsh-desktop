@@ -7,3 +7,7 @@ pnpm-debug.log
 dsh-plugin-desktop/dist/
 dsh-plugin-desktop/lib/
 dsh-community-market/lib/
+
+# 兄弟 fork 直连时代的本地产物与个人加速配置
+vendor/
+.npmrc

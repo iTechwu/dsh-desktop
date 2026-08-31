@@ -1,7 +1,6 @@
 {
-  "repository": "https://github.com/deepseek-ai/deepseek-harness.git",
-  "commit": "bd67eb5040f895a9390317bd8181f4b6a14e9b85",
-  "sourceVersion": "0.1.2-alpha.1",
-  "runtimePackageVersion": "0.1.2-alpha.1",
-  "localCheckout": "../deepseek-harness"
+  "repository": "git@github.com:iTechwu/deepseek-harness.git",
+  "branch": "dev",
+  "localCheckout": "../deepseek-harness",
+  "sourceVersion": "0.1.2-alpha.2"
 }
