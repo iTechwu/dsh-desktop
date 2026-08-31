@@ -1,7 +1,7 @@
 /** Model catalog fetched from the DoFe model router. */
 
-/** Public model gateway used by the in-network desktop deployment. */
-export const DOFE_MODEL_CATALOG_URL = 'https://ixicai.cn/api/v1/models'
+/** OpenAI-compatible chat model catalog used by the desktop model picker. */
+export const DOFE_MODEL_CATALOG_URL = 'https://ixicai.cn/api/v1/models?protocol=openai'
 
 export interface DofeModel {
   readonly id: string

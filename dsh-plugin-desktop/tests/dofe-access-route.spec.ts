@@ -39,7 +39,7 @@ describe('DoFe model_api_key validation route', () => {
     await handleDofeAccessValidationRequest(request({ key: 'entered-secret' }), res, ORIGIN, fetcher)
 
     expect(fetcher).toHaveBeenCalledWith(
-      'https://ixicai.cn/api/v1/models',
+      'https://ixicai.cn/api/v1/models?protocol=openai',
       expect.objectContaining({
         headers: { Authorization: 'Bearer entered-secret' },
         redirect: 'error',
@@ -87,7 +87,7 @@ describe('DoFe model_api_key validation route', () => {
     await handleDofeModelCatalogRequest(request({ key: 'entered-secret' }), res, ORIGIN, fetcher)
 
     expect(fetcher).toHaveBeenCalledWith(
-      'https://ixicai.cn/api/v1/models',
+      'https://ixicai.cn/api/v1/models?protocol=openai',
       expect.objectContaining({ headers: { Authorization: 'Bearer entered-secret', Accept: 'application/json' } }),
     )
     expect(JSON.parse(res.body)).toEqual({ models: [{ id: 'remote-a', name: 'Remote A' }] })
