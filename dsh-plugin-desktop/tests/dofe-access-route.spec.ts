@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { Readable } from 'node:stream'
 import { describe, expect, it, vi } from 'vitest'
@@ -32,6 +33,14 @@ function response(): ServerResponse & { body: string } {
 }
 
 describe('DoFe model_api_key validation route', () => {
+  it('registers both handlers on the Desktop private web surface', () => {
+    const source = readFileSync(new URL('../src/index.ts', import.meta.url), 'utf8')
+
+    expect(source).toContain('[DOFE_ACCESS_MODELS_PATH, handleDofeModelCatalogRequest]')
+    expect(source).toContain('[DOFE_ACCESS_VALIDATE_PATH, handleDofeAccessValidationRequest]')
+    expect(source).toContain('rejectDesktopRequest(ctx, req, res)')
+  })
+
   it('validates the key through the managed gateway without returning the secret', async () => {
     const fetcher = vi.fn(async () => new Response('{}', { status: 200 }))
     const res = response()

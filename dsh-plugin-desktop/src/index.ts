@@ -20,6 +20,12 @@ import {
   RENDERER_BOOT_REPORT_PATH,
 } from './renderer-boot.ts'
 import {
+  DOFE_ACCESS_MODELS_PATH,
+  DOFE_ACCESS_VALIDATE_PATH,
+  handleDofeAccessValidationRequest,
+  handleDofeModelCatalogRequest,
+} from './dofe-access-route.ts'
+import {
   DESKTOP_DIRECTORY_PICKER_PATH,
   DESKTOP_DIRECTORY_VALIDATOR_PATH,
 } from './directory-picker-contract.ts'
@@ -346,6 +352,23 @@ export function apply(ctx: Context, config: Config): void {
     }),
     'dsh-plugin-desktop: renderer boot report route',
   )
+  const dofeAccessRoutes = [
+    [DOFE_ACCESS_MODELS_PATH, handleDofeModelCatalogRequest],
+    [DOFE_ACCESS_VALIDATE_PATH, handleDofeAccessValidationRequest],
+  ] as const
+  for (const [path, handler] of dofeAccessRoutes) {
+    ctx.effect(
+      () => ctx.webServer.register({
+        kind: 'exact',
+        path,
+        handler: (req, res) => {
+          if (rejectDesktopRequest(ctx, req, res)) return
+          return handler(req, res, rendererOrigin)
+        },
+      }),
+      `dsh-plugin-desktop: private DoFe access route ${path}`,
+    )
+  }
   if (runtime.platform === 'win32') {
     ctx.effect(
       () => ctx.webServer.register({
