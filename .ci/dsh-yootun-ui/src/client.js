@@ -67,6 +67,15 @@ async function jsonPost(path, body) {
   return { ok: response.ok, value: await response.json() }
 }
 
+async function mutateCurrentSettings(settingsApi, namespace, operations) {
+  const described = await settingsApi.describe()
+  if (!described.ok) throw new Error('settings unavailable')
+  const target = described.value.namespaces.find(item => item.ns === namespace)
+  if (!target) throw new Error(`${namespace} unavailable`)
+  const result = await settingsApi.mutate(namespace, operations, target.revision)
+  if (!result.ok) throw new Error(`${namespace} rejected`)
+}
+
 function AccessForm({ credentials, settingsApi, useAccess, initialConfigured, onboarding, onConfigured, t }) {
   const access = useAccess(snapshot => snapshot)
   const [configured, setConfigured] = useState(initialConfigured)
@@ -114,39 +123,27 @@ function AccessForm({ credentials, settingsApi, useAccess, initialConfigured, on
         setError(t('invalid'))
         return
       }
-      const described = await settingsApi.describe()
-      if (!described.ok) throw new Error('settings unavailable')
-      const namespaces = described.value.namespaces
       const modelConfig = models.map(model => ({
         id: model.id, name: model.name, ...(model.description ? { description: model.description } : {}),
         ...(model.contextWindow ? { contextWindow: model.contextWindow } : {}),
         inputModalities: Array.isArray(model.inputModalities) ? model.inputModalities : ['text'],
       }))
-      const llm = namespaces.find(item => item.ns === 'llm-deepseek')
-      if (llm) {
-        const result = await settingsApi.mutate('llm-deepseek', [{ op: 'set', path: ['models'], value: modelConfig }], llm.revision)
-        if (!result.ok) throw new Error('model settings rejected')
-      }
+      await mutateCurrentSettings(settingsApi, 'llm-deepseek', [
+        { op: 'set', path: ['models'], value: modelConfig },
+      ])
       const stored = await credentials.set(ACCESS_KEY, entered)
       if (!stored.ok) throw new Error('credential rejected')
-      await access.mutate([
+      await mutateCurrentSettings(settingsApi, 'agent-default-model', [
+        { op: 'set', path: ['provider'], value: 'deepseek-official' },
+        { op: 'set', path: ['model'], value: modelId },
+      ])
+      // Commit authorization last so a partial write never unlocks the gate.
+      await mutateCurrentSettings(settingsApi, ACCESS_NS, [
         { op: 'set', path: ['setupComplete'], value: true },
         { op: 'set', path: ['validationVersion'], value: VALIDATION_VERSION },
         { op: 'set', path: ['enabledPlugins'], value: enabled },
         { op: 'set', path: ['modelId'], value: modelId },
       ])
-      // Settings namespaces share one document revision. Refresh it after the
-      // model catalog and DoFe scope writes before updating the default model.
-      const refreshed = await settingsApi.describe()
-      if (!refreshed.ok) throw new Error('settings refresh rejected')
-      const defaultModel = refreshed.value.namespaces.find(item => item.ns === 'agent-default-model')
-      if (defaultModel) {
-        const result = await settingsApi.mutate('agent-default-model', [
-          { op: 'set', path: ['provider'], value: 'deepseek-official' },
-          { op: 'set', path: ['model'], value: modelId },
-        ], defaultModel.revision)
-        if (!result.ok) throw new Error('default model rejected')
-      }
       setConfigured(true)
       setKey('')
       onConfigured?.()
