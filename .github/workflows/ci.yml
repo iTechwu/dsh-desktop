@@ -77,8 +77,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p "$GITHUB_WORKSPACE/../deepseek-harness"
-          curl --fail --location --retry 3 https://github.com/iTechwu/deepseek-harness/archive/refs/heads/dev.tar.gz | tar -xz --strip-components=1 -C "$GITHUB_WORKSPACE/../deepseek-harness"
+          upstream_dir="$GITHUB_WORKSPACE/../deepseek-harness"
+          if command -v cygpath >/dev/null 2>&1; then upstream_dir="$(cygpath -u "$upstream_dir")"; fi
+          mkdir -p "$upstream_dir"
+          curl --fail --location --retry 3 https://github.com/iTechwu/deepseek-harness/archive/refs/heads/dev.tar.gz | tar -xz --strip-components=1 -C "$upstream_dir"
           node scripts/upstream-workspace-link.mjs
           node scripts/prepare-dofe-ui.mjs
           pnpm dofe-ui:build
@@ -121,8 +123,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p "$GITHUB_WORKSPACE/../deepseek-harness"
-          curl --fail --location --retry 3 https://github.com/iTechwu/deepseek-harness/archive/refs/heads/dev.tar.gz | tar -xz --strip-components=1 -C "$GITHUB_WORKSPACE/../deepseek-harness"
+          upstream_dir="$GITHUB_WORKSPACE/../deepseek-harness"
+          if command -v cygpath >/dev/null 2>&1; then upstream_dir="$(cygpath -u "$upstream_dir")"; fi
+          mkdir -p "$upstream_dir"
+          curl --fail --location --retry 3 https://github.com/iTechwu/deepseek-harness/archive/refs/heads/dev.tar.gz | tar -xz --strip-components=1 -C "$upstream_dir"
           node scripts/upstream-workspace-link.mjs
           node scripts/prepare-dofe-ui.mjs
           pnpm dofe-ui:build
@@ -177,8 +181,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p "$GITHUB_WORKSPACE/../deepseek-harness"
-          curl --fail --location --retry 3 https://github.com/iTechwu/deepseek-harness/archive/refs/heads/dev.tar.gz | tar -xz --strip-components=1 -C "$GITHUB_WORKSPACE/../deepseek-harness"
+          upstream_dir="$GITHUB_WORKSPACE/../deepseek-harness"
+          if command -v cygpath >/dev/null 2>&1; then upstream_dir="$(cygpath -u "$upstream_dir")"; fi
+          mkdir -p "$upstream_dir"
+          curl --fail --location --retry 3 https://github.com/iTechwu/deepseek-harness/archive/refs/heads/dev.tar.gz | tar -xz --strip-components=1 -C "$upstream_dir"
           node scripts/upstream-workspace-link.mjs
           node scripts/prepare-dofe-ui.mjs
           pnpm dofe-ui:build
@@ -225,8 +231,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p "$GITHUB_WORKSPACE/../deepseek-harness"
-          curl --fail --location --retry 3 https://github.com/iTechwu/deepseek-harness/archive/refs/heads/dev.tar.gz | tar -xz --strip-components=1 -C "$GITHUB_WORKSPACE/../deepseek-harness"
+          upstream_dir="$GITHUB_WORKSPACE/../deepseek-harness"
+          if command -v cygpath >/dev/null 2>&1; then upstream_dir="$(cygpath -u "$upstream_dir")"; fi
+          mkdir -p "$upstream_dir"
+          curl --fail --location --retry 3 https://github.com/iTechwu/deepseek-harness/archive/refs/heads/dev.tar.gz | tar -xz --strip-components=1 -C "$upstream_dir"
           node scripts/upstream-workspace-link.mjs
           node scripts/prepare-dofe-ui.mjs
           pnpm dofe-ui:build
