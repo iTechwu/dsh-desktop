@@ -88,8 +88,10 @@ jobs:
         with:
           path: ${{ steps.pnpm-store.outputs.dir }}
           key: pnpm-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml', 'pnpm-workspace.yaml', 'upstream.json') }}
+      # The sibling fork keeps its own frozen lockfile; pnpm cannot freeze an
+      # external symlink workspace against the Desktop-only root lockfile.
       - if: needs.changes.outputs.product == 'true'
-        run: pnpm install --frozen-lockfile
+        run: pnpm install --no-frozen-lockfile
       - if: needs.changes.outputs.product == 'true'
         run: pnpm upstream:install
       - if: needs.changes.outputs.product == 'true'
@@ -125,7 +127,8 @@ jobs:
         with:
           path: ${{ steps.pnpm-store.outputs.dir }}
           key: pnpm-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml', 'pnpm-workspace.yaml', 'upstream.json') }}
-      - run: pnpm install --frozen-lockfile
+      # The following upstream install validates the sibling's own lockfile.
+      - run: pnpm install --no-frozen-lockfile
       - run: pnpm upstream:install
       - run: pnpm upstream:build
       - run: pnpm --filter dsh-plugin-desktop check:win-package
@@ -177,7 +180,8 @@ jobs:
         with:
           path: ${{ steps.pnpm-store.outputs.dir }}
           key: pnpm-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml', 'pnpm-workspace.yaml', 'upstream.json') }}
-      - run: pnpm install --frozen-lockfile
+      # The following upstream install validates the sibling's own lockfile.
+      - run: pnpm install --no-frozen-lockfile
       - run: pnpm upstream:install
       - run: pnpm upstream:build
       - run: pnpm --filter dsh-plugin-desktop check:mac-package

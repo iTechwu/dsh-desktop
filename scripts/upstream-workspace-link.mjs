@@ -46,3 +46,7 @@ export function main() {
   const materialized = materializeWindowsWorkspaceLink()
   process.stdout.write(`upstream-workspace-link: ${materialized ? 'materialized Windows junction' : 'symlink already in place'}\n`)
 }
+
+if (process.argv[1] !== undefined && resolve(process.argv[1]) === script) {
+  main()
+}

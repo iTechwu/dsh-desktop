@@ -1,6 +1,8 @@
+import { spawnSync } from 'node:child_process'
 import { lstatSync, mkdirSync, mkdtempSync, readlinkSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { afterEach, describe, expect, it } from 'vitest'
 import { materializeWindowsWorkspaceLink } from '../../scripts/upstream-workspace-link.mjs'
 
@@ -21,6 +23,14 @@ function fixture(): { root: string; link: string; target: string } {
 }
 
 describe('Windows sibling workspace link', () => {
+  it('runs the workspace-link check when invoked as a CLI', () => {
+    const script = fileURLToPath(new URL('../../scripts/upstream-workspace-link.mjs', import.meta.url))
+    const result = spawnSync(process.execPath, [script], { encoding: 'utf8' })
+
+    expect(result.status).toBe(0)
+    expect(result.stdout).toContain('upstream-workspace-link: symlink already in place')
+  })
+
   it('replaces Git symlink text with a directory link', () => {
     const { root, link, target } = fixture()
     mkdirSync(join(root, 'desktop'))

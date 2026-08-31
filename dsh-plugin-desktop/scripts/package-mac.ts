@@ -129,6 +129,7 @@ export function packageMacSmoke(options: MacSmokePackageOptions = defaultOptions
       '--universal',
       '--publish',
       'never',
+      '--config.publish=null',
       '--config.mac.notarize=false',
       '--config.npmRebuild=false',
       `--config.directories.output=${options.outputDir}`,
