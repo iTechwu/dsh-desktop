@@ -104,7 +104,10 @@ async function scenario(inputs) {
     await context.plugin(TerminalBash, {
       shellDialect: 'pwsh',
       shellPath: inputs.shellPath,
-      timeoutMs: 20_000,
+      // Windows runners can spend tens of seconds creating the Electron ACL
+      // relay on a cold start; keep the smoke bounded while avoiding a false
+      // failure before the shell has published its readiness marker.
+      timeoutMs: 60_000,
       idleSilenceMs: 1_000,
       handoffGraceMs: 500,
       disposeGraceMs: 1_000,
