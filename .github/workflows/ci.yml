@@ -77,7 +77,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          git clone --depth 1 --branch dev https://github.com/iTechwu/deepseek-harness.git "$GITHUB_WORKSPACE/../deepseek-harness"
+          mkdir -p "$GITHUB_WORKSPACE/../deepseek-harness"
+          curl --fail --location --retry 3 https://github.com/iTechwu/deepseek-harness/archive/refs/heads/dev.tar.gz | tar -xz --strip-components=1 -C "$GITHUB_WORKSPACE/../deepseek-harness"
           node scripts/upstream-workspace-link.mjs
           node scripts/prepare-dofe-ui.mjs
           pnpm dofe-ui:build
@@ -120,7 +121,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          git clone --depth 1 --branch dev https://github.com/iTechwu/deepseek-harness.git "$GITHUB_WORKSPACE/../deepseek-harness"
+          mkdir -p "$GITHUB_WORKSPACE/../deepseek-harness"
+          curl --fail --location --retry 3 https://github.com/iTechwu/deepseek-harness/archive/refs/heads/dev.tar.gz | tar -xz --strip-components=1 -C "$GITHUB_WORKSPACE/../deepseek-harness"
           node scripts/upstream-workspace-link.mjs
           node scripts/prepare-dofe-ui.mjs
           pnpm dofe-ui:build
@@ -175,7 +177,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          git clone --depth 1 --branch dev https://github.com/iTechwu/deepseek-harness.git "$GITHUB_WORKSPACE/../deepseek-harness"
+          mkdir -p "$GITHUB_WORKSPACE/../deepseek-harness"
+          curl --fail --location --retry 3 https://github.com/iTechwu/deepseek-harness/archive/refs/heads/dev.tar.gz | tar -xz --strip-components=1 -C "$GITHUB_WORKSPACE/../deepseek-harness"
           node scripts/upstream-workspace-link.mjs
           node scripts/prepare-dofe-ui.mjs
           pnpm dofe-ui:build
@@ -222,7 +225,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          git clone --depth 1 --branch dev https://github.com/iTechwu/deepseek-harness.git "$GITHUB_WORKSPACE/../deepseek-harness"
+          mkdir -p "$GITHUB_WORKSPACE/../deepseek-harness"
+          curl --fail --location --retry 3 https://github.com/iTechwu/deepseek-harness/archive/refs/heads/dev.tar.gz | tar -xz --strip-components=1 -C "$GITHUB_WORKSPACE/../deepseek-harness"
           node scripts/upstream-workspace-link.mjs
           node scripts/prepare-dofe-ui.mjs
           pnpm dofe-ui:build
