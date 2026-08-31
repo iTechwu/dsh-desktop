@@ -4,13 +4,17 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import { fileURLToPath } from 'node:url'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
+import type {} from '@deepseek-ai/dsh-app-boot'
 import type {} from '@deepseek-ai/dsh-cmdline'
+import type {} from '@deepseek-ai/dsh-credentials'
 import {
   LOCALE_SETTINGS_NAMESPACE,
   type LocaleSettings,
 } from '@deepseek-ai/dsh-client-locale'
 import type {} from '@deepseek-ai/dsh-host-webserver'
 import type {} from '@deepseek-ai/dsh-client-connection'
+import type {} from '@deepseek-ai/dsh-session-persistence'
+import type {} from '@deepseek-ai/dsh-tools'
 import {
   THEME_SETTINGS_NAMESPACE,
   type ThemeSettings,
@@ -25,6 +29,10 @@ import {
   handleDofeAccessValidationRequest,
   handleDofeModelCatalogRequest,
 } from './dofe-access-route.ts'
+import {
+  handleYootunDashboardRequest,
+  YOOTUN_DASHBOARD_YESTERDAY_PATH,
+} from './yootun-dashboard-route.ts'
 import {
   DESKTOP_DIRECTORY_PICKER_PATH,
   DESKTOP_DIRECTORY_VALIDATOR_PATH,
@@ -369,6 +377,22 @@ export function apply(ctx: Context, config: Config): void {
       `dsh-plugin-desktop: private DoFe access route ${path}`,
     )
   }
+  ctx.effect(
+    () => ctx.webServer.register({
+      kind: 'exact',
+      path: YOOTUN_DASHBOARD_YESTERDAY_PATH,
+      handler: (req, res) => {
+        if (rejectDesktopRequest(ctx, req, res)) return
+        return handleYootunDashboardRequest(req, res, rendererOrigin, {
+          credentials: ctx.get('credentials'),
+          tools: ctx.get('tools'),
+          sessionPersistence: ctx.get('sessionPersistence'),
+          dshHomePath: ctx.get('dshHomePath'),
+        })
+      },
+    }),
+    `dsh-plugin-desktop: private Yootun dashboard route ${YOOTUN_DASHBOARD_YESTERDAY_PATH}`,
+  )
   if (runtime.platform === 'win32') {
     ctx.effect(
       () => ctx.webServer.register({
