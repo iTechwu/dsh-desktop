@@ -421,6 +421,14 @@ describe('published package surface', () => {
     expect(main).toContain('clearDesktopSetupWizardState(app.getPath(\'userData\'), profileDir)')
   })
 
+  it('declares every remote service consumed by the mandatory DoFe gate', () => {
+    const client = readFileSync(new URL('src/client/index.ts', packageRoot), 'utf8')
+    const credentials = client.indexOf("'remote.credentials'")
+    const settings = client.indexOf("'remote.settings'")
+    expect(credentials).toBeGreaterThanOrEqual(0)
+    expect(settings).toBeGreaterThan(credentials)
+  })
+
   it('wires lifecycle evidence through key startup stages and terminal outcomes', () => {
     const main = readFileSync(new URL('src/main.ts', packageRoot), 'utf8')
     const createRecorder = main.indexOf('const lifecycleRecorder = createDesktopLifecycleRecorder({')
