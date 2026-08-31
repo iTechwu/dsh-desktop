@@ -141,9 +141,9 @@ function AccessForm({ credentials, settingsApi, settingsScope, t, onboarding, on
     void settingsApi.describe().then(result => {
       if (cancelled || !result.ok) return
       const deepseek = result.value.namespaces.find(item => item.ns === 'llm-deepseek')
-      const value = deepseek?.value
-      const catalog = typeof value === 'object' && value !== null && !Array.isArray(value)
-        ? parseDofeModelCatalog((value as { models?: unknown }).models)
+      const user = deepseek?.user
+      const catalog = typeof user === 'object' && user !== null && !Array.isArray(user)
+        ? parseDofeModelCatalog((user as { models?: unknown }).models)
         : []
       if (catalog.length === 0 || cancelled) return
       setModels(catalog)
