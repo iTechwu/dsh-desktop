@@ -1491,6 +1491,9 @@ importers:
       node-addon-require-builtin:
         specifier: ^0.1.4
         version: 0.1.5
+      open:
+        specifier: 11.0.1
+        version: 11.0.1(patch_hash=383484d0b84b1bb856145936155333d024f1dfc5d6eaf86104b2a00bac8e8612)
       pnpm:
         specifier: 11.7.0
         version: 11.7.0
