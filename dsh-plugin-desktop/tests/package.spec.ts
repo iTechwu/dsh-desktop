@@ -74,7 +74,7 @@ describe('published package surface', () => {
 
   it('rebuilds the sibling fork cleanly from the root command', () => {
     expect(workspaceManifest.scripts?.['upstream:build']).toBe(
-      'cd ../deepseek-harness && corepack pnpm run clean && corepack pnpm run build',
+      'corepack pnpm --dir ../deepseek-harness run clean && corepack pnpm --dir ../deepseek-harness run build',
     )
   })
 
