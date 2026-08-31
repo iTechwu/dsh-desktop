@@ -3,7 +3,7 @@ import { createElement, type ReactNode } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it, vi } from 'vitest'
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
-import { apply } from '../src/client/index.ts'
+import { apply, inject } from '../src/client/index.ts'
 import { AdvancedFrame, type AdvancedFrameProps } from '../src/client/AdvancedFrame.tsx'
 import { applyAdvancedShell } from '../src/client/advanced-shell.ts'
 import { claimDesktopLayout } from '../src/client/layout-service.ts'
@@ -16,6 +16,7 @@ import {
 } from '../src/client/layout-state.ts'
 import { installDesktopOwnedStyles } from '../src/client/styles.ts'
 import { desktopWindowService, provideDesktopWindow } from '../src/client/window-service.ts'
+import { DEFAULT_DOFE_PLUGIN_IDS, DOFE_PLUGIN_CATALOG } from '../src/dofe-plugins.ts'
 import {
   ADVANCED_MACOS_CONTENT_INSET,
   ADVANCED_MACOS_DRAG_LAYER_Z_INDEX,
@@ -27,6 +28,16 @@ import {
 } from '../src/window-chrome.ts'
 
 describe('desktop client environment', () => {
+  it('composes Yootun branding and the mandatory DoFe access surfaces', () => {
+    const source = readFileSync(new URL('../src/client/index.ts', import.meta.url), 'utf8')
+
+    expect(inject).toEqual(expect.arrayContaining(['remote.credentials', 'remote.settings']))
+    expect(source).toContain('applyDesktopBrand(ctx)')
+    expect(source).toContain('installDofeAccessGate(dofeAccess())')
+    expect(source).toContain('DofeAccessSection')
+    expect(DEFAULT_DOFE_PLUGIN_IDS).toEqual(DOFE_PLUGIN_CATALOG.map(plugin => plugin.id))
+  })
+
   it('does not activate desktop effects for an ordinary browser URL', () => {
     vi.stubGlobal('window', { location: { search: '' } })
     const effect = vi.fn()

@@ -1,4 +1,5 @@
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
+import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
@@ -9,12 +10,16 @@ import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type {} from '@deepseek-ai/dsh-client-ui-theme/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import { applyAdvancedShell } from './advanced-shell.ts'
+import { applyDesktopBrand } from './brand.tsx'
 import { startRendererBootReporter } from './boot-health.ts'
 import { applyDesktopSettings } from './desktop-settings.ts'
 import { installDesktopDirectoryPickerBridge } from './directory-picker.ts'
 import { parseDesktopClientEnvironment } from './environment.ts'
 import { applyExtendedShell, applyFramedShell } from './extended-shell.ts'
 import { desktopWindowService, provideDesktopWindow } from './window-service.ts'
+import { DofeAccessSection, installDofeAccessGate, installDofeAccessStyles } from './DofeAccessSection.tsx'
+import { DOFE_ACCESS_COPY, type DofeAccessLocaleKey } from './dofe-access.ts'
+import { DOFE_ACCESS_SETTINGS_NAMESPACE, type DofeAccessSettings } from '../dofe-plugins.ts'
 
 export { applyAdvancedShell } from './advanced-shell.ts'
 export { applyDesktopSettings } from './desktop-settings.ts'
@@ -77,17 +82,34 @@ export const inject = [
   'sessions',
   'theme',
   'uiRenderer',
+  'remote.credentials',
+  'remote.settings',
 ]
 
 /** Register desktop-owned client surfaces for the current BrowserWindow mode. @param ctx - browser Cordis context. */
 export function apply(ctx: ClientContext): void {
   const environment = parseDesktopClientEnvironment(window.location.search)
   if (!environment) return
+  applyDesktopBrand(ctx)
   ctx.effect(
     () => provideDesktopWindow(ctx, desktopWindowService(environment)),
     'dsh-plugin-desktop: native window geometry service',
   )
   const desktopSettings = applyDesktopSettings(ctx, environment)
+  const dofeT = ctx.locale.bind('dofe.access') as (key: DofeAccessLocaleKey) => string
+  ctx.effect(() => ctx.locale.register('dofe.access', DOFE_ACCESS_COPY), 'dofe: access dictionaries')
+  ctx.effect(() => installDofeAccessStyles(), 'dofe: access styles')
+  const dofeAccess = () => ({
+    credentials: ctx.remote.credentials,
+    settingsApi: ctx.remote.settings,
+    settingsScope: ctx.settingsScope.bind<DofeAccessSettings>({ namespace: DOFE_ACCESS_SETTINGS_NAMESPACE }),
+    t: dofeT,
+  })
+  ctx.effect(() => installDofeAccessGate(dofeAccess()), 'dofe: mandatory access gate')
+  ctx.slots.inject('settings.section', () => ctx.slots.register({
+    name: 'settings.section', id: 'dofe-access', order: 20, label: () => dofeT('nav'), locale: 'dofe.access',
+    inject: dofeAccess,
+  }, DofeAccessSection))
   ctx.effect(
     () => startRendererBootReporter(ctx.loader),
     'dsh-plugin-desktop: renderer boot health report',
