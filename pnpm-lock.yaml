@@ -1476,6 +1476,9 @@ importers:
       '@deepseek-ai/schemastery':
         specifier: workspace:*
         version: link:../deepseek-harness/vendor/schemastery
+      '@dofe/dsh-yootun-ui':
+        specifier: file:../../docker-helm.dofe.ai/plugins/dsh-yootun-ui
+        version: file:../docker-helm.dofe.ai/plugins/dsh-yootun-ui
       adm-zip:
         specifier: ^0.6.0
         version: 0.6.0
@@ -1888,6 +1891,9 @@ packages:
   '@csstools/css-tokenizer@4.0.0':
     resolution: {integrity: sha512-QxULHAm7cNu72w97JUNCBFODFaXpbDg+dP8b/oWFAZ2MTRppA3U00Y2L1HqaS4J6yBqxwa/Y3nMBaxVKbB/NsA==}
     engines: {node: '>=20.19.0'}
+
+  '@dofe/dsh-yootun-ui@file:../docker-helm.dofe.ai/plugins/dsh-yootun-ui':
+    resolution: {directory: ../docker-helm.dofe.ai/plugins/dsh-yootun-ui, type: directory}
 
   '@dotenvx/dotenvx@1.75.1':
     resolution: {integrity: sha512-/BITOC9dmS/edY2zQwZNicQ059O6RKabtQfyEafV0nGtfYRNHYy1DIPiYVcov40+tob9hfmBnbR963dS+EQ1DQ==}
@@ -5717,6 +5723,8 @@ snapshots:
       css-tree: 3.2.1
 
   '@csstools/css-tokenizer@4.0.0': {}
+
+  '@dofe/dsh-yootun-ui@file:../docker-helm.dofe.ai/plugins/dsh-yootun-ui': {}
 
   '@dotenvx/dotenvx@1.75.1':
     dependencies:

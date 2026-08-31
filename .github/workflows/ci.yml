@@ -79,6 +79,8 @@ jobs:
           set -euo pipefail
           git clone --depth 1 --branch dev https://github.com/iTechwu/deepseek-harness.git "$GITHUB_WORKSPACE/../deepseek-harness"
           node scripts/upstream-workspace-link.mjs
+          git clone --depth 1 --branch master https://github.com/iTechwu/docker-helm.dofe.ai.git "$GITHUB_WORKSPACE/../docker-helm.dofe.ai"
+          pnpm dofe-ui:build
       - name: Resolve pnpm store path
         if: needs.changes.outputs.product == 'true'
         id: pnpm-store
@@ -120,6 +122,8 @@ jobs:
           set -euo pipefail
           git clone --depth 1 --branch dev https://github.com/iTechwu/deepseek-harness.git "$GITHUB_WORKSPACE/../deepseek-harness"
           node scripts/upstream-workspace-link.mjs
+          git clone --depth 1 --branch master https://github.com/iTechwu/docker-helm.dofe.ai.git "$GITHUB_WORKSPACE/../docker-helm.dofe.ai"
+          pnpm dofe-ui:build
       - name: Resolve pnpm store path
         id: pnpm-store
         run: echo "dir=$(pnpm store path)" >> "$env:GITHUB_OUTPUT"
@@ -173,6 +177,8 @@ jobs:
           set -euo pipefail
           git clone --depth 1 --branch dev https://github.com/iTechwu/deepseek-harness.git "$GITHUB_WORKSPACE/../deepseek-harness"
           node scripts/upstream-workspace-link.mjs
+          git clone --depth 1 --branch master https://github.com/iTechwu/docker-helm.dofe.ai.git "$GITHUB_WORKSPACE/../docker-helm.dofe.ai"
+          pnpm dofe-ui:build
       - name: Resolve pnpm store path
         id: pnpm-store
         run: echo "dir=$(pnpm store path)" >> "$GITHUB_OUTPUT"
@@ -218,6 +224,8 @@ jobs:
           set -euo pipefail
           git clone --depth 1 --branch dev https://github.com/iTechwu/deepseek-harness.git "$GITHUB_WORKSPACE/../deepseek-harness"
           node scripts/upstream-workspace-link.mjs
+          git clone --depth 1 --branch master https://github.com/iTechwu/docker-helm.dofe.ai.git "$GITHUB_WORKSPACE/../docker-helm.dofe.ai"
+          pnpm dofe-ui:build
       - name: Probe the materialized workspace link
         shell: bash
         run: |

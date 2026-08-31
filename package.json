@@ -27,6 +27,7 @@
     "dist:win-portable": "pnpm --filter dsh-community-market build && pnpm --filter dsh-plugin-desktop dist:win-portable",
     "upstream:version": "corepack pnpm --dir ../deepseek-harness --version",
     "upstream:install": "corepack pnpm --dir ../deepseek-harness install --frozen-lockfile",
-    "upstream:build": "corepack pnpm --dir ../deepseek-harness run clean && corepack pnpm --dir ../deepseek-harness run build"
+    "upstream:build": "corepack pnpm --dir ../deepseek-harness run clean && corepack pnpm --dir ../deepseek-harness run build",
+    "dofe-ui:build": "node scripts/build-dofe-ui.mjs"
   }
 }

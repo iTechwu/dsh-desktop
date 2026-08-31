@@ -78,6 +78,15 @@ describe('published package surface', () => {
     )
   })
 
+  it('preinstalls the independently owned Yootun DoFe client plugin', () => {
+    expect(manifest.dependencies?.['@dofe/dsh-yootun-ui'])
+      .toBe('file:../../docker-helm.dofe.ai/plugins/dsh-yootun-ui')
+    expect(workspaceManifest.scripts?.['dofe-ui:build'])
+      .toBe('node scripts/build-dofe-ui.mjs')
+    expect(ciWorkflow.match(/git clone --depth 1 --branch master https:\/\/github\.com\/iTechwu\/docker-helm\.dofe\.ai\.git/g))
+      .toHaveLength(4)
+  })
+
   it('registers both npm launcher names', () => {
     expect(manifest.name).toBe('dsh-plugin-desktop')
     expect(manifest.bin).toEqual({

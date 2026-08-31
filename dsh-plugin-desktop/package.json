@@ -151,6 +151,7 @@
     "prepack": "corepack pnpm run check"
   },
   "dependencies": {
+    "@dofe/dsh-yootun-ui": "file:../../docker-helm.dofe.ai/plugins/dsh-yootun-ui",
     "@deepseek-ai/cordis": "workspace:*",
     "@deepseek-ai/cordis-plugin-group": "workspace:*",
     "@deepseek-ai/cordis-plugin-hmr": "workspace:*",
