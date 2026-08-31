@@ -10,14 +10,22 @@ import {
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { describe, expect, it, vi } from 'vitest'
 import {
   hydratePackagedMacRuntime,
   MACOS_UNIVERSAL_NATIVE_ENTRIES,
+  prepareInstalledMacUniversalRuntime,
   prepareMacUniversalRuntime,
 } from '../scripts/mac-universal.ts'
 
 describe('universal macOS native runtime preparation', () => {
+  it('prepares every native file from the installed desktop deploy root', () => {
+    const desktopRoot = fileURLToPath(new URL('../', import.meta.url))
+
+    expect(() => prepareInstalledMacUniversalRuntime(desktopRoot)).not.toThrow()
+  })
+
   it('requires every CPU-specific file and repairs both node-pty helpers', () => {
     const chmod = vi.fn()
     const desktopRoot = resolve('/desktop')
