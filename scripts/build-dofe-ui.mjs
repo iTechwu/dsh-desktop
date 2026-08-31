@@ -8,7 +8,7 @@ const plugin = resolve(root, '../docker-helm.dofe.ai/plugins/dsh-yootun-ui')
 if (!existsSync(resolve(plugin, 'package.json'))) {
   throw new Error(`build-dofe-ui: sibling plugin is missing at ${plugin}`)
 }
-execFileSync(process.platform === 'win32' ? 'npm.cmd' : 'npm', ['run', 'build'], {
+execFileSync(process.execPath, [resolve(plugin, 'scripts/build.mjs')], {
   cwd: plugin,
   stdio: 'inherit',
 })
