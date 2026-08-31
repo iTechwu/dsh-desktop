@@ -25,8 +25,8 @@
     "dist:mac-smoke": "pnpm --filter dsh-community-market build && pnpm --filter dsh-plugin-desktop dist:mac-smoke",
     "dist:win": "pnpm --filter dsh-community-market build && pnpm --filter dsh-plugin-desktop dist:win",
     "dist:win-portable": "pnpm --filter dsh-community-market build && pnpm --filter dsh-plugin-desktop dist:win-portable",
-    "upstream:version": "cd ../deepseek-harness && corepack pnpm --version",
-    "upstream:install": "cd ../deepseek-harness && corepack pnpm install --frozen-lockfile",
-    "upstream:build": "cd ../deepseek-harness && corepack pnpm run clean && corepack pnpm run build"
+    "upstream:version": "corepack pnpm --dir ../deepseek-harness --version",
+    "upstream:install": "corepack pnpm --dir ../deepseek-harness install --frozen-lockfile",
+    "upstream:build": "corepack pnpm --dir ../deepseek-harness run clean && corepack pnpm --dir ../deepseek-harness run build"
   }
 }
