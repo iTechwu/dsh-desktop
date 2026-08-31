@@ -107,7 +107,7 @@ async function scenario(inputs) {
       // Windows runners can spend tens of seconds creating the Electron ACL
       // relay on a cold start; keep the smoke bounded while avoiding a false
       // failure before the shell has published its readiness marker.
-      timeoutMs: 60_000,
+      timeoutMs: 120_000,
       idleSilenceMs: 1_000,
       handoffGraceMs: 500,
       disposeGraceMs: 1_000,
@@ -204,7 +204,7 @@ async function parent() {
   const exitCode = await deadline(new Promise((resolve, reject) => {
     child.once('error', reject)
     child.once('exit', resolve)
-  }), 180_000, 'Windows minimal PTY smoke worker').catch(error => {
+  }), 240_000, 'Windows minimal PTY smoke worker').catch(error => {
     child.kill()
     throw error
   })
