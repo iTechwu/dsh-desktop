@@ -83,7 +83,7 @@ jobs:
           curl --fail --location --retry 3 https://github.com/iTechwu/deepseek-harness/archive/refs/heads/dev.tar.gz | tar -xz --strip-components=1 -C "$upstream_dir"
           node scripts/upstream-workspace-link.mjs
           node scripts/prepare-dofe-ui.mjs
-          pnpm dofe-ui:build
+          node scripts/build-dofe-ui.mjs
       - name: Resolve pnpm store path
         if: needs.changes.outputs.product == 'true'
         id: pnpm-store
@@ -129,7 +129,7 @@ jobs:
           curl --fail --location --retry 3 https://github.com/iTechwu/deepseek-harness/archive/refs/heads/dev.tar.gz | tar -xz --strip-components=1 -C "$upstream_dir"
           node scripts/upstream-workspace-link.mjs
           node scripts/prepare-dofe-ui.mjs
-          pnpm dofe-ui:build
+          node scripts/build-dofe-ui.mjs
       - name: Resolve pnpm store path
         id: pnpm-store
         run: echo "dir=$(pnpm store path)" >> "$env:GITHUB_OUTPUT"
@@ -187,7 +187,7 @@ jobs:
           curl --fail --location --retry 3 https://github.com/iTechwu/deepseek-harness/archive/refs/heads/dev.tar.gz | tar -xz --strip-components=1 -C "$upstream_dir"
           node scripts/upstream-workspace-link.mjs
           node scripts/prepare-dofe-ui.mjs
-          pnpm dofe-ui:build
+          node scripts/build-dofe-ui.mjs
       - name: Resolve pnpm store path
         id: pnpm-store
         run: echo "dir=$(pnpm store path)" >> "$GITHUB_OUTPUT"
@@ -237,7 +237,7 @@ jobs:
           curl --fail --location --retry 3 https://github.com/iTechwu/deepseek-harness/archive/refs/heads/dev.tar.gz | tar -xz --strip-components=1 -C "$upstream_dir"
           node scripts/upstream-workspace-link.mjs
           node scripts/prepare-dofe-ui.mjs
-          pnpm dofe-ui:build
+          node scripts/build-dofe-ui.mjs
       - name: Probe the materialized workspace link
         shell: bash
         run: |
