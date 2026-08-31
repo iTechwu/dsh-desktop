@@ -56,7 +56,7 @@ describe('alpha host directory-picker browse patch', () => {
     statState.stalls.clear()
   })
 
-  it('enters real directories from dirents and probes only symlink candidates', async () => {
+  it('stats directory and symlink candidates and skips ordinary stat failures', async () => {
     const root = await mkdtemp(join(tmpdir(), 'dsh-desktop-browse-'))
     const accessible = join(root, 'accessible')
     const blockedDirectory = join(root, 'blocked-directory')
@@ -68,29 +68,29 @@ describe('alpha host directory-picker browse patch', () => {
       mkdir(linkedTarget),
     ])
     await symlink(linkedTarget, blockedLink, process.platform === 'win32' ? 'junction' : 'dir')
+    statState.failures.add(blockedDirectory)
     statState.failures.add(blockedLink)
     const fixture = await browseFixture()
 
     try {
       const listing = await fixture.capability.list(root)
-      // 真实目录由 dirent 直接判定可进入;仅符号链接候选需要一次 stat 探测,
-      // 探测失败的链接(损坏或不可读)静默跳过。
-      expect(listing.entries.map(entry => entry.name)).toEqual(['accessible', 'blocked-directory', 'linked-target'])
-      expect(statState.calls).toEqual([blockedLink])
-      expect(statState.calls).not.toContain(accessible)
-      expect(statState.calls).not.toContain(blockedDirectory)
+      expect(listing.entries.map(entry => entry.name)).toEqual(['accessible', 'linked-target'])
+      expect(statState.calls).toEqual(expect.arrayContaining([
+        accessible,
+        blockedDirectory,
+        blockedLink,
+        linkedTarget,
+      ]))
     } finally {
       await fixture.dispose()
       await rm(root, { recursive: true, force: true })
     }
   })
 
-  it('lets an abort interrupt a stalled stat of a symlink candidate', async () => {
+  it('lets an abort interrupt a stalled stat of a directory candidate', async () => {
     const root = await mkdtemp(join(tmpdir(), 'dsh-desktop-browse-abort-'))
-    const linkedTarget = join(root, 'linked-target')
     const stalled = join(root, 'stalled')
-    await mkdir(linkedTarget)
-    await symlink(linkedTarget, stalled, process.platform === 'win32' ? 'junction' : 'dir')
+    await mkdir(stalled)
     let markStarted!: () => void
     const started = new Promise<void>((resolve) => { markStarted = resolve })
     statState.stalls.set(stalled, markStarted)

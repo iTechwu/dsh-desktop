@@ -31,6 +31,9 @@ describe('installed DSH product version', () => {
     const upstream = JSON.parse(readFileSync(new URL('../../upstream.json', import.meta.url), 'utf8')) as {
       sourceVersion: string
     }
+    // The desktop workspace consumes the sibling harness checkout through
+    // workspace:* links, so the installed runtime version is the sibling's
+    // recorded source version rather than a pinned registry range.
     expect(dshProductVersion()).toBe(upstream.sourceVersion)
   })
 

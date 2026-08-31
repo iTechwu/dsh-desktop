@@ -4,7 +4,6 @@ import {
   copyFileSync,
   mkdirSync,
   mkdtempSync,
-  readdirSync,
   readFileSync,
   realpathSync,
   rmSync,
@@ -302,6 +301,7 @@ describe('published package surface', () => {
     expect(boot).toBeGreaterThan(installDsh)
     expect(main).toContain("'dsh-plugin-desktop: packaged pnpm runtime PATH'")
     expect(main).toContain("'dsh-plugin-desktop: packaged dsh runtime PATH'")
+    expect(main).toContain('hostCtx.loader.internal = undefined')
     expect(main).toContain('pnpmBinDir: pnpmRuntime.pathDir')
     expect(main).not.toContain("'--host'")
     expect(readFileSync(new URL('src/profile.ts', packageRoot), 'utf8'))
@@ -390,7 +390,10 @@ describe('published package surface', () => {
     const setupState = main.indexOf('readDesktopSetupWizardState(', prepare)
     const setupWindow = main.indexOf('new DesktopSetupWizardWindow({', setupState)
     const setupRun = main.indexOf('await setupWizardWindow.run()', setupWindow)
-    const updateSettings = main.indexOf('await updateDesktopSetupWizardSettings(', setupRun)
+    const skipBranch = main.indexOf("if (setupResult.action === 'skip')", setupRun)
+    const completeBranch = main.indexOf('} else {', skipBranch)
+    const profilePreferences = main.indexOf('profilePreferences = await writeDesktopProfilePreferences(', completeBranch)
+    const updateSettings = main.indexOf('await updateDesktopSetupWizardSettings(', profilePreferences)
     const selectMarket = main.indexOf('await selectDesktopMarketProvider(', updateSettings)
     const reprepare = main.indexOf('prepared = prepareDesktopProfile(', selectMarket)
     const completeMarker = main.indexOf("'completed',", reprepare)
@@ -403,7 +406,10 @@ describe('published package surface', () => {
     expect(setupState).toBeGreaterThan(prepare)
     expect(setupWindow).toBeGreaterThan(setupState)
     expect(setupRun).toBeGreaterThan(setupWindow)
-    expect(updateSettings).toBeGreaterThan(setupRun)
+    expect(skipBranch).toBeGreaterThan(setupRun)
+    expect(main.slice(skipBranch, completeBranch)).not.toContain('writeDesktopProfilePreferences(')
+    expect(profilePreferences).toBeGreaterThan(completeBranch)
+    expect(updateSettings).toBeGreaterThan(profilePreferences)
     expect(selectMarket).toBeGreaterThan(updateSettings)
     expect(reprepare).toBeGreaterThan(selectMarket)
     expect(completeMarker).toBeGreaterThan(reprepare)
@@ -729,10 +735,10 @@ describe('published package surface', () => {
     expect(manifest.dependencies).not.toHaveProperty('electron')
     expect(manifest.peerDependencies?.electron).toBe('43.4.0')
     expect(manifest.devDependencies?.electron).toBe('43.4.0')
-    expect(manifest.dependencies?.pnpm).toBe('11.8.0')
+    expect(manifest.dependencies?.pnpm).toBe('11.7.0')
   })
 
-  it('keeps the packaged pnpm manifest, lock entry, and installed runtime on 11.8.0', () => {
+  it('keeps the packaged pnpm manifest, lock entry, and installed runtime on 11.7.0', () => {
     const lockfile = readFileSync(new URL('pnpm-lock.yaml', workspaceRoot), 'utf8')
     const workspaceRequire = createRequire(new URL('package.json', packageRoot))
     const installedPnpm = JSON.parse(readFileSync(
@@ -740,9 +746,9 @@ describe('published package surface', () => {
       'utf8',
     )) as { version?: unknown }
 
-    expect(manifest.dependencies?.pnpm).toBe('11.8.0')
-    expect(lockfile).toContain('pnpm@11.8.0:')
-    expect(installedPnpm.version).toBe('11.8.0')
+    expect(manifest.dependencies?.pnpm).toBe('11.7.0')
+    expect(lockfile).toContain('pnpm@11.7.0:')
+    expect(installedPnpm.version).toBe('11.7.0')
   })
 
   it('packages the native-compiled Koffi Windows runtime', () => {
@@ -777,7 +783,6 @@ describe('published package surface', () => {
   })
 
   it('declares the first-party Web bundle entry points at the Desktop root', () => {
-    const workspaceRequire = createRequire(new URL('package.json', packageRoot))
     const bundleDependencies = ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app']
     const rootDependencies = new Set(Object.keys(manifest.dependencies ?? {}))
     const missing = [...new Set(bundleDependencies)]
@@ -830,6 +835,14 @@ describe('published package surface', () => {
       join(dirname(appBuilderManifest), 'templates/nsis/include/allowOnlyOneInstallerInstance.nsh'),
       'utf8',
     )
+    const installedNsisExtractor = readFileSync(
+      join(dirname(appBuilderManifest), 'templates/nsis/include/extractAppPackage.nsh'),
+      'utf8',
+    )
+    const installedNsisInstallUtil = readFileSync(
+      join(dirname(appBuilderManifest), 'templates/nsis/include/installUtil.nsh'),
+      'utf8',
+    )
 
     expect(manifest.devDependencies?.['electron-builder']).toBe('26.15.7')
     expect(lockfile).toContain('app-builder-lib@26.15.7(patch_hash=')
@@ -837,6 +850,8 @@ describe('published package surface', () => {
     expect(patch).toContain('"-k", keychainPassword, keychainFile')
     expect(patch).toContain('ManifestLongPathAware true')
     expect(patch).toContain("[System.IO.Path]::GetFileName($$_.Path) -ieq '${_FILE}'")
+    expect(patch).toContain('diff --git a/templates/nsis/include/extractAppPackage.nsh')
+    expect(patch).toContain('diff --git a/templates/nsis/include/installUtil.nsh')
     expect(manifest.build?.toolsets?.nsis).toBe('1.2.1')
     expect(installedCodeSign).toContain('importCerts(keychainFile, certPaths, cscPasswords, keychainPassword)')
     expect(installedCodeSign).toContain('"-k", keychainPassword, keychainFile')
@@ -844,6 +859,21 @@ describe('published package surface', () => {
     expect(installedNsisPortable).toContain('ManifestLongPathAware true')
     expect(installedNsisSingleInstance).toContain("[System.IO.Path]::GetFileName($$_.Path) -ieq '${_FILE}'")
     expect(installedNsisSingleInstance).not.toContain("$$_.Path.StartsWith('$INSTDIR', 'CurrentCultureIgnoreCase')}).Count")
+    expect(installedNsisExtractor).toContain('SetOutPath "$INSTDIR"')
+    expect(installedNsisExtractor).not.toContain('$PLUGINSDIR\\7z-out')
+    expect(installedNsisExtractor).not.toContain('CopyFiles /SILENT')
+    expect(installedNsisInstallUtil).toContain(
+      'Old uninstaller returned code 2; continuing with non-atomic in-place replacement.',
+    )
+    expect(installedNsisInstallUtil).toContain(
+      '# Code 2 is handled by the non-atomic in-place replacement path.',
+    )
+    const legacyCode2Fallback = installedNsisInstallUtil.indexOf(
+      '# Code 2 is handled by the non-atomic in-place replacement path.',
+    )
+    expect(legacyCode2Fallback).toBeGreaterThan(installedNsisInstallUtil.indexOf('CheckResult:'))
+    expect(legacyCode2Fallback).toBeLessThan(installedNsisInstallUtil.indexOf('Sleep 1000', legacyCode2Fallback))
+    expect(installedNsisInstallUtil).toContain('MessageBox MB_OK|MB_ICONEXCLAMATION "$(uninstallFailed): $R0"')
   })
 
   it('loads the Windows sandbox implementation from the sibling checkout', () => {
