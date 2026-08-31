@@ -256,7 +256,7 @@ describe('published package surface', () => {
     expect(client).not.toMatch(/\bprocess(?:\.|\[)/u)
   })
 
-  it.skip('packages the confirmed Yootun hero headline in the conversation client', () => { // TODO(阶段3): fork 移植品牌文案后恢复
+  it('packages the confirmed Yootun hero headline in the conversation client', () => {
 
     const workspaceRequire = createRequire(new URL('package.json', packageRoot))
     const conversationManifest = workspaceRequire.resolve(
@@ -785,6 +785,35 @@ describe('published package surface', () => {
       .sort()
 
     expect(missing).toEqual([])
+  })
+
+  it('ports the hidden-console and brand behaviors natively in the sibling fork', () => {
+    // 兄弟直连后,桌面行为以 fork 源码为契约;verify-layout 已保证 checkout 存在。
+    const forkRoot = resolve(fileURLToPath(workspaceRoot), '../deepseek-harness')
+    const read = (...parts: string[]) => readFileSync(join(forkRoot, ...parts), 'utf8')
+
+    const abi = read('packages', 'subprocess', 'win32-process', 'src', 'abi.ts')
+    const processSource = read('packages', 'subprocess', 'win32-process', 'src', 'process.ts')
+    expect(abi).toContain('export const STARTF_USESHOWWINDOW = 0x00000001')
+    expect(processSource.match(/wShowWindow: 0/gu)).toHaveLength(2)
+
+    const spawn = read('packages', 'subprocess', 'subprocess-local', 'src', 'spawn.ts')
+    expect(spawn.match(/windowsHide: true/gu)).toHaveLength(2)
+    const cli = read('apps', 'cli', 'src', 'plugin.ts')
+    expect(cli).toContain('windowsHide: true')
+
+    const webApp = read('packages', 'bundle', 'web-app', 'src', 'index.ts')
+    expect(webApp).toContain("ELECTRON_RUN_AS_NODE: '1'")
+    expect(webApp).toContain('windowsHide: true')
+
+    const settingsRoot = read('packages', 'client', 'ui-settings-general', 'src', 'client', 'SettingsRoot.tsx')
+    expect(settingsRoot).toContain('function IconDesktopSettings')
+    expect(settingsRoot).toContain("id === 'desktop'")
+
+    const conversationLocales = read('packages', 'client', 'ui-conversation', 'src', 'client', 'locales.ts')
+    expect(conversationLocales).toContain("'hero.headline': '青年人买车就到优惠豚'")
+    const conversationRoot = read('packages', 'client', 'ui-conversation', 'src', 'client', 'skeleton', 'ConversationRoot.tsx')
+    expect(conversationRoot).toContain('data-dsh-conversation-drop-target')
   })
 
   it('resolves electron-builder through the pinned app-builder-lib keychain patch', () => {
