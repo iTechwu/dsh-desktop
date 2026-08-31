@@ -25,6 +25,7 @@ test('ships all DoFe capabilities enabled by default', async () => {
 
 test('bundles Yootun branding, settings, and a mandatory credential gate', async () => {
   const bundle = await readFile(new URL('lib/client.js', root), 'utf8')
+  const source = await readFile(new URL('src/client.js', root), 'utf8')
 
   assert.match(bundle, /window\.__ModuleLoader__\.load/u)
   assert.match(bundle, /sidebar\.brand\.mark/u)
@@ -34,6 +35,9 @@ test('bundles Yootun branding, settings, and a mandatory credential gate', async
   assert.match(bundle, /mandatory model_api_key gate/u)
   assert.match(bundle, /MODELS_API_KEY/u)
   assert.doesNotMatch(bundle, /Set up later|稍后设置/u)
+  assert.match(source, /const \[configured, setConfigured\] = useState\(false\)/u)
+  assert.match(source, /\.catch\(\(\) => \{ if \(active\) setConfigured\(false\) \}\)/u)
+  assert.doesNotMatch(source, /configured === undefined/u)
 })
 
 test('loads the generated module and registers every owned surface', async () => {

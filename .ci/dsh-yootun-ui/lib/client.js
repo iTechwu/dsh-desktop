@@ -203,17 +203,18 @@ window.__ModuleLoader__.load({
 
     function AccessOnboarding({ complete, credentials, settingsApi, useAccess, t }) {
       const access = useAccess(snapshot => snapshot)
-      const [configured, setConfigured] = useState(undefined)
+      // Fail closed while the credential service is starting or unavailable.
+      const [configured, setConfigured] = useState(false)
       useEffect(() => {
         let active = true
         void credentials.describe([ACCESS_KEY]).then(result => {
           if (active) setConfigured(result.ok && result.value[ACCESS_KEY]?.configured === true)
-        })
+        }).catch(() => { if (active) setConfigured(false) })
         return () => { active = false }
       }, [credentials])
       const authorized = configured === true && access.value?.setupComplete === true && access.value?.validationVersion === VALIDATION_VERSION
       useEffect(() => { if (authorized) complete() }, [authorized, complete])
-      if (configured === undefined || authorized) return null
+      if (authorized) return null
       return h('div', { className: 'yu-modal' }, h('section', { className: 'yu-card', role: 'dialog', 'aria-modal': true, 'aria-labelledby': 'yu-title' },
         h('header', { className: 'yu-header' }, h('img', { alt: '', src: LOGO }), h('div', null, h('p', { className: 'yu-eyebrow' }, t('eyebrow')), h('h2', { id: 'yu-title' }, t('title')), h('p', null, t('intro')))),
         h(AccessForm, { credentials, settingsApi, useAccess, initialConfigured: configured, onboarding: true, onConfigured: () => { setConfigured(true) }, t })))
