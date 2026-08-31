@@ -121,6 +121,9 @@ jobs:
       - run: pnpm upstream:install
       - run: pnpm upstream:build
       - run: pnpm --filter dsh-plugin-desktop check:win-package
+      - name: Windows PTY environment smoke
+        continue-on-error: true
+        run: pnpm --filter dsh-plugin-desktop verify:win-minimal-pty
       - name: Build Windows installer
         env:
           DSH_PACKAGE_CHECK_ALREADY_RAN: '1'
