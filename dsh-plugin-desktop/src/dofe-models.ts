@@ -11,6 +11,23 @@ export interface DofeModel {
   readonly inputModalities?: readonly ('text' | 'image')[]
 }
 
+const NON_CHAT_MODEL_PATTERN = /(?:voice|speech|tts|stt|audio|seedance|seedream|embedding|rerank|moderation|music|video-generation|image-generation)/iu
+
+/** Return whether a catalog row advertises an OpenAI-compatible chat surface. */
+function isOpenAiCompatibleChatRow(entry: Record<string, unknown>): boolean {
+  for (const field of ['protocol', 'api_protocol', 'apiProtocol', 'api_type', 'apiType', 'type']) {
+    const value = entry[field]
+    if (typeof value !== 'string') continue
+    const normalized = value.trim().toLowerCase()
+    if (field === 'type' && ['chat', 'text', 'multimodal'].includes(normalized)) continue
+    if (field === 'type' && ['embedding', 'rerank', 'moderation', 'audio', 'image', 'video', 'speech'].includes(normalized)) return false
+    if (normalized.includes('openai') || normalized.includes('compatible')) continue
+    if (field !== 'type') return false
+  }
+  const id = typeof entry.id === 'string' ? entry.id : ''
+  return !NON_CHAT_MODEL_PATTERN.test(id)
+}
+
 /** Convert an OpenAI-compatible model listing into the desktop catalog shape. */
 export function parseDofeModelCatalog(value: unknown): DofeModel[] {
   const rows = Array.isArray(value)
@@ -24,6 +41,7 @@ export function parseDofeModelCatalog(value: unknown): DofeModel[] {
     if (typeof row !== 'object' || row === null || Array.isArray(row)) continue
     const entry = row as Record<string, unknown>
     if (typeof entry.id !== 'string' || entry.id.trim().length === 0) continue
+    if (!isOpenAiCompatibleChatRow(entry)) continue
     const id = entry.id.trim()
     if (seen.has(id)) continue
     seen.add(id)
@@ -40,6 +58,7 @@ export function parseDofeModelCatalog(value: unknown): DofeModel[] {
       ? entry.input_modalities
       : Array.isArray(entry.inputModalities) ? entry.inputModalities : undefined
     const inputModalities = modalities?.filter((item): item is 'text' | 'image' => item === 'text' || item === 'image')
+    if (modalities !== undefined && inputModalities?.length === 0) continue
     models.push({
       id,
       name,

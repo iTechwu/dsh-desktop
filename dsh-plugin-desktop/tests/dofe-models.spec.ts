@@ -19,4 +19,18 @@ describe('DoFe model catalog parsing', () => {
     expect(parseDofeModelCatalog({ object: 'list', data: 'bad' })).toEqual([])
     expect(parseDofeModelCatalog(undefined)).toEqual([])
   })
+
+  it('filters non-chat and non-OpenAI protocol models from a shared gateway catalog', () => {
+    expect(parseDofeModelCatalog({ data: [
+      { id: 'minimax-voice-clone' },
+      { id: 'seedance-2.0-mini' },
+      { id: 'text-embedding-3-large', type: 'embedding' },
+      { id: 'vendor-chat', protocol: 'vendor-native' },
+      { id: 'qwen-chat', protocol: 'openai-compatible' },
+      { id: 'deepseek-v4-flash-vision-exp', input_modalities: ['text', 'image'] },
+    ] })).toEqual([
+      { id: 'qwen-chat', name: 'qwen-chat' },
+      { id: 'deepseek-v4-flash-vision-exp', name: 'deepseek-v4-flash-vision-exp', inputModalities: ['text', 'image'] },
+    ])
+  })
 })

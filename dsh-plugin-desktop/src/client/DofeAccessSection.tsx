@@ -9,7 +9,7 @@ import { DofeOnboardingModal } from './DofeOnboardingModal.tsx'
 import { DOFE_ACCESS_KEY, type DofeAccessLocaleKey } from './dofe-access.ts'
 import { DOFE_PLUGIN_CATALOG, DOFE_ACCESS_VALIDATION_VERSION, type DofeAccessSettings, type DofePluginId, DEFAULT_DOFE_PLUGIN_IDS } from '../dofe-plugins.ts'
 import { DOFE_ACCESS_MODELS_PATH, DOFE_ACCESS_VALIDATE_PATH } from '../dofe-access-route.ts'
-import type { DofeModel } from '../dofe-models.ts'
+import { parseDofeModelCatalog, type DofeModel } from '../dofe-models.ts'
 
 const STYLE_ID = 'dsh-dofe-access-styles'
 const CSS = `
@@ -136,8 +136,23 @@ function AccessForm({ credentials, settingsApi, settingsScope, t, onboarding, on
     if (settings.value?.modelId !== undefined) setSelectedModel(settings.value.modelId)
   }, [settings.value?.modelId])
   useEffect(() => { void credentials.describe([DOFE_ACCESS_KEY]).then(result => { if (result.ok) setConfigured(result.value[DOFE_ACCESS_KEY]?.configured === true); else setError(t('loadError')) }) }, [credentials, t])
-  const loadModels = async (): Promise<void> => {
-    const key = draft.trim()
+  useEffect(() => {
+    let cancelled = false
+    void settingsApi.describe().then(result => {
+      if (cancelled || !result.ok) return
+      const deepseek = result.value.namespaces.find(item => item.ns === 'llm-deepseek')
+      const value = deepseek?.value
+      const catalog = typeof value === 'object' && value !== null && !Array.isArray(value)
+        ? parseDofeModelCatalog((value as { models?: unknown }).models)
+        : []
+      if (catalog.length === 0 || cancelled) return
+      setModels(catalog)
+      setSelectedModel(current => catalog.some(model => model.id === current) ? current : catalog[0]!.id)
+    }).catch(() => undefined)
+    return () => { cancelled = true }
+  }, [settingsApi])
+  const loadModels = async (keyOverride?: string): Promise<void> => {
+    const key = (keyOverride ?? draft).trim()
     if (!key) return
     setLoadingModels(true)
     setError(undefined)
@@ -170,13 +185,15 @@ function AccessForm({ credentials, settingsApi, settingsScope, t, onboarding, on
     }
   }
   const save = async (): Promise<void> => {
-    if (!draft.trim() || enabledPlugins.length === 0 || !selectedModel || models.length === 0) {
+    const key = draft.trim()
+    const useStoredCredential = key.length === 0 && configured === true
+    if ((!key && !useStoredCredential) || enabledPlugins.length === 0 || !selectedModel || models.length === 0) {
       if (onboarding && !selectedModel) setError(t('modelRequired'))
       return
     }
     setBusy(true)
     setError(undefined)
-    if (!(await validateModelApiKey(draft.trim()))) {
+    if (key.length > 0 && !(await validateModelApiKey(key))) {
       setBusy(false)
       setError(t('invalidKey'))
       return
@@ -197,8 +214,10 @@ function AccessForm({ credentials, settingsApi, settingsScope, t, onboarding, on
         const result = await settingsApi.mutate('llm-deepseek', [{ op: 'set', path: ['models'], value: modelConfig }], deepseek.revision)
         if (!result.ok) throw new Error(result.error.message)
       }
-      const result = await credentials.set(DOFE_ACCESS_KEY, draft.trim())
-      if (!result.ok) throw new Error(result.error.message)
+      if (key.length > 0) {
+        const result = await credentials.set(DOFE_ACCESS_KEY, key)
+        if (!result.ok) throw new Error(result.error.message)
+      }
       await settingsScope.mutate([
         { op: 'set', path: ['setupComplete'], value: true },
         { op: 'set', path: ['validationVersion'], value: DOFE_ACCESS_VALIDATION_VERSION },
@@ -244,11 +263,11 @@ function AccessForm({ credentials, settingsApi, settingsScope, t, onboarding, on
       <div className="dshDofeAccessInputWrap"><Input className="dshDofeAccessInput" id="dofe-model-api-key" type={revealKey ? 'text' : 'password'} autoComplete="off" value={draft} placeholder={onboarding ? t('placeholder') : configured ? t('configured') : t('placeholder')} onChange={event => { setDraft(event.currentTarget.value); setModels([]); setSelectedModel('') }} onKeyDown={event => { if (event.key === 'Enter') void loadModels() }} /><button type="button" className="dshDofeAccessReveal" title={revealKey ? t('hideKey') : t('showKey')} aria-label={revealKey ? t('hideKey') : t('showKey')} onClick={() => setRevealKey(current => !current)}>{revealKey ? <EyeOff size={17} /> : <Eye size={17} />}</button></div>
     </div>
     <div className="dshDofeAccessActions"><Button disabled={loadingModels || !draft.trim()} onClick={() => void loadModels()}>{loadingModels ? t('loadingModels') : t('loadModels')}</Button></div>
-    <div className="dshDofeAccessField"><div className="dshDofeAccessFieldHeader"><label className="dshDofeAccessLabel" htmlFor="dofe-model-select">{t('modelsTitle')}</label></div><select id="dofe-model-select" className="dshDofeAccessModelSelect" value={selectedModel} disabled={models.length === 0 || loadingModels} onChange={event => setSelectedModel(event.currentTarget.value)}><option value="">{models.length === 0 ? t('modelsPlaceholder') : t('modelsEmpty')}</option>{models.map(model => <option key={model.id} value={model.id}>{model.name} ({model.id})</option>)}</select></div>
+    <div className="dshDofeAccessField"><div className="dshDofeAccessFieldHeader"><label className="dshDofeAccessLabel" htmlFor="dofe-model-select">{t('modelsTitle')}</label></div>{configured === true && !draft.trim() && models.length === 0 && <p className="dshDofeAccessHint">{t('reenterKey')}</p>}<select id="dofe-model-select" className="dshDofeAccessModelSelect" value={selectedModel} disabled={models.length === 0 || loadingModels} onChange={event => setSelectedModel(event.currentTarget.value)}><option value="">{models.length === 0 ? t('modelsPlaceholder') : t('modelsEmpty')}</option>{models.map(model => <option key={model.id} value={model.id}>{model.name} ({model.id})</option>)}</select></div>
     {onboarding && <p className="dshDofeAccessHelp"><Phone size={15} aria-hidden="true" /><span>{t('onboardingHelp')}</span></p>}
     {onboarding && <div className="dshDofeAccessField"><div className="dshDofeAccessFieldHeader"><span className="dshDofeAccessLabel">{t('pluginsTitle')}</span><span className="dshDofeAccessCount">{t('selectedCount').replace('{count}', String(enabledPlugins.length))}</span></div><div className="dshDofeAccessPlugins">{DOFE_PLUGIN_CATALOG.map(plugin => { const selected = enabledPlugins.includes(plugin.id); return <label className={`dshDofeAccessPlugin${selected ? ' dshDofeAccessPluginSelected' : ''}`} key={plugin.id}><input type="checkbox" checked={selected} onChange={event => setEnabledPlugins(current => event.currentTarget.checked ? [...new Set([...current, plugin.id])] : current.filter(id => id !== plugin.id))} /><span className="dshDofeAccessPluginCheck" aria-hidden="true"><Check size={14} strokeWidth={2.5} /></span><span><span className="dshDofeAccessPluginName">{plugin.name}</span><span className="dshDofeAccessPluginDescription">{plugin.description}</span></span></label> })}</div></div>}
     {error !== undefined && <p className="dshDofeAccessError" role="alert">{error}</p>}
-    <div className={`dshDofeAccessActions${onboarding ? ' dshDofeAccessActionsOnboarding' : ''}`}><Button className="dshDofeAccessPrimary" variant="primary" disabled={busy || !draft.trim() || (onboarding && enabledPlugins.length === 0)} onClick={() => void save()}>{busy ? t('saving') : t('save')}{!busy && <ArrowRight size={16} aria-hidden="true" />}</Button>{!onboarding && <Button disabled={busy || configured !== true} onClick={() => void remove()}>{busy ? t('removing') : t('remove')}</Button>}{!onboarding && <span className="dshDofeAccessStatus" role="status">{configured === true ? t('configured') : configured === false ? t('missing') : ''}</span>}</div>
+    <div className={`dshDofeAccessActions${onboarding ? ' dshDofeAccessActionsOnboarding' : ''}`}><Button className="dshDofeAccessPrimary" variant="primary" disabled={busy || (!draft.trim() && configured !== true) || models.length === 0 || !selectedModel || (onboarding && enabledPlugins.length === 0)} onClick={() => void save()}>{busy ? t('saving') : t('save')}{!busy && <ArrowRight size={16} aria-hidden="true" />}</Button>{!onboarding && <Button disabled={busy || configured !== true} onClick={() => void remove()}>{busy ? t('removing') : t('remove')}</Button>}{!onboarding && <span className="dshDofeAccessStatus" role="status">{configured === true ? t('configured') : configured === false ? t('missing') : ''}</span>}</div>
   </div>
 }
 
