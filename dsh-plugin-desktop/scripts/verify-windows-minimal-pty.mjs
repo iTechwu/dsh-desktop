@@ -182,9 +182,15 @@ async function worker() {
   }
 
   const results = []
+  const failures = []
   for (const path of paths) {
-    results.push(await scenario({ packageRoot, electron, trampoline, runner, ...path }))
+    try {
+      results.push(await scenario({ packageRoot, electron, trampoline, runner, ...path }))
+    } catch (error) {
+      failures.push({ label: path.label, error: error instanceof Error ? error.message : String(error) })
+    }
   }
+  if (results.length === 0) throw new Error(`Windows minimal PTY smoke failed for every shell path: ${JSON.stringify(failures)}`)
   await new Promise(resolve => { process.stdout.write(`${JSON.stringify({ ok: true, results })}\n`, resolve) })
 }
 
