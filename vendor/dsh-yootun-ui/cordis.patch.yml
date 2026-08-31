@@ -1,0 +1,5 @@
+# Keep the Yootun product identity and mandatory DoFe access flow in one
+# independently versioned Client plugin.
+- insert:
+    - id: dofe-yootun-ui
+      name: '@dofe/dsh-yootun-ui'

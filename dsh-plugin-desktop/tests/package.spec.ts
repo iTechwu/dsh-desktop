@@ -83,8 +83,7 @@ describe('published package surface', () => {
       .toBe('file:../../docker-helm.dofe.ai/plugins/dsh-yootun-ui')
     expect(workspaceManifest.scripts?.['dofe-ui:build'])
       .toBe('node scripts/build-dofe-ui.mjs')
-    expect(ciWorkflow.match(/git clone --depth 1 --branch master https:\/\/github\.com\/iTechwu\/docker-helm\.dofe\.ai\.git/g))
-      .toHaveLength(4)
+    expect(ciWorkflow.match(/node scripts\/prepare-dofe-ui\.mjs/g)).toHaveLength(4)
   })
 
   it('registers both npm launcher names', () => {
