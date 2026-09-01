@@ -19,6 +19,8 @@
       name: '@dofe/dsh-yootun-content-command'
     - id: dofe-yootun-knowledge
       name: '@dofe/dsh-yootun-knowledge'
+    - id: dofe-yootun-approvals
+      name: '@dofe/dsh-yootun-approvals'
     - id: desktop-terminal
       name: dsh-plugin-desktop/terminal
       disabled: !!js process.platform === 'linux'
