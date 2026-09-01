@@ -30,10 +30,6 @@ import {
   handleDofeModelCatalogRequest,
 } from './dofe-access-route.ts'
 import {
-  handleYootunDashboardRequest,
-  YOOTUN_DASHBOARD_YESTERDAY_PATH,
-} from './yootun-dashboard-route.ts'
-import {
   handleYootunRecruiterRequest,
   YOOTUN_RECRUITER_PATH,
 } from './yootun-recruiter-route.ts'
@@ -381,22 +377,6 @@ export function apply(ctx: Context, config: Config): void {
       `dsh-plugin-desktop: private DoFe access route ${path}`,
     )
   }
-  ctx.effect(
-    () => ctx.webServer.register({
-      kind: 'exact',
-      path: YOOTUN_DASHBOARD_YESTERDAY_PATH,
-      handler: (req, res) => {
-        if (rejectDesktopRequest(ctx, req, res)) return
-        return handleYootunDashboardRequest(req, res, rendererOrigin, {
-          credentials: ctx.get('credentials'),
-          tools: ctx.get('tools'),
-          sessionPersistence: ctx.get('sessionPersistence'),
-          dshHomePath: ctx.get('dshHomePath'),
-        })
-      },
-    }),
-    `dsh-plugin-desktop: private Yootun dashboard route ${YOOTUN_DASHBOARD_YESTERDAY_PATH}`,
-  )
   ctx.effect(
     () => ctx.webServer.register({
       kind: 'exact',

@@ -29,7 +29,6 @@ import {
   DOFE_ACCESS_MODELS_PATH,
   DOFE_ACCESS_VALIDATE_PATH,
 } from '../src/dofe-access-route.ts'
-import { YOOTUN_DASHBOARD_YESTERDAY_PATH } from '../src/yootun-dashboard-route.ts'
 import { YOOTUN_RECRUITER_PATH } from '../src/yootun-recruiter-route.ts'
 import {
   DESKTOP_DEVELOPER_TOOLS_TOGGLE_PATH,
@@ -413,7 +412,6 @@ describe('desktop Host plugin', () => {
       DESKTOP_DIAGNOSTICS_EXPORT_PATH,
       DOFE_ACCESS_MODELS_PATH,
       DOFE_ACCESS_VALIDATE_PATH,
-      YOOTUN_DASHBOARD_YESTERDAY_PATH,
       YOOTUN_RECRUITER_PATH,
       RENDERER_BOOT_REPORT_PATH,
       DESKTOP_DIRECTORY_PICKER_PATH,
