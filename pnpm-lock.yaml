@@ -1476,6 +1476,9 @@ importers:
       '@dofe/dsh-yootun-dashboard':
         specifier: file:../../docker-helm.dofe.ai/plugins/dsh-yootun-dashboard
         version: file:../docker-helm.dofe.ai/plugins/dsh-yootun-dashboard
+      '@dofe/dsh-yootun-knowledge':
+        specifier: file:../../docker-helm.dofe.ai/plugins/dsh-yootun-knowledge
+        version: file:../docker-helm.dofe.ai/plugins/dsh-yootun-knowledge
       '@dofe/dsh-yootun-recruiter':
         specifier: file:../../docker-helm.dofe.ai/plugins/dsh-yootun-recruiter
         version: file:../docker-helm.dofe.ai/plugins/dsh-yootun-recruiter
@@ -1906,6 +1909,9 @@ packages:
 
   '@dofe/dsh-yootun-dashboard@file:../docker-helm.dofe.ai/plugins/dsh-yootun-dashboard':
     resolution: {directory: ../docker-helm.dofe.ai/plugins/dsh-yootun-dashboard, type: directory}
+
+  '@dofe/dsh-yootun-knowledge@file:../docker-helm.dofe.ai/plugins/dsh-yootun-knowledge':
+    resolution: {directory: ../docker-helm.dofe.ai/plugins/dsh-yootun-knowledge, type: directory}
 
   '@dofe/dsh-yootun-recruiter@file:../docker-helm.dofe.ai/plugins/dsh-yootun-recruiter':
     resolution: {directory: ../docker-helm.dofe.ai/plugins/dsh-yootun-recruiter, type: directory}
@@ -5751,6 +5757,8 @@ snapshots:
   '@dofe/dsh-yootun-content-command@file:../docker-helm.dofe.ai/plugins/dsh-yootun-content-command': {}
 
   '@dofe/dsh-yootun-dashboard@file:../docker-helm.dofe.ai/plugins/dsh-yootun-dashboard': {}
+
+  '@dofe/dsh-yootun-knowledge@file:../docker-helm.dofe.ai/plugins/dsh-yootun-knowledge': {}
 
   '@dofe/dsh-yootun-recruiter@file:../docker-helm.dofe.ai/plugins/dsh-yootun-recruiter': {}
 
