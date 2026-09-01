@@ -23,7 +23,8 @@ const CANDIDATE_STAGES = ['sourced', 'screening', 'interview', 'offer', 'hired',
 const FEEDBACK_STATUSES = ['none', 'draft', 'confirmed'] as const
 const ACTION_TYPES = ['publish_jd', 'send_message', 'write_feedback'] as const
 const ACTION_STATUSES = ['awaiting_confirmation', 'confirmed_pending_adapter', 'dismissed'] as const
-const PROTECTED_SCREENING_SIGNAL = /性别|男性|女性|男生|女生|年龄|出生|婚育|结婚|民族|籍贯|宗教|残疾|健康状况|户籍|政治面貌|颜值|照片/iu
+// Keep candidate evidence focused on job-relevant signals; reject common protected attributes.
+const PROTECTED_SCREENING_SIGNAL = /性别|男性|女性|男生|女生|年龄|出生|婚育|结婚|民族|籍贯|国籍|宗教|残疾|健康状况|户籍|政治面貌|性取向|同性恋|异性恋|身高|体重|颜值|外貌|照片|家庭状况|家庭成员|血型/iu
 const CONTACT_SIGNAL = /(?:1[3-9]\d{9}|微信|(?:^|\s)vx(?:$|\s)|邮箱|email)/iu
 
 type RequirementStatus = typeof REQUIREMENT_STATUSES[number]
