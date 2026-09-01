@@ -61,7 +61,7 @@ Yootun-Agent 的企业能力采用“本地工作台 + 可替换外部适配器�
 
 `model_api_key` 是用户或服务主体访问 Models 的业务凭据，不是服务间内部接口的共享密钥。Models `/internal/mcp/auth-context` 是数据平面例外：在启用 API-key data-plane 策略时，MCP Gateway 预检和 `auth_request` 应发送用户 `MODELS_API_KEY`，由 Models 派生租户/成员上下文。其他服务间 internal API 才使用 `INTERNAL_API_SECRET` 生成的短时 HMAC 服务令牌（并携带服务名），两类凭据不能互换。它们都必须由 Jenkins Credentials/运行时 Secret 注入，不能进入插件 bundle、桌面日志或提交记录。
 
-本次 CI 实机审计复现了 `/internal/mcp/auth-context` 的 401（`Invalid service token`），根因是 CI 侧 `MODELS_API_KEY` 与 Models 当前运行配置不再匹配；不能通过替换成内部 Secret 来绕过。需重新签发/注入有效 Models Key，并确认 Models data-plane 策略后，才可把 Gateway 构建标记为部署成功。详细契约与迁移清单见 `../docker-helm.dofe.ai/docs/0901/mcp-auth-usage-governance-architecture.md` 和 `mcp-auth-usage-implementation-roadmap.md`。
+本次 CI 实机审计复现了 `/internal/mcp/auth-context` 的 401（`Invalid service token`），说明 CI 侧 Models Key 或 Models data-plane 策略与当前运行配置不匹配；不能通过替换成内部 Secret 来绕过。需重新签发/注入有效 Models Key，并确认 `MODELS_INTERNAL_API_KEY_AUTH=true` 已进入运行容器后，才可把 Gateway 构建标记为部署成功。详细契约与迁移清单见 `../docker-helm.dofe.ai/docs/0901/mcp-auth-usage-governance-architecture.md` 和 `mcp-auth-usage-implementation-roadmap.md`。
 
 ## macOS / Windows 发布门禁
 
