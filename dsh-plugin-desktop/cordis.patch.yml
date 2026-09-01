@@ -7,6 +7,8 @@
         mode: compatibility
     - id: dofe-yootun-ui
       name: '@dofe/dsh-yootun-ui'
+    - id: dofe-yootun-dashboard
+      name: '@dofe/dsh-yootun-dashboard'
     - id: desktop-terminal
       name: dsh-plugin-desktop/terminal
       disabled: !!js process.platform === 'linux'
