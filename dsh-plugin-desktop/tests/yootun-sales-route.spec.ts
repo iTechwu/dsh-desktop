@@ -52,12 +52,24 @@ describe('Yootun sales workspace route', () => {
 
     const leadId = save.body().leads[0].id
     const queued = response()
+    const idempotencyKey = 'sales-follow-up-1'
     await handleYootunSalesRequest(request('POST', JSON.stringify({
-      action: 'queue_follow_up', leadId, channel: 'email', summary: '发送方案摘要并约 30 分钟沟通',
+      action: 'queue_follow_up', leadId, channel: 'email', summary: '发送方案摘要并约 30 分钟沟通', idempotencyKey,
     })), queued, 'http://127.0.0.1:43120', { statePath, now })
     expect(queued.status).toBe(200)
     expect(queued.body().dashboard.pendingConfirmation).toBe(1)
     expect(queued.body().actions[0].status).toBe('awaiting_confirmation')
+    const replay = response()
+    await handleYootunSalesRequest(request('POST', JSON.stringify({
+      action: 'queue_follow_up', leadId, channel: 'email', summary: '发送方案摘要并约 30 分钟沟通', idempotencyKey,
+    })), replay, 'http://127.0.0.1:43120', { statePath, now })
+    expect(replay.body().actions).toHaveLength(1)
+    const conflict = response()
+    await handleYootunSalesRequest(request('POST', JSON.stringify({
+      action: 'queue_follow_up', leadId, channel: 'phone', summary: '改用电话沟通', idempotencyKey,
+    })), conflict, 'http://127.0.0.1:43120', { statePath, now })
+    expect(conflict.status).toBe(400)
+    expect(conflict.body().error).toBe('idempotency_key_conflict')
 
     const confirmed = response()
     await handleYootunSalesRequest(request('POST', JSON.stringify({

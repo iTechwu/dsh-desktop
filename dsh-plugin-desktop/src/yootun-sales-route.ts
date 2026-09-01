@@ -195,13 +195,20 @@ function mutate(state: SalesState, value: unknown, now: string): SalesState {
     return { ...state, leads: [lead, ...state.leads.filter(item => item.id !== id)], updatedAt: now }
   }
   if (body.action === 'queue_follow_up') {
-    if (!exactKeys(body, ['action', 'leadId', 'channel', 'summary'])) throw new InvalidSalesRequest('request_fields_invalid')
+    if (!exactKeys(body, ['action', 'leadId', 'channel', 'summary'], ['idempotencyKey'])) throw new InvalidSalesRequest('request_fields_invalid')
     const leadId = text(body.leadId, 'lead_id', 80)
     if (!state.leads.some(item => item.id === leadId)) throw new InvalidSalesRequest('lead_not_found')
+    const channel = enumValue(body.channel, ACTION_CHANNELS, 'channel')
+    const summary = text(body.summary, 'summary', 500)
+    const idempotencyKey = body.idempotencyKey === undefined ? randomUUID() : text(body.idempotencyKey, 'idempotency_key', 80)
+    const existing = state.actions.find(item => item.idempotencyKey === idempotencyKey)
+    if (existing !== undefined) {
+      if (existing.leadId !== leadId || existing.channel !== channel || existing.summary !== summary) throw new InvalidSalesRequest('idempotency_key_conflict')
+      return state
+    }
     if (state.actions.length >= MAX_ACTIONS) throw new InvalidSalesRequest('action_limit_reached')
     const action: SalesAction = {
-      id: randomUUID(), leadId, type: 'follow_up', channel: enumValue(body.channel, ACTION_CHANNELS, 'channel'),
-      summary: text(body.summary, 'summary', 500), status: 'awaiting_confirmation', idempotencyKey: randomUUID(), createdAt: now, updatedAt: now,
+      id: randomUUID(), leadId, type: 'follow_up', channel, summary, status: 'awaiting_confirmation', idempotencyKey, createdAt: now, updatedAt: now,
     }
     return { ...state, actions: [action, ...state.actions], updatedAt: now }
   }
