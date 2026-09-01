@@ -139,7 +139,9 @@ async function loadUsage(
   period: DashboardPeriod,
   now: Date,
 ): Promise<FinopsSummary> {
-  if (dependencies.credentials === undefined) return emptySnapshot(period, 'unavailable', 'credential_service_unavailable', now)
+  if (dependencies.credentials === undefined || typeof dependencies.credentials.resolve !== 'function') {
+    return emptySnapshot(period, 'unavailable', 'credential_service_unavailable', now)
+  }
   let resolved
   try {
     resolved = await dependencies.credentials.resolve(MODELS_API_KEY_REF)
