@@ -346,14 +346,19 @@ function saveCandidate(state: RecruiterState, body: JsonRecord, now: string): Re
 }
 
 function queueAction(state: RecruiterState, body: JsonRecord, now: string): RecruiterState {
-  if (!exactKeys(body, ['action', 'type', 'targetLabel', 'summary'])) {
+  if (!exactKeys(body, ['action', 'type', 'targetLabel', 'summary'], ['idempotencyKey'])) {
     throw new InvalidRecruiterRequest('request_fields_invalid')
   }
+  const idempotencyKey = body.idempotencyKey === undefined
+    ? randomUUID()
+    : limitedText(body.idempotencyKey, 'idempotency_key', 80)
+  const existing = state.actions.find(item => item.idempotencyKey === idempotencyKey)
+  if (existing !== undefined) return state
   if (state.actions.length >= MAX_ACTIONS) throw new InvalidRecruiterRequest('action_limit_reached')
   const item: RecruiterAction = {
     id: randomUUID(), type: enumValue(body.type, ACTION_TYPES, 'type'),
     targetLabel: limitedText(body.targetLabel, 'target_label'), summary: limitedText(body.summary, 'summary', 500),
-    status: 'awaiting_confirmation', idempotencyKey: randomUUID(), createdAt: now, updatedAt: now,
+    status: 'awaiting_confirmation', idempotencyKey, createdAt: now, updatedAt: now,
   }
   return { ...state, actions: [item, ...state.actions], updatedAt: now }
 }

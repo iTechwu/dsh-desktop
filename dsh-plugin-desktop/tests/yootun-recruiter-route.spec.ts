@@ -109,6 +109,21 @@ describe('Yootun recruiter route', () => {
     expect(JSON.stringify(confirmed.value)).not.toMatch(/succeeded|sent/iu)
   })
 
+  it('deduplicates retries with the same idempotency key and rejects a second confirmation', async () => {
+    const statePath = path()
+    const payload = {
+      action: 'queue_action', type: 'publish_jd', targetLabel: 'AI 产品经理', summary: '发布职位草稿',
+      idempotencyKey: 'recruiter-jd-20260901-001',
+    }
+    const first = await call(statePath, 'POST', payload)
+    const retry = await call(statePath, 'POST', payload)
+    expect((first.value.actions as unknown[]).length).toBe(1)
+    expect((retry.value.actions as unknown[]).length).toBe(1)
+    const id = (first.value.actions as Array<{ id: string }>)[0]!.id
+    expect((await call(statePath, 'POST', { action: 'confirm_action', id })).status).toBe(200)
+    expect((await call(statePath, 'POST', { action: 'confirm_action', id })).status).toBe(400)
+  })
+
   it.each([
     ['protected candidate field', async (statePath: string) => {
       const saved = await call(statePath, 'POST', requirement())
