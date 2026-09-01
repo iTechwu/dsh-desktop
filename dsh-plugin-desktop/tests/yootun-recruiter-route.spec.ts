@@ -126,6 +126,14 @@ describe('Yootun recruiter route', () => {
         evidence: [], concerns: [], interviewQuestions: [], feedbackStatus: 'none', resume: 'raw text',
       })
     }],
+    ['protected screening signal', async (statePath: string) => {
+      const saved = await call(statePath, 'POST', requirement())
+      const requirementId = (saved.value.requirements as Array<{ id: string }>)[0]!.id
+      return call(statePath, 'POST', {
+        action: 'save_candidate_analysis', displayName: '候选人 D', requirementId, stage: 'screening',
+        evidence: ['女性候选人'], concerns: [], interviewQuestions: [], feedbackStatus: 'none',
+      })
+    }],
     ['unknown action', (statePath: string) => call(statePath, 'POST', { action: 'publish_now' })],
   ])('rejects %s', async (_label, operation) => {
     expect((await operation(path())).status).toBe(400)

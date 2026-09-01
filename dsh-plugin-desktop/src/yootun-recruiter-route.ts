@@ -23,6 +23,8 @@ const CANDIDATE_STAGES = ['sourced', 'screening', 'interview', 'offer', 'hired',
 const FEEDBACK_STATUSES = ['none', 'draft', 'confirmed'] as const
 const ACTION_TYPES = ['publish_jd', 'send_message', 'write_feedback'] as const
 const ACTION_STATUSES = ['awaiting_confirmation', 'confirmed_pending_adapter', 'dismissed'] as const
+const PROTECTED_SCREENING_SIGNAL = /性别|男性|女性|男生|女生|年龄|出生|婚育|结婚|民族|籍贯|宗教|残疾|健康状况|户籍|政治面貌|颜值|照片/iu
+const CONTACT_SIGNAL = /(?:1[3-9]\d{9}|微信|(?:^|\s)vx(?:$|\s)|邮箱|email)/iu
 
 type RequirementStatus = typeof REQUIREMENT_STATUSES[number]
 type CandidateStage = typeof CANDIDATE_STAGES[number]
@@ -124,6 +126,14 @@ function textList(value: unknown, label: string, maxItems = 30): string[] {
   return value.map((item, index) => limitedText(item, `${label}_${String(index)}`, 320))
 }
 
+function screeningTextList(value: unknown, label: string): string[] {
+  const list = textList(value, label)
+  if (list.some(item => PROTECTED_SCREENING_SIGNAL.test(item) || CONTACT_SIGNAL.test(item))) {
+    throw new InvalidRecruiterRequest(`${label}_contains_protected_data`)
+  }
+  return list
+}
+
 function enumValue<T extends string>(value: unknown, options: readonly T[], label: string): T {
   if (typeof value !== 'string' || !options.includes(value as T)) {
     throw new InvalidRecruiterRequest(`${label}_invalid`)
@@ -196,8 +206,8 @@ function parsePersistedCandidate(value: unknown): RecruiterCandidateAnalysis | u
       requirementId: limitedText(item.requirementId, 'requirement_id', 80),
       stage: enumValue(item.stage, CANDIDATE_STAGES, 'stage'),
       ...(item.matchScore === undefined ? {} : { matchScore: integer(item.matchScore, 'match_score', 0, 100) }),
-      evidence: textList(item.evidence, 'evidence'), concerns: textList(item.concerns, 'concerns'),
-      interviewQuestions: textList(item.interviewQuestions, 'interview_questions'),
+      evidence: screeningTextList(item.evidence, 'evidence'), concerns: screeningTextList(item.concerns, 'concerns'),
+      interviewQuestions: screeningTextList(item.interviewQuestions, 'interview_questions'),
       feedbackStatus: enumValue(item.feedbackStatus, FEEDBACK_STATUSES, 'feedback_status'), updatedAt,
     }
   } catch { return undefined }
@@ -325,8 +335,8 @@ function saveCandidate(state: RecruiterState, body: JsonRecord, now: string): Re
     id, displayName: limitedText(body.displayName, 'display_name'), requirementId,
     stage: enumValue(body.stage, CANDIDATE_STAGES, 'stage'),
     ...(body.matchScore === undefined ? {} : { matchScore: integer(body.matchScore, 'match_score', 0, 100) }),
-    evidence: textList(body.evidence, 'evidence'), concerns: textList(body.concerns, 'concerns'),
-    interviewQuestions: textList(body.interviewQuestions, 'interview_questions'),
+    evidence: screeningTextList(body.evidence, 'evidence'), concerns: screeningTextList(body.concerns, 'concerns'),
+    interviewQuestions: screeningTextList(body.interviewQuestions, 'interview_questions'),
     feedbackStatus: enumValue(body.feedbackStatus, FEEDBACK_STATUSES, 'feedback_status'), updatedAt: now,
   }
   const exists = state.candidates.some(entry => entry.id === id)
