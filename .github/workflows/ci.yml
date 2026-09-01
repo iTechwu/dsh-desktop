@@ -16,6 +16,8 @@ concurrency:
 
 env:
   DSH_TELEMETRY_DISABLED: '1'
+  # Dashboard periods are local-calendar semantics; keep CI deterministic.
+  TZ: Asia/Shanghai
 
 jobs:
   # Keep required checks conclusive for documentation-only changes. Workflow
