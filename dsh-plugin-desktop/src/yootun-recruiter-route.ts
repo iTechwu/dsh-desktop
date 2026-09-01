@@ -22,7 +22,10 @@ const REQUIREMENT_STATUSES = ['draft', 'active', 'paused', 'closed'] as const
 const CANDIDATE_STAGES = ['sourced', 'screening', 'interview', 'offer', 'hired', 'archived'] as const
 const FEEDBACK_STATUSES = ['none', 'draft', 'confirmed'] as const
 const ACTION_TYPES = ['publish_jd', 'send_message', 'write_feedback'] as const
-const ACTION_STATUSES = ['awaiting_confirmation', 'confirmed_pending_adapter', 'dismissed'] as const
+const ACTION_STATUSES = [
+  'awaiting_confirmation', 'confirmed_pending_adapter', 'dismissed',
+  'succeeded', 'failed', 'requires_user_login',
+] as const
 // Keep candidate evidence focused on job-relevant signals; reject common protected attributes.
 const PROTECTED_SCREENING_SIGNAL = /性别|男性|女性|男生|女生|年龄|出生|婚育|结婚|民族|籍贯|国籍|宗教|残疾|健康状况|户籍|政治面貌|性取向|同性恋|异性恋|身高|体重|颜值|外貌|照片|家庭状况|家庭成员|血型/iu
 const CONTACT_SIGNAL = /(?:1[3-9]\d{9}|微信|(?:^|\s)vx(?:$|\s)|邮箱|email)/iu
@@ -33,6 +36,34 @@ type FeedbackStatus = typeof FEEDBACK_STATUSES[number]
 type RecruiterActionType = typeof ACTION_TYPES[number]
 type RecruiterActionStatus = typeof ACTION_STATUSES[number]
 type JsonRecord = Record<string, unknown>
+
+export type RecruiterAdapterStatus = 'succeeded' | 'failed' | 'requires_user_login'
+
+export interface RecruiterAdapterRequest {
+  actionId: string
+  type: RecruiterActionType
+  idempotencyKey: string
+  targetLabel: string
+  summary: string
+}
+
+export interface RecruiterAdapterResult {
+  status: RecruiterAdapterStatus
+  reasonCode: string
+  completedAt?: string
+  remoteRef?: string
+}
+
+export interface RecruiterAdapter {
+  execute: (request: RecruiterAdapterRequest) => Promise<RecruiterAdapterResult>
+}
+
+export interface RecruiterAdapterReceipt {
+  status: RecruiterAdapterStatus
+  reasonCode: string
+  completedAt: string
+  remoteRef?: string
+}
 
 export interface RecruiterRequirement {
   id: string
@@ -72,6 +103,7 @@ export interface RecruiterAction {
   idempotencyKey: string
   createdAt: string
   updatedAt: string
+  adapterReceipt?: RecruiterAdapterReceipt
 }
 
 export interface RecruiterState {
@@ -218,16 +250,43 @@ function parsePersistedAction(value: unknown): RecruiterAction | undefined {
   const item = record(value)
   if (item === undefined || !exactKeys(item, [
     'id', 'type', 'targetLabel', 'summary', 'status', 'idempotencyKey', 'createdAt', 'updatedAt',
-  ])) return undefined
+  ], ['adapterReceipt'])) return undefined
   try {
     const createdAt = canonicalTime(item.createdAt)
     const updatedAt = canonicalTime(item.updatedAt)
     if (createdAt === undefined || updatedAt === undefined) return undefined
+    const actionStatus = enumValue(item.status, ACTION_STATUSES, 'status')
+    const rawReceipt = item.adapterReceipt
+    let adapterReceipt: RecruiterAdapterReceipt | undefined
+    if (rawReceipt !== undefined) {
+      const receipt = record(rawReceipt)
+      if (receipt === undefined) return undefined
+      const completedAt = canonicalTime(receipt.completedAt)
+      const status = typeof receipt.status === 'string' && ['succeeded', 'failed', 'requires_user_login'].includes(receipt.status)
+        ? receipt.status as RecruiterAdapterStatus
+        : undefined
+      const reasonCode = typeof receipt.reasonCode === 'string' && /^[a-z0-9_:-]{1,80}$/u.test(receipt.reasonCode)
+        ? receipt.reasonCode
+        : undefined
+      const remoteRef = receipt.remoteRef === undefined
+        ? undefined
+        : typeof receipt.remoteRef === 'string' && receipt.remoteRef.length <= 160 && !/[\0\r\n]/u.test(receipt.remoteRef)
+          ? receipt.remoteRef
+          : undefined
+      if (completedAt === undefined || status === undefined || reasonCode === undefined
+        || (receipt.remoteRef !== undefined && remoteRef === undefined)) return undefined
+      adapterReceipt = { status, reasonCode, completedAt, ...(remoteRef === undefined ? {} : { remoteRef }) }
+    }
+    const terminal = actionStatus === 'succeeded' || actionStatus === 'failed' || actionStatus === 'requires_user_login'
+    if (terminal !== (adapterReceipt !== undefined) || (adapterReceipt !== undefined && adapterReceipt.status !== actionStatus)) {
+      return undefined
+    }
     return {
       id: limitedText(item.id, 'id', 80), type: enumValue(item.type, ACTION_TYPES, 'type'),
       targetLabel: limitedText(item.targetLabel, 'target_label'), summary: limitedText(item.summary, 'summary', 500),
-      status: enumValue(item.status, ACTION_STATUSES, 'status'),
+      status: actionStatus,
       idempotencyKey: limitedText(item.idempotencyKey, 'idempotency_key', 80), createdAt, updatedAt,
+      ...(adapterReceipt === undefined ? {} : { adapterReceipt }),
     }
   } catch { return undefined }
 }
@@ -422,6 +481,74 @@ export async function mutateRecruiterState(
   }
 }
 
+function adapterReceipt(value: unknown, fallbackTime: string): RecruiterAdapterReceipt {
+  const item = record(value)
+  const status = item?.status
+  const reasonCode = item?.reasonCode
+  const completedAt = item?.completedAt
+  const remoteRef = item?.remoteRef
+  if ((status !== 'succeeded' && status !== 'failed' && status !== 'requires_user_login')
+    || typeof reasonCode !== 'string' || !/^[a-z0-9_:-]{1,80}$/u.test(reasonCode)
+    || (completedAt !== undefined && canonicalTime(completedAt) === undefined)
+    || (remoteRef !== undefined && (typeof remoteRef !== 'string' || remoteRef.length > 160 || /[\0\r\n]/u.test(remoteRef)))) {
+    return { status: 'failed', reasonCode: 'adapter_invalid_result', completedAt: fallbackTime }
+  }
+  return {
+    status,
+    reasonCode,
+    completedAt: typeof completedAt === 'string' ? completedAt : fallbackTime,
+    ...(typeof remoteRef === 'string' ? { remoteRef } : {}),
+  }
+}
+
+/** Execute one confirmed action through an explicitly injected external adapter. */
+export async function executeRecruiterAction(
+  path: string,
+  actionId: string,
+  adapter: RecruiterAdapter | undefined,
+  now = new Date().toISOString(),
+): Promise<RecruiterSnapshot> {
+  const previous = stateMutationQueues.get(path) ?? Promise.resolve()
+  let release: (() => void) | undefined
+  const current = new Promise<void>(resolve => { release = resolve })
+  const chain = previous.then(() => current)
+  stateMutationQueues.set(path, chain)
+  await previous
+  try {
+    const state = await readRecruiterState(path, now)
+    const action = state.actions.find(item => item.id === actionId)
+    if (action === undefined) throw new InvalidRecruiterRequest('action_not_found')
+    if (action.status === 'awaiting_confirmation') throw new InvalidRecruiterRequest('action_not_confirmed')
+    if (action.status === 'dismissed' || action.status === 'succeeded') return recruiterSnapshot(state)
+    if (adapter === undefined) throw new InvalidRecruiterRequest('recruiter_adapter_unavailable')
+    let result: RecruiterAdapterResult
+    try {
+      result = await adapter.execute({
+        actionId: action.id,
+        type: action.type,
+        idempotencyKey: action.idempotencyKey,
+        targetLabel: action.targetLabel,
+        summary: action.summary,
+      })
+    } catch {
+      result = { status: 'failed', reasonCode: 'adapter_failed' }
+    }
+    const receipt = adapterReceipt(result, now)
+    const next: RecruiterState = {
+      ...state,
+      actions: state.actions.map(item => item.id === action.id
+        ? { ...item, status: receipt.status, adapterReceipt: receipt, updatedAt: receipt.completedAt }
+        : item),
+      updatedAt: receipt.completedAt,
+    }
+    await writeRecruiterState(path, next)
+    return recruiterSnapshot(next)
+  } finally {
+    release?.()
+    if (stateMutationQueues.get(path) === chain) stateMutationQueues.delete(path)
+  }
+}
+
 function finish(res: ServerResponse, status: number, value: object, allow?: string): void {
   res.statusCode = status
   res.setHeader('cache-control', 'no-store')
@@ -465,6 +592,7 @@ async function readJson(req: IncomingMessage): Promise<unknown> {
 export interface RecruiterRouteDependencies {
   statePath?: string | undefined
   now?: (() => Date) | undefined
+  adapter?: RecruiterAdapter | undefined
 }
 
 export async function handleYootunRecruiterRequest(
@@ -483,12 +611,27 @@ export async function handleYootunRecruiterRequest(
     return finish(res, 415, { error: 'content_type_invalid' })
   }
   try {
-    const next = await mutateRecruiterState(dependencies.statePath, await readJson(req), now)
+    const body = readJson(req)
+    const parsed = await body
+    const recordBody = record(parsed)
+    let next: RecruiterSnapshot
+    if (recordBody?.action === 'execute_action') {
+      if (!exactKeys(recordBody, ['action', 'id'])) throw new InvalidRecruiterRequest('request_fields_invalid')
+      next = await executeRecruiterAction(
+        dependencies.statePath,
+        limitedText(recordBody.id, 'id', 80),
+        dependencies.adapter,
+        now,
+      )
+    } else {
+      next = await mutateRecruiterState(dependencies.statePath, parsed, now)
+    }
     finish(res, 200, next)
   } catch (cause) {
     if (cause instanceof RecruiterBodyTooLarge) return finish(res, 413, { error: 'request_too_large' })
     if (cause instanceof InvalidRecruiterRequest || cause instanceof SyntaxError) {
-      return finish(res, 400, { error: cause instanceof InvalidRecruiterRequest ? cause.message : 'request_invalid' })
+      const error = cause instanceof InvalidRecruiterRequest ? cause.message : 'request_invalid'
+      return finish(res, error === 'recruiter_adapter_unavailable' ? 503 : 400, { error })
     }
     finish(res, 500, { error: 'recruiter_storage_failed' })
   }

@@ -56,9 +56,17 @@ function requirement(overrides: Record<string, unknown> = {}) {
   }
 }
 
-async function call(statePath: string, method: string, body?: unknown, overrides?: Record<string, unknown>) {
+async function call(
+  statePath: string,
+  method: string,
+  body?: unknown,
+  overrides?: Record<string, unknown>,
+  routeOverrides: { adapter?: { execute: (request: any) => Promise<any> } } = {},
+) {
   const res = response()
-  await handleYootunRecruiterRequest(request(method, body, overrides), res, ORIGIN, { statePath, now: () => NOW })
+  await handleYootunRecruiterRequest(request(method, body, overrides), res, ORIGIN, {
+    statePath, now: () => NOW, ...routeOverrides,
+  })
   return { status: res.statusCode, value: JSON.parse(res.body) as Record<string, unknown>, res }
 }
 
@@ -122,6 +130,54 @@ describe('Yootun recruiter route', () => {
     const id = (first.value.actions as Array<{ id: string }>)[0]!.id
     expect((await call(statePath, 'POST', { action: 'confirm_action', id })).status).toBe(200)
     expect((await call(statePath, 'POST', { action: 'confirm_action', id })).status).toBe(400)
+  })
+
+  it('executes only confirmed actions through an injected adapter and persists a minimal receipt', async () => {
+    const statePath = path()
+    const queued = await call(statePath, 'POST', {
+      action: 'queue_action', type: 'send_message', targetLabel: '候选人 A', summary: '邀请参加产品面试',
+      idempotencyKey: 'recruiter-adapter-001',
+    })
+    const id = (queued.value.actions as Array<{ id: string }>)[0]!.id
+    await call(statePath, 'POST', { action: 'confirm_action', id })
+    const requests: any[] = []
+    const executed = await call(statePath, 'POST', { action: 'execute_action', id }, undefined, {
+      adapter: { execute: async request => { requests.push(request); return { status: 'succeeded', reasonCode: 'remote_accepted', remoteRef: 'boss-msg-1' } } },
+    })
+    const action = (executed.value.actions as Array<{ status: string; adapterReceipt: Record<string, unknown> }>)[0]!
+    expect(requests).toEqual([{
+      actionId: id, type: 'send_message', idempotencyKey: 'recruiter-adapter-001',
+      targetLabel: '候选人 A', summary: '邀请参加产品面试',
+    }])
+    expect(action.status).toBe('succeeded')
+    expect(action.adapterReceipt).toMatchObject({ status: 'succeeded', reasonCode: 'remote_accepted', remoteRef: 'boss-msg-1' })
+    expect(JSON.parse(readFileSync(statePath, 'utf8')).actions[0].adapterReceipt).not.toHaveProperty('cookie')
+    const retry = await call(statePath, 'POST', { action: 'execute_action', id }, undefined, {
+      adapter: { execute: async () => { throw new Error('must not execute twice') } },
+    })
+    expect((retry.value.actions as Array<{ status: string }>)[0]!.status).toBe('succeeded')
+  })
+
+  it('keeps adapter-unavailable actions pending and supports explicit login retry with the same key', async () => {
+    const statePath = path()
+    const queued = await call(statePath, 'POST', {
+      action: 'queue_action', type: 'publish_jd', targetLabel: 'AI 产品经理', summary: '发布职位草稿',
+      idempotencyKey: 'recruiter-adapter-002',
+    })
+    const id = (queued.value.actions as Array<{ id: string }>)[0]!.id
+    await call(statePath, 'POST', { action: 'confirm_action', id })
+    const unavailable = await call(statePath, 'POST', { action: 'execute_action', id })
+    expect(unavailable.status).toBe(503)
+    expect(((await call(statePath, 'GET')).value.actions as Array<{ status: string }>)[0]!.status)
+      .toBe('confirmed_pending_adapter')
+    const login = await call(statePath, 'POST', { action: 'execute_action', id }, undefined, {
+      adapter: { execute: async () => ({ status: 'requires_user_login', reasonCode: 'login_required' }) },
+    })
+    expect((login.value.actions as Array<{ status: string }>)[0]!.status).toBe('requires_user_login')
+    const completed = await call(statePath, 'POST', { action: 'execute_action', id }, undefined, {
+      adapter: { execute: async request => ({ status: 'succeeded', reasonCode: 'remote_accepted', remoteRef: request.idempotencyKey }) },
+    })
+    expect((completed.value.actions as Array<{ status: string }>)[0]!.status).toBe('succeeded')
   })
 
   it('rejects a conflicting payload that reuses an idempotency key', async () => {

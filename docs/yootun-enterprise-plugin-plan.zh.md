@@ -39,14 +39,14 @@ Yootun-Agent 的企业能力采用“本地工作台 + 可替换外部适配器�
 
 ### 适配器层
 
-外部站点（例如 BOSS 直聘）只能由单独审核的 adapter 执行。预装工作台不保存登录 Cookie、不模拟“已发送”，也不绕过用户确认。adapter 消费一次性 `idempotencyKey`，回写明确的 `confirmed_pending_adapter`、`succeeded` 或 `failed` 状态，并把最小化结果写入本地审计记录。
+外部站点（例如 BOSS 直聘）只能由单独审核的 adapter 执行。预装工作台不保存登录 Cookie、不模拟“已发送”，也不绕过用户确认。Desktop Host 仅接受已确认动作的 `execute_action` 请求，并通过可注入 adapter 边界执行；adapter 消费一次性 `idempotencyKey`，回写明确的 `confirmed_pending_adapter`、`succeeded`、`failed` 或 `requires_user_login` 状态，并把最小化结果写入本地审计记录。
 
 ## HR 招聘纵向切片
 
 1. Agent 通过 `yootun_recruiter` 保存岗位需求。
 2. Agent 只保存脱敏候选人分析：显示名、岗位匹配证据、待核实问题、面试问题和阶段。
 3. 发布 JD、发送候选人消息、写入反馈都只能创建 `awaiting_confirmation` 动作。
-4. 用户在招聘工作台确认或撤销；确认后状态为 `confirmed_pending_adapter`，没有 adapter 时保持该状态。
+4. 用户在招聘工作台确认或撤销；确认后状态为 `confirmed_pending_adapter`，没有 adapter 时保持该状态。失败或需登录可沿用原幂等键显式重试，成功与撤销是终态。
 5. 所有输入执行字段白名单、长度/数量上限、时间与金额规范化，并拒绝联系方式、证件和受保护招聘属性。
 
 ## 安全与隐私门禁
