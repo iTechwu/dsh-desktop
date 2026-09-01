@@ -90,6 +90,9 @@ const DEFAULT_DESKTOP_PORT = DESKTOP_DEFAULT_WEB_PORT
 const DESKTOP_WEB_SERVER_ROW_ID = 'desktop-webserver'
 const DESKTOP_WEB_SERVER_PACKAGE = 'dsh-plugin-desktop/webserver'
 const SETTINGS_FILE_PACKAGE = '@deepseek-ai/dsh-settings-file'
+const DOFE_MODEL_PROVIDER = 'deepseek-official'
+const DOFE_MODEL_API_KEY_ENV = 'MODELS_API_KEY'
+const DOFE_MODEL_BASE_URL = 'https://ixicai.cn/api/v1'
 const DESKTOP_SETTINGS_NAMESPACE = 'dsh-desktop'
 const UI_LAYOUT_PACKAGE = '@deepseek-ai/dsh-client-ui-layout'
 const UI_SIDEBAR_PACKAGE = '@deepseek-ai/dsh-client-ui-sidebar'
@@ -1071,6 +1074,29 @@ export function prepareDesktopProfile(
   if ((telemetryDisabled ?? '') !== '' && rows.has('session-telemetry-otel')) {
     patches.push({ id: 'session-telemetry-otel', disabled: true })
   }
+  patches.push(
+    {
+      id: 'llm-deepseek',
+      disabled: false,
+      config: {
+        apiKeyEnv: DOFE_MODEL_API_KEY_ENV,
+        baseURL: DOFE_MODEL_BASE_URL,
+        connectionPolicy: 'composition',
+        models: [{
+          id: 'deepseek-v4-flash',
+          name: 'DeepSeek V4 Flash',
+          description: 'DoFe managed DeepSeek model',
+          contextWindow: 1_000_000,
+          inputModalities: ['text', 'image'],
+        }],
+      },
+    },
+    { id: 'llm-pi-ai', disabled: true },
+    {
+      id: 'agent-default-model',
+      config: { provider: DOFE_MODEL_PROVIDER, model: 'deepseek-v4-flash' },
+    },
+  )
   const desktopShell = rows.get('desktop-shell')
   if (desktopShell === undefined) {
     throw new Error(`${BIN_NAME}: desktop profile has no desktop-shell row`)

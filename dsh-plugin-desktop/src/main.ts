@@ -165,6 +165,11 @@ import {
   type SessionProjectionCacheRecoveryResult,
 } from './session-projcache-recovery.ts'
 import { windowsSupportsMica } from './window-material.ts'
+import {
+  removeLegacyModelCredentials,
+  removeModelCredentialEnvironment,
+  restrictModelLaunchEnvironment,
+} from './dofe-credential-migration.ts'
 
 const BIN_NAME = 'dsh-plugin-desktop'
 const PRODUCT_NAME = 'Yootun-Agent'
@@ -539,7 +544,9 @@ async function start(): Promise<void> {
       platform: process.platform,
     })
     for (const [name, value] of Object.entries(shellEnvironmentResolution.updates)) process.env[name] = value
+    removeModelCredentialEnvironment(process.env)
     const homeDir = resolveDshHome()
+    await removeLegacyModelCredentials(homeDir)
     const projectionCacheRecovery = recoverOversizedSessionProjectionCache(homeDir)
     if (projectionCacheRecovery.status === 'quarantined') {
       sessionProjectionCacheRecovery = projectionCacheRecovery
@@ -565,7 +572,8 @@ async function start(): Promise<void> {
 
     startupStage = 'runtime-bootstrap'
     lifecycleRecorder.transitionStartupStage(startupStage)
-    const environment = loadLayeredEnv(BIN_NAME, process.cwd())
+    const environment = restrictModelLaunchEnvironment(loadLayeredEnv(BIN_NAME, process.cwd()))
+    removeModelCredentialEnvironment(process.env)
     const electronVersion = process.versions.electron
     if (electronVersion === undefined) {
       throw new Error(`${BIN_NAME}: plugin runtime requires the Electron runtime version`)

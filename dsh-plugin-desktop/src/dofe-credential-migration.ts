@@ -3,6 +3,7 @@ import { chmod, lstat, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { parseDocument } from 'yaml'
 import { writeFileAtomic } from '@deepseek-ai/dsh-atomic-write'
+import type { LaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
 
 const LEGACY_MODEL_REFS = new Set([
   'DEEPSEEK_API_KEY',
@@ -16,9 +17,29 @@ const AMBIENT_MODEL_CREDENTIALS = [
   ...LEGACY_MODEL_REFS,
 ] as const
 
-/** Require model credentials to come from the mandatory desktop settings flow. */
+const AMBIENT_MODEL_CONNECTION = new Set([
+  ...AMBIENT_MODEL_CREDENTIALS,
+  'DEEPSEEK_BASE_URL',
+  'OPENAI_BASE_URL',
+  'ANTHROPIC_BASE_URL',
+  'GEMINI_BASE_URL',
+])
+
+/** Require model credentials and endpoints to come from the managed Desktop flow. */
 export function removeModelCredentialEnvironment(environment: NodeJS.ProcessEnv): void {
-  for (const key of AMBIENT_MODEL_CREDENTIALS) delete environment[key]
+  for (const key of AMBIENT_MODEL_CONNECTION) delete environment[key]
+}
+
+/** Hide ambient model credentials and endpoints from the immutable launch snapshot. */
+export function restrictModelLaunchEnvironment(
+  environment: LaunchEnvironmentSnapshot,
+): LaunchEnvironmentSnapshot {
+  return {
+    get: name => AMBIENT_MODEL_CONNECTION.has(name.toUpperCase()) ? undefined : environment.get(name),
+    getFrom: (name, sources) => AMBIENT_MODEL_CONNECTION.has(name.toUpperCase())
+      ? undefined
+      : environment.getFrom(name, sources),
+  }
 }
 
 export async function removeLegacyModelCredentials(homeDir: string): Promise<boolean> {

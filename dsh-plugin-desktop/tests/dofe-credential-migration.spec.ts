@@ -3,9 +3,11 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { parse } from 'yaml'
+import { createLaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
 import {
   removeLegacyModelCredentials,
   removeModelCredentialEnvironment,
+  restrictModelLaunchEnvironment,
 } from '../src/dofe-credential-migration.ts'
 
 const homes: string[] = []
@@ -58,6 +60,7 @@ describe('DoFe model credential migration', () => {
     const environment: NodeJS.ProcessEnv = {
       MODELS_API_KEY: 'ambient-managed-key',
       DEEPSEEK_API_KEY: 'ambient-legacy-key',
+      DEEPSEEK_BASE_URL: 'https://api.deepseek.com',
       OPENAI_API_KEY: 'ambient-openai-key',
       FEISHU_APP_SECRET: 'preserved',
     }
@@ -65,5 +68,29 @@ describe('DoFe model credential migration', () => {
     removeModelCredentialEnvironment(environment)
 
     expect(environment).toEqual({ FEISHU_APP_SECRET: 'preserved' })
+  })
+
+  it('hides model credentials and endpoints from every launch environment layer', () => {
+    const environment = restrictModelLaunchEnvironment(createLaunchEnvironmentSnapshot([
+      {
+        source: 'process',
+        values: {
+          MODELS_API_KEY: 'ambient-models-key',
+          DEEPSEEK_BASE_URL: 'https://api.deepseek.com',
+          FEISHU_APP_ID: 'preserved',
+        },
+      },
+      {
+        source: 'user-env',
+        path: '/home/.dsh/.env',
+        values: { DEEPSEEK_API_KEY: 'file-key' },
+      },
+    ]))
+
+    expect(environment.get('MODELS_API_KEY')).toBeUndefined()
+    expect(environment.get('DEEPSEEK_API_KEY')).toBeUndefined()
+    expect(environment.get('DEEPSEEK_BASE_URL')).toBeUndefined()
+    expect(environment.getFrom('DEEPSEEK_API_KEY', ['user-env'])).toBeUndefined()
+    expect(environment.get('FEISHU_APP_ID')).toEqual({ value: 'preserved', source: 'process' })
   })
 })

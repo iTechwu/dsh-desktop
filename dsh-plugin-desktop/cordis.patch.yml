@@ -36,11 +36,12 @@
       name: dsh-plugin-desktop/dofe-opencli
 
 # DoFe owns the model route in the Desktop distribution. The upstream adapter
-# remains in place, but it resolves the single managed key and CI-only Router.
+# remains in place, but Desktop fixes its single managed key and endpoint.
 - id: llm-deepseek
   config:
     apiKeyEnv: MODELS_API_KEY
     baseURL: https://ixicai.cn/api/v1
+    connectionPolicy: composition
     models:
       - id: deepseek-v4-flash
         name: DeepSeek V4 Flash

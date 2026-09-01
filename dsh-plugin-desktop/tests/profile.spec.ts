@@ -376,8 +376,52 @@ virtualStoreDirMaxLength: 60
     expect(rows.find(row => row.id === 'desktop-notifications')).toEqual(expect.objectContaining({
       name: 'dsh-plugin-desktop/notifications',
     }))
+    expect(rows.find(row => row.id === 'llm-deepseek')).toEqual(expect.objectContaining({
+      disabled: false,
+      config: expect.objectContaining({
+        apiKeyEnv: 'MODELS_API_KEY',
+        baseURL: 'https://ixicai.cn/api/v1',
+        connectionPolicy: 'composition',
+      }),
+    }))
+    expect(rows.find(row => row.id === 'llm-pi-ai')).toEqual(expect.objectContaining({ disabled: true }))
+    expect(rows.find(row => row.id === 'agent-default-model')).toEqual(expect.objectContaining({
+      config: { provider: 'deepseek-official', model: 'deepseek-v4-flash' },
+    }))
     expect(rows.find(row => row.id === 'desktop-profiles')).toEqual(expect.objectContaining({
       name: 'dsh-plugin-desktop/profiles',
+    }))
+  })
+
+  it('overrides direct model connection facts from the user patch in the final Desktop layer', () => {
+    const home = temporaryHome()
+    writeFileSync(join(home, 'cordis.patch.yml'), [
+      '- id: llm-deepseek',
+      '  config:',
+      '    apiKeyEnv: DEEPSEEK_API_KEY',
+      '    baseURL: https://api.deepseek.com',
+      '- id: llm-pi-ai',
+      '  disabled: false',
+      '- id: agent-default-model',
+      '  config:',
+      '    provider: deepseek-direct',
+      '    model: deepseek-chat',
+      '',
+    ].join('\n'))
+
+    const rows = composeEntries([prepareDesktopProfile(undefined, home, 'darwin').patches])
+
+    expect(rows.find(row => row.id === 'llm-deepseek')).toEqual(expect.objectContaining({
+      disabled: false,
+      config: expect.objectContaining({
+        apiKeyEnv: 'MODELS_API_KEY',
+        baseURL: 'https://ixicai.cn/api/v1',
+        connectionPolicy: 'composition',
+      }),
+    }))
+    expect(rows.find(row => row.id === 'llm-pi-ai')).toEqual(expect.objectContaining({ disabled: true }))
+    expect(rows.find(row => row.id === 'agent-default-model')).toEqual(expect.objectContaining({
+      config: { provider: 'deepseek-official', model: 'deepseek-v4-flash' },
     }))
   })
 
