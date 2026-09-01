@@ -34,10 +34,6 @@ import {
   YOOTUN_RECRUITER_PATH,
 } from './yootun-recruiter-route.ts'
 import {
-  handleYootunDashboardRequest,
-  YOOTUN_DASHBOARD_YESTERDAY_PATH,
-} from './yootun-dashboard-route.ts'
-import {
   handleYootunSalesRequest,
   YOOTUN_SALES_PATH,
 } from './yootun-sales-route.ts'
@@ -368,22 +364,6 @@ export function apply(ctx: Context, config: Config): void {
       )
     }
   }
-  ctx.effect(
-    () => ctx.webServer.register({
-      kind: 'exact',
-      path: YOOTUN_DASHBOARD_YESTERDAY_PATH,
-      handler: (req, res) => {
-        if (rejectDesktopRequest(ctx, req, res)) return
-        return handleYootunDashboardRequest(req, res, rendererOrigin, {
-          credentials: ctx.get('credentials'),
-          tools: ctx.tools,
-          sessionPersistence: ctx.get('sessionPersistence'),
-          dshHomePath: ctx.get('dshHomePath'),
-        })
-      },
-    }),
-    `dsh-plugin-desktop: private Yootun dashboard route ${YOOTUN_DASHBOARD_YESTERDAY_PATH}`,
-  )
   ctx.effect(
     () => ctx.webServer.register({
       kind: 'exact',
