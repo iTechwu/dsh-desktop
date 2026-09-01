@@ -34,6 +34,10 @@ import {
   YOOTUN_RECRUITER_PATH,
 } from './yootun-recruiter-route.ts'
 import {
+  handleYootunSalesRequest,
+  YOOTUN_SALES_PATH,
+} from './yootun-sales-route.ts'
+import {
   DESKTOP_DIRECTORY_PICKER_PATH,
   DESKTOP_DIRECTORY_VALIDATOR_PATH,
 } from './directory-picker-contract.ts'
@@ -389,6 +393,19 @@ export function apply(ctx: Context, config: Config): void {
       },
     }),
     `dsh-plugin-desktop: private Yootun recruiter route ${YOOTUN_RECRUITER_PATH}`,
+  )
+  ctx.effect(
+    () => ctx.webServer.register({
+      kind: 'exact',
+      path: YOOTUN_SALES_PATH,
+      handler: (req, res) => {
+        if (rejectDesktopRequest(ctx, req, res)) return
+        return handleYootunSalesRequest(req, res, rendererOrigin, {
+          statePath: ctx.get('dshHomePath')?.('storages', 'yootun-sales', 'state.json'),
+        })
+      },
+    }),
+    `dsh-plugin-desktop: private Yootun sales route ${YOOTUN_SALES_PATH}`,
   )
   if (runtime.platform === 'win32') {
     ctx.effect(
