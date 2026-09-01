@@ -469,7 +469,10 @@ export function apply(ctx: Context, config: Config): void {
       path: YOOTUN_FINOPS_PATH,
       handler: (req, res) => {
         if (rejectDesktopRequest(ctx, req, res)) return
-        return handleYootunFinopsRequest(req, res, rendererOrigin)
+        return handleYootunFinopsRequest(req, res, rendererOrigin, {
+          credentials: ctx.get('credentials'),
+          logger: ctx.logger,
+        })
       },
     }),
     `dsh-plugin-desktop: private Yootun FinOps route ${YOOTUN_FINOPS_PATH}`,
