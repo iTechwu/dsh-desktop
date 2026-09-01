@@ -187,6 +187,8 @@ describe('published package surface', () => {
     expect(readFileSync(new URL('cordis.patch.yml', packageRoot), 'utf8')).toContain("name: '@dofe/dsh-yootun-knowledge'")
     expect(readFileSync(new URL('cordis.patch.yml', packageRoot), 'utf8')).toContain("name: '@dofe/dsh-yootun-approvals'")
     expect(readFileSync(new URL('cordis.patch.yml', packageRoot), 'utf8')).toContain("name: '@dofe/dsh-yootun-finops'")
+    expect(readFileSync(new URL('cordis.patch.yml', packageRoot), 'utf8')).toContain("name: '@dofe/dsh-yootun-retrofit'")
+    expect(readFileSync(new URL('cordis.patch.yml', packageRoot), 'utf8')).toContain("name: '@dofe/dsh-yootun-daily-report'")
     expect(readFileSync(new URL('cordis.patch.yml', packageRoot), 'utf8')).toContain('baseURL: https://ixicai.cn/api/v1')
     expect(readFileSync(new URL('cordis.patch.yml', packageRoot), 'utf8')).toContain('apiKeyEnv: MODELS_API_KEY')
     expect(readFileSync(new URL('cordis.patch.yml', packageRoot), 'utf8')).toContain('id: ui-settings-models')

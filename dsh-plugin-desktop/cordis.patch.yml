@@ -23,6 +23,10 @@
       name: '@dofe/dsh-yootun-approvals'
     - id: dofe-yootun-finops
       name: '@dofe/dsh-yootun-finops'
+    - id: dofe-yootun-retrofit
+      name: '@dofe/dsh-yootun-retrofit'
+    - id: dofe-yootun-daily-report
+      name: '@dofe/dsh-yootun-daily-report'
     - id: desktop-terminal
       name: dsh-plugin-desktop/terminal
       disabled: !!js process.platform === 'linux'
