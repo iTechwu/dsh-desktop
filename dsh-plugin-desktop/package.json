@@ -392,7 +392,7 @@
     "@deepseek-ai/schemastery": "workspace:*",
     "adm-zip": "^0.6.0",
     "dsh-community-market": "0.1.0-dev.0",
-    "dshmarket": "1.17.1",
+    "dshmarket": "1.39.0",
     "koffi": "3.1.5",
     "node-addon-require-builtin": "^0.1.4",
     "node-pty": "1.2.0-beta.15",

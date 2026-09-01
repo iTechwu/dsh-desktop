@@ -198,7 +198,7 @@ describe('published package surface', () => {
   it('pins both selectable Market providers in the published runtime', () => {
     expect(manifest.dependencies).toMatchObject({
       'dsh-community-market': '0.1.0-dev.0',
-      dshmarket: '1.17.1',
+      dshmarket: '1.39.0',
     })
     expect(manifest.optionalDependencies ?? {}).not.toHaveProperty('dshmarket')
   })

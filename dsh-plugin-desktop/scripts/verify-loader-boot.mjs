@@ -148,6 +148,7 @@ try {
     [{ insert: [
       { id: 'desktop-shell', name: 'dsh-plugin-desktop' },
       { id: 'community-market', name: 'dsh-community-market' },
+      { id: 'dsh-market', name: 'dshmarket' },
       { id: 'third-party-smoke', name: THIRD_PARTY_NAME },
     ] }],
     (host) => {
@@ -191,6 +192,7 @@ try {
 
   const desktopEntry = ctx.loader.resolve('include:desktop-shell')
   const marketEntry = ctx.loader.resolve('include:community-market')
+  const dshMarketEntry = ctx.loader.resolve('include:dsh-market')
   const thirdPartyEntry = ctx.loader.resolve('include:third-party-smoke')
   if (desktopEntry?.options.name !== 'dsh-plugin-desktop') {
     throw new Error('launcher-owned desktop plugin did not activate through its bare package name')
@@ -200,6 +202,9 @@ try {
   }
   if (marketEntry?.options.name !== 'dsh-community-market') {
     throw new Error('community market Host plugin did not activate through its bare package name')
+  }
+  if (dshMarketEntry?.options.name !== 'dshmarket') {
+    throw new Error('dsh-market Host plugin did not activate through its bare package name')
   }
   if (mountedSpec?.mode !== 'compatibility') {
     throw new Error(`desktop plugin produced an unexpected shell mode: ${String(mountedSpec?.mode)}`)
