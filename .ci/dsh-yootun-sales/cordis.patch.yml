@@ -1,0 +1,4 @@
+# Add the sales workspace to a DSH browser bundle.
+- insert:
+    - id: dofe-yootun-sales
+      name: '@dofe/dsh-yootun-sales'

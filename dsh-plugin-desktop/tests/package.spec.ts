@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto'
 import { execFileSync } from 'node:child_process'
 import {
   copyFileSync,
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -100,6 +101,26 @@ describe('published package surface', () => {
     expect(workspaceManifest.scripts?.['dofe-ui:build'])
       .toBe('node scripts/build-dofe-ui.mjs')
     expect(ciWorkflow.match(/node scripts\/prepare-dofe-ui\.mjs/g)).toHaveLength(4)
+  })
+
+  it('keeps CI fallback snapshots for every preinstalled Yootun plugin', () => {
+    const pluginNames = [
+      'dsh-yootun-ui',
+      'dsh-yootun-dashboard',
+      'dsh-yootun-recruiter',
+      'dsh-yootun-sales',
+      'dsh-yootun-supply-watch',
+      'dsh-yootun-content-command',
+      'dsh-yootun-knowledge',
+      'dsh-yootun-approvals',
+      'dsh-yootun-finops',
+      'dsh-yootun-retrofit',
+      'dsh-yootun-daily-report',
+    ]
+    for (const name of pluginNames) {
+      expect(existsSync(new URL(`../.ci/${name}/package.json`, packageRoot))).toBe(true)
+      expect(existsSync(new URL(`../.ci/${name}/lib/client.js`, packageRoot))).toBe(true)
+    }
   })
 
   it('registers both npm launcher names', () => {

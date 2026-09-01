@@ -1,0 +1,3 @@
+- insert:
+    - id: dofe-yootun-daily-report
+      name: '@dofe/dsh-yootun-daily-report'

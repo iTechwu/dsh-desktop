@@ -1,0 +1,3 @@
+- insert:
+    - id: dofe-yootun-retrofit
+      name: '@dofe/dsh-yootun-retrofit'
