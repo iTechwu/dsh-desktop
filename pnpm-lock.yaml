@@ -1263,6 +1263,9 @@ importers:
       '@deepseek-ai/dsh-session-title-llm':
         specifier: workspace:*
         version: link:../deepseek-harness/packages/session/session-title-llm
+      '@deepseek-ai/dsh-session-turn-outline':
+        specifier: workspace:*
+        version: link:../deepseek-harness/packages/session/session-turn-outline
       '@deepseek-ai/dsh-settings':
         specifier: workspace:*
         version: link:../deepseek-harness/packages/settings/settings
