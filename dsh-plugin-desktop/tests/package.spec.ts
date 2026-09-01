@@ -121,6 +121,9 @@ describe('published package surface', () => {
       expect(existsSync(new URL(`../.ci/${name}/package.json`, packageRoot))).toBe(true)
       expect(existsSync(new URL(`../.ci/${name}/lib/client.js`, packageRoot))).toBe(true)
     }
+    const recruiterSource = readFileSync(new URL('../.ci/dsh-yootun-recruiter/src/client.js', packageRoot), 'utf8')
+    expect(recruiterSource).toContain("succeeded: '适配器已完成'")
+    expect(recruiterSource).toContain("requiresLogin: '需要重新登录'")
   })
 
   it('registers both npm launcher names', () => {

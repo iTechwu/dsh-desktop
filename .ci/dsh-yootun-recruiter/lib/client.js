@@ -18,7 +18,7 @@ window.__ModuleLoader__.load({
         loginTitle: '使用官方页面扫码登录', loginBody: '二维码和账号会话由 BOSS 直聘页面处理，Yootun-Agent 不读取或保存它们。', openBoss: '打开 BOSS 直聘',
         loginRequired: '需要用户扫码登录', adapterPending: '适配器未配置', adapterBody: '批准后的动作会停留在“已确认，等待适配器”，不会伪装为已发送。',
         emptyActions: '暂无待确认动作', approve: '确认动作', dismiss: '撤销', target: '目标', actionSummary: '摘要', status: '状态',
-        waiting: '等待确认', confirmed: '已确认，等待适配器', dismissed: '已撤销', saveHint: '岗位与候选人分析通过 Agent 对话接口保存。',
+        waiting: '等待确认', confirmed: '已确认，等待适配器', succeeded: '适配器已完成', failed: '适配器失败', requiresLogin: '需要重新登录', dismissed: '已撤销', saveHint: '岗位与候选人分析通过 Agent 对话接口保存。',
         stage: '阶段', evidence: '岗位相关证据', concerns: '待核实问题', interview: '面试问题', score: '匹配度',
       },
       en: {
@@ -29,7 +29,7 @@ window.__ModuleLoader__.load({
         loginTitle: 'Scan on the official login page', loginBody: 'BOSS handles the QR code and account session. Yootun-Agent does not read or store them.', openBoss: 'Open BOSS Zhipin',
         loginRequired: 'User QR login required', adapterPending: 'Adapter not configured', adapterBody: 'Approved actions remain pending until a reviewed adapter executes them.',
         emptyActions: 'No actions awaiting approval', approve: 'Approve action', dismiss: 'Dismiss', target: 'Target', actionSummary: 'Summary', status: 'Status',
-        waiting: 'Awaiting approval', confirmed: 'Approved, adapter pending', dismissed: 'Dismissed', saveHint: 'Save roles and candidate analysis through the Agent conversation interface.',
+        waiting: 'Awaiting approval', confirmed: 'Approved, adapter pending', succeeded: 'Adapter completed', failed: 'Adapter failed', requiresLogin: 'Login required', dismissed: 'Dismissed', saveHint: 'Save roles and candidate analysis through the Agent conversation interface.',
         stage: 'Stage', evidence: 'Role-related evidence', concerns: 'Open questions', interview: 'Interview questions', score: 'Match score',
       },
     }
@@ -50,7 +50,7 @@ window.__ModuleLoader__.load({
       if (!response.ok) throw new Error('recruiter mutation failed')
       return response.json()
     }
-    function statusText(status, t) { return status === 'awaiting_confirmation' ? t('waiting') : status === 'confirmed_pending_adapter' ? t('confirmed') : t('dismissed') }
+    function statusText(status, t) { return status === 'awaiting_confirmation' ? t('waiting') : status === 'confirmed_pending_adapter' ? t('confirmed') : status === 'succeeded' ? t('succeeded') : status === 'failed' ? t('failed') : status === 'requires_user_login' ? t('requiresLogin') : t('dismissed') }
     function Metric({ label, value }) { return h('div', { className: 'yr-metric' }, h('span', null, label), h('strong', null, String(value ?? 0))) }
     function Status({ status, t }) { return h('span', { className: `yr-status yr-status-${status}` }, h('span', { 'aria-hidden': true }), statusText(status, t)) }
 
