@@ -92,6 +92,37 @@ describe('Yootun sales workspace route', () => {
     expect(YOOTUN_SALES_PATH).toBe('/api/desktop/yootun/sales')
   })
 
+  it('executes only confirmed follow-ups through an injected adapter and replays terminal state', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'yootun-sales-adapter-'))
+    const statePath = join(root, 'state.json')
+    const now = () => new Date('2026-09-01T02:00:00.000Z')
+    const save = response()
+    await handleYootunSalesRequest(request('POST', JSON.stringify({
+      action: 'save_lead', company: '优惠豚', contactLabel: '采购负责人', stage: 'qualified', source: 'lead-discovery',
+    })), save, 'http://127.0.0.1:43120', { statePath, now })
+    const leadId = save.body().leads[0].id
+    const queued = response()
+    await handleYootunSalesRequest(request('POST', JSON.stringify({
+      action: 'queue_follow_up', leadId, channel: 'email', summary: '发送确认邮件', idempotencyKey: 'sales-adapter-1',
+    })), queued, 'http://127.0.0.1:43120', { statePath, now })
+    const actionId = queued.body().actions[0].id
+    const confirmed = response()
+    await handleYootunSalesRequest(request('POST', JSON.stringify({ action: 'confirm_action', id: actionId })), confirmed, 'http://127.0.0.1:43120', { statePath, now })
+    let calls = 0
+    const execute = response()
+    await handleYootunSalesRequest(request('POST', JSON.stringify({ action: 'execute_action', id: actionId })), execute, 'http://127.0.0.1:43120', {
+      statePath, now, adapter: { async execute(input) { calls += 1; expect(input).toMatchObject({ actionId, leadId, channel: 'email', idempotencyKey: 'sales-adapter-1', targetLabel: '采购负责人' }); return { status: 'succeeded', reasonCode: 'sent', remoteRef: 'crm-42' } } },
+    })
+    expect(execute.status).toBe(200)
+    expect(execute.body().actions[0]).toMatchObject({ status: 'succeeded', adapterReceipt: { reasonCode: 'sent', remoteRef: 'crm-42' } })
+    const replay = response()
+    await handleYootunSalesRequest(request('POST', JSON.stringify({ action: 'execute_action', id: actionId })), replay, 'http://127.0.0.1:43120', {
+      statePath, now, adapter: { async execute() { calls += 1; return { status: 'failed', reasonCode: 'should_not_run' } } },
+    })
+    expect(replay.body().actions[0].status).toBe('succeeded')
+    expect(calls).toBe(1)
+  })
+
   it('runs natural-language intent discovery through the managed Tools runtime', async () => {
     const root = await mkdtemp(join(tmpdir(), 'yootun-sales-intent-'))
     const result = response()

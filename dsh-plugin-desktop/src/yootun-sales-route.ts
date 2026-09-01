@@ -19,13 +19,43 @@ const DIRECTORY_MODE = 0o700
 const FILE_MODE = 0o600
 const CHECK_POSIX_MODE = process.platform !== 'win32'
 const LEAD_STAGES = ['new', 'qualified', 'proposal', 'won', 'lost'] as const
-const ACTION_STATUSES = ['awaiting_confirmation', 'confirmed_pending_adapter', 'dismissed'] as const
+const ACTION_STATUSES = ['awaiting_confirmation', 'confirmed_pending_adapter', 'dismissed', 'succeeded', 'failed', 'requires_user_login'] as const
 const ACTION_CHANNELS = ['email', 'phone', 'meeting'] as const
 
 type LeadStage = typeof LEAD_STAGES[number]
 type ActionStatus = typeof ACTION_STATUSES[number]
 type ActionChannel = typeof ACTION_CHANNELS[number]
 type JsonRecord = Record<string, unknown>
+
+export type SalesAdapterStatus = 'succeeded' | 'failed' | 'requires_user_login'
+
+export interface SalesAdapterRequest {
+  actionId: string
+  type: 'follow_up'
+  leadId: string
+  channel: ActionChannel
+  idempotencyKey: string
+  targetLabel: string
+  summary: string
+}
+
+export interface SalesAdapterResult {
+  status: SalesAdapterStatus
+  reasonCode: string
+  completedAt?: string
+  remoteRef?: string
+}
+
+export interface SalesAdapter {
+  execute: (request: SalesAdapterRequest) => Promise<SalesAdapterResult>
+}
+
+export interface SalesAdapterReceipt {
+  status: SalesAdapterStatus
+  reasonCode: string
+  completedAt: string
+  remoteRef?: string
+}
 
 export interface SalesLead {
   id: string
@@ -48,6 +78,7 @@ export interface SalesAction {
   idempotencyKey: string
   createdAt: string
   updatedAt: string
+  adapterReceipt?: SalesAdapterReceipt
 }
 
 export interface SalesState {
@@ -120,16 +151,37 @@ function parseLead(value: unknown): SalesLead | undefined {
 
 function parseAction(value: unknown): SalesAction | undefined {
   const item = record(value)
-  if (item === undefined || !exactKeys(item, ['id', 'leadId', 'type', 'channel', 'summary', 'status', 'idempotencyKey', 'createdAt', 'updatedAt'])) return undefined
+  if (item === undefined || !exactKeys(item, ['id', 'leadId', 'type', 'channel', 'summary', 'status', 'idempotencyKey', 'createdAt', 'updatedAt'], ['adapterReceipt'])) return undefined
   const createdAt = canonicalTime(item.createdAt)
   const updatedAt = canonicalTime(item.updatedAt)
   if (createdAt === undefined || updatedAt === undefined || item.type !== 'follow_up') return undefined
   try {
+    const status = enumValue(item.status, ACTION_STATUSES, 'status')
+    const rawReceipt = item.adapterReceipt
+    let adapterReceipt: SalesAdapterReceipt | undefined
+    if (rawReceipt !== undefined) {
+      const receipt = record(rawReceipt)
+      if (receipt === undefined) return undefined
+      const completedAt = canonicalTime(receipt.completedAt)
+      const receiptStatus = typeof receipt.status === 'string' && ['succeeded', 'failed', 'requires_user_login'].includes(receipt.status)
+        ? receipt.status as SalesAdapterStatus : undefined
+      const reasonCode = typeof receipt.reasonCode === 'string' && /^[a-z0-9_:-]{1,80}$/u.test(receipt.reasonCode)
+        ? receipt.reasonCode : undefined
+      const remoteRef = receipt.remoteRef === undefined ? undefined
+        : typeof receipt.remoteRef === 'string' && receipt.remoteRef.length <= 160 && !/[\0\r\n]/u.test(receipt.remoteRef)
+          ? receipt.remoteRef : undefined
+      if (completedAt === undefined || receiptStatus === undefined || reasonCode === undefined
+        || (receipt.remoteRef !== undefined && remoteRef === undefined)) return undefined
+      adapterReceipt = { status: receiptStatus, reasonCode, completedAt, ...(remoteRef === undefined ? {} : { remoteRef }) }
+    }
+    const terminal = status === 'succeeded' || status === 'failed' || status === 'requires_user_login'
+    if (terminal !== (adapterReceipt !== undefined) || (adapterReceipt !== undefined && adapterReceipt.status !== status)) return undefined
     return {
       id: text(item.id, 'id', 80), leadId: text(item.leadId, 'lead_id', 80), type: 'follow_up',
       channel: enumValue(item.channel, ACTION_CHANNELS, 'channel'), summary: text(item.summary, 'summary', 500),
-      status: enumValue(item.status, ACTION_STATUSES, 'status'), idempotencyKey: text(item.idempotencyKey, 'idempotency_key', 80),
+      status, idempotencyKey: text(item.idempotencyKey, 'idempotency_key', 80),
       createdAt, updatedAt,
+      ...(adapterReceipt === undefined ? {} : { adapterReceipt }),
     }
   } catch { return undefined }
 }
@@ -241,6 +293,58 @@ async function mutateSalesState(path: string, value: unknown, now: string): Prom
   finally { release?.(); if (mutationQueues.get(path) === chain) mutationQueues.delete(path) }
 }
 
+function salesAdapterReceipt(value: unknown, fallbackTime: string): SalesAdapterReceipt {
+  const item = record(value)
+  const status = item?.status
+  const reasonCode = item?.reasonCode
+  const completedAt = item?.completedAt
+  const remoteRef = item?.remoteRef
+  if ((status !== 'succeeded' && status !== 'failed' && status !== 'requires_user_login')
+    || typeof reasonCode !== 'string' || !/^[a-z0-9_:-]{1,80}$/u.test(reasonCode)
+    || (completedAt !== undefined && canonicalTime(completedAt) === undefined)
+    || (remoteRef !== undefined && (typeof remoteRef !== 'string' || remoteRef.length > 160 || /[\0\r\n]/u.test(remoteRef)))) {
+    return { status: 'failed', reasonCode: 'adapter_invalid_result', completedAt: fallbackTime }
+  }
+  return { status, reasonCode, completedAt: typeof completedAt === 'string' ? completedAt : fallbackTime,
+    ...(typeof remoteRef === 'string' ? { remoteRef } : {}) }
+}
+
+export async function executeSalesAction(
+  path: string,
+  actionId: string,
+  adapter: SalesAdapter | undefined,
+  now = new Date().toISOString(),
+): Promise<SalesSnapshot> {
+  const previous = mutationQueues.get(path) ?? Promise.resolve()
+  let release: (() => void) | undefined
+  const current = new Promise<void>(resolve => { release = resolve })
+  const chain = previous.then(() => current)
+  mutationQueues.set(path, chain)
+  await previous
+  try {
+    const state = await readSalesState(path, now)
+    const action = state.actions.find(item => item.id === actionId)
+    if (action === undefined) throw new InvalidSalesRequest('action_not_found')
+    if (action.status === 'awaiting_confirmation') throw new InvalidSalesRequest('action_not_confirmed')
+    if (action.status === 'dismissed' || action.status === 'succeeded') return salesSnapshot(state)
+    if (adapter === undefined) throw new InvalidSalesRequest('sales_adapter_unavailable')
+    let result: SalesAdapterResult
+    try {
+      const lead = state.leads.find(item => item.id === action.leadId)
+      result = await adapter.execute({ actionId: action.id, type: action.type, leadId: action.leadId,
+        channel: action.channel, idempotencyKey: action.idempotencyKey, targetLabel: lead?.contactLabel ?? 'sales lead', summary: action.summary })
+    } catch { result = { status: 'failed', reasonCode: 'adapter_failed' } }
+    const receipt = salesAdapterReceipt(result, now)
+    const next: SalesState = { ...state, actions: state.actions.map(item => item.id === action.id
+      ? { ...item, status: receipt.status, adapterReceipt: receipt, updatedAt: receipt.completedAt } : item), updatedAt: receipt.completedAt }
+    await writeSalesState(path, next)
+    return salesSnapshot(next)
+  } finally {
+    release?.()
+    if (mutationQueues.get(path) === chain) mutationQueues.delete(path)
+  }
+}
+
 function finish(res: ServerResponse, status: number, value: object, allow?: string): void {
   res.statusCode = status
   res.setHeader('cache-control', 'no-store')
@@ -281,6 +385,7 @@ export interface SalesRouteDependencies {
   statePath?: string | undefined
   now?: () => Date
   tools?: SalesToolsRuntime | undefined
+  adapter?: SalesAdapter | undefined
 }
 
 export interface SalesToolsRuntime {
@@ -380,11 +485,18 @@ export async function handleYootunSalesRequest(req: IncomingMessage, res: Server
       finish(res, 200, { ...snapshot, intent: { query, ...intent } })
       return
     }
+    if (request?.action === 'execute_action') {
+      if (!exactKeys(request, ['action', 'id'])) throw new InvalidSalesRequest('request_fields_invalid')
+      const next = await executeSalesAction(dependencies.statePath, text(request.id, 'id', 80), dependencies.adapter, now)
+      finish(res, 200, next)
+      return
+    }
     const next = await mutateSalesState(dependencies.statePath, body, now)
     finish(res, 200, salesSnapshot(next, dependencies.now?.() ?? new Date()))
   } catch (cause) {
     if (cause instanceof SalesBodyTooLarge) return finish(res, 413, { error: 'request_too_large' })
-    if (cause instanceof InvalidSalesRequest || cause instanceof SyntaxError) return finish(res, 400, { error: cause instanceof InvalidSalesRequest ? cause.message : 'request_invalid' })
+    if (cause instanceof InvalidSalesRequest) return finish(res, cause.message === 'sales_adapter_unavailable' ? 503 : 400, { error: cause.message })
+    if (cause instanceof SyntaxError) return finish(res, 400, { error: 'request_invalid' })
     finish(res, 500, { error: 'sales_storage_failed' })
   }
 }
