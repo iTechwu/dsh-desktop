@@ -255,9 +255,6 @@ importers:
       '@deepseek-ai/dsh-code-runtime':
         specifier: workspace:*
         version: link:../deepseek-harness/packages/code-runtime/code-runtime
-      '@deepseek-ai/dsh-code-runtime-python':
-        specifier: workspace:*
-        version: link:../deepseek-harness/packages/code-runtime/code-runtime-python
       '@deepseek-ai/dsh-code-runtime-worker-thread':
         specifier: workspace:*
         version: link:../deepseek-harness/packages/code-runtime/code-runtime-worker-thread
@@ -300,6 +297,9 @@ importers:
       '@deepseek-ai/dsh-e2b':
         specifier: workspace:*
         version: link:../deepseek-harness/packages/e2b/e2b
+      '@deepseek-ai/dsh-experimental-code-runtime-python':
+        specifier: workspace:*
+        version: link:../deepseek-harness/packages/experimental/code-runtime-python
       '@deepseek-ai/dsh-file-reference':
         specifier: workspace:*
         version: link:../deepseek-harness/packages/context/file-reference
@@ -675,9 +675,6 @@ importers:
       '@deepseek-ai/dsh-tool-subagent-control':
         specifier: workspace:*
         version: link:../deepseek-harness/packages/subagent/tool-subagent-control
-      '@deepseek-ai/dsh-tool-subagent-report':
-        specifier: workspace:*
-        version: link:../deepseek-harness/packages/subagent/tool-subagent-report
       '@deepseek-ai/dsh-tool-terminal':
         specifier: workspace:*
         version: link:../deepseek-harness/packages/terminal/tool-terminal
@@ -1395,9 +1392,6 @@ importers:
       '@deepseek-ai/dsh-tool-subagent-control':
         specifier: workspace:*
         version: link:../deepseek-harness/packages/subagent/tool-subagent-control
-      '@deepseek-ai/dsh-tool-subagent-report':
-        specifier: workspace:*
-        version: link:../deepseek-harness/packages/subagent/tool-subagent-report
       '@deepseek-ai/dsh-tool-todo':
         specifier: workspace:*
         version: link:../deepseek-harness/packages/todo/tool-todo
