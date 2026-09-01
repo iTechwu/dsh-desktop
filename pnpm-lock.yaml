@@ -1479,6 +1479,9 @@ importers:
       '@dofe/dsh-yootun-sales':
         specifier: file:../../docker-helm.dofe.ai/plugins/dsh-yootun-sales
         version: file:../docker-helm.dofe.ai/plugins/dsh-yootun-sales
+      '@dofe/dsh-yootun-supply-watch':
+        specifier: file:../../docker-helm.dofe.ai/plugins/dsh-yootun-supply-watch
+        version: file:../docker-helm.dofe.ai/plugins/dsh-yootun-supply-watch
       '@dofe/dsh-yootun-ui':
         specifier: file:../../docker-helm.dofe.ai/plugins/dsh-yootun-ui
         version: file:../docker-helm.dofe.ai/plugins/dsh-yootun-ui
@@ -1903,6 +1906,9 @@ packages:
 
   '@dofe/dsh-yootun-sales@file:../docker-helm.dofe.ai/plugins/dsh-yootun-sales':
     resolution: {directory: ../docker-helm.dofe.ai/plugins/dsh-yootun-sales, type: directory}
+
+  '@dofe/dsh-yootun-supply-watch@file:../docker-helm.dofe.ai/plugins/dsh-yootun-supply-watch':
+    resolution: {directory: ../docker-helm.dofe.ai/plugins/dsh-yootun-supply-watch, type: directory}
 
   '@dofe/dsh-yootun-ui@file:../docker-helm.dofe.ai/plugins/dsh-yootun-ui':
     resolution: {directory: ../docker-helm.dofe.ai/plugins/dsh-yootun-ui, type: directory}
@@ -5741,6 +5747,8 @@ snapshots:
   '@dofe/dsh-yootun-recruiter@file:../docker-helm.dofe.ai/plugins/dsh-yootun-recruiter': {}
 
   '@dofe/dsh-yootun-sales@file:../docker-helm.dofe.ai/plugins/dsh-yootun-sales': {}
+
+  '@dofe/dsh-yootun-supply-watch@file:../docker-helm.dofe.ai/plugins/dsh-yootun-supply-watch': {}
 
   '@dofe/dsh-yootun-ui@file:../docker-helm.dofe.ai/plugins/dsh-yootun-ui': {}
 

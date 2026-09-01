@@ -13,6 +13,8 @@
       name: '@dofe/dsh-yootun-recruiter'
     - id: dofe-yootun-sales
       name: '@dofe/dsh-yootun-sales'
+    - id: dofe-yootun-supply-watch
+      name: '@dofe/dsh-yootun-supply-watch'
     - id: desktop-terminal
       name: dsh-plugin-desktop/terminal
       disabled: !!js process.platform === 'linux'

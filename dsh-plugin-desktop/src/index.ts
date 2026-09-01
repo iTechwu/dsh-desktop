@@ -38,6 +38,10 @@ import {
   YOOTUN_SALES_PATH,
 } from './yootun-sales-route.ts'
 import {
+  handleYootunSupplyWatchRequest,
+  YOOTUN_SUPPLY_WATCH_PATH,
+} from './yootun-supply-watch-route.ts'
+import {
   DESKTOP_DIRECTORY_PICKER_PATH,
   DESKTOP_DIRECTORY_VALIDATOR_PATH,
 } from './directory-picker-contract.ts'
@@ -406,6 +410,19 @@ export function apply(ctx: Context, config: Config): void {
       },
     }),
     `dsh-plugin-desktop: private Yootun sales route ${YOOTUN_SALES_PATH}`,
+  )
+  ctx.effect(
+    () => ctx.webServer.register({
+      kind: 'exact',
+      path: YOOTUN_SUPPLY_WATCH_PATH,
+      handler: (req, res) => {
+        if (rejectDesktopRequest(ctx, req, res)) return
+        return handleYootunSupplyWatchRequest(req, res, rendererOrigin, {
+          statePath: ctx.get('dshHomePath')?.('storages', 'yootun-supply-watch', 'state.json'),
+        })
+      },
+    }),
+    `dsh-plugin-desktop: private Yootun supply watch route ${YOOTUN_SUPPLY_WATCH_PATH}`,
   )
   if (runtime.platform === 'win32') {
     ctx.effect(
