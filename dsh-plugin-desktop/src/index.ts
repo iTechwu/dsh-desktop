@@ -34,6 +34,10 @@ import {
   YOOTUN_DASHBOARD_YESTERDAY_PATH,
 } from './yootun-dashboard-route.ts'
 import {
+  handleYootunRecruiterRequest,
+  YOOTUN_RECRUITER_PATH,
+} from './yootun-recruiter-route.ts'
+import {
   DESKTOP_DIRECTORY_PICKER_PATH,
   DESKTOP_DIRECTORY_VALIDATOR_PATH,
 } from './directory-picker-contract.ts'
@@ -392,6 +396,19 @@ export function apply(ctx: Context, config: Config): void {
       },
     }),
     `dsh-plugin-desktop: private Yootun dashboard route ${YOOTUN_DASHBOARD_YESTERDAY_PATH}`,
+  )
+  ctx.effect(
+    () => ctx.webServer.register({
+      kind: 'exact',
+      path: YOOTUN_RECRUITER_PATH,
+      handler: (req, res) => {
+        if (rejectDesktopRequest(ctx, req, res)) return
+        return handleYootunRecruiterRequest(req, res, rendererOrigin, {
+          statePath: ctx.get('dshHomePath')?.('storages', 'yootun-recruiter', 'state.json'),
+        })
+      },
+    }),
+    `dsh-plugin-desktop: private Yootun recruiter route ${YOOTUN_RECRUITER_PATH}`,
   )
   if (runtime.platform === 'win32') {
     ctx.effect(
