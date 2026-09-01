@@ -47,6 +47,10 @@
       "types": "./lib/types/ci-tools.d.ts",
       "default": "./lib/ci-tools.js"
     },
+    "./yootun-recruiter-tools": {
+      "types": "./lib/types/yootun-recruiter-tools.d.ts",
+      "default": "./lib/yootun-recruiter-tools.js"
+    },
     "./dofe-managed": {
       "types": "./lib/types/dofe-managed.d.ts",
       "default": "./lib/dofe-managed.js"

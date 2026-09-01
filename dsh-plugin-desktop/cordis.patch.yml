@@ -28,6 +28,8 @@
       name: dsh-plugin-desktop/browser-tools
     - id: desktop-ci-tools
       name: dsh-plugin-desktop/ci-tools
+    - id: desktop-yootun-recruiter-tools
+      name: dsh-plugin-desktop/yootun-recruiter-tools
     - id: dofe-managed
       name: dsh-plugin-desktop/dofe-managed
     - id: dofe-opencli

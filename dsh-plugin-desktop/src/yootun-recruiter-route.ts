@@ -263,7 +263,7 @@ async function writeRecruiterState(path: string, state: RecruiterState): Promise
   if (CHECK_POSIX_MODE) await chmod(path, FILE_MODE)
 }
 
-function snapshot(state: RecruiterState): RecruiterSnapshot {
+export function recruiterSnapshot(state: RecruiterState): RecruiterSnapshot {
   const funnel = CANDIDATE_STAGES.map(stage => ({
     stage,
     count: state.candidates.filter(candidate => candidate.stage === stage).length,
@@ -373,6 +373,31 @@ function mutate(state: RecruiterState, value: unknown, now: string): RecruiterSt
   throw new InvalidRecruiterRequest('action_invalid')
 }
 
+const stateMutationQueues = new Map<string, Promise<void>>()
+
+/** Serialize one read-modify-write cycle so renderer and Agent updates cannot overwrite each other. */
+export async function mutateRecruiterState(
+  path: string,
+  value: unknown,
+  now = new Date().toISOString(),
+): Promise<RecruiterSnapshot> {
+  const previous = stateMutationQueues.get(path) ?? Promise.resolve()
+  let release: (() => void) | undefined
+  const current = new Promise<void>(resolve => { release = resolve })
+  const chain = previous.then(() => current)
+  stateMutationQueues.set(path, chain)
+  await previous
+  try {
+    const state = await readRecruiterState(path, now)
+    const next = mutate(state, value, now)
+    await writeRecruiterState(path, next)
+    return recruiterSnapshot(next)
+  } finally {
+    release?.()
+    if (stateMutationQueues.get(path) === chain) stateMutationQueues.delete(path)
+  }
+}
+
 function finish(res: ServerResponse, status: number, value: object, allow?: string): void {
   res.statusCode = status
   res.setHeader('cache-control', 'no-store')
@@ -429,14 +454,13 @@ export async function handleYootunRecruiterRequest(
   if (dependencies.statePath === undefined) return finish(res, 503, { error: 'recruiter_storage_unavailable' })
   const now = (dependencies.now?.() ?? new Date()).toISOString()
   const state = await readRecruiterState(dependencies.statePath, now)
-  if (req.method === 'GET') return finish(res, 200, snapshot(state))
+  if (req.method === 'GET') return finish(res, 200, recruiterSnapshot(state))
   if (req.headers['content-type']?.split(';', 1)[0]?.trim().toLowerCase() !== 'application/json') {
     return finish(res, 415, { error: 'content_type_invalid' })
   }
   try {
-    const next = mutate(state, await readJson(req), now)
-    await writeRecruiterState(dependencies.statePath, next)
-    finish(res, 200, snapshot(next))
+    const next = await mutateRecruiterState(dependencies.statePath, await readJson(req), now)
+    finish(res, 200, next)
   } catch (cause) {
     if (cause instanceof RecruiterBodyTooLarge) return finish(res, 413, { error: 'request_too_large' })
     if (cause instanceof InvalidRecruiterRequest || cause instanceof SyntaxError) {

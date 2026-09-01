@@ -133,6 +133,10 @@ describe('published package surface', () => {
       types: './lib/types/notifications.d.ts',
       default: './lib/notifications.js',
     })
+    expect(manifest.exports).toHaveProperty('./yootun-recruiter-tools', {
+      types: './lib/types/yootun-recruiter-tools.d.ts',
+      default: './lib/yootun-recruiter-tools.js',
+    })
     expect(manifest.exports).not.toHaveProperty('./windows-acl-runner')
     expect(manifest.exports).not.toHaveProperty('./desktop-cli')
     expect(manifest.exports).not.toHaveProperty('./desktop-runtime-environment')
@@ -161,6 +165,7 @@ describe('published package surface', () => {
     expect(readFileSync(new URL('cordis.patch.yml', packageRoot), 'utf8')).toContain('name: dsh-plugin-desktop/notifications')
     expect(readFileSync(new URL('cordis.patch.yml', packageRoot), 'utf8')).toContain('name: dsh-plugin-desktop/updates')
     expect(readFileSync(new URL('cordis.patch.yml', packageRoot), 'utf8')).toContain('name: dsh-plugin-desktop/dofe-managed')
+    expect(readFileSync(new URL('cordis.patch.yml', packageRoot), 'utf8')).toContain('name: dsh-plugin-desktop/yootun-recruiter-tools')
     expect(readFileSync(new URL('cordis.patch.yml', packageRoot), 'utf8')).toContain("name: '@dofe/dsh-yootun-ui'")
     expect(readFileSync(new URL('cordis.patch.yml', packageRoot), 'utf8')).toContain("name: '@dofe/dsh-yootun-dashboard'")
     expect(readFileSync(new URL('cordis.patch.yml', packageRoot), 'utf8')).toContain("name: '@dofe/dsh-yootun-recruiter'")
