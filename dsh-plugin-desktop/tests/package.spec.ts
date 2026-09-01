@@ -81,6 +81,8 @@ describe('published package surface', () => {
   it('preinstalls the independently owned Yootun DoFe client plugin', () => {
     expect(manifest.dependencies?.['@dofe/dsh-yootun-dashboard'])
       .toBe('file:../../docker-helm.dofe.ai/plugins/dsh-yootun-dashboard')
+    expect(manifest.dependencies?.['@dofe/dsh-yootun-recruiter'])
+      .toBe('file:../../docker-helm.dofe.ai/plugins/dsh-yootun-recruiter')
     expect(manifest.dependencies?.['@dofe/dsh-yootun-ui'])
       .toBe('file:../../docker-helm.dofe.ai/plugins/dsh-yootun-ui')
     expect(workspaceManifest.scripts?.['dofe-ui:build'])
@@ -161,6 +163,7 @@ describe('published package surface', () => {
     expect(readFileSync(new URL('cordis.patch.yml', packageRoot), 'utf8')).toContain('name: dsh-plugin-desktop/dofe-managed')
     expect(readFileSync(new URL('cordis.patch.yml', packageRoot), 'utf8')).toContain("name: '@dofe/dsh-yootun-ui'")
     expect(readFileSync(new URL('cordis.patch.yml', packageRoot), 'utf8')).toContain("name: '@dofe/dsh-yootun-dashboard'")
+    expect(readFileSync(new URL('cordis.patch.yml', packageRoot), 'utf8')).toContain("name: '@dofe/dsh-yootun-recruiter'")
     expect(readFileSync(new URL('cordis.patch.yml', packageRoot), 'utf8')).toContain('baseURL: https://ixicai.cn/api/v1')
     expect(readFileSync(new URL('cordis.patch.yml', packageRoot), 'utf8')).toContain('apiKeyEnv: MODELS_API_KEY')
     expect(readFileSync(new URL('cordis.patch.yml', packageRoot), 'utf8')).toContain('id: ui-settings-models')

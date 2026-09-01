@@ -4,7 +4,7 @@ import { existsSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 
 const root = resolve(import.meta.dirname, '..')
-for (const name of ['dsh-yootun-ui', 'dsh-yootun-dashboard']) {
+for (const name of ['dsh-yootun-ui', 'dsh-yootun-dashboard', 'dsh-yootun-recruiter']) {
   const sibling = resolve(root, `../docker-helm.dofe.ai/plugins/${name}`)
   const snapshot = resolve(root, `.ci/${name}`)
   if (existsSync(resolve(sibling, 'package.json'))) {

@@ -1,0 +1,4 @@
+# Add the safe recruitment workspace to a DSH browser bundle.
+- insert:
+    - id: dofe-yootun-recruiter
+      name: '@dofe/dsh-yootun-recruiter'
