@@ -8,7 +8,7 @@ Yootun-Agent 的企业能力采用“本地工作台 + 可替换外部适配器�
 
 ## 驾驶舱契约
 
-入口为 `POST /api/desktop/yootun/dashboard/yesterday`，请求只能来自本机 loopback、同源 Electron renderer，并使用 JSON body。服务端按本地时区计算“昨日” `[start, end)` 区间，同时并行读取三个独立数据源：
+入口为 `POST /api/desktop/yootun/dashboard/yesterday`，由 `@dofe/dsh-yootun-dashboard` 预装包通过 bundle patch 注册；Desktop shell 不重复注册该 exact route。请求只能来自本机 loopback、同源 Electron renderer，并使用 JSON body。服务端按本地时区计算“昨日” `[start, end)` 区间，同时并行读取三个独立数据源：
 
 | 区块 | 来源 | 允许展示 | 不允许展示 | 降级语义 |
 | --- | --- | --- | --- | --- |
