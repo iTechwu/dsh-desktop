@@ -67,6 +67,13 @@ body:is([data-dsh-desktop-mode="compatibility"], [data-dsh-desktop-mode="extende
   flex: none;
   min-width: 0;
 }
+/* Desktop has no persistent right details column when it is closed. Let the
+   transcript and composer use that reclaimed width; a user drag still wins
+   through the inline --dsh-chat-user-width value published by DSH. */
+body:is([data-dsh-desktop-mode="compatibility"], [data-dsh-desktop-mode="extended"])
+  #root:has([data-details-collapsed]) [data-dsh-conversation-drop-target] {
+  --dsh-chat-content-width: var(--dsh-chat-user-width, min(calc(100% - 32px), 1280px));
+}
 body[data-dsh-desktop-mode="extended"] .dshDesktopSidebarSurface {
   --dsw-specific-sidebar-fill: transparent;
   border-right-color: transparent;
