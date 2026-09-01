@@ -159,6 +159,7 @@
     "@dofe/dsh-yootun-recruiter": "file:../../docker-helm.dofe.ai/plugins/dsh-yootun-recruiter",
     "@dofe/dsh-yootun-sales": "file:../../docker-helm.dofe.ai/plugins/dsh-yootun-sales",
     "@dofe/dsh-yootun-supply-watch": "file:../../docker-helm.dofe.ai/plugins/dsh-yootun-supply-watch",
+    "@dofe/dsh-yootun-content-command": "file:../../docker-helm.dofe.ai/plugins/dsh-yootun-content-command",
     "@dofe/dsh-yootun-ui": "file:../../docker-helm.dofe.ai/plugins/dsh-yootun-ui",
     "@deepseek-ai/cordis": "workspace:*",
     "@deepseek-ai/cordis-plugin-group": "workspace:*",

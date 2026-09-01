@@ -1470,6 +1470,9 @@ importers:
       '@deepseek-ai/schemastery':
         specifier: workspace:*
         version: link:../deepseek-harness/vendor/schemastery
+      '@dofe/dsh-yootun-content-command':
+        specifier: file:../../docker-helm.dofe.ai/plugins/dsh-yootun-content-command
+        version: file:../docker-helm.dofe.ai/plugins/dsh-yootun-content-command
       '@dofe/dsh-yootun-dashboard':
         specifier: file:../../docker-helm.dofe.ai/plugins/dsh-yootun-dashboard
         version: file:../docker-helm.dofe.ai/plugins/dsh-yootun-dashboard
@@ -1897,6 +1900,9 @@ packages:
   '@csstools/css-tokenizer@4.0.0':
     resolution: {integrity: sha512-QxULHAm7cNu72w97JUNCBFODFaXpbDg+dP8b/oWFAZ2MTRppA3U00Y2L1HqaS4J6yBqxwa/Y3nMBaxVKbB/NsA==}
     engines: {node: '>=20.19.0'}
+
+  '@dofe/dsh-yootun-content-command@file:../docker-helm.dofe.ai/plugins/dsh-yootun-content-command':
+    resolution: {directory: ../docker-helm.dofe.ai/plugins/dsh-yootun-content-command, type: directory}
 
   '@dofe/dsh-yootun-dashboard@file:../docker-helm.dofe.ai/plugins/dsh-yootun-dashboard':
     resolution: {directory: ../docker-helm.dofe.ai/plugins/dsh-yootun-dashboard, type: directory}
@@ -5741,6 +5747,8 @@ snapshots:
       css-tree: 3.2.1
 
   '@csstools/css-tokenizer@4.0.0': {}
+
+  '@dofe/dsh-yootun-content-command@file:../docker-helm.dofe.ai/plugins/dsh-yootun-content-command': {}
 
   '@dofe/dsh-yootun-dashboard@file:../docker-helm.dofe.ai/plugins/dsh-yootun-dashboard': {}
 
