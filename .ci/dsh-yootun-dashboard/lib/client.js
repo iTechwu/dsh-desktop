@@ -294,10 +294,10 @@ window.__ModuleLoader__.load({
       }, 'dofe-yootun-dashboard: styles')
       const t = ctx.locale.bind(NS)
       ctx.slots.inject('sidebar.footer.action', () => ctx.slots.register({
-        name: 'sidebar.footer.action', order: 10, inject: () => ({ t }),
+        name: 'sidebar.footer.action', id: 'dofe-yootun-dashboard', order: 10, inject: () => ({ t }),
       }, DashboardButton))
       ctx.slots.inject('shell.overlay', () => ctx.slots.register({
-        name: 'shell.overlay', order: 10, inject: () => ({ t }),
+        name: 'shell.overlay', id: 'dofe-yootun-dashboard', order: 10, inject: () => ({ t }),
       }, DashboardOverlay))
     }
 

@@ -52,7 +52,11 @@ test('loads and registers the sidebar action and global overlay', async () => {
     locale: { bind: () => key => key, register: () => () => {} },
     slots: {
       inject(_name, factory) { factory() },
-      register(options) { registrations.push(options.name); return () => {} },
+      register(options) {
+        assert.equal(options.id, 'dofe-yootun-dashboard')
+        registrations.push(options.name)
+        return () => {}
+      },
     },
   })
   assert.deepEqual(registrations, ['sidebar.footer.action', 'shell.overlay'])
