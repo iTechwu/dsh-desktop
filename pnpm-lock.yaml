@@ -66,9 +66,6 @@ importers:
       '@deepseek-ai/dsh-agent-presets':
         specifier: workspace:*
         version: link:../deepseek-harness/packages/preset/agent-presets
-      '@deepseek-ai/dsh-agent-spine-demo':
-        specifier: workspace:*
-        version: link:../deepseek-harness/packages/examples/agent-spine-demo
       '@deepseek-ai/dsh-agent-tool-presentation':
         specifier: workspace:*
         version: link:../deepseek-harness/packages/core/agent-tool-presentation
@@ -489,9 +486,6 @@ importers:
       '@deepseek-ai/dsh-session-persistence-jsonl':
         specifier: workspace:*
         version: link:../deepseek-harness/packages/session/session-persistence-jsonl
-      '@deepseek-ai/dsh-session-persistence-sqlite':
-        specifier: workspace:*
-        version: link:../deepseek-harness/packages/session/session-persistence-sqlite
       '@deepseek-ai/dsh-session-projection':
         specifier: workspace:*
         version: link:../deepseek-harness/packages/session/session-projection
