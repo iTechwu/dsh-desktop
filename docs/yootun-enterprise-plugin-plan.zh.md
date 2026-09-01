@@ -57,6 +57,12 @@ Yootun-Agent 的企业能力采用“本地工作台 + 可替换外部适配器�
 - 外部动作采用“预览 → 一次性确认 → 幂等执行”状态机，禁止工具自行确认。
 - UI 文案明确区分“不可用”“无数据”“异常”，不把失败降级成空成功。
 
+### Models / MCP 认证边界（0901 审计结论）
+
+`model_api_key` 是用户或服务主体访问 Models 的业务凭据，不是服务间内部接口的共享密钥。MCP Gateway 调用 Models `/internal/mcp/auth-context` 时必须使用 `INTERNAL_API_SECRET` 生成的短时 HMAC 服务令牌（并携带服务名），不能把 `MODELS_API_KEY` 直接作为该内部接口的 Bearer token。Gateway 仍可在完成内部鉴权后，把用户 Key 交给 Models 的数据平面上下文解析；两类凭据必须由 Jenkins Credentials/运行时 Secret 注入，不能进入插件 bundle、桌面日志或提交记录。
+
+本次 CI 实机审计已复现旧路径的 401（`Invalid service token`）。在 MCP Gateway Jenkins 预检改为签名服务令牌并确认 Models 端 `INTERNAL_API_SECRET` 一致前，不得把失败构建标记为部署成功。详细契约与迁移清单见 `../docker-helm.dofe.ai/docs/0901/mcp-auth-usage-governance-architecture.md` 和 `mcp-auth-usage-implementation-roadmap.md`。
+
 ## macOS / Windows 发布门禁
 
 每次发布候选都执行：`pnpm check`、Desktop/Market build、runtime-closure、Loader/profile headless smoke 与插件单测。macOS 额外验证 universal `x86_64`/`arm64` DMG、Info.plist、执行权限和 `app.asar`；Windows 额外验证 NSIS 与 portable ZIP 的 PE 架构、安装/卸载保留用户数据、绿色版不接入自动更新。未签名 smoke 产物不得冒充正式发布，正式包必须在持有签名与公证凭据的原生 runner 上生成。
