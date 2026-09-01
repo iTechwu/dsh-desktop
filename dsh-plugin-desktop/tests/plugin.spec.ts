@@ -35,6 +35,7 @@ import { YOOTUN_SUPPLY_WATCH_PATH } from '../src/yootun-supply-watch-route.ts'
 import { YOOTUN_CONTENT_COMMAND_PATH } from '../src/yootun-content-command-route.ts'
 import { YOOTUN_APPROVALS_PATH } from '../src/yootun-approvals-route.ts'
 import { YOOTUN_FINOPS_PATH } from '../src/yootun-finops-route.ts'
+import { YOOTUN_DASHBOARD_YESTERDAY_PATH } from '../src/yootun-dashboard-route.ts'
 import {
   DESKTOP_DEVELOPER_TOOLS_TOGGLE_PATH,
   DESKTOP_DIAGNOSTICS_EXPORT_PATH,
@@ -423,6 +424,7 @@ describe('desktop Host plugin', () => {
       YOOTUN_CONTENT_COMMAND_PATH,
       YOOTUN_APPROVALS_PATH,
       YOOTUN_FINOPS_PATH,
+      YOOTUN_DASHBOARD_YESTERDAY_PATH,
       RENDERER_BOOT_REPORT_PATH,
       DESKTOP_DIRECTORY_PICKER_PATH,
       DESKTOP_DIRECTORY_VALIDATOR_PATH,
