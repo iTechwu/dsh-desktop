@@ -124,6 +124,18 @@ describe('Yootun recruiter route', () => {
     expect((await call(statePath, 'POST', { action: 'confirm_action', id })).status).toBe(400)
   })
 
+  it('rejects a conflicting payload that reuses an idempotency key', async () => {
+    const statePath = path()
+    const payload = {
+      action: 'queue_action', type: 'publish_jd', targetLabel: 'AI 产品经理', summary: '发布职位草稿',
+      idempotencyKey: 'recruiter-jd-20260901-002',
+    }
+    expect((await call(statePath, 'POST', payload)).status).toBe(200)
+    const conflict = await call(statePath, 'POST', { ...payload, summary: '发布已修改职位' })
+    expect(conflict.status).toBe(400)
+    expect(conflict.value.error).toBe('idempotency_conflict')
+  })
+
   it.each([
     ['protected candidate field', async (statePath: string) => {
       const saved = await call(statePath, 'POST', requirement())

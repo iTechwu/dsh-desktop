@@ -353,7 +353,15 @@ function queueAction(state: RecruiterState, body: JsonRecord, now: string): Recr
     ? randomUUID()
     : limitedText(body.idempotencyKey, 'idempotency_key', 80)
   const existing = state.actions.find(item => item.idempotencyKey === idempotencyKey)
-  if (existing !== undefined) return state
+  if (existing !== undefined) {
+    const type = enumValue(body.type, ACTION_TYPES, 'type')
+    const targetLabel = limitedText(body.targetLabel, 'target_label')
+    const summary = limitedText(body.summary, 'summary', 500)
+    if (existing.type !== type || existing.targetLabel !== targetLabel || existing.summary !== summary) {
+      throw new InvalidRecruiterRequest('idempotency_conflict')
+    }
+    return state
+  }
   if (state.actions.length >= MAX_ACTIONS) throw new InvalidRecruiterRequest('action_limit_reached')
   const item: RecruiterAction = {
     id: randomUUID(), type: enumValue(body.type, ACTION_TYPES, 'type'),
