@@ -308,17 +308,40 @@ function sanitizeIntentItem(value: unknown): JsonRecord | undefined {
   if (item === undefined) return undefined
   const result: JsonRecord = {}
   for (const key of ['platform', 'sourceUrl', 'observedAt', 'topic', 'intentLevel', 'confidence', 'suggestedNextStep']) {
-    if (item[key] !== undefined && (typeof item[key] === 'string' || typeof item[key] === 'number')) result[key] = item[key]
+    if (item[key] !== undefined && (typeof item[key] === 'string' || typeof item[key] === 'number')) {
+      if (key === 'sourceUrl' && typeof item[key] === 'string') {
+        const sourceUrl = safeSourceUrl(item[key])
+        if (sourceUrl !== undefined) result[key] = sourceUrl
+      } else result[key] = typeof item[key] === 'string' ? redact(item[key]) : item[key]
+    }
   }
   if (Array.isArray(item.intentSignals)) result.intentSignals = item.intentSignals.filter(signal => typeof signal === 'string').slice(0, 12)
   if (Array.isArray(item.evidence)) result.evidence = item.evidence.slice(0, 5).map(entry => {
     const evidence = record(entry)
     return evidence === undefined ? undefined : {
       ...(typeof evidence.publishedAt === 'string' ? { publishedAt: evidence.publishedAt } : {}),
-      ...(typeof evidence.quote === 'string' ? { quote: evidence.quote.slice(0, 240) } : {}),
+      ...(typeof evidence.quote === 'string' ? { quote: redact(evidence.quote).slice(0, 240) } : {}),
     }
   }).filter(entry => entry !== undefined)
   return result
+}
+
+function safeSourceUrl(value: string): string | undefined {
+  try {
+    const url = new URL(value)
+    if (url.protocol !== 'https:' && url.protocol !== 'http:') return undefined
+    url.username = ''
+    url.password = ''
+    url.search = ''
+    url.hash = ''
+    return url.toString().slice(0, 500)
+  } catch { return undefined }
+}
+
+function redact(value: string): string {
+  return value
+    .replace(/1[3-9]\d{9}/gu, '[手机号]')
+    .replace(/(?:微信|vx|v信)\s*[:：]?\s*[a-z0-9_-]{3,32}/giu, '[联系方式]')
 }
 
 async function intentSearch(query: string, tools: SalesToolsRuntime | undefined): Promise<JsonRecord> {

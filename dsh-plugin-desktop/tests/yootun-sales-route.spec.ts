@@ -93,7 +93,7 @@ describe('Yootun sales workspace route', () => {
         schemas: () => [{ name: 'mcp__tools-lead-discovery__search', description: 'lead discovery' }],
         async execute(input: any): Promise<any> {
           calls.push(input)
-          return { structuredContent: { items: [{ platform: 'community', sourceUrl: 'https://example.invalid/post', observedAt: '2026-08-31T12:00:00+08:00', intentLevel: 'high', confidence: 0.82, evidence: [{ quote: '想了解改装方案', publishedAt: '2026-08-31T11:00:00+08:00' }], phone: '13800000000' }] } }
+          return { structuredContent: { items: [{ platform: 'community', sourceUrl: 'https://example.invalid/post?phone=13800000000', observedAt: '2026-08-31T12:00:00+08:00', intentLevel: 'high', confidence: 0.82, evidence: [{ quote: '想了解改装方案，联系 13800000000', publishedAt: '2026-08-31T11:00:00+08:00' }], phone: '13800000000' }] } }
         },
       },
     })
@@ -101,6 +101,8 @@ describe('Yootun sales workspace route', () => {
     expect(result.body().intent.status).toBe('ready')
     expect(result.body().intent.items[0]).toMatchObject({ platform: 'community', confidence: 0.82 })
     expect(result.body().intent.items[0]).not.toHaveProperty('phone')
+    expect(result.body().intent.items[0].sourceUrl).toBe('https://example.invalid/post')
+    expect(result.body().intent.items[0].evidence[0].quote).not.toContain('13800000000')
     expect(calls[0]).toMatchObject({ name: 'mcp__tools-lead-discovery__search', arguments: { query: expect.any(String) } })
   })
 })
