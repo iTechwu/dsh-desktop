@@ -418,6 +418,7 @@ export function apply(ctx: Context, config: Config): void {
         if (rejectDesktopRequest(ctx, req, res)) return
         return handleYootunSalesRequest(req, res, rendererOrigin, {
           statePath: ctx.get('dshHomePath')?.('storages', 'yootun-sales', 'state.json'),
+          tools: ctx.tools,
         })
       },
     }),

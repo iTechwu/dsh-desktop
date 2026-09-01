@@ -5,6 +5,8 @@ import { chmod, lstat, mkdir, readFile } from 'node:fs/promises'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { dirname } from 'node:path'
 import { writeFileAtomic } from '@deepseek-ai/dsh-atomic-write'
+import { ToolCallId } from '@deepseek-ai/dsh-llm'
+import type { ToolRuntime } from '@deepseek-ai/dsh-tools'
 
 export const YOOTUN_SALES_PATH = '/api/desktop/yootun/sales'
 
@@ -271,6 +273,62 @@ async function readJson(req: IncomingMessage): Promise<unknown> {
 export interface SalesRouteDependencies {
   statePath?: string | undefined
   now?: () => Date
+  tools?: SalesToolsRuntime | undefined
+}
+
+export interface SalesToolsRuntime {
+  schemas(): readonly { name: string, description?: string }[]
+  execute: ToolRuntime['execute']
+}
+
+function sanitizeIntentResult(value: unknown): JsonRecord {
+  const root = record(value)
+  const envelope = record(root?.value) ?? root
+  let structured = record(envelope?.structuredContent) ?? record(envelope?.data) ?? envelope
+  let items = Array.isArray(structured?.items) ? structured.items : Array.isArray(structured?.results) ? structured.results : []
+  if (items.length === 0 && Array.isArray(root?.content)) {
+    for (const block of root.content) {
+      const textBlock = record(block)
+      if (textBlock?.type !== 'text' || typeof textBlock.text !== 'string') continue
+      try {
+        structured = record(JSON.parse(textBlock.text)) ?? structured
+        items = Array.isArray(structured?.items) ? structured.items : Array.isArray(structured?.results) ? structured.results : []
+        if (items.length > 0) break
+      } catch { /* keep looking for a structured text block */ }
+    }
+  }
+  return {
+    status: root?.isError === true ? 'error' : 'ready',
+    items: items.slice(0, 50).map(item => sanitizeIntentItem(item)).filter(item => item !== undefined),
+  }
+}
+
+function sanitizeIntentItem(value: unknown): JsonRecord | undefined {
+  const item = record(value)
+  if (item === undefined) return undefined
+  const result: JsonRecord = {}
+  for (const key of ['platform', 'sourceUrl', 'observedAt', 'topic', 'intentLevel', 'confidence', 'suggestedNextStep']) {
+    if (item[key] !== undefined && (typeof item[key] === 'string' || typeof item[key] === 'number')) result[key] = item[key]
+  }
+  if (Array.isArray(item.intentSignals)) result.intentSignals = item.intentSignals.filter(signal => typeof signal === 'string').slice(0, 12)
+  if (Array.isArray(item.evidence)) result.evidence = item.evidence.slice(0, 5).map(entry => {
+    const evidence = record(entry)
+    return evidence === undefined ? undefined : {
+      ...(typeof evidence.publishedAt === 'string' ? { publishedAt: evidence.publishedAt } : {}),
+      ...(typeof evidence.quote === 'string' ? { quote: evidence.quote.slice(0, 240) } : {}),
+    }
+  }).filter(entry => entry !== undefined)
+  return result
+}
+
+async function intentSearch(query: string, tools: SalesToolsRuntime | undefined): Promise<JsonRecord> {
+  if (tools === undefined) return { status: 'unavailable', reason: 'tools_unavailable', items: [] }
+  const schema = tools.schemas().find(item => /lead.?discovery|lead.?monitor|hotspot.?discovery|browser.?intelligence/i.test(`${item.name} ${item.description || ''}`))
+  if (schema === undefined) return { status: 'unavailable', reason: 'lead_discovery_tool_unavailable', items: [] }
+  try {
+    const result = await tools.execute({ callId: ToolCallId(`yootun-sales-intent-${randomUUID()}`), name: schema.name, arguments: { query }, signal: AbortSignal.timeout(15_000) })
+    return sanitizeIntentResult(result)
+  } catch { return { status: 'error', reason: 'lead_discovery_request_failed', items: [] } }
 }
 
 export async function handleYootunSalesRequest(req: IncomingMessage, res: ServerResponse, expectedOrigin: string, dependencies: SalesRouteDependencies): Promise<void> {
@@ -281,7 +339,18 @@ export async function handleYootunSalesRequest(req: IncomingMessage, res: Server
   if (req.method === 'GET') return finish(res, 200, salesSnapshot(await readSalesState(dependencies.statePath, now), dependencies.now?.() ?? new Date()))
   if (req.headers['content-type']?.split(';', 1)[0]?.trim().toLowerCase() !== 'application/json') return finish(res, 415, { error: 'content_type_invalid' })
   try {
-    const next = await mutateSalesState(dependencies.statePath, await readJson(req), now)
+    const body = await readJson(req)
+    const request = record(body)
+    if (request?.action === 'intent_search') {
+      if (Object.keys(request).some(key => key !== 'action' && key !== 'query') || typeof request.query !== 'string') throw new InvalidSalesRequest('request_fields_invalid')
+      const query = request.query.trim()
+      if (query.length === 0 || query.length > 500 || /[\0\r]/u.test(query)) throw new InvalidSalesRequest('query_invalid')
+      const snapshot = salesSnapshot(await readSalesState(dependencies.statePath, now), dependencies.now?.() ?? new Date())
+      const intent = await intentSearch(query, dependencies.tools)
+      finish(res, 200, { ...snapshot, intent: { query, ...intent } })
+      return
+    }
+    const next = await mutateSalesState(dependencies.statePath, body, now)
     finish(res, 200, salesSnapshot(next, dependencies.now?.() ?? new Date()))
   } catch (cause) {
     if (cause instanceof SalesBodyTooLarge) return finish(res, 413, { error: 'request_too_large' })

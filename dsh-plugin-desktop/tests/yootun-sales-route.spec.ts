@@ -79,4 +79,28 @@ describe('Yootun sales workspace route', () => {
     expect(result.body()).toMatchObject({ dashboard: { leads: 0, pendingConfirmation: 0 }, leads: [], actions: [] })
     expect(YOOTUN_SALES_PATH).toBe('/api/desktop/yootun/sales')
   })
+
+  it('runs natural-language intent discovery through the managed Tools runtime', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'yootun-sales-intent-'))
+    const result = response()
+    const calls: Array<{ name: string, arguments: unknown }> = []
+    await handleYootunSalesRequest(request('POST', JSON.stringify({
+      action: 'intent_search', query: '找最近一周长沙地区对新能源汽车改装感兴趣的公开讨论',
+    })), result, 'http://127.0.0.1:43120', {
+      statePath: join(root, 'state.json'),
+      now: () => new Date('2026-09-01T02:00:00.000Z'),
+      tools: {
+        schemas: () => [{ name: 'mcp__tools-lead-discovery__search', description: 'lead discovery' }],
+        async execute(input: any): Promise<any> {
+          calls.push(input)
+          return { structuredContent: { items: [{ platform: 'community', sourceUrl: 'https://example.invalid/post', observedAt: '2026-08-31T12:00:00+08:00', intentLevel: 'high', confidence: 0.82, evidence: [{ quote: '想了解改装方案', publishedAt: '2026-08-31T11:00:00+08:00' }], phone: '13800000000' }] } }
+        },
+      },
+    })
+    expect(result.status).toBe(200)
+    expect(result.body().intent.status).toBe('ready')
+    expect(result.body().intent.items[0]).toMatchObject({ platform: 'community', confidence: 0.82 })
+    expect(result.body().intent.items[0]).not.toHaveProperty('phone')
+    expect(calls[0]).toMatchObject({ name: 'mcp__tools-lead-discovery__search', arguments: { query: expect.any(String) } })
+  })
 })
