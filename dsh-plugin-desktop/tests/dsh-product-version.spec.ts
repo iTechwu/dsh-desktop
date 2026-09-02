@@ -28,6 +28,7 @@ function fixture(manifest: unknown): { readonly moduleUrl: URL; readonly manifes
 
 describe('installed DSH product version', () => {
   it('reads the package actually resolvable from the Desktop installation graph', () => {
+<<<<<<< HEAD
     const upstream = JSON.parse(readFileSync(new URL('../../upstream.json', import.meta.url), 'utf8')) as {
       sourceVersion: string
     }
@@ -35,6 +36,12 @@ describe('installed DSH product version', () => {
     // workspace:* links, so the installed runtime version is the sibling's
     // recorded source version rather than a pinned registry range.
     expect(dshProductVersion()).toBe(upstream.sourceVersion)
+=======
+    const desktopManifest = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as {
+      dependencies: Record<string, string>
+    }
+    expect(dshProductVersion()).toBe(desktopManifest.dependencies['@deepseek-ai/dsh'])
+>>>>>>> upstream/master
   })
 
   it('resolves and validates a canonical prerelease from the caller package graph', () => {
