@@ -5,7 +5,7 @@ index 3bde9755d703a70fc3a45c048c249559fef78d82..9db6a66ee59dbe28a167683b791d8357
 @@ -155,16 +155,16 @@ async function createKeychain({ tmpDir, cscLink, cscKeyPassword, cscILink, cscI
      if (cscIKeyPassword != null) {
          cscPasswords.push(cscIKeyPassword);
-        }
+     }
 -    return await importCerts(keychainFile, certPaths, cscPasswords);
 +    return await importCerts(keychainFile, certPaths, cscPasswords, keychainPassword);
  }
@@ -128,36 +128,11 @@ diff --git a/templates/nsis/include/installUtil.nsh b/templates/nsis/include/ins
 +    ${endif}
    ${endif}
 @@ -233,4 +238,8 @@ Function uninstallOldVersion
-    CheckResult:
-      ${if} $R0 == 0
-        Return
-      ${endIf}
+     CheckResult:
+       ${if} $R0 == 0
+         Return
+       ${endIf}
 +      ${if} $R0 == 2
 +        # Code 2 is handled by the non-atomic in-place replacement path.
 +        Return
 +      ${endIf}
-diff --git a/out/node-module-collector/pnpmNodeModulesCollector.js b/out/node-module-collector/pnpmNodeModulesCollector.js
---- a/out/node-module-collector/pnpmNodeModulesCollector.js
-+++ b/out/node-module-collector/pnpmNodeModulesCollector.js
-@@ -143,4 +143,8 @@ class PnpmNodeModulesCollector extends nodeModulesCollector_1.NodeModulesCollector {
--    async collectAllDependencies(_tree, _appPackageName) {
--        for (const root of this.allWorkspacePackages) {
--            await this.collectDepsRecursively(root);
--        }
-+    async collectAllDependencies(_tree, appPackageName) {
-+        // pnpm v11 returns every workspace package as a top-level entry. Electron
-+        // Builder only packages one app, so traversing unrelated workspace roots
-+        // causes multi-minute scans and can copy dependencies never used by it.
-+        const appRoot = this.allWorkspacePackages.find(pkg => pkg.name === appPackageName || pkg.from === appPackageName) ?? this.allWorkspacePackages[0];
-+        if (appRoot != null) {
-+            await this.collectDepsRecursively(appRoot);
-+        }
-diff --git a/out/node-module-collector/index.js b/out/node-module-collector/index.js
---- a/out/node-module-collector/index.js
-+++ b/out/node-module-collector/index.js
-@@ -37,1 +37,4 @@
--    const root = await findWorkspaceRoot(pm.pm, projectDir);
-+    // pnpm's workspace-root probe can hang on large cyclic workspaces. The
-+    // package-manager collector receives the target app name and only needs the
-+    // current project directory as its dependency root.
-+    const root = pm.pm === packageManager_1.PM.PNPM ? undefined : await findWorkspaceRoot(pm.pm, projectDir);
