@@ -13,7 +13,7 @@ test('publishes a browser recruiter plugin with a bundle patch', async () => {
 
 test('keeps BOSS actions human-confirmed and does not accept raw PII', async () => {
   const source = await readFile(new URL('src/client.js', root), 'utf8')
-  for (const token of ['/api/desktop/yootun/recruiter', 'awaiting_confirmation', 'confirmed_pending_adapter', 'requires_user_login', 'zhipin.com', 'confirm_action']) {
+  for (const token of ['/api/desktop/yootun/recruiter', 'awaiting_confirmation', 'confirmed_pending_adapter', 'succeeded', 'failed', 'requires_user_login', 'zhipin.com', 'confirm_action', 'loadError', 'yr-status-succeeded']) {
     assert.match(source, new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'u'))
   }
   assert.doesNotMatch(source, /resumeText|password|cookie|二维码内容|聊天正文/iu)

@@ -1,1 +1,4 @@
-[]
+# Register the host endpoint plugin into the DSH bundle.
+- insert:
+    - id: yootun-supply-watch
+      name: '@dofe/yootun-supply-watch'

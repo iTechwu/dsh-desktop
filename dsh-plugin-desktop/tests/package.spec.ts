@@ -79,47 +79,49 @@ describe('published package surface', () => {
     )
   })
 
-  it('preinstalls the independently owned Yootun DoFe client plugin', () => {
-    expect(manifest.dependencies?.['@dofe/dsh-yootun-dashboard'])
-      .toBe('file:../../docker-helm.dofe.ai/plugins/dsh-yootun-dashboard')
-    expect(manifest.dependencies?.['@dofe/dsh-yootun-recruiter'])
-      .toBe('file:../../docker-helm.dofe.ai/plugins/dsh-yootun-recruiter')
-    expect(manifest.dependencies?.['@dofe/dsh-yootun-sales'])
-      .toBe('file:../../docker-helm.dofe.ai/plugins/dsh-yootun-sales')
-    expect(manifest.dependencies?.['@dofe/dsh-yootun-supply-watch'])
-      .toBe('file:../../docker-helm.dofe.ai/plugins/dsh-yootun-supply-watch')
-    expect(manifest.dependencies?.['@dofe/dsh-yootun-content-command'])
-      .toBe('file:../../docker-helm.dofe.ai/plugins/dsh-yootun-content-command')
-    expect(manifest.dependencies?.['@dofe/dsh-yootun-knowledge'])
-      .toBe('file:../../docker-helm.dofe.ai/plugins/dsh-yootun-knowledge')
-    expect(manifest.dependencies?.['@dofe/dsh-yootun-approvals'])
-      .toBe('file:../../docker-helm.dofe.ai/plugins/dsh-yootun-approvals')
-    expect(manifest.dependencies?.['@dofe/dsh-yootun-finops'])
-      .toBe('file:../../docker-helm.dofe.ai/plugins/dsh-yootun-finops')
-    expect(manifest.dependencies?.['@dofe/dsh-yootun-ui'])
-      .toBe('file:../../docker-helm.dofe.ai/plugins/dsh-yootun-ui')
+  it('preinstalls every DoFe plugin from the plugin workspace', () => {
+    const plugins = [
+      ['@dofe/dsh-geoflow-mcp', 'dsh-geoflow-mcp'],
+      ['@dofe/dsh-georank-mcp', 'dsh-georank-mcp'],
+      ['@dofe/dsh-opencli', 'dsh-opencli'],
+      ['@noob-stupid/dsh-plugin-console', 'dsh-plugin-console'],
+      ['@dofe/dsh-tools-mcp', 'dsh-tools-mcp'],
+      ['@dofe/dsh-yootun-approvals', 'dsh-yootun-approvals'],
+      ['@dofe/dsh-yootun-content-command', 'dsh-yootun-content-command'],
+      ['@dofe/dsh-yootun-daily-report', 'dsh-yootun-daily-report'],
+      ['@dofe/dsh-yootun-dashboard', 'dsh-yootun-dashboard'],
+      ['@dofe/dsh-yootun-finops', 'dsh-yootun-finops'],
+      ['@dofe/dsh-yootun-knowledge', 'dsh-yootun-knowledge'],
+      ['@dofe/dsh-yootun-lead-discovery', 'dsh-yootun-lead-discovery'],
+      ['@dofe/dsh-yootun-recruiter', 'dsh-yootun-recruiter'],
+      ['@dofe/dsh-yootun-retrofit', 'dsh-yootun-retrofit'],
+      ['@dofe/dsh-yootun-sales', 'dsh-yootun-sales'],
+      ['@dofe/dsh-yootun-supply-watch', 'dsh-yootun-supply-watch'],
+      ['@dofe/dsh-yootun-ui', 'dsh-yootun-ui'],
+    ] as const
+    for (const [name, directory] of plugins) {
+      expect(manifest.dependencies?.[name])
+        .toBe(`file:../../docker-helm.dofe.ai/plugins/${directory}`)
+    }
     expect(workspaceManifest.scripts?.['dofe-ui:build'])
       .toBe('node scripts/build-dofe-ui.mjs')
     expect(ciWorkflow.match(/node scripts\/prepare-dofe-ui\.mjs/g)).toHaveLength(4)
   })
 
-  it('keeps CI fallback snapshots for every preinstalled Yootun plugin', () => {
-    const pluginNames = [
-      'dsh-yootun-ui',
-      'dsh-yootun-dashboard',
-      'dsh-yootun-recruiter',
-      'dsh-yootun-sales',
-      'dsh-yootun-supply-watch',
-      'dsh-yootun-content-command',
-      'dsh-yootun-knowledge',
-      'dsh-yootun-approvals',
-      'dsh-yootun-finops',
-      'dsh-yootun-retrofit',
-      'dsh-yootun-daily-report',
-    ]
-    for (const name of pluginNames) {
+  it('keeps CI fallback snapshots for every preinstalled plugin', () => {
+    const pluginMains = new Map([
+      ['dsh-geoflow-mcp', 'index.js'], ['dsh-georank-mcp', 'index.js'], ['dsh-opencli', 'index.js'],
+      ['dsh-plugin-console', 'lib/index.js'], ['dsh-tools-mcp', 'index.js'],
+      ['dsh-yootun-approvals', 'index.js'], ['dsh-yootun-content-command', 'index.js'],
+      ['dsh-yootun-daily-report', 'index.js'], ['dsh-yootun-dashboard', 'index.js'],
+      ['dsh-yootun-finops', 'index.js'], ['dsh-yootun-knowledge', 'index.js'],
+      ['dsh-yootun-lead-discovery', 'index.js'], ['dsh-yootun-recruiter', 'index.js'],
+      ['dsh-yootun-retrofit', 'index.js'], ['dsh-yootun-sales', 'index.js'],
+      ['dsh-yootun-supply-watch', 'index.js'], ['dsh-yootun-ui', 'index.js'],
+    ])
+    for (const [name, main] of pluginMains) {
       expect(existsSync(new URL(`../.ci/${name}/package.json`, packageRoot))).toBe(true)
-      expect(existsSync(new URL(`../.ci/${name}/lib/client.js`, packageRoot))).toBe(true)
+      expect(existsSync(new URL(`../.ci/${name}/${main}`, packageRoot))).toBe(true)
     }
     const recruiterSource = readFileSync(new URL('../.ci/dsh-yootun-recruiter/src/client.js', packageRoot), 'utf8')
     expect(recruiterSource).toContain("succeeded: '适配器已完成'")

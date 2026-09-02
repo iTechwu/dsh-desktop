@@ -23,7 +23,7 @@ const copy = {
     unavailable: '数据源暂不可用', empty: '昨日暂无数据', error: '数据读取失败',
     sourceReady: '已就绪', sourceEmpty: '无数据', sourceUnavailable: '不可用', sourceError: '异常',
     tabOverview: '总览', tabGeo: 'GEO 效果', tabUsage: '模型与消费', tabActivity: 'Agent 工作',
-    geo: 'GEO', usage: '模型消费', activity: 'Agent 工作', sources: '数据状态',
+    geo: 'GEO', usage: '模型消费', activity: 'Agent 工作', sources: '数据状态', capabilities: 'MCP 能力', tools: 'Tools', knowledge: 'Knowledge', memory: 'Memory', georank: 'GEORank', openmontage: 'OpenMontage',
     articles: '生成内容', published: '已发布', views: '总浏览', failedTasks: '失败任务',
     requests: '模型请求', cost: '昨日消费', models: '使用模型', tokens: '总 Token',
     sessions: '工作会话', turns: '执行轮次', completed: '完成轮次', failed: '异常轮次', tools: '工具调用',
@@ -39,7 +39,7 @@ const copy = {
     unavailable: 'Source unavailable', empty: 'No data yesterday', error: 'Could not load data',
     sourceReady: 'Ready', sourceEmpty: 'No data', sourceUnavailable: 'Unavailable', sourceError: 'Error',
     tabOverview: 'Overview', tabGeo: 'GEO performance', tabUsage: 'Models and spend', tabActivity: 'Agent work',
-    geo: 'GEO', usage: 'Model spend', activity: 'Agent work', sources: 'Source status',
+    geo: 'GEO', usage: 'Model spend', activity: 'Agent work', sources: 'Source status', capabilities: 'MCP capabilities', tools: 'Tools', knowledge: 'Knowledge', memory: 'Memory', georank: 'GEORank', openmontage: 'OpenMontage',
     articles: 'Content created', published: 'Published', views: 'Total views', failedTasks: 'Failed tasks',
     requests: 'Model requests', cost: 'Yesterday spend', models: 'Models used', tokens: 'Total tokens',
     sessions: 'Work sessions', turns: 'Turns', completed: 'Completed', failed: 'Failed', tools: 'Tool calls',
@@ -118,12 +118,17 @@ function SourceBand({ data, t }) {
     [t('usage'), t('billed'), data?.usage],
     [t('activity'), t('local'), data?.activity],
   ]
+  const capabilities = Object.entries(data?.capabilities || {})
   return h('section', { className: 'yd-source-band', 'aria-labelledby': 'yd-source-title' },
     h('div', { className: 'yd-section-heading' }, h('h2', { id: 'yd-source-title' }, t('sources')), h('p', null, t('privacy'))),
     h('div', { className: 'yd-source-list' }, ...sources.map(([name, description, source]) =>
       h('div', { className: 'yd-source-row', key: name },
         h('div', null, h('strong', null, name), h('span', null, description)),
-        h(SourceState, { source, t })))))
+        h(SourceState, { source, t })))),
+    capabilities.length ? h('div', { className: 'yd-capability-group' },
+      h('h3', null, t('capabilities')),
+      ...capabilities.map(([name, source]) => h('div', { className: 'yd-source-row', key: name },
+        h('div', null, h('strong', null, t(name) || name)), h(SourceState, { source, t })))) : null)
 }
 
 function GeoMetrics({ source, t, detailed = false }) {
@@ -277,13 +282,14 @@ const css = `
 `
 
 const inject = ['slots', 'locale']
+const capabilityCss = '.yd-capability-group{margin-top:18px}.yd-capability-group h3{margin:0 0 8px;font-size:13px}'
 
 function apply(ctx) {
   ctx.effect(() => ctx.locale.register(NS, copy), 'dofe-yootun-dashboard: dictionaries')
   ctx.effect(() => {
     const style = document.createElement('style')
     style.dataset.plugin = '@dofe/dsh-yootun-dashboard'
-    style.textContent = css
+    style.textContent = css + capabilityCss
     document.head.appendChild(style)
     return () => style.remove()
   }, 'dofe-yootun-dashboard: styles')

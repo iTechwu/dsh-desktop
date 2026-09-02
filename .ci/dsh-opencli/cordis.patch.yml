@@ -1,0 +1,4 @@
+- insert:
+    - id: dsh-agent-reach-tools
+      name: '@dofe/dsh-agent-reach'
+

@@ -1,4 +1,4 @@
-# Add the safe recruitment workspace to a DSH browser bundle.
+# Register the host endpoint plugin into the DSH bundle.
 - insert:
-    - id: dofe-yootun-recruiter
-      name: '@dofe/dsh-yootun-recruiter'
+    - id: yootun-recruiter
+      name: '@dofe/yootun-recruiter'

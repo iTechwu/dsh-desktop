@@ -17,7 +17,7 @@ test('publishes a discoverable DSH client plugin', async () => {
 test('ships all DoFe capabilities enabled by default', async () => {
   const source = await readFile(new URL('src/client.js', root), 'utf8')
 
-  for (const id of ['geoflow', 'georank', 'tools', 'openmontage', 'opencli']) {
+  for (const id of ['geoflow', 'georank', 'tools', 'openmontage', 'opencli', 'knowledge']) {
     assert.match(source, new RegExp(`id: ['"]${id}['"]`))
   }
   assert.match(source, /const DEFAULT_PLUGIN_IDS = PLUGINS\.map/u)

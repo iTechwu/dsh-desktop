@@ -1467,6 +1467,18 @@ importers:
       '@deepseek-ai/schemastery':
         specifier: workspace:*
         version: link:../deepseek-harness/vendor/schemastery
+      '@dofe/dsh-geoflow-mcp':
+        specifier: file:../../docker-helm.dofe.ai/plugins/dsh-geoflow-mcp
+        version: file:../docker-helm.dofe.ai/plugins/dsh-geoflow-mcp
+      '@dofe/dsh-georank-mcp':
+        specifier: file:../../docker-helm.dofe.ai/plugins/dsh-georank-mcp
+        version: file:../docker-helm.dofe.ai/plugins/dsh-georank-mcp
+      '@dofe/dsh-opencli':
+        specifier: file:../../docker-helm.dofe.ai/plugins/dsh-opencli
+        version: file:../docker-helm.dofe.ai/plugins/dsh-opencli
+      '@dofe/dsh-tools-mcp':
+        specifier: file:../../docker-helm.dofe.ai/plugins/dsh-tools-mcp
+        version: file:../docker-helm.dofe.ai/plugins/dsh-tools-mcp
       '@dofe/dsh-yootun-approvals':
         specifier: file:../../docker-helm.dofe.ai/plugins/dsh-yootun-approvals
         version: file:../docker-helm.dofe.ai/plugins/dsh-yootun-approvals
@@ -1485,6 +1497,9 @@ importers:
       '@dofe/dsh-yootun-knowledge':
         specifier: file:../../docker-helm.dofe.ai/plugins/dsh-yootun-knowledge
         version: file:../docker-helm.dofe.ai/plugins/dsh-yootun-knowledge
+      '@dofe/dsh-yootun-lead-discovery':
+        specifier: file:../../docker-helm.dofe.ai/plugins/dsh-yootun-lead-discovery
+        version: file:../docker-helm.dofe.ai/plugins/dsh-yootun-lead-discovery
       '@dofe/dsh-yootun-recruiter':
         specifier: file:../../docker-helm.dofe.ai/plugins/dsh-yootun-recruiter
         version: file:../docker-helm.dofe.ai/plugins/dsh-yootun-recruiter
@@ -1500,6 +1515,9 @@ importers:
       '@dofe/dsh-yootun-ui':
         specifier: file:../../docker-helm.dofe.ai/plugins/dsh-yootun-ui
         version: file:../docker-helm.dofe.ai/plugins/dsh-yootun-ui
+      '@noob-stupid/dsh-plugin-console':
+        specifier: file:../../docker-helm.dofe.ai/plugins/dsh-plugin-console
+        version: file:../docker-helm.dofe.ai/plugins/dsh-plugin-console
       adm-zip:
         specifier: ^0.6.0
         version: 0.6.0
@@ -1913,6 +1931,18 @@ packages:
     resolution: {integrity: sha512-QxULHAm7cNu72w97JUNCBFODFaXpbDg+dP8b/oWFAZ2MTRppA3U00Y2L1HqaS4J6yBqxwa/Y3nMBaxVKbB/NsA==}
     engines: {node: '>=20.19.0'}
 
+  '@dofe/dsh-geoflow-mcp@file:../docker-helm.dofe.ai/plugins/dsh-geoflow-mcp':
+    resolution: {directory: ../docker-helm.dofe.ai/plugins/dsh-geoflow-mcp, type: directory}
+
+  '@dofe/dsh-georank-mcp@file:../docker-helm.dofe.ai/plugins/dsh-georank-mcp':
+    resolution: {directory: ../docker-helm.dofe.ai/plugins/dsh-georank-mcp, type: directory}
+
+  '@dofe/dsh-opencli@file:../docker-helm.dofe.ai/plugins/dsh-opencli':
+    resolution: {directory: ../docker-helm.dofe.ai/plugins/dsh-opencli, type: directory}
+
+  '@dofe/dsh-tools-mcp@file:../docker-helm.dofe.ai/plugins/dsh-tools-mcp':
+    resolution: {directory: ../docker-helm.dofe.ai/plugins/dsh-tools-mcp, type: directory}
+
   '@dofe/dsh-yootun-approvals@file:../docker-helm.dofe.ai/plugins/dsh-yootun-approvals':
     resolution: {directory: ../docker-helm.dofe.ai/plugins/dsh-yootun-approvals, type: directory}
 
@@ -1930,6 +1960,9 @@ packages:
 
   '@dofe/dsh-yootun-knowledge@file:../docker-helm.dofe.ai/plugins/dsh-yootun-knowledge':
     resolution: {directory: ../docker-helm.dofe.ai/plugins/dsh-yootun-knowledge, type: directory}
+
+  '@dofe/dsh-yootun-lead-discovery@file:../docker-helm.dofe.ai/plugins/dsh-yootun-lead-discovery':
+    resolution: {directory: ../docker-helm.dofe.ai/plugins/dsh-yootun-lead-discovery, type: directory}
 
   '@dofe/dsh-yootun-recruiter@file:../docker-helm.dofe.ai/plugins/dsh-yootun-recruiter':
     resolution: {directory: ../docker-helm.dofe.ai/plugins/dsh-yootun-recruiter, type: directory}
@@ -2517,6 +2550,9 @@ packages:
   '@nodelib/fs.walk@1.2.8':
     resolution: {integrity: sha512-oGB+UxlgWcgQkgwo8GcEGwemoTFt3FIO9ababBmaGwXIoBKZ+GTy0pP185beGg7Llih/NSHSV2XAs1lnznocSg==}
     engines: {node: '>= 8'}
+
+  '@noob-stupid/dsh-plugin-console@file:../docker-helm.dofe.ai/plugins/dsh-plugin-console':
+    resolution: {directory: ../docker-helm.dofe.ai/plugins/dsh-plugin-console, type: directory}
 
   '@opentelemetry/api@1.9.1':
     resolution: {integrity: sha512-gLyJlPHPZYdAk1JENA9LeHejZe1Ti77/pTeFm/nMXmQH/HFZlcS/O2XJB+L8fkbrNSqhdtlvjBVjxwUYanNH5Q==}
@@ -5778,6 +5814,14 @@ snapshots:
 
   '@csstools/css-tokenizer@4.0.0': {}
 
+  '@dofe/dsh-geoflow-mcp@file:../docker-helm.dofe.ai/plugins/dsh-geoflow-mcp': {}
+
+  '@dofe/dsh-georank-mcp@file:../docker-helm.dofe.ai/plugins/dsh-georank-mcp': {}
+
+  '@dofe/dsh-opencli@file:../docker-helm.dofe.ai/plugins/dsh-opencli': {}
+
+  '@dofe/dsh-tools-mcp@file:../docker-helm.dofe.ai/plugins/dsh-tools-mcp': {}
+
   '@dofe/dsh-yootun-approvals@file:../docker-helm.dofe.ai/plugins/dsh-yootun-approvals': {}
 
   '@dofe/dsh-yootun-content-command@file:../docker-helm.dofe.ai/plugins/dsh-yootun-content-command': {}
@@ -5789,6 +5833,8 @@ snapshots:
   '@dofe/dsh-yootun-finops@file:../docker-helm.dofe.ai/plugins/dsh-yootun-finops': {}
 
   '@dofe/dsh-yootun-knowledge@file:../docker-helm.dofe.ai/plugins/dsh-yootun-knowledge': {}
+
+  '@dofe/dsh-yootun-lead-discovery@file:../docker-helm.dofe.ai/plugins/dsh-yootun-lead-discovery': {}
 
   '@dofe/dsh-yootun-recruiter@file:../docker-helm.dofe.ai/plugins/dsh-yootun-recruiter': {}
 
@@ -6277,6 +6323,8 @@ snapshots:
     dependencies:
       '@nodelib/fs.scandir': 2.1.5
       fastq: 1.20.1
+
+  '@noob-stupid/dsh-plugin-console@file:../docker-helm.dofe.ai/plugins/dsh-plugin-console': {}
 
   '@opentelemetry/api@1.9.1':
     optional: true

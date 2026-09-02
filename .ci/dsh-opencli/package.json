@@ -1,0 +1,15 @@
+{
+  "name": "@dofe/dsh-opencli",
+  "version": "0.3.0",
+  "description": "DSH agent-reach routing tool backed by the CI OpenCLI installation.",
+  "type": "module",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "bundle": {"patch": "./cordis.patch.yml"}
+  }
+}

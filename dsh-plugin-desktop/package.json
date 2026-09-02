@@ -155,6 +155,11 @@
     "prepack": "corepack pnpm run check"
   },
   "dependencies": {
+    "@dofe/dsh-geoflow-mcp": "file:../../docker-helm.dofe.ai/plugins/dsh-geoflow-mcp",
+    "@dofe/dsh-georank-mcp": "file:../../docker-helm.dofe.ai/plugins/dsh-georank-mcp",
+    "@dofe/dsh-opencli": "file:../../docker-helm.dofe.ai/plugins/dsh-opencli",
+    "@noob-stupid/dsh-plugin-console": "file:../../docker-helm.dofe.ai/plugins/dsh-plugin-console",
+    "@dofe/dsh-tools-mcp": "file:../../docker-helm.dofe.ai/plugins/dsh-tools-mcp",
     "@dofe/dsh-yootun-dashboard": "file:../../docker-helm.dofe.ai/plugins/dsh-yootun-dashboard",
     "@dofe/dsh-yootun-recruiter": "file:../../docker-helm.dofe.ai/plugins/dsh-yootun-recruiter",
     "@dofe/dsh-yootun-sales": "file:../../docker-helm.dofe.ai/plugins/dsh-yootun-sales",
@@ -165,6 +170,7 @@
     "@dofe/dsh-yootun-finops": "file:../../docker-helm.dofe.ai/plugins/dsh-yootun-finops",
     "@dofe/dsh-yootun-retrofit": "file:../../docker-helm.dofe.ai/plugins/dsh-yootun-retrofit",
     "@dofe/dsh-yootun-daily-report": "file:../../docker-helm.dofe.ai/plugins/dsh-yootun-daily-report",
+    "@dofe/dsh-yootun-lead-discovery": "file:../../docker-helm.dofe.ai/plugins/dsh-yootun-lead-discovery",
     "@dofe/dsh-yootun-ui": "file:../../docker-helm.dofe.ai/plugins/dsh-yootun-ui",
     "@deepseek-ai/cordis": "workspace:*",
     "@deepseek-ai/cordis-plugin-group": "workspace:*",

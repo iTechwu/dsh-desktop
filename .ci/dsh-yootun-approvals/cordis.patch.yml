@@ -1,1 +1,4 @@
-[]
+# Register the host endpoint plugin into the DSH bundle.
+- insert:
+    - id: yootun-approvals
+      name: '@dofe/yootun-approvals'

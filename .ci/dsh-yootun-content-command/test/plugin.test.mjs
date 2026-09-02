@@ -1,0 +1,7 @@
+import assert from 'node:assert/strict'
+import { readFile } from 'node:fs/promises'
+import test from 'node:test'
+const root = new URL('../', import.meta.url)
+test('publishes a web plugin with a bundle patch', async () => { const manifest = JSON.parse(await readFile(new URL('package.json', root), 'utf8')); assert.equal(manifest.name, '@dofe/dsh-yootun-content-command'); assert.equal(manifest.dsh.client.platform, 'web'); assert.equal(manifest.dsh.bundle.patch, './cordis.patch.yml') })
+test('keeps publishing behind explicit human confirmation and a local route', async () => { const source = await readFile(new URL('src/client.js', root), 'utf8'); for (const token of ['/api/desktop/yootun/content-command', 'awaiting_confirmation', 'confirm_action', 'dismiss_action', '适配器已完成', '适配器执行失败', '需要重新登录']) assert.match(source, new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'u')); assert.doesNotMatch(source, /password|cookie|银行卡|原始正文/iu) })
+test('uses only DSH alpha3 exported icons', async () => { const source = await readFile(new URL('src/client.js', root), 'utf8'); const imports = source.match(/const \{([^}]+)\} = require\('@deepseek-ai\/dsh-client-ui-primitives'\)/u)?.[1] || ''; const exported = await readFile(new URL('../../../deepseek-harness/packages/client/ui-primitives/src/icons/index.tsx', root), 'utf8'); for (const name of imports.split(',').map(token => token.trim()).filter(token => token.startsWith('Icon'))) assert.match(exported, new RegExp(`export const ${name}\\b`, 'u')) })

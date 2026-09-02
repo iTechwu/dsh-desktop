@@ -21,6 +21,7 @@ window.__ModuleLoader__.load({
       { id: 'tools', name: 'DoFe Tools', description: '优惠豚调研与热点工具集' },
       { id: 'openmontage', name: 'OpenMontage', description: '视频生成与素材编排' },
       { id: 'opencli', name: 'OpenCLI Research', description: '受控的互联网只读调研' },
+      { id: 'knowledge', name: '企业知识与 Memory', description: '知识库、Memory 与知识图谱治理' },
     ]
     const DEFAULT_PLUGIN_IDS = PLUGINS.map(plugin => plugin.id)
 
