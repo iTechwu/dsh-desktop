@@ -188,20 +188,6 @@ function desktopLanHttpsPrivateKeyProtector(): DesktopLanHttpsPrivateKeyProtecto
   }
 }
 
-/** Require OS-backed secret storage; Linux's plaintext fallback is not sufficient for a CA key. */
-function desktopLanHttpsPrivateKeyProtector(): DesktopLanHttpsPrivateKeyProtector {
-  return {
-    available: () => {
-      if (!safeStorage.isEncryptionAvailable()) return false
-      if (process.platform !== 'linux') return true
-      const backend = safeStorage.getSelectedStorageBackend()
-      return backend !== 'basic_text' && backend !== 'unknown'
-    },
-    seal: plaintext => safeStorage.encryptString(Buffer.from(plaintext).toString('utf8')),
-    open: sealed => Buffer.from(safeStorage.decryptString(Buffer.from(sealed)), 'utf8'),
-  }
-}
-
 class RendererStartupFailure extends Error {
   constructor(
     readonly reason: 'renderer-failed' | 'renderer-timeout',

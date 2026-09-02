@@ -596,7 +596,6 @@ describe('Desktop settings Slot registration', () => {
       mutate: vi.fn(async () => {}),
       set: vi.fn(async () => {}),
       unset: vi.fn(async () => {}),
-      mutate: vi.fn(async () => {}),
     } satisfies SettingsScope<unknown>
     const bind = vi.fn(() => scope)
     const register = vi.fn(() => () => {})
