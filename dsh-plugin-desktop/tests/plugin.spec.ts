@@ -197,6 +197,7 @@ function createHarness(
     settings,
     connection: { authenticatedUrl, requestRejection },
     tools: { schemas: vi.fn(() => []), execute: vi.fn() },
+    credentials: { resolve: vi.fn(), describe: vi.fn(), set: vi.fn(), unset: vi.fn() },
     logger: { warn: vi.fn(), error: vi.fn() },
     get: vi.fn((key: unknown) => {
       if (String(key) === 'desktopRuntime') return runtime
@@ -327,6 +328,7 @@ describe('desktop Host plugin', () => {
     expect(inject).toContain('settings')
     expect(inject).toContain('connection')
     expect(inject).toContain('tools')
+    expect(inject).toContain('credentials')
     expect(inject).not.toContain('loader')
     const register = vi.mocked(harness.ctx.settings.register)
     expect(register.mock.calls[0]?.[2]).toEqual(expect.objectContaining({ applies: 'restart' }))
