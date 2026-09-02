@@ -34,6 +34,7 @@ test('bundles Yootun branding, settings, and a mandatory credential gate', async
   assert.match(bundle, /yu-mandatory-gate/u)
   assert.match(bundle, /mandatory model_api_key gate/u)
   assert.match(bundle, /MODELS_API_KEY/u)
+  assert.match(source, /function YootunBrandName\(\) \{\s*return null\s*\}/u)
   assert.doesNotMatch(bundle, /Set up later|稍后设置/u)
   assert.match(source, /const \[configured, setConfigured\] = useState\(false\)/u)
   assert.match(source, /\.catch\(\(\) => \{ if \(active\) setConfigured\(false\) \}\)/u)

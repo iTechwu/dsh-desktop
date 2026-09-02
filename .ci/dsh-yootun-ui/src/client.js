@@ -51,7 +51,7 @@ function YootunBrandMark() {
 }
 
 function YootunBrandName() {
-  return h('span', { className: 'yu-brand-name' }, 'Yootun-Agent')
+  return null
 }
 
 function YootunHeroMark({ size, className }) {

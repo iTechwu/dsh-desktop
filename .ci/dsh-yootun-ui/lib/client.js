@@ -56,7 +56,7 @@ window.__ModuleLoader__.load({
     }
 
     function YootunBrandName() {
-      return h('span', { className: 'yu-brand-name' }, 'Yootun-Agent')
+      return null
     }
 
     function YootunHeroMark({ size, className }) {
