@@ -78,8 +78,6 @@ describe('macOS DMG smoke packaging', () => {
         PATH: '/usr/bin:/bin',
         SAFE_VALUE: 'kept',
         CSC_IDENTITY_AUTO_DISCOVERY: 'false',
-        npm_config_user_agent: 'npm',
-        npm_execpath: '',
       },
     })
     expect(calls[2]).toEqual({
@@ -125,6 +123,26 @@ describe('macOS DMG smoke packaging', () => {
       'Building an unsigned macOS DMG smoke; signing and notarization are release-only steps.',
       'Skipping the macOS package preflight; the package gate already passed.',
     ])
+  })
+
+  it('preserves the pnpm environment for Electron Builder package discovery', () => {
+    const calls: CommandCall[] = []
+    const value = {
+      ...options(calls),
+      env: {
+        ...options(calls).env,
+        DSH_PACKAGE_CHECK_ALREADY_RAN: '1',
+        npm_config_user_agent: 'pnpm/11.7.0 npm/? node/v22.23.2 darwin arm64',
+        npm_execpath: '/usr/local/bin/pnpm',
+      },
+    }
+
+    packageMacSmoke(value)
+
+    expect(calls[0]?.env).toMatchObject({
+      npm_config_user_agent: 'pnpm/11.7.0 npm/? node/v22.23.2 darwin arm64',
+      npm_execpath: '/usr/local/bin/pnpm',
+    })
   })
 
   it.each([

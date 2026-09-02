@@ -137,10 +137,7 @@ export function packageMacSmoke(options: MacSmokePackageOptions = defaultOptions
     {
       ...cleanEnvironment,
       CSC_IDENTITY_AUTO_DISCOVERY: 'false',
-      // Electron Builder's pnpm v11 collector drops deduplicated workspace links.
-      // Its npm collector only reads the installed tree and preserves the complete closure.
-      npm_config_user_agent: 'npm',
-      npm_execpath: '',
+      // Preserve pnpm metadata so Electron Builder selects its v11 collector.
     },
   )
   options.run(
