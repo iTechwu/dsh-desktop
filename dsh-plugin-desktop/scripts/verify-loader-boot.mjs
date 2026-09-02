@@ -185,6 +185,18 @@ try {
           }
         },
       })
+      // The production shell waits for these host services before activation.
+      // Keep the loader smoke fixture aligned with the desktop plugin contract.
+      host.provide('tools', {
+        schemas() { return [] },
+        execute() { throw new Error('tools smoke execution is not expected') },
+      })
+      host.provide('credentials', {
+        resolve() { return undefined },
+        describe() { return undefined },
+        set() {},
+        unset() {},
+      })
     },
     prepared.bareModuleBaseUrl,
   )
