@@ -920,6 +920,7 @@ describe('published package surface', () => {
     expect(patch).toContain('diff --git a/templates/nsis/include/installUtil.nsh')
     expect(patch).toContain('async collectAllDependencies(_tree, appPackageName)')
     expect(patch).toContain('this.allWorkspacePackages.find(pkg => pkg.name === appPackageName || pkg.from === appPackageName)')
+    expect(patch).toContain('pm.pm === packageManager_1.PM.PNPM ? undefined : await findWorkspaceRoot')
     expect(manifest.build?.toolsets?.nsis).toBe('1.2.1')
     expect(installedCodeSign).toContain('importCerts(keychainFile, certPaths, cscPasswords, keychainPassword)')
     expect(installedCodeSign).toContain('"-k", keychainPassword, keychainFile')
