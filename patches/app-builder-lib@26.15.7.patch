@@ -156,7 +156,7 @@ diff --git a/out/node-module-collector/pnpmNodeModulesCollector.js b/out/node-mo
 diff --git a/out/node-module-collector/index.js b/out/node-module-collector/index.js
 --- a/out/node-module-collector/index.js
 +++ b/out/node-module-collector/index.js
-@@ -34,7 +34,12 @@ const determinePackageManagerEnv = ({ projectDir, appDir, workspaceRoot }) => new lazy_val_1.Lazy(async () => {
+@@ -34,4 +34,8 @@ const determinePackageManagerEnv = ({ projectDir, appDir, workspaceRoot }) => new lazy_val_1.Lazy(async () => {
      const availableDirs = [workspaceRoot, projectDir, appDir].filter((it) => !(0, builder_util_1.isEmptyOrSpaces)(it));
      const pm = await (0, packageManager_1.detectPackageManager)(availableDirs);
 -    const root = await findWorkspaceRoot(pm.pm, projectDir);
