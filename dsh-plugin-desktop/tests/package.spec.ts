@@ -98,6 +98,8 @@ describe('published package surface', () => {
       .toBe('file:../../docker-helm.dofe.ai/plugins/dsh-yootun-finops')
     expect(manifest.dependencies?.['@dofe/dsh-yootun-ui'])
       .toBe('file:../../docker-helm.dofe.ai/plugins/dsh-yootun-ui')
+    expect(manifest.dependencies?.['@dofe/dsh-yootun-lead-discovery'])
+      .toBe('file:../../docker-helm.dofe.ai/plugins/dsh-yootun-lead-discovery')
     expect(workspaceManifest.scripts?.['dofe-ui:build'])
       .toBe('node scripts/build-dofe-ui.mjs')
     expect(ciWorkflow.match(/node scripts\/prepare-dofe-ui\.mjs/g)).toHaveLength(4)
@@ -115,6 +117,7 @@ describe('published package surface', () => {
       'dsh-yootun-approvals',
       'dsh-yootun-finops',
       'dsh-yootun-retrofit',
+      'dsh-yootun-lead-discovery',
       'dsh-yootun-daily-report',
     ]
     for (const name of pluginNames) {

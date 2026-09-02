@@ -15,6 +15,7 @@ const preinstalledPlugins = [
   'dsh-yootun-approvals',
   'dsh-yootun-finops',
   'dsh-yootun-retrofit',
+  'dsh-yootun-lead-discovery',
   'dsh-yootun-daily-report',
 ]
 for (const name of preinstalledPlugins) {
