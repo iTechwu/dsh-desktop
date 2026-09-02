@@ -128,11 +128,27 @@ diff --git a/templates/nsis/include/installUtil.nsh b/templates/nsis/include/ins
 +    ${endif}
    ${endif}
 @@ -233,4 +238,8 @@ Function uninstallOldVersion
-     CheckResult:
-       ${if} $R0 == 0
-         Return
-       ${endIf}
+    CheckResult:
+      ${if} $R0 == 0
+        Return
+      ${endIf}
 +      ${if} $R0 == 2
 +        # Code 2 is handled by the non-atomic in-place replacement path.
 +        Return
 +      ${endIf}
+diff --git a/out/node-module-collector/pnpmNodeModulesCollector.js b/out/node-module-collector/pnpmNodeModulesCollector.js
+--- a/out/node-module-collector/pnpmNodeModulesCollector.js
++++ b/out/node-module-collector/pnpmNodeModulesCollector.js
+@@ -143,4 +143,8 @@ class PnpmNodeModulesCollector extends nodeModulesCollector_1.NodeModulesCollector {
+-    async collectAllDependencies(_tree, _appPackageName) {
+-        for (const root of this.allWorkspacePackages) {
+-            await this.collectDepsRecursively(root);
+-        }
++    async collectAllDependencies(_tree, appPackageName) {
++        // pnpm v11 returns every workspace package as a top-level entry. Electron
++        // Builder only packages one app, so traversing unrelated workspace roots
++        // causes multi-minute scans and can copy dependencies never used by it.
++        const appRoot = this.allWorkspacePackages.find(pkg => pkg.name === appPackageName || pkg.from === appPackageName) ?? this.allWorkspacePackages[0];
++        if (appRoot != null) {
++            await this.collectDepsRecursively(appRoot);
++        }
