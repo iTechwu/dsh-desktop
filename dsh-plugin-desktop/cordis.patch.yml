@@ -5,6 +5,28 @@
       name: dsh-plugin-desktop
       config:
         mode: compatibility
+    - id: dofe-yootun-ui
+      name: '@dofe/dsh-yootun-ui'
+    - id: dofe-yootun-dashboard
+      name: '@dofe/dsh-yootun-dashboard'
+    - id: dofe-yootun-recruiter
+      name: '@dofe/dsh-yootun-recruiter'
+    - id: dofe-yootun-sales
+      name: '@dofe/dsh-yootun-sales'
+    - id: dofe-yootun-supply-watch
+      name: '@dofe/dsh-yootun-supply-watch'
+    - id: dofe-yootun-content-command
+      name: '@dofe/dsh-yootun-content-command'
+    - id: dofe-yootun-knowledge
+      name: '@dofe/dsh-yootun-knowledge'
+    - id: dofe-yootun-approvals
+      name: '@dofe/dsh-yootun-approvals'
+    - id: dofe-yootun-finops
+      name: '@dofe/dsh-yootun-finops'
+    - id: dofe-yootun-retrofit
+      name: '@dofe/dsh-yootun-retrofit'
+    - id: dofe-yootun-daily-report
+      name: '@dofe/dsh-yootun-daily-report'
     - id: desktop-terminal
       name: dsh-plugin-desktop/terminal
       disabled: !!js process.platform === 'linux'
@@ -22,6 +44,41 @@
       name: dsh-plugin-desktop/browser-tools
     - id: desktop-ci-tools
       name: dsh-plugin-desktop/ci-tools
+    - id: desktop-yootun-recruiter-tools
+      name: dsh-plugin-desktop/yootun-recruiter-tools
+    - id: dofe-managed
+      name: dsh-plugin-desktop/dofe-managed
+    - id: dofe-opencli
+      name: dsh-plugin-desktop/dofe-opencli
+
+# DoFe owns the model route in the Desktop distribution. The upstream adapter
+# remains in place, but Desktop fixes its single managed key and endpoint.
+- id: llm-deepseek
+  config:
+    apiKeyEnv: MODELS_API_KEY
+    baseURL: https://ixicai.cn/api/v1
+    connectionPolicy: composition
+    models:
+      - id: deepseek-v4-flash
+        name: DeepSeek V4 Flash
+        description: DoFe managed DeepSeek model
+        contextWindow: 1000000
+        inputModalities: [text, image]
+
+- id: agent-default-model
+  config:
+    provider: deepseek-official
+    model: deepseek-v4-flash
+
+# The DoFe Access page is the only model configuration surface in Desktop.
+# Users can still manage the key, but cannot select another provider, endpoint,
+# or catalog through the upstream Models editor.
+- id: ui-settings-models
+  disabled: true
+
+# Desktop supplies the Yootun occupants for the shared browser-brand slots.
+- id: ui-brand-official
+  disabled: true
 
 # A desktop launch has no terminal operator waiting for the Web readiness line.
 - id: web-runtime

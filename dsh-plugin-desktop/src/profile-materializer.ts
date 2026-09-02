@@ -4,11 +4,13 @@ import { spawn as childSpawn } from 'node:child_process'
 import type { ChildProcess, SpawnOptions } from 'node:child_process'
 import { delimiter, isAbsolute } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { PNPM_IGNORE_MINIMUM_RELEASE_AGE } from './pnpm-policy.ts'
 
 const ELECTRON_HEADERS_URL = 'https://electronjs.org/headers'
 const DEFAULT_TIMEOUT_MS = 120_000
 const DEFAULT_MAX_OUTPUT_BYTES = 256 * 1024
 const TERMINATION_GRACE_MS = 3_000
+const DIAGNOSTIC_STREAM_CHARS = 8_000
 
 /** Runtime inputs resolved by the Electron bootstrap. */
 export interface ProfileMaterializerOptions {
@@ -25,6 +27,8 @@ export interface ProfileMaterializerOptions {
   readonly maxOutputBytes?: number
   /** Permit a one-time Profile migration to reconcile stale lockfile settings. */
   readonly updateLockfile?: boolean
+  /** Confirm durable migration output before treating a non-exiting pnpm process as complete. */
+  readonly completionCheck?: () => boolean
   /** Injectable only for headless tests; production uses node:child_process.spawn. */
   readonly spawn?: ProfileMaterializerSpawn
 }
@@ -55,6 +59,35 @@ export class ProfileMaterializationError extends Error {
     this.name = 'ProfileMaterializationError'
     if (result !== undefined) this.result = result
   }
+}
+
+function diagnosticStream(label: string, value: string): string | undefined {
+  const normalized = value.trim()
+  if (normalized.length === 0) return undefined
+  const rendered = normalized.length <= DIAGNOSTIC_STREAM_CHARS
+    ? normalized
+    : `${normalized.slice(0, DIAGNOSTIC_STREAM_CHARS)}\n… ${label} truncated`
+  return `${label}:\n${rendered}`
+}
+
+/** Bounded technical context suitable for a local recovery error window. */
+export function formatProfileMaterializationFailure(cause: unknown): string {
+  if (!(cause instanceof ProfileMaterializationError)) {
+    return cause instanceof Error ? cause.stack ?? cause.message : String(cause)
+  }
+  const result = cause.result
+  if (result === undefined) return cause.stack ?? cause.message
+  const pnpmCommand = `pnpm ${result.argv.slice(4).join(' ')}`
+  const sections = [
+    'Profile dependency materialization failed.',
+    `Command: ${pnpmCommand}`,
+    `Working directory: ${result.cwd}`,
+    `Exit status: ${String(result.exitCode)}`,
+    `Signal: ${result.signal ?? 'none'}`,
+    diagnosticStream('stderr', result.stderr),
+    diagnosticStream('stdout', result.stdout),
+  ]
+  return sections.filter((section): section is string => section !== undefined).join('\n\n')
 }
 
 function inheritedPath(): string {
@@ -135,6 +168,7 @@ export async function materializeProfile(
     '--import',
     pathToFileURL(options.clearEnvironmentPath).href,
     options.pnpmBinPath,
+    PNPM_IGNORE_MINIMUM_RELEASE_AGE,
     'install',
     options.updateLockfile === true ? '--no-frozen-lockfile' : '--frozen-lockfile',
   ] as const
@@ -157,6 +191,7 @@ export async function materializeProfile(
     shell: false,
     detached: process.platform !== 'win32',
     stdio: ['ignore', 'pipe', 'pipe'],
+    windowsHide: true,
   })
   if (child.stdout === null || child.stderr === null) {
     killProcessTree(child)
@@ -176,7 +211,7 @@ export async function materializeProfile(
 
   return await new Promise<ProfileMaterializationResult>((resolve, reject) => {
     const terminate = (cause: Error): void => {
-      if (failure !== undefined) return
+      if (settled || failure !== undefined) return
       failure = cause
       killProcessTree(child)
       terminationTimer = setTimeout(() => { killProcessTree(child, true) }, TERMINATION_GRACE_MS)
@@ -196,6 +231,28 @@ export async function materializeProfile(
     child.once('error', (cause) => { terminate(cause instanceof Error ? cause : new Error(String(cause))) })
     options.signal?.addEventListener('abort', onAbort, { once: true })
     timeoutTimer = setTimeout(() => {
+      try {
+        if (options.completionCheck?.() === true) {
+          settled = true
+          options.signal?.removeEventListener('abort', onAbort)
+          stdout.off('data', acceptStdout)
+          stderr.off('data', acceptStderr)
+          killProcessTree(child)
+          terminationTimer = setTimeout(() => { killProcessTree(child, true) }, TERMINATION_GRACE_MS)
+          terminationTimer.unref()
+          resolve({
+            argv,
+            cwd: options.profileDir,
+            exitCode: null,
+            signal: null,
+            stdout: Buffer.concat(stdoutChunks).toString('utf8'),
+            stderr: Buffer.concat(stderrChunks).toString('utf8'),
+          })
+          return
+        }
+      } catch {
+        // The normal timeout failure below preserves the fail-closed behavior.
+      }
       terminate(new ProfileMaterializationError(`profile materializer timed out after ${String(timeoutMs)}ms`))
     }, timeoutMs)
     timeoutTimer.unref()

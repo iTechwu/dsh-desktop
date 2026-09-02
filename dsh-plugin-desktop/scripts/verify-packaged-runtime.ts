@@ -1,16 +1,37 @@
 /** Fail-loud verification of the runtime entries sealed into Electron's app.asar. */
 
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
-import { isAbsolute, join, relative, sep } from 'node:path'
+import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { Worker } from 'node:worker_threads'
 import { listPackage } from '@electron/asar'
 import AdmZip from 'adm-zip'
 import {
   FORBIDDEN_MACOS_UNIVERSAL_ENTRIES,
+  hydratePackagedMacRuntime,
   MACOS_UNIVERSAL_NATIVE_ENTRIES,
+  type MacUniversalArch,
 } from './mac-universal.ts'
+import {
+  hydratePackagedWindowsKoffiRuntime,
+  smokePackagedWindowsKoffiRuntime,
+} from './windows-koffi-runtime.ts'
+import {
+  hydratePackagedWindowsSharpRuntime,
+  smokePackagedWindowsSharpRuntime,
+} from './windows-sharp-runtime.ts'
+
+const DSH_PACKAGE_ROOT = dirname(createRequire(import.meta.url).resolve('@deepseek-ai/dsh/package.json'))
+
+/** Every generated JavaScript file shipped by the installed DSH CLI package. */
+export const REQUIRED_DSH_CLI_RUNTIME_ENTRIES = Object.freeze(
+  readdirSync(join(DSH_PACKAGE_ROOT, 'lib'), { withFileTypes: true })
+    .filter(entry => entry.isFile() && entry.name.endsWith('.js'))
+    .map(entry => `node_modules/@deepseek-ai/dsh/lib/${entry.name}`)
+    .sort(),
+)
 
 /** AfterPack fields consumed without importing Electron Builder's incomplete declaration graph. */
 export interface PackagedRuntimeContext {
@@ -35,6 +56,7 @@ export const REQUIRED_PACKAGED_RUNTIME_ENTRIES = [
   'lib/client.js',
   'lib/native-ui/profile-create.html',
   'lib/native-ui/recovery.html',
+  'lib/native-ui/setup-wizard.html',
   'lib/profile.js',
   'lib/profile-manager.js',
   'lib/profile-service.js',
@@ -49,11 +71,12 @@ export const REQUIRED_PACKAGED_RUNTIME_ENTRIES = [
   'lib/update-checker.js',
   'lib/update-download.js',
   'lib/updates.js',
-  'lib/windows-agent-presets.js',
   'lib/windows-acl-runner.js',
-  'node_modules/@deepseek-ai/dsh/lib/bin.js',
+  ...REQUIRED_DSH_CLI_RUNTIME_ENTRIES,
+  'node_modules/@deepseek-ai/dsh-subprocess-local/lib/index.js',
   'node_modules/@deepseek-ai/dsh-web-frontend/dist/index.html',
   'node_modules/@deepseek-ai/dsh-app-boot/lib/index.js',
+  'node_modules/open/index.js',
   'node_modules/pnpm/bin/pnpm.mjs',
 ] as const
 
@@ -69,6 +92,7 @@ export const REQUIRED_UNPACKED_RUNTIME_ENTRIES = [
   'lib/client.js',
   'lib/native-ui/profile-create.html',
   'lib/native-ui/recovery.html',
+  'lib/native-ui/setup-wizard.html',
   'lib/index.js',
   'lib/profile.js',
   'lib/profile-manager.js',
@@ -80,15 +104,17 @@ export const REQUIRED_UNPACKED_RUNTIME_ENTRIES = [
   'lib/terminal.js',
   'lib/update-download.js',
   'lib/updates.js',
-  'lib/windows-agent-presets.js',
   'lib/windows-pwsh-sandbox.js',
   'node_modules/@deepseek-ai/dsh/package.json',
-  'node_modules/@deepseek-ai/dsh/config/agent-presets/cordis/agent.cordis.yml',
-  'node_modules/@deepseek-ai/dsh/config/agent-presets/cordis/skills/cordis-plugin-development/SKILL.md',
-  'node_modules/@deepseek-ai/dsh/config/agent-presets/cordis/skills/editing-cordis-compositions/SKILL.md',
-  'node_modules/@deepseek-ai/dsh/lib/bin.js',
+  'node_modules/@deepseek-ai/dsh-agent-presets/package.json',
+  'node_modules/@deepseek-ai/dsh-agent-presets/presets/cordis/agent.cordis.yml',
+  'node_modules/@deepseek-ai/dsh-agent-presets/presets/cordis/skills/cordis-plugin-development/SKILL.md',
+  'node_modules/@deepseek-ai/dsh-agent-presets/presets/cordis/skills/editing-cordis-compositions/SKILL.md',
+  ...REQUIRED_DSH_CLI_RUNTIME_ENTRIES,
+  'node_modules/@deepseek-ai/dsh-subprocess-local/lib/index.js',
   'node_modules/@deepseek-ai/dsh-app-boot/lib/index.js',
   'node_modules/@deepseek-ai/dsh-web-frontend/dist/index.html',
+  'node_modules/open/index.js',
   'node_modules/pnpm/bin/pnpm.mjs',
 ] as const
 
@@ -117,7 +143,6 @@ export const REQUIRED_UNPACKED_PACKAGE_SPECIFIERS = [
   'dsh-plugin-desktop/diagnostics',
   'dsh-plugin-desktop/notifications',
   'dsh-plugin-desktop/updates',
-  'dsh-plugin-desktop/windows-agent-presets',
   'dsh-plugin-desktop/windows-pwsh-sandbox',
   'dsh-plugin-desktop/package.json',
   '@deepseek-ai/dsh-base/package.json',
@@ -149,8 +174,48 @@ export type PackagedDiagnosticWorkerLauncher = (
   workerData: PackagedDiagnosticWorkerData,
 ) => Promise<string>
 
+/** Injectable native-runtime hydration seam used before static verification. */
+export type PackagedRuntimeHydrator = (context: PackagedRuntimeContext) => void
+
+export interface PackagedRuntimeHydrationOptions {
+  /** Override the source package root for focused verification. */
+  readonly desktopRoot?: string
+}
+
+export function macArchesForElectronBuilder(arch: number | undefined): readonly MacUniversalArch[] {
+  // Universal's thin inputs must have identical paths before their Mach-O files can be merged.
+  if (arch === 1 || arch === 3 || arch === 4) return ['arm64', 'x86_64']
+  throw new Error(`dsh-plugin-desktop: unsupported macOS Electron Builder arch ${String(arch)}`)
+}
+
+/** Restore native optional dependencies omitted by Electron Builder's npm collector. */
+export function hydratePackagedRuntime(
+  context: PackagedRuntimeContext,
+  options: PackagedRuntimeHydrationOptions = {},
+): void {
+  const desktopRoot = options.desktopRoot
+    ?? resolve(dirname(fileURLToPath(import.meta.url)), '..')
+  const unpackedRoot = resolvePackagedUnpackedRoot(context)
+  if (context.electronPlatformName === 'darwin') {
+    hydratePackagedMacRuntime({
+      desktopRoot,
+      unpackedRoot,
+      arches: macArchesForElectronBuilder(context.arch),
+    })
+  } else if (context.electronPlatformName === 'win32') {
+    hydratePackagedWindowsKoffiRuntime({ desktopRoot, unpackedRoot })
+    hydratePackagedWindowsSharpRuntime({ desktopRoot, unpackedRoot })
+  }
+}
+
 /** Injectable smoke seam used to verify afterPack ordering. */
 export type PackagedDiagnosticWorkerSmoke = (unpackedRoot: string) => Promise<void>
+
+/** Injectable Windows Koffi load seam used after static verification. */
+export type PackagedWindowsKoffiSmoke = (unpackedRoot: string) => void
+
+/** Injectable Windows Sharp load seam used after static verification. */
+export type PackagedWindowsSharpSmoke = (unpackedRoot: string) => void
 
 /** Result posted by the bundled diagnostics Worker. */
 type PackagedDiagnosticWorkerResult =
@@ -372,7 +437,20 @@ export function verifyPackagedRuntime(
   const archiveEntries = verifyPackagedAsar(resolvePackagedAsarPath(context), list)
   const unpackedRoot = resolvePackagedUnpackedRoot(context)
   const requiredPhysicalEntries = context.electronPlatformName === 'win32'
-    ? [...REQUIRED_UNPACKED_RUNTIME_ENTRIES, ...REQUIRED_WINDOWS_X64_NODE_PTY_ENTRIES]
+    ? [
+        ...REQUIRED_UNPACKED_RUNTIME_ENTRIES,
+        ...REQUIRED_WINDOWS_X64_NODE_PTY_ENTRIES,
+        ...[...archiveEntries]
+          .filter(entry => entry.endsWith('/node_modules/koffi/package.json')
+            || entry === 'node_modules/koffi/package.json')
+          .map(entry => join(
+            dirname(dirname(entry)),
+            '@koromix',
+            'koffi-win32-x64',
+            'win32_x64',
+            'koffi.node',
+          )),
+      ]
     : context.electronPlatformName === 'darwin' && context.arch === 4
       ? [...REQUIRED_UNPACKED_RUNTIME_ENTRIES, ...REQUIRED_MACOS_UNIVERSAL_ENTRIES]
       : REQUIRED_UNPACKED_RUNTIME_ENTRIES
@@ -402,10 +480,18 @@ export function verifyPackagedRuntime(
  */
 export async function afterPack(
   context: PackagedRuntimeContext,
+  hydrate: PackagedRuntimeHydrator = hydratePackagedRuntime,
   verify: typeof verifyPackagedRuntime = verifyPackagedRuntime,
   smoke: PackagedDiagnosticWorkerSmoke = smokePackagedDiagnosticWorker,
+  smokeWindowsKoffi: PackagedWindowsKoffiSmoke = smokePackagedWindowsKoffiRuntime,
+  smokeWindowsSharp: PackagedWindowsSharpSmoke = smokePackagedWindowsSharpRuntime,
 ): Promise<void> {
+  hydrate(context)
   verify(context)
+  if (context.electronPlatformName === 'win32') {
+    smokeWindowsKoffi(resolvePackagedUnpackedRoot(context))
+    smokeWindowsSharp(resolvePackagedUnpackedRoot(context))
+  }
   await smoke(resolvePackagedUnpackedRoot(context))
 }
 

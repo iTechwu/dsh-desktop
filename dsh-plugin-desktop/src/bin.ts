@@ -1,4 +1,4 @@
-/** Headless-safe npm launcher for the DSH Desktop Electron executable. */
+/** Headless-safe npm launcher for the Yootun-Agent Electron executable. */
 
 import { spawn } from 'node:child_process'
 import { readFileSync } from 'node:fs'
@@ -13,7 +13,7 @@ export type DesktopCliAction = 'export-diagnostics' | 'help' | 'version' | 'laun
 /** Human-readable launcher help. */
 export const DESKTOP_CLI_HELP = `Usage: dsh-plugin-desktop [options]
 
-Launch DSH Desktop with the selected Web-capable profile.
+Launch Yootun-Agent with the selected Web-capable profile.
 
 Options:
   --export-diagnostics  export logs and crash evidence without launching the app
@@ -51,13 +51,13 @@ export function defaultDesktopUserDataDirectory(
   if (platform === 'win32') {
     const appData = environment.APPDATA
     if (appData === undefined || appData.length === 0) {
-      throw new Error('APPDATA is unavailable; cannot locate DSH Desktop diagnostics')
+      throw new Error('APPDATA is unavailable; cannot locate Yootun-Agent diagnostics')
     }
-    return path.join(appData, 'DSH Desktop')
+    return path.join(appData, 'Yootun-Agent')
   }
-  if (platform === 'darwin') return path.join(homeDirectory, 'Library', 'Application Support', 'DSH Desktop')
+  if (platform === 'darwin') return path.join(homeDirectory, 'Library', 'Application Support', 'Yootun-Agent')
   const config = environment.XDG_CONFIG_HOME
-  return path.join(config === undefined || config.length === 0 ? path.join(homeDirectory, '.config') : config, 'DSH Desktop')
+  return path.join(config === undefined || config.length === 0 ? path.join(homeDirectory, '.config') : config, 'Yootun-Agent')
 }
 
 export interface DesktopCliOptions {
@@ -82,13 +82,17 @@ async function launchElectron(): Promise<number> {
       + '  npm install -g dsh-plugin-desktop\n'
       + 'Or add electron to the profile before launching:\n'
       + '  dsh plugin --profile <name> add electron\n'
-      + 'Or use the packaged DSH Desktop application.\n',
+      + 'Or use the packaged Yootun-Agent application.\n',
     )
     return 1
   }
   const mainPath = fileURLToPath(new URL('./main.js', import.meta.url))
   return new Promise<number>((resolveExit, reject) => {
-    const child = spawn(electronPath, [mainPath], { stdio: 'inherit', env: process.env })
+    const child = spawn(electronPath, [mainPath], {
+      stdio: 'inherit',
+      env: process.env,
+      windowsHide: true,
+    })
     child.once('error', reject)
     child.once('exit', (code, signal) => {
       resolveExit(code ?? (signal === null ? 1 : 128))

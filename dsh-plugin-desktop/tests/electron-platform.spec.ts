@@ -46,14 +46,16 @@ describe('electronPlatformStrategy', () => {
     expect(strategy.canPickDirectory).toBe(true)
     expect(strategy.canToggleShellMode).toBe(true)
 
-    strategy.configureApplication(icon, 'DSH Desktop')
+    strategy.configureApplication(icon, 'Yootun-Agent')
     strategy.configureWindow(window as never)
     strategy.refreshThemeMaterial(window as never, 'mica')
 
     expect(electron.app.dock.setIcon).not.toHaveBeenCalled()
     expect(electron.Menu.setApplicationMenu).not.toHaveBeenCalled()
     expect(window.removeMenu).toHaveBeenCalledTimes(1)
-    expect(window.setBackgroundMaterial).toHaveBeenCalledWith('mica')
+    expect(window.setBackgroundMaterial.mock.calls).toEqual([
+      ['mica'],
+    ])
   })
 
   it('selects the macOS adapter and configures its native application chrome', () => {
@@ -66,7 +68,7 @@ describe('electronPlatformStrategy', () => {
     expect(strategy.canPickDirectory).toBe(false)
     expect(strategy.canToggleShellMode).toBe(true)
 
-    strategy.configureApplication(icon, 'DSH Desktop')
+    strategy.configureApplication(icon, 'Yootun-Agent')
     strategy.configureWindow(window as never)
     strategy.refreshThemeMaterial(window as never, 'transparent')
 
@@ -86,7 +88,7 @@ describe('electronPlatformStrategy', () => {
     expect(strategy.canPickDirectory).toBe(false)
     expect(strategy.canToggleShellMode).toBe(false)
 
-    strategy.configureApplication({} as never, 'DSH Desktop')
+    strategy.configureApplication({} as never, 'Yootun-Agent')
     strategy.configureWindow(window as never)
     strategy.refreshThemeMaterial(window as never, 'off')
 

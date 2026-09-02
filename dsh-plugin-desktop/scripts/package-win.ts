@@ -24,7 +24,7 @@ export interface WindowsPackageOptions {
   readonly arch: string
   /** Node version executing the package build. */
   readonly nodeVersion: string
-  /** Repository root containing the Yarn workspace. */
+  /** Repository root containing the pnpm workspace. */
   readonly workspaceRoot: string
   /** Desktop package root containing electron-builder configuration. */
   readonly desktopRoot: string
@@ -111,9 +111,9 @@ function assertWindowsPackageHost(options: WindowsPackageOptions, artifact: stri
   const versionMatch = /^(\d+)\.(\d+)\./u.exec(options.nodeVersion)
   const major = Number(versionMatch?.[1])
   const minor = Number(versionMatch?.[2])
-  if (!((major === 22 && minor >= 19) || major === 24)) {
+  if (!((major === 22 && minor >= 19) || major >= 24)) {
     throw new Error(
-      `Windows ${artifact} requires Node 22.19+ or Node 24.x with bundled Corepack; received ${options.nodeVersion}`,
+      `Windows ${artifact} requires Node 22.19+ or Node 24+ with bundled Corepack; received ${options.nodeVersion}`,
     )
   }
 }
@@ -135,7 +135,7 @@ export function packageWindowsArtifact(
         '/d',
         '/s',
         '/c',
-        'corepack yarn workspace dsh-plugin-desktop check:win-package',
+        'corepack pnpm --filter dsh-plugin-desktop check:win-package',
       ],
       options.workspaceRoot,
       cleanEnvironment,
@@ -159,6 +159,10 @@ export function packageWindowsArtifact(
     {
       ...cleanEnvironment,
       CSC_IDENTITY_AUTO_DISCOVERY: 'false',
+      // Electron Builder's pnpm v11 collector drops deduplicated workspace links.
+      // Its npm collector only reads the installed tree and preserves the complete closure.
+      npm_config_user_agent: 'npm',
+      npm_execpath: '',
     },
   )
   options.run(

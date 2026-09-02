@@ -1,0 +1,17 @@
+# Yootun enterprise knowledge, Memory, and graph MCP route.
+- insert:
+    - id: mcp-knowledge
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        transport: streamable-http
+        serverName: knowledge
+        url: 'https://ixicai.cn/mcp/knowledge'
+        headers:
+          Authorization: !!js ('Bearer ' + (process.env.MODELS_API_KEY || ''))
+        toolCallTimeoutMs: 90000
+        failOnStartupError: false
+        reconnect:
+          enabled: true
+
+    - id: yootun-knowledge-tools
+      name: '@dofe/dsh-yootun-knowledge'

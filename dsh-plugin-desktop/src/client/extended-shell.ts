@@ -1,29 +1,36 @@
 /** Independent Desktop frame shared by compatibility and extended modes. */
 
-import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
+import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-client-ui-theme/client'
 import type {} from './contracts.ts'
 import { ExtendedFrame } from './ExtendedFrame.tsx'
 import { createDesktopSettingsApi } from './desktop-settings-api.ts'
-import { DESKTOP_SETTINGS_LOCALE_NAMESPACE } from './desktop-settings.ts'
-import type { DesktopClientEnvironment } from './environment.ts'
 import {
-  DesktopFrameTitlebar,
-  DesktopFrameTitlebarNativeActions,
-} from './ExtendedTitlebar.tsx'
+  DESKTOP_SETTINGS_LOCALE_NAMESPACE,
+  DESKTOP_SHELL_SETTINGS_NAMESPACE,
+  type DesktopSettingsClientControl,
+} from './desktop-settings.ts'
+import type { DesktopShellSettings } from './DesktopSettingsSection.tsx'
+import type { DesktopClientEnvironment } from './environment.ts'
+import { DesktopFrameTitlebar } from './ExtendedTitlebar.tsx'
 import { installExtendedStyles } from './extended-styles.ts'
 import { DesktopLayoutState } from './layout-state.ts'
-import { provideDesktopLayout } from './layout-service.ts'
+import { claimDesktopLayout } from './layout-service.ts'
 import { installDesktopOwnedStyles } from './styles.ts'
 import { DesktopThemePresenter } from './theme-presenter.ts'
 
-/** Own the extended root/sidebar surface without reusing enhanced-mode chrome. */
-function applyExtendedOwnedShell(ctx: ClientContext, environment: DesktopClientEnvironment): void {
+/**
+ * Own the extended root/sidebar surface without reusing enhanced-mode chrome.
+ *
+ * When the upstream `dsh-client-ui-layout` wins the shared `layout` service,
+ * the owned presentation (layout, owned styles, presenter, root slot) is
+ * skipped and `false` returned; the independent framed chrome can still be
+ * layered over the upstream frame by the caller (#517).
+ */
+function applyExtendedOwnedShell(ctx: ClientContext, environment: DesktopClientEnvironment): boolean {
   const desktopLayout = new DesktopLayoutState()
-  ctx.effect(
-    () => provideDesktopLayout(ctx, desktopLayout),
-    'desktop: extended layout service',
-  )
+  const upstreamOwnsLayout = !claimDesktopLayout(ctx, desktopLayout)
+  if (upstreamOwnsLayout) return false
 
   ctx.effect(
     () => installDesktopOwnedStyles(),
@@ -50,13 +57,25 @@ function applyExtendedOwnedShell(ctx: ClientContext, environment: DesktopClientE
     },
     inject: () => ({ layout: desktopLayout, platform: environment.platform }),
   }, ExtendedFrame), 'desktop: extended root slot')
+
+  return true
 }
 
-export function applyFramedShell(ctx: ClientContext, environment: DesktopClientEnvironment): void {
+export function applyFramedShell(
+  ctx: ClientContext,
+  environment: DesktopClientEnvironment,
+  settingsControl?: DesktopSettingsClientControl,
+): void {
   if (environment.mode !== 'compatibility' && environment.mode !== 'extended') {
     throw new Error(`dsh-plugin-desktop: framed shell received mode ${JSON.stringify(environment.mode)}`)
   }
-  const api = createDesktopSettingsApi()
+  const api = settingsControl?.api ?? createDesktopSettingsApi()
+  const setMode = settingsControl?.setMode ?? (async (mode: DesktopShellSettings['mode']) => {
+    const desktopSettings = ctx.settingsScope.bind<DesktopShellSettings>({
+      namespace: DESKTOP_SHELL_SETTINGS_NAMESPACE,
+    })
+    await desktopSettings.set('mode', mode)
+  })
 
   ctx.effect(() => {
     const contentViewport = document.getElementById('root')
@@ -81,27 +100,22 @@ export function applyFramedShell(ctx: ClientContext, environment: DesktopClientE
     name: 'shell.overlay',
     id: 'desktop-frame-titlebar',
     order: -1000,
-    children: {
-      'desktop.titlebar.action': { kind: 'list', scope: 'root' },
-    },
     locale: DESKTOP_SETTINGS_LOCALE_NAMESPACE,
-    inject: () => ({ environment }),
+    inject: () => ({ api, environment, setMode }),
   }, DesktopFrameTitlebar))
-
-  ctx.slots.inject('desktop.titlebar.action', () => ctx.slots.register({
-    name: 'desktop.titlebar.action',
-    id: 'desktop-native-actions',
-    order: 0,
-    locale: DESKTOP_SETTINGS_LOCALE_NAMESPACE,
-    inject: () => ({ api }),
-  }, DesktopFrameTitlebarNativeActions))
 }
 
 /** Compose the extended-owned layout beneath its independent Desktop frame. */
-export function applyExtendedShell(ctx: ClientContext, environment: DesktopClientEnvironment): void {
+export function applyExtendedShell(
+  ctx: ClientContext,
+  environment: DesktopClientEnvironment,
+  settingsControl?: DesktopSettingsClientControl,
+): void {
   if (environment.mode !== 'extended') {
     throw new Error(`dsh-plugin-desktop: extended shell received mode ${JSON.stringify(environment.mode)}`)
   }
+  // Losing the layout race only drops the owned presentation; the framed
+  // chrome (titlebar overlay) still layers over whatever presents the root.
   applyExtendedOwnedShell(ctx, environment)
-  applyFramedShell(ctx, environment)
+  applyFramedShell(ctx, environment, settingsControl)
 }

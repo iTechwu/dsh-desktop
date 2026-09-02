@@ -202,12 +202,12 @@ my-fabric-plugin/
 ### 6.2 开发流程
 
 ```sh
-yarn dlx dsh-community-fabric init
-yarn fabric validate       # schema、ID、entrypoint、capability 版本
-yarn fabric generate       # 从 manifest 生成精确 context 类型
-yarn fabric test           # fake Host + lifecycle + capability fixtures
-yarn fabric dev --host web # 连接明确的开发 Host integration
-yarn fabric pack           # 产出静态 manifest 与可审查包
+pnpm dlx dsh-community-fabric init
+pnpm fabric validate       # schema、ID、entrypoint、capability 版本
+pnpm fabric generate       # 从 manifest 生成精确 context 类型
+pnpm fabric test           # fake Host + lifecycle + capability fixtures
+pnpm fabric dev --host web # 连接明确的开发 Host integration
+pnpm fabric pack           # 产出静态 manifest 与可审查包
 ```
 
 命令名称尚未冻结。关键是同一份 manifest 同时驱动静态校验、类型生成、市场兼容判断和 Host 协商，避免配置重复。

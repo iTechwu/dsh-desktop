@@ -1,0 +1,324 @@
+import { useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from 'react'
+import { createRoot, type Root } from 'react-dom/client'
+import type { ClientRemote } from '@deepseek-ai/dsh-api-remotes/client'
+import type { InjectFace, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+import { Button, Input } from '@deepseek-ai/dsh-client-ui-primitives'
+import { ArrowRight, Check, Eye, EyeOff, Phone, ShieldCheck } from 'lucide-react'
+import type { SettingsScope } from '@deepseek-ai/dsh-client-ui-settings/client'
+import { DofeOnboardingModal } from './DofeOnboardingModal.tsx'
+import { DOFE_ACCESS_KEY, type DofeAccessLocaleKey } from './dofe-access.ts'
+import { DOFE_PLUGIN_CATALOG, DOFE_ACCESS_VALIDATION_VERSION, type DofeAccessSettings, type DofePluginId, DEFAULT_DOFE_PLUGIN_IDS } from '../dofe-plugins.ts'
+import { DOFE_ACCESS_MODELS_PATH, DOFE_ACCESS_VALIDATE_PATH } from '../dofe-access-route.ts'
+import { parseDofeModelCatalog, type DofeModel } from '../dofe-models.ts'
+
+const STYLE_ID = 'dsh-dofe-access-styles'
+const CSS = `
+#dsh-dofe-access-gate { position: fixed; inset: 0; z-index: 2147483000; pointer-events: none; }
+.dshDofeGate { position: fixed; inset: 0; display: grid; place-items: center; padding: 32px; background: rgba(14, 18, 24, .58); backdrop-filter: blur(10px) saturate(.8); pointer-events: auto; }
+.dshDofeModal { width: min(680px, calc(100vw - 64px)); max-height: calc(100vh - 64px); display: grid; grid-template-rows: auto minmax(0, 1fr); overflow: hidden; color: var(--dsw-alias-label-primary, #172033); background: var(--dsw-alias-bg-layer-1, #fff); border: 1px solid var(--dsw-alias-border-l1, #d9dee8); border-radius: 8px; box-shadow: 0 24px 72px rgba(5, 10, 18, .28), 0 2px 8px rgba(5, 10, 18, .12); }
+.dshDofeModalHeader { display: grid; grid-template-columns: 44px 1fr; gap: 16px; padding: 26px 28px 22px; border-bottom: 1px solid var(--dsw-alias-border-l1, #e2e6ed); }
+.dshDofeModalMark { width: 44px; height: 44px; display: grid; place-items: center; color: #fff; background: var(--dsw-alias-brand-primary, #245eea); border-radius: 8px; }
+.dshDofeModalEyebrow { margin: 0 0 5px; color: var(--dsw-alias-brand-primary, #245eea); font-size: 11px; font-weight: 700; letter-spacing: 0; }
+.dshDofeModalHeader h2 { margin: 0; color: var(--dsw-alias-label-primary, #172033); font-size: 24px; line-height: 1.25; letter-spacing: 0; outline: none; }
+.dshDofeModalDescription { margin: 7px 0 0; max-width: 540px; color: var(--dsw-alias-label-secondary, #667085); font-size: 14px; line-height: 1.55; }
+.dshDofeModalBody { min-height: 0; overflow: auto; padding: 22px 28px 26px; }
+.dshDofeAccess { display: grid; gap: 20px; max-width: 640px; }
+.dshDofeAccessIntro { color: var(--dsw-alias-label-secondary, #667085); line-height: 1.5; margin: 0; }
+.dshDofeAccessHelp { display: flex; align-items: center; gap: 8px; color: var(--dsw-alias-label-secondary, #667085); background: var(--dsw-alias-bg-layer-2, #f5f7fa); border-left: 3px solid var(--dsw-alias-brand-primary, #245eea); padding: 10px 12px; margin: 0; font-size: 13px; line-height: 1.45; }
+.dshDofeAccessHelp svg { flex: 0 0 auto; color: var(--dsw-alias-brand-primary, #245eea); }
+.dshDofeAccessField { display: grid; gap: 9px; }
+.dshDofeAccessFieldHeader { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; }
+.dshDofeAccessLabel { color: var(--dsw-alias-label-primary, #172033); font-size: 14px; font-weight: 650; }
+.dshDofeAccessHint, .dshDofeAccessCount { color: var(--dsw-alias-label-secondary, #667085); font-size: 12px; }
+.dshDofeAccessInputWrap { position: relative; }
+.dshDofeAccessInput { display: flex; width: 100%; height: 42px; padding-right: 42px; box-sizing: border-box; }
+.dshDofeAccessInput input { width: 100%; }
+.dshDofeAccessModelSelect { width: 100%; min-height: 42px; padding: 0 12px; color: var(--dsw-alias-label-primary, #172033); background: var(--dsw-alias-bg-layer-1, #fff); border: 1px solid var(--dsw-alias-border-l2, #c7ced9); border-radius: 6px; font: inherit; }
+.dshDofeAccessModelSelect:focus-visible { outline: 2px solid var(--dsw-alias-brand-primary, #245eea); outline-offset: 1px; }
+.dshDofeAccessReveal { position: absolute; top: 50%; right: 6px; width: 32px; height: 32px; display: grid; place-items: center; transform: translateY(-50%); color: var(--dsw-alias-label-secondary, #667085); background: transparent; border: 0; border-radius: 6px; cursor: pointer; }
+.dshDofeAccessReveal:hover { color: var(--dsw-alias-label-primary, #172033); background: var(--dsw-alias-interactive-bg-hover, #edf1f7); }
+.dshDofeAccessReveal:focus-visible { outline: 2px solid var(--dsw-alias-brand-primary, #245eea); outline-offset: 1px; }
+.dshDofeAccessActions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.dshDofeAccessActionsOnboarding { justify-content: space-between; padding-top: 2px; }
+.dshDofeAccessPrimary { display: inline-flex; align-items: center; gap: 8px; min-height: 42px; padding-inline: 18px; }
+.dshDofeAccessStatus { color: var(--dsw-alias-label-secondary, #667085); font-size: 13px; }
+.dshDofeAccessError { color: var(--dsw-alias-state-error-primary, #c93636); background: rgba(201, 54, 54, .08); border-left: 3px solid var(--dsw-alias-state-error-primary, #c93636); padding: 10px 12px; margin: 0; font-size: 13px; line-height: 1.45; }
+.dshDofeAccessPlugins { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); border-top: 1px solid var(--dsw-alias-border-l1, #e2e6ed); }
+.dshDofeAccessPlugin { position: relative; display: grid; grid-template-columns: 24px minmax(0, 1fr); gap: 10px; min-height: 66px; align-items: center; padding: 11px 12px 11px 4px; border-bottom: 1px solid var(--dsw-alias-border-l1, #e2e6ed); cursor: pointer; }
+.dshDofeAccessPlugin:nth-child(odd) { padding-right: 18px; border-right: 1px solid var(--dsw-alias-border-l1, #e2e6ed); }
+.dshDofeAccessPlugin:nth-child(even) { padding-left: 18px; }
+.dshDofeAccessPlugin:hover { background: var(--dsw-alias-interactive-bg-hover, #f2f5f9); }
+.dshDofeAccessPlugin input { position: absolute; opacity: 0; pointer-events: none; }
+.dshDofeAccessPluginCheck { width: 20px; height: 20px; display: grid; place-items: center; color: transparent; background: var(--dsw-alias-bg-layer-1, #fff); border: 1px solid var(--dsw-alias-border-l2, #c7ced9); border-radius: 5px; }
+.dshDofeAccessPluginSelected .dshDofeAccessPluginCheck { color: #fff; background: var(--dsw-alias-brand-primary, #245eea); border-color: var(--dsw-alias-brand-primary, #245eea); }
+.dshDofeAccessPlugin:has(input:focus-visible) .dshDofeAccessPluginCheck { outline: 2px solid var(--dsw-alias-brand-primary, #245eea); outline-offset: 2px; }
+.dshDofeAccessPluginName { display: block; color: var(--dsw-alias-label-primary, #172033); font-size: 14px; font-weight: 650; line-height: 1.35; }
+.dshDofeAccessPluginDescription { display: block; color: var(--dsw-alias-label-secondary, #667085); font-size: 12px; line-height: 1.4; margin-top: 2px; }
+@media (max-width: 720px) {
+  .dshDofeGate { padding: 16px; }
+  .dshDofeModal { width: calc(100vw - 32px); max-height: calc(100vh - 32px); }
+  .dshDofeModalHeader { padding: 22px 20px 18px; }
+  .dshDofeModalBody { padding: 18px 20px 22px; }
+  .dshDofeAccessFieldHeader { align-items: flex-start; flex-direction: column; gap: 3px; }
+  .dshDofeAccessPlugins { grid-template-columns: 1fr; }
+  .dshDofeAccessPlugin:nth-child(n) { padding: 11px 4px; border-right: 0; }
+}
+`
+
+async function validateModelApiKey(key: string): Promise<boolean> {
+  try {
+    const response = await fetch(DOFE_ACCESS_VALIDATE_PATH, {
+      method: 'POST',
+      credentials: 'same-origin',
+      redirect: 'error',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({ key }),
+    })
+    if (!response.ok) return false
+    const value = await response.json() as unknown
+    return typeof value === 'object' && value !== null && (value as { valid?: unknown }).valid === true
+  } catch {
+    return false
+  }
+}
+
+type Credentials = Pick<ClientRemote['credentials'], 'describe' | 'set' | 'unset'>
+type SettingsApi = Pick<ClientRemote['settings'], 'describe' | 'mutate'>
+export interface DofeAccessInjected {
+  credentials: Credentials
+  settingsApi: SettingsApi
+  settingsScope: SettingsScope<DofeAccessSettings>
+  t: (key: DofeAccessLocaleKey) => string
+}
+export type DofeAccessSectionProps = PropsRuntime<'settings.section'> & InjectFace<DofeAccessInjected>
+type DofeAccessRoot = Pick<Root, 'render' | 'unmount'>
+type DofeAccessRootFactory = (container: Element | DocumentFragment) => DofeAccessRoot
+
+declare module '@deepseek-ai/dsh-client-ui-slots' { interface LocaleNamespaceMap { 'dofe.access': DofeAccessLocaleKey } }
+
+/** Adapt receiver-dependent SettingsScope methods for React's callback contract. */
+export function dofeAccessSettingsStore(settingsScope: SettingsScope<DofeAccessSettings>) {
+  return {
+    subscribe: (listener: () => void) => settingsScope.subscribe(listener),
+    getSnapshot: () => settingsScope.getSnapshot(),
+  }
+}
+
+/** Block the application root while the mandatory gate is visible and restore it exactly once. */
+export function blockDofeApplicationRoot(): () => void {
+  const root = document.getElementById('root')
+  const previousInert = root?.inert
+  const previousOverflow = document.body.style.overflow
+  if (root !== null) root.inert = true
+  document.body.style.overflow = 'hidden'
+  return () => {
+    if (root !== null) root.inert = previousInert ?? false
+    document.body.style.overflow = previousOverflow
+  }
+}
+
+function AccessForm({ credentials, settingsApi, settingsScope, t, onboarding, onDone }: DofeAccessInjected & { onboarding?: boolean; onDone?: () => void }): ReactNode {
+  const [configured, setConfigured] = useState<boolean | undefined>()
+  const [draft, setDraft] = useState('')
+  const [revealKey, setRevealKey] = useState(false)
+  const settingsStore = useMemo(() => dofeAccessSettingsStore(settingsScope), [settingsScope])
+  const settings = useSyncExternalStore(settingsStore.subscribe, settingsStore.getSnapshot, settingsStore.getSnapshot)
+  const [enabledPlugins, setEnabledPlugins] = useState<DofePluginId[]>(() => (settings.value?.enabledPlugins ?? DEFAULT_DOFE_PLUGIN_IDS) as DofePluginId[])
+  const [models, setModels] = useState<readonly DofeModel[]>([])
+  const [selectedModel, setSelectedModel] = useState('')
+  const [loadingModels, setLoadingModels] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string>()
+  useEffect(() => {
+    if (settings.value?.enabledPlugins !== undefined) setEnabledPlugins(settings.value.enabledPlugins as DofePluginId[])
+  }, [settings.value?.enabledPlugins])
+  useEffect(() => {
+    if (settings.value?.modelId !== undefined) setSelectedModel(settings.value.modelId)
+  }, [settings.value?.modelId])
+  useEffect(() => { void credentials.describe([DOFE_ACCESS_KEY]).then(result => { if (result.ok) setConfigured(result.value[DOFE_ACCESS_KEY]?.configured === true); else setError(t('loadError')) }) }, [credentials, t])
+  useEffect(() => {
+    let cancelled = false
+    void settingsApi.describe().then(result => {
+      if (cancelled || !result.ok) return
+      const deepseek = result.value.namespaces.find(item => item.ns === 'llm-deepseek')
+      const user = deepseek?.user
+      const catalog = typeof user === 'object' && user !== null && !Array.isArray(user)
+        ? parseDofeModelCatalog((user as { models?: unknown }).models)
+        : []
+      if (catalog.length === 0 || cancelled) return
+      setModels(catalog)
+      setSelectedModel(current => catalog.some(model => model.id === current) ? current : catalog[0]!.id)
+    }).catch(() => undefined)
+    return () => { cancelled = true }
+  }, [settingsApi])
+  const loadModels = async (keyOverride?: string): Promise<void> => {
+    const key = (keyOverride ?? draft).trim()
+    if (!key) return
+    setLoadingModels(true)
+    setError(undefined)
+    try {
+      const response = await fetch(DOFE_ACCESS_MODELS_PATH, {
+        method: 'POST',
+        credentials: 'same-origin',
+        redirect: 'error',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify({ key }),
+      })
+      const payload = await response.json() as unknown
+      const found = typeof payload === 'object' && payload !== null && Array.isArray((payload as { models?: unknown }).models)
+        ? (payload as { models: DofeModel[] }).models
+        : []
+      if (!response.ok || found.length === 0) {
+        setModels([])
+        setSelectedModel('')
+        setError(t('modelsError'))
+        return
+      }
+      setModels(found)
+      setSelectedModel(current => found.some(model => model.id === current) ? current : found[0]!.id)
+    } catch {
+      setModels([])
+      setSelectedModel('')
+      setError(t('modelsError'))
+    } finally {
+      setLoadingModels(false)
+    }
+  }
+  const save = async (): Promise<void> => {
+    const key = draft.trim()
+    const useStoredCredential = key.length === 0 && configured === true
+    if ((!key && !useStoredCredential) || enabledPlugins.length === 0 || !selectedModel || models.length === 0) {
+      if (onboarding && !selectedModel) setError(t('modelRequired'))
+      return
+    }
+    setBusy(true)
+    setError(undefined)
+    if (key.length > 0 && !(await validateModelApiKey(key))) {
+      setBusy(false)
+      setError(t('invalidKey'))
+      return
+    }
+    try {
+      const describe = await settingsApi.describe()
+      if (!describe.ok) throw new Error(describe.error.message)
+      const descriptor = describe.value.namespaces
+      const deepseek = descriptor.find(item => item.ns === 'llm-deepseek')
+      if (deepseek !== undefined) {
+        const modelConfig = models.map(model => ({
+          id: model.id,
+          name: model.name,
+          ...(model.description === undefined ? {} : { description: model.description }),
+          ...(model.contextWindow === undefined ? {} : { contextWindow: model.contextWindow }),
+          inputModalities: model.inputModalities === undefined ? ['text'] : [...model.inputModalities],
+        }))
+        const result = await settingsApi.mutate('llm-deepseek', [{ op: 'set', path: ['models'], value: modelConfig }], deepseek.revision)
+        if (!result.ok) throw new Error(result.error.message)
+      }
+      if (key.length > 0) {
+        const result = await credentials.set(DOFE_ACCESS_KEY, key)
+        if (!result.ok) throw new Error(result.error.message)
+      }
+      await settingsScope.mutate([
+        { op: 'set', path: ['setupComplete'], value: true },
+        { op: 'set', path: ['validationVersion'], value: DOFE_ACCESS_VALIDATION_VERSION },
+        { op: 'set', path: ['enabledPlugins'], value: enabledPlugins },
+        { op: 'set', path: ['modelId'], value: selectedModel },
+      ])
+      const defaultModel = descriptor.find(item => item.ns === 'agent-default-model')
+      if (defaultModel !== undefined) {
+        const result = await settingsApi.mutate('agent-default-model', [
+          { op: 'set', path: ['provider'], value: 'deepseek-official' },
+          { op: 'set', path: ['model'], value: selectedModel },
+        ], defaultModel.revision)
+        if (!result.ok) throw new Error(result.error.message)
+      }
+    } catch {
+      setBusy(false)
+      setError(t('saveError'))
+      return
+    }
+    setBusy(false)
+    setDraft('')
+    setConfigured(true)
+    onDone?.()
+  }
+  const remove = async (): Promise<void> => {
+    setBusy(true)
+    setError(undefined)
+    const result = await credentials.unset(DOFE_ACCESS_KEY)
+    if (!result.ok) { setBusy(false); setError(t('removeError')); return }
+    try { await settingsScope.mutate([
+      { op: 'set', path: ['setupComplete'], value: false },
+      { op: 'set', path: ['validationVersion'], value: 0 },
+      { op: 'set', path: ['modelId'], value: '' },
+    ]) } catch { /* key removal still succeeded */ }
+    setBusy(false)
+    setConfigured(false)
+  }
+  return <div className={`dshDofeAccess${onboarding ? ' dshDofeAccessOnboarding' : ''}`}>
+    {!onboarding && <h2>{t('title')}</h2>}
+    {!onboarding && <p className="dshDofeAccessIntro">{t('intro')}</p>}
+    <div className="dshDofeAccessField">
+      <div className="dshDofeAccessFieldHeader"><label className="dshDofeAccessLabel" htmlFor="dofe-model-api-key">{t('key')}</label>{onboarding && <span className="dshDofeAccessHint"><ShieldCheck size={13} aria-hidden="true" /> {t('credentialHint')}</span>}</div>
+      <div className="dshDofeAccessInputWrap"><Input className="dshDofeAccessInput" id="dofe-model-api-key" type={revealKey ? 'text' : 'password'} autoComplete="off" value={draft} placeholder={onboarding ? t('placeholder') : configured ? t('configured') : t('placeholder')} onChange={event => { setDraft(event.currentTarget.value); setModels([]); setSelectedModel('') }} onKeyDown={event => { if (event.key === 'Enter') void loadModels() }} /><button type="button" className="dshDofeAccessReveal" title={revealKey ? t('hideKey') : t('showKey')} aria-label={revealKey ? t('hideKey') : t('showKey')} onClick={() => setRevealKey(current => !current)}>{revealKey ? <EyeOff size={17} /> : <Eye size={17} />}</button></div>
+    </div>
+    <div className="dshDofeAccessActions"><Button disabled={loadingModels || !draft.trim()} onClick={() => void loadModels()}>{loadingModels ? t('loadingModels') : t('loadModels')}</Button></div>
+    <div className="dshDofeAccessField"><div className="dshDofeAccessFieldHeader"><label className="dshDofeAccessLabel" htmlFor="dofe-model-select">{t('modelsTitle')}</label></div>{configured === true && !draft.trim() && models.length === 0 && <p className="dshDofeAccessHint">{t('reenterKey')}</p>}<select id="dofe-model-select" className="dshDofeAccessModelSelect" value={selectedModel} disabled={models.length === 0 || loadingModels} onChange={event => setSelectedModel(event.currentTarget.value)}><option value="">{models.length === 0 ? t('modelsPlaceholder') : t('modelsEmpty')}</option>{models.map(model => <option key={model.id} value={model.id}>{model.name} ({model.id})</option>)}</select></div>
+    {onboarding && <p className="dshDofeAccessHelp"><Phone size={15} aria-hidden="true" /><span>{t('onboardingHelp')}</span></p>}
+    {onboarding && <div className="dshDofeAccessField"><div className="dshDofeAccessFieldHeader"><span className="dshDofeAccessLabel">{t('pluginsTitle')}</span><span className="dshDofeAccessCount">{t('selectedCount').replace('{count}', String(enabledPlugins.length))}</span></div><div className="dshDofeAccessPlugins">{DOFE_PLUGIN_CATALOG.map(plugin => { const selected = enabledPlugins.includes(plugin.id); return <label className={`dshDofeAccessPlugin${selected ? ' dshDofeAccessPluginSelected' : ''}`} key={plugin.id}><input type="checkbox" checked={selected} onChange={event => setEnabledPlugins(current => event.currentTarget.checked ? [...new Set([...current, plugin.id])] : current.filter(id => id !== plugin.id))} /><span className="dshDofeAccessPluginCheck" aria-hidden="true"><Check size={14} strokeWidth={2.5} /></span><span><span className="dshDofeAccessPluginName">{plugin.name}</span><span className="dshDofeAccessPluginDescription">{plugin.description}</span></span></label> })}</div></div>}
+    {error !== undefined && <p className="dshDofeAccessError" role="alert">{error}</p>}
+    <div className={`dshDofeAccessActions${onboarding ? ' dshDofeAccessActionsOnboarding' : ''}`}><Button className="dshDofeAccessPrimary" variant="primary" disabled={busy || (!draft.trim() && configured !== true) || models.length === 0 || !selectedModel || (onboarding && enabledPlugins.length === 0)} onClick={() => void save()}>{busy ? t('saving') : t('save')}{!busy && <ArrowRight size={16} aria-hidden="true" />}</Button>{!onboarding && <Button disabled={busy || configured !== true} onClick={() => void remove()}>{busy ? t('removing') : t('remove')}</Button>}{!onboarding && <span className="dshDofeAccessStatus" role="status">{configured === true ? t('configured') : configured === false ? t('missing') : ''}</span>}</div>
+  </div>
+}
+
+export function installDofeAccessStyles(): () => void {
+  document.getElementById(STYLE_ID)?.remove()
+  const style = document.createElement('style')
+  style.id = STYLE_ID
+  style.textContent = CSS
+  document.head.appendChild(style)
+  return () => { style.remove() }
+}
+
+export function DofeAccessSection(props: DofeAccessSectionProps): ReactNode { if (props.credentials === undefined || props.settingsApi === undefined || props.settingsScope === undefined || props.t === undefined) return null; return <AccessForm credentials={props.credentials} settingsApi={props.settingsApi} settingsScope={props.settingsScope} t={props.t} /> }
+export function DofeAccessGate({ credentials, settingsApi, settingsScope, t }: DofeAccessInjected): ReactNode {
+  const settingsStore = useMemo(() => dofeAccessSettingsStore(settingsScope), [settingsScope])
+  const settings = useSyncExternalStore(settingsStore.subscribe, settingsStore.getSnapshot, settingsStore.getSnapshot)
+  const [credentialConfigured, setCredentialConfigured] = useState(false)
+  useEffect(() => {
+    void credentials.describe([DOFE_ACCESS_KEY]).then(result => {
+      setCredentialConfigured(result.ok && result.value[DOFE_ACCESS_KEY]?.configured === true)
+    })
+  }, [credentials, settings.value?.setupComplete, settings.value?.validationVersion])
+  const authorized = credentialConfigured
+    && settings.value?.setupComplete === true
+    && settings.value.validationVersion === DOFE_ACCESS_VALIDATION_VERSION
+  useEffect(() => {
+    if (authorized) {
+      const root = document.getElementById('root')
+      if (root !== null) root.inert = false
+      document.body.style.overflow = ''
+      return
+    }
+    return blockDofeApplicationRoot()
+  }, [authorized])
+  if (authorized) return null
+  return <DofeOnboardingModal eyebrow={t('onboardingEyebrow')} title={t('onboardingTitle')} description={t('onboardingIntro')}><AccessForm credentials={credentials} settingsApi={settingsApi} settingsScope={settingsScope} t={t} onboarding onDone={() => setCredentialConfigured(true)} /></DofeOnboardingModal>
+}
+
+/** Mount the mandatory credential gate independently of upstream session onboarding. */
+export function installDofeAccessGate(
+  props: DofeAccessInjected,
+  rootFactory: DofeAccessRootFactory = container => createRoot(container),
+): () => void {
+  document.getElementById('dsh-dofe-access-gate')?.remove()
+  const host = document.createElement('div')
+  host.id = 'dsh-dofe-access-gate'
+  document.body.appendChild(host)
+  const root = rootFactory(host)
+  root.render(<DofeAccessGate {...props} />)
+  return () => {
+    root.unmount()
+    host.remove()
+  }
+}

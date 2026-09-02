@@ -1,0 +1,41 @@
+packages:
+  - dsh-plugin-desktop
+  - dsh-community-fabric
+  - dsh-community-market
+  - deepseek-harness/apps/**
+  - deepseek-harness/packages/**
+  - deepseek-harness/native/**
+  - deepseek-harness/vendor/**
+
+allowBuilds:
+  '@deepseek-ai/dsh-subprocess-local': true
+  '@google/genai': false
+  electron: true
+  electron-winstaller: false
+  esbuild: true
+  koffi: true
+  lefthook: true
+  node-addon-require-builtin: false
+  node-pty: true
+  protobufjs: false
+
+linkWorkspacePackages: true
+
+overrides:
+  app-builder-lib>@electron/get: 5.1.0
+
+supportedArchitectures:
+  os:
+    - current
+    - darwin
+  cpu:
+    - x64
+    - arm64
+
+patchedDependencies:
+  app-builder-lib@26.15.7: patches/app-builder-lib@26.15.7.patch
+  dshmarket@1.39.0: patches/dshmarket@1.39.0.patch
+  open@11.0.1: patches/open@11.0.1.patch
+
+minimumReleaseAgeExclude:
+  - dshmarket@1.39.0

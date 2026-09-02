@@ -1,0 +1,17 @@
+# Opt-in reference for MiniMax Token Plan MCP. Install `uv` and warm the
+# `minimax-coding-plan-mcp` package first so the row launches an already-cached
+# command; DSH starts the server process but does not run a package manager.
+- insert:
+    - id: mcp-minimax-token-plan
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: minimax
+        transport: stdio
+        command: uvx
+        args: ['minimax-coding-plan-mcp', '-y']
+        cwd: !!js process.cwd()
+        env:
+          MINIMAX_API_KEY: !!js process.env.MINIMAX_API_KEY
+          MINIMAX_API_HOST: !!js process.env.MINIMAX_API_HOST?.trim() || 'https://api.minimaxi.com'
+          MINIMAX_MCP_BASE_PATH: !!js process.env.MINIMAX_MCP_BASE_PATH?.trim() || process.getBuiltinModule('node:path').join(process.getBuiltinModule('node:os').homedir(), 'minimax-token-plan-output')
+          MINIMAX_API_RESOURCE_MODE: !!js process.env.MINIMAX_API_RESOURCE_MODE?.trim() || 'url'

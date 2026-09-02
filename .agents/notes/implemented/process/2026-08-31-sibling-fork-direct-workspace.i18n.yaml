@@ -1,0 +1,5 @@
+# Bilingual-pair consistency record: the git blob hash of each side as of the last
+# confirmed-consistent state. Both languages carry equal authority. Update both files
+# and re-record their hashes after editing either side.
+2026-08-31-sibling-fork-direct-workspace.md: 94033f0ddc1958f9b6f4f6e3dbb838a4a17e7599
+2026-08-31-sibling-fork-direct-workspace.zh.md: 489d0b7f70a7376d17bb5fc1219dd54b684d6c74

@@ -1,3 +1,4 @@
+import { unlinkSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { DesktopShellSpec } from '../src/runtime.ts'
@@ -5,7 +6,6 @@ import { DESKTOP_FRAME_HEIGHT } from '../src/window-chrome.ts'
 
 const terminal = vi.hoisted(() => ({ open: vi.fn() }))
 const diagnostics = vi.hoisted(() => ({ export: vi.fn() }))
-const windowsAcrylic = vi.hoisted(() => ({ set: vi.fn(() => true) }))
 const updater = vi.hoisted(() => ({
   download: vi.fn(),
   filename: vi.fn(),
@@ -39,6 +39,16 @@ const childProcess = vi.hoisted(() => {
   }
 })
 
+const MAIN_WINDOW_STATE_PATH = '/tmp/dsh-desktop-user-data/main-window-state.json'
+
+function clearMainWindowState(): void {
+  try {
+    unlinkSync(MAIN_WINDOW_STATE_PATH)
+  } catch (cause) {
+    if ((cause as NodeJS.ErrnoException).code !== 'ENOENT') throw cause
+  }
+}
+
 vi.mock('../src/desktop-terminal.ts', async (importOriginal) => ({
   ...await importOriginal<typeof import('../src/desktop-terminal.ts')>(),
   openDesktopTerminal: terminal.open,
@@ -48,9 +58,6 @@ vi.mock('../src/diagnostic-export.ts', () => ({
   exportDesktopDiagnostics: diagnostics.export,
 }))
 
-vi.mock('../src/windows-acrylic.ts', () => ({
-  setWindowsAcrylic: windowsAcrylic.set,
-}))
 
 vi.mock('../src/update-download.ts', () => ({
   desktopUpdateFilename: updater.filename,
@@ -72,6 +79,8 @@ const electron = vi.hoisted(() => {
   const browserWindowOn = vi.fn()
   const browserWindowOff = vi.fn()
   const loadURL = vi.fn(async (_url: string) => {})
+  const webRequest = { onBeforeSendHeaders: vi.fn() }
+  const sessionFetch = vi.fn()
   const applicationMenuTemplates: unknown[][] = []
   const menuTemplates: unknown[][] = []
   const notifications: Notification[] = []
@@ -96,9 +105,12 @@ const electron = vi.hoisted(() => {
     setTemplateImage: vi.fn(),
   }
   const webContents = {
+    id: 73,
+    session: { fetch: sessionFetch, webRequest },
     closeDevTools: vi.fn(() => { devToolsOpened = false }),
     executeJavaScript: vi.fn(async (_code: string, _userGesture?: boolean) => null as string | null),
     getZoomLevel: vi.fn(() => zoomLevel),
+    getURL: vi.fn(() => ''),
     isDevToolsOpened: vi.fn(() => devToolsOpened),
     on: vi.fn(),
     off: vi.fn(),
@@ -127,6 +139,7 @@ const electron = vi.hoisted(() => {
     readonly isVisible = vi.fn(() => false)
     readonly isMinimized = vi.fn(() => false)
     readonly isFullScreen = vi.fn(() => false)
+    readonly getNormalBounds = vi.fn(() => ({ x: 120, y: 80, width: 1280, height: 840 }))
     readonly flashFrame = vi.fn()
     readonly restore = vi.fn()
     readonly show = vi.fn()
@@ -202,11 +215,12 @@ const electron = vi.hoisted(() => {
     browserWindowOff,
     browserWindowOn,
     loadURL,
+    sessionFetch,
     dialog,
     Menu: {
       buildFromTemplate: vi.fn((template: unknown[]) => {
         const first = template[0] as { label?: unknown, submenu?: unknown } | undefined
-        if (first?.label === 'DSH Desktop' && Array.isArray(first.submenu)) {
+        if (first?.label === 'Yootun-Agent' && Array.isArray(first.submenu)) {
           applicationMenuTemplates.push(template)
         } else {
           menuTemplates.push(template)
@@ -223,6 +237,11 @@ const electron = vi.hoisted(() => {
     notifications,
     resetZoomLevel: () => { zoomLevel = 0 },
     resetDevTools: () => { devToolsOpened = false },
+    screen: {
+      getDisplayMatching: vi.fn(() => ({
+        workArea: { x: 0, y: 0, width: 1920, height: 1080 },
+      })),
+    },
     shell: {
       openExternal: vi.fn(async () => {}),
       openPath: vi.fn(async () => ''),
@@ -232,6 +251,7 @@ const electron = vi.hoisted(() => {
     Tray,
     trays,
     webContents,
+    webRequest,
   }
 })
 
@@ -257,6 +277,7 @@ vi.mock('electron', () => ({
   nativeTheme: electron.nativeTheme,
   net: electron.net,
   Notification: electron.Notification,
+  screen: electron.screen,
   shell: electron.shell,
   Tray: electron.Tray,
 }))
@@ -264,14 +285,19 @@ vi.mock('electron', () => ({
 const spec: DesktopShellSpec = {
   mode: 'compatibility',
   macosMaterial: 'transparent',
-  windowsMaterial: 'acrylic',
+  windowsMaterial: 'off',
   material: 'off',
   width: 1280,
   height: 840,
   minWidth: 900,
   minHeight: 640,
   url: 'http://127.0.0.1:43120/',
-  productName: 'DSH Desktop',
+  authenticationUrl: 'http://127.0.0.1:43120/?token=test-token',
+  rendererAccessHeader: {
+    name: 'x-dsh-desktop-renderer',
+    value: Buffer.alloc(32, 9).toString('base64url'),
+  },
+  productName: 'Yootun-Agent',
   windowTitle: 'DeepSeek Harness Desktop',
   iconPath: '/tmp/app-icon.png',
   trayIcons: {
@@ -286,6 +312,7 @@ const spec: DesktopShellSpec = {
 
 describe('Electron desktop runtime', () => {
   beforeEach(() => {
+    clearMainWindowState()
     electron.app.isPackaged = false
     electron.browserWindowOptions.length = 0
     electron.browserWindowThemeSources.length = 0
@@ -299,7 +326,7 @@ describe('Electron desktop runtime', () => {
     updater.download.mockReset()
     updater.filename.mockReset()
     updater.filename.mockImplementation((platform: string, version: string) => (
-      `DSH-Desktop-${version}-${platform === 'darwin' ? 'mac.dmg' : 'windows.exe'}`
+      `Yootun-Agent-${version}-${platform === 'darwin' ? 'mac.dmg' : 'windows.exe'}`
     ))
     updater.pending.mockReset()
     updater.pending.mockResolvedValue(undefined)
@@ -308,10 +335,10 @@ describe('Electron desktop runtime', () => {
     updater.resolve.mockReset()
     updater.resolve.mockResolvedValue(undefined)
     diagnostics.export.mockReset()
-    windowsAcrylic.set.mockReset()
-    windowsAcrylic.set.mockReturnValue(true)
     electron.loadURL.mockReset()
     electron.loadURL.mockResolvedValue(undefined)
+    electron.sessionFetch.mockReset()
+    electron.sessionFetch.mockResolvedValue(new Response(null, { status: 200 }))
     electron.app.getPreferredSystemLanguages.mockReturnValue(['en-US'])
     electron.dialog.showMessageBox.mockResolvedValue({ response: 0, checkboxChecked: false })
     electron.dialog.showOpenDialog.mockResolvedValue({ canceled: true, filePaths: [] })
@@ -323,6 +350,7 @@ describe('Electron desktop runtime', () => {
   })
 
   afterEach(() => {
+    clearMainWindowState()
     vi.useRealTimers()
     vi.restoreAllMocks()
   })
@@ -352,6 +380,7 @@ describe('Electron desktop runtime', () => {
         nodeIntegration: false,
         sandbox: true,
         webSecurity: true,
+        partition: 'persist:dsh-desktop-renderer',
       },
     }))
     expect(options).not.toHaveProperty('autoHideMenuBar')
@@ -362,7 +391,7 @@ describe('Electron desktop runtime', () => {
     expect(electron.browserWindows[0]?.removeMenu).not.toHaveBeenCalled()
     expect(electron.app.dock.setIcon).toHaveBeenCalledWith(electron.appIcon)
     expect(electron.applicationMenuTemplates[0]?.map(item => (item as { label?: string }).label)).toEqual([
-      'DSH Desktop', '文件', '编辑', '显示', '窗口',
+      'Yootun-Agent', '文件', '编辑', '显示', '窗口',
     ])
     expect(electron.Menu.setApplicationMenu).toHaveBeenCalledWith({
       template: electron.applicationMenuTemplates[0],
@@ -382,6 +411,283 @@ describe('Electron desktop runtime', () => {
     await release()
     expect(electron.browserWindowOff).toHaveBeenCalledWith('page-title-updated', titleListener)
     expect(electron.trays[0]?.off).toHaveBeenCalledWith('click', expect.any(Function))
+  })
+
+  it('attaches the renderer capability to same-origin HTTP and WebSocket requests only', async () => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('darwin')
+    const { ElectronDesktopRuntime } = await import('../src/electron-runtime.ts')
+    const runtime = new ElectronDesktopRuntime(async () => {})
+    const release = runtime.schedule(spec)
+
+    await runtime.mountScheduled()
+
+    expect(electron.sessionFetch).toHaveBeenNthCalledWith(1, spec.authenticationUrl, {
+      method: 'GET',
+      credentials: 'include',
+      redirect: 'follow',
+      cache: 'no-store',
+      headers: {
+        [spec.rendererAccessHeader.name]: spec.rendererAccessHeader.value,
+      },
+    })
+    expect(electron.sessionFetch).toHaveBeenCalledTimes(1)
+    const registration = electron.webRequest.onBeforeSendHeaders.mock.calls
+      .find(call => call.length === 2)
+    expect(registration).toBeDefined()
+    expect(registration?.[0]).toEqual({ urls: ['<all_urls>'] })
+    expect(electron.sessionFetch.mock.invocationCallOrder[0])
+      .toBeLessThan(electron.webRequest.onBeforeSendHeaders.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY)
+    expect(electron.webRequest.onBeforeSendHeaders.mock.invocationCallOrder[0])
+      .toBeLessThan(electron.loadURL.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY)
+    const listener = registration?.[1] as (
+      details: {
+        id: number
+        url: string
+        method: string
+        webContentsId?: number
+        webContents?: { id: number }
+        frame?: {
+          detached: boolean
+          origin: string
+          parent: unknown
+          top: { detached: boolean; origin: string } | null
+        } | null
+        resourceType: string
+        referrer: string
+        timestamp: number
+        requestHeaders: Record<string, string>
+      },
+      callback: (response: { requestHeaders?: Record<string, string | string[]> }) => void,
+    ) => void
+
+    const assetCallback = vi.fn()
+    const mainFrame = {
+      detached: false,
+      origin: 'http://127.0.0.1:43120',
+      parent: null,
+      top: null,
+    }
+    listener({
+      id: 1,
+      url: 'http://127.0.0.1:43120/assets/index.js',
+      method: 'GET',
+      webContentsId: 73,
+      frame: mainFrame,
+      resourceType: 'script',
+      referrer: 'http://127.0.0.1:43120/',
+      timestamp: 1,
+      requestHeaders: {
+        Accept: '*/*',
+        'X-DSH-DESKTOP-RENDERER': 'spoofed',
+      },
+    }, assetCallback)
+    expect(assetCallback).toHaveBeenCalledWith({
+      requestHeaders: {
+        Accept: '*/*',
+        [spec.rendererAccessHeader.name]: spec.rendererAccessHeader.value,
+      },
+    })
+
+    const socketCallback = vi.fn()
+    listener({
+      id: 2,
+      url: 'ws://127.0.0.1:43120/api/events.websocket',
+      method: 'GET',
+      webContents: { id: 73 },
+      frame: mainFrame,
+      resourceType: 'webSocket',
+      referrer: 'http://127.0.0.1:43120/',
+      timestamp: 2,
+      requestHeaders: { Upgrade: 'websocket' },
+    }, socketCallback)
+    expect(socketCallback).toHaveBeenCalledWith({
+      requestHeaders: {
+        Upgrade: 'websocket',
+        [spec.rendererAccessHeader.name]: spec.rendererAccessHeader.value,
+      },
+    })
+
+    for (const details of [
+      {
+        id: 3,
+        url: 'https://example.com/asset.js',
+        method: 'GET',
+        webContentsId: 73,
+        frame: mainFrame,
+        resourceType: 'script',
+        referrer: 'http://127.0.0.1:43120/',
+        timestamp: 3,
+        requestHeaders: {
+          Accept: 'text/javascript',
+          [spec.rendererAccessHeader.name]: spec.rendererAccessHeader.value,
+        },
+      },
+      {
+        id: 4,
+        url: 'http://127.0.0.1:43120/api/private',
+        method: 'GET',
+        webContentsId: 74,
+        frame: mainFrame,
+        resourceType: 'xhr',
+        referrer: 'http://127.0.0.1:43120/',
+        timestamp: 4,
+        requestHeaders: {
+          Accept: 'application/json',
+          [spec.rendererAccessHeader.name]: spec.rendererAccessHeader.value,
+        },
+      },
+    ]) {
+      const callback = vi.fn()
+      listener(details, callback)
+      expect(callback).toHaveBeenCalledWith({
+        requestHeaders: Object.fromEntries(
+          Object.entries(details.requestHeaders)
+            .filter(([name]) => name !== spec.rendererAccessHeader.name),
+        ),
+      })
+    }
+
+    for (const details of [
+      {
+        id: 5,
+        url: 'http://127.0.0.1:43120/api/private',
+        method: 'GET',
+        resourceType: 'xhr',
+        referrer: 'http://127.0.0.1:43120/',
+        timestamp: 5,
+        requestHeaders: {},
+      },
+      {
+        id: 6,
+        url: 'http://127.0.0.1:43120/api/private',
+        method: 'GET',
+        webContentsId: 73,
+        frame: {
+          detached: false,
+          origin: 'https://untrusted.example',
+          parent: mainFrame,
+          top: mainFrame,
+        },
+        resourceType: 'xhr',
+        referrer: 'https://untrusted.example/',
+        timestamp: 6,
+        requestHeaders: {},
+      },
+      {
+        id: 7,
+        url: 'http://127.0.0.1:43120/api/private',
+        method: 'GET',
+        webContentsId: 73,
+        webContents: { id: 74 },
+        frame: mainFrame,
+        resourceType: 'xhr',
+        referrer: 'http://127.0.0.1:43120/',
+        timestamp: 7,
+        requestHeaders: {},
+      },
+    ]) {
+      const callback = vi.fn()
+      listener(details, callback)
+      expect(callback).toHaveBeenCalledWith({ requestHeaders: {} })
+    }
+
+    await release()
+    expect(electron.webRequest.onBeforeSendHeaders).toHaveBeenLastCalledWith(null)
+  })
+
+  it('restores, debounces, and flushes main-window bounds across shell generations', async () => {
+    vi.useFakeTimers()
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
+    const { FileMainWindowStateStore } = await import('../src/main-window-state.ts')
+    const store = new FileMainWindowStateStore('/tmp/dsh-desktop-user-data')
+    store.write({ x: 260, y: 140, width: 1440, height: 900 })
+    const { ElectronDesktopRuntime } = await import('../src/electron-runtime.ts')
+    const runtime = new ElectronDesktopRuntime(async () => {})
+    const release = runtime.schedule(spec)
+
+    await runtime.mountScheduled()
+
+    expect(electron.browserWindowOptions[0]).toEqual(expect.objectContaining({
+      x: 260,
+      y: 140,
+      width: 1440,
+      height: 900,
+    }))
+    const window = electron.browserWindows[0]
+    const move = electron.browserWindowOn.mock.calls.find(([event]) => event === 'move')?.[1]
+    const close = electron.browserWindowOn.mock.calls.find(([event]) => event === 'close')?.[1]
+    expect(move).toEqual(expect.any(Function))
+    expect(close).toEqual(expect.any(Function))
+
+    window?.getNormalBounds.mockReturnValue({ x: 320, y: 180, width: 1500, height: 920 })
+    move()
+    expect(store.read()).toEqual({ x: 260, y: 140, width: 1440, height: 900 })
+    await vi.advanceTimersByTimeAsync(250)
+    expect(store.read()).toEqual({ x: 320, y: 180, width: 1500, height: 920 })
+
+    window?.getNormalBounds.mockReturnValue({ x: 360, y: 220, width: 1520, height: 940 })
+    close({ preventDefault: vi.fn() })
+    expect(store.read()).toEqual({ x: 360, y: 220, width: 1520, height: 940 })
+
+    await release()
+    expect(electron.browserWindowOff).toHaveBeenCalledWith('move', move)
+    expect(electron.browserWindowOff).toHaveBeenCalledWith('resize', expect.any(Function))
+  })
+
+  it('fits stale saved bounds into the current display work area', async () => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('darwin')
+    const { FileMainWindowStateStore } = await import('../src/main-window-state.ts')
+    const store = new FileMainWindowStateStore('/tmp/dsh-desktop-user-data')
+    const stale = { x: 5_000, y: -2_000, width: 2_000, height: 1_400 }
+    store.write(stale)
+    electron.screen.getDisplayMatching.mockReturnValueOnce({
+      workArea: { x: 0, y: 24, width: 1440, height: 876 },
+    })
+    const { ElectronDesktopRuntime } = await import('../src/electron-runtime.ts')
+    const runtime = new ElectronDesktopRuntime(async () => {})
+    const release = runtime.schedule(spec)
+
+    await runtime.mountScheduled()
+
+    expect(electron.screen.getDisplayMatching).toHaveBeenCalledWith(stale)
+    expect(electron.browserWindowOptions[0]).toEqual(expect.objectContaining({
+      x: 0,
+      y: 24,
+      width: 1440,
+      height: 876,
+    }))
+
+    await release()
+  })
+
+  it('fails closed before renderer load when the upstream token exchange is rejected', async () => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('darwin')
+    electron.sessionFetch.mockResolvedValueOnce(new Response(null, { status: 401 }))
+    const { ElectronDesktopRuntime } = await import('../src/electron-runtime.ts')
+    const runtime = new ElectronDesktopRuntime(async () => {})
+    runtime.schedule(spec)
+
+    await expect(runtime.mountScheduled()).rejects.toThrow(
+      'browser authentication failed with HTTP 401',
+    )
+    expect(electron.loadURL).not.toHaveBeenCalled()
+    expect(electron.webRequest.onBeforeSendHeaders).not.toHaveBeenCalled()
+    expect(electron.browserWindows[0]?.destroy).toHaveBeenCalledOnce()
+  })
+
+  it('fails closed when the authenticated redirect chain does not reach the Web root', async () => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('darwin')
+    electron.sessionFetch.mockResolvedValueOnce(new Response(null, { status: 503 }))
+    const { ElectronDesktopRuntime } = await import('../src/electron-runtime.ts')
+    const runtime = new ElectronDesktopRuntime(async () => {})
+    runtime.schedule(spec)
+
+    await expect(runtime.mountScheduled()).rejects.toThrow(
+      'browser authentication failed with HTTP 503',
+    )
+    expect(electron.loadURL).not.toHaveBeenCalled()
+    expect(electron.webRequest.onBeforeSendHeaders).not.toHaveBeenCalled()
+    expect(electron.browserWindows[0]?.destroy).toHaveBeenCalledOnce()
   })
 
   it('reloads the renderer and toggles Developer Tools only for a mounted generation', async () => {
@@ -665,7 +971,7 @@ describe('Electron desktop runtime', () => {
     expect(runtime.locale).toBe('zh')
     expect((electron.menuTemplates.at(-1) as Array<{ label?: string }>).map(item => item.label))
       .toEqual(expect.arrayContaining([
-        '打开 DSH Desktop',
+        '打开 Yootun-Agent',
         '切换到扩展窗口',
         '退出',
       ]))
@@ -674,7 +980,7 @@ describe('Electron desktop runtime', () => {
     expect(runtime.locale).toBe('en')
     expect((electron.menuTemplates.at(-1) as Array<{ label?: string }>).map(item => item.label))
       .toEqual(expect.arrayContaining([
-        'Open DSH Desktop',
+        'Open Yootun-Agent',
         'Switch to Extended Window',
         'Quit',
       ]))
@@ -684,7 +990,7 @@ describe('Electron desktop runtime', () => {
     expect(runtime.locale).toBe('zh')
     expect((electron.menuTemplates.at(-1) as Array<{ label?: string }>).map(item => item.label))
       .toEqual(expect.arrayContaining([
-        '打开 DSH Desktop',
+        '打开 Yootun-Agent',
         '切换到扩展窗口',
         '退出',
       ]))
@@ -863,9 +1169,14 @@ describe('Electron desktop runtime', () => {
     expect(trayClick).toEqual(expect.any(Function))
     expect(close).toEqual(expect.any(Function))
 
-    window?.isMinimized.mockReturnValueOnce(true)
+    expect(window?.show).toHaveBeenCalledOnce()
+    expect(window?.focus).toHaveBeenCalledOnce()
+
+    window?.isVisible.mockReturnValue(true)
     ready()
+    window?.isMinimized.mockReturnValue(true)
     activate()
+    window?.isMinimized.mockReturnValue(false)
     trayClick()
     expect(window?.restore).toHaveBeenCalledOnce()
     expect(window?.show).toHaveBeenCalledTimes(3)
@@ -881,6 +1192,29 @@ describe('Electron desktop runtime', () => {
     close(quittingCloseEvent)
     expect(quittingCloseEvent.preventDefault).not.toHaveBeenCalled()
     expect(window?.hide).toHaveBeenCalledOnce()
+
+    await release()
+  })
+
+  it('reveals the startup surface before ready-to-show and does not re-show a visible window', async () => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('darwin')
+    const { ElectronDesktopRuntime } = await import('../src/electron-runtime.ts')
+    const runtime = new ElectronDesktopRuntime(async () => {})
+    const release = runtime.schedule(spec)
+
+    await runtime.mountScheduled()
+
+    const window = electron.browserWindows[0]
+    const ready = window?.once.mock.calls.find(([event]) => event === 'ready-to-show')?.[1]
+    expect(ready).toEqual(expect.any(Function))
+    expect(window?.show).toHaveBeenCalledOnce()
+    expect(window?.focus).toHaveBeenCalledOnce()
+
+    window?.isVisible.mockReturnValue(true)
+    ready()
+
+    expect(window?.show).toHaveBeenCalledOnce()
+    expect(window?.focus).toHaveBeenCalledOnce()
 
     await release()
   })
@@ -906,8 +1240,8 @@ describe('Electron desktop runtime', () => {
     expect(click).toEqual(expect.any(Function))
     click()
     expect(electron.app.setBadgeCount).toHaveBeenLastCalledWith(0)
-    expect(window?.show).toHaveBeenCalledOnce()
-    expect(window?.focus).toHaveBeenCalledOnce()
+    expect(window?.show).toHaveBeenCalledTimes(2)
+    expect(window?.focus).toHaveBeenCalledTimes(2)
 
     window?.isFocused.mockReturnValue(true)
     runtime.notifyAttention({ title: 'Ignored', body: 'Focused window' })
@@ -947,8 +1281,8 @@ describe('Electron desktop runtime', () => {
     window?.isFullScreen.mockReturnValue(false)
     runtime.show()
     expect(window?.setFullScreen.mock.calls).toEqual([[false], [true]])
-    expect(window?.show).toHaveBeenCalledOnce()
-    expect(window?.focus).toHaveBeenCalledOnce()
+    expect(window?.show).toHaveBeenCalledTimes(2)
+    expect(window?.focus).toHaveBeenCalledTimes(2)
 
     await release()
   })
@@ -972,8 +1306,8 @@ describe('Electron desktop runtime', () => {
 
     expect(window?.hide).not.toHaveBeenCalled()
     expect(window?.setFullScreen.mock.calls).toEqual([[false], [true]])
-    expect(window?.show).toHaveBeenCalledOnce()
-    expect(window?.focus).toHaveBeenCalledOnce()
+    expect(window?.show).toHaveBeenCalledTimes(2)
+    expect(window?.focus).toHaveBeenCalledTimes(2)
 
     await release()
   })
@@ -1015,10 +1349,13 @@ describe('Electron desktop runtime', () => {
 
     electron.app.isHidden.mockReturnValue(true)
     window?.isVisible.mockReturnValue(false)
+    const appShowCount = electron.app.show.mock.calls.length
+    const focusCountBeforeReveal = window?.focus.mock.calls.length ?? 0
     didBecomeActive()
-    expect(electron.app.show).toHaveBeenCalledOnce()
-    expect(electron.app.show.mock.invocationCallOrder[0]).toBeLessThan(window?.show.mock.invocationCallOrder[0] ?? Infinity)
-    expect(window?.focus).toHaveBeenCalledOnce()
+    expect(electron.app.show).toHaveBeenCalledTimes(appShowCount + 1)
+    expect((electron.app.show.mock.invocationCallOrder.at(-1) ?? Infinity))
+      .toBeLessThan(window?.show.mock.invocationCallOrder.at(-1) ?? Infinity)
+    expect(window?.focus).toHaveBeenCalledTimes(focusCountBeforeReveal + 1)
 
     electron.app.isHidden.mockReturnValue(false)
     window?.isVisible.mockReturnValue(true)
@@ -1145,7 +1482,7 @@ describe('Electron desktop runtime', () => {
 
     const labels = (electron.menuTemplates.at(-1) as Array<{ label?: string }>).map(item => item.label)
     expect(labels).toEqual([
-      'Open DSH Desktop', undefined,
+      'Open Yootun-Agent', undefined,
       'Earlier Tool', 'Later Tool', undefined,
       'Check for Updates…', undefined,
       'Switch to Extended Window', undefined,
@@ -1206,7 +1543,7 @@ describe('Electron desktop runtime', () => {
     const application = (electron.applicationMenuTemplates.at(-1) as Array<{
       label?: string
       submenu?: Array<{ label?: string, submenu?: unknown }>
-    }>).find(item => item.label === 'DSH Desktop')
+    }>).find(item => item.label === 'Yootun-Agent')
     expect(application?.submenu).toEqual(expect.arrayContaining([
       expect.objectContaining({ label: 'Profile: desktop' }),
     ]))
@@ -1237,10 +1574,9 @@ describe('Electron desktop runtime', () => {
         appExecutable: process.execPath,
         electronVersion: '43.4.0',
         profileName: 'desktop',
-        productVersion: '2.0.3',
+        productVersion: '2.0.4',
         profileDir: expect.stringMatching(/profiles[\\/]+desktop$/u),
         homeDir: expect.stringContaining('dsh-desktop-user-data'),
-        installRecoveryStatePath: expect.stringMatching(/[\\/]plugin-install-recovery[\\/]state\.json$/u),
         spawn: expect.any(Function),
         onLaunchError: expect.any(Function),
       }))
@@ -1274,7 +1610,7 @@ describe('Electron desktop runtime', () => {
     expect(diagnostics.export).toHaveBeenCalledWith(
       expect.stringContaining('dsh-desktop-user-data'),
       expect.objectContaining({
-        appVersion: '2.0.3',
+        appVersion: '2.0.4',
         crashDumpsDir: expect.stringMatching(/[\\/]Crashpad$/u),
       }),
     )
@@ -1404,10 +1740,10 @@ describe('Electron desktop runtime', () => {
     expect(electron.dialog.showMessageBox).toHaveBeenCalledOnce()
     expect(electron.dialog.showMessageBox).toHaveBeenCalledWith(expect.objectContaining({
       type: 'error',
-      title: 'Plugin Recovery',
-      message: 'DSH Desktop could not load all plugins.',
+      title: 'Plugin Load Failed',
+      message: 'Some plugins could not be loaded.',
       detail: expect.stringContaining('dsh-vision-router'),
-      buttons: ['Open DSH Terminal', 'Restart DSH Desktop', 'Dismiss'],
+      buttons: ['Open DSH Terminal', 'Restart Yootun-Agent', 'Dismiss'],
     }))
     const recoveryCalls = electron.dialog.showMessageBox.mock.calls as unknown as Array<[{ detail?: string }]>
     expect(recoveryCalls[0]?.[0].detail).toContain('vision_crop')
@@ -1503,7 +1839,7 @@ describe('Electron desktop runtime', () => {
 
     expect(restart).not.toHaveBeenCalled()
     expect(electron.dialog.showMessageBox).toHaveBeenCalledWith(expect.objectContaining({
-      type: 'question', title: 'Restart DSH Desktop', buttons: ['Restart', 'Cancel'], defaultId: 1, cancelId: 1,
+      type: 'question', title: 'Restart Yootun-Agent', buttons: ['Restart', 'Cancel'], defaultId: 1, cancelId: 1,
     }))
 
     electron.dialog.showMessageBox.mockResolvedValueOnce({ response: 0, checkboxChecked: false })
@@ -1532,7 +1868,7 @@ describe('Electron desktop runtime', () => {
     vi.spyOn(process, 'platform', 'get').mockReturnValue('darwin')
     const response = Response.json({ version: '2.1.0' })
     electron.net.fetch.mockResolvedValueOnce(response)
-    updater.download.mockResolvedValueOnce('/tmp/DSH-Desktop-2.1.0-mac.dmg')
+    updater.download.mockResolvedValueOnce('/tmp/Yootun-Agent-2.1.0-mac.dmg')
     const { ElectronDesktopRuntime } = await import('../src/electron-runtime.ts')
     const runtime = new ElectronDesktopRuntime(async () => {})
     const release = runtime.schedule(spec)
@@ -1544,7 +1880,7 @@ describe('Electron desktop runtime', () => {
     expect(runtime.updates).toMatchObject({
       isPackaged: false,
       canDownload: false,
-      currentVersion: '2.0.3',
+      currentVersion: '2.0.4',
       statePath: join('/tmp/dsh-desktop-user-data', 'updates', 'state.json'),
     })
     electron.app.isPackaged = true
@@ -1558,7 +1894,7 @@ describe('Electron desktop runtime', () => {
     expect(electron.dialog.showMessageBox).toHaveBeenLastCalledWith(
       activeWindow,
       expect.objectContaining({
-        title: 'DSH Desktop Is Up to Date',
+        title: 'Yootun-Agent Is Up to Date',
         detail: 'Installed version: 2.0.0',
         buttons: ['OK'],
       }),
@@ -1582,33 +1918,33 @@ describe('Electron desktop runtime', () => {
     const controller = new AbortController()
     electron.dialog.showSaveDialog.mockResolvedValueOnce({
       canceled: false,
-      filePath: '/tmp/Downloads/DSH-Desktop-2.1.0-mac.dmg',
+      filePath: '/tmp/Downloads/Yootun-Agent-2.1.0-mac.dmg',
     })
     await runtime.updates.downloadAndOpen('2.1.0', controller.signal)
     expect(electron.dialog.showSaveDialog).toHaveBeenCalledWith(
       activeWindow,
       expect.objectContaining({
-        defaultPath: join('/tmp/Downloads', 'DSH-Desktop-2.1.0-mac.dmg'),
+        defaultPath: join('/tmp/Downloads', 'Yootun-Agent-2.1.0-mac.dmg'),
         filters: [{ name: 'Disk Image', extensions: ['dmg'] }],
       }),
     )
     expect(updater.download).toHaveBeenCalledWith({
       platform: 'darwin',
       version: '2.1.0',
-      destinationPath: '/tmp/Downloads/DSH-Desktop-2.1.0-mac.dmg',
+      destinationPath: '/tmp/Downloads/Yootun-Agent-2.1.0-mac.dmg',
       request: expect.any(Function),
       signal: controller.signal,
     })
-    expect(electron.shell.openPath).toHaveBeenCalledWith('/tmp/DSH-Desktop-2.1.0-mac.dmg')
+    expect(electron.shell.openPath).toHaveBeenCalledWith('/tmp/Yootun-Agent-2.1.0-mac.dmg')
     expect(updater.record).toHaveBeenCalledWith('/tmp/dsh-desktop-user-data', {
       platform: 'darwin',
       version: '2.1.0',
-      path: '/tmp/DSH-Desktop-2.1.0-mac.dmg',
+      path: '/tmp/Yootun-Agent-2.1.0-mac.dmg',
     })
     expect(electron.dialog.showMessageBox).toHaveBeenLastCalledWith(
       activeWindow,
       expect.objectContaining({
-        title: 'DSH Desktop Update Downloaded',
+        title: 'Yootun-Agent Update Downloaded',
         buttons: ['OK'],
       }),
     )
@@ -1626,34 +1962,34 @@ describe('Electron desktop runtime', () => {
     expect(notification?.once).toHaveBeenCalledWith('click', expect.any(Function))
     const click = notification?.once.mock.calls.find(([event]) => event === 'click')?.[1]
     click()
-    expect(activeWindow?.show).toHaveBeenCalledOnce()
-    expect(activeWindow?.focus).toHaveBeenCalledOnce()
+    expect(activeWindow?.show).toHaveBeenCalledTimes(2)
+    expect(activeWindow?.focus).toHaveBeenCalledTimes(2)
 
     await release()
   })
 
   it('starts the downloaded Windows installer before requesting orderly exit', async () => {
     vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
-    updater.download.mockResolvedValueOnce('C:\\Updates\\DSH-Desktop-2.1.0-windows.exe')
+    updater.download.mockResolvedValueOnce('C:\\Updates\\Yootun-Agent-2.1.0-windows.exe')
     const requestQuit = vi.fn()
     const { ElectronDesktopRuntime } = await import('../src/electron-runtime.ts')
     const runtime = new ElectronDesktopRuntime(async () => {})
     runtime.schedule({ ...spec, requestQuit })
     electron.dialog.showSaveDialog.mockResolvedValueOnce({
       canceled: false,
-      filePath: 'C:\\Updates\\DSH-Desktop-2.1.0-windows.exe',
+      filePath: 'C:\\Updates\\Yootun-Agent-2.1.0-windows.exe',
     })
 
     const pending = runtime.updates.downloadAndOpen('2.1.0', new AbortController().signal)
     await vi.waitFor(() => { expect(childProcess.spawn).toHaveBeenCalledOnce() })
     expect(childProcess.spawn).toHaveBeenCalledWith(
-      'C:\\Updates\\DSH-Desktop-2.1.0-windows.exe',
+      'C:\\Updates\\Yootun-Agent-2.1.0-windows.exe',
       ['--updated', '--force-run'],
       {
         detached: true,
         stdio: 'ignore',
         shell: false,
-        windowsHide: false,
+        windowsHide: true,
       },
     )
     expect(requestQuit).not.toHaveBeenCalled()
@@ -1664,21 +2000,21 @@ describe('Electron desktop runtime', () => {
     expect(updater.record).toHaveBeenCalledWith('/tmp/dsh-desktop-user-data', {
       platform: 'win32',
       version: '2.1.0',
-      path: 'C:\\Updates\\DSH-Desktop-2.1.0-windows.exe',
+      path: 'C:\\Updates\\Yootun-Agent-2.1.0-windows.exe',
     })
     expect(requestQuit).toHaveBeenCalledWith(0)
   })
 
   it('does not exit when the downloaded Windows installer fails to spawn', async () => {
     vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
-    updater.download.mockResolvedValueOnce('C:\\Updates\\DSH-Desktop-2.1.0-windows.exe')
+    updater.download.mockResolvedValueOnce('C:\\Updates\\Yootun-Agent-2.1.0-windows.exe')
     const requestQuit = vi.fn()
     const { ElectronDesktopRuntime } = await import('../src/electron-runtime.ts')
     const runtime = new ElectronDesktopRuntime(async () => {})
     runtime.schedule({ ...spec, requestQuit })
     electron.dialog.showSaveDialog.mockResolvedValueOnce({
       canceled: false,
-      filePath: 'C:\\Updates\\DSH-Desktop-2.1.0-windows.exe',
+      filePath: 'C:\\Updates\\Yootun-Agent-2.1.0-windows.exe',
     })
 
     const pending = runtime.updates.downloadAndOpen('2.1.0', new AbortController().signal)
@@ -1689,7 +2025,7 @@ describe('Electron desktop runtime', () => {
     expect(updater.record).toHaveBeenCalledWith('/tmp/dsh-desktop-user-data', {
       platform: 'win32',
       version: '2.1.0',
-      path: 'C:\\Updates\\DSH-Desktop-2.1.0-windows.exe',
+      path: 'C:\\Updates\\Yootun-Agent-2.1.0-windows.exe',
     })
     expect(updater.resolve).not.toHaveBeenCalled()
     expect(childProcess.child.unref).not.toHaveBeenCalled()
@@ -1698,13 +2034,13 @@ describe('Electron desktop runtime', () => {
 
   it('keeps a downloaded Windows installer idle when installation is deferred', async () => {
     vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
-    updater.download.mockResolvedValueOnce('C:\\Updates\\DSH-Desktop-2.1.0-windows.exe')
+    updater.download.mockResolvedValueOnce('C:\\Updates\\Yootun-Agent-2.1.0-windows.exe')
     electron.dialog.showMessageBox.mockResolvedValueOnce({ response: 1, checkboxChecked: false })
     const { ElectronDesktopRuntime } = await import('../src/electron-runtime.ts')
     const runtime = new ElectronDesktopRuntime(async () => {})
     electron.dialog.showSaveDialog.mockResolvedValueOnce({
       canceled: false,
-      filePath: 'C:\\Updates\\DSH-Desktop-2.1.0-windows.exe',
+      filePath: 'C:\\Updates\\Yootun-Agent-2.1.0-windows.exe',
     })
 
     await runtime.updates.downloadAndOpen('2.1.0', new AbortController().signal)
@@ -1715,12 +2051,12 @@ describe('Electron desktop runtime', () => {
 
   it('continues the update handoff when cleanup tracking cannot be persisted', async () => {
     vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
-    updater.download.mockResolvedValueOnce('C:\\Updates\\DSH-Desktop-2.1.0-windows.exe')
+    updater.download.mockResolvedValueOnce('C:\\Updates\\Yootun-Agent-2.1.0-windows.exe')
     updater.record.mockRejectedValueOnce(new Error('read-only user data'))
     electron.dialog.showMessageBox.mockResolvedValueOnce({ response: 1, checkboxChecked: false })
     electron.dialog.showSaveDialog.mockResolvedValueOnce({
       canceled: false,
-      filePath: 'C:\\Updates\\DSH-Desktop-2.1.0-windows.exe',
+      filePath: 'C:\\Updates\\Yootun-Agent-2.1.0-windows.exe',
     })
     const logger = { error: vi.fn(), errorCause: vi.fn() }
     const { ElectronDesktopRuntime } = await import('../src/electron-runtime.ts')
@@ -1754,7 +2090,7 @@ describe('Electron desktop runtime', () => {
     const artifact = {
       platform: 'win32' as const,
       version: '2.0.1',
-      path: 'C:\\Updates\\DSH-Desktop-2.0.1-windows.exe',
+      path: 'C:\\Updates\\Yootun-Agent-2.0.1-windows.exe',
     }
     updater.pending.mockResolvedValueOnce(artifact)
     electron.dialog.showMessageBox.mockResolvedValueOnce({ response, checkboxChecked: false })
@@ -1778,13 +2114,13 @@ describe('Electron desktop runtime', () => {
 
   it('rejects a macOS handoff when the operating system cannot open the DMG', async () => {
     vi.spyOn(process, 'platform', 'get').mockReturnValue('darwin')
-    updater.download.mockResolvedValueOnce('/tmp/DSH-Desktop-2.1.0-mac.dmg')
+    updater.download.mockResolvedValueOnce('/tmp/Yootun-Agent-2.1.0-mac.dmg')
     electron.shell.openPath.mockResolvedValueOnce('Launch Services rejected the image')
     const { ElectronDesktopRuntime } = await import('../src/electron-runtime.ts')
     const runtime = new ElectronDesktopRuntime(async () => {})
     electron.dialog.showSaveDialog.mockResolvedValueOnce({
       canceled: false,
-      filePath: '/tmp/DSH-Desktop-2.1.0-mac.dmg',
+      filePath: '/tmp/Yootun-Agent-2.1.0-mac.dmg',
     })
 
     await expect(runtime.updates.downloadAndOpen('2.1.0', new AbortController().signal))
@@ -1794,7 +2130,7 @@ describe('Electron desktop runtime', () => {
 
   it('does not show macOS completion after the update generation is cancelled', async () => {
     vi.spyOn(process, 'platform', 'get').mockReturnValue('darwin')
-    updater.download.mockResolvedValueOnce('/tmp/DSH-Desktop-2.1.0-mac.dmg')
+    updater.download.mockResolvedValueOnce('/tmp/Yootun-Agent-2.1.0-mac.dmg')
     let finishOpen!: (result: string) => void
     electron.shell.openPath.mockImplementationOnce(async () => new Promise<string>(resolve => {
       finishOpen = resolve
@@ -1804,7 +2140,7 @@ describe('Electron desktop runtime', () => {
     const controller = new AbortController()
     electron.dialog.showSaveDialog.mockResolvedValueOnce({
       canceled: false,
-      filePath: '/tmp/DSH-Desktop-2.1.0-mac.dmg',
+      filePath: '/tmp/Yootun-Agent-2.1.0-mac.dmg',
     })
 
     const pending = runtime.updates.downloadAndOpen('2.1.0', controller.signal)
@@ -1881,7 +2217,7 @@ describe('Electron desktop runtime', () => {
     await release()
   })
 
-  it('uses native acrylic for an extended Windows 10 window', async () => {
+  it('keeps an extended Windows 10 window opaque when material is off', async () => {
     vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
     electron.nativeTheme.themeSource = 'light'
     const { ElectronDesktopRuntime } = await import('../src/electron-runtime.ts')
@@ -1889,7 +2225,7 @@ describe('Electron desktop runtime', () => {
     const release = runtime.schedule({
       ...spec,
       mode: 'extended',
-      material: 'acrylic',
+      material: 'off',
       windowsBuild: 19_045,
       readThemeSource: () => 'dark',
     })
@@ -1897,15 +2233,43 @@ describe('Electron desktop runtime', () => {
     await runtime.mountScheduled()
 
     expect(electron.browserWindowOptions[0]).toEqual(expect.objectContaining({
-      transparent: true,
+      backgroundColor: '#202124',
       titleBarOverlay: expect.objectContaining({ height: DESKTOP_FRAME_HEIGHT }),
     }))
+    expect(electron.browserWindowOptions[0]).not.toHaveProperty('transparent')
     expect(electron.browserWindowOptions[0]).not.toHaveProperty('backgroundMaterial')
-    expect(windowsAcrylic.set).toHaveBeenCalledOnce()
-    expect(windowsAcrylic.set).toHaveBeenCalledWith(electron.browserWindows[0], true, true)
     expect(electron.menuTemplates[0]).toEqual(expect.arrayContaining([
-      expect.objectContaining({ label: 'Switch to Advanced Mode', enabled: true }),
+      expect.objectContaining({ label: 'Switch to Enhanced Mode', enabled: true }),
     ]))
+
+    await release()
+  })
+
+  it('does not install a native backdrop when Windows material is off', async () => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
+    electron.nativeTheme.themeSource = 'light'
+    const { ElectronDesktopRuntime } = await import('../src/electron-runtime.ts')
+    const runtime = new ElectronDesktopRuntime(async () => {})
+    const release = runtime.schedule({
+      ...spec,
+      mode: 'extended',
+      material: 'off',
+      windowsBuild: 22_621,
+      readThemeSource: () => 'dark',
+    })
+
+    await runtime.mountScheduled()
+
+    expect(electron.browserWindowOptions[0]).toEqual(expect.objectContaining({
+      backgroundColor: '#202124',
+      roundedCorners: true,
+      thickFrame: true,
+    }))
+    expect(electron.browserWindowOptions[0]).not.toHaveProperty('transparent')
+    const window = electron.browserWindows[0]
+    window?.setBackgroundMaterial.mockClear()
+    runtime.setThemeSource('light')
+    expect(window?.setBackgroundMaterial).not.toHaveBeenCalled()
 
     await release()
   })
@@ -1929,6 +2293,7 @@ describe('Electron desktop runtime', () => {
       rendererBoot,
     ])).rejects.toThrow('renderer unavailable')
     expect(electron.nativeTheme.themeSource).toBe('dark')
+    expect(electron.webRequest.onBeforeSendHeaders).toHaveBeenLastCalledWith(null)
     await expect(release()).rejects.toThrow('renderer unavailable')
     expect(electron.nativeTheme.themeSource).toBe('light')
   })

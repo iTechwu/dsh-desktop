@@ -1,11 +1,6 @@
 .DS_Store
-.yarn/*
-!.yarn/patches
-!.yarn/plugins
-!.yarn/releases
-!.yarn/sdks
-!.yarn/versions
 node_modules/
+pnpm-debug.log
 *.tsbuildinfo
 .build/
 
@@ -13,4 +8,6 @@ dsh-plugin-desktop/dist/
 dsh-plugin-desktop/lib/
 dsh-community-market/lib/
 
-.env.yarn
+# 兄弟 fork 直连时代的本地产物与个人加速配置
+vendor/
+.npmrc

@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from 'vitest'
 import AdmZip from 'adm-zip'
 import {
   afterPack,
+  REQUIRED_DSH_CLI_RUNTIME_ENTRIES,
   REQUIRED_PACKAGED_RUNTIME_ENTRIES,
   REQUIRED_MACOS_UNIVERSAL_ENTRIES,
   REQUIRED_UNPACKED_PACKAGE_SPECIFIERS,
@@ -44,6 +45,12 @@ function completePackageResolver(unpackedRoot: string): PackageResolver {
 }
 
 describe('packaged desktop runtime verification', () => {
+  it('tracks every generated DSH CLI chunk without pinning one release hash', () => {
+    expect(REQUIRED_DSH_CLI_RUNTIME_ENTRIES).toContain('node_modules/@deepseek-ai/dsh/lib/bin.js')
+    const pluginChunk = REQUIRED_DSH_CLI_RUNTIME_ENTRIES.find(entry => /\/lib\/plugin-[A-Za-z0-9_-]+\.js$/.test(entry))
+    expect(pluginChunk).toBeDefined()
+  })
+
   it('fails the diagnostic Worker smoke when its archive omits the crash dump', async () => {
     const unpackedRoot = resolvePackagedUnpackedRoot(context('/build', 'win32'))
     const launch = vi.fn<PackagedDiagnosticWorkerLauncher>(async (_workerPath, workerData) => {
@@ -91,17 +98,35 @@ describe('packaged desktop runtime verification', () => {
     },
   )
 
-  it('runs the static package gate before the diagnostic Worker smoke', async () => {
+  it('hydrates native packages before static and platform-specific smokes', async () => {
     const runtimeContext = context('/build', 'win32')
+    const unpackedRoot = resolvePackagedUnpackedRoot(runtimeContext)
     const calls: string[] = []
+    const runAfterPack = afterPack as unknown as (
+      context: PackagedRuntimeContext,
+      hydrate: (context: PackagedRuntimeContext) => void,
+      verify: (context: PackagedRuntimeContext) => void,
+      smoke: (unpackedRoot: string) => Promise<void>,
+      smokeKoffi: (unpackedRoot: string) => void,
+      smokeSharp: (unpackedRoot: string) => void,
+    ) => Promise<void>
 
-    await afterPack(
+    await runAfterPack(
       runtimeContext,
+      () => { calls.push('hydrate') },
       () => { calls.push('static') },
-      async (unpackedRoot) => { calls.push(unpackedRoot) },
+      async root => { calls.push(`diagnostic:${root}`) },
+      root => { calls.push(`koffi:${root}`) },
+      root => { calls.push(`sharp:${root}`) },
     )
 
-    expect(calls).toEqual(['static', resolvePackagedUnpackedRoot(runtimeContext)])
+    expect(calls).toEqual([
+      'hydrate',
+      'static',
+      `koffi:${unpackedRoot}`,
+      `sharp:${unpackedRoot}`,
+      `diagnostic:${unpackedRoot}`,
+    ])
   })
 
   it('tracks the ConPTY-only native surface shipped by node-pty 1.2', () => {
@@ -205,13 +230,14 @@ describe('packaged desktop runtime verification', () => {
 
   it.each([
     'lib/client.js',
+    'lib/native-ui/setup-wizard.html',
     'lib/desktop-runtime-environment.js',
     'lib/profile-service.js',
     'lib/diagnostics.js',
     'lib/diagnostic-export-worker.js',
     'lib/pnpm.js',
     'lib/update-download.js',
-    'lib/windows-agent-presets.js',
+    'node_modules/open/index.js',
   ])('fails loud when required runtime entry %s is absent', (missing) => {
     const entries = completeArchiveEntries().filter(entry => entry !== `/${missing}`)
 
@@ -223,12 +249,15 @@ describe('packaged desktop runtime verification', () => {
     'package.json',
     'build/app-icon-mac.png',
     'build/tray-iconTemplate.png',
+    'lib/native-ui/setup-wizard.html',
     'lib/terminal.js',
     'lib/diagnostics.js',
     'lib/diagnostic-export-worker.js',
     'lib/update-download.js',
-    'lib/windows-agent-presets.js',
     'node_modules/@deepseek-ai/dsh/lib/bin.js',
+    REQUIRED_DSH_CLI_RUNTIME_ENTRIES.find(entry => entry.includes('/lib/plugin-'))!,
+    'node_modules/@deepseek-ai/dsh-subprocess-local/lib/index.js',
+    'node_modules/open/index.js',
     'node_modules/pnpm/bin/pnpm.mjs',
     'node_modules/node-pty/prebuilds/win32-x64/conpty.node',
   ])('fails loud when physical runtime entry %s is absent from app.asar.unpacked', (missing) => {
@@ -248,9 +277,9 @@ describe('packaged desktop runtime verification', () => {
     const runtimeContext = context('/build', 'win32')
     const unpackedRoot = resolvePackagedUnpackedRoot(runtimeContext)
     const requiredPresetEntries = [
-      'node_modules/@deepseek-ai/dsh/config/agent-presets/cordis/agent.cordis.yml',
-      'node_modules/@deepseek-ai/dsh/config/agent-presets/cordis/skills/cordis-plugin-development/SKILL.md',
-      'node_modules/@deepseek-ai/dsh/config/agent-presets/cordis/skills/editing-cordis-compositions/SKILL.md',
+      'node_modules/@deepseek-ai/dsh-agent-presets/presets/cordis/agent.cordis.yml',
+      'node_modules/@deepseek-ai/dsh-agent-presets/presets/cordis/skills/cordis-plugin-development/SKILL.md',
+      'node_modules/@deepseek-ai/dsh-agent-presets/presets/cordis/skills/editing-cordis-compositions/SKILL.md',
     ]
 
     for (const missing of requiredPresetEntries) {

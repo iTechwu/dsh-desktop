@@ -85,7 +85,7 @@ function installMarketFixture(profileDir: string, options: { validPatch: boolean
   mkdirSync(join(packageDir, 'lib'), { recursive: true })
   writeFileSync(join(packageDir, 'package.json'), JSON.stringify({
     name: 'dshmarket',
-    version: '1.21.0',
+    version: '1.40.0',
     main: './lib/index.js',
     dsh: { bundle: { patch: './cordis.patch.yml' } },
   }))
@@ -96,6 +96,7 @@ function installMarketFixture(profileDir: string, options: { validPatch: boolean
 async function mountUpdateRoute(
   profileDir: string,
   commandRuntime: MarketCommandRuntime,
+  loaderEntries: readonly object[] = [],
 ): Promise<{ route: MarketRoute; dispose: () => void }> {
   const require = createRequire(import.meta.url)
   const manifest = require.resolve('dshmarket/package.json')
@@ -116,7 +117,7 @@ async function mountUpdateRoute(
         return () => routes.delete(route.path)
       },
     },
-    loader: { entries: () => [] },
+    loader: { entries: () => loaderEntries },
     plugin: () => ({ await: async () => undefined, dispose: () => undefined }),
   }, { profile: 'desktop', profileDirectory: profileDir, allowRestart: false }, commandRuntime, () => ({ list: () => [] }))
   const route = routes.get('/dsh-market/update')
@@ -145,7 +146,7 @@ describe('dsh-market Desktop install compatibility', () => {
       vi.stubEnv(name, '')
     }
     globalThis.fetch = vi.fn(async () => new Response(
-      JSON.stringify({ version: '1.20.0' }),
+      JSON.stringify({ version: '1.40.0' }),
       { status: 200, headers: { 'content-type': 'application/json' } },
     ))
 
@@ -192,9 +193,9 @@ describe('dsh-market Desktop install compatibility', () => {
     expect(status).toBe(200)
     expect(JSON.parse(body).updates.dshmarket).toMatchObject({
       kind: 'npm',
-      version: '1.17.1',
-      current: '1.17.1',
-      latest: '1.20.0',
+      version: '1.39.0',
+      current: '1.39.0',
+      latest: '1.40.0',
       updateAvailable: true,
     })
 
@@ -275,14 +276,14 @@ describe('dsh-market Desktop install compatibility', () => {
       '/private/dsh-invoking',
     )
 
-    await expect(runtime.runPlugin('desktop', ['add', 'dshmarket@1.18.0'])).resolves.toMatchObject({
+    await expect(runtime.runPlugin('desktop', ['add', 'dshmarket@1.40.0'])).resolves.toMatchObject({
       exitCode: 0,
       timedOut: false,
       cancelled: false,
     })
     expect(runPlugin).not.toHaveBeenCalled()
     expect(runExternalMarketPluginInstall).toHaveBeenCalledWith(
-      ['add', '--reporter=ndjson', 'dshmarket@1.18.0'],
+      ['add', '--reporter=ndjson', 'dshmarket@1.40.0'],
       '/private/dsh-invoking',
       expect.any(AbortSignal),
     )
@@ -291,7 +292,7 @@ describe('dsh-market Desktop install compatibility', () => {
 
   it('does not reject a host-provided market update for a pre-existing missing bundle', async () => {
     globalThis.fetch = vi.fn(async () => new Response(
-      JSON.stringify({ version: '1.21.0' }),
+      JSON.stringify({ version: '1.40.0' }),
       { status: 200, headers: { 'content-type': 'application/json' } },
     ))
     const profileDir = mkdtempSync(join(tmpdir(), 'dshmarket-trial-baseline-'))
@@ -308,7 +309,7 @@ describe('dsh-market Desktop install compatibility', () => {
         writeProfileManifest(profileDir, {
           name: 'dsh-profile-desktop',
           private: true,
-          dependencies: { dshmarket: '^1.21.0' },
+          dependencies: { dshmarket: '^1.40.0' },
           dsh: { profile: { bundles: ['orphan', 'dshmarket'] } },
         })
         installMarketFixture(profileDir, { validPatch: true })
@@ -320,23 +321,26 @@ describe('dsh-market Desktop install compatibility', () => {
       probePnpm: async () => true,
       provisionPnpm: async () => ({ ok: true }),
       cancelActive: () => false,
-    })
+    }, [{ fiber: {}, options: { name: 'dshmarket' } }])
 
     const result = await invokeUpdate(route)
     dispose()
 
-    expect(result.status).toBe(200)
-    expect(result.body).toMatchObject({ ok: true })
+    expect(result.status, JSON.stringify(result.body)).toBe(200)
+    expect(result.body).toMatchObject({
+      ok: true,
+      activation: { dshmarket: { state: 'restart' } },
+    })
     expect(runPlugin).toHaveBeenCalledOnce()
     expect(JSON.parse(readFileSync(join(profileDir, 'package.json'), 'utf8'))).toMatchObject({
-      dependencies: { dshmarket: '^1.21.0' },
+      dependencies: { dshmarket: '^1.40.0' },
       dsh: { profile: { bundles: ['orphan', 'dshmarket'] } },
     })
   })
 
   it('restores dependencies and the bundle stack when an update introduces a trial failure', async () => {
     globalThis.fetch = vi.fn(async () => new Response(
-      JSON.stringify({ version: '1.21.0' }),
+      JSON.stringify({ version: '1.40.0' }),
       { status: 200, headers: { 'content-type': 'application/json' } },
     ))
     const profileDir = mkdtempSync(join(tmpdir(), 'dshmarket-trial-rollback-'))
@@ -353,7 +357,7 @@ describe('dsh-market Desktop install compatibility', () => {
       if (args[0] === 'add') {
         writeProfileManifest(profileDir, {
           ...initialManifest,
-          dependencies: { ...initialManifest.dependencies, dshmarket: '^1.21.0' },
+          dependencies: { ...initialManifest.dependencies, dshmarket: '^1.40.0' },
           dsh: { profile: { bundles: ['dshmarket'] } },
         })
         installMarketFixture(profileDir, { validPatch: false })

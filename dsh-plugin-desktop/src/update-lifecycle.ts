@@ -36,6 +36,8 @@ export interface DesktopUpdateLifecycleOptions {
 
 /** Lifecycle handle for one generation's update operations. */
 export interface DesktopUpdateLifecycle {
+  /** Run the same interactive update flow exposed by the native tray. */
+  checkNow(): Promise<void>
   dispose(): Promise<void>
 }
 
@@ -81,7 +83,7 @@ class DesktopUpdateLifecycleOwner implements DesktopUpdateLifecycle {
       group: 'status',
       order: 10,
       label: () => this.trayLabel(),
-      invoke: () => this.runManualCheck(),
+      invoke: () => this.checkNow(),
     })
     if (options.adapter.isPackaged && options.policy.enabled) {
       this.scheduleBackgroundCheck(options.policy.initialDelayMs)
@@ -101,6 +103,10 @@ class DesktopUpdateLifecycleOwner implements DesktopUpdateLifecycle {
     if (this.checkTask !== undefined) pending.push(this.checkTask)
     this.disposeTask = Promise.allSettled(pending).then(() => {})
     return this.disposeTask
+  }
+
+  checkNow(): Promise<void> {
+    return this.runManualCheck()
   }
 
   private async loadState(): Promise<void> {
@@ -148,6 +154,9 @@ class DesktopUpdateLifecycleOwner implements DesktopUpdateLifecycle {
       try {
         return await checkForStableUpdate({
           currentVersion: this.options.adapter.currentVersion,
+          ...(this.options.adapter.installationId === undefined
+            ? {}
+            : { installationId: this.options.adapter.installationId }),
           signal: controller.signal,
           request: this.options.adapter.request,
         })
@@ -292,8 +301,8 @@ function parseState(text: string): ParsedUpdateState {
 
 function updateAvailableNotification(locale: DesktopLocale, version: string): DesktopNotification {
   return locale === 'zh'
-    ? { title: 'DSH Desktop 有可用更新', body: `版本 ${version} 已可下载。打开 DSH Desktop 即可继续。` }
-    : { title: 'DSH Desktop Update Available', body: `Version ${version} is ready to download. Open DSH Desktop to continue.` }
+    ? { title: 'Yootun-Agent 有可用更新', body: `版本 ${version} 已可下载。打开 Yootun-Agent 即可继续。` }
+    : { title: 'Yootun-Agent Update Available', body: `Version ${version} is ready to download. Open Yootun-Agent to continue.` }
 }
 
 async function readState(filename: string): Promise<string> {

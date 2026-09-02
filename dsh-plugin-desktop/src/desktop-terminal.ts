@@ -1,4 +1,4 @@
-/** Isolated command-line environment launched from the DSH Desktop tray. */
+/** Isolated command-line environment launched from the Yootun-Agent tray. */
 
 import type { ChildProcess, SpawnOptions } from 'node:child_process'
 import {
@@ -12,8 +12,8 @@ import {
 } from 'node:fs'
 import { createHash, randomUUID } from 'node:crypto'
 import { basename, dirname, join, win32 } from 'node:path'
-import { DESKTOP_INSTALL_RECOVERY_STATE_ENV } from './install-recovery.ts'
 import { assertDesktopProfileName } from './profile-manager.ts'
+import { PNPM_IGNORE_MINIMUM_RELEASE_AGE } from './pnpm-policy.ts'
 
 const RUN_AS_NODE = 'ELECTRON_RUN_AS_NODE'
 const DEFAULT_PROFILE = 'DSH_DESKTOP_DEFAULT_PROFILE'
@@ -48,7 +48,7 @@ const PRIVATE_FILE_MODE = 0o600
 const WINDOWS_SHELL_COMMANDS = ['pwsh.exe', 'powershell.exe', 'cmd.exe'] as const
 const ELECTRON_HEADERS_URL = 'https://electronjs.org/headers'
 
-/** Platforms with a native terminal launch contract owned by DSH Desktop. */
+/** Platforms with a native terminal launch contract owned by Yootun-Agent. */
 export type DesktopTerminalPlatform = 'darwin' | 'win32'
 
 /** Process launcher injected by the Electron adapter. */
@@ -96,8 +96,6 @@ export interface DesktopTerminalOptions {
   profileDir: string
   /** Harness home exported as `DSH_HOME` inside the terminal. */
   homeDir: string
-  /** Desktop-private recovery WAL used by plugin installs from this terminal. */
-  installRecoveryStatePath: string
   /** Private directory receiving the generated terminal files. */
   stateDir: string
   /** Process launcher; production passes `node:child_process.spawn`. */
@@ -270,7 +268,7 @@ function macPnpmShim(options: DesktopTerminalOptions): string {
       'npm_config_runtime=electron',
       `npm_config_target=${quoteSh(options.electronVersion)}`,
       `npm_config_disturl=${quoteSh(ELECTRON_HEADERS_URL)}`,
-      `exec ${quoteSh(options.appExecutable)} ${quoteSh(options.pnpmBinPath)} "$@"`,
+      `exec ${quoteSh(options.appExecutable)} ${quoteSh(options.pnpmBinPath)} ${PNPM_IGNORE_MINIMUM_RELEASE_AGE} "$@"`,
     ].join(' '),
     '',
   ].join('\n')
@@ -285,7 +283,7 @@ function windowsPnpmShim(): string {
     'set "npm_config_runtime=electron"',
     `set "npm_config_target=%${WINDOWS_ELECTRON_VERSION}%"`,
     `set "npm_config_disturl=${ELECTRON_HEADERS_URL}"`,
-    `"%${WINDOWS_APP_EXECUTABLE}%" "%${WINDOWS_PNPM_ENTRY}%" %*`,
+    `"%${WINDOWS_APP_EXECUTABLE}%" "%${WINDOWS_PNPM_ENTRY}%" ${PNPM_IGNORE_MINIMUM_RELEASE_AGE} %*`,
     'exit /b %errorlevel%',
     '',
   ].join('\r\n')
@@ -342,7 +340,7 @@ function macWelcome(
     `export PATH=${quoteSh(shimDir)}:"\${PATH:-}"`,
     `cd ${quoteSh(options.profileDir)}`,
     "printf '\\033[2J\\033[3J\\033[H'",
-    `printf '%s\\n' ${quoteSh(`DSH Desktop ${options.productVersion} terminal`)}`,
+    `printf '%s\\n' ${quoteSh(`Yootun-Agent ${options.productVersion} terminal`)}`,
     `printf '%s\\n' ${quoteSh(`Profile: ${options.profileName}`)}`,
     `printf '%s\\n' ${quoteSh(`Profile directory: ${options.profileDir}`)}`,
     `printf '%s\\n' ${quoteSh(`Harness home: ${options.homeDir}`)}`,
@@ -352,7 +350,7 @@ function macWelcome(
     `printf '  %s\\n' ${quoteSh(pluginAdd)}`,
     `printf '  %s\\n' ${quoteSh(pluginRemove)}`,
     `printf '  %s\\n' ${quoteSh(pluginUpdate)}`,
-    `printf '%s\\n' ${quoteSh('Restart DSH Desktop after plugin changes.')}`,
+    `printf '%s\\n' ${quoteSh('Restart Yootun-Agent after plugin changes.')}`,
     'case "${SHELL:-/bin/zsh}" in',
     '  */bash)',
     '    export DSH_DESKTOP_USER_BASHRC="${HOME:-}/.bashrc"',
@@ -385,7 +383,7 @@ function windowsWelcome(): string {
     `$dshDesktopPath = @($env:${PATH} -split ';' | Where-Object { -not [string]::Equals($_, $dshDesktopShimDir, [StringComparison]::OrdinalIgnoreCase) })`,
     `$env:${PATH} = (@($dshDesktopShimDir) + $dshDesktopPath) -join ';'`,
     `Set-Location -LiteralPath $env:${WINDOWS_PROFILE_DIRECTORY}`,
-    `Write-Host ("DSH Desktop {0} terminal" -f $env:${WINDOWS_PRODUCT_VERSION})`,
+    `Write-Host ("Yootun-Agent {0} terminal" -f $env:${WINDOWS_PRODUCT_VERSION})`,
     `Write-Host ("Profile: {0}" -f $env:${DEFAULT_PROFILE})`,
     `Write-Host ("Profile directory: {0}" -f $env:${WINDOWS_PROFILE_DIRECTORY})`,
     `Write-Host ("Harness home: {0}" -f $env:${DSH_HOME})`,
@@ -395,7 +393,7 @@ function windowsWelcome(): string {
     `Write-Host '  ${pluginAdd}'`,
     `Write-Host '  ${pluginRemove}'`,
     `Write-Host '  ${pluginUpdate}'`,
-    `Write-Host 'Restart DSH Desktop after plugin changes.'`,
+    `Write-Host 'Restart Yootun-Agent after plugin changes.'`,
     '',
   ].join('\r\n')
 }
@@ -411,7 +409,7 @@ function windowsCmdWelcome(): string {
     'setlocal EnableDelayedExpansion',
     `set "${RUN_AS_NODE}="`,
     `cd /d "!${WINDOWS_PROFILE_DIRECTORY}!"`,
-    `echo(DSH Desktop !${WINDOWS_PRODUCT_VERSION}! terminal`,
+    `echo(Yootun-Agent !${WINDOWS_PRODUCT_VERSION}! terminal`,
     `echo(Profile: !${DEFAULT_PROFILE}!`,
     `echo(Profile directory: !${WINDOWS_PROFILE_DIRECTORY}!`,
     `echo(Harness home: !${DSH_HOME}!`,
@@ -421,7 +419,7 @@ function windowsCmdWelcome(): string {
     `echo(  ${escapeBatchText(pluginAdd)}`,
     `echo(  ${escapeBatchText(pluginRemove)}`,
     `echo(  ${escapeBatchText(pluginUpdate)}`,
-    `echo(${escapeBatchText('Restart DSH Desktop after plugin changes.')}`,
+    `echo(${escapeBatchText('Restart Yootun-Agent after plugin changes.')}`,
     'endlocal & set "ELECTRON_RUN_AS_NODE="',
     '',
   ].join('\r\n')
@@ -440,7 +438,6 @@ function prepareDesktopTerminalFiles(options: DesktopTerminalOptions): DesktopTe
     ['Electron version', options.electronVersion],
     ['profile directory', options.profileDir],
     ['Harness home', options.homeDir],
-    ['install recovery state', options.installRecoveryStatePath],
     ['state directory', options.stateDir],
     ['product version', options.productVersion],
   ] as const) assertScriptValue(label, value)
@@ -495,7 +492,6 @@ function terminalEnvironment(options: DesktopTerminalOptions, files: DesktopTerm
     if (
       normalized === RUN_AS_NODE
       || normalized === DSH_HOME
-      || normalized === DESKTOP_INSTALL_RECOVERY_STATE_ENV
     ) continue
     if (options.platform === 'win32' && WINDOWS_GENERATED_ENVIRONMENT_KEYS.has(normalized)) continue
     if (normalized === PATH) {
@@ -509,7 +505,6 @@ function terminalEnvironment(options: DesktopTerminalOptions, files: DesktopTerm
     ? files.shimDir
     : `${files.shimDir}${delimiter}${inheritedPath}`
   env[DSH_HOME] = options.homeDir
-  env[DESKTOP_INSTALL_RECOVERY_STATE_ENV] = options.installRecoveryStatePath
   if (options.platform === 'win32') {
     env[DEFAULT_PROFILE] = options.profileName
     env[WINDOWS_APP_EXECUTABLE] = options.appExecutable
@@ -641,7 +636,7 @@ function windowsLaunchBroker(
   return [
     '@echo off',
     'setlocal EnableDelayedExpansion',
-    `start "DSH Desktop" /D "!${WINDOWS_PROFILE_DIRECTORY}!" ${target}`,
+    `start "Yootun-Agent" /D "!${WINDOWS_PROFILE_DIRECTORY}!" ${target}`,
     'exit /b %errorlevel%',
     '',
   ].join('\r\n')

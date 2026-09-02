@@ -1,4 +1,7 @@
-import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
+import type { Context as ClientContext } from '@deepseek-ai/cordis'
+import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
+import type {} from '@deepseek-ai/dsh-client-ui-session/client'
+import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
 import type {} from '@deepseek-ai/cordis-plugin-loader'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 // Type-only service and SlotMap convergence for the Desktop settings section.
@@ -8,10 +11,9 @@ import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import { applyAdvancedShell } from './advanced-shell.ts'
 import { startRendererBootReporter } from './boot-health.ts'
 import { applyDesktopSettings } from './desktop-settings.ts'
-import { installDesktopDirectoryPickerBridge, requestDesktopDirectoryValidation } from './directory-picker.ts'
+import { installDesktopDirectoryPickerBridge } from './directory-picker.ts'
 import { parseDesktopClientEnvironment } from './environment.ts'
 import { applyExtendedShell, applyFramedShell } from './extended-shell.ts'
-import { installWorkspaceFolderDrop } from './workspace-folder-drop.ts'
 import { desktopWindowService, provideDesktopWindow } from './window-service.ts'
 
 export { applyAdvancedShell } from './advanced-shell.ts'
@@ -74,7 +76,6 @@ export const inject = [
   'settingsScope',
   'sessions',
   'theme',
-  'workspaces',
   'uiRenderer',
 ]
 
@@ -86,20 +87,10 @@ export function apply(ctx: ClientContext): void {
     () => provideDesktopWindow(ctx, desktopWindowService(environment)),
     'dsh-plugin-desktop: native window geometry service',
   )
-  applyDesktopSettings(ctx, environment)
+  const desktopSettings = applyDesktopSettings(ctx, environment)
   ctx.effect(
     () => startRendererBootReporter(ctx.loader),
     'dsh-plugin-desktop: renderer boot health report',
-  )
-  ctx.effect(
-    () => installWorkspaceFolderDrop({
-      create: input => ctx.workspaces.create(input),
-      startSession: workspaceId => { ctx.workspaces.startSession(workspaceId) },
-      ...(environment.platform === 'win32'
-        ? { validateDirectory: (path: string) => requestDesktopDirectoryValidation(path) }
-        : {}),
-    }),
-    'dsh-plugin-desktop: workspace folder drop',
   )
   if (environment.platform === 'win32') {
     ctx.effect(
@@ -108,8 +99,8 @@ export function apply(ctx: ClientContext): void {
     )
   }
   if (environment.mode === 'advanced') applyAdvancedShell(ctx, environment)
-  if (environment.mode === 'extended') applyExtendedShell(ctx, environment)
+  if (environment.mode === 'extended') applyExtendedShell(ctx, environment, desktopSettings)
   if (environment.platform !== 'linux' && environment.mode === 'compatibility') {
-    applyFramedShell(ctx, environment)
+    applyFramedShell(ctx, environment, desktopSettings)
   }
 }

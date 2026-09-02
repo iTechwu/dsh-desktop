@@ -1,0 +1,12 @@
+{
+  "name": "@dofe/dsh-yootun-retrofit",
+  "version": "0.1.0",
+  "description": "Yootun vehicle retrofit discovery workspace",
+  "type": "module",
+  "main": "./index.js",
+  "exports": { ".": "./index.js", "./client": "./lib/client.js", "./package.json": "./package.json" },
+  "dsh": { "bundle": { "patch": "./cordis.patch.yml" }, "client": { "platform": "web", "inject": ["@deepseek-ai/dsh-client-locale", "@deepseek-ai/dsh-client-ui-primitives", "@deepseek-ai/dsh-client-ui-sidebar"] } },
+  "files": ["cordis.patch.yml", "index.js", "lib"],
+  "scripts": { "build": "node scripts/build.mjs", "test": "node --test test/plugin.test.mjs", "check": "npm run build && npm test" },
+  "license": "MIT", "private": true
+}

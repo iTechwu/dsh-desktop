@@ -6,7 +6,6 @@ import {
   desktopWindowsPwshPath,
   type WindowsAclAdaptation,
 } from '../src/windows-pwsh-sandbox.ts'
-
 const RUN_AS_NODE = 'ELECTRON_RUN_AS_NODE'
 
 function shellSpec(env?: Record<string, string>): ShellExecSpec {
@@ -23,9 +22,9 @@ function shellSpec(env?: Record<string, string>): ShellExecSpec {
 const adaptation: WindowsAclAdaptation = {
   platform: 'win32',
   electron: true,
-  execPath: 'C:\\Program Files\\DSH Desktop\\DSH Desktop.exe',
-  upstreamRunner: 'C:\\Program Files\\DSH Desktop\\resources\\app.asar\\runner.js',
-  trampoline: 'C:\\Program Files\\DSH Desktop\\resources\\app.asar\\desktop-runner.js',
+  execPath: 'C:\\Program Files\\Yootun-Agent\\Yootun-Agent.exe',
+  upstreamRunner: 'C:\\Program Files\\Yootun-Agent\\resources\\app.asar\\runner.js',
+  trampoline: 'C:\\Program Files\\Yootun-Agent\\resources\\app.asar\\desktop-runner.js',
 }
 
 describe('Windows Electron PowerShell sandbox adaptation', () => {
@@ -223,4 +222,5 @@ describe('Windows ACL runner trampoline', () => {
       'windows-acl-run: desktop trampoline: desktop trampoline received an unexpected ACL runner',
     ))
   })
+
 })

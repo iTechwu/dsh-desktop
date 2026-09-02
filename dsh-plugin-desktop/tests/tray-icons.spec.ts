@@ -43,7 +43,7 @@ describe('platform tray icons', () => {
     expect(electron.template.setTemplateImage).toHaveBeenCalledWith(true)
   })
 
-  it.each(['win32', 'linux'] satisfies DesktopPlatform[])('%s uses the fixed brand-blue image', (platform) => {
+  it.each(['win32', 'linux'] satisfies DesktopPlatform[])('%s uses the brand tray image', (platform) => {
     expect(prepareTrayIcon(assets, platform)).toBe(electron.blue)
     expect(electron.createFromPath).toHaveBeenCalledOnce()
     expect(electron.createFromPath).toHaveBeenCalledWith(assets.bluePath)

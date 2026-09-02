@@ -11,7 +11,7 @@
  */
 
 import { createRequire } from 'node:module'
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -54,7 +54,7 @@ function resolvePackageManifest(name, fromManifestPath) {
   const segments = name.split('/')
   const folder = name.startsWith('@') ? segments.slice(0, 2).join('/') : segments[0]
   const entry = name.startsWith('@') ? segments.slice(2).join('/') : segments.slice(1).join('/')
-  let dir = dirname(fromManifestPath)
+  let dir = dirname(realpathSync(fromManifestPath))
   for (;;) {
     const candidate = join(dir, 'node_modules', folder, entry, 'package.json')
     if (existsSync(candidate)) return candidate
@@ -81,37 +81,46 @@ function licenseExpression(manifest) {
 
 const failures = []
 const seen = new Set()
+const listed = new Set()
 const manifests = []
-const queue = [{ name: rootManifest.name ?? 'dsh-plugin-desktop', manifestPath: join(packageRoot, 'package.json') }]
+const rootManifestPath = realpathSync(join(packageRoot, 'package.json'))
+const queue = [{ name: rootManifest.name ?? 'dsh-plugin-desktop', manifestPath: rootManifestPath }]
 
 for (let index = 0; index < queue.length; index += 1) {
   const current = queue[index]
-  if (current === undefined || seen.has(current.name)) continue
-  seen.add(current.name)
-  const manifest = JSON.parse(readFileSync(current.manifestPath, 'utf8'))
+  if (current === undefined) continue
+  const manifestPath = realpathSync(current.manifestPath)
+  if (seen.has(manifestPath)) continue
+  seen.add(manifestPath)
+  const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'))
+  const manifestName = manifest.name ?? current.name
 
-  if (current.name !== rootManifest.name) {
+  if (manifestPath !== rootManifestPath) {
     const license = licenseExpression(manifest)
-    const hasLicenseFile = existsSync(join(dirname(current.manifestPath), 'LICENSE'))
-      || existsSync(join(dirname(current.manifestPath), 'LICENSE.md'))
-      || existsSync(join(dirname(current.manifestPath), 'LICENSE.txt'))
+    const hasLicenseFile = existsSync(join(dirname(manifestPath), 'LICENSE'))
+      || existsSync(join(dirname(manifestPath), 'LICENSE.md'))
+      || existsSync(join(dirname(manifestPath), 'LICENSE.txt'))
     if (license === undefined && !hasLicenseFile) {
-      failures.push(`${current.name}: no license field and no LICENSE file`)
+      failures.push(`${manifestName}: no license field and no LICENSE file`)
     } else if (license !== undefined && license.startsWith('SEE LICENSE IN ')) {
       if (!hasLicenseFile) {
-        failures.push(`${current.name}: license refers to ${JSON.stringify(license)} but no LICENSE file is shipped`)
+        failures.push(`${manifestName}: license refers to ${JSON.stringify(license)} but no LICENSE file is shipped`)
       }
     } else if (license !== undefined && !ALLOWED_LICENSES.has(license) && !NOTICE_LICENSES.has(license)) {
-      failures.push(`${current.name}: license ${JSON.stringify(license)} is not on the redistribution allowlist`)
+      failures.push(`${manifestName}: license ${JSON.stringify(license)} is not on the redistribution allowlist`)
     }
-    manifests.push({ name: current.name, version: manifest.version, license: license ?? 'SEE LICENSE FILE' })
+    const identity = `${manifestName}\0${manifest.version ?? ''}`
+    if (!listed.has(identity)) {
+      listed.add(identity)
+      manifests.push({ name: manifestName, version: manifest.version, license: license ?? 'SEE LICENSE FILE' })
+    }
   }
 
-  const requireFrom = createRequire(current.manifestPath)
+  const requireFrom = createRequire(manifestPath)
   void requireFrom
   for (const section of ['dependencies', 'optionalDependencies']) {
     for (const name of Object.keys(manifest[section] ?? {})) {
-      const resolved = resolvePackageManifest(name, current.manifestPath)
+      const resolved = resolvePackageManifest(name, manifestPath)
       if (resolved === undefined) {
         // Optional dependencies may legitimately be absent on this platform.
         if (section === 'optionalDependencies') continue
@@ -140,14 +149,15 @@ if (noticesArg !== -1) {
   const lines = [
     '# Third-Party Notices',
     '',
-    'DSH Desktop distributes the following third-party packages inside its installers.',
+    'Yootun-Agent distributes the following third-party packages inside its installers.',
     'Each package ships with its own license text in the application files; this list records',
     'the package names, versions, and licenses for transparency.',
     '',
     '| Package | Version | License |',
     '| --- | --- | --- |',
     ...manifests
-      .sort((a, b) => a.name.localeCompare(b.name))
+      .sort((a, b) => a.name.localeCompare(b.name)
+        || String(a.version ?? '').localeCompare(String(b.version ?? '')))
       .map(entry => `| ${entry.name} | ${entry.version ?? ''} | ${entry.license} |`),
     '',
     noticeOnly.length === 0

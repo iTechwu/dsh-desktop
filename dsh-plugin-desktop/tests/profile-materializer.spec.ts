@@ -5,6 +5,7 @@ import { delimiter } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { describe, expect, it, vi } from 'vitest'
 import {
+  formatProfileMaterializationFailure,
   materializeProfile,
   type ProfileMaterializerOptions,
   type ProfileMaterializerSpawn,
@@ -30,7 +31,7 @@ function fakeChild(): FakeChild {
 
 function options(spawn: ProfileMaterializerSpawn): ProfileMaterializerOptions {
   return {
-    appExecutable: '/Applications/DSH Desktop.app/Contents/MacOS/DSH Desktop',
+    appExecutable: '/Applications/Yootun-Agent.app/Contents/MacOS/Yootun-Agent',
     clearEnvironmentPath: '/private/clear-env.mjs',
     pnpmBinPath: '/private/pnpm/bin/pnpm.mjs',
     nodeBinDir: '/private/node-bin',
@@ -61,11 +62,12 @@ describe('profile materializer', () => {
     child.emit('close', 0, null)
     const result = await resultPromise
 
-    expect(command).toBe('/Applications/DSH Desktop.app/Contents/MacOS/DSH Desktop')
+    expect(command).toBe('/Applications/Yootun-Agent.app/Contents/MacOS/Yootun-Agent')
     expect(args).toEqual([
       '--import',
       pathToFileURL('/private/clear-env.mjs').href,
       '/private/pnpm/bin/pnpm.mjs',
+      '--config.minimumReleaseAge=0',
       'install',
       '--frozen-lockfile',
     ])
@@ -73,6 +75,7 @@ describe('profile materializer', () => {
       cwd: '/Users/test/.dsh/profiles/desktop',
       shell: false,
       stdio: ['ignore', 'pipe', 'pipe'],
+      windowsHide: true,
       env: {
         PATH: `/private/node-bin${delimiter}${process.env.PATH ?? ''}`,
         NODE: '/private/node-bin/node',
@@ -106,6 +109,7 @@ describe('profile materializer', () => {
       '--import',
       pathToFileURL('/private/clear-env.mjs').href,
       '/private/pnpm/bin/pnpm.mjs',
+      '--config.minimumReleaseAge=0',
       'install',
       '--no-frozen-lockfile',
     ])
@@ -123,6 +127,22 @@ describe('profile materializer', () => {
     })
   })
 
+  it('formats bounded package-manager details for the recovery error window', async () => {
+    const child = fakeChild()
+    const spawn = vi.fn(() => child as unknown as ChildProcess) as unknown as ProfileMaterializerSpawn
+    const resultPromise = materializeProfile(options(spawn))
+    child.stdout.end('resolution completed')
+    child.stderr.end('ERR_PNPM_OUTDATED_LOCKFILE')
+    child.emit('close', 1, null)
+    const cause = await resultPromise.catch((error: unknown) => error)
+
+    const detail = formatProfileMaterializationFailure(cause)
+    expect(detail).toContain('Command: pnpm --config.minimumReleaseAge=0 install --frozen-lockfile')
+    expect(detail).toContain('Exit status: 1')
+    expect(detail).toContain('stderr:\nERR_PNPM_OUTDATED_LOCKFILE')
+    expect(detail).toContain('stdout:\nresolution completed')
+  })
+
   it('terminates and rejects when the caller aborts', async () => {
     const child = fakeChild()
     const spawn = vi.fn(() => child as unknown as ChildProcess) as unknown as ProfileMaterializerSpawn
@@ -132,5 +152,47 @@ describe('profile materializer', () => {
     expect(child.kill).toHaveBeenCalled()
     child.emit('close', null, 'SIGTERM')
     await expect(resultPromise).rejects.toThrow('aborted')
+  })
+
+  it('accepts a timed-out migration when its durable completion check passes', async () => {
+    vi.useFakeTimers()
+    try {
+      const child = fakeChild()
+      const spawn = vi.fn(() => child as unknown as ChildProcess) as unknown as ProfileMaterializerSpawn
+      const completionCheck = vi.fn(() => true)
+      const resultPromise = materializeProfile({
+        ...options(spawn),
+        timeoutMs: 25,
+        completionCheck,
+      })
+
+      await vi.advanceTimersByTimeAsync(25)
+
+      await expect(resultPromise).resolves.toMatchObject({ exitCode: null, signal: null })
+      expect(completionCheck).toHaveBeenCalledOnce()
+      expect(child.kill).toHaveBeenCalled()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('rejects a timed-out migration when its completion check fails', async () => {
+    vi.useFakeTimers()
+    try {
+      const child = fakeChild()
+      const spawn = vi.fn(() => child as unknown as ChildProcess) as unknown as ProfileMaterializerSpawn
+      const resultPromise = materializeProfile({
+        ...options(spawn),
+        timeoutMs: 25,
+        completionCheck: () => false,
+      })
+
+      await vi.advanceTimersByTimeAsync(25)
+      child.emit('close', null, 'SIGTERM')
+
+      await expect(resultPromise).rejects.toThrow('timed out after 25ms')
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
