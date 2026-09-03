@@ -27,6 +27,15 @@ import {
   WINDOWS_CAPTION_CONTROLS_WIDTH,
 } from '../src/window-chrome.ts'
 
+function expectUnifiedSidebarFooterStyles(css: string): void {
+  expect(css).toContain('--dsh-sidebar-footer-control-height: 36px;')
+  expect(css).toContain('--dsh-sidebar-footer-control-gap: 4px;')
+  expect(css).toMatch(/\[data-slot="sidebar\.footer\.action"\] > button \{[^}]*height: var\(--dsh-sidebar-footer-control-height\);[^}]*margin: 0;[^}]*padding: 0 8px;[^}]*border-radius: 6px;[^}]*font-size: 14px;/)
+  expect(css).toMatch(/\[data-slot="sidebar\.settings"\] > div:first-child \{[^}]*margin: var\(--dsh-sidebar-footer-control-gap\) 0 0;/)
+  expect(css).toMatch(/\[data-slot="sidebar\.settings"\] > div:first-child > button \{[^}]*height: var\(--dsh-sidebar-footer-control-height\);[^}]*margin: 0;[^}]*padding: 0 8px;[^}]*border-radius: 6px;[^}]*font-size: 14px;/)
+  expect(css).toMatch(/\[data-sidebar-collapsed\][^{]*\[data-slot="sidebar\.footer\.action"\] > button,[\s\S]*\[data-sidebar-collapsed\][^{]*\[data-slot="sidebar\.settings"\] > div:first-child > button \{[^}]*width: var\(--dsh-sidebar-footer-control-height\);[^}]*padding: 0;[^}]*justify-content: center;/)
+}
+
 describe('desktop client environment', () => {
   it('does not activate desktop effects for an ordinary browser URL', () => {
     vi.stubGlobal('window', { location: { search: '' } })
@@ -181,6 +190,7 @@ describe('advanced desktop layout', () => {
       expect(css).toMatch(/\.dshDesktopFrame\[data-dragging\] \{ transition: none; \}/)
       expect(css).toMatch(/\[data-slot="sidebar\.footer\.action"\] \{[^}]*display: flex !important;[^}]*flex-direction: column;[^}]*max-height: min\(40vh, 240px\);[^}]*overflow-y: auto;/)
       expect(css).toMatch(/\[data-slot="sidebar\.footer\.action"\] > \* \{[^}]*flex: none;[^}]*min-width: 0;/)
+      expectUnifiedSidebarFooterStyles(css)
       expect(css).toMatch(/\.dshDesktopFrame\[data-details-collapsed\] \.dshDesktopDetailsSurface \{ border-left: none; \}/)
       expect(css).toMatch(/\.dshDesktopResizeHandle \{[^}]*transition: left var\(--ds-transition-duration-slow\) var\(--ds-ease-in-out\);/)
       expect(css).toMatch(/\.dshDesktopFrame\[data-dragging\] \.dshDesktopResizeHandle \{ transition: none; \}/)
@@ -459,6 +469,7 @@ describe('independent Desktop frame', () => {
       expect(css).toMatch(/\[data-shell-overlay\] \{[^}]*overflow: hidden;[^}]*transform: translateZ\(0\);/)
       expect(css).toMatch(/\[data-slot="sidebar\.footer\.action"\] \{[^}]*display: flex !important;[^}]*flex-direction: column;[^}]*max-height: min\(40vh, 240px\);[^}]*overflow-y: auto;/)
       expect(css).toMatch(/\[data-slot="sidebar\.footer\.action"\] > \* \{[^}]*flex: none;[^}]*min-width: 0;/)
+      expectUnifiedSidebarFooterStyles(css)
       expect(css).toMatch(/#root:has\(\[data-details-collapsed\]\) \[data-dsh-conversation-drop-target\] \{[^}]*--dsh-chat-content-width: var\(--dsh-chat-user-width, min\(calc\(100% - 32px\), 1280px\)\);/)
       expect(css).toMatch(/\[role="presentation"\]:has\(> \[aria-modal="true"\]\),[\s\S]*> \[aria-modal="true"\] \{[\s\S]*top: var\(--dsh-desktop-frame-height\) !important;/)
       expect(css).not.toContain('#root > :has(> [data-shell-overlay])')

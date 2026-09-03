@@ -50,10 +50,17 @@ body:is([data-dsh-desktop-mode="compatibility"], [data-dsh-desktop-mode="extende
   transform: translateZ(0);
 }
 body:is([data-dsh-desktop-mode="compatibility"], [data-dsh-desktop-mode="extended"])
+  [data-slot="sidebar.footer.action"],
+body:is([data-dsh-desktop-mode="compatibility"], [data-dsh-desktop-mode="extended"])
+  [data-slot="sidebar.settings"] {
+  --dsh-sidebar-footer-control-height: 36px;
+  --dsh-sidebar-footer-control-gap: 4px;
+}
+body:is([data-dsh-desktop-mode="compatibility"], [data-dsh-desktop-mode="extended"])
   [data-slot="sidebar.footer.action"] {
   display: flex !important;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--dsh-sidebar-footer-control-gap);
   min-width: 0;
   width: 100%;
   max-height: min(40vh, 240px);
@@ -66,6 +73,52 @@ body:is([data-dsh-desktop-mode="compatibility"], [data-dsh-desktop-mode="extende
   [data-slot="sidebar.footer.action"] > * {
   flex: none;
   min-width: 0;
+}
+body:is([data-dsh-desktop-mode="compatibility"], [data-dsh-desktop-mode="extended"])
+  [data-slot="sidebar.footer.action"] > button {
+  box-sizing: border-box;
+  width: 100%;
+  height: var(--dsh-sidebar-footer-control-height);
+  min-height: var(--dsh-sidebar-footer-control-height);
+  margin: 0;
+  padding: 0 8px;
+  gap: 8px;
+  justify-content: flex-start;
+  border-radius: 6px;
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 22px;
+}
+body:is([data-dsh-desktop-mode="compatibility"], [data-dsh-desktop-mode="extended"])
+  [data-slot="sidebar.settings"] > div:first-child {
+  box-sizing: border-box;
+  width: 100%;
+  margin: var(--dsh-sidebar-footer-control-gap) 0 0;
+}
+body:is([data-dsh-desktop-mode="compatibility"], [data-dsh-desktop-mode="extended"])
+  [data-slot="sidebar.settings"] > div:first-child > button {
+  box-sizing: border-box;
+  height: var(--dsh-sidebar-footer-control-height);
+  min-height: var(--dsh-sidebar-footer-control-height);
+  margin: 0;
+  padding: 0 8px;
+  gap: 8px;
+  border-radius: 6px;
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 22px;
+}
+body:is([data-dsh-desktop-mode="compatibility"], [data-dsh-desktop-mode="extended"])
+  [data-sidebar-collapsed] [data-slot="sidebar.footer.action"] > button,
+body:is([data-dsh-desktop-mode="compatibility"], [data-dsh-desktop-mode="extended"])
+  [data-sidebar-collapsed] [data-slot="sidebar.settings"] > div:first-child > button {
+  width: var(--dsh-sidebar-footer-control-height);
+  padding: 0;
+  justify-content: center;
+}
+body:is([data-dsh-desktop-mode="compatibility"], [data-dsh-desktop-mode="extended"])
+  [data-sidebar-collapsed] [data-slot="sidebar.settings"] > div:first-child {
+  width: var(--dsh-sidebar-footer-control-height);
 }
 /* Desktop has no persistent right details column when it is closed. Let the
    transcript and composer use that reclaimed width; a user drag still wins
