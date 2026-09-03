@@ -173,6 +173,7 @@
     "@dofe/dsh-yootun-lead-discovery": "file:../../docker-helm.dofe.ai/plugins/dsh-yootun-lead-discovery",
     "@dofe/dsh-yootun-ui": "file:../../docker-helm.dofe.ai/plugins/dsh-yootun-ui",
     "@deepseek-ai/cordis": "workspace:*",
+    "@deepseek-ai/cosmokit": "workspace:*",
     "@deepseek-ai/cordis-plugin-group": "workspace:*",
     "@deepseek-ai/cordis-plugin-hmr": "workspace:*",
     "@deepseek-ai/cordis-plugin-include": "workspace:*",

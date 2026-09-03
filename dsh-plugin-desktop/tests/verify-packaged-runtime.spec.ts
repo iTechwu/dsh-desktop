@@ -51,6 +51,13 @@ describe('packaged desktop runtime verification', () => {
     expect(pluginChunk).toBeDefined()
   })
 
+  it('requires the Cordis runtime dependency introduced by Harness alpha.5', () => {
+    expect(REQUIRED_PACKAGED_RUNTIME_ENTRIES)
+      .toContain('node_modules/@deepseek-ai/cosmokit/lib/index.js')
+    expect(REQUIRED_UNPACKED_PACKAGE_SPECIFIERS)
+      .toContain('@deepseek-ai/cosmokit/package.json')
+  })
+
   it('fails the diagnostic Worker smoke when its archive omits the crash dump', async () => {
     const unpackedRoot = resolvePackagedUnpackedRoot(context('/build', 'win32'))
     const launch = vi.fn<PackagedDiagnosticWorkerLauncher>(async (_workerPath, workerData) => {

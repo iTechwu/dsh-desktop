@@ -816,6 +816,9 @@ importers:
       '@deepseek-ai/cordis-plugin-timer':
         specifier: workspace:*
         version: link:../deepseek-harness/vendor/timer
+      '@deepseek-ai/cosmokit':
+        specifier: workspace:*
+        version: link:../deepseek-harness/vendor/cosmokit
       '@deepseek-ai/dsh':
         specifier: workspace:*
         version: link:../deepseek-harness/apps/cli
