@@ -31,9 +31,12 @@ function expectUnifiedSidebarFooterStyles(css: string): void {
   expect(css).toContain('--dsh-sidebar-footer-control-height: 36px;')
   expect(css).toContain('--dsh-sidebar-footer-control-gap: 4px;')
   expect(css).toMatch(/\[data-slot="sidebar\.footer\.action"\] > button \{[^}]*height: var\(--dsh-sidebar-footer-control-height\);[^}]*margin: 0;[^}]*padding: 0 8px;[^}]*border-radius: 6px;[^}]*font-size: 14px;/)
+  expect(css).toMatch(/\[data-slot="sidebar\.footer\.action"\] > button \{[^}]*display: flex;[^}]*align-items: center;/)
   expect(css).toMatch(/\[data-slot="sidebar\.settings"\] > div:first-child \{[^}]*margin: var\(--dsh-sidebar-footer-control-gap\) 0 0;/)
   expect(css).toMatch(/\[data-slot="sidebar\.settings"\] > div:first-child > button \{[^}]*height: var\(--dsh-sidebar-footer-control-height\);[^}]*margin: 0;[^}]*padding: 0 8px;[^}]*border-radius: 6px;[^}]*font-size: 14px;/)
+  expect(css).toMatch(/\[data-slot="sidebar\.footer\.action"\] > button:has\(> svg\):not\(:has\(> span\)\)::after \{[^}]*content: attr\(aria-label\);[^}]*overflow: hidden;[^}]*text-overflow: ellipsis;[^}]*white-space: nowrap;/)
   expect(css).toMatch(/\[data-sidebar-collapsed\][^{]*\[data-slot="sidebar\.footer\.action"\] > button,[\s\S]*\[data-sidebar-collapsed\][^{]*\[data-slot="sidebar\.settings"\] > div:first-child > button \{[^}]*width: var\(--dsh-sidebar-footer-control-height\);[^}]*padding: 0;[^}]*justify-content: center;/)
+  expect(css).toMatch(/\[data-sidebar-collapsed\][^{]*\[data-slot="sidebar\.footer\.action"\] > button:has\(> svg\):not\(:has\(> span\)\)::after \{ content: none; \}/)
 }
 
 describe('desktop client environment', () => {
