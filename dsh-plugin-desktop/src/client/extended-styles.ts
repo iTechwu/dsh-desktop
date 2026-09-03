@@ -76,6 +76,8 @@ body:is([data-dsh-desktop-mode="compatibility"], [data-dsh-desktop-mode="extende
 }
 body:is([data-dsh-desktop-mode="compatibility"], [data-dsh-desktop-mode="extended"])
   [data-slot="sidebar.footer.action"] > button {
+  display: flex;
+  align-items: center;
   box-sizing: border-box;
   width: 100%;
   height: var(--dsh-sidebar-footer-control-height);
@@ -88,6 +90,14 @@ body:is([data-dsh-desktop-mode="compatibility"], [data-dsh-desktop-mode="extende
   font-family: inherit;
   font-size: 14px;
   line-height: 22px;
+}
+body:is([data-dsh-desktop-mode="compatibility"], [data-dsh-desktop-mode="extended"])
+  [data-slot="sidebar.footer.action"] > button:has(> svg):not(:has(> span))::after {
+  content: attr(aria-label);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 body:is([data-dsh-desktop-mode="compatibility"], [data-dsh-desktop-mode="extended"])
   [data-slot="sidebar.settings"] > div:first-child {
@@ -116,6 +126,8 @@ body:is([data-dsh-desktop-mode="compatibility"], [data-dsh-desktop-mode="extende
   padding: 0;
   justify-content: center;
 }
+body:is([data-dsh-desktop-mode="compatibility"], [data-dsh-desktop-mode="extended"])
+  [data-sidebar-collapsed] [data-slot="sidebar.footer.action"] > button:has(> svg):not(:has(> span))::after { content: none; }
 body:is([data-dsh-desktop-mode="compatibility"], [data-dsh-desktop-mode="extended"])
   [data-sidebar-collapsed] [data-slot="sidebar.settings"] > div:first-child {
   width: var(--dsh-sidebar-footer-control-height);
