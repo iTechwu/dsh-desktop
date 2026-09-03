@@ -99,6 +99,10 @@ export function DesktopOwnedFrame({
   const sidebarOwnerWidth = collapsed ? SIDEBAR_COLLAPSED : columns.sidebar
   const columnsRef = useRef(columns)
   columnsRef.current = columns
+  // React 18 only serializes inert when passed in its standard empty-string form.
+  const detailsIsolation = columns.details === 0
+    ? { 'aria-hidden': true, inert: '' } as const
+    : {}
 
   const sidebarBase = useRef(0)
   const detailsBase = useRef(0)
@@ -137,7 +141,10 @@ export function DesktopOwnedFrame({
         </div>
       </aside>
       <main className="dshDesktopConversationSurface">{renderSlot('conversation', {})}</main>
-      <aside className="dshDesktopDetailsSurface">
+      <aside
+        className="dshDesktopDetailsSurface"
+        {...detailsIsolation}
+      >
         <SessionProvider>{renderSlot('details', {})}</SessionProvider>
       </aside>
       {/* Electron resolves app regions in DOM order; Desktop overlays must remain later. */}

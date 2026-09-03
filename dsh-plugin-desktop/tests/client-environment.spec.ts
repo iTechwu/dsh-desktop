@@ -137,8 +137,9 @@ describe('advanced desktop layout', () => {
     ['extended', ExtendedFrame],
   ] as const)('binds the strict details slot through SessionProvider in %s mode', (_mode, Frame) => {
     vi.stubGlobal('window', { innerWidth: 1440 })
+    const layout = new DesktopLayoutState()
     const props = {
-      layout: new DesktopLayoutState(),
+      layout,
       platform: 'darwin',
       useSessions: (select: (state: { current?: string; byId: Record<string, { blank: boolean }> }) => unknown) =>
         select({ byId: {} }),
@@ -152,6 +153,20 @@ describe('advanced desktop layout', () => {
       expect(markup).toContain(
         '<section data-session-provider=""><span data-slot="details"></span></section>',
       )
+      expect(markup).toContain(
+        '<aside class="dshDesktopDetailsSurface" aria-hidden="true" inert="">',
+      )
+
+      layout.openDetails()
+      const expandedProps = {
+        ...props,
+        useSessions: (select: (state: { current?: string; byId: Record<string, { blank: boolean }> }) => unknown) =>
+          select({ current: 'session-1', byId: { 'session-1': { blank: false } } }),
+      } as unknown as AdvancedFrameProps
+      const expandedMarkup = renderToStaticMarkup(createElement(Frame, expandedProps))
+      expect(expandedMarkup).toContain('<aside class="dshDesktopDetailsSurface">')
+      expect(expandedMarkup).not.toContain('<aside class="dshDesktopDetailsSurface" aria-hidden="true"')
+      expect(expandedMarkup).not.toContain('inert=""')
     } finally {
       vi.unstubAllGlobals()
     }
