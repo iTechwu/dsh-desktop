@@ -5,10 +5,12 @@ import { chmod, lstat, mkdir, readFile } from 'node:fs/promises'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { dirname } from 'node:path'
 import { writeFileAtomic } from '@deepseek-ai/dsh-atomic-write'
+import { credentialRef, type CredentialProvider } from '@deepseek-ai/dsh-credentials'
 
 export const YOOTUN_RECRUITER_PATH = '/api/desktop/yootun/recruiter'
 
-const STATE_VERSION = 1
+const STATE_VERSION = 2
+const MODELS_API_KEY_REF = credentialRef('MODELS_API_KEY')
 const MAX_BODY_BYTES = 64 * 1024
 const MAX_STATE_BYTES = 1024 * 1024
 const MAX_REQUIREMENTS = 50
@@ -21,7 +23,7 @@ const CHECK_POSIX_MODE = process.platform !== 'win32'
 const REQUIREMENT_STATUSES = ['draft', 'active', 'paused', 'closed'] as const
 const CANDIDATE_STAGES = ['sourced', 'screening', 'interview', 'offer', 'hired', 'archived'] as const
 const FEEDBACK_STATUSES = ['none', 'draft', 'confirmed'] as const
-const ACTION_TYPES = ['publish_jd', 'send_message', 'write_feedback'] as const
+const ACTION_TYPES = ['publish_jd', 'send_message', 'write_feedback', 'publish_knowledge'] as const
 const ACTION_STATUSES = [
   'awaiting_confirmation', 'confirmed_pending_adapter', 'dismissed',
   'succeeded', 'failed', 'requires_user_login',
@@ -56,6 +58,31 @@ export interface RecruiterAdapterResult {
 
 export interface RecruiterAdapter {
   execute: (request: RecruiterAdapterRequest) => Promise<RecruiterAdapterResult>
+}
+
+export interface RecruiterBossSyncResult {
+  status: 'ready' | 'partial' | 'failed' | 'requires_user_login'
+  reasonCode: string
+  imported: number
+  updated: number
+  skipped: number
+  cursor?: string
+  completedAt?: string
+  responseRate?: number
+  requirements?: RecruiterRequirement[]
+  candidates?: RecruiterCandidateAnalysis[]
+}
+
+export interface RecruiterBossAdapter extends RecruiterAdapter {
+  sync: (request: { cursor?: string; idempotencyKey: string }) => Promise<RecruiterBossSyncResult>
+}
+
+export interface RecruiterKnowledgePublisher {
+  publish: (request: {
+    spaceId: string
+    content: string
+    idempotencyKey: string
+  }) => Promise<{ status: 'succeeded' | 'failed'; reasonCode: string; memoryId?: string; completedAt?: string }>
 }
 
 export interface RecruiterAdapterReceipt {
@@ -106,11 +133,48 @@ export interface RecruiterAction {
   adapterReceipt?: RecruiterAdapterReceipt
 }
 
+export interface RecruiterSyncState {
+  provider: 'boss_zhipin'
+  status: 'not_connected' | 'requires_user_login' | 'ready' | 'partial' | 'error'
+  imported: number
+  updated: number
+  skipped: number
+  lastAttemptAt?: string
+  lastSuccessAt?: string
+  cursor?: string
+  responseRate?: number
+  reason?: string
+}
+
+export interface RecruiterKnowledgeState {
+  status: 'unavailable' | 'ready' | 'error'
+  spaceId?: string
+  spaces: number
+  documents: number
+  memories: number
+  pending: number
+  lastPublishedAt?: string
+  recent: Array<{ id: string; title: string; updatedAt: string }>
+  reason?: string
+}
+
+export interface RecruiterAnalyticsState {
+  status: 'empty' | 'ready'
+  responseRate?: number
+  avgScreeningDays?: number
+  offerConversion?: number
+  insight: string
+  updatedAt: string
+}
+
 export interface RecruiterState {
-  version: 1
+  version: 2
   requirements: RecruiterRequirement[]
   candidates: RecruiterCandidateAnalysis[]
   actions: RecruiterAction[]
+  sync: RecruiterSyncState
+  knowledge: RecruiterKnowledgeState
+  analytics: RecruiterAnalyticsState
   updatedAt: string
 }
 
@@ -121,12 +185,13 @@ export interface RecruiterSnapshot extends RecruiterState {
     pendingReplies: number
     pendingFeedback: number
     pendingConfirmation: number
+    responseRate?: number
     funnel: Array<{ stage: CandidateStage; count: number }>
   }
   boss: {
     loginUrl: string
-    status: 'requires_user_login'
-    adapter: 'not_configured'
+    status: 'requires_user_login' | 'connected' | 'error'
+    adapter: 'not_configured' | 'official'
   }
 }
 
@@ -196,7 +261,95 @@ function canonicalTime(value: unknown): string | undefined {
 }
 
 function emptyState(now: string): RecruiterState {
-  return { version: STATE_VERSION, requirements: [], candidates: [], actions: [], updatedAt: now }
+  return {
+    version: STATE_VERSION,
+    requirements: [],
+    candidates: [],
+    actions: [],
+    sync: {
+      provider: 'boss_zhipin', status: 'not_connected', imported: 0, updated: 0, skipped: 0,
+      reason: 'official_authorization_required',
+    },
+    knowledge: {
+      status: 'unavailable', spaces: 0, documents: 0, memories: 0, pending: 0, recent: [],
+      reason: 'hr_space_not_configured',
+    },
+    analytics: { status: 'empty', insight: '样本不足时不输出确定性结论。', updatedAt: now },
+    updatedAt: now,
+  }
+}
+
+function nonNegative(value: unknown, label: string): number {
+  return integer(value, label, 0, Number.MAX_SAFE_INTEGER)
+}
+
+function parsePersistedSync(value: unknown): RecruiterSyncState | undefined {
+  const item = record(value)
+  if (item === undefined || !exactKeys(item, ['provider', 'status', 'imported', 'updated', 'skipped'], [
+    'lastAttemptAt', 'lastSuccessAt', 'cursor', 'responseRate', 'reason',
+  ])) return undefined
+  try {
+    if (item.provider !== 'boss_zhipin') return undefined
+    const lastAttemptAt = item.lastAttemptAt === undefined ? undefined : canonicalTime(item.lastAttemptAt)
+    const lastSuccessAt = item.lastSuccessAt === undefined ? undefined : canonicalTime(item.lastSuccessAt)
+    if ((item.lastAttemptAt !== undefined && lastAttemptAt === undefined)
+      || (item.lastSuccessAt !== undefined && lastSuccessAt === undefined)) return undefined
+    return {
+      provider: 'boss_zhipin',
+      status: enumValue(item.status, ['not_connected', 'requires_user_login', 'ready', 'partial', 'error'] as const, 'sync_status'),
+      imported: nonNegative(item.imported, 'sync_imported'), updated: nonNegative(item.updated, 'sync_updated'),
+      skipped: nonNegative(item.skipped, 'sync_skipped'),
+      ...(lastAttemptAt === undefined ? {} : { lastAttemptAt }),
+      ...(lastSuccessAt === undefined ? {} : { lastSuccessAt }),
+      ...(item.cursor === undefined ? {} : { cursor: limitedText(item.cursor, 'sync_cursor', 240) }),
+      ...(item.responseRate === undefined ? {} : { responseRate: integer(item.responseRate, 'response_rate', 0, 100) }),
+      ...(item.reason === undefined ? {} : { reason: limitedText(item.reason, 'sync_reason', 160) }),
+    }
+  } catch { return undefined }
+}
+
+function parsePersistedKnowledge(value: unknown): RecruiterKnowledgeState | undefined {
+  const item = record(value)
+  if (item === undefined || !exactKeys(item, [
+    'status', 'spaces', 'documents', 'memories', 'pending', 'recent',
+  ], ['spaceId', 'lastPublishedAt', 'reason']) || !Array.isArray(item.recent) || item.recent.length > 20) return undefined
+  try {
+    const lastPublishedAt = item.lastPublishedAt === undefined ? undefined : canonicalTime(item.lastPublishedAt)
+    if (item.lastPublishedAt !== undefined && lastPublishedAt === undefined) return undefined
+    const recent = item.recent.map((raw) => {
+      const entry = record(raw)
+      if (entry === undefined || !exactKeys(entry, ['id', 'title', 'updatedAt'])) throw new InvalidRecruiterRequest('knowledge_recent_invalid')
+      const updatedAt = canonicalTime(entry.updatedAt)
+      if (updatedAt === undefined) throw new InvalidRecruiterRequest('knowledge_recent_invalid')
+      return { id: limitedText(entry.id, 'knowledge_id', 160), title: limitedText(entry.title, 'knowledge_title', 280), updatedAt }
+    })
+    return {
+      status: enumValue(item.status, ['unavailable', 'ready', 'error'] as const, 'knowledge_status'),
+      ...(item.spaceId === undefined ? {} : { spaceId: limitedText(item.spaceId, 'knowledge_space_id', 80) }),
+      spaces: nonNegative(item.spaces, 'knowledge_spaces'), documents: nonNegative(item.documents, 'knowledge_documents'),
+      memories: nonNegative(item.memories, 'knowledge_memories'), pending: nonNegative(item.pending, 'knowledge_pending'),
+      ...(lastPublishedAt === undefined ? {} : { lastPublishedAt }), recent,
+      ...(item.reason === undefined ? {} : { reason: limitedText(item.reason, 'knowledge_reason', 160) }),
+    }
+  } catch { return undefined }
+}
+
+function parsePersistedAnalytics(value: unknown): RecruiterAnalyticsState | undefined {
+  const item = record(value)
+  if (item === undefined || !exactKeys(item, ['status', 'insight', 'updatedAt'], [
+    'responseRate', 'avgScreeningDays', 'offerConversion',
+  ])) return undefined
+  try {
+    const updatedAt = canonicalTime(item.updatedAt)
+    if (updatedAt === undefined) return undefined
+    return {
+      status: enumValue(item.status, ['empty', 'ready'] as const, 'analytics_status'),
+      ...(item.responseRate === undefined ? {} : { responseRate: integer(item.responseRate, 'response_rate', 0, 100) }),
+      ...(item.avgScreeningDays === undefined ? {} : { avgScreeningDays: nonNegative(item.avgScreeningDays, 'avg_screening_days') }),
+      ...(item.offerConversion === undefined ? {} : { offerConversion: integer(item.offerConversion, 'offer_conversion', 0, 100) }),
+      insight: limitedText(item.insight, 'analytics_insight', 500), updatedAt,
+    }
+  } catch { return undefined }
 }
 
 function parsePersistedRequirement(value: unknown): RecruiterRequirement | undefined {
@@ -293,8 +446,10 @@ function parsePersistedAction(value: unknown): RecruiterAction | undefined {
 
 function parsePersistedState(value: unknown): RecruiterState | undefined {
   const root = record(value)
-  if (root === undefined || !exactKeys(root, ['version', 'requirements', 'candidates', 'actions', 'updatedAt'])
-    || root.version !== STATE_VERSION || !Array.isArray(root.requirements)
+  if (root === undefined || (root.version !== 1 && root.version !== STATE_VERSION)
+    || !exactKeys(root, ['version', 'requirements', 'candidates', 'actions', 'updatedAt'],
+      root.version === STATE_VERSION ? ['sync', 'knowledge', 'analytics'] : [])
+    || !Array.isArray(root.requirements)
     || !Array.isArray(root.candidates) || !Array.isArray(root.actions)
     || root.requirements.length > MAX_REQUIREMENTS || root.candidates.length > MAX_CANDIDATES
     || root.actions.length > MAX_ACTIONS) return undefined
@@ -304,11 +459,21 @@ function parsePersistedState(value: unknown): RecruiterState | undefined {
   const actions = root.actions.map(parsePersistedAction)
   if (updatedAt === undefined || requirements.some(item => item === undefined)
     || candidates.some(item => item === undefined) || actions.some(item => item === undefined)) return undefined
+  const defaults = emptyState(updatedAt)
+  const sync = root.version === STATE_VERSION && root.sync !== undefined ? parsePersistedSync(root.sync) : defaults.sync
+  const knowledge = root.version === STATE_VERSION && root.knowledge !== undefined
+    ? parsePersistedKnowledge(root.knowledge) : defaults.knowledge
+  const analytics = root.version === STATE_VERSION && root.analytics !== undefined
+    ? parsePersistedAnalytics(root.analytics) : defaults.analytics
+  if (sync === undefined || knowledge === undefined || analytics === undefined) return undefined
   return {
     version: STATE_VERSION,
     requirements: requirements as RecruiterRequirement[],
     candidates: candidates as RecruiterCandidateAnalysis[],
     actions: actions as RecruiterAction[],
+    sync,
+    knowledge,
+    analytics,
     updatedAt,
   }
 }
@@ -333,25 +498,65 @@ async function writeRecruiterState(path: string, state: RecruiterState): Promise
   if (CHECK_POSIX_MODE) await chmod(path, FILE_MODE)
 }
 
-export function recruiterSnapshot(state: RecruiterState): RecruiterSnapshot {
+function aggregateAnalytics(state: RecruiterState): RecruiterAnalyticsState {
+  const active = state.candidates.filter(item => item.stage !== 'archived')
+  if (active.length === 0) {
+    return { status: 'empty', insight: '样本不足时不输出确定性结论。', updatedAt: state.updatedAt }
+  }
+  const offers = active.filter(item => item.stage === 'offer' || item.stage === 'hired').length
+  const hires = active.filter(item => item.stage === 'hired').length
+  const offerConversion = offers === 0 ? undefined : Math.round(hires / offers * 100)
+  const responseRate = state.sync.responseRate
+  return {
+    status: 'ready',
+    ...(responseRate === undefined ? {} : { responseRate }),
+    ...(offerConversion === undefined ? {} : { offerConversion }),
+    insight: offerConversion === undefined
+      ? '已有候选人样本，Offer 转化样本仍不足。'
+      : `当前 Offer 到入职转化率为 ${String(offerConversion)}%，仅用于招聘过程复盘。`,
+    updatedAt: state.updatedAt,
+  }
+}
+
+export function recruiterSnapshot(
+  state: RecruiterState,
+  capabilities: { bossAdapter?: boolean; knowledgeReady?: boolean } = {},
+): RecruiterSnapshot {
   const funnel = CANDIDATE_STAGES.map(stage => ({
     stage,
     count: state.candidates.filter(candidate => candidate.stage === stage).length,
   }))
+  const analytics = aggregateAnalytics(state)
+  const sync = capabilities.bossAdapter === true && state.sync.status === 'not_connected'
+    ? { ...state.sync, status: 'requires_user_login' as const, reason: 'official_login_required' }
+    : state.sync
+  const knowledge = capabilities.knowledgeReady === true && state.knowledge.status === 'unavailable'
+    ? (() => {
+        const { reason: _reason, ...rest } = state.knowledge
+        return { ...rest, status: 'ready' as const, spaces: Math.max(1, rest.spaces) }
+      })()
+    : state.knowledge
+  const pendingKnowledge = state.actions.filter(item => item.type === 'publish_knowledge'
+    && ['awaiting_confirmation', 'confirmed_pending_adapter'].includes(item.status)).length
   return {
     ...state,
+    sync,
+    knowledge: { ...knowledge, pending: pendingKnowledge },
+    analytics,
     dashboard: {
       openRoles: state.requirements.filter(item => item.status === 'active').length,
       activeCandidates: state.candidates.filter(item => item.stage !== 'hired' && item.stage !== 'archived').length,
       pendingReplies: state.actions.filter(item => item.type === 'send_message' && item.status === 'awaiting_confirmation').length,
       pendingFeedback: state.candidates.filter(item => item.feedbackStatus === 'draft').length,
       pendingConfirmation: state.actions.filter(item => item.status === 'awaiting_confirmation').length,
+      ...(analytics.responseRate === undefined ? {} : { responseRate: analytics.responseRate }),
       funnel,
     },
     boss: {
       loginUrl: 'https://www.zhipin.com/web/user/?ka=header-login',
-      status: 'requires_user_login',
-      adapter: 'not_configured',
+      status: sync.status === 'ready' || sync.status === 'partial'
+        ? 'connected' : sync.status === 'error' ? 'error' : 'requires_user_login',
+      adapter: capabilities.bossAdapter === true ? 'official' : 'not_configured',
     },
   }
 }
@@ -430,6 +635,20 @@ function queueAction(state: RecruiterState, body: JsonRecord, now: string): Recr
   return { ...state, actions: [item, ...state.actions], updatedAt: now }
 }
 
+function queueKnowledgePublication(state: RecruiterState, body: JsonRecord, now: string): RecruiterState {
+  if (!exactKeys(body, ['action', 'scope']) || body.scope !== 'hr-recruiting') {
+    throw new InvalidRecruiterRequest('request_fields_invalid')
+  }
+  const pending = state.actions.some(item => item.type === 'publish_knowledge'
+    && (item.status === 'awaiting_confirmation' || item.status === 'confirmed_pending_adapter'))
+  if (pending) return state
+  return queueAction(state, {
+    action: 'queue_action', type: 'publish_knowledge', targetLabel: 'HR 招聘知识库',
+    summary: '将已确认的岗位与面试复盘沉淀为知识候选，等待人工确认',
+    idempotencyKey: `hr-knowledge-${state.updatedAt}`,
+  }, now)
+}
+
 function updateAction(state: RecruiterState, body: JsonRecord, now: string): RecruiterState {
   if (!exactKeys(body, ['action', 'id'])) throw new InvalidRecruiterRequest('request_fields_invalid')
   const id = limitedText(body.id, 'id', 80)
@@ -452,6 +671,7 @@ function mutate(state: RecruiterState, value: unknown, now: string): RecruiterSt
   if (body.action === 'save_requirement') return saveRequirement(state, body, now)
   if (body.action === 'save_candidate_analysis') return saveCandidate(state, body, now)
   if (body.action === 'queue_action') return queueAction(state, body, now)
+  if (body.action === 'publish_knowledge') return queueKnowledgePublication(state, body, now)
   if (body.action === 'confirm_action' || body.action === 'dismiss_action') return updateAction(state, body, now)
   throw new InvalidRecruiterRequest('action_invalid')
 }
@@ -501,11 +721,30 @@ function adapterReceipt(value: unknown, fallbackTime: string): RecruiterAdapterR
   }
 }
 
+function knowledgeContent(state: RecruiterState): string {
+  const compact = (items: string[]) => items.slice(0, 2).map(item => item.slice(0, 120))
+  return JSON.stringify({
+    kind: 'hr_recruiting_review',
+    generatedAt: state.updatedAt,
+    roles: state.requirements.filter(item => item.status !== 'closed').slice(0, 10).map(item => ({
+      title: item.title, department: item.department, location: item.location,
+      employmentType: item.employmentType, responsibilities: compact(item.responsibilities),
+      requiredSkills: compact(item.requiredSkills), preferredSkills: compact(item.preferredSkills),
+    })),
+    confirmedReviews: state.candidates.filter(item => item.feedbackStatus === 'confirmed').slice(0, 8).map(item => ({
+      requirementId: item.requirementId, stage: item.stage, evidence: compact(item.evidence),
+      concerns: compact(item.concerns), interviewQuestions: compact(item.interviewQuestions),
+    })),
+    policy: '仅包含岗位事实和已确认的脱敏招聘复盘，不包含联系方式、原始简历或受保护属性。',
+  })
+}
+
 /** Execute one confirmed action through an explicitly injected external adapter. */
 export async function executeRecruiterAction(
   path: string,
   actionId: string,
   adapter: RecruiterAdapter | undefined,
+  knowledge: { publisher?: RecruiterKnowledgePublisher; spaceId?: string } = {},
   now = new Date().toISOString(),
 ): Promise<RecruiterSnapshot> {
   const previous = stateMutationQueues.get(path) ?? Promise.resolve()
@@ -520,18 +759,39 @@ export async function executeRecruiterAction(
     if (action === undefined) throw new InvalidRecruiterRequest('action_not_found')
     if (action.status === 'awaiting_confirmation') throw new InvalidRecruiterRequest('action_not_confirmed')
     if (action.status === 'dismissed' || action.status === 'succeeded') return recruiterSnapshot(state)
-    if (adapter === undefined) throw new InvalidRecruiterRequest('recruiter_adapter_unavailable')
     let result: RecruiterAdapterResult
-    try {
-      result = await adapter.execute({
-        actionId: action.id,
-        type: action.type,
-        idempotencyKey: action.idempotencyKey,
-        targetLabel: action.targetLabel,
-        summary: action.summary,
-      })
-    } catch {
-      result = { status: 'failed', reasonCode: 'adapter_failed' }
+    if (action.type === 'publish_knowledge') {
+      if (knowledge.publisher === undefined || knowledge.spaceId === undefined) {
+        throw new InvalidRecruiterRequest('knowledge_publisher_unavailable')
+      }
+      try {
+        const published = await knowledge.publisher.publish({
+          spaceId: knowledge.spaceId,
+          content: knowledgeContent(state),
+          idempotencyKey: action.idempotencyKey,
+        })
+        result = {
+          status: published.status,
+          reasonCode: published.reasonCode,
+          ...(published.completedAt === undefined ? {} : { completedAt: published.completedAt }),
+          ...(published.memoryId === undefined ? {} : { remoteRef: published.memoryId }),
+        }
+      } catch {
+        result = { status: 'failed', reasonCode: 'knowledge_publish_failed' }
+      }
+    } else {
+      if (adapter === undefined) throw new InvalidRecruiterRequest('recruiter_adapter_unavailable')
+      try {
+        result = await adapter.execute({
+          actionId: action.id,
+          type: action.type,
+          idempotencyKey: action.idempotencyKey,
+          targetLabel: action.targetLabel,
+          summary: action.summary,
+        })
+      } catch {
+        result = { status: 'failed', reasonCode: 'adapter_failed' }
+      }
     }
     const receipt = adapterReceipt(result, now)
     const next: RecruiterState = {
@@ -539,10 +799,121 @@ export async function executeRecruiterAction(
       actions: state.actions.map(item => item.id === action.id
         ? { ...item, status: receipt.status, adapterReceipt: receipt, updatedAt: receipt.completedAt }
         : item),
+      knowledge: action.type === 'publish_knowledge' && receipt.status === 'succeeded'
+        ? {
+            status: 'ready',
+            spaceId: knowledge.spaceId as string,
+            spaces: Math.max(1, state.knowledge.spaces),
+            documents: state.knowledge.documents,
+            memories: state.knowledge.memories + 1,
+            pending: Math.max(0, state.knowledge.pending - 1),
+            lastPublishedAt: receipt.completedAt,
+            recent: receipt.remoteRef === undefined ? state.knowledge.recent : [{
+              id: receipt.remoteRef, title: action.targetLabel, updatedAt: receipt.completedAt,
+            }, ...state.knowledge.recent.filter(item => item.id !== receipt.remoteRef)].slice(0, 20),
+          }
+        : state.knowledge,
       updatedAt: receipt.completedAt,
     }
     await writeRecruiterState(path, next)
     return recruiterSnapshot(next)
+  } finally {
+    release?.()
+    if (stateMutationQueues.get(path) === chain) stateMutationQueues.delete(path)
+  }
+}
+
+function syncReceipt(value: unknown, now: string): RecruiterBossSyncResult {
+  const item = record(value)
+  const status = item?.status
+  const reasonCode = item?.reasonCode
+  const completedAt = item?.completedAt === undefined ? now : canonicalTime(item.completedAt)
+  if (!['ready', 'partial', 'failed', 'requires_user_login'].includes(String(status))
+    || typeof reasonCode !== 'string' || !/^[a-z0-9_:-]{1,80}$/u.test(reasonCode)
+    || completedAt === undefined) {
+    return { status: 'failed', reasonCode: 'boss_sync_invalid_result', imported: 0, updated: 0, skipped: 0, completedAt: now }
+  }
+  try {
+    const rawRequirements = item?.requirements === undefined ? [] : item.requirements
+    const rawCandidates = item?.candidates === undefined ? [] : item.candidates
+    if (!Array.isArray(rawRequirements) || rawRequirements.length > MAX_REQUIREMENTS
+      || !Array.isArray(rawCandidates) || rawCandidates.length > MAX_CANDIDATES) {
+      throw new InvalidRecruiterRequest('boss_sync_records_invalid')
+    }
+    const requirements = rawRequirements.map(parsePersistedRequirement)
+    const candidates = rawCandidates.map(parsePersistedCandidate)
+    if (requirements.some(entry => entry === undefined) || candidates.some(entry => entry === undefined)) {
+      throw new InvalidRecruiterRequest('boss_sync_records_invalid')
+    }
+    return {
+      status: status as RecruiterBossSyncResult['status'], reasonCode,
+      imported: nonNegative(item?.imported, 'sync_imported'), updated: nonNegative(item?.updated, 'sync_updated'),
+      skipped: nonNegative(item?.skipped, 'sync_skipped'), completedAt,
+      ...(item?.cursor === undefined ? {} : { cursor: limitedText(item.cursor, 'sync_cursor', 240) }),
+      ...(item?.responseRate === undefined ? {} : { responseRate: integer(item.responseRate, 'response_rate', 0, 100) }),
+      ...(requirements.length === 0 ? {} : { requirements: requirements as RecruiterRequirement[] }),
+      ...(candidates.length === 0 ? {} : { candidates: candidates as RecruiterCandidateAnalysis[] }),
+    }
+  } catch {
+    return { status: 'failed', reasonCode: 'boss_sync_invalid_result', imported: 0, updated: 0, skipped: 0, completedAt: now }
+  }
+}
+
+export async function syncRecruiterBoss(
+  path: string,
+  adapter: RecruiterBossAdapter | undefined,
+  now = new Date().toISOString(),
+): Promise<RecruiterSnapshot> {
+  if (adapter === undefined) throw new InvalidRecruiterRequest('boss_official_adapter_unavailable')
+  const previous = stateMutationQueues.get(path) ?? Promise.resolve()
+  let release: (() => void) | undefined
+  const current = new Promise<void>(resolve => { release = resolve })
+  const chain = previous.then(() => current)
+  stateMutationQueues.set(path, chain)
+  await previous
+  try {
+    const state = await readRecruiterState(path, now)
+    let raw: RecruiterBossSyncResult
+    try {
+      raw = await adapter.sync({
+        ...(state.sync.cursor === undefined ? {} : { cursor: state.sync.cursor }),
+        idempotencyKey: randomUUID(),
+      })
+    } catch {
+      raw = { status: 'failed', reasonCode: 'boss_sync_failed', imported: 0, updated: 0, skipped: 0 }
+    }
+    const receipt = syncReceipt(raw, now)
+    const completedAt = receipt.completedAt ?? now
+    const successful = receipt.status === 'ready' || receipt.status === 'partial'
+    const importedRequirements = successful ? receipt.requirements ?? [] : []
+    const requirements = [
+      ...importedRequirements,
+      ...state.requirements.filter(item => !importedRequirements.some(imported => imported.id === item.id)),
+    ].slice(0, MAX_REQUIREMENTS)
+    const requirementIds = new Set(requirements.map(item => item.id))
+    const importedCandidates = (successful ? receipt.candidates ?? [] : []).filter(item => requirementIds.has(item.requirementId))
+    const candidates = [
+      ...importedCandidates,
+      ...state.candidates.filter(item => !importedCandidates.some(imported => imported.id === item.id)),
+    ].slice(0, MAX_CANDIDATES)
+    const next: RecruiterState = {
+      ...state,
+      requirements,
+      candidates,
+      sync: {
+        provider: 'boss_zhipin',
+        status: receipt.status === 'failed' ? 'error' : receipt.status,
+        imported: receipt.imported, updated: receipt.updated, skipped: receipt.skipped,
+        lastAttemptAt: completedAt,
+        ...(successful ? { lastSuccessAt: completedAt } : {}),
+        ...(receipt.cursor === undefined ? {} : { cursor: receipt.cursor }),
+        ...(receipt.responseRate === undefined ? {} : { responseRate: receipt.responseRate }),
+        reason: receipt.reasonCode,
+      },
+      updatedAt: completedAt,
+    }
+    await writeRecruiterState(path, next)
+    return recruiterSnapshot(next, { bossAdapter: true })
   } finally {
     release?.()
     if (stateMutationQueues.get(path) === chain) stateMutationQueues.delete(path)
@@ -593,6 +964,25 @@ export interface RecruiterRouteDependencies {
   statePath?: string | undefined
   now?: (() => Date) | undefined
   adapter?: RecruiterAdapter | undefined
+  bossAdapter?: RecruiterBossAdapter | undefined
+  credentials?: Pick<CredentialProvider, 'resolve'> | undefined
+  knowledgePublisher?: RecruiterKnowledgePublisher | undefined
+  hrKnowledgeSpaceId?: string | undefined
+}
+
+async function modelsAccessReady(credentials: Pick<CredentialProvider, 'resolve'> | undefined): Promise<boolean> {
+  if (credentials === undefined) return false
+  try {
+    const resolved = await credentials.resolve(MODELS_API_KEY_REF)
+    return typeof resolved?.value === 'string' && resolved.value.length > 0
+  } catch {
+    return false
+  }
+}
+
+function validUuid(value: string | undefined): value is string {
+  return typeof value === 'string'
+    && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(value)
 }
 
 export async function handleYootunRecruiterRequest(
@@ -606,7 +996,11 @@ export async function handleYootunRecruiterRequest(
   if (dependencies.statePath === undefined) return finish(res, 503, { error: 'recruiter_storage_unavailable' })
   const now = (dependencies.now?.() ?? new Date()).toISOString()
   const state = await readRecruiterState(dependencies.statePath, now)
-  if (req.method === 'GET') return finish(res, 200, recruiterSnapshot(state))
+  const knowledgeReady = dependencies.knowledgePublisher !== undefined && validUuid(dependencies.hrKnowledgeSpaceId)
+  if (req.method === 'GET') return finish(res, 200, recruiterSnapshot(state, {
+    bossAdapter: dependencies.bossAdapter !== undefined,
+    knowledgeReady,
+  }))
   if (req.headers['content-type']?.split(';', 1)[0]?.trim().toLowerCase() !== 'application/json') {
     return finish(res, 415, { error: 'content_type_invalid' })
   }
@@ -617,21 +1011,37 @@ export async function handleYootunRecruiterRequest(
     let next: RecruiterSnapshot
     if (recordBody?.action === 'execute_action') {
       if (!exactKeys(recordBody, ['action', 'id'])) throw new InvalidRecruiterRequest('request_fields_invalid')
+      if (!await modelsAccessReady(dependencies.credentials)) throw new InvalidRecruiterRequest('model_api_key_unavailable')
       next = await executeRecruiterAction(
         dependencies.statePath,
         limitedText(recordBody.id, 'id', 80),
-        dependencies.adapter,
+        dependencies.adapter ?? dependencies.bossAdapter,
+        {
+          ...(dependencies.knowledgePublisher === undefined ? {} : { publisher: dependencies.knowledgePublisher }),
+          ...(validUuid(dependencies.hrKnowledgeSpaceId) ? { spaceId: dependencies.hrKnowledgeSpaceId } : {}),
+        },
         now,
       )
+    } else if (recordBody?.action === 'sync_boss') {
+      if (!exactKeys(recordBody, ['action'])) throw new InvalidRecruiterRequest('request_fields_invalid')
+      if (!await modelsAccessReady(dependencies.credentials)) throw new InvalidRecruiterRequest('model_api_key_unavailable')
+      next = await syncRecruiterBoss(dependencies.statePath, dependencies.bossAdapter, now)
     } else {
       next = await mutateRecruiterState(dependencies.statePath, parsed, now)
     }
-    finish(res, 200, next)
+    finish(res, 200, recruiterSnapshot(next, {
+      bossAdapter: dependencies.bossAdapter !== undefined,
+      knowledgeReady,
+    }))
   } catch (cause) {
     if (cause instanceof RecruiterBodyTooLarge) return finish(res, 413, { error: 'request_too_large' })
     if (cause instanceof InvalidRecruiterRequest || cause instanceof SyntaxError) {
       const error = cause instanceof InvalidRecruiterRequest ? cause.message : 'request_invalid'
-      return finish(res, error === 'recruiter_adapter_unavailable' ? 503 : 400, { error })
+      const unavailable = [
+        'recruiter_adapter_unavailable', 'boss_official_adapter_unavailable',
+        'knowledge_publisher_unavailable', 'model_api_key_unavailable',
+      ].includes(error)
+      return finish(res, unavailable ? 503 : 400, { error })
     }
     finish(res, 500, { error: 'recruiter_storage_failed' })
   }

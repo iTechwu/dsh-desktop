@@ -34,6 +34,10 @@ import {
   YOOTUN_RECRUITER_PATH,
 } from './yootun-recruiter-route.ts'
 import {
+  createRecruiterKnowledgePublisher,
+  resolveRecruiterAccess,
+} from './yootun-recruiter-integrations.ts'
+import {
   handleYootunSalesRequest,
   YOOTUN_SALES_PATH,
 } from './yootun-sales-route.ts'
@@ -401,10 +405,14 @@ export function apply(ctx: Context, config: Config): void {
     () => ctx.webServer.register({
       kind: 'exact',
       path: YOOTUN_RECRUITER_PATH,
-      handler: (req, res) => {
+      handler: async (req, res) => {
         if (rejectDesktopRequest(ctx, req, res)) return
+        const access = await resolveRecruiterAccess(ctx.credentials)
         return handleYootunRecruiterRequest(req, res, rendererOrigin, {
           statePath: ctx.get('dshHomePath')?.('storages', 'yootun-recruiter', 'state.json'),
+          credentials: ctx.credentials,
+          knowledgePublisher: createRecruiterKnowledgePublisher(ctx.tools),
+          hrKnowledgeSpaceId: access.ready ? access.hrSpaceId : undefined,
         })
       },
     }),

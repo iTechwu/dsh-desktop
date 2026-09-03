@@ -61,11 +61,19 @@ async function call(
   method: string,
   body?: unknown,
   overrides?: Record<string, unknown>,
-  routeOverrides: { adapter?: { execute: (request: any) => Promise<any> } } = {},
+  routeOverrides: {
+    adapter?: { execute: (request: any) => Promise<any> }
+    bossAdapter?: { execute: (request: any) => Promise<any>; sync: (request: any) => Promise<any> }
+    credentials?: { resolve: (ref: unknown) => Promise<{ value: string; source: 'env' } | undefined> }
+    knowledgePublisher?: { publish: (request: any) => Promise<any> }
+    hrKnowledgeSpaceId?: string
+  } = {},
 ) {
   const res = response()
   await handleYootunRecruiterRequest(request(method, body, overrides), res, ORIGIN, {
-    statePath, now: () => NOW, ...routeOverrides,
+    statePath, now: () => NOW,
+    credentials: { resolve: async () => ({ value: 'test-only-model-key', source: 'env' }) },
+    ...routeOverrides,
   })
   return { status: res.statusCode, value: JSON.parse(res.body) as Record<string, unknown>, res }
 }
@@ -75,13 +83,34 @@ describe('Yootun recruiter route', () => {
     const result = await call(path(), 'GET')
     expect(result.status).toBe(200)
     expect(result.value).toMatchObject({
-      version: 1,
+      version: 2,
       requirements: [], candidates: [], actions: [],
       dashboard: { openRoles: 0, activeCandidates: 0, pendingConfirmation: 0 },
       boss: { status: 'requires_user_login', adapter: 'not_configured' },
     })
     expect((result.value.boss as { loginUrl: string }).loginUrl).toMatch(/^https:\/\/www\.zhipin\.com\//u)
     expect(result.res.setHeader).toHaveBeenCalledWith('cache-control', 'no-store')
+  })
+
+  it('migrates version 1 state without losing recruitment records', async () => {
+    const statePath = path()
+    writeFileSync(statePath, JSON.stringify({
+      version: 1,
+      requirements: [{
+        id: 'role-1', title: 'AI 产品经理', department: '产品部', location: '上海',
+        employmentType: '全职', headcount: 1, responsibilities: ['负责 AI 产品'],
+        requiredSkills: ['产品设计'], preferredSkills: [], status: 'active', updatedAt: NOW.toISOString(),
+      }],
+      candidates: [], actions: [], updatedAt: NOW.toISOString(),
+    }))
+    const state = await readRecruiterState(statePath, NOW.toISOString())
+    expect(state).toMatchObject({
+      version: 2,
+      requirements: [{ id: 'role-1' }],
+      sync: { provider: 'boss_zhipin', status: 'not_connected' },
+      knowledge: { status: 'unavailable' },
+      analytics: { status: 'empty' },
+    })
   })
 
   it('persists requirements, candidate evidence, and derived funnel counts', async () => {
@@ -156,6 +185,95 @@ describe('Yootun recruiter route', () => {
       adapter: { execute: async () => { throw new Error('must not execute twice') } },
     })
     expect((retry.value.actions as Array<{ status: string }>)[0]!.status).toBe('succeeded')
+  })
+
+  it('publishes only confirmed, sanitized HR knowledge into the configured ACL space', async () => {
+    const statePath = path()
+    const saved = await call(statePath, 'POST', requirement())
+    const requirementId = (saved.value.requirements as Array<{ id: string }>)[0]!.id
+    await call(statePath, 'POST', {
+      action: 'save_candidate_analysis', displayName: '候选人 A', requirementId,
+      stage: 'interview', evidence: ['具备企业 AI 产品交付经验'], concerns: [],
+      interviewQuestions: ['请复盘一次交付'], feedbackStatus: 'confirmed',
+    })
+    const queued = await call(statePath, 'POST', { action: 'publish_knowledge', scope: 'hr-recruiting' })
+    const id = (queued.value.actions as Array<{ id: string }>)[0]!.id
+    expect((queued.value.knowledge as { pending: number }).pending).toBe(1)
+    await call(statePath, 'POST', { action: 'confirm_action', id })
+    const publications: any[] = []
+    const published = await call(statePath, 'POST', { action: 'execute_action', id }, undefined, {
+      hrKnowledgeSpaceId: '20000000-0000-4000-8000-000000000001',
+      knowledgePublisher: {
+        publish: async request => {
+          publications.push(request)
+          return { status: 'succeeded', reasonCode: 'knowledge_confirmed', memoryId: 'memory-1' }
+        },
+      },
+    })
+    expect(publications[0]).toMatchObject({ spaceId: '20000000-0000-4000-8000-000000000001' })
+    expect(publications[0].content).not.toContain('候选人 A')
+    expect(published.value.knowledge).toMatchObject({ status: 'ready', memories: 1, pending: 0 })
+  })
+
+  it('requires MODELS_API_KEY before knowledge or BOSS data operations', async () => {
+    const statePath = path()
+    const queued = await call(statePath, 'POST', { action: 'publish_knowledge', scope: 'hr-recruiting' })
+    const id = (queued.value.actions as Array<{ id: string }>)[0]!.id
+    await call(statePath, 'POST', { action: 'confirm_action', id })
+    const missing = await call(statePath, 'POST', { action: 'execute_action', id }, undefined, {
+      credentials: { resolve: async () => undefined },
+    })
+    expect(missing).toMatchObject({ status: 503, value: { error: 'model_api_key_unavailable' } })
+  })
+
+  it('syncs only through an injected official BOSS adapter and persists aggregate receipts', async () => {
+    const statePath = path()
+    const result = await call(statePath, 'POST', { action: 'sync_boss' }, undefined, {
+      bossAdapter: {
+        execute: async () => ({ status: 'succeeded', reasonCode: 'unused' }),
+        sync: async () => ({
+          status: 'ready', reasonCode: 'boss_sync_completed', imported: 5, updated: 2, skipped: 1,
+          cursor: 'cursor-2', responseRate: 64,
+          requirements: [{
+            id: 'boss-role-1', title: '数据产品经理', department: '产品部', location: '杭州',
+            employmentType: '全职', headcount: 1, responsibilities: ['负责数据产品'],
+            requiredSkills: ['数据分析'], preferredSkills: [], status: 'active', updatedAt: NOW.toISOString(),
+          }],
+          candidates: [{
+            id: 'boss-candidate-1', displayName: '候选人 B', requirementId: 'boss-role-1',
+            stage: 'screening', evidence: ['具备数据产品经验'], concerns: [], interviewQuestions: [],
+            feedbackStatus: 'none', updatedAt: NOW.toISOString(),
+          }],
+        }),
+      },
+    })
+    expect(result.value).toMatchObject({
+      sync: { status: 'ready', imported: 5, updated: 2, skipped: 1, cursor: 'cursor-2', responseRate: 64 },
+      boss: { status: 'connected', adapter: 'official' },
+      analytics: { status: 'ready', responseRate: 64 },
+      dashboard: { responseRate: 64 },
+      requirements: [{ id: 'boss-role-1' }],
+      candidates: [{ id: 'boss-candidate-1' }],
+    })
+    expect(readFileSync(statePath, 'utf8')).not.toMatch(/cookie|authorization|test-only-model-key/iu)
+  })
+
+  it('keeps healthy local recruitment analytics when the BOSS source fails', async () => {
+    const statePath = path()
+    await call(statePath, 'POST', requirement())
+    const failed = await call(statePath, 'POST', { action: 'sync_boss' }, undefined, {
+      bossAdapter: {
+        execute: async () => ({ status: 'failed', reasonCode: 'unused' }),
+        sync: async () => ({
+          status: 'failed', reasonCode: 'boss_upstream_unavailable', imported: 0, updated: 0, skipped: 0,
+        }),
+      },
+    })
+    expect(failed.value).toMatchObject({
+      sync: { status: 'error', reason: 'boss_upstream_unavailable' },
+      dashboard: { openRoles: 1 },
+      requirements: [{ title: 'AI 产品经理' }],
+    })
   })
 
   it('keeps adapter-unavailable actions pending and supports explicit login retry with the same key', async () => {
