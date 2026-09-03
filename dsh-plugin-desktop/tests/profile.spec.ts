@@ -132,9 +132,22 @@ describe('desktop profile composition', {
     ])).toEqual([
       '@deepseek-ai/dsh-base',
       '@deepseek-ai/dsh-web-app',
+      '@linxin666/dsh-web-ui-all',
       'third-party-one',
       'third-party-two',
     ])
+  })
+
+  it('ships the requested Web UI bundle in every Desktop profile', () => {
+    expect(desktopBundleList([])).toContain('@linxin666/dsh-web-ui-all')
+  })
+
+  it('disables aggregate rows that require the removed legacy apiProxy service', () => {
+    const home = temporaryHome()
+    const rows = composeEntries([prepareDesktopProfile(undefined, home).patches])
+
+    expect(rows.find(row => row.id === 'web-ui-task-board')?.disabled).toBe(true)
+    expect(rows.find(row => row.id === 'web-ui-remote-web-ui')?.disabled).toBe(true)
   })
 
   it('repairs a base-only CLI profile without replacing dependencies', () => {
@@ -158,6 +171,7 @@ describe('desktop profile composition', {
     expect(repaired.dsh.profile.bundles).toEqual([
       '@deepseek-ai/dsh-base',
       '@deepseek-ai/dsh-web-app',
+      '@linxin666/dsh-web-ui-all',
       'third-party-plugin',
     ])
     expect(repaired.dependencies).toEqual({ 'third-party-plugin': '^1.2.3' })
@@ -189,6 +203,7 @@ describe('desktop profile composition', {
     expect(repaired.dsh.profile.bundles).toEqual([
       '@deepseek-ai/dsh-base',
       '@deepseek-ai/dsh-web-app',
+      '@linxin666/dsh-web-ui-all',
     ])
   })
 

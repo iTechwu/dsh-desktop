@@ -8,6 +8,7 @@ import {
   findOverlayPackage,
   packageNameFromSpecifier,
   resolveOverlayPackage,
+  type PackageOverlaySource,
 } from './package-overlay.ts'
 
 const LOADER_ENTRY_URL = import.meta.resolve('@deepseek-ai/cordis-plugin-loader')
@@ -88,6 +89,7 @@ export function installProfilePackageResolver(profileBaseUrl: string): () => voi
 
   // Track the module graph rooted at every overlay-selected Loader package.
   const overlayModuleUrls = new Set<string>()
+  const overlayModuleSources = new Map<string, PackageOverlaySource>()
   const hooks = registerHooks({
     resolve(specifier, context, nextResolve) {
       // Cordis' internal ModuleLoader deliberately performs top-level imports
@@ -107,6 +109,7 @@ export function installProfilePackageResolver(profileBaseUrl: string): () => voi
           parentURL: overlay.selected.source === 'profile' ? profileBaseUrl : DESKTOP_ENTRY_URL,
         })
         overlayModuleUrls.add(resolved.url)
+        overlayModuleSources.set(resolved.url, overlay.selected.source)
         return resolved
       }
       if (context.parentURL === undefined || !overlayModuleUrls.has(context.parentURL)) {
@@ -120,12 +123,28 @@ export function installProfilePackageResolver(profileBaseUrl: string): () => voi
       try {
         const resolved = nextResolve(specifier, context)
         overlayModuleUrls.add(resolved.url)
+        const source = overlayModuleSources.get(context.parentURL)
+        if (source !== undefined) overlayModuleSources.set(resolved.url, source)
         return resolved
       } catch (cause) {
         if ((cause as NodeJS.ErrnoException).code !== 'ERR_MODULE_NOT_FOUND') throw cause
-        const resolved = nextResolve(specifier, { ...context, parentURL: profileBaseUrl })
-        overlayModuleUrls.add(resolved.url)
-        return resolved
+        const source = overlayModuleSources.get(context.parentURL)
+        const fallbackParents = source === 'install'
+          ? [profileBaseUrl, DESKTOP_ENTRY_URL]
+          : [profileBaseUrl]
+        let lastCause: unknown = cause
+        for (const parentURL of fallbackParents) {
+          try {
+            const resolved = nextResolve(specifier, { ...context, parentURL })
+            overlayModuleUrls.add(resolved.url)
+            if (source !== undefined) overlayModuleSources.set(resolved.url, source)
+            return resolved
+          } catch (fallbackCause) {
+            if ((fallbackCause as NodeJS.ErrnoException).code !== 'ERR_MODULE_NOT_FOUND') throw fallbackCause
+            lastCause = fallbackCause
+          }
+        }
+        throw lastCause
       }
     },
   })

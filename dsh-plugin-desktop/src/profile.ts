@@ -67,11 +67,14 @@ export const DESKTOP_PROFILE_NAME = 'desktop'
 /** Standalone package name inserted through the launcher-owned desktop layer. */
 export const DESKTOP_PACKAGE_NAME = 'dsh-plugin-desktop'
 
+/** Product-owned aggregate Web UI bundle shipped with every Desktop profile. */
+export const DESKTOP_WEB_UI_ALL_PACKAGE = '@linxin666/dsh-web-ui-all'
+
 /** Empty include root rewritten before every profile boot. */
 export const DESKTOP_PROFILE_ROOT = 'cordis.yml'
 
 const BIN_NAME = DESKTOP_PACKAGE_NAME
-const REQUIRED_BUNDLES = requiredWebBundles()
+const REQUIRED_BUNDLES = [...requiredWebBundles(), DESKTOP_WEB_UI_ALL_PACKAGE]
 const REQUIRED_BUNDLE_SET = new Set(REQUIRED_BUNDLES)
 const OBSOLETE_DESKTOP_BUNDLE_SET = new Set(['@deepseek-ai/dsh-desktop-app'])
 const INSTALL_ANCHOR = unpackedAsarPath(fileURLToPath(new URL('../package.json', import.meta.url)))
@@ -871,6 +874,18 @@ export function prepareDesktopProfile(
   const filteredBundles = filterMarketProviderPatches(bundlePatches)
   const filteredProfile = filterMarketProviderPatches(profile.patches)
   const filteredHome = filterMarketProviderPatches(homePatches)
+  // The 0.3.6 aggregate still carries two RC-era rows that inject the removed
+  // apiProxy service. Keep the aggregate installed while disabling only those
+  // incompatible capabilities until their Typert Gateway build is published.
+  const filteredAggregateCompat = filteredBundles.patches.map((patch) => {
+    if (!patch.insert) return patch
+    return {
+      ...patch,
+      insert: patch.insert.map((row) => row.id === 'web-ui-task-board' || row.id === 'web-ui-remote-web-ui'
+        ? { ...row, disabled: true }
+        : row),
+    }
+  })
   const hasProviderConflict = filteredBundles.removedProviderReference
     || filteredProfile.removedProviderReference
     || filteredHome.removedProviderReference
@@ -909,7 +924,7 @@ export function prepareDesktopProfile(
     }
   }
   const patches: PatchOptions[] = [
-    ...filteredBundles.patches,
+    ...filteredAggregateCompat,
     ...providerPatches,
     ...filteredProfile.patches,
     ...filteredHome.patches,

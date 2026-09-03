@@ -10,6 +10,8 @@ packages:
 allowBuilds:
   '@deepseek-ai/dsh-subprocess-local': true
   '@google/genai': false
+  cloudflared: true
+  cpu-features: true
   electron: true
   electron-winstaller: false
   esbuild: true
@@ -18,6 +20,7 @@ allowBuilds:
   node-addon-require-builtin: false
   node-pty: true
   protobufjs: false
+  ssh2: true
 
 linkWorkspacePackages: true
 

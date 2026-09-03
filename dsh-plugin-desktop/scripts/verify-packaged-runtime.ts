@@ -249,6 +249,7 @@ export const PACKAGED_STARTUP_IMPORT_ENTRIES = [
   'node_modules/@deepseek-ai/dsh-web-fetch-http/lib/index.js',
   'node_modules/@deepseek-ai/dsh-llm-deepseek/lib/index.js',
   'node_modules/@deepseek-ai/dsh-session-log-export/lib/index.js',
+  'node_modules/@linxin666/dsh-web-ui-all/lib/index.js',
   'lib/dofe-managed.js',
   'lib/webserver.js',
 ] as const

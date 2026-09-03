@@ -261,6 +261,12 @@ describe('published package surface', () => {
     }
   })
 
+  it('pins the requested Web UI aggregate bundle in the published runtime', () => {
+    expect(manifest.dependencies).toMatchObject({
+      '@linxin666/dsh-web-ui-all': '0.3.6',
+    })
+  })
+
   it.runIf(process.platform === 'win32')(
     'launches the browser opener helper through Electron Node mode',
     () => {
