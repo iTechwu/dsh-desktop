@@ -92,6 +92,7 @@ export function applyDesktopSettings(
       setMode,
       desktopSettings,
       notificationSettings,
+      searchCredentials: ctx.remote.credentials,
     }),
   }, DesktopSettingsSection))
   ctx.slots.inject('settings.action', () => ctx.slots.register({

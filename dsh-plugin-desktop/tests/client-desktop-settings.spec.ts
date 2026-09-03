@@ -601,7 +601,13 @@ describe('Desktop settings Slot registration', () => {
     const register = vi.fn(() => () => {})
     const inject = vi.fn((_name: string, mount: () => unknown) => mount())
     const localeRegister = vi.fn(() => () => {})
+    const searchCredentials = {
+      describe: vi.fn(),
+      set: vi.fn(),
+      unset: vi.fn(),
+    }
     const ctx = {
+      remote: { credentials: searchCredentials },
       settingsScope: { bind },
       locale: {
         bind: (namespace: string) => (key: string) => `${namespace}:${key}`,
@@ -639,6 +645,7 @@ describe('Desktop settings Slot registration', () => {
       initialMode: 'compatibility',
       micaSupported: false,
       setMode: expect.any(Function),
+      searchCredentials,
     })
     expect(component).toBe(DesktopSettingsSection)
 
