@@ -22,6 +22,7 @@ const rootManifest = JSON.parse(readFileSync(join(packageRoot, 'package.json'), 
 const ALLOWED_LICENSES = new Set([
   'MIT',
   'Apache-2.0',
+  '(MPL-2.0 OR Apache-2.0)',
   'BSD-2-Clause',
   'BSD-3-Clause',
   'ISC',
