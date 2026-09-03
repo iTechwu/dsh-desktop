@@ -6,11 +6,13 @@ import type { HeroBrandMarkOwnerProps } from '@deepseek-ai/dsh-client-ui-convers
 import type { SidebarBrandMarkOwnerProps } from '@deepseek-ai/dsh-client-ui-sidebar/client'
 import { heroBrandDataUrl, sidebarBrandDataUrl } from './generated-brand-assets.ts'
 
+const DESKTOP_BRAND_PRIORITY = -100
+
 const sidebarStyle: CSSProperties = {
   display: 'block',
   width: 200,
   height: 36,
-  maxWidth: 'none',
+  maxWidth: '100%',
   objectFit: 'contain',
   objectPosition: 'left center',
 }
@@ -64,8 +66,8 @@ export function applyDesktopBrand(ctx: ClientContext): void {
   ctx.slots.inject('sidebar.brand.mark', () =>
     ctx.slots.inject('sidebar.brand.name', () =>
       ctx.slots.inject('conversation.hero.brand.mark', function* () {
-        yield ctx.slots.register({ name: 'sidebar.brand.mark' }, YootunSidebarBrandMark)
-        yield ctx.slots.register({ name: 'sidebar.brand.name' }, YootunSidebarBrandName)
-        yield ctx.slots.register({ name: 'conversation.hero.brand.mark' }, YootunHeroBrandMark)
+        yield ctx.slots.register({ name: 'sidebar.brand.mark', priority: DESKTOP_BRAND_PRIORITY }, YootunSidebarBrandMark)
+        yield ctx.slots.register({ name: 'sidebar.brand.name', priority: DESKTOP_BRAND_PRIORITY }, YootunSidebarBrandName)
+        yield ctx.slots.register({ name: 'conversation.hero.brand.mark', priority: DESKTOP_BRAND_PRIORITY }, YootunHeroBrandMark)
       })))
 }

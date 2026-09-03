@@ -783,6 +783,21 @@ describe('published package surface', () => {
       .toBe('6f6ce9ae30ffe5b9c410c0044f21202ba1255ee154e913d131e9c84a493a5ca3')
     expect(digestOf('build/brand-logo.png'))
       .toBe('09d698cfc2d89aa77812e40ee0476a2e315bcc7f9f132be01ce53c2c9919771e')
+    expect(digestOf('build/sidebar-brand.png'))
+      .toBe('97fdafd7e3ff3ce84c7cba7f8e602782d513c3a117bca34d9b0de168f34cc939')
+  })
+
+  it('keeps the complete horizontal sidebar brand artwork', async () => {
+    const metadata = await sharp(readFileSync(new URL('build/sidebar-brand.png', packageRoot))).metadata()
+
+    expect(metadata).toEqual(expect.objectContaining({
+      format: 'png',
+      width: 2537,
+      height: 457,
+      channels: 4,
+      hasAlpha: true,
+    }))
+    expect(metadata.width! / metadata.height!).toBeCloseTo(200 / 36, 2)
   })
 
   it('generates a centered macOS icon with at least a 100-pixel visual inset', async () => {

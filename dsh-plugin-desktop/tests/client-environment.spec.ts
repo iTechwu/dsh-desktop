@@ -6,6 +6,7 @@ import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import { apply } from '../src/client/index.ts'
 import { AdvancedFrame, type AdvancedFrameProps } from '../src/client/AdvancedFrame.tsx'
 import { applyAdvancedShell } from '../src/client/advanced-shell.ts'
+import { applyDesktopBrand } from '../src/client/brand.tsx'
 import { claimDesktopLayout } from '../src/client/layout-service.ts'
 import { parseDesktopClientEnvironment } from '../src/client/environment.ts'
 import { ExtendedFrame } from '../src/client/ExtendedFrame.tsx'
@@ -62,6 +63,55 @@ describe('desktop client environment', () => {
     ['?dsh-desktop-mode=advanced&dsh-desktop-platform=win32&dsh-desktop-version=2.0.3&dsh-desktop-material=mica&dsh-desktop-mica=0', 'incompatible'],
   ])('fails loud for malformed marker %s', (search, field) => {
     expect(() => parseDesktopClientEnvironment(search)).toThrow(field)
+  })
+})
+
+describe('desktop brand', () => {
+  it('shadows bundled brand occupants at the product priority', () => {
+    const injections: string[] = []
+    const registrations: Array<Record<string, unknown>> = []
+    const disposeStyle = vi.fn()
+    vi.stubGlobal('document', {
+      createElement: () => ({ dataset: {}, remove: disposeStyle, textContent: '' }),
+      head: { appendChild: vi.fn() },
+    })
+    const drain = (value: unknown): void => {
+      if (value !== null && typeof value === 'object' && Symbol.iterator in value) {
+        for (const _entry of value as Iterable<unknown>) { /* exhaust registration fiber */ }
+      }
+    }
+    const ctx = {
+      effect: (mount: () => unknown) => { drain(mount()) },
+      slots: {
+        inject: (name: string, mount: () => unknown) => {
+          injections.push(name)
+          const value = mount()
+          drain(value)
+          return value
+        },
+        register: (options: Record<string, unknown>) => {
+          registrations.push(options)
+          return () => {}
+        },
+      },
+    } as unknown as ClientContext
+
+    try {
+      applyDesktopBrand(ctx)
+      expect(injections).toEqual([
+        'sidebar.brand.mark',
+        'sidebar.brand.name',
+        'conversation.hero.brand.mark',
+      ])
+      expect(registrations).toEqual([
+        { name: 'sidebar.brand.mark', priority: -100 },
+        { name: 'sidebar.brand.name', priority: -100 },
+        { name: 'conversation.hero.brand.mark', priority: -100 },
+      ])
+    }
+    finally {
+      vi.unstubAllGlobals()
+    }
   })
 })
 
