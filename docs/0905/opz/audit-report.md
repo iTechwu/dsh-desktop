@@ -27,6 +27,7 @@
 | AUD-011 | P3 | 外部权限待处理 | 飞书机器人没有 `application:app_slash_command:read` 应用身份权限 | 4.9.1 启动时仅跳过斜杠命令注册，普通消息长连接保持 1/1 在线且测试消息发送成功；需由飞书应用管理员补权后再验证斜杠命令，不在本机写入或扩张凭据权限 |
 | AUD-012 | P1 | 已修复 | 企业驾驶舱近 7 天/近 30 天在 GeoFlow 返回 `tenant_id` 时引用未传入的 `now`，导致 GEO 数据源整体降级为异常 | 真实包复现 `GeoFlow series failed: now is not defined`；`docker-helm.dofe.ai@b94319b` 注入时钟并补充租户目标月份回归，插件 15/15 通过；重包后两个范围均恢复 4/4，06:13 后日志无同类错误 |
 | AUD-013 | P2 | 已修复 | 5 个业务插件已有 Host 路由测试，但默认 `npm test` 只运行 `plugin.test.mjs`，常规 gate 无法发现真实工具调用、缺能力降级和审批投影回归 | `docker-helm.dofe.ai@066ae47` 将招聘、销售、供应链、内容指挥和统一审批改为执行全部 Node 测试；五包 `npm run check` 共 26/26 通过 |
+| AUD-014 | P1 | 已修复 | 线索发现、销售、供应链、统一审批、内容指挥、招聘和改装检索共 7 个 Host 调用 `ctx.tools.execute` 时未传 Harness 必需的 `AbortSignal`；线索发现“已存候选”真实复现读取失败 | 直连公共 MCP 的 `lead_discovery_candidates_list` 返回 HTTP 200、0 条候选，排除服务与凭据故障；先加信号断言得到七包 RED，`docker-helm.dofe.ai@8bd495c` 传递 Agent 取消信号并为 HTTP 路由设置 60 秒超时，同时补齐 5 个 Host 的异常回退及审批双源失败状态。七包 37/37 PASS；06:49 重包后已存候选恢复 0 条空态，供应链、内容和审批均正常，无新增业务失败日志 |
 
 ## 已确认正常
 
@@ -41,6 +42,7 @@
 - 企业驾驶舱刷新可用；昨日及近 7/30 天切换均能完成，修复后趋势范围维持 4/4 数据源并对真实无数据场景显示“暂无数据”。
 - 当前 Harness 提供 `typertGateway`、`sessionController` 和 `workspaceController`；与 `dsh-im@4.9.1` 声明的 Desktop 进程内连接契约一致。
 - 真实 `desktop` Profile 已运行 `dsh-im@4.9.1`；飞书机器人 1/1 在线，连接检查成功发送测试消息。
+- 公共 Lead Discovery MCP 的工具列表与候选读取契约可用；修复 Host 调用契约后，桌面真实候选读取恢复且未创建业务数据。
 
 ## 工作区基线
 
