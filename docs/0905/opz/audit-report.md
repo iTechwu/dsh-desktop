@@ -15,7 +15,7 @@
 | ID | 严重度 | 状态 | 发现 | 证据与影响 |
 | --- | --- | --- | --- | --- |
 | AUD-001 | P1 | 已修复 | 移除 `@linxin666/dsh-web-ui-all` 后仍有 7 个测试断言要求旧包存在 | `b3e1773b69` 更新迁移契约；完整 `pnpm check` 恢复为 desktop 1107 通过、4 跳过 |
-| AUD-002 | P1 | 定位中 | 9 个未配置消息渠道每 30 秒调用 `host.describe` 并收到 403 | 飞书、Discord、WhatsApp、企微、QQ、Telegram、Slack、微信、钉钉持续重试；当日日志 03:26 已达约 833 KiB/4600 行，造成唤醒、噪声和日志增长 |
+| AUD-002 | P1 | 已定位，待隔离升级验证 | `@xmanrui/dsh-im@2.3.0` 的 9 个消息渠道每 30 秒通过未认证 HTTP 调用 `host.describe` 并收到 403 | 真实配置仅飞书有 1 个机器人，其余渠道无配置；旧版 supervisor 在读取渠道状态前先调用 Harness，导致空渠道也永久重试。`4.9.1` 已提供 Typert Gateway 进程内连接，但发布于审计当日且现有插件市场无可回滚升级操作，禁止直接覆盖真实 Profile |
 | AUD-003 | P1 | 已修复 | 多个业务覆盖层可叠加，关闭上层后露出前一层；隐藏层与主界面控件仍在辅助功能树中 | `docker-helm.dofe.ai@8c9f508` 实现 11 个面板互斥；`dsh-desktop@705ab05047` 和 `deepseek-harness@de9675462b` 分别覆盖桌面自有帧与兼容帧的背景隔离。真实包打开 Dashboard 后辅助功能树只保留当前弹窗 |
 | AUD-004 | P2 | 待修复 | Skill 管理面板只暴露标题、刷新和关闭，分组、搜索、技能卡片与操作未进入辅助功能树 | 鼠标视觉可见，但键盘和读屏无法完整操作 |
 | AUD-005 | P2 | 待优化 | 一条极简聊天冒烟请求输入 78.3K token | 请求成功但上下文成本与首 token 延迟偏高；需检查技能目录和系统上下文注入策略 |
@@ -34,6 +34,7 @@
 - 设置中的 DeepSeek Search API Key 入口可见，未读取或暴露凭据值。
 - 真实聊天成功返回 `YOOTUN_CHAT_SMOKE_OK`，模型为 `deepseek-v4-flash-vision`。
 - 模型与预算插件显示连接正常，观察到 24 次请求；成本、token 预算未配置时有明确状态。
+- 当前 Harness 提供 `typertGateway`、`sessionController` 和 `workspaceController`；与 `dsh-im@4.9.1` 声明的 Desktop 进程内连接契约一致。
 
 ## 工作区基线
 
