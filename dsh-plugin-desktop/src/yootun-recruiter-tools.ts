@@ -115,7 +115,7 @@ export function apply(ctx: Context, config: Config): void {
   ctx.systemPrompt.section({
     name: 'tool:yootun-recruiter',
     order: 117,
-    text: '使用 yootun_recruiter 管理企业招聘工作台。先保存岗位，再保存脱敏后的候选人分析；不得传入原始简历、联系方式、证件或其他敏感字段。publish_jd、send_message、write_feedback 只能创建待确认动作，必须由用户在招聘工作台确认；工具不能确认或直接发送外部动作。',
+    text: '使用 yootun_recruiter 管理企业招聘工作台。先保存岗位，再保存脱敏后的候选人分析；不得传入原始简历、联系方式、证件或其他敏感字段。用户需要连接 BOSS 直聘时，若存在 sidebar_open 工具则在其会话侧边栏打开官方登录页 https://www.zhipin.com/web/user/?ka=header-login，由用户自行登录和操作；不得读取或保存 Cookie、二维码和页面会话，本期不得自动抓取页面数据。publish_jd、send_message、write_feedback 只能创建待确认动作，必须由用户在招聘工作台确认；工具不能确认或直接发送外部动作。',
   })
   ctx.tools.register(defineTool({
     name: 'yootun_recruiter',

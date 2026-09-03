@@ -1,5 +1,5 @@
 import { EventEmitter } from 'node:events'
-import { mkdirSync, mkdtempSync, readFileSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -67,6 +67,7 @@ async function call(
     credentials?: { resolve: (ref: unknown) => Promise<{ value: string; source: 'env' } | undefined> }
     knowledgePublisher?: { publish: (request: any) => Promise<any> }
     hrKnowledgeSpaceId?: string
+    openBossWeb?: (url?: string) => Promise<void>
   } = {},
 ) {
   const res = response()
@@ -356,6 +357,22 @@ describe('Yootun recruiter route', () => {
       adapter: { execute: async request => ({ status: 'succeeded', reasonCode: 'remote_accepted', remoteRef: request.idempotencyKey }) },
     })
     expect((completed.value.actions as Array<{ status: string }>)[0]!.status).toBe('succeeded')
+  })
+
+  it('opens the in-app BOSS browser only through an injected desktop opener', async () => {
+    const statePath = path()
+    const absent = await call(statePath, 'POST', { action: 'open_boss_login' })
+    expect(absent.status).toBe(503)
+    expect(absent.value.error).toBe('boss_web_unavailable')
+    expect(((await call(statePath, 'GET')).value.boss as { inAppBrowser: boolean }).inAppBrowser).toBe(false)
+    const opens: Array<string | undefined> = []
+    const opened = await call(statePath, 'POST', { action: 'open_boss_login' }, undefined, {
+      openBossWeb: async url => { opens.push(url) },
+    })
+    expect(opened.status).toBe(200)
+    expect(opens).toEqual([undefined])
+    expect((opened.value.boss as { inAppBrowser: boolean }).inAppBrowser).toBe(true)
+    expect(existsSync(statePath)).toBe(false)
   })
 
   it('rejects a conflicting payload that reuses an idempotency key', async () => {

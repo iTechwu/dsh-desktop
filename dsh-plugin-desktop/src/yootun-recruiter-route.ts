@@ -202,6 +202,7 @@ export interface RecruiterSnapshot extends RecruiterState {
     loginUrl: string
     status: 'requires_user_login' | 'connected' | 'error'
     adapter: 'not_configured' | 'official'
+    inAppBrowser: boolean
   }
 }
 
@@ -531,7 +532,7 @@ function aggregateAnalytics(state: RecruiterState): RecruiterAnalyticsState {
 
 export function recruiterSnapshot(
   state: RecruiterState,
-  capabilities: { bossAdapter?: boolean; knowledgeReady?: boolean } = {},
+  capabilities: { bossAdapter?: boolean; knowledgeReady?: boolean; bossWeb?: boolean } = {},
 ): RecruiterSnapshot {
   const funnel = CANDIDATE_STAGES.map(stage => ({
     stage,
@@ -568,6 +569,7 @@ export function recruiterSnapshot(
       status: sync.status === 'ready' || sync.status === 'partial'
         ? 'connected' : sync.status === 'error' ? 'error' : 'requires_user_login',
       adapter: capabilities.bossAdapter === true ? 'official' : 'not_configured',
+      inAppBrowser: capabilities.bossWeb === true,
     },
   }
 }
@@ -1010,6 +1012,7 @@ export interface RecruiterRouteDependencies {
   credentials?: Pick<CredentialProvider, 'resolve'> | undefined
   knowledgePublisher?: RecruiterKnowledgePublisher | undefined
   hrKnowledgeSpaceId?: string | undefined
+  openBossWeb?: ((url?: string) => Promise<void>) | undefined
 }
 
 async function modelsAccessReady(credentials: Pick<CredentialProvider, 'resolve'> | undefined): Promise<boolean> {
@@ -1042,10 +1045,12 @@ export async function handleYootunRecruiterRequest(
   const now = (dependencies.now?.() ?? new Date()).toISOString()
   const state = await readRecruiterState(dependencies.statePath, now)
   const knowledgeReady = dependencies.knowledgePublisher !== undefined && validUuid(dependencies.hrKnowledgeSpaceId)
-  if (req.method === 'GET') return finish(res, 200, recruiterSnapshot(state, {
+  const capabilities = {
     bossAdapter: dependencies.bossAdapter !== undefined,
     knowledgeReady,
-  }))
+    bossWeb: dependencies.openBossWeb !== undefined,
+  }
+  if (req.method === 'GET') return finish(res, 200, recruiterSnapshot(state, capabilities))
   if (req.headers['content-type']?.split(';', 1)[0]?.trim().toLowerCase() !== 'application/json') {
     return finish(res, 415, { error: 'content_type_invalid' })
   }
@@ -1071,22 +1076,23 @@ export async function handleYootunRecruiterRequest(
       next = await syncRecruiterBoss(dependencies.statePath, dependencies.bossAdapter, now)
     } else if (recordBody?.action === 'sync_preview') {
       if (!exactKeys(recordBody, ['action'])) throw new InvalidRecruiterRequest('request_fields_invalid')
-      const capabilities = { bossAdapter: dependencies.bossAdapter !== undefined, knowledgeReady }
       return finish(res, 200, { ...recruiterSnapshot(state, capabilities), syncPreview: syncPreview(state, capabilities.bossAdapter) })
+    } else if (recordBody?.action === 'open_boss_login') {
+      if (!exactKeys(recordBody, ['action'])) throw new InvalidRecruiterRequest('request_fields_invalid')
+      if (dependencies.openBossWeb === undefined) throw new InvalidRecruiterRequest('boss_web_unavailable')
+      await dependencies.openBossWeb()
+      return finish(res, 200, recruiterSnapshot(state, capabilities))
     } else {
       next = await mutateRecruiterState(dependencies.statePath, parsed, now)
     }
-    finish(res, 200, recruiterSnapshot(next, {
-      bossAdapter: dependencies.bossAdapter !== undefined,
-      knowledgeReady,
-    }))
+    finish(res, 200, recruiterSnapshot(next, capabilities))
   } catch (cause) {
     if (cause instanceof RecruiterBodyTooLarge) return finish(res, 413, { error: 'request_too_large' })
     if (cause instanceof InvalidRecruiterRequest || cause instanceof SyntaxError) {
       const error = cause instanceof InvalidRecruiterRequest ? cause.message : 'request_invalid'
       const unavailable = [
         'recruiter_adapter_unavailable', 'boss_official_adapter_unavailable',
-        'knowledge_publisher_unavailable', 'model_api_key_unavailable',
+        'knowledge_publisher_unavailable', 'model_api_key_unavailable', 'boss_web_unavailable',
       ].includes(error)
       return finish(res, unavailable ? 503 : 400, { error })
     }

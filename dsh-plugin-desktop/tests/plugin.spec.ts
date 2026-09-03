@@ -126,6 +126,7 @@ function createHarness(
     platform,
     windowsBuild: platform === 'win32' ? 22_631 : undefined,
     locale: 'en',
+    openBossWeb: async () => {},
     updates: {
       isPackaged: false,
       canDownload: platform === 'darwin' || platform === 'win32',

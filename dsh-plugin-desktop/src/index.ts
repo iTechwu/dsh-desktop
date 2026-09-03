@@ -413,6 +413,7 @@ export function apply(ctx: Context, config: Config): void {
           credentials: ctx.credentials,
           knowledgePublisher: createRecruiterKnowledgePublisher(ctx.tools),
           hrKnowledgeSpaceId: access.ready ? access.hrSpaceId : undefined,
+          openBossWeb: async url => { await ctx.get('desktopRuntime')?.openBossWeb(url) },
         })
       },
     }),

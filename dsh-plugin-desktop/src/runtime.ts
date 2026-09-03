@@ -223,6 +223,9 @@ export interface DesktopRuntime {
   /** Launch the OpenMontage web app with one managed DoFe credential. */
   openOpenMontage(apiKey: string): Promise<void>
 
+  /** Open the in-app BOSS Zhipin browser window (web-use login for recruiting). */
+  openBossWeb(url?: string): Promise<void>
+
   /** Open the isolated native Profile creator, focusing an existing instance. */
   openProfileCreateWindow(options: Omit<ProfileCreateWindowOptions, 'locale'>): void
 

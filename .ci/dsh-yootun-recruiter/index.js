@@ -38,7 +38,7 @@ export function apply(ctx, config = {}) {
           if (id) handledActions.set(id, { action, at: new Date().toISOString() })
           return send(res, 200, await buildState(ctx))
         }
-        if (action === 'sync_boss' || action === 'publish_knowledge') {
+        if (action === 'sync_boss' || action === 'publish_knowledge' || action === 'open_boss_login') {
           return send(res, 503, { status: 'unavailable', reason: 'recruiter_adapter_not_configured' })
         }
         return send(res, 400, { error: 'unknown_action' })

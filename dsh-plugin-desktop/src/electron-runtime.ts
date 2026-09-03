@@ -61,6 +61,7 @@ import {
 import { ElectronWorkspaceAdmission } from './workspace-admission.ts'
 import { ProfileCreateWindow, type ProfileCreateWindowOptions } from './profile-create-window.ts'
 import { OpenMontageWindow } from './openmontage-window.ts'
+import { BossWebWindow, BOSS_LOGIN_URL } from './yootun-boss-web-window.ts'
 import { windowsBuildNumber } from './window-material.ts'
 import { desktopNativeCopy } from './native-dialog-copy.ts'
 import {
@@ -125,6 +126,7 @@ export class ElectronDesktopRuntime implements DesktopRuntime {
   private rendererHealthGate: DesktopRendererHealthGate | undefined
   private profileCreateWindow: ProfileCreateWindow | undefined
   private openMontageWindow: OpenMontageWindow | undefined
+  private bossWebWindow: BossWebWindow | undefined
   private restartRequest: Promise<void> | undefined
 
   constructor(
@@ -384,6 +386,18 @@ export class ElectronDesktopRuntime implements DesktopRuntime {
         defaultId: 0,
         cancelId: 0,
       })
+      throw cause
+    }
+  }
+
+  /** @inheritdoc */
+  async openBossWeb(url: string = BOSS_LOGIN_URL): Promise<void> {
+    if (this.bossWebWindow === undefined) this.bossWebWindow = new BossWebWindow()
+    try {
+      await this.bossWebWindow.open(url)
+    } catch (cause) {
+      const detail = cause instanceof Error ? cause.message : String(cause)
+      this.logError(`dsh-plugin-desktop: failed to open the BOSS web window: ${detail}`)
       throw cause
     }
   }

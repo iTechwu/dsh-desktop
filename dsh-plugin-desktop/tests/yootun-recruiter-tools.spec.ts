@@ -44,6 +44,8 @@ describe('Yootun recruiter Agent tool', () => {
     const prompt = (await ctx.systemPrompt.assemble()).sections.map(section => section.text).join('\n')
     expect(prompt).toContain('必须由用户在招聘工作台确认')
     expect(prompt).toContain('不得传入原始简历')
+    expect(prompt).toContain('sidebar_open')
+    expect(prompt).toContain('不得读取或保存 Cookie、二维码和页面会话')
   })
 
   it('builds a role, candidate analysis, and pending external action', async () => {
