@@ -34,6 +34,7 @@
 - 插件市场加载 14 个插件，搜索、分类和卡片控件进入辅助功能树。
 - 设置中的 DeepSeek Search API Key 入口可见，未读取或暴露凭据值。
 - 真实聊天成功返回 `YOOTUN_CHAT_SMOKE_OK`，模型为 `deepseek-v4-flash-vision`。
+- 独立审计会话只执行一次 `pwd`，工具摘要、参数、结果、Schema 和计时完整；新会话不继承上下文，完成态与进行中会话在重启后均按策略恢复。
 - 模型与预算插件显示连接正常，观察到 24 次请求；成本、token 预算未配置时有明确状态。
 - 当前 Harness 提供 `typertGateway`、`sessionController` 和 `workspaceController`；与 `dsh-im@4.9.1` 声明的 Desktop 进程内连接契约一致。
 - 真实 `desktop` Profile 已运行 `dsh-im@4.9.1`；飞书机器人 1/1 在线，连接检查成功发送测试消息。
