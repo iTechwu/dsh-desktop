@@ -10,7 +10,8 @@ export const inject = ['webServer', 'tools']
 
 const handledActions = new Map()
 
-export function apply(ctx) {
+export function apply(ctx, config = {}) {
+  if (config.registerHostRoute === false) return undefined
   return ctx.effect(() => ctx.webServer.register({
     kind: 'exact',
     path: PATH,

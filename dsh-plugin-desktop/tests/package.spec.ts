@@ -207,6 +207,12 @@ describe('published package surface', () => {
     expect(readFileSync(new URL('cordis.patch.yml', packageRoot), 'utf8')).toContain("name: '@dofe/dsh-yootun-ui'")
     expect(readFileSync(new URL('cordis.patch.yml', packageRoot), 'utf8')).toContain("name: '@dofe/dsh-yootun-dashboard'")
     expect(readFileSync(new URL('cordis.patch.yml', packageRoot), 'utf8')).toContain("name: '@dofe/dsh-yootun-recruiter'")
+    const patchSource = readFileSync(new URL('cordis.patch.yml', packageRoot), 'utf8')
+    for (const plugin of ['recruiter', 'sales', 'supply-watch', 'content-command', 'approvals', 'finops']) {
+      expect(patchSource).toMatch(
+        new RegExp(`name: '@dofe/dsh-yootun-${plugin}'\\n\\s+config:\\n\\s+registerHostRoute: false`, 'u'),
+      )
+    }
     expect(readFileSync(new URL('cordis.patch.yml', packageRoot), 'utf8')).toContain("name: '@dofe/dsh-yootun-sales'")
     expect(readFileSync(new URL('cordis.patch.yml', packageRoot), 'utf8')).toContain("name: '@dofe/dsh-yootun-supply-watch'")
     expect(readFileSync(new URL('cordis.patch.yml', packageRoot), 'utf8')).toContain("name: '@dofe/dsh-yootun-content-command'")

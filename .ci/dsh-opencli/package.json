@@ -2,6 +2,7 @@
   "name": "@dofe/dsh-opencli",
   "version": "0.3.0",
   "description": "DSH agent-reach routing tool backed by the CI OpenCLI installation.",
+  "license": "MIT",
   "type": "module",
   "main": "index.js",
   "exports": {

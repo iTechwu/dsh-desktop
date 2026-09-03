@@ -10,7 +10,10 @@ export const inject = ['webServer', 'tools']
 
 const handledActions = new Map()
 
-export function apply(ctx) {
+export function apply(ctx, config = {}) {
+  // Desktop owns the shared recruiter route so its local, approval-gated
+  // state and Agent tool cannot be shadowed by the live-candidate adapter.
+  if (config.registerHostRoute === false) return undefined
   return ctx.effect(() => ctx.webServer.register({
     kind: 'exact',
     path: PATH,

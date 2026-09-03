@@ -11,6 +11,7 @@ const REQUEST_TIMEOUT_MS = 20000
 export const inject = ['webServer', 'credentials']
 
 export function apply(ctx, overrides = {}) {
+  if (overrides.registerHostRoute === false) return undefined
   const fetchImpl = overrides.fetch || globalThis.fetch
   const now = overrides.now || (() => new Date())
   return ctx.effect(() => ctx.webServer.register({

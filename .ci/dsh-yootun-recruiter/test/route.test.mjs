@@ -42,3 +42,15 @@ test('serves live ranked candidates through the talent discovery tool', async ()
   const dismissed = await invoke(route, 'POST', { action: 'dismiss_action', id: 'c-1' })
   assert.equal(dismissed.body.actions[0].status, 'adapter_pending')
 })
+
+test('does not register its host route when the desktop owns the endpoint', () => {
+  let registrations = 0
+  const result = apply({
+    effect(factory) { registrations += 1; return factory() },
+    tools: {},
+    webServer: { register() { throw new Error('route must stay desktop-owned') } },
+  }, { registerHostRoute: false })
+
+  assert.equal(result, undefined)
+  assert.equal(registrations, 0)
+})

@@ -2,6 +2,7 @@
   "name": "@dofe/dsh-geoflow-mcp",
   "version": "0.2.0",
   "description": "DSH bundle for GeoFlow MCP with draft-only automation guidance.",
+  "license": "MIT",
   "type": "module",
   "main": "index.js",
   "exports": {
@@ -13,4 +14,3 @@
     "bundle": {"patch": "./cordis.patch.yml"}
   }
 }
-

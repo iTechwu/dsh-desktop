@@ -2,6 +2,7 @@
   "name": "@dofe/dsh-tools-mcp",
   "version": "0.2.0",
   "description": "DSH bundle for the Tools MCP domains used by GEO automation.",
+  "license": "MIT",
   "type": "module",
   "main": "index.js",
   "exports": {
@@ -13,4 +14,3 @@
     "bundle": {"patch": "./cordis.patch.yml"}
   }
 }
-

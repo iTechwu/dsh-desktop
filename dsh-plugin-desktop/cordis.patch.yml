@@ -9,20 +9,34 @@
       name: '@dofe/dsh-yootun-ui'
     - id: dofe-yootun-dashboard
       name: '@dofe/dsh-yootun-dashboard'
+      config:
+        registerHostRoute: false
     - id: dofe-yootun-recruiter
       name: '@dofe/dsh-yootun-recruiter'
+      config:
+        registerHostRoute: false
     - id: dofe-yootun-sales
       name: '@dofe/dsh-yootun-sales'
+      config:
+        registerHostRoute: false
     - id: dofe-yootun-supply-watch
       name: '@dofe/dsh-yootun-supply-watch'
+      config:
+        registerHostRoute: false
     - id: dofe-yootun-content-command
       name: '@dofe/dsh-yootun-content-command'
+      config:
+        registerHostRoute: false
     - id: dofe-yootun-knowledge
       name: '@dofe/dsh-yootun-knowledge'
     - id: dofe-yootun-approvals
       name: '@dofe/dsh-yootun-approvals'
+      config:
+        registerHostRoute: false
     - id: dofe-yootun-finops
       name: '@dofe/dsh-yootun-finops'
+      config:
+        registerHostRoute: false
     - id: dofe-yootun-retrofit
       name: '@dofe/dsh-yootun-retrofit'
     - id: dofe-yootun-daily-report

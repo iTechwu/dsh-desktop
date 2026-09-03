@@ -2,6 +2,7 @@
   "name": "@dofe/dsh-georank-mcp",
   "version": "0.1.0",
   "description": "DSH bundle for GEORank MCP: GEO diagnosis, Q&A, keyword expansion, solutions and structured-content tools.",
+  "license": "MIT",
   "type": "module",
   "main": "index.js",
   "exports": {

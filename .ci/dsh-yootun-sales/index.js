@@ -14,7 +14,8 @@ export const inject = ['webServer', 'tools']
 // adapter is the component that eventually executes or persists them.
 const handledActions = new Map()
 
-export function apply(ctx) {
+export function apply(ctx, config = {}) {
+  if (config.registerHostRoute === false) return undefined
   return ctx.effect(() => ctx.webServer.register({
     kind: 'exact',
     path: PATH,
