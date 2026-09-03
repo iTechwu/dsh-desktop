@@ -224,6 +224,10 @@ describe('Yootun recruiter route', () => {
       credentials: { resolve: async () => undefined },
     })
     expect(missing).toMatchObject({ status: 503, value: { error: 'model_api_key_unavailable' } })
+    const read = await call(statePath, 'GET', undefined, undefined, {
+      credentials: { resolve: async () => undefined },
+    })
+    expect(read).toMatchObject({ status: 503, value: { error: 'model_api_key_unavailable' } })
   })
 
   it('syncs only through an injected official BOSS adapter and persists aggregate receipts', async () => {
@@ -361,7 +365,10 @@ describe('Yootun recruiter route', () => {
     const tooLarge = request('POST', requirement())
     tooLarge.headers['content-length'] = String(yootunRecruiterLimits.bodyBytes + 1)
     const res = response()
-    await handleYootunRecruiterRequest(tooLarge, res, ORIGIN, { statePath, now: () => NOW })
+    await handleYootunRecruiterRequest(tooLarge, res, ORIGIN, {
+      statePath, now: () => NOW,
+      credentials: { resolve: async () => ({ value: 'test-only-model-key', source: 'env' }) },
+    })
     expect(res.statusCode).toBe(413)
 
     const oversizedPath = path()

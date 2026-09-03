@@ -994,6 +994,9 @@ export async function handleYootunRecruiterRequest(
   if (req.method !== 'GET' && req.method !== 'POST') return finish(res, 405, { error: 'method_not_allowed' }, 'GET, POST')
   if (!sameOrigin(req, expectedOrigin, req.method === 'POST')) return finish(res, 403, { error: 'forbidden' })
   if (dependencies.statePath === undefined) return finish(res, 503, { error: 'recruiter_storage_unavailable' })
+  if (!await modelsAccessReady(dependencies.credentials)) {
+    return finish(res, 503, { error: 'model_api_key_unavailable' })
+  }
   const now = (dependencies.now?.() ?? new Date()).toISOString()
   const state = await readRecruiterState(dependencies.statePath, now)
   const knowledgeReady = dependencies.knowledgePublisher !== undefined && validUuid(dependencies.hrKnowledgeSpaceId)
@@ -1011,7 +1014,6 @@ export async function handleYootunRecruiterRequest(
     let next: RecruiterSnapshot
     if (recordBody?.action === 'execute_action') {
       if (!exactKeys(recordBody, ['action', 'id'])) throw new InvalidRecruiterRequest('request_fields_invalid')
-      if (!await modelsAccessReady(dependencies.credentials)) throw new InvalidRecruiterRequest('model_api_key_unavailable')
       next = await executeRecruiterAction(
         dependencies.statePath,
         limitedText(recordBody.id, 'id', 80),
@@ -1024,7 +1026,6 @@ export async function handleYootunRecruiterRequest(
       )
     } else if (recordBody?.action === 'sync_boss') {
       if (!exactKeys(recordBody, ['action'])) throw new InvalidRecruiterRequest('request_fields_invalid')
-      if (!await modelsAccessReady(dependencies.credentials)) throw new InvalidRecruiterRequest('model_api_key_unavailable')
       next = await syncRecruiterBoss(dependencies.statePath, dependencies.bossAdapter, now)
     } else {
       next = await mutateRecruiterState(dependencies.statePath, parsed, now)
