@@ -5,6 +5,11 @@ import { dirname, resolve } from 'node:path'
 
 const root = resolve(import.meta.dirname, '..')
 const preinstalledPlugins = [
+  'dsh-geoflow-mcp',
+  'dsh-georank-mcp',
+  'dsh-opencli',
+  'dsh-plugin-console',
+  'dsh-tools-mcp',
   'dsh-yootun-ui',
   'dsh-yootun-dashboard',
   'dsh-yootun-recruiter',
@@ -16,6 +21,7 @@ const preinstalledPlugins = [
   'dsh-yootun-finops',
   'dsh-yootun-retrofit',
   'dsh-yootun-daily-report',
+  'dsh-yootun-lead-discovery',
 ]
 for (const name of preinstalledPlugins) {
   const sibling = resolve(root, `../docker-helm.dofe.ai/plugins/${name}`)
