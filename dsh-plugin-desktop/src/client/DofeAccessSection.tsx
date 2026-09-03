@@ -40,7 +40,13 @@ const CSS = `
 .dshDofeAccessReveal:focus-visible { outline: 2px solid var(--dsw-alias-brand-primary, #245eea); outline-offset: 1px; }
 .dshDofeAccessActions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
 .dshDofeAccessActionsOnboarding { justify-content: space-between; padding-top: 2px; }
-.dshDofeAccessPrimary { display: inline-flex; align-items: center; gap: 8px; min-height: 42px; padding-inline: 18px; }
+.dshDofeAccessPrimary { display: inline-flex; align-items: center; gap: 8px; min-height: 42px; padding-inline: 18px; color: #fff; background: var(--dsw-alias-brand-primary, #245eea); border: 1px solid var(--dsw-alias-brand-primary, #245eea); box-shadow: 0 1px 0 rgba(36, 94, 234, .12); }
+.dshDofeAccessPrimary:hover:not(:disabled) { background: #1d4fc7; border-color: #1d4fc7; box-shadow: 0 2px 6px rgba(36, 94, 234, .28); }
+.dshDofeAccessPrimary:active:not(:disabled) { background: #1843b0; border-color: #1843b0; box-shadow: none; transform: translateY(1px); }
+.dshDofeAccessPrimary:focus-visible { outline: 2px solid var(--dsw-alias-brand-primary, #245eea); outline-offset: 2px; }
+.dshDofeAccessDanger { color: var(--dsw-alias-state-error-primary, #c93636); background: var(--dsw-alias-bg-layer-1, #fff); border: 1px solid rgba(201, 54, 54, .35); }
+.dshDofeAccessDanger:hover:not(:disabled) { color: #fff; background: var(--dsw-alias-state-error-primary, #c93636); border-color: var(--dsw-alias-state-error-primary, #c93636); }
+.dshDofeAccessDanger:focus-visible { outline: 2px solid var(--dsw-alias-state-error-primary, #c93636); outline-offset: 2px; }
 .dshDofeAccessStatus { color: var(--dsw-alias-label-secondary, #667085); font-size: 13px; }
 .dshDofeAccessError { color: var(--dsw-alias-state-error-primary, #c93636); background: rgba(201, 54, 54, .08); border-left: 3px solid var(--dsw-alias-state-error-primary, #c93636); padding: 10px 12px; margin: 0; font-size: 13px; line-height: 1.45; }
 .dshDofeAccessPlugins { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); border-top: 1px solid var(--dsw-alias-border-l1, #e2e6ed); }
@@ -232,9 +238,10 @@ function AccessForm({ credentials, settingsApi, settingsScope, t, onboarding, on
         ], defaultModel.revision)
         if (!result.ok) throw new Error(result.error.message)
       }
-    } catch {
+    } catch (cause) {
       setBusy(false)
-      setError(t('saveError'))
+      const detail = cause instanceof Error && cause.message.length > 0 ? cause.message : ''
+      setError(detail.length > 0 ? `${t('saveError')}（${detail}）` : t('saveError'))
       return
     }
     setBusy(false)
@@ -267,7 +274,7 @@ function AccessForm({ credentials, settingsApi, settingsScope, t, onboarding, on
     {onboarding && <p className="dshDofeAccessHelp"><Phone size={15} aria-hidden="true" /><span>{t('onboardingHelp')}</span></p>}
     {onboarding && <div className="dshDofeAccessField"><div className="dshDofeAccessFieldHeader"><span className="dshDofeAccessLabel">{t('pluginsTitle')}</span><span className="dshDofeAccessCount">{t('selectedCount').replace('{count}', String(enabledPlugins.length))}</span></div><div className="dshDofeAccessPlugins">{DOFE_PLUGIN_CATALOG.map(plugin => { const selected = enabledPlugins.includes(plugin.id); return <label className={`dshDofeAccessPlugin${selected ? ' dshDofeAccessPluginSelected' : ''}`} key={plugin.id}><input type="checkbox" checked={selected} onChange={event => setEnabledPlugins(current => event.currentTarget.checked ? [...new Set([...current, plugin.id])] : current.filter(id => id !== plugin.id))} /><span className="dshDofeAccessPluginCheck" aria-hidden="true"><Check size={14} strokeWidth={2.5} /></span><span><span className="dshDofeAccessPluginName">{plugin.name}</span><span className="dshDofeAccessPluginDescription">{plugin.description}</span></span></label> })}</div></div>}
     {error !== undefined && <p className="dshDofeAccessError" role="alert">{error}</p>}
-    <div className={`dshDofeAccessActions${onboarding ? ' dshDofeAccessActionsOnboarding' : ''}`}><Button className="dshDofeAccessPrimary" variant="primary" disabled={busy || (!draft.trim() && configured !== true) || models.length === 0 || !selectedModel || (onboarding && enabledPlugins.length === 0)} onClick={() => void save()}>{busy ? t('saving') : t('save')}{!busy && <ArrowRight size={16} aria-hidden="true" />}</Button>{!onboarding && <Button disabled={busy || configured !== true} onClick={() => void remove()}>{busy ? t('removing') : t('remove')}</Button>}{!onboarding && <span className="dshDofeAccessStatus" role="status">{configured === true ? t('configured') : configured === false ? t('missing') : ''}</span>}</div>
+    <div className={`dshDofeAccessActions${onboarding ? ' dshDofeAccessActionsOnboarding' : ''}`}><Button className="dshDofeAccessPrimary" variant="primary" disabled={busy || (!draft.trim() && configured !== true) || models.length === 0 || !selectedModel || (onboarding && enabledPlugins.length === 0)} onClick={() => void save()}>{busy ? t('saving') : t('save')}{!busy && <ArrowRight size={16} aria-hidden="true" />}</Button>{!onboarding && <Button className="dshDofeAccessDanger" disabled={busy || configured !== true} onClick={() => void remove()}>{busy ? t('removing') : t('remove')}</Button>}{!onboarding && <span className="dshDofeAccessStatus" role="status">{configured === true ? t('configured') : configured === false ? t('missing') : ''}</span>}</div>
   </div>
 }
 
