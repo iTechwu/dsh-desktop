@@ -12,6 +12,19 @@ export interface DofeModel {
 }
 
 const NON_CHAT_MODEL_PATTERN = /(?:voice|speech|tts|stt|audio|seedance|seedream|embedding|rerank|moderation|music|video-generation|image-generation)/iu
+const DOFE_VISION_MODEL_IDS = new Set([
+  'deepseek-v4-flash-vision',
+  'deepseek-v4-flash-vision-exp',
+])
+
+/** Fill capability metadata omitted by the OpenAI-compatible model listing. */
+export function dofeModelInputModalities(
+  id: string,
+  declared?: readonly ('text' | 'image')[],
+): readonly ('text' | 'image')[] | undefined {
+  if (DOFE_VISION_MODEL_IDS.has(id)) return ['text', 'image']
+  return declared
+}
 
 /** Return whether a catalog row advertises an OpenAI-compatible chat surface. */
 function isOpenAiCompatibleChatRow(entry: Record<string, unknown>): boolean {
@@ -57,14 +70,18 @@ export function parseDofeModelCatalog(value: unknown): DofeModel[] {
     const modalities = Array.isArray(entry.input_modalities)
       ? entry.input_modalities
       : Array.isArray(entry.inputModalities) ? entry.inputModalities : undefined
-    const inputModalities = modalities?.filter((item): item is 'text' | 'image' => item === 'text' || item === 'image')
-    if (modalities !== undefined && inputModalities?.length === 0) continue
+    const declaredModalities = modalities?.filter((item): item is 'text' | 'image' => item === 'text' || item === 'image')
+    if (modalities !== undefined && declaredModalities?.length === 0) continue
+    const inputModalities = dofeModelInputModalities(
+      id,
+      declaredModalities === undefined ? undefined : [...new Set(declaredModalities)],
+    )
     models.push({
       id,
       name,
       ...(description === undefined ? {} : { description }),
       ...(contextWindow === undefined ? {} : { contextWindow }),
-      ...(inputModalities === undefined || inputModalities.length === 0 ? {} : { inputModalities: [...new Set(inputModalities)] }),
+      ...(inputModalities === undefined || inputModalities.length === 0 ? {} : { inputModalities }),
     })
   }
   return models

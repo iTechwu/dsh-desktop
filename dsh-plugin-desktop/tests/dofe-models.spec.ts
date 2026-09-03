@@ -33,4 +33,24 @@ describe('DoFe model catalog parsing', () => {
       { id: 'deepseek-v4-flash-vision-exp', name: 'deepseek-v4-flash-vision-exp', inputModalities: ['text', 'image'] },
     ])
   })
+
+  it('restores image input for known DoFe vision models when the OpenAI catalog omits it', () => {
+    expect(parseDofeModelCatalog({ data: [
+      { id: 'deepseek-v4-flash-vision' },
+      { id: 'deepseek-v4-flash-vision-exp', input_modalities: ['text'] },
+      { id: 'deepseek-v4-pro' },
+    ] })).toEqual([
+      {
+        id: 'deepseek-v4-flash-vision',
+        name: 'deepseek-v4-flash-vision',
+        inputModalities: ['text', 'image'],
+      },
+      {
+        id: 'deepseek-v4-flash-vision-exp',
+        name: 'deepseek-v4-flash-vision-exp',
+        inputModalities: ['text', 'image'],
+      },
+      { id: 'deepseek-v4-pro', name: 'deepseek-v4-pro' },
+    ])
+  })
 })
