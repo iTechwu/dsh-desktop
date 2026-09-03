@@ -130,3 +130,31 @@
 
 - 根因是 `dsh-skill-panel@1.3.1` 无分页/虚拟化的一次性大树触发 Electron 到 macOS AX 的主体裁剪，而不是本轮桌面模态隔离器造成。
 - 推荐插件改为虚拟列表或分批分页，同时保留搜索结果计数和稳定焦点。当前 GitHub 仓库 `nianchen8/dsh-skill-panel` 对登录账号只授予 `READ`，未创建未授权 fork，也未改写 Profile 内已安装包。
+
+## 第 5 轮：折叠详情面板辅助功能隔离
+
+时间：2026-09-04 04:44-05:01（Asia/Shanghai）
+
+### 根因与修复
+
+- 复核确认详情列的视觉宽度已为 0，实际问题是 `DesktopOwnedFrame` 始终挂载详情 `aside`，折叠时没有 `inert` 或 `aria-hidden`，因此隐藏标题、关闭按钮和占位提示仍留在 macOS AX。
+- 先在高级/扩展帧静态渲染测试中加入折叠态断言并观察 RED；实现 React 18 兼容的 `inert=""` 与 `aria-hidden` 后转为 GREEN。
+- 测试同时覆盖有效会话打开详情时两个隔离属性自动移除，避免修复阻断正常查看。
+- `dsh-desktop@bbcd4eb29c` 已推送 `origin/master`；用户未跟踪的品牌渲染脚本保持未改动。
+
+### 自动门禁
+
+- 定向测试：`client-environment.spec.ts` 23/23 PASS；五套 TypeScript 配置检查 PASS。
+- Desktop 完整 `check`：123 个测试文件全部通过，1108 项通过、4 项跳过；build、typecheck、runtime closure、CLI、Loader、Profile、licenses、operations 全部通过。
+
+### 实际应用回归
+
+- 第一次目录打包和第一次重试在 Electron 下载阶段遇到 `fetch failed`；第三次沿用仓库 `package-dir.mjs` 契约完整下载 Electron 43.4.0，完成依赖组装、fuses 与未签名目录包生成。
+- 新包初始折叠态不再暴露“详情”“关闭详情”和占位提示。
+- 打开既有含工具调用的会话，展开 Bash 工具并点击“查看”后，事件详情、概述/参数/结果/Schema/计时标签及内容完整进入 macOS AX。
+- 关闭详情后再次读取完整 AX，`事件详情`、`关闭详情` 与占位提示均不存在，双态回归 PASS。
+
+### 部署判断
+
+- 本轮只修改桌面客户端布局与测试，不产生服务端容器或路由变更，因此不触发 Jenkins。
+- 本次目录包用于修复回归，不替代北京时间 07:30 后要求执行的 macOS 与 Windows 最终打包验证。
