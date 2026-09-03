@@ -1,8 +1,8 @@
 diff --git a/out/codeSign/macCodeSign.js b/out/codeSign/macCodeSign.js
-index 3bde9755d703a70fc3a45c048c249559fef78d82..9db6a66ee59dbe28a167683b791d835766f279dd 100644
+index 9a69042fd48f4759a1c697bf23fa5b44f2da2366..637cc19f525c6ee3479b377cac4c6c78345aa8ba 100644
 --- a/out/codeSign/macCodeSign.js
 +++ b/out/codeSign/macCodeSign.js
-@@ -155,16 +155,16 @@ async function createKeychain({ tmpDir, cscLink, cscKeyPassword, cscILink, cscI
+@@ -156,16 +156,16 @@ async function createKeychain({ tmpDir, cscLink, cscKeyPassword, cscILink, cscIK
      if (cscIKeyPassword != null) {
          cscPasswords.push(cscIKeyPassword);
      }
@@ -22,17 +22,110 @@ index 3bde9755d703a70fc3a45c048c249559fef78d82..9db6a66ee59dbe28a167683b791d8357
      }
      return {
          keychainFile,
-diff --git a/templates/nsis/installer.nsi b/templates/nsis/installer.nsi
-index 2f5d5cf1240c5219217498f1f1a0530deab435a6..821e1d1c9b97dce3fd8e847132508384968072a0 100644
---- a/templates/nsis/installer.nsi
-+++ b/templates/nsis/installer.nsi
-@@ -28,0 +29 @@
-+ManifestLongPathAware true
+diff --git a/out/node-module-collector/pnpmNodeModulesCollector.js b/out/node-module-collector/pnpmNodeModulesCollector.js
+index 8853912e013d3769f3e763d06720a94091a7ffaa..7864dcfc81d643c8c0a0bc867a93f7f0daab708f 100644
+--- a/out/node-module-collector/pnpmNodeModulesCollector.js
++++ b/out/node-module-collector/pnpmNodeModulesCollector.js
+@@ -58,12 +58,10 @@ class PnpmNodeModulesCollector extends nodeModulesCollector_1.NodeModulesCollect
+      * versions of a dep exist in the workspace.
+      */
+     async locateFromDepOrRoot(pkgName, parentPath, requiredRange) {
+-        // pnpm's virtual store is content-addressed: every `name@version` lookup is deterministic,
+-        // so memoize on the exact version. `requiredRange` is normally an exact version coming from
+-        // the pnpm list output (e.g. `value.version`), which makes this cache hit on duplicates.
+-        // Only memoize when we have a concrete version — semver ranges could resolve differently
+-        // depending on what's installed at `parentPath` vs root, so skip the cache for those.
+-        const memoKey = requiredRange && /^\d/.test(requiredRange) ? `${pkgName}@${requiredRange}` : null;
++        // The same version can resolve differently (or be absent) from different virtual-store
++        // parents. Include the parent in the key so one failed workspace lookup cannot poison a
++        // later lookup from the dependency's actual package directory.
++        const memoKey = requiredRange && /^\d/.test(requiredRange) ? `${pkgName}@${requiredRange}::${parentPath || this.rootDir}` : null;
+         if (memoKey != null) {
+             const cached = this.locateMemo.get(memoKey);
+             if (cached != null) {
+@@ -77,10 +75,19 @@ class PnpmNodeModulesCollector extends nodeModulesCollector_1.NodeModulesCollect
+         const skipDownwardSearch = !(await this.isHoisted.value);
+         const promise = (async () => {
+             const fromDep = parentPath ? await this.cache.locatePackageVersion({ pkgName, parentDir: parentPath, requiredRange, skipDownwardSearch }) : null;
++            const normalizeLocatedPackage = async (result) => {
++                if (!result) {
++                    return result;
++                }
++                const packageDir = this.cache.realPath
++                    ? await this.cache.realPath[result.packageDir]
++                    : result.packageDir;
++                return { ...result, packageDir };
++            };
+             if (fromDep) {
+-                return fromDep;
++                return normalizeLocatedPackage(fromDep);
+             }
+-            return this.cache.locatePackageVersion({ pkgName, parentDir: this.rootDir, requiredRange, skipDownwardSearch });
++            return normalizeLocatedPackage(await this.cache.locatePackageVersion({ pkgName, parentDir: this.rootDir, requiredRange, skipDownwardSearch }));
+         })();
+         if (memoKey != null) {
+             this.locateMemo.set(memoKey, promise);
+@@ -109,10 +116,52 @@ class PnpmNodeModulesCollector extends nodeModulesCollector_1.NodeModulesCollect
+             }
+         }
+         const packageName = tree.name || tree.from;
+-        const { packageJson } = (await this.locateFromDepOrRoot(packageName, tree.path, tree.version)) || {};
++        const locatedPackage = await this.locateFromDepOrRoot(packageName, tree.path, tree.version);
++        const { packageJson } = locatedPackage || {};
+         const all = packageJson ? { ...packageJson.dependencies, ...packageJson.optionalDependencies } : { ...tree.dependencies, ...tree.optionalDependencies };
+         const optional = packageJson ? { ...packageJson.optionalDependencies } : {};
+-        const deps = { ...(tree.dependencies || {}), ...(tree.optionalDependencies || {}) };
++        const deps = this._pnpmMajorVersion >= 11 && packageJson
++            ? {}
++            : { ...(tree.dependencies || {}), ...(tree.optionalDependencies || {}) };
++        // pnpm v11 emits workspace packages as top-level list entries without their dependency
++        // subtrees. Recover manifest edges while reusing app-root workspace nodes whenever possible,
++        // which prevents the workspace graph from being duplicated under every first-party package.
++        if (this._pnpmMajorVersion >= 11 && packageJson) {
++            const parentPath = (locatedPackage === null || locatedPackage === void 0 ? void 0 : locatedPackage.packageDir) || tree.path;
++            for (const [dependencyName, requiredRange] of Object.entries(all)) {
++                if (typeof requiredRange !== "string") {
++                    continue;
++                }
++                if (requiredRange.startsWith("workspace:")) {
++                    const collected = [...this.allDependencies.entries()].find(([id]) => id.startsWith(`${dependencyName}@`));
++                    if (collected) {
++                        deps[dependencyName] = collected[1];
++                        continue;
++                    }
++                    const workspacePackage = this.allWorkspacePackages.find(pkg => (pkg.name || pkg.from) === dependencyName);
++                    if (workspacePackage) {
++                        const dependency = { ...workspacePackage, name: dependencyName, from: dependencyName };
++                        deps[dependencyName] = dependency;
++                        this.allDependencies.set(`${dependencyName}@${dependency.version}`, dependency);
++                    }
++                    continue;
++                }
++                const locatedDependency = await this.locateFromDepOrRoot(dependencyName, parentPath, requiredRange);
++                const installedVersion = locatedDependency === null || locatedDependency === void 0 ? void 0 : locatedDependency.packageJson.version;
++                if (!locatedDependency || typeof installedVersion !== "string") {
++                    this.logMissingDependency(`${dependencyName}@${requiredRange}`);
++                    continue;
++                }
++                const dependency = {
++                    name: dependencyName,
++                    from: dependencyName,
++                    version: installedVersion,
++                    path: locatedDependency.packageDir,
++                };
++                deps[dependencyName] = dependency;
++                this.allDependencies.set(`${dependencyName}@${installedVersion}`, dependency);
++            }
++        }
+         this.productionGraph[dependencyId] = { dependencies: [] };
+         const depPromises = Object.entries(deps).map(async ([packageName, dependency]) => {
+             // First check if it's in production dependencies
 diff --git a/templates/nsis/include/allowOnlyOneInstallerInstance.nsh b/templates/nsis/include/allowOnlyOneInstallerInstance.nsh
-index b32bafafac67d1e2ba6d867fb97865f67766a17e..77b621c83ccbd51392f292c989fbb249c76aa243 100644
+index a5cb3fe536a9fe95a95ac796f92a27f62d9762cc..fd3b12e350a803c25258cbb6739701f426734475 100644
 --- a/templates/nsis/include/allowOnlyOneInstallerInstance.nsh
 +++ b/templates/nsis/include/allowOnlyOneInstallerInstance.nsh
-@@ -64,6 +64,6 @@
+@@ -63,7 +63,7 @@
+
  !macro FIND_PROCESS _FILE _RETURN
    ${if} $IsPowerShellAvailable == 0
 -    nsExec::Exec `"$PowerShellPath" -C "if ((Get-CimInstance -ClassName Win32_Process | ? {$$_.Path -and $$_.Path.StartsWith('$INSTDIR', 'CurrentCultureIgnoreCase')}).Count -gt 0) { exit 0 } else { exit 1 }"`
@@ -40,29 +133,31 @@ index b32bafafac67d1e2ba6d867fb97865f67766a17e..77b621c83ccbd51392f292c989fbb249
      Pop ${_RETURN}
    ${else}
      !ifdef INSTALL_MODE_PER_ALL_USERS
-@@ -93,5 +93,5 @@
+@@ -91,7 +91,7 @@
+   ${endIf}
+
    ${if} $IsPowerShellAvailable == 0
 -    nsExec::Exec `"$PowerShellPath" -C "Get-CimInstance -ClassName Win32_Process | ? {$$_.Path -and $$_.Path.StartsWith('$INSTDIR', 'CurrentCultureIgnoreCase')} | % { Stop-Process -Id $$_.ProcessId $0 }"`
 +    nsExec::Exec `"$PowerShellPath" -C "Get-CimInstance -ClassName Win32_Process | ? {$$_.Path -and [System.IO.Path]::GetFileName($$_.Path) -ieq '${_FILE}'} | % { Stop-Process -Id $$_.ProcessId $0 }"`
    ${else}
      !ifdef INSTALL_MODE_PER_ALL_USERS
        nsExec::Exec `taskkill /IM "${_FILE}" /FI "PID ne $pid"`
-diff --git a/templates/nsis/portable.nsi b/templates/nsis/portable.nsi
-index 8d2992afbe79af270a0d08c38203166d3afc03f1..bd8dc7fd2bc01a4ec9ade821bbd5d7bd37265caf 100644
---- a/templates/nsis/portable.nsi
-+++ b/templates/nsis/portable.nsi
-@@ -8,0 +9 @@
-+ManifestLongPathAware true
 diff --git a/templates/nsis/include/extractAppPackage.nsh b/templates/nsis/include/extractAppPackage.nsh
+index f5470bf52e923dc47266cea4684c76ef78ced451..54fe67e965b2548991f382f169700c0012a7f418 100644
 --- a/templates/nsis/include/extractAppPackage.nsh
 +++ b/templates/nsis/include/extractAppPackage.nsh
-@@ -92,47 +92,6 @@
+@@ -90,49 +90,8 @@
+ !macroend
+
  !macro extractUsing7za FILE
 -  Push $OUTDIR
 -  CreateDirectory "$PLUGINSDIR\7z-out"
 -  ClearErrors
 -  SetOutPath "$PLUGINSDIR\7z-out"
--  Nsis7z::Extract "${FILE}"
++  # The Desktop package favors install speed over atomic replacement: avoid
++  # writing the entire app to $PLUGINSDIR and copying every file a second time.
++  SetOutPath "$INSTDIR"
+   Nsis7z::Extract "${FILE}"
 -  Pop $R0
 -  SetOutPath $R0
 -
@@ -103,15 +198,14 @@ diff --git a/templates/nsis/include/extractAppPackage.nsh b/templates/nsis/inclu
 -    Goto LoopExtract7za
 -
 -  DoneExtract7za:
-+  # The Desktop package favors install speed over atomic replacement: avoid
-+  # writing the entire app to $PLUGINSDIR and copying every file a second time.
-+  SetOutPath "$INSTDIR"
-+  Nsis7z::Extract "${FILE}"
  !macroend
 diff --git a/templates/nsis/include/installUtil.nsh b/templates/nsis/include/installUtil.nsh
+index 47367741632726ba0886ac516461dbe98b7aea58..69e7e0f0ff4cf9cbb1a184ad89f1d210a55af2e6 100644
 --- a/templates/nsis/include/installUtil.nsh
 +++ b/templates/nsis/include/installUtil.nsh
-@@ -128,6 +128,11 @@ Function handleUninstallResult
+@@ -126,10 +126,15 @@ Function handleUninstallResult
+   Return
+
    ${if} $R0 != 0
 -    MessageBox MB_OK|MB_ICONEXCLAMATION "$(uninstallFailed): $R0"
 -    DetailPrint `Uninstall was not successful. Uninstaller error code: $R0.`
@@ -127,8 +221,9 @@ diff --git a/templates/nsis/include/installUtil.nsh b/templates/nsis/include/ins
 +      Quit
 +    ${endif}
    ${endif}
-@@ -233,4 +238,8 @@ Function uninstallOldVersion
-     CheckResult:
+ FunctionEnd
+
+@@ -234,6 +239,10 @@ Function uninstallOldVersion
        ${if} $R0 == 0
          Return
        ${endIf}
@@ -136,3 +231,30 @@ diff --git a/templates/nsis/include/installUtil.nsh b/templates/nsis/include/ins
 +        # Code 2 is handled by the non-atomic in-place replacement path.
 +        Return
 +      ${endIf}
+
+     Sleep 1000
+     Goto UninstallLoop
+diff --git a/templates/nsis/installer.nsi b/templates/nsis/installer.nsi
+index 4b1f42e4e96ba2b3e7d6d8d2f9ee19b46779a422..5a891625166167d928fa205c06c6af966762ed59 100644
+--- a/templates/nsis/installer.nsi
++++ b/templates/nsis/installer.nsi
+@@ -25,6 +25,7 @@ Var oldMenuDirectory
+   !endif
+ !else
+   RequestExecutionLevel user
++ManifestLongPathAware true
+ !endif
+
+ !ifdef BUILD_UNINSTALLER
+diff --git a/templates/nsis/portable.nsi b/templates/nsis/portable.nsi
+index e5436bb0f810058b52e15ce65b3d256f86dabc6f..94152f99eb3b943a8a43ed83faa5cdf75e79046e 100644
+--- a/templates/nsis/portable.nsi
++++ b/templates/nsis/portable.nsi
+@@ -5,6 +5,7 @@
+ CRCCheck off
+ WindowIcon Off
+ AutoCloseWindow True
++ManifestLongPathAware true
+ RequestExecutionLevel ${REQUEST_EXECUTION_LEVEL}
+
+ Function .onInit

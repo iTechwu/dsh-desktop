@@ -957,6 +957,278 @@ describe('published package surface', () => {
     expect(installedNsisInstallUtil).toContain('MessageBox MB_OK|MB_ICONEXCLAMATION "$(uninstallFailed): $R0"')
   })
 
+  it('collects external production dependencies omitted from pnpm 11 workspace trees', async () => {
+    const workspaceRequire = createRequire(new URL('package.json', packageRoot))
+    const electronBuilderManifest = workspaceRequire.resolve('electron-builder/package.json')
+    const electronBuilderRequire = createRequire(electronBuilderManifest)
+    const appBuilderManifest = electronBuilderRequire.resolve('app-builder-lib/package.json')
+    const collectorModule = electronBuilderRequire(
+      join(dirname(appBuilderManifest), 'out/node-module-collector/pnpmNodeModulesCollector.js'),
+    ) as {
+      PnpmNodeModulesCollector: new (rootDir: string, tempDirManager: unknown) => {
+        _pnpmMajorVersion: number
+        _allWorkspacePackages: unknown[]
+        allDependencies: Map<string, { path?: string; version?: string }>
+        productionGraph: Record<string, { dependencies: string[] }>
+        locateFromDepOrRoot: (
+          packageName: string,
+          parentPath: string | undefined,
+          requiredRange: string | undefined,
+        ) => Promise<unknown>
+        extractProductionDependencyGraph: (tree: unknown, dependencyId: string) => Promise<void>
+      }
+    }
+    const collector = new collectorModule.PnpmNodeModulesCollector('/workspace', {})
+    collector._pnpmMajorVersion = 11
+    const packages = new Map<string, { packageDir: string; packageJson: Record<string, unknown> }>([
+      ['dsh-plugin-desktop', {
+        packageDir: '/workspace/app',
+        packageJson: {
+          name: 'dsh-plugin-desktop',
+          version: '2.0.4',
+          dependencies: {
+            '@deepseek-ai/dsh-session-telemetry-otel': 'workspace:*',
+            '@deepseek-ai/schemastery': 'workspace:*',
+          },
+        },
+      }],
+      ['@deepseek-ai/dsh-session-telemetry-otel', {
+        packageDir: '/workspace/packages/session-telemetry-otel',
+        packageJson: {
+          name: '@deepseek-ai/dsh-session-telemetry-otel',
+          version: '0.1.2-alpha.5',
+          dependencies: {
+            '@deepseek-ai/schemastery': 'workspace:^',
+            '@deepseek-ai/node-addon-landlock-run': 'workspace:^',
+            '@opentelemetry/sdk-logs': '^0.220.0',
+          },
+        },
+      }],
+      ['@deepseek-ai/schemastery', {
+        packageDir: '/workspace/packages/schemastery',
+        packageJson: {
+          name: '@deepseek-ai/schemastery',
+          version: '0.1.2-alpha.5',
+        },
+      }],
+      ['@deepseek-ai/node-addon-landlock-run', {
+        packageDir: '/workspace/native/landlock-run',
+        packageJson: {
+          name: '@deepseek-ai/node-addon-landlock-run',
+          version: '0.1.1',
+        },
+      }],
+      ['@opentelemetry/sdk-logs', {
+        packageDir: '/workspace/node_modules/@opentelemetry/sdk-logs',
+        packageJson: {
+          name: '@opentelemetry/sdk-logs',
+          version: '0.220.0',
+        },
+      }],
+    ])
+    collector._allWorkspacePackages = [...packages.values()].map(pkg => ({
+      name: pkg.packageJson.name,
+      version: pkg.packageJson.version,
+      path: pkg.packageDir,
+    }))
+    collector.locateFromDepOrRoot = async packageName => packages.get(packageName)
+    collector.allDependencies.set(
+      '@deepseek-ai/dsh-session-telemetry-otel@link:session-telemetry-otel',
+      { path: '/workspace/packages/session-telemetry-otel', version: 'link:session-telemetry-otel' },
+    )
+    collector.allDependencies.set(
+      '@deepseek-ai/schemastery@link:schemastery',
+      { path: '/workspace/packages/schemastery', version: 'link:schemastery' },
+    )
+    const dependencyId = '@deepseek-ai/dsh-session-telemetry-otel@link:session-telemetry-otel'
+
+    await collector.extractProductionDependencyGraph({
+      name: 'dsh-plugin-desktop',
+      version: '2.0.4',
+      path: '/workspace/app',
+      dependencies: {
+        '@deepseek-ai/dsh-session-telemetry-otel': {
+          from: '@deepseek-ai/dsh-session-telemetry-otel',
+          version: 'link:session-telemetry-otel',
+          path: '/workspace/packages/session-telemetry-otel',
+        },
+        '@deepseek-ai/schemastery': {
+          from: '@deepseek-ai/schemastery',
+          version: 'link:schemastery',
+          path: '/workspace/packages/schemastery',
+        },
+      },
+    }, 'dsh-plugin-desktop')
+
+    expect(collector.productionGraph[dependencyId]?.dependencies)
+      .toEqual([
+        '@deepseek-ai/schemastery@link:schemastery',
+        '@deepseek-ai/node-addon-landlock-run@0.1.1',
+        '@opentelemetry/sdk-logs@0.220.0',
+      ])
+    expect(collector.allDependencies.get('@opentelemetry/sdk-logs@0.220.0')?.path)
+      .toBe('/workspace/node_modules/@opentelemetry/sdk-logs')
+    expect(collector.allDependencies.get('@deepseek-ai/node-addon-landlock-run@0.1.1')?.path)
+      .toBe('/workspace/native/landlock-run')
+    expect(collector.productionGraph).not.toHaveProperty('@deepseek-ai/schemastery@0.1.2-alpha.5')
+  })
+
+  it('does not reuse a pnpm package lookup miss across different parents', async () => {
+    const workspaceRequire = createRequire(new URL('package.json', packageRoot))
+    const electronBuilderManifest = workspaceRequire.resolve('electron-builder/package.json')
+    const electronBuilderRequire = createRequire(electronBuilderManifest)
+    const appBuilderManifest = electronBuilderRequire.resolve('app-builder-lib/package.json')
+    const collectorModule = electronBuilderRequire(
+      join(dirname(appBuilderManifest), 'out/node-module-collector/pnpmNodeModulesCollector.js'),
+    ) as {
+      PnpmNodeModulesCollector: new (rootDir: string, tempDirManager: unknown) => {
+        isHoisted: { value: Promise<boolean> }
+        cache: {
+          locatePackageVersion: (options: { parentDir: string }) => Promise<unknown>
+        }
+        locateFromDepOrRoot: (
+          packageName: string,
+          parentPath: string | undefined,
+          requiredRange: string | undefined,
+        ) => Promise<unknown>
+      }
+    }
+    const collector = new collectorModule.PnpmNodeModulesCollector('/workspace', {})
+    collector.isHoisted = { value: Promise.resolve(false) }
+    collector.cache.locatePackageVersion = async ({ parentDir }) => parentDir === '/valid-parent'
+      ? {
+          packageDir: '/store/@opentelemetry/core',
+          packageJson: { name: '@opentelemetry/core', version: '2.9.0' },
+        }
+      : null
+
+    expect(await collector.locateFromDepOrRoot('@opentelemetry/core', '/wrong-parent', '2.9.0'))
+      .toBeNull()
+    expect(await collector.locateFromDepOrRoot('@opentelemetry/core', '/valid-parent', '2.9.0'))
+      .toMatchObject({ packageDir: '/store/@opentelemetry/core' })
+  })
+
+  it('normalizes pnpm symlink locations before walking transitive dependencies', async () => {
+    const workspaceRequire = createRequire(new URL('package.json', packageRoot))
+    const electronBuilderManifest = workspaceRequire.resolve('electron-builder/package.json')
+    const electronBuilderRequire = createRequire(electronBuilderManifest)
+    const appBuilderManifest = electronBuilderRequire.resolve('app-builder-lib/package.json')
+    const collectorModule = electronBuilderRequire(
+      join(dirname(appBuilderManifest), 'out/node-module-collector/pnpmNodeModulesCollector.js'),
+    ) as {
+      PnpmNodeModulesCollector: new (rootDir: string, tempDirManager: unknown) => {
+        isHoisted: { value: Promise<boolean> }
+        cache: {
+          realPath: Record<string, Promise<string>>
+          locatePackageVersion: (options: { parentDir: string; pkgName: string }) => Promise<unknown>
+        }
+        locateFromDepOrRoot: (
+          packageName: string,
+          parentPath: string | undefined,
+          requiredRange: string | undefined,
+        ) => Promise<{ packageDir?: string } | null>
+      }
+    }
+    const collector = new collectorModule.PnpmNodeModulesCollector('/workspace', {})
+    collector.isHoisted = { value: Promise.resolve(false) }
+    collector.cache.realPath = {
+      '/workspace/packages/telemetry/node_modules/@opentelemetry/resources': Promise.resolve('/store/resources'),
+      '/store/resources/node_modules/@opentelemetry/core': Promise.resolve('/store/core'),
+    }
+    collector.cache.locatePackageVersion = async ({ parentDir, pkgName }) => {
+      if (parentDir === '/workspace/packages/telemetry' && pkgName === '@opentelemetry/resources') {
+        return {
+          packageDir: '/workspace/packages/telemetry/node_modules/@opentelemetry/resources',
+          packageJson: { name: pkgName, version: '2.10.0' },
+        }
+      }
+      if (parentDir === '/store/resources' && pkgName === '@opentelemetry/core') {
+        return {
+          packageDir: '/store/resources/node_modules/@opentelemetry/core',
+          packageJson: { name: pkgName, version: '2.10.0' },
+        }
+      }
+      return null
+    }
+
+    const resources = await collector.locateFromDepOrRoot(
+      '@opentelemetry/resources',
+      '/workspace/packages/telemetry',
+      '2.10.0',
+    )
+    const core = await collector.locateFromDepOrRoot(
+      '@opentelemetry/core',
+      resources?.packageDir,
+      '2.10.0',
+    )
+
+    expect(resources?.packageDir).toBe('/store/resources')
+    expect(core?.packageDir).toBe('/store/core')
+  })
+
+  it('rebuilds pnpm 11 external edges from the installed package manifest', async () => {
+    const workspaceRequire = createRequire(new URL('package.json', packageRoot))
+    const electronBuilderManifest = workspaceRequire.resolve('electron-builder/package.json')
+    const electronBuilderRequire = createRequire(electronBuilderManifest)
+    const appBuilderManifest = electronBuilderRequire.resolve('app-builder-lib/package.json')
+    const collectorModule = electronBuilderRequire(
+      join(dirname(appBuilderManifest), 'out/node-module-collector/pnpmNodeModulesCollector.js'),
+    ) as {
+      PnpmNodeModulesCollector: new (rootDir: string, tempDirManager: unknown) => {
+        _pnpmMajorVersion: number
+        allDependencies: Map<string, { path?: string; version?: string }>
+        productionGraph: Record<string, { dependencies: string[] }>
+        locateFromDepOrRoot: (packageName: string) => Promise<unknown>
+        extractProductionDependencyGraph: (tree: unknown, dependencyId: string) => Promise<void>
+      }
+    }
+    const collector = new collectorModule.PnpmNodeModulesCollector('/workspace', {})
+    collector._pnpmMajorVersion = 11
+    const packages = new Map([
+      ['@opentelemetry/sdk-logs', {
+        packageDir: '/store/sdk-logs',
+        packageJson: {
+          name: '@opentelemetry/sdk-logs',
+          version: '0.220.0',
+          dependencies: {
+            '@opentelemetry/core': '2.9.0',
+            '@opentelemetry/resources': '2.9.0',
+          },
+        },
+      }],
+      ['@opentelemetry/core', {
+        packageDir: '/store/core-2.9.0',
+        packageJson: { name: '@opentelemetry/core', version: '2.9.0' },
+      }],
+      ['@opentelemetry/resources', {
+        packageDir: '/store/resources-2.9.0',
+        packageJson: { name: '@opentelemetry/resources', version: '2.9.0' },
+      }],
+    ])
+    collector.locateFromDepOrRoot = async packageName => packages.get(packageName)
+
+    await collector.extractProductionDependencyGraph({
+      name: '@opentelemetry/sdk-logs',
+      version: '0.220.0',
+      path: '/store/sdk-logs',
+      dependencies: {
+        '@opentelemetry/resources': {
+          from: '@opentelemetry/resources',
+          version: '2.10.0',
+          path: '/store/resources-2.10.0',
+        },
+      },
+    }, '@opentelemetry/sdk-logs@0.220.0')
+
+    expect(collector.productionGraph['@opentelemetry/sdk-logs@0.220.0']?.dependencies)
+      .toEqual([
+        '@opentelemetry/core@2.9.0',
+        '@opentelemetry/resources@2.9.0',
+      ])
+    expect(collector.allDependencies.get('@opentelemetry/core@2.9.0')?.path)
+      .toBe('/store/core-2.9.0')
+  })
+
   it('loads the Windows sandbox implementation from the sibling checkout', () => {
     const lockfile = readFileSync(new URL('pnpm-lock.yaml', workspaceRoot), 'utf8')
     const installedManifest = fileURLToPath(new URL(

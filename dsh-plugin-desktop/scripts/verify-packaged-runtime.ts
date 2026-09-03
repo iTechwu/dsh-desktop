@@ -239,13 +239,23 @@ type PackagedDiagnosticWorkerResult =
 
 const PACKAGED_DIAGNOSTIC_WORKER_TIMEOUT_MS = 30_000
 
+/** Plugin modules whose eager imports exercise the complete packaged Host dependency surface. */
+export const PACKAGED_STARTUP_IMPORT_ENTRIES = [
+  'node_modules/@deepseek-ai/dsh-app-boot/lib/index.js',
+  'node_modules/@deepseek-ai/dsh-settings-file/lib/index.js',
+  'node_modules/@deepseek-ai/cordis-plugin-hmr/lib/index.js',
+  'node_modules/@deepseek-ai/dsh-session-telemetry-otel/lib/index.js',
+  'node_modules/@deepseek-ai/dsh-sandbox-local/lib/index.js',
+  'node_modules/@deepseek-ai/dsh-web-fetch-http/lib/index.js',
+  'node_modules/@deepseek-ai/dsh-llm-deepseek/lib/index.js',
+  'node_modules/@deepseek-ai/dsh-session-log-export/lib/index.js',
+  'lib/dofe-managed.js',
+  'lib/webserver.js',
+] as const
+
 /** Load the same eager Harness entry that Electron resolves before app startup. */
 export async function smokePackagedStartupImports(unpackedRoot: string): Promise<void> {
-  for (const entry of [
-    'node_modules/@deepseek-ai/dsh-app-boot/lib/index.js',
-    'node_modules/@deepseek-ai/dsh-settings-file/lib/index.js',
-    'node_modules/@deepseek-ai/cordis-plugin-hmr/lib/index.js',
-  ]) {
+  for (const entry of PACKAGED_STARTUP_IMPORT_ENTRIES) {
     await import(pathToFileURL(join(unpackedRoot, entry)).href)
   }
 }

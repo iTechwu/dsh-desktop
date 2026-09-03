@@ -5,6 +5,7 @@ import AdmZip from 'adm-zip'
 import {
   afterPack,
   REQUIRED_DSH_CLI_RUNTIME_ENTRIES,
+  PACKAGED_STARTUP_IMPORT_ENTRIES,
   REQUIRED_PACKAGED_RUNTIME_ENTRIES,
   REQUIRED_MACOS_UNIVERSAL_ENTRIES,
   REQUIRED_UNPACKED_PACKAGE_SPECIFIERS,
@@ -69,6 +70,18 @@ describe('packaged desktop runtime verification', () => {
       .toContain('chokidar')
     expect(REQUIRED_UNPACKED_PACKAGE_SPECIFIERS)
       .toContain('resolve.exports/package.json')
+  })
+
+  it('imports every plugin entry involved in the reported packaged startup failure', () => {
+    expect(PACKAGED_STARTUP_IMPORT_ENTRIES).toEqual(expect.arrayContaining([
+      'node_modules/@deepseek-ai/dsh-session-telemetry-otel/lib/index.js',
+      'node_modules/@deepseek-ai/dsh-sandbox-local/lib/index.js',
+      'node_modules/@deepseek-ai/dsh-web-fetch-http/lib/index.js',
+      'node_modules/@deepseek-ai/dsh-llm-deepseek/lib/index.js',
+      'node_modules/@deepseek-ai/dsh-session-log-export/lib/index.js',
+      'lib/dofe-managed.js',
+      'lib/webserver.js',
+    ]))
   })
 
   it('fails the diagnostic Worker smoke when its archive omits the crash dump', async () => {
