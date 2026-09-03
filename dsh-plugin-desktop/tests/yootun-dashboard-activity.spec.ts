@@ -31,9 +31,9 @@ describe('Yootun dashboard local activity', () => {
     const start = new Date('2026-08-30T16:00:00.000Z').getTime()
     const end = new Date('2026-08-31T16:00:00.000Z').getTime()
     await writeFile(join(projections, 'session-1.json'), JSON.stringify(projection(start - 1_000, start + 1_000)))
-    const inspect = vi.fn(async () => ({
-      meta: {},
-      events: [
+    const close = vi.fn(async () => {})
+    const open = vi.fn(async () => ({
+      read: vi.fn(async () => [
         { type: 'turn/start', time: start + 10, data: { turn: 1 } },
         { type: 'user/message', time: start + 20, data: { message: { content: 'private prompt' } } },
         { type: 'tool/call', time: start + 30, data: { name: 'mcp__geoflow__overview', arguments: { secret: true } } },
@@ -44,11 +44,12 @@ describe('Yootun dashboard local activity', () => {
         } } },
         { type: 'turn/end', time: start + 50, data: { turn: 1, reason: { kind: 'completed' } } },
         { type: 'turn/start', time: end + 10, data: { turn: 2 } },
-      ],
+      ]),
+      close,
     }))
     const result = await collectLocalActivity(projections, {
-      inspect,
-      locate: () => undefined,
+      open,
+      stat: vi.fn(async () => ({ sizeBytes: 1024 })),
     } as never, {
       start: new Date(start).toISOString(),
       end: new Date(end).toISOString(),
@@ -66,14 +67,15 @@ describe('Yootun dashboard local activity', () => {
     expect(serialized).not.toContain('private prompt')
     expect(serialized).not.toContain('private answer')
     expect(serialized).not.toContain('secret')
+    expect(close).toHaveBeenCalledOnce()
   })
 
   it('isolates corrupt projection rows', async () => {
     const root = await mkdtemp(join(tmpdir(), 'yootun-corrupt-'))
     await writeFile(join(root, 'broken.json'), '{')
     const result = await collectLocalActivity(root, {
-      inspect: vi.fn(),
-      locate: () => undefined,
+      open: vi.fn(),
+      stat: vi.fn(),
     } as never, {
       start: '2026-08-30T16:00:00.000Z',
       end: '2026-08-31T16:00:00.000Z',

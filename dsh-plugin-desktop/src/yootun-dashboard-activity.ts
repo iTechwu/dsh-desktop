@@ -139,20 +139,40 @@ async function projectionCandidates(
 }
 
 async function logWithinLimit(
-  persistence: Pick<SessionPersistence, 'locate'>,
+  persistence: Pick<SessionPersistence, 'stat'>,
   candidate: ProjectionCandidate,
+  signal?: AbortSignal,
 ): Promise<boolean> {
   try {
-    const location = persistence.locate({
-      id: SessionId(candidate.id),
-      cwd: candidate.cwd,
-      createdAt: candidate.createdAt,
-    } as never)
-    if (location === undefined) return true
-    const info = await lstat(location.path)
-    return info.isFile() && !info.isSymbolicLink() && info.size <= MAX_LOG_BYTES
+    const snapshot = await persistence.stat(
+      SessionId(candidate.id),
+      signal === undefined ? {} : { signal },
+    )
+    return snapshot !== undefined
+      && (snapshot.sizeBytes === undefined || snapshot.sizeBytes <= MAX_LOG_BYTES)
   } catch {
     return false
+  }
+}
+
+async function readSessionEvents(
+  persistence: Pick<SessionPersistence, 'open'>,
+  id: string,
+  signal?: AbortSignal,
+): Promise<readonly SessionEvent[]> {
+  const handle = await persistence.open(
+    SessionId(id),
+    'read',
+    signal === undefined ? {} : { signal },
+  )
+  try {
+    return await handle.read(
+      0,
+      MAX_EVENTS_PER_SESSION + 1,
+      signal === undefined ? {} : { signal },
+    )
+  } finally {
+    await handle.close()
   }
 }
 
@@ -168,7 +188,7 @@ function inPeriod(event: SessionEvent, startMs: number, endMs: number): boolean 
 /** Read yesterday's local work facts without returning prompt or response content. */
 export async function collectLocalActivity(
   projectionDirectory: string,
-  persistence: Pick<SessionPersistence, 'inspect' | 'locate'>,
+  persistence: Pick<SessionPersistence, 'open' | 'stat'>,
   period: DashboardPeriod,
   signal?: AbortSignal,
 ): Promise<LocalActivitySummary> {
@@ -183,12 +203,12 @@ export async function collectLocalActivity(
   for (const candidate of candidates) {
     signal?.throwIfAborted()
     try {
-      if (!await logWithinLimit(persistence, candidate)) {
+      if (!await logWithinLimit(persistence, candidate, signal)) {
         skippedSessions++
         continue
       }
-      const inspected = await persistence.inspect(SessionId(candidate.id), signal)
-      if (inspected.events.length > MAX_EVENTS_PER_SESSION) {
+      const events = await readSessionEvents(persistence, candidate.id, signal)
+      if (events.length > MAX_EVENTS_PER_SESSION) {
         skippedSessions++
         continue
       }
@@ -197,7 +217,7 @@ export async function collectLocalActivity(
       let failedTurns = 0
       let toolCalls = 0
       let relevantEvents = 0
-      for (const event of inspected.events) {
+      for (const event of events) {
         if (!inPeriod(event, startMs, endMs)) continue
         relevantEvents++
         const value = eventRecord(event)

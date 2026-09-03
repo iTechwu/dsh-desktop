@@ -34,7 +34,7 @@ export interface YootunDashboardResponse {
 export interface YootunDashboardDependencies {
   credentials?: Pick<CredentialProvider, 'resolve'> | undefined
   tools?: Pick<ToolRuntime, 'schemas' | 'execute'> | undefined
-  sessionPersistence?: Pick<SessionPersistence, 'inspect' | 'locate'> | undefined
+  sessionPersistence?: Pick<SessionPersistence, 'open' | 'stat'> | undefined
   dshHomePath?: ((...segments: string[]) => string) | undefined
   fetcher?: typeof fetch | undefined
   now?: (() => Date) | undefined
