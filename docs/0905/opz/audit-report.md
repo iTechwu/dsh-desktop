@@ -28,6 +28,7 @@
 | AUD-012 | P1 | 已修复 | 企业驾驶舱近 7 天/近 30 天在 GeoFlow 返回 `tenant_id` 时引用未传入的 `now`，导致 GEO 数据源整体降级为异常 | 真实包复现 `GeoFlow series failed: now is not defined`；`docker-helm.dofe.ai@b94319b` 注入时钟并补充租户目标月份回归，插件 15/15 通过；重包后两个范围均恢复 4/4，06:13 后日志无同类错误 |
 | AUD-013 | P2 | 已修复 | 5 个业务插件已有 Host 路由测试，但默认 `npm test` 只运行 `plugin.test.mjs`，常规 gate 无法发现真实工具调用、缺能力降级和审批投影回归 | `docker-helm.dofe.ai@066ae47` 将招聘、销售、供应链、内容指挥和统一审批改为执行全部 Node 测试；五包 `npm run check` 共 26/26 通过 |
 | AUD-014 | P1 | 已修复 | 线索发现、销售、供应链、统一审批、内容指挥、招聘和改装检索共 7 个 Host 调用 `ctx.tools.execute` 时未传 Harness 必需的 `AbortSignal`；线索发现“已存候选”真实复现读取失败 | 直连公共 MCP 的 `lead_discovery_candidates_list` 返回 HTTP 200、0 条候选，排除服务与凭据故障；先加信号断言得到七包 RED，`docker-helm.dofe.ai@8bd495c` 传递 Agent 取消信号并为 HTTP 路由设置 60 秒超时，同时补齐 5 个 Host 的异常回退及审批双源失败状态。七包 37/37 PASS；06:49 重包后已存候选恢复 0 条空态，供应链、内容和审批均正常，无新增业务失败日志 |
+| AUD-015 | P0 | 已修复，外部能力待补 | 改装 Host 用 `/retrofit/` 模糊匹配工具；注册 `yootun_retrofit_search` 后真实查询会选择自身、无限递归并拖死 Electron 主进程 | 查询后窗口消失，主进程持续约 100% CPU、物理内存约 1.2 GiB，`SIGTERM` 无法退出；进程采样显示主线程在 Node/V8 HTTP 回调中持续分配。`docker-helm.dofe.ai@7d28070` 改为仅选择声明字符串 `query` 参数的外部 Custom Car 工具，并限制返回文本长度，测试 3/3 PASS；重包后同一查询 2 秒内显示“工具暂不可用”，CPU 约 1%。公共 MCP 当前 12 个工具均无 `query` 参数，真实检索结果仍依赖服务端新增兼容契约 |
 
 ## 已确认正常
 
