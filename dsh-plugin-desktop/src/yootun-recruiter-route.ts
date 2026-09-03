@@ -79,7 +79,7 @@ export interface RecruiterBossAdapter extends RecruiterAdapter {
 
 export interface RecruiterKnowledgePublisher {
   publish: (request: {
-    spaceId: string
+    spaceId?: string
     content: string
     idempotencyKey: string
   }) => Promise<{ status: 'succeeded' | 'failed'; reasonCode: string; memoryId?: string; completedAt?: string }>
@@ -796,12 +796,12 @@ export async function executeRecruiterAction(
     if (action.status === 'dismissed' || action.status === 'succeeded') return recruiterSnapshot(state)
     let result: RecruiterAdapterResult
     if (action.type === 'publish_knowledge') {
-      if (knowledge.publisher === undefined || knowledge.spaceId === undefined) {
+      if (knowledge.publisher === undefined) {
         throw new InvalidRecruiterRequest('knowledge_publisher_unavailable')
       }
       try {
         const published = await knowledge.publisher.publish({
-          spaceId: knowledge.spaceId,
+          ...(knowledge.spaceId === undefined ? {} : { spaceId: knowledge.spaceId }),
           content: knowledgeContent(state),
           idempotencyKey: action.idempotencyKey,
         })
@@ -837,7 +837,7 @@ export async function executeRecruiterAction(
       knowledge: action.type === 'publish_knowledge' && receipt.status === 'succeeded'
         ? {
             status: 'ready',
-            spaceId: knowledge.spaceId as string,
+            ...(knowledge.spaceId === undefined ? {} : { spaceId: knowledge.spaceId }),
             spaces: Math.max(1, state.knowledge.spaces),
             documents: state.knowledge.documents,
             memories: state.knowledge.memories + 1,
@@ -1011,6 +1011,7 @@ export interface RecruiterRouteDependencies {
   bossAdapter?: RecruiterBossAdapter | undefined
   credentials?: Pick<CredentialProvider, 'resolve'> | undefined
   knowledgePublisher?: RecruiterKnowledgePublisher | undefined
+  /** @deprecated Default HR space is resolved by Knowledge from tenant context. */
   hrKnowledgeSpaceId?: string | undefined
   openBossWeb?: ((url?: string) => Promise<void>) | undefined
 }
@@ -1044,7 +1045,7 @@ export async function handleYootunRecruiterRequest(
   }
   const now = (dependencies.now?.() ?? new Date()).toISOString()
   const state = await readRecruiterState(dependencies.statePath, now)
-  const knowledgeReady = dependencies.knowledgePublisher !== undefined && validUuid(dependencies.hrKnowledgeSpaceId)
+  const knowledgeReady = dependencies.knowledgePublisher !== undefined
   const capabilities = {
     bossAdapter: dependencies.bossAdapter !== undefined,
     knowledgeReady,
