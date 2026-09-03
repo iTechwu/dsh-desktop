@@ -39,6 +39,7 @@ import {
 } from '../src/client/desktop-settings.ts'
 import { en, zh, type DesktopSettingsLocaleKey } from '../src/client/desktop-settings-locales.ts'
 import { installDesktopSettingsStyles } from '../src/client/desktop-settings-styles.ts'
+import { inject as desktopClientInject } from '../src/client/index.ts'
 
 const BROWSER_AUTH_TOKEN = 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'
 const CA_FINGERPRINT = 'a'.repeat(64)
@@ -581,6 +582,10 @@ describe('Desktop native action presentation', () => {
 })
 
 describe('Desktop settings Slot registration', () => {
+  it('declares the credential namespace required by the Search API Key control', () => {
+    expect(desktopClientInject).toContain('remote.credentials')
+  })
+
   it('registers the official Desktop section, native actions, and both settings scopes', async () => {
     const scope = {
       getSnapshot: () => ({
