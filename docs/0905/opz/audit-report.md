@@ -26,6 +26,7 @@
 | AUD-010 | P2 | 已修复 | 打开业务对话框后焦点未进入面板 | DOM 契约覆盖首控件聚焦及正反向 Tab 循环；真实 Electron 中焦点进入 Dashboard 的“昨日”控件，Escape 后恢复到“企业看板”触发按钮 |
 | AUD-011 | P3 | 外部权限待处理 | 飞书机器人没有 `application:app_slash_command:read` 应用身份权限 | 4.9.1 启动时仅跳过斜杠命令注册，普通消息长连接保持 1/1 在线且测试消息发送成功；需由飞书应用管理员补权后再验证斜杠命令，不在本机写入或扩张凭据权限 |
 | AUD-012 | P1 | 已修复 | 企业驾驶舱近 7 天/近 30 天在 GeoFlow 返回 `tenant_id` 时引用未传入的 `now`，导致 GEO 数据源整体降级为异常 | 真实包复现 `GeoFlow series failed: now is not defined`；`docker-helm.dofe.ai@b94319b` 注入时钟并补充租户目标月份回归，插件 15/15 通过；重包后两个范围均恢复 4/4，06:13 后日志无同类错误 |
+| AUD-013 | P2 | 已修复 | 5 个业务插件已有 Host 路由测试，但默认 `npm test` 只运行 `plugin.test.mjs`，常规 gate 无法发现真实工具调用、缺能力降级和审批投影回归 | `docker-helm.dofe.ai@066ae47` 将招聘、销售、供应链、内容指挥和统一审批改为执行全部 Node 测试；五包 `npm run check` 共 26/26 通过 |
 
 ## 已确认正常
 
