@@ -1,0 +1,30 @@
+{
+  "name": "@dofe/dsh-yootun-tos-upload",
+  "version": "0.1.0",
+  "description": "Yootun host-only media upload capability: native file picker plus streaming TOS upload, returning a public URL",
+  "type": "module",
+  "main": "./index.js",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./lib/client.js",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "files": [
+    "cordis.patch.yml",
+    "index.js",
+    "lib",
+    "*.js",
+    "drivers"
+  ],
+  "scripts": {
+    "test": "node --test test/plugin.test.mjs test/loader-cordis.test.mjs test/desktop-profile.test.mjs",
+    "check": "npm test"
+  },
+  "license": "MIT",
+  "private": true
+}

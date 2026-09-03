@@ -166,6 +166,7 @@
     "@dofe/dsh-yootun-retrofit": "file:../../docker-helm.dofe.ai/plugins/dsh-yootun-retrofit",
     "@dofe/dsh-yootun-lead-discovery": "file:../../docker-helm.dofe.ai/plugins/dsh-yootun-lead-discovery",
     "@dofe/dsh-yootun-daily-report": "file:../../docker-helm.dofe.ai/plugins/dsh-yootun-daily-report",
+    "@dofe/dsh-yootun-tos-upload": "file:../../docker-helm.dofe.ai/plugins/dsh-yootun-tos-upload",
     "@dofe/dsh-yootun-ui": "file:../../docker-helm.dofe.ai/plugins/dsh-yootun-ui",
     "@deepseek-ai/cordis": "workspace:*",
     "@deepseek-ai/cordis-plugin-group": "workspace:*",

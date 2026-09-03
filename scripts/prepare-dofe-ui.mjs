@@ -17,6 +17,7 @@ const preinstalledPlugins = [
   'dsh-yootun-retrofit',
   'dsh-yootun-lead-discovery',
   'dsh-yootun-daily-report',
+  'dsh-yootun-tos-upload',
 ]
 for (const name of preinstalledPlugins) {
   const sibling = resolve(root, `../docker-helm.dofe.ai/plugins/${name}`)
