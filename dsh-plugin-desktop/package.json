@@ -12,7 +12,6 @@
     "directory": "dsh-plugin-desktop"
   },
   "type": "module",
-  "packageManager": "pnpm@11.7.0",
   "main": "lib/main.js",
   "types": "lib/types/index.d.ts",
   "bin": {
