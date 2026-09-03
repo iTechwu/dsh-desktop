@@ -1,5 +1,7 @@
 const MCP_URL = 'https://ixicai.cn/mcp/knowledge'
+const KNOWLEDGE_OVERVIEW_URL = 'https://ixicai.cn/api/yootun/v1/knowledge/overview'
 const REQUEST_TIMEOUT_MS = 30000
+const OVERVIEW_TIMEOUT_MS = 20000
 
 const TOOL_OUTPUT = {
   schema: {
@@ -21,6 +23,7 @@ const TOOL_DEFINITIONS = {
   knowledge_search: ['knowledge.search', 'Search ACL-scoped enterprise documents with citations.'],
   knowledge_recall: ['knowledge.recall', 'Recall ACL-scoped Memory and evidence.'],
   knowledge_remember: ['knowledge.remember', 'Create a Memory candidate or confirmed Memory.'],
+  knowledge_confirm_memory: ['knowledge.confirm_memory', 'Confirm a Memory candidate after explicit user approval.'],
   knowledge_forget: ['knowledge.forget', 'Forget a Memory by id.'],
   knowledge_graph: ['knowledge.graph', 'Read an ACL-scoped knowledge graph around an entity.'],
 }
@@ -68,6 +71,7 @@ export function apply(ctx, overrides = {}) {
             mcp: { route: MCP_URL, auth: credential ? 'credential-store' : 'missing' },
             capabilities: Object.keys(TOOL_DEFINITIONS),
             templates: COMPANY_TEMPLATES,
+            overview: await loadKnowledgeOverview(fetchImpl, credential),
           })
           return
         }
@@ -99,8 +103,10 @@ const ACTIONS = {
   search: 'knowledge.search',
   recall: 'knowledge.recall',
   remember: 'knowledge.remember',
+  confirm_memory: 'knowledge.confirm_memory',
   forget: 'knowledge.forget',
   graph: 'knowledge.graph',
+  ingest_file: 'knowledge.ingest_file',
 }
 
 const COMPANY_TEMPLATES = [
@@ -108,6 +114,86 @@ const COMPANY_TEMPLATES = [
   { id: 'youhuitun-park', name: '汽车科技文创园项目', description: '7500m²园区、首发经济、改装、科技市集与青年创业场景', entities: ['红星BOX1', '智能驾驶', '车载机器人', '科技市集', '青年创业'] },
   { id: 'youhuitun-service', name: '会员与5S服务', description: '会员制用车专家、透明一口价和5S服务标准', entities: ['微笑', '专业', '迅速', '诚恳', '灵巧'] },
 ]
+
+async function loadKnowledgeOverview(fetchImpl, apiKey) {
+  if (!apiKey) return { status: 'unavailable', reason: 'model_api_key_unavailable' }
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), OVERVIEW_TIMEOUT_MS)
+  try {
+    const response = await fetchImpl(KNOWLEDGE_OVERVIEW_URL, {
+      signal: controller.signal,
+      headers: { Authorization: `Bearer ${apiKey}`, Accept: 'application/json' },
+    })
+    if (!response.ok) {
+      if (response.status === 401 || response.status === 403) return { status: 'unavailable', reason: 'knowledge_auth_unavailable' }
+      return { status: 'error', reason: `knowledge_http_${response.status}` }
+    }
+    const payload = await response.json()
+    const data = payload?.data
+    if (!data || typeof data !== 'object') return { status: 'error', reason: 'knowledge_invalid_response' }
+    return { status: 'ready', data: normalizeOverview(data) }
+  } catch (error) {
+    return { status: 'error', reason: error?.name === 'AbortError' ? 'knowledge_overview_timeout' : 'knowledge_overview_request_failed' }
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+function normalizeOverview(data) {
+  const countOf = (...values) => {
+    for (const value of values) {
+      if (typeof value === 'number' && Number.isFinite(value) && value >= 0) return value
+      if (value && typeof value === 'object' && !Array.isArray(value)) {
+        const total = value.total ?? value.total_count ?? value.count
+        if (typeof total === 'number' && Number.isFinite(total) && total >= 0) return total
+      }
+    }
+    return null
+  }
+  const recentOf = (...values) => {
+    for (const value of values) {
+      if (!Array.isArray(value)) continue
+      return value.slice(0, 8).map(item => {
+        const row = item && typeof item === 'object' ? item : {}
+        const title = row.title ?? row.name ?? row.content
+        return {
+          id: row.id != null ? String(row.id) : '',
+          title: typeof title === 'string' || typeof title === 'number' ? String(title) : '',
+          content: typeof row.content === 'string' ? row.content : '',
+          status: typeof row.status === 'string' ? row.status : '',
+          type: typeof row.type === 'string' ? row.type : '',
+          scope: typeof row.scope === 'string' ? row.scope : '',
+          sourceType: typeof row.sourceType === 'string' ? row.sourceType : typeof row.source_type === 'string' ? row.source_type : '',
+          updatedAt: String(row.updatedAt ?? row.updated_at ?? row.createdAt ?? row.created_at ?? ''),
+          ...(typeof row.confidence === 'number' ? { confidence: row.confidence } : {}),
+          ...(typeof row.sourceSessionId === 'string' ? { sourceSessionId: row.sourceSessionId } : {}),
+          ...(row.toolMetadata && typeof row.toolMetadata === 'object' ? { toolMetadata: row.toolMetadata } : {}),
+        }
+      })
+    }
+    return []
+  }
+  return {
+    spaces: countOf(data.totals?.spaces, data.spaces, data.space_count, data.spaceCount),
+    documents: countOf(data.totals?.documents, data.documents, data.document_count, data.documentCount),
+    memories: countOf(data.totals?.memories, data.memories, data.memory_count, data.memoryCount),
+    pendingImports: countOf(data.imports?.pending, data.pending_imports, data.pendingImports, data.import_queue?.pending, data.ingestion?.queued),
+    recentDocuments: recentOf(data.recent_documents, data.recentDocuments, data.documents?.recent),
+    recentMemories: recentOf(data.recent_memories, data.recentMemories, data.memories?.recent),
+    ingestion: {
+      queued: countOf(data.ingestion?.queued, data.import_queue?.queued),
+      processing: countOf(data.ingestion?.processing, data.import_queue?.processing),
+      failed: countOf(data.ingestion?.failed, data.import_queue?.failed),
+    },
+    health: typeof data.health === 'string' ? data.health : data.health && typeof data.health === 'object' ? {
+      api: String(data.health.api ?? ''),
+      postgres: String(data.health.postgres ?? ''),
+      minio: String(data.health.minio ?? ''),
+      qdrant: String(data.health.qdrant ?? ''),
+      neo4j: String(data.health.neo4j ?? ''),
+    } : {},
+  }
+}
 
 async function resolveModelsKey(ctx) {
   try {

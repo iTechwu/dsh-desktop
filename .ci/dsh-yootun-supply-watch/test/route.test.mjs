@@ -40,6 +40,8 @@ test('builds risks and review actions from live supply chain alerts', async () =
   assert.equal(state.body.actions.length, 1)
   assert.equal(state.body.actions[0].id, 'a-1')
   assert.equal(executed[0].arguments.pageSize, 20)
+  assert.ok(executed[0].signal instanceof AbortSignal)
+  assert.equal(executed[0].signal.aborted, false)
   const confirmed = await invoke(route, 'POST', { action: 'confirm_action', id: 'a-1' })
   assert.equal(confirmed.body.actions[0].status, 'adapter_pending')
 })
@@ -54,5 +56,22 @@ test('reports unavailable instead of fake data when tools are missing', async ()
   })
   const state = await invoke(route, 'GET')
   assert.equal(state.body.status, 'unavailable')
+  assert.deepEqual(state.body.risks, [])
+})
+
+test('returns a stable error state when the supply tool fails', async () => {
+  let route
+  apply({
+    effect(factory) { return factory() },
+    logger: { warn() {} },
+    tools: {
+      schemas() { return [{ name: 'supply_chain_alerts_list' }] },
+      async execute() { throw new Error('tool_failed') },
+    },
+    webServer: { register(value) { route = value; return () => {} } },
+  })
+  const state = await invoke(route, 'GET')
+  assert.equal(state.status, 200)
+  assert.equal(state.body.status, 'error')
   assert.deepEqual(state.body.risks, [])
 })

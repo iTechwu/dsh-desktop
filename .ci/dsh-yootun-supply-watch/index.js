@@ -5,6 +5,7 @@
 
 const PATH = '/api/desktop/yootun/supply-watch'
 const MAX_ALERTS = 20
+const TOOL_CALL_TIMEOUT_MS = 60_000
 
 export const inject = ['webServer', 'tools']
 
@@ -12,19 +13,29 @@ const handledActions = new Map()
 
 export function apply(ctx, config = {}) {
   if (config.registerHostRoute === false) return undefined
-  return ctx.effect(() => ctx.webServer.register({
+  return ctx.effect(() => {
+    const disposers = []
+    if (ctx.tools?.register) disposers.push(ctx.tools.register({
+      name: 'yootun_supply_watch_overview',
+      description: 'Return supplier risk signals and approval state shown by the Yootun supply-watch plugin.',
+      parameters: { type: 'object', additionalProperties: false, properties: {} },
+      output: outputSchema,
+      isConcurrencySafe: () => true,
+      async execute(_args, execution) { return { ok: true, result: await buildState(ctx, execution?.signal) } },
+    }))
+    disposers.push(ctx.webServer.register({
     kind: 'exact',
     path: PATH,
     async handler(req, res) {
       try {
-        if (req.method === 'GET') return send(res, 200, await buildState(ctx, {}))
+        if (req.method === 'GET') return send(res, 200, await buildState(ctx))
         if (req.method !== 'POST') return send(res, 405, { error: 'method_not_allowed' })
         const body = await readBody(req)
         const action = String(body.action || '')
         if (action === 'confirm_action' || action === 'dismiss_action') {
           const id = String(body.id || '').slice(0, 120)
           if (id) handledActions.set(id, { action, at: new Date().toISOString() })
-          return send(res, 200, await buildState(ctx, {}))
+          return send(res, 200, await buildState(ctx))
         }
         return send(res, 400, { error: 'unknown_action' })
       } catch (error) {
@@ -32,10 +43,13 @@ export function apply(ctx, config = {}) {
         return send(res, 200, { status: 'error', dashboard: {}, risks: [], actions: [] })
       }
     },
-  }))
+    }))
+    return () => disposers.reverse().forEach(dispose => dispose?.())
+  })
 }
+const outputSchema = { schema: { type: 'object', additionalProperties: false, properties: { ok: { type: 'boolean' }, error: { type: 'string' }, result: { type: 'object', additionalProperties: true } } }, render: (_args, value) => [{ type: 'text', text: JSON.stringify(value) }] }
 
-async function buildState(ctx) {
+async function buildState(ctx, signal = AbortSignal.timeout(TOOL_CALL_TIMEOUT_MS)) {
   const schema = findTool(ctx, 'supply_chain_alerts_list')
   if (!schema) {
     return { status: 'unavailable', reason: 'supply_chain_tool_unavailable', dashboard: {}, risks: [], actions: [] }
@@ -44,6 +58,7 @@ async function buildState(ctx) {
     callId: `yootun-supply-${Date.now()}`,
     name: schema.name,
     arguments: { page: 1, pageSize: MAX_ALERTS },
+    signal,
   })
   const payload = parseResult(result)
   const alerts = Array.isArray(payload.alerts) ? payload.alerts : []
@@ -85,6 +100,7 @@ function projectRisk(alert) {
 }
 
 function findTool(ctx, name) { return (ctx.tools.schemas?.() || []).find(item => String(item.name || '').includes(name)) }
+function safeError(error) { return error instanceof Error ? error.message.slice(0, 200) : 'unknown error' }
 function parseResult(result) {
   if (!result) return {}
   if (result && typeof result === 'object' && !Array.isArray(result) && Array.isArray(result.content)) {

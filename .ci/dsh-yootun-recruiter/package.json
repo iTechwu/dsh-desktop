@@ -13,7 +13,7 @@
     }
   },
   "files": ["cordis.patch.yml", "index.js", "lib"],
-  "scripts": { "build": "node scripts/build.mjs", "test": "node --test test/plugin.test.mjs", "check": "npm run build && npm test" },
+  "scripts": { "build": "node scripts/build.mjs", "test": "node --test", "check": "npm run build && npm test" },
   "license": "MIT",
   "private": true
 }

@@ -24,6 +24,9 @@ function makeCtx(results) {
         { name: 'mcp__tools-talent-discovery__talent_candidates_list' },
       ] },
       async execute(input) {
+        assert.ok(input.signal instanceof AbortSignal)
+        assert.equal(input.signal.aborted, false)
+        if (results.error) throw results.error
         const name = String(input.name)
         if (name.includes('supply_chain_alerts_list')) {
           return { content: [{ type: 'text', text: JSON.stringify({ alerts: results.supplyAlerts }) }] }
@@ -75,4 +78,12 @@ test('reports empty queue when every source is unavailable', async () => {
   assert.equal(state.body.status, 'unavailable')
   assert.deepEqual(state.body.actions, [])
   assert.equal(state.body.dashboard.pending, 0)
+})
+
+test('reports an error queue when every configured source fails', async () => {
+  const route = makeCtx({ error: new Error('tool_failed') })
+  const state = await invoke(route, 'GET')
+  assert.equal(state.status, 200)
+  assert.equal(state.body.status, 'error')
+  assert.deepEqual(state.body.actions, [])
 })

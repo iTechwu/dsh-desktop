@@ -41,6 +41,25 @@ test('maps geoflow tasks to briefs, publish-ready actions, and metrics', async (
   assert.equal(state.body.actions[0].targetLabel, '改装避坑指南')
   assert.equal(state.body.actions[0].status, 'awaiting_confirmation')
   assert.equal(executed[0].arguments.limit, 50)
+  assert.ok(executed[0].signal instanceof AbortSignal)
+  assert.equal(executed[0].signal.aborted, false)
   const confirmed = await invoke(route, 'POST', { action: 'confirm_action', id: 't-1' })
   assert.equal(confirmed.body.actions[0].status, 'adapter_pending')
+})
+
+test('returns a stable error state when GeoFlow fails', async () => {
+  let route
+  apply({
+    effect(factory) { return factory() },
+    logger: { warn() {} },
+    tools: {
+      schemas() { return [{ name: 'geoflow_tasks_list' }] },
+      async execute() { throw new Error('tool_failed') },
+    },
+    webServer: { register(value) { route = value; return () => {} } },
+  })
+  const state = await invoke(route, 'GET')
+  assert.equal(state.status, 200)
+  assert.equal(state.body.status, 'error')
+  assert.deepEqual(state.body.briefs, [])
 })
