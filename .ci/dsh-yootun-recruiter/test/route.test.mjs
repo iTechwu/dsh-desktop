@@ -18,6 +18,7 @@ test('serves live ranked candidates through the talent discovery tool', async ()
   apply({
     effect(factory) { return factory() },
     logger: { warn() {} },
+    credentials: { async resolve() { return { value: 'test-only-model-key', source: 'env' } } },
     tools: {
       schemas() { return [{ name: 'mcp__tools-talent-discovery__talent_candidates_list' }] },
       async execute(input) {

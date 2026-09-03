@@ -5,8 +5,15 @@
 
 const PATH = '/api/desktop/yootun/recruiter'
 const MAX_CANDIDATES = 50
+const PUBLIC_KNOWLEDGE_MCP = 'https://ixicai.cn/mcp/knowledge'
+const SYNC_PROVIDER = 'boss_zhipin'
 
-export const inject = ['webServer', 'tools']
+export const inject = ['webServer', 'tools', 'credentials']
+export const recruiterDataContract = Object.freeze({
+  auth: 'MODELS_API_KEY',
+  syncProvider: SYNC_PROVIDER,
+  knowledgeRoute: PUBLIC_KNOWLEDGE_MCP,
+})
 
 const handledActions = new Map()
 
@@ -19,28 +26,37 @@ export function apply(ctx, config = {}) {
     path: PATH,
     async handler(req, res) {
       try {
-        if (req.method === 'GET') return send(res, 200, await buildState(ctx, {}))
+        if (!await hasModelsCredential(ctx)) {
+          return send(res, 503, unavailableState('model_api_key_unavailable'))
+        }
+        if (req.method === 'GET') return send(res, 200, await buildState(ctx))
         if (req.method !== 'POST') return send(res, 405, { error: 'method_not_allowed' })
         const body = await readBody(req)
         const action = String(body.action || '')
         if (action === 'confirm_action' || action === 'dismiss_action') {
           const id = String(body.id || '').slice(0, 120)
           if (id) handledActions.set(id, { action, at: new Date().toISOString() })
-          return send(res, 200, await buildState(ctx, {}))
+          return send(res, 200, await buildState(ctx))
+        }
+        if (action === 'sync_boss' || action === 'publish_knowledge') {
+          return send(res, 503, { status: 'unavailable', reason: 'recruiter_adapter_not_configured' })
         }
         return send(res, 400, { error: 'unknown_action' })
       } catch (error) {
         ctx.logger?.warn?.('yootun recruiter failed: %s', safeError(error))
-        return send(res, 200, { status: 'error', dashboard: {}, requirements: [], candidates: [], actions: [] })
+        return send(res, 200, { status: 'error', dashboard: {}, requirements: [], candidates: [], actions: [], sync: { provider: SYNC_PROVIDER, status: 'error', reason: 'recruiter_request_failed' }, knowledge: { status: 'unavailable', route: PUBLIC_KNOWLEDGE_MCP } })
       }
     },
   }))
 }
 
 async function buildState(ctx) {
+  if (!await hasModelsCredential(ctx)) {
+    return unavailableState('model_api_key_unavailable')
+  }
   const schema = findTool(ctx, 'talent_candidates_list')
   if (!schema) {
-    return { status: 'unavailable', reason: 'talent_tool_unavailable', dashboard: {}, requirements: [], candidates: [], actions: [] }
+    return unavailableState('talent_tool_unavailable')
   }
   const result = await ctx.tools.execute({
     callId: `yootun-recruiter-${Date.now()}`,
@@ -61,10 +77,26 @@ async function buildState(ctx) {
     }))
   return {
     status: 'ready',
-    dashboard: { candidates: candidates.length, pending: actions.filter(item => item.status === 'awaiting_confirmation').length },
+    dashboard: { candidates: candidates.length, activeCandidates: candidates.length, pending: actions.filter(item => item.status === 'awaiting_confirmation').length, pendingConfirmation: actions.filter(item => item.status === 'awaiting_confirmation').length, funnel: [] },
     requirements: [],
     candidates,
     actions,
+    sync: { provider: SYNC_PROVIDER, status: 'requires_user_login', imported: 0, updated: 0, lastSuccessAt: null, reason: 'boss_adapter_not_configured' },
+    knowledge: { status: 'unavailable', route: PUBLIC_KNOWLEDGE_MCP, spaces: 0, documents: 0, memories: 0, pending: 0, recent: [] },
+    analytics: { status: 'empty', window: '30d', responseRate: null, avgScreeningDays: null, offerConversion: null },
+  }
+}
+
+function unavailableState(reason) {
+  return { status: 'unavailable', reason, dashboard: {}, requirements: [], candidates: [], actions: [], sync: { provider: SYNC_PROVIDER, status: 'unavailable', reason }, knowledge: { status: 'unavailable', route: PUBLIC_KNOWLEDGE_MCP } }
+}
+
+async function hasModelsCredential(ctx) {
+  try {
+    const resolved = await ctx.credentials?.resolve?.('MODELS_API_KEY')
+    return typeof (resolved?.value || process.env.MODELS_API_KEY) === 'string' && Boolean(resolved?.value || process.env.MODELS_API_KEY)
+  } catch {
+    return Boolean(process.env.MODELS_API_KEY)
   }
 }
 

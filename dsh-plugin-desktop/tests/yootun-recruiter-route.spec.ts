@@ -280,6 +280,62 @@ describe('Yootun recruiter route', () => {
     })
   })
 
+  it('previews the sync scope without writing state or touching the adapter', async () => {
+    const statePath = path()
+    await call(statePath, 'POST', requirement())
+    const preview = await call(statePath, 'POST', { action: 'sync_preview' })
+    expect(preview.status).toBe(200)
+    expect(preview.value.syncPreview).toMatchObject({
+      status: 'unavailable', adapter: 'not_configured', increment: 'full',
+      scope: { requirements: 1, candidates: 0, hasCursor: false },
+      reason: 'boss_official_adapter_unavailable',
+    })
+    expect((preview.value.syncPreview as { fields: string[] }).fields).toContain('displayName')
+    expect(readFileSync(statePath, 'utf8')).not.toContain('syncPreview')
+    const configured = await call(statePath, 'POST', { action: 'sync_preview' }, undefined, {
+      bossAdapter: {
+        execute: async () => ({ status: 'succeeded', reasonCode: 'unused' }),
+        sync: async () => ({ status: 'ready', reasonCode: 'unused', imported: 0, updated: 0, skipped: 0 }),
+      },
+    })
+    expect(configured.value.syncPreview).toMatchObject({ status: 'ready', adapter: 'official' })
+    expect(configured.value.syncPreview).not.toHaveProperty('reason')
+  })
+
+  it('keeps locally confirmed candidate records when a sync returns the same identity', async () => {
+    const statePath = path()
+    const saved = await call(statePath, 'POST', requirement())
+    const requirementId = (saved.value.requirements as Array<{ id: string }>)[0]!.id
+    await call(statePath, 'POST', {
+      action: 'save_candidate_analysis', id: 'cand-1', displayName: '候选人 A', requirementId,
+      stage: 'interview', evidence: ['本地确认证据'], concerns: [], interviewQuestions: [],
+      feedbackStatus: 'confirmed',
+    })
+    const synced = await call(statePath, 'POST', { action: 'sync_boss' }, undefined, {
+      bossAdapter: {
+        execute: async () => ({ status: 'succeeded', reasonCode: 'unused' }),
+        sync: async () => ({
+          status: 'ready', reasonCode: 'boss_sync_completed', imported: 2, updated: 0, skipped: 1,
+          cursor: 'cursor-3',
+          candidates: [
+            { id: 'cand-1', displayName: '候选人 A（远端）', requirementId, stage: 'screening', evidence: ['远端证据'], concerns: [], interviewQuestions: [], feedbackStatus: 'none', updatedAt: NOW.toISOString() },
+            { id: 'cand-2', displayName: '候选人 B', requirementId, stage: 'sourced', evidence: [], concerns: [], interviewQuestions: [], feedbackStatus: 'none', updatedAt: NOW.toISOString() },
+          ],
+        }),
+      },
+    })
+    expect(synced.value.sync).toMatchObject({ status: 'ready', conflictsPreserved: 1 })
+    const candidates = synced.value.candidates as Array<{ id: string; stage: string; feedbackStatus: string; displayName: string }>
+    expect(candidates.find(item => item.id === 'cand-1')).toMatchObject({
+      stage: 'interview', feedbackStatus: 'confirmed', displayName: '候选人 A',
+    })
+    expect(candidates.find(item => item.id === 'cand-2')).toMatchObject({ stage: 'sourced' })
+    const persisted = JSON.parse(readFileSync(statePath, 'utf8'))
+    expect(persisted.sync.conflictsPreserved).toBe(1)
+    expect(persisted.candidates.find((item: { id: string }) => item.id === 'cand-1').evidence)
+      .toEqual(['本地确认证据'])
+  })
+
   it('keeps adapter-unavailable actions pending and supports explicit login retry with the same key', async () => {
     const statePath = path()
     const queued = await call(statePath, 'POST', {

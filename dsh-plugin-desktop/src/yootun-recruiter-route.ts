@@ -144,6 +144,7 @@ export interface RecruiterSyncState {
   cursor?: string
   responseRate?: number
   reason?: string
+  conflictsPreserved?: number
 }
 
 export interface RecruiterKnowledgeState {
@@ -176,6 +177,15 @@ export interface RecruiterState {
   knowledge: RecruiterKnowledgeState
   analytics: RecruiterAnalyticsState
   updatedAt: string
+}
+
+export interface RecruiterSyncPreview {
+  status: 'ready' | 'unavailable'
+  adapter: 'not_configured' | 'official'
+  increment: 'cursor' | 'full'
+  scope: { requirements: number; candidates: number; hasCursor: boolean }
+  fields: string[]
+  reason?: string
 }
 
 export interface RecruiterSnapshot extends RecruiterState {
@@ -286,7 +296,7 @@ function nonNegative(value: unknown, label: string): number {
 function parsePersistedSync(value: unknown): RecruiterSyncState | undefined {
   const item = record(value)
   if (item === undefined || !exactKeys(item, ['provider', 'status', 'imported', 'updated', 'skipped'], [
-    'lastAttemptAt', 'lastSuccessAt', 'cursor', 'responseRate', 'reason',
+    'lastAttemptAt', 'lastSuccessAt', 'cursor', 'responseRate', 'reason', 'conflictsPreserved',
   ])) return undefined
   try {
     if (item.provider !== 'boss_zhipin') return undefined
@@ -304,6 +314,7 @@ function parsePersistedSync(value: unknown): RecruiterSyncState | undefined {
       ...(item.cursor === undefined ? {} : { cursor: limitedText(item.cursor, 'sync_cursor', 240) }),
       ...(item.responseRate === undefined ? {} : { responseRate: integer(item.responseRate, 'response_rate', 0, 100) }),
       ...(item.reason === undefined ? {} : { reason: limitedText(item.reason, 'sync_reason', 160) }),
+      ...(item.conflictsPreserved === undefined ? {} : { conflictsPreserved: nonNegative(item.conflictsPreserved, 'sync_conflicts_preserved') }),
     }
   } catch { return undefined }
 }
@@ -558,6 +569,28 @@ export function recruiterSnapshot(
         ? 'connected' : sync.status === 'error' ? 'error' : 'requires_user_login',
       adapter: capabilities.bossAdapter === true ? 'official' : 'not_configured',
     },
+  }
+}
+
+const SYNC_PREVIEW_FIELDS = Object.freeze([
+  'remoteRoleId', 'roleTitle', 'roleLocation', 'roleStatus', 'roleUpdatedAt',
+  'candidateRef', 'displayName', 'requirementId', 'stage', 'updatedAt',
+  'matchScore', 'evidence', 'concerns', 'interviewQuestions', 'actionState', 'idempotencyKey',
+])
+
+/** Read-only first-sync preview (plan §7.2): scope, increment mode, and allowed fields. */
+function syncPreview(state: RecruiterState, adapterConfigured: boolean): RecruiterSyncPreview {
+  return {
+    status: adapterConfigured ? 'ready' : 'unavailable',
+    adapter: adapterConfigured ? 'official' : 'not_configured',
+    increment: state.sync.cursor === undefined ? 'full' : 'cursor',
+    scope: {
+      requirements: state.requirements.length,
+      candidates: state.candidates.length,
+      hasCursor: state.sync.cursor !== undefined,
+    },
+    fields: [...SYNC_PREVIEW_FIELDS],
+    ...(adapterConfigured ? {} : { reason: 'boss_official_adapter_unavailable' }),
   }
 }
 
@@ -891,7 +924,15 @@ export async function syncRecruiterBoss(
       ...state.requirements.filter(item => !importedRequirements.some(imported => imported.id === item.id)),
     ].slice(0, MAX_REQUIREMENTS)
     const requirementIds = new Set(requirements.map(item => item.id))
-    const importedCandidates = (successful ? receipt.candidates ?? [] : []).filter(item => requirementIds.has(item.requirementId))
+    // Conflict policy (plan §4.2/§7.2): a locally confirmed candidate record is the
+    // HR decision of record; the remote copy enters neither the state nor the
+    // cursor. Unconfirmed records stay sync-owned and are replaced by the import.
+    const locallyConfirmed = new Set(
+      state.candidates.filter(item => item.feedbackStatus === 'confirmed').map(item => item.id),
+    )
+    const importedCandidates = (successful ? receipt.candidates ?? [] : [])
+      .filter(item => !locallyConfirmed.has(item.id))
+      .filter(item => requirementIds.has(item.requirementId))
     const candidates = [
       ...importedCandidates,
       ...state.candidates.filter(item => !importedCandidates.some(imported => imported.id === item.id)),
@@ -908,6 +949,7 @@ export async function syncRecruiterBoss(
         ...(successful ? { lastSuccessAt: completedAt } : {}),
         ...(receipt.cursor === undefined ? {} : { cursor: receipt.cursor }),
         ...(receipt.responseRate === undefined ? {} : { responseRate: receipt.responseRate }),
+        ...(locallyConfirmed.size === 0 ? {} : { conflictsPreserved: locallyConfirmed.size }),
         reason: receipt.reasonCode,
       },
       updatedAt: completedAt,
@@ -1027,6 +1069,10 @@ export async function handleYootunRecruiterRequest(
     } else if (recordBody?.action === 'sync_boss') {
       if (!exactKeys(recordBody, ['action'])) throw new InvalidRecruiterRequest('request_fields_invalid')
       next = await syncRecruiterBoss(dependencies.statePath, dependencies.bossAdapter, now)
+    } else if (recordBody?.action === 'sync_preview') {
+      if (!exactKeys(recordBody, ['action'])) throw new InvalidRecruiterRequest('request_fields_invalid')
+      const capabilities = { bossAdapter: dependencies.bossAdapter !== undefined, knowledgeReady }
+      return finish(res, 200, { ...recruiterSnapshot(state, capabilities), syncPreview: syncPreview(state, capabilities.bossAdapter) })
     } else {
       next = await mutateRecruiterState(dependencies.statePath, parsed, now)
     }
