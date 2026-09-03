@@ -58,6 +58,19 @@ describe('packaged desktop runtime verification', () => {
       .toContain('@deepseek-ai/cosmokit/package.json')
   })
 
+  it('requires the app-boot runtime dependency introduced by Harness alpha.5', () => {
+    expect(REQUIRED_PACKAGED_RUNTIME_ENTRIES)
+      .toContain('node_modules/resolve.exports/dist/index.mjs')
+    expect(REQUIRED_PACKAGED_RUNTIME_ENTRIES)
+      .toContain('node_modules/chokidar/index.js')
+    expect(REQUIRED_PACKAGED_RUNTIME_ENTRIES)
+      .toContain('node_modules/@deepseek-ai/cordis-plugin-hmr/lib/index.js')
+    expect(REQUIRED_UNPACKED_PACKAGE_SPECIFIERS)
+      .toContain('chokidar')
+    expect(REQUIRED_UNPACKED_PACKAGE_SPECIFIERS)
+      .toContain('resolve.exports/package.json')
+  })
+
   it('fails the diagnostic Worker smoke when its archive omits the crash dump', async () => {
     const unpackedRoot = resolvePackagedUnpackedRoot(context('/build', 'win32'))
     const launch = vi.fn<PackagedDiagnosticWorkerLauncher>(async (_workerPath, workerData) => {
@@ -116,6 +129,7 @@ describe('packaged desktop runtime verification', () => {
       smoke: (unpackedRoot: string) => Promise<void>,
       smokeKoffi: (unpackedRoot: string) => void,
       smokeSharp: (unpackedRoot: string) => void,
+      smokeStartupImports: (unpackedRoot: string) => Promise<void>,
     ) => Promise<void>
 
     await runAfterPack(
@@ -125,11 +139,13 @@ describe('packaged desktop runtime verification', () => {
       async root => { calls.push(`diagnostic:${root}`) },
       root => { calls.push(`koffi:${root}`) },
       root => { calls.push(`sharp:${root}`) },
+      async root => { calls.push(`startup-imports:${root}`) },
     )
 
     expect(calls).toEqual([
       'hydrate',
       'static',
+      `startup-imports:${unpackedRoot}`,
       `koffi:${unpackedRoot}`,
       `sharp:${unpackedRoot}`,
       `diagnostic:${unpackedRoot}`,

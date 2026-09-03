@@ -798,6 +798,9 @@ importers:
 
   dsh-plugin-desktop:
     dependencies:
+      '@babel/code-frame':
+        specifier: ^7.29.0
+        version: 7.29.7
       '@deepseek-ai/cordis':
         specifier: workspace:*
         version: link:../deepseek-harness/vendor/cordis
@@ -1524,6 +1527,9 @@ importers:
       adm-zip:
         specifier: ^0.6.0
         version: 0.6.0
+      chokidar:
+        specifier: ^4.0.3
+        version: 4.0.3
       dsh-community-market:
         specifier: 0.1.0-dev.0
         version: link:../dsh-community-market
@@ -1542,12 +1548,18 @@ importers:
       open:
         specifier: 11.0.1
         version: 11.0.1(patch_hash=383484d0b84b1bb856145936155333d024f1dfc5d6eaf86104b2a00bac8e8612)
+      picomatch:
+        specifier: ^4.0.3
+        version: 4.0.5
       pnpm:
         specifier: 11.7.0
         version: 11.7.0
       react:
         specifier: 18.3.1
         version: 18.3.1
+      resolve.exports:
+        specifier: ^2.0.3
+        version: 2.0.3
       selfsigned:
         specifier: 5.5.0
         version: 5.5.0
@@ -3324,6 +3336,10 @@ packages:
     resolution: {integrity: sha512-dLitG79d+GV1Nb/VYcCDFivJeK1hiukt9QjRNVOsUtTy1rR1YJsmpGGTZ3qJos+uw7WmWF4wUwBd9jxjocFC2w==}
     engines: {node: ^12.17.0 || ^14.13 || >=16.0.0}
 
+  chokidar@4.0.3:
+    resolution: {integrity: sha512-Qgzu8kfBvo+cA4962jnP1KkS6Dop5NS6g7R5LFYJr4b8Ub94PPQXUksCw9PvXoeXPRRddRNC5C1JQUR2SMGtnA==}
+    engines: {node: '>= 14.16.0'}
+
   chownr@3.0.0:
     resolution: {integrity: sha512-+IxzY9BZOQd/XuYPRmrvEVjF/nqj5kgT4kEq7VofrDoM1MxoRjEWkrCC3EtLi59TVawxTAn+orJwFQcrqEN1+g==}
     engines: {node: '>=18'}
@@ -4796,6 +4812,10 @@ packages:
   readable-stream@2.3.8:
     resolution: {integrity: sha512-8p0AUk4XODgIewSi0l8Epjs+EVnWiK7NoDIEGU0HhE7+ZyY8D1IMY7odu5lRrFXGg71L15KG8QrPmum45RTtdA==}
 
+  readdirp@4.0.1:
+    resolution: {integrity: sha512-GkMg9uOTpIWWKbSsgwb5fA4EavTR+SG/PMPoAY8hkhHfEEY0/vqljY+XHqtDf2cr2IJtoNRDbrrEpZUiZCkYRw==}
+    engines: {node: '>= 14.16.0'}
+
   recast@0.23.21:
     resolution: {integrity: sha512-mFAyJq9vUbSTARLZUvAEf1z3YxlvAwswbmxMx2mPA/MSm4KmpwvwvhsH/NIrZhyOuwD60Lzyw2qh83uCbgTPYw==}
     engines: {node: '>= 4'}
@@ -4824,6 +4844,10 @@ packages:
 
   resolve-pkg-maps@1.0.0:
     resolution: {integrity: sha512-seS2Tj26TBVOC2NIc2rOe2y2ZO7efxITtLZcGSOnHHNOQ7CkiUBfw0Iw2ck6xkIhPwLhKNLS8BO+hEpngQlqzw==}
+
+  resolve.exports@2.0.3:
+    resolution: {integrity: sha512-OcXjMsGdhL4XnbShKpAcSqPMzQoYkYyhbEaeSko47MjRP9NfEQMhZkXL1DoFlt9LWQn4YttrdnV6X2OiyzBi+A==}
+    engines: {node: '>=10'}
 
   restore-cursor@5.1.0:
     resolution: {integrity: sha512-oMA2dcrw6u0YfxJQXm342bFKX/E4sG9rbTzO9ptUcR/e8A33cHuvStiYOwH7fszkZlZ1z/ta9AAoPk2F4qIOHA==}
@@ -7056,6 +7080,10 @@ snapshots:
 
   chalk@5.3.0: {}
 
+  chokidar@4.0.3:
+    dependencies:
+      readdirp: 4.0.1
+
   chownr@3.0.0: {}
 
   chromium-pickle-js@0.2.0: {}
@@ -8486,6 +8514,8 @@ snapshots:
       string_decoder: 1.1.1
       util-deprecate: 1.0.2
 
+  readdirp@4.0.1: {}
+
   recast@0.23.21:
     dependencies:
       ast-types: 0.16.1
@@ -8509,6 +8539,8 @@ snapshots:
   resolve-from@4.0.0: {}
 
   resolve-pkg-maps@1.0.0: {}
+
+  resolve.exports@2.0.3: {}
 
   restore-cursor@5.1.0:
     dependencies:

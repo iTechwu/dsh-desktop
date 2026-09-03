@@ -235,6 +235,15 @@ describe('published package surface', () => {
     expect(manifest.optionalDependencies ?? {}).not.toHaveProperty('dshmarket')
   })
 
+  it('pins Harness startup imports in the packaged runtime', () => {
+    expect(manifest.dependencies).toMatchObject({
+      '@babel/code-frame': '^7.29.0',
+      chokidar: '^4.0.3',
+      picomatch: '^4.0.3',
+      'resolve.exports': '^2.0.3',
+    })
+  })
+
   it('loads DeepSeek Harness packages directly from the sibling checkout', () => {
     const workspaceFile = readFileSync(new URL('pnpm-workspace.yaml', workspaceRoot), 'utf8')
     expect(workspaceFile).toContain('deepseek-harness/packages/**')

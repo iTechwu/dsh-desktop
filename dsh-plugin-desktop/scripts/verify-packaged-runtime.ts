@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync 
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { Worker } from 'node:worker_threads'
 import { listPackage } from '@electron/asar'
 import AdmZip from 'adm-zip'
@@ -77,6 +77,12 @@ export const REQUIRED_PACKAGED_RUNTIME_ENTRIES = [
   'node_modules/@deepseek-ai/dsh-subprocess-local/lib/index.js',
   'node_modules/@deepseek-ai/dsh-web-frontend/dist/index.html',
   'node_modules/@deepseek-ai/dsh-app-boot/lib/index.js',
+  'node_modules/@deepseek-ai/dsh-settings-file/lib/index.js',
+  'node_modules/@deepseek-ai/cordis-plugin-hmr/lib/index.js',
+  'node_modules/@babel/code-frame/lib/index.js',
+  'node_modules/chokidar/index.js',
+  'node_modules/picomatch/index.js',
+  'node_modules/resolve.exports/dist/index.mjs',
   'node_modules/open/index.js',
   'node_modules/pnpm/bin/pnpm.mjs',
 ] as const
@@ -150,6 +156,10 @@ export const REQUIRED_UNPACKED_PACKAGE_SPECIFIERS = [
   '@deepseek-ai/dsh-base/package.json',
   '@deepseek-ai/schemastery/package.json',
   '@deepseek-ai/dsh-web-app/package.json',
+  '@babel/code-frame',
+  'chokidar',
+  'picomatch',
+  'resolve.exports/package.json',
 ] as const
 
 /** Injectable archive listing seam used by focused tests. */
@@ -213,6 +223,9 @@ export function hydratePackagedRuntime(
 /** Injectable smoke seam used to verify afterPack ordering. */
 export type PackagedDiagnosticWorkerSmoke = (unpackedRoot: string) => Promise<void>
 
+/** Injectable smoke seam for the main process's eager Harness import graph. */
+export type PackagedStartupImportSmoke = (unpackedRoot: string) => Promise<void>
+
 /** Injectable Windows Koffi load seam used after static verification. */
 export type PackagedWindowsKoffiSmoke = (unpackedRoot: string) => void
 
@@ -225,6 +238,17 @@ type PackagedDiagnosticWorkerResult =
   | { readonly ok: false, readonly error: string }
 
 const PACKAGED_DIAGNOSTIC_WORKER_TIMEOUT_MS = 30_000
+
+/** Load the same eager Harness entry that Electron resolves before app startup. */
+export async function smokePackagedStartupImports(unpackedRoot: string): Promise<void> {
+  for (const entry of [
+    'node_modules/@deepseek-ai/dsh-app-boot/lib/index.js',
+    'node_modules/@deepseek-ai/dsh-settings-file/lib/index.js',
+    'node_modules/@deepseek-ai/cordis-plugin-hmr/lib/index.js',
+  ]) {
+    await import(pathToFileURL(join(unpackedRoot, entry)).href)
+  }
+}
 
 /** Start the physical packaged diagnostics Worker and wait for its terminal result. */
 async function launchPackagedDiagnosticWorker(
@@ -487,9 +511,11 @@ export async function afterPack(
   smoke: PackagedDiagnosticWorkerSmoke = smokePackagedDiagnosticWorker,
   smokeWindowsKoffi: PackagedWindowsKoffiSmoke = smokePackagedWindowsKoffiRuntime,
   smokeWindowsSharp: PackagedWindowsSharpSmoke = smokePackagedWindowsSharpRuntime,
+  smokeStartupImports: PackagedStartupImportSmoke = smokePackagedStartupImports,
 ): Promise<void> {
   hydrate(context)
   verify(context)
+  await smokeStartupImports(resolvePackagedUnpackedRoot(context))
   if (context.electronPlatformName === 'win32') {
     smokeWindowsKoffi(resolvePackagedUnpackedRoot(context))
     smokeWindowsSharp(resolvePackagedUnpackedRoot(context))
