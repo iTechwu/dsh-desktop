@@ -6,7 +6,7 @@
 
 期望：覆盖层由桌面壳统一仲裁；打开新业务面板时替换当前面板，背景和隐藏层使用 `inert`/正确的 `aria-hidden` 隔离；关闭后焦点回到触发按钮。
 
-进展：`docker-helm.dofe.ai@8c9f508` 已让 11 个面板通过统一事件互斥，真实 Electron 包中 Dashboard -> Recruiter 切换后 Dashboard 从辅助功能树消失。背景隔离和打开时焦点进入面板仍待完成。
+进展：已完成。`docker-helm.dofe.ai@8c9f508` 让 11 个面板通过统一事件互斥；`dsh-desktop@705ab05047` 与 `deepseek-harness@de9675462b` 分别为桌面自有帧和兼容帧实现背景 `inert`、弹窗内 Tab 循环和焦点归还。真实 Electron 包中打开 Dashboard 后辅助功能树只保留弹窗，Escape 后焦点返回“企业看板”。
 
 ## UX-002 Skill 管理无法完整键盘/读屏操作
 

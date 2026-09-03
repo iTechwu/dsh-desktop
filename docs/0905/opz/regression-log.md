@@ -65,3 +65,30 @@
 ### 部署判断
 
 - 本轮改动为桌面内嵌客户端插件，不改变服务端路由或容器；未触发 Jenkins 服务部署。
+
+## 第 2 轮：模态背景隔离与焦点管理
+
+时间：2026-09-04 04:05-04:22（Asia/Shanghai）
+
+### 修复与提交
+
+- `deepseek-harness@de9675462b`：兼容模式 `AppFrame` 在模态打开时隔离后台、聚焦弹窗、约束正反向 Tab 循环并在关闭后恢复焦点；新增客户端回归测试。
+- `dsh-desktop@705ab05047`：高级与扩展模式的 `DesktopOwnedFrame` 接入同等的模态隔离器；新增独立 DOM 契约测试。
+- 两个提交均已推送各自 `origin`；桌面仓库中用户未跟踪的品牌渲染脚本未改动。
+
+### 自动门禁
+
+- Harness UI layout：7 个测试文件、63 项测试全部通过，包 bundle 通过；预推送全仓 typecheck 通过。
+- Desktop：模态隔离测试 1/1，五套 TypeScript 配置检查通过。
+- 完整 `corepack pnpm check`：Market 268/268；Desktop 1107 通过、4 跳过；build、typecheck、runtime closure、CLI、Loader、Profile、licenses、operations 全部通过。
+
+### 实际应用回归
+
+- 第一次目录包在下载 Electron 时短暂 `fetch failed`，重试后下载、解压、依赖组装和 fuses 均成功；未跳过验证或修改下载契约。
+- 首次真实回归揭示高级模式使用桌面自有帧，而非 Harness `AppFrame`；补齐桌面边界后再次构建目录包。
+- 打开企业驾驶舱后，可访问树由完整主界面收敛为当前弹窗，背景隔离 PASS。
+- 焦点进入弹窗内“昨日”切换控件；按 Escape 后弹窗消失、主界面恢复，焦点回到“企业看板”按钮，进入与归还 PASS。
+
+### 部署判断
+
+- 本轮仍仅修改客户端壳与本地 Harness，未产生服务端部署目标，因此没有触发 Jenkins。
