@@ -7,6 +7,7 @@ import {
   collapsedSidebarWidth, computeDesktopColumns, DesktopLayoutState,
   SIDEBAR_AUTO_COLLAPSE, SIDEBAR_COLLAPSED, SIDEBAR_DEFAULT,
 } from './layout-state.ts'
+import { installModalOverlayIsolation } from './modal-overlay.ts'
 
 /** Private values assembled by one Desktop-owned shell registration. */
 export interface AdvancedFrameInjected {
@@ -41,6 +42,7 @@ export function DesktopOwnedFrame({
   const readLayout = useCallback(() => layout.getSnapshot(), [layout])
   const panels = useSyncExternalStore(subscribeLayout, readLayout, readLayout)
   const frameRef = useRef<HTMLDivElement>(null)
+  const overlayRef = useRef<HTMLDivElement>(null)
   const [viewport, setViewport] = useState(() => window.innerWidth)
   const detailsSession = useSessions((state) => {
     const current = state.current
@@ -63,6 +65,13 @@ export function DesktopOwnedFrame({
       observer.disconnect()
       if (raf !== null) cancelAnimationFrame(raf)
     }
+  }, [])
+
+  useEffect(() => {
+    const frame = frameRef.current
+    const overlay = overlayRef.current
+    if (frame === null || overlay === null) return
+    return installModalOverlayIsolation(frame, overlay)
   }, [])
 
   const narrow = viewport < SIDEBAR_AUTO_COLLAPSE
@@ -133,7 +142,7 @@ export function DesktopOwnedFrame({
       </aside>
       {/* Electron resolves app regions in DOM order; Desktop overlays must remain later. */}
       {mode === 'advanced' && platform === 'win32' && <div className="dshDesktopWindowsCaptionRow" aria-hidden="true" />}
-      <div className="dshDesktopOverlay" data-shell-overlay>
+      <div ref={overlayRef} className="dshDesktopOverlay" data-shell-overlay>
         {renderSlot('shell.overlay', {})}
       </div>
       {!collapsed && (
