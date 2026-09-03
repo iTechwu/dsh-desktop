@@ -97,6 +97,7 @@ describe('published package surface', () => {
       ['@dofe/dsh-yootun-retrofit', 'dsh-yootun-retrofit'],
       ['@dofe/dsh-yootun-sales', 'dsh-yootun-sales'],
       ['@dofe/dsh-yootun-supply-watch', 'dsh-yootun-supply-watch'],
+      ['@dofe/dsh-yootun-tos-upload', 'dsh-yootun-tos-upload'],
       ['@dofe/dsh-yootun-ui', 'dsh-yootun-ui'],
     ] as const
     for (const [name, directory] of plugins) {
@@ -117,7 +118,7 @@ describe('published package surface', () => {
       ['dsh-yootun-finops', 'index.js'], ['dsh-yootun-knowledge', 'index.js'],
       ['dsh-yootun-lead-discovery', 'index.js'], ['dsh-yootun-recruiter', 'index.js'],
       ['dsh-yootun-retrofit', 'index.js'], ['dsh-yootun-sales', 'index.js'],
-      ['dsh-yootun-supply-watch', 'index.js'], ['dsh-yootun-ui', 'index.js'],
+      ['dsh-yootun-supply-watch', 'index.js'], ['dsh-yootun-tos-upload', 'index.js'], ['dsh-yootun-ui', 'index.js'],
     ])
     for (const [name, main] of pluginMains) {
       expect(existsSync(new URL(`../.ci/${name}/package.json`, packageRoot))).toBe(true)

@@ -395,6 +395,7 @@
     "@dofe/dsh-yootun-retrofit": "file:../../docker-helm.dofe.ai/plugins/dsh-yootun-retrofit",
     "@dofe/dsh-yootun-sales": "file:../../docker-helm.dofe.ai/plugins/dsh-yootun-sales",
     "@dofe/dsh-yootun-supply-watch": "file:../../docker-helm.dofe.ai/plugins/dsh-yootun-supply-watch",
+    "@dofe/dsh-yootun-tos-upload": "file:../../docker-helm.dofe.ai/plugins/dsh-yootun-tos-upload",
     "@dofe/dsh-yootun-ui": "file:../../docker-helm.dofe.ai/plugins/dsh-yootun-ui",
     "@linxin666/dsh-client-ui-aionui-panel": "0.3.6",
     "@linxin666/dsh-client-ui-community-plugins": "0.3.6",

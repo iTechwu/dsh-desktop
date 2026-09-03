@@ -1518,6 +1518,9 @@ importers:
       '@dofe/dsh-yootun-supply-watch':
         specifier: file:../../docker-helm.dofe.ai/plugins/dsh-yootun-supply-watch
         version: file:../docker-helm.dofe.ai/plugins/dsh-yootun-supply-watch
+      '@dofe/dsh-yootun-tos-upload':
+        specifier: file:../../docker-helm.dofe.ai/plugins/dsh-yootun-tos-upload
+        version: file:../docker-helm.dofe.ai/plugins/dsh-yootun-tos-upload
       '@dofe/dsh-yootun-ui':
         specifier: file:../../docker-helm.dofe.ai/plugins/dsh-yootun-ui
         version: file:../docker-helm.dofe.ai/plugins/dsh-yootun-ui
@@ -2446,6 +2449,9 @@ packages:
 
   '@dofe/dsh-yootun-ui@file:../docker-helm.dofe.ai/plugins/dsh-yootun-ui':
     resolution: {directory: ../docker-helm.dofe.ai/plugins/dsh-yootun-ui, type: directory}
+
+  '@dofe/dsh-yootun-tos-upload@file:../docker-helm.dofe.ai/plugins/dsh-yootun-tos-upload':
+    resolution: {directory: ../docker-helm.dofe.ai/plugins/dsh-yootun-tos-upload, type: directory}
 
   '@dotenvx/dotenvx@1.75.1':
     resolution: {integrity: sha512-/BITOC9dmS/edY2zQwZNicQ059O6RKabtQfyEafV0nGtfYRNHYy1DIPiYVcov40+tob9hfmBnbR963dS+EQ1DQ==}
@@ -7723,6 +7729,8 @@ snapshots:
   '@dofe/dsh-yootun-supply-watch@file:../docker-helm.dofe.ai/plugins/dsh-yootun-supply-watch': {}
 
   '@dofe/dsh-yootun-ui@file:../docker-helm.dofe.ai/plugins/dsh-yootun-ui': {}
+
+  '@dofe/dsh-yootun-tos-upload@file:../docker-helm.dofe.ai/plugins/dsh-yootun-tos-upload': {}
 
   '@dotenvx/dotenvx@1.75.1':
     dependencies:

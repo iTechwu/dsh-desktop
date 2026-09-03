@@ -43,6 +43,23 @@
       name: '@dofe/dsh-yootun-daily-report'
     - id: dofe-yootun-lead-discovery
       name: '@dofe/dsh-yootun-lead-discovery'
+    # Yootun 通用媒体上传能力（纯宿主插件，无客户端半）。AK/SK 不写进本文件，
+    # 由部署侧 credential store（STORAGE_ACCESS_KEY_ID/SECRET）注入，装完即用。
+    # entry id 与插件自带 dsh.bundle.patch 一致，避免合并出重复加载项。
+    - id: dofe-yootun-tos-upload
+      name: '@dofe/dsh-yootun-tos-upload'
+      config:
+        backend: tos
+        tos:
+          region: cn-beijing
+          bucket: dofe-transcode
+          keyPrefix: yootun/uploads
+        limits:
+          # 单文件大小上限（字节），默认 500MB。
+          maxBytes: 524288000
+        tool:
+          # agent 工具单次上传超时（大视频走整段 await）。
+          timeoutMs: 1800000
     - id: desktop-terminal
       name: dsh-plugin-desktop/terminal
       disabled: !!js process.platform === 'linux'
