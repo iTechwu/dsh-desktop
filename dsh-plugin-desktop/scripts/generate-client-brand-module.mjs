@@ -8,7 +8,7 @@ import sharp from 'sharp'
 const packageRoot = dirname(dirname(fileURLToPath(import.meta.url)))
 const outputPath = join(packageRoot, 'src', 'client', 'generated-brand-assets.ts')
 const assets = [
-  ['sidebarBrandDataUrl', join(packageRoot, 'build', 'sidebar-brand.png'), 660, 119],
+  ['sidebarBrandDataUrl', join(packageRoot, 'build', 'sidebar-brand.png'), 2537, 457],
   ['heroBrandDataUrl', join(packageRoot, 'build', 'hero-brand.png'), 204, 204],
 ]
 
