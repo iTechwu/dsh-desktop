@@ -36,3 +36,32 @@
 - 2026-09-04 03:26 时日志约 833 KiB/4600 行。
 - 9 个消息渠道以 30 秒间隔重复收到 `host.describe` 403。
 - 一个用户级 OpenCLI sitemap skill 因 YAML frontmatter 无效被忽略。
+
+## 第 1 轮：迁移门禁与业务面板互斥
+
+时间：2026-09-04 03:30-04:05（Asia/Shanghai）
+
+### 修复与提交
+
+- `dsh-desktop@b3e1773b69`：移除旧聚合 Web UI 的运行依赖并更新 7 个过期测试。
+- `docker-helm.dofe.ai@8c9f508`：11 个业务覆盖层统一打开事件、互斥关闭、对话框语义和 Escape 行为；新增跨插件契约测试。
+- 两个提交均已推送各自 `origin/master`。
+
+### 自动门禁
+
+- 完整 `corepack pnpm check`：PASS。
+- Market：268/268；Desktop：1107 通过、4 跳过；build、typecheck、runtime closure、CLI、Loader、Profile、licenses、operations 均通过。
+- 12 个相关插件独立 `npm run check`：PASS；Dashboard 首次暴露无 `window` 的 headless 回归，增加环境守卫后 15/15 通过。
+- 跨插件覆盖层契约：先 RED（Dashboard 缺少 `OVERLAY_ID`），实现后 5/5 PASS。
+
+### 实际应用回归
+
+- 第一次目录包仍叠加面板，定位为 pnpm `file:` 安装快照未随插件源产物刷新。
+- 定向刷新 11 个插件依赖并排除无关锁文件变化后重新打包。
+- Dashboard -> Recruiter：Dashboard 文本计数 `5 -> 0`，Recruiter `0 -> 5`，互斥 PASS。
+- Escape：Dashboard 和 Recruiter 计数均为 0，关闭 PASS。
+- 遗留：打开 Recruiter 后焦点仍在后台“招聘工作台”按钮；背景主界面仍可从辅助功能树访问。
+
+### 部署判断
+
+- 本轮改动为桌面内嵌客户端插件，不改变服务端路由或容器；未触发 Jenkins 服务部署。
