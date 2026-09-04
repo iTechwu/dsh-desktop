@@ -46,4 +46,25 @@ describe('Yootun supply watch route', () => {
     ])
     expect(JSON.stringify(record.mock.calls)).not.toMatch(/敏感供应商|风险信号|处置正文/u)
   })
+
+  it('classifies concurrent writes from the state serialized with each mutation', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'yootun-supply-concurrent-'))
+    const statePath = join(root, 'state.json')
+    const now = () => new Date('2026-09-01T02:00:00.000Z')
+    const record = vi.fn(async (_input: any): Promise<any> => ({ status: 'stored', clientEventId: 'event-1' }))
+    const risk = (severity: 'high' | 'critical') => JSON.stringify({
+      action: 'save_risk', id: 'concurrent-risk', title: '并发风险', supplierLabel: '供应商',
+      category: '交付', severity, status: 'open', signal: '信号', recommendedAction: '复核', source: 'manual',
+    })
+
+    const invoke = (severity: 'high' | 'critical') => handleYootunSupplyWatchRequest(
+      request('POST', risk(severity)), response(), 'http://127.0.0.1:43120', { statePath, now, audit: { record } },
+    )
+    await Promise.all([invoke('high'), invoke('critical')])
+
+    expect(record.mock.calls.map(([event]) => event.actionCode).sort()).toEqual([
+      'supply.risk.created',
+      'supply.risk.updated',
+    ])
+  })
 })

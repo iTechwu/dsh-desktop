@@ -114,6 +114,22 @@ describe('Yootun recruiter route', () => {
     expect(JSON.stringify(record.mock.calls)).not.toContain('不得进入审计')
   })
 
+  it('classifies concurrent writes from the state serialized with each mutation', async () => {
+    const statePath = path()
+    const record = vi.fn(async (_input: any): Promise<any> => ({ status: 'stored', clientEventId: 'event-1' }))
+    const id = 'concurrent-role'
+
+    await Promise.all([
+      call(statePath, 'POST', requirement({ id, status: 'active' }), undefined, { audit: { record } }),
+      call(statePath, 'POST', requirement({ id, status: 'paused' }), undefined, { audit: { record } }),
+    ])
+
+    expect(record.mock.calls.map(([event]) => event.actionCode).sort()).toEqual([
+      'recruiter.requirement.created',
+      'recruiter.requirement.updated',
+    ])
+  })
+
   it('marks the tenant HR space ready without a client-configured space id', async () => {
     const result = await call(path(), 'GET', undefined, undefined, {
       knowledgePublisher: { publish: async () => ({ status: 'succeeded', reasonCode: 'knowledge_confirmed' }) },

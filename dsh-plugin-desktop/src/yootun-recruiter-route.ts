@@ -714,12 +714,11 @@ function mutate(state: RecruiterState, value: unknown, now: string): RecruiterSt
 
 const stateMutationQueues = new Map<string, Promise<void>>()
 
-/** Serialize one read-modify-write cycle so renderer and Agent updates cannot overwrite each other. */
-export async function mutateRecruiterState(
+async function mutateRecruiterStateTransition(
   path: string,
   value: unknown,
-  now = new Date().toISOString(),
-): Promise<RecruiterSnapshot> {
+  now: string,
+): Promise<{ before: RecruiterState; next: RecruiterSnapshot }> {
   const previous = stateMutationQueues.get(path) ?? Promise.resolve()
   let release: (() => void) | undefined
   const current = new Promise<void>(resolve => { release = resolve })
@@ -727,14 +726,23 @@ export async function mutateRecruiterState(
   stateMutationQueues.set(path, chain)
   await previous
   try {
-    const state = await readRecruiterState(path, now)
-    const next = mutate(state, value, now)
-    await writeRecruiterState(path, next)
-    return recruiterSnapshot(next)
+    const before = await readRecruiterState(path, now)
+    const state = mutate(before, value, now)
+    await writeRecruiterState(path, state)
+    return { before, next: recruiterSnapshot(state) }
   } finally {
     release?.()
     if (stateMutationQueues.get(path) === chain) stateMutationQueues.delete(path)
   }
+}
+
+/** Serialize one read-modify-write cycle so renderer and Agent updates cannot overwrite each other. */
+export async function mutateRecruiterState(
+  path: string,
+  value: unknown,
+  now = new Date().toISOString(),
+): Promise<RecruiterSnapshot> {
+  return (await mutateRecruiterStateTransition(path, value, now)).next
 }
 
 function adapterReceipt(value: unknown, fallbackTime: string): RecruiterAdapterReceipt {
@@ -1142,8 +1150,9 @@ export async function handleYootunRecruiterRequest(
       await dependencies.openBossWeb()
       return finish(res, 200, recruiterSnapshot(state, capabilities))
     } else {
-      next = await mutateRecruiterState(dependencies.statePath, parsed, now)
-      await recordRecruiterAudit(dependencies.audit, recordBody === undefined ? undefined : recruiterMutationAudit(recordBody, state, next))
+      const transition = await mutateRecruiterStateTransition(dependencies.statePath, parsed, now)
+      next = transition.next
+      await recordRecruiterAudit(dependencies.audit, recordBody === undefined ? undefined : recruiterMutationAudit(recordBody, transition.before, next))
     }
     finish(res, 200, recruiterSnapshot(next, capabilities))
   } catch (cause) {
