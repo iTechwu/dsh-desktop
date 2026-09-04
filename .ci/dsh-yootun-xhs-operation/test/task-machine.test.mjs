@@ -115,3 +115,25 @@ test('create failure surfaces createFailed and keeps no versions', async () => {
   assert.equal(machine.get().task, null)
   assert.equal(machine.get().versions, null)
 })
+
+test('stop during in-flight create does not start polling', async () => {
+  let resolveCreate
+  let statusCalls = 0
+  const { machine, timers } = makeMachine({
+    createTask: () => new Promise(resolve => { resolveCreate = resolve }),
+    queryStatus: async () => { statusCalls++; return { taskStatus: 'running' } },
+  })
+  const submitPromise = machine.submit({ action: 'create', mediaType: 'images', idempotencyKey: 'k1' })
+  // 创建请求尚未返回时关闭页面
+  machine.stop()
+  // 创建请求返回
+  resolveCreate({ taskId: 't-1', taskStatus: 'queued', mediaType: 'images' })
+  await submitPromise
+  // 关闭后不得启动轮询
+  assert.equal(statusCalls, 0)
+  assert.equal(timers.pending, false)
+  // 任务已保存，重开页面 resume 可继续查询
+  assert.equal(machine.get().task.taskId, 't-1')
+  await machine.resume()
+  assert.equal(statusCalls, 1)
+})
