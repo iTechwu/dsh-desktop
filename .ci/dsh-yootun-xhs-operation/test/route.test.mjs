@@ -8,11 +8,12 @@ const SCHEMAS = [
   { name: 'mcp__tools-xhs-operation__xhs_operation_result_get' },
 ]
 
-function makeCtx(execute, schemas = SCHEMAS) {
+function makeCtx(execute, schemas = SCHEMAS, auditEvents = []) {
   let route
   apply({
     effect(factory) { return factory() },
     logger: { warn() {} },
+    yootunAudit: { async record(event) { auditEvents.push(event) } },
     tools: {
       schemas: () => schemas,
       execute,
@@ -116,6 +117,28 @@ test('result delegates to result_get and projects only display fields', async ()
   assert.equal(result.body.versions[0].internalId, undefined)
   assert.deepEqual(result.body.versions[0].pages, [{ pageIndex: 0, copy: '页1' }])
   assert.deepEqual(result.body.versions[1].tags, [])
+})
+
+test('records task creation and the first terminal observation exactly once', async () => {
+  const events = []
+  const versions = Array.from({ length: 3 }, (_, index) => ({ version: String(index + 1), title: `不得进入审计 ${index}`, body: '不得进入审计的正文' }))
+  const { route } = makeCtx(async value => {
+    if (value.name.endsWith('task_create')) return { structuredContent: { taskId: 'xhst-audit', status: 'queued' } }
+    if (value.name.endsWith('task_get')) return { structuredContent: { taskId: 'xhst-audit', status: 'succeeded' } }
+    return { structuredContent: { taskId: 'xhst-audit', status: 'succeeded', versions } }
+  }, SCHEMAS, events)
+  await invoke(route, { action: 'create', mediaType: 'images', imageUrls: ['https://example.com/secret.jpg'], theme: '不得进入审计的主题' })
+  await invoke(route, { action: 'status', taskId: 'xhst-audit' })
+  await invoke(route, { action: 'status', taskId: 'xhst-audit' })
+  await invoke(route, { action: 'result', taskId: 'xhst-audit' })
+  assert.equal(events.length, 2)
+  assert.equal(events[0].actionCode, 'xhs.rewrite.created')
+  assert.equal(events[0].outcome, 'accepted')
+  assert.equal(events[1].actionCode, 'xhs.rewrite.completed')
+  assert.equal(events[1].outcome, 'succeeded')
+  assert.equal(events[0].traceId, events[1].traceId)
+  assert.equal(events[1].changes.find(change => change.field === 'versionCount').after, 3)
+  assert.doesNotMatch(JSON.stringify(events), /不得进入审计|secret\.jpg/u)
 })
 
 test('result rejects a succeeded task without exactly three versions', async () => {

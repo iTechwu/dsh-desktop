@@ -3,7 +3,7 @@
 // task_get / result_get），并把 MCP 信封投影为安全结果。页面不读取 MODELS_API_KEY、
 // 不直连公网 MCP，也不接收凭据、内部地址或原始传输错误（docs/0904/xhs §6.1）。
 
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 
 const PATH = '/api/desktop/yootun/xhs-operation'
 const TOOL_CALL_TIMEOUT_MS = 60_000
@@ -20,7 +20,9 @@ const MAX_ACCOUNT_NAME = 200
 const MAX_IDEMPOTENCY_KEY = 128
 const MAX_TASK_ID = 64
 
-export const inject = ['webServer', 'tools']
+export const inject = ['webServer', 'tools', 'yootunAudit']
+
+const auditedTerminalTasks = new Set()
 
 export function apply(ctx) {
   return ctx.effect(() => {
@@ -76,6 +78,7 @@ async function handleCreate(ctx, body, res, signal = AbortSignal.timeout(TOOL_CA
   const payload = parseResult(result)
   const taskId = firstString(payload.taskId, payload.task_ref, payload.taskRef)
   if (!taskId) return send(res, 200, { status: 'error', reason: 'create_failed_no_task' })
+  await recordCreatedAudit(ctx, taskId, firstString(payload.status) || 'queued')
   return send(res, 200, { status: 'created', taskId, idempotencyKey, mediaType, taskStatus: firstString(payload.status) || 'queued' })
 }
 
@@ -86,10 +89,12 @@ async function handleStatus(ctx, body, res, signal = AbortSignal.timeout(TOOL_CA
   if (!schema) return send(res, 200, { status: 'unavailable', reason: 'xhs_operation_tool_unavailable' })
   const result = await ctx.tools.execute({ callId: `yootun-xhs-status-${Date.now()}`, name: schema.name, arguments: { taskId }, signal })
   const payload = parseResult(result)
+  const taskStatus = firstString(payload.status) || 'unknown'
+  await recordTerminalAudit(ctx, taskId, taskStatus, taskStatus === 'succeeded' ? 3 : 0, firstString(payload.errorCode))
   return send(res, 200, {
     status: 'ready',
     taskId,
-    taskStatus: firstString(payload.status) || 'unknown',
+    taskStatus,
     currentStep: firstString(payload.currentStep),
     nextStep: firstString(payload.nextStep),
     errorCode: firstString(payload.errorCode),
@@ -110,7 +115,45 @@ async function handleResult(ctx, body, res, signal = AbortSignal.timeout(TOOL_CA
   if (taskStatus === 'succeeded' && versions.length !== 3) {
     return send(res, 200, { status: 'error', reason: 'versions_unavailable', taskId, taskStatus })
   }
+  await recordTerminalAudit(ctx, taskId, taskStatus, versions.length, firstString(payload.errorCode))
   return send(res, 200, { status: 'ready', taskId, taskStatus, versions })
+}
+
+function eventUuid(seed) {
+  const hex = createHash('sha256').update(seed).digest('hex').slice(0, 32).split('')
+  hex[12] = '4'
+  hex[16] = ['8', '9', 'a', 'b'][Number.parseInt(hex[16], 16) % 4]
+  return `${hex.slice(0, 8).join('')}-${hex.slice(8, 12).join('')}-${hex.slice(12, 16).join('')}-${hex.slice(16, 20).join('')}-${hex.slice(20).join('')}`
+}
+
+async function recordCreatedAudit(ctx, taskId, status) {
+  await recordAudit(ctx, {
+    clientEventId: eventUuid(`xhs:create:${taskId}`), traceId: `xhs:${taskId}`,
+    actionCode: 'xhs.rewrite.created', category: 'create',
+    source: { pluginId: '@dofe/dsh-yootun-xhs-operation', pluginVersion: '0.1.0', surface: 'human_ui' },
+    target: { type: 'xhs_rewrite_task', id: taskId }, outcome: 'accepted',
+    changes: [{ field: 'status', after: status.slice(0, 160) }, { field: 'versionCount', after: 3 }], effects: [],
+  })
+}
+
+async function recordTerminalAudit(ctx, taskId, status, versionCount, rawError) {
+  if (!['succeeded', 'failed', 'cancelled'].includes(status) || auditedTerminalTasks.has(taskId)) return
+  const outcome = status === 'succeeded' ? 'succeeded' : 'failed'
+  const errorCode = typeof rawError === 'string' && /^[a-z0-9_:-]{1,80}$/iu.test(rawError) ? rawError.toLowerCase() : 'xhs_rewrite_failed'
+  const stored = await recordAudit(ctx, {
+    clientEventId: eventUuid(`xhs:terminal:${taskId}:${status}`), traceId: `xhs:${taskId}`,
+    actionCode: 'xhs.rewrite.completed', category: 'execute',
+    source: { pluginId: '@dofe/dsh-yootun-xhs-operation', pluginVersion: '0.1.0', surface: 'human_ui' },
+    target: { type: 'xhs_rewrite_task', id: taskId }, outcome,
+    changes: [{ field: 'status', after: status }, { field: 'versionCount', after: versionCount }], effects: [],
+    ...(outcome === 'failed' ? { errorCode } : {}),
+  })
+  if (stored) auditedTerminalTasks.add(taskId)
+}
+
+async function recordAudit(ctx, input) {
+  if (!ctx.yootunAudit?.record) return false
+  try { const result = await ctx.yootunAudit.record(input); return result?.status !== 'failed' } catch { ctx.logger?.warn?.('yootun audit record failed: audit_record_failed'); return false }
 }
 
 // 对标笔记：页面只开放 { source, url }，投影为对标笔记对象子集（docs/0904/xhs §5.1）。
