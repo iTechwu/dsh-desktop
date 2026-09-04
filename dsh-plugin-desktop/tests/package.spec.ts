@@ -111,6 +111,7 @@ describe('published package surface', () => {
     expect(workspaceManifest.scripts?.['dofe-ui:build'])
       .toBe('node scripts/build-dofe-ui.mjs')
     expect(dofeUiBuild).toContain("'dsh-yootun-audit'")
+    expect(manifest.scripts?.['test:audit-ui']).toBe('node tests/browser/yootun-audit.visual.mjs')
     expect(ciWorkflow.match(/node scripts\/prepare-dofe-ui\.mjs/g)).toHaveLength(4)
   })
 

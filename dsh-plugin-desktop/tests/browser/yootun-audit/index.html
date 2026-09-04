@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>操作审计浏览器验收</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --dsw-alias-bg-base: #f7f8fa;
+        --dsw-alias-bg-layer-1: #ffffff;
+        --dsw-alias-bg-layer-2: #eef1f5;
+        --dsw-alias-border-l1: #d7dce4;
+        --dsw-alias-label-primary: #1c2430;
+        --dsw-alias-label-secondary: #5d6674;
+        --dsw-alias-state-error-primary: #b42318;
+        --dsw-alias-state-warn-primary: #9a6700;
+      }
+      * { box-sizing: border-box; }
+      html, body, #root { width: 100%; height: 100%; margin: 0; }
+      body { font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: var(--dsw-alias-bg-base); }
+      #root { display: grid; place-items: center; }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/main.jsx"></script>
+  </body>
+</html>

@@ -1,6 +1,6 @@
 # Yootun-Agent 操作审计插件设计
 
-状态：已确认，待实施
+状态：已实施，待用户验证
 
 日期：2026-09-04
 
@@ -463,3 +463,26 @@ GET 响应包含服务端事件、本机 pending 事件、同步健康、数据�
 4. 各业务工作台既有安全确认机制未发生行为回归。
 5. 所有提交使用中文 Conventional Commits 并推送至各自 `origin`。
 6. 实机界面通过桌面和窄屏视觉检查，且无控制台错误。
+
+## 17. 实施与自动化验收记录
+
+2026-09-05 已完成 Models、Desktop 和 Docker 三个仓库的实现与发布分支推送。中央审批客户端、Desktop Host 路由和预装依赖已删除，领域工作台既有确认流程保持不变；操作审计采用只读工作台、服务端授权查询和 Desktop 可靠补传。
+
+已执行并通过：
+
+- Models 全量质量门禁；
+- Desktop 审计契约、存储、补传、路由及四个本机采集器测试；
+- Docker 审计工作台及知识、发现、公开源刷新、小红书仿写、媒体上传采集器测试；
+- `corepack pnpm --filter dsh-plugin-desktop exec vitest run tests/package.spec.ts tests/plugin.spec.ts tests/yootun-audit-integration.spec.ts`；
+- `corepack pnpm --filter dsh-plugin-desktop run test:audit-ui`。
+
+浏览器验收使用隔离 Playwright 会话加载实际 `dsh-yootun-audit/src/client.js`，以受控同源响应覆盖加载、真实空态、筛选空态、在线表格与详情、离线缓存、待同步重试、普通成员、团队管理员和超级管理员显式选团队。320、768、1024、1440 像素视口均通过页面溢出、剩余高度、可访问名称、对话框语义、代表性 WCAG AA 对比度、键盘详情/关闭/焦点恢复、控制台和请求路径断言；14 次业务请求只访问 `/api/desktop/yootun/audit`。
+
+截图证据位于 `docs/superpowers/evidence/2026-09-05-yootun-audit/`：
+
+- `320-member-list.png`、`320-event-detail.png`；
+- `768-offline-cache.png`；
+- `1024-pending-sync.png`、`1024-empty.png`、`1024-filtered-empty.png`、`1024-loading.png`；
+- `1440-superadmin-detail.png`。
+
+尚未完成的发布后验证包括：使用获批非生产环境进行 10 万行查询 P95、真实断网重启补传，以及 5 名目标用户的任务完成率和 SUS。完成这些项目之前，状态保持“已实施，待用户验证”，不得标记为“已验证”。
