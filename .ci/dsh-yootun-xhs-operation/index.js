@@ -8,7 +8,7 @@ import { randomUUID } from 'node:crypto'
 const PATH = '/api/desktop/yootun/xhs-operation'
 const TOOL_CALL_TIMEOUT_MS = 60_000
 
-// 与 tools.dofe.ai 的 xhs_operation DTO 上限对齐（schemas.py），页面只开放 images/video。
+// 字段上限与 docs/0904/xhs §5.1 客户端调用合同一致，页面只开放 images/video。
 const MAX_THEME = 500
 const MAX_MEDIA_URL = 2048
 const MAX_IMAGE_COUNT = 5
@@ -104,15 +104,16 @@ async function handleResult(ctx, body, res, signal = AbortSignal.timeout(TOOL_CA
   if (!schema) return send(res, 200, { status: 'unavailable', reason: 'xhs_operation_tool_unavailable' })
   const result = await ctx.tools.execute({ callId: `yootun-xhs-result-${Date.now()}`, name: schema.name, arguments: { taskId }, signal })
   const payload = parseResult(result)
-  return send(res, 200, {
-    status: 'ready',
-    taskId,
-    taskStatus: firstString(payload.status) || 'unknown',
-    versions: projectVersions(payload.versions),
-  })
+  const taskStatus = firstString(payload.status) || 'unknown'
+  const versions = projectVersions(payload.versions)
+  // 契约：客户端固定 versionCount=3，succeeded 必须返回三套文案；否则按读取失败处理，避免空白或静默少版本。
+  if (taskStatus === 'succeeded' && versions.length !== 3) {
+    return send(res, 200, { status: 'error', reason: 'versions_unavailable', taskId, taskStatus })
+  }
+  return send(res, 200, { status: 'ready', taskId, taskStatus, versions })
 }
 
-// 对标笔记：页面只开放 { source, url }，投影为服务端 XhsTaskReference 子集。
+// 对标笔记：页面只开放 { source, url }，投影为对标笔记对象子集（docs/0904/xhs §5.1）。
 function projectReferences(value) {
   if (!Array.isArray(value)) return []
   const out = []
@@ -133,7 +134,7 @@ function projectReferences(value) {
   return out
 }
 
-// 对标账号：页面只开放 { name }，投影为服务端 XhsTaskAccount 子集。
+// 对标账号：页面只开放 { name }，投影为对标账号对象子集（docs/0904/xhs §5.1）。
 function projectAccounts(value) {
   if (!Array.isArray(value)) return []
   const out = []

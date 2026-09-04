@@ -93,10 +93,10 @@ window.__ModuleLoader__.load({
           h(IconEditOutline16, { size: wide ? 14 : 18 }), wide ? h('span', null, t('open')) : null))
     }
 
-    function TabBar({ tab, onTab, t }) {
+    function TabBar({ tab, onTab, t, disabled }) {
       return h('nav', { className: 'yxh-tabs', 'aria-label': t('material') },
-        h('button', { type: 'button', 'aria-current': tab === 'images', onClick: () => onTab('images') }, t('tabImages')),
-        h('button', { type: 'button', 'aria-current': tab === 'video', onClick: () => onTab('video') }, t('tabVideo')))
+        h('button', { type: 'button', 'aria-current': tab === 'images', disabled, onClick: () => onTab('images') }, t('tabImages')),
+        h('button', { type: 'button', 'aria-current': tab === 'video', disabled, onClick: () => onTab('video') }, t('tabVideo')))
     }
 
     function Version({ version, index, t }) {
@@ -108,9 +108,9 @@ window.__ModuleLoader__.load({
           version.title ? h('h3', null, version.title) : null),
         version.body ? h('div', { className: 'yxh-version-body' }, h(MarkdownText, { text: version.body, labels })) : null,
         version.tags && version.tags.length ? h('div', { className: 'yxh-tags', 'aria-label': t('tagsLabel') }, ...version.tags.map(tag => h('span', { className: 'yxh-tag', key: tag }, tag))) : null,
-        version.coverCopy ? h('p', { className: 'yxh-cover' }, `${t('coverLabel')}：${version.coverCopy}`) : null,
-        version.pages && version.pages.length ? h('ol', { className: 'yxh-pages' }, ...version.pages.map(page => h('li', { key: page.pageIndex }, h('span', { className: 'yxh-page-index' }, String(page.pageIndex + 1)), h('span', null, page.copy)))) : null,
-        version.leadGuide ? h('p', { className: 'yxh-lead' }, version.leadGuide) : null)
+        version.coverCopy ? h('div', { className: 'yxh-extra' }, h('span', { className: 'yxh-extra-label' }, t('coverLabel')), h('div', { className: 'yxh-extra-body' }, h(MarkdownText, { text: version.coverCopy, labels }))) : null,
+        version.pages && version.pages.length ? h('ol', { className: 'yxh-pages' }, ...version.pages.map(page => h('li', { key: page.pageIndex }, h('span', { className: 'yxh-page-index' }, String(page.pageIndex + 1)), h('div', { className: 'yxh-page-copy' }, h(MarkdownText, { text: page.copy, labels }))))) : null,
+        version.leadGuide ? h('div', { className: 'yxh-extra' }, h('span', { className: 'yxh-extra-label' }, t('leadLabel')), h('div', { className: 'yxh-extra-body' }, h(MarkdownText, { text: version.leadGuide, labels }))) : null)
     }
 
     function Overlay({ t }) {
@@ -131,6 +131,10 @@ window.__ModuleLoader__.load({
 
       const taskStatus = task?.taskStatus || 'idle'
       const processing = Boolean(task?.taskId) && !isTerminal(taskStatus)
+      const locked = busy || processing
+
+      const versionsRef = useRef(null)
+      useEffect(() => { versionsRef.current = versions }, [versions])
 
       useEffect(() => {
         if (!visible) return undefined
@@ -141,34 +145,54 @@ window.__ModuleLoader__.load({
 
       useEffect(() => {
         if (!visible) return undefined
+        let stopped = false
         let timer = null
-        const stop = () => { if (timer) { clearInterval(timer); timer = null } }
-        const tick = async () => {
+
+        const loadResult = async taskId => {
+          const result = await post({ action: 'result', taskId }).catch(() => null)
+          if (stopped) return
+          if (result && result.status === 'ready' && Array.isArray(result.versions) && result.versions.length === 3) {
+            setVersions(result.versions)
+            setTaskError('')
+          } else {
+            setTaskError(t('resultFailed'))
+          }
+        }
+
+        // 自调度串行轮询：下一次查询在上一次完成后 30 秒才发起，绝不让旧响应覆盖新状态。
+        const poll = async () => {
+          if (stopped) return
           const current = activeTaskRef.current
-          if (!current?.taskId || isTerminal(current.taskStatus)) { stop(); return }
+          if (!current?.taskId) return
+          // 已终态：succeeded 且尚未读到结果时补读一次（含「创建即 succeeded」与「重开页面」）；failed/cancelled 直接停。
+          if (isTerminal(current.taskStatus)) {
+            if (current.taskStatus === 'succeeded' && versionsRef.current === null) await loadResult(current.taskId)
+            return
+          }
           const status = await post({ action: 'status', taskId: current.taskId }).catch(() => null)
+          if (stopped) return
           if (!status || status.status !== 'ready') { setTaskError(t('pollFailed')); return }
           const next = { ...current, taskStatus: status.taskStatus, currentStep: status.currentStep || status.nextStep || '' }
           activeTask = next
           activeTaskRef.current = next
           setTask(next)
           if (status.taskStatus === 'succeeded') {
-            const result = await post({ action: 'result', taskId: current.taskId }).catch(() => null)
-            if (result && result.status === 'ready' && Array.isArray(result.versions)) { setVersions(result.versions); setTaskError('') }
-            else setTaskError(t('resultFailed'))
-            stop()
-          } else if (status.taskStatus === 'failed' || status.taskStatus === 'cancelled') {
-            setTaskError(status.taskStatus === 'cancelled' ? t('cancelled') : t('failed'))
-            stop()
+            await loadResult(current.taskId)
+            return
           }
+          if (status.taskStatus === 'failed' || status.taskStatus === 'cancelled') {
+            setTaskError(status.taskStatus === 'cancelled' ? t('cancelled') : t('failed'))
+            return
+          }
+          timer = setTimeout(poll, POLL_INTERVAL_MS)
         }
-        const current = activeTaskRef.current
-        if (current?.taskId && !isTerminal(current.taskStatus)) { tick(); timer = setInterval(tick, POLL_INTERVAL_MS) }
-        return () => { if (timer) clearInterval(timer) }
+
+        poll()
+        return () => { stopped = true; if (timer) clearTimeout(timer) }
       }, [visible, task?.taskId])
 
       const pickAndUpload = async kind => {
-        if (uploading) return
+        if (uploading || locked) return
         setUploading(true)
         setUploadError('')
         try {
@@ -222,50 +246,50 @@ window.__ModuleLoader__.load({
       const left = h('div', { className: 'yxh-left' },
         h('section', { className: 'yxh-section' },
           h('h2', null, t('material')),
-          h(TabBar, { tab, onTab: setTab, t }),
+          h(TabBar, { tab, onTab: setTab, t, disabled: locked }),
           tab === 'images'
             ? h('div', { className: 'yxh-media' },
               images.map((image, index) => h('figure', { className: 'yxh-thumb', key: `${index}-${image.name}` },
                 h('img', { src: image.url, alt: image.name }),
-                h('button', { type: 'button', className: 'yxh-thumb-remove', 'aria-label': t('remove'), onClick: () => setImages(prev => prev.filter((_, i) => i !== index)) }, '×'))),
+                h('button', { type: 'button', className: 'yxh-thumb-remove', 'aria-label': t('remove'), disabled: locked, onClick: () => setImages(prev => prev.filter((_, i) => i !== index)) }, '×'))),
               images.length < MAX_IMAGES
-                ? h('button', { type: 'button', className: 'yxh-add', 'aria-label': t('addImage'), disabled: uploading, onClick: () => pickAndUpload('image') }, uploading ? '…' : '+')
+                ? h('button', { type: 'button', className: 'yxh-add', 'aria-label': t('addImage'), disabled: uploading || locked, onClick: () => pickAndUpload('image') }, uploading ? '…' : '+')
                 : null)
             : h('div', { className: 'yxh-media' },
               video
                 ? h('div', { className: 'yxh-video' },
                   h('span', { className: 'yxh-video-name' }, video.name),
                   video.size ? h('span', { className: 'yxh-video-meta' }, formatBytes(video.size)) : null,
-                  h('button', { type: 'button', className: 'yxh-thumb-remove', 'aria-label': t('remove'), onClick: () => setVideo(null) }, '×'))
-                : h('button', { type: 'button', className: 'yxh-add', 'aria-label': t('videoLabel'), disabled: uploading, onClick: () => pickAndUpload('video') }, uploading ? '…' : '+')),
+                  h('button', { type: 'button', className: 'yxh-thumb-remove', 'aria-label': t('remove'), disabled: locked, onClick: () => setVideo(null) }, '×'))
+                : h('button', { type: 'button', className: 'yxh-add', 'aria-label': t('videoLabel'), disabled: uploading || locked, onClick: () => pickAndUpload('video') }, uploading ? '…' : '+')),
           h('div', { className: 'yxh-hint' }, tab === 'images' ? t('imageHint').replace('{count}', String(images.length)) : null),
           uploadError ? h('p', { className: 'yxh-error', role: 'alert' }, uploadError) : null,
           h('label', { className: 'yxh-field' },
             h('span', null, t('theme')),
-            h('input', { type: 'text', value: theme, maxLength: 500, placeholder: t('themePlaceholder'), disabled: processing, onChange: event => setTheme(event.target.value) }))),
+            h('input', { type: 'text', value: theme, maxLength: 500, placeholder: t('themePlaceholder'), disabled: locked, onChange: event => setTheme(event.target.value) }))),
         h('section', { className: 'yxh-section' },
           h('h2', null, t('reference')),
           h('label', { className: 'yxh-field' },
             h('span', null, t('refNote')),
-            h('input', { type: 'text', value: refNote, maxLength: 2048, placeholder: t('refNotePlaceholder'), disabled: processing, onChange: event => setRefNote(event.target.value) })),
+            h('input', { type: 'text', value: refNote, maxLength: 2048, placeholder: t('refNotePlaceholder'), disabled: locked, onChange: event => setRefNote(event.target.value) })),
           h('label', { className: 'yxh-field' },
             h('span', null, t('refAccount')),
-            h('input', { type: 'text', value: refAccount, maxLength: 200, placeholder: t('refAccountPlaceholder'), disabled: processing, onChange: event => setRefAccount(event.target.value) }))),
+            h('input', { type: 'text', value: refAccount, maxLength: 200, placeholder: t('refAccountPlaceholder'), disabled: locked, onChange: event => setRefAccount(event.target.value) }))),
         h('div', { className: 'yxh-actions' },
           h('button', { type: 'button', className: 'yxh-submit', disabled: buttonDisabled, onClick: onSubmit }, buttonLabel)))
 
       let right
       if (taskStatus === 'succeeded' && Array.isArray(versions)) {
         right = h('div', { className: 'yxh-versions' }, versions.map((version, index) => h(Version, { key: version.version || index, version, index, t })))
+      } else if (taskError) {
+        right = h('div', { className: 'yxh-state yxh-state-error', role: 'alert' },
+          h('p', null, taskError),
+          h('p', { className: 'yxh-hint' }, t('failedHint')))
       } else if (processing || taskStatus === 'succeeded') {
         right = h('div', { className: 'yxh-state', role: 'status' },
           h('span', { className: 'yxh-spinner' }),
           h('p', null, t('processing')),
           task?.currentStep ? h('p', { className: 'yxh-step' }, `${t('stepLabel')} · ${task.currentStep}`) : null)
-      } else if (taskError) {
-        right = h('div', { className: 'yxh-state yxh-state-error', role: 'alert' },
-          h('p', null, taskError),
-          h('p', { className: 'yxh-hint' }, t('failedHint')))
       } else {
         right = h('div', { className: 'yxh-state' }, h('p', null, t('empty')))
       }
@@ -289,7 +313,7 @@ window.__ModuleLoader__.load({
       return `${(num / 1024 / 1024).toFixed(1)} MB`
     }
 
-    const css = `.yxh-button{display:flex;width:36px;height:36px;align-items:center;justify-content:center;gap:8px;border:0;border-radius:6px;background:transparent;color:var(--dsw-alias-label-secondary);cursor:pointer}.yxh-button:hover{background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary)}.yxh-wide{width:100%;height:34px;justify-content:flex-start;padding:0 10px}.yxh-wide span{font-size:13px}.yxh-overlay{position:fixed;inset:0;z-index:520;background:var(--dsw-alias-bg-base);color:var(--dsw-alias-label-primary)}.yxh-shell{display:grid;grid-template-rows:auto 1fr;width:100%;height:100%;overflow:hidden}.yxh-header{display:flex;min-height:74px;align-items:center;justify-content:space-between;padding:14px 24px;border-bottom:1px solid var(--dsw-alias-border-l1)}.yxh-header h1{margin:0;font-size:20px}.yxh-header p{margin:4px 0 0;color:var(--dsw-alias-label-secondary);font-size:13px}.yxh-header-buttons{display:flex;gap:6px}.yxh-header-buttons button{display:grid;width:34px;height:34px;place-items:center;border:1px solid var(--dsw-alias-border-l1);border-radius:6px;background:var(--dsw-alias-bg-layer-1);color:inherit;cursor:pointer}.yxh-body{display:grid;grid-template-columns:minmax(360px,.85fr) minmax(480px,1.15fr);max-width:1440px;margin:0 auto;width:100%;min-height:0;overflow:hidden}.yxh-left{overflow:auto;padding:20px 24px 32px;border-right:1px solid var(--dsw-alias-border-l1)}.yxh-right{overflow:auto;padding:20px 24px 32px}.yxh-section{display:grid;gap:12px}.yxh-section+.yxh-section{margin-top:22px}.yxh-section h2{margin:0;font-size:14px}.yxh-tabs{display:flex;gap:2px;border-bottom:1px solid var(--dsw-alias-border-l1)}.yxh-tabs button{height:40px;padding:0 14px;border:0;border-bottom:2px solid transparent;background:transparent;color:var(--dsw-alias-label-secondary);font:inherit;font-size:13px;cursor:pointer}.yxh-tabs button[aria-current]{border-bottom-color:var(--dsw-alias-brand-primary);color:var(--dsw-alias-label-primary);font-weight:650}.yxh-media{display:flex;flex-wrap:wrap;gap:10px}.yxh-thumb{position:relative;margin:0;width:96px;height:96px;border:1px solid var(--dsw-alias-border-l1);border-radius:6px;overflow:hidden;background:var(--dsw-alias-bg-layer-1)}.yxh-thumb img{width:100%;height:100%;object-fit:cover}.yxh-thumb-remove{position:absolute;top:4px;right:4px;display:grid;width:20px;height:20px;place-items:center;border:0;border-radius:4px;background:color-mix(in srgb,var(--dsw-alias-bg-base) 82%,transparent);color:var(--dsw-alias-label-primary);font-size:14px;line-height:1;cursor:pointer}.yxh-add{display:grid;width:96px;height:96px;place-items:center;border:1px dashed var(--dsw-alias-border-l2);border-radius:6px;background:transparent;color:var(--dsw-alias-label-secondary);font-size:26px;cursor:pointer}.yxh-add:hover{border-color:var(--dsw-alias-brand-primary);color:var(--dsw-alias-brand-primary)}.yxh-add:disabled{opacity:.45;cursor:default}.yxh-video{display:flex;min-width:220px;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--dsw-alias-border-l1);border-radius:6px;background:var(--dsw-alias-bg-layer-1)}.yxh-video-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px}.yxh-video-meta{color:var(--dsw-alias-label-secondary);font-size:12px}.yxh-hint{color:var(--dsw-alias-label-secondary);font-size:12px}.yxh-error{color:var(--dsw-alias-state-error-primary);font-size:12px}.yxh-field{display:grid;gap:6px}.yxh-field span{color:var(--dsw-alias-label-secondary);font-size:12px}.yxh-field input{min-height:36px;padding:0 10px;border:1px solid var(--dsw-alias-border-l1);border-radius:6px;background:var(--dsw-alias-bg-layer-1);color:inherit;font:inherit;font-size:13px}.yxh-field input:disabled{opacity:.6}.yxh-actions{margin-top:22px}.yxh-submit{min-height:38px;padding:0 16px;border:0;border-radius:6px;background:var(--dsw-alias-brand-primary);color:var(--dsw-alias-bg-base);font:inherit;font-size:13px;font-weight:600;cursor:pointer}.yxh-submit:disabled{opacity:.45;cursor:default}.yxh-versions{display:grid;gap:16px}.yxh-version{padding:16px;border:1px solid var(--dsw-alias-border-l1);border-radius:8px;background:var(--dsw-alias-bg-layer-1)}.yxh-version-head{display:flex;align-items:baseline;gap:10px;margin-bottom:8px}.yxh-version-badge{flex:none;padding:2px 8px;border-radius:4px;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-secondary);font-size:12px}.yxh-version-head h3{margin:0;font-size:15px}.yxh-version-body{font-size:13px}.yxh-tags{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}.yxh-tag{padding:2px 8px;border-radius:4px;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-secondary);font-size:12px}.yxh-cover,.yxh-lead{margin:10px 0 0;color:var(--dsw-alias-label-secondary);font-size:12px}.yxh-pages{margin:10px 0 0;padding-left:20px;display:grid;gap:4px}.yxh-pages li{font-size:13px}.yxh-page-index{margin-right:8px;color:var(--dsw-alias-label-tertiary);font-variant-numeric:tabular-nums}.yxh-state{display:grid;min-height:160px;place-items:center;align-content:center;gap:10px;color:var(--dsw-alias-label-secondary);font-size:13px;text-align:center}.yxh-state p{margin:0}.yxh-step{color:var(--dsw-alias-label-tertiary);font-size:12px}.yxh-state-error p:first-child{color:var(--dsw-alias-state-error-primary)}.yxh-spinner{width:18px;height:18px;border:2px solid var(--dsw-alias-border-l2);border-top-color:var(--dsw-alias-brand-primary);border-radius:50%;animation:yxh-spin .8s linear infinite}@keyframes yxh-spin{to{transform:rotate(360deg)}}@media(max-width:900px){.yxh-header,.yxh-left,.yxh-right{padding-left:16px;padding-right:16px}.yxh-body{grid-template-columns:1fr;overflow:auto}.yxh-left{border-right:0;border-bottom:1px solid var(--dsw-alias-border-l1)}.yxh-right{min-height:320px}}`
+    const css = `.yxh-button{display:flex;width:36px;height:36px;align-items:center;justify-content:center;gap:8px;border:0;border-radius:6px;background:transparent;color:var(--dsw-alias-label-secondary);cursor:pointer}.yxh-button:hover{background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary)}.yxh-wide{width:100%;height:34px;justify-content:flex-start;padding:0 10px}.yxh-wide span{font-size:13px}.yxh-overlay{position:fixed;inset:0;z-index:520;background:var(--dsw-alias-bg-base);color:var(--dsw-alias-label-primary)}.yxh-shell{display:grid;grid-template-rows:auto 1fr;width:100%;height:100%;overflow:hidden}.yxh-header{display:flex;min-height:74px;align-items:center;justify-content:space-between;padding:14px 24px;border-bottom:1px solid var(--dsw-alias-border-l1)}.yxh-header h1{margin:0;font-size:20px}.yxh-header p{margin:4px 0 0;color:var(--dsw-alias-label-secondary);font-size:13px}.yxh-header-buttons{display:flex;gap:6px}.yxh-header-buttons button{display:grid;width:34px;height:34px;place-items:center;border:1px solid var(--dsw-alias-border-l1);border-radius:6px;background:var(--dsw-alias-bg-layer-1);color:inherit;cursor:pointer}.yxh-body{display:grid;grid-template-columns:minmax(360px,.85fr) minmax(480px,1.15fr);max-width:1440px;margin:0 auto;width:100%;min-height:0;overflow:hidden}.yxh-left{overflow:auto;padding:20px 24px 32px;border-right:1px solid var(--dsw-alias-border-l1)}.yxh-right{overflow:auto;padding:20px 24px 32px}.yxh-section{display:grid;gap:12px}.yxh-section+.yxh-section{margin-top:22px}.yxh-section h2{margin:0;font-size:14px}.yxh-tabs{display:flex;gap:2px;border-bottom:1px solid var(--dsw-alias-border-l1)}.yxh-tabs button{height:40px;padding:0 14px;border:0;border-bottom:2px solid transparent;background:transparent;color:var(--dsw-alias-label-secondary);font:inherit;font-size:13px;cursor:pointer}.yxh-tabs button[aria-current]{border-bottom-color:var(--dsw-alias-brand-primary);color:var(--dsw-alias-label-primary);font-weight:650}.yxh-tabs button:disabled{opacity:.45;cursor:default}.yxh-media{display:flex;flex-wrap:wrap;gap:10px}.yxh-thumb{position:relative;margin:0;width:96px;height:96px;border:1px solid var(--dsw-alias-border-l1);border-radius:6px;overflow:hidden;background:var(--dsw-alias-bg-layer-1)}.yxh-thumb img{width:100%;height:100%;object-fit:cover}.yxh-thumb-remove{position:absolute;top:4px;right:4px;display:grid;width:20px;height:20px;place-items:center;border:0;border-radius:4px;background:color-mix(in srgb,var(--dsw-alias-bg-base) 82%,transparent);color:var(--dsw-alias-label-primary);font-size:14px;line-height:1;cursor:pointer}.yxh-thumb-remove:disabled{opacity:.45;cursor:default}.yxh-add{display:grid;width:96px;height:96px;place-items:center;border:1px dashed var(--dsw-alias-border-l2);border-radius:6px;background:transparent;color:var(--dsw-alias-label-secondary);font-size:26px;cursor:pointer}.yxh-add:hover{border-color:var(--dsw-alias-brand-primary);color:var(--dsw-alias-brand-primary)}.yxh-add:disabled{opacity:.45;cursor:default}.yxh-video{position:relative;display:flex;min-width:220px;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--dsw-alias-border-l1);border-radius:6px;background:var(--dsw-alias-bg-layer-1)}.yxh-video-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px}.yxh-video-meta{color:var(--dsw-alias-label-secondary);font-size:12px}.yxh-hint{color:var(--dsw-alias-label-secondary);font-size:12px}.yxh-error{color:var(--dsw-alias-state-error-primary);font-size:12px}.yxh-field{display:grid;gap:6px}.yxh-field span{color:var(--dsw-alias-label-secondary);font-size:12px}.yxh-field input{min-height:36px;padding:0 10px;border:1px solid var(--dsw-alias-border-l1);border-radius:6px;background:var(--dsw-alias-bg-layer-1);color:inherit;font:inherit;font-size:13px}.yxh-field input:disabled{opacity:.6}.yxh-actions{margin-top:22px}.yxh-submit{min-height:38px;padding:0 16px;border:0;border-radius:6px;background:var(--dsw-alias-brand-primary);color:var(--dsw-alias-bg-base);font:inherit;font-size:13px;font-weight:600;cursor:pointer}.yxh-submit:disabled{opacity:.45;cursor:default}.yxh-versions{display:grid;gap:16px}.yxh-version{padding:16px;border:1px solid var(--dsw-alias-border-l1);border-radius:8px;background:var(--dsw-alias-bg-layer-1)}.yxh-version-head{display:flex;align-items:baseline;gap:10px;margin-bottom:8px}.yxh-version-badge{flex:none;padding:2px 8px;border-radius:4px;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-secondary);font-size:12px}.yxh-version-head h3{margin:0;font-size:15px}.yxh-version-body{font-size:13px}.yxh-tags{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}.yxh-tag{padding:2px 8px;border-radius:4px;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-secondary);font-size:12px}.yxh-extra{display:grid;gap:2px;margin-top:10px}.yxh-extra-label{color:var(--dsw-alias-label-tertiary);font-size:11px}.yxh-extra-body{font-size:13px}.yxh-page-copy{font-size:13px}.yxh-pages{margin:10px 0 0;padding-left:20px;display:grid;gap:4px}.yxh-pages li{font-size:13px}.yxh-page-index{margin-right:8px;color:var(--dsw-alias-label-tertiary);font-variant-numeric:tabular-nums}.yxh-state{display:grid;min-height:160px;place-items:center;align-content:center;gap:10px;color:var(--dsw-alias-label-secondary);font-size:13px;text-align:center}.yxh-state p{margin:0}.yxh-step{color:var(--dsw-alias-label-tertiary);font-size:12px}.yxh-state-error p:first-child{color:var(--dsw-alias-state-error-primary)}.yxh-spinner{width:18px;height:18px;border:2px solid var(--dsw-alias-border-l2);border-top-color:var(--dsw-alias-brand-primary);border-radius:50%;animation:yxh-spin .8s linear infinite}@keyframes yxh-spin{to{transform:rotate(360deg)}}@media(max-width:900px){.yxh-header,.yxh-left,.yxh-right{padding-left:16px;padding-right:16px}.yxh-body{grid-template-columns:1fr;overflow:auto}.yxh-left{border-right:0;border-bottom:1px solid var(--dsw-alias-border-l1)}.yxh-right{min-height:320px}}`
 
     function apply(ctx) {
       ctx.effect(() => ctx.locale.register(NS, copy), 'dofe-yootun-xhs-operation: dictionaries')

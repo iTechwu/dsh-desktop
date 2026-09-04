@@ -102,6 +102,7 @@ test('result delegates to result_get and projects only display fields', async ()
   const payload = JSON.stringify({ taskId: 'xhst-1', status: 'succeeded', versions: [
     { version: 'A', title: '标题A', body: '**正文**A', tags: ['a'], coverCopy: '封面A', leadGuide: '引导A', internalId: 'leak', pages: [{ pageIndex: 0, copy: '页1' }] },
     { version: 'B', title: '标题B', body: '正文B', tags: [], coverCopy: '', leadGuide: '' },
+    { version: 'C', title: '标题C', body: '正文C', tags: ['c'], coverCopy: '', leadGuide: '' },
   ] })
   const { route } = makeCtx(async value => { calls.push(value); return { structuredContent: JSON.parse(payload) } })
   const result = await invoke(route, { action: 'result', taskId: 'xhst-1' })
@@ -109,12 +110,25 @@ test('result delegates to result_get and projects only display fields', async ()
   assert.equal(result.body.status, 'ready')
   assert.equal(result.body.taskStatus, 'succeeded')
   assert.equal(calls[0].name, 'mcp__tools-xhs-operation__xhs_operation_result_get')
-  assert.equal(result.body.versions.length, 2)
+  assert.equal(result.body.versions.length, 3)
   assert.equal(result.body.versions[0].version, 'A')
   assert.equal(result.body.versions[0].body, '**正文**A')
   assert.equal(result.body.versions[0].internalId, undefined)
   assert.deepEqual(result.body.versions[0].pages, [{ pageIndex: 0, copy: '页1' }])
   assert.deepEqual(result.body.versions[1].tags, [])
+})
+
+test('result rejects a succeeded task without exactly three versions', async () => {
+  const payload = JSON.stringify({ taskId: 'xhst-1', status: 'succeeded', versions: [
+    { version: 'A', title: '标题A', body: '正文A', tags: [] },
+    { version: 'B', title: '标题B', body: '正文B', tags: [] },
+  ] })
+  const { route } = makeCtx(async () => ({ structuredContent: JSON.parse(payload) }))
+  const result = await invoke(route, { action: 'result', taskId: 'xhst-1' })
+  assert.equal(result.status, 200)
+  assert.equal(result.body.status, 'error')
+  assert.equal(result.body.reason, 'versions_unavailable')
+  assert.equal(result.body.versions, undefined)
 })
 
 test('preserves a safe MCP error category for diagnosis', async () => {
