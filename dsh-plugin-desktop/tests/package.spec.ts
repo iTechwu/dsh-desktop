@@ -33,6 +33,7 @@ const manifest = JSON.parse(readFileSync(new URL('package.json', packageRoot), '
     appId?: unknown
     asarUnpack?: unknown
     afterPack?: unknown
+    electronDownload?: { checksums?: Record<string, unknown> }
     electronFuses?: unknown
     toolsets?: Record<string, unknown>
     files?: unknown
@@ -695,6 +696,14 @@ describe('published package surface', () => {
     expect(workspaceManifest.scripts?.['dist:win-portable'])
       .toBe('pnpm --filter dsh-community-market build && pnpm --filter dsh-plugin-desktop dist:win-portable')
     expect(manifest.build?.afterPack).toBe('./scripts/verify-packaged-runtime.ts')
+    expect(manifest.build?.electronDownload?.checksums).toEqual({
+      'electron-v43.4.0-darwin-arm64.zip':
+        '827f9f182566f46846377575b51c547b9926b111637313a373b6f717462aebac',
+      'electron-v43.4.0-darwin-x64.zip':
+        '7ab39ec1b0bcf5463f2dc0040142fbc1c30cd7bc3f99086066f588c717b11e24',
+      'electron-v43.4.0-win32-x64.zip':
+        'ef0709cfa719739acce73de6f9b684304baf38c6454376638a70d34a7cecffe0',
+    })
     expect(manifest.build?.mac).toEqual(expect.objectContaining({
       extendInfo: {
         CFBundleAllowMixedLocalizations: true,
@@ -708,6 +717,7 @@ describe('published package surface', () => {
       target: ['dir'],
       x64ArchFiles: expect.stringContaining('node-pty/prebuilds/darwin-*'),
     }))
+    expect(manifest.build?.mac?.x64ArchFiles).toContain('lightningcss-darwin-*')
     expect(manifest.build?.files).toContain('!node_modules/node-pty/build/**')
     expect(manifest.devDependencies?.['@electron/asar']).toBe('3.4.1')
   })

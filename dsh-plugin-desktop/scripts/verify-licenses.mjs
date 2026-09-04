@@ -14,6 +14,7 @@ import { createRequire } from 'node:module'
 import { existsSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { hasLicenseFile } from './license-file.mjs'
 
 const packageRoot = dirname(dirname(fileURLToPath(import.meta.url)))
 const rootManifest = JSON.parse(readFileSync(join(packageRoot, 'package.json'), 'utf8'))
@@ -98,13 +99,11 @@ for (let index = 0; index < queue.length; index += 1) {
 
   if (manifestPath !== rootManifestPath) {
     const license = licenseExpression(manifest)
-    const hasLicenseFile = existsSync(join(dirname(manifestPath), 'LICENSE'))
-      || existsSync(join(dirname(manifestPath), 'LICENSE.md'))
-      || existsSync(join(dirname(manifestPath), 'LICENSE.txt'))
-    if (license === undefined && !hasLicenseFile) {
+    const packageHasLicenseFile = hasLicenseFile(dirname(manifestPath))
+    if (license === undefined && !packageHasLicenseFile) {
       failures.push(`${manifestName}: no license field and no LICENSE file`)
     } else if (license !== undefined && license.startsWith('SEE LICENSE IN ')) {
-      if (!hasLicenseFile) {
+      if (!packageHasLicenseFile) {
         failures.push(`${manifestName}: license refers to ${JSON.stringify(license)} but no LICENSE file is shipped`)
       }
     } else if (license !== undefined && !ALLOWED_LICENSES.has(license) && !NOTICE_LICENSES.has(license)) {
