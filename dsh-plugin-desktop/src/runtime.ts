@@ -228,6 +228,9 @@ export interface DesktopRuntime {
   /** Open the in-app BOSS Zhipin browser window (web-use login for recruiting). */
   openBossWeb(url?: string): Promise<void>
 
+  /** Open one isolated official publishing platform window for reviewed content. */
+  openContentPlatformWeb(platform: 'toutiao' | 'baidu' | 'xiaohongshu' | 'sohu', url: string): Promise<void>
+
   /** Open the isolated native Profile creator, focusing an existing instance. */
   openProfileCreateWindow(options: Omit<ProfileCreateWindowOptions, 'locale'>): void
 

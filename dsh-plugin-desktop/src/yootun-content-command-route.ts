@@ -1,43 +1,235 @@
-/** Private, local-only GEO content command workspace for Yootun-Agent. */
-import { randomUUID } from 'node:crypto'
+/** Local GEO article review and multi-channel publishing workspace. */
 import { chmod, lstat, mkdir, readFile } from 'node:fs/promises'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { dirname } from 'node:path'
 import { writeFileAtomic } from '@deepseek-ai/dsh-atomic-write'
+import { ToolCallId } from '@deepseek-ai/dsh-llm'
+import type { ToolExecutionInput } from '@deepseek-ai/dsh-tools'
+
 export const YOOTUN_CONTENT_COMMAND_PATH = '/api/desktop/yootun/content-command'
-const VERSION = 1; const MAX_BODY = 64 * 1024; const MAX_STATE = 1024 * 1024; const MAX_BRIEFS = 1000; const MAX_ACTIONS = 1000; const DIR_MODE = 0o700; const FILE_MODE = 0o600; const POSIX = process.platform !== 'win32'
-const STAGES = ['awareness', 'consideration', 'conversion', 'retention'] as const; const STATUSES = ['idea', 'draft', 'in_production', 'ready', 'published', 'archived'] as const; const ACTION_STATUSES = ['awaiting_confirmation', 'confirmed_pending_adapter', 'dismissed', 'succeeded', 'failed', 'requires_user_login'] as const
-type Stage = typeof STAGES[number]; type Status = typeof STATUSES[number]; type ActionStatus = typeof ACTION_STATUSES[number]; type RecordValue = Record<string, unknown>
-export type ContentAdapterStatus = 'succeeded' | 'failed' | 'requires_user_login'
-export interface ContentAdapterRequest { actionId: string; type: 'publish_content'; briefId: string; idempotencyKey: string; targetLabel: string; summary: string }
-export interface ContentAdapterResult { status: ContentAdapterStatus; reasonCode: string; completedAt?: string; remoteRef?: string }
-export interface ContentAdapter { execute: (request: ContentAdapterRequest) => Promise<ContentAdapterResult> }
-export interface ContentAdapterReceipt { status: ContentAdapterStatus; reasonCode: string; completedAt: string; remoteRef?: string }
-export interface ContentBrief { id: string; title: string; targetQuery: string; funnelStage: Stage; status: Status; source: string; geoScore?: number; dueAt?: string; summary?: string; updatedAt: string }
-export interface ContentAction { id: string; briefId: string; type: 'publish_content'; targetLabel: string; summary: string; status: ActionStatus; idempotencyKey: string; createdAt: string; updatedAt: string; adapterReceipt?: ContentAdapterReceipt }
-export interface ContentState { version: 1; briefs: ContentBrief[]; actions: ContentAction[]; updatedAt: string }
-export interface ContentSnapshot extends ContentState { dashboard: { briefs: number; ready: number; published: number; dueToday: number; pendingConfirmation: number } }
-class InvalidContentRequest extends Error {}; class ContentBodyTooLarge extends Error {}
+const VERSION = 2
+const MAX_BODY = 64 * 1024
+const MAX_STATE = 1024 * 1024
+const MAX_ARTICLES = 30
+const DIR_MODE = 0o700
+const FILE_MODE = 0o600
+const POSIX = process.platform !== 'win32'
+
+export const CONTENT_PLATFORMS = [
+  { id: 'website', name: '优惠豚官网', mode: 'system', loginRequired: false, url: 'https://yootun.ixicai.cn/media/' },
+  { id: 'toutiao', name: '今日头条', mode: 'agent_web_ui', loginRequired: true, url: 'https://mp.toutiao.com/', agentSession: 'yootun-content-toutiao' },
+  { id: 'baidu', name: '百度百家号', mode: 'agent_web_ui', loginRequired: true, url: 'https://baijiahao.baidu.com/', agentSession: 'yootun-content-baidu' },
+  { id: 'xiaohongshu', name: '小红书', mode: 'agent_web_ui', loginRequired: true, url: 'https://creator.xiaohongshu.com/', agentSession: 'yootun-content-xiaohongshu' },
+  { id: 'sohu', name: '搜狐号', mode: 'agent_web_ui', loginRequired: true, url: 'https://mp.sohu.com/', agentSession: 'yootun-content-sohu' },
+] as const
+export type ContentPlatformId = typeof CONTENT_PLATFORMS[number]['id']
+type ReviewStatus = 'pending' | 'approved' | 'rejected'
+type PlatformStatus = 'adapter_pending' | 'requires_user_login' | 'succeeded' | 'failed'
+type RecordValue = Record<string, unknown>
+
+export interface ContentDecision {
+  reviewStatus: ReviewStatus
+  selectedPlatforms: ContentPlatformId[]
+  platformStatus: Partial<Record<ContentPlatformId, PlatformStatus>>
+  reviewedAt?: string
+  publishRequestedAt?: string
+}
+export interface ContentState { version: 2; decisions: Record<string, ContentDecision>; updatedAt: string }
+export interface ContentArticle {
+  id: string
+  articleId: number
+  title: string
+  slug?: string
+  status: string
+  reviewStatus: ReviewStatus
+  summary: string
+  content: string
+  contentFormat: 'markdown'
+  source: 'geoflow'
+  generatedAt?: string
+  selectedPlatforms: ContentPlatformId[]
+  platformStatus: Partial<Record<ContentPlatformId, PlatformStatus>>
+  reviewedAt: string | null
+}
+interface ContentTools {
+  schemas: () => Array<{ name?: unknown }>
+  execute(input: ToolExecutionInput): Promise<unknown>
+}
+
+export interface ContentRouteDependencies {
+  statePath: string | undefined
+  tools?: ContentTools | undefined
+  now?: () => Date
+  openPlatformWeb?: ((platform: ContentPlatformId, url: string) => Promise<void>) | undefined
+  publishWebsite?: ((article: ContentArticle) => Promise<string>) | undefined
+}
+
+class InvalidContentRequest extends Error {}
+class ContentBodyTooLarge extends Error {}
 const record = (value: unknown): RecordValue | undefined => typeof value === 'object' && value !== null && !Array.isArray(value) ? value as RecordValue : undefined
-const exactKeys = (value: RecordValue, required: readonly string[], optional: readonly string[] = []) => { const allowed = new Set([...required, ...optional]); return required.every(key => Object.prototype.hasOwnProperty.call(value, key)) && Object.keys(value).every(key => allowed.has(key)) }
-const text = (value: unknown, label: string, max = 240) => { if (typeof value !== 'string') throw new InvalidContentRequest(`${label}_invalid`); const result = value.trim(); if (!result || result.length > max || /[\0\r]/u.test(result)) throw new InvalidContentRequest(`${label}_invalid`); return result }
-const enumValue = <T extends string>(value: unknown, options: readonly T[], label: string): T => { if (typeof value !== 'string' || !options.includes(value as T)) throw new InvalidContentRequest(`${label}_invalid`); return value as T }
+const exactKeys = (value: RecordValue, required: readonly string[], optional: readonly string[] = []) => { const allowed = new Set([...required, ...optional]); return required.every(key => Object.hasOwn(value, key)) && Object.keys(value).every(key => allowed.has(key)) }
 const time = (value: unknown) => { if (typeof value !== 'string') return undefined; const parsed = Date.parse(value); return Number.isFinite(parsed) && new Date(parsed).toISOString() === value ? value : undefined }
-const integer = (value: unknown, label: string) => { if (!Number.isInteger(value) || Number(value) < 0 || Number(value) > 100) throw new InvalidContentRequest(`${label}_invalid`); return Number(value) }
-const emptyState = (now: string): ContentState => ({ version: VERSION, briefs: [], actions: [], updatedAt: now })
-function parseBrief(value: unknown): ContentBrief | undefined { const item = record(value); if (!item || !exactKeys(item, ['id', 'title', 'targetQuery', 'funnelStage', 'status', 'source', 'updatedAt'], ['geoScore', 'dueAt', 'summary'])) return undefined; const updatedAt = time(item.updatedAt); const dueAt = item.dueAt === undefined ? undefined : time(item.dueAt); if (!updatedAt || (item.dueAt !== undefined && !dueAt)) return undefined; try { return { id: text(item.id, 'id', 80), title: text(item.title, 'title'), targetQuery: text(item.targetQuery, 'target_query', 160), funnelStage: enumValue(item.funnelStage, STAGES, 'funnel_stage'), status: enumValue(item.status, STATUSES, 'status'), source: text(item.source, 'source', 80), ...(item.geoScore === undefined ? {} : { geoScore: integer(item.geoScore, 'geo_score') }), ...(dueAt === undefined ? {} : { dueAt }), ...(item.summary === undefined ? {} : { summary: text(item.summary, 'summary', 500) }), updatedAt } } catch { return undefined } }
-function parseAction(value: unknown): ContentAction | undefined { const item = record(value); if (!item || !exactKeys(item, ['id', 'briefId', 'type', 'targetLabel', 'summary', 'status', 'idempotencyKey', 'createdAt', 'updatedAt'], ['adapterReceipt'])) return undefined; const createdAt = time(item.createdAt); const updatedAt = time(item.updatedAt); if (!createdAt || !updatedAt || item.type !== 'publish_content') return undefined; try { const status = enumValue(item.status, ACTION_STATUSES, 'status'); const rawReceipt = item.adapterReceipt; let adapterReceipt: ContentAdapterReceipt | undefined; if (rawReceipt !== undefined) { const receipt = record(rawReceipt); if (!receipt) return undefined; const completedAt = time(receipt.completedAt); const receiptStatus = typeof receipt.status === 'string' && ['succeeded', 'failed', 'requires_user_login'].includes(receipt.status) ? receipt.status as ContentAdapterStatus : undefined; const reasonCode = typeof receipt.reasonCode === 'string' && /^[a-z0-9_:-]{1,80}$/u.test(receipt.reasonCode) ? receipt.reasonCode : undefined; const remoteRef = receipt.remoteRef === undefined ? undefined : typeof receipt.remoteRef === 'string' && receipt.remoteRef.length <= 160 && !/[\0\r\n]/u.test(receipt.remoteRef) ? receipt.remoteRef : undefined; if (!completedAt || !receiptStatus || !reasonCode || (receipt.remoteRef !== undefined && remoteRef === undefined)) return undefined; adapterReceipt = { status: receiptStatus, reasonCode, completedAt, ...(remoteRef === undefined ? {} : { remoteRef }) } } const terminal = status === 'succeeded' || status === 'failed' || status === 'requires_user_login'; if (terminal !== (adapterReceipt !== undefined) || (adapterReceipt !== undefined && adapterReceipt.status !== status)) return undefined; return { id: text(item.id, 'id', 80), briefId: text(item.briefId, 'brief_id', 80), type: 'publish_content', targetLabel: text(item.targetLabel, 'target_label'), summary: text(item.summary, 'summary', 500), status, idempotencyKey: text(item.idempotencyKey, 'idempotency_key', 80), createdAt, updatedAt, ...(adapterReceipt === undefined ? {} : { adapterReceipt }) } } catch { return undefined } }
-function parseState(value: unknown): ContentState | undefined { const root = record(value); if (!root || !exactKeys(root, ['version', 'briefs', 'actions', 'updatedAt']) || root.version !== VERSION || !Array.isArray(root.briefs) || !Array.isArray(root.actions) || root.briefs.length > MAX_BRIEFS || root.actions.length > MAX_ACTIONS) return undefined; const updatedAt = time(root.updatedAt); const briefs = root.briefs.map(parseBrief); const actions = root.actions.map(parseAction); if (!updatedAt || briefs.some(item => !item) || actions.some(item => !item)) return undefined; return { version: VERSION, briefs: briefs as ContentBrief[], actions: actions as ContentAction[], updatedAt } }
-export async function readContentState(path: string, now = new Date().toISOString()): Promise<ContentState> { try { const info = await lstat(path); if (!info.isFile() || info.isSymbolicLink() || info.size > MAX_STATE) return emptyState(now); return parseState(JSON.parse(await readFile(path, 'utf8'))) ?? emptyState(now) } catch { return emptyState(now) } }
-async function writeState(path: string, state: ContentState) { const dir = dirname(path); await mkdir(dir, { recursive: true, mode: DIR_MODE }); const info = await lstat(dir); if (!info.isDirectory() || info.isSymbolicLink()) throw new Error('content_state_directory_invalid'); if (POSIX) await chmod(dir, DIR_MODE); const json = `${JSON.stringify(state, undefined, 2)}\n`; if (Buffer.byteLength(json) > MAX_STATE) throw new InvalidContentRequest('state_too_large'); await writeFileAtomic(path, json, { mode: FILE_MODE, dirMode: DIR_MODE }); if (POSIX) await chmod(path, FILE_MODE) }
-export function contentSnapshot(state: ContentState, now = new Date()): ContentSnapshot { const today = now.toISOString().slice(0, 10); return { ...state, dashboard: { briefs: state.briefs.length, ready: state.briefs.filter(item => item.status === 'ready').length, published: state.briefs.filter(item => item.status === 'published').length, dueToday: state.briefs.filter(item => item.dueAt?.slice(0, 10) === today && item.status !== 'published' && item.status !== 'archived').length, pendingConfirmation: state.actions.filter(item => item.status === 'awaiting_confirmation').length } } }
-function mutate(state: ContentState, value: unknown, now: string): ContentState { const body = record(value); if (!body || typeof body.action !== 'string') throw new InvalidContentRequest('request_invalid'); if (body.action === 'save_brief') { if (!exactKeys(body, ['action', 'title', 'targetQuery', 'funnelStage', 'status', 'source'], ['id', 'geoScore', 'dueAt', 'summary'])) throw new InvalidContentRequest('request_fields_invalid'); const id = body.id === undefined ? randomUUID() : text(body.id, 'id', 80); const dueAt = body.dueAt === undefined ? undefined : time(body.dueAt); if (body.dueAt !== undefined && !dueAt) throw new InvalidContentRequest('due_at_invalid'); const brief: ContentBrief = { id, title: text(body.title, 'title'), targetQuery: text(body.targetQuery, 'target_query', 160), funnelStage: enumValue(body.funnelStage, STAGES, 'funnel_stage'), status: enumValue(body.status, STATUSES, 'status'), source: text(body.source, 'source', 80), ...(body.geoScore === undefined ? {} : { geoScore: integer(body.geoScore, 'geo_score') }), ...(dueAt === undefined ? {} : { dueAt }), ...(body.summary === undefined ? {} : { summary: text(body.summary, 'summary', 500) }), updatedAt: now }; if (!state.briefs.some(item => item.id === id) && state.briefs.length >= MAX_BRIEFS) throw new InvalidContentRequest('brief_limit_reached'); return { ...state, briefs: [brief, ...state.briefs.filter(item => item.id !== id)], updatedAt: now } }
-  if (body.action === 'queue_publish') { if (!exactKeys(body, ['action', 'briefId', 'summary'], ['idempotencyKey'])) throw new InvalidContentRequest('request_fields_invalid'); const briefId = text(body.briefId, 'brief_id', 80); const brief = state.briefs.find(item => item.id === briefId); if (!brief) throw new InvalidContentRequest('brief_not_found'); const summary = text(body.summary, 'summary', 500); const idempotencyKey = body.idempotencyKey === undefined ? randomUUID() : text(body.idempotencyKey, 'idempotency_key', 80); const existing = state.actions.find(item => item.idempotencyKey === idempotencyKey); if (existing) { if (existing.briefId !== briefId || existing.summary !== summary) throw new InvalidContentRequest('idempotency_key_conflict'); return state } const action: ContentAction = { id: randomUUID(), briefId, type: 'publish_content', targetLabel: brief.title, summary, status: 'awaiting_confirmation', idempotencyKey, createdAt: now, updatedAt: now }; return { ...state, actions: [action, ...state.actions], updatedAt: now } }
-  if (body.action === 'confirm_action' || body.action === 'dismiss_action') { if (!exactKeys(body, ['action', 'id'])) throw new InvalidContentRequest('request_fields_invalid'); const id = text(body.id, 'id', 80); const action = state.actions.find(item => item.id === id); if (!action || action.status !== 'awaiting_confirmation') throw new InvalidContentRequest('action_not_pending'); const status: ActionStatus = body.action === 'confirm_action' ? 'confirmed_pending_adapter' : 'dismissed'; return { ...state, actions: state.actions.map(item => item.id === id ? { ...item, status, updatedAt: now } : item), updatedAt: now } }
-  throw new InvalidContentRequest('action_invalid') }
-const queues = new Map<string, Promise<void>>(); async function mutateState(path: string, value: unknown, now: string) { const previous = queues.get(path) ?? Promise.resolve(); let release: (() => void) | undefined; const current = new Promise<void>(resolve => { release = resolve }); const chain = previous.then(() => current); queues.set(path, chain); await previous; try { const next = mutate(await readContentState(path, now), value, now); await writeState(path, next); return next } finally { release?.(); if (queues.get(path) === chain) queues.delete(path) } }
-function contentAdapterReceipt(value: unknown, fallbackTime: string): ContentAdapterReceipt { const item = record(value); const status = item?.status; const reasonCode = item?.reasonCode; const completedAt = item?.completedAt; const remoteRef = item?.remoteRef; if ((status !== 'succeeded' && status !== 'failed' && status !== 'requires_user_login') || typeof reasonCode !== 'string' || !/^[a-z0-9_:-]{1,80}$/u.test(reasonCode) || (completedAt !== undefined && time(completedAt) === undefined) || (remoteRef !== undefined && (typeof remoteRef !== 'string' || remoteRef.length > 160 || /[\0\r\n]/u.test(remoteRef)))) return { status: 'failed', reasonCode: 'adapter_invalid_result', completedAt: fallbackTime }; return { status, reasonCode, completedAt: typeof completedAt === 'string' ? completedAt : fallbackTime, ...(typeof remoteRef === 'string' ? { remoteRef } : {}) } }
-export async function executeContentAction(path: string, actionId: string, adapter: ContentAdapter | undefined, now = new Date().toISOString()): Promise<ContentSnapshot> { const previous = queues.get(path) ?? Promise.resolve(); let release: (() => void) | undefined; const current = new Promise<void>(resolve => { release = resolve }); const chain = previous.then(() => current); queues.set(path, chain); await previous; try { const state = await readContentState(path, now); const action = state.actions.find(item => item.id === actionId); if (!action) throw new InvalidContentRequest('action_not_found'); if (action.status === 'awaiting_confirmation') throw new InvalidContentRequest('action_not_confirmed'); if (action.status === 'dismissed' || action.status === 'succeeded') return contentSnapshot(state); if (!adapter) throw new InvalidContentRequest('content_adapter_unavailable'); let result: ContentAdapterResult; try { result = await adapter.execute({ actionId: action.id, type: action.type, briefId: action.briefId, idempotencyKey: action.idempotencyKey, targetLabel: action.targetLabel, summary: action.summary }) } catch { result = { status: 'failed', reasonCode: 'adapter_failed' } } const receipt = contentAdapterReceipt(result, now); const next: ContentState = { ...state, actions: state.actions.map(item => item.id === action.id ? { ...item, status: receipt.status, adapterReceipt: receipt, updatedAt: receipt.completedAt } : item), updatedAt: receipt.completedAt }; await writeState(path, next); return contentSnapshot(next) } finally { release?.(); if (queues.get(path) === chain) queues.delete(path) } }
+const positiveInteger = (value: unknown) => { const result = Number(value); if (!Number.isInteger(result) || result < 1) throw new InvalidContentRequest('article_id_invalid'); return result }
+const platformId = (value: unknown): ContentPlatformId => { if (typeof value !== 'string' || !CONTENT_PLATFORMS.some(item => item.id === value)) throw new InvalidContentRequest('platform_invalid'); return value as ContentPlatformId }
+const platformList = (value: unknown): ContentPlatformId[] => { if (!Array.isArray(value)) throw new InvalidContentRequest('platforms_invalid'); return [...new Set(value.map(platformId))] }
+const firstString = (...values: unknown[]) => { for (const value of values) if (typeof value === 'string' && value.trim()) return value.trim(); return undefined }
+const emptyState = (now: string): ContentState => ({ version: VERSION, decisions: {}, updatedAt: now })
+
+function parseDecision(value: unknown): ContentDecision | undefined {
+  const item = record(value)
+  if (!item || !exactKeys(item, ['reviewStatus', 'selectedPlatforms', 'platformStatus'], ['reviewedAt', 'publishRequestedAt'])) return undefined
+  if (!['pending', 'approved', 'rejected'].includes(String(item.reviewStatus))) return undefined
+  try {
+    const selectedPlatforms = platformList(item.selectedPlatforms)
+    const rawStatuses = record(item.platformStatus)
+    if (!rawStatuses) return undefined
+    const platformStatus: Partial<Record<ContentPlatformId, PlatformStatus>> = {}
+    for (const [key, value] of Object.entries(rawStatuses)) {
+      const id = platformId(key)
+      if (!['adapter_pending', 'requires_user_login', 'succeeded', 'failed'].includes(String(value))) return undefined
+      platformStatus[id] = value as PlatformStatus
+    }
+    const reviewedAt = item.reviewedAt === undefined ? undefined : time(item.reviewedAt)
+    const publishRequestedAt = item.publishRequestedAt === undefined ? undefined : time(item.publishRequestedAt)
+    if ((item.reviewedAt !== undefined && !reviewedAt) || (item.publishRequestedAt !== undefined && !publishRequestedAt)) return undefined
+    return { reviewStatus: item.reviewStatus as ReviewStatus, selectedPlatforms, platformStatus, ...(reviewedAt ? { reviewedAt } : {}), ...(publishRequestedAt ? { publishRequestedAt } : {}) }
+  } catch { return undefined }
+}
+
+function parseState(value: unknown): ContentState | undefined {
+  const root = record(value)
+  if (!root || !exactKeys(root, ['version', 'decisions', 'updatedAt']) || root.version !== VERSION || !time(root.updatedAt)) return undefined
+  const source = record(root.decisions)
+  if (!source || Object.keys(source).length > 1000) return undefined
+  const decisions: Record<string, ContentDecision> = {}
+  for (const [key, value] of Object.entries(source)) { const parsed = parseDecision(value); if (!/^\d+$/u.test(key) || !parsed) return undefined; decisions[key] = parsed }
+  return { version: VERSION, decisions, updatedAt: root.updatedAt as string }
+}
+
+export async function readContentState(path: string, now = new Date().toISOString()): Promise<ContentState> {
+  try { const info = await lstat(path); if (!info.isFile() || info.isSymbolicLink() || info.size > MAX_STATE) return emptyState(now); return parseState(JSON.parse(await readFile(path, 'utf8'))) ?? emptyState(now) } catch { return emptyState(now) }
+}
+async function writeState(path: string, state: ContentState) {
+  const dir = dirname(path)
+  await mkdir(dir, { recursive: true, mode: DIR_MODE })
+  const info = await lstat(dir)
+  if (!info.isDirectory() || info.isSymbolicLink()) throw new Error('content_state_directory_invalid')
+  if (POSIX) await chmod(dir, DIR_MODE)
+  const json = `${JSON.stringify(state, undefined, 2)}\n`
+  if (Buffer.byteLength(json) > MAX_STATE) throw new InvalidContentRequest('state_too_large')
+  await writeFileAtomic(path, json, { mode: FILE_MODE, dirMode: DIR_MODE })
+  if (POSIX) await chmod(path, FILE_MODE)
+}
+
+function findTool(tools: ContentTools, token: string) { return tools.schemas().find(item => String(item.name || '').includes(token))?.name as string | undefined }
+function parseToolResult(result: unknown): RecordValue {
+  const item = record(result)
+  if (item && Array.isArray(item.content)) {
+    const body = item.content.map(value => record(value)).filter(value => value?.type === 'text').map(value => String(value?.text || '')).join('')
+    try { return record(JSON.parse(body)) ?? {} } catch { return {} }
+  }
+  return item ?? {}
+}
+async function callTool(tools: ContentTools, name: string, args: Record<string, unknown>, signal: AbortSignal) { return parseToolResult(await tools.execute({ callId: ToolCallId(`yootun-content-${Date.now()}-${Math.random().toString(16).slice(2)}`), name, arguments: args, signal })) }
+
+async function loadArticles(state: ContentState, tools: ContentTools | undefined): Promise<ContentArticle[]> {
+  if (!tools) return []
+  const listTool = findTool(tools, 'geoflow_articles_list')
+  const getTool = findTool(tools, 'geoflow_articles_get')
+  if (!listTool || !getTool) return []
+  const signal = AbortSignal.timeout(60_000)
+  const listed = await callTool(tools, listTool, { page: 1, per_page: MAX_ARTICLES }, signal)
+  const rows = Array.isArray(listed.items) ? listed.items : []
+  return (await Promise.all(rows.map(async value => {
+    const row = record(value)
+    if (!row) return undefined
+    let articleId: number
+    try { articleId = positiveInteger(row.id) } catch { return undefined }
+    let detail: RecordValue = {}
+    try { detail = await callTool(tools, getTool, { article_id: articleId }, signal) } catch {}
+    const merged = { ...row, ...detail }
+    const local = state.decisions[String(articleId)]
+    const upstreamReview = String(merged.review_status || '').toLowerCase()
+    const reviewStatus: ReviewStatus = local?.reviewStatus ?? (['approved', 'auto_approved'].includes(upstreamReview) ? 'approved' : upstreamReview === 'rejected' ? 'rejected' : 'pending')
+    return { id: `article:${articleId}`, articleId, title: firstString(merged.title) ?? `GEO 文章 #${articleId}`, ...(firstString(merged.slug) ? { slug: firstString(merged.slug) } : {}), status: firstString(merged.status) ?? 'draft', reviewStatus, summary: firstString(merged.excerpt, merged.meta_description) ?? '', content: typeof merged.content === 'string' ? merged.content : '', contentFormat: 'markdown' as const, source: 'geoflow' as const, ...(firstString(merged.created_at, merged.updated_at) ? { generatedAt: firstString(merged.created_at, merged.updated_at) } : {}), selectedPlatforms: local?.selectedPlatforms ?? [], platformStatus: local?.platformStatus ?? {}, reviewedAt: local?.reviewedAt ?? null }
+  }))).filter((item): item is ContentArticle => item !== undefined)
+}
+
+async function snapshot(state: ContentState, tools: ContentTools | undefined) {
+  const articles = await loadArticles(state, tools)
+  return { status: tools ? 'ready' : 'unavailable', dashboard: { articles: articles.length, pendingReview: articles.filter(item => item.reviewStatus === 'pending').length, reviewed: articles.filter(item => item.reviewStatus === 'approved').length, publishReady: articles.filter(item => item.reviewStatus === 'approved' && item.status !== 'published').length }, platforms: CONTENT_PLATFORMS, articles }
+}
+
+const queues = new Map<string, Promise<void>>()
+async function mutateState(path: string, update: (state: ContentState) => Promise<ContentState> | ContentState) {
+  const previous = queues.get(path) ?? Promise.resolve()
+  let release: (() => void) | undefined
+  const current = new Promise<void>(resolve => { release = resolve })
+  const chain = previous.then(() => current)
+  queues.set(path, chain)
+  await previous
+  try { const next = await update(await readContentState(path)); await writeState(path, next); return next } finally { release?.(); if (queues.get(path) === chain) queues.delete(path) }
+}
+
 const finish = (res: ServerResponse, status: number, value: object, allow?: string) => { res.statusCode = status; res.setHeader('Content-Type', 'application/json; charset=utf-8'); res.setHeader('Cache-Control', 'no-store'); if (allow) res.setHeader('Allow', allow); res.end(JSON.stringify(value)) }
 async function requestBody(req: IncomingMessage) { let size = 0; const chunks: Buffer[] = []; for await (const chunk of req) { const data = Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk)); size += data.byteLength; if (size > MAX_BODY) throw new ContentBodyTooLarge(); chunks.push(data) } try { return JSON.parse(Buffer.concat(chunks).toString('utf8')) } catch { throw new InvalidContentRequest('json_invalid') } }
-export async function handleYootunContentCommandRequest(req: IncomingMessage, res: ServerResponse, rendererOrigin: string, options: { statePath: string | undefined; now?: () => Date; adapter?: ContentAdapter | undefined }): Promise<void> { if (req.headers.origin && req.headers.origin !== rendererOrigin) { finish(res, 403, { error: 'origin_forbidden' }); return } const path = options.statePath; if (!path) { finish(res, 503, { error: 'state_unavailable' }); return } const now = (options.now ?? (() => new Date()))().toISOString(); try { if (req.method === 'GET') { finish(res, 200, contentSnapshot(await readContentState(path, now), new Date(now))); return } if (req.method !== 'POST') { finish(res, 405, { error: 'method_not_allowed' }, 'GET, POST'); return } const payload = await requestBody(req); const request = record(payload); if (request?.action === 'execute_action') { if (!exactKeys(request, ['action', 'id'])) throw new InvalidContentRequest('request_fields_invalid'); finish(res, 200, await executeContentAction(path, text(request.id, 'id', 80), options.adapter, now)); return } finish(res, 200, contentSnapshot(await mutateState(path, payload, now), new Date(now))) } catch (cause) { if (cause instanceof ContentBodyTooLarge) { finish(res, 413, { error: 'body_too_large' }); return } if (cause instanceof InvalidContentRequest) { finish(res, cause.message === 'content_adapter_unavailable' ? 503 : 400, { error: cause.message }); return } finish(res, 500, { error: 'state_write_failed' }) } }
+
+export async function handleYootunContentCommandRequest(req: IncomingMessage, res: ServerResponse, rendererOrigin: string, dependencies: ContentRouteDependencies): Promise<void> {
+  if (req.headers.origin && req.headers.origin !== rendererOrigin) return finish(res, 403, { error: 'origin_forbidden' })
+  if (!dependencies.statePath) return finish(res, 503, { error: 'state_unavailable' })
+  if (req.method === 'GET') { try { return finish(res, 200, await snapshot(await readContentState(dependencies.statePath), dependencies.tools)) } catch { return finish(res, 200, { status: 'error', dashboard: { articles: 0, pendingReview: 0, reviewed: 0, publishReady: 0 }, platforms: CONTENT_PLATFORMS, articles: [] }) } }
+  if (req.method !== 'POST') return finish(res, 405, { error: 'method_not_allowed' }, 'GET, POST')
+  try {
+    const body = record(await requestBody(req))
+    if (!body || typeof body.action !== 'string') throw new InvalidContentRequest('request_invalid')
+    const articleId = positiveInteger(body.articleId)
+    const key = String(articleId)
+    const now = (dependencies.now?.() ?? new Date()).toISOString()
+    const next = await mutateState(dependencies.statePath, async state => {
+      const current = state.decisions[key] ?? { reviewStatus: 'pending', selectedPlatforms: [], platformStatus: {} }
+      if (body.action === 'review_article') {
+        if (!exactKeys(body, ['action', 'articleId', 'decision'])) throw new InvalidContentRequest('request_fields_invalid')
+        if (body.decision !== 'approved' && body.decision !== 'rejected') throw new InvalidContentRequest('decision_invalid')
+        return { ...state, decisions: { ...state.decisions, [key]: { ...current, reviewStatus: body.decision, reviewedAt: now, selectedPlatforms: body.decision === 'approved' ? current.selectedPlatforms : [] } }, updatedAt: now }
+      }
+      if (current.reviewStatus !== 'approved') throw new InvalidContentRequest('article_not_approved')
+      if (body.action === 'select_platforms') {
+        if (!exactKeys(body, ['action', 'articleId', 'platforms'])) throw new InvalidContentRequest('request_fields_invalid')
+        return { ...state, decisions: { ...state.decisions, [key]: { ...current, selectedPlatforms: platformList(body.platforms) } }, updatedAt: now }
+      }
+      if (body.action === 'open_platform') {
+        if (!exactKeys(body, ['action', 'articleId', 'platform'])) throw new InvalidContentRequest('request_fields_invalid')
+        const platform = platformId(body.platform)
+        const config = CONTENT_PLATFORMS.find(item => item.id === platform)
+        if (!config?.loginRequired || !dependencies.openPlatformWeb) throw new InvalidContentRequest('platform_web_unavailable')
+        await dependencies.openPlatformWeb(platform, config.url)
+        return { ...state, decisions: { ...state.decisions, [key]: { ...current, platformStatus: { ...current.platformStatus, [platform]: 'requires_user_login' } } }, updatedAt: now }
+      }
+      if (body.action === 'publish_selected') {
+        if (!exactKeys(body, ['action', 'articleId', 'platforms'])) throw new InvalidContentRequest('request_fields_invalid')
+        const selectedPlatforms = platformList(body.platforms)
+        if (!selectedPlatforms.length) throw new InvalidContentRequest('platforms_required')
+        const articles = await loadArticles(state, dependencies.tools)
+        const article = articles.find(item => item.articleId === articleId)
+        if (!article) throw new InvalidContentRequest('article_not_found')
+        const platformStatus = { ...current.platformStatus }
+        for (const platform of selectedPlatforms) {
+          const config = CONTENT_PLATFORMS.find(item => item.id === platform)!
+          if (platform === 'website' && dependencies.publishWebsite) {
+            try { await dependencies.publishWebsite(article); platformStatus.website = 'succeeded' } catch { platformStatus.website = 'failed' }
+          } else if (config.loginRequired && dependencies.openPlatformWeb) {
+            await dependencies.openPlatformWeb(platform, config.url)
+            platformStatus[platform] = 'requires_user_login'
+          } else platformStatus[platform] = 'adapter_pending'
+        }
+        return { ...state, decisions: { ...state.decisions, [key]: { ...current, selectedPlatforms, platformStatus, publishRequestedAt: now } }, updatedAt: now }
+      }
+      throw new InvalidContentRequest('action_invalid')
+    })
+    return finish(res, 200, await snapshot(next, dependencies.tools))
+  } catch (cause) {
+    if (cause instanceof ContentBodyTooLarge) return finish(res, 413, { error: 'body_too_large' })
+    if (cause instanceof InvalidContentRequest) return finish(res, ['platform_web_unavailable'].includes(cause.message) ? 503 : cause.message === 'article_not_approved' ? 409 : 400, { error: cause.message })
+    return finish(res, 500, { error: 'state_write_failed' })
+  }
+}

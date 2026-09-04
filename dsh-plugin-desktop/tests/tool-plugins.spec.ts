@@ -16,17 +16,19 @@ import {
 describe('browser-tools command construction', () => {
   it('builds a navigate command with a safe url', () => {
     expect(buildBrowserCommand('opencli', { action: 'navigate', url: 'https://example.com' }))
-      .toBe('opencli browser navigate --url https://example.com')
+      .toBe('opencli browser yootun-agent open https://example.com --window foreground')
   })
 
   it('quotes a url containing shell characters', () => {
     const cmd = buildBrowserCommand('opencli', { action: 'navigate', url: "https://example.com/a b" })
-    expect(cmd).toBe("opencli browser navigate --url 'https://example.com/a b'")
+    expect(cmd).toBe("opencli browser yootun-agent open 'https://example.com/a b' --window foreground")
   })
 
-  it('builds a search command with a query and selector', () => {
-    const cmd = buildBrowserCommand('opencli', { action: 'search', query: 'dsh desktop', selector: '.result' })
-    expect(cmd).toBe("opencli browser search --query 'dsh desktop' --selector .result")
+  it('builds session-bound form and upload commands', () => {
+    expect(buildBrowserCommand('opencli', { action: 'fill', session: 'yootun-content-sohu', target: '12', text: '文章正文' }))
+      .toBe("opencli browser yootun-content-sohu fill 12 '文章正文'")
+    expect(buildBrowserCommand('opencli', { action: 'upload', target: '8', files: ['/tmp/cover image.png'] }))
+      .toBe("opencli browser yootun-agent upload 8 '/tmp/cover image.png'")
   })
 })
 

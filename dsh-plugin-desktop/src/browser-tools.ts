@@ -28,7 +28,7 @@ export const inject = ['tools', 'shell', 'systemPrompt']
 export const DEFAULT_BROWSER_TIMEOUT_MS = 30_000
 
 /** Model-facing `browser` actions the driver understands. */
-export const BROWSER_ACTIONS = ['navigate', 'extract', 'click', 'back', 'search'] as const
+export const BROWSER_ACTIONS = ['navigate', 'state', 'extract', 'click', 'type', 'fill', 'select', 'upload', 'keys', 'get_value', 'back'] as const
 
 export type BrowserAction = (typeof BROWSER_ACTIONS)[number]
 
@@ -51,9 +51,12 @@ type ResolvedConfig = Required<Config>
 /** Canonical `browser` tool arguments after schema validation. */
 export interface BrowserArgs {
   action: BrowserAction
+  session?: string
   url?: string
+  target?: string
+  text?: string
   selector?: string
-  query?: string
+  files?: string[]
 }
 
 /** Canonical `browser` tool result value (lossless JSON). */
@@ -80,13 +83,23 @@ function shellQuote(value: string): string {
  * @returns the shell command string to execute.
  */
 export function buildBrowserCommand(opencliCommand: string, args: BrowserArgs): string {
-  const parts = [opencliCommand, 'browser', args.action]
-  if (args.action === 'search') {
-    if (args.query !== undefined) parts.push('--query', shellQuote(args.query))
-  } else if (args.url !== undefined) {
-    parts.push('--url', shellQuote(args.url))
+  const required = (value: string | undefined, name: string) => {
+    if (!value) throw new Error(`browser ${args.action} requires ${name}`)
+    return shellQuote(value)
   }
-  if (args.selector !== undefined) parts.push('--selector', shellQuote(args.selector))
+  const parts = [opencliCommand, 'browser', shellQuote(args.session ?? 'yootun-agent')]
+  if (args.action === 'navigate') parts.push('open', required(args.url, 'url'), '--window', 'foreground')
+  else if (args.action === 'state' || args.action === 'back') parts.push(args.action)
+  else if (args.action === 'extract') {
+    parts.push('extract')
+    if (args.selector) parts.push('--selector', shellQuote(args.selector))
+  } else if (args.action === 'click') parts.push('click', required(args.target, 'target'))
+  else if (args.action === 'type' || args.action === 'fill' || args.action === 'select') parts.push(args.action, required(args.target, 'target'), required(args.text, 'text'))
+  else if (args.action === 'upload') {
+    if (!args.files?.length) throw new Error('browser upload requires files')
+    parts.push('upload', required(args.target, 'target'), ...args.files.map(shellQuote))
+  } else if (args.action === 'keys') parts.push('keys', required(args.text, 'text'))
+  else if (args.action === 'get_value') parts.push('get', 'value', required(args.target, 'target'))
   return parts.join(' ')
 }
 
@@ -143,15 +156,16 @@ export function apply(ctx: Context, config: Config): void {
     name: 'tool:desktop-browser',
     order: 115,
     text: `Use the browser tool to operate a real browser through the OpenCLI
-driver. The required action is one of ${BROWSER_ACTIONS.join(', ')}. Pass url for
-navigate, query for search, and selector for click or extract. A successful call
-returns optional page content; pass it back to the model verbatim and cite the
-url. When the action fails, read the error and adjust the inputs before retrying.`,
+driver. The required action is one of ${BROWSER_ACTIONS.join(', ')}. Use one stable
+session for a multi-step flow. Always run state before click/type/fill/select/upload,
+use the current numeric ref as target, and verify important writes with get_value.
+Never type login credentials: ask the user to sign in in the foreground window.
+Do not click a platform's final publish control without explicit user approval.`,
   })
 
   ctx.tools.register(defineTool({
     name: 'browser',
-    description: `Operate a real browser via the OpenCLI driver. Actions: ${BROWSER_ACTIONS.join(', ')}. Use navigate with a url, search with a query, click or extract with a selector, and back to return. Returns page content and the current url.`,
+    description: `Operate a real browser via OpenCLI. Actions: ${BROWSER_ACTIONS.join(', ')}. Supports stable sessions, page inspection, verified form input, uploads, and clicks.`,
     parameters: {
       action: {
         type: 'string',
@@ -159,9 +173,12 @@ url. When the action fails, read the error and adjust the inputs before retrying
         enum: [...BROWSER_ACTIONS],
         description: 'The browser action to perform.',
       },
+      session: { type: 'string', description: 'Stable session name. Reuse it throughout one publishing flow.' },
       url: { type: 'string', description: 'Target URL for navigate.' },
-      query: { type: 'string', description: 'Search query for the search action.' },
-      selector: { type: 'string', description: 'CSS selector for click or extract.' },
+      target: { type: 'string', description: 'Numeric ref from state, or an unambiguous CSS selector.' },
+      text: { type: 'string', description: 'Text, select option, or key chord required by the action.' },
+      selector: { type: 'string', description: 'Optional extraction scope CSS selector.' },
+      files: { type: 'array', items: { type: 'string' }, description: 'Local file paths for upload.' },
     },
     output: {
       schema: {

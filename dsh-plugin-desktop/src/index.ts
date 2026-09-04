@@ -48,6 +48,7 @@ import {
   handleYootunContentCommandRequest,
   YOOTUN_CONTENT_COMMAND_PATH,
 } from './yootun-content-command-route.ts'
+import { createYootunWebsitePublisher } from './yootun-website-publisher.ts'
 import {
   handleYootunApprovalsRequest,
   YOOTUN_APPROVALS_PATH,
@@ -293,6 +294,7 @@ export function apply(ctx: Context, config: Config): void {
     },
   )
   const rendererOrigin = `http://127.0.0.1:${String(ctx.webServer.port)}`
+  const publishYootunWebsite = createYootunWebsitePublisher()
   if (lanHttps.caCertificate !== null) {
     const caCertificate = lanHttps.caCertificate
     ctx.effect(
@@ -447,6 +449,12 @@ export function apply(ctx: Context, config: Config): void {
         if (rejectDesktopRequest(ctx, req, res)) return
         return handleYootunContentCommandRequest(req, res, rendererOrigin, {
           statePath: ctx.get('dshHomePath')?.('storages', 'yootun-content-command', 'state.json'),
+          tools: ctx.tools,
+          publishWebsite: publishYootunWebsite,
+          openPlatformWeb: async (platform, url) => {
+            if (platform === 'website') return
+            await ctx.get('desktopRuntime')?.openContentPlatformWeb(platform, url)
+          },
         })
       },
     }),

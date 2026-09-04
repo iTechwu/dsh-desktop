@@ -64,6 +64,7 @@ import { ElectronWorkspaceAdmission } from './workspace-admission.ts'
 import { ProfileCreateWindow, type ProfileCreateWindowOptions } from './profile-create-window.ts'
 import { OpenMontageWindow } from './openmontage-window.ts'
 import { BossWebWindow, BOSS_LOGIN_URL } from './yootun-boss-web-window.ts'
+import { ContentPlatformWebWindow } from './yootun-content-platform-window.ts'
 import { windowsBuildNumber } from './window-material.ts'
 import { desktopNativeCopy } from './native-dialog-copy.ts'
 import {
@@ -129,6 +130,7 @@ export class ElectronDesktopRuntime implements DesktopRuntime {
   private profileCreateWindow: ProfileCreateWindow | undefined
   private openMontageWindow: OpenMontageWindow | undefined
   private bossWebWindow: BossWebWindow | undefined
+  private readonly contentPlatformWindows = new Map<'toutiao' | 'baidu' | 'xiaohongshu' | 'sohu', ContentPlatformWebWindow>()
   private restartRequest: Promise<void> | undefined
 
   constructor(
@@ -225,6 +227,10 @@ export class ElectronDesktopRuntime implements DesktopRuntime {
           this.profileCreateWindow = undefined
           this.openMontageWindow?.close()
           this.openMontageWindow = undefined
+          this.bossWebWindow?.close()
+          this.bossWebWindow = undefined
+          for (const window of this.contentPlatformWindows.values()) window.close()
+          this.contentPlatformWindows.clear()
           await this.generation?.release()
         } finally {
           this.generation = undefined
@@ -401,6 +407,19 @@ export class ElectronDesktopRuntime implements DesktopRuntime {
     } catch (cause) {
       const detail = cause instanceof Error ? cause.message : String(cause)
       this.logError(`dsh-plugin-desktop: failed to open the BOSS web window: ${detail}`)
+      throw cause
+    }
+  }
+
+  /** @inheritdoc */
+  async openContentPlatformWeb(platform: 'toutiao' | 'baidu' | 'xiaohongshu' | 'sohu', url: string): Promise<void> {
+    let window = this.contentPlatformWindows.get(platform)
+    if (!window) {
+      window = new ContentPlatformWebWindow(platform)
+      this.contentPlatformWindows.set(platform, window)
+    }
+    try { await window.open(url) } catch (cause) {
+      this.logError(`dsh-plugin-desktop: failed to open ${platform} publishing window: ${cause instanceof Error ? cause.message : String(cause)}`)
       throw cause
     }
   }
