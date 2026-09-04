@@ -16,7 +16,7 @@ window.__ModuleLoader__.load({
     const OVERLAY_EVENT = 'dofe:yootun-overlay:open'
     const copy = {
       zh: {
-        open: '内容指挥', title: 'GEO 内容运营', subtitle: '诊断、生产、审核与分发', close: '关闭', refresh: '刷新数据',
+        open: 'GEO工作台', title: 'GEO 内容运营', subtitle: '诊断、生产、审核与分发', close: '关闭', refresh: '刷新数据',
         overview: '运营总览', reviewPublish: '内容审核与发布', sourceOnline: '数据正常', sourceEmpty: '暂无数据', sourceError: '连接异常', sourceUnavailable: '未接入',
         geoBaseline: 'GEO 基准分', companyScore: '品牌资料', diagnosticScore: '最近诊断', noScore: '尚无基准', certified: '已认证', recentDiagnostics: '最近诊断', noDiagnostics: '暂无优惠豚诊断记录', score: '分',
         contentPipeline: '内容工程漏斗', lastSevenDays: '近 7 天', generated: '已生成', published: '已发布', views: '内容浏览', productionTrend: '生产趋势', created: '生成',
