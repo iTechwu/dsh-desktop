@@ -476,6 +476,16 @@ GET 响应包含服务端事件、本机 pending 事件、同步健康、数据�
 - `corepack pnpm --filter dsh-plugin-desktop exec vitest run tests/package.spec.ts tests/plugin.spec.ts tests/yootun-audit-integration.spec.ts`；
 - `corepack pnpm --filter dsh-plugin-desktop run test:audit-ui`。
 
+实施后独立审查进一步完成以下加固：权限缓存不再覆盖缺失凭据、401 或 403，pending 事件按 API Key 指纹隔离并将身份不匹配事件移入 quarantine；Models 使用独立动作投影白名单重新校验分类、目标类型和变更字段；补传批次限制在 512 KiB 内，并隔离永久拒绝事件；本地 pending 与首屏查询合并展示；指标统一为今日、成功、异常和待同步；失败的业务写入尝试同样产生脱敏审计；终态执行重放不会重复记录；异步工具的信封级失败与小红书完成版本数按真实结果归类。
+
+2026-09-05 本轮新鲜验证结果：
+
+- `corepack pnpm quality:gate`（Models）退出码 0；
+- `corepack pnpm check`（Desktop）退出码 0，136 个测试文件通过，1236 条测试通过、4 条预期跳过；
+- 五个 Docker 采集插件分别执行 `npm run check`，知识 14 条、线索 7 条、改装 7 条、小红书 21 条、媒体上传 63 条测试全部通过；
+- 跨仓集成门禁实际执行 8 条打包采集器审计行为测试，覆盖成功与失败归类、只读排除、终态去重及敏感正文隔离；
+- 四个 Desktop 业务路由的失败写入审计回归与审计服务测试共 78 条通过，包级 TypeScript 检查通过。
+
 浏览器验收使用隔离 Playwright 会话加载实际 `dsh-yootun-audit/src/client.js`，以受控同源响应覆盖加载、真实空态、筛选空态、在线表格与详情、离线缓存、待同步重试、普通成员、团队管理员和超级管理员显式选团队。320、768、1024、1440 像素视口均通过页面溢出、剩余高度、可访问名称、对话框语义、代表性 WCAG AA 对比度、键盘详情/关闭/焦点恢复、控制台和请求路径断言；14 次业务请求只访问 `/api/desktop/yootun/audit`。
 
 截图证据位于 `docs/superpowers/evidence/2026-09-05-yootun-audit/`：
