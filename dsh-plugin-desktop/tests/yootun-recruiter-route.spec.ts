@@ -68,6 +68,7 @@ async function call(
     knowledgePublisher?: { publish: (request: any) => Promise<any> }
     hrKnowledgeSpaceId?: string
     openBossWeb?: (url?: string) => Promise<void>
+    audit?: { record: (input: any) => Promise<any> }
   } = {},
 ) {
   const res = response()
@@ -91,6 +92,26 @@ describe('Yootun recruiter route', () => {
     })
     expect((result.value.boss as { loginUrl: string }).loginUrl).toMatch(/^https:\/\/www\.zhipin\.com\//u)
     expect(result.res.setHeader).toHaveBeenCalledWith('cache-control', 'no-store')
+  })
+
+  it('audits recruiter writes while leaving previews and login handoffs unrecorded', async () => {
+    const statePath = path()
+    const record = vi.fn(async (_input: any): Promise<any> => ({ status: 'stored', clientEventId: 'event-1' }))
+    const audit = { record }
+    const saved = await call(statePath, 'POST', requirement({ title: '不得进入审计的岗位正文' }), undefined, { audit })
+    const requirementId = (saved.value.requirements as Array<{ id: string }>)[0]!.id
+
+    await call(statePath, 'POST', { action: 'sync_preview' }, undefined, { audit })
+    await call(statePath, 'POST', { action: 'open_boss_login' }, undefined, { audit, openBossWeb: async () => {} })
+    const failed = await call(statePath, 'POST', { action: 'execute_action', id: 'missing-action' }, undefined, { audit })
+
+    expect(failed.status).toBe(400)
+    expect(record).toHaveBeenCalledTimes(2)
+    expect(record.mock.calls.map(([event]) => event)).toEqual([
+      expect.objectContaining({ actionCode: 'recruiter.requirement.created', target: { type: 'requirement', id: requirementId }, outcome: 'succeeded', changes: [{ field: 'status', after: 'active' }] }),
+      expect.objectContaining({ actionCode: 'recruiter.action.executed', target: { type: 'recruiter_action', id: 'missing-action' }, outcome: 'failed', errorCode: 'action_not_found' }),
+    ])
+    expect(JSON.stringify(record.mock.calls)).not.toContain('不得进入审计')
   })
 
   it('marks the tenant HR space ready without a client-configured space id', async () => {

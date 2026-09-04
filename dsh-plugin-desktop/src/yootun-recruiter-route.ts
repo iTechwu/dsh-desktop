@@ -6,6 +6,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import { dirname } from 'node:path'
 import { writeFileAtomic } from '@deepseek-ai/dsh-atomic-write'
 import { credentialRef, type CredentialProvider } from '@deepseek-ai/dsh-credentials'
+import type { YootunAuditRecordInput, YootunAuditRecorder } from './yootun-audit-contract.ts'
 
 export const YOOTUN_RECRUITER_PATH = '/api/desktop/yootun/recruiter'
 
@@ -1014,6 +1015,59 @@ export interface RecruiterRouteDependencies {
   /** @deprecated Default HR space is resolved by Knowledge from tenant context. */
   hrKnowledgeSpaceId?: string | undefined
   openBossWeb?: ((url?: string) => Promise<void>) | undefined
+  audit?: YootunAuditRecorder | undefined
+}
+
+const RECRUITER_AUDIT_SOURCE = Object.freeze({
+  pluginId: 'dsh-plugin-desktop/yootun-recruiter', pluginVersion: '2.0.5', surface: 'human_ui' as const,
+})
+
+async function recordRecruiterAudit(audit: YootunAuditRecorder | undefined, input: YootunAuditRecordInput | undefined): Promise<void> {
+  if (audit === undefined || input === undefined) return
+  try { await audit.record(input) } catch { /* Audit transport must never change business behavior. */ }
+}
+
+function recruiterMutationAudit(body: JsonRecord, before: RecruiterState, next: RecruiterSnapshot): YootunAuditRecordInput | undefined {
+  if (body.action === 'save_requirement') {
+    const id = typeof body.id === 'string' ? body.id : next.requirements.find(item => !before.requirements.some(previous => previous.id === item.id))?.id
+    const after = next.requirements.find(item => item.id === id)
+    if (id === undefined || after === undefined) return undefined
+    const previous = before.requirements.find(item => item.id === id)
+    return { source: RECRUITER_AUDIT_SOURCE, actionCode: previous === undefined ? 'recruiter.requirement.created' : 'recruiter.requirement.updated', category: previous === undefined ? 'create' : 'update', target: { type: 'requirement', id }, outcome: 'succeeded', changes: [{ field: 'status', ...(previous === undefined ? {} : { before: previous.status }), after: after.status }] }
+  }
+  if (body.action === 'save_candidate_analysis') {
+    const id = typeof body.id === 'string' ? body.id : next.candidates.find(item => !before.candidates.some(previous => previous.id === item.id))?.id
+    const after = next.candidates.find(item => item.id === id)
+    if (id === undefined || after === undefined) return undefined
+    const previous = before.candidates.find(item => item.id === id)
+    return { source: RECRUITER_AUDIT_SOURCE, actionCode: 'recruiter.candidate_analysis.saved', category: 'update', target: { type: 'candidate', id }, outcome: 'succeeded', changes: [{ field: 'feedbackStatus', ...(previous === undefined ? {} : { before: previous.feedbackStatus }), after: after.feedbackStatus }] }
+  }
+  if (body.action === 'queue_action' || body.action === 'publish_knowledge') {
+    const action = next.actions.find(item => !before.actions.some(previous => previous.id === item.id))
+    if (action === undefined) return undefined
+    return { source: RECRUITER_AUDIT_SOURCE, actionCode: 'recruiter.action.created', category: 'create', target: { type: 'recruiter_action', id: action.id }, outcome: 'succeeded', changes: [{ field: 'type', after: action.type }, { field: 'status', after: action.status }] }
+  }
+  if (body.action === 'confirm_action' || body.action === 'dismiss_action') {
+    const id = typeof body.id === 'string' ? body.id : undefined
+    const previous = before.actions.find(item => item.id === id)
+    const after = next.actions.find(item => item.id === id)
+    if (id === undefined || previous === undefined || after === undefined) return undefined
+    const confirmed = body.action === 'confirm_action'
+    return { source: RECRUITER_AUDIT_SOURCE, actionCode: confirmed ? 'recruiter.action.confirmed' : 'recruiter.action.dismissed', category: 'update', target: { type: 'recruiter_action', id }, outcome: 'succeeded', changes: [{ field: 'status', before: previous.status, after: after.status }] }
+  }
+  return undefined
+}
+
+function recruiterExecutionAudit(actionId: string, next: RecruiterSnapshot): YootunAuditRecordInput {
+  const action = next.actions.find(item => item.id === actionId)
+  const status = action?.status
+  const outcome = status === 'succeeded' ? 'succeeded' : status === 'requires_user_login' ? 'accepted' : 'failed'
+  return { source: RECRUITER_AUDIT_SOURCE, actionCode: 'recruiter.action.executed', category: 'execute', target: { type: 'recruiter_action', id: actionId }, outcome, changes: status === undefined ? [] : [{ field: 'status', after: status }], ...(action?.adapterReceipt === undefined ? {} : { effects: [{ target: action.type === 'publish_knowledge' ? 'knowledge' : 'recruiter_adapter', outcome: action.adapterReceipt.status, code: action.adapterReceipt.reasonCode, ...(action.adapterReceipt.remoteRef === undefined ? {} : { remoteRef: action.adapterReceipt.remoteRef }) }] }), ...(outcome === 'failed' ? { errorCode: action?.adapterReceipt?.reasonCode ?? 'action_failed' } : {}) }
+}
+
+function recruiterSyncAudit(next: RecruiterSnapshot): YootunAuditRecordInput {
+  const outcome = next.sync.status === 'ready' ? 'succeeded' : next.sync.status === 'partial' ? 'partial' : next.sync.status === 'requires_user_login' ? 'accepted' : 'failed'
+  return { source: RECRUITER_AUDIT_SOURCE, actionCode: 'recruiter.boss_sync.executed', category: 'execute', target: { type: 'candidate_collection', id: 'boss_zhipin' }, outcome, changes: [{ field: 'insertedCount', after: next.sync.imported }, { field: 'updatedCount', after: next.sync.updated }], ...(outcome === 'failed' ? { errorCode: next.sync.reason ?? 'boss_sync_failed' } : {}) }
 }
 
 async function modelsAccessReady(credentials: Pick<CredentialProvider, 'resolve'> | undefined): Promise<boolean> {
@@ -1055,10 +1109,12 @@ export async function handleYootunRecruiterRequest(
   if (req.headers['content-type']?.split(';', 1)[0]?.trim().toLowerCase() !== 'application/json') {
     return finish(res, 415, { error: 'content_type_invalid' })
   }
+  let auditRequest: JsonRecord | undefined
   try {
     const body = readJson(req)
     const parsed = await body
     const recordBody = record(parsed)
+    auditRequest = recordBody
     let next: RecruiterSnapshot
     if (recordBody?.action === 'execute_action') {
       if (!exactKeys(recordBody, ['action', 'id'])) throw new InvalidRecruiterRequest('request_fields_invalid')
@@ -1072,9 +1128,11 @@ export async function handleYootunRecruiterRequest(
         },
         now,
       )
+      await recordRecruiterAudit(dependencies.audit, recruiterExecutionAudit(limitedText(recordBody.id, 'id', 80), next))
     } else if (recordBody?.action === 'sync_boss') {
       if (!exactKeys(recordBody, ['action'])) throw new InvalidRecruiterRequest('request_fields_invalid')
       next = await syncRecruiterBoss(dependencies.statePath, dependencies.bossAdapter, now)
+      await recordRecruiterAudit(dependencies.audit, recruiterSyncAudit(next))
     } else if (recordBody?.action === 'sync_preview') {
       if (!exactKeys(recordBody, ['action'])) throw new InvalidRecruiterRequest('request_fields_invalid')
       return finish(res, 200, { ...recruiterSnapshot(state, capabilities), syncPreview: syncPreview(state, capabilities.bossAdapter) })
@@ -1085,9 +1143,15 @@ export async function handleYootunRecruiterRequest(
       return finish(res, 200, recruiterSnapshot(state, capabilities))
     } else {
       next = await mutateRecruiterState(dependencies.statePath, parsed, now)
+      await recordRecruiterAudit(dependencies.audit, recordBody === undefined ? undefined : recruiterMutationAudit(recordBody, state, next))
     }
     finish(res, 200, recruiterSnapshot(next, capabilities))
   } catch (cause) {
+    if (auditRequest?.action === 'execute_action' && typeof auditRequest.id === 'string') {
+      await recordRecruiterAudit(dependencies.audit, { source: RECRUITER_AUDIT_SOURCE, actionCode: 'recruiter.action.executed', category: 'execute', target: { type: 'recruiter_action', id: auditRequest.id }, outcome: 'failed', errorCode: cause instanceof InvalidRecruiterRequest ? cause.message : 'recruiter_storage_failed' })
+    } else if (auditRequest?.action === 'sync_boss') {
+      await recordRecruiterAudit(dependencies.audit, { source: RECRUITER_AUDIT_SOURCE, actionCode: 'recruiter.boss_sync.executed', category: 'execute', target: { type: 'candidate_collection', id: 'boss_zhipin' }, outcome: 'failed', errorCode: cause instanceof InvalidRecruiterRequest ? cause.message : 'recruiter_storage_failed' })
+    }
     if (cause instanceof RecruiterBodyTooLarge) return finish(res, 413, { error: 'request_too_large' })
     if (cause instanceof InvalidRecruiterRequest || cause instanceof SyntaxError) {
       const error = cause instanceof InvalidRecruiterRequest ? cause.message : 'request_invalid'
