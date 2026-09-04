@@ -88,6 +88,8 @@ function createTaskMachine({ createTask, queryStatus, queryResult, intervalMs = 
   let snapshot = { task: null, versions: null, error: '' }
   let timer = null
   let generation = 0
+  let submission = 0
+  let active = true
 
   const update = next => { snapshot = next; onChange?.(snapshot) }
   const cancel = () => { generation++; if (timer) { clearSchedule(timer); timer = null } }
@@ -138,23 +140,27 @@ function createTaskMachine({ createTask, queryStatus, queryResult, intervalMs = 
   }
 
   const submit = async body => {
+    const submissionId = ++submission
     cancel()
     update({ task: snapshot.task, versions: null, error: '' })
-    const gen = generation
     let created
     try {
       created = await createTask(body)
     } catch {
-      if (gen === generation) update({ ...snapshot, error: 'createFailed' })
+      if (submissionId === submission) update({ ...snapshot, error: 'createFailed' })
       return
     }
-    // 创建期间页面关闭（stop() 已推进 generation）：仍保存任务供 resume 续查，但不启动轮询。
+    if (submissionId !== submission) return
+    // 创建期间允许页面开关：始终保存最新任务，只有页面当前激活时才开始轮询。
     update({ task: { taskId: created.taskId, idempotencyKey: body.idempotencyKey, taskStatus: created.taskStatus || 'queued', mediaType: body.mediaType, input: body }, versions: null, error: '' })
-    if (gen !== generation) return
+    if (!active) return
     await poll()
   }
 
-  return { submit, resume: poll, stop: cancel, get: () => snapshot }
+  const resume = async () => { active = true; await poll() }
+  const stop = () => { active = false; cancel() }
+
+  return { submit, resume, stop, get: () => snapshot }
 }
 
 // 状态机错误码 → 本地化文案。

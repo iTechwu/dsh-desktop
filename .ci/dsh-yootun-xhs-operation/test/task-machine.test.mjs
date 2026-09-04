@@ -137,3 +137,21 @@ test('stop during in-flight create does not start polling', async () => {
   await machine.resume()
   assert.equal(statusCalls, 1)
 })
+
+test('reopening before in-flight create completes starts polling after create', async () => {
+  let resolveCreate
+  let statusCalls = 0
+  const { machine, timers } = makeMachine({
+    createTask: () => new Promise(resolve => { resolveCreate = resolve }),
+    queryStatus: async () => { statusCalls++; return { taskStatus: 'running' } },
+  })
+  const submitPromise = machine.submit({ action: 'create', mediaType: 'images', idempotencyKey: 'k1' })
+  machine.stop()
+  await machine.resume()
+  assert.equal(statusCalls, 0)
+  resolveCreate({ taskId: 't-1', taskStatus: 'queued', mediaType: 'images' })
+  await submitPromise
+  assert.equal(machine.get().task.taskId, 't-1')
+  assert.equal(statusCalls, 1)
+  assert.equal(timers.pending, true)
+})
