@@ -5,6 +5,7 @@ import { dirname } from 'node:path'
 import { writeFileAtomic } from '@deepseek-ai/dsh-atomic-write'
 import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import type { ToolExecutionInput } from '@deepseek-ai/dsh-tools'
+import type { YootunAuditEffect, YootunAuditRecordInput, YootunAuditRecorder } from './yootun-audit-contract.ts'
 
 export const YOOTUN_CONTENT_COMMAND_PATH = '/api/desktop/yootun/content-command'
 const VERSION = 2
@@ -67,6 +68,7 @@ export interface ContentRouteDependencies {
   now?: () => Date
   openPlatformWeb?: ((platform: ContentPlatformId, url: string) => Promise<void>) | undefined
   publishWebsite?: ((article: ContentArticle) => Promise<string>) | undefined
+  audit?: YootunAuditRecorder | undefined
 }
 
 class InvalidContentRequest extends Error {}
@@ -237,19 +239,51 @@ async function mutateState(path: string, update: (state: ContentState) => Promis
 const finish = (res: ServerResponse, status: number, value: object, allow?: string) => { res.statusCode = status; res.setHeader('Content-Type', 'application/json; charset=utf-8'); res.setHeader('Cache-Control', 'no-store'); if (allow) res.setHeader('Allow', allow); res.end(JSON.stringify(value)) }
 async function requestBody(req: IncomingMessage) { let size = 0; const chunks: Buffer[] = []; for await (const chunk of req) { const data = Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk)); size += data.byteLength; if (size > MAX_BODY) throw new ContentBodyTooLarge(); chunks.push(data) } try { return JSON.parse(Buffer.concat(chunks).toString('utf8')) } catch { throw new InvalidContentRequest('json_invalid') } }
 
+const CONTENT_AUDIT_SOURCE = Object.freeze({ pluginId: 'dsh-plugin-desktop/yootun-content-command', pluginVersion: '2.0.5', surface: 'human_ui' as const })
+
+async function recordContentAudit(audit: YootunAuditRecorder | undefined, input: YootunAuditRecordInput | undefined): Promise<void> {
+  if (audit === undefined || input === undefined) return
+  try { await audit.record(input) } catch { /* Audit transport must never change business behavior. */ }
+}
+
+function contentAudit(body: RecordValue, articleId: number, before: ContentDecision, after: ContentDecision): YootunAuditRecordInput | undefined {
+  const target = { type: 'article' as const, id: String(articleId) }
+  if (body.action === 'review_article') {
+    return { source: CONTENT_AUDIT_SOURCE, actionCode: 'content.review.updated', category: 'update', target, outcome: 'succeeded', changes: [{ field: 'reviewStatus', before: before.reviewStatus, after: after.reviewStatus }] }
+  }
+  if (body.action === 'select_platforms') {
+    return { source: CONTENT_AUDIT_SOURCE, actionCode: 'content.platforms.updated', category: 'update', target, outcome: 'succeeded', changes: [{ field: 'platformCount', before: before.selectedPlatforms.length, after: after.selectedPlatforms.length }] }
+  }
+  if (body.action !== 'publish_selected') return undefined
+  const effects: YootunAuditEffect[] = after.selectedPlatforms.map(platform => {
+    const status = after.platformStatus[platform] ?? 'adapter_pending'
+    return { target: platform, outcome: status === 'adapter_pending' ? 'accepted' : status }
+  })
+  const outcomes = effects.map(effect => effect.outcome)
+  const outcome = outcomes.every(value => value === 'succeeded')
+    ? 'succeeded'
+    : outcomes.every(value => value === 'failed') ? 'failed'
+      : outcomes.some(value => value === 'succeeded' || value === 'failed') ? 'partial' : 'accepted'
+  return { source: CONTENT_AUDIT_SOURCE, actionCode: 'content.publish.executed', category: 'publish', target, outcome, changes: [{ field: 'platformCount', after: after.selectedPlatforms.length }], effects, ...(outcome === 'failed' ? { errorCode: 'publish_failed' } : {}) }
+}
+
 export async function handleYootunContentCommandRequest(req: IncomingMessage, res: ServerResponse, rendererOrigin: string, dependencies: ContentRouteDependencies): Promise<void> {
   if (req.headers.origin && req.headers.origin !== rendererOrigin) return finish(res, 403, { error: 'origin_forbidden' })
   if (!dependencies.statePath) return finish(res, 503, { error: 'state_unavailable' })
   if (req.method === 'GET') { try { return finish(res, 200, await snapshot(await readContentState(dependencies.statePath), dependencies.tools)) } catch { return finish(res, 200, { status: 'error', dashboard: emptyDashboard(), sources: emptySources(), platforms: CONTENT_PLATFORMS, articles: [] }) } }
   if (req.method !== 'POST') return finish(res, 405, { error: 'method_not_allowed' }, 'GET, POST')
+  let auditRequest: RecordValue | undefined
   try {
     const body = record(await requestBody(req))
     if (!body || typeof body.action !== 'string') throw new InvalidContentRequest('request_invalid')
+    auditRequest = body
     const articleId = positiveInteger(body.articleId)
     const key = String(articleId)
     const now = (dependencies.now?.() ?? new Date()).toISOString()
+    let previousDecision: ContentDecision = { reviewStatus: 'pending', selectedPlatforms: [], platformStatus: {} }
     const next = await mutateState(dependencies.statePath, async state => {
       const current = state.decisions[key] ?? { reviewStatus: 'pending', selectedPlatforms: [], platformStatus: {} }
+      previousDecision = current
       if (body.action === 'review_article') {
         if (!exactKeys(body, ['action', 'articleId', 'decision'])) throw new InvalidContentRequest('request_fields_invalid')
         if (body.decision !== 'approved' && body.decision !== 'rejected') throw new InvalidContentRequest('decision_invalid')
@@ -289,8 +323,13 @@ export async function handleYootunContentCommandRequest(req: IncomingMessage, re
       }
       throw new InvalidContentRequest('action_invalid')
     })
+    const nextDecision = next.decisions[key]
+    if (nextDecision !== undefined) await recordContentAudit(dependencies.audit, contentAudit(body, articleId, previousDecision, nextDecision))
     return finish(res, 200, await snapshot(next, dependencies.tools))
   } catch (cause) {
+    if (auditRequest?.action === 'publish_selected' && Number.isInteger(Number(auditRequest.articleId)) && Number(auditRequest.articleId) > 0) {
+      await recordContentAudit(dependencies.audit, { source: CONTENT_AUDIT_SOURCE, actionCode: 'content.publish.executed', category: 'publish', target: { type: 'article', id: String(auditRequest.articleId) }, outcome: 'failed', errorCode: cause instanceof InvalidContentRequest ? cause.message : 'state_write_failed' })
+    }
     if (cause instanceof ContentBodyTooLarge) return finish(res, 413, { error: 'body_too_large' })
     if (cause instanceof InvalidContentRequest) return finish(res, ['platform_web_unavailable'].includes(cause.message) ? 503 : cause.message === 'article_not_approved' ? 409 : 400, { error: cause.message })
     return finish(res, 500, { error: 'state_write_failed' })

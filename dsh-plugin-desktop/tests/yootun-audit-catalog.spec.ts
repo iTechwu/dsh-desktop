@@ -20,11 +20,11 @@ describe('Yootun audit action catalog', () => {
     const roots = [desktopSourceRoot, dockerPluginRoot]
     const used = roots.flatMap(sourceFiles).flatMap((path) => {
       const source = readFileSync(path, 'utf8')
-      return [...source.matchAll(/(?:audit|yootunAudit)(?:\?\.|\.)record\s*\(\s*\{[\s\S]{0,500}?actionCode:\s*['"]([^'"]+)['"]/gu)]
+      return [...source.matchAll(/actionCode:\s*['"]([^'"]+)['"]/gu)]
         .flatMap(match => match[1] === undefined ? [] : [{ actionCode: match[1], path }])
     })
 
-    expect(used.length).toBeGreaterThanOrEqual(0)
+    expect(used.length).toBeGreaterThan(0)
     for (const use of used) {
       expect(YOOTUN_AUDIT_ACTIONS, `${use.actionCode} in ${use.path}`).toHaveProperty(use.actionCode)
     }

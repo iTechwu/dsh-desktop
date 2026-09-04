@@ -493,6 +493,7 @@ export function apply(ctx: Context, config: Config): void {
           statePath: ctx.get('dshHomePath')?.('storages', 'yootun-content-command', 'state.json'),
           tools: ctx.tools,
           publishWebsite: publishYootunWebsite,
+          audit: ctx.yootunAudit,
           openPlatformWeb: async (platform, url) => {
             if (platform === 'website') return
             await ctx.get('desktopRuntime')?.openContentPlatformWeb(platform, url)
