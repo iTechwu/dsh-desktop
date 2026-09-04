@@ -1126,10 +1126,11 @@ describe('published package surface', () => {
       }
     }
     const collector = new collectorModule.PnpmNodeModulesCollector('/workspace', {})
+    const expectedPackageDir = resolve('/store/@opentelemetry/core')
     collector.isHoisted = { value: Promise.resolve(false) }
     collector.cache.locatePackageVersion = async ({ parentDir }) => parentDir === '/valid-parent'
       ? {
-          packageDir: '/store/@opentelemetry/core',
+          packageDir: expectedPackageDir,
           packageJson: { name: '@opentelemetry/core', version: '2.9.0' },
         }
       : null
@@ -1137,7 +1138,7 @@ describe('published package surface', () => {
     expect(await collector.locateFromDepOrRoot('@opentelemetry/core', '/wrong-parent', '2.9.0'))
       .toBeNull()
     expect(await collector.locateFromDepOrRoot('@opentelemetry/core', '/valid-parent', '2.9.0'))
-      .toMatchObject({ packageDir: '/store/@opentelemetry/core' })
+      .toMatchObject({ packageDir: expectedPackageDir })
   })
 
   it('normalizes pnpm symlink locations before walking transitive dependencies', async () => {
