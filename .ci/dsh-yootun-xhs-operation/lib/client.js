@@ -164,18 +164,28 @@ window.__ModuleLoader__.load({
           if (stopped) return
           const current = activeTaskRef.current
           if (!current?.taskId) return
-          // 已终态：succeeded 且尚未读到结果时补读一次（含「创建即 succeeded」与「重开页面」）；failed/cancelled 直接停。
+          // 已终态：succeeded 补读结果；failed/cancelled 展示失败/取消提示。
           if (isTerminal(current.taskStatus)) {
-            if (current.taskStatus === 'succeeded' && versionsRef.current === null) await loadResult(current.taskId)
+            if (current.taskStatus === 'succeeded') {
+              if (versionsRef.current === null) await loadResult(current.taskId)
+            } else {
+              setTaskError(current.taskStatus === 'cancelled' ? t('cancelled') : t('failed'))
+            }
             return
           }
           const status = await post({ action: 'status', taskId: current.taskId }).catch(() => null)
           if (stopped) return
-          if (!status || status.status !== 'ready') { setTaskError(t('pollFailed')); return }
+          if (!status || status.status !== 'ready') {
+            // 暂态查询失败：保留 taskId/idempotencyKey，按间隔继续重试，不自动取消或更换幂等键。
+            setTaskError(t('pollFailed'))
+            timer = setTimeout(poll, POLL_INTERVAL_MS)
+            return
+          }
           const next = { ...current, taskStatus: status.taskStatus, currentStep: status.currentStep || status.nextStep || '' }
           activeTask = next
           activeTaskRef.current = next
           setTask(next)
+          setTaskError('')
           if (status.taskStatus === 'succeeded') {
             await loadResult(current.taskId)
             return
