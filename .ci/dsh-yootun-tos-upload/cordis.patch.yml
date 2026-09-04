@@ -1,16 +1,11 @@
 # Yootun TOS 上传能力插件（纯宿主半，无客户端半）。
-# 凭证卫生：AK/SK 不写进本文件、不入库、不进安装包。
-# 密钥由部署侧注入（credential store，键 STORAGE_ACCESS_KEY_ID / STORAGE_ACCESS_KEY_SECRET），
-# 客户端装完即用；插件按 credential store -> 环境变量 -> $DSH_HOME/tos-upload.env 兜底解析。
+# 凭证卫生：本插件不持有 TOS AK/SK、桶、地域、endpoint——上传授权一律由
+# Tools 服务的 tos_upload_authorize 工具下发（PUT 预签名 URL），凭证与内部
+# 拓扑永不出服务端。这里只保留非敏感运行参数。
 - insert:
     - id: dofe-yootun-tos-upload
       name: '@dofe/dsh-yootun-tos-upload'
       config:
-        backend: tos
-        tos:
-          region: cn-beijing
-          bucket: dofe-transcode
-          keyPrefix: yootun/uploads
         limits:
           # 单文件大小上限（字节），默认 500MB。
           maxBytes: 524288000

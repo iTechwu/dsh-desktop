@@ -59,11 +59,14 @@ t('desktop patch carries a unique TOS loader row with non-sensitive config', asy
 
   assert.ok(patch.includes(`id: ${ENTRY_ID}`), 'TOS Loader 行必须存在')
   assert.ok(patch.includes(`name: '${PLUGIN_NAME}'`), 'Loader 行必须指向插件包名')
-  assert.ok(patch.includes('backend: tos'))
-  assert.ok(patch.includes('bucket: dofe-transcode'))
-  assert.ok(patch.includes('keyPrefix: yootun/uploads'))
+  assert.ok(patch.includes('maxBytes: 524288000'))
+  assert.ok(patch.includes('timeoutMs: 1800000'))
 
-  // 凭证卫生：desktop patch 不得写入 AK/SK。
+  // 凭证/拓扑卫生：desktop patch 不得携带 backend / 桶 / 地域 / key 前缀 / AK/SK。
+  assert.doesNotMatch(patch, /backend:/u)
+  assert.doesNotMatch(patch, /bucket:/u)
+  assert.doesNotMatch(patch, /region:/u)
+  assert.doesNotMatch(patch, /keyPrefix:/u)
   assert.doesNotMatch(patch, /accessKeyId:\s*\S+/u, 'desktop patch 不得写明文 AK')
   assert.doesNotMatch(patch, /accessKeySecret:\s*\S+/u, 'desktop patch 不得写明文 SK')
   assert.doesNotMatch(patch, /STORAGE_ACCESS_KEY_ID:\s*['"]?[A-Za-z0-9+/=]{8}/u)
@@ -132,9 +135,11 @@ t('snapshot is a byte-identical copy of the tracked source', async () => {
     assert.ok(sourceText.equals(snapshotText), `快照与源码不一致: ${relative}`)
   }
   // 反向：源码里的关键文件必须在快照里。
-  for (const file of ['index.js', 'config.js', 'lib/errors.js', 'drivers/tos.js', 'cordis.patch.yml', 'package.json']) {
+  for (const file of ['index.js', 'config.js', 'authorize.js', 'lib/errors.js', 'drivers/tos.js', 'cordis.patch.yml', 'package.json']) {
     assert.ok(existsSync(join(snapshot, file)), `快照缺少关键文件: ${file}`)
   }
+  // SigV4 签名器已删除，快照里也不得残留。
+  assert.equal(existsSync(join(snapshot, 'drivers/tos-signer.js')), false, '快照不得残留已删除的 tos-signer.js')
 })
 
 t('shipped files never embed local paths, CI private addresses, or secrets', async () => {
@@ -169,7 +174,7 @@ t('index.js never accesses ctx.config and uses ctx.get for optional services', a
   assert.doesNotMatch(index, /ctx\.config/, '不得访问 ctx.config（真实 Cordis 会抛 without inject）')
   assert.doesNotMatch(index, /ctx\.credentials\b/, '不得直接访问 ctx.credentials')
   assert.doesNotMatch(index, /ctx\.systemPrompt\b/, '不得直接访问 ctx.systemPrompt')
-  assert.match(index, /ctx\.get\?\.\(['"]credentials['"]\)/, 'credentials 必须走 ctx.get()')
+  assert.doesNotMatch(index, /ctx\.get\?\.\(['"]credentials['"]\)/, '插件不再读取 credential store（凭证在 Tools 服务侧）')
   assert.match(index, /ctx\.get\?\.\(['"]systemPrompt['"]\)/, 'systemPrompt 必须走 ctx.get()')
   assert.match(index, /apply\(ctx, config = \{\}/, 'apply 第二参数是 Loader 行 config')
 })

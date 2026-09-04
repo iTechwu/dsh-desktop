@@ -20,6 +20,7 @@ export const ERROR_CODES = Object.freeze([
   'file_changed',
   'upload_timeout',
   'upload_cancelled',
+  'upload_authorization_invalid',
   'storage_auth_failed',
   'storage_unavailable',
   'upload_failed',

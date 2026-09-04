@@ -4,11 +4,16 @@
  * 文件传上公网）。工具走人机回环——触发原生对话框由用户亲手选文件，选中路径
  * 自动进入允许清单，与 HTTP 通道共用同一套防护。
  *
+ * 上传链路：选文件 -> TOCTOU 复查 -> tos_upload_authorize 授权 -> 预签名 PUT 直传。
+ * 插件不再持有 TOS 凭证/桶/地域/endpoint，也不自行生成对象 key；公网 URL 由
+ * 授权响应下发（publicUrl）。
+ *
  * 错误契约：execute 只返回固定错误码（lib/errors.js 的 ERROR_CODES），
- * 绝不返回本地路径、访问密钥或内部错误堆栈；诊断细节只进日志。
+ * 绝不返回本地路径、预签名 URL、object key、访问密钥或内部错误堆栈；诊断细节只进日志。
  */
 
 import { revalidateAdmittedFile } from './allowlist.js'
+import { authorizeUpload } from './authorize.js'
 import { toPublicCode } from './lib/errors.js'
 
 const TOOL_OUTPUT = {
@@ -19,7 +24,6 @@ const TOOL_OUTPUT = {
       ok: { type: 'boolean' },
       error: { type: 'string' },
       url: { type: 'string' },
-      key: { type: 'string' },
       size: { type: 'number' },
       contentType: { type: 'string' },
       name: { type: 'string' },
@@ -31,7 +35,7 @@ const TOOL_OUTPUT = {
 /**
  * 注册 media_upload 工具，返回 disposer。
  * @param {object} ctx 宿主上下文（ctx.tools.register）。
- * @param {object} deps { picker, driver, store?, maxBytes, timeoutMs, logger? }
+ * @param {object} deps { picker, driver, tools, store?, maxBytes, timeoutMs, logger? }
  */
 export function registerMediaUploadTool(ctx, deps) {
   return ctx.tools.register({
@@ -79,13 +83,25 @@ export function registerMediaUploadTool(ctx, deps) {
       }
 
       try {
-        const result = await deps.driver.upload(
+        // 授权：只把文件元数据交给授权工具，换取 PUT 预签名直传授权。
+        const auth = await authorizeUpload(deps.tools, {
+          filename: check.entry.name,
+          contentType: check.entry.mime,
+          size: check.size,
+        }, exec?.signal)
+        await deps.driver.upload(
           picked.path,
-          { name: check.entry.name, mime: check.entry.mime },
+          { url: auth.url, method: auth.method, headers: auth.headers },
           exec?.signal,
         )
-        // 回到对话上下文的只有公网 URL 与对象元信息，不含本地路径。
-        return { ok: true, url: result.url, key: result.key, size: result.size, contentType: result.contentType, name: check.entry.name }
+        // 回到对话上下文的只有公网 URL 与对象元信息，不含预签名 URL/key/本地路径。
+        return {
+          ok: true,
+          url: auth.publicUrl,
+          size: check.size,
+          contentType: check.entry.mime,
+          name: check.entry.name,
+        }
       } catch (cause) {
         // 用户主动取消（宿主中止信号）与插件卸载取消分开归因。
         if (exec?.signal?.aborted || cause?.name === 'AbortError') {

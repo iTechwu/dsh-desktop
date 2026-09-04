@@ -4,13 +4,15 @@
  *   1. HTTP 路由 /_dsh/uploader/pick-file + /_dsh/uploader/upload（插件 UI 按钮）
  *   2. agent 工具 media_upload（会话中模型调用，人机回环选文件）
  *
+ * 上传链路：选文件 -> TOCTOU 复查 -> tos_upload_authorize 授权（Tools MCP 工具）
+ * -> 预签名 PUT 直传。插件不持有 TOS 凭证/桶/地域/endpoint，也不生成对象 key；
+ * 授权与公网 URL 全部来自 Tools 服务，凭证与内部拓扑永不出服务端。
+ *
  * Cordis 契约：
  * - apply(ctx, config) 第二参数是 Loader 行 config（非敏感项），插件绝不读
  *   上下文里的 config 服务，也不把 config 加入 inject；
- * - 硬依赖 webServer/tools 走 inject；可选服务 credentials/systemPrompt 统一用
- *   ctx.get() 读取——缺失时不阻断插件加载（credential store 不在就回退环境
- *   变量/密钥文件，system prompt 服务不在工具照常注册）；logger 用 Cordis
- *   内置上下文属性，不加入 inject；
+ * - 硬依赖 webServer/tools 走 inject；可选服务 systemPrompt 用 ctx.get() 读取——
+ *   缺失时不阻断插件加载；logger 用 Cordis 内置上下文属性，不加入 inject；
  * - 注册具备事务性：任一步失败即逆序注销已注册内容并释放驱动/允许清单，
  *   不会留下半注册状态；重载后不会出现重复工具/路由/prompt。
  */
@@ -24,27 +26,6 @@ import { registerMediaUploadTool } from './tool.js'
 export const name = 'yootun-tos-upload'
 /** 硬依赖：缺失时 Cordis 会等待/拒绝启动，不进入半注册状态。 */
 export const inject = ['webServer', 'tools']
-
-/**
- * 从部署注入的 credential store 解析 TOS AK/SK（对齐 MODELS_API_KEY 的既有模式）。
- * credential store 不存在或读取失败都不抛出——返回空值，由环境变量/密钥文件兜底。
- * @param {object} ctx 宿主上下文。
- * @returns {Promise<{accessKeyId:string,accessKeySecret:string}>}
- */
-async function resolveStoredCredentials(ctx) {
-  const out = { accessKeyId: '', accessKeySecret: '' }
-  try {
-    const store = ctx.get?.('credentials')
-    if (!store || typeof store.resolve !== 'function') return out
-    const id = await store.resolve('STORAGE_ACCESS_KEY_ID')
-    const secret = await store.resolve('STORAGE_ACCESS_KEY_SECRET')
-    out.accessKeyId = id?.value ?? ''
-    out.accessKeySecret = secret?.value ?? ''
-  } catch {
-    // credential store 不可用时降级到环境变量 / 密钥文件。
-  }
-  return out
-}
 
 /** 逆序执行清理；单个 disposer 失败不阻断其余清理。 */
 function unwindDisposers(disposers, logger) {
@@ -62,7 +43,7 @@ function unwindDisposers(disposers, logger) {
 /**
  * @param {object} ctx 宿主上下文。
  * @param {object} [config] Loader 行配置（非敏感项）。
- * @param {object} [overrides] 测试注入点：{ env?, homeDir?, secrets?, credentials?, dialog?, driver?, config? }。
+ * @param {object} [overrides] 测试注入点：{ dialog?, driver?, config? }。
  * @returns {Promise<() => void>} 注销函数（幂等，可重复调用）。
  */
 export async function apply(ctx, config = {}, overrides = {}) {
@@ -82,25 +63,15 @@ export async function apply(ctx, config = {}, overrides = {}) {
   }
 
   try {
-    // 可选服务：统一 ctx.get()，缺失不阻断。
-    const credentials = overrides.credentials
-      ?? await resolveStoredCredentials(ctx)
-
     const rowConfig = overrides.config ?? config
-    const effectiveConfig = await loadConfig(rowConfig, {
-      env: overrides.env,
-      homeDir: overrides.homeDir,
-      secrets: overrides.secrets,
-      credentials,
-    })
+    const effectiveConfig = loadConfig(rowConfig)
 
     // 配置校验问题：明确日志 + “不可上传但插件可加载”降级。
     for (const problem of effectiveConfig.errors) {
       logger?.warn?.('yootun-tos-upload: config problem: %s', problem)
     }
     if (!effectiveConfig.ready) {
-      logger?.warn?.('yootun-tos-upload: 上传能力不可用（缺 %s），插件以降级状态加载；请配置 STORAGE_* 环境变量或 $DSH_HOME 密钥文件',
-        effectiveConfig.missing.concat(effectiveConfig.errors.length > 0 ? ['valid-config'] : []).join('/') || 'credentials')
+      logger?.warn?.('yootun-tos-upload: 上传能力不可用（配置非法），插件以降级状态加载；请检查 limits.maxBytes / tool.timeoutMs')
     }
 
     const picker = createFilePicker({
@@ -109,14 +80,14 @@ export async function apply(ctx, config = {}, overrides = {}) {
     })
     state.picker = picker
 
-    // 驱动抽象：第一期 tos；后期 ci-server 实现同一接口，config.backend 切换。
+    // 驱动是预签名 PUT 直传，不依赖任何本地凭证；配置合法即可创建。
     let driver = overrides.driver ?? null
-    if (driver === null && effectiveConfig.backend === 'tos' && effectiveConfig.ready) {
+    if (driver === null && effectiveConfig.ready) {
       try {
-        driver = await createTosDriver(effectiveConfig.tos)
+        driver = await createTosDriver()
       } catch (cause) {
         // 驱动初始化失败不输出签名或请求内容，只记录消息。
-        logger?.error?.('yootun-tos-upload: TOS driver init failed: %s', cause?.message ?? 'unknown')
+        logger?.error?.('yootun-tos-upload: upload driver init failed: %s', cause?.message ?? 'unknown')
       }
     }
     state.driver = driver
@@ -142,6 +113,7 @@ export async function apply(ctx, config = {}, overrides = {}) {
           expectedOrigin,
           store: picker.store,
           driver,
+          tools: ctx.tools,
           maxBytes: effectiveConfig.limits.maxBytes,
           reportError,
         }),
@@ -153,6 +125,7 @@ export async function apply(ctx, config = {}, overrides = {}) {
       disposers.push(registerMediaUploadTool(ctx, {
         picker,
         driver,
+        tools: ctx.tools,
         maxBytes: effectiveConfig.limits.maxBytes,
         timeoutMs: effectiveConfig.tool.timeoutMs,
         logger,

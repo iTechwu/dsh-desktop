@@ -1,7 +1,7 @@
 /**
  * HTTP 触发通道：插件 UI 按钮两次同源 fetch。
  *   POST /_dsh/uploader/pick-file  -> { path, name, size, mime }（原生 showOpenDialog）
- *   POST /_dsh/uploader/upload     { path } -> { url, key, size, contentType }
+ *   POST /_dsh/uploader/upload     { path } -> { url, size, contentType, name }
  * 加固口径同 dofe-access-route.ts：loopback + Origin + sec-fetch-site 校验；
  * upload 只接受本会话 pick-file 登记过的路径（允许清单），上传前做 TOCTOU 复查
  * （存在性/普通文件/符号链接/大小一致），文件被替换返回 file_changed。
@@ -9,6 +9,7 @@
  */
 
 import { revalidateAdmittedFile } from './allowlist.js'
+import { authorizeUpload } from './authorize.js'
 import { toPublicCode } from './lib/errors.js'
 
 export const PICK_FILE_PATH = '/_dsh/uploader/pick-file'
@@ -58,11 +59,13 @@ function statusForCode(code) {
     case 'storage_unavailable':
     case 'upload_failed':
     case 'upload_cancelled':
+    case 'upload_authorization_invalid':
       return 502
     case 'user_cancelled':
       return 409
     case 'file_not_found':
     case 'file_changed':
+    case 'file_too_large':
     case 'extension_not_allowed':
       return 400
     default:
@@ -102,9 +105,10 @@ export async function handlePickFileRequest(req, res, deps) {
 }
 
 /**
- * upload：只允许上传允许清单内的路径，TOCTOU 复查后流式上传并返回公网 URL。
+ * upload：只允许上传允许清单内的路径，TOCTOU 复查 -> 授权 -> 预签名 PUT 直传。
+ * 返回公网 URL（授权响应下发的 publicUrl），不回传预签名 URL/object key。
  * v1 先 await 整个上传；进度反馈（任务 ID + 轮询路由）列为 v2。
- * @param {object} deps { expectedOrigin, store, driver, maxBytes, reportError? }
+ * @param {object} deps { expectedOrigin, store, driver, tools, maxBytes, reportError? }
  */
 export async function handleUploadRequest(req, res, deps) {
   if (req.method !== 'POST') return finishJson(res, 405, { error: 'method_not_allowed' })
@@ -133,8 +137,21 @@ export async function handleUploadRequest(req, res, deps) {
   }
 
   try {
-    const result = await deps.driver.upload(path, { name: check.entry.name, mime: check.entry.mime })
-    return finishJson(res, 200, result)
+    const auth = await authorizeUpload(deps.tools, {
+      filename: check.entry.name,
+      contentType: check.entry.mime,
+      size: check.size,
+    })
+    await deps.driver.upload(
+      path,
+      { url: auth.url, method: auth.method, headers: auth.headers },
+    )
+    return finishJson(res, 200, {
+      url: auth.publicUrl,
+      size: check.size,
+      contentType: check.entry.mime,
+      name: check.entry.name,
+    })
   } catch (cause) {
     deps.reportError?.(cause)
     const code = toPublicCode(cause)

@@ -8,7 +8,8 @@
  *
  * 覆盖：
  * - Loader 行 config 通过 apply(ctx, config) 传入；
- * - 没有 config / credential store / system prompt 服务时仍能加载；
+ * - 没有 config / system prompt 服务时仍能加载；
+ * - 配置非法时降级为 uploader_not_configured；
  * - 工具注册幂等：重载后只存在一个 media_upload；
  * - 插件卸载后 media_upload 消失、路由清空；
  * - 注册失败时不留下半注册状态。
@@ -56,8 +57,11 @@ const loaderModule = cordisEntry && loaderEntry ? await import(loaderEntry) : nu
 const { Context } = cordis ?? {}
 const Loader = loaderModule?.Loader ?? loaderModule?.default
 
-/** 提供一个真实 Cordis Context，并在 root 作用域提供 webServer/tools/credentials/systemPrompt。 */
-async function bootServices({ withCredentials = true, withSystemPrompt = true } = {}) {
+/** 授权工具公共名（与 authorize.js 的 AUTHORIZE_PUBLIC_NAME 一致）。 */
+const AUTHORIZE_PUBLIC_NAME = 'mcp__tools-tos-upload__tos_upload_authorize'
+
+/** 提供一个真实 Cordis Context，并在 root 作用域提供 webServer/tools/systemPrompt。 */
+async function bootServices({ withSystemPrompt = true } = {}) {
   const root = new Context()
   const state = { routes: new Map(), tools: new Map(), sections: [] }
 
@@ -74,12 +78,25 @@ async function bootServices({ withCredentials = true, withSystemPrompt = true } 
         state.tools.set(tool.name, tool)
         return () => state.tools.delete(tool.name)
       },
+      schemas() {
+        return [{ name: AUTHORIZE_PUBLIC_NAME }]
+      },
+      async execute() {
+        return {
+          isError: false,
+          value: {
+            content: [{ type: 'text', text: JSON.stringify({
+              method: 'PUT',
+              url: 'https://tos-s3-cn-beijing.volces.com/b/k?X-Amz-Signature=x',
+              headers: { 'Content-Type': 'video/mp4' },
+              publicUrl: 'https://cdn.example.com/media/uuid.mp4',
+              expiresAt: new Date(Date.now() + 600_000).toISOString(),
+              maxBytes: 524288000,
+            }) }],
+          },
+        }
+      },
     })
-    if (withCredentials) {
-      ctx.provide('credentials', {
-        async resolve(key) { return { value: `${key}-stored` } },
-      })
-    }
     if (withSystemPrompt) {
       ctx.provide('systemPrompt', {
         section(section) {
@@ -125,11 +142,19 @@ if (!cordis || !Loader) {
     assert.equal(state.routes.size, 0)
   })
 
-  test('loads with an empty config object and degrades on missing credentials', async () => {
-    const { loader, state } = await bootServices({ withCredentials: false })
+  test('loads with an empty config object', async () => {
+    const { loader, state } = await bootServices({ withSystemPrompt: false })
     await loadEntry(loader, { config: {} })
     const tool = state.tools.get('media_upload')
-    assert.ok(tool, '没有 credential store 时插件仍必须加载')
+    assert.ok(tool, '空 config 时插件必须加载并注册 media_upload')
+    await loader.remove('dofe-yootun-tos-upload')
+  })
+
+  test('loads with invalid config and degrades to uploader_not_configured', async () => {
+    const { loader, state } = await bootServices({ withSystemPrompt: false })
+    await loadEntry(loader, { config: { limits: { maxBytes: -1 } } })
+    const tool = state.tools.get('media_upload')
+    assert.ok(tool, '配置非法时插件仍必须加载')
     assert.deepEqual(await tool.execute({}, {}), { ok: false, error: 'uploader_not_configured' })
     await loader.remove('dofe-yootun-tos-upload')
   })
@@ -189,7 +214,6 @@ if (!cordis || !Loader) {
       ctx.provide('tools', {
         register() { throw new Error('boom from tools.register') },
       })
-      ctx.provide('credentials', { async resolve(key) { return { value: `${key}-stored` } } })
     })
     await root.plugin(Loader)
     const loader = root.get('loader')

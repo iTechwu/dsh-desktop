@@ -1,49 +1,25 @@
 /**
- * 按扩展名推断 Content-Type，覆盖图片/音频/视频常见格式。
- * TOS 对象带上正确 Content-Type，浏览器才能直接预览/播放。
- * 实现口径对齐 tools.dofe.ai 的 S3 兼容上传（boto3 那套）。
+ * 按扩展名推断 Content-Type，覆盖本插件允许上传的图片/视频格式。
+ *
+ * 口径与 Tools 服务 `tos_upload_authorize` 的 MIME allowlist 严格对齐
+ * （`tos_upload_allowed_content_types`）：只允许
+ * video/mp4、video/quicktime、image/jpeg、image/png、image/webp。
+ * 选择器过滤器与授权服务双重收口，避免用户选中一个授权阶段必然被拒的类型。
  */
 
 const MIME = {
   // 图片
-  '.png': 'image/png',
   '.jpg': 'image/jpeg',
   '.jpeg': 'image/jpeg',
+  '.png': 'image/png',
   '.webp': 'image/webp',
-  '.gif': 'image/gif',
-  '.svg': 'image/svg+xml',
-  '.bmp': 'image/bmp',
-  '.avif': 'image/avif',
-  '.ico': 'image/x-icon',
-  '.tif': 'image/tiff',
-  '.tiff': 'image/tiff',
-  // 音频
-  '.mp3': 'audio/mpeg',
-  '.wav': 'audio/wav',
-  '.m4a': 'audio/mp4',
-  '.aac': 'audio/aac',
-  '.ogg': 'audio/ogg',
-  '.flac': 'audio/flac',
-  '.opus': 'audio/opus',
-  '.wma': 'audio/x-ms-wma',
-  '.mid': 'audio/midi',
-  '.midi': 'audio/midi',
   // 视频
   '.mp4': 'video/mp4',
-  '.webm': 'video/webm',
   '.mov': 'video/quicktime',
-  '.mkv': 'video/x-matroska',
-  '.avi': 'video/x-msvideo',
-  '.m4v': 'video/x-m4v',
-  '.ts': 'video/mp2t',
-  '.flv': 'video/x-flv',
-  '.3gp': 'video/3gpp',
-  '.mpg': 'video/mpeg',
-  '.mpeg': 'video/mpeg',
 }
 
-export const IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp', 'avif', 'tif', 'tiff']
-export const VIDEO_EXTENSIONS = ['mp4', 'mov', 'webm', 'mkv', 'avi', 'm4v', 'flv', '3gp', 'mpg', 'mpeg']
+export const IMAGE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'webp']
+export const VIDEO_EXTENSIONS = ['mp4', 'mov']
 export const MEDIA_EXTENSIONS = [...IMAGE_EXTENSIONS, ...VIDEO_EXTENSIONS]
 
 /** 取小写扩展名（不含点），无扩展名返回空串。 */

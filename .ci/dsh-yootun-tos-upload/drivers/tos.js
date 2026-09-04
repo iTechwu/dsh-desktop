@@ -1,35 +1,28 @@
 /**
- * TOS 驱动：零依赖实现 UploaderDriver 契约。
- * 用 node:http/https + 自实现 SigV4 签名（见 tos-signer.js）做单次流式 PUT，不分片。
- * 对齐 tools.dofe.ai 的 boto3 口径：s3v4 签名 + virtual addressing + tos-s3-* endpoint。
- * payload 用 UNSIGNED-PAYLOAD（对齐 boto3 payload_signing=False，避免整文件读一遍做哈希），
- * 同时显式带 Content-Length，正是 @aws-sdk/client-s3 + requestChecksumCalculation=WHEN_REQUIRED
- * 在火山 TOS 上跑通的那套组合。
+ * 预签名 PUT 上传驱动：零依赖实现 UploaderDriver 契约。
+ * 把本地文件流式 PUT 到授权工具下发的预签名 URL，不接触 TOS 桶/地域/endpoint/
+ * AK/SK，也不自行生成对象 key 或公网 URL——这些全部来自 Tools 服务授权响应。
  *
  * 稳定性契约：
  * - 流式上传，文件不整块读内存；请求结束/失败/取消都会关闭文件流与 HTTP 请求；
  * - 分层超时：建连 / 响应头 / 整体上传，均会中止底层请求并等待流关闭；
  * - destroy() 取消所有未完成请求（插件卸载路径）；
- * - 有限重试：仅网络错误与 5xx/429，指数退避；认证失败/参数错误/4xx 不重试；
- * - 对象 key 不含本地路径：文件名安全规范化 + 时间戳 + 随机后缀防覆盖；
- * - 错误只带诊断标记（isTimeout/isStorageNetwork/statusCode），不携带签名或请求内容。
+ * - 有限重试：仅网络错误与 5xx/429，指数退避；认证失败/参数错误/4xx（含 403
+ *   签名过期）不重试；
+ * - 错误只带诊断标记（isTimeout/isStorageNetwork/statusCode），不携带预签名
+ *   URL（含 query 签名）或请求内容。
  */
 
 import { createReadStream } from 'node:fs'
 import { stat } from 'node:fs/promises'
 import http from 'node:http'
 import https from 'node:https'
-import { randomBytes } from 'node:crypto'
-import { guessContentType } from '../mime.js'
 import { makeCodedError } from '../lib/errors.js'
-import { signV4, uriEncode } from './tos-signer.js'
 
 /** 上传尝试次数（首次 + 2 次重试），禁止无限重试。 */
 export const MAX_UPLOAD_ATTEMPTS = 3
 /** 重试退避上限（毫秒）。 */
 export const MAX_BACKOFF_MS = 8000
-/** 对象存储 PUT 的负载哈希哨兵（对齐 boto3 payload_signing=False）。 */
-const UNSIGNED_PAYLOAD = 'UNSIGNED-PAYLOAD'
 
 /** 默认分层超时（毫秒）：建连 / 响应头 / 整体上传。 */
 export const DEFAULT_TIMEOUTS = Object.freeze({
@@ -71,34 +64,9 @@ function isRetryable(statusCode) {
   return statusCode >= 500 || statusCode === 429
 }
 
-/** 生成 `yyyyMMdd_HHmmss` 时间戳，用于默认 key 去重。 */
-function timestamp() {
-  const d = new Date()
-  const pad = (n) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`
-}
-
-/** 短随机 ID（hex），避免同一秒内同名文件互相覆盖。 */
-function randomSuffix() {
-  return randomBytes(4).toString('hex')
-}
-
-/**
- * 文件名安全规范化：只保留路径末段（POSIX 与 Windows 分隔符都处理），
- * 剔除盘符/分隔符与不安全字符，保证对象 key 永远不携带本地路径，
- * 也不会出现 `..` 等穿越片段。
- */
-export function sanitizeFilename(name) {
-  const raw = String(name ?? '')
-  const leaf = raw.slice(Math.max(raw.lastIndexOf('/'), raw.lastIndexOf('\\')) + 1)
-  const cleaned = leaf.replace(/[^A-Za-z0-9._-]+/g, '_').replace(/^\.+/, '').replace(/_{2,}/g, '_')
-  const trimmed = cleaned.replace(/^_+|_+$/g, '')
-  return trimmed === '' || trimmed === '.' || trimmed === '..' ? 'file' : trimmed.slice(-128)
-}
-
-/** 根据 endpoint 协议选择 http/https 模块（本地联调 loopback http，公网 https）。 */
-function transportFor(endpoint) {
-  return String(endpoint).startsWith('http://') ? http : https
+/** 根据预签名 URL 协议选择 http/https 模块。 */
+function transportFor(url) {
+  return String(url).startsWith('http://') ? http : https
 }
 
 /**
@@ -107,7 +75,7 @@ function transportFor(endpoint) {
  */
 function streamClosed(stream) {
   return new Promise((resolve) => {
-    if (stream.destroyed || stream.closed) {
+    if (!stream || stream.destroyed || stream.closed) {
       resolve()
       return
     }
@@ -116,47 +84,31 @@ function streamClosed(stream) {
 }
 
 /**
- * 用 node:http/https 发一次签名 PUT，把文件流 pipe 到对象存储。
+ * 用 node:http/https 发一次 PUT，把文件流 pipe 到预签名 URL。
  * 超时/取消/失败都会销毁请求并等待文件流关闭。
+ * @param {object} target { url, method, headers }（headers 含授权服务返回的 Content-Type）。
+ * @param {string} localPath 本地文件绝对路径。
+ * @param {number} size 实际文件字节数（用于 Content-Length）。
+ * @param {AbortSignal} [signal] 取消信号。
+ * @param {object} timeouts 分层超时。
+ * @param {(req:import('node:http').ClientRequest)=>()=>void} onPending 登记未完成请求。
+ * @param {object} [injectedTransport] 测试注入的 http/https 替身。
+ * @param {(path:string)=>import('node:fs').ReadStream} [streamFactory] 测试注入的读流工厂。
  * @returns {Promise<{statusCode:number,etag:string|null}>}
  */
-function putObject(config, localPath, key, contentType, size, signal, timeouts, onPending, injectedTransport = null, streamFactory = createReadStream) {
-  const endpoint = new URL(config.endpoint)
-  // virtual = https://{bucket}.{endpoint}/{key}；path = https://{endpoint}/{bucket}/{key}。
-  const usePathStyle = config.addressingStyle === 'path'
-  const hostname = usePathStyle ? endpoint.hostname : `${config.bucket}.${endpoint.hostname}`
-  const port = endpoint.port ? Number(endpoint.port) : (endpoint.protocol === 'https:' ? 443 : 80)
-  const host = endpoint.port ? `${hostname}:${endpoint.port}` : hostname
-  const objectPath = usePathStyle ? `/${config.bucket}/${key}` : `/${key}`
-  const encodedPath = uriEncode(objectPath, false)
-  const amzDate = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z')
+function putObject(target, localPath, size, signal, timeouts, onPending, injectedTransport = null, streamFactory = createReadStream) {
+  const url = new URL(target.url)
+  const method = typeof target.method === 'string' ? target.method : 'PUT'
+  const headers = { ...(target.headers ?? {}) }
+  // Content-Length 由本驱动按实际文件大小显式设置（不信任授权响应的任何长度字段）。
+  headers['content-length'] = String(size)
 
-  const headers = {
-    host,
-    'content-type': contentType,
-    'content-length': String(size),
-    'content-disposition': 'inline',
-    'x-amz-content-sha256': UNSIGNED_PAYLOAD,
-    'x-amz-date': amzDate,
-  }
-  headers.authorization = signV4({
-    method: 'PUT',
-    path: encodedPath,
-    headers,
-    payloadHash: UNSIGNED_PAYLOAD,
-    amzDate,
-    region: config.region,
-    service: 's3',
-    accessKeyId: config.accessKeyId,
-    secretAccessKey: config.accessKeySecret,
-  }).authorization
-
-  const transport = injectedTransport ?? transportFor(config.endpoint)
+  const transport = injectedTransport ?? transportFor(target.url)
   const transportOptions = {
-    hostname,
-    port,
-    path: encodedPath,
-    method: 'PUT',
+    hostname: url.hostname,
+    port: url.port ? Number(url.port) : (url.protocol === 'https:' ? 443 : 80),
+    path: `${url.pathname}${url.search}`,
+    method,
     headers,
     signal,
   }
@@ -209,7 +161,7 @@ function putObject(config, localPath, key, contentType, size, signal, timeouts, 
       const etag = typeof res.headers.etag === 'string'
         ? res.headers.etag.replace(/^"|"$/g, '')
         : null
-      const error = new Error(`TOS PUT HTTP ${statusCode}`)
+      const error = new Error(`storage PUT HTTP ${statusCode}`)
       error.statusCode = statusCode
       finish(resolve, { statusCode, etag, error })
     })
@@ -234,9 +186,6 @@ function putObject(config, localPath, key, contentType, size, signal, timeouts, 
 
     // 分层超时状态机：connect 超时只负责建连，headers 超时只在“建连成功且请求体
     // 写完”之后才启动，避免大文件上传时把写 body 的耗时误判为响应头超时。
-    // - finish 只置 bodyFinished 标记，绝不清除 connect timer；
-    // - 只有确认 socket 建连成功才清除 connect timer；
-    // - headers timer 仅在 connected && bodyFinished 都成立时启动。
     timers.add(setTimeout(() => timeoutAbort('overall upload'), timeouts.overallMs))
     const connectTimer = setTimeout(() => timeoutAbort('establishing connection'), timeouts.connectMs)
     timers.add(connectTimer)
@@ -279,13 +228,11 @@ function putObject(config, localPath, key, contentType, size, signal, timeouts, 
 }
 
 /**
- * 创建 TOS 上传驱动（实现 UploaderDriver 契约）。
- * @param {object} config loadConfig() 返回的 config.tos。
- * @param {object} [options] 测试注入点：
- *   { timeouts?, transport?, createReadStream? }。
- *   transport 覆盖 http/https 模块；createReadStream 覆盖请求体读取流工厂。
+ * 创建预签名 PUT 上传驱动（实现 UploaderDriver 契约）。
+ * 不接收任何 TOS 拓扑/凭证配置：每次上传的 URL/方法/头都来自授权响应。
+ * @param {object} [options] 测试注入点：{ timeouts?, transport?, createReadStream? }。
  */
-export async function createTosDriver(config, options = {}) {
+export function createTosDriver(options = {}) {
   const timeouts = { ...DEFAULT_TIMEOUTS, ...(options.timeouts ?? {}) }
   const injectedTransport = options.transport ?? null
   const streamFactory = options.createReadStream ?? createReadStream
@@ -307,35 +254,7 @@ export async function createTosDriver(config, options = {}) {
     }
   }
 
-  /** 解析对象 key：去掉前导斜杠，未带前缀时自动补 `{keyPrefix}/`。 */
-  function resolveKey(key) {
-    const cleaned = String(key).replace(/^\/+/, '')
-    if (config.keyPrefix && !cleaned.startsWith(`${config.keyPrefix}/`)) {
-      return `${config.keyPrefix}/${cleaned}`
-    }
-    return cleaned
-  }
-
-  /**
-   * 构造固定公网 URL。优先级：CDN 域名 > 显式 publicBaseUrl > 默认推导。
-   * 默认与 boto3 的 to_public_url 对齐：`https://{bucket}.tos-{region}.volces.com/{key}`。
-   * 只由已配置的 bucket/region/key 合成，禁止任何任意外部模板。
-   */
-  function publicUrl(key) {
-    const cleaned = String(key).replace(/^\/+/, '')
-    if (config.cdnDomain) {
-      const domain = config.cdnDomain.replace(/^https?:\/\//, '').replace(/\/+$/, '')
-      return `https://${domain}/${cleaned}`
-    }
-    if (config.publicBaseUrl) {
-      return `${config.publicBaseUrl.replace(/\/+$/, '')}/${cleaned}`
-    }
-    return `https://${config.bucket}.tos-${config.region}.volces.com/${cleaned}`
-  }
-
   return {
-    resolveKey,
-    publicUrl,
     get pendingCount() {
       return pending.size
     },
@@ -351,18 +270,13 @@ export async function createTosDriver(config, options = {}) {
     },
 
     /**
-     * 上传单个本地文件（流式，不整块读内存；网络/5xx 错误自动重试，4xx 不重试）。
+     * 把本地文件流式 PUT 到授权响应给定的预签名 URL。
      * @param {string} localPath 本地文件绝对路径。
-     * @param {object} [meta] { name?, mime?, key? }。
+     * @param {object} target { url, method, headers }（来自授权工具）。
      * @param {AbortSignal} [signal] 取消信号。
-     * @returns {Promise<{key:string,url:string,size:number,contentType:string,etag?:string}>}
+     * @returns {Promise<{etag?:string}>} 上传成功（2xx）时返回，失败抛出诊断错误。
      */
-    async upload(localPath, meta = {}, signal) {
-      // 文件名安全规范化：key 不携带本地路径，随机后缀避免覆盖。
-      const filename = sanitizeFilename(meta.name ?? localPath)
-      const key = resolveKey(meta.key ?? `${timestamp()}_${randomSuffix()}_${filename}`)
-      const contentType = meta.mime ?? guessContentType(filename)
-
+    async upload(localPath, target, signal) {
       const info = await stat(localPath)
       if (!info.isFile()) {
         throw makeCodedError('not_a_regular_file', 'not a regular file')
@@ -377,10 +291,10 @@ export async function createTosDriver(config, options = {}) {
         if (effectiveSignal.aborted) throw makeAbortError()
         try {
           const { statusCode, etag, error } = await putObject(
-            config, localPath, key, contentType, info.size, effectiveSignal, timeouts, onPending, injectedTransport, streamFactory,
+            target, localPath, info.size, effectiveSignal, timeouts, onPending, injectedTransport, streamFactory,
           )
           if (statusCode >= 200 && statusCode < 300) {
-            const out = { key, url: publicUrl(key), size: info.size, contentType }
+            const out = {}
             if (etag) out.etag = etag
             return out
           }

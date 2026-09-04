@@ -8,23 +8,21 @@ import { fileURLToPath } from 'node:url'
 import { Readable, Writable } from 'node:stream'
 import test from 'node:test'
 
-import { guessContentType, extensionOf, MEDIA_EXTENSIONS } from '../mime.js'
-import {
-  loadConfig,
-  readSecretsFile,
-  resolveCredentials,
-  SECRETS_FILENAME,
-  SUPPORTED_BACKENDS,
-  MAX_MAX_BYTES,
-  MAX_TOOL_TIMEOUT_MS,
-} from '../config.js'
+import { guessContentType, extensionOf, MEDIA_EXTENSIONS, IMAGE_EXTENSIONS, VIDEO_EXTENSIONS } from '../mime.js'
+import { loadConfig, DEFAULT_MAX_BYTES, DEFAULT_TOOL_TIMEOUT_MS, MAX_MAX_BYTES, MAX_TOOL_TIMEOUT_MS } from '../config.js'
 import { PickedFileStore, validateUploadableFile, revalidateAdmittedFile } from '../allowlist.js'
 import { createFilePicker } from '../picker.js'
-import { signV4, sha256Hex, uriEncode } from '../drivers/tos-signer.js'
-import { createTosDriver, sanitizeFilename, MAX_UPLOAD_ATTEMPTS, DEFAULT_TIMEOUTS } from '../drivers/tos.js'
+import { createTosDriver, MAX_UPLOAD_ATTEMPTS, DEFAULT_TIMEOUTS } from '../drivers/tos.js'
 import { ERROR_CODES, toPublicCode, makeCodedError } from '../lib/errors.js'
 import { handlePickFileRequest, handleUploadRequest, PICK_FILE_PATH, UPLOAD_PATH } from '../routes.js'
 import { registerMediaUploadTool } from '../tool.js'
+import {
+  AUTHORIZE_PUBLIC_NAME,
+  findAuthorizeToolName,
+  validateAuthorizationResponse,
+  authorizeUpload,
+  isForbiddenPublicHost,
+} from '../authorize.js'
 import { apply, inject, name } from '../index.js'
 
 const root = new URL('../', import.meta.url)
@@ -62,24 +60,22 @@ async function tempFile(content = 'demo') {
 }
 
 /**
- * 起一个本地对象存储替身：接收 PUT，记录请求头/体，可编程返回状态码与 ETag。
- * 用 path-style + http endpoint 让驱动能直连本机。
+ * 起一个本地对象存储替身：接收 PUT，记录请求头/体/方法/URL，可编程返回状态码与 ETag。
  */
 async function startStorageServer() {
   const requests = []
-  const state = { status: 200, etag: undefined, seq: [], /** 挂起不响应的请求数。 */ hold: 0 }
+  const state = { status: 200, etag: undefined, seq: [], hold: 0 }
   const held = []
   const server = http.createServer((req, res) => {
     const chunks = []
     req.on('data', (c) => chunks.push(c))
     req.on('end', () => {
-      requests.push({ url: req.url, headers: req.headers, body: Buffer.concat(chunks) })
+      requests.push({ url: req.url, method: req.method, headers: req.headers, body: Buffer.concat(chunks) })
       if (state.hold > 0) {
         state.hold--
         held.push(res)
         return
       }
-      // seq 允许按次数编排状态码（如先 503 两次再 200）。
       const status = state.seq.length > 0 ? (state.seq.shift() ?? 200) : state.status
       res.writeHead(status, state.etag ? { etag: state.etag } : undefined)
       res.end()
@@ -96,16 +92,46 @@ async function startStorageServer() {
   }
 }
 
-function tosConfig(server, overrides = {}) {
+/** 预签名 PUT 直传 target（driver 唯一入参形状）。 */
+function uploadTarget(server, overrides = {}) {
   return {
-    bucket: 'dofe-transcode',
-    region: 'cn-beijing',
-    endpoint: server.endpoint,
-    accessKeyId: 'AK',
-    accessKeySecret: 'SK',
-    keyPrefix: 'yootun/uploads',
-    addressingStyle: 'path',
+    url: `${server.endpoint}/yootun/uploads/x.mp4`,
+    method: 'PUT',
+    headers: { 'Content-Type': 'video/mp4' },
     ...overrides,
+  }
+}
+
+/** 一份结构合法的授权响应（expiresAt 动态、其余固定）。 */
+function validAuth(overrides = {}) {
+  return {
+    method: 'PUT',
+    url: 'https://tos-s3-cn-beijing.volces.com/dofe-transcode/yootun/uploads/uuid.mp4?X-Amz-Signature=abc',
+    headers: { 'Content-Type': 'video/mp4' },
+    objectKey: 'yootun/uploads/t-abc/2026/09/uuid.mp4',
+    publicUrl: 'https://cdn.example.com/media/uuid.mp4',
+    expiresAt: new Date(Date.now() + 600_000).toISOString(),
+    maxBytes: 524288000,
+    ...overrides,
+  }
+}
+
+/** 授权工具替身（schemas + execute），缺省返回合法授权。 */
+function okTools(overrides = {}) {
+  return {
+    schemas: () => overrides.schemas ?? [{ name: AUTHORIZE_PUBLIC_NAME }],
+    execute: async (input) => {
+      if (overrides.execute) return overrides.execute(input)
+      return { isError: false, value: { content: [{ type: 'text', text: JSON.stringify(validAuth()) }] } }
+    },
+  }
+}
+
+function okDriver() {
+  return {
+    destroyed: 0,
+    async upload() { return {} },
+    destroy() { this.destroyed++ },
   }
 }
 
@@ -119,17 +145,18 @@ test('publishes a host-only plugin manifest without client declaration or runtim
   assert.equal(manifest.dependencies, undefined, '纯宿主插件必须零运行时依赖')
   const patch = await readFile(new URL('cordis.patch.yml', root), 'utf8')
   assert.match(patch, /name: '@dofe\/dsh-yootun-tos-upload'/u)
-  assert.match(patch, /bucket: dofe-transcode/u)
-  assert.match(patch, /keyPrefix: yootun\/uploads/u)
+  assert.doesNotMatch(patch, /backend/u, '不再配置 backend')
+  assert.doesNotMatch(patch, /bucket/u, '不再配置桶')
+  assert.doesNotMatch(patch, /region/u, '不再配置地域')
+  assert.doesNotMatch(patch, /keyPrefix/u, '不再配置 key 前缀')
   assert.doesNotMatch(patch, /accessKeyId: \S+/u, 'cordis.patch.yml 不得写入明文 AK')
   assert.doesNotMatch(patch, /accessKeySecret: \S+/u, 'cordis.patch.yml 不得写入明文 SK')
-  assert.doesNotMatch(patch, /cdnDomain/u, '本插件不加 cdnDomain')
   assert.deepEqual(inject, ['webServer', 'tools'], '硬依赖只有 webServer 与 tools')
   assert.equal(name, 'yootun-tos-upload')
 })
 
 test('every shipped source file is valid JavaScript', async () => {
-  const files = ['index.js', 'config.js', 'mime.js', 'allowlist.js', 'picker.js', 'routes.js', 'tool.js', 'lib/errors.js', 'drivers/tos.js', 'drivers/tos-signer.js', 'drivers/types.js', 'lib/client.js']
+  const files = ['index.js', 'config.js', 'mime.js', 'allowlist.js', 'picker.js', 'routes.js', 'tool.js', 'authorize.js', 'lib/errors.js', 'drivers/tos.js', 'drivers/types.js', 'lib/client.js']
   for (const file of files) {
     const result = spawnSync(process.execPath, ['--check', fileURLToPath(new URL(file, root))], { encoding: 'utf8' })
     assert.equal(result.status, 0, `${file}: ${result.stderr}`)
@@ -137,7 +164,7 @@ test('every shipped source file is valid JavaScript', async () => {
 })
 
 test('never embeds CI addresses or third-party MCP endpoints', async () => {
-  for (const file of ['index.js', 'config.js', 'picker.js', 'routes.js', 'tool.js', 'lib/errors.js', 'drivers/tos.js', 'drivers/tos-signer.js']) {
+  for (const file of ['index.js', 'config.js', 'mime.js', 'picker.js', 'routes.js', 'tool.js', 'authorize.js', 'lib/errors.js', 'drivers/tos.js']) {
     const source = await readFile(new URL(file, root), 'utf8')
     assert.doesNotMatch(source, /172\.30\.30\.11/u, file)
   }
@@ -146,10 +173,11 @@ test('never embeds CI addresses or third-party MCP endpoints', async () => {
 // ---------- 统一错误模型 ----------
 
 test('error model exposes a fixed code set and normalizes internal codes', () => {
-  assert.equal(ERROR_CODES.length, 12)
+  assert.equal(ERROR_CODES.length, 13)
   assert.equal(new Set(ERROR_CODES).size, ERROR_CODES.length, '错误码不允许重复')
 
   assert.equal(toPublicCode({ code: 'file_too_large' }), 'file_too_large', '固定码原样透传')
+  assert.equal(toPublicCode({ code: 'upload_authorization_invalid' }), 'upload_authorization_invalid', '授权非法码原样透传')
   assert.equal(toPublicCode({ name: 'AbortError' }), 'upload_cancelled')
   assert.equal(toPublicCode({ code: 'ABORT_ERR' }), 'upload_cancelled')
   assert.equal(toPublicCode({ isTimeout: true }), 'upload_timeout')
@@ -166,214 +194,184 @@ test('error model exposes a fixed code set and normalizes internal codes', () =>
   assert.equal(toPublicCode({ code: 'upload_failed' }), 'upload_failed')
 })
 
-// ---------- SigV4 签名器 ----------
-
-test('SigV4 signer matches AWS SDK (@smithy/signature-v4) for a TOS PUT', () => {
-  const amzDate = '20130524T000000Z'
-  const headers = {
-    host: 'dofe-transcode.tos-s3-cn-beijing.volces.com',
-    'content-type': 'video/mp4',
-    'content-length': '12345',
-    'content-disposition': 'inline',
-    'x-amz-content-sha256': 'UNSIGNED-PAYLOAD',
-    'x-amz-date': amzDate,
-  }
-  const result = signV4({
-    method: 'PUT',
-    path: '/yootun/uploads/20260902_120000_v.mp4',
-    headers,
-    payloadHash: 'UNSIGNED-PAYLOAD',
-    amzDate,
-    region: 'cn-beijing',
-    service: 's3',
-    accessKeyId: 'AKIAIOSFODNN7EXAMPLE',
-    secretAccessKey: 'wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY',
-  })
-  // 该向量来自与 @smithy/signature-v4@5.7.3 的逐字节对拍，固化防止回归。
-  assert.equal(
-    result.authorization,
-    'AWS4-HMAC-SHA256 Credential=AKIAIOSFODNN7EXAMPLE/20130524/cn-beijing/s3/aws4_request, SignedHeaders=content-disposition;content-length;content-type;host;x-amz-content-sha256;x-amz-date, Signature=77ff98f2f57e7370439c5d975ebd7974d9fe27fcc66386c4cef1f04dad2a3263',
-  )
-})
-
-test('uriEncode keeps unreserved and slash, percent-encodes the rest', () => {
-  assert.equal(uriEncode('/a-b_c.d~e/中文 file.mp4', false), '/a-b_c.d~e/%E4%B8%AD%E6%96%87%20file.mp4')
-  assert.equal(uriEncode('/a/b', true), '%2Fa%2Fb')
-  assert.equal(sha256Hex(''), 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855')
-})
-
 // ---------- mime ----------
 
-test('infers content type and extensions for media files', () => {
+test('infers content type and extensions for the server allowlist only', () => {
   assert.equal(guessContentType('a/b/cover.JPG'), 'image/jpeg')
   assert.equal(guessContentType('intro.mp4'), 'video/mp4')
+  assert.equal(guessContentType('clip.mov'), 'video/quicktime')
   assert.equal(guessContentType('no-extension'), 'application/octet-stream')
   assert.equal(extensionOf('archive.tar.gz'), 'gz')
   assert.ok(MEDIA_EXTENSIONS.includes('mp4'))
   assert.ok(MEDIA_EXTENSIONS.includes('png'))
-})
-
-// ---------- 对象 key 安全 ----------
-
-test('sanitizeFilename strips local paths, separators and unsafe characters', () => {
-  const out = sanitizeFilename('/home/user/videos/../../etc/passwd.mp4')
-  assert.equal(out.includes('/'), false)
-  assert.equal(out.includes('\\'), false)
-  assert.equal(out.includes('..'), false)
-  assert.equal(out.endsWith('.mp4'), true, '扩展名保留')
-  // Windows 反斜杠路径同样只保留末段。
-  const win = sanitizeFilename('C:\\Users\\someone\\clip 1.mov')
-  assert.equal(win.includes(':'), false)
-  assert.equal(win.includes('\\'), false)
-  assert.equal(win, 'clip_1.mov')
-  assert.equal(sanitizeFilename(''), 'file')
-  assert.equal(sanitizeFilename('..'), 'file')
-  assert.equal(sanitizeFilename('a'.repeat(300)).length <= 128, true)
+  assert.ok(MEDIA_EXTENSIONS.includes('mov'))
+  assert.equal(MEDIA_EXTENSIONS.includes('webm'), false, 'webm 不在服务端 allowlist')
+  assert.equal(MEDIA_EXTENSIONS.includes('gif'), false, 'gif 不在服务端 allowlist')
+  assert.equal(MEDIA_EXTENSIONS.includes('mkv'), false, 'mkv 不在服务端 allowlist')
+  assert.deepEqual(IMAGE_EXTENSIONS, ['jpg', 'jpeg', 'png', 'webp'])
+  assert.deepEqual(VIDEO_EXTENSIONS, ['mp4', 'mov'])
 })
 
 // ---------- config ----------
 
-test('resolves config with defaults and reports missing credentials', async () => {
-  const config = await loadConfig({}, { env: {}, secrets: {} })
-  assert.equal(config.backend, 'tos')
-  assert.equal(config.tos.region, 'cn-beijing')
-  assert.equal(config.tos.endpoint, 'https://tos-s3-cn-beijing.volces.com')
-  assert.equal(config.tos.keyPrefix, 'yootun/uploads')
-  assert.equal(config.ready, false)
-  assert.deepEqual(config.missing, ['bucket', 'accessKeyId', 'accessKeySecret'])
-  assert.deepEqual(config.errors, [])
-})
-
-test('non-secrets from loader row config; credentials from store / env / secrets file', async () => {
-  const config = await loadConfig(
-    { tos: { bucket: 'dofe-transcode', region: 'tos-s3-cn-beijing', keyPrefix: '/a/b/' } },
-    { env: { STORAGE_ACCESS_KEY_SECRET: 'env-sk' }, secrets: { STORAGE_ACCESS_KEY_ID: 'file-ak', STORAGE_BUCKET: 'ignored-bucket' } },
-  )
-  assert.equal(config.tos.bucket, 'dofe-transcode', '非敏感项以 Loader 行 config 为准')
-  assert.equal(config.tos.region, 'cn-beijing', 'region 归一化去掉 tos-s3- 前缀')
-  assert.equal(config.tos.keyPrefix, 'a/b')
-  assert.equal(config.tos.accessKeyId, 'file-ak', '无部署注入时 AK 回落到密钥文件')
-  assert.equal(config.tos.accessKeySecret, 'env-sk', '无部署注入时 SK 回落到环境变量')
+test('loadConfig returns limits/tool defaults and is ready', () => {
+  const config = loadConfig({})
   assert.equal(config.ready, true)
-
-  const injected = await loadConfig(
-    { tos: { bucket: 'dofe-transcode' } },
-    { credentials: { accessKeyId: 'store-ak', accessKeySecret: 'store-sk' }, env: { STORAGE_ACCESS_KEY_ID: 'env-ak' }, secrets: {} },
-  )
-  assert.equal(injected.tos.accessKeyId, 'store-ak', '部署注入 credential store 优先于环境变量')
-  assert.equal(injected.tos.accessKeySecret, 'store-sk')
-  assert.equal(injected.ready, true)
+  assert.deepEqual(config.errors, [])
+  assert.equal(config.limits.maxBytes, DEFAULT_MAX_BYTES)
+  assert.equal(config.tool.timeoutMs, DEFAULT_TOOL_TIMEOUT_MS)
 })
 
-test('rejects credentials declared in loader row config', async () => {
-  const config = await loadConfig(
-    { accessKeyId: 'leak-ak', tos: { bucket: 'dofe-transcode', accessKeySecret: 'leak-sk' } },
-    { env: {}, secrets: { STORAGE_ACCESS_KEY_ID: 'file-ak', STORAGE_ACCESS_KEY_SECRET: 'file-sk' } },
-  )
-  assert.equal(config.tos.accessKeyId, 'file-ak', 'Loader config 中的 AK 必须被忽略')
-  assert.equal(config.tos.accessKeySecret, 'file-sk', 'Loader config 中的 SK 必须被忽略')
-  assert.equal(config.ready, false, '出现凭证字段即视为配置非法，进入不可上传降级')
-  assert.ok(config.errors.some((problem) => problem.includes('not allowed')))
-  assert.ok(JSON.stringify(config.info).includes('***'), '凭证元数据只能以脱敏形式出现')
-})
+test('loadConfig honors loader row config and rejects invalid values', () => {
+  const config = loadConfig({ limits: { maxBytes: 524288000 }, tool: { timeoutMs: 1800000 } })
+  assert.equal(config.ready, true)
+  assert.deepEqual(config.errors, [])
+  assert.equal(config.limits.maxBytes, 524288000)
+  assert.equal(config.tool.timeoutMs, 1800000)
 
-test('config validation bounds: backend/region/bucket/keyPrefix/maxBytes/timeoutMs/endpoint', async () => {
   const cases = [
-    [{ backend: 'ftp' }, 'unsupported backend'],
-    [{ tos: { region: 'CN_BEIJING!!' } }, 'invalid region'],
-    [{ tos: { bucket: 'Bad_Bucket' } }, 'invalid bucket'],
-    [{ tos: { keyPrefix: '../escape' } }, 'invalid keyPrefix'],
     [{ limits: { maxBytes: -1 } }, 'invalid limits.maxBytes'],
     [{ limits: { maxBytes: MAX_MAX_BYTES + 1 } }, 'invalid limits.maxBytes'],
-    [{ tool: { timeoutMs: MAX_TOOL_TIMEOUT_MS + 1 } }, 'invalid tool.timeoutMs'],
     [{ tool: { timeoutMs: 0 } }, 'invalid tool.timeoutMs'],
-    [{ tos: { endpoint: 'http://tos-s3-cn-beijing.volces.com' } }, 'endpoint must be an HTTPS address'],
-    [{ tos: { publicBaseUrl: 'ftp://cdn.example.com' } }, 'publicBaseUrl must be an HTTPS address'],
+    [{ tool: { timeoutMs: MAX_TOOL_TIMEOUT_MS + 1 } }, 'invalid tool.timeoutMs'],
   ]
   for (const [row, expected] of cases) {
-    const config = await loadConfig(
-      row,
-      { env: {}, secrets: { STORAGE_ACCESS_KEY_ID: 'ak', STORAGE_ACCESS_KEY_SECRET: 'sk', STORAGE_BUCKET: 'dofe-transcode' } },
+    const c = loadConfig(row)
+    assert.equal(c.ready, false, JSON.stringify(row))
+    assert.ok(c.errors.some((problem) => problem.includes(expected)), `${expected}: ${JSON.stringify(c.errors)}`)
+  }
+})
+
+test('loadConfig ignores legacy backend/credential/tos fields entirely', () => {
+  const config = loadConfig({
+    backend: 'tos',
+    tos: { bucket: 'dofe-transcode', region: 'cn-beijing', endpoint: 'https://x', keyPrefix: 'a', accessKeyId: 'ak', accessKeySecret: 'sk' },
+    accessKeyId: 'leak',
+  })
+  assert.equal(config.ready, true)
+  assert.deepEqual(config.errors, [], '遗留字段既不报错也不生效')
+  assert.equal(config.backend, undefined)
+  assert.equal(config.tos, undefined)
+})
+
+// ---------- 授权校验 ----------
+
+test('validateAuthorizationResponse accepts a well-formed PUT authorization', () => {
+  const auth = validAuth()
+  const out = validateAuthorizationResponse(auth, { contentType: 'video/mp4', size: 1000 })
+  assert.equal(out.method, 'PUT')
+  assert.equal(out.url, auth.url)
+  assert.equal(out.publicUrl, auth.publicUrl)
+  assert.equal(out.maxBytes, 524288000)
+})
+
+test('validateAuthorizationResponse rejects method/url/expiry/size/mime violations', () => {
+  const base = validAuth()
+  const meta = { contentType: 'video/mp4', size: 1000 }
+  const cases = [
+    [{ method: 'POST' }, 'method'],
+    [{ url: 'http://insecure.example.com/x' }, '非 HTTPS'],
+    [{ url: 'http://127.0.0.1:9000/x' }, 'loopback'],
+    [{ url: 'https://192.168.1.10/x' }, '私网'],
+    [{ url: 'https://100.64.0.1/x' }, 'CGNAT'],
+    [{ publicUrl: 'http://insecure.example.com/x' }, 'publicUrl 非 HTTPS'],
+    [{ expiresAt: new Date(Date.now() - 1000).toISOString() }, '已过期'],
+    [{ expiresAt: 'not-a-date' }, '非法日期'],
+    [{ maxBytes: 0 }, 'maxBytes 非法'],
+    [{ maxBytes: 10 }, 'size 超 maxBytes'],
+    [{ headers: { 'Content-Type': 'image/png' } }, 'MIME 不一致'],
+  ]
+  for (const [patch, label] of cases) {
+    assert.throws(
+      () => validateAuthorizationResponse({ ...base, ...patch }, meta),
+      (err) => err.code === 'upload_authorization_invalid',
+      label,
     )
-    assert.equal(config.ready, false, JSON.stringify(row))
-    assert.ok(config.errors.some((problem) => problem.includes(expected)), `${expected}: ${JSON.stringify(config.errors)}`)
+  }
+})
+
+test('isForbiddenPublicHost rejects loopback/private/link-local/CGNAT', () => {
+  for (const host of ['localhost', '127.0.0.1', '::1', '10.0.0.1', '172.16.0.1', '172.31.255.255', '172.30.30.11', '192.168.1.1', '169.254.1.1', '100.64.0.1', 'fe80::1', 'fd00::1']) {
+    assert.equal(isForbiddenPublicHost(host), true, host)
+  }
+  for (const host of ['tos-s3-cn-beijing.volces.com', 'cdn.example.com', 'media.example.cn', '52.1.2.3', '8.8.8.8']) {
+    assert.equal(isForbiddenPublicHost(host), false, host)
+  }
+})
+
+test('findAuthorizeToolName locates exact name and falls back to suffix', () => {
+  const exact = { schemas: () => [{ name: 'mcp__other__x' }, { name: AUTHORIZE_PUBLIC_NAME }] }
+  assert.equal(findAuthorizeToolName(exact), AUTHORIZE_PUBLIC_NAME)
+
+  const suffix = { schemas: () => [{ name: 'mcp__custom-server__tos_upload_authorize' }] }
+  assert.equal(findAuthorizeToolName(suffix), 'mcp__custom-server__tos_upload_authorize')
+
+  assert.equal(findAuthorizeToolName({ schemas: () => [] }), null)
+  assert.equal(findAuthorizeToolName({}), null)
+})
+
+test('authorizeUpload sends only file metadata and returns the validated auth', async () => {
+  const auth = validAuth()
+  const calls = []
+  const tools = {
+    schemas: () => [{ name: AUTHORIZE_PUBLIC_NAME }],
+    execute: async (input) => { calls.push(input); return { isError: false, value: { content: [{ type: 'text', text: JSON.stringify(auth) }] } } },
+  }
+  const result = await authorizeUpload(tools, { filename: 'demo.mp4', contentType: 'video/mp4', size: 1000 })
+  assert.equal(result.publicUrl, auth.publicUrl)
+  assert.equal(result.url, auth.url)
+  assert.equal(calls.length, 1)
+  assert.equal(calls[0].name, AUTHORIZE_PUBLIC_NAME)
+  assert.deepEqual(calls[0].arguments, { filename: 'demo.mp4', contentType: 'video/mp4', size: 1000 })
+  assert.equal('bucket' in calls[0].arguments, false)
+  assert.equal('region' in calls[0].arguments, false)
+  assert.equal('tenantId' in calls[0].arguments, false)
+})
+
+test('authorizeUpload parses structuredContent when present', async () => {
+  const auth = validAuth()
+  const tools = {
+    schemas: () => [{ name: AUTHORIZE_PUBLIC_NAME }],
+    execute: async () => ({ isError: false, value: { content: [], structuredContent: auth } }),
+  }
+  const result = await authorizeUpload(tools, { filename: 'a.mp4', contentType: 'video/mp4', size: 1 })
+  assert.equal(result.publicUrl, auth.publicUrl)
+})
+
+test('authorizeUpload maps server error codes and falls back to upload_authorization_invalid', async () => {
+  for (const [serverCode, publicCode] of [
+    ['UPLOAD_SIZE_EXCEEDED', 'file_too_large'],
+    ['UPLOAD_TYPE_NOT_ALLOWED', 'extension_not_allowed'],
+    ['UNAUTHORIZED', 'storage_auth_failed'],
+    ['STORAGE_AUTH_FAILED', 'storage_auth_failed'],
+    ['STORAGE_UNAVAILABLE', 'storage_unavailable'],
+    ['VALIDATION_ERROR', 'upload_failed'],
+  ]) {
+    const tools = {
+      schemas: () => [{ name: AUTHORIZE_PUBLIC_NAME }],
+      execute: async () => ({ isError: true, error: { message: `boom ${serverCode}` }, content: [{ type: 'text', text: `{"error":{"code":"${serverCode}"}}` }] }),
+    }
+    const err = await authorizeUpload(tools, { filename: 'a.mp4', contentType: 'video/mp4', size: 1 }).then(() => null, (e) => e)
+    assert.equal(err.code, publicCode, serverCode)
   }
 
-  // loopback http 例外只允许本地联调。
-  const loopback = await loadConfig(
-    { tos: { bucket: 'dofe-transcode', endpoint: 'http://127.0.0.1:9000' } },
-    { env: {}, secrets: { STORAGE_ACCESS_KEY_ID: 'ak', STORAGE_ACCESS_KEY_SECRET: 'sk' } },
-  )
-  assert.deepEqual(loopback.errors, [])
-  assert.equal(loopback.ready, true)
+  const unknown = { schemas: () => [{ name: AUTHORIZE_PUBLIC_NAME }], execute: async () => ({ isError: true, error: { message: 'weird' } }) }
+  const err = await authorizeUpload(unknown, { filename: 'a.mp4', contentType: 'video/mp4', size: 1 }).then(() => null, (e) => e)
+  assert.equal(err.code, 'upload_authorization_invalid')
 })
 
-test('valid config with every field present stays ready', async () => {
-  const config = await loadConfig(
-    {
-      backend: 'tos',
-      tos: { bucket: 'dofe-transcode', region: 'cn-beijing', keyPrefix: 'yootun/uploads' },
-      limits: { maxBytes: 524288000 },
-      tool: { timeoutMs: 1800000 },
-    },
-    { credentials: { accessKeyId: 'store-ak-value', accessKeySecret: 'store-sk-value' }, env: {}, secrets: {} },
-  )
-  assert.equal(config.ready, true)
-  assert.deepEqual(config.errors, [])
-  assert.equal(SUPPORTED_BACKENDS, SUPPORTED_BACKENDS)
+test('authorizeUpload reports uploader_not_configured when the tool is absent', async () => {
+  const err = await authorizeUpload({ schemas: () => [] }, { filename: 'a.mp4', contentType: 'video/mp4', size: 1 }).then(() => null, (e) => e)
+  assert.equal(err.code, 'uploader_not_configured')
 })
 
-// ---------- 凭证统一解析 ----------
-
-test('resolveCredentials returns structured, redacted metadata without plaintext', async () => {
-  const env = { STORAGE_ACCESS_KEY_ID: 'AKENVLONGID1234' }
-  const result = await resolveCredentials({ env, secrets: { STORAGE_ACCESS_KEY_SECRET: 'SKFILELONGSECRET5678' } })
-
-  assert.equal(result.accessKeyId, 'AKENVLONGID1234')
-  assert.deepEqual(result.info.accessKeyId, { present: true, source: 'environment', available: true, redacted: result.info.accessKeyId.redacted })
-  assert.equal(result.info.accessKeyId.redacted.startsWith('AK'), true)
-  assert.equal(result.info.accessKeyId.redacted.includes('ENVLONGID'), false)
-  assert.deepEqual(result.info.accessKeySecret, { present: true, source: 'secret-file', available: true, redacted: result.info.accessKeySecret.redacted })
-  assert.equal(result.info.accessKeySecret.redacted.includes('FILELONGSECRET'), false)
-  assert.equal(result.info.bothPresent, true)
-  assert.equal(result.info.ready, true)
-  assert.equal(JSON.stringify(result.info).includes('AKENVLONGID1234'), false, '元数据不得携带明文')
-})
-
-test('resolveCredentials: empty result when neither store nor env nor file exists', async () => {
-  const result = await resolveCredentials({ env: {}, secrets: {} })
-  assert.equal(result.accessKeyId, '')
-  assert.equal(result.accessKeySecret, '')
-  assert.equal(result.info.bothPresent, false, '只允许整组凭证，不允许半组')
-  assert.equal(result.info.ready, false)
-  assert.equal(result.info.accessKeyId.source, null)
-})
-
-test('resolveCredentials: credential store wins over env over secret file', async () => {
-  const result = await resolveCredentials({
-    credentials: { accessKeyId: 'store-ak-123456', accessKeySecret: 'store-sk-123456' },
-    env: { STORAGE_ACCESS_KEY_ID: 'env-ak-123456' },
-    secrets: { STORAGE_ACCESS_KEY_SECRET: 'file-sk-123456' },
-  })
-  assert.equal(result.info.accessKeyId.source, 'credential-store')
-  assert.equal(result.info.accessKeySecret.source, 'credential-store')
-})
-
-test('secrets file is guarded by lstat and size limit', async () => {
-  const dir = await mkdtemp(join(tmpdir(), 'tos-secrets-'))
-  assert.deepEqual(await readSecretsFile(dir), {}, '文件不存在时为空')
-
-  await writeFile(join(dir, SECRETS_FILENAME), '# comment\nSTORAGE_BUCKET=file-bucket\nbad-line\nSTORAGE_ACCESS_KEY_ID = ak \n')
-  const parsed = await readSecretsFile(dir)
-  assert.equal(parsed.STORAGE_BUCKET, 'file-bucket')
-  assert.equal(parsed.STORAGE_ACCESS_KEY_ID, 'ak')
-  assert.equal(parsed['bad-line'], undefined)
-
-  const linkDir = await mkdtemp(join(tmpdir(), 'tos-secrets-link-'))
-  const target = join(linkDir, 'real.env')
-  await writeFile(target, 'STORAGE_BUCKET=leak')
-  await symlink(target, join(linkDir, SECRETS_FILENAME))
-  assert.deepEqual(await readSecretsFile(linkDir), {}, '符号链接密钥文件必须被拒绝')
+test('authorizeUpload maps transport failures to storage_unavailable', async () => {
+  const tools = {
+    schemas: () => [{ name: AUTHORIZE_PUBLIC_NAME }],
+    execute: async () => { throw new Error('ECONNREFUSED') },
+  }
+  const err = await authorizeUpload(tools, { filename: 'a.mp4', contentType: 'video/mp4', size: 1 }).then(() => null, (e) => e)
+  assert.equal(err.code, 'storage_unavailable')
 })
 
 // ---------- 允许清单 ----------
@@ -518,17 +516,13 @@ test('pick-file route reports cancel and picker_unavailable', async () => {
   assert.equal(res2.json().error, 'picker_unavailable')
 })
 
-test('upload route only accepts admitted paths and streams through the driver', async () => {
+test('upload route authorizes then streams through the driver and returns the public url', async () => {
   const { path } = await tempFile()
   const store = new PickedFileStore()
   const uploads = []
-  const driver = {
-    async upload(p, meta) {
-      uploads.push([p, meta])
-      return { key: 'yootun/uploads/x.mp4', url: 'https://dofe-transcode.tos-cn-beijing.volces.com/yootun/uploads/x.mp4', size: 4, contentType: 'video/mp4' }
-    },
-  }
-  const deps = { expectedOrigin: ORIGIN, store, driver, maxBytes: 1024 }
+  const driver = { async upload(p, target) { uploads.push([p, target]); return {} } }
+  const tools = okTools()
+  const deps = { expectedOrigin: ORIGIN, store, driver, tools, maxBytes: 1024 }
 
   const denied = mockRes()
   await handleUploadRequest(mockReq({ body: { path }, contentType: 'application/json' }), denied, deps)
@@ -545,13 +539,32 @@ test('upload route only accepts admitted paths and streams through the driver', 
   const ok = mockRes()
   await handleUploadRequest(mockReq({ body: { path }, contentType: 'application/json' }), ok, deps)
   assert.equal(ok.statusCode, 200)
-  assert.equal(ok.json().url, 'https://dofe-transcode.tos-cn-beijing.volces.com/yootun/uploads/x.mp4')
-  assert.deepEqual(uploads, [[path, { name: 'video.mp4', mime: 'video/mp4' }]])
+  assert.equal(ok.json().url, 'https://cdn.example.com/media/uuid.mp4')
+  assert.equal(ok.json().name, 'video.mp4')
+  assert.equal(ok.json().contentType, 'video/mp4')
+  assert.equal(ok.json().key, undefined, '不得返回 object key')
+  assert.equal(uploads.length, 1)
+  assert.equal(uploads[0][1].url, validAuth().url, '直传用授权下发的预签名 URL')
+  assert.equal(uploads[0][1].method, 'PUT')
 
   const down = mockRes()
   await handleUploadRequest(mockReq({ body: { path }, contentType: 'application/json' }), down, { ...deps, driver: null })
   assert.equal(down.statusCode, 503)
   assert.equal(down.json().error, 'uploader_not_configured')
+})
+
+test('upload route maps authorize rejection to fixed error codes', async () => {
+  const { path } = await tempFile()
+  const store = new PickedFileStore()
+  store.admit(path, { name: 'video.mp4', size: 4 })
+  const tools = okTools({ execute: async () => ({ isError: true, error: { message: 'UPLOAD_SIZE_EXCEEDED' } }) })
+  let uploaded = 0
+  const driver = { async upload() { uploaded++ } }
+  const res = mockRes()
+  await handleUploadRequest(mockReq({ body: { path }, contentType: 'application/json' }), res, { expectedOrigin: ORIGIN, store, driver, tools, maxBytes: 1024 })
+  assert.equal(res.statusCode, 400)
+  assert.equal(res.json().error, 'file_too_large')
+  assert.equal(uploaded, 0, '授权被拒后不得直传')
 })
 
 test('upload route returns file_changed for files replaced after admission', async () => {
@@ -562,7 +575,8 @@ test('upload route returns file_changed for files replaced after admission', asy
   const deps = {
     expectedOrigin: ORIGIN,
     store,
-    driver: { async upload() { uploads++; return { key: 'k', url: 'https://x/k', size: 9, contentType: 'video/mp4' } } },
+    driver: { async upload() { uploads++ } },
+    tools: okTools(),
     maxBytes: 1024,
   }
 
@@ -581,10 +595,11 @@ test('upload route maps driver failures to fixed error codes without leaking pat
   const deps = {
     expectedOrigin: ORIGIN,
     store,
+    tools: okTools(),
     maxBytes: 1024,
     driver: {
       async upload() {
-        const error = new Error('TOS PUT HTTP 403')
+        const error = new Error('storage PUT HTTP 403')
         error.statusCode = 403
         throw error
       },
@@ -597,84 +612,66 @@ test('upload route maps driver failures to fixed error codes without leaking pat
   assert.equal(JSON.stringify(res.json()).includes(path), false)
 })
 
-// ---------- TOS 驱动 ----------
+// ---------- 预签名 PUT 驱动 ----------
 
-test('tos driver resolves keys and public urls like tools.dofe.ai boto3', async () => {
-  const driver = await createTosDriver({
-    bucket: 'dofe-transcode', region: 'cn-beijing', endpoint: 'https://tos-s3-cn-beijing.volces.com',
-    accessKeyId: 'ak', accessKeySecret: 'sk', keyPrefix: 'yootun/uploads', addressingStyle: 'virtual',
-  })
-  assert.equal(driver.resolveKey('a.mp4'), 'yootun/uploads/a.mp4')
-  assert.equal(driver.resolveKey('yootun/uploads/a.mp4'), 'yootun/uploads/a.mp4')
-  assert.equal(driver.publicUrl('yootun/uploads/a.mp4'), 'https://dofe-transcode.tos-cn-beijing.volces.com/yootun/uploads/a.mp4')
-})
-
-test('tos driver PUTs the file body, signed headers and correct content-type to storage', async () => {
+test('driver PUTs the file body to the presigned URL with provided headers and content-length', async () => {
   const server = await startStorageServer()
   server.state.etag = '"abc123"'
   const { path } = await tempFile('hello-tos-body')
-  const driver = await createTosDriver(tosConfig(server))
+  const driver = await createTosDriver()
 
-  const result = await driver.upload(path, { name: 'v.mp4' })
+  const result = await driver.upload(path, uploadTarget(server))
   assert.equal(result.etag, 'abc123')
-  assert.equal(result.contentType, 'video/mp4')
-  assert.match(result.key, /^yootun\/uploads\/\d{8}_\d{6}_[0-9a-f]{8}_v\.mp4$/u, 'key 带时间戳与随机后缀防覆盖')
-  assert.equal(result.url, `https://dofe-transcode.tos-cn-beijing.volces.com/${result.key}`)
-  assert.equal(result.url.includes(result.key), true)
 
   assert.equal(server.requests.length, 1)
   const req = server.requests[0]
   assert.equal(req.body.toString(), 'hello-tos-body', '文件体必须流式原样到达')
   assert.equal(req.headers['content-type'], 'video/mp4')
   assert.equal(req.headers['content-length'], String(Buffer.byteLength('hello-tos-body')))
-  assert.equal(req.headers['content-disposition'], 'inline')
-  assert.equal(req.headers['x-amz-content-sha256'], 'UNSIGNED-PAYLOAD')
-  assert.match(req.headers.authorization, /^AWS4-HMAC-SHA256 Credential=AK\/\d{8}\/cn-beijing\/s3\/aws4_request, SignedHeaders=/, 'Authorization 头格式正确')
+  assert.equal(req.method, 'PUT')
+  assert.equal(req.url, '/yootun/uploads/x.mp4')
+  assert.equal(req.headers.authorization, undefined, '预签名直传不再自行签名')
   await server.close()
 })
 
-test('tos driver generates unique keys for same-name uploads', async () => {
+test('driver preserves the presigned query string on the request path', async () => {
   const server = await startStorageServer()
-  const { path } = await tempFile('dup')
-  const driver = await createTosDriver(tosConfig(server))
-  const a = await driver.upload(path, { name: 'v.mp4' })
-  const b = await driver.upload(path, { name: 'v.mp4' })
-  assert.notEqual(a.key, b.key, '同秒同名上传不得互相覆盖')
+  const { path } = await tempFile('query')
+  const driver = await createTosDriver()
+  await driver.upload(path, uploadTarget(server, { url: `${server.endpoint}/yootun/uploads/x.mp4?X-Amz-Signature=abc123&X-Amz-Expires=1800` }))
+  assert.equal(server.requests[0].url, '/yootun/uploads/x.mp4?X-Amz-Signature=abc123&X-Amz-Expires=1800')
   await server.close()
 })
 
-test('tos driver retries 5xx but not 4xx, within a bounded attempt count', async () => {
+test('driver retries 5xx but not 4xx, within a bounded attempt count', async () => {
   const { path } = await tempFile('retry-body')
 
   const retryServer = await startStorageServer()
   retryServer.state.seq = [503, 503, 200]
-  const retryDriver = await createTosDriver(tosConfig(retryServer))
-  await retryDriver.upload(path, { name: 'v.mp4' })
+  const retryDriver = await createTosDriver()
+  await retryDriver.upload(path, uploadTarget(retryServer))
   assert.equal(retryServer.requests.length, 3, '5xx 指数退避重试到成功')
   await retryServer.close()
 
   const clientErrServer = await startStorageServer()
   clientErrServer.state.status = 403
-  const clientErrDriver = await createTosDriver(tosConfig(clientErrServer))
-  const failure = await clientErrDriver.upload(path, { name: 'v.mp4' }).then(() => null, (cause) => cause)
+  const clientErrDriver = await createTosDriver()
+  const failure = await clientErrDriver.upload(path, uploadTarget(clientErrServer)).then(() => null, (cause) => cause)
   assert.equal(failure.statusCode, 403)
   assert.equal(toPublicCode(failure), 'storage_auth_failed')
-  assert.equal(clientErrServer.requests.length, 1, '4xx 不重试')
+  assert.equal(clientErrServer.requests.length, 1, '403（含签名过期）不重试')
   await clientErrServer.close()
   assert.equal(MAX_UPLOAD_ATTEMPTS, 3, '重试必须有界')
 })
 
-test('tos driver surfaces header timeout as upload_timeout and closes the file stream', async () => {
+test('driver surfaces header timeout as upload_timeout and closes the file stream', async () => {
   const server = await startStorageServer()
-  server.state.hold = 1 // 接收请求但永不响应
+  server.state.hold = 1
   const { path } = await tempFile('timeout-body')
-  const driver = await createTosDriver(tosConfig(server), {
+  const driver = await createTosDriver({
     timeouts: { connectMs: 1000, headersMs: 120, overallMs: DEFAULT_TIMEOUTS.overallMs },
   })
-  const failure = await driver.upload(path, { name: 'v.mp4' }).then(
-    () => null,
-    (cause) => cause,
-  )
+  const failure = await driver.upload(path, uploadTarget(server)).then(() => null, (cause) => cause)
   assert.notEqual(failure, null, '必须以失败终结')
   assert.equal(failure.isTimeout, true)
   assert.equal(toPublicCode(failure), 'upload_timeout')
@@ -683,25 +680,23 @@ test('tos driver surfaces header timeout as upload_timeout and closes the file s
   await server.close()
 })
 
-test('tos driver surfaces overall timeout as upload_timeout', async () => {
+test('driver surfaces overall timeout as upload_timeout', async () => {
   const server = await startStorageServer()
   server.state.hold = 1
   const { path } = await tempFile('overall-body')
-  const driver = await createTosDriver(tosConfig(server), {
+  const driver = await createTosDriver({
     timeouts: { connectMs: 60_000, headersMs: 60_000, overallMs: 100 },
   })
-  const failure = await driver.upload(path, { name: 'v.mp4' }).then(() => null, (cause) => cause)
+  const failure = await driver.upload(path, uploadTarget(server)).then(() => null, (cause) => cause)
   assert.equal(failure?.isTimeout, true)
   assert.equal(toPublicCode(failure), 'upload_timeout')
   await server.close()
 })
 
-test('tos driver does not fire headers timeout while the body is still uploading', async () => {
-  // 可控慢速请求体：显式按时间间隔推送数据，不依赖 socket 缓冲区大小。
-  // headers 超时应在 req 'finish'（body 写完）之后才启动，而不是 socket 建连后。
+test('driver does not fire headers timeout while the body is still uploading', async () => {
   const server = await startStorageServer()
   const SIZE = 256 * 1024
-  const { path } = await tempFile('x'.repeat(SIZE)) // 真实文件用于 stat 出 Content-Length
+  const { path } = await tempFile('x'.repeat(SIZE))
   let sent = 0
   let pushing = false
   const slowStream = new Readable({
@@ -720,62 +715,57 @@ test('tos driver does not fire headers timeout while the body is still uploading
       }, 50)
     },
   })
-  const driver = await createTosDriver(tosConfig(server), {
+  const driver = await createTosDriver({
     timeouts: { connectMs: 1000, headersMs: 300, overallMs: 30_000 },
     createReadStream: () => slowStream,
   })
-  const result = await driver.upload(path, { name: 'slow.mp4' })
+  const result = await driver.upload(path, uploadTarget(server))
 
-  assert.ok(result?.url, '慢速请求体不应被误判为响应头超时，上传必须成功')
+  assert.ok(result, '慢速请求体不应被误判为响应头超时，上传必须成功')
   assert.equal(server.requests.length, 1)
   assert.equal(server.requests[0].body.length, SIZE, '请求体必须完整到达')
   await server.close()
 })
 
-test('tos driver fires connect timeout even if the body finished before connecting', async () => {
-  // 状态机：body 已 finish 但连接仍未建立时，connect 超时必须生效（而不是被 finish 清除）。
+test('driver fires connect timeout even if the body finished before connecting', async () => {
   const { path } = await tempFile('tiny')
   const neverConnectingTransport = {
     request(options, cb) {
       const req = new Writable({ write(chunk, enc, next) { next() } })
-      // 模拟 socket 已分配但永不通连（socket.connecting=true 且永不 emit connect）。
       process.nextTick(() => req.emit('socket', { connecting: true, once() {} }))
       return req
     },
   }
-  const driver = await createTosDriver(tosConfig({ endpoint: 'http://unused' }), {
+  const driver = await createTosDriver({
     timeouts: { connectMs: 120, headersMs: 60_000, overallMs: 60_000 },
     transport: neverConnectingTransport,
   })
-  const failure = await driver.upload(path, { name: 'v.mp4' }).then(() => null, (cause) => cause)
+  const failure = await driver.upload(path, uploadTarget({ endpoint: 'http://unused' })).then(() => null, (cause) => cause)
   assert.notEqual(failure, null, '连接无法建立时必须失败')
   assert.equal(failure?.isTimeout, true)
-  assert.match(failure?.message, /establishing connection/, '必须由 connect 超时触发，而不是 headers 超时')
+  assert.match(failure?.message, /establishing connection/, '必须由 connect 超时触发')
   assert.equal(toPublicCode(failure), 'upload_timeout')
 })
 
-test('tos driver still returns upload_timeout after body completes and no response headers arrive', async () => {
-  // 与“请求体完成后等待响应头超时”对应的明确断言：body 写完后服务器不回响应头，
-  // headers 超时仍应从 finish 之后计时并返回 upload_timeout。
+test('driver still returns upload_timeout after body completes and no response headers arrive', async () => {
   const server = await startStorageServer()
   server.state.hold = 1
   const { path } = await tempFile('after-finish-body')
-  const driver = await createTosDriver(tosConfig(server), {
+  const driver = await createTosDriver({
     timeouts: { connectMs: 1000, headersMs: 150, overallMs: DEFAULT_TIMEOUTS.overallMs },
   })
-  const failure = await driver.upload(path, { name: 'v.mp4' }).then(() => null, (cause) => cause)
-  assert.equal(failure?.isTimeout, true, 'body 完成后等待响应头超时必须返回 upload_timeout')
+  const failure = await driver.upload(path, uploadTarget(server)).then(() => null, (cause) => cause)
+  assert.equal(failure?.isTimeout, true)
   assert.equal(toPublicCode(failure), 'upload_timeout')
   await server.close()
 })
 
-test('tos driver destroy() cancels in-flight uploads (plugin unload path)', async () => {
+test('driver destroy() cancels in-flight uploads (plugin unload path)', async () => {
   const server = await startStorageServer()
   server.state.hold = 1
   const { path } = await tempFile('cancel-body')
-  const driver = await createTosDriver(tosConfig(server))
-  const pending = driver.upload(path, { name: 'v.mp4' })
-  // 等请求真的发出去再销毁。
+  const driver = await createTosDriver()
+  const pending = driver.upload(path, uploadTarget(server))
   for (let i = 0; i < 100 && server.requests.length === 0; i++) {
     await new Promise((resolve) => setTimeout(resolve, 10))
   }
@@ -791,13 +781,13 @@ test('tos driver destroy() cancels in-flight uploads (plugin unload path)', asyn
   await server.close()
 })
 
-test('tos driver maps abort signal cancellation to upload_cancelled', async () => {
+test('driver maps abort signal cancellation to upload_cancelled', async () => {
   const server = await startStorageServer()
   server.state.hold = 1
   const { path } = await tempFile('signal-body')
-  const driver = await createTosDriver(tosConfig(server))
+  const driver = await createTosDriver()
   const controller = new AbortController()
-  const pending = driver.upload(path, { name: 'v.mp4' }, controller.signal)
+  const pending = driver.upload(path, uploadTarget(server), controller.signal)
   setTimeout(() => controller.abort(), 50)
   const failure = await pending.then(() => null, (cause) => cause)
   assert.equal(toPublicCode(failure), 'upload_cancelled')
@@ -809,9 +799,6 @@ test('tos driver maps abort signal cancellation to upload_cancelled', async () =
 
 function mockCtx(overrides = {}) {
   const registered = { routes: new Map(), tools: new Map(), sections: [] }
-  const credentialsService = overrides.credentialsService === undefined
-    ? { async resolve(key) { return { value: `${key}-stored` } } }
-    : overrides.credentialsService
   const systemPromptService = overrides.systemPromptService === undefined
     ? {
         section(section) {
@@ -825,7 +812,6 @@ function mockCtx(overrides = {}) {
     : overrides.systemPromptService
   const ctx = {
     get(service) {
-      if (service === 'credentials') return credentialsService
       if (service === 'systemPrompt') return systemPromptService
       return undefined
     },
@@ -844,6 +830,11 @@ function mockCtx(overrides = {}) {
         registered.tools.set(tool.name, tool)
         return () => registered.tools.delete(tool.name)
       },
+      schemas: () => overrides.toolSchemas ?? [{ name: AUTHORIZE_PUBLIC_NAME }],
+      execute: async (input) => {
+        if (overrides.toolExecute) return overrides.toolExecute(input)
+        return { isError: false, value: { content: [{ type: 'text', text: JSON.stringify(validAuth()) }] } }
+      },
     },
     logger: {
       warnings: [],
@@ -855,21 +846,16 @@ function mockCtx(overrides = {}) {
   return { ctx, registered }
 }
 
-function okDriver() {
-  return {
-    destroyed: 0,
-    async upload() {
-      return { key: 'k', url: 'https://dofe-transcode.tos-cn-beijing.volces.com/k', size: 4, contentType: 'video/mp4' }
-    },
-    destroy() { this.destroyed++ },
-  }
-}
-
-test('apply registers both routes and the human-in-the-loop media_upload tool from loader row config', async () => {
+test('apply registers both routes and the media_upload tool, and uploads via authorize + driver', async () => {
   const { path } = await tempFile()
   const { ctx, registered } = mockCtx()
-  const driver = okDriver()
-  const dispose = await apply(ctx, { tool: { timeoutMs: 12345 } }, { dialog: fakeDialog([path]), driver, env: {}, secrets: {} })
+  const calls = []
+  const driver = {
+    destroyed: 0,
+    async upload(p, target) { calls.push([p, target]); return {} },
+    destroy() { this.destroyed++ },
+  }
+  const dispose = await apply(ctx, { tool: { timeoutMs: 12345 } }, { dialog: fakeDialog([path]), driver })
 
   assert.ok(registered.routes.has(PICK_FILE_PATH))
   assert.ok(registered.routes.has(UPLOAD_PATH))
@@ -881,10 +867,16 @@ test('apply registers both routes and the human-in-the-loop media_upload tool fr
 
   const result = await tool.execute({ kind: 'video' }, {})
   assert.equal(result.ok, true)
-  assert.equal(result.url, 'https://dofe-transcode.tos-cn-beijing.volces.com/k')
+  assert.equal(result.url, 'https://cdn.example.com/media/uuid.mp4')
+  assert.equal(result.contentType, 'video/mp4')
+  assert.equal(result.name, 'video.mp4')
+  assert.equal(result.key, undefined, '工具结果不得暴露 object key')
   assert.equal(JSON.stringify(result).includes(path), false, '工具结果不得泄露本地路径')
+  assert.equal(JSON.stringify(result).includes('X-Amz-Signature'), false, '工具结果不得泄露预签名 URL')
+  assert.equal(calls.length, 1)
+  assert.equal(calls[0][1].method, 'PUT')
 
-  const dispose2 = await apply(ctx, {}, { dialog: fakeDialog([], true), driver, env: {}, secrets: {} })
+  const dispose2 = await apply(ctx, {}, { dialog: fakeDialog([], true), driver })
   const cancelled = await registered.tools.get('media_upload').execute({}, {})
   assert.deepEqual(cancelled, { ok: false, error: 'user_cancelled' })
 
@@ -898,46 +890,41 @@ test('apply never reads ctx.config (Cordis would throw without inject)', async (
   Object.defineProperty(ctx, 'config', {
     get() { throw new Error('cannot get property "config" without inject') },
   })
-  const dispose = await apply(ctx, {}, { dialog: fakeDialog([], true), driver: okDriver(), env: {}, secrets: {} })
+  const dispose = await apply(ctx, {}, { dialog: fakeDialog([], true), driver: okDriver() })
   assert.equal(typeof dispose, 'function')
   dispose()
 })
 
-test('apply degrades cleanly when credentials are missing', async () => {
-  const { ctx, registered } = mockCtx({ credentialsService: { async resolve() { return undefined } } })
-  const dispose = await apply(ctx, {}, { dialog: fakeDialog([], true), env: {}, secrets: {} })
+test('apply degrades cleanly on invalid loader config', async () => {
+  const { ctx, registered } = mockCtx()
+  const dispose = await apply(ctx, { limits: { maxBytes: -1 } }, { dialog: fakeDialog([], true) })
   const result = await registered.tools.get('media_upload').execute({}, {})
   assert.deepEqual(result, { ok: false, error: 'uploader_not_configured' })
   dispose()
 })
 
-test('apply loads without credential store and without system prompt services', async () => {
-  const { ctx, registered } = mockCtx({
-    credentialsService: null,
-    systemPromptService: null,
-  })
+test('apply loads without a system prompt service', async () => {
+  const { ctx, registered } = mockCtx({ systemPromptService: null })
   assert.equal(registered.sections.length, 0)
-  const dispose = await apply(ctx, {}, { dialog: fakeDialog([], true), env: {}, secrets: {} })
+  const dispose = await apply(ctx, {}, { dialog: fakeDialog([], true), driver: okDriver() })
   const tool = registered.tools.get('media_upload')
-  assert.ok(tool, '没有 credential store / system prompt 时工具仍必须注册')
-  assert.deepEqual(await tool.execute({}, {}), { ok: false, error: 'uploader_not_configured' }, '无凭证时工具结构化降级')
+  assert.ok(tool, '没有 system prompt 时工具仍必须注册')
   dispose()
 })
 
-test('apply enters degraded state on invalid loader config but still loads', async () => {
-  const { ctx, registered } = mockCtx()
-  const dispose = await apply(ctx, { backend: 'ftp' }, { dialog: fakeDialog([], true), env: {}, secrets: {} })
-  const tool = registered.tools.get('media_upload')
-  assert.ok(tool, '配置非法时插件必须仍可加载')
-  assert.deepEqual(await tool.execute({}, {}), { ok: false, error: 'uploader_not_configured' })
-  assert.ok(ctx.logger.warnings.some((line) => line.includes('unsupported backend')), '配置问题必须给出明确日志')
+test('apply degrades to uploader_not_configured when the authorize tool is absent', async () => {
+  const { path } = await tempFile()
+  const { ctx, registered } = mockCtx({ toolSchemas: [] })
+  const dispose = await apply(ctx, {}, { dialog: fakeDialog([path]), driver: okDriver() })
+  const result = await registered.tools.get('media_upload').execute({}, {})
+  assert.deepEqual(result, { ok: false, error: 'uploader_not_configured' })
   dispose()
 })
 
 test('apply rolls back all registrations when a registration step throws', async () => {
   const { ctx, registered } = mockCtx({ toolRegisterThrows: true })
   const driver = okDriver()
-  await assert.rejects(() => apply(ctx, {}, { driver, env: {}, secrets: {} }))
+  await assert.rejects(() => apply(ctx, {}, { driver }))
   assert.equal(registered.routes.size, 0, '工具注册失败时路由必须全部回滚')
   assert.equal(driver.destroyed, 1, '回滚必须释放驱动')
 })
@@ -945,15 +932,15 @@ test('apply rolls back all registrations when a registration step throws', async
 test('apply leaves no duplicate tools or routes across reloads', async () => {
   const { ctx, registered } = mockCtx()
   const driver = okDriver()
-  const dispose1 = await apply(ctx, {}, { dialog: fakeDialog([], true), driver, env: {}, secrets: {} })
+  const dispose1 = await apply(ctx, {}, { dialog: fakeDialog([], true), driver })
   const firstTool = registered.tools.get('media_upload')
-  const dispose2 = await apply(ctx, {}, { dialog: fakeDialog([], true), driver, env: {}, secrets: {} })
+  const dispose2 = await apply(ctx, {}, { dialog: fakeDialog([], true), driver })
   const secondTool = registered.tools.get('media_upload')
 
   assert.notEqual(firstTool, secondTool, '重载后必须替换为新工具实例')
   assert.equal(registered.tools.size, 1, '同名工具只允许存在一个')
   assert.equal(registered.routes.size, 2, '同路径路由只允许一组')
-  assert.equal(registered.sections.filter((section) => section.name === 'tool:media-upload').length, 2, '重载期新旧 prompt 区块共存，注销后清空')
+  assert.equal(registered.sections.filter((section) => section.name === 'tool:media-upload').length, 2, '重载期新旧 prompt 区块共存')
 
   dispose1()
   assert.equal(registered.tools.size, 0, '旧工具注销后宿主里没有 media_upload')
@@ -964,51 +951,25 @@ test('apply leaves no duplicate tools or routes across reloads', async () => {
   assert.equal(driver.destroyed, 2)
 })
 
-test('apply cancels an in-flight upload when the plugin is disposed', async () => {
-  const server = await startStorageServer()
-  server.state.hold = 1
-  const { ctx, registered } = mockCtx()
-  const { path } = await tempFile('unload-body')
-  // 用真实 TOS 驱动连本地替身：覆盖“插件卸载取消上传请求”路径。
-  const dispose = await apply(ctx, { tos: { bucket: 'dofe-transcode', endpoint: server.endpoint, addressingStyle: 'path' } }, {
-    env: {},
-    secrets: { STORAGE_ACCESS_KEY_ID: 'AKTEST123456', STORAGE_ACCESS_KEY_SECRET: 'SKTEST123456' },
-  })
-  const tool = registered.tools.get('media_upload')
-  const dialog = fakeDialog([path])
-  // 直接构造第二次 apply 拿真实 picker 太重；改用工具通道模拟：注册阶段 driver 可用。
-  const executePromise = tool.execute({}, {}).then((value) => value, (cause) => ({ thrown: String(cause) }))
-  dispose()
-  const result = await Promise.race([
-    executePromise,
-    new Promise((resolve) => setTimeout(() => resolve('hung'), 1500)),
-  ])
-  // 没有真实弹窗：execute 在 picker 阶段就结束，dispose 后不得悬挂。
-  assert.notEqual(result, 'hung', '插件卸载后工具执行必须安全结束')
-  await server.close()
-})
-
 test('tool returns structured fixed codes for picker and storage failures', async () => {
-  // storage_auth_failed：驱动抛 403。
   const { ctx, registered } = mockCtx()
   const driver = {
     async upload() {
-      const error = new Error('TOS PUT HTTP 403')
+      const error = new Error('storage PUT HTTP 403')
       error.statusCode = 403
       throw error
     },
   }
   const { path } = await tempFile('tool-403')
-  const dispose = await apply(ctx, {}, { dialog: fakeDialog([path]), driver, env: {}, secrets: {} })
+  const dispose = await apply(ctx, {}, { dialog: fakeDialog([path]), driver })
   const tool = registered.tools.get('media_upload')
   const result = await tool.execute({}, {})
   assert.deepEqual(result, { ok: false, error: 'storage_auth_failed' })
   assert.equal(JSON.stringify(result).includes(path), false, '工具结果不得携带本地路径')
   dispose()
 
-  // picker_unavailable：无 Electron。
   const { ctx: ctx2, registered: registered2 } = mockCtx()
-  const dispose2 = await apply(ctx2, {}, { dialog: null, driver: okDriver(), env: {}, secrets: {} })
+  const dispose2 = await apply(ctx2, {}, { dialog: null, driver: okDriver() })
   const result2 = await registered2.tools.get('media_upload').execute({}, {})
   assert.deepEqual(result2, { ok: false, error: 'picker_unavailable' })
   dispose2()
@@ -1016,7 +977,6 @@ test('tool returns structured fixed codes for picker and storage failures', asyn
 
 test('tool reports file_changed when the picked file is swapped before upload', async () => {
   const { path } = await tempFile('original')
-  // admit 时记录的 size 与实际不符 -> 上传前的 TOCTOU 复查必须拦截。
   const store = new PickedFileStore()
   const realAdmit = store.admit.bind(store)
   store.admit = (admitPath, meta) => realAdmit(admitPath, { ...meta, size: (meta?.size ?? 0) + 1 })
@@ -1027,6 +987,7 @@ test('tool reports file_changed when the picked file is swapped before upload', 
     {
       picker: createFilePicker({ dialog: fakeDialog([path]), store }),
       driver: okDriver(),
+      tools: okTools(),
       store,
       maxBytes: 1024 * 1024,
       timeoutMs: 60_000,
@@ -1037,15 +998,13 @@ test('tool reports file_changed when the picked file is swapped before upload', 
   assert.deepEqual(result, { ok: false, error: 'file_changed' })
 })
 
-test('tool never leaks the local path inside the object key', async () => {
-  const { ctx, registered } = mockCtx()
+test('tool maps an authorize failure to the server-derived code', async () => {
   const { path } = await tempFile('ok-body')
-  const driver = okDriver()
-  const dispose = await apply(ctx, {}, { dialog: fakeDialog([path]), driver, env: {}, secrets: {} })
+  const { ctx, registered } = mockCtx({
+    toolExecute: async () => ({ isError: true, error: { message: 'UPLOAD_TYPE_NOT_ALLOWED' } }),
+  })
+  const dispose = await apply(ctx, {}, { dialog: fakeDialog([path]), driver: okDriver() })
   const result = await registered.tools.get('media_upload').execute({}, {})
-  assert.equal(result.ok, true)
-  assert.equal(result.name, 'video.mp4')
-  assert.equal(result.key.includes('/home/'), false, 'key 不得包含本地路径')
-  assert.equal(result.key.includes(tmpdir()), false)
+  assert.deepEqual(result, { ok: false, error: 'extension_not_allowed' })
   dispose()
 })
