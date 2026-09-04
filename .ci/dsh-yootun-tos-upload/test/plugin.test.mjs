@@ -151,7 +151,7 @@ test('publishes a host-only plugin manifest without client declaration or runtim
   assert.doesNotMatch(patch, /keyPrefix/u, '不再配置 key 前缀')
   assert.doesNotMatch(patch, /accessKeyId: \S+/u, 'cordis.patch.yml 不得写入明文 AK')
   assert.doesNotMatch(patch, /accessKeySecret: \S+/u, 'cordis.patch.yml 不得写入明文 SK')
-  assert.deepEqual(inject, ['webServer', 'tools'], '硬依赖只有 webServer 与 tools')
+  assert.deepEqual(inject, ['webServer', 'tools', 'yootunAudit'], '硬依赖包含审计服务')
   assert.equal(name, 'yootun-tos-upload')
 })
 
@@ -522,7 +522,8 @@ test('upload route authorizes then streams through the driver and returns the pu
   const uploads = []
   const driver = { async upload(p, target) { uploads.push([p, target]); return {} } }
   const tools = okTools()
-  const deps = { expectedOrigin: ORIGIN, store, driver, tools, maxBytes: 1024 }
+  const auditEvents = []
+  const deps = { expectedOrigin: ORIGIN, store, driver, tools, maxBytes: 1024, audit: { async record(event) { auditEvents.push(event) } } }
 
   const denied = mockRes()
   await handleUploadRequest(mockReq({ body: { path }, contentType: 'application/json' }), denied, deps)
@@ -546,6 +547,11 @@ test('upload route authorizes then streams through the driver and returns the pu
   assert.equal(uploads.length, 1)
   assert.equal(uploads[0][1].url, validAuth().url, '直传用授权下发的预签名 URL')
   assert.equal(uploads[0][1].method, 'PUT')
+  assert.equal(auditEvents.length, 1)
+  assert.deepEqual(auditEvents[0].source, { pluginId: '@dofe/dsh-yootun-tos-upload', pluginVersion: '0.1.0', surface: 'human_ui' })
+  assert.equal(auditEvents[0].actionCode, 'media.upload.completed')
+  assert.deepEqual(auditEvents[0].changes, [{ field: 'sizeBucket', after: 'under_1mb' }, { field: 'mimeFamily', after: 'video' }])
+  assert.doesNotMatch(JSON.stringify(auditEvents), /video\.mp4|X-Amz-Signature|cdn\.example\.com|\/var\//u)
 
   const down = mockRes()
   await handleUploadRequest(mockReq({ body: { path }, contentType: 'application/json' }), down, { ...deps, driver: null })
@@ -811,6 +817,7 @@ function mockCtx(overrides = {}) {
       }
     : overrides.systemPromptService
   const ctx = {
+    yootunAudit: { async record(event) { overrides.auditEvents?.push(event) } },
     get(service) {
       if (service === 'systemPrompt') return systemPromptService
       return undefined
@@ -848,7 +855,8 @@ function mockCtx(overrides = {}) {
 
 test('apply registers both routes and the media_upload tool, and uploads via authorize + driver', async () => {
   const { path } = await tempFile()
-  const { ctx, registered } = mockCtx()
+  const auditEvents = []
+  const { ctx, registered } = mockCtx({ auditEvents })
   const calls = []
   const driver = {
     destroyed: 0,
@@ -875,6 +883,9 @@ test('apply registers both routes and the media_upload tool, and uploads via aut
   assert.equal(JSON.stringify(result).includes('X-Amz-Signature'), false, '工具结果不得泄露预签名 URL')
   assert.equal(calls.length, 1)
   assert.equal(calls[0][1].method, 'PUT')
+  assert.equal(auditEvents.length, 1)
+  assert.equal(auditEvents[0].source.surface, 'agent_tool')
+  assert.doesNotMatch(JSON.stringify(auditEvents), /video\.mp4|X-Amz-Signature|cdn\.example\.com|\/var\//u)
 
   const dispose2 = await apply(ctx, {}, { dialog: fakeDialog([], true), driver })
   const cancelled = await registered.tools.get('media_upload').execute({}, {})

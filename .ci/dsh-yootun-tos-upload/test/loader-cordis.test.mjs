@@ -97,6 +97,7 @@ async function bootServices({ withSystemPrompt = true } = {}) {
         }
       },
     })
+    ctx.provide('yootunAudit', { async record() { return { status: 'stored', clientEventId: 'loader-test-event' } } })
     if (withSystemPrompt) {
       ctx.provide('systemPrompt', {
         section(section) {
@@ -214,6 +215,7 @@ if (!cordis || !Loader) {
       ctx.provide('tools', {
         register() { throw new Error('boom from tools.register') },
       })
+      ctx.provide('yootunAudit', { async record() { return { status: 'stored', clientEventId: 'loader-test-event' } } })
     })
     await root.plugin(Loader)
     const loader = root.get('loader')

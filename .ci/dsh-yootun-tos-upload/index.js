@@ -25,7 +25,7 @@ import { registerMediaUploadTool } from './tool.js'
 
 export const name = 'yootun-tos-upload'
 /** 硬依赖：缺失时 Cordis 会等待/拒绝启动，不进入半注册状态。 */
-export const inject = ['webServer', 'tools']
+export const inject = ['webServer', 'tools', 'yootunAudit']
 
 /** 逆序执行清理；单个 disposer 失败不阻断其余清理。 */
 function unwindDisposers(disposers, logger) {
@@ -116,6 +116,8 @@ export async function apply(ctx, config = {}, overrides = {}) {
           tools: ctx.tools,
           maxBytes: effectiveConfig.limits.maxBytes,
           reportError,
+          audit: ctx.yootunAudit,
+          logger,
         }),
       }))
     }
@@ -129,6 +131,7 @@ export async function apply(ctx, config = {}, overrides = {}) {
         maxBytes: effectiveConfig.limits.maxBytes,
         timeoutMs: effectiveConfig.tool.timeoutMs,
         logger,
+        yootunAudit: ctx.yootunAudit,
       }))
       // system prompt 是可选服务：缺失时工具照常注册。
       const systemPrompt = ctx.get?.('systemPrompt')

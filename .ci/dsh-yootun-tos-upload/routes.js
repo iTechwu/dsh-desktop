@@ -11,6 +11,7 @@
 import { revalidateAdmittedFile } from './allowlist.js'
 import { authorizeUpload } from './authorize.js'
 import { toPublicCode } from './lib/errors.js'
+import { recordMediaUploadAudit } from './tool.js'
 
 export const PICK_FILE_PATH = '/_dsh/uploader/pick-file'
 export const UPLOAD_PATH = '/_dsh/uploader/upload'
@@ -146,6 +147,7 @@ export async function handleUploadRequest(req, res, deps) {
       path,
       { url: auth.url, method: auth.method, headers: auth.headers },
     )
+    await recordMediaUploadAudit(deps.audit, deps.logger, 'human_ui', { publicUrl: auth.publicUrl, size: check.size, mime: check.entry.mime })
     return finishJson(res, 200, {
       url: auth.publicUrl,
       size: check.size,
@@ -155,6 +157,7 @@ export async function handleUploadRequest(req, res, deps) {
   } catch (cause) {
     deps.reportError?.(cause)
     const code = toPublicCode(cause)
+    await recordMediaUploadAudit(deps.audit, deps.logger, 'human_ui', { size: check.size, mime: check.entry.mime, errorCode: code })
     return finishJson(res, statusForCode(code), { error: code })
   }
 }

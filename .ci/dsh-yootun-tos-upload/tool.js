@@ -12,6 +12,7 @@
  * 绝不返回本地路径、预签名 URL、object key、访问密钥或内部错误堆栈；诊断细节只进日志。
  */
 
+import { createHash } from 'node:crypto'
 import { revalidateAdmittedFile } from './allowlist.js'
 import { authorizeUpload } from './authorize.js'
 import { toPublicCode } from './lib/errors.js'
@@ -94,6 +95,7 @@ export function registerMediaUploadTool(ctx, deps) {
           { url: auth.url, method: auth.method, headers: auth.headers },
           exec?.signal,
         )
+        await recordMediaUploadAudit(deps.yootunAudit, deps.logger, 'agent_tool', { publicUrl: auth.publicUrl, size: check.size, mime: check.entry.mime })
         // 回到对话上下文的只有公网 URL 与对象元信息，不含预签名 URL/key/本地路径。
         return {
           ok: true,
@@ -110,8 +112,34 @@ export function registerMediaUploadTool(ctx, deps) {
         }
         const code = toPublicCode(cause)
         deps.logger?.warn?.('media_upload: upload failed: %s (%s)', cause?.message ?? 'unknown', code)
+        await recordMediaUploadAudit(deps.yootunAudit, deps.logger, 'agent_tool', { size: check.size, mime: check.entry.mime, errorCode: code })
         return { ok: false, error: code }
       }
     },
   })
+}
+
+function sizeBucket(size) {
+  if (size < 1024 * 1024) return 'under_1mb'
+  if (size < 10 * 1024 * 1024) return 'under_10mb'
+  if (size < 100 * 1024 * 1024) return 'under_100mb'
+  return 'over_100mb'
+}
+
+export async function recordMediaUploadAudit(audit, logger, surface, result) {
+  if (!audit?.record) return
+  const succeeded = typeof result.publicUrl === 'string'
+  const assetSeed = succeeded ? result.publicUrl : `${surface}:${result.mime}:${result.size}:${result.errorCode}`
+  const id = `asset-${createHash('sha256').update(assetSeed).digest('hex').slice(0, 24)}`
+  const mimeFamily = typeof result.mime === 'string' && result.mime.includes('/') ? result.mime.split('/', 1)[0] : 'unknown'
+  const errorCode = typeof result.errorCode === 'string' && /^[a-z0-9_:-]{1,80}$/u.test(result.errorCode) ? result.errorCode : 'upload_failed'
+  try {
+    await audit.record({
+      actionCode: 'media.upload.completed', category: 'create',
+      source: { pluginId: '@dofe/dsh-yootun-tos-upload', pluginVersion: '0.1.0', surface },
+      target: { type: 'media_asset', id }, outcome: succeeded ? 'succeeded' : 'failed',
+      changes: [{ field: 'sizeBucket', after: sizeBucket(result.size) }, { field: 'mimeFamily', after: mimeFamily }], effects: [],
+      ...(succeeded ? {} : { errorCode }),
+    })
+  } catch { logger?.warn?.('yootun audit record failed: audit_record_failed') }
 }
