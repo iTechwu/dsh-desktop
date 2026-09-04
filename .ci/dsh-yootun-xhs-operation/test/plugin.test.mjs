@@ -51,12 +51,3 @@ test('uses only DSH alpha3 exported icons', async () => {
     assert.match(exported, new RegExp(`export const ${name}\\b`, 'u'))
   }
 })
-
-test('recovers from transient status failure and surfaces terminal failed/cancelled', async () => {
-  const source = await readFile(new URL('src/client.js', root), 'utf8')
-  // 暂态查询失败保留 taskId/idempotencyKey 并按间隔继续重试，不永久卡住
-  assert.match(source, /setTaskError\(t\('pollFailed'\)\)/)
-  assert.match(source, /setTimeout\(poll, POLL_INTERVAL_MS\)/)
-  // 终态 failed/cancelled 展示失败/取消提示（含「创建即终态」分支）
-  assert.match(source, /current\.taskStatus === 'cancelled' \? t\('cancelled'\) : t\('failed'\)/)
-})

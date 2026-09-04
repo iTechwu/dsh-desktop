@@ -1,5 +1,5 @@
 const React = require('react')
-const { createElement: h, useEffect, useRef, useState, useSyncExternalStore } = React
+const { createElement: h, useEffect, useState, useSyncExternalStore } = React
 const { IconCloseOutline16, IconEditOutline16, MarkdownText, Tooltip } = require('@deepseek-ai/dsh-client-ui-primitives')
 const NS = 'dofe.yootun-xhs-operation'
 const PATH = '/api/desktop/yootun/xhs-operation'
@@ -47,9 +47,8 @@ const setOpened = value => { opened = value; emitOpen() }
 const subscribeOpen = listener => { openListeners.add(listener); return () => openListeners.delete(listener) }
 const snapshotOpen = () => opened
 
-// 同一应用进程内跨开关保留的当前任务（docs/0904/xhs §5.2）：关闭页面停止轮询但
-// 不取消任务；重新打开页面继续查询当前任务。
-let activeTask = null
+// 同一应用进程内跨开关保留的当前任务（docs/0904/xhs §5.2）：由下方模块级 task machine
+// 持有；关闭页面停止轮询但不取消任务，重新打开页面继续查询当前任务。
 
 const openOverlay = () => {
   window.dispatchEvent(new CustomEvent(OVERLAY_EVENT, { detail: { id: OVERLAY_ID } }))
@@ -81,6 +80,112 @@ function newIdempotencyKey() {
 }
 
 function markdownLabels(t) { return { code: { copyLabel: t('copyCode'), copiedLabel: t('copiedCode') }, footnotes: t('footnotes') } }
+
+// 小红书仿写任务状态机（纯逻辑，无 React/浏览器依赖，可被 test/task-machine.test.mjs 直接驱动）。
+// 职责：创建 → 轮询 → 读结果 → 终态；暂态失败按间隔重试；stop 停止轮询不取消任务；resume 恢复。
+// 注入 createTask/queryStatus/queryResult/schedule/clearSchedule，便于单测用假定时器与假 fetch。
+function createTaskMachine({ createTask, queryStatus, queryResult, intervalMs = POLL_INTERVAL_MS, schedule = setTimeout, clearSchedule = clearTimeout, onChange }) {
+  let snapshot = { task: null, versions: null, error: '' }
+  let timer = null
+  let generation = 0
+
+  const update = next => { snapshot = next; onChange?.(snapshot) }
+  const cancel = () => { generation++; if (timer) { clearSchedule(timer); timer = null } }
+
+  const loadResult = async (taskId, gen) => {
+    let versions = null
+    let error = ''
+    try {
+      const result = await queryResult(taskId)
+      if (result && Array.isArray(result.versions) && result.versions.length === 3) versions = result.versions
+      else error = 'resultFailed'
+    } catch {
+      error = 'resultFailed'
+    }
+    if (gen !== generation) return
+    update({ ...snapshot, versions, error })
+  }
+
+  const poll = async () => {
+    const gen = generation
+    const task = snapshot.task
+    if (!task?.taskId) return
+    // 已终态：succeeded 补读结果；failed/cancelled 展示失败/取消提示。
+    if (isTerminal(task.taskStatus)) {
+      if (task.taskStatus === 'succeeded') {
+        if (snapshot.versions === null) await loadResult(task.taskId, gen)
+      } else {
+        update({ ...snapshot, error: task.taskStatus === 'cancelled' ? 'cancelled' : 'failed' })
+      }
+      return
+    }
+    try {
+      const status = await queryStatus(task.taskId)
+      if (gen !== generation) return
+      const next = { ...task, taskStatus: status.taskStatus, currentStep: status.currentStep || status.nextStep || '' }
+      update({ ...snapshot, task: next, error: '' })
+      if (status.taskStatus === 'succeeded') { await loadResult(task.taskId, gen); return }
+      if (status.taskStatus === 'failed' || status.taskStatus === 'cancelled') {
+        update({ ...snapshot, error: status.taskStatus === 'cancelled' ? 'cancelled' : 'failed' })
+        return
+      }
+      timer = schedule(poll, intervalMs)
+    } catch {
+      if (gen !== generation) return
+      update({ ...snapshot, error: 'pollFailed' })
+      timer = schedule(poll, intervalMs)
+    }
+  }
+
+  const submit = async body => {
+    cancel()
+    update({ task: snapshot.task, versions: null, error: '' })
+    try {
+      const created = await createTask(body)
+      update({ task: { taskId: created.taskId, idempotencyKey: body.idempotencyKey, taskStatus: created.taskStatus || 'queued', mediaType: body.mediaType, input: body }, versions: null, error: '' })
+    } catch {
+      update({ ...snapshot, error: 'createFailed' })
+      return
+    }
+    await poll()
+  }
+
+  return { submit, resume: poll, stop: cancel, get: () => snapshot }
+}
+
+// 状态机错误码 → 本地化文案。
+function errorText(error, t) {
+  switch (error) {
+    case 'pollFailed': return t('pollFailed')
+    case 'resultFailed': return t('resultFailed')
+    case 'createFailed': return t('createFailed')
+    case 'failed': return t('failed')
+    case 'cancelled': return t('cancelled')
+    default: return ''
+  }
+}
+
+// 模块级单例：跨 overlay 开关保留任务与轮询进度。
+const machineListeners = new Set()
+const machine = createTaskMachine({
+  createTask: async body => {
+    const res = await post(body)
+    if (!res || res.status !== 'created' || !res.taskId) throw new Error('create_failed')
+    return { taskId: res.taskId, taskStatus: res.taskStatus || 'queued', mediaType: body.mediaType }
+  },
+  queryStatus: async taskId => {
+    const res = await post({ action: 'status', taskId })
+    if (!res || res.status !== 'ready') throw new Error('status_failed')
+    return { taskStatus: res.taskStatus, currentStep: res.currentStep, nextStep: res.nextStep }
+  },
+  queryResult: async taskId => {
+    const res = await post({ action: 'result', taskId })
+    if (!res || res.status !== 'ready') throw new Error('result_failed')
+    return { versions: res.versions }
+  },
+  onChange: () => machineListeners.forEach(listener => listener()),
+})
+const subscribeMachine = listener => { machineListeners.add(listener); return () => machineListeners.delete(listener) }
 
 function Button({ wide, t }) {
   return h(Tooltip, { label: t('open'), disabled: wide },
@@ -118,18 +223,13 @@ function Overlay({ t }) {
   const [theme, setTheme] = useState('')
   const [refNote, setRefNote] = useState('')
   const [refAccount, setRefAccount] = useState('')
-  const [task, setTask] = useState(activeTask)
-  const [versions, setVersions] = useState(null)
-  const [taskError, setTaskError] = useState('')
+  const machineState = useSyncExternalStore(subscribeMachine, () => machine.get(), () => machine.get())
+  const { task, versions, error } = machineState
   const [busy, setBusy] = useState(false)
-  const activeTaskRef = useRef(activeTask)
 
   const taskStatus = task?.taskStatus || 'idle'
   const processing = Boolean(task?.taskId) && !isTerminal(taskStatus)
   const locked = busy || processing
-
-  const versionsRef = useRef(null)
-  useEffect(() => { versionsRef.current = versions }, [versions])
 
   useEffect(() => {
     if (!visible) return undefined
@@ -138,63 +238,11 @@ function Overlay({ t }) {
     return () => window.removeEventListener('keydown', key)
   }, [visible])
 
+  // 打开/关闭 overlay：恢复或停止轮询（不取消任务）。
   useEffect(() => {
-    if (!visible) return undefined
-    let stopped = false
-    let timer = null
-
-    const loadResult = async taskId => {
-      const result = await post({ action: 'result', taskId }).catch(() => null)
-      if (stopped) return
-      if (result && result.status === 'ready' && Array.isArray(result.versions) && result.versions.length === 3) {
-        setVersions(result.versions)
-        setTaskError('')
-      } else {
-        setTaskError(t('resultFailed'))
-      }
-    }
-
-    // 自调度串行轮询：下一次查询在上一次完成后 30 秒才发起，绝不让旧响应覆盖新状态。
-    const poll = async () => {
-      if (stopped) return
-      const current = activeTaskRef.current
-      if (!current?.taskId) return
-      // 已终态：succeeded 补读结果；failed/cancelled 展示失败/取消提示。
-      if (isTerminal(current.taskStatus)) {
-        if (current.taskStatus === 'succeeded') {
-          if (versionsRef.current === null) await loadResult(current.taskId)
-        } else {
-          setTaskError(current.taskStatus === 'cancelled' ? t('cancelled') : t('failed'))
-        }
-        return
-      }
-      const status = await post({ action: 'status', taskId: current.taskId }).catch(() => null)
-      if (stopped) return
-      if (!status || status.status !== 'ready') {
-        // 暂态查询失败：保留 taskId/idempotencyKey，按间隔继续重试，不自动取消或更换幂等键。
-        setTaskError(t('pollFailed'))
-        timer = setTimeout(poll, POLL_INTERVAL_MS)
-        return
-      }
-      const next = { ...current, taskStatus: status.taskStatus, currentStep: status.currentStep || status.nextStep || '' }
-      activeTask = next
-      activeTaskRef.current = next
-      setTask(next)
-      setTaskError('')
-      if (status.taskStatus === 'succeeded') {
-        await loadResult(current.taskId)
-        return
-      }
-      if (status.taskStatus === 'failed' || status.taskStatus === 'cancelled') {
-        setTaskError(status.taskStatus === 'cancelled' ? t('cancelled') : t('failed'))
-        return
-      }
-      timer = setTimeout(poll, POLL_INTERVAL_MS)
-    }
-
-    poll()
-    return () => { stopped = true; if (timer) clearTimeout(timer) }
-  }, [visible, task?.taskId])
+    if (visible) machine.resume()
+    else machine.stop()
+  }, [visible])
 
   const pickAndUpload = async kind => {
     if (uploading || locked) return
@@ -230,19 +278,13 @@ function Overlay({ t }) {
     if (mediaType === 'images') { body.imageUrls = input.imageUrls; body.coverIndex = 0 }
     else { body.videoUrl = input.videoUrl }
     setBusy(true)
-    setVersions(null)
-    setTaskError('')
-    const created = await post(body).catch(() => null)
+    await machine.submit(body)
     setBusy(false)
-    if (!created || created.status !== 'created' || !created.taskId) { setTaskError(t('createFailed')); return }
-    const next = { taskId: created.taskId, idempotencyKey, taskStatus: created.taskStatus || 'queued', mediaType, input }
-    activeTask = next
-    activeTaskRef.current = next
-    setTask(next)
   }
 
   if (!visible) return null
 
+  const taskErrorText = errorText(error, t)
   const labels = markdownLabels(t)
   const hasMaterial = tab === 'images' ? images.length > 0 : video !== null
   const buttonDisabled = busy || uploading || processing || !hasMaterial
@@ -286,9 +328,9 @@ function Overlay({ t }) {
   let right
   if (taskStatus === 'succeeded' && Array.isArray(versions)) {
     right = h('div', { className: 'yxh-versions' }, versions.map((version, index) => h(Version, { key: version.version || index, version, index, t })))
-  } else if (taskError) {
+  } else if (taskErrorText) {
     right = h('div', { className: 'yxh-state yxh-state-error', role: 'alert' },
-      h('p', null, taskError),
+      h('p', null, taskErrorText),
       h('p', { className: 'yxh-hint' }, t('failedHint')))
   } else if (processing || taskStatus === 'succeeded') {
     right = h('div', { className: 'yxh-state', role: 'status' },
@@ -328,4 +370,4 @@ function apply(ctx) {
   ctx.slots.inject('sidebar.footer.action', () => ctx.slots.register({ name: 'sidebar.footer.action', id: 'dofe-yootun-xhs-operation', order: 41, inject: () => ({ t }) }, Button))
   ctx.slots.inject('shell.overlay', () => ctx.slots.register({ name: 'shell.overlay', id: 'dofe-yootun-xhs-operation', order: 41, inject: () => ({ t }) }, Overlay))
 }
-module.exports = { apply, inject: ['slots', 'locale'] }
+module.exports = { apply, inject: ['slots', 'locale'], createTaskMachine }
