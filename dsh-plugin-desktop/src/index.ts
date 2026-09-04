@@ -53,10 +53,6 @@ import {
   YOOTUN_APPROVALS_PATH,
 } from './yootun-approvals-route.ts'
 import {
-  handleYootunFinopsRequest,
-  YOOTUN_FINOPS_PATH,
-} from './yootun-finops-route.ts'
-import {
   DESKTOP_DIRECTORY_PICKER_PATH,
   DESKTOP_DIRECTORY_VALIDATOR_PATH,
 } from './directory-picker-contract.ts'
@@ -468,20 +464,6 @@ export function apply(ctx: Context, config: Config): void {
       },
     }),
     `dsh-plugin-desktop: private Yootun approvals route ${YOOTUN_APPROVALS_PATH}`,
-  )
-  ctx.effect(
-    () => ctx.webServer.register({
-      kind: 'exact',
-      path: YOOTUN_FINOPS_PATH,
-      handler: (req, res) => {
-        if (rejectDesktopRequest(ctx, req, res)) return
-        return handleYootunFinopsRequest(req, res, rendererOrigin, {
-          credentials: ctx.get('credentials'),
-          logger: ctx.logger,
-        })
-      },
-    }),
-    `dsh-plugin-desktop: private Yootun FinOps route ${YOOTUN_FINOPS_PATH}`,
   )
   if (runtime.platform === 'win32') {
     ctx.effect(

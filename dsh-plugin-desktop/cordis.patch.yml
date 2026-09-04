@@ -35,8 +35,6 @@
         registerHostRoute: false
     - id: dofe-yootun-finops
       name: '@dofe/dsh-yootun-finops'
-      config:
-        registerHostRoute: false
     - id: dofe-yootun-retrofit
       name: '@dofe/dsh-yootun-retrofit'
     - id: dofe-yootun-daily-report
