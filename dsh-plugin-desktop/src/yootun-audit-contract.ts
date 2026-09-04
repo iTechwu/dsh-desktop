@@ -132,6 +132,16 @@ export interface YootunAuditRecorder {
   record(input: YootunAuditRecordInput): Promise<AuditRecordResult>
 }
 
+export function safeYootunAuditTargetId(value: unknown): string {
+  return typeof value === 'string'
+    && value.length > 0
+    && value.length <= 160
+    && value.trim() === value
+    && !/[\0\r\n]/u.test(value)
+    ? value
+    : 'unresolved'
+}
+
 export interface YootunAuditBuildRuntime {
   readonly now?: () => Date
   readonly randomUUID?: () => string

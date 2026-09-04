@@ -5,7 +5,7 @@ import { dirname } from 'node:path'
 import { writeFileAtomic } from '@deepseek-ai/dsh-atomic-write'
 import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import type { ToolExecutionInput } from '@deepseek-ai/dsh-tools'
-import type { YootunAuditEffect, YootunAuditRecordInput, YootunAuditRecorder } from './yootun-audit-contract.ts'
+import { safeYootunAuditTargetId, type YootunAuditEffect, type YootunAuditRecordInput, type YootunAuditRecorder } from './yootun-audit-contract.ts'
 
 export const YOOTUN_CONTENT_COMMAND_PATH = '/api/desktop/yootun/content-command'
 const VERSION = 2
@@ -267,6 +267,15 @@ function contentAudit(body: RecordValue, articleId: number, before: ContentDecis
   return { source: CONTENT_AUDIT_SOURCE, actionCode: 'content.publish.executed', category: 'publish', target, outcome, changes: [{ field: 'platformCount', after: after.selectedPlatforms.length }], effects, ...(outcome === 'failed' ? { errorCode: 'publish_failed' } : {}) }
 }
 
+function failedContentMutationAudit(body: RecordValue, errorCode: string): YootunAuditRecordInput | undefined {
+  const articleId = Number(body.articleId)
+  const target = { type: 'article', id: safeYootunAuditTargetId(Number.isInteger(articleId) && articleId > 0 ? String(articleId) : undefined) }
+  if (body.action === 'review_article') return { source: CONTENT_AUDIT_SOURCE, actionCode: 'content.review.updated', category: 'update', target, outcome: 'failed', errorCode }
+  if (body.action === 'select_platforms') return { source: CONTENT_AUDIT_SOURCE, actionCode: 'content.platforms.updated', category: 'update', target, outcome: 'failed', errorCode }
+  if (body.action === 'publish_selected') return { source: CONTENT_AUDIT_SOURCE, actionCode: 'content.publish.executed', category: 'publish', target, outcome: 'failed', errorCode }
+  return undefined
+}
+
 export async function handleYootunContentCommandRequest(req: IncomingMessage, res: ServerResponse, rendererOrigin: string, dependencies: ContentRouteDependencies): Promise<void> {
   if (req.headers.origin && req.headers.origin !== rendererOrigin) return finish(res, 403, { error: 'origin_forbidden' })
   if (!dependencies.statePath) return finish(res, 503, { error: 'state_unavailable' })
@@ -327,8 +336,9 @@ export async function handleYootunContentCommandRequest(req: IncomingMessage, re
     if (nextDecision !== undefined) await recordContentAudit(dependencies.audit, contentAudit(body, articleId, previousDecision, nextDecision))
     return finish(res, 200, await snapshot(next, dependencies.tools))
   } catch (cause) {
-    if (auditRequest?.action === 'publish_selected' && Number.isInteger(Number(auditRequest.articleId)) && Number(auditRequest.articleId) > 0) {
-      await recordContentAudit(dependencies.audit, { source: CONTENT_AUDIT_SOURCE, actionCode: 'content.publish.executed', category: 'publish', target: { type: 'article', id: String(auditRequest.articleId) }, outcome: 'failed', errorCode: cause instanceof InvalidContentRequest ? cause.message : 'state_write_failed' })
+    if (auditRequest !== undefined) {
+      const errorCode = cause instanceof InvalidContentRequest ? cause.message : 'state_write_failed'
+      await recordContentAudit(dependencies.audit, failedContentMutationAudit(auditRequest, errorCode))
     }
     if (cause instanceof ContentBodyTooLarge) return finish(res, 413, { error: 'body_too_large' })
     if (cause instanceof InvalidContentRequest) return finish(res, ['platform_web_unavailable'].includes(cause.message) ? 503 : cause.message === 'article_not_approved' ? 409 : 400, { error: cause.message })

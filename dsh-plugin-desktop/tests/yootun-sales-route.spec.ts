@@ -181,15 +181,21 @@ describe('Yootun sales workspace route', () => {
     await handleYootunSalesRequest(request('POST', JSON.stringify({
       action: 'execute_action', id: 'missing-action',
     })), failed, 'http://127.0.0.1:43120', { statePath, now, audit })
+    const rejectedWrite = response()
+    await handleYootunSalesRequest(request('POST', JSON.stringify({
+      action: 'save_lead', company: '失败请求也不得进入审计', unexpectedSecret: '敏感失败载荷',
+    })), rejectedWrite, 'http://127.0.0.1:43120', { statePath, now, audit })
 
     expect(failed.status).toBe(400)
-    expect(record).toHaveBeenCalledTimes(3)
+    expect(rejectedWrite.status).toBe(400)
+    expect(record).toHaveBeenCalledTimes(4)
     expect(record.mock.calls.map(([event]) => event)).toEqual([
       expect.objectContaining({ actionCode: 'sales.lead.created', target: { type: 'lead', id: leadId }, outcome: 'succeeded', changes: [{ field: 'stage', after: 'new' }] }),
       expect.objectContaining({ actionCode: 'sales.lead.updated', target: { type: 'lead', id: leadId }, outcome: 'succeeded', changes: [{ field: 'stage', before: 'new', after: 'qualified' }] }),
       expect.objectContaining({ actionCode: 'sales.follow_up.executed', target: { type: 'follow_up', id: 'missing-action' }, outcome: 'failed', errorCode: 'action_not_found' }),
+      expect.objectContaining({ actionCode: 'sales.lead.created', target: { type: 'lead', id: 'unresolved' }, outcome: 'failed', errorCode: 'request_fields_invalid' }),
     ])
-    expect(JSON.stringify(record.mock.calls)).not.toMatch(/不得进入审计|这段查询/u)
+    expect(JSON.stringify(record.mock.calls)).not.toMatch(/不得进入审计|这段查询|敏感失败载荷/u)
   })
 
   it('does not let an unavailable audit recorder fail a completed sales write', async () => {

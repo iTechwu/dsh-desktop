@@ -5,7 +5,7 @@ import { chmod, lstat, mkdir, readFile } from 'node:fs/promises'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { dirname } from 'node:path'
 import { writeFileAtomic } from '@deepseek-ai/dsh-atomic-write'
-import type { YootunAuditRecordInput, YootunAuditRecorder } from './yootun-audit-contract.ts'
+import { safeYootunAuditTargetId, type YootunAuditRecordInput, type YootunAuditRecorder } from './yootun-audit-contract.ts'
 
 export const YOOTUN_SUPPLY_WATCH_PATH = '/api/desktop/yootun/supply-watch'
 const STATE_VERSION = 1
@@ -112,6 +112,21 @@ function supplyExecutionAudit(actionId: string, next: SupplySnapshot): YootunAud
   return { source: SUPPLY_AUDIT_SOURCE, actionCode: 'supply.review.executed', category: 'execute', target: { type: 'supply_review', id: actionId }, outcome, changes: status === undefined ? [] : [{ field: 'status', after: status }], ...(action?.adapterReceipt === undefined ? {} : { effects: [{ target: 'supply_adapter', outcome: action.adapterReceipt.status, code: action.adapterReceipt.reasonCode, ...(action.adapterReceipt.remoteRef === undefined ? {} : { remoteRef: action.adapterReceipt.remoteRef }) }] }), ...(outcome === 'failed' ? { errorCode: action?.adapterReceipt?.reasonCode ?? 'action_failed' } : {}) }
 }
 
+function failedSupplyMutationAudit(request: JsonRecord, errorCode: string): YootunAuditRecordInput | undefined {
+  if (request.action === 'save_risk') {
+    const updating = request.id !== undefined
+    return { source: SUPPLY_AUDIT_SOURCE, actionCode: updating ? 'supply.risk.updated' : 'supply.risk.created', category: updating ? 'update' : 'create', target: { type: 'supply_risk', id: safeYootunAuditTargetId(request.id) }, outcome: 'failed', errorCode }
+  }
+  if (request.action === 'queue_review') {
+    return { source: SUPPLY_AUDIT_SOURCE, actionCode: 'supply.review.created', category: 'create', target: { type: 'supply_review', id: 'unresolved' }, outcome: 'failed', errorCode }
+  }
+  if (request.action === 'confirm_action' || request.action === 'dismiss_action') {
+    const confirmed = request.action === 'confirm_action'
+    return { source: SUPPLY_AUDIT_SOURCE, actionCode: confirmed ? 'supply.review.confirmed' : 'supply.review.dismissed', category: 'update', target: { type: 'supply_review', id: safeYootunAuditTargetId(request.id) }, outcome: 'failed', errorCode }
+  }
+  return undefined
+}
+
 export async function handleYootunSupplyWatchRequest(req: IncomingMessage, res: ServerResponse, rendererOrigin: string, options: SupplyRouteDependencies): Promise<void> {
   if (req.headers.origin && req.headers.origin !== rendererOrigin) return finish(res, 403, { error: 'origin_forbidden' })
   const path = options.statePath
@@ -137,8 +152,11 @@ export async function handleYootunSupplyWatchRequest(req: IncomingMessage, res: 
     await recordSupplyAudit(options.audit, request === undefined ? undefined : supplyMutationAudit(request, transition.before, next))
     finish(res, 200, supplySnapshot(next, new Date(now)))
   } catch (cause) {
-    if (auditRequest?.action === 'execute_action' && typeof auditRequest.id === 'string') {
-      await recordSupplyAudit(options.audit, { source: SUPPLY_AUDIT_SOURCE, actionCode: 'supply.review.executed', category: 'execute', target: { type: 'supply_review', id: auditRequest.id }, outcome: 'failed', errorCode: cause instanceof InvalidSupplyRequest ? cause.message : 'state_write_failed' })
+    const errorCode = cause instanceof InvalidSupplyRequest ? cause.message : 'state_write_failed'
+    if (auditRequest?.action === 'execute_action') {
+      await recordSupplyAudit(options.audit, { source: SUPPLY_AUDIT_SOURCE, actionCode: 'supply.review.executed', category: 'execute', target: { type: 'supply_review', id: safeYootunAuditTargetId(auditRequest.id) }, outcome: 'failed', errorCode })
+    } else if (auditRequest !== undefined) {
+      await recordSupplyAudit(options.audit, failedSupplyMutationAudit(auditRequest, errorCode))
     }
     if (cause instanceof SupplyBodyTooLarge) return finish(res, 413, { error: 'body_too_large' })
     if (cause instanceof InvalidSupplyRequest) return finish(res, cause.message === 'supply_adapter_unavailable' ? 503 : 400, { error: cause.message })

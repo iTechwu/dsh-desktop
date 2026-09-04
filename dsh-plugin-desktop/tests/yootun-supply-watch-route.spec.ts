@@ -58,15 +58,19 @@ describe('Yootun supply watch route', () => {
     await handleYootunSupplyWatchRequest(request('POST', JSON.stringify({ action: 'save_risk', id: riskId, title: '更新', supplierLabel: '供应商', category: '交付', severity: 'critical', status: 'monitoring', signal: '更新', recommendedAction: '更新', source: 'manual' })), response(), 'http://127.0.0.1:43120', { statePath, now, audit })
     const failed = response()
     await handleYootunSupplyWatchRequest(request('POST', JSON.stringify({ action: 'execute_action', id: 'missing-review' })), failed, 'http://127.0.0.1:43120', { statePath, now, audit })
+    const rejectedWrite = response()
+    await handleYootunSupplyWatchRequest(request('POST', JSON.stringify({ action: 'save_risk', secret: '敏感失败载荷' })), rejectedWrite, 'http://127.0.0.1:43120', { statePath, now, audit })
     await handleYootunSupplyWatchRequest(request('GET'), response(), 'http://127.0.0.1:43120', { statePath, now, audit })
 
-    expect(record).toHaveBeenCalledTimes(3)
+    expect(rejectedWrite.status).toBe(400)
+    expect(record).toHaveBeenCalledTimes(4)
     expect(record.mock.calls.map(([event]) => event)).toEqual([
       expect.objectContaining({ actionCode: 'supply.risk.created', target: { type: 'supply_risk', id: riskId }, outcome: 'succeeded' }),
       expect.objectContaining({ actionCode: 'supply.risk.updated', target: { type: 'supply_risk', id: riskId }, outcome: 'succeeded' }),
       expect.objectContaining({ actionCode: 'supply.review.executed', target: { type: 'supply_review', id: 'missing-review' }, outcome: 'failed', errorCode: 'action_not_found' }),
+      expect.objectContaining({ actionCode: 'supply.risk.created', target: { type: 'supply_risk', id: 'unresolved' }, outcome: 'failed', errorCode: 'request_fields_invalid' }),
     ])
-    expect(JSON.stringify(record.mock.calls)).not.toMatch(/敏感供应商|风险信号|处置正文/u)
+    expect(JSON.stringify(record.mock.calls)).not.toMatch(/敏感供应商|风险信号|处置正文|敏感失败载荷/u)
   })
 
   it('classifies concurrent writes from the state serialized with each mutation', async () => {

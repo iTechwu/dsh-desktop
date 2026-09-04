@@ -2,7 +2,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { YootunAuditRecordInput } from '../src/yootun-audit-contract.ts'
+import type { YootunAuditClientEvent, YootunAuditRecordInput } from '../src/yootun-audit-contract.ts'
 import type { YootunAuditModelsClient } from '../src/yootun-audit-models-client.ts'
 import { YootunAuditService, type YootunAuditScheduler } from '../src/yootun-audit-service.ts'
 import { YootunAuditStore } from '../src/yootun-audit-store.ts'
@@ -156,7 +156,7 @@ describe('YootunAuditService', () => {
       ...large,
       target: { type: 'lead', id: `lead-${index}` },
     })))
-    remote.batch.mockImplementationOnce(async events => ({
+    remote.batch.mockImplementationOnce(async (events: readonly YootunAuditClientEvent[]) => ({
       accepted: events.map(item => ({ clientEventId: item.clientEventId, id: item.clientEventId, receivedAt: item.occurredAt })),
     }))
 
@@ -168,7 +168,7 @@ describe('YootunAuditService', () => {
   })
 
   it('quarantines a single permanently rejected event and continues the queue', async () => {
-    const { service, remote, scheduler } = await createService({
+    const { service, scheduler } = await createService({
       batch: vi.fn().mockRejectedValue({ kind: 'permanent', status: 400 }),
     })
     await service.record(input)

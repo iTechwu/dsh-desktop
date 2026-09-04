@@ -108,13 +108,17 @@ describe('Yootun content command route', () => {
     await handleYootunContentCommandRequest(request('POST', JSON.stringify({ action: 'select_platforms', articleId: 42, platforms: ['website', 'xiaohongshu'] })), response(), 'http://127.0.0.1:43120', dependencies)
     await handleYootunContentCommandRequest(request('POST', JSON.stringify({ action: 'open_platform', articleId: 42, platform: 'xiaohongshu' })), response(), 'http://127.0.0.1:43120', dependencies)
     await handleYootunContentCommandRequest(request('POST', JSON.stringify({ action: 'publish_selected', articleId: 42, platforms: ['website', 'xiaohongshu'] })), response(), 'http://127.0.0.1:43120', dependencies)
+    const rejectedWrite = response()
+    await handleYootunContentCommandRequest(request('POST', JSON.stringify({ action: 'select_platforms', articleId: 42, secret: '敏感失败载荷' })), rejectedWrite, 'http://127.0.0.1:43120', dependencies)
 
-    expect(record).toHaveBeenCalledTimes(3)
+    expect(rejectedWrite.status).toBe(400)
+    expect(record).toHaveBeenCalledTimes(4)
     expect(record.mock.calls.map(([event]) => event)).toEqual([
       expect.objectContaining({ actionCode: 'content.review.updated', target: { type: 'article', id: '42' }, outcome: 'succeeded', changes: [{ field: 'reviewStatus', before: 'pending', after: 'approved' }] }),
       expect.objectContaining({ actionCode: 'content.platforms.updated', target: { type: 'article', id: '42' }, outcome: 'succeeded', changes: [{ field: 'platformCount', before: 0, after: 2 }] }),
       expect.objectContaining({ actionCode: 'content.publish.executed', target: { type: 'article', id: '42' }, outcome: 'partial', effects: [{ target: 'website', outcome: 'succeeded' }, { target: 'xiaohongshu', outcome: 'requires_user_login' }] }),
+      expect.objectContaining({ actionCode: 'content.platforms.updated', target: { type: 'article', id: '42' }, outcome: 'failed', errorCode: 'request_fields_invalid' }),
     ])
-    expect(JSON.stringify(record.mock.calls)).not.toMatch(/企业 AI 助手选型指南|# 正文|摘要/u)
+    expect(JSON.stringify(record.mock.calls)).not.toMatch(/企业 AI 助手选型指南|# 正文|摘要|敏感失败载荷/u)
   })
 })

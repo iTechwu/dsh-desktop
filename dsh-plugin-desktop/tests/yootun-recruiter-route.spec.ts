@@ -104,14 +104,17 @@ describe('Yootun recruiter route', () => {
     await call(statePath, 'POST', { action: 'sync_preview' }, undefined, { audit })
     await call(statePath, 'POST', { action: 'open_boss_login' }, undefined, { audit, openBossWeb: async () => {} })
     const failed = await call(statePath, 'POST', { action: 'execute_action', id: 'missing-action' }, undefined, { audit })
+    const rejectedWrite = await call(statePath, 'POST', { action: 'save_requirement', secret: '敏感失败载荷' }, undefined, { audit })
 
     expect(failed.status).toBe(400)
-    expect(record).toHaveBeenCalledTimes(2)
+    expect(rejectedWrite.status).toBe(400)
+    expect(record).toHaveBeenCalledTimes(3)
     expect(record.mock.calls.map(([event]) => event)).toEqual([
       expect.objectContaining({ actionCode: 'recruiter.requirement.created', target: { type: 'requirement', id: requirementId }, outcome: 'succeeded', changes: [{ field: 'status', after: 'active' }] }),
       expect.objectContaining({ actionCode: 'recruiter.action.executed', target: { type: 'recruiter_action', id: 'missing-action' }, outcome: 'failed', errorCode: 'action_not_found' }),
+      expect.objectContaining({ actionCode: 'recruiter.requirement.created', target: { type: 'requirement', id: 'unresolved' }, outcome: 'failed', errorCode: 'request_fields_invalid' }),
     ])
-    expect(JSON.stringify(record.mock.calls)).not.toContain('不得进入审计')
+    expect(JSON.stringify(record.mock.calls)).not.toMatch(/不得进入审计|敏感失败载荷/u)
   })
 
   it('classifies concurrent writes from the state serialized with each mutation', async () => {

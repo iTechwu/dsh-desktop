@@ -7,7 +7,7 @@ import { dirname } from 'node:path'
 import { writeFileAtomic } from '@deepseek-ai/dsh-atomic-write'
 import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import type { ToolRuntime } from '@deepseek-ai/dsh-tools'
-import type { YootunAuditRecordInput, YootunAuditRecorder } from './yootun-audit-contract.ts'
+import { safeYootunAuditTargetId, type YootunAuditRecordInput, type YootunAuditRecorder } from './yootun-audit-contract.ts'
 
 export const YOOTUN_SALES_PATH = '/api/desktop/yootun/sales'
 
@@ -447,6 +447,21 @@ function salesExecutionAudit(actionId: string, next: SalesSnapshot): YootunAudit
   }
 }
 
+function failedSalesMutationAudit(request: JsonRecord, errorCode: string): YootunAuditRecordInput | undefined {
+  if (request.action === 'save_lead') {
+    const updating = request.id !== undefined
+    return { source: SALES_AUDIT_SOURCE, actionCode: updating ? 'sales.lead.updated' : 'sales.lead.created', category: updating ? 'update' : 'create', target: { type: 'lead', id: safeYootunAuditTargetId(request.id) }, outcome: 'failed', errorCode }
+  }
+  if (request.action === 'queue_follow_up') {
+    return { source: SALES_AUDIT_SOURCE, actionCode: 'sales.follow_up.created', category: 'create', target: { type: 'follow_up', id: 'unresolved' }, outcome: 'failed', errorCode }
+  }
+  if (request.action === 'confirm_action' || request.action === 'dismiss_action') {
+    const confirmed = request.action === 'confirm_action'
+    return { source: SALES_AUDIT_SOURCE, actionCode: confirmed ? 'sales.follow_up.confirmed' : 'sales.follow_up.dismissed', category: 'update', target: { type: 'follow_up', id: safeYootunAuditTargetId(request.id) }, outcome: 'failed', errorCode }
+  }
+  return undefined
+}
+
 export interface SalesToolsRuntime {
   schemas(): readonly { name: string, description?: string }[]
   execute: ToolRuntime['execute']
@@ -559,12 +574,14 @@ export async function handleYootunSalesRequest(req: IncomingMessage, res: Server
     await recordSalesAudit(dependencies.audit, request === undefined ? undefined : salesMutationAudit(request, transition.before, transition.next))
     finish(res, 200, salesSnapshot(transition.next, dependencies.now?.() ?? new Date()))
   } catch (cause) {
-    if (auditRequest?.action === 'execute_action' && typeof auditRequest.id === 'string') {
-      const errorCode = cause instanceof InvalidSalesRequest ? cause.message : 'sales_storage_failed'
+    const errorCode = cause instanceof InvalidSalesRequest ? cause.message : 'sales_storage_failed'
+    if (auditRequest?.action === 'execute_action') {
       await recordSalesAudit(dependencies.audit, {
         source: SALES_AUDIT_SOURCE, actionCode: 'sales.follow_up.executed', category: 'execute',
-        target: { type: 'follow_up', id: auditRequest.id }, outcome: 'failed', errorCode,
+        target: { type: 'follow_up', id: safeYootunAuditTargetId(auditRequest.id) }, outcome: 'failed', errorCode,
       })
+    } else if (auditRequest !== undefined) {
+      await recordSalesAudit(dependencies.audit, failedSalesMutationAudit(auditRequest, errorCode))
     }
     if (cause instanceof SalesBodyTooLarge) return finish(res, 413, { error: 'request_too_large' })
     if (cause instanceof InvalidSalesRequest) return finish(res, cause.message === 'sales_adapter_unavailable' ? 503 : 400, { error: cause.message })
