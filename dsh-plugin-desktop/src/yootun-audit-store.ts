@@ -35,6 +35,7 @@ export interface YootunAuditCachedEvent {
 export interface YootunAuditCache extends Record<string, unknown> {
   readonly syncedAt: string
   readonly events: readonly YootunAuditCachedEvent[]
+  readonly credentialFingerprint?: string
 }
 
 export interface YootunAuditSyncState {
@@ -118,6 +119,22 @@ function parsePendingEvent(value: unknown): YootunAuditClientEvent {
   return event
 }
 
+interface PendingEnvelope {
+  readonly credentialFingerprint: string | null
+  readonly event: YootunAuditClientEvent
+}
+
+function parsePendingEnvelope(value: unknown): PendingEnvelope {
+  if (isRecord(value) && value.storeVersion === 1 && 'event' in value) {
+    const fingerprint = value.credentialFingerprint
+    if (fingerprint !== null && (typeof fingerprint !== 'string' || !/^[0-9a-f]{64}$/u.test(fingerprint))) {
+      fail('audit_store_credential_binding_invalid')
+    }
+    return { credentialFingerprint: fingerprint as string | null, event: parsePendingEvent(value.event) }
+  }
+  return { credentialFingerprint: null, event: parsePendingEvent(value) }
+}
+
 function parseIso(value: unknown): string | undefined {
   if (typeof value !== 'string' || !Number.isFinite(Date.parse(value))) return undefined
   return value
@@ -190,33 +207,37 @@ export class YootunAuditStore {
     return join(this.pendingDirectory, `${clientEventId}.json`)
   }
 
-  async append(event: YootunAuditClientEvent): Promise<void> {
+  async append(event: YootunAuditClientEvent, credentialFingerprint: string | null = null): Promise<void> {
     await this.exclusive(async () => {
       await this.prepare()
       const validated = parsePendingEvent(event)
+      const envelope = parsePendingEnvelope({ storeVersion: 1, credentialFingerprint, event: validated })
       const path = this.eventPath(validated.clientEventId)
       if (await assertOrdinaryFile(path)) {
-        let existing: YootunAuditClientEvent | undefined
+        let existing: PendingEnvelope | undefined
         try {
-          existing = parsePendingEvent(JSON.parse(await readBoundedFile(path, MAX_EVENT_BYTES)) as unknown)
+          existing = parsePendingEnvelope(JSON.parse(await readBoundedFile(path, MAX_EVENT_BYTES)) as unknown)
         } catch (cause) {
           if (cause instanceof Error && cause.message === 'audit_store_path_unsafe') throw cause
           await this.moveToQuarantine(`${validated.clientEventId}.json`, 'event_invalid')
         }
         if (existing !== undefined) {
-          if (JSON.stringify(existing) !== JSON.stringify(validated)) fail('audit_event_id_conflict')
+          if (JSON.stringify(existing) !== JSON.stringify(envelope)) fail('audit_event_id_conflict')
           return
         }
       }
-      await writeFileAtomic(path, `${JSON.stringify(validated)}\n`, {
+      await writeFileAtomic(path, `${JSON.stringify({ storeVersion: 1, ...envelope })}\n`, {
         mode: FILE_MODE,
         dirMode: DIRECTORY_MODE,
       })
     })
   }
 
-  async pendingBatch(limit: number): Promise<YootunAuditClientEvent[]> {
+  async pendingBatch(limit: number, credentialFingerprint?: string): Promise<YootunAuditClientEvent[]> {
     if (!Number.isInteger(limit) || limit < 1 || limit > 50) fail('audit_batch_limit_invalid')
+    if (credentialFingerprint !== undefined && !/^[0-9a-f]{64}$/u.test(credentialFingerprint)) {
+      fail('audit_store_credential_binding_invalid')
+    }
     return await this.exclusive(async () => {
       await this.prepare()
       const entries = (await readdir(this.pendingDirectory, { withFileTypes: true }))
@@ -229,9 +250,13 @@ export class YootunAuditStore {
         try {
           const match = EVENT_FILE_PATTERN.exec(entry.name)
           if (match?.[1] === undefined) fail('audit_store_event_invalid')
-          const parsed = parsePendingEvent(JSON.parse(await readBoundedFile(path, MAX_EVENT_BYTES)) as unknown)
-          if (parsed.clientEventId.toLowerCase() !== match[1].toLowerCase()) fail('audit_store_event_invalid')
-          events.push(parsed)
+          const parsed = parsePendingEnvelope(JSON.parse(await readBoundedFile(path, MAX_EVENT_BYTES)) as unknown)
+          if (parsed.event.clientEventId.toLowerCase() !== match[1].toLowerCase()) fail('audit_store_event_invalid')
+          if (credentialFingerprint !== undefined && parsed.credentialFingerprint !== credentialFingerprint) {
+            await this.moveToQuarantine(entry.name, 'credential_binding_changed')
+            continue
+          }
+          events.push(parsed.event)
         } catch (cause) {
           if (cause instanceof Error && cause.message === 'audit_store_path_unsafe') throw cause
           await this.moveToQuarantine(entry.name, 'event_invalid')

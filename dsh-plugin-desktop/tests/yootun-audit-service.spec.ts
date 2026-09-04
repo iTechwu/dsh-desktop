@@ -44,7 +44,7 @@ class ManualScheduler implements YootunAuditScheduler {
 
 async function createService(
   remoteOverrides: Partial<YootunAuditModelsClient> = {},
-  options: { enabled?: boolean; credential?: string | undefined } = {},
+  options: { enabled?: boolean; credential?: string | undefined; resolveApiKey?: () => Promise<string | undefined> } = {},
 ) {
   const root = await mkdtemp(join(tmpdir(), 'yootun-audit-service-'))
   roots.push(root)
@@ -61,7 +61,7 @@ async function createService(
   const service = new YootunAuditService({
     store,
     remote: remote as unknown as YootunAuditModelsClient,
-    resolveApiKey: vi.fn().mockResolvedValue(options.credential === undefined ? 'model-key' : options.credential),
+    resolveApiKey: options.resolveApiKey ?? vi.fn().mockResolvedValue(options.credential === undefined ? 'model-key' : options.credential),
     enabled: options.enabled ?? true,
     scheduler,
     now: () => new Date('2026-09-05T08:00:00.000Z'),
@@ -157,6 +157,49 @@ describe('YootunAuditService', () => {
       freshness: { source: 'cache', syncedAt: '2026-09-05T08:00:00.000Z' },
     })
     expect(await store.readCache()).toBeDefined()
+  })
+
+  it('never serves cached audit data after an authorization denial', async () => {
+    const { service, remote } = await createService()
+    remote.list.mockResolvedValueOnce({
+      events: [{ id: 'server-1', clientEventId: 'client-1', receivedAt: '2026-09-05T07:00:00.000Z' }],
+      nextCursor: null,
+    })
+    await service.workspace({ scope: 'team', teamId: 'team-1', limit: 50 })
+    remote.list.mockRejectedValueOnce({ kind: 'auth', status: 403 })
+
+    await expect(service.workspace({ scope: 'team', teamId: 'team-1', limit: 50 })).resolves.toMatchObject({
+      status: 'forbidden',
+      events: [],
+      freshness: { source: 'live' },
+    })
+  })
+
+  it('does not reuse a cache created under another credential', async () => {
+    let credential = 'model-key-a'
+    const { service, remote } = await createService({}, { resolveApiKey: async () => credential })
+    await service.workspace({ scope: 'self', limit: 50 })
+    credential = 'model-key-b'
+    remote.list.mockRejectedValueOnce({ kind: 'retryable' })
+
+    await expect(service.workspace({ scope: 'self', limit: 50 })).resolves.toMatchObject({
+      status: 'offline',
+      events: [],
+      freshness: { source: 'live' },
+    })
+  })
+
+  it('quarantines pending events instead of submitting them with a different credential', async () => {
+    let credential = 'model-key-a'
+    const { service, remote } = await createService({}, { resolveApiKey: async () => credential })
+    await service.record(input)
+    credential = 'model-key-b'
+
+    await service.credentialUpdated()
+    await service.flushNow()
+
+    expect(remote.batch).not.toHaveBeenCalled()
+    await expect(service.health()).resolves.toMatchObject({ pending: 0, quarantine: 1 })
   })
 
   it('merges successful pages into cache by clientEventId', async () => {

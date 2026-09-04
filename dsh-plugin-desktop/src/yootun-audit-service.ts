@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import type {} from '@deepseek-ai/cordis'
 import {
   buildYootunAuditEvent,
@@ -114,6 +114,10 @@ function queryKey(query: YootunAuditListQuery): string {
   return JSON.stringify(stable)
 }
 
+function credentialFingerprint(apiKey: string): string {
+  return createHash('sha256').update(apiKey).digest('hex')
+}
+
 function retryDelay(failures: number, random: () => number): number {
   const base = Math.min(MAX_RETRY_DELAY_MS, 2_000 * (2 ** Math.min(20, Math.max(0, failures - 1))))
   const jitter = 0.8 + Math.min(1, Math.max(0, random())) * 0.4
@@ -206,7 +210,8 @@ export class YootunAuditService implements YootunAuditRecorder, YootunAuditReade
     try {
       const event = buildYootunAuditEvent(input, this.clock)
       clientEventId = event.clientEventId
-      await this.options.store.append(event)
+      const apiKey = await this.options.resolveApiKey().catch(() => undefined)
+      await this.options.store.append(event, apiKey === undefined ? null : credentialFingerprint(apiKey))
       if (this.options.enabled) this.scheduleFlush(0)
       return { status: 'stored', clientEventId }
     } catch {
@@ -232,17 +237,17 @@ export class YootunAuditService implements YootunAuditRecorder, YootunAuditReade
   private async flush(): Promise<void> {
     let batch
     try {
-      batch = await this.options.store.pendingBatch(MAX_BATCH)
+      const apiKey = await this.options.resolveApiKey()
+      if (apiKey === undefined) {
+        await this.pauseForAuth('model_api_key_missing')
+        return
+      }
+      batch = await this.options.store.pendingBatch(MAX_BATCH, credentialFingerprint(apiKey))
       if (batch.length === 0) {
         this.state = 'ready'
         this.cancelProbe?.()
         this.cancelProbe = undefined
         await this.persistState({ consecutiveFailures: 0 })
-        return
-      }
-      const apiKey = await this.options.resolveApiKey()
-      if (apiKey === undefined) {
-        await this.pauseForAuth('model_api_key_missing')
         return
       }
       const lastAttemptAt = this.now().toISOString()
@@ -377,6 +382,7 @@ export class YootunAuditService implements YootunAuditRecorder, YootunAuditReade
     try {
       const apiKey = await this.options.resolveApiKey()
       if (apiKey === undefined) return await this.cachedWorkspace(key, 'auth_required', 'model_api_key_missing')
+      const fingerprint = credentialFingerprint(apiKey)
       const [list, summary, scopes, health] = await Promise.all([
         this.options.remote.list(query, apiKey),
         this.options.remote.summary(query, apiKey),
@@ -400,16 +406,17 @@ export class YootunAuditService implements YootunAuditRecorder, YootunAuditReade
       const cachedEvents = previousParts === undefined
         ? workspace.events
         : mergeCachedEvents(previousParts.events, workspace.events)
-      const cache: YootunAuditCache = { ...workspace, queryKey: key, syncedAt, events: cachedEvents }
+      const cache: YootunAuditCache = { ...workspace, queryKey: key, syncedAt, events: cachedEvents, credentialFingerprint: fingerprint }
       await this.options.store.writeCache(cache).catch(() => { this.noteLocalFailure('cache_write_failed') })
       return workspace
     } catch (cause) {
       if (isRemoteFailure(cause) && cause.kind === 'auth') {
         return await this.cachedWorkspace(key, cause.status === 403 ? 'forbidden' : 'auth_required', 'model_api_key_rejected')
       }
+      const apiKey = await this.options.resolveApiKey().catch(() => undefined)
       return await this.cachedWorkspace(key, 'offline', isRemoteFailure(cause) && cause.kind === 'invalid_response'
         ? 'remote_response_invalid'
-        : 'remote_unreachable')
+        : 'remote_unreachable', apiKey === undefined ? undefined : credentialFingerprint(apiKey))
     }
   }
 
@@ -417,13 +424,16 @@ export class YootunAuditService implements YootunAuditRecorder, YootunAuditReade
     key: string,
     failureStatus: 'offline' | 'auth_required' | 'forbidden',
     errorCode: string,
+    fingerprint?: string,
   ): Promise<DesktopAuditWorkspace> {
     const [cache, health] = await Promise.all([
       this.options.store.readCache().catch(() => undefined),
       this.health(),
     ])
     const cached = cache === undefined ? undefined : cachedWorkspaceParts(cache)
-    if (cache !== undefined && cache.queryKey === key && cached !== undefined) {
+    if (failureStatus === 'offline' && fingerprint !== undefined
+      && cache !== undefined && cache.queryKey === key
+      && cache.credentialFingerprint === fingerprint && cached !== undefined) {
       return {
         status: 'cached',
         summary: { ...cached.summary, pendingSync: health.pending },
