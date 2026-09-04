@@ -41,6 +41,8 @@
       name: '@dofe/dsh-yootun-daily-report'
     - id: dofe-yootun-lead-discovery
       name: '@dofe/dsh-yootun-lead-discovery'
+    - id: dofe-yootun-xhs-operation
+      name: '@dofe/dsh-yootun-xhs-operation'
     # Yootun 通用媒体上传能力（纯宿主插件，无客户端半）。凭证与 TOS 拓扑不写进
     # 本文件：上传授权由 dofe-managed 注册的 tools-tos-upload MCP 工具下发，
     # 凭证走 credential store 的 MODELS_API_KEY，装完即用。

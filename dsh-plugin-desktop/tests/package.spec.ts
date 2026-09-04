@@ -101,6 +101,7 @@ describe('published package surface', () => {
       ['@dofe/dsh-yootun-supply-watch', 'dsh-yootun-supply-watch'],
       ['@dofe/dsh-yootun-tos-upload', 'dsh-yootun-tos-upload'],
       ['@dofe/dsh-yootun-ui', 'dsh-yootun-ui'],
+      ['@dofe/dsh-yootun-xhs-operation', 'dsh-yootun-xhs-operation'],
     ] as const
     for (const [name, directory] of plugins) {
       expect(manifest.dependencies?.[name])
@@ -121,6 +122,7 @@ describe('published package surface', () => {
       ['dsh-yootun-lead-discovery', 'index.js'], ['dsh-yootun-recruiter', 'index.js'],
       ['dsh-yootun-retrofit', 'index.js'], ['dsh-yootun-sales', 'index.js'],
       ['dsh-yootun-supply-watch', 'index.js'], ['dsh-yootun-tos-upload', 'index.js'], ['dsh-yootun-ui', 'index.js'],
+      ['dsh-yootun-xhs-operation', 'index.js'],
     ])
     for (const [name, main] of pluginMains) {
       expect(existsSync(new URL(`../.ci/${name}/package.json`, packageRoot))).toBe(true)

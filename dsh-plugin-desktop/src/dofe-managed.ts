@@ -27,7 +27,7 @@ const ROUTES: readonly { plugin: Exclude<DofePluginId, 'opencli'>; serverName: s
   { plugin: 'openmontage', serverName: 'openmontage', path: 'montage', timeoutMs: 600_000 },
   ...[
     'platform', 'supply-chain', 'talent-discovery', 'lead-discovery', 'lead-monitor',
-    'hotspot-discovery', 'custom-car-monitoring', 'viral-video', 'browser-intelligence', 'tos-upload',
+    'hotspot-discovery', 'custom-car-monitoring', 'viral-video', 'browser-intelligence', 'tos-upload', 'xhs-operation',
   ].map(path => ({ plugin: 'tools' as const, serverName: `tools-${path}`, path: `tools/${path}`, timeoutMs: 60_000 })),
 ]
 

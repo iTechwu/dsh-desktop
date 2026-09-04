@@ -1527,6 +1527,9 @@ importers:
       '@dofe/dsh-yootun-ui':
         specifier: file:../../docker-helm.dofe.ai/plugins/dsh-yootun-ui
         version: file:../docker-helm.dofe.ai/plugins/dsh-yootun-ui
+      '@dofe/dsh-yootun-xhs-operation':
+        specifier: file:../../docker-helm.dofe.ai/plugins/dsh-yootun-xhs-operation
+        version: file:../docker-helm.dofe.ai/plugins/dsh-yootun-xhs-operation
       '@linxin666/dsh-client-ui-aionui-panel':
         specifier: 0.3.6
         version: 0.3.6(react@18.3.1)
@@ -2455,6 +2458,9 @@ packages:
 
   '@dofe/dsh-yootun-ui@file:../docker-helm.dofe.ai/plugins/dsh-yootun-ui':
     resolution: {directory: ../docker-helm.dofe.ai/plugins/dsh-yootun-ui, type: directory}
+
+  '@dofe/dsh-yootun-xhs-operation@file:../docker-helm.dofe.ai/plugins/dsh-yootun-xhs-operation':
+    resolution: {directory: ../docker-helm.dofe.ai/plugins/dsh-yootun-xhs-operation, type: directory}
 
   '@dotenvx/dotenvx@1.75.1':
     resolution: {integrity: sha512-/BITOC9dmS/edY2zQwZNicQ059O6RKabtQfyEafV0nGtfYRNHYy1DIPiYVcov40+tob9hfmBnbR963dS+EQ1DQ==}
@@ -7734,6 +7740,8 @@ snapshots:
   '@dofe/dsh-yootun-tos-upload@file:../docker-helm.dofe.ai/plugins/dsh-yootun-tos-upload': {}
 
   '@dofe/dsh-yootun-ui@file:../docker-helm.dofe.ai/plugins/dsh-yootun-ui': {}
+
+  '@dofe/dsh-yootun-xhs-operation@file:../docker-helm.dofe.ai/plugins/dsh-yootun-xhs-operation': {}
 
   '@dotenvx/dotenvx@1.75.1':
     dependencies:

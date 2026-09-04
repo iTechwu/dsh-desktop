@@ -1,0 +1,7 @@
+# 小红书仿写工作台：页面侧插件（客户端 UI）+ 本地宿主路由（同源 host endpoint）。
+# 凭证卫生：页面只访问本地同源路由 /api/desktop/yootun/xhs-operation，上传复用
+# dsh-yootun-tos-upload 的 /_dsh/uploader/*；浏览器不读取 MODELS_API_KEY、不直连
+# 公网 MCP，也不接收凭据、内部地址或原始传输错误。
+- insert:
+    - id: dofe-yootun-xhs-operation
+      name: '@dofe/dsh-yootun-xhs-operation'
