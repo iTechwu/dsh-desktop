@@ -25,6 +25,9 @@ const ROUTES: readonly { plugin: Exclude<DofePluginId, 'opencli'>; serverName: s
   { plugin: 'geoflow', serverName: 'geoflow', path: 'geoflow', timeoutMs: 60_000 },
   { plugin: 'georank', serverName: 'georank', path: 'georank', timeoutMs: 120_000 },
   { plugin: 'openmontage', serverName: 'openmontage', path: 'montage', timeoutMs: 600_000 },
+  // Models 媒体直连生成：create 是普通 API 调用（60s），轮询由 Agent 显式调用
+  // get_generation_task，不持有长连接等待生成完成。
+  { plugin: 'media', serverName: 'media', path: 'media', timeoutMs: 60_000 },
   ...[
     'platform', 'supply-chain', 'talent-discovery', 'lead-discovery', 'lead-monitor',
     'hotspot-discovery', 'custom-car-monitoring', 'viral-video', 'browser-intelligence', 'tos-upload', 'xhs-operation',
@@ -59,7 +62,7 @@ export async function apply(ctx: Context): Promise<void> {
   ctx.systemPrompt.section({
     name: 'dofe:managed-access',
     order: 4,
-    text: 'DoFe 托管能力：模型请求统一使用 CI Model Router；涉及 GEO、商业工具或视频生成时，优先使用已加载的 mcp__geoflow__、mcp__georank__、mcp__tools-* 与 mcp__openmontage__ 工具。启动引导会收集一次 model_api_key，之后不要要求用户再次提供。',
+    text: 'DoFe 托管能力：模型请求统一使用 CI Model Router；涉及 GEO、商业工具、单张图片、5–10 秒单镜头短视频或复杂视频生成时，优先使用已加载的 mcp__geoflow__、mcp__georank__、mcp__tools-*、mcp__media__ 与 mcp__openmontage__ 工具（脚本/多镜头/复刻/字幕/配音用 mcp__openmontage__，单镜头直连用 mcp__media__）。启动引导会收集一次 model_api_key，之后不要要求用户再次提供。',
   })
   let clients: { dispose(): void | Promise<void> }[] = []
   let activeKey: string | undefined

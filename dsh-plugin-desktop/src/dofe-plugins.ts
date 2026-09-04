@@ -25,6 +25,11 @@ export const DOFE_PLUGIN_CATALOG = [
     description: '视频生成与素材编排',
   },
   {
+    id: 'media',
+    name: 'Media 生成',
+    description: '单张图片与 5–10 秒单镜头视频直连生成（复杂视频走 OpenMontage）',
+  },
+  {
     id: 'opencli',
     name: 'OpenCLI Research',
     description: '受控的互联网只读调研',
