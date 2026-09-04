@@ -21,8 +21,8 @@ const {
 } = module.exports.__test
 
 test('normalizes invalid workspace fields to honest defaults', () => {
-  assert.deepEqual(JSON.parse(JSON.stringify(normalizeWorkspace({ status: 'cached', summary: { today: 4, failed: 1, pendingSync: 2 }, events: 'invalid' }))), {
-    status: 'cached', summary: { today: 4, failed: 1, pendingSync: 2 }, events: [], page: { nextCursor: null },
+  assert.deepEqual(JSON.parse(JSON.stringify(normalizeWorkspace({ status: 'cached', summary: { today: 4, succeeded: 3, abnormal: 1, pendingSync: 2 }, events: 'invalid' }))), {
+    status: 'cached', summary: { today: 4, succeeded: 3, abnormal: 1, pendingSync: 2 }, events: [], page: { nextCursor: null },
     scopes: { available: ['self'], isSuperAdmin: false }, sync: { pending: 0, quarantine: 0 }, freshness: { source: 'live' },
   })
 })

@@ -46,7 +46,7 @@ const failedEvent = {
 
 const workspace = overrides => ({
   status: 'ready',
-  summary: { today: 12, failed: 1, pendingSync: 0 },
+  summary: { today: 12, succeeded: 10, abnormal: 2, pendingSync: 0 },
   events: [event, failedEvent],
   page: { nextCursor: null },
   scopes: { available: ['self'], isSuperAdmin: false },
@@ -58,9 +58,9 @@ const workspace = overrides => ({
 let scenario = 'live'
 const responses = {
   live: () => workspace({}),
-  empty: () => workspace({ summary: { today: 0, failed: 0, pendingSync: 0 }, events: [] }),
+  empty: () => workspace({ summary: { today: 0, succeeded: 0, abnormal: 0, pendingSync: 0 }, events: [] }),
   cached: () => workspace({ status: 'offline', freshness: { source: 'cache', syncedAt: '2026-09-05T01:50:00.000Z' } }),
-  pending: () => workspace({ summary: { today: 12, failed: 1, pendingSync: 3 }, sync: { pending: 3, quarantine: 0, errorCode: 'network_unavailable' } }),
+  pending: () => workspace({ summary: { today: 12, succeeded: 10, abnormal: 2, pendingSync: 3 }, sync: { pending: 3, quarantine: 0, errorCode: 'network_unavailable' } }),
   member: () => workspace({ scopes: { available: ['self'], isSuperAdmin: false } }),
   admin: () => workspace({ scopes: { available: ['self', 'team'], currentTeam: { id: 'team-1', name: '增长团队' }, isSuperAdmin: false } }),
   superadmin: () => workspace({ scopes: { available: ['self', 'team'], isSuperAdmin: true } }),
@@ -109,7 +109,7 @@ await page.route('**/api/desktop/yootun/audit*', async route => {
     return
   }
   if (scenario === 'loading') await new Promise(resolveDelay => setTimeout(resolveDelay, 500))
-  const value = query.get('query') ? workspace({ events: [], summary: { today: 0, failed: 0, pendingSync: 0 } }) : responses[scenario === 'loading' ? 'live' : scenario]()
+  const value = query.get('query') ? workspace({ events: [], summary: { today: 0, succeeded: 0, abnormal: 0, pendingSync: 0 } }) : responses[scenario === 'loading' ? 'live' : scenario]()
   await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(value) })
 })
 
