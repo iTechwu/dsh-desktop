@@ -33,7 +33,6 @@ import { YOOTUN_RECRUITER_PATH } from '../src/yootun-recruiter-route.ts'
 import { YOOTUN_SALES_PATH } from '../src/yootun-sales-route.ts'
 import { YOOTUN_SUPPLY_WATCH_PATH } from '../src/yootun-supply-watch-route.ts'
 import { YOOTUN_CONTENT_COMMAND_PATH } from '../src/yootun-content-command-route.ts'
-import { YOOTUN_APPROVALS_PATH } from '../src/yootun-approvals-route.ts'
 import { YOOTUN_AUDIT_PATH } from '../src/yootun-audit-route.ts'
 import {
   DESKTOP_DEVELOPER_TOOLS_TOGGLE_PATH,
@@ -437,7 +436,6 @@ describe('desktop Host plugin', () => {
       YOOTUN_SALES_PATH,
       YOOTUN_SUPPLY_WATCH_PATH,
       YOOTUN_CONTENT_COMMAND_PATH,
-      YOOTUN_APPROVALS_PATH,
       YOOTUN_AUDIT_PATH,
       RENDERER_BOOT_REPORT_PATH,
       DESKTOP_DIRECTORY_PICKER_PATH,

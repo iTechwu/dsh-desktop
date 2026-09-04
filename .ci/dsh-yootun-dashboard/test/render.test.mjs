@@ -112,7 +112,7 @@ test('dashboard client renders health strip, attention queue, and tab switching'
   assert.equal(byClass(tree, 'yd-geo-detail').length, 1)
   assert.equal(byClass(tree, 'yd-geo-detail').at(0).props.className, 'yd-detail-stack yd-geo-detail')
 
-  // 待审批异常行带「打开统一审批」直达按钮，点击派发跨插件事件
+  // 待审批异常行只能跳转只读操作审计，不再进入中央审批队列
   states[0] = 'overview'
   tree = render()
   const dispatches = []
@@ -120,9 +120,9 @@ test('dashboard client renders health strip, attention queue, and tab switching'
   globalThis.window ??= { dispatchEvent: event => dispatches.push(event.type), addEventListener() {}, removeEventListener() {} }
   const actionButtons = byClass(tree, 'yd-attention-action')
   assert.equal(actionButtons.length, 1)
-  assert.equal(text(actionButtons[0]), 'openApprovals')
+  assert.equal(text(actionButtons[0]), 'openAudit')
   actionButtons[0].props.onClick()
-  assert.deepEqual(dispatches, ['dofe:yootun-approvals:open'])
+  assert.deepEqual(dispatches, ['dofe:yootun-audit:open'])
   // 昨日视图不展示团队/本人切换，避免把 key-scoped 数据误标成团队数据。
   assert.equal(collect(tree, node => node.props?.['aria-label'] === 'scopeControl').length, 0)
   const exportButton = collect(tree, node => node.props?.['aria-label'] === 'exportCsv').at(0)

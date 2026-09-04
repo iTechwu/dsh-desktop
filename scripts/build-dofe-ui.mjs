@@ -4,7 +4,7 @@ import { existsSync } from 'node:fs'
 import { resolve } from 'node:path'
 
 const root = resolve(import.meta.dirname, '..')
-const plugins = ['dsh-yootun-ui', 'dsh-yootun-dashboard', 'dsh-yootun-recruiter', 'dsh-yootun-xhs-operation']
+const plugins = ['dsh-yootun-ui', 'dsh-yootun-dashboard', 'dsh-yootun-audit', 'dsh-yootun-recruiter', 'dsh-yootun-xhs-operation']
 for (const name of plugins) {
   const plugin = resolve(root, `../docker-helm.dofe.ai/plugins/${name}`)
   if (!existsSync(resolve(plugin, 'package.json'))) {

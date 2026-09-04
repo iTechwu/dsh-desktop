@@ -62,6 +62,7 @@ const workspaceManifest = JSON.parse(readFileSync(new URL('package.json', worksp
   scripts?: Record<string, unknown>
 }
 const ciWorkflow = readFileSync(new URL('.github/workflows/ci.yml', workspaceRoot), 'utf8')
+const dofeUiBuild = readFileSync(new URL('scripts/build-dofe-ui.mjs', workspaceRoot), 'utf8')
 const main = readFileSync(new URL('src/main.ts', packageRoot), 'utf8')
 
 describe('published package surface', () => {
@@ -88,7 +89,7 @@ describe('published package surface', () => {
       ['@dofe/dsh-opencli', 'dsh-opencli'],
       ['@noob-stupid/dsh-plugin-console', 'dsh-plugin-console'],
       ['@dofe/dsh-tools-mcp', 'dsh-tools-mcp'],
-      ['@dofe/dsh-yootun-approvals', 'dsh-yootun-approvals'],
+      ['@dofe/dsh-yootun-audit', 'dsh-yootun-audit'],
       ['@dofe/dsh-yootun-content-command', 'dsh-yootun-content-command'],
       ['@dofe/dsh-yootun-daily-report', 'dsh-yootun-daily-report'],
       ['@dofe/dsh-yootun-dashboard', 'dsh-yootun-dashboard'],
@@ -109,6 +110,7 @@ describe('published package surface', () => {
     }
     expect(workspaceManifest.scripts?.['dofe-ui:build'])
       .toBe('node scripts/build-dofe-ui.mjs')
+    expect(dofeUiBuild).toContain("'dsh-yootun-audit'")
     expect(ciWorkflow.match(/node scripts\/prepare-dofe-ui\.mjs/g)).toHaveLength(4)
   })
 
@@ -116,7 +118,7 @@ describe('published package surface', () => {
     const pluginMains = new Map([
       ['dsh-geoflow-mcp', 'index.js'], ['dsh-georank-mcp', 'index.js'], ['dsh-opencli', 'index.js'],
       ['dsh-plugin-console', 'lib/index.js'], ['dsh-tools-mcp', 'index.js'],
-      ['dsh-yootun-approvals', 'index.js'], ['dsh-yootun-content-command', 'index.js'],
+      ['dsh-yootun-audit', 'index.js'], ['dsh-yootun-content-command', 'index.js'],
       ['dsh-yootun-daily-report', 'index.js'], ['dsh-yootun-dashboard', 'index.js'],
       ['dsh-yootun-finops', 'index.js'], ['dsh-yootun-knowledge', 'index.js'],
       ['dsh-yootun-lead-discovery', 'index.js'], ['dsh-yootun-recruiter', 'index.js'],
@@ -238,7 +240,7 @@ describe('published package surface', () => {
     expect(readFileSync(new URL('cordis.patch.yml', packageRoot), 'utf8')).toContain("name: '@dofe/dsh-yootun-dashboard'")
     expect(readFileSync(new URL('cordis.patch.yml', packageRoot), 'utf8')).toContain("name: '@dofe/dsh-yootun-recruiter'")
     const patchSource = readFileSync(new URL('cordis.patch.yml', packageRoot), 'utf8')
-    for (const plugin of ['recruiter', 'sales', 'supply-watch', 'content-command', 'approvals']) {
+    for (const plugin of ['recruiter', 'sales', 'supply-watch', 'content-command']) {
       expect(patchSource).toMatch(
         new RegExp(`name: '@dofe/dsh-yootun-${plugin}'\\n\\s+config:\\n\\s+registerHostRoute: false`, 'u'),
       )
@@ -247,7 +249,8 @@ describe('published package surface', () => {
     expect(readFileSync(new URL('cordis.patch.yml', packageRoot), 'utf8')).toContain("name: '@dofe/dsh-yootun-supply-watch'")
     expect(readFileSync(new URL('cordis.patch.yml', packageRoot), 'utf8')).toContain("name: '@dofe/dsh-yootun-content-command'")
     expect(readFileSync(new URL('cordis.patch.yml', packageRoot), 'utf8')).toContain("name: '@dofe/dsh-yootun-knowledge'")
-    expect(readFileSync(new URL('cordis.patch.yml', packageRoot), 'utf8')).toContain("name: '@dofe/dsh-yootun-approvals'")
+    expect(readFileSync(new URL('cordis.patch.yml', packageRoot), 'utf8')).toContain("name: '@dofe/dsh-yootun-audit'")
+    expect(patchSource).not.toContain('dsh-yootun-approvals')
     expect(readFileSync(new URL('cordis.patch.yml', packageRoot), 'utf8')).toContain("name: '@dofe/dsh-yootun-finops'")
     expect(patchSource).not.toMatch(/name: '@dofe\/dsh-yootun-finops'\n\s+config:\n\s+registerHostRoute: false/u)
     expect(readFileSync(new URL('cordis.patch.yml', packageRoot), 'utf8')).toContain("name: '@dofe/dsh-yootun-retrofit'")

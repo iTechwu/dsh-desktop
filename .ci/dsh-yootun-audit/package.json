@@ -1,7 +1,7 @@
 {
-  "name": "@dofe/dsh-yootun-approvals",
+  "name": "@dofe/dsh-yootun-audit",
   "version": "0.1.0",
-  "description": "Yootun unified human approval and audit workspace",
+  "description": "Yootun operation audit workspace",
   "type": "module",
   "main": "./index.js",
   "exports": { ".": "./index.js", "./client": "./lib/client.js", "./package.json": "./package.json" },

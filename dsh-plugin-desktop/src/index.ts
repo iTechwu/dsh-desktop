@@ -55,10 +55,6 @@ import { handleYootunAuditRequest, YOOTUN_AUDIT_PATH } from './yootun-audit-rout
 import { YootunAuditService } from './yootun-audit-service.ts'
 import { YootunAuditStore } from './yootun-audit-store.ts'
 import {
-  handleYootunApprovalsRequest,
-  YOOTUN_APPROVALS_PATH,
-} from './yootun-approvals-route.ts'
-import {
   DESKTOP_DIRECTORY_PICKER_PATH,
   DESKTOP_DIRECTORY_VALIDATOR_PATH,
 } from './directory-picker-contract.ts'
@@ -502,19 +498,6 @@ export function apply(ctx: Context, config: Config): void {
       },
     }),
     `dsh-plugin-desktop: private Yootun content command route ${YOOTUN_CONTENT_COMMAND_PATH}`,
-  )
-  ctx.effect(
-    () => ctx.webServer.register({
-      kind: 'exact',
-      path: YOOTUN_APPROVALS_PATH,
-      handler: (req, res) => {
-        if (rejectDesktopRequest(ctx, req, res)) return
-        return handleYootunApprovalsRequest(req, res, rendererOrigin, {
-          statePath: ctx.get('dshHomePath')?.('storages', 'yootun-approvals', 'state.json'),
-        })
-      },
-    }),
-    `dsh-plugin-desktop: private Yootun approvals route ${YOOTUN_APPROVALS_PATH}`,
   )
   if (runtime.platform === 'win32') {
     ctx.effect(

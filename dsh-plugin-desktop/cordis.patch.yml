@@ -29,10 +29,8 @@
         registerHostRoute: false
     - id: dofe-yootun-knowledge
       name: '@dofe/dsh-yootun-knowledge'
-    - id: dofe-yootun-approvals
-      name: '@dofe/dsh-yootun-approvals'
-      config:
-        registerHostRoute: false
+    - id: dofe-yootun-audit
+      name: '@dofe/dsh-yootun-audit'
     - id: dofe-yootun-finops
       name: '@dofe/dsh-yootun-finops'
     - id: dofe-yootun-retrofit

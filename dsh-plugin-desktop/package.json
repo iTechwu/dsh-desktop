@@ -385,7 +385,7 @@
     "@dofe/dsh-georank-mcp": "file:../../docker-helm.dofe.ai/plugins/dsh-georank-mcp",
     "@dofe/dsh-opencli": "file:../../docker-helm.dofe.ai/plugins/dsh-opencli",
     "@dofe/dsh-tools-mcp": "file:../../docker-helm.dofe.ai/plugins/dsh-tools-mcp",
-    "@dofe/dsh-yootun-approvals": "file:../../docker-helm.dofe.ai/plugins/dsh-yootun-approvals",
+    "@dofe/dsh-yootun-audit": "file:../../docker-helm.dofe.ai/plugins/dsh-yootun-audit",
     "@dofe/dsh-yootun-content-command": "file:../../docker-helm.dofe.ai/plugins/dsh-yootun-content-command",
     "@dofe/dsh-yootun-daily-report": "file:../../docker-helm.dofe.ai/plugins/dsh-yootun-daily-report",
     "@dofe/dsh-yootun-dashboard": "file:../../docker-helm.dofe.ai/plugins/dsh-yootun-dashboard",

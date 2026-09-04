@@ -420,21 +420,57 @@ async function loadUsage(fetchImpl, apiKey, period, logger) {
       if (response.status === 403) return unavailable('billing_forbidden')
       return failed(`billing_http_${response.status}`)
     }
-    const data = await response.json()
-    const missingFields = []
+    const raw = await response.json()
+    const rawData = raw?.data && typeof raw.data === 'object' ? raw.data : raw
+    const data = normalizeUsagePayload(raw)
+    const missingFields = Array.isArray(data?.missingFields)
+      ? data.missingFields.filter(field => typeof field === 'string')
+      : []
     if (!data?.summary || typeof data.summary !== 'object') missingFields.push('summary')
-    if (!Array.isArray(data?.byModel)) missingFields.push('byModel')
+    if (!Array.isArray(rawData?.byModel) && !Array.isArray(rawData?.by_model)) missingFields.push('byModel')
     return {
       status: Number(data?.summary?.requests || 0) > 0 ? 'ready' : 'empty',
       data,
       asOf: data?.generatedAt || data?.asOf || '',
-      sourceCompleteness: missingFields.length ? 'partial' : 'complete',
-      missingFields,
+      sourceCompleteness: data?.sourceCompleteness === 'partial' || missingFields.length ? 'partial' : 'complete',
+      missingFields: [...new Set(missingFields)],
     }
   } catch (error) {
     logger?.warn?.('yootun dashboard: usage query failed: %s', safeError(error))
     return failed(error?.name === 'TimeoutError' ? 'billing_timeout' : 'billing_request_failed')
   }
+}
+
+// Models deployments before the daily rollup used snake_case or aggregate
+// aliases. Normalize at the Host boundary so the UI never silently loses
+// token/cost fields when an otherwise valid response uses an older shape.
+function normalizeUsagePayload(payload) {
+  const envelope = object(payload)
+  const value = { ...envelope, ...object(envelope.data) }
+  const rawSummary = object(value.summary)
+  const pick = (...values) => values.find(item => item !== null && item !== undefined && item !== '')
+  const summary = {
+    ...rawSummary,
+    requests: pick(rawSummary.requests, rawSummary.requestCount, rawSummary.request_count),
+    successfulRequests: pick(rawSummary.successfulRequests, rawSummary.successCount, rawSummary.success_count),
+    inputTokens: pick(rawSummary.inputTokens, rawSummary.input_tokens),
+    outputTokens: pick(rawSummary.outputTokens, rawSummary.output_tokens),
+    totalTokens: pick(rawSummary.totalTokens, rawSummary.total_tokens),
+    cost: pick(rawSummary.cost, rawSummary.totalCost, rawSummary.total_cost),
+  }
+  const byModel = list(value.byModel ?? value.by_model).map(row => {
+    const item = object(row)
+    return {
+      ...item,
+      model: string(pick(item.model, item.modelName, item.model_name)) || 'unknown',
+      requests: pick(item.requests, item.requestCount, item.request_count),
+      inputTokens: pick(item.inputTokens, item.input_tokens),
+      outputTokens: pick(item.outputTokens, item.output_tokens),
+      totalTokens: pick(item.totalTokens, item.total_tokens),
+      cost: pick(item.cost, item.totalCost, item.total_cost),
+    }
+  })
+  return { ...value, summary, byModel }
 }
 
 async function loadActivity(persistence, period, logger) {
@@ -563,6 +599,12 @@ function windowDates(startDate, endDate) {
     cursor += DAY_MS
   }
   return dates
+}
+
+function addDays(date, amount) {
+  const value = new Date(`${date}T00:00:00Z`)
+  value.setUTCDate(value.getUTCDate() + amount)
+  return value.toISOString().slice(0, 10)
 }
 
 function dayKey(ms) {
@@ -745,13 +787,25 @@ async function loadUsageSeries(fetchImpl, apiKey, window, scope, logger) {
       fetchUsageDaily(fetchImpl, apiKey, window.baselineStart, window.baselineEnd, scope),
     ])
     if (currentResult.status === 'rejected') throw currentResult.reason
-    const current = currentResult.value
+    let current = currentResult.value
     if (!current.ok) {
       if (current.status === 401) return unavailable('billing_auth_unavailable')
       if (current.status === 403) return unavailable(scope === 'team' ? 'billing_team_forbidden' : 'billing_forbidden')
-      return failed(`billing_http_${current.status}`)
+      // The range endpoint is key-scoped. Never use it as a team fallback or
+      // the dashboard would present a key snapshot as a team aggregate.
+      if (scope === 'team') return failed('billing_team_rollup_unavailable')
+      // Keep the dashboard usable while Models rolls out/fixes the daily
+      // rollup. The fallback is still key-authenticated and only calls the
+      // existing <=48h usage contract, one calendar day at a time.
+      current = await loadUsageSeriesFallback(fetchImpl, apiKey, window, scope, logger)
+      if (!current?.ok) return failed(`billing_http_${current.status || 502}`)
     }
-    const baseline = baselineResult.status === 'fulfilled' && baselineResult.value.ok ? baselineResult.value : null
+    let baseline = baselineResult.status === 'fulfilled' && baselineResult.value.ok ? baselineResult.value : null
+    if (!baseline) {
+      baseline = scope === 'team'
+        ? null
+        : await loadUsageSeriesFallback(fetchImpl, apiKey, { startDate: window.baselineStartDate, endDate: window.startDate }, scope, logger)
+    }
     const totals = {
       requests: sumOf(current.days, 'requests'),
       successfulRequests: sumOf(current.days, 'successfulRequests'),
@@ -783,10 +837,54 @@ async function loadUsageSeries(fetchImpl, apiKey, window, scope, logger) {
         )
         : { status: 'unavailable', reason: 'baseline_unavailable' },
       asOf: current.asOf,
+      ...(current.partial ? { sourceCompleteness: 'partial', missingFields: current.missingFields } : {}),
     }
   } catch (error) {
     logger?.warn?.('yootun dashboard: usage series failed: %s', safeError(error))
     return failed(error?.name === 'TimeoutError' ? 'billing_timeout' : 'billing_request_failed')
+  }
+}
+
+async function loadUsageSeriesFallback(fetchImpl, apiKey, window, scope, logger) {
+  const dates = windowDates(window.startDate, window.endDate)
+  const results = await mapWithConcurrency(dates, 4, async date => {
+    const next = addDays(date, 1)
+    try {
+      const url = new URL(MODELS_USAGE_URL)
+      url.searchParams.set('start', `${date}T00:00:00+08:00`)
+      url.searchParams.set('end', `${next}T00:00:00+08:00`)
+      const response = await timedFetch(fetchImpl, url, { headers: { Authorization: `Bearer ${apiKey}`, Accept: 'application/json' } })
+      if (!response.ok) return { date, ok: false, status: response.status }
+      const payload = normalizeUsagePayload(await response.json())
+      return { date, ok: true, payload }
+    } catch (error) {
+      logger?.warn?.('yootun dashboard: usage fallback failed: %s', safeError(error))
+      return { date, ok: false, status: 502 }
+    }
+  })
+  if (results.some(item => item.status === 401 || item.status === 403)) return { ok: false, status: 401 }
+  const successful = results.filter(item => item.ok)
+  if (!successful.length) return { ok: false, status: results[0]?.status || 502 }
+  const missingFields = [
+    ...results.filter(item => !item.ok).map(item => `days.${item.date}`),
+    ...successful.flatMap(item => list(item.payload?.missingFields).filter(field => typeof field === 'string')),
+  ]
+  const days = results.map(item => {
+    const summary = item.payload?.summary || {}
+    return {
+      date: item.date,
+      requests: numberOrNull(summary.requests), successfulRequests: numberOrNull(summary.successfulRequests),
+      inputTokens: numberOrNull(summary.inputTokens), outputTokens: numberOrNull(summary.outputTokens),
+      totalTokens: numberOrNull(summary.totalTokens), cost: numberOrNull(summary.cost), latencyP50Ms: null, latencyP95Ms: null,
+    }
+  })
+  return {
+    ok: true,
+    fallback: true,
+    partial: successful.length !== results.length || successful.some(item => item.payload?.sourceCompleteness === 'partial') || missingFields.length > 0,
+    missingFields: [...new Set(missingFields)],
+    days, currency: successful.find(item => item.payload?.currency)?.payload?.currency || 'CNY',
+    scope, byRoute: [], byMember: [], budgets: [], principal: null, asOf: '',
   }
 }
 
@@ -800,18 +898,23 @@ async function fetchUsageDaily(fetchImpl, apiKey, start, end, scope) {
     headers: { Authorization: `Bearer ${apiKey}`, Accept: 'application/json' },
   })
   if (!response.ok) return { ok: false, status: response.status }
-  const payload = await response.json()
+  const rawPayload = await response.json()
+  const payload = rawPayload?.data && typeof rawPayload.data === 'object' ? { ...rawPayload, ...rawPayload.data } : rawPayload
   const days = list(payload?.days).map(day => ({
     date: string(day?.date),
-    requests: number(day?.requests),
-    successfulRequests: number(day?.successfulRequests),
-    inputTokens: number(day?.inputTokens),
-    outputTokens: number(day?.outputTokens),
-    totalTokens: number(day?.totalTokens),
-    cost: number(day?.cost),
+    requests: numberOrNull(day?.requests ?? day?.requestCount ?? day?.request_count),
+    successfulRequests: numberOrNull(day?.successfulRequests ?? day?.successCount ?? day?.success_count),
+    inputTokens: numberOrNull(day?.inputTokens ?? day?.input_tokens),
+    outputTokens: numberOrNull(day?.outputTokens ?? day?.output_tokens),
+    totalTokens: numberOrNull(day?.totalTokens ?? day?.total_tokens),
+    cost: numberOrNull(day?.cost ?? day?.totalCost ?? day?.total_cost),
     latencyP50Ms: day?.latencyP50Ms === null || day?.latencyP50Ms === undefined ? null : number(day.latencyP50Ms),
     latencyP95Ms: day?.latencyP95Ms === null || day?.latencyP95Ms === undefined ? null : number(day.latencyP95Ms),
   }))
+  const missingFields = [
+    ...list(payload?.missingFields).filter(field => typeof field === 'string'),
+    ...usageMetricGaps(days, 'days'),
+  ]
   return {
     ok: true,
     days,
@@ -819,29 +922,38 @@ async function fetchUsageDaily(fetchImpl, apiKey, start, end, scope) {
     scope: payload?.attribution?.scope === 'team' ? 'team' : 'key',
     byRoute: list(payload?.byRoute).map(route => ({
       route: string(route?.route) || 'unknown',
-      requests: number(route?.requests),
-      cost: number(route?.cost),
+      requests: numberOrNull(route?.requests ?? route?.requestCount ?? route?.request_count),
+      cost: numberOrNull(route?.cost ?? route?.totalCost ?? route?.total_cost),
     })),
     byMember: list(payload?.byMember).map(member => ({
       memberId: string(member?.memberId),
       displayName: string(member?.displayName),
       ownerType: string(member?.ownerType),
-      requests: number(member?.requests),
-      cost: number(member?.cost),
+      requests: numberOrNull(member?.requests ?? member?.requestCount ?? member?.request_count),
+      cost: numberOrNull(member?.cost ?? member?.totalCost ?? member?.total_cost),
     })),
     budgets: list(payload?.budgets).map(budget => ({
       name: string(budget?.name),
       type: string(budget?.type),
       period: string(budget?.period),
-      limit: number(budget?.limit),
-      used: number(budget?.used),
+      limit: numberOrNull(budget?.limit),
+      used: numberOrNull(budget?.used),
       currency: string(budget?.currency) || 'CNY',
     })),
     principal: payload?.attribution?.principal && typeof payload.attribution.principal === 'object'
       ? payload.attribution.principal
       : null,
     asOf: payload?.generatedAt || payload?.asOf || '',
+    partial: payload?.sourceCompleteness === 'partial' || missingFields.length > 0,
+    missingFields: [...new Set(missingFields)],
   }
+}
+
+function usageMetricGaps(rows, prefix) {
+  if (!rows.length) return []
+  return ['inputTokens', 'outputTokens', 'totalTokens', 'cost']
+    .filter(field => rows.every(row => numberOrNull(row?.[field]) === null))
+    .map(field => `${prefix}.${field}`)
 }
 
 async function loadActivitySeries(persistence, window, logger) {
@@ -1016,7 +1128,21 @@ function sumBucketList(days) {
 }
 
 function sumOf(days, key) {
-  return days.reduce((sum, day) => sum + number(day[key]), 0)
+  const values = days.map(day => numberOrNull(day[key])).filter(value => value !== null)
+  return values.length ? Number(values.reduce((sum, value) => sum + value, 0).toFixed(4)) : null
+}
+
+async function mapWithConcurrency(items, limit, worker) {
+  const output = new Array(items.length)
+  let cursor = 0
+  async function run() {
+    while (cursor < items.length) {
+      const index = cursor++
+      output[index] = await worker(items[index], index)
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, run))
+  return output
 }
 
 // 环比：服务端（Host）按同一时区窗口计算，前端不自行猜基线。
@@ -1025,10 +1151,10 @@ function buildComparison(current, baseline, keys) {
   const delta = {}
   const deltaPercent = {}
   for (const key of keys) {
-    const base = number(baseline[key])
-    const value = number(current[key])
-    delta[key] = value - base
-    deltaPercent[key] = base > 0 ? Math.round(((value - base) / base) * 100) : null
+    const base = numberOrNull(baseline[key])
+    const value = numberOrNull(current[key])
+    delta[key] = value !== null && base !== null ? value - base : null
+    deltaPercent[key] = value !== null && base !== null && base > 0 ? Math.round(((value - base) / base) * 100) : null
   }
   return { status: 'ready', baseline, delta, deltaPercent }
 }

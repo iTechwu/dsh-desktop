@@ -12,7 +12,7 @@ const overlayPlugins = [
   'dsh-yootun-content-command',
   'dsh-yootun-knowledge',
   'dsh-yootun-retrofit',
-  'dsh-yootun-approvals',
+  'dsh-yootun-audit',
   'dsh-yootun-daily-report',
   'dsh-yootun-finops',
 ]

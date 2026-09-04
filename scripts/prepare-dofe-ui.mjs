@@ -17,7 +17,7 @@ const preinstalledPlugins = [
   'dsh-yootun-supply-watch',
   'dsh-yootun-content-command',
   'dsh-yootun-knowledge',
-  'dsh-yootun-approvals',
+  'dsh-yootun-audit',
   'dsh-yootun-finops',
   'dsh-yootun-retrofit',
   'dsh-yootun-daily-report',

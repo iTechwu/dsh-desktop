@@ -69,6 +69,7 @@ test('dashboard UI uses one spacing rhythm across desktop and mobile breakpoints
   assert.match(source, /sourceEmptyContext/)
   assert.match(source, /@media\(max-width:800px\)\{\.yd-overlay\{--yd-content-gutter:16px\}/)
   assert.match(source, /style\.textContent = css \+ spacingCss \+ capabilityCss/)
+  assert.match(source, /\.yd-ranges button\[data-active=true\]\{background:var\(--dsw-alias-brand-primary\);color:var\(--dsw-alias-bg-base\)/)
 })
 
 test('loads and registers the sidebar action and global overlay', async () => {
@@ -356,6 +357,146 @@ test('host endpoint reports partial completeness when upstream omits fields', as
   // Models 缺 byModel
   assert.equal(response.body.usage.sourceCompleteness, 'partial')
   assert.deepEqual(response.body.usage.missingFields, ['byModel'])
+})
+
+test('normalizes legacy Models aliases so model token and cost details are retained', async () => {
+  let route
+  applyHost({
+    credentials: { async resolve() { return { value: 'test-model-key' } } },
+    effect(factory) { return factory() },
+    logger: { warn() {} },
+    sessionPersistence: { async list() { return [] } },
+    webServer: { register(value) { if (value.path === '/api/desktop/yootun/dashboard/yesterday') route = value; return () => {} } },
+  }, {
+    fetch: async url => {
+      const target = String(url)
+      if (target.includes('/mcp/geoflow')) return new Response(JSON.stringify({ jsonrpc: '2.0', result: { structuredContent: { kpis: { articles: 0, published: 0, total_views: 0, failed_tasks: 0 }, top_content: [] } } }), { status: 200 })
+      if (target.includes('/montage/overview')) return new Response(JSON.stringify({ data: { jobs: {}, artifacts: {}, health: {} }, meta: {} }), { status: 200 })
+      return new Response(JSON.stringify({ currency: 'CNY', summary: { request_count: 2, input_tokens: 100, output_tokens: 40, total_tokens: 140, total_cost: 0.5 }, by_model: [{ model_name: 'legacy-model', request_count: 2, input_tokens: 100, output_tokens: 40, total_tokens: 140, total_cost: 0.5 }] }), { status: 200 })
+    },
+    now: () => new Date('2026-09-01T01:30:00.000Z'),
+  })
+  const response = await invokeRoute(route, 'POST')
+  assert.equal(response.body.usage.status, 'ready')
+  assert.equal(response.body.usage.data.summary.requests, 2)
+  assert.equal(response.body.usage.data.summary.inputTokens, 100)
+  assert.equal(response.body.usage.data.summary.totalTokens, 140)
+  assert.equal(response.body.usage.data.summary.cost, 0.5)
+  assert.deepEqual(response.body.usage.data.byModel[0], { model_name: 'legacy-model', request_count: 2, input_tokens: 100, output_tokens: 40, total_tokens: 140, total_cost: 0.5, model: 'legacy-model', requests: 2, inputTokens: 100, outputTokens: 40, totalTokens: 140, cost: 0.5 })
+})
+
+test('preserves wrapped Models reconciliation metadata with settled spend', async () => {
+  let route
+  applyHost({
+    credentials: { async resolve() { return { value: 'test-model-key' } } },
+    effect(factory) { return factory() }, logger: { warn() {} },
+    sessionPersistence: { async list() { return [] } }, tools: { schemas() { return [] } },
+    webServer: { register(value) { if (value.path === '/api/desktop/yootun/dashboard/yesterday') route = value; return () => {} } },
+  }, {
+    fetch: async url => {
+      const target = String(url)
+      if (target.includes('/mcp/geoflow')) return new Response('failed', { status: 502 })
+      if (target.includes('/montage/overview')) return new Response('failed', { status: 503 })
+      return new Response(JSON.stringify({ data: {
+        currency: 'CNY',
+        sourceCompleteness: 'partial',
+        missingFields: ['summary.cost'],
+        summary: { requests: 5, inputTokens: 100, outputTokens: 20, totalTokens: 120, cost: 1.25 },
+        byModel: [],
+      } }), { status: 200, headers: { 'content-type': 'application/json' } })
+    },
+    now: () => new Date('2026-09-01T01:30:00.000Z'),
+  })
+  const response = await invokeRoute(route, 'POST')
+  assert.equal(response.body.usage.data.summary.cost, 1.25)
+  assert.equal(response.body.usage.sourceCompleteness, 'partial')
+  assert.deepEqual(response.body.usage.missingFields, ['summary.cost'])
+})
+
+test('falls back to authenticated daily usage slices when usage daily is unavailable', async () => {
+  let route
+  let dailyCalls = 0
+  let rangeCalls = 0
+  applyHost({
+    credentials: { async resolve() { return { value: 'test-model-key' } } },
+    effect(factory) { return factory() },
+    logger: { warn() {} },
+    sessionPersistence: { async list() { return [] } },
+    tools: { schemas() { return [] } },
+    webServer: { register(value) { if (value.path === '/api/desktop/yootun/dashboard/series') route = value; return () => {} } },
+  }, {
+    fetch: async url => {
+      const target = String(url)
+      if (target.includes('/usage/daily')) { dailyCalls += 1; return new Response('rollup unavailable', { status: 500 }) }
+      if (target.includes('/api/v1/yootun/usage?')) {
+        rangeCalls += 1
+        return new Response(JSON.stringify({ currency: 'CNY', summary: { requests: 1, inputTokens: 10, outputTokens: 5, totalTokens: 15, cost: 0.02 }, byModel: [{ model: 'fallback-model', requests: 1, inputTokens: 10, outputTokens: 5, totalTokens: 15, cost: 0.02 }] }), { status: 200 })
+      }
+      if (target.includes('/mcp/geoflow')) return new Response('failed', { status: 502 })
+      if (target.includes('/montage/series')) return new Response('failed', { status: 503 })
+      throw new Error(`unexpected URL ${target}`)
+    },
+    now: () => new Date('2026-09-01T01:30:00.000Z'),
+  })
+  const response = await invokeRoute(route, 'POST', { days: 7 })
+  assert.equal(response.body.usage.status, 'ready')
+  assert.equal(response.body.usage.data.totals.requests, 7)
+  assert.equal(response.body.usage.data.totals.totalTokens, 105)
+  assert.equal(response.body.usage.sourceCompleteness, 'complete')
+  assert.equal(dailyCalls, 2)
+  assert.equal(rangeCalls, 14)
+})
+
+test('preserves missing daily accounting fields as null across wrapped responses', async () => {
+  let route
+  applyHost({
+    credentials: { async resolve() { return { value: 'test-model-key' } } },
+    effect(factory) { return factory() }, logger: { warn() {} },
+    sessionPersistence: { async list() { return [] } }, tools: { schemas() { return [] } },
+    webServer: { register(value) { if (value.path === '/api/desktop/yootun/dashboard/series') route = value; return () => {} } },
+  }, {
+    fetch: async url => {
+      const target = String(url)
+      if (target.includes('/usage/daily')) return new Response(JSON.stringify({ data: { currency: 'CNY', attribution: { scope: 'key' }, days: [{ date: '2026-08-31', requests: 2 }], byRoute: [] } }), { status: 200 })
+      if (target.includes('/mcp/geoflow')) return new Response('failed', { status: 502 })
+      if (target.includes('/montage/series')) return new Response('failed', { status: 503 })
+      throw new Error(`unexpected URL ${target}`)
+    },
+    now: () => new Date('2026-09-01T01:30:00.000Z'),
+  })
+  const response = await invokeRoute(route, 'POST', { days: 7 })
+  assert.equal(response.body.usage.status, 'ready')
+  assert.equal(response.body.usage.data.totals.requests, 2)
+  assert.equal(response.body.usage.data.totals.totalTokens, null)
+  assert.equal(response.body.usage.data.totals.cost, null)
+  assert.equal(response.body.usage.comparison.delta.cost, null)
+  assert.equal(response.body.usage.sourceCompleteness, 'partial')
+  assert.ok(response.body.usage.missingFields.includes('days.cost'))
+})
+
+test('never falls back from team rollup to key-scoped usage', async () => {
+  let route
+  let rangeCalls = 0
+  applyHost({
+    credentials: { async resolve() { return { value: 'test-model-key' } } },
+    effect(factory) { return factory() }, logger: { warn() {} },
+    sessionPersistence: { async list() { return [] } }, tools: { schemas() { return [] } },
+    webServer: { register(value) { if (value.path === '/api/desktop/yootun/dashboard/series') route = value; return () => {} } },
+  }, {
+    fetch: async url => {
+      const target = String(url)
+      if (target.includes('/usage/daily')) return new Response('rollup unavailable', { status: 500 })
+      if (target.includes('/api/v1/yootun/usage?')) { rangeCalls += 1; return new Response('{}', { status: 200 }) }
+      if (target.includes('/mcp/geoflow')) return new Response('failed', { status: 502 })
+      if (target.includes('/montage/series')) return new Response('failed', { status: 503 })
+      throw new Error(`unexpected URL ${target}`)
+    },
+    now: () => new Date('2026-09-01T01:30:00.000Z'),
+  })
+  const response = await invokeRoute(route, 'POST', { days: 7, scope: 'team' })
+  assert.equal(response.body.usage.status, 'error')
+  assert.equal(response.body.usage.reason, 'billing_team_rollup_unavailable')
+  assert.equal(rangeCalls, 0)
 })
 
 test('host endpoint exposes the GEORank benchmark as an isolated GEO source', async () => {

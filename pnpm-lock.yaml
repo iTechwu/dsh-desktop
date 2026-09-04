@@ -1488,9 +1488,9 @@ importers:
       '@dofe/dsh-tools-mcp':
         specifier: file:../../docker-helm.dofe.ai/plugins/dsh-tools-mcp
         version: file:../docker-helm.dofe.ai/plugins/dsh-tools-mcp
-      '@dofe/dsh-yootun-approvals':
-        specifier: file:../../docker-helm.dofe.ai/plugins/dsh-yootun-approvals
-        version: file:../docker-helm.dofe.ai/plugins/dsh-yootun-approvals
+      '@dofe/dsh-yootun-audit':
+        specifier: file:../../docker-helm.dofe.ai/plugins/dsh-yootun-audit
+        version: file:../docker-helm.dofe.ai/plugins/dsh-yootun-audit
       '@dofe/dsh-yootun-content-command':
         specifier: file:../../docker-helm.dofe.ai/plugins/dsh-yootun-content-command
         version: file:../docker-helm.dofe.ai/plugins/dsh-yootun-content-command
@@ -2420,8 +2420,8 @@ packages:
   '@dofe/dsh-tools-mcp@file:../docker-helm.dofe.ai/plugins/dsh-tools-mcp':
     resolution: {directory: ../docker-helm.dofe.ai/plugins/dsh-tools-mcp, type: directory}
 
-  '@dofe/dsh-yootun-approvals@file:../docker-helm.dofe.ai/plugins/dsh-yootun-approvals':
-    resolution: {directory: ../docker-helm.dofe.ai/plugins/dsh-yootun-approvals, type: directory}
+  '@dofe/dsh-yootun-audit@file:../docker-helm.dofe.ai/plugins/dsh-yootun-audit':
+    resolution: {directory: ../docker-helm.dofe.ai/plugins/dsh-yootun-audit, type: directory}
 
   '@dofe/dsh-yootun-content-command@file:../docker-helm.dofe.ai/plugins/dsh-yootun-content-command':
     resolution: {directory: ../docker-helm.dofe.ai/plugins/dsh-yootun-content-command, type: directory}
@@ -7715,7 +7715,7 @@ snapshots:
 
   '@dofe/dsh-tools-mcp@file:../docker-helm.dofe.ai/plugins/dsh-tools-mcp': {}
 
-  '@dofe/dsh-yootun-approvals@file:../docker-helm.dofe.ai/plugins/dsh-yootun-approvals': {}
+  '@dofe/dsh-yootun-audit@file:../docker-helm.dofe.ai/plugins/dsh-yootun-audit': {}
 
   '@dofe/dsh-yootun-content-command@file:../docker-helm.dofe.ai/plugins/dsh-yootun-content-command': {}
 

@@ -293,7 +293,7 @@ the package names, versions, and licenses for transparency.
 | @dofe/dsh-georank-mcp | 0.1.0 | MIT |
 | @dofe/dsh-opencli | 0.3.0 | MIT |
 | @dofe/dsh-tools-mcp | 0.2.0 | MIT |
-| @dofe/dsh-yootun-approvals | 0.1.0 | MIT |
+| @dofe/dsh-yootun-audit | 0.1.0 | MIT |
 | @dofe/dsh-yootun-content-command | 0.1.0 | MIT |
 | @dofe/dsh-yootun-daily-report | 0.1.0 | MIT |
 | @dofe/dsh-yootun-dashboard | 0.1.0 | MIT |

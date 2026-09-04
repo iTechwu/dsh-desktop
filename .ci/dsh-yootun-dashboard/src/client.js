@@ -93,7 +93,7 @@ const copy = {
     rangeControl: '统计范围', scopeControl: '模型用量视角',
     byRoute: '路由归因', route: '路由', flat: '持平',
     scopeKey: '本人', scopeTeam: '团队', teamForbidden: '团队用量需要管理员/超管账号',
-    exportCsv: '导出 CSV', openApprovals: '打开统一审批',
+    exportCsv: '导出 CSV', openAudit: '查看操作审计',
     oldestWaiting: '最早等待', waitP50: '等待 P50', waitP95: '等待 P95', heartbeat: '心跳',
     budget: '预算阈值', budgetOf: '已用', latency: 'P95 延迟', member: '成员',
     funnel: '内容漏斗', channels: '渠道分布', stageStats: '阶段耗时',
@@ -128,7 +128,7 @@ const copy = {
     rangeControl: 'Date range', scopeControl: 'Model usage scope',
     byRoute: 'Route attribution', route: 'Route', flat: 'flat',
     scopeKey: 'Self', scopeTeam: 'Team', teamForbidden: 'Team usage requires an admin account',
-    exportCsv: 'Export CSV', openApprovals: 'Open approvals queue',
+    exportCsv: 'Export CSV', openAudit: 'View operation audit',
     oldestWaiting: 'Oldest waiting', waitP50: 'Wait P50', waitP95: 'Wait P95', heartbeat: 'Heartbeat',
     budget: 'Budgets', budgetOf: 'used', latency: 'P95 latency', member: 'Member',
     funnel: 'Content funnel', channels: 'Channel mix', stageStats: 'Stage durations',
@@ -309,7 +309,7 @@ function attentionItems(data, t) {
   if (geoFailed > 0) items.push({ key: 'geo-failed', tab: 'geo', glyph: 'warning', label: t('failedTasks'), value: formatNumber(geoFailed) })
   if (number(activityTotals.failedTurns) > 0) items.push({ key: 'activity-failed', tab: 'activity', glyph: 'warning', label: t('failed'), value: formatNumber(activityTotals.failedTurns) })
   if (montageFailed > 0) items.push({ key: 'montage-failed', tab: 'montage', glyph: 'warning', label: t('montageFailed'), value: formatNumber(montageFailed) })
-  if (montageApprovals > 0) items.push({ key: 'montage-approval', tab: 'montage', glyph: 'checklist', label: t('pendingApprovals'), value: formatNumber(montageApprovals), plugin: 'approvals' })
+  if (montageApprovals > 0) items.push({ key: 'montage-approval', tab: 'montage', glyph: 'checklist', label: t('pendingApprovals'), value: formatNumber(montageApprovals), plugin: 'audit' })
   if (failedWorkers > 0) items.push({ key: 'montage-worker', tab: 'montage', glyph: 'server', label: t('workerDown'), value: formatNumber(failedWorkers) })
   for (const [key, tab, name, source] of [
     ['geo-source', 'geo', t('geo'), data?.geo],
@@ -336,8 +336,7 @@ function HealthStrip({ data, t }) {
     h('span', { className: 'yd-chip', 'data-tone': limited ? 'warning' : 'good' }, h(Glyph, { name: limited ? 'warning' : 'check', size: 14 }), t('sourcesReady'), h('strong', null, `${available}/${sources.length}`)))
 }
 
-// 异常行：点击进对应页签；高风险动作（待审批）提供直达待确认队列的入口——
-// 驾驶舱本身不执行任何审批动作，只跳转到 approvals 插件。
+// 异常行：点击进入对应页签；待人工审批指标只提供只读审计入口。
 function AttentionSection({ data, t, onOpenTab }) {
   const items = attentionItems(data, t)
   return h('section', { className: 'yd-domain', 'aria-labelledby': 'yd-attention-title' },
@@ -354,7 +353,7 @@ function AttentionSection({ data, t, onOpenTab }) {
             type: 'button',
             className: 'yd-attention-action',
             onClick: () => window.dispatchEvent(new CustomEvent(`dofe:yootun-${item.plugin}:open`)),
-          }, t(item.plugin === 'approvals' ? 'openApprovals' : `open${item.plugin}`)) : null)))
+          }, t(item.plugin === 'audit' ? 'openAudit' : `open${item.plugin}`)) : null)))
       : h('p', { className: 'yd-inline-empty' }, t('attentionEmpty')))
 }
 
@@ -778,8 +777,8 @@ function MontageView({ source, t, detailed = false }) {
   ]
   const approvalsSection = approvals > 0 ? h('section', { className: 'yd-table-section' },
     h('div', { className: 'yd-section-heading' }, h('h2', null, t('pendingApprovals')), h('button', {
-      type: 'button', className: 'yd-domain-link', onClick: () => window.dispatchEvent(new CustomEvent('dofe:yootun-approvals:open')),
-    }, t('openApprovals'), h(Glyph, { name: 'chevron', size: 12 }))),
+      type: 'button', className: 'yd-domain-link', onClick: () => window.dispatchEvent(new CustomEvent('dofe:yootun-audit:open')),
+    }, t('openAudit'), h(Glyph, { name: 'chevron', size: 12 }))),
     h('div', { className: 'yd-list' }, ...waitRows.map(([label, value]) =>
       h('div', { className: 'yd-list-row', key: label },
         h('span', { className: 'yd-rank' }, '·'),
@@ -1063,6 +1062,7 @@ const spacingCss = `
 .yd-domain-card .yd-metric{min-height:72px;padding:var(--yd-space-3)}
 .yd-metric-head{gap:var(--yd-space-1)}
 .yd-source{gap:var(--yd-space-2)}
+.yd-ranges button[data-active=true]{background:var(--dsw-alias-brand-primary);color:var(--dsw-alias-bg-base);font-weight:600}
 .yd-source-row{gap:var(--yd-space-4);min-height:var(--yd-row-height)}
 .yd-source-row>div{gap:var(--yd-space-1)}
 .yd-source-meta{gap:var(--yd-space-3)}
