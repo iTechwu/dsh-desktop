@@ -63,7 +63,8 @@ export interface YootunAuditListResult {
 
 export interface YootunAuditSummary {
   readonly today: number
-  readonly failed: number
+  readonly succeeded: number
+  readonly abnormal: number
 }
 
 export interface YootunAuditTeam {
@@ -216,9 +217,10 @@ function parseList(value: unknown): YootunAuditListResult {
 function parseSummary(value: unknown): YootunAuditSummary {
   if (!isRecord(value)) invalidResponse()
   const today = nonnegativeInteger(value.today)
-  const failed = nonnegativeInteger(value.failed)
-  if (today === undefined || failed === undefined) invalidResponse()
-  return { today, failed }
+  const succeeded = nonnegativeInteger(value.succeeded)
+  const abnormal = nonnegativeInteger(value.abnormal)
+  if (today === undefined || succeeded === undefined || abnormal === undefined) invalidResponse()
+  return { today, succeeded, abnormal }
 }
 
 function parseTeam(value: unknown): YootunAuditTeam {

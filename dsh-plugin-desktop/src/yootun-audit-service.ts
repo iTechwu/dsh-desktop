@@ -38,7 +38,7 @@ export type DesktopAuditStatus =
 
 export interface DesktopAuditWorkspace {
   readonly status: DesktopAuditStatus
-  readonly summary: { readonly today: number; readonly failed: number; readonly pendingSync: number }
+  readonly summary: { readonly today: number; readonly succeeded: number; readonly abnormal: number; readonly pendingSync: number }
   readonly events: readonly DesktopAuditEvent[]
   readonly page: { readonly nextCursor: string | null }
   readonly scopes: YootunAuditScopes
@@ -162,7 +162,8 @@ function cachedWorkspaceParts(cache: YootunAuditCache): Pick<
   const page = cache.page
   const scopes = cache.scopes
   if (!isRecord(summary) || !Number.isInteger(summary.today) || Number(summary.today) < 0
-    || !Number.isInteger(summary.failed) || Number(summary.failed) < 0
+    || !Number.isInteger(summary.succeeded) || Number(summary.succeeded) < 0
+    || !Number.isInteger(summary.abnormal) || Number(summary.abnormal) < 0
     || !isRecord(page) || (page.nextCursor !== null && typeof page.nextCursor !== 'string')
     || !isRecord(scopes) || !Array.isArray(scopes.available)
     || scopes.available.some(scope => scope !== 'self' && scope !== 'team')
@@ -170,7 +171,8 @@ function cachedWorkspaceParts(cache: YootunAuditCache): Pick<
   return {
     summary: {
       today: Number(summary.today),
-      failed: Number(summary.failed),
+      succeeded: Number(summary.succeeded),
+      abnormal: Number(summary.abnormal),
       pendingSync: Number.isInteger(summary.pendingSync) && Number(summary.pendingSync) >= 0
         ? Number(summary.pendingSync)
         : 0,
@@ -505,7 +507,8 @@ export class YootunAuditService implements YootunAuditRecorder, YootunAuditReade
         status: 'ready',
         summary: {
           today: summary.today + uniquePending.filter(event => Date.parse(event.occurredAt) >= startOfToday.getTime()).length,
-          failed: summary.failed + uniquePending.filter(event => event.outcome === 'failed').length,
+          succeeded: summary.succeeded + uniquePending.filter(event => event.outcome === 'succeeded').length,
+          abnormal: summary.abnormal + uniquePending.filter(event => event.outcome === 'failed' || event.outcome === 'partial').length,
           pendingSync: health.pending,
         },
         events,
@@ -561,7 +564,7 @@ export class YootunAuditService implements YootunAuditRecorder, YootunAuditReade
     }
     return {
       status: failureStatus,
-      summary: { today: 0, failed: 0, pendingSync: health.pending },
+      summary: { today: 0, succeeded: 0, abnormal: 0, pendingSync: health.pending },
       events: [],
       page: { nextCursor: null },
       scopes: emptyScopes(),

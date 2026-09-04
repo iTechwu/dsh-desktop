@@ -53,7 +53,7 @@ async function createService(
   const remote = {
     batch: vi.fn().mockResolvedValue({ accepted: [] }),
     list: vi.fn().mockResolvedValue({ events: [], nextCursor: null }),
-    summary: vi.fn().mockResolvedValue({ today: 0, failed: 0 }),
+    summary: vi.fn().mockResolvedValue({ today: 0, succeeded: 0, abnormal: 0 }),
     scopes: vi.fn().mockResolvedValue({ available: ['self'], isSuperAdmin: false }),
     teams: vi.fn().mockResolvedValue({ teams: [], nextCursor: null }),
   }
@@ -211,13 +211,13 @@ describe('YootunAuditService', () => {
 
   it('serves the last trusted cache when a live query fails', async () => {
     const { service, store, remote } = await createService()
-    remote.summary.mockResolvedValueOnce({ today: 4, failed: 1 })
+    remote.summary.mockResolvedValueOnce({ today: 4, succeeded: 3, abnormal: 1 })
     await service.workspace({ scope: 'self', limit: 50 })
     remote.list.mockRejectedValueOnce({ kind: 'retryable' })
 
     await expect(service.workspace({ scope: 'self', limit: 50 })).resolves.toMatchObject({
       status: 'cached',
-      summary: { today: 4, failed: 1, pendingSync: 0 },
+      summary: { today: 4, succeeded: 3, abnormal: 1, pendingSync: 0 },
       freshness: { source: 'cache', syncedAt: '2026-09-05T08:00:00.000Z' },
     })
     expect(await store.readCache()).toBeDefined()

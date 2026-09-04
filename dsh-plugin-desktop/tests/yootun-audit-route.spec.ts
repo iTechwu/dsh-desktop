@@ -39,7 +39,7 @@ function service() {
   return {
     workspace: vi.fn().mockResolvedValue({
       status: 'ready',
-      summary: { today: 0, failed: 0, pendingSync: 0 },
+      summary: { today: 0, succeeded: 0, abnormal: 0, pendingSync: 0 },
       events: [],
       page: { nextCursor: null },
       scopes: { available: ['self'], isSuperAdmin: false },

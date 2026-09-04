@@ -103,13 +103,13 @@ describe('YootunAuditModelsClient', () => {
   it('issues validated list, summary, scope and team reads', async () => {
     const fetcher = vi.fn()
       .mockResolvedValueOnce(ok({ events: [], nextCursor: null }))
-      .mockResolvedValueOnce(ok({ today: 3, failed: 1 }))
+      .mockResolvedValueOnce(ok({ today: 3, succeeded: 2, abnormal: 1 }))
       .mockResolvedValueOnce(ok({ available: ['self'], isSuperAdmin: false }))
       .mockResolvedValueOnce(ok({ teams: [], nextCursor: null }))
     const client = new YootunAuditModelsClient({ fetcher })
 
     await expect(client.list({ scope: 'self', limit: 50 }, 'key')).resolves.toEqual({ events: [], nextCursor: null })
-    await expect(client.summary({ scope: 'self', limit: 50 }, 'key')).resolves.toEqual({ today: 3, failed: 1 })
+    await expect(client.summary({ scope: 'self', limit: 50 }, 'key')).resolves.toEqual({ today: 3, succeeded: 2, abnormal: 1 })
     await expect(client.scopes('key')).resolves.toEqual({ available: ['self'], isSuperAdmin: false })
     await expect(client.teams({ query: '设计', limit: 20 }, 'key')).resolves.toEqual({ teams: [], nextCursor: null })
     expect(fetcher.mock.calls.map(call => String(call[0]))).toEqual([
