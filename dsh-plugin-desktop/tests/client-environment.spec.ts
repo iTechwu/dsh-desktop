@@ -143,9 +143,9 @@ describe('advanced desktop layout', () => {
       platform: 'darwin',
       useSessions: (select: (state: { current?: string; byId: Record<string, { blank: boolean }> }) => unknown) =>
         select({ byId: {} }),
-      renderSlot: (name: string) => createElement('span', { 'data-slot': name }),
-      SessionProvider: ({ children }: { children: ReactNode }) =>
+      SessionProvider: ({ children }: { children?: ReactNode }) =>
         createElement('section', { 'data-session-provider': '' }, children),
+      renderSlot: (name: string) => createElement('span', { 'data-slot': name }),
     } as unknown as AdvancedFrameProps
 
     try {

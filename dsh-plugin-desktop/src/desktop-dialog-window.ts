@@ -25,11 +25,13 @@ export interface DesktopDialogOptions {
   readonly title: string
   readonly message: string
   readonly detail?: string
+  /** Important guidance rendered after the detail instead of inside its scroll area. */
+  readonly advisory?: string
   readonly buttons: readonly string[]
   readonly defaultId?: number
   readonly cancelId?: number
   /** Use a larger shadcn scroll surface for bounded technical diagnostics. */
-  readonly presentation?: 'default' | 'diagnostic'
+  readonly presentation?: 'default' | 'diagnostic' | 'profile-compatibility'
   /** Override whether this dialog exposes native close/caption controls. */
   readonly windowControls?: boolean
 }
@@ -76,6 +78,7 @@ export class DesktopDialogWindow {
       title: this.options.title,
       message: this.options.message,
       ...(this.options.detail === undefined ? {} : { detail: this.options.detail }),
+      ...(this.options.advisory === undefined ? {} : { advisory: this.options.advisory }),
       buttons: this.options.buttons,
       defaultId,
       cancelId,

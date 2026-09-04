@@ -8,6 +8,7 @@ export type DesktopTrayLabelKey =
   | 'checkingForUpdates'
   | 'downloadingUpdate'
   | 'exportDiagnostics'
+  | 'exitSafeMode'
   | 'openDesktop'
   | 'openTerminal'
   | 'profile'
@@ -15,6 +16,7 @@ export type DesktopTrayLabelKey =
   | 'switchToAdvanced'
   | 'switchToCompatibility'
   | 'switchToExtended'
+  | 'installStable'
   | 'unavailableForDesktop'
   | 'updateAvailable'
 
@@ -25,6 +27,7 @@ const labels: Record<DesktopLocale, Record<DesktopTrayLabelKey, (value: string) 
     checkingForUpdates: () => 'Checking for Updates…',
     downloadingUpdate: version => `Downloading Yootun-Agent ${version}…`,
     exportDiagnostics: () => 'Export Diagnostics…',
+    exitSafeMode: () => 'Exit Safe Mode and Restart…',
     openDesktop: productName => `Open ${productName}`,
     openTerminal: () => 'Open DSH Terminal',
     profile: profileName => `Profile: ${profileName}`,
@@ -32,6 +35,7 @@ const labels: Record<DesktopLocale, Record<DesktopTrayLabelKey, (value: string) 
     switchToAdvanced: () => 'Switch to Enhanced Mode',
     switchToCompatibility: () => 'Switch to Compatibility Mode',
     switchToExtended: () => 'Switch to Extended Window',
+    installStable: () => 'Install Stable Edition…',
     unavailableForDesktop: profileName => `${profileName} (Unavailable for Desktop)`,
     updateAvailable: version => `Yootun-Agent ${version} Available`,
   },
@@ -41,6 +45,7 @@ const labels: Record<DesktopLocale, Record<DesktopTrayLabelKey, (value: string) 
     checkingForUpdates: () => '正在检查更新…',
     downloadingUpdate: version => `正在下载 Yootun-Agent ${version}…`,
     exportDiagnostics: () => '导出诊断信息…',
+    exitSafeMode: () => '退出安全模式并重启…',
     openDesktop: productName => `打开 ${productName}`,
     openTerminal: () => '打开 DSH 终端',
     profile: profileName => `Profile：${profileName}`,
@@ -48,6 +53,7 @@ const labels: Record<DesktopLocale, Record<DesktopTrayLabelKey, (value: string) 
     switchToAdvanced: () => '切换到增强模式',
     switchToCompatibility: () => '切换到兼容模式',
     switchToExtended: () => '切换到扩展窗口',
+    installStable: () => '安装稳定版…',
     unavailableForDesktop: profileName => `${profileName}（不可用于桌面端）`,
     updateAvailable: version => `Yootun-Agent ${version} 可用`,
   },

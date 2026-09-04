@@ -17,6 +17,8 @@ const PROFILE_CREATE_DOCUMENT = fileURLToPath(new URL('./native-ui/profile-creat
 export interface ProfileCreateWindowOptions {
   readonly locale: DesktopLocale
   readonly onSubmit: (name: string) => void | Promise<void>
+  /** Optional completion signal for explicit cancel, window close, or load failure. */
+  readonly onCancel?: () => void
 }
 
 export interface ProfileCreateAction {
@@ -45,6 +47,8 @@ export class ProfileCreateWindow {
   private window: BrowserWindow | undefined
   private busy = false
   private disposed = false
+  private accepted = false
+  private cancelNotified = false
 
   constructor(private readonly options: ProfileCreateWindowOptions) {}
 
@@ -56,6 +60,8 @@ export class ProfileCreateWindow {
     }
     this.disposed = false
     this.busy = false
+    this.accepted = false
+    this.cancelNotified = false
     const copy = desktopProfileCreateCopy(this.options.locale)
     const window = new BrowserWindow({
       title: copy.title,
@@ -96,6 +102,7 @@ export class ProfileCreateWindow {
       // Electron destroys webContents before emitting BrowserWindow's `closed`.
       // Accessing window.webContents here can itself throw during a restart.
       if (this.window === window) this.window = undefined
+      if (!this.accepted) this.notifyCancel()
     })
     void window.loadFile(PROFILE_CREATE_DOCUMENT, {
       query: {
@@ -118,6 +125,7 @@ export class ProfileCreateWindow {
   private async handleAction(action: ProfileCreateAction): Promise<void> {
     if (this.busy || this.disposed) return
     if (action.action === 'cancel') {
+      this.notifyCancel()
       this.close()
       return
     }
@@ -126,6 +134,7 @@ export class ProfileCreateWindow {
     this.busy = true
     try {
       await this.options.onSubmit(name)
+      this.accepted = true
       this.close()
     } catch {
       this.busy = false
@@ -137,5 +146,11 @@ export class ProfileCreateWindow {
         true,
       ).catch(() => {})
     }
+  }
+
+  private notifyCancel(): void {
+    if (this.cancelNotified) return
+    this.cancelNotified = true
+    this.options.onCancel?.()
   }
 }

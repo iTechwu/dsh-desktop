@@ -53,7 +53,7 @@ profile 的名字和绝对目录由 `desktopProfiles.current` 提供，不能从
 
 `desktopPnpm.run()` 直接跑内置 pnpm；`runPlugin()` 通过打包的 DSH CLI 维持 profile 初始化、相对 source 和 bundle reconcile。两者都属于当前 generation，并由 subprocess service 管理完整进程树。
 
-Launcher 私有的 `desktopRuntime`、`desktopPnpmBootstrap`、Electron executable、Node helper 和 ABI 环境不是第三方 API。公开 contract 只有 `dsh-plugin-desktop/profile-service` 与 `dsh-plugin-desktop/pnpm`。
+Launcher 私有的 `desktopRuntime`、`desktopPnpmBootstrap`、Electron executable、Node helper 和 ABI 环境不是第三方 API。稳定包的公开 contract 是 `dsh-plugin-desktop/profile-service` 与 `dsh-plugin-desktop/pnpm`；Beta 包提供对应的 `dsh-plugin-desktop-beta/*` 路径。
 
 ## 打包与运行时闭包
 

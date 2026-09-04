@@ -166,6 +166,36 @@ describe('DesktopDialogWindow', () => {
     await expect(result).resolves.toEqual({ response: 0 })
   })
 
+  it('keeps Profile compatibility guidance outside the version detail', async () => {
+    const result = new DesktopDialogWindow({
+      type: 'warning',
+      title: 'Profile compatibility warning',
+      message: 'Current Profile “work” was used by DSH Desktop Beta.',
+      detail: 'Previous DSH: 0.1.2-alpha.5\nCurrent DSH: 0.1.1-rc.2',
+      advisory: 'Warning: DSH version differences may make plugins unavailable.',
+      presentation: 'profile-compatibility',
+      buttons: ['Switch Profile', 'Use Anyway', 'Quit'],
+      defaultId: 0,
+      cancelId: 2,
+    }).run()
+    await vi.waitFor(() => { expect(electron.windows).toHaveLength(1) })
+    const window = electron.windows[0]
+    const loadCalls = window?.loadFile.mock.calls as unknown as readonly [
+      string,
+      { readonly query: { readonly state?: string } },
+    ][] | undefined
+    const state = JSON.parse(Buffer.from(loadCalls?.[0]?.[1].query.state ?? '', 'base64url').toString('utf8')) as Record<string, unknown>
+    expect(state).toMatchObject({
+      presentation: 'profile-compatibility',
+      advisory: 'Warning: DSH version differences may make plugins unavailable.',
+    })
+    window?.webListeners.get('will-navigate')?.(
+      { preventDefault: vi.fn() },
+      'dsh-desktop-dialog://response?id=2',
+    )
+    await expect(result).resolves.toEqual({ response: 2 })
+  })
+
   it('maps window close to the configured cancel response', async () => {
     vi.spyOn(process, 'platform', 'get').mockReturnValue('darwin')
     const result = new DesktopDialogWindow({

@@ -31,12 +31,6 @@ import {
   DSH_1024STORE_LEGACY_ADAPTER_ID,
   isDsh1024StoreAdapterId,
 } from '../adapters/dsh-1024store.js'
-import {
-  DSH_MARKETPLACE_ADAPTER_ID,
-  DSH_MARKETPLACE_HOSTNAME,
-  DSH_MARKETPLACE_KEY,
-  isDshMarketplaceSourceUrl,
-} from '../adapters/dsh-marketplace.js'
 import { DSHFIND_ADAPTER_ID, DSHFIND_HOSTNAME } from '../adapters/dshfind.js'
 import { assertStandardSourceTrustRoot } from '../adapters/standard-http.js'
 import { BUILT_IN_PROVIDERS, DefaultCatalogService, type CatalogFetchScope, type CatalogFullIndex } from '../catalog/service.js'
@@ -104,12 +98,6 @@ const dshfindHttpClient = createCachedCatalogHttpClient(
     // source hostnames must never inherit this local-proxy exception.
     syntheticProxyHostnames: [DSHFIND_HOSTNAME],
     maxBodyBytes: MAX_DSHFIND_BODY_BYTES,
-  }),
-)
-
-const dshMarketplaceHttpClient = createCachedCatalogHttpClient(
-  createRestrictedHttpClient({
-    syntheticProxyHostnames: [DSH_MARKETPLACE_HOSTNAME],
   }),
 )
 
@@ -574,11 +562,7 @@ async function mutateSources(
   const records = [...await store.load()]
   const unavailableSourceRecordIds = new Set<string>()
   const nextOrder = records.reduce((maximum, record) => Math.max(maximum, record.order), -1) + 1
-  const builtInKey = mutation.action === 'add-builtin'
-    ? mutation.key
-    : mutation.action === 'add-standard' && isDshMarketplaceSourceUrl(mutation.manifestUrl)
-      ? DSH_MARKETPLACE_KEY
-      : undefined
+  const builtInKey = mutation.action === 'add-builtin' ? mutation.key : undefined
   if (builtInKey !== undefined) {
     const provider = BUILT_IN_PROVIDERS.find(candidate => candidate.key === builtInKey)
     if (provider === undefined) throw new Error('built-in source unavailable')
@@ -676,7 +660,6 @@ export function registerMarketRoutes(
       // These are compiled-in adapter hosts, not names supplied by a remote source.
       syntheticProxyHostnames: [
         DSH_1024STORE_HOSTNAME,
-        DSH_MARKETPLACE_HOSTNAME,
         'github.com',
         'avatars.githubusercontent.com',
       ],
@@ -686,7 +669,6 @@ export function registerMarketRoutes(
     adapterHttpClients: new Map([
       [DSH_1024STORE_ADAPTER_ID, dsh1024StoreHttpClient],
       [DSH_1024STORE_LEGACY_ADAPTER_ID, dsh1024StoreHttpClient],
-      [DSH_MARKETPLACE_ADAPTER_ID, dshMarketplaceHttpClient],
       [DSHFIND_ADAPTER_ID, dshfindHttpClient],
     ]),
     media,
@@ -803,7 +785,6 @@ export function registerMarketRoutes(
           throw new Error('catalog source is not active')
         }
         const providerQuery = activeSource?.adapterId === DSHFIND_ADAPTER_ID
-          || (activeSource?.adapterId === DSH_MARKETPLACE_ADAPTER_ID && categories.length <= 1)
           || isDsh1024StoreAdapterId(activeSource?.adapterId)
         if (providerQuery) {
           let results: readonly MarketCatalogSourceResult[]
@@ -1034,7 +1015,6 @@ export function registerMarketRoutes(
             ...(cursors[0] === undefined ? {} : { cursor: cursors[0] }),
           }
           const providerQuery = activeSource.adapterId === DSHFIND_ADAPTER_ID
-            || (activeSource.adapterId === DSH_MARKETPLACE_ADAPTER_ID && categories.length <= 1)
             || isDsh1024StoreAdapterId(activeSource.adapterId)
           let results: readonly MarketCatalogSourceResult[]
           let metadata: MarketCatalogMetadata | undefined

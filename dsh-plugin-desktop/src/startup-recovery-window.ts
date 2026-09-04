@@ -34,7 +34,7 @@ const DEFAULT_RECOVERY_MIN_WIDTH = 680
 const DEFAULT_RECOVERY_MIN_HEIGHT = 560
 const RECOVERY_WORK_AREA_INSET = 48
 
-type RecoveryWindowResult = 'restart' | 'quit'
+export type RecoveryWindowResult = 'restart' | 'safe-mode' | 'quit'
 type RecoveryNoticeTone = 'info' | 'success' | 'warning' | 'error'
 
 export type { DesktopStartupFailureStage } from './recovery-copy.ts'
@@ -64,6 +64,10 @@ export interface DesktopStartupRecoveryWindowOptions {
   readonly openTerminal?: () => void | Promise<void>
   /** Main-process validated actions available from the failure generation. */
   readonly profileActions?: DesktopStartupRecoveryProfileActions
+  /** Prepare a fresh isolated environment before a Safe Mode relaunch. */
+  readonly enterSafeMode?: () => void | Promise<void>
+  /** True when this process already uses the disposable Safe Mode environment. */
+  readonly safeModeActive?: boolean
 }
 
 export interface DesktopStartupRecoveryProfile {
@@ -170,6 +174,8 @@ export interface DesktopStartupRecoveryViewModel {
   readonly profileActionToken?: string
   readonly terminalAvailable?: boolean
   readonly profileCreatorAvailable?: boolean
+  readonly safeModeAvailable?: boolean
+  readonly safeModeActive?: boolean
 }
 
 /** Parse only the fixed action origin used by the local shadcn recovery document. */
@@ -197,6 +203,7 @@ export function parseDesktopStartupRecoveryAction(
     'open-profile-directory',
     'open-terminal',
     'open-profile-creator',
+    'enter-safe-mode',
     'switch-profile',
     'restart',
     'quit',
@@ -229,7 +236,7 @@ export class DesktopStartupRecoveryWindow {
   private notice: RecoveryNotice | undefined
   private busy = false
   private restartReady = false
-  private activeTab: DesktopRecoveryTab = 'plugins'
+  private activeTab: DesktopRecoveryTab = 'quick'
   private profiles: readonly DesktopStartupRecoveryProfile[] | undefined
   private resolveResult: ((result: RecoveryWindowResult) => void) | undefined
   private settled = false
@@ -351,7 +358,18 @@ export class DesktopStartupRecoveryWindow {
       } else if (action.action === 'open-profile-creator') {
         this.activeTab = 'profiles'
         if (this.options.profileActions === undefined) throw new Error('Profile creation is unavailable for this startup stage.')
+        const previousCurrent = this.profiles?.find(profile => profile.current)?.name
         await this.options.profileActions.openCreator()
+        this.refreshProfiles()
+        const selected = this.profiles?.find(profile => profile.current)?.name
+        if (selected !== undefined && selected !== previousCurrent) {
+          this.notice = {
+            tone: 'success',
+            title: selected,
+            body: copy.profileSelectedSuccess,
+          }
+          this.restartReady = true
+        }
       } else if (action.action === 'switch-profile' && action.id !== undefined && action.name !== undefined) {
         this.activeTab = 'profiles'
         const actions = this.options.profileActions
@@ -368,6 +386,15 @@ export class DesktopStartupRecoveryWindow {
           this.restartReady = true
           this.refreshProfiles()
         })
+      } else if (action.action === 'enter-safe-mode') {
+        this.activeTab = 'quick'
+        if (this.options.safeModeActive === true) return
+        if (this.options.enterSafeMode === undefined) throw new Error('Safe Mode is unavailable for this startup stage.')
+        if (await this.confirmSafeMode()) {
+          await this.runBusy(async () => { await this.options.enterSafeMode?.() })
+          this.finish('safe-mode')
+          return
+        }
       } else if (action.action === 'open-settings-document') {
         this.activeTab = 'diagnostics'
         await this.openConfigurationPath('settingsDocument')
@@ -478,6 +505,23 @@ export class DesktopStartupRecoveryWindow {
     }, window)
     return result.response === 0
   }
+
+  private async confirmSafeMode(): Promise<boolean> {
+    const window = this.window
+    if (window === undefined || window.isDestroyed()) return false
+    const copy = desktopRecoveryCopy(this.options.locale)
+    const result = await showDesktopMessageBox({
+      type: 'question',
+      title: copy.confirmSafeMode,
+      message: copy.confirmSafeModeMessage,
+      detail: copy.confirmSafeModeBody,
+      buttons: [copy.confirmSafeModeAction, copy.cancel],
+      defaultId: 1,
+      cancelId: 1,
+      noLink: true,
+    }, window)
+    return result.response === 0
+  }
   private async runBusy(operation: () => Promise<void>): Promise<void> {
     this.busy = true
     await this.render()
@@ -566,6 +610,8 @@ export class DesktopStartupRecoveryWindow {
       ...(this.options.profileActions === undefined ? {} : { profileActionToken: this.options.profileActions.token }),
       ...(this.options.openTerminal === undefined ? {} : { terminalAvailable: true }),
       ...(this.options.profileActions === undefined ? {} : { profileCreatorAvailable: true }),
+      ...(this.options.enterSafeMode === undefined ? {} : { safeModeAvailable: true }),
+      ...(this.options.safeModeActive === true ? { safeModeActive: true } : {}),
     }
     const state = Buffer.from(JSON.stringify(model), 'utf8').toString('base64url')
     await window.loadFile(RECOVERY_DOCUMENT, {

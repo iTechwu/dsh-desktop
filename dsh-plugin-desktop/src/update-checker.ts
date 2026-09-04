@@ -6,11 +6,17 @@ import {
   type DesktopInstallationId,
 } from './desktop-installation-id.ts'
 
-/** Public endpoint returning the latest stable Yootun-Agent version. */
+/** Public endpoint returning the latest Yootun-Agent version for a requested channel. */
 export const DESKTOP_VERSION_ENDPOINT = 'https://www.dshdesktop.cn/api/desktop/version'
 
 /** Header carrying the installed Desktop version to the fixed version endpoint. */
 export const DESKTOP_CURRENT_VERSION_HEADER = 'X-DSH-Desktop-Version'
+
+/** Header selecting an isolated Desktop release stream. */
+export const DESKTOP_RELEASE_CHANNEL_HEADER = 'X-DSH-Desktop-Channel'
+
+/** Release streams supported by the Desktop service. */
+export type DesktopReleaseChannel = 'stable' | 'beta'
 
 /** Maximum response body bytes accepted from the version service. */
 export const MAX_VERSION_RESPONSE_BYTES = 4 * 1024
@@ -34,10 +40,16 @@ export interface ParsedSemVer {
 /** Fetch-compatible request function used by the headless checker. */
 export type UpdateRequest = (url: string, init: RequestInit) => Promise<Response>
 
-/** Inputs for one stable version check. */
+/** Inputs for one channel-scoped version check. */
 export interface UpdateCheckOptions {
-  /** Installed application version, expressed as canonical stable SemVer. */
+  /** Installed application version, expressed as canonical SemVer. */
   readonly currentVersion: string
+  /** Release stream that must be returned by the service. */
+  readonly channel: DesktopReleaseChannel
+  /** Channel of the installed application when explicitly switching streams. */
+  readonly currentChannel?: DesktopReleaseChannel
+  /** Treat a different older version as selectable for an explicit channel switch. */
+  readonly allowDowngrade?: boolean
   /** Caller-owned cancellation signal; the checker does not create its own timeout. */
   readonly signal?: AbortSignal
   /** Optional fetch implementation for a host adapter or test. */
@@ -50,7 +62,7 @@ export interface UpdateCheckOptions {
 export type UpdateCheckResult = {
   /** Whether the service reports a version newer than the installed application. */
   readonly status: 'up-to-date' | 'update-available'
-  /** Canonical installed stable version. */
+  /** Canonical installed version, including any prerelease identifiers. */
   readonly currentVersion: string
   /** Canonical latest stable version returned by the service. */
   readonly latestVersion: string
@@ -96,19 +108,22 @@ export function compareSemVerVersions(left: string, right: string): number | nul
 }
 
 /**
- * Check the fixed Yootun-Agent version endpoint for a newer stable release.
+ * Check the fixed Yootun-Agent version endpoint for a release in one channel.
  * @param options - installed version, caller-owned signal, and optional request adapter.
  * @returns a successful comparison, or null when any request or validation step fails.
  */
-export async function checkForStableUpdate(
+export async function checkForDesktopUpdate(
   options: UpdateCheckOptions,
 ): Promise<UpdateCheckResult | null> {
-  const current = parseCanonicalStableVersion(options.currentVersion)
+  const current = parseCanonicalChannelVersion(
+    options.currentVersion,
+    options.currentChannel ?? options.channel,
+  )
   if (current === null) return null
 
   let headers: HeadersInit
   try {
-    headers = desktopVersionRequestHeaders(options.installationId, current.version)
+    headers = desktopVersionRequestHeaders(options.installationId, current.version, options.channel)
   } catch {
     return null
   }
@@ -137,24 +152,42 @@ export async function checkForStableUpdate(
     return null
   }
 
-  const latest = parseVersionResponse(body)
+  const latest = parseVersionResponse(body, options.channel)
   if (latest === null) return null
+  const comparison = compareParsedSemVer(latest, current)
   return {
-    status: compareParsedSemVer(latest, current) > 0 ? 'update-available' : 'up-to-date',
+    status: comparison > 0 || (options.allowDowngrade === true && comparison !== 0)
+      ? 'update-available'
+      : 'up-to-date',
     currentVersion: current.version,
     latestVersion: latest.version,
   }
+}
+
+/** Backward-compatible stable-channel entry point for existing callers. */
+export function checkForStableUpdate(
+  options: Omit<UpdateCheckOptions, 'channel'>,
+): Promise<UpdateCheckResult | null> {
+  return checkForDesktopUpdate({ ...options, channel: 'stable' })
 }
 
 /** Build the complete header set for the fixed version-check request only. */
 export function desktopVersionRequestHeaders(
   installationId?: string,
   currentVersion?: string,
+  channel?: DesktopReleaseChannel,
 ): Readonly<Record<string, string>> {
   const headers: Record<string, string> = { Accept: 'application/json' }
+  if (channel !== undefined) headers[DESKTOP_RELEASE_CHANNEL_HEADER] = channel
   if (currentVersion !== undefined) {
-    const parsed = parseCanonicalStableVersion(currentVersion)
-    if (parsed === null) throw new Error('Desktop current version must be a canonical stable SemVer.')
+    const parsed = channel === undefined
+      ? parseCanonicalChannelVersion(currentVersion, 'stable')
+      : parseCanonicalSupportedVersion(currentVersion)
+    if (parsed === null) {
+      throw new Error(channel === undefined
+        ? 'Desktop current version must be canonical stable SemVer.'
+        : 'Desktop current version must be canonical SemVer.')
+    }
     headers[DESKTOP_CURRENT_VERSION_HEADER] = parsed.version
   }
   if (installationId !== undefined) {
@@ -197,7 +230,7 @@ async function readLimitedBody(response: Response): Promise<string> {
   }
 }
 
-function parseVersionResponse(body: string): ParsedSemVer | null {
+function parseVersionResponse(body: string, expectedChannel: DesktopReleaseChannel): ParsedSemVer | null {
   let value: unknown
   try {
     value = JSON.parse(body)
@@ -205,14 +238,33 @@ function parseVersionResponse(body: string): ParsedSemVer | null {
     return null
   }
   if (!isRecord(value) || typeof value.version !== 'string') return null
-  return parseCanonicalStableVersion(value.version)
+  if (expectedChannel === 'beta' && value.channel !== 'beta') return null
+  if (value.channel !== undefined && value.channel !== expectedChannel) return null
+  return parseCanonicalChannelVersion(value.version, expectedChannel)
 }
 
-function parseCanonicalStableVersion(input: string): ParsedSemVer | null {
-  const parsed = parseSemVer(input)
-  return parsed !== null && parsed.prerelease.length === 0 && parsed.version === input
+function parseCanonicalChannelVersion(
+  input: string,
+  channel: DesktopReleaseChannel,
+): ParsedSemVer | null {
+  const parsed = parseCanonicalVersion(input)
+  if (parsed === null) return null
+  if (channel === 'stable') return parsed.prerelease.length === 0 ? parsed : null
+  return parsed.prerelease.length === 2
+    && parsed.prerelease[0] === 'beta'
+    && isNumeric(parsed.prerelease[1]!)
     ? parsed
     : null
+}
+
+function parseCanonicalSupportedVersion(input: string): ParsedSemVer | null {
+  return parseCanonicalChannelVersion(input, 'stable')
+    ?? parseCanonicalChannelVersion(input, 'beta')
+}
+
+function parseCanonicalVersion(input: string): ParsedSemVer | null {
+  const parsed = parseSemVer(input)
+  return parsed !== null && parsed.version === input ? parsed : null
 }
 
 function compareParsedSemVer(left: ParsedSemVer, right: ParsedSemVer): number {

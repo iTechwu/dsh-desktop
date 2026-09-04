@@ -16,6 +16,7 @@ export interface DesktopNativeCopy {
   readonly updateAvailableTitle: string
   readonly updateAvailableMessage: (version: string) => string
   readonly downloadUpdate: string
+  readonly installStableAlongsideBeta: string
   readonly download: string
   readonly later: string
   readonly updateCheckFailedTitle: string
@@ -47,6 +48,25 @@ export interface DesktopNativeCopy {
   readonly skippedPluginBody: (name: string, additionalCount: number) => string
   readonly unsupportedStorageTitle: string
   readonly unsupportedStorageBody: (label: string) => string
+  readonly profileCompatibilityTitle: string
+  readonly profileCompatibilityMessage: (profileName: string, previousProductName?: string) => string
+  readonly profileCompatibilityDetail: (
+    previousDesktopVersion: string,
+    previousDshVersion: string,
+    currentProductName: string,
+    currentDesktopVersion: string,
+    currentDshVersion: string,
+  ) => string
+  readonly profileCompatibilityUnknownDetail: (
+    currentProductName: string,
+    currentDesktopVersion: string,
+    currentDshVersion: string,
+  ) => string
+  readonly profileCompatibilityWarning: string
+  readonly switchProfile: string
+  readonly useProfileAnyway: string
+  readonly quit: string
+  readonly unknownVersion: string
 }
 
 const COPY: Record<DesktopLocale, DesktopNativeCopy> = {
@@ -64,6 +84,7 @@ const COPY: Record<DesktopLocale, DesktopNativeCopy> = {
     updateAvailableTitle: 'Yootun-Agent Update Available',
     updateAvailableMessage: version => `Yootun-Agent ${version} is available.`,
     downloadUpdate: 'Download this update now?',
+    installStableAlongsideBeta: 'Install the stable edition alongside DSH Desktop Beta? The Beta app will remain installed.',
     download: 'Download',
     later: 'Later',
     updateCheckFailedTitle: 'Unable to Check for Updates',
@@ -97,6 +118,18 @@ const COPY: Record<DesktopLocale, DesktopNativeCopy> = {
       : `${name} is not installed in this Profile.`,
     unsupportedStorageTitle: 'Storage May Be Unsupported',
     unsupportedStorageBody: label => `${label} is on a volume that may prevent sandboxed commands or plugin installation from working.`,
+    profileCompatibilityTitle: 'Profile Compatibility Warning',
+    profileCompatibilityMessage: profileName =>
+      `The Desktop version last used by the current Profile “${profileName}” differs from the current version:`,
+    profileCompatibilityDetail: (previousDesktopVersion, previousDshVersion, _currentProductName, currentDesktopVersion, currentDshVersion) =>
+      `Last Desktop/DSH version: ${previousDesktopVersion}/${previousDshVersion}\nCurrent Desktop/DSH version: ${currentDesktopVersion}/${currentDshVersion}`,
+    profileCompatibilityUnknownDetail: (_currentProductName, currentDesktopVersion, currentDshVersion) =>
+      `Last Desktop/DSH version: Unknown/Unknown\nCurrent Desktop/DSH version: ${currentDesktopVersion}/${currentDshVersion}`,
+    profileCompatibilityWarning: 'DSH version differences may cause:\n1. Historical session information to fail to load;\n2. Some plugins in the current Profile to be incompatible and possibly cause errors or crashes.\nWe recommend switching to a compatible Profile or creating a new Profile.',
+    switchProfile: 'Switch Profile',
+    useProfileAnyway: 'Use Anyway',
+    quit: 'Quit',
+    unknownVersion: 'Unknown',
   },
   zh: {
     ok: '确定',
@@ -112,6 +145,7 @@ const COPY: Record<DesktopLocale, DesktopNativeCopy> = {
     updateAvailableTitle: 'Yootun-Agent 有可用更新',
     updateAvailableMessage: version => `Yootun-Agent ${version} 已可用。`,
     downloadUpdate: '现在下载此更新？',
+    installStableAlongsideBeta: '是否同时安装稳定版？DSH Desktop Beta 将继续保留。',
     download: '下载',
     later: '稍后',
     updateCheckFailedTitle: '无法检查更新',
@@ -145,6 +179,18 @@ const COPY: Record<DesktopLocale, DesktopNativeCopy> = {
       : `${name} 未安装在当前 Profile 中。`,
     unsupportedStorageTitle: '存储位置可能不受支持',
     unsupportedStorageBody: label => `${label} 所在的磁盘可能导致沙盒命令或插件安装无法正常工作。`,
+    profileCompatibilityTitle: 'Profile 兼容性警告',
+    profileCompatibilityMessage: profileName =>
+      `当前 Profile“${profileName}”最后一次使用的桌面版本与当前版本不同：`,
+    profileCompatibilityDetail: (previousDesktopVersion, previousDshVersion, _currentProductName, currentDesktopVersion, currentDshVersion) =>
+      `最后一次的桌面版/DSH 版本：${previousDesktopVersion}/${previousDshVersion}\n当前的桌面版/DSH 版本：${currentDesktopVersion}/${currentDshVersion}`,
+    profileCompatibilityUnknownDetail: (_currentProductName, currentDesktopVersion, currentDshVersion) =>
+      `最后一次的桌面版/DSH 版本：未知/未知\n当前的桌面版/DSH 版本：${currentDesktopVersion}/${currentDshVersion}`,
+    profileCompatibilityWarning: 'DSH 版本差异可能会导致：\n1. 历史会话信息加载出错；\n2. 当前 Profile 下的部分插件不兼容，甚至引发报错或崩溃。\n建议您切换到兼容的 Profile，或创建新的 Profile。',
+    switchProfile: '切换 Profile',
+    useProfileAnyway: '仍然使用',
+    quit: '退出',
+    unknownVersion: '未知',
   },
 }
 

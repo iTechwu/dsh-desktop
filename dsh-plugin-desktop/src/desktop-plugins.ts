@@ -19,8 +19,12 @@ import {
 } from '@deepseek-ai/dsh-app-boot'
 import { withFileLock, writeFileAtomic } from '@deepseek-ai/dsh-atomic-write'
 import { assertDesktopProfileName } from './profile-manager.ts'
+import {
+  DESKTOP_PACKAGE_NAME,
+  DESKTOP_PACKAGE_NAMES,
+} from './product-identity.ts'
 
-const BIN_NAME = 'dsh-plugin-desktop'
+const BIN_NAME = DESKTOP_PACKAGE_NAME
 const STATE_VERSION = 1
 const STATE_FILE_MODE = 0o600
 const STATE_DIRECTORY_MODE = 0o700
@@ -38,7 +42,7 @@ const PACKAGE_NAME_PATTERN = /^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$
 const IMMUTABLE_BUNDLES = new Set([
   ...(PROFILE_TEMPLATES.web?.bundles ?? []),
   '@deepseek-ai/dsh-desktop-app',
-  'dsh-plugin-desktop',
+  ...DESKTOP_PACKAGE_NAMES,
   'dsh-community-market',
 ])
 

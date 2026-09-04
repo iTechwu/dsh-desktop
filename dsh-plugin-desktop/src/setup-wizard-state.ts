@@ -323,10 +323,10 @@ export async function completeOrSkipDesktopSetupWizard(
 }
 
 /** Clear one Profile marker without touching any other Profile's decision. */
-export async function clearDesktopSetupWizardState(
+export function clearDesktopSetupWizardStateSync(
   userDataDir: string,
   profileDir: string,
-): Promise<void> {
+): void {
   const path = desktopSetupWizardStatePath(userDataDir, profileDir)
   if (existingPathInfo(dirname(dirname(path))) === undefined) return
   assertPrivateDirectory(dirname(dirname(path)))
@@ -336,6 +336,14 @@ export async function clearDesktopSetupWizardState(
   if (info === undefined) return
   assertSafeStateTarget(path)
   unlinkSync(path)
+}
+
+/** Promise-compatible wrapper retained for existing asynchronous cleanup callers. */
+export async function clearDesktopSetupWizardState(
+  userDataDir: string,
+  profileDir: string,
+): Promise<void> {
+  clearDesktopSetupWizardStateSync(userDataDir, profileDir)
 }
 
 export const desktopSetupWizardStateConstants = Object.freeze({

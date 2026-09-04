@@ -201,7 +201,6 @@ describe('dsh-market Desktop install compatibility', () => {
 
     const client = readFileSync(join(dirname(manifest), 'client', 'client.js'), 'utf8')
     expect(client).toContain('installed["dshmarket"] !== void 0 || updates["dshmarket"] !== void 0')
-    expect(client).toContain('const self = selfName')
   })
 
   it.each([

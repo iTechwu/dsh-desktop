@@ -62,6 +62,7 @@ const workspaceManifest = JSON.parse(readFileSync(new URL('package.json', worksp
   scripts?: Record<string, unknown>
 }
 const ciWorkflow = readFileSync(new URL('.github/workflows/ci.yml', workspaceRoot), 'utf8')
+const main = readFileSync(new URL('src/main.ts', packageRoot), 'utf8')
 
 describe('published package surface', () => {
   it('runs desktop and community market typechecks from the root command', () => {
@@ -136,6 +137,31 @@ describe('published package surface', () => {
       'dsh-plugin-desktop': 'lib/bin.js',
       'dsh-desktop': 'lib/bin.js',
     })
+  })
+
+  it('keeps Safe Mode out of the normal DSH home and Desktop state', () => {
+    expect(main).toContain('const profileUserDataDir = safeModePaths?.userDataDir ?? desktopUserDataDir')
+    expect(main).toContain('const homeDir = safeModePaths?.homeDir ?? resolveDshHome()')
+    expect(main).toContain('if (safeModePaths !== undefined) process.env.DSH_HOME = homeDir')
+    expect(main).toContain('createDesktopWebProfile(paths.homeDir, DESKTOP_SAFE_MODE_PROFILE_NAME)')
+    expect(main).toContain("join(paths.userDataDir, 'profile-selection', 'state.json')")
+    expect(main).toContain('selectDesktopProfile(')
+    expect(main).toContain('cleanupDesktopSafeModeEnvironment(desktopUserDataDir)')
+    expect(main).toContain('if (safeModeRequested) {')
+    expect(main).toContain('const inheritedDshHome = process.env.DSH_HOME')
+    expect(main).toContain('if (process.env.DSH_HOME === safeModeHomeDir) delete process.env.DSH_HOME')
+    expect(main).toContain('if (inheritedDshHome === undefined) delete process.env.DSH_HOME')
+    expect(main).toContain('failed to remove the Safe Mode environment')
+    expect(main).toContain('desktopSafeModeRelaunchArguments()')
+    expect(main).toContain("desktopTrayLabel(runtime.locale, 'exitSafeMode')")
+    expect(main).toContain('notifyDesktopSafeModeActive(runtime, electronLogger)')
+    expect(main).toContain('safeModePaths !== undefined && DESKTOP_SAFE_MODE_DEFAULTS.settings.notifications.enabled')
+    expect(main).toContain('const setupWizardState = safeModePaths === undefined')
+    expect(main).toContain('if (safeModePaths === undefined && desktopSetupWizardRequired(')
+    expect(main).toContain('const safeModeDefaults = DESKTOP_SAFE_MODE_DEFAULTS')
+    expect(main).toContain('updateDesktopSetupWizardSettings(prepared.settingsDocument, safeModeDefaults.settings)')
+    expect(main).toContain('selectDesktopMarketProvider(marketUserDataDir, safeModeDefaults.market)')
+    expect(main).toContain('safeModeDefaults.settings.notifications')
   })
 
   it('exposes the Host plugin and desktop-owned client face', () => {
@@ -414,7 +440,7 @@ describe('published package surface', () => {
     const main = readFileSync(new URL('src/main.ts', packageRoot), 'utf8')
     const profileImport = main.indexOf('createDesktopWebProfile,')
     const profileService = main.indexOf('await hostCtx.plugin(DesktopProfileService, {')
-    const create = main.indexOf('create: name => createDesktopWebProfile(homeDir, name),', profileService)
+    const create = main.indexOf('create: name => createFreshDesktopProfile(name),', profileService)
     const list = main.indexOf('list: () => listDesktopProfiles(homeDir),', profileService)
     const persist = main.indexOf('persistSelection: name => { selectDesktopProfile(selectionStatePath, homeDir, name) },', profileService)
     const restart = main.indexOf('requestRestart: () => runtime.requestRestart(),', profileService)
@@ -449,6 +475,8 @@ describe('published package surface', () => {
   it('creates unified Profile checkpoints before composition and records only after health', () => {
     const main = readFileSync(new URL('src/main.ts', packageRoot), 'utf8')
     const beginProfile = main.indexOf('const profileStartup = beginDesktopProfileStartup(')
+    const admissionGuard = main.indexOf('if (!recoveryModeRequested)', beginProfile)
+    const admission = main.indexOf('inspectDesktopProfileChannelAdmission(', admissionGuard)
     const checkpoint = main.indexOf('profileCheckpoint = new DesktopProfileCheckpoint({', beginProfile)
     const recoveryController = main.indexOf('startupRecoveryController = new DesktopStartupRecoveryController({', checkpoint)
     const prepare = main.indexOf('let prepared = prepareDesktopProfile(')
@@ -459,7 +487,9 @@ describe('published package surface', () => {
     const mount = main.indexOf('runtime.mountScheduled(),', awaitRenderer)
 
     expect(beginProfile).toBeGreaterThanOrEqual(0)
-    expect(checkpoint).toBeGreaterThan(beginProfile)
+    expect(admissionGuard).toBeGreaterThan(beginProfile)
+    expect(admission).toBeGreaterThan(admissionGuard)
+    expect(checkpoint).toBeGreaterThan(admission)
     expect(recoveryController).toBeGreaterThan(checkpoint)
     expect(prepare).toBeGreaterThan(recoveryController)
     expect(monitor).toBeGreaterThan(prepare)
@@ -470,6 +500,9 @@ describe('published package surface', () => {
     expect(main).not.toContain('DesktopStartupStateCommit')
     expect(main).not.toContain('DesktopInstallRecoveryStore')
     expect(main).not.toContain('lastKnownGood')
+    expect(main).toContain('desktopPackageName: DESKTOP_PACKAGE_NAME')
+    expect(main).toContain('releaseChannel: DESKTOP_RELEASE_CHANNEL')
+    expect(main).toContain('dshVersion: currentDshVersion')
   })
 
   it('finishes or skips per-Profile native setup before Host boot and the main window', () => {
@@ -508,7 +541,7 @@ describe('published package surface', () => {
     expect(main).toContain("setupResult.action === 'quit'")
     expect(main).toContain("setupResult.action === 'skip'")
     expect(main).toContain("'skipped',")
-    expect(main).toContain('clearDesktopSetupWizardState(marketUserDataDir, profileDir)')
+    expect(main).toContain('clearDesktopProfileUsageHistory(releaseUserDataLocations, profileDir)')
   })
 
   it('declares every remote service consumed by the mandatory DoFe gate', () => {
@@ -557,17 +590,26 @@ describe('published package surface', () => {
     expect(main).toContain('lifecycleStartupFailureReason(cause, runtime)')
   })
 
-  it('routes requested and failed startup through the unified recovery window without automatic mutation', () => {
+  it('keeps compatibility Profile selection separate from requested and failed recovery', () => {
     const main = readFileSync(new URL('src/main.ts', packageRoot), 'utf8')
+    const recoveryUi = readFileSync(new URL('src/native-ui/recovery/App.tsx', packageRoot), 'utf8')
+    const selectorUi = readFileSync(new URL('src/native-ui/profile-selector/App.tsx', packageRoot), 'utf8')
     const windows = [...main.matchAll(/await openStartupRecoveryWindow\(/gu)]
       .map(match => match.index)
     const requested = main.indexOf('if (recoveryModeRequested)')
+    const beginProfile = main.indexOf('const profileStartup = beginDesktopProfileStartup(')
+    const profileActions = main.indexOf('startupRecoveryProfileActions = {')
     const prepare = main.indexOf('let prepared = prepareDesktopProfile(')
     const quiesce = main.indexOf('const recoveryActionsSafe = await generation.quiesceForRecovery()')
     const configureTerminal = main.indexOf('runtime.configureTerminal({')
     const terminalAvailable = main.indexOf('recoveryTerminalAvailable = true')
+    const compatibilitySelector = main.indexOf('await openCompatibilityProfileSelector()')
 
     expect(windows).toHaveLength(2)
+    expect(compatibilitySelector).toBeGreaterThanOrEqual(0)
+    expect(compatibilitySelector).toBeLessThan(requested)
+    expect(profileActions).toBeGreaterThanOrEqual(0)
+    expect(profileActions).toBeLessThan(beginProfile)
     expect(windows[0]).toBeGreaterThan(requested)
     expect(windows[0]).toBeLessThan(prepare)
     expect(configureTerminal).toBeGreaterThanOrEqual(0)
@@ -575,9 +617,18 @@ describe('published package surface', () => {
     expect(terminalAvailable).toBeGreaterThan(configureTerminal)
     expect(terminalAvailable).toBeLessThan(requested)
     expect(main.match(/runtime\.configureTerminal\(\{/gu)).toHaveLength(1)
-    expect(windows[1]).toBeGreaterThan(windows[0]!)
     expect(quiesce).toBeGreaterThan(prepare)
     expect(windows[1]).toBeGreaterThan(quiesce)
+    expect(main).toContain("buttons: [copy.switchProfile, copy.useProfileAnyway, copy.quit]")
+    expect(main).toContain('advisory: copy.profileCompatibilityWarning')
+    expect(main).toContain("presentation: 'profile-compatibility'")
+    expect(main).not.toContain('profileRecoveryActionUsed')
+    expect(main).toContain('let expectedRecoveryProfileName = activeProfileName')
+    expect(main.match(/expectedRecoveryProfileName = name/gu)).toHaveLength(2)
+    expect(main).toContain('selection.active !== expectedRecoveryProfileName')
+    expect(main).not.toContain("'Profile selection was requested from the compatibility warning.'")
+    expect(recoveryUi).toContain("from '../shared/ProfileSelector.tsx'")
+    expect(selectorUi).toContain("from '../shared/ProfileSelector.tsx'")
     expect(main).not.toContain('installRecovery')
     expect(main).not.toContain('restoreLatest')
     expect(main).not.toContain('restoreLastKnownGood')
