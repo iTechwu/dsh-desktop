@@ -7,6 +7,7 @@ import {
   collapsedSidebarWidth, computeDesktopColumns, DesktopLayoutState,
   SIDEBAR_AUTO_COLLAPSE, SIDEBAR_COLLAPSED, SIDEBAR_DEFAULT,
 } from './layout-state.ts'
+import { installModalOverlayIsolation } from './modal-overlay.ts'
 
 /** Private values assembled by one Desktop-owned shell registration. */
 export interface AdvancedFrameInjected {
@@ -41,6 +42,7 @@ export function DesktopOwnedFrame({
   const readLayout = useCallback(() => layout.getSnapshot(), [layout])
   const panels = useSyncExternalStore(subscribeLayout, readLayout, readLayout)
   const frameRef = useRef<HTMLDivElement>(null)
+  const overlayRef = useRef<HTMLDivElement>(null)
   const [viewport, setViewport] = useState(() => window.innerWidth)
   const detailsSession = useSessions((state) => {
     const current = state.current
@@ -63,6 +65,13 @@ export function DesktopOwnedFrame({
       observer.disconnect()
       if (raf !== null) cancelAnimationFrame(raf)
     }
+  }, [])
+
+  useEffect(() => {
+    const frame = frameRef.current
+    const overlay = overlayRef.current
+    if (frame === null || overlay === null) return
+    return installModalOverlayIsolation(frame, overlay)
   }, [])
 
   const narrow = viewport < SIDEBAR_AUTO_COLLAPSE
@@ -90,6 +99,10 @@ export function DesktopOwnedFrame({
   const sidebarOwnerWidth = collapsed ? SIDEBAR_COLLAPSED : columns.sidebar
   const columnsRef = useRef(columns)
   columnsRef.current = columns
+  // React 18 only serializes inert when passed in its standard empty-string form.
+  const detailsIsolation = columns.details === 0
+    ? { 'aria-hidden': true, inert: '' } as const
+    : {}
 
   const sidebarBase = useRef(0)
   const detailsBase = useRef(0)
@@ -128,12 +141,15 @@ export function DesktopOwnedFrame({
         </div>
       </aside>
       <main className="dshDesktopConversationSurface">{renderSlot('conversation', {})}</main>
-      <aside className="dshDesktopDetailsSurface">
+      <aside
+        className="dshDesktopDetailsSurface"
+        {...detailsIsolation}
+      >
         <SessionProvider>{renderSlot('details', {})}</SessionProvider>
       </aside>
       {/* Electron resolves app regions in DOM order; Desktop overlays must remain later. */}
       {mode === 'advanced' && platform === 'win32' && <div className="dshDesktopWindowsCaptionRow" aria-hidden="true" />}
-      <div className="dshDesktopOverlay" data-shell-overlay>
+      <div ref={overlayRef} className="dshDesktopOverlay" data-shell-overlay>
         {renderSlot('shell.overlay', {})}
       </div>
       {!collapsed && (

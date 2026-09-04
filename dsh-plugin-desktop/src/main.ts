@@ -170,6 +170,7 @@ import {
   removeModelCredentialEnvironment,
   restrictModelLaunchEnvironment,
 } from './dofe-credential-migration.ts'
+import { repairDofeVisionModelSettings } from './dofe-model-capability-migration.ts'
 
 const BIN_NAME = 'dsh-plugin-desktop'
 const PRODUCT_NAME = 'Yootun-Agent'
@@ -547,6 +548,7 @@ async function start(): Promise<void> {
     removeModelCredentialEnvironment(process.env)
     const homeDir = resolveDshHome()
     await removeLegacyModelCredentials(homeDir)
+    await repairDofeVisionModelSettings(homeDir)
     const projectionCacheRecovery = recoverOversizedSessionProjectionCache(homeDir)
     if (projectionCacheRecovery.status === 'quarantined') {
       sessionProjectionCacheRecovery = projectionCacheRecovery

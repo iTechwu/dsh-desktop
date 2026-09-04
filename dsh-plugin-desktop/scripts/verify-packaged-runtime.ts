@@ -10,8 +10,11 @@ import { listPackage } from '@electron/asar'
 import AdmZip from 'adm-zip'
 import {
   FORBIDDEN_MACOS_UNIVERSAL_ENTRIES,
+  hydrateInstalledMacCloudflaredRuntime,
+  hydrateInstalledMacCpuFeaturesRuntime,
   hydratePackagedMacRuntime,
-  MACOS_UNIVERSAL_NATIVE_ENTRIES,
+  MACOS_UNIVERSAL_PACKAGED_ENTRIES,
+  disablePackagedMacSshCryptoRuntime,
   type MacUniversalArch,
 } from './mac-universal.ts'
 import {
@@ -135,7 +138,7 @@ export const REQUIRED_WINDOWS_X64_NODE_PTY_ENTRIES = [
 
 /** CPU-specific runtime assets that must coexist in a universal macOS application. */
 export const REQUIRED_MACOS_UNIVERSAL_ENTRIES = [
-  ...MACOS_UNIVERSAL_NATIVE_ENTRIES.map(entry => entry.path),
+  ...new Set(MACOS_UNIVERSAL_PACKAGED_ENTRIES.map(entry => entry.path)),
 ] as const
 
 /** Package exports that profile fallback links must resolve from the physical application tree. */
@@ -209,6 +212,9 @@ export function hydratePackagedRuntime(
     ?? resolve(dirname(fileURLToPath(import.meta.url)), '..')
   const unpackedRoot = resolvePackagedUnpackedRoot(context)
   if (context.electronPlatformName === 'darwin') {
+    hydrateInstalledMacCloudflaredRuntime(unpackedRoot, context.arch)
+    hydrateInstalledMacCpuFeaturesRuntime(desktopRoot, unpackedRoot, context.arch)
+    disablePackagedMacSshCryptoRuntime(unpackedRoot)
     hydratePackagedMacRuntime({
       desktopRoot,
       unpackedRoot,
@@ -249,7 +255,6 @@ export const PACKAGED_STARTUP_IMPORT_ENTRIES = [
   'node_modules/@deepseek-ai/dsh-web-fetch-http/lib/index.js',
   'node_modules/@deepseek-ai/dsh-llm-deepseek/lib/index.js',
   'node_modules/@deepseek-ai/dsh-session-log-export/lib/index.js',
-  'node_modules/@linxin666/dsh-web-ui-all/lib/index.js',
   'lib/dofe-managed.js',
   'lib/webserver.js',
 ] as const

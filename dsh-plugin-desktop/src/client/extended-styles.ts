@@ -55,6 +55,8 @@ body:is([data-dsh-desktop-mode="compatibility"], [data-dsh-desktop-mode="extende
   [data-slot="sidebar.settings"] {
   --dsh-sidebar-footer-control-height: 36px;
   --dsh-sidebar-footer-control-gap: 4px;
+  --dsh-sidebar-footer-icon-size: 16px;
+  --dsh-sidebar-footer-font-size: 14px;
 }
 body:is([data-dsh-desktop-mode="compatibility"], [data-dsh-desktop-mode="extended"])
   [data-slot="sidebar.footer.action"] {
@@ -88,7 +90,7 @@ body:is([data-dsh-desktop-mode="compatibility"], [data-dsh-desktop-mode="extende
   justify-content: flex-start;
   border-radius: 6px;
   font-family: inherit;
-  font-size: 14px;
+  font-size: var(--dsh-sidebar-footer-font-size);
   line-height: 22px;
 }
 body:is([data-dsh-desktop-mode="compatibility"], [data-dsh-desktop-mode="extended"])
@@ -115,8 +117,23 @@ body:is([data-dsh-desktop-mode="compatibility"], [data-dsh-desktop-mode="extende
   gap: 8px;
   border-radius: 6px;
   font-family: inherit;
-  font-size: 14px;
+  font-size: var(--dsh-sidebar-footer-font-size);
   line-height: 22px;
+}
+body:is([data-dsh-desktop-mode="compatibility"], [data-dsh-desktop-mode="extended"])
+  [data-slot="sidebar.footer.action"] > button > span,
+body:is([data-dsh-desktop-mode="compatibility"], [data-dsh-desktop-mode="extended"])
+  [data-slot="sidebar.settings"] > div:first-child > button > span {
+  font-size: inherit;
+  line-height: inherit;
+}
+body:is([data-dsh-desktop-mode="compatibility"], [data-dsh-desktop-mode="extended"])
+  [data-slot="sidebar.footer.action"] > button svg,
+body:is([data-dsh-desktop-mode="compatibility"], [data-dsh-desktop-mode="extended"])
+  [data-slot="sidebar.settings"] > div:first-child > button svg {
+  flex: none;
+  width: var(--dsh-sidebar-footer-icon-size);
+  height: var(--dsh-sidebar-footer-icon-size);
 }
 body:is([data-dsh-desktop-mode="compatibility"], [data-dsh-desktop-mode="extended"])
   [data-sidebar-collapsed] [data-slot="sidebar.footer.action"] > button,

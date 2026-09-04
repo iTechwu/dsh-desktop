@@ -6,7 +6,6 @@ import { writeFileAtomic } from '@deepseek-ai/dsh-atomic-write'
 import type { LaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
 
 const LEGACY_MODEL_REFS = new Set([
-  'DEEPSEEK_API_KEY',
   'OPENAI_API_KEY',
   'ANTHROPIC_API_KEY',
   'GEMINI_API_KEY',
@@ -14,6 +13,7 @@ const LEGACY_MODEL_REFS = new Set([
 
 const AMBIENT_MODEL_CREDENTIALS = [
   'MODELS_API_KEY',
+  'DEEPSEEK_API_KEY',
   ...LEGACY_MODEL_REFS,
 ] as const
 

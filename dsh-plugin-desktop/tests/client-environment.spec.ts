@@ -30,10 +30,14 @@ import {
 function expectUnifiedSidebarFooterStyles(css: string): void {
   expect(css).toContain('--dsh-sidebar-footer-control-height: 36px;')
   expect(css).toContain('--dsh-sidebar-footer-control-gap: 4px;')
-  expect(css).toMatch(/\[data-slot="sidebar\.footer\.action"\] > button \{[^}]*height: var\(--dsh-sidebar-footer-control-height\);[^}]*margin: 0;[^}]*padding: 0 8px;[^}]*border-radius: 6px;[^}]*font-size: 14px;/)
+  expect(css).toContain('--dsh-sidebar-footer-icon-size: 16px;')
+  expect(css).toContain('--dsh-sidebar-footer-font-size: 14px;')
+  expect(css).toMatch(/\[data-slot="sidebar\.footer\.action"\] > button \{[^}]*height: var\(--dsh-sidebar-footer-control-height\);[^}]*margin: 0;[^}]*padding: 0 8px;[^}]*border-radius: 6px;[^}]*font-size: var\(--dsh-sidebar-footer-font-size\);/)
   expect(css).toMatch(/\[data-slot="sidebar\.footer\.action"\] > button \{[^}]*display: flex;[^}]*align-items: center;/)
   expect(css).toMatch(/\[data-slot="sidebar\.settings"\] > div:first-child \{[^}]*margin: var\(--dsh-sidebar-footer-control-gap\) 0 0;/)
-  expect(css).toMatch(/\[data-slot="sidebar\.settings"\] > div:first-child > button \{[^}]*height: var\(--dsh-sidebar-footer-control-height\);[^}]*margin: 0;[^}]*padding: 0 8px;[^}]*border-radius: 6px;[^}]*font-size: 14px;/)
+  expect(css).toMatch(/\[data-slot="sidebar\.settings"\] > div:first-child > button \{[^}]*height: var\(--dsh-sidebar-footer-control-height\);[^}]*margin: 0;[^}]*padding: 0 8px;[^}]*border-radius: 6px;[^}]*font-size: var\(--dsh-sidebar-footer-font-size\);/)
+  expect(css).toMatch(/\[data-slot="sidebar\.footer\.action"\] > button > span,[\s\S]*\[data-slot="sidebar\.settings"\] > div:first-child > button > span \{[^}]*font-size: inherit;[^}]*line-height: inherit;/)
+  expect(css).toMatch(/\[data-slot="sidebar\.footer\.action"\] > button svg,[\s\S]*\[data-slot="sidebar\.settings"\] > div:first-child > button svg \{[^}]*width: var\(--dsh-sidebar-footer-icon-size\);[^}]*height: var\(--dsh-sidebar-footer-icon-size\);/)
   expect(css).toMatch(/\[data-slot="sidebar\.footer\.action"\] > button:has\(> svg\):not\(:has\(> span\)\)::after \{[^}]*content: attr\(aria-label\);[^}]*overflow: hidden;[^}]*text-overflow: ellipsis;[^}]*white-space: nowrap;/)
   expect(css).toMatch(/\[data-sidebar-collapsed\][^{]*\[data-slot="sidebar\.footer\.action"\] > button,[\s\S]*\[data-sidebar-collapsed\][^{]*\[data-slot="sidebar\.settings"\] > div:first-child > button \{[^}]*width: var\(--dsh-sidebar-footer-control-height\);[^}]*padding: 0;[^}]*justify-content: center;/)
   expect(css).toMatch(/\[data-sidebar-collapsed\][^{]*\[data-slot="sidebar\.footer\.action"\] > button:has\(> svg\):not\(:has\(> span\)\)::after \{ content: none; \}/)
@@ -133,8 +137,9 @@ describe('advanced desktop layout', () => {
     ['extended', ExtendedFrame],
   ] as const)('binds the strict details slot through SessionProvider in %s mode', (_mode, Frame) => {
     vi.stubGlobal('window', { innerWidth: 1440 })
+    const layout = new DesktopLayoutState()
     const props = {
-      layout: new DesktopLayoutState(),
+      layout,
       platform: 'darwin',
       useSessions: (select: (state: { current?: string; byId: Record<string, { blank: boolean }> }) => unknown) =>
         select({ byId: {} }),
@@ -148,6 +153,20 @@ describe('advanced desktop layout', () => {
       expect(markup).toContain(
         '<section data-session-provider=""><span data-slot="details"></span></section>',
       )
+      expect(markup).toContain(
+        '<aside class="dshDesktopDetailsSurface" aria-hidden="true" inert="">',
+      )
+
+      layout.openDetails()
+      const expandedProps = {
+        ...props,
+        useSessions: (select: (state: { current?: string; byId: Record<string, { blank: boolean }> }) => unknown) =>
+          select({ current: 'session-1', byId: { 'session-1': { blank: false } } }),
+      } as unknown as AdvancedFrameProps
+      const expandedMarkup = renderToStaticMarkup(createElement(Frame, expandedProps))
+      expect(expandedMarkup).toContain('<aside class="dshDesktopDetailsSurface">')
+      expect(expandedMarkup).not.toContain('<aside class="dshDesktopDetailsSurface" aria-hidden="true"')
+      expect(expandedMarkup).not.toContain('inert=""')
     } finally {
       vi.unstubAllGlobals()
     }

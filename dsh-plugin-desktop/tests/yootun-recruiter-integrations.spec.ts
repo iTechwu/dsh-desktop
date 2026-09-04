@@ -32,6 +32,25 @@ describe('Yootun recruiter integrations', () => {
     } } })
   })
 
+  it('lets the Knowledge service resolve the tenant HR space by default', async () => {
+    const calls: Array<{ name: string; arguments: any }> = []
+    const publisher = createRecruiterKnowledgePublisher({
+      schemas: () => [
+        { name: 'knowledge_remember', description: '', parameters: {} },
+        { name: 'knowledge_confirm_memory', description: '', parameters: {} },
+      ],
+      execute: vi.fn(async (input: any) => {
+        calls.push(input)
+        return input.name === 'knowledge_remember'
+          ? { isError: false, value: { ok: true, result: { structuredContent: { id: 'memory-2' } } }, content: [] }
+          : { isError: false, value: { ok: true, result: {} }, content: [] }
+      }),
+    } as any)
+    await publisher!.publish({ content: '统一 HR 空间', idempotencyKey: 'knowledge-default-1' })
+    expect(calls[0]!.arguments.input).toMatchObject({ scope: 'TEAM' })
+    expect(calls[0]!.arguments.input).not.toHaveProperty('spaceId')
+  })
+
   it('does not invoke the BOSS official client before authorization', async () => {
     const executeRecruiterAction = vi.fn()
     const syncRecruitingData = vi.fn()

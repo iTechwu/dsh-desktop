@@ -138,7 +138,7 @@ describe('desktop direct bundle management', () => {
     )
     expect(desktopPluginBundleMutable('dsh-plugin-desktop')).toBe(false)
     expect(desktopPluginBundleMutable('dsh-community-market')).toBe(false)
-    expect(desktopPluginBundleMutable('@linxin666/dsh-web-ui-all')).toBe(false)
+    expect(desktopPluginBundleMutable('@linxin666/dsh-web-ui-all')).toBe(true)
     expect(desktopPluginBundleMutable('../third-party-plugin')).toBe(false)
     expect(desktopPluginBundleMutable('Third-Party-Plugin')).toBe(false)
     await harness.dispose()

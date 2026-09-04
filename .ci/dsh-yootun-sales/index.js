@@ -7,6 +7,7 @@ import { createHash } from 'node:crypto'
 const PATH = '/api/desktop/yootun/sales'
 const MAX_QUERY = 500
 const MAX_ITEMS = 30
+const TOOL_CALL_TIMEOUT_MS = 60_000
 
 export const inject = ['webServer', 'tools']
 
@@ -16,7 +17,27 @@ const handledActions = new Map()
 
 export function apply(ctx, config = {}) {
   if (config.registerHostRoute === false) return undefined
-  return ctx.effect(() => ctx.webServer.register({
+  return ctx.effect(() => {
+    const disposers = []
+    if (ctx.tools?.register) {
+      disposers.push(ctx.tools.register({
+        name: 'yootun_sales_overview',
+        description: 'Return the sales workspace data shown by the Yootun sales plugin.',
+        parameters: { type: 'object', additionalProperties: false, properties: {} },
+        output: outputSchema,
+        isConcurrencySafe: () => true,
+        async execute() { return { ok: true, result: await buildState(ctx, {}) } },
+      }))
+      disposers.push(ctx.tools.register({
+        name: 'yootun_sales_intent_search',
+        description: 'Find public sales-intent signals and return the projected sales plugin output.',
+        parameters: { type: 'object', additionalProperties: false, properties: { query: { type: 'string', minLength: 1, maxLength: MAX_QUERY }, platform: { type: 'string', maxLength: 80 } }, required: ['query'] },
+        output: outputSchema,
+        isConcurrencySafe: () => true,
+        async execute(args, execution) { const intent = await runIntentSearch(ctx, args || {}, execution?.signal); return { ok: true, result: await buildState(ctx, { intent }) } },
+      }))
+    }
+    disposers.push(ctx.webServer.register({
     kind: 'exact',
     path: PATH,
     async handler(req, res) {
@@ -40,8 +61,11 @@ export function apply(ctx, config = {}) {
         return send(res, 200, { status: 'error', dashboard: {}, leads: [], actions: [], intent: { status: 'error' } })
       }
     },
-  }))
+    }))
+    return () => disposers.reverse().forEach(dispose => dispose?.())
+  })
 }
+const outputSchema = { schema: { type: 'object', additionalProperties: false, properties: { ok: { type: 'boolean' }, error: { type: 'string' }, result: { type: 'object', additionalProperties: true } } }, render: (_args, value) => [{ type: 'text', text: JSON.stringify(value) }] }
 
 async function buildState(ctx, { intent }) {
   const leads = intent?.items || lastIntent?.items || []
@@ -65,7 +89,7 @@ async function buildState(ctx, { intent }) {
   }
 }
 
-async function runIntentSearch(ctx, body) {
+async function runIntentSearch(ctx, body, signal = AbortSignal.timeout(TOOL_CALL_TIMEOUT_MS)) {
   const query = String(body.query || '').trim().slice(0, MAX_QUERY)
   if (!query) return { status: 'error', reason: 'query_required', items: [] }
   const schema = findTool(ctx, 'lead_discovery_discover')
@@ -75,6 +99,7 @@ async function runIntentSearch(ctx, body) {
     callId: `yootun-sales-${Date.now()}`,
     name: schema.name,
     arguments: { keyword: query, platform, persist: true, idempotencyKey: stableKey('sales-intent', query, platform) },
+    signal,
   })
   const payload = parseResult(result)
   const items = projectItems(payload.items)
@@ -116,6 +141,7 @@ function parseResult(result) {
 }
 function firstString(...values) { for (const value of values) if (typeof value === 'string' && value) return value; return null }
 function numberOrNull(value) { return typeof value === 'number' && Number.isFinite(value) ? value : null }
+function safeError(error) { return error instanceof Error ? error.message.slice(0, 200) : 'unknown error' }
 async function readBody(req) {
   if (typeof req.body === 'object' && req.body) return req.body
   let raw = ''

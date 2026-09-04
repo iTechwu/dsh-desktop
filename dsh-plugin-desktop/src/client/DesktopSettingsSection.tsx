@@ -5,11 +5,13 @@ import {
 } from 'react'
 import type { SettingsScope } from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+import type { ClientRemote } from '@deepseek-ai/dsh-api-remotes/client'
 import type {
   DesktopMarketProvider, DesktopProfileView, DesktopSettingsApi, DesktopSettingsView,
 } from './desktop-settings-api.ts'
 import type { DesktopSettingsLocaleKey } from './desktop-settings-locales.ts'
 import type { DesktopClientPlatform } from './environment.ts'
+import { DeepSeekSearchSettings } from './DeepSeekSearchSettings.tsx'
 import {
   desktopBrowserAccessAvailable,
   desktopBrowserAccessEnabled,
@@ -44,6 +46,7 @@ export interface DesktopSettingsSectionInjected {
   readonly setMode: (mode: DesktopShellSettings['mode']) => Promise<void>
   readonly desktopSettings: SettingsScope<DesktopShellSettings>
   readonly notificationSettings: SettingsScope<DesktopNotificationSettings>
+  readonly searchCredentials: Pick<ClientRemote['credentials'], 'describe' | 'set' | 'unset'>
 }
 
 /** Renderer-composed props for the official settings section entry. */
@@ -308,6 +311,7 @@ export function DesktopSettingsSection({
   setMode: persistMode,
   desktopSettings,
   notificationSettings,
+  searchCredentials,
 }: DesktopSettingsSectionProps) {
   const desktop = useScope(desktopSettings)
   const notifications = useScope(notificationSettings)
@@ -479,6 +483,8 @@ export function DesktopSettingsSection({
           {t(restart === 'restarting' ? 'restarting' : 'restartRequired')}
         </p>
       )}
+
+      <DeepSeekSearchSettings credentials={searchCredentials} t={t} />
 
       <section className="dshDesktopSettingsGroup" aria-labelledby="dsh-desktop-profile-title">
         <div>

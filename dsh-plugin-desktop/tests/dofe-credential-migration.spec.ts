@@ -23,7 +23,7 @@ afterEach(() => {
 })
 
 describe('DoFe model credential migration', () => {
-  it('removes superseded model credentials and preserves the managed key and unrelated secrets', async () => {
+  it('removes superseded model credentials and preserves model, search, and unrelated secrets', async () => {
     const home = temporaryHome()
     mkdirSync(home, { recursive: true })
     const path = join(home, '.credentials.yaml')
@@ -45,6 +45,7 @@ describe('DoFe model credential migration', () => {
     }
     expect(value.refs).toEqual({
       MODELS_API_KEY: 'managed-secret',
+      DEEPSEEK_API_KEY: 'old-deepseek-secret',
       FEISHU_APP_SECRET: 'unrelated-secret',
     })
     expect(value.records).toEqual({ 'browser-session': 'preserved-record' })

@@ -123,31 +123,31 @@ describe('desktop profile composition', {
     ), 'utf8')).toBe('# Cordis plugin development\n')
   })
 
-  it('adds the Web surface before third-party bundles and removes the launcher bundle duplicate', () => {
+  it('adds the Web surface before third-party bundles and removes obsolete Desktop bundles', () => {
     expect(desktopBundleList([
       '@deepseek-ai/dsh-base',
+      '@linxin666/dsh-web-ui-all',
       'third-party-one',
       DESKTOP_PACKAGE_NAME,
       'third-party-two',
     ])).toEqual([
       '@deepseek-ai/dsh-base',
       '@deepseek-ai/dsh-web-app',
-      '@linxin666/dsh-web-ui-all',
       'third-party-one',
       'third-party-two',
     ])
   })
 
-  it('ships the requested Web UI bundle in every Desktop profile', () => {
-    expect(desktopBundleList([])).toContain('@linxin666/dsh-web-ui-all')
+  it('does not ship the obsolete aggregate Web UI bundle', () => {
+    expect(desktopBundleList([])).not.toContain('@linxin666/dsh-web-ui-all')
   })
 
-  it('disables aggregate rows that require the removed legacy apiProxy service', () => {
+  it('does not compose rows from the obsolete aggregate Web UI bundle', () => {
     const home = temporaryHome()
     const rows = composeEntries([prepareDesktopProfile(undefined, home).patches])
 
-    expect(rows.find(row => row.id === 'web-ui-task-board')?.disabled).toBe(true)
-    expect(rows.find(row => row.id === 'web-ui-remote-web-ui')?.disabled).toBe(true)
+    expect(rows.find(row => row.id === 'web-ui-task-board')).toBeUndefined()
+    expect(rows.find(row => row.id === 'web-ui-remote-web-ui')).toBeUndefined()
   })
 
   it('repairs a base-only CLI profile without replacing dependencies', () => {
@@ -171,7 +171,6 @@ describe('desktop profile composition', {
     expect(repaired.dsh.profile.bundles).toEqual([
       '@deepseek-ai/dsh-base',
       '@deepseek-ai/dsh-web-app',
-      '@linxin666/dsh-web-ui-all',
       'third-party-plugin',
     ])
     expect(repaired.dependencies).toEqual({ 'third-party-plugin': '^1.2.3' })
@@ -191,6 +190,7 @@ describe('desktop profile composition', {
             '@deepseek-ai/dsh-base',
             '@deepseek-ai/dsh-web-app',
             '@deepseek-ai/dsh-desktop-app',
+            '@linxin666/dsh-web-ui-all',
           ],
         },
       },
@@ -203,7 +203,6 @@ describe('desktop profile composition', {
     expect(repaired.dsh.profile.bundles).toEqual([
       '@deepseek-ai/dsh-base',
       '@deepseek-ai/dsh-web-app',
-      '@linxin666/dsh-web-ui-all',
     ])
   })
 

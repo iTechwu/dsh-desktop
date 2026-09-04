@@ -125,6 +125,44 @@ const CSS = `
   font-size: 12px;
 }
 .dshDesktopSettingsField > span { width: 100%; }
+.dshDesktopSettingsFieldHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.dshDesktopSettingsCredentialStatus { color: var(--dsw-alias-label-secondary); }
+.dshDesktopSettingsCredentialForm {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+}
+.dshDesktopSettingsSecretInput { position: relative; display: block; }
+.dshDesktopSettingsSecretInput .dshDesktopSettingsInput { padding-right: 40px; }
+.dshDesktopSettingsSecretReveal {
+  position: absolute;
+  top: 50%;
+  right: 4px;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  transform: translateY(-50%);
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+}
+.dshDesktopSettingsSecretReveal:hover:not(:disabled) { background: var(--dsw-alias-interactive-bg-hover); }
+.dshDesktopSettingsSecretReveal:focus-visible {
+  outline: 2px solid var(--dsw-alias-brand-primary);
+  outline-offset: 1px;
+}
+.dshDesktopSettingsSecretReveal:disabled { cursor: default; opacity: .55; }
+.dshDesktopSettingsSecretReveal svg { width: 16px; height: 16px; stroke-width: 1.8; }
+.dshDesktopSettingsCredentialActions { display: flex; gap: 8px; padding-bottom: 18px; }
 .dshDesktopSettingsInput {
   width: 100%;
   min-height: 36px;
@@ -365,6 +403,8 @@ const CSS = `
   .dshDesktopSettingsChoice,
   .dshDesktopSettingsToggleRow { align-items: flex-start; }
   .dshDesktopSettingsForm { align-items: stretch; flex-direction: column; }
+  .dshDesktopSettingsCredentialForm { align-items: stretch; flex-direction: column; }
+  .dshDesktopSettingsCredentialActions { padding-bottom: 0; }
 }
 `
 

@@ -40,7 +40,6 @@ const IMMUTABLE_BUNDLES = new Set([
   '@deepseek-ai/dsh-desktop-app',
   'dsh-plugin-desktop',
   'dsh-community-market',
-  '@linxin666/dsh-web-ui-all',
 ])
 
 /** One direct bundle declared by the active profile. */

@@ -23,6 +23,8 @@ test('serves live ranked candidates through the talent discovery tool', async ()
       schemas() { return [{ name: 'mcp__tools-talent-discovery__talent_candidates_list' }] },
       async execute(input) {
         assert.equal(input.arguments.limit, 50)
+        assert.ok(input.signal instanceof AbortSignal)
+        assert.equal(input.signal.aborted, false)
         return { content: [{ type: 'text', text: JSON.stringify({ candidates: [
           { candidateId: 'c-1', displayName: '候选甲', level: 'A', score: 0.92, highlights: ['改装内容连续产出'], concerns: [] },
           { candidateId: 'c-2', displayName: '候选乙', level: 'C' },
@@ -54,4 +56,22 @@ test('does not register its host route when the desktop owns the endpoint', () =
 
   assert.equal(result, undefined)
   assert.equal(registrations, 0)
+})
+
+test('returns a stable error state when talent discovery fails', async () => {
+  let route
+  apply({
+    effect(factory) { return factory() },
+    logger: { warn() {} },
+    credentials: { async resolve() { return { value: 'test-only-model-key', source: 'env' } } },
+    tools: {
+      schemas() { return [{ name: 'talent_candidates_list' }] },
+      async execute() { throw new Error('tool_failed') },
+    },
+    webServer: { register(value) { route = value; return () => {} } },
+  })
+  const state = await invoke(route, 'GET')
+  assert.equal(state.status, 200)
+  assert.equal(state.body.status, 'error')
+  assert.deepEqual(state.body.candidates, [])
 })

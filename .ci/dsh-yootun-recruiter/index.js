@@ -5,6 +5,7 @@
 
 const PATH = '/api/desktop/yootun/recruiter'
 const MAX_CANDIDATES = 50
+const TOOL_CALL_TIMEOUT_MS = 60_000
 const PUBLIC_KNOWLEDGE_MCP = 'https://ixicai.cn/mcp/knowledge'
 const SYNC_PROVIDER = 'boss_zhipin'
 
@@ -21,7 +22,17 @@ export function apply(ctx, config = {}) {
   // Desktop owns the shared recruiter route so its local, approval-gated
   // state and Agent tool cannot be shadowed by the live-candidate adapter.
   if (config.registerHostRoute === false) return undefined
-  return ctx.effect(() => ctx.webServer.register({
+  return ctx.effect(() => {
+    const disposers = []
+    if (ctx.tools?.register) disposers.push(ctx.tools.register({
+      name: 'yootun_recruiter_overview',
+      description: 'Return the ranked candidate and synchronization state shown by the Yootun recruiter plugin.',
+      parameters: { type: 'object', additionalProperties: false, properties: {} },
+      output: outputSchema,
+      isConcurrencySafe: () => true,
+      async execute(_args, execution) { return { ok: true, result: await buildState(ctx, execution?.signal) } },
+    }))
+    disposers.push(ctx.webServer.register({
     kind: 'exact',
     path: PATH,
     async handler(req, res) {
@@ -44,13 +55,16 @@ export function apply(ctx, config = {}) {
         return send(res, 400, { error: 'unknown_action' })
       } catch (error) {
         ctx.logger?.warn?.('yootun recruiter failed: %s', safeError(error))
-        return send(res, 200, { status: 'error', dashboard: {}, requirements: [], candidates: [], actions: [], sync: { provider: SYNC_PROVIDER, status: 'error', reason: 'recruiter_request_failed' }, knowledge: { status: 'unavailable', route: PUBLIC_KNOWLEDGE_MCP } })
+        return send(res, 200, { status: 'error', dashboard: {}, requirements: [], candidates: [], actions: [], sync: { provider: SYNC_PROVIDER, status: 'error', reason: 'recruiter_request_failed' }, knowledge: { status: 'unavailable', route: PUBLIC_KNOWLEDGE_MCP, reason: 'recruiter_request_failed' } })
       }
     },
-  }))
+    }))
+    return () => disposers.reverse().forEach(dispose => dispose?.())
+  })
 }
+const outputSchema = { schema: { type: 'object', additionalProperties: false, properties: { ok: { type: 'boolean' }, error: { type: 'string' }, result: { type: 'object', additionalProperties: true } } }, render: (_args, value) => [{ type: 'text', text: JSON.stringify(value) }] }
 
-async function buildState(ctx) {
+async function buildState(ctx, signal = AbortSignal.timeout(TOOL_CALL_TIMEOUT_MS)) {
   if (!await hasModelsCredential(ctx)) {
     return unavailableState('model_api_key_unavailable')
   }
@@ -62,6 +76,7 @@ async function buildState(ctx) {
     callId: `yootun-recruiter-${Date.now()}`,
     name: schema.name,
     arguments: { limit: MAX_CANDIDATES },
+    signal,
   })
   const payload = parseResult(result)
   const rows = Array.isArray(payload.candidates) ? payload.candidates : []
@@ -82,13 +97,13 @@ async function buildState(ctx) {
     candidates,
     actions,
     sync: { provider: SYNC_PROVIDER, status: 'requires_user_login', imported: 0, updated: 0, lastSuccessAt: null, reason: 'boss_adapter_not_configured' },
-    knowledge: { status: 'unavailable', route: PUBLIC_KNOWLEDGE_MCP, spaces: 0, documents: 0, memories: 0, pending: 0, recent: [] },
+    knowledge: { status: 'unavailable', route: PUBLIC_KNOWLEDGE_MCP, reason: 'knowledge_service_unavailable', spaces: 0, documents: 0, memories: 0, pending: 0, recent: [] },
     analytics: { status: 'empty', window: '30d', responseRate: null, avgScreeningDays: null, offerConversion: null },
   }
 }
 
 function unavailableState(reason) {
-  return { status: 'unavailable', reason, dashboard: {}, requirements: [], candidates: [], actions: [], sync: { provider: SYNC_PROVIDER, status: 'unavailable', reason }, knowledge: { status: 'unavailable', route: PUBLIC_KNOWLEDGE_MCP } }
+  return { status: 'unavailable', reason, dashboard: {}, requirements: [], candidates: [], actions: [], sync: { provider: SYNC_PROVIDER, status: 'unavailable', reason }, knowledge: { status: 'unavailable', route: PUBLIC_KNOWLEDGE_MCP, reason } }
 }
 
 async function hasModelsCredential(ctx) {
@@ -130,6 +145,7 @@ function asStringList(value) {
 }
 function firstString(...values) { for (const value of values) if (typeof value === 'string' && value) return value; return null }
 function numberOrNull(value) { return typeof value === 'number' && Number.isFinite(value) ? value : null }
+function safeError(error) { return error instanceof Error ? error.message.slice(0, 200) : 'unknown error' }
 async function readBody(req) {
   if (typeof req.body === 'object' && req.body) return req.body
   let raw = ''

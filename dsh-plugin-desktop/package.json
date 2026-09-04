@@ -139,7 +139,7 @@
     "verify:cli": "node scripts/verify-cli-runtime.mjs",
     "verify:loader": "node scripts/verify-loader-boot.mjs",
     "verify:profile": "node scripts/verify-profile-boot.mjs",
-    "verify:licenses": "node scripts/verify-licenses.mjs",
+    "verify:licenses": "node --test scripts/license-file.spec.mjs && node scripts/verify-licenses.mjs",
     "verify:operations": "node --test scripts/operation-reliability.spec.mjs && node scripts/verify-operation-reliability.mjs",
     "verify:notices": "node scripts/verify-licenses.mjs --notices THIRD_PARTY_NOTICES.md",
     "check": "corepack pnpm run build && corepack pnpm run typecheck && corepack pnpm run test && corepack pnpm run verify:closure && corepack pnpm run verify:cli && corepack pnpm run verify:loader && corepack pnpm run verify:profile && corepack pnpm run verify:licenses && corepack pnpm run verify:operations",
@@ -266,6 +266,7 @@
     "@deepseek-ai/dsh-host-frontend-static": "workspace:*",
     "@deepseek-ai/dsh-host-plugin-inventory": "workspace:*",
     "@deepseek-ai/dsh-host-webserver": "workspace:*",
+    "@deepseek-ai/dsh-http-proxy": "workspace:*",
     "@deepseek-ai/dsh-invariants": "workspace:*",
     "@deepseek-ai/dsh-jobs": "workspace:*",
     "@deepseek-ai/dsh-jobs-local": "workspace:*",
@@ -478,6 +479,13 @@
       "node_modules/**"
     ],
     "afterPack": "./scripts/verify-packaged-runtime.ts",
+    "electronDownload": {
+      "checksums": {
+        "electron-v43.4.0-darwin-arm64.zip": "827f9f182566f46846377575b51c547b9926b111637313a373b6f717462aebac",
+        "electron-v43.4.0-darwin-x64.zip": "7ab39ec1b0bcf5463f2dc0040142fbc1c30cd7bc3f99086066f588c717b11e24",
+        "electron-v43.4.0-win32-x64.zip": "ef0709cfa719739acce73de6f9b684304baf38c6454376638a70d34a7cecffe0"
+      }
+    },
     "electronFuses": {
       "runAsNode": true
     },
@@ -520,7 +528,7 @@
       "signIgnore": [
         "\\.(?:pak|dat|wasm)$"
       ],
-      "x64ArchFiles": "**/node_modules/{node-pty/prebuilds/darwin-*/**,node-addon-require-builtin-darwin-*/**,@vscode/ripgrep-darwin-*/**,@img/sharp-darwin-*/**,@img/sharp-libvips-darwin-*/**,@koromix/koffi-darwin-*/**}"
+      "x64ArchFiles": "**/node_modules/{node-pty/prebuilds/darwin-*/**,node-addon-require-builtin-darwin-*/**,@vscode/ripgrep-darwin-*/**,@img/sharp-darwin-*/**,@img/sharp-libvips-darwin-*/**,@koromix/koffi-darwin-*/**,lightningcss-darwin-*/**}"
     },
     "win": {
       "target": [

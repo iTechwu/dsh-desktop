@@ -93,6 +93,13 @@ describe('Yootun recruiter route', () => {
     expect(result.res.setHeader).toHaveBeenCalledWith('cache-control', 'no-store')
   })
 
+  it('marks the tenant HR space ready without a client-configured space id', async () => {
+    const result = await call(path(), 'GET', undefined, undefined, {
+      knowledgePublisher: { publish: async () => ({ status: 'succeeded', reasonCode: 'knowledge_confirmed' }) },
+    })
+    expect(result.value.knowledge).toMatchObject({ status: 'ready', spaces: 1 })
+  })
+
   it('migrates version 1 state without losing recruitment records', async () => {
     const statePath = path()
     writeFileSync(statePath, JSON.stringify({
@@ -188,7 +195,7 @@ describe('Yootun recruiter route', () => {
     expect((retry.value.actions as Array<{ status: string }>)[0]!.status).toBe('succeeded')
   })
 
-  it('publishes only confirmed, sanitized HR knowledge into the configured ACL space', async () => {
+  it('publishes confirmed, sanitized HR knowledge without client space configuration', async () => {
     const statePath = path()
     const saved = await call(statePath, 'POST', requirement())
     const requirementId = (saved.value.requirements as Array<{ id: string }>)[0]!.id
@@ -203,7 +210,6 @@ describe('Yootun recruiter route', () => {
     await call(statePath, 'POST', { action: 'confirm_action', id })
     const publications: any[] = []
     const published = await call(statePath, 'POST', { action: 'execute_action', id }, undefined, {
-      hrKnowledgeSpaceId: '20000000-0000-4000-8000-000000000001',
       knowledgePublisher: {
         publish: async request => {
           publications.push(request)
@@ -211,7 +217,7 @@ describe('Yootun recruiter route', () => {
         },
       },
     })
-    expect(publications[0]).toMatchObject({ spaceId: '20000000-0000-4000-8000-000000000001' })
+    expect(publications[0]).not.toHaveProperty('spaceId')
     expect(publications[0].content).not.toContain('候选人 A')
     expect(published.value.knowledge).toMatchObject({ status: 'ready', memories: 1, pending: 0 })
   })
