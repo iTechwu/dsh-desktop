@@ -1131,6 +1131,9 @@ importers:
       '@deepseek-ai/dsh-host-webserver':
         specifier: workspace:*
         version: link:../deepseek-harness/packages/host/webserver
+      '@deepseek-ai/dsh-http-proxy':
+        specifier: workspace:*
+        version: link:../deepseek-harness/packages/util/http-proxy
       '@deepseek-ai/dsh-invariants':
         specifier: workspace:*
         version: link:../deepseek-harness/packages/runtime-diagnostics/invariants
