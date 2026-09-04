@@ -215,7 +215,9 @@ describe('Yootun recruiter route', () => {
     const id = (queued.value.actions as Array<{ id: string }>)[0]!.id
     await call(statePath, 'POST', { action: 'confirm_action', id })
     const requests: any[] = []
+    const auditRecord = vi.fn(async () => ({ status: 'stored' as const, clientEventId: 'event-1' }))
     const executed = await call(statePath, 'POST', { action: 'execute_action', id }, undefined, {
+      audit: { record: auditRecord },
       adapter: { execute: async request => { requests.push(request); return { status: 'succeeded', reasonCode: 'remote_accepted', remoteRef: 'boss-msg-1' } } },
     })
     const action = (executed.value.actions as Array<{ status: string; adapterReceipt: Record<string, unknown> }>)[0]!
@@ -227,9 +229,11 @@ describe('Yootun recruiter route', () => {
     expect(action.adapterReceipt).toMatchObject({ status: 'succeeded', reasonCode: 'remote_accepted', remoteRef: 'boss-msg-1' })
     expect(JSON.parse(readFileSync(statePath, 'utf8')).actions[0].adapterReceipt).not.toHaveProperty('cookie')
     const retry = await call(statePath, 'POST', { action: 'execute_action', id }, undefined, {
+      audit: { record: auditRecord },
       adapter: { execute: async () => { throw new Error('must not execute twice') } },
     })
     expect((retry.value.actions as Array<{ status: string }>)[0]!.status).toBe('succeeded')
+    expect(auditRecord).toHaveBeenCalledTimes(1)
   })
 
   it('publishes confirmed, sanitized HR knowledge without client space configuration', async () => {

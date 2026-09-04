@@ -316,6 +316,7 @@ export async function executeSalesAction(
   actionId: string,
   adapter: SalesAdapter | undefined,
   now = new Date().toISOString(),
+  execution?: { performed: boolean },
 ): Promise<SalesSnapshot> {
   const previous = mutationQueues.get(path) ?? Promise.resolve()
   let release: (() => void) | undefined
@@ -329,6 +330,7 @@ export async function executeSalesAction(
     if (action === undefined) throw new InvalidSalesRequest('action_not_found')
     if (action.status === 'awaiting_confirmation') throw new InvalidSalesRequest('action_not_confirmed')
     if (action.status === 'dismissed' || action.status === 'succeeded') return salesSnapshot(state)
+    if (execution !== undefined) execution.performed = true
     if (adapter === undefined) throw new InvalidSalesRequest('sales_adapter_unavailable')
     let result: SalesAdapterResult
     try {
@@ -547,8 +549,9 @@ export async function handleYootunSalesRequest(req: IncomingMessage, res: Server
     if (request?.action === 'execute_action') {
       if (!exactKeys(request, ['action', 'id'])) throw new InvalidSalesRequest('request_fields_invalid')
       const actionId = text(request.id, 'id', 80)
-      const next = await executeSalesAction(dependencies.statePath, actionId, dependencies.adapter, now)
-      await recordSalesAudit(dependencies.audit, salesExecutionAudit(actionId, next))
+      const execution = { performed: false }
+      const next = await executeSalesAction(dependencies.statePath, actionId, dependencies.adapter, now, execution)
+      if (execution.performed) await recordSalesAudit(dependencies.audit, salesExecutionAudit(actionId, next))
       finish(res, 200, next)
       return
     }

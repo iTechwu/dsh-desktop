@@ -790,6 +790,7 @@ export async function executeRecruiterAction(
   adapter: RecruiterAdapter | undefined,
   knowledge: { publisher?: RecruiterKnowledgePublisher; spaceId?: string } = {},
   now = new Date().toISOString(),
+  execution?: { performed: boolean },
 ): Promise<RecruiterSnapshot> {
   const previous = stateMutationQueues.get(path) ?? Promise.resolve()
   let release: (() => void) | undefined
@@ -803,6 +804,7 @@ export async function executeRecruiterAction(
     if (action === undefined) throw new InvalidRecruiterRequest('action_not_found')
     if (action.status === 'awaiting_confirmation') throw new InvalidRecruiterRequest('action_not_confirmed')
     if (action.status === 'dismissed' || action.status === 'succeeded') return recruiterSnapshot(state)
+    if (execution !== undefined) execution.performed = true
     let result: RecruiterAdapterResult
     if (action.type === 'publish_knowledge') {
       if (knowledge.publisher === undefined) {
@@ -1126,6 +1128,7 @@ export async function handleYootunRecruiterRequest(
     let next: RecruiterSnapshot
     if (recordBody?.action === 'execute_action') {
       if (!exactKeys(recordBody, ['action', 'id'])) throw new InvalidRecruiterRequest('request_fields_invalid')
+      const execution = { performed: false }
       next = await executeRecruiterAction(
         dependencies.statePath,
         limitedText(recordBody.id, 'id', 80),
@@ -1135,8 +1138,9 @@ export async function handleYootunRecruiterRequest(
           ...(validUuid(dependencies.hrKnowledgeSpaceId) ? { spaceId: dependencies.hrKnowledgeSpaceId } : {}),
         },
         now,
+        execution,
       )
-      await recordRecruiterAudit(dependencies.audit, recruiterExecutionAudit(limitedText(recordBody.id, 'id', 80), next))
+      if (execution.performed) await recordRecruiterAudit(dependencies.audit, recruiterExecutionAudit(limitedText(recordBody.id, 'id', 80), next))
     } else if (recordBody?.action === 'sync_boss') {
       if (!exactKeys(recordBody, ['action'])) throw new InvalidRecruiterRequest('request_fields_invalid')
       next = await syncRecruiterBoss(dependencies.statePath, dependencies.bossAdapter, now)

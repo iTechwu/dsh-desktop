@@ -24,6 +24,28 @@ describe('Yootun supply watch route', () => {
   })
   it('executes only confirmed reviews through an injected adapter', async () => { const root = await mkdtemp(join(tmpdir(), 'yootun-supply-adapter-')); const statePath = join(root, 'state.json'); const now = () => new Date('2026-09-01T02:00:00.000Z'); const saved = response(); await handleYootunSupplyWatchRequest(request('POST', JSON.stringify({ action: 'save_risk', title: '交付周期异常', supplierLabel: '供应商 A', category: '交付', severity: 'high', status: 'open', signal: '延迟上升', recommendedAction: '复核替代方案', source: 'supply-chain' })), saved, 'http://127.0.0.1:43120', { statePath, now }); const riskId = saved.body().risks[0].id; const queued = response(); await handleYootunSupplyWatchRequest(request('POST', JSON.stringify({ action: 'queue_review', riskId, summary: '确认替代方案', idempotencyKey: 'supply-adapter-1' })), queued, 'http://127.0.0.1:43120', { statePath, now }); const actionId = queued.body().actions[0].id; const confirmed = response(); await handleYootunSupplyWatchRequest(request('POST', JSON.stringify({ action: 'confirm_action', id: actionId })), confirmed, 'http://127.0.0.1:43120', { statePath, now }); let calls = 0; const executed = response(); await handleYootunSupplyWatchRequest(request('POST', JSON.stringify({ action: 'execute_action', id: actionId })), executed, 'http://127.0.0.1:43120', { statePath, now, adapter: { async execute(input) { calls += 1; expect(input).toMatchObject({ actionId, riskId, idempotencyKey: 'supply-adapter-1', targetLabel: '供应商 A' }); return { status: 'succeeded', reasonCode: 'reviewed', remoteRef: 'ticket-9' } } } }); expect(executed.body().actions[0]).toMatchObject({ status: 'succeeded', adapterReceipt: { reasonCode: 'reviewed', remoteRef: 'ticket-9' } }); const replay = response(); await handleYootunSupplyWatchRequest(request('POST', JSON.stringify({ action: 'execute_action', id: actionId })), replay, 'http://127.0.0.1:43120', { statePath, now, adapter: { async execute() { calls += 1; return { status: 'failed', reasonCode: 'unexpected' } } } }); expect(replay.body().actions[0].status).toBe('succeeded'); expect(calls).toBe(1) })
 
+  it('does not audit a terminal review replay as another execution', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'yootun-supply-replay-audit-'))
+    const statePath = join(root, 'state.json')
+    const now = () => new Date('2026-09-01T02:00:00.000Z')
+    const call = async (payload: object, options: Record<string, unknown> = {}) => {
+      const result = response()
+      await handleYootunSupplyWatchRequest(request('POST', JSON.stringify(payload)), result, 'http://127.0.0.1:43120', { statePath, now, ...options })
+      return result.body()
+    }
+    const risk = await call({ action: 'save_risk', title: '风险', supplierLabel: '供应商', category: '交付', severity: 'high', status: 'open', signal: '信号', recommendedAction: '复核', source: 'manual' })
+    const queued = await call({ action: 'queue_review', riskId: risk.risks[0].id, summary: '复核', idempotencyKey: 'replay-audit' })
+    const actionId = queued.actions[0].id
+    await call({ action: 'confirm_action', id: actionId })
+    const record = vi.fn(async () => ({ status: 'stored' as const, clientEventId: 'event-1' }))
+    const options = { audit: { record }, adapter: { async execute() { return { status: 'succeeded' as const, reasonCode: 'reviewed' } } } }
+
+    await call({ action: 'execute_action', id: actionId }, options)
+    await call({ action: 'execute_action', id: actionId }, options)
+
+    expect(record).toHaveBeenCalledTimes(1)
+  })
+
   it('records structured supply writes and failed execution attempts', async () => {
     const root = await mkdtemp(join(tmpdir(), 'yootun-supply-audit-'))
     const statePath = join(root, 'state.json')

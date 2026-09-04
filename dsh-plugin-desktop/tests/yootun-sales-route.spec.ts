@@ -109,18 +109,20 @@ describe('Yootun sales workspace route', () => {
     const confirmed = response()
     await handleYootunSalesRequest(request('POST', JSON.stringify({ action: 'confirm_action', id: actionId })), confirmed, 'http://127.0.0.1:43120', { statePath, now })
     let calls = 0
+    const auditRecord = vi.fn(async () => ({ status: 'stored' as const, clientEventId: 'event-1' }))
     const execute = response()
     await handleYootunSalesRequest(request('POST', JSON.stringify({ action: 'execute_action', id: actionId })), execute, 'http://127.0.0.1:43120', {
-      statePath, now, adapter: { async execute(input) { calls += 1; expect(input).toMatchObject({ actionId, leadId, channel: 'email', idempotencyKey: 'sales-adapter-1', targetLabel: '采购负责人' }); return { status: 'succeeded', reasonCode: 'sent', remoteRef: 'crm-42' } } },
+      statePath, now, audit: { record: auditRecord }, adapter: { async execute(input) { calls += 1; expect(input).toMatchObject({ actionId, leadId, channel: 'email', idempotencyKey: 'sales-adapter-1', targetLabel: '采购负责人' }); return { status: 'succeeded', reasonCode: 'sent', remoteRef: 'crm-42' } } },
     })
     expect(execute.status).toBe(200)
     expect(execute.body().actions[0]).toMatchObject({ status: 'succeeded', adapterReceipt: { reasonCode: 'sent', remoteRef: 'crm-42' } })
     const replay = response()
     await handleYootunSalesRequest(request('POST', JSON.stringify({ action: 'execute_action', id: actionId })), replay, 'http://127.0.0.1:43120', {
-      statePath, now, adapter: { async execute() { calls += 1; return { status: 'failed', reasonCode: 'should_not_run' } } },
+      statePath, now, audit: { record: auditRecord }, adapter: { async execute() { calls += 1; return { status: 'failed', reasonCode: 'should_not_run' } } },
     })
     expect(replay.body().actions[0].status).toBe('succeeded')
     expect(calls).toBe(1)
+    expect(auditRecord).toHaveBeenCalledTimes(1)
   })
 
   it('runs natural-language intent discovery through the managed Tools runtime', async () => {
