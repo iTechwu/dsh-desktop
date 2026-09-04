@@ -148,6 +148,62 @@ test('routes memory forget with the required audit reason', async () => {
   assert.deepEqual(rpc.params.arguments, input)
 })
 
+test('audits knowledge writes from Agent and UI while excluding reads and input bodies', async () => {
+  let route
+  const registered = new Map()
+  const events = []
+  const ctx = {
+    credentials: { async resolve() { return { value: 'test-key' } } },
+    yootunAudit: { async record(event) { events.push(event); return { status: 'stored', clientEventId: 'event-1' } } },
+    tools: { register(tool) { registered.set(tool.name, tool); return () => {} } },
+    systemPrompt: { section() { return () => {} } },
+    webServer: { register(value) { route = value; return () => {} } },
+  }
+  apply(ctx, { fetch: async (_url, init) => {
+    const rpc = JSON.parse(init.body)
+    const id = rpc.params.name === 'knowledge.ingest_file' ? 'document-7' : 'memory-7'
+    return new Response(JSON.stringify({ jsonrpc: '2.0', result: { structuredContent: { id, status: 'candidate' } } }), { status: 200 })
+  } })
+
+  await registered.get('knowledge_search').execute({ input: { query: '不得进入审计的搜索正文' } }, {})
+  await registered.get('knowledge_remember').execute({ input: { content: '不得进入审计的知识正文' } }, {})
+  await invoke(route, 'POST', { action: 'forget', input: { memoryId: 'memory-7', reason: '不得进入审计的原因正文' } })
+
+  assert.equal(events.length, 2)
+  assert.deepEqual(events[0], {
+    actionCode: 'knowledge.memory.remembered', category: 'create',
+    source: { pluginId: '@dofe/dsh-yootun-knowledge', pluginVersion: '0.1.0', surface: 'agent_tool' },
+    target: { type: 'memory', id: 'memory-7' }, outcome: 'succeeded',
+    changes: [{ field: 'status', after: 'candidate' }], effects: [],
+  })
+  assert.equal(events[1].actionCode, 'knowledge.memory.forgotten')
+  assert.equal(events[1].source.surface, 'human_ui')
+  assert.equal(events[1].target.id, 'memory-7')
+  assert.doesNotMatch(JSON.stringify(events), /不得进入审计/u)
+})
+
+test('marks an MCP result envelope error as a failed knowledge write', async () => {
+  const registered = new Map()
+  const events = []
+  const ctx = {
+    credentials: { async resolve() { return { value: 'test-key' } } },
+    yootunAudit: { async record(event) { events.push(event); return { status: 'stored', clientEventId: 'event-1' } } },
+    tools: { register(tool) { registered.set(tool.name, tool); return () => {} } },
+    systemPrompt: { section() { return () => {} } },
+    webServer: { register() { return () => {} } },
+  }
+  apply(ctx, { fetch: async () => new Response(JSON.stringify({
+    jsonrpc: '2.0', result: { isError: true, content: [{ type: 'text', text: 'private failure detail' }] },
+  }), { status: 200 }) })
+
+  await registered.get('knowledge_remember').execute({ input: { content: '不得进入审计' } }, {})
+
+  assert.equal(events.length, 1)
+  assert.equal(events[0].outcome, 'failed')
+  assert.equal(events[0].errorCode, 'knowledge_mcp_tool_failed')
+  assert.doesNotMatch(JSON.stringify(events), /private failure detail|不得进入审计/u)
+})
+
 test('GET overview reads the public knowledge API envelope next to local route facts', async () => {
   let route
   const requests = []

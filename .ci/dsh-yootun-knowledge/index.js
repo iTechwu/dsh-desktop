@@ -17,7 +17,7 @@ const TOOL_OUTPUT = {
 }
 
 export const name = 'yootun-knowledge-tools'
-export const inject = ['tools', 'systemPrompt', 'credentials', 'webServer']
+export const inject = ['tools', 'systemPrompt', 'credentials', 'webServer', 'yootunAudit']
 
 const TOOL_DEFINITIONS = {
   knowledge_search: ['knowledge.search', 'Search ACL-scoped enterprise documents with citations.'],
@@ -47,7 +47,7 @@ export function apply(ctx, overrides = {}) {
       async execute(args, exec) {
         const credential = await resolveModelsKey(ctx)
         if (!credential) return { ok: false, error: 'model_api_key_unavailable' }
-        return callMcp(fetchImpl, credential, remoteName, args?.input || {}, exec?.signal)
+        return executeKnowledge(ctx, fetchImpl, credential, remoteName, args?.input || {}, 'agent_tool', exec?.signal)
       },
     })
     disposers.push(dispose)
@@ -90,7 +90,7 @@ export function apply(ctx, overrides = {}) {
           sendJson(res, 400, { status: 'error', reason: 'unsupported_action' })
           return
         }
-        const result = await callMcp(fetchImpl, credential, action, body.input || {})
+        const result = await executeKnowledge(ctx, fetchImpl, credential, action, body.input || {}, 'human_ui')
         sendJson(res, result.ok ? 200 : 502, result)
       },
     }))
@@ -219,12 +219,47 @@ async function callMcp(fetchImpl, apiKey, tool, input, signal) {
     const payload = await response.text()
     const message = parseMcpMessage(payload)
     if (message?.error) return { ok: false, error: message.error.message || 'knowledge_mcp_error' }
+    if (message?.result?.isError === true) return { ok: false, error: 'knowledge_mcp_tool_failed' }
     return { ok: true, result: message?.result || null }
   } catch (error) {
     return { ok: false, error: error?.name === 'AbortError' ? 'knowledge_mcp_timeout' : 'knowledge_mcp_request_failed' }
   } finally {
     clearTimeout(timer)
   }
+}
+
+const KNOWLEDGE_AUDIT_ACTIONS = {
+  'knowledge.remember': ['knowledge.memory.remembered', 'create', 'memory', 'candidate'],
+  'knowledge.confirm_memory': ['knowledge.memory.confirmed', 'update', 'memory', 'confirmed'],
+  'knowledge.forget': ['knowledge.memory.forgotten', 'delete', 'memory', 'forgotten'],
+  'knowledge.ingest_file': ['knowledge.file.imported', 'create', 'knowledge_document', 'accepted'],
+}
+
+async function executeKnowledge(ctx, fetchImpl, credential, tool, input, surface, signal) {
+  const result = await callMcp(fetchImpl, credential, tool, input, signal)
+  const definition = KNOWLEDGE_AUDIT_ACTIONS[tool]
+  if (!definition) return result
+  const [actionCode, category, targetType, defaultStatus] = definition
+  const data = result?.result?.structuredContent || result?.result || {}
+  const fallbackId = targetType === 'knowledge_document' ? input?.documentId : input?.memoryId
+  const rawId = data.id ?? data.memoryId ?? data.documentId ?? fallbackId ?? 'unresolved'
+  const id = String(rawId).slice(0, 160) || 'unresolved'
+  const rawStatus = typeof data.status === 'string' ? data.status.toLowerCase() : defaultStatus
+  const errorCode = typeof result?.error === 'string' && /^[a-z0-9_:-]{1,80}$/u.test(result.error) ? result.error : 'knowledge_write_failed'
+  await recordKnowledgeAudit(ctx, {
+    actionCode, category,
+    source: { pluginId: '@dofe/dsh-yootun-knowledge', pluginVersion: '0.1.0', surface },
+    target: { type: targetType, id },
+    outcome: result?.ok ? 'succeeded' : 'failed',
+    changes: [{ field: 'status', after: result?.ok ? rawStatus.slice(0, 160) : 'failed' }], effects: [],
+    ...(result?.ok ? {} : { errorCode }),
+  })
+  return result
+}
+
+async function recordKnowledgeAudit(ctx, input) {
+  if (!ctx.yootunAudit?.record) return
+  try { await ctx.yootunAudit.record(input) } catch { ctx.logger?.warn?.('yootun audit record failed: audit_record_failed') }
 }
 
 function parseMcpMessage(payload) {

@@ -20,6 +20,8 @@ test('lead discovery package exposes a DSH client and guarded host route', async
   assert.match(client, /动态统计必须以当前已展示样本为准/)
   assert.match(client, /storeUnavailable/)
   assert.match(client, /searchHeading/)
+  assert.match(client, /databaseSource: '定时数据'/)
+  assert.match(client, /liveSource: '即时检索'/)
   assert.match(client, /yl-start-steps/)
   assert.match(client, /yl-platform-options/)
   assert.match(client, /hasResult: Boolean\(data\)/)
@@ -36,8 +38,8 @@ test('host delegates discover to lead_discovery_discover and forwards only safe 
   })
   apply({
     tools: {
-      schemas: () => [{ name: 'lead_discovery_discover' }, { name: 'lead_discovery_result_page_get' }, { name: 'lead_discovery_candidates_list' }],
-      execute: async value => { calls.push(value); return { content: [{ type: 'text', text: discoverText }, { type: 'image', data: 'secret' }] } },
+      schemas: () => [{ name: 'lead_discovery_database_search' }, { name: 'lead_discovery_discover' }, { name: 'lead_discovery_result_page_get' }, { name: 'lead_discovery_candidates_list' }],
+      execute: async value => { calls.push(value); if (value.name === 'lead_discovery_database_search') return { structuredContent: { count: 0, candidates: [], dataSource: 'database' } }; return { content: [{ type: 'text', text: discoverText }, { type: 'image', data: 'secret' }] } },
     },
     webServer: { register(value) { route = value; return () => {} } },
     effect(factory) { return factory() },
@@ -45,13 +47,14 @@ test('host delegates discover to lead_discovery_discover and forwards only safe 
   const result = await invoke(route, { action: 'discover', keyword: '新能源SUV', platform: 'xiaohongshu-v2' })
   assert.equal(result.status, 200)
   assert.equal(result.body.status, 'ready')
-  assert.equal(calls[0].name, 'lead_discovery_discover')
-  assert.ok(calls[0].signal instanceof AbortSignal)
-  assert.equal(calls[0].signal.aborted, false)
-  assert.equal(calls[0].arguments.keyword, '新能源SUV')
-  assert.equal(calls[0].arguments.persist, true)
-  assert.equal(typeof calls[0].arguments.idempotencyKey, 'string')
-  assert.ok(calls[0].arguments.idempotencyKey.length > 0)
+  assert.equal(calls[0].name, 'lead_discovery_database_search')
+  assert.equal(calls[1].name, 'lead_discovery_discover')
+  assert.ok(calls[1].signal instanceof AbortSignal)
+  assert.equal(calls[1].signal.aborted, false)
+  assert.equal(calls[1].arguments.keyword, '新能源SUV')
+  assert.equal(calls[1].arguments.persist, true)
+  assert.equal(typeof calls[1].arguments.idempotencyKey, 'string')
+  assert.ok(calls[1].arguments.idempotencyKey.length > 0)
   assert.equal(result.body.resultRef, 'ref-abc')
   assert.equal(result.body.items.length, 1)
   assert.equal(result.body.items[0].leadLevel, 'A')
@@ -60,10 +63,31 @@ test('host delegates discover to lead_discovery_discover and forwards only safe 
   assert.equal(result.body.stats.highIntent, 1)
   assert.equal(result.body.stats.avgIntent, 80)
   assert.equal(result.body.stats.totalAvailable, 12)
+  assert.equal(result.body.dataSource, 'getoneapi')
+  assert.equal(result.body.retrievedAt, '2026-09-02T00:00:00Z')
   assert.deepEqual(result.body.stats.cities, [{ key: '长沙', count: 1 }])
   assert.equal(result.body.items[0].originalText, undefined)
   assert.equal(result.body.items[0].leadId, undefined)
   assert.equal(result.body.items[0].rawId, undefined)
+})
+
+test('host returns fresh database leads without calling discover', async () => {
+  let route
+  const calls = []
+  apply({
+    tools: {
+      schemas: () => [{ name: 'lead_discovery_database_search' }, { name: 'lead_discovery_discover' }],
+      execute: async value => { calls.push(value); return { structuredContent: { count: 1, retrievedAt: '2026-09-04T03:00:00Z', candidates: [{ leadLevel: 'A', platform: 'douyin', intentScore: 91, aiSummary: '近期计划购车' }] } } },
+    },
+    webServer: { register(value) { route = value; return () => {} } },
+    effect(factory) { return factory() },
+  })
+  const result = await invoke(route, { action: 'discover', keyword: '近期购车', platform: 'douyin' })
+  assert.equal(result.body.status, 'ready')
+  assert.equal(result.body.dataSource, 'database')
+  assert.equal(result.body.retrievedAt, '2026-09-04T03:00:00Z')
+  assert.equal(result.body.items[0].intentScore, 91)
+  assert.deepEqual(calls.map(call => call.name), ['lead_discovery_database_search'])
 })
 
 test('host delegates pagination and stored candidates to their read-only tools', async () => {
@@ -112,6 +136,56 @@ test('host preserves a safe MCP error category for diagnosis', async () => {
   const result = await invoke(route, { action: 'candidates' })
   assert.equal(result.status, 200)
   assert.deepEqual(result.body, { status: 'error', reason: 'RESULT_STORE_UNAVAILABLE' })
+})
+
+test('audits persisted discovery once and keeps pages and stored candidates read-only', async () => {
+  let route
+  const events = []
+  const ctx = {
+    yootunAudit: { async record(event) { events.push(event) } },
+    tools: {
+      schemas: () => [{ name: 'lead_discovery_discover' }, { name: 'lead_discovery_result_page_get' }, { name: 'lead_discovery_candidates_list' }],
+      register() { return () => {} },
+      async execute(value) {
+        if (value.name === 'lead_discovery_discover') return { structuredContent: { references: { resultRef: 'result-7' }, items: [], summary: { persisted: { inserted: 3, updated: 2 }, dataSource: 'getoneapi' } } }
+        if (value.name === 'lead_discovery_result_page_get') return { structuredContent: { items: [] } }
+        return { structuredContent: { candidates: [] } }
+      },
+    },
+    webServer: { register(value) { route = value; return () => {} } }, effect(factory) { return factory() },
+  }
+  apply(ctx)
+  await invoke(route, { action: 'discover', keyword: '不得进入审计的检索正文', platform: 'douyin' })
+  await invoke(route, { action: 'page', resultRef: 'result-7' })
+  await invoke(route, { action: 'candidates' })
+  assert.equal(events.length, 1)
+  assert.deepEqual(events[0], {
+    actionCode: 'lead_discovery.discovery.executed', category: 'execute',
+    source: { pluginId: '@dofe/dsh-yootun-lead-discovery', pluginVersion: '0.1.0', surface: 'human_ui' },
+    target: { type: 'lead_discovery', id: 'result-7' }, outcome: 'succeeded',
+    changes: [{ field: 'insertedCount', after: 3 }, { field: 'updatedCount', after: 2 }], effects: [],
+  })
+  assert.doesNotMatch(JSON.stringify(events), /不得进入审计/u)
+})
+
+test('audits a resolved tool error as failed instead of succeeded', async () => {
+  let route
+  const events = []
+  apply({
+    yootunAudit: { async record(event) { events.push(event) } },
+    tools: {
+      schemas: () => [{ name: 'lead_discovery_discover' }], register() { return () => {} },
+      async execute() { return { isError: true, content: [{ type: 'text', text: JSON.stringify({ error: { code: 'UPSTREAM_FAILED' } }) }] } },
+    },
+    webServer: { register(value) { route = value; return () => {} } }, effect(factory) { return factory() },
+  })
+
+  const result = await invoke(route, { action: 'discover', keyword: '失败样例' })
+
+  assert.equal(result.body.status, 'error')
+  assert.equal(events.length, 1)
+  assert.equal(events[0].outcome, 'failed')
+  assert.equal(events[0].errorCode, 'upstream_failed')
 })
 
 async function invoke(route, body) { let status; let raw = ''; await route.handler({ method: 'POST', body }, { writeHead(value) { status = value; return this }, end(value) { raw += value } }); return { status, body: JSON.parse(raw) } }

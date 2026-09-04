@@ -8,7 +8,7 @@ const TOOL_CALL_TIMEOUT_MS = 60_000
 const PLATFORMS = ['xiaohongshu-v2', 'douyin']
 const SAFE_LEAD_FIELDS = ['leadLevel', 'platform', 'intentScore', 'aiSummary', 'city', 'budgetMin', 'budgetMax', 'purchaseTiming', 'recommendedAction', 'sourceUrl']
 
-export const inject = ['webServer', 'tools']
+export const inject = ['webServer', 'tools', 'yootunAudit']
 
 export function apply(ctx) {
   return ctx.effect(() => {
@@ -20,7 +20,7 @@ export function apply(ctx) {
         parameters: { type: 'object', additionalProperties: false, properties: { keyword: { type: 'string', minLength: 1, maxLength: MAX_QUERY }, platform: { type: 'string', maxLength: 80 } }, required: ['keyword'] },
         output: outputSchema,
         isConcurrencySafe: () => true,
-        async execute(args, execution) { return { ok: true, result: await discover(ctx, args || {}, execution?.signal) } },
+        async execute(args, execution) { return { ok: true, result: await discover(ctx, args || {}, execution?.signal, 'agent_tool') } },
       }))
       disposers.push(ctx.tools.register({
         name: 'yootun_lead_discovery_candidates',
@@ -57,22 +57,57 @@ export function apply(ctx) {
 const outputSchema = { schema: { type: 'object', additionalProperties: false, properties: { ok: { type: 'boolean' }, error: { type: 'string' }, result: { type: 'object', additionalProperties: true } } }, render: (_args, value) => [{ type: 'text', text: JSON.stringify(value) }] }
 
 async function handleDiscover(ctx, body, res) {
-  const result = await discover(ctx, body)
+  const result = await discover(ctx, body, undefined, 'human_ui')
   return send(res, result.error === 'keyword_required' ? 400 : 200, result)
 }
 
-async function discover(ctx, body, signal = AbortSignal.timeout(TOOL_CALL_TIMEOUT_MS)) {
+async function discover(ctx, body, signal = AbortSignal.timeout(TOOL_CALL_TIMEOUT_MS), surface = 'human_ui') {
   const keyword = String(body.keyword || '').trim().slice(0, MAX_QUERY)
   const platform = normalizePlatform(body.platform)
   if (!keyword) return { error: 'keyword_required' }
+  const databaseSchema = findTool(ctx, 'lead_discovery_database_search')
+  if (databaseSchema) {
+    const storedResult = await ctx.tools.execute({ callId: `yootun-lead-db-${Date.now()}`, name: databaseSchema.name, arguments: { query: keyword, platform, limit: 20 }, signal })
+    const storedPayload = parseResult(storedResult)
+    const storedItems = projectItems(storedPayload.candidates)
+    if (storedItems.length > 0) {
+      return {
+        status: 'ready',
+        keyword,
+        platform,
+        resultRef: null,
+        nextCursor: null,
+        hasMore: false,
+        totalAvailable: numberOrNull(storedPayload.count) ?? storedItems.length,
+        retrievedAt: firstString(storedPayload.retrievedAt),
+        items: storedItems,
+        stats: summarizeItems(storedItems, storedPayload.count),
+        summary: { code: 'completed', keyword, platform, persisted: null, dataSource: 'database', cacheHit: false, charged: false },
+        dataSource: 'database',
+      }
+    }
+  }
   const schema = findTool(ctx, 'lead_discovery_discover')
   if (!schema) return { status: 'unavailable', reason: 'lead_discovery_tool_unavailable', keyword, platform }
   const idempotencyKey = stableKey('discover', keyword, platform)
-  const result = await ctx.tools.execute({ callId: `yootun-lead-${Date.now()}`, name: schema.name, arguments: { keyword, platform, persist: true, idempotencyKey }, signal })
-  const payload = parseResult(result)
-  const items = projectItems(payload.items)
-  const refs = pickRefs(payload)
-  return { status: 'ready', keyword, platform, ...refs, items, stats: summarizeItems(items, refs.totalAvailable), summary: pickSummary(payload) }
+  try {
+    const result = await ctx.tools.execute({ callId: `yootun-lead-${Date.now()}`, name: schema.name, arguments: { keyword, platform, persist: true, idempotencyKey }, signal })
+    const payload = parseResult(result)
+    const failure = resolvedToolFailure(result, payload)
+    if (failure) {
+      await recordDiscoveryAudit(ctx, surface, idempotencyKey, { persisted: null }, 'failed', failure)
+      return { status: 'error', reason: failure, keyword, platform }
+    }
+    const items = projectItems(payload.items)
+    const refs = pickRefs(payload)
+    const summary = pickSummary(payload)
+    const response = { status: 'ready', keyword, platform, ...refs, items, stats: summarizeItems(items, refs.totalAvailable), summary, dataSource: summary.dataSource, retrievedAt: refs.retrievedAt }
+    await recordDiscoveryAudit(ctx, surface, refs.resultRef || idempotencyKey, summary, 'succeeded')
+    return response
+  } catch (error) {
+    await recordDiscoveryAudit(ctx, surface, idempotencyKey, { persisted: null }, 'failed', safeToolErrorReason(error))
+    throw error
+  }
 }
 
 async function handlePage(ctx, body, res, signal = AbortSignal.timeout(TOOL_CALL_TIMEOUT_MS)) {
@@ -110,12 +145,21 @@ function normalizePlatform(value) { const platform = String(value || '').trim();
 function stableKey(scope, keyword, platform) { return createHash('sha256').update(`${scope}:${keyword}:${platform}`).digest('hex').slice(0, 40) }
 function parseResult(result) {
   if (!result) return {}
+  if (result && typeof result === 'object' && !Array.isArray(result) && result.structuredContent && typeof result.structuredContent === 'object') return result.structuredContent
   if (result && typeof result === 'object' && !Array.isArray(result) && Array.isArray(result.content)) {
     const text = result.content.filter(item => item?.type === 'text').map(item => String(item.text || '')).join('')
     if (!text) return {}
     try { return JSON.parse(text) } catch { return {} }
   }
   return result
+}
+function resolvedToolFailure(result, payload) {
+  const failed = result?.isError === true || result?.ok === false
+    || (Number.isInteger(result?.exitCode) && result.exitCode !== 0)
+    || payload?.ok === false || ['error', 'failed'].includes(String(payload?.status || '').toLowerCase())
+  if (!failed) return null
+  const raw = firstString(payload?.error?.code, payload?.errorCode, payload?.reason, result?.error?.code)
+  return raw && /^[A-Za-z0-9_:-]{1,80}$/u.test(raw) ? raw.toLowerCase() : 'lead_discovery_tool_failed'
 }
 function pickRefs(payload) {
   const refs = (payload && typeof payload.references === 'object' && payload.references) || {}
@@ -130,7 +174,15 @@ function pickRefs(payload) {
 function pickSummary(payload) {
   const summary = (payload && typeof payload.summary === 'object' && payload.summary) || {}
   const persisted = (summary.persisted && typeof summary.persisted === 'object') ? { inserted: numberOrNull(summary.persisted.inserted), updated: numberOrNull(summary.persisted.updated) } : null
-  return { code: payload?.status?.code ?? null, keyword: firstString(summary.keyword), platform: firstString(summary.platform), persisted }
+  return {
+    code: payload?.status?.code ?? null,
+    keyword: firstString(summary.keyword),
+    platform: firstString(summary.platform),
+    persisted,
+    dataSource: firstString(summary.dataSource) || 'getoneapi',
+    cacheHit: typeof summary.cacheHit === 'boolean' ? summary.cacheHit : null,
+    charged: typeof summary.charged === 'boolean' ? summary.charged : null,
+  }
 }
 // 文本标注：统计只使用已投影的安全字段，避免把原文、内部 ID 或联系方式带到客户端。
 function summarizeItems(items, totalAvailable = null) {
@@ -186,6 +238,22 @@ function safeToolErrorReason(error) {
     if (allowed.has(code)) return code
   } catch {}
   return allowed.has(message) ? message : 'lead_discovery_request_failed'
+}
+
+async function recordDiscoveryAudit(ctx, surface, id, summary, outcome, errorCode) {
+  if (!ctx.yootunAudit?.record) return
+  const inserted = numberOrNull(summary?.persisted?.inserted) ?? 0
+  const updated = numberOrNull(summary?.persisted?.updated) ?? 0
+  const safeError = typeof errorCode === 'string' && /^[A-Za-z0-9_:-]{1,80}$/u.test(errorCode) ? errorCode.toLowerCase() : 'lead_discovery_failed'
+  try {
+    await ctx.yootunAudit.record({
+      actionCode: 'lead_discovery.discovery.executed', category: 'execute',
+      source: { pluginId: '@dofe/dsh-yootun-lead-discovery', pluginVersion: '0.1.0', surface },
+      target: { type: 'lead_discovery', id: String(id).slice(0, 160) }, outcome,
+      changes: [{ field: 'insertedCount', after: inserted }, { field: 'updatedCount', after: updated }], effects: [],
+      ...(outcome === 'failed' ? { errorCode: safeError } : {}),
+    })
+  } catch { ctx.logger?.warn?.('yootun audit record failed: audit_record_failed') }
 }
 async function readBody(req) {
   if (typeof req.body === 'object' && req.body) return req.body
