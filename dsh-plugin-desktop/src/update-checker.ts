@@ -7,13 +7,13 @@ import {
 } from './desktop-installation-id.ts'
 
 /** Public endpoint returning the latest Yootun-Agent version for a requested channel. */
-export const DESKTOP_VERSION_ENDPOINT = 'https://www.dshdesktop.cn/api/desktop/version'
+export const DESKTOP_VERSION_ENDPOINT = 'https://ixicai.cn/api/desktop/version'
 
 /** Header carrying the installed Desktop version to the fixed version endpoint. */
-export const DESKTOP_CURRENT_VERSION_HEADER = 'X-DSH-Desktop-Version'
+export const DESKTOP_CURRENT_VERSION_HEADER = 'X-Yootun-Agent-Version'
 
 /** Header selecting an isolated Desktop release stream. */
-export const DESKTOP_RELEASE_CHANNEL_HEADER = 'X-DSH-Desktop-Channel'
+export const DESKTOP_RELEASE_CHANNEL_HEADER = 'X-Yootun-Agent-Channel'
 
 /** Release streams supported by the Desktop service. */
 export type DesktopReleaseChannel = 'stable' | 'beta'
