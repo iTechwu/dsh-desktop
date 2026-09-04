@@ -26,9 +26,10 @@ const ERROR_CODE_PATTERN = /^[a-z0-9_:-]{1,80}$/u
 
 const mutationQueues = new Map<string, Promise<void>>()
 
-export interface YootunAuditCachedEvent extends Record<string, unknown> {
+export interface YootunAuditCachedEvent {
   readonly id: string
   readonly receivedAt: string
+  readonly clientEventId?: unknown
 }
 
 export interface YootunAuditCache extends Record<string, unknown> {
@@ -126,7 +127,7 @@ function parseCache(value: unknown): YootunAuditCache | undefined {
   if (!isRecord(value) || parseIso(value.syncedAt) === undefined || !Array.isArray(value.events)) return undefined
   const events = value.events.flatMap((event) => {
     if (!isRecord(event) || typeof event.id !== 'string' || parseIso(event.receivedAt) === undefined) return []
-    return [event as YootunAuditCachedEvent]
+    return [{ ...event, id: event.id, receivedAt: event.receivedAt as string }]
   })
   if (events.length !== value.events.length) return undefined
   return { ...value, syncedAt: value.syncedAt as string, events }

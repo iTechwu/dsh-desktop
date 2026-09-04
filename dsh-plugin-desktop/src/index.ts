@@ -7,6 +7,7 @@ import z from '@deepseek-ai/schemastery'
 import type {} from '@deepseek-ai/dsh-app-boot'
 import type {} from '@deepseek-ai/dsh-cmdline'
 import type {} from '@deepseek-ai/dsh-credentials'
+import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import {
   LOCALE_SETTINGS_NAMESPACE,
   type LocaleSettings,
@@ -49,6 +50,10 @@ import {
   YOOTUN_CONTENT_COMMAND_PATH,
 } from './yootun-content-command-route.ts'
 import { createYootunWebsitePublisher } from './yootun-website-publisher.ts'
+import { YootunAuditModelsClient } from './yootun-audit-models-client.ts'
+import { handleYootunAuditRequest, YOOTUN_AUDIT_PATH } from './yootun-audit-route.ts'
+import { YootunAuditService } from './yootun-audit-service.ts'
+import { YootunAuditStore } from './yootun-audit-store.ts'
 import {
   handleYootunApprovalsRequest,
   YOOTUN_APPROVALS_PATH,
@@ -125,6 +130,7 @@ export const DESKTOP_SETTINGS_NAMESPACE = 'dsh-desktop' as const
 
 const UI_THEME_SETTINGS_NAMESPACE = THEME_SETTINGS_NAMESPACE
 const UI_LOCALE_SETTINGS_NAMESPACE = LOCALE_SETTINGS_NAMESPACE
+const MODELS_API_KEY_REF = credentialRef('MODELS_API_KEY')
 
 /** Apply the official Connection trust and browser-auth fence before a private Desktop route. */
 function rejectDesktopRequest(
@@ -193,6 +199,8 @@ export interface Config {
   minWidth: number
   /** Minimum window height in CSS pixels. */
   minHeight: number
+  /** Whether queued operation-audit events may sync to Models. */
+  auditSyncEnabled: boolean
 }
 
 /** Validated native window configuration. */
@@ -206,6 +214,7 @@ export const Config: z<Config> = z.object({
   height: z.number().step(1).min(600).default(840),
   minWidth: z.number().step(1).min(640).default(900),
   minHeight: z.number().step(1).min(480).default(640),
+  auditSyncEnabled: z.boolean().default(true),
 })
 
 /**
@@ -295,6 +304,36 @@ export function apply(ctx: Context, config: Config): void {
   )
   const rendererOrigin = `http://127.0.0.1:${String(ctx.webServer.port)}`
   const publishYootunWebsite = createYootunWebsitePublisher()
+  const dshHomePath = ctx.get('dshHomePath')
+  if (dshHomePath === undefined) {
+    throw new Error('dsh-plugin-desktop: dshHomePath is required for the audit outbox')
+  }
+  const audit = new YootunAuditService({
+    store: new YootunAuditStore(dshHomePath('storages', 'yootun-audit')),
+    remote: new YootunAuditModelsClient(),
+    resolveApiKey: async () => (await ctx.credentials.resolve(MODELS_API_KEY_REF))?.value,
+    enabled: config.auditSyncEnabled,
+    logger: ctx.logger,
+  })
+  ctx.provide('yootunAudit', audit)
+  ctx.effect(() => {
+    void audit.start()
+    return () => { audit.dispose() }
+  }, 'dsh-plugin-desktop: yootun audit service lifetime')
+  ctx.on('credentials/reference-updated', (ref) => {
+    if (ref === 'MODELS_API_KEY') void audit.credentialUpdated()
+  })
+  ctx.effect(
+    () => ctx.webServer.register({
+      kind: 'exact',
+      path: YOOTUN_AUDIT_PATH,
+      handler: (req, res) => {
+        if (rejectDesktopRequest(ctx, req, res)) return
+        return handleYootunAuditRequest(req, res, rendererOrigin, audit)
+      },
+    }),
+    `dsh-plugin-desktop: private Yootun audit route ${YOOTUN_AUDIT_PATH}`,
+  )
   if (lanHttps.caCertificate !== null) {
     const caCertificate = lanHttps.caCertificate
     ctx.effect(

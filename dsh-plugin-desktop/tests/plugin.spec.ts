@@ -34,6 +34,7 @@ import { YOOTUN_SALES_PATH } from '../src/yootun-sales-route.ts'
 import { YOOTUN_SUPPLY_WATCH_PATH } from '../src/yootun-supply-watch-route.ts'
 import { YOOTUN_CONTENT_COMMAND_PATH } from '../src/yootun-content-command-route.ts'
 import { YOOTUN_APPROVALS_PATH } from '../src/yootun-approvals-route.ts'
+import { YOOTUN_AUDIT_PATH } from '../src/yootun-audit-route.ts'
 import {
   DESKTOP_DEVELOPER_TOOLS_TOGGLE_PATH,
   DESKTOP_DIAGNOSTICS_EXPORT_PATH,
@@ -63,6 +64,7 @@ const config: DesktopConfig = {
   height: 840,
   minWidth: 900,
   minHeight: 640,
+  auditSyncEnabled: false,
 }
 
 afterEach(() => { vi.useRealTimers() })
@@ -204,7 +206,11 @@ function createHarness(
       if (String(key) === 'desktopRuntime') return runtime
       if (String(key) === 'desktopBrowserAccess') return browserAccess
       if (String(key) === 'desktopLanHttps') return lanHttps
+      if (String(key) === 'dshHomePath') return (...segments: string[]) => join('/tmp', 'dsh-desktop-audit-tests', ...segments)
       return () => {}
+    }),
+    provide: vi.fn((key: string, value: unknown) => {
+      Object.assign(ctx, { [key]: value })
     }),
     effect: vi.fn((register: () => unknown) => register()),
     on: vi.fn((event: string, listener: (namespace: unknown, next: unknown) => void) => {
@@ -243,8 +249,8 @@ function createHarness(
 
 describe('desktop Host plugin', () => {
   it('defaults to compatibility mode and validates both schemas', () => {
-    expect(Config({} as DesktopConfig)).toEqual(config)
-    expect(Config({ mode: 'advanced' } as DesktopConfig)).toEqual({ ...config, mode: 'advanced' })
+    expect(Config({} as DesktopConfig)).toEqual({ ...config, auditSyncEnabled: true })
+    expect(Config({ mode: 'advanced', auditSyncEnabled: false } as DesktopConfig)).toEqual({ ...config, mode: 'advanced' })
     expect(DesktopSettingsSchema({} as DesktopSettings)).toEqual({
       mode: 'compatibility',
       macosMaterial: 'transparent',
@@ -331,6 +337,11 @@ describe('desktop Host plugin', () => {
     expect(inject).toContain('tools')
     expect(inject).toContain('credentials')
     expect(inject).not.toContain('loader')
+    expect(harness.ctx.provide).toHaveBeenCalledWith(
+      'yootunAudit',
+      expect.objectContaining({ record: expect.any(Function), workspace: expect.any(Function) }),
+    )
+    expect(harness.route(YOOTUN_AUDIT_PATH)).toBeDefined()
     const register = vi.mocked(harness.ctx.settings.register)
     expect(register.mock.calls[0]?.[2]).toEqual(expect.objectContaining({ applies: 'restart' }))
     expect(register.mock.calls[0]?.[2]).not.toHaveProperty('base')
@@ -427,6 +438,7 @@ describe('desktop Host plugin', () => {
       YOOTUN_SUPPLY_WATCH_PATH,
       YOOTUN_CONTENT_COMMAND_PATH,
       YOOTUN_APPROVALS_PATH,
+      YOOTUN_AUDIT_PATH,
       RENDERER_BOOT_REPORT_PATH,
       DESKTOP_DIRECTORY_PICKER_PATH,
       DESKTOP_DIRECTORY_VALIDATOR_PATH,
