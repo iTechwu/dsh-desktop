@@ -16,7 +16,7 @@ vm.runInNewContext(source, {
   window: {}, document: {}, URLSearchParams, AbortController, CustomEvent: class {}, requestAnimationFrame: noop,
 })
 
-const { normalizeWorkspace, buildQuery, mergePage } = module.exports.__test
+const { normalizeWorkspace, buildQuery, mergePage, reducer } = module.exports.__test
 
 test('normalizes invalid workspace fields to honest defaults', () => {
   assert.deepEqual(JSON.parse(JSON.stringify(normalizeWorkspace({ status: 'cached', summary: { today: 4, failed: 1, pendingSync: 2 }, events: 'invalid' }))), {
@@ -34,4 +34,22 @@ test('merges cursor pages without duplicating events', () => {
   const first = [{ id: 'a', occurredAt: '2026-09-05T02:00:00Z' }, { id: 'b', occurredAt: '2026-09-05T01:00:00Z' }]
   const second = [{ id: 'b', occurredAt: '2026-09-05T01:00:00Z' }, { id: 'c', occurredAt: '2026-09-05T00:00:00Z' }]
   assert.deepEqual([...mergePage(first, second).map(item => item.id)], ['a', 'b', 'c'])
+})
+
+test('keeps the event list visible until a user explicitly selects a detail', () => {
+  const state = {
+    visible: true, loading: true, appending: false, error: '', workspace: null,
+    selectedId: null, scope: 'self', teamId: '', teamQuery: '', teams: [], filters: {}, revision: 0,
+  }
+  const loaded = reducer(state, {
+    type: 'loaded',
+    value: { events: [{ id: 'event-1' }], summary: {}, page: {}, scopes: {}, sync: {}, freshness: {} },
+  })
+  assert.equal(loaded.selectedId, null)
+})
+
+test('resolves stable time-range tokens only when building the request', () => {
+  const query = buildQuery({ scope: 'self', timeRange: '7d' }, undefined, Date.parse('2026-09-05T00:00:00.000Z'))
+  assert.equal(new URLSearchParams(query).get('start'), '2026-08-29T00:00:00.000Z')
+  assert.equal(new URLSearchParams(query).has('timeRange'), false)
 })
