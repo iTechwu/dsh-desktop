@@ -265,6 +265,7 @@ export function buildYootunAuditEvent(
   const clientEventId = uuid(input.clientEventId ?? (runtime.randomUUID ?? randomUUID)())
   const traceId = text(input.traceId ?? clientEventId, 128)
   const targetLabel = optionalText(input.target.label, 160)
+  if (targetLabel !== undefined) fail('audit_target_label_forbidden')
   const event: YootunAuditClientEvent = {
     schemaVersion: 1,
     clientEventId,
@@ -280,7 +281,6 @@ export function buildYootunAuditEvent(
     target: {
       type: text(input.target.type, 80),
       id: text(input.target.id, 160),
-      ...(targetLabel === undefined ? {} : { label: targetLabel }),
     },
     outcome: input.outcome,
     changes: changes.map(change => cloneChange(

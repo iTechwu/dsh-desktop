@@ -80,6 +80,13 @@ describe('YootunAuditModelsClient', () => {
     await expect(client.batch([event], 'secret-key')).rejects.toMatchObject({ kind: 'retryable', status })
   })
 
+  it.each([400, 413, 422])('classifies permanent batch rejection %s without retrying forever', async (status) => {
+    const client = new YootunAuditModelsClient({
+      fetcher: vi.fn().mockResolvedValue(new Response('{}', { status })),
+    })
+    await expect(client.batch([event], 'secret-key')).rejects.toMatchObject({ kind: 'permanent', status })
+  })
+
   it('classifies network failures as retryable and malformed success as invalid', async () => {
     const offline = new YootunAuditModelsClient({
       fetcher: vi.fn().mockRejectedValue(new Error('socket includes secret-key')),

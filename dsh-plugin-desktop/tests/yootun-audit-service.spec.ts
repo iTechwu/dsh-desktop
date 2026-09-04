@@ -145,6 +145,40 @@ describe('YootunAuditService', () => {
     expect(scheduler.next(2_000)).toBeDefined()
   })
 
+  it('keeps every outgoing batch within the Models 512 KiB request limit', async () => {
+    const { service, remote } = await createService()
+    const large = {
+      ...input,
+      changes: Array.from({ length: 20 }, () => ({ field: 'stage', before: '前'.repeat(160), after: '后'.repeat(160) })),
+      effects: Array.from({ length: 10 }, (_, index) => ({ target: `remote-${index}-${'x'.repeat(60)}`, outcome: 'failed' as const, code: 'e'.repeat(80), remoteRef: 'r'.repeat(160) })),
+    }
+    await Promise.all(Array.from({ length: 50 }, (_, index) => service.record({
+      ...large,
+      target: { type: 'lead', id: `lead-${index}` },
+    })))
+    remote.batch.mockImplementationOnce(async events => ({
+      accepted: events.map(item => ({ clientEventId: item.clientEventId, id: item.clientEventId, receivedAt: item.occurredAt })),
+    }))
+
+    await service.flushNow()
+
+    const sent = remote.batch.mock.calls[0]?.[0]
+    expect(new TextEncoder().encode(JSON.stringify({ events: sent })).byteLength).toBeLessThanOrEqual(512 * 1024)
+    expect(sent.length).toBeLessThan(50)
+  })
+
+  it('quarantines a single permanently rejected event and continues the queue', async () => {
+    const { service, remote, scheduler } = await createService({
+      batch: vi.fn().mockRejectedValue({ kind: 'permanent', status: 400 }),
+    })
+    await service.record(input)
+
+    await service.flushNow()
+
+    await expect(service.health()).resolves.toMatchObject({ pending: 0, quarantine: 1 })
+    expect(scheduler.next(0)).toBeDefined()
+  })
+
   it('stops automatic retry on 401 but preserves pending data', async () => {
     const { service, store, remote, scheduler } = await createService({
       batch: vi.fn().mockRejectedValue({ kind: 'auth', status: 401 }),

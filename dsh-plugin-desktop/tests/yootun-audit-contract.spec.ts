@@ -15,7 +15,7 @@ const validInput: YootunAuditRecordInput = {
     pluginVersion: '0.1.0',
     surface: 'human_ui',
   },
-  target: { type: 'lead', id: 'lead-1', label: '华东客户' },
+  target: { type: 'lead', id: 'lead-1' },
   outcome: 'succeeded',
   changes: [{ field: 'stage', before: 'new', after: 'qualified' }],
   effects: [],
@@ -95,6 +95,10 @@ describe('Yootun audit client contract', () => {
       ...validInput,
       changes: [{ field: 'phone', after: '13800000000' }],
     } as never, fixedRuntime)).toThrow('audit_field_forbidden')
+    expect(() => buildYootunAuditEvent({
+      ...validInput,
+      target: { ...validInput.target, label: '不得进入审计的业务正文' },
+    }, fixedRuntime)).toThrow('audit_target_label_forbidden')
   })
 
   it('enforces bounded arrays, text and serialized event size', () => {
@@ -111,7 +115,7 @@ describe('Yootun audit client contract', () => {
     }, fixedRuntime)).toThrow('audit_effects_too_many')
     expect(() => buildYootunAuditEvent({
       ...validInput,
-      target: { type: 'lead', id: 'lead-1', label: 'x'.repeat(161) },
+      target: { type: 'lead', id: 'x'.repeat(161) },
     }, fixedRuntime)).toThrow('audit_value_invalid')
   })
 

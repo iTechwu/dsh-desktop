@@ -24,6 +24,7 @@ import type {
 } from './yootun-audit-store.ts'
 
 const MAX_BATCH = 50
+const MAX_BATCH_BYTES = 512 * 1024
 const PROBE_DELAY_MS = 30_000
 const MAX_RETRY_DELAY_MS = 5 * 60 * 1_000
 
@@ -117,7 +118,17 @@ function defaultScheduler(): YootunAuditScheduler {
 function isRemoteFailure(value: unknown): value is AuditRemoteFailure {
   if (typeof value !== 'object' || value === null) return false
   const kind = (value as { kind?: unknown }).kind
-  return kind === 'auth' || kind === 'retryable' || kind === 'invalid_response'
+  return kind === 'auth' || kind === 'retryable' || kind === 'permanent' || kind === 'invalid_response'
+}
+
+function boundedBatch(events: readonly YootunAuditClientEvent[]): YootunAuditClientEvent[] {
+  const selected: YootunAuditClientEvent[] = []
+  for (const event of events) {
+    const candidate = [...selected, event]
+    if (new TextEncoder().encode(JSON.stringify({ events: candidate })).byteLength > MAX_BATCH_BYTES) break
+    selected.push(event)
+  }
+  return selected
 }
 
 function queryKey(query: YootunAuditListQuery): string {
@@ -244,6 +255,7 @@ export class YootunAuditService implements YootunAuditRecorder, YootunAuditReade
   private flushing: Promise<void> | undefined
   private disposed = false
   private state: YootunAuditHealth['state'] = 'ready'
+  private batchLimit = MAX_BATCH
 
   constructor(private readonly options: YootunAuditServiceOptions) {
     this.scheduler = options.scheduler ?? defaultScheduler()
@@ -297,14 +309,15 @@ export class YootunAuditService implements YootunAuditRecorder, YootunAuditReade
   }
 
   private async flush(): Promise<void> {
-    let batch
+    let batch: YootunAuditClientEvent[] = []
     try {
       const apiKey = await this.options.resolveApiKey()
       if (apiKey === undefined) {
         await this.pauseForAuth('model_api_key_missing')
         return
       }
-      batch = await this.options.store.pendingBatch(MAX_BATCH, credentialFingerprint(apiKey))
+      const candidates = await this.options.store.pendingBatch(this.batchLimit, credentialFingerprint(apiKey))
+      batch = boundedBatch(candidates)
       if (batch.length === 0) {
         this.state = 'ready'
         this.cancelProbe?.()
@@ -326,11 +339,37 @@ export class YootunAuditService implements YootunAuditRecorder, YootunAuditReade
         return
       }
       this.state = 'ready'
+      this.batchLimit = MAX_BATCH
       await this.persistState({ consecutiveFailures: 0, lastAttemptAt })
       if ((await this.options.store.counts()).pending > 0) this.scheduleFlush(0)
     } catch (cause) {
       if (isRemoteFailure(cause) && cause.kind === 'auth') {
         await this.pauseForAuth(cause.status === 403 ? 'model_api_key_forbidden' : 'model_api_key_rejected')
+        return
+      }
+      if (isRemoteFailure(cause) && cause.kind === 'permanent') {
+        if (batch.length > 1) {
+          this.batchLimit = Math.max(1, Math.floor(batch.length / 2))
+          await this.persistState({
+            consecutiveFailures: 0,
+            lastAttemptAt: this.now().toISOString(),
+            errorCode: 'remote_batch_rejected_split',
+          })
+          this.scheduleFlush(0)
+          return
+        }
+        const rejected = batch[0]
+        if (rejected !== undefined) {
+          await this.options.store.quarantine(`${rejected.clientEventId}.json`, 'remote_event_rejected')
+        }
+        this.batchLimit = MAX_BATCH
+        this.state = 'ready'
+        await this.persistState({
+          consecutiveFailures: 0,
+          lastAttemptAt: this.now().toISOString(),
+          errorCode: 'remote_event_rejected',
+        })
+        this.scheduleFlush(0)
         return
       }
       if (isRemoteFailure(cause)) {

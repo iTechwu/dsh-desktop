@@ -13,6 +13,7 @@ const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3
 export type AuditRemoteFailure =
   | { readonly kind: 'auth'; readonly status: 401 | 403 }
   | { readonly kind: 'retryable'; readonly status?: number; readonly retryAfterMs?: number }
+  | { readonly kind: 'permanent'; readonly status: number }
   | { readonly kind: 'invalid_response' }
 
 export interface YootunAuditAcceptedEvent {
@@ -334,7 +335,7 @@ export class YootunAuditModelsClient {
           ...(delay === undefined ? {} : { retryAfterMs: delay }),
         }
       } else {
-        failure = { kind: 'invalid_response' }
+        failure = { kind: 'permanent', status: response.status }
       }
       this.state = { ...this.state, failureKind: failure.kind }
       throw failure
