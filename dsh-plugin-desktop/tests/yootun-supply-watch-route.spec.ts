@@ -1,7 +1,7 @@
 import { mkdtemp, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { handleYootunSupplyWatchRequest, YOOTUN_SUPPLY_WATCH_PATH } from '../src/yootun-supply-watch-route.ts'
 
 function request(method: string, body?: string): any {
@@ -23,4 +23,27 @@ describe('Yootun supply watch route', () => {
     const root = await mkdtemp(join(tmpdir(), 'yootun-supply-corrupt-')); const statePath = join(root, 'state.json'); await import('node:fs/promises').then(fs => fs.writeFile(statePath, '{broken')); const result = response(); await handleYootunSupplyWatchRequest(request('GET'), result, 'http://127.0.0.1:43120', { statePath, now: () => new Date('2026-09-01T02:00:00.000Z') }); expect(result.status).toBe(200); expect(result.body()).toMatchObject({ dashboard: { risks: 0, pendingConfirmation: 0 }, risks: [], actions: [] }); expect(YOOTUN_SUPPLY_WATCH_PATH).toBe('/api/desktop/yootun/supply-watch')
   })
   it('executes only confirmed reviews through an injected adapter', async () => { const root = await mkdtemp(join(tmpdir(), 'yootun-supply-adapter-')); const statePath = join(root, 'state.json'); const now = () => new Date('2026-09-01T02:00:00.000Z'); const saved = response(); await handleYootunSupplyWatchRequest(request('POST', JSON.stringify({ action: 'save_risk', title: '交付周期异常', supplierLabel: '供应商 A', category: '交付', severity: 'high', status: 'open', signal: '延迟上升', recommendedAction: '复核替代方案', source: 'supply-chain' })), saved, 'http://127.0.0.1:43120', { statePath, now }); const riskId = saved.body().risks[0].id; const queued = response(); await handleYootunSupplyWatchRequest(request('POST', JSON.stringify({ action: 'queue_review', riskId, summary: '确认替代方案', idempotencyKey: 'supply-adapter-1' })), queued, 'http://127.0.0.1:43120', { statePath, now }); const actionId = queued.body().actions[0].id; const confirmed = response(); await handleYootunSupplyWatchRequest(request('POST', JSON.stringify({ action: 'confirm_action', id: actionId })), confirmed, 'http://127.0.0.1:43120', { statePath, now }); let calls = 0; const executed = response(); await handleYootunSupplyWatchRequest(request('POST', JSON.stringify({ action: 'execute_action', id: actionId })), executed, 'http://127.0.0.1:43120', { statePath, now, adapter: { async execute(input) { calls += 1; expect(input).toMatchObject({ actionId, riskId, idempotencyKey: 'supply-adapter-1', targetLabel: '供应商 A' }); return { status: 'succeeded', reasonCode: 'reviewed', remoteRef: 'ticket-9' } } } }); expect(executed.body().actions[0]).toMatchObject({ status: 'succeeded', adapterReceipt: { reasonCode: 'reviewed', remoteRef: 'ticket-9' } }); const replay = response(); await handleYootunSupplyWatchRequest(request('POST', JSON.stringify({ action: 'execute_action', id: actionId })), replay, 'http://127.0.0.1:43120', { statePath, now, adapter: { async execute() { calls += 1; return { status: 'failed', reasonCode: 'unexpected' } } } }); expect(replay.body().actions[0].status).toBe('succeeded'); expect(calls).toBe(1) })
+
+  it('records structured supply writes and failed execution attempts', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'yootun-supply-audit-'))
+    const statePath = join(root, 'state.json')
+    const now = () => new Date('2026-09-01T02:00:00.000Z')
+    const record = vi.fn(async (_input: any): Promise<any> => ({ status: 'stored', clientEventId: 'event-1' }))
+    const audit = { record }
+    const created = response()
+    await handleYootunSupplyWatchRequest(request('POST', JSON.stringify({ action: 'save_risk', title: '不得进入审计', supplierLabel: '敏感供应商', category: '交付', severity: 'high', status: 'open', signal: '不得进入审计的风险信号', recommendedAction: '不得进入审计的处置正文', source: 'supply-chain' })), created, 'http://127.0.0.1:43120', { statePath, now, audit })
+    const riskId = created.body().risks[0].id
+    await handleYootunSupplyWatchRequest(request('POST', JSON.stringify({ action: 'save_risk', id: riskId, title: '更新', supplierLabel: '供应商', category: '交付', severity: 'critical', status: 'monitoring', signal: '更新', recommendedAction: '更新', source: 'manual' })), response(), 'http://127.0.0.1:43120', { statePath, now, audit })
+    const failed = response()
+    await handleYootunSupplyWatchRequest(request('POST', JSON.stringify({ action: 'execute_action', id: 'missing-review' })), failed, 'http://127.0.0.1:43120', { statePath, now, audit })
+    await handleYootunSupplyWatchRequest(request('GET'), response(), 'http://127.0.0.1:43120', { statePath, now, audit })
+
+    expect(record).toHaveBeenCalledTimes(3)
+    expect(record.mock.calls.map(([event]) => event)).toEqual([
+      expect.objectContaining({ actionCode: 'supply.risk.created', target: { type: 'supply_risk', id: riskId }, outcome: 'succeeded' }),
+      expect.objectContaining({ actionCode: 'supply.risk.updated', target: { type: 'supply_risk', id: riskId }, outcome: 'succeeded' }),
+      expect.objectContaining({ actionCode: 'supply.review.executed', target: { type: 'supply_review', id: 'missing-review' }, outcome: 'failed', errorCode: 'action_not_found' }),
+    ])
+    expect(JSON.stringify(record.mock.calls)).not.toMatch(/敏感供应商|风险信号|处置正文/u)
+  })
 })

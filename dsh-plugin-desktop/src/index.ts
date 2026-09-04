@@ -477,6 +477,7 @@ export function apply(ctx: Context, config: Config): void {
         if (rejectDesktopRequest(ctx, req, res)) return
         return handleYootunSupplyWatchRequest(req, res, rendererOrigin, {
           statePath: ctx.get('dshHomePath')?.('storages', 'yootun-supply-watch', 'state.json'),
+          audit: ctx.yootunAudit,
         })
       },
     }),
