@@ -82,6 +82,36 @@ describe('YootunAuditService', () => {
     expect(scheduler.next(0)).toBeDefined()
   })
 
+  it('shows current-credential pending events in the first self page', async () => {
+    const { service } = await createService()
+    const stored = await service.record(input)
+
+    await expect(service.workspace({ scope: 'self', limit: 50 })).resolves.toMatchObject({
+      summary: { pendingSync: 1 },
+      events: [{
+        id: `pending:${stored.clientEventId}`,
+        clientEventId: stored.clientEventId,
+        actorDisplayName: '本机待同步',
+        syncStatus: 'pending',
+      }],
+    })
+  })
+
+  it('does not mix local pending events into another explicitly selected team', async () => {
+    const { service, remote } = await createService()
+    remote.scopes.mockResolvedValue({
+      available: ['self', 'team'],
+      currentTeam: { id: 'current-team', name: '当前团队' },
+      isSuperAdmin: true,
+    })
+    await service.record(input)
+
+    await expect(service.workspace({ scope: 'team', teamId: 'other-team', limit: 50 })).resolves.toMatchObject({
+      events: [],
+      summary: { pendingSync: 1 },
+    })
+  })
+
   it('never throws for an invalid collector payload', async () => {
     const { service, store } = await createService()
 

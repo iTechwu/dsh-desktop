@@ -4,6 +4,7 @@ import {
   buildYootunAuditEvent,
   type AuditRecordResult,
   type YootunAuditBuildRuntime,
+  type YootunAuditClientEvent,
   type YootunAuditRecordInput,
   type YootunAuditRecorder,
 } from './yootun-audit-contract.ts'
@@ -37,7 +38,7 @@ export type DesktopAuditStatus =
 export interface DesktopAuditWorkspace {
   readonly status: DesktopAuditStatus
   readonly summary: { readonly today: number; readonly failed: number; readonly pendingSync: number }
-  readonly events: readonly YootunAuditServerEvent[]
+  readonly events: readonly DesktopAuditEvent[]
   readonly page: { readonly nextCursor: string | null }
   readonly scopes: YootunAuditScopes
   readonly sync: {
@@ -49,6 +50,16 @@ export interface DesktopAuditWorkspace {
   }
   readonly freshness: { readonly source: 'live' | 'cache'; readonly syncedAt?: string }
 }
+
+export interface DesktopAuditPendingEvent extends YootunAuditClientEvent {
+  readonly id: string
+  readonly receivedAt: string
+  readonly actorDisplayName: '本机待同步'
+  readonly clockSkewed: false
+  readonly syncStatus: 'pending'
+}
+
+export type DesktopAuditEvent = YootunAuditServerEvent | DesktopAuditPendingEvent
 
 export interface YootunAuditHealth {
   readonly state: Exclude<DesktopAuditStatus, 'cached' | 'forbidden'>
@@ -171,6 +182,57 @@ function mergeCachedEvents(
     merged.push(event as YootunAuditServerEvent)
   }
   return merged
+}
+
+function matchesPending(event: YootunAuditClientEvent, query: YootunAuditListQuery): boolean {
+  if (query.start !== undefined && event.occurredAt < query.start) return false
+  if (query.end !== undefined && event.occurredAt > query.end) return false
+  if (query.pluginId !== undefined && event.source.pluginId !== query.pluginId) return false
+  if (query.actionCode !== undefined && event.actionCode !== query.actionCode) return false
+  if (query.targetType !== undefined && event.target.type !== query.targetType) return false
+  if (query.outcome !== undefined && event.outcome !== query.outcome) return false
+  if (query.memberId !== undefined) return false
+  if (query.query !== undefined) {
+    const needle = query.query.toLocaleLowerCase()
+    const haystack = [event.actionCode, event.target.id, event.target.label ?? '', '本机待同步']
+      .join('\n').toLocaleLowerCase()
+    if (!haystack.includes(needle)) return false
+  }
+  return true
+}
+
+function pendingDisplayEvents(
+  events: readonly YootunAuditClientEvent[],
+  query: YootunAuditListQuery,
+  scopes: YootunAuditScopes,
+): DesktopAuditPendingEvent[] {
+  const selectedOtherTeam = query.scope === 'team' && query.teamId !== undefined
+    && query.teamId !== scopes.currentTeam?.id
+  if (query.cursor !== undefined || selectedOtherTeam) return []
+  return events.filter(event => matchesPending(event, query)).map(event => ({
+    ...event,
+    id: `pending:${event.clientEventId}`,
+    receivedAt: event.occurredAt,
+    actorDisplayName: '本机待同步',
+    clockSkewed: false,
+    syncStatus: 'pending',
+  }))
+}
+
+function mergeWorkspaceEvents(
+  remote: readonly YootunAuditServerEvent[],
+  pending: readonly DesktopAuditPendingEvent[],
+): DesktopAuditEvent[] {
+  const byClientEventId = new Map<string, DesktopAuditEvent>()
+  for (const event of remote) byClientEventId.set(event.clientEventId, event)
+  for (const event of pending) {
+    if (!byClientEventId.has(event.clientEventId)) byClientEventId.set(event.clientEventId, event)
+  }
+  return [...byClientEventId.values()].sort((left, right) => {
+    const rightTime = right.occurredAt ?? right.receivedAt
+    const leftTime = left.occurredAt ?? left.receivedAt
+    return rightTime.localeCompare(leftTime)
+  })
 }
 
 export class YootunAuditService implements YootunAuditRecorder, YootunAuditReader {
@@ -383,17 +445,31 @@ export class YootunAuditService implements YootunAuditRecorder, YootunAuditReade
       const apiKey = await this.options.resolveApiKey()
       if (apiKey === undefined) return await this.cachedWorkspace(key, 'auth_required', 'model_api_key_missing')
       const fingerprint = credentialFingerprint(apiKey)
-      const [list, summary, scopes, health] = await Promise.all([
+      const [list, summary, scopes] = await Promise.all([
         this.options.remote.list(query, apiKey),
         this.options.remote.summary(query, apiKey),
         this.options.remote.scopes(apiKey),
-        this.health(),
       ])
+      const pending = await this.options.store.pendingBatch(MAX_BATCH, fingerprint).catch(() => {
+        this.noteLocalFailure('pending_read_failed')
+        return []
+      })
+      const health = await this.health()
+      const pendingEvents = pendingDisplayEvents(pending, query, scopes)
+      const events = mergeWorkspaceEvents(list.events, pendingEvents)
+      const remoteIds = new Set(list.events.map(event => event.clientEventId))
+      const uniquePending = pendingEvents.filter(event => !remoteIds.has(event.clientEventId))
+      const startOfToday = new Date(this.now().getTime())
+      startOfToday.setUTCHours(0, 0, 0, 0)
       const syncedAt = this.now().toISOString()
       const workspace: DesktopAuditWorkspace = {
         status: 'ready',
-        summary: { ...summary, pendingSync: health.pending },
-        events: list.events,
+        summary: {
+          today: summary.today + uniquePending.filter(event => Date.parse(event.occurredAt) >= startOfToday.getTime()).length,
+          failed: summary.failed + uniquePending.filter(event => event.outcome === 'failed').length,
+          pendingSync: health.pending,
+        },
+        events,
         page: { nextCursor: list.nextCursor },
         scopes,
         sync: this.syncView(health),
@@ -404,8 +480,8 @@ export class YootunAuditService implements YootunAuditRecorder, YootunAuditReade
         : await this.options.store.readCache().catch(() => undefined)
       const previousParts = previous?.queryKey === key ? cachedWorkspaceParts(previous) : undefined
       const cachedEvents = previousParts === undefined
-        ? workspace.events
-        : mergeCachedEvents(previousParts.events, workspace.events)
+        ? list.events
+        : mergeCachedEvents(previousParts.events, list.events)
       const cache: YootunAuditCache = { ...workspace, queryKey: key, syncedAt, events: cachedEvents, credentialFingerprint: fingerprint }
       await this.options.store.writeCache(cache).catch(() => { this.noteLocalFailure('cache_write_failed') })
       return workspace
