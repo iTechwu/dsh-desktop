@@ -16,7 +16,9 @@ vm.runInNewContext(source, {
   window: {}, document: {}, URLSearchParams, AbortController, CustomEvent: class {}, requestAnimationFrame: noop,
 })
 
-const { normalizeWorkspace, buildQuery, mergePage, reducer } = module.exports.__test
+const {
+  normalizeWorkspace, buildQuery, mergePage, reducer, actionLabel, surfaceLabel, effectOutcomeLabel,
+} = module.exports.__test
 
 test('normalizes invalid workspace fields to honest defaults', () => {
   assert.deepEqual(JSON.parse(JSON.stringify(normalizeWorkspace({ status: 'cached', summary: { today: 4, failed: 1, pendingSync: 2 }, events: 'invalid' }))), {
@@ -52,4 +54,11 @@ test('resolves stable time-range tokens only when building the request', () => {
   const query = buildQuery({ scope: 'self', timeRange: '7d' }, undefined, Date.parse('2026-09-05T00:00:00.000Z'))
   assert.equal(new URLSearchParams(query).get('start'), '2026-08-29T00:00:00.000Z')
   assert.equal(new URLSearchParams(query).has('timeRange'), false)
+})
+
+test('renders catalog actions and technical enums as readable audit language', () => {
+  assert.equal(actionLabel('xhs.rewrite.completed'), '完成小红书仿写')
+  assert.equal(actionLabel('knowledge.memory.forgotten'), '删除知识记忆')
+  assert.equal(surfaceLabel('human_ui'), '人工界面')
+  assert.equal(effectOutcomeLabel('requires_user_login'), '需要用户登录')
 })
