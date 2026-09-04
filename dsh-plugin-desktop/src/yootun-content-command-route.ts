@@ -47,6 +47,11 @@ export interface ContentArticle {
   contentFormat: 'markdown'
   source: 'geoflow'
   generatedAt?: string
+  publishedAt?: string
+  taskName?: string
+  categoryName?: string
+  authorName?: string
+  humanize?: { status: string | null; score: number | null; classification: string | null; issues: string[]; completedAt: string | null }
   selectedPlatforms: ContentPlatformId[]
   platformStatus: Partial<Record<ContentPlatformId, PlatformStatus>>
   reviewedAt: string | null
@@ -122,13 +127,13 @@ async function writeState(path: string, state: ContentState) {
 }
 
 function findTool(tools: ContentTools, token: string) { return tools.schemas().find(item => String(item.name || '').includes(token))?.name as string | undefined }
-function parseToolResult(result: unknown): RecordValue {
+function parseToolResult(result: unknown): unknown {
   const item = record(result)
   if (item && Array.isArray(item.content)) {
     const body = item.content.map(value => record(value)).filter(value => value?.type === 'text').map(value => String(value?.text || '')).join('')
-    try { return record(JSON.parse(body)) ?? {} } catch { return {} }
+    try { return JSON.parse(body) } catch { return undefined }
   }
-  return item ?? {}
+  return result
 }
 async function callTool(tools: ContentTools, name: string, args: Record<string, unknown>, signal: AbortSignal) { return parseToolResult(await tools.execute({ callId: ToolCallId(`yootun-content-${Date.now()}-${Math.random().toString(16).slice(2)}`), name, arguments: args, signal })) }
 
@@ -138,7 +143,7 @@ async function loadArticles(state: ContentState, tools: ContentTools | undefined
   const getTool = findTool(tools, 'geoflow_articles_get')
   if (!listTool || !getTool) return []
   const signal = AbortSignal.timeout(60_000)
-  const listed = await callTool(tools, listTool, { page: 1, per_page: MAX_ARTICLES }, signal)
+  const listed = record(await callTool(tools, listTool, { page: 1, per_page: MAX_ARTICLES }, signal)) ?? {}
   const rows = Array.isArray(listed.items) ? listed.items : []
   return (await Promise.all(rows.map(async value => {
     const row = record(value)
@@ -146,18 +151,76 @@ async function loadArticles(state: ContentState, tools: ContentTools | undefined
     let articleId: number
     try { articleId = positiveInteger(row.id) } catch { return undefined }
     let detail: RecordValue = {}
-    try { detail = await callTool(tools, getTool, { article_id: articleId }, signal) } catch {}
+    try { detail = record(await callTool(tools, getTool, { article_id: articleId }, signal)) ?? {} } catch {}
     const merged = { ...row, ...detail }
     const local = state.decisions[String(articleId)]
     const upstreamReview = String(merged.review_status || '').toLowerCase()
     const reviewStatus: ReviewStatus = local?.reviewStatus ?? (['approved', 'auto_approved'].includes(upstreamReview) ? 'approved' : upstreamReview === 'rejected' ? 'rejected' : 'pending')
-    return { id: `article:${articleId}`, articleId, title: firstString(merged.title) ?? `GEO 文章 #${articleId}`, ...(firstString(merged.slug) ? { slug: firstString(merged.slug) } : {}), status: firstString(merged.status) ?? 'draft', reviewStatus, summary: firstString(merged.excerpt, merged.meta_description) ?? '', content: typeof merged.content === 'string' ? merged.content : '', contentFormat: 'markdown' as const, source: 'geoflow' as const, ...(firstString(merged.created_at, merged.updated_at) ? { generatedAt: firstString(merged.created_at, merged.updated_at) } : {}), selectedPlatforms: local?.selectedPlatforms ?? [], platformStatus: local?.platformStatus ?? {}, reviewedAt: local?.reviewedAt ?? null }
-  }))).filter((item): item is ContentArticle => item !== undefined)
+    return { id: `article:${articleId}`, articleId, title: firstString(merged.title) ?? `GEO 文章 #${articleId}`, ...(firstString(merged.slug) ? { slug: firstString(merged.slug) } : {}), status: firstString(merged.status) ?? 'draft', reviewStatus, summary: firstString(merged.excerpt, merged.meta_description) ?? '', content: typeof merged.content === 'string' ? merged.content : '', contentFormat: 'markdown' as const, source: 'geoflow' as const, ...(firstString(merged.created_at, merged.updated_at) ? { generatedAt: firstString(merged.created_at, merged.updated_at) } : {}), ...(firstString(merged.published_at) ? { publishedAt: firstString(merged.published_at) } : {}), ...(firstString(merged.task_name) ? { taskName: firstString(merged.task_name) } : {}), ...(firstString(merged.category_name) ? { categoryName: firstString(merged.category_name) } : {}), ...(firstString(merged.author_name) ? { authorName: firstString(merged.author_name) } : {}), humanize: { status: firstString(merged.humanize_status) ?? null, score: finiteNumber(merged.humanize_score), classification: firstString(merged.humanize_classification) ?? null, issues: humanizeIssues(merged.humanize_issues, 8), completedAt: firstString(merged.humanized_at) ?? null }, selectedPlatforms: local?.selectedPlatforms ?? [], platformStatus: local?.platformStatus ?? {}, reviewedAt: local?.reviewedAt ?? null } as ContentArticle
+  }))).filter((item): item is NonNullable<typeof item> => item !== undefined)
 }
 
 async function snapshot(state: ContentState, tools: ContentTools | undefined) {
-  const articles = await loadArticles(state, tools)
-  return { status: tools ? 'ready' : 'unavailable', dashboard: { articles: articles.length, pendingReview: articles.filter(item => item.reviewStatus === 'pending').length, reviewed: articles.filter(item => item.reviewStatus === 'approved').length, publishReady: articles.filter(item => item.reviewStatus === 'approved' && item.status !== 'published').length }, platforms: CONTENT_PLATFORMS, articles }
+  if (!tools) return { status: 'unavailable', dashboard: emptyDashboard(), sources: emptySources(), platforms: CONTENT_PLATFORMS, articles: [] }
+  const signal = AbortSignal.timeout(60_000)
+  const [articlesResult, geoflow, georank] = await Promise.all([
+    loadArticles(state, tools).then(articles => ({ status: 'ready' as const, articles })).catch(() => ({ status: 'error' as const, articles: [] as ContentArticle[] })),
+    loadGeoFlowInsights(tools, signal),
+    loadGeoRankInsights(tools, signal),
+  ])
+  const articles = articlesResult.articles
+  return { status: articlesResult.status, dashboard: { articles: articles.length, pendingReview: articles.filter(item => item.reviewStatus === 'pending').length, reviewed: articles.filter(item => item.reviewStatus === 'approved').length, publishReady: articles.filter(item => item.reviewStatus === 'approved' && item.status !== 'published').length }, sources: { geoflow, georank }, platforms: CONTENT_PLATFORMS, articles }
+}
+
+const emptyDashboard = () => ({ articles: 0, pendingReview: 0, reviewed: 0, publishReady: 0 })
+const sourceState = (status: 'ready' | 'empty' | 'unavailable' | 'error', reason?: string, data?: RecordValue) => ({ status, ...(reason ? { reason } : {}), ...(data ? { data } : {}) })
+const emptySources = () => ({ geoflow: sourceState('unavailable'), georank: sourceState('unavailable') })
+const recordList = (value: unknown): RecordValue[] => Array.isArray(value) ? value.map(record).filter((item): item is RecordValue => item !== undefined) : []
+const humanizeIssues = (value: unknown, max = 8): string[] => (Array.isArray(value) ? value : []).map(item => { if (typeof item === 'string') return item.trim(); const row = record(item); const text = firstString(row?.text, row?.type); const suggestion = firstString(row?.suggestion); return [text, suggestion].filter((part): part is string => Boolean(part)).join(' - ') }).filter(Boolean).slice(0, max)
+const finiteNumber = (value: unknown): number | null => { if (value === null || value === undefined || value === '') return null; const parsed = Number(value); return Number.isFinite(parsed) ? parsed : null }
+const isYootunUrl = (value: unknown) => { try { return new URL(String(value ?? '')).hostname === 'yootun.ixicai.cn' } catch { return false } }
+
+async function loadGeoFlowInsights(tools: ContentTools, signal: AbortSignal) {
+  const overviewTool = findTool(tools, 'geoflow_analytics_overview')
+  const goalsTool = findTool(tools, 'geoflow_analytics_goals')
+  if (!overviewTool && !goalsTool) return sourceState('unavailable', 'geoflow_analytics_tools_unavailable')
+  const [overviewResult, goalsResult] = await Promise.allSettled([
+    overviewTool ? callTool(tools, overviewTool, { preset: '7d' }, signal) : Promise.resolve(undefined),
+    goalsTool ? callTool(tools, goalsTool, {}, signal) : Promise.resolve(undefined),
+  ])
+  const overview = overviewResult.status === 'fulfilled' ? record(overviewResult.value) ?? {} : {}
+  const goals = goalsResult.status === 'fulfilled' ? record(goalsResult.value) ?? {} : {}
+  if (!Object.keys(overview).length && !Object.keys(goals).length) return sourceState('error', 'geoflow_analytics_unavailable')
+  return sourceState('ready', undefined, {
+    filter: record(overview.filter) ?? {}, kpis: record(overview.kpis) ?? {},
+    publicationTrend: recordList(overview.publication_trend), contentFunnel: record(overview.content_funnel) ?? {},
+    distributionSummary: record(overview.distribution_summary) ?? {}, performance: record(overview.performance) ?? {},
+    taskHealth: record(overview.task_health) ?? {}, month: firstString(goals.month) ?? null, goals: recordList(goals.goals),
+  })
+}
+
+async function loadGeoRankInsights(tools: ContentTools, signal: AbortSignal) {
+  const historyTool = findTool(tools, 'georank_diagnostic_history')
+  const companyTool = findTool(tools, 'georank_list_companies')
+  if (!historyTool && !companyTool) return sourceState('unavailable', 'georank_read_tools_unavailable')
+  const [historyResult, companyResult] = await Promise.allSettled([
+    historyTool ? callTool(tools, historyTool, { limit: 20 }, signal) : Promise.resolve(undefined),
+    companyTool ? callTool(tools, companyTool, { query: '优惠豚', page: 1, size: 10, sort: 'geo_score' }, signal) : Promise.resolve(undefined),
+  ])
+  if (historyResult.status === 'rejected' && companyResult.status === 'rejected') return sourceState('error', 'georank_unavailable')
+  const historyValue = historyResult.status === 'fulfilled' ? historyResult.value : undefined
+  const historyRoot = record(historyValue)
+  const reports = (Array.isArray(historyValue) ? recordList(historyValue) : recordList(historyRoot?.items)).map(row => ({ reportId: firstString(row.report_id), url: firstString(row.url), status: firstString(row.status) ?? 'unknown', score: finiteNumber(row.overall_score), createdAt: firstString(row.created_at) ?? null })).filter(row => row.reportId && row.url && isYootunUrl(row.url)).slice(0, 8)
+  const companies = recordList(record(companyResult.status === 'fulfilled' ? companyResult.value : undefined)?.items)
+  const company = companies.find(row => isYootunUrl(row.url)) ?? companies[0] ?? null
+  const latestReport = reports[0] ?? null
+  const companyScore = finiteNumber(company?.geo_score)
+  const reportScore = finiteNumber(latestReport?.score)
+  return sourceState(company || reports.length ? 'ready' : 'empty', undefined, {
+    score: companyScore ?? reportScore, scoreSource: companyScore !== null ? 'company' : reportScore !== null ? 'diagnostic' : null,
+    company: company ? { name: firstString(company.name) ?? null, url: firstString(company.url) ?? null, certified: company.is_geo_certified === true } : null,
+    latestReport, reports,
+  })
 }
 
 const queues = new Map<string, Promise<void>>()
@@ -177,7 +240,7 @@ async function requestBody(req: IncomingMessage) { let size = 0; const chunks: B
 export async function handleYootunContentCommandRequest(req: IncomingMessage, res: ServerResponse, rendererOrigin: string, dependencies: ContentRouteDependencies): Promise<void> {
   if (req.headers.origin && req.headers.origin !== rendererOrigin) return finish(res, 403, { error: 'origin_forbidden' })
   if (!dependencies.statePath) return finish(res, 503, { error: 'state_unavailable' })
-  if (req.method === 'GET') { try { return finish(res, 200, await snapshot(await readContentState(dependencies.statePath), dependencies.tools)) } catch { return finish(res, 200, { status: 'error', dashboard: { articles: 0, pendingReview: 0, reviewed: 0, publishReady: 0 }, platforms: CONTENT_PLATFORMS, articles: [] }) } }
+  if (req.method === 'GET') { try { return finish(res, 200, await snapshot(await readContentState(dependencies.statePath), dependencies.tools)) } catch { return finish(res, 200, { status: 'error', dashboard: emptyDashboard(), sources: emptySources(), platforms: CONTENT_PLATFORMS, articles: [] }) } }
   if (req.method !== 'POST') return finish(res, 405, { error: 'method_not_allowed' }, 'GET, POST')
   try {
     const body = record(await requestBody(req))

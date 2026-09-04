@@ -6,7 +6,21 @@ import { handleYootunContentCommandRequest, YOOTUN_CONTENT_COMMAND_PATH } from '
 
 function request(method: string, body?: string): any { const chunks = body === undefined ? [] : [Buffer.from(body)]; return { method, headers: { origin: 'http://127.0.0.1:43120', 'content-type': 'application/json' }, socket: { remoteAddress: '127.0.0.1' }, async *[Symbol.asyncIterator]() { yield* chunks } } }
 function response() { let raw = ''; return { statusCode: 0, setHeader() {}, end(value = '') { raw += value }, get status() { return this.statusCode }, body() { return raw ? JSON.parse(raw) : undefined } } as any }
-function tools() { return { schemas: () => [{ name: 'mcp__geoflow__geoflow_articles_list' }, { name: 'mcp__geoflow__geoflow_articles_get' }], execute: vi.fn(async (input: any) => input.name.endsWith('articles_list') ? { items: [{ id: 42, title: '企业 AI 助手选型指南', status: 'draft', review_status: 'pending', created_at: '2026-09-01T02:00:00.000Z' }] } : { id: 42, content: '# 正文', excerpt: '摘要', slug: 'ai-guide' }) } }
+function tools(): any { return { schemas: () => [
+  { name: 'mcp__geoflow__geoflow_articles_list' },
+  { name: 'mcp__geoflow__geoflow_articles_get' },
+  { name: 'mcp__geoflow__geoflow_analytics_overview' },
+  { name: 'mcp__geoflow__geoflow_analytics_goals' },
+  { name: 'mcp__georank__georank_diagnostic_history' },
+  { name: 'mcp__georank__georank_list_companies' },
+], execute: vi.fn(async (input: any) => {
+  if (input.name.endsWith('articles_list')) return { items: [{ id: 42, title: '企业 AI 助手选型指南', status: 'draft', review_status: 'pending', created_at: '2026-09-01T02:00:00.000Z' }] }
+  if (input.name.endsWith('articles_get')) return { id: 42, content: '# 正文', excerpt: '摘要', slug: 'ai-guide', humanize_status: 'processed', humanize_score: 18, humanize_classification: 'HUMAN_ONLY', humanize_issues: [{ type: 'rhythm', text: '术语密度偏高', suggestion: '拆分长句' }] }
+  if (input.name.endsWith('analytics_overview')) return { kpis: { articles: 15, published: 8 }, publication_trend: [{ date: '2026-09-04', created: 2, published: 1 }], content_funnel: { max: 15, stages: [{ key: 'created', label: '已创建', count: 15 }] }, performance: { success_rate: 92 }, task_health: { active_tasks: 2, failed_jobs: 1 }, distribution_summary: { synced: 6, failed: 1, pending: 2 } }
+  if (input.name.endsWith('analytics_goals')) return { month: '2026-09', goals: [{ metric: 'published', target: 30, actual: 8, attainment_pct: 26, pace_pct: 13 }] }
+  if (input.name.endsWith('diagnostic_history')) return [{ report_id: 'report-1', url: 'https://yootun.ixicai.cn', status: 'completed', overall_score: 76, created_at: '2026-09-04T01:00:00Z' }]
+  return { items: [{ id: 'company-1', name: '优惠豚', url: 'https://yootun.ixicai.cn', geo_score: 82, is_geo_certified: true }] }
+}) } }
 
 describe('Yootun content command route', () => {
   it('loads GeoFlow article bodies and persists review/channel decisions only', async () => {
@@ -16,7 +30,14 @@ describe('Yootun content command route', () => {
     const now = () => new Date('2026-09-01T02:00:00.000Z')
     const loaded = response()
     await handleYootunContentCommandRequest(request('GET'), loaded, 'http://127.0.0.1:43120', { statePath, tools: source, now })
-    expect(loaded.body()).toMatchObject({ dashboard: { articles: 1, pendingReview: 1 }, articles: [{ articleId: 42, content: '# 正文', reviewStatus: 'pending' }] })
+    expect(loaded.body()).toMatchObject({
+      dashboard: { articles: 1, pendingReview: 1 },
+      articles: [{ articleId: 42, content: '# 正文', reviewStatus: 'pending', humanize: { status: 'processed', score: 18, classification: 'HUMAN_ONLY', issues: ['术语密度偏高 - 拆分长句'] } }],
+      sources: {
+        geoflow: { status: 'ready', data: { goals: [{ target: 30 }] } },
+        georank: { status: 'ready', data: { score: 82, latestReport: { reportId: 'report-1' } } },
+      },
+    })
 
     const blocked = response()
     await handleYootunContentCommandRequest(request('POST', JSON.stringify({ action: 'select_platforms', articleId: 42, platforms: ['website'] })), blocked, 'http://127.0.0.1:43120', { statePath, tools: source, now })
@@ -58,5 +79,18 @@ describe('Yootun content command route', () => {
     expect(result.status).toBe(200)
     expect(result.body()).toMatchObject({ dashboard: { articles: 0 }, articles: [] })
     expect(YOOTUN_CONTENT_COMMAND_PATH).toBe('/api/desktop/yootun/content-command')
+  })
+
+  it('keeps article review available when analytics and rank reads fail', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'yootun-content-isolation-'))
+    const source = tools()
+    source.execute.mockImplementation(async (input: any) => {
+      if (input.name.endsWith('articles_list')) return { items: [{ id: 42, title: '仍可审核', status: 'draft', review_status: 'pending' }] }
+      if (input.name.endsWith('articles_get')) return { id: 42, content: '# 正文' }
+      throw new Error('insight_unavailable')
+    })
+    const result = response()
+    await handleYootunContentCommandRequest(request('GET'), result, 'http://127.0.0.1:43120', { statePath: join(root, 'state.json'), tools: source })
+    expect(result.body()).toMatchObject({ status: 'ready', articles: [{ articleId: 42 }], sources: { geoflow: { status: 'error' }, georank: { status: 'error' } } })
   })
 })
