@@ -462,6 +462,7 @@ export function apply(ctx: Context, config: Config): void {
         return handleYootunSalesRequest(req, res, rendererOrigin, {
           statePath: ctx.get('dshHomePath')?.('storages', 'yootun-sales', 'state.json'),
           tools: ctx.tools,
+          audit: ctx.yootunAudit,
         })
       },
     }),

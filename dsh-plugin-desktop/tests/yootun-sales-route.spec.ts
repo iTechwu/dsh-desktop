@@ -1,7 +1,7 @@
 import { mkdtemp, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import {
   handleYootunSalesRequest,
   YOOTUN_SALES_PATH,
@@ -147,5 +147,59 @@ describe('Yootun sales workspace route', () => {
     expect(result.body().intent.items[0].sourceUrl).toBe('https://example.invalid/post')
     expect(result.body().intent.items[0].evidence[0].quote).not.toContain('13800000000')
     expect(calls[0]).toMatchObject({ name: 'mcp__tools-lead-discovery__search', arguments: { query: expect.any(String) } })
+  })
+
+  it('records only state-changing sales attempts without exposing business text', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'yootun-sales-audit-'))
+    const statePath = join(root, 'state.json')
+    const now = () => new Date('2026-09-01T02:00:00.000Z')
+    const record = vi.fn(async (_input: any): Promise<any> => ({ status: 'stored', clientEventId: 'event-1' }))
+    const audit = { record }
+
+    const created = response()
+    await handleYootunSalesRequest(request('POST', JSON.stringify({
+      action: 'save_lead', company: '不得进入审计的公司名称', contactLabel: '不得进入审计的联系人',
+      stage: 'new', source: 'lead-discovery', note: '不得进入审计的沟通正文',
+    })), created, 'http://127.0.0.1:43120', { statePath, now, audit })
+    const leadId = created.body().leads[0].id
+
+    await handleYootunSalesRequest(request('POST', JSON.stringify({
+      action: 'save_lead', id: leadId, company: '仍不得进入审计', contactLabel: '采购负责人',
+      stage: 'qualified', source: 'lead-discovery',
+    })), response(), 'http://127.0.0.1:43120', { statePath, now, audit })
+
+    await handleYootunSalesRequest(request('POST', JSON.stringify({
+      action: 'intent_search', query: '这段查询不应产生审计事件',
+    })), response(), 'http://127.0.0.1:43120', {
+      statePath, now, audit,
+      tools: { schemas: () => [], async execute() { return {} } } as any,
+    })
+
+    const failed = response()
+    await handleYootunSalesRequest(request('POST', JSON.stringify({
+      action: 'execute_action', id: 'missing-action',
+    })), failed, 'http://127.0.0.1:43120', { statePath, now, audit })
+
+    expect(failed.status).toBe(400)
+    expect(record).toHaveBeenCalledTimes(3)
+    expect(record.mock.calls.map(([event]) => event)).toEqual([
+      expect.objectContaining({ actionCode: 'sales.lead.created', target: { type: 'lead', id: leadId }, outcome: 'succeeded', changes: [{ field: 'stage', after: 'new' }] }),
+      expect.objectContaining({ actionCode: 'sales.lead.updated', target: { type: 'lead', id: leadId }, outcome: 'succeeded', changes: [{ field: 'stage', before: 'new', after: 'qualified' }] }),
+      expect.objectContaining({ actionCode: 'sales.follow_up.executed', target: { type: 'follow_up', id: 'missing-action' }, outcome: 'failed', errorCode: 'action_not_found' }),
+    ])
+    expect(JSON.stringify(record.mock.calls)).not.toMatch(/不得进入审计|这段查询/u)
+  })
+
+  it('does not let an unavailable audit recorder fail a completed sales write', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'yootun-sales-audit-failure-'))
+    const result = response()
+    await handleYootunSalesRequest(request('POST', JSON.stringify({
+      action: 'save_lead', company: '优惠豚', contactLabel: '采购负责人', stage: 'new', source: 'manual',
+    })), result, 'http://127.0.0.1:43120', {
+      statePath: join(root, 'state.json'),
+      audit: { async record() { throw new Error('audit_unavailable') } },
+    })
+    expect(result.status).toBe(200)
+    expect(result.body().leads).toHaveLength(1)
   })
 })
