@@ -667,7 +667,12 @@ describe('published package surface', () => {
       'lib/**',
       'node_modules/**',
     ])
-    expect(manifest.build?.electronFuses).toEqual({ runAsNode: true })
+    expect(manifest.build?.electronFuses).toEqual({
+      enableEmbeddedAsarIntegrityValidation: true,
+      onlyLoadAppFromAsar: true,
+      resetAdHocDarwinSignature: true,
+      runAsNode: true,
+    })
     expect(manifest.build?.toolsets).toEqual({ nsis: '1.2.1' })
     expect(manifest.files).toEqual(expect.arrayContaining([
       'build/app-icon.png',
@@ -974,7 +979,7 @@ describe('published package surface', () => {
     expect(processSource.match(/wShowWindow: 0/gu)).toHaveLength(2)
 
     const spawn = read('packages', 'subprocess', 'subprocess-local', 'src', 'spawn.ts')
-    expect(spawn.match(/windowsHide: true/gu)).toHaveLength(2)
+    expect(spawn.match(/windowsHide: (?:true|platform === 'win32')/gu)).toHaveLength(2)
     const cli = read('apps', 'cli', 'src', 'plugin.ts')
     expect(cli).toContain('windowsHide: true')
 

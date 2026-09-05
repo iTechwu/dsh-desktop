@@ -163,12 +163,15 @@ describe('Desktop Profile release-channel admission', () => {
       .toMatchObject({ status: 'warn', reason: 'other-channel-latest' })
   })
 
-  it('warns without claiming an owner when evidence is damaged', () => {
+  it('warns for damaged evidence until the current release becomes healthy', () => {
     const target = fixture()
     const manifestPath = capture(target, target.locations.other, '2026-09-02T01:00:00.000Z')
     writeFileSync(manifestPath, '{broken')
     expect(inspectDesktopProfileChannelAdmission(target.locations, target.profile, 'work'))
       .toEqual({ status: 'warn', reason: 'uncertain' })
+    capture(target, target.locations.current, '2026-09-02T01:00:01.000Z')
+    expect(inspectDesktopProfileChannelAdmission(target.locations, target.profile, 'work'))
+      .toEqual({ status: 'allow', reason: 'current-channel-latest' })
 
     const currentOnly = fixture()
     const currentManifest = capture(currentOnly, currentOnly.locations.current, '2026-09-02T01:00:00.000Z')

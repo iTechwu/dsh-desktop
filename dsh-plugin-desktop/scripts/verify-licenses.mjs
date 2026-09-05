@@ -45,6 +45,8 @@ const ALLOWED_LICENSES = new Set([
 const NOTICE_LICENSES = new Set([
   'LGPL-3.0-or-later',
   'Apache-2.0 AND LGPL-3.0-or-later',
+  // pnpm installs the wasm32 sharp variant on every host; yarn never sees it.
+  'Apache-2.0 AND LGPL-3.0-or-later AND MIT',
 ])
 
 /**

@@ -58,18 +58,15 @@ function market(
   return { requested, effective, legacyDefaulted }
 }
 
-function bootstrap(
-  overrides: Partial<DesktopSettingsControllerBootstrap> = {},
-): DesktopSettingsControllerBootstrap {
+type DesktopSettingsControllerBootstrapOverrides = Omit<
+  Partial<DesktopSettingsControllerBootstrap>,
+  'profiles'
+> & {
+  readonly profiles?: Partial<DesktopSettingsControllerBootstrap['profiles']>
+}
+
+function bootstrap(overrides: DesktopSettingsControllerBootstrapOverrides = {}): DesktopSettingsControllerBootstrap {
   return {
-    profiles: {
-      current: { name: DESKTOP.name, dir: DESKTOP.dir },
-      list: () => [DESKTOP, WORK, BROKEN],
-      create: () => WORK,
-      canDelete: () => false,
-      delete: async () => {},
-    },
-    persistProfileSelection: async () => {},
     readMarket: () => market(),
     readWeb: () => ({
       localUrl: 'http://127.0.0.1:43120/',
@@ -88,6 +85,18 @@ function bootstrap(
     exportDiagnostics: async () => {},
     openProfileCreator: () => {},
     ...overrides,
+    profiles: {
+      current: { name: DESKTOP.name, dir: DESKTOP.dir },
+      list: () => [DESKTOP, WORK, BROKEN],
+      create: () => WORK,
+      prepareSelection: async name => ({
+        restartRequired: name !== DESKTOP.name,
+        restart: async () => {},
+      }),
+      canDelete: () => false,
+      delete: async () => {},
+      ...overrides.profiles,
+    },
   }
 }
 
@@ -167,15 +176,15 @@ describe('desktop settings controller', () => {
 
   it('creates without selecting or restarting and returns a fresh safe state', () => {
     const create = vi.fn(() => WORK)
-    const persistProfileSelection = vi.fn(async () => {})
+    const prepareSelection = vi.fn(async () => ({ restartRequired: true, restart: async () => {} }))
     const scheduleRestart = vi.fn()
     const controller = new DesktopSettingsController(bootstrap({
       profiles: {
         current: { name: DESKTOP.name, dir: DESKTOP.dir },
         list: () => [DESKTOP, WORK],
         create,
+        prepareSelection,
       },
-      persistProfileSelection,
       scheduleRestart,
     }))
 
@@ -196,7 +205,7 @@ describe('desktop settings controller', () => {
       },
     })
     expect(create).toHaveBeenCalledWith('work')
-    expect(persistProfileSelection).not.toHaveBeenCalled()
+    expect(prepareSelection).not.toHaveBeenCalled()
     expect(scheduleRestart).not.toHaveBeenCalled()
   })
 
@@ -231,16 +240,20 @@ describe('desktop settings controller', () => {
     expect(remove).toHaveBeenCalledWith('work')
   })
 
-  it('persists a fresh selectable profile and defers restart until after response', async () => {
-    const persistProfileSelection = vi.fn(async () => {})
+  it('prepares a profile through the Profile module and defers restart until after response', async () => {
+    const restart = vi.fn(async () => {})
+    const prepareSelection = vi.fn(async (name: string) => {
+      if (name === BROKEN.name) throw new Error('profile is not selectable')
+      return { restartRequired: name !== DESKTOP.name, restart }
+    })
     const scheduleRestart = vi.fn()
     const controller = new DesktopSettingsController(bootstrap({
       profiles: {
         current: { name: DESKTOP.name, dir: DESKTOP.dir },
         list: () => [DESKTOP, WORK, BROKEN],
         create: () => WORK,
+        prepareSelection,
       },
-      persistProfileSelection,
       scheduleRestart,
     }))
 
@@ -249,11 +262,12 @@ describe('desktop settings controller', () => {
     })
     const operation = await controller.selectProfile('work')
     expect(operation.response).toEqual({ accepted: true, restartRequired: true })
-    expect(persistProfileSelection).toHaveBeenCalledOnce()
-    expect(persistProfileSelection).toHaveBeenCalledWith('work')
+    expect(prepareSelection.mock.calls).toEqual([['desktop'], ['work']])
     expect(scheduleRestart).not.toHaveBeenCalled()
+    expect(restart).not.toHaveBeenCalled()
     operation.afterResponse?.()
-    expect(scheduleRestart).toHaveBeenCalledOnce()
+    expect(restart).toHaveBeenCalledOnce()
+    expect(scheduleRestart).not.toHaveBeenCalled()
     await expect(controller.selectProfile('broken')).rejects.toThrow('is not selectable')
   })
 
@@ -294,7 +308,9 @@ describe('desktop settings controller', () => {
   it('does not expose a restart callback when persistence fails', async () => {
     const scheduleRestart = vi.fn()
     const controller = new DesktopSettingsController(bootstrap({
-      persistProfileSelection: async () => { throw new Error('state is read-only') },
+      profiles: {
+        prepareSelection: async () => { throw new Error('state is read-only') },
+      },
       selectMarket: async () => { throw new Error('state is read-only') },
       scheduleRestart,
     }))
@@ -516,7 +532,11 @@ describe('desktop settings HTTP boundary', () => {
   })
 
   it('selects a profile and persists a Market provider through their fixed endpoints', async () => {
-    const persistProfileSelection = vi.fn(async () => {})
+    const restartProfile = vi.fn(async () => {})
+    const prepareSelection = vi.fn(async () => ({
+      restartRequired: true,
+      restart: restartProfile,
+    }))
     const selectMarket = vi.fn(async () => market('community-market'))
     const scheduleRestart = vi.fn()
     const controller = new DesktopSettingsController(bootstrap({
@@ -524,8 +544,8 @@ describe('desktop settings HTTP boundary', () => {
         current: { name: DESKTOP.name, dir: DESKTOP.dir },
         list: () => [DESKTOP, WORK],
         create: () => WORK,
+        prepareSelection,
       },
-      persistProfileSelection,
       selectMarket,
       scheduleRestart,
     }))
@@ -543,11 +563,35 @@ describe('desktop settings HTTP boundary', () => {
     expect(JSON.parse(profileResponse.body)).toEqual({ accepted: true, restartRequired: true })
     expect(marketResponse.statusCode).toBe(202)
     expect(JSON.parse(marketResponse.body)).toEqual({ accepted: true, restartRequired: true })
-    expect(persistProfileSelection).toHaveBeenCalledWith('work')
+    expect(prepareSelection).toHaveBeenCalledWith('work')
     expect(selectMarket).toHaveBeenCalledWith('community-market')
     expect(scheduleRestart).not.toHaveBeenCalled()
     await new Promise<void>(resolve => { setImmediate(resolve) })
-    expect(scheduleRestart).toHaveBeenCalledTimes(2)
+    expect(restartProfile).toHaveBeenCalledOnce()
+    expect(scheduleRestart).toHaveBeenCalledOnce()
+  })
+
+  it('reports a Profile restart failure after the selection response is sent', async () => {
+    const reportError = vi.fn()
+    const controller = new DesktopSettingsController(bootstrap({
+      profiles: {
+        prepareSelection: async () => ({
+          restartRequired: true,
+          restart: async () => { throw new Error('restart unavailable') },
+        }),
+      },
+    }))
+    const res = response()
+
+    await handleDesktopProfileSelectRequest(
+      jsonRequest({ name: 'work' }), res, ORIGIN, controller, reportError,
+    )
+
+    expect(res.statusCode).toBe(202)
+    expect(JSON.parse(res.body)).toEqual({ accepted: true, restartRequired: true })
+    expect(reportError).not.toHaveBeenCalled()
+    await new Promise<void>(resolve => { setImmediate(resolve) })
+    expect(reportError).toHaveBeenCalledWith('select profile after response', expect.any(Error))
   })
 
   it('opens the terminal only for an exact same-origin empty request', async () => {

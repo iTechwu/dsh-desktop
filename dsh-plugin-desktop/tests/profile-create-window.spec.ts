@@ -96,10 +96,22 @@ describe('ProfileCreateWindow', () => {
       webPreferences: expect.objectContaining({
         contextIsolation: true,
         nodeIntegration: false,
+        nodeIntegrationInSubFrames: false,
         sandbox: true,
         webSecurity: true,
+        webviewTag: false,
+        spellcheck: false,
+        partition: 'dsh-profile-create',
       }),
     }))
+    const webContents = electron.windows[0]!.webContents
+    const deny = webContents.setWindowOpenHandler?.mock.calls[0]?.[0] as (() => unknown) | undefined
+    expect(deny?.()).toEqual({ action: 'deny' })
+    const attach = webContents.on?.mock.calls
+      .find(([event]) => event === 'will-attach-webview')?.[1] as ((event: { preventDefault(): void }) => void) | undefined
+    const attachEvent = { preventDefault: vi.fn() }
+    attach?.(attachEvent)
+    expect(attachEvent.preventDefault).toHaveBeenCalledOnce()
     expect(electron.windows[0]?.options).not.toHaveProperty('modal')
     expect(electron.windows[0]?.options).not.toHaveProperty('parent')
   })

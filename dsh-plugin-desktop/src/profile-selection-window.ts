@@ -1,12 +1,13 @@
 /** Isolated Profile chooser shared with the Recovery Assistant's Profile card. */
 
-import { BrowserWindow } from 'electron'
+import type { BrowserWindow } from 'electron'
 import { fileURLToPath } from 'node:url'
 import {
   auxiliaryWindowChromeOptions,
   auxiliaryWindowHasCustomFrame,
 } from './auxiliary-window-options.ts'
 import { revealApplication } from './electron-reveal.ts'
+import { createDesktopLocalWindow } from './local-window-policy.ts'
 import { desktopRecoveryCopy } from './recovery-copy.ts'
 import type { DesktopLocale } from './runtime.ts'
 import type { DesktopStartupRecoveryProfileActions } from './startup-recovery-window.ts'
@@ -64,7 +65,8 @@ export class DesktopProfileSelectionWindow {
       this.resolveResult = resolve
       this.rejectResult = reject
     })
-    const window = new BrowserWindow({
+    const window = createDesktopLocalWindow({
+      partition: 'dsh-profile-selector',
       title: copy.tabs.profiles,
       ...auxiliaryWindowChromeOptions(process.platform, false),
       width: 640,
@@ -79,22 +81,10 @@ export class DesktopProfileSelectionWindow {
       show: false,
       autoHideMenuBar: true,
       backgroundColor: '#202124',
-      webPreferences: {
-        contextIsolation: true,
-        nodeIntegration: false,
-        nodeIntegrationInSubFrames: false,
-        sandbox: true,
-        webSecurity: true,
-        webviewTag: false,
-        spellcheck: false,
-        partition: 'dsh-profile-selector',
-      },
     })
     this.window = window
     window.accessibleTitle = copy.tabs.profiles
     window.removeMenu()
-    window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
-    window.webContents.on('will-attach-webview', event => { event.preventDefault() })
     const navigate = (event: Electron.Event, href: string): void => {
       event.preventDefault()
       const action = parseDesktopProfileSelectionAction(href)

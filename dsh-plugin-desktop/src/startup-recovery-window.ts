@@ -1,6 +1,6 @@
 /** Host-independent Electron recovery window for profile startup failures. */
 
-import { app, BrowserWindow, screen, shell } from 'electron'
+import { app, screen, shell, type BrowserWindow } from 'electron'
 import { execFile } from 'node:child_process'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { basename, dirname } from 'node:path'
@@ -10,6 +10,7 @@ import {
   auxiliaryWindowHasCustomFrame,
 } from './auxiliary-window-options.ts'
 import { showDesktopDialog, showDesktopMessageBox } from './desktop-dialog-window.ts'
+import { createDesktopLocalWindow } from './local-window-policy.ts'
 import type { DesktopLocale } from './runtime.ts'
 import { applicationNeedsReveal, revealApplication } from './electron-reveal.ts'
 import { desktopRestartConfirmationCopy } from './tray-locale.ts'
@@ -253,29 +254,18 @@ export class DesktopStartupRecoveryWindow {
       this.snapshotError = cause instanceof Error ? cause.message : String(cause)
     }
     this.refreshProfiles()
-    const window = new BrowserWindow({
+    const window = createDesktopLocalWindow({
+      partition: 'dsh-recovery',
       title: copy.title,
       ...auxiliaryWindowChromeOptions(),
       ...desktopStartupRecoveryWindowBounds(),
       show: false,
       autoHideMenuBar: true,
       backgroundColor: '#202124',
-      webPreferences: {
-        contextIsolation: true,
-        nodeIntegration: false,
-        nodeIntegrationInSubFrames: false,
-        sandbox: true,
-        webSecurity: true,
-        webviewTag: false,
-        spellcheck: false,
-        partition: 'dsh-recovery',
-      },
     })
     this.window = window
     window.accessibleTitle = copy.title
     window.removeMenu()
-    window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
-    window.webContents.on('will-attach-webview', event => { event.preventDefault() })
     const navigate = (event: Electron.Event, href: string): void => {
       const action = parseDesktopStartupRecoveryAction(href)
       event.preventDefault()
