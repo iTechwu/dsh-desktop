@@ -41,7 +41,6 @@ import FileSettingsProvider, {
   type Config as SettingsFileConfig,
 } from '@deepseek-ai/dsh-settings-file'
 import { parseAllDocuments, parseDocument } from 'yaml'
-import { unpackedAsarPath } from './packaged-runtime-path.ts'
 import { findOverlayPackage, resolveOverlayPackage } from './package-overlay.ts'
 import { withAsarModuleResolver } from './asar-module-resolver-state.ts'
 import { DESKTOP_DEFAULT_WEB_PORT } from './desktop-port.ts'
@@ -94,7 +93,9 @@ const OBSOLETE_DESKTOP_BUNDLE_SET = new Set([
   '@deepseek-ai/dsh-desktop-app',
   '@linxin666/dsh-web-ui-all',
 ])
-const INSTALL_ANCHOR = unpackedAsarPath(fileURLToPath(new URL('../package.json', import.meta.url)))
+// Keep package discovery anchored in app.asar so ordinary dependency manifests
+// remain resolvable while only native helpers use the physical unpacked tree.
+const INSTALL_ANCHOR = fileURLToPath(new URL('../package.json', import.meta.url))
 const DESKTOP_PATCH_PATH = fileURLToPath(new URL('../cordis.patch.yml', import.meta.url))
 const DIRECTORY_PICKER_ROW_ID = 'directory-picker'
 const AUTO_PICKER_PACKAGE = '@deepseek-ai/dsh-host-directory-picker-auto'

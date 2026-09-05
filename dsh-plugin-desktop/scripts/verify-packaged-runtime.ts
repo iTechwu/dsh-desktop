@@ -77,7 +77,19 @@ export const MAX_PNPM_SMART_UNPACK_BYTES = 32 * 1024 * 1024
 
 /** Package roots electron-builder may smart-unpack as one indivisible unit. */
 export const ALLOWED_SMART_UNPACK_PACKAGE_ROOTS = [
+  'node_modules/@deepseek-ai/dsh-fs-local',
+  'node_modules/@deepseek-ai/dsh',
+  'node_modules/@deepseek-ai/dsh-host-directory-picker-native',
+  'node_modules/@deepseek-ai/dsh-sandbox-windows-acl',
+  'node_modules/@deepseek-ai/dsh-session-persistence-jsonl',
+  'node_modules/@deepseek-ai/dsh-subprocess-local',
+  'node_modules/@deepseek-ai/dsh-win32-process',
+  'node_modules/cloudflared',
+  'node_modules/cpu-features',
+  'node_modules/dsh-better-sidebar',
+  'node_modules/fs-ext',
   'node_modules/koffi',
+  'node_modules/ssh2',
   'node_modules/node-addon-require-builtin',
   'node_modules/node-pty',
   // pnpm embeds executable and native helper payloads.
@@ -90,6 +102,7 @@ export const ALLOWED_SMART_UNPACK_PACKAGE_PREFIXES = [
   'node_modules/@img/sharp-',
   'node_modules/@koromix/koffi-',
   'node_modules/@vscode/ripgrep-',
+  'node_modules/lightningcss-',
   'node_modules/node-addon-require-builtin-',
 ] as const
 

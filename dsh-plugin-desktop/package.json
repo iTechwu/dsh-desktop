@@ -475,14 +475,9 @@
   "build": {
     "appId": "ai.yootun.agent",
     "productName": "Yootun-Agent",
-    "asar": true,
-    "asarUnpack": [
-      "package.json",
-      "cordis.patch.yml",
-      "build/**",
-      "lib/**",
-      "node_modules/**"
-    ],
+    "asar": {
+      "smartUnpack": true
+    },
     "afterPack": "./scripts/verify-packaged-runtime.ts",
     "electronDownload": {
       "checksums": {
@@ -521,6 +516,35 @@
         "build/app-icon-mac.png",
         "build/tray-iconTemplate.png",
         "build/tray-iconTemplate@2x.png"
+      ],
+      "files": [
+        "build/app-icon.png",
+        "build/app-icon-mac.png",
+        "build/tray-icon.svg",
+        "build/brand-logo.png",
+        "build/tray-icon*.png",
+        "cordis.patch.yml",
+        "lib/**",
+        "package.json",
+        "!node_modules/@img/sharp-linux*/**",
+        "!node_modules/@img/sharp-libvips-linux*/**",
+        "!node_modules/@koromix/koffi-linux*/**",
+        "!node_modules/@koromix/koffi-freebsd*/**",
+        "!node_modules/@koromix/koffi-openbsd*/**",
+        "!node_modules/@koromix/koffi-win32*/**",
+        "!node_modules/@img/sharp-win32*/**",
+        "!node_modules/node-addon-require-builtin-linux*/**",
+        "!node_modules/node-addon-require-builtin-win32*/**",
+        "!node_modules/lightningcss-linux*/**",
+        "!node_modules/**/lightningcss-linux*/**",
+        "!node_modules/lightningcss-android*/**",
+        "!node_modules/**/lightningcss-android*/**",
+        "!node_modules/**/lightningcss-freebsd*/**",
+        "!node_modules/lightningcss-win32*/**",
+        "!node_modules/**/lightningcss-win32*/**",
+        "!node_modules/**/@vscode/ripgrep-linux*/**",
+        "!node_modules/**/@vscode/ripgrep-win32*/**",
+        "!node_modules/koffi-win32-x64-3-1-1/**"
       ],
       "target": [
         "dir"

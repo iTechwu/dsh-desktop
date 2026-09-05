@@ -31,6 +31,7 @@ const manifest = JSON.parse(readFileSync(new URL('package.json', packageRoot), '
   build?: {
     productName?: unknown
     appId?: unknown
+    asar?: unknown
     asarUnpack?: unknown
     afterPack?: unknown
     electronDownload?: { checksums?: Record<string, unknown> }
@@ -38,6 +39,7 @@ const manifest = JSON.parse(readFileSync(new URL('package.json', packageRoot), '
     toolsets?: Record<string, unknown>
     files?: unknown
     mac?: {
+      asarUnpack?: unknown
       extendInfo?: unknown
       hardenedRuntime?: unknown
       icon?: unknown
@@ -660,13 +662,8 @@ describe('published package surface', () => {
     expect(manifest.version).toBe(workspaceManifest.version)
     expect(manifest.build?.productName).toBe('Yootun-Agent')
     expect(manifest.build?.appId).toBe('ai.yootun.agent')
-    expect(manifest.build?.asarUnpack).toEqual([
-      'package.json',
-      'cordis.patch.yml',
-      'build/**',
-      'lib/**',
-      'node_modules/**',
-    ])
+    expect(manifest.build?.asar).toEqual({ smartUnpack: true })
+    expect(manifest.build?.asarUnpack).toBeUndefined()
     expect(manifest.build?.electronFuses).toEqual({
       enableEmbeddedAsarIntegrityValidation: true,
       onlyLoadAppFromAsar: true,
@@ -694,6 +691,11 @@ describe('published package surface', () => {
       '!node_modules/node-pty/build/**',
     ])
     expect(manifest.build?.mac?.icon).toBe('build/app-icon-mac.png')
+    expect(manifest.build?.mac?.asarUnpack).toEqual([
+      'build/app-icon-mac.png',
+      'build/tray-iconTemplate.png',
+      'build/tray-iconTemplate@2x.png',
+    ])
     expect(manifest.build?.mac?.mergeASARs).toBe(false)
     expect(manifest.build?.mac?.signIgnore).toEqual(['\\.(?:pak|dat|wasm)$'])
     expect(manifest.build?.win?.icon).toBe('build/app-icon.png')

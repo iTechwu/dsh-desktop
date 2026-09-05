@@ -3,7 +3,6 @@
 import Module, { registerHooks } from 'node:module'
 import { dirname } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { unpackedAsarPath } from './packaged-runtime-path.ts'
 import {
   findOverlayPackage,
   packageNameFromSpecifier,
@@ -13,10 +12,10 @@ import {
 
 const LOADER_ENTRY_URL = import.meta.resolve('@deepseek-ai/cordis-plugin-loader')
 const DESKTOP_ENTRY_URL = pathToFileURL(
-  unpackedAsarPath(fileURLToPath(new URL('../lib/index.js', import.meta.url))),
+  fileURLToPath(new URL('../lib/index.js', import.meta.url)),
 ).href
 const DESKTOP_PACKAGE_URL = pathToFileURL(
-  unpackedAsarPath(fileURLToPath(new URL('../package.json', import.meta.url))),
+  fileURLToPath(new URL('../package.json', import.meta.url)),
 ).href
 
 interface CommonJsModuleResolver {
