@@ -501,6 +501,6 @@ GET 响应包含服务端事件、本机 pending 事件、同步健康、数据�
 
 本轮发布前后补充验证如下：Models 的 `benchmark:yootun-audit` 入口已兼容 TypeScript 6 的命令行解析，并通过 10 条参数与安全边界测试；Models `quality:gate` 与 API 类型检查均通过。公网 Models 健康检查返回 HTTP 200，未携带 API Key 访问审计查询返回 HTTP 401，说明服务可达且鉴权边界生效。
 
-Desktop 已触发 `dev` 分支 GitHub CI，执行完整检查及 Windows/macOS 打包流程。该 CI 只能证明提交可构建、可测试和可产出安装包，不等同于生产部署。Docker Compose 配置检查通过，但当前环境无法访问 Jenkins `172.30.30.11:18080`，因此本轮没有直接触发生产 Jenkins 发布，也没有宣称生产已部署。
+Desktop `dev` 分支 GitHub CI 运行 `33939342857` 已完整通过：全量检查、Windows 安装包与便携包、macOS 通用 DMG smoke 以及全部产物上传均成功。该 CI 只能证明提交可构建、可测试和可产出安装包，不等同于生产部署。Docker Compose 配置检查通过，但当前环境无法访问 Jenkins `172.30.30.11:18080`，因此本轮没有直接触发生产 Jenkins 发布，也没有宣称生产已部署。
 
 10 万行基准仍必须在获批的非生产数据库上运行；脚本会拒绝生产数据库主机，当前本机没有可用数据库，所以不能用本地失败连接替代真实性能结论。部署完成后应按 Docker 仓库发布说明重新执行健康、鉴权、基准和断网重启补传 smoke。
