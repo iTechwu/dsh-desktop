@@ -193,6 +193,30 @@ describe('installProfilePackageResolver', () => {
     )
   })
 
+  it('falls back to Desktop dependencies for Profile-selected packages', () => {
+    const profileBaseUrl = 'file:///C:/Users/test/profile/package.json'
+    const profilePluginUrl = 'file:///C:/Users/test/profile/node_modules/plugin/index.js'
+    const desktopDependencyUrl = 'file:///Applications/DSH.app/Contents/Resources/app.asar/node_modules/dependency/index.js'
+    harness.sources.set('plugin', 'profile')
+    installProfilePackageResolver(profileBaseUrl)
+    const nextResolve = vi.fn((specifier: string, context: { parentURL?: string }) => {
+      if (specifier === 'plugin' && context.parentURL === profileBaseUrl) return { url: profilePluginUrl }
+      if (specifier === 'desktop-dependency' && context.parentURL === profilePluginUrl) {
+        throw missing(specifier, context.parentURL)
+      }
+      if (specifier === 'desktop-dependency' && context.parentURL?.endsWith('/lib/index.js')) {
+        return { url: desktopDependencyUrl }
+      }
+      throw missing(specifier, context.parentURL)
+    })
+    const loaderEntryUrl = import.meta.resolve('@deepseek-ai/cordis-plugin-loader')
+
+    expect(harness.resolve?.('plugin', { parentURL: loaderEntryUrl }, nextResolve)).toEqual({ url: profilePluginUrl })
+    expect(harness.resolve?.('desktop-dependency', { parentURL: profilePluginUrl }, nextResolve)).toEqual({
+      url: desktopDependencyUrl,
+    })
+  })
+
   it('does not expose Profile dependencies to unrelated modules', () => {
     const profileBaseUrl = 'file:///C:/Users/test/profile/package.json'
     installProfilePackageResolver(profileBaseUrl)

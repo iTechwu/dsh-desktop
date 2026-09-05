@@ -128,9 +128,12 @@ export function installProfilePackageResolver(profileBaseUrl: string): () => voi
       } catch (cause) {
         if ((cause as NodeJS.ErrnoException).code !== 'ERR_MODULE_NOT_FOUND') throw cause
         const source = overlayModuleSources.get(context.parentURL)
+        // Profile plugins commonly declare DSH packages as peers. Their
+        // private node_modules may contain only the plugin itself, so use the
+        // installed Desktop graph as the final fallback for both sources.
         const fallbackParents = source === 'install'
           ? [profileBaseUrl, DESKTOP_ENTRY_URL]
-          : [profileBaseUrl]
+          : [profileBaseUrl, DESKTOP_ENTRY_URL]
         let lastCause: unknown = cause
         for (const parentURL of fallbackParents) {
           try {
