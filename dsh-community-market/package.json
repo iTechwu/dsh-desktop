@@ -111,6 +111,9 @@
     "@deepseek-ai/dsh-client-connection": {
       "optional": true
     },
+    "@deepseek-ai/dsh-client-file-upload": {
+      "optional": true
+    },
     "@deepseek-ai/dsh-client-ui-theme": {
       "optional": true
     },

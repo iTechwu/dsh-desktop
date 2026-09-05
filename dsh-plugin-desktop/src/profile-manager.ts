@@ -295,6 +295,9 @@ function deletionTarget(options: DesktopProfileDeletionOptions, name: string): s
   if (name === options.currentProfileName) {
     throw new Error(`${BIN_NAME}: current profile ${JSON.stringify(name)} cannot be deleted`)
   }
+  if (name === readDesktopProfileState(options.selectionStatePath).active) {
+    throw new Error(`${BIN_NAME}: selected profile ${JSON.stringify(name)} cannot be deleted`)
+  }
   const target = resolveProfileDir(name, options.home)
   let item
   try {

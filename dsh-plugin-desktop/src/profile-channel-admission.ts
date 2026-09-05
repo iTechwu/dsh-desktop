@@ -127,7 +127,9 @@ export function inspectDesktopProfileChannelAdmission(
   const current = inspectDesktopReleaseProfileUsage(locations.current, profileDir, profileName)
   const other = inspectDesktopReleaseProfileUsage(locations.other, profileDir, profileName)
   if (other.status === 'invalid') {
-    return { status: 'warn', reason: 'uncertain' }
+    return current.status === 'valid'
+      ? { status: 'allow', reason: 'current-channel-latest' }
+      : { status: 'warn', reason: 'uncertain' }
   }
   if (current.status === 'invalid') {
     // A damaged record in this package alone is not evidence of a channel

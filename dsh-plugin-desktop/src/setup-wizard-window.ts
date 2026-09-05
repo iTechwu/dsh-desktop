@@ -1,12 +1,13 @@
 /** Isolated pre-Host Setup Wizard window with a strict navigation result channel. */
 
-import { BrowserWindow } from 'electron'
+import type { BrowserWindow } from 'electron'
 import { fileURLToPath } from 'node:url'
 import {
   auxiliaryWindowChromeOptions,
   auxiliaryWindowHasCustomFrame,
 } from './auxiliary-window-options.ts'
 import { revealApplication } from './electron-reveal.ts'
+import { createDesktopLocalWindow } from './local-window-policy.ts'
 import type { DesktopLocale } from './runtime.ts'
 import {
   desktopSetupWizardSelectionIsAvailable,
@@ -148,7 +149,8 @@ export class DesktopSetupWizardWindow {
     const copy = desktopSetupWizardCopy(this.options.locale)
     const state = Buffer.from(JSON.stringify(input), 'utf8').toString('base64url')
     const customFrame = auxiliaryWindowHasCustomFrame(input.platform)
-    const window = new BrowserWindow({
+    const window = createDesktopLocalWindow({
+      partition: 'dsh-setup-wizard',
       title: copy.title,
       ...auxiliaryWindowChromeOptions(input.platform),
       width: 880,
@@ -165,22 +167,10 @@ export class DesktopSetupWizardWindow {
       show: input.platform === 'win32',
       autoHideMenuBar: true,
       backgroundColor: '#202124',
-      webPreferences: {
-        contextIsolation: true,
-        nodeIntegration: false,
-        nodeIntegrationInSubFrames: false,
-        sandbox: true,
-        webSecurity: true,
-        webviewTag: false,
-        spellcheck: false,
-        partition: 'dsh-setup-wizard',
-      },
     })
     this.window = window
     window.accessibleTitle = copy.title
     window.removeMenu()
-    window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
-    window.webContents.on('will-attach-webview', event => { event.preventDefault() })
 
     return await new Promise<DesktopSetupWizardResult>((resolve, reject) => {
       let settled = false

@@ -1,12 +1,13 @@
 /** Isolated native window for creating and immediately selecting a Desktop Profile. */
 
-import { BrowserWindow } from 'electron'
+import type { BrowserWindow } from 'electron'
 import { fileURLToPath } from 'node:url'
 import {
   auxiliaryWindowChromeOptions,
   auxiliaryWindowHasCustomFrame,
 } from './auxiliary-window-options.ts'
 import { revealApplication } from './electron-reveal.ts'
+import { createDesktopLocalWindow } from './local-window-policy.ts'
 import type { DesktopLocale } from './runtime.ts'
 import { desktopProfileCreateCopy } from './profile-create-copy.ts'
 
@@ -63,7 +64,8 @@ export class ProfileCreateWindow {
     this.accepted = false
     this.cancelNotified = false
     const copy = desktopProfileCreateCopy(this.options.locale)
-    const window = new BrowserWindow({
+    const window = createDesktopLocalWindow({
+      partition: 'dsh-profile-create',
       title: copy.title,
       ...auxiliaryWindowChromeOptions(),
       width: 480,
@@ -74,20 +76,10 @@ export class ProfileCreateWindow {
       show: false,
       autoHideMenuBar: true,
       backgroundColor: '#202124',
-      webPreferences: {
-        contextIsolation: true,
-        nodeIntegration: false,
-        nodeIntegrationInSubFrames: false,
-        sandbox: true,
-        webSecurity: true,
-        webviewTag: false,
-        spellcheck: false,
-      },
     })
     this.window = window
     window.accessibleTitle = copy.title
     window.removeMenu()
-    window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
     const navigate = (event: Electron.Event, href: string): void => {
       const action = parseProfileCreateAction(href)
       event.preventDefault()

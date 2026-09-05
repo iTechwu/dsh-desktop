@@ -27,10 +27,8 @@ import type {
 /** Launcher capabilities used without exposing their filesystem roots. */
 export interface DesktopSettingsControllerBootstrap {
   /** Generation-scoped profile service. */
-  readonly profiles: Pick<DesktopProfiles, 'current' | 'list' | 'create'>
+  readonly profiles: Pick<DesktopProfiles, 'current' | 'list' | 'create' | 'prepareSelection'>
     & Partial<Pick<DesktopProfiles, 'canDelete' | 'delete'>>
-  /** Persist one already-validated profile as pending without restarting. */
-  persistProfileSelection(name: string): void | Promise<void>
   /** Read the latest persisted request and the startup-effective provider. */
   readMarket(): DesktopMarketSnapshot
   /** Persist an explicit provider request. */
@@ -56,7 +54,7 @@ export interface DesktopSettingsControllerBootstrap {
 /** A persisted response plus work that must run only after `res.end()`. */
 export interface DesktopSettingsPostResponse<T extends object> {
   readonly response: T
-  readonly afterResponse?: () => void
+  readonly afterResponse?: () => void | Promise<void>
 }
 
 /** Remove paths, bundle identities, and parser diagnostics from a profile. */
@@ -140,17 +138,10 @@ export class DesktopSettingsController {
   async selectProfile(
     name: string,
   ): Promise<DesktopSettingsPostResponse<DesktopProfileSelectResponse>> {
-    const restartRequired = name !== this.bootstrap.profiles.current.name
-    if (restartRequired) {
-      const profile = this.bootstrap.profiles.list().find(candidate => candidate.name === name)
-      if (profile === undefined || !profile.webCapable || profile.problem !== undefined) {
-        throw new Error(`dsh-plugin-desktop: profile ${JSON.stringify(name)} is not selectable`)
-      }
-      await this.bootstrap.persistProfileSelection(name)
-    }
+    const selection = await this.bootstrap.profiles.prepareSelection(name)
     return Object.freeze({
-      response: Object.freeze({ accepted: true, restartRequired }),
-      ...(restartRequired ? { afterResponse: () => { this.bootstrap.scheduleRestart() } } : {}),
+      response: Object.freeze({ accepted: true, restartRequired: selection.restartRequired }),
+      ...(selection.restartRequired ? { afterResponse: () => selection.restart() } : {}),
     })
   }
 
