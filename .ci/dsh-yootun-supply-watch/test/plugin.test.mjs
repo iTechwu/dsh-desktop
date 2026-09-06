@@ -20,6 +20,13 @@ test('keeps risk reviews human-confirmed and local-only', async () => {
   assert.doesNotMatch(source, /password|cookie|银行卡|供应商联系人手机号/iu)
 })
 
+test('keeps load and review-action failures visible and localized', async () => {
+  const source = await readFile(new URL('src/client.js', root), 'utf8')
+  for (const token of ['actionError', "setError('action')", "setError('load')", "role: 'alert'", "t('retry')"]) {
+    assert.match(source, new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'u'))
+  }
+})
+
 test('uses only icons exported by DSH alpha3 primitives', async () => {
   const source = await readFile(new URL('src/client.js', root), 'utf8')
   const imports = source.match(/const \{([^}]+)\} = require\('@deepseek-ai\/dsh-client-ui-primitives'\)/u)?.[1] || ''
