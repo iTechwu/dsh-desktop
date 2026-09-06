@@ -37,6 +37,7 @@ test('registers menu at order 41 and renders the three-region overlay', async ()
   ]) assert.match(source, new RegExp(escape(token), 'u'))
   // 互斥与上限：最多 5 张、视频单选、提交只读当前 Tab
   assert.match(source, /const MAX_IMAGES = 5/)
+  for (const field of ['theme', 'refNote', 'refAccount']) assert.match(source, new RegExp(`aria-label': t\\('${field}'\\)`, 'u'))
   assert.match(source, /mediaType === 'images'/)
   assert.match(source, /videoUrl/)
   // 禁止不安全富文本

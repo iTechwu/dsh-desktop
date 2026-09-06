@@ -16,6 +16,7 @@ test('retrofit package exposes a complete database-first workspace', async () =>
   assert.match(client, /平台覆盖/)
   assert.match(client, /今日头条/)
   assert.match(client, /Lemon8/)
+  assert.match(client, /aria-label': t\('placeholder'\)/u)
 })
 
 test('host delegates to a query-capable custom-car tool without exposing credentials', async () => {

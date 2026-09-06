@@ -16,6 +16,7 @@ test('keeps follow-ups human-confirmed and points only at the Desktop route', as
   for (const token of ['/api/desktop/yootun/sales', 'intent_search', 'intentPlaceholder', 'awaiting_confirmation', 'item.status', 'confirm_action', 'dismiss_action', '已确认，等待适配器', '适配器已完成', '适配器执行失败', '需要重新登录']) {
     assert.match(source, new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'u'))
   }
+  assert.match(source, /aria-label': t\('intentPlaceholder'\)/u)
   assert.doesNotMatch(source, /contactPhone|password|cookie|聊天正文/iu)
 })
 

@@ -328,15 +328,15 @@ window.__ModuleLoader__.load({
           uploadError ? h('p', { className: 'yxh-error', role: 'alert' }, uploadError) : null,
           h('label', { className: 'yxh-field' },
             h('span', null, t('theme')),
-            h('input', { type: 'text', value: theme, maxLength: 500, placeholder: t('themePlaceholder'), disabled: locked, onChange: event => setTheme(event.target.value) }))),
+            h('input', { type: 'text', value: theme, maxLength: 500, placeholder: t('themePlaceholder'), 'aria-label': t('theme'), disabled: locked, onChange: event => setTheme(event.target.value) }))),
         h('section', { className: 'yxh-section' },
           h('h2', null, t('reference')),
           h('label', { className: 'yxh-field' },
             h('span', null, t('refNote')),
-            h('input', { type: 'text', value: refNote, maxLength: 2048, placeholder: t('refNotePlaceholder'), disabled: locked, onChange: event => setRefNote(event.target.value) })),
+            h('input', { type: 'text', value: refNote, maxLength: 2048, placeholder: t('refNotePlaceholder'), 'aria-label': t('refNote'), disabled: locked, onChange: event => setRefNote(event.target.value) })),
           h('label', { className: 'yxh-field' },
             h('span', null, t('refAccount')),
-            h('input', { type: 'text', value: refAccount, maxLength: 200, placeholder: t('refAccountPlaceholder'), disabled: locked, onChange: event => setRefAccount(event.target.value) }))),
+            h('input', { type: 'text', value: refAccount, maxLength: 200, placeholder: t('refAccountPlaceholder'), 'aria-label': t('refAccount'), disabled: locked, onChange: event => setRefAccount(event.target.value) }))),
         h('div', { className: 'yxh-actions' },
           h('button', { type: 'button', className: 'yxh-submit', disabled: buttonDisabled, onClick: onSubmit }, buttonLabel)))
 
