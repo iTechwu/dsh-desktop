@@ -303,6 +303,32 @@ function packagedRuntimeRunnable(context: PackagedRuntimeContext): boolean {
   return false
 }
 
+/** Load the exact packaged fs-ext addon through Electron before accepting the application. */
+export function smokePackagedFsExtRuntime(
+  context: PackagedRuntimeContext,
+  run: PackagedElectronRunner = runPackagedElectron,
+): void {
+  if (!packagedRuntimeRunnable(context)) return
+  const executable = resolvePackagedExecutablePath(context)
+  const entry = join(resolvePackagedAsarPath(context), 'node_modules', 'fs-ext', 'fs-ext.js')
+  const result = run(executable, ['--expose-internals', entry], {
+    ...process.env,
+    ELECTRON_RUN_AS_NODE: '1',
+  })
+  if (result.error !== undefined) {
+    throw new Error('dsh-plugin-desktop: packaged fs-ext native ABI smoke could not start', {
+      cause: result.error,
+    })
+  }
+  if (result.status !== 0 || result.stdout.trim() !== '') {
+    throw new Error(
+      `dsh-plugin-desktop: packaged fs-ext native ABI smoke failed with status ${String(result.status)}; `
+      + `signal=${String(result.signal ?? null)}; `
+      + `stdout=${JSON.stringify(result.stdout.trim())}; stderr=${JSON.stringify(result.stderr.trim())}`,
+    )
+  }
+}
+
 /**
  * Execute the real packaged runtime through Electron's supported RunAsNode
  * path. This proves DSH and pnpm can load from logical ASAR paths, the upstream
@@ -336,6 +362,12 @@ export function smokePackagedElectronRuntime(
       entry: join(asarRoot, 'node_modules', 'pnpm', 'bin', 'pnpm.mjs'),
       args: ['--version'],
       accepts: (stdout: string) => stdout.trim() === PNPM_RUNTIME_VERSION,
+    },
+    {
+      label: 'fs-ext native ABI',
+      entry: join(asarRoot, 'node_modules', 'fs-ext', 'fs-ext.js'),
+      args: [],
+      accepts: (stdout: string) => stdout.trim() === '',
     },
     {
       label: 'ASAR/Profile/CJS/ripgrep',
@@ -790,9 +822,11 @@ export async function afterPack(
   context: PackagedRuntimeContext,
   verify: typeof verifyPackagedRuntime = verifyPackagedRuntime,
   report: (summary: UnpackedRuntimeSummary) => void = reportUnpackedRuntime,
+  smokeNative: PackagedElectronSmoke = smokePackagedFsExtRuntime,
 ): Promise<void> {
   const summary = verify(context)
   report(summary)
+  smokeNative(context)
 }
 
 export default afterPack

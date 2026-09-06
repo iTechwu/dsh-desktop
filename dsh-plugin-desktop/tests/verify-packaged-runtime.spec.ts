@@ -33,6 +33,7 @@ import {
   resolvePackagedUnpackedRoot,
   resolveRuntimePackageRoot,
   smokePackagedElectronRuntime,
+  smokePackagedFsExtRuntime,
   summarizeUnpackedRuntime,
   verifyPackagedRuntime,
   verifySelectiveUnpackedRuntime,
@@ -231,7 +232,7 @@ describe('packaged desktop runtime verification', () => {
     expect(listDesktop).toHaveBeenCalledWith(join('/project', 'lib'))
   })
 
-  it('runs only static verification and inventory reporting during afterPack', async () => {
+  it('runs static verification, inventory reporting, and native ABI smoke during afterPack', async () => {
     const runtimeContext = context('/build', 'win32')
     const calls: string[] = []
     const summary: UnpackedRuntimeSummary = { files: 4, bytes: 1024, groups: [] }
@@ -246,9 +247,21 @@ describe('packaged desktop runtime verification', () => {
         expect(received).toBe(summary)
         calls.push('report')
       },
+      () => calls.push('native'),
     )
 
-    expect(calls).toEqual(['static', 'report'])
+    expect(calls).toEqual(['static', 'report', 'native'])
+  })
+
+  it('rejects an fs-ext addon built for a different Electron ABI', () => {
+    const run: PackagedElectronRunner = () => ({
+      status: 1,
+      stdout: '',
+      stderr: 'NODE_MODULE_VERSION 141. This version requires NODE_MODULE_VERSION 148.',
+    })
+
+    expect(() => smokePackagedFsExtRuntime(context('/build', process.platform), run))
+      .toThrow('packaged fs-ext native ABI smoke failed')
   })
 
   it('tracks ripgrep and the ConPTY native surface required on Windows', () => {
@@ -659,6 +672,8 @@ describe('packaged desktop runtime verification', () => {
           ? dshVersion
           : normalizedArgs.some(arg => arg.endsWith('/pnpm/bin/pnpm.mjs'))
             ? pnpmVersion
+            : normalizedArgs.some(arg => arg.endsWith('/fs-ext/fs-ext.js'))
+              ? ''
             : args.includes('--dump-config')
               ? '# == cordis.yml\n- name: @deepseek-ai/dsh-base\n'
               : normalizedArgs.some(arg => arg.endsWith('/lib/desktop-cli.js'))
@@ -670,7 +685,7 @@ describe('packaged desktop runtime verification', () => {
 
     smokePackagedElectronRuntime(runtimeContext, run)
 
-    expect(run).toHaveBeenCalledTimes(5)
+    expect(run).toHaveBeenCalledTimes(6)
     for (const [executable, args, environment] of run.mock.calls) {
       expect(executable).toBe(resolvePackagedExecutablePath(runtimeContext))
       expect(args).toContain('--expose-internals')
