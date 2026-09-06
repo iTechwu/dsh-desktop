@@ -12,11 +12,13 @@ import {
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { dirname, join, parse } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { getRawHeader } from '@electron/asar'
 import {
   FORBIDDEN_MACOS_UNIVERSAL_ENTRIES,
+  hydratePackagedMacRuntime,
   MACOS_UNIVERSAL_NATIVE_ENTRIES,
+  type MacUniversalArch,
 } from './mac-universal.ts'
 
 /** Resolve a package root even when its exports hide `package.json`. */
@@ -132,6 +134,25 @@ export interface PackagedRuntimeContext {
       readonly productFilename: string
     }
   }
+}
+
+/** Restore architecture-specific packages omitted by Electron Builder's pnpm collector. */
+export function hydratePackagedMacRuntimeForContext(context: PackagedRuntimeContext): void {
+  if (context.electronPlatformName !== 'darwin') return
+  let arches: readonly MacUniversalArch[]
+  if (context.arch === 4) arches = ['arm64', 'x86_64']
+  else if (context.arch === 3) arches = ['arm64']
+  else if (context.arch === 1) arches = ['x86_64']
+  else {
+    throw new Error(
+      `dsh-plugin-desktop: unsupported macOS package architecture ${String(context.arch)}`,
+    )
+  }
+  hydratePackagedMacRuntime({
+    desktopRoot: context.packager.projectDir ?? DESKTOP_PACKAGE_ROOT,
+    unpackedRoot: resolvePackagedUnpackedRoot(context),
+    arches,
+  })
 }
 
 /** Stable non-desktop archive entries required by the packaged runtime. */
@@ -329,6 +350,68 @@ export function smokePackagedFsExtRuntime(
   }
 }
 
+/** Verify packaged CLI fallbacks are physical, owned proxies into the current ASAR. */
+export function verifyPackagedProfileModuleFallback(modulesDir: string, asarRoot: string): void {
+  const entries = readdirSync(modulesDir, { withFileTypes: true })
+  if (entries.length === 0) {
+    throw new Error('dsh-plugin-desktop: packaged Desktop CLI created no Profile module fallbacks')
+  }
+  const packages: Array<{ name: string; directory: string }> = []
+  for (const entry of entries) {
+    const entryPath = join(modulesDir, entry.name)
+    if (entry.isSymbolicLink() || !entry.isDirectory()) {
+      throw new Error(`dsh-plugin-desktop: packaged Profile fallback must be a physical directory: ${entryPath}`)
+    }
+    if (!entry.name.startsWith('@')) {
+      packages.push({ name: entry.name, directory: entryPath })
+      continue
+    }
+    for (const child of readdirSync(entryPath, { withFileTypes: true })) {
+      const childPath = join(entryPath, child.name)
+      if (child.isSymbolicLink() || !child.isDirectory()) {
+        throw new Error(`dsh-plugin-desktop: packaged Profile fallback must be a physical directory: ${childPath}`)
+      }
+      packages.push({ name: `${entry.name}/${child.name}`, directory: childPath })
+    }
+  }
+  const asarUrlPrefix = `${pathToFileURL(asarRoot).href}/`
+  for (const candidate of packages) {
+    const manifestPath = join(candidate.directory, 'package.json')
+    const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as {
+      name?: unknown
+      private?: unknown
+      type?: unknown
+      exports?: unknown
+      dsh?: { moduleFallback?: { targets?: unknown } }
+    }
+    const exports = manifest.exports
+    const targets = manifest.dsh?.moduleFallback?.targets
+    if (manifest.name !== candidate.name || manifest.private !== true || manifest.type !== 'module'
+      || exports === null || typeof exports !== 'object' || Array.isArray(exports)
+      || targets === null || typeof targets !== 'object' || Array.isArray(targets)) {
+      throw new Error(`dsh-plugin-desktop: invalid managed Profile proxy manifest at ${manifestPath}`)
+    }
+    const exportEntries = Object.entries(exports as Record<string, unknown>)
+    const targetEntries = Object.entries(targets as Record<string, unknown>)
+    if (targetEntries.length === 0
+      || JSON.stringify(exportEntries.map(([subpath]) => subpath))
+        !== JSON.stringify(targetEntries.map(([subpath]) => subpath))) {
+      throw new Error(`dsh-plugin-desktop: incomplete managed Profile proxy exports at ${manifestPath}`)
+    }
+    for (const [index, [subpath, target]] of targetEntries.entries()) {
+      const entryName = `./entry-${String(index)}.js`
+      if ((exports as Record<string, unknown>)[subpath] !== entryName
+        || typeof target !== 'string' || !target.startsWith(asarUrlPrefix)) {
+        throw new Error(`dsh-plugin-desktop: invalid managed Profile proxy target at ${manifestPath}`)
+      }
+      const entryPath = join(candidate.directory, entryName.slice(2))
+      if (!lstatSync(entryPath).isFile() || !readFileSync(entryPath, 'utf8').includes(JSON.stringify(target))) {
+        throw new Error(`dsh-plugin-desktop: incomplete managed Profile proxy entry at ${entryPath}`)
+      }
+    }
+  }
+}
+
 /**
  * Execute the real packaged runtime through Electron's supported RunAsNode
  * path. This proves DSH and pnpm can load from logical ASAR paths, the upstream
@@ -406,12 +489,7 @@ export function smokePackagedElectronRuntime(
         )
       }
     }
-    const obsoleteFallback = join(smokeHome, 'profiles', 'node_modules')
-    if (existsSync(obsoleteFallback) && readdirSync(obsoleteFallback).length > 0) {
-      throw new Error(
-        `dsh-plugin-desktop: packaged Desktop CLI recreated the obsolete shared Profile fallback at ${obsoleteFallback}`,
-      )
-    }
+    verifyPackagedProfileModuleFallback(join(smokeHome, 'profiles', 'node_modules'), asarRoot)
   } finally {
     rmSync(smokeHome, { recursive: true, force: true })
   }
@@ -823,7 +901,9 @@ export async function afterPack(
   verify: typeof verifyPackagedRuntime = verifyPackagedRuntime,
   report: (summary: UnpackedRuntimeSummary) => void = reportUnpackedRuntime,
   smokeNative: PackagedElectronSmoke = smokePackagedFsExtRuntime,
+  hydrateMac: (context: PackagedRuntimeContext) => void = hydratePackagedMacRuntimeForContext,
 ): Promise<void> {
+  hydrateMac(context)
   const summary = verify(context)
   report(summary)
   smokeNative(context)

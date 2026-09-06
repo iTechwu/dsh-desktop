@@ -1226,31 +1226,29 @@ async function start(): Promise<void> {
         `${BIN_NAME}: requested Market provider ${prepared.market.requested} was disabled for this generation: ${prepared.marketFailure}`,
       )
     }
-    let lanHttpsCertificate: Awaited<ReturnType<typeof createLanHttpsCertificate>> | undefined
-    let lanHttpsFailureCode: string | undefined
-    if (prepared.lanAddresses.length === 0) {
-      lanHttpsFailureCode = 'no-address'
-    } else {
-      try {
-        lanHttpsCertificate = await createLanHttpsCertificate(
-          marketUserDataDir,
-          prepared.lanAddresses,
-          desktopLanHttpsPrivateKeyProtector(),
-        )
-      } catch (cause) {
-        lanHttpsFailureCode = cause instanceof DesktopLanHttpsCertificateError
-          ? cause.code
-          : 'certificate-state'
-        electronLogger.error(
-          `${BIN_NAME}: LAN HTTPS certificate setup is unavailable: ${cause instanceof Error ? cause.message : String(cause)}`,
-        )
-      }
-    }
     const lanHttps = new DesktopLanHttpsRuntime({
       addresses: prepared.lanAddresses,
-      ...(lanHttpsCertificate === undefined ? {} : { certificate: lanHttpsCertificate }),
-      ...(lanHttpsFailureCode === undefined ? {} : { failureCode: lanHttpsFailureCode }),
       requestedPort: 0,
+      prepareCertificate: async () => {
+        if (prepared.lanAddresses.length === 0) return { failureCode: 'no-address' }
+        try {
+          return {
+            certificate: await createLanHttpsCertificate(
+              marketUserDataDir,
+              prepared.lanAddresses,
+              desktopLanHttpsPrivateKeyProtector(),
+            ),
+          }
+        } catch (cause) {
+          const failureCode = cause instanceof DesktopLanHttpsCertificateError
+            ? cause.code
+            : 'certificate-state'
+          electronLogger.error(
+            `${BIN_NAME}: LAN HTTPS certificate setup is unavailable: ${cause instanceof Error ? cause.message : String(cause)}`,
+          )
+          return { failureCode }
+        }
+      },
     })
     const browserAccess = createDesktopBrowserAccess(
       prepared.mode === 'compatibility' && prepared.openBrowser,

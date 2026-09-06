@@ -1,7 +1,8 @@
 /** Profile-relative package resolution for Electron's restricted Node runtime. */
 
-import Module, { registerHooks } from 'node:module'
-import { dirname } from 'node:path'
+import Module, { createRequire, registerHooks } from 'node:module'
+import { realpathSync } from 'node:fs'
+import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import {
   findOverlayPackage,
@@ -39,6 +40,25 @@ function isBareSpecifier(specifier: string): boolean {
   return !specifier.startsWith('.') && !specifier.startsWith('/') && !URL.canParse(specifier)
 }
 
+function isMissingModule(cause: unknown): boolean {
+  const code = (cause as NodeJS.ErrnoException | null)?.code
+  return code === 'ERR_MODULE_NOT_FOUND' || code === 'MODULE_NOT_FOUND'
+}
+
+function canonicalFilename(filename: string): string {
+  try {
+    return realpathSync(filename)
+  } catch {
+    return resolve(filename)
+  }
+}
+
+function isInsideDirectory(filename: string, directory: string): boolean {
+  const path = relative(canonicalFilename(directory), canonicalFilename(filename))
+  return path !== '' && path !== '..' && !path.startsWith(`..${process.platform === 'win32' ? '\\' : '/'}`)
+    && !isAbsolute(path)
+}
+
 /**
  * Resolve Cordis Loader bare imports from the selected persistent profile.
  * @param profileBaseUrl - file URL inside the profile that owns plugin dependencies.
@@ -46,7 +66,16 @@ function isBareSpecifier(specifier: string): boolean {
  */
 export function installProfilePackageResolver(profileBaseUrl: string): () => void {
   const profileManifestPath = fileURLToPath(profileBaseUrl)
-  const profileDirectory = dirname(profileManifestPath)
+  const profileDirectory = canonicalFilename(dirname(profileManifestPath))
+  const obsoleteSharedModulesDirectory = join(dirname(profileDirectory), 'node_modules')
+
+  const isObsoleteSharedFallback = (url: string): boolean => {
+    try {
+      return isInsideDirectory(fileURLToPath(url), obsoleteSharedModulesDirectory)
+    } catch {
+      return false
+    }
+  }
 
   // ClientModuleRegistry intentionally uses createRequire(ctx.baseUrl) to
   // resolve each browser bundle from the config tree. Node's ESM resolve hook
@@ -57,6 +86,9 @@ export function installProfilePackageResolver(profileBaseUrl: string): () => voi
   // remains untouched.
   const commonJsModule = Module as unknown as CommonJsModuleResolver
   const previousResolveFilename = commonJsModule._resolveFilename
+  const commonJsModuleSources = new Map<string, PackageOverlaySource>()
+  const profileResolve = createRequire(profileBaseUrl).resolve
+  const installResolve = createRequire(DESKTOP_PACKAGE_URL).resolve
   const overlayResolveFilename: CommonJsModuleResolver['_resolveFilename'] = function (
     this: CommonJsModuleResolver,
     request,
@@ -71,18 +103,60 @@ export function installProfilePackageResolver(profileBaseUrl: string): () => voi
     // exposing Desktop packages to unrelated CommonJS modules.
     const parentFilename = parent?.filename
     const fromProfileAnchor = parentFilename !== undefined
-      && dirname(parentFilename) === profileDirectory
-    const packageName = fromProfileAnchor
-      ? packageNameFromManifestSpecifier(request)
-      : undefined
+      && canonicalFilename(dirname(parentFilename)) === profileDirectory
+    const packageName = fromProfileAnchor ? packageNameFromSpecifier(request) : undefined
     if (packageName !== undefined) {
       const overlay = findOverlayPackage(packageName, {
         installPackageUrl: DESKTOP_PACKAGE_URL,
         profilePackageUrl: profileBaseUrl,
       })
-      if (overlay !== undefined) return overlay.selected.manifestPath
+      if (overlay !== undefined) {
+        if (packageNameFromManifestSpecifier(request) === packageName) {
+          return overlay.selected.manifestPath
+        }
+        const resolved = overlay.selected.source === 'install'
+          ? installResolve(request)
+          : previousResolveFilename.call(this, request, parent, isMain, options)
+        commonJsModuleSources.set(canonicalFilename(resolved), overlay.selected.source)
+        return resolved
+      }
     }
-    return previousResolveFilename.call(this, request, parent, isMain, options)
+    const parentSource = parentFilename === undefined
+      ? undefined
+      : commonJsModuleSources.get(canonicalFilename(parentFilename))
+    if (parentSource === undefined) {
+      return previousResolveFilename.call(this, request, parent, isMain, options)
+    }
+    if (!isBareSpecifier(request)) {
+      const resolved = previousResolveFilename.call(this, request, parent, isMain, options)
+      if (request.startsWith('.')) commonJsModuleSources.set(canonicalFilename(resolved), parentSource)
+      return resolved
+    }
+    let lastCause: unknown = new Error(
+      `dsh-plugin-desktop: ignored obsolete shared Profile fallback for ${JSON.stringify(request)}`,
+    )
+    try {
+      const resolved = previousResolveFilename.call(this, request, parent, isMain, options)
+      if (!isInsideDirectory(resolved, obsoleteSharedModulesDirectory)) {
+        commonJsModuleSources.set(canonicalFilename(resolved), parentSource)
+        return resolved
+      }
+    } catch (cause) {
+      if (!isMissingModule(cause)) throw cause
+      lastCause = cause
+    }
+    for (const resolvePackage of [profileResolve, installResolve]) {
+      try {
+        const resolved = resolvePackage(request)
+        if (isInsideDirectory(resolved, obsoleteSharedModulesDirectory)) continue
+        commonJsModuleSources.set(canonicalFilename(resolved), parentSource)
+        return resolved
+      } catch (fallbackCause) {
+        if (!isMissingModule(fallbackCause)) throw fallbackCause
+        lastCause = fallbackCause
+      }
+    }
+    throw lastCause
   }
   commonJsModule._resolveFilename = overlayResolveFilename
 
@@ -119,35 +193,37 @@ export function installProfilePackageResolver(profileBaseUrl: string): () => voi
         if (specifier.startsWith('.')) overlayModuleUrls.add(resolved.url)
         return resolved
       }
+      const source = overlayModuleSources.get(context.parentURL)
+      let lastCause: unknown = new Error(
+        `dsh-plugin-desktop: ignored obsolete shared Profile fallback for ${JSON.stringify(specifier)}`,
+      )
       try {
         const resolved = nextResolve(specifier, context)
-        overlayModuleUrls.add(resolved.url)
-        const source = overlayModuleSources.get(context.parentURL)
-        if (source !== undefined) overlayModuleSources.set(resolved.url, source)
-        return resolved
-      } catch (cause) {
-        if ((cause as NodeJS.ErrnoException).code !== 'ERR_MODULE_NOT_FOUND') throw cause
-        const source = overlayModuleSources.get(context.parentURL)
-        // Profile plugins commonly declare DSH packages as peers. Their
-        // private node_modules may contain only the plugin itself, so use the
-        // installed Desktop graph as the final fallback for both sources.
-        const fallbackParents = source === 'install'
-          ? [profileBaseUrl, DESKTOP_ENTRY_URL]
-          : [profileBaseUrl, DESKTOP_ENTRY_URL]
-        let lastCause: unknown = cause
-        for (const parentURL of fallbackParents) {
-          try {
-            const resolved = nextResolve(specifier, { ...context, parentURL })
-            overlayModuleUrls.add(resolved.url)
-            if (source !== undefined) overlayModuleSources.set(resolved.url, source)
-            return resolved
-          } catch (fallbackCause) {
-            if ((fallbackCause as NodeJS.ErrnoException).code !== 'ERR_MODULE_NOT_FOUND') throw fallbackCause
-            lastCause = fallbackCause
-          }
+        if (!isObsoleteSharedFallback(resolved.url)) {
+          overlayModuleUrls.add(resolved.url)
+          if (source !== undefined) overlayModuleSources.set(resolved.url, source)
+          return resolved
         }
-        throw lastCause
+      } catch (cause) {
+        if (!isMissingModule(cause)) throw cause
+        lastCause = cause
       }
+      // Profile plugins commonly declare DSH packages as peers. Their private
+      // node_modules may contain only the plugin itself, so use the installed
+      // Desktop graph as the final fallback after excluding legacy shared links.
+      for (const parentURL of [profileBaseUrl, DESKTOP_ENTRY_URL]) {
+        try {
+          const resolved = nextResolve(specifier, { ...context, parentURL })
+          if (isObsoleteSharedFallback(resolved.url)) continue
+          overlayModuleUrls.add(resolved.url)
+          if (source !== undefined) overlayModuleSources.set(resolved.url, source)
+          return resolved
+        } catch (fallbackCause) {
+          if (!isMissingModule(fallbackCause)) throw fallbackCause
+          lastCause = fallbackCause
+        }
+      }
+      throw lastCause
     },
   })
   let active = true

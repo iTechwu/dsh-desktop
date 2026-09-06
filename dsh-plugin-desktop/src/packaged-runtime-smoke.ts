@@ -16,6 +16,7 @@ import { rgPath } from '@vscode/ripgrep'
 import AdmZip from 'adm-zip'
 import { exportDiagnosticsZip } from './diagnostic-export.ts'
 import { installProfilePackageResolver } from './module-resolution.ts'
+import { unpackedAsarPath } from './packaged-runtime-path.ts'
 
 const OK_MARKER = 'DSH_PACKAGED_RUNTIME_OK'
 
@@ -29,11 +30,12 @@ assert(
   `did not start from app.asar: ${installAnchor.pathname}`,
 )
 assert(
-  /([\\/])app\.asar\.unpacked\1/u.test(rgPath),
-  `resolved ripgrep outside app.asar.unpacked: ${rgPath}`,
+  /([\\/])app\.asar(?:\.unpacked)?\1/u.test(rgPath),
+  `resolved ripgrep outside the packaged ASAR: ${rgPath}`,
 )
-assert(existsSync(rgPath), `cannot find ripgrep at ${rgPath}`)
-const rgVersion = execFileSync(rgPath, ['--version'], { encoding: 'utf8', windowsHide: true })
+const physicalRgPath = unpackedAsarPath(rgPath)
+assert(existsSync(physicalRgPath), `cannot find physical ripgrep at ${physicalRgPath}`)
+const rgVersion = execFileSync(physicalRgPath, ['--version'], { encoding: 'utf8', windowsHide: true })
 assert(/^ripgrep\s/u.test(rgVersion), `received an invalid ripgrep version: ${JSON.stringify(rgVersion.trim())}`)
 
 /** Exercise the production Worker entry through Electron's logical ASAR path. */

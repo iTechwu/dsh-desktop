@@ -87,7 +87,11 @@ try {
   const prepared = prepareDesktopProfile(undefined, home)
   const thirdPartyLink = join(prepared.profile.dir, 'node_modules', THIRD_PARTY_NAME)
   const thirdPartyDir = join(home, 'linked-plugins', THIRD_PARTY_NAME)
-  const thirdPartyDependencyDir = join(home, 'profiles', 'node_modules', THIRD_PARTY_DEPENDENCY_NAME)
+  const thirdPartyDependencyDir = join(
+    prepared.profile.dir,
+    'node_modules',
+    THIRD_PARTY_DEPENDENCY_NAME,
+  )
   mkdirSync(join(prepared.profile.dir, 'node_modules'), { recursive: true })
   mkdirSync(thirdPartyDir, { recursive: true })
   mkdirSync(thirdPartyDependencyDir, { recursive: true })

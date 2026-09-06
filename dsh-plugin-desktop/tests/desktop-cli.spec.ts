@@ -49,6 +49,20 @@ describe('packaged dsh bootstrap', () => {
     expect(load).toHaveBeenCalledOnce()
   })
 
+  it('marks the process as packaged only while loading the packaged DSH CLI', async () => {
+    const environment = { DSH_HOME: join(tmpdir(), 'dsh-packaged-cli-marker') }
+    const argv = ['/Applications/Yootun-Agent', '/app.asar/lib/desktop-cli.js', '--profile', 'headless', '--help']
+    const before = Object.getOwnPropertyDescriptor(process, 'pkg')
+    const observed: unknown[] = []
+
+    await runDesktopDshCli(environment, async () => {
+      observed.push((process as NodeJS.Process & { pkg?: unknown }).pkg)
+    }, argv, true)
+
+    expect(observed).toEqual([{ runtime: 'electron-asar' }])
+    expect(Object.getOwnPropertyDescriptor(process, 'pkg')).toEqual(before)
+  })
+
   it('leaves the release-age policy to the final pnpm shim exactly once', async () => {
     const load = vi.fn(async () => {})
     const defaulted = [

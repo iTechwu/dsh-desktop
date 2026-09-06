@@ -1162,7 +1162,6 @@ export function healDesktopProfileModuleFallback(home: string, profile?: Profile
     ...(profile === undefined ? {} : { profile }),
   })
   if (!/([\\/])app\.asar\1/u.test(INSTALL_ANCHOR)) return heal()
-  removeObsoleteDesktopSharedModuleFallback(home)
   return withAsarModuleResolver(heal)
 }
 

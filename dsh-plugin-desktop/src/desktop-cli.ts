@@ -8,6 +8,7 @@ import { packagedDependencyPath } from './packaged-runtime-path.ts'
 import { assertDesktopProfileName } from './profile-manager.ts'
 import { withoutForwardedDesktopPnpmPolicy } from './pnpm-policy.ts'
 import { installProfilePackageResolver } from './module-resolution.ts'
+import { withAsarModuleResolver } from './asar-module-resolver-state.ts'
 
 const RUN_AS_NODE = 'ELECTRON_RUN_AS_NODE'
 const DEFAULT_PROFILE = 'DSH_DESKTOP_DEFAULT_PROFILE'
@@ -88,6 +89,7 @@ export async function runDesktopDshCli(
   environment: NodeJS.ProcessEnv = process.env,
   load: (url: string) => Promise<unknown> = url => import(url),
   argv: string[] = process.argv,
+  packagedEntry: boolean = /([\\/])app\.asar\1/u.test(fileURLToPath(DSH_ENTRY_URL)),
 ): Promise<void> {
   const profileName = takeDefaultProfile(environment)
   clearElectronRunAsNode(environment)
@@ -97,21 +99,24 @@ export async function runDesktopDshCli(
   argv.splice(2, argv.length - 2, ...withoutForwardedDesktopPnpmPolicy(selected))
   const selectedProfile = selectedDesktopCliProfile(argv.slice(2))
   const releaseResolver = selectedProfile !== undefined
-    && /([\\/])app\.asar\1/u.test(fileURLToPath(DSH_ENTRY_URL))
+    && packagedEntry
     ? installProfilePackageResolver(desktopCliProfileManifestUrl(selectedProfile, environment))
     : undefined
+  const loadDsh = (): Promise<unknown> => packagedEntry
+    ? withAsarModuleResolver(() => load(DSH_ENTRY_URL))
+    : load(DSH_ENTRY_URL)
   // The DSH module finishes evaluating once a long-lived Profile is ready;
   // later HMR and Loader imports still need the same process-wide resolver.
   // Keep it until process exit rather than treating import settlement as app
   // shutdown. A packaged CLI process owns exactly one Profile invocation.
   if (releaseResolver === undefined) {
-    await load(DSH_ENTRY_URL)
+    await loadDsh()
     return
   }
   const releaseAtExit = (): void => { releaseResolver() }
   process.once('exit', releaseAtExit)
   try {
-    await load(DSH_ENTRY_URL)
+    await loadDsh()
   } catch (cause) {
     process.off('exit', releaseAtExit)
     releaseResolver()

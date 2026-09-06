@@ -7,7 +7,7 @@ import {
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, relative } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { describe, expect, it, vi } from 'vitest'
 import {
   ALLOWED_SMART_UNPACK_PACKAGE_PREFIXES,
@@ -15,6 +15,7 @@ import {
   afterPack,
   formatUnpackedRuntimeSummary,
   FORBIDDEN_UNPACKED_RUNTIME_ENTRIES,
+  hydratePackagedMacRuntimeForContext,
   indexPackagedAsarHeader,
   listDesktopRuntimeEntries,
   MAX_PNPM_SMART_UNPACK_BYTES,
@@ -36,6 +37,7 @@ import {
   smokePackagedFsExtRuntime,
   summarizeUnpackedRuntime,
   verifyPackagedRuntime,
+  verifyPackagedProfileModuleFallback,
   verifySelectiveUnpackedRuntime,
   type ArchiveHeaderReader,
   type FileProbe,
@@ -251,6 +253,30 @@ describe('packaged desktop runtime verification', () => {
     )
 
     expect(calls).toEqual(['static', 'report', 'native'])
+  })
+
+  it('hydrates omitted macOS native packages before verifying the package', async () => {
+    const runtimeContext = context('/build', 'darwin', 3)
+    const calls: string[] = []
+    const summary: UnpackedRuntimeSummary = { files: 4, bytes: 1024, groups: [] }
+
+    await afterPack(
+      runtimeContext,
+      () => {
+        calls.push('static')
+        return summary
+      },
+      () => calls.push('report'),
+      () => calls.push('native'),
+      () => calls.push('hydrate'),
+    )
+
+    expect(calls).toEqual(['hydrate', 'static', 'report', 'native'])
+  })
+
+  it('rejects unsupported macOS package architectures before verification', () => {
+    expect(() => hydratePackagedMacRuntimeForContext(context('/build', 'darwin', 0)))
+      .toThrow('unsupported macOS package architecture 0')
   })
 
   it('rejects an fs-ext addon built for a different Electron ABI', () => {
@@ -664,8 +690,33 @@ describe('packaged desktop runtime verification', () => {
       new URL('../node_modules/pnpm/package.json', import.meta.url),
       'utf8',
     )).version as string
-    const run = vi.fn<PackagedElectronRunner>((_executable, args) => {
+    const run = vi.fn<PackagedElectronRunner>((_executable, args, environment) => {
       const normalizedArgs = args.map(arg => arg.replaceAll('\\', '/'))
+      if (normalizedArgs.some(arg => arg.endsWith('/lib/desktop-cli.js')) && args.includes('--help')) {
+        const packageDir = join(environment.DSH_HOME!, 'profiles', 'node_modules', 'yaml')
+        const target = pathToFileURL(join(
+          resolvePackagedAsarPath(runtimeContext),
+          'node_modules',
+          'yaml',
+          'dist',
+          'index.js',
+        )).href
+        mkdirSync(packageDir, { recursive: true })
+        writeFileSync(join(packageDir, 'package.json'), JSON.stringify({
+          name: 'yaml',
+          version: '2.9.0',
+          private: true,
+          type: 'module',
+          exports: { '.': './entry-0.js' },
+          dsh: { moduleFallback: { targets: { '.': target } } },
+        }))
+        writeFileSync(join(packageDir, 'entry-0.js'), [
+          `export * from ${JSON.stringify(target)}`,
+          `import * as target from ${JSON.stringify(target)}`,
+          'export default target.default',
+          '',
+        ].join('\n'))
+      }
       return {
         status: 0,
         stdout: normalizedArgs.some(arg => arg.endsWith('/@deepseek-ai/dsh/lib/bin.js'))
@@ -692,6 +743,43 @@ describe('packaged desktop runtime verification', () => {
       expect(args.some(arg => arg.includes('app.asar'))).toBe(true)
       expect(environment.ELECTRON_RUN_AS_NODE).toBe('1')
       expect(environment.DSH_HOME).toEqual(expect.any(String))
+    }
+  })
+
+  it('rejects non-directory packaged Profile fallbacks', () => {
+    const root = mkdtempSync(join(tmpdir(), 'dsh-packaged-profile-fallback-'))
+    const modulesDir = join(root, 'profiles', 'node_modules')
+    try {
+      mkdirSync(modulesDir, { recursive: true })
+      writeFileSync(join(modulesDir, 'yaml'), 'not a proxy directory\n')
+
+      expect(() => verifyPackagedProfileModuleFallback(modulesDir, join(root, 'app.asar')))
+        .toThrow('must be a physical directory')
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('rejects packaged Profile proxy targets outside the current ASAR', () => {
+    const root = mkdtempSync(join(tmpdir(), 'dsh-packaged-profile-target-'))
+    const packageDir = join(root, 'profiles', 'node_modules', 'yaml')
+    const outsideTarget = pathToFileURL(join(root, 'other.app', 'app.asar', 'node_modules', 'yaml', 'index.js')).href
+    try {
+      mkdirSync(packageDir, { recursive: true })
+      writeFileSync(join(packageDir, 'package.json'), JSON.stringify({
+        name: 'yaml',
+        version: '2.9.0',
+        private: true,
+        type: 'module',
+        exports: { '.': './entry-0.js' },
+        dsh: { moduleFallback: { targets: { '.': outsideTarget } } },
+      }))
+      writeFileSync(join(packageDir, 'entry-0.js'), `export * from ${JSON.stringify(outsideTarget)}\n`)
+
+      expect(() => verifyPackagedProfileModuleFallback(packageDir + '/..', join(root, 'app.asar')))
+        .toThrow('invalid managed Profile proxy target')
+    } finally {
+      rmSync(root, { recursive: true, force: true })
     }
   })
 

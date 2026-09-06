@@ -5,12 +5,14 @@ import {
   copyFileSync,
   cpSync,
   existsSync,
+  lstatSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
   readdirSync,
   realpathSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from 'node:fs'
 import { spawnSync } from 'node:child_process'
@@ -382,6 +384,38 @@ function packageArch(arch: MacUniversalArch): 'arm64' | 'x64' {
 
 function copyPackage(source: string, target: string): void {
   if (!existsSync(source)) return
+  let existingFiles: string[] | undefined
+  try {
+    if (lstatSync(target).isDirectory()) {
+      existingFiles = []
+      const pending: Array<{ directory: string; relativeDir: string }> = [{
+        directory: target,
+        relativeDir: '',
+      }]
+      for (let next = pending.pop(); next !== undefined; next = pending.pop()) {
+        for (const entry of readdirSync(next.directory, { withFileTypes: true })) {
+          const relativePath = join(next.relativeDir, entry.name)
+          if (entry.isDirectory()) {
+            pending.push({ directory: join(next.directory, entry.name), relativeDir: relativePath })
+          } else {
+            existingFiles.push(relativePath)
+          }
+        }
+      }
+    }
+  } catch {
+    existingFiles = undefined
+  }
+  if (existingFiles !== undefined) {
+    for (const relativePath of existingFiles) {
+      const sourceFile = join(source, relativePath)
+      if (!existsSync(sourceFile) || !statSync(sourceFile).isFile()) continue
+      const targetFile = join(target, relativePath)
+      copyFileSync(sourceFile, targetFile)
+      chmodSync(targetFile, statSync(sourceFile).mode & 0o777)
+    }
+    return
+  }
   rmSync(target, { recursive: true, force: true })
   cpSync(source, target, { recursive: true, force: true, dereference: true })
 }

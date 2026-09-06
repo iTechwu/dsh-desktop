@@ -3,6 +3,7 @@
 const RESOLVER_MARKER = Symbol.for('dsh-plugin-desktop.asar-module-resolver')
 
 type ResolverState = Record<PropertyKey, unknown>
+type PackagedProcess = NodeJS.Process & { pkg?: unknown }
 
 function state(): ResolverState {
   return globalThis as unknown as ResolverState
@@ -29,9 +30,18 @@ export function retainAsarModuleResolver(): () => void {
 /** Run one operation while the Desktop ASAR resolver contract is active. */
 export async function withAsarModuleResolver<T>(operation: () => Promise<T>): Promise<T> {
   const release = retainAsarModuleResolver()
+  const packagedProcess = process as PackagedProcess
+  const pkgDescriptor = Object.getOwnPropertyDescriptor(packagedProcess, 'pkg')
+  if (pkgDescriptor === undefined) {
+    Object.defineProperty(packagedProcess, 'pkg', {
+      value: Object.freeze({ runtime: 'electron-asar' }),
+      configurable: true,
+    })
+  }
   try {
     return await operation()
   } finally {
+    if (pkgDescriptor === undefined) delete packagedProcess.pkg
     release()
   }
 }

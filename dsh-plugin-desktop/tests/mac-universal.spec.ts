@@ -5,7 +5,6 @@ import {
   mkdtempSync,
   readFileSync,
   rmSync,
-  symlinkSync,
   writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -210,6 +209,7 @@ describe('universal macOS native runtime preparation', () => {
     const aliasedKoffiX64 = join(installedModules, 'koffi-darwin-x64-3-1-1')
     const aliasedKoffiX64Native = join(aliasedKoffiX64, 'darwin_x64')
     const sharpNative = join(installedModules, '@img', 'sharp-darwin-arm64', 'lib')
+    const packagedSharpNative = join(packagedModules, '@img', 'sharp-darwin-arm64', 'lib')
 
     try {
       mkdirSync(installedKoffi, { recursive: true })
@@ -220,6 +220,7 @@ describe('universal macOS native runtime preparation', () => {
       mkdirSync(versionedKoffiNative, { recursive: true })
       mkdirSync(aliasedKoffiX64Native, { recursive: true })
       mkdirSync(sharpNative, { recursive: true })
+      mkdirSync(packagedSharpNative, { recursive: true })
       writeFileSync(
         join(installedKoffi, 'package.json'),
         '{"name":"koffi","version":"3.1.5","exports":{".":"./index.js"}}',
@@ -239,21 +240,24 @@ describe('universal macOS native runtime preparation', () => {
       )
       writeFileSync(join(aliasedKoffiX64Native, 'koffi.node'), 'koffi-3.1.1-x64')
       writeFileSync(join(sharpNative, 'sharp.node'), 'sharp-arm64')
-      mkdirSync(join(packagedModules, '@img'), { recursive: true })
-      symlinkSync(
-        join(installedModules, '@img', 'sharp-darwin-arm64'),
-        join(packagedModules, '@img', 'sharp-darwin-arm64'),
-      )
+      writeFileSync(join(dirname(sharpNative), 'README.md'), 'source documentation')
+      writeFileSync(join(packagedSharpNative, 'sharp.node'), 'stale-arm64')
 
       hydratePackagedMacRuntime({ desktopRoot, unpackedRoot, arches: ['arm64', 'x86_64'] })
 
-      expect(existsSync(join(
+      expect(readFileSync(join(
         packagedModules,
         '@img',
         'sharp-darwin-arm64',
         'lib',
         'sharp.node',
-      ))).toBe(true)
+      ), 'utf8')).toBe('sharp-arm64')
+      expect(existsSync(join(
+        packagedModules,
+        '@img',
+        'sharp-darwin-arm64',
+        'README.md',
+      ))).toBe(false)
       expect(readFileSync(join(
         packagedModules,
         '@deepseek-ai',

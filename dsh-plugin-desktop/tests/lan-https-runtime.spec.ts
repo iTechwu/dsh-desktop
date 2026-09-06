@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { DesktopLanHttpsRuntime } from '../src/lan-https-runtime.ts'
 
 describe('Desktop LAN HTTPS runtime', () => {
@@ -37,5 +37,46 @@ describe('Desktop LAN HTTPS runtime', () => {
     const runtime = new DesktopLanHttpsRuntime({ addresses: [] })
     runtime.attach(43_120)
     await expect(runtime.setEnabled('yes' as never)).rejects.toThrow('must be a boolean')
+  })
+
+  it('defers certificate preparation until LAN access is requested', async () => {
+    const prepareCertificate = vi.fn(async () => ({
+      failureCode: 'certificate-unavailable',
+    }))
+    const runtime = new DesktopLanHttpsRuntime({
+      addresses: ['192.168.1.20'],
+      prepareCertificate,
+    })
+    runtime.attach(43_120)
+
+    expect(prepareCertificate).not.toHaveBeenCalled()
+    await expect(runtime.setEnabled(false)).resolves.toMatchObject({ state: 'inactive' })
+    expect(prepareCertificate).not.toHaveBeenCalled()
+
+    await expect(runtime.setEnabled(true)).resolves.toMatchObject({
+      state: 'failed',
+      errorCode: 'certificate-unavailable',
+    })
+    expect(prepareCertificate).toHaveBeenCalledOnce()
+  })
+
+  it('does not surface a deferred certificate failure after LAN access is cancelled', async () => {
+    let finishPreparation: ((result: { failureCode: string }) => void) | undefined
+    const prepareCertificate = vi.fn(() => new Promise<{ failureCode: string }>((resolve) => {
+      finishPreparation = resolve
+    }))
+    const runtime = new DesktopLanHttpsRuntime({
+      addresses: ['192.168.1.20'],
+      prepareCertificate,
+    })
+    runtime.attach(43_120)
+
+    const enabling = runtime.setEnabled(true)
+    expect(runtime.snapshot().state).toBe('starting')
+    await expect(runtime.setEnabled(false)).resolves.toMatchObject({ state: 'inactive' })
+    finishPreparation?.({ failureCode: 'certificate-unavailable' })
+
+    await expect(enabling).resolves.toMatchObject({ state: 'inactive', errorCode: null })
+    expect(prepareCertificate).toHaveBeenCalledOnce()
   })
 })

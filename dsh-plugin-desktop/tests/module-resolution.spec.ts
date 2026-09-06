@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { pathToFileURL } from 'node:url'
@@ -28,6 +29,7 @@ const harness = vi.hoisted(() => {
         },
       }
     }),
+    installResolve: vi.fn((request: string) => `/install/${request}`),
     cjsOriginal,
     cjsModule: { _resolveFilename: cjsOriginal },
   }
@@ -35,6 +37,7 @@ const harness = vi.hoisted(() => {
 
 vi.mock('node:module', () => ({
   default: harness.cjsModule,
+  createRequire: vi.fn(() => ({ resolve: harness.installResolve })),
   registerHooks: vi.fn((definition: { resolve: typeof harness.resolve }) => {
     harness.resolve = definition.resolve
     return { deregister: harness.deregister }
@@ -68,6 +71,7 @@ describe('installProfilePackageResolver', () => {
     harness.overlay.mockClear()
     harness.sources.clear()
     harness.cjsOriginal.mockClear()
+    harness.installResolve.mockClear()
     harness.cjsModule._resolveFilename = harness.cjsOriginal
   })
 
@@ -217,6 +221,50 @@ describe('installProfilePackageResolver', () => {
     })
   })
 
+  it('falls back after a CommonJS module-not-found result', () => {
+    const profileBaseUrl = 'file:///C:/Users/test/profile/package.json'
+    const profilePluginUrl = 'file:///C:/Users/test/profile/node_modules/plugin/index.cjs'
+    const desktopDependencyUrl = 'file:///Applications/DSH.app/Contents/Resources/app.asar/node_modules/dependency/index.js'
+    harness.sources.set('plugin', 'profile')
+    installProfilePackageResolver(profileBaseUrl)
+    const nextResolve = vi.fn((specifier: string, context: { parentURL?: string }) => {
+      if (specifier === 'plugin' && context.parentURL === profileBaseUrl) return { url: profilePluginUrl }
+      if (specifier === 'desktop-dependency' && context.parentURL?.endsWith('/lib/index.js')) {
+        return { url: desktopDependencyUrl }
+      }
+      throw Object.assign(new Error(`Cannot find module '${specifier}'`), { code: 'MODULE_NOT_FOUND' })
+    })
+    const loaderEntryUrl = import.meta.resolve('@deepseek-ai/cordis-plugin-loader')
+
+    expect(harness.resolve?.('plugin', { parentURL: loaderEntryUrl }, nextResolve)).toEqual({ url: profilePluginUrl })
+    expect(harness.resolve?.('desktop-dependency', { parentURL: profilePluginUrl }, nextResolve)).toEqual({
+      url: desktopDependencyUrl,
+    })
+  })
+
+  it('bypasses the obsolete shared Profile fallback for tracked plugin dependencies', () => {
+    const profileBaseUrl = 'file:///C:/Users/test/profiles/desktop/package.json'
+    const profilePluginUrl = 'file:///C:/Users/test/profiles/desktop/node_modules/plugin/index.js'
+    const obsoleteDependencyUrl = 'file:///C:/Users/test/profiles/node_modules/dependency/index.js'
+    const desktopDependencyUrl = 'file:///Applications/DSH.app/Contents/Resources/app.asar/node_modules/dependency/index.js'
+    harness.sources.set('plugin', 'profile')
+    installProfilePackageResolver(profileBaseUrl)
+    const nextResolve = vi.fn((specifier: string, context: { parentURL?: string }) => {
+      if (specifier === 'plugin' && context.parentURL === profileBaseUrl) return { url: profilePluginUrl }
+      if (specifier === 'dependency' && context.parentURL?.endsWith('/lib/index.js')) {
+        return { url: desktopDependencyUrl }
+      }
+      if (specifier === 'dependency') return { url: obsoleteDependencyUrl }
+      throw missing(specifier, context.parentURL)
+    })
+    const loaderEntryUrl = import.meta.resolve('@deepseek-ai/cordis-plugin-loader')
+
+    expect(harness.resolve?.('plugin', { parentURL: loaderEntryUrl }, nextResolve)).toEqual({ url: profilePluginUrl })
+    expect(harness.resolve?.('dependency', { parentURL: profilePluginUrl }, nextResolve)).toEqual({
+      url: desktopDependencyUrl,
+    })
+  })
+
   it('does not expose Profile dependencies to unrelated modules', () => {
     const profileBaseUrl = 'file:///C:/Users/test/profile/package.json'
     installProfilePackageResolver(profileBaseUrl)
@@ -264,6 +312,70 @@ describe('installProfilePackageResolver', () => {
 
     dispose()
     expect(harness.cjsModule._resolveFilename).toBe(harness.cjsOriginal)
+  })
+
+  it('falls back to the Desktop install for missing CommonJS peer dependencies', () => {
+    const profileManifestPath = join(tmpdir(), 'dsh-profile', 'package.json')
+    const profilePluginPath = join(tmpdir(), 'dsh-profile', 'node_modules', 'plugin', 'index.cjs')
+    const profileBaseUrl = pathToFileURL(profileManifestPath).href
+    harness.cjsOriginal.mockImplementation((request: string) => {
+      if (request === 'plugin') return profilePluginPath
+      throw Object.assign(new Error(`Cannot find module '${request}'`), { code: 'MODULE_NOT_FOUND' })
+    })
+    const dispose = installProfilePackageResolver(profileBaseUrl)
+    const resolveFilename = harness.cjsModule._resolveFilename
+
+    expect(resolveFilename('plugin', { filename: profileManifestPath }, false)).toBe(profilePluginPath)
+    expect(resolveFilename('yaml/util', { filename: profilePluginPath }, false)).toBe('/install/yaml/util')
+
+    dispose()
+  })
+
+  it('tracks CommonJS parents across canonical filesystem aliases', () => {
+    const actualRoot = mkdtempSync(join(tmpdir(), 'dsh-module-resolution-'))
+    const aliasRoot = `${actualRoot}-alias`
+    symlinkSync(actualRoot, aliasRoot, 'dir')
+    const profileManifestPath = join(aliasRoot, 'profiles', 'desktop', 'package.json')
+    const profilePluginPath = join(aliasRoot, 'profiles', 'desktop', 'node_modules', 'plugin', 'index.cjs')
+    mkdirSync(join(profilePluginPath, '..'), { recursive: true })
+    writeFileSync(profileManifestPath, '{}\n')
+    writeFileSync(profilePluginPath, 'module.exports = {}\n')
+    const canonicalPluginPath = realpathSync(profilePluginPath)
+    const profileBaseUrl = pathToFileURL(profileManifestPath).href
+    harness.cjsOriginal.mockImplementation((request: string) => {
+      if (request === 'plugin') return profilePluginPath
+      throw Object.assign(new Error(`Cannot find module '${request}'`), { code: 'MODULE_NOT_FOUND' })
+    })
+    const dispose = installProfilePackageResolver(profileBaseUrl)
+    const resolveFilename = harness.cjsModule._resolveFilename
+    try {
+      expect(resolveFilename('plugin', { filename: profileManifestPath }, false)).toBe(profilePluginPath)
+      expect(resolveFilename('yaml/util', { filename: canonicalPluginPath }, false)).toBe('/install/yaml/util')
+    } finally {
+      dispose()
+      rmSync(aliasRoot)
+      rmSync(actualRoot, { recursive: true, force: true })
+    }
+  })
+
+  it('bypasses obsolete shared fallbacks inside a CommonJS plugin graph', () => {
+    const profilesDirectory = join(tmpdir(), 'profiles')
+    const profileManifestPath = join(profilesDirectory, 'desktop', 'package.json')
+    const profilePluginPath = join(profilesDirectory, 'desktop', 'node_modules', 'plugin', 'index.cjs')
+    const obsoleteDependencyPath = join(profilesDirectory, 'node_modules', 'dependency', 'index.js')
+    const profileBaseUrl = pathToFileURL(profileManifestPath).href
+    harness.cjsOriginal.mockImplementation((request: string) => {
+      if (request === 'plugin') return profilePluginPath
+      if (request === 'dependency') return obsoleteDependencyPath
+      return `ordinary:${request}`
+    })
+    const dispose = installProfilePackageResolver(profileBaseUrl)
+    const resolveFilename = harness.cjsModule._resolveFilename
+
+    expect(resolveFilename('plugin', { filename: profileManifestPath }, false)).toBe(profilePluginPath)
+    expect(resolveFilename('dependency', { filename: profilePluginPath }, false)).toBe('/install/dependency')
+
+    dispose()
   })
 
   it('deregisters hooks only once even if the disposer is reused', () => {
