@@ -31,6 +31,8 @@
       name: '@dofe/dsh-yootun-knowledge'
     - id: dofe-yootun-audit
       name: '@dofe/dsh-yootun-audit'
+    - id: yootun-agent-knowledge-capture
+      name: '@dofe/dsh-knowledge-capture'
     - id: dofe-yootun-finops
       name: '@dofe/dsh-yootun-finops'
     - id: dofe-yootun-retrofit
