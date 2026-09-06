@@ -30,6 +30,11 @@ test('builds a syntactically valid browser module', async () => {
   assert.equal(result.status, 0, result.stderr)
 })
 
+test('announces intent search failures to assistive technology', async () => {
+  const source = await readFile(new URL('src/client.js', root), 'utf8')
+  assert.match(source, /intent\.status === 'error'.*role: 'alert'/u)
+})
+
 test('uses only icons exported by the DSH primitives package', async () => {
   const source = await readFile(new URL('src/client.js', root), 'utf8')
   const imports = source.match(/const \{([^}]+)\} = require\('@deepseek-ai\/dsh-client-ui-primitives'\)/u)?.[1] || ''
