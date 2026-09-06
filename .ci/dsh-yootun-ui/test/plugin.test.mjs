@@ -37,6 +37,7 @@ test('bundles Yootun branding, settings, and a mandatory credential gate', async
   assert.match(source, /function YootunBrandName\(\) \{\s*return null\s*\}/u)
   assert.doesNotMatch(bundle, /Set up later|稍后设置/u)
   assert.match(source, /const \[configured, setConfigured\] = useState\(false\)/u)
+  assert.match(source, /id: 'yu-model-key',[\s\S]*'aria-label': t\('key'\)/u)
   assert.match(source, /\.catch\(\(\) => \{ if \(active\) setConfigured\(false\) \}\)/u)
   assert.doesNotMatch(source, /configured === undefined/u)
   assert.match(source, /async function mutateCurrentSettings/u)

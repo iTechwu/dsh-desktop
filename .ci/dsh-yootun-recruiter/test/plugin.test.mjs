@@ -20,6 +20,8 @@ test('keeps BOSS actions human-confirmed and does not accept raw PII', async () 
   assert.doesNotMatch(source, /resumeText|password|cookie|二维码内容|聊天正文/iu)
   assert.doesNotMatch(source, /待配置空间|YOOTUN_HR_KNOWLEDGE_SPACE_ID/u)
   assert.doesNotMatch(source, /MODELS_API_KEY|Authorization\s*:/u)
+  assert.match(source, /className: 'yr-filter',[\s\S]*placeholder: t\('candidates'\), 'aria-label': t\('candidates'\)/u)
+  assert.match(source, /value: stage,[\s\S]*'aria-label': t\('stage'\)/u)
 })
 
 test('declares the Models-authenticated data contract without exposing a client key', async () => {

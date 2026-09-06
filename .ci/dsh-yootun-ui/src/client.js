@@ -179,7 +179,7 @@ function AccessForm({ credentials, settingsApi, useAccess, initialConfigured, on
   return h('div', { className: 'yu-form' },
     h('div', { className: 'yu-field' },
       h('div', { className: 'yu-label-row' }, h('label', { htmlFor: 'yu-model-key' }, t('key')), h('span', null, configured ? t('configured') : t('missing'))),
-      h('input', { id: 'yu-model-key', type: 'password', autoComplete: 'off', value: key, placeholder: t('keyPlaceholder'), onChange: event => { setKey(event.currentTarget.value); setModels([]); setModelId('') }, onKeyDown: event => { if (event.key === 'Enter') void loadModels() } }),
+      h('input', { id: 'yu-model-key', type: 'password', autoComplete: 'off', value: key, placeholder: t('keyPlaceholder'), 'aria-label': t('key'), onChange: event => { setKey(event.currentTarget.value); setModels([]); setModelId('') }, onKeyDown: event => { if (event.key === 'Enter') void loadModels() } }),
       h('div', { className: 'yu-actions' }, h('button', { type: 'button', className: 'yu-button', disabled: loading || !key.trim(), onClick: () => { void loadModels() } }, loading ? t('loading') : t('load')))),
     h('div', { className: 'yu-field' },
       h('label', { htmlFor: 'yu-model-select' }, t('model')),
