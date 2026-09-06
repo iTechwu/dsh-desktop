@@ -80,7 +80,7 @@ function workspaceQuery(params: URLSearchParams): YootunAuditListQuery {
   const teamId = one(params, 'teamId')
   if (teamId !== undefined && !UUID_PATTERN.test(teamId)) throw new Error('query_invalid')
   const outcome = one(params, 'outcome')
-  if (outcome !== undefined && !['succeeded', 'partial', 'failed', 'accepted'].includes(outcome)) {
+  if (outcome !== undefined && !['succeeded', 'partial', 'failed', 'accepted', 'cancelled'].includes(outcome)) {
     throw new Error('query_invalid')
   }
   const start = dateTime(one(params, 'start'))

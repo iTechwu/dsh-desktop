@@ -50,7 +50,7 @@ export interface YootunAuditListQuery {
   readonly actionCode?: string
   readonly memberId?: string
   readonly targetType?: string
-  readonly outcome?: 'succeeded' | 'partial' | 'failed' | 'accepted'
+  readonly outcome?: 'succeeded' | 'partial' | 'failed' | 'accepted' | 'cancelled'
   readonly query?: string
   readonly cursor?: string
   readonly limit: number

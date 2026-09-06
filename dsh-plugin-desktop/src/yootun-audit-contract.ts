@@ -32,6 +32,7 @@ export const YOOTUN_AUDIT_ACTIONS = Object.freeze({
   'retrofit.public_sources.refreshed': ['execute', 'retrofit_search'],
   'xhs.rewrite.created': ['create', 'xhs_rewrite_task'],
   'xhs.rewrite.completed': ['execute', 'xhs_rewrite_task'],
+  'xhs.rewrite.cancelled': ['execute', 'xhs_rewrite_task'],
   'media.upload.completed': ['create', 'media_asset'],
 } as const satisfies Record<string, readonly [AuditCategory, string]>)
 
@@ -69,12 +70,13 @@ export const YOOTUN_AUDIT_CHANGE_FIELDS = Object.freeze({
   'retrofit.public_sources.refreshed': ['resultCount', 'source'],
   'xhs.rewrite.created': ['status', 'versionCount'],
   'xhs.rewrite.completed': ['status', 'versionCount'],
+  'xhs.rewrite.cancelled': ['status'],
   'media.upload.completed': ['sizeBucket', 'mimeFamily'],
 } as const satisfies Record<YootunAuditActionCode, readonly string[]>)
 
 export type AuditSurface = 'human_ui' | 'agent_tool' | 'system'
 export type AuditCategory = 'create' | 'update' | 'delete' | 'publish' | 'execute'
-export type AuditOutcome = 'succeeded' | 'partial' | 'failed' | 'accepted'
+export type AuditOutcome = 'succeeded' | 'partial' | 'failed' | 'accepted' | 'cancelled'
 export type AuditChangeValue = string | number | boolean | null
 
 export interface YootunAuditChange {
@@ -156,7 +158,7 @@ const TARGET_KEYS = new Set(['type', 'id', 'label'])
 const CHANGE_KEYS = new Set(['field', 'before', 'after'])
 const EFFECT_KEYS = new Set(['target', 'outcome', 'code', 'remoteRef'])
 const SURFACES = new Set<AuditSurface>(['human_ui', 'agent_tool', 'system'])
-const OUTCOMES = new Set<AuditOutcome>(['succeeded', 'partial', 'failed', 'accepted'])
+const OUTCOMES = new Set<AuditOutcome>(['succeeded', 'partial', 'failed', 'accepted', 'cancelled'])
 const EFFECT_OUTCOMES = new Set<YootunAuditEffect['outcome']>([
   'succeeded', 'failed', 'requires_user_login', 'accepted',
 ])
