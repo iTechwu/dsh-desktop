@@ -249,20 +249,20 @@ function Overview({ data, t }) {
     h('div', { className: 'yf-secondary-grid' }, h(ModelMix, { models: data?.models, summary, currency, t }), h(AlertPanel, { alerts: data?.alerts, source, t })), h('p', { className: 'yf-privacy' }, t('privacy')))
 }
 
-function SeriesView({ seriesState, days, onDays, t }) {
+function SeriesView({ seriesState, days, onDays, onRetry, t }) {
   const data = seriesState.data, currency = data?.summary?.currency || 'CNY'
   return h('div', { className: 'yf-detail-view' },
     h('div', { className: 'yf-trend-toolbar' }, h(DaysControl, { days, onChange: onDays, t }),
       h(ComparisonChips, { comparison: data?.comparison, currency, t }),
       data ? h(SourceBadge, { source: data.source, t }) : null),
     seriesState.error && !data
-      ? h('section', { className: 'yf-panel' }, h('div', { className: 'yf-fatal', role: 'alert' }, h(Glyph, { name: 'warning' }), h('strong', null, t('sourceError'))))
+      ? h('section', { className: 'yf-panel' }, h('div', { className: 'yf-fatal', role: 'alert' }, h(Glyph, { name: 'warning' }), h('strong', null, t('sourceError')), h('button', { type: 'button', onClick: onRetry }, t('retry'))))
       : h('section', { className: 'yf-panel' }, h('div', { className: 'yf-panel-heading' }, h('div', null, h('h2', null, t('trendTitle')), h('p', null, t('trendHint'))), h(Glyph, { name: 'clock' })),
         seriesState.loading && !data ? h('div', { className: 'yf-loading', role: 'status' }, h(Glyph, { name: 'loading' }), t('loading')) : data ? h(TrendChart, { series: data.series, currency, t }) : null))
 }
 
-function Detail({ tab, data, seriesState, days, onDays, t }) {
-  if (tab === 'trend') return h(SeriesView, { seriesState, days, onDays, t })
+function Detail({ tab, data, seriesState, days, onDays, onRetry, t }) {
+  if (tab === 'trend') return h(SeriesView, { seriesState, days, onDays, onRetry, t })
   if (tab === 'models') {
     const currency = data?.summary?.currency || 'CNY'
     return h('div', { className: 'yf-detail-view' },
@@ -304,7 +304,7 @@ function Overlay({ t }) {
   useEffect(() => { if (!visible) return undefined; const key = event => { if (event.key === 'Escape') setOpened(false) }; window.addEventListener('keydown', key); return () => window.removeEventListener('keydown', key) }, [visible])
   if (!visible) return null
   const refresh = () => { seriesCache.current.clear(); setRevision(value => value + 1) }
-  const body = loading && !data ? h('div', { className: 'yf-loading', role: 'status' }, h(Glyph, { name: 'loading' }), t('loading')) : error && !data ? h('div', { className: 'yf-fatal', role: 'alert' }, h(Glyph, { name: 'warning' }), h('strong', null, t('sourceError')), h('button', { type: 'button', onClick: refresh }, t('retry'))) : data ? h(React.Fragment, null, loading ? h('div', { className: 'yf-stale', role: 'status' }, t('loading')) : null, tab === 'overview' ? h(Overview, { data, t }) : h(Detail, { tab, data, seriesState: seriesState.days === days ? seriesState : { ...seriesState, loading: true }, days, onDays: setDays, t })) : null
+  const body = loading && !data ? h('div', { className: 'yf-loading', role: 'status' }, h(Glyph, { name: 'loading' }), t('loading')) : error && !data ? h('div', { className: 'yf-fatal', role: 'alert' }, h(Glyph, { name: 'warning' }), h('strong', null, t('sourceError')), h('button', { type: 'button', onClick: refresh }, t('retry'))) : data ? h(React.Fragment, null, loading ? h('div', { className: 'yf-stale', role: 'status' }, t('loading')) : null, tab === 'overview' ? h(Overview, { data, t }) : h(Detail, { tab, data, seriesState: seriesState.days === days ? seriesState : { ...seriesState, loading: true }, days, onDays: setDays, onRetry: refresh, t })) : null
   return h('div', { className: 'yf-overlay', role: 'dialog', 'aria-modal': true, 'aria-labelledby': 'yf-title' }, h('main', { className: 'yf-shell', 'aria-labelledby': 'yf-title' }, h('header', { className: 'yf-header' }, h('div', null, h('div', { className: 'yf-title-row' }, h('h1', { id: 'yf-title' }, t('title')), data?.period?.label ? h('span', { className: 'yf-period-label' }, data.period.label) : null), h('p', null, t('subtitle'))), h('div', { className: 'yf-header-buttons' }, h(Tooltip, { label: t('refresh') }, h('button', { type: 'button', className: 'yf-icon-button', disabled: loading, 'aria-label': t('refresh'), onClick: refresh }, h(IconRefreshOutline16, { size: 16 }))), h(Tooltip, { label: t('close') }, h('button', { type: 'button', className: 'yf-icon-button', 'aria-label': t('close'), onClick: () => setOpened(false) }, h(IconCloseOutline16, { size: 16 }))))), h('div', { className: 'yf-toolbar' }, h(RangeControl, { range, onChange: value => { setRange(value); setTab('overview') }, t }), data?.period?.timeZone ? h('span', { className: 'yf-toolbar-meta' }, `${t('timeZone')}: ${data.period.timeZone}`) : null), h('nav', { className: 'yf-tabs', 'aria-label': t('title') }, ...TABS.map(([id, key]) => h('button', { type: 'button', key: id, 'aria-current': tab === id ? 'page' : undefined, onClick: () => setTab(id) }, t(key)))), h('div', { className: `yf-content${loading && data ? ' yf-refreshing' : ''}` }, body)))
 }
 

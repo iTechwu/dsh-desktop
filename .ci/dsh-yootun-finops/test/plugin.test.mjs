@@ -59,6 +59,7 @@ test('keeps cost data source-bound and free of credentials or direct providers',
   for (const token of ['realtime', 'yesterday', 'week', 'RangeControl', 'TrendChart', 'ModelMix', 'BudgetPanel', 'sourceWarning', 'sourceCompleteness', 'noBudget', 'SeriesView', 'comparison']) {
     assert.match(source, new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'u'))
   }
+  assert.match(source, /seriesState\.error && !data[\s\S]*onClick: onRetry/u, 'series failures must expose a retry action')
   assert.doesNotMatch(source, /MODELS_API_KEY|api\.deepseek\.com|password|cookie/iu)
 })
 
