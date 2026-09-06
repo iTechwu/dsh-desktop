@@ -57,9 +57,21 @@ body:is([data-dsh-desktop-mode="extended"], [data-dsh-desktop-mode="advanced"]) 
 .dshDesktopNoDrag, button, input, textarea, select, label, summary, a, [contenteditable="true"], [role="button"], [role="checkbox"], [role="dialog"], [role="menuitem"], [role="option"], [role="switch"], [role="tab"] { -webkit-app-region: no-drag !important; }
 [role="dialog"], [aria-modal="true"] { -webkit-app-region: no-drag !important; }
 html:has([aria-modal="true"]) .dshDesktopWindowsCaptionRow::before { -webkit-app-region: no-drag !important; }
+[aria-modal="true"] :is(button, input, textarea, select, summary, a, [role="button"], [role="tab"], [role="option"]):focus-visible {
+  outline: 2px solid var(--dsw-alias-brand-primary, #245eea);
+  outline-offset: 2px;
+}
 @media (prefers-reduced-motion: reduce) {
   .dshDesktopFrame,
-  .dshDesktopResizeHandle { transition: none !important; }
+  .dshDesktopResizeHandle,
+  [aria-modal="true"] *,
+  [aria-modal="true"] *::before,
+  [aria-modal="true"] *::after {
+    transition: none !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+  }
 }
 `
 
