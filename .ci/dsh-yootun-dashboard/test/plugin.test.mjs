@@ -72,6 +72,15 @@ test('dashboard UI uses one spacing rhythm across desktop and mobile breakpoints
   assert.match(source, /\.yd-ranges button\[data-active=true\]\{background:var\(--dsw-alias-brand-primary\);color:var\(--dsw-alias-bg-base\)/)
 })
 
+test('moves focus into the dashboard and restores its opener on close', async () => {
+  const source = await readFile(new URL('src/client.js', root), 'utf8')
+  for (const token of ['useRef', 'document.activeElement', 'shellRef.current?.focus()', 'target.focus()', 'ref: shellRef', 'tabIndex: -1', 'closeOverlay()']) {
+    assert.match(source, new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'u'))
+  }
+  assert.match(source, /event\.key === 'Escape'\) closeOverlay\(\)/u)
+  assert.match(source, /onClick: closeOverlay/u)
+})
+
 test('loads and registers the sidebar action and global overlay', async () => {
   const bundle = await readFile(new URL('lib/client.js', root), 'utf8')
   let plugin
@@ -85,7 +94,7 @@ test('loads and registers the sidebar action and global overlay', async () => {
       load({ factory }) {
         plugin = factory(specifier => {
           if (specifier === 'react') return {
-            createElement() {}, useEffect() {}, useMemo() {}, useState() {}, useSyncExternalStore() {},
+            createElement() {}, useEffect() {}, useMemo() {}, useRef() {}, useState() {}, useSyncExternalStore() {},
           }
           if (specifier === '@deepseek-ai/dsh-client-ui-primitives') return Object.fromEntries([
             'IconAgentPresetOutline16', 'IconArchiveOutline20', 'IconBrowseOutline16', 'IconCheckOutline16',

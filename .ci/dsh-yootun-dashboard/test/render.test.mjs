@@ -27,6 +27,7 @@ test('dashboard client renders health strip, attention queue, and tab switching'
     },
     useEffect() {},
     useMemo(factory) { return factory() },
+    useRef(initialValue) { return { current: initialValue } },
     useSyncExternalStore(_subscribe, getSnapshot) { return getSnapshot() },
   }
   const require_ = name => (name === 'react' ? react : name === '@deepseek-ai/dsh-client-ui-primitives' ? primitives : null)

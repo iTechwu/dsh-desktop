@@ -1,5 +1,5 @@
 const React = require('react')
-const { createElement: h, useEffect, useMemo, useState, useSyncExternalStore } = React
+const { createElement: h, useEffect, useMemo, useRef, useState, useSyncExternalStore } = React
 const {
   IconAgentPresetOutline16,
   IconArchiveOutline20,
@@ -138,14 +138,23 @@ const copy = {
 }
 
 let opened = false
+let opener = null
 const listeners = new Set()
 function emit() { for (const listener of listeners) listener() }
 function setOpened(value) { opened = value; emit() }
 function openOverlay() {
+  const activeElement = typeof document === 'undefined' ? null : document.activeElement
+  opener = activeElement && typeof activeElement.focus === 'function' ? activeElement : null
   if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
     window.dispatchEvent(new CustomEvent(OVERLAY_EVENT, { detail: { id: OVERLAY_ID } }))
   }
   setOpened(true)
+}
+function closeOverlay() {
+  setOpened(false)
+  const target = opener
+  opener = null
+  if (target && target.isConnected !== false) window.requestAnimationFrame(() => target.focus())
 }
 function closeOtherOverlay(event) { if (event.detail?.id !== OVERLAY_ID) setOpened(false) }
 function subscribe(listener) { listeners.add(listener); return () => listeners.delete(listener) }
@@ -959,6 +968,7 @@ function DashboardButton({ wide, t }) {
 
 function DashboardOverlay({ t }) {
   const visible = useSyncExternalStore(subscribe, getSnapshot, getSnapshot)
+  const shellRef = useRef(null)
   const [tab, setTab] = useState('overview')
   const [range, setRange] = useState(() => loadPrefs().range || 'yesterday')
   const [usageScope, setUsageScope] = useState(() => loadPrefs().usageScope || 'key')
@@ -983,9 +993,10 @@ function DashboardOverlay({ t }) {
 
   useEffect(() => {
     if (!visible) return undefined
-    const onKeyDown = event => { if (event.key === 'Escape') setOpened(false) }
+    const frame = window.requestAnimationFrame(() => shellRef.current?.focus())
+    const onKeyDown = event => { if (event.key === 'Escape') closeOverlay() }
     window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
+    return () => { window.cancelAnimationFrame(frame); window.removeEventListener('keydown', onKeyDown) }
   }, [visible])
 
   const periodLabel = useMemo(() => data?.period?.date || data?.period?.label || '', [data?.period?.date, data?.period?.label])
@@ -1002,7 +1013,7 @@ function DashboardOverlay({ t }) {
   }
 
   return h('div', { className: 'yd-overlay', role: 'dialog', 'aria-modal': true, 'aria-labelledby': 'yd-title' },
-    h('main', { className: 'yd-shell', 'aria-labelledby': 'yd-title' },
+    h('main', { className: 'yd-shell', ref: shellRef, tabIndex: -1, 'aria-labelledby': 'yd-title' },
       h('header', { className: 'yd-header' },
         h('div', null,
           h('div', { className: 'yd-title-line' },
@@ -1024,7 +1035,7 @@ function DashboardOverlay({ t }) {
               onClick: () => { setUsageScope(id); savePrefs({ range, usageScope: id }) },
             }, t(id === 'team' ? 'scopeTeam' : 'scopeKey')))),
           h(Tooltip, { label: t('refresh'), side: 'bottom' }, h('button', { type: 'button', className: 'yd-icon-button', disabled: loading, onClick: () => setRevision(value => value + 1), 'aria-label': t('refresh') }, h(IconRefreshOutline16, { size: 16 }))),
-          h(Tooltip, { label: t('close'), side: 'bottom' }, h('button', { type: 'button', className: 'yd-icon-button', onClick: () => setOpened(false), 'aria-label': t('close') }, h(IconCloseOutline16, { size: 16 }))))),
+          h(Tooltip, { label: t('close'), side: 'bottom' }, h('button', { type: 'button', className: 'yd-icon-button', onClick: closeOverlay, 'aria-label': t('close') }, h(IconCloseOutline16, { size: 16 }))))),
       h('nav', { className: 'yd-tabs', 'aria-label': t('title') }, ...TABS.map(item =>
         h('button', { type: 'button', key: item.id, 'aria-current': tab === item.id ? 'page' : undefined, onClick: () => setTab(item.id) }, t(item.label)))),
       failed && data ? h('div', { className: 'yd-stale', role: 'status' }, t('error')) : null,
@@ -1091,7 +1102,7 @@ const spacingCss = `
 @media(max-width:800px){.yd-overlay{--yd-content-gutter:16px}.yd-content{padding-top:var(--yd-space-5)}.yd-domain-grid{gap:var(--yd-space-4)}}
 @media(max-width:480px){.yd-header{padding-top:var(--yd-space-3);padding-bottom:var(--yd-space-3)}.yd-content{padding-top:var(--yd-space-4)}}
 `
-const capabilityCss = '.yd-capability-group h3{margin:0 0 var(--yd-space-2);font-size:13px}'
+const capabilityCss = '.yd-capability-group h3{margin:0 0 var(--yd-space-2);font-size:13px}.yd-shell:focus{outline:0}'
 
 function apply(ctx) {
   ctx.effect(() => ctx.locale.register(NS, copy), 'dofe-yootun-dashboard: dictionaries')
