@@ -150,6 +150,7 @@ const TOOL_DEFINITIONS = {
   knowledge_entity_merges: ['knowledge.entity_merges', 'Read entity merge decisions and provenance.'],
   knowledge_provenance_lineage: ['knowledge.provenance_lineage', 'Read bounded provenance lineage for an entity.'],
 }
+const TOOL_NAMES_BY_REMOTE = Object.fromEntries(Object.entries(TOOL_DEFINITIONS).map(([name, [remoteName]]) => [remoteName, name]))
 
 export function apply(ctx, overrides = {}) {
   const fetchImpl = overrides.fetch || globalThis.fetch
@@ -213,6 +214,11 @@ export function apply(ctx, overrides = {}) {
         const action = ACTIONS[body?.action]
         if (!action) {
           sendJson(res, 400, { status: 'error', reason: 'unsupported_action' })
+          return
+        }
+        const violations = validateToolArguments(TOOL_NAMES_BY_REMOTE[action], { input: body.input || {} })
+        if (violations.length > 0) {
+          sendJson(res, 400, { status: 'error', reason: 'invalid_tool_arguments', details: violations })
           return
         }
         const result = await executeKnowledge(ctx, fetchImpl, credential, action, body.input || {}, 'human_ui')

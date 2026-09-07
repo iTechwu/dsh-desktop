@@ -110,6 +110,22 @@ test('rejects invalid tool arguments before contacting the gateway', async () =>
   assert.equal(calls, 0)
 })
 
+test('rejects invalid management actions before contacting the gateway', async () => {
+  let route
+  let calls = 0
+  apply({
+    credentials: { async resolve() { return { value: 'test-key' } } },
+    tools: { register() { return () => {} } },
+    systemPrompt: { section() { return () => {} } },
+    webServer: { register(value) { route = value; return () => {} } },
+  }, { fetch: async () => { calls += 1; return new Response('{}', { status: 200 }) } })
+
+  const response = await invoke(route, 'POST', { action: 'recall', input: { topK: 51 } })
+  assert.equal(response.status, 400)
+  assert.equal(response.body.reason, 'invalid_tool_arguments')
+  assert.equal(calls, 0)
+})
+
 test('exposes explicit memory confirmation through the authenticated knowledge MCP route', async () => {
   const registered = new Map()
   const requests = []
@@ -249,7 +265,7 @@ test('audits knowledge writes from Agent and UI while excluding reads and input 
 
   await registered.get('knowledge_search').execute({ input: { query: '不得进入审计的搜索正文' } }, {})
   await registered.get('knowledge_remember').execute({ input: { content: '不得进入审计的知识正文' } }, {})
-  await invoke(route, 'POST', { action: 'forget', input: { memoryId: 'memory-7', reason: '不得进入审计的原因正文' } })
+  await invoke(route, 'POST', { action: 'forget', input: { memoryId: '40000000-0000-4000-8000-000000000007', reason: '不得进入审计的原因正文' } })
 
   assert.equal(events.length, 2)
   assert.deepEqual(events[0], {
