@@ -147,7 +147,7 @@ function Roles({ data, t, onUpdate, busy }) {
   }
   const generate = async () => {
     if (!input.trim()) { setMessage(t('roleDraftHint')); return }
-    try { await onUpdate?.(draftFromText(input)); setMessage(t('roleGenerated')) } catch { setMessage(t('saveError')) }
+    try { const result = await onUpdate?.(draftFromText(input)); setMessage(result ? t('roleGenerated') : t('saveError')) } catch { setMessage(t('saveError')) }
   }
   return h('div', { className: 'yr-page' },
     h('div', { className: 'yr-heading yr-workbench-toolbar' }, h('div', null, h('h2', null, t('roles')), h('p', { className: 'yr-subheading' }, t('rolesIntro'))), h('span', { className: 'yr-muted' }, `${roles.length} ${t('roles')}`)),
@@ -253,7 +253,7 @@ function Overlay({ t }) {
   }, [visible])
   if (!visible) return null
   const tData = data || { status: 'empty', dashboard: {}, requirements: [], candidates: [], actions: [], boss: {}, sync: {}, knowledge: {}, analytics: {} }
-  const update = async body => { if (actionBusyRef.current) return undefined; actionBusyRef.current = true; setPendingActionId(body.id || body.action); try { const next = await mutate(body); setData(next); setError(''); return next } catch (cause) { setError('action'); throw cause } finally { actionBusyRef.current = false; setPendingActionId('') } }
+  const update = async body => { if (actionBusyRef.current) return undefined; actionBusyRef.current = true; setPendingActionId(body.id || body.action); try { const next = await mutate(body); setData(next); setError(''); return next } catch { setError('action'); return undefined } finally { actionBusyRef.current = false; setPendingActionId('') } }
   const busy = Boolean(pendingActionId)
   let body
   if (loading && !data) body = h('div', { className: 'yr-empty yr-loading', role: 'status' }, h('span', { className: 'yr-spinner', 'aria-hidden': true }), t('loading'))

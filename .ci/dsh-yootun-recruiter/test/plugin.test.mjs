@@ -31,6 +31,13 @@ test('blocks duplicate mutations and announces pending recruiter actions', async
   }
 })
 
+test('consumes recruiter mutation failures without reporting false draft success', async () => {
+  const source = await readFile(new URL('src/client.js', root), 'utf8')
+  assert.match(source, /catch \{ setError\('action'\); return undefined \}/u)
+  assert.match(source, /const result = await onUpdate\?\.\(draftFromText\(input\)\); setMessage\(result \? t\('roleGenerated'\) : t\('saveError'\)\)/u)
+  assert.doesNotMatch(source, /throw cause/u)
+})
+
 test('moves focus into recruiter and restores its opener', async () => {
   const source = await readFile(new URL('src/client.js', root), 'utf8')
   for (const token of ['document.activeElement', 'shellRef.current?.focus()', 'target.focus()', 'ref: shellRef', 'tabIndex: -1', 'closeOverlay()']) {
