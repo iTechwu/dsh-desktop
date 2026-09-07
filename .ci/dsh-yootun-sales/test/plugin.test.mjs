@@ -35,6 +35,17 @@ test('announces intent search failures to assistive technology', async () => {
   assert.match(source, /intent\.status === 'error'.*role: 'alert'/u)
 })
 
+test('locks intent criteria without mislabeling unrelated sales actions', async () => {
+  const source = await readFile(new URL('src/client.js', root), 'utf8')
+  for (const token of [
+    'function IntentSearch({ t, current, update, busy, active })',
+    "return h('section', { className: 'ys-intent', 'aria-busy': active }",
+    "h('input', { value: query, disabled: busy",
+    "active ? '…' : t('intentSearch')",
+    'active: pendingActionId === \'intent_search\'',
+  ]) assert.ok(source.includes(token), `missing intent interaction state: ${token}`)
+})
+
 test('blocks duplicate sales mutations and exposes localized action errors', async () => {
   const source = await readFile(new URL('src/client.js', root), 'utf8')
   for (const token of ['useRef', 'if (actionBusyRef.current) return', 'actionBusyRef.current = true', 'setPendingActionId(body.id || body.action)', 'disabled: busy', 'disabled: loading || busy', "'aria-busy': active", "role: 'alert'", "t('actionError')", "t('loadError')"]) {
