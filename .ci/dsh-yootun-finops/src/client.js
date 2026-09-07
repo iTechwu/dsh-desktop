@@ -62,10 +62,12 @@ const copy = {
 }
 
 let opened = false
+let opener = null
 const listeners = new Set()
 const emit = () => listeners.forEach(listener => listener())
 const setOpened = value => { opened = value; emit() }
-const openOverlay = () => { window.dispatchEvent(new CustomEvent(OVERLAY_EVENT, { detail: { id: OVERLAY_ID } })); setOpened(true) }
+const openOverlay = () => { const activeElement = document.activeElement; opener = activeElement && typeof activeElement.focus === 'function' ? activeElement : null; window.dispatchEvent(new CustomEvent(OVERLAY_EVENT, { detail: { id: OVERLAY_ID } })); setOpened(true) }
+const closeOverlay = () => { setOpened(false); const target = opener; opener = null; if (target && target.isConnected !== false) window.requestAnimationFrame(() => target.focus()) }
 const closeOtherOverlay = event => { if (event.detail?.id !== OVERLAY_ID) setOpened(false) }
 const subscribe = listener => { listeners.add(listener); return () => listeners.delete(listener) }
 const snapshot = () => opened
@@ -279,6 +281,7 @@ function Button({ wide, t }) {
 
 function Overlay({ t }) {
   const visible = useSyncExternalStore(subscribe, snapshot, snapshot)
+  const shellRef = useRef(null)
   const [range, setRange] = useState('yesterday'), [tab, setTab] = useState('overview'), [data, setData] = useState(null), [loading, setLoading] = useState(false), [error, setError] = useState(false), [revision, setRevision] = useState(0)
   const [days, setDays] = useState(7), [seriesState, setSeriesState] = useState({ days: 7, data: null, loading: false, error: false })
   const seriesCache = useRef(new Map())
@@ -301,11 +304,11 @@ function Overlay({ t }) {
       .catch(cause => { if (cause?.name !== 'AbortError') setSeriesState({ days, data: null, loading: false, error: true }) })
     return () => controller.abort()
   }, [visible, tab, days, revision])
-  useEffect(() => { if (!visible) return undefined; const key = event => { if (event.key === 'Escape') setOpened(false) }; window.addEventListener('keydown', key); return () => window.removeEventListener('keydown', key) }, [visible])
+  useEffect(() => { if (!visible) return undefined; const frame = window.requestAnimationFrame(() => shellRef.current?.focus()); const key = event => { if (event.key === 'Escape') closeOverlay() }; window.addEventListener('keydown', key); return () => { window.cancelAnimationFrame(frame); window.removeEventListener('keydown', key) } }, [visible])
   if (!visible) return null
   const refresh = () => { seriesCache.current.clear(); setRevision(value => value + 1) }
   const body = loading && !data ? h('div', { className: 'yf-loading', role: 'status' }, h(Glyph, { name: 'loading' }), t('loading')) : error && !data ? h('div', { className: 'yf-fatal', role: 'alert' }, h(Glyph, { name: 'warning' }), h('strong', null, t('sourceError')), h('button', { type: 'button', onClick: refresh }, t('retry'))) : data ? h(React.Fragment, null, loading ? h('div', { className: 'yf-stale', role: 'status' }, t('loading')) : null, tab === 'overview' ? h(Overview, { data, t }) : h(Detail, { tab, data, seriesState: seriesState.days === days ? seriesState : { ...seriesState, loading: true }, days, onDays: setDays, onRetry: refresh, t })) : null
-  return h('div', { className: 'yf-overlay', role: 'dialog', 'aria-modal': true, 'aria-labelledby': 'yf-title' }, h('main', { className: 'yf-shell', 'aria-labelledby': 'yf-title' }, h('header', { className: 'yf-header' }, h('div', null, h('div', { className: 'yf-title-row' }, h('h1', { id: 'yf-title' }, t('title')), data?.period?.label ? h('span', { className: 'yf-period-label' }, data.period.label) : null), h('p', null, t('subtitle'))), h('div', { className: 'yf-header-buttons' }, h(Tooltip, { label: t('refresh') }, h('button', { type: 'button', className: 'yf-icon-button', disabled: loading, 'aria-label': t('refresh'), onClick: refresh }, h(IconRefreshOutline16, { size: 16 }))), h(Tooltip, { label: t('close') }, h('button', { type: 'button', className: 'yf-icon-button', 'aria-label': t('close'), onClick: () => setOpened(false) }, h(IconCloseOutline16, { size: 16 }))))), h('div', { className: 'yf-toolbar' }, h(RangeControl, { range, onChange: value => { setRange(value); setTab('overview') }, t }), data?.period?.timeZone ? h('span', { className: 'yf-toolbar-meta' }, `${t('timeZone')}: ${data.period.timeZone}`) : null), h('nav', { className: 'yf-tabs', 'aria-label': t('title') }, ...TABS.map(([id, key]) => h('button', { type: 'button', key: id, 'aria-current': tab === id ? 'page' : undefined, onClick: () => setTab(id) }, t(key)))), h('div', { className: `yf-content${loading && data ? ' yf-refreshing' : ''}` }, body)))
+  return h('div', { className: 'yf-overlay', role: 'dialog', 'aria-modal': true, 'aria-labelledby': 'yf-title' }, h('main', { className: 'yf-shell', ref: shellRef, tabIndex: -1, 'aria-labelledby': 'yf-title' }, h('header', { className: 'yf-header' }, h('div', null, h('div', { className: 'yf-title-row' }, h('h1', { id: 'yf-title' }, t('title')), data?.period?.label ? h('span', { className: 'yf-period-label' }, data.period.label) : null), h('p', null, t('subtitle'))), h('div', { className: 'yf-header-buttons' }, h(Tooltip, { label: t('refresh') }, h('button', { type: 'button', className: 'yf-icon-button', disabled: loading, 'aria-label': t('refresh'), onClick: refresh }, h(IconRefreshOutline16, { size: 16 }))), h(Tooltip, { label: t('close') }, h('button', { type: 'button', className: 'yf-icon-button', 'aria-label': t('close'), onClick: closeOverlay }, h(IconCloseOutline16, { size: 16 }))))), h('div', { className: 'yf-toolbar' }, h(RangeControl, { range, onChange: value => { setRange(value); setTab('overview') }, t }), data?.period?.timeZone ? h('span', { className: 'yf-toolbar-meta' }, `${t('timeZone')}: ${data.period.timeZone}`) : null), h('nav', { className: 'yf-tabs', 'aria-label': t('title') }, ...TABS.map(([id, key]) => h('button', { type: 'button', key: id, 'aria-current': tab === id ? 'page' : undefined, onClick: () => setTab(id) }, t(key)))), h('div', { className: `yf-content${loading && data ? ' yf-refreshing' : ''}` }, body)))
 }
 
 const css = `
