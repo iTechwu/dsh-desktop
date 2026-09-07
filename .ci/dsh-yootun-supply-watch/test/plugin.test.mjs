@@ -34,6 +34,15 @@ test('prevents duplicate review submissions and announces progress', async () =>
   }
 })
 
+test('moves focus into supply watch and restores its opener', async () => {
+  const source = await readFile(new URL('src/client.js', root), 'utf8')
+  for (const token of ['document.activeElement', 'shellRef.current?.focus()', 'target.focus()', 'ref: shellRef', 'tabIndex: -1', 'closeOverlay()']) {
+    assert.match(source, new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'u'))
+  }
+  assert.match(source, /event\.key === 'Escape'\) closeOverlay\(\)/u)
+  assert.match(source, /onClick: closeOverlay/u)
+})
+
 test('uses only icons exported by DSH alpha3 primitives', async () => {
   const source = await readFile(new URL('src/client.js', root), 'utf8')
   const imports = source.match(/const \{([^}]+)\} = require\('@deepseek-ai\/dsh-client-ui-primitives'\)/u)?.[1] || ''
