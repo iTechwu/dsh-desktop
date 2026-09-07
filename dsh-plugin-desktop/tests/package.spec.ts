@@ -49,7 +49,7 @@ const manifest = JSON.parse(readFileSync(new URL('package.json', packageRoot), '
       target?: unknown
       x64ArchFiles?: unknown
     }
-    win?: { icon?: unknown; target?: unknown; artifactName?: unknown }
+    win?: { icon?: unknown; files?: unknown; target?: unknown; artifactName?: unknown }
     nsis?: Record<string, unknown>
     portable?: Record<string, unknown>
     linux?: { icon?: unknown }
@@ -724,6 +724,24 @@ describe('published package surface', () => {
     expect(manifest.build?.mac?.mergeASARs).toBe(false)
     expect(manifest.build?.mac?.signIgnore).toEqual(['\\.(?:pak|dat|wasm)$'])
     expect(manifest.build?.win?.icon).toBe('build/app-icon.ico')
+    expect(manifest.build?.win?.files).toEqual([
+      '!node_modules/@img/sharp-darwin*/**',
+      '!node_modules/@img/sharp-libvips-darwin*/**',
+      '!node_modules/@img/sharp-win32-arm64*/**',
+      '!node_modules/@img/sharp-win32-ia32*/**',
+      '!node_modules/@koromix/koffi-darwin*/**',
+      '!node_modules/@koromix/koffi-win32-arm64*/**',
+      '!node_modules/@koromix/koffi-win32-ia32*/**',
+      '!node_modules/**/@vscode/ripgrep-darwin*/**',
+      '!node_modules/lightningcss-darwin*/**',
+      '!node_modules/**/lightningcss-darwin*/**',
+      '!node_modules/lightningcss-win32-arm64*/**',
+      '!node_modules/**/lightningcss-win32-arm64*/**',
+      '!node_modules/node-addon-require-builtin-darwin*/**',
+      '!node_modules/node-addon-require-builtin-win32-arm64*/**',
+      '!node_modules/node-addon-require-builtin-win32-ia32*/**',
+      '!node_modules/koffi-darwin-*-3-1-1/**',
+    ])
     expect(manifest.build?.win?.target).toEqual([{
       target: 'nsis',
       arch: ['x64'],

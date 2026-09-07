@@ -578,6 +578,24 @@
         "build/tray-icon-blue@1.5x.png",
         "build/tray-icon-blue@2x.png"
       ],
+      "files": [
+        "!node_modules/@img/sharp-darwin*/**",
+        "!node_modules/@img/sharp-libvips-darwin*/**",
+        "!node_modules/@img/sharp-win32-arm64*/**",
+        "!node_modules/@img/sharp-win32-ia32*/**",
+        "!node_modules/@koromix/koffi-darwin*/**",
+        "!node_modules/@koromix/koffi-win32-arm64*/**",
+        "!node_modules/@koromix/koffi-win32-ia32*/**",
+        "!node_modules/**/@vscode/ripgrep-darwin*/**",
+        "!node_modules/lightningcss-darwin*/**",
+        "!node_modules/**/lightningcss-darwin*/**",
+        "!node_modules/lightningcss-win32-arm64*/**",
+        "!node_modules/**/lightningcss-win32-arm64*/**",
+        "!node_modules/node-addon-require-builtin-darwin*/**",
+        "!node_modules/node-addon-require-builtin-win32-arm64*/**",
+        "!node_modules/node-addon-require-builtin-win32-ia32*/**",
+        "!node_modules/koffi-darwin-*-3-1-1/**"
+      ],
       "target": [
         {
           "target": "nsis",
