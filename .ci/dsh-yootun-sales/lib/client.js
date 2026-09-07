@@ -16,10 +16,12 @@ window.__ModuleLoader__.load({
       en: { open: 'Sales workspace', title: 'Sales workspace', subtitle: 'Public intent discovery, follow-ups, and approvals', close: 'Close sales workspace', refresh: 'Refresh', loading: 'Loading sales workspace…', processing: 'Submitting…', retry: 'Try again', loadError: 'Could not load the sales workspace', actionError: 'Action could not be completed. Try again.', leads: 'Leads', qualified: 'Qualified', dueToday: 'Due today', pending: 'Awaiting approval', empty: 'No sales leads yet', actions: 'Follow-up actions', approve: 'Approve', dismiss: 'Dismiss', adapter: 'Approved, adapter pending', succeeded: 'Adapter completed', failed: 'Adapter failed', requiresLogin: 'Login required', source: 'Source', intent: 'Intent discovery', intentPlaceholder: 'Describe the public intent to find in one sentence', intentSearch: 'Search', intentEmpty: 'Enter a requirement to find public discussions', intentUnavailable: 'Tools intent discovery is unavailable', intentError: 'Intent search failed', confidence: 'Confidence' },
     }
     let opened = false
+    let opener = null
     const listeners = new Set()
     const emit = () => listeners.forEach(listener => listener())
     const setOpened = value => { opened = value; emit() }
-    const openOverlay = () => { window.dispatchEvent(new CustomEvent(OVERLAY_EVENT, { detail: { id: OVERLAY_ID } })); setOpened(true) }
+    const openOverlay = () => { const activeElement = document.activeElement; opener = activeElement && typeof activeElement.focus === 'function' ? activeElement : null; window.dispatchEvent(new CustomEvent(OVERLAY_EVENT, { detail: { id: OVERLAY_ID } })); setOpened(true) }
+    const closeOverlay = () => { setOpened(false); const target = opener; opener = null; if (target && target.isConnected !== false) window.requestAnimationFrame(() => target.focus()) }
     const closeOtherOverlay = event => { if (event.detail?.id !== OVERLAY_ID) setOpened(false) }
     const subscribe = listener => { listeners.add(listener); return () => listeners.delete(listener) }
     const snapshot = () => opened
@@ -37,6 +39,7 @@ window.__ModuleLoader__.load({
     function Overlay({ t }) {
       const visible = useSyncExternalStore(subscribe, snapshot, snapshot)
       const actionBusyRef = useRef(false)
+      const shellRef = useRef(null)
       const [data, setData] = useState(null)
       const [error, setError] = useState('')
       const [loading, setLoading] = useState(false)
@@ -54,9 +57,10 @@ window.__ModuleLoader__.load({
       }, [visible, revision])
       useEffect(() => {
         if (!visible) return undefined
-        const onKey = event => { if (event.key === 'Escape') setOpened(false) }
+        const frame = window.requestAnimationFrame(() => shellRef.current?.focus())
+        const onKey = event => { if (event.key === 'Escape') closeOverlay() }
         window.addEventListener('keydown', onKey)
-        return () => window.removeEventListener('keydown', onKey)
+        return () => { window.cancelAnimationFrame(frame); window.removeEventListener('keydown', onKey) }
       }, [visible])
       if (!visible) return null
       const current = data || { dashboard: {}, leads: [], actions: [] }
@@ -92,12 +96,12 @@ window.__ModuleLoader__.load({
         ? h('div', { role: 'alert', className: 'ys-empty ys-error' }, h('strong', null, t('loadError')), h('button', { type: 'button', onClick: () => setRevision(value => value + 1) }, t('retry')))
         : h(React.Fragment, null, error === 'action' ? h('div', { role: 'alert', className: 'ys-error-banner' }, t('actionError')) : null, intent, metrics, actions, leads)
       return h('div', { className: 'ys-overlay', role: 'dialog', 'aria-modal': true, 'aria-labelledby': 'ys-title' },
-        h('main', { className: 'ys-shell', 'aria-labelledby': 'ys-title', 'aria-busy': busy },
+        h('main', { className: 'ys-shell', ref: shellRef, tabIndex: -1, 'aria-labelledby': 'ys-title', 'aria-busy': busy },
           h('header', { className: 'ys-header' },
             h('div', null, h('h1', { id: 'ys-title' }, t('title')), h('p', null, t('subtitle'))),
             h('div', { className: 'ys-header-buttons' },
               h(Tooltip, { label: t('refresh') }, h('button', { type: 'button', 'aria-label': t('refresh'), disabled: loading, onClick: () => setRevision(value => value + 1) }, h(IconRefreshOutline16, { size: 16 }))),
-              h(Tooltip, { label: t('close') }, h('button', { type: 'button', 'aria-label': t('close'), onClick: () => setOpened(false) }, h(IconCloseOutline16, { size: 16 }))),
+              h(Tooltip, { label: t('close') }, h('button', { type: 'button', 'aria-label': t('close'), onClick: closeOverlay }, h(IconCloseOutline16, { size: 16 }))),
             ),
           ),
           h('div', { className: 'ys-content' }, content),
@@ -106,7 +110,7 @@ window.__ModuleLoader__.load({
     }
     function Button({ wide, t }) { return h(Tooltip, { label: t('open'), disabled: wide }, h('button', { type: 'button', className: `ys-button${wide ? ' ys-wide' : ''}`, 'aria-label': t('open'), onClick: openOverlay }, h(IconDataOutline16, { size: wide ? 14 : 18 }), wide ? h('span', null, t('open')) : null)) }
     const css = `.ys-button{display:flex;width:36px;height:36px;align-items:center;justify-content:center;gap:8px;border:0;border-radius:6px;background:transparent;color:var(--dsw-alias-label-secondary);cursor:pointer}.ys-button:hover{background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary)}.ys-wide{width:100%;height:34px;justify-content:flex-start;padding:0 10px}.ys-wide span{font-size:13px}.ys-overlay{position:fixed;inset:0;z-index:510;background:var(--dsw-alias-bg-base);color:var(--dsw-alias-label-primary)}.ys-shell{display:grid;grid-template-rows:auto minmax(0,1fr);width:100%;height:100%;overflow:hidden}.ys-header{display:flex;min-height:74px;align-items:center;justify-content:space-between;padding:14px 24px;border-bottom:1px solid var(--dsw-alias-border-l1)}.ys-header h1{margin:0;font-size:20px}.ys-header p{margin:4px 0 0;color:var(--dsw-alias-label-secondary);font-size:13px}.ys-header-buttons{display:flex;gap:6px}.ys-header-buttons button{display:grid;width:34px;height:34px;place-items:center;border:1px solid var(--dsw-alias-border-l1);border-radius:6px;background:var(--dsw-alias-bg-layer-1);color:inherit;cursor:pointer}.ys-header-buttons button:disabled{opacity:.45;cursor:default}.ys-content{min-height:0;overflow:auto;padding:22px 24px 40px}.ys-intent,.ys-section{display:grid;gap:10px;max-width:1120px;margin:0 auto 24px}.ys-section{margin-top:24px}.ys-section-heading h2{margin:0;font-size:14px}.ys-intent-form{display:flex;gap:8px}.ys-intent-form input{flex:1;min-width:0;padding:10px 12px;border:1px solid var(--dsw-alias-border-l1);border-radius:6px;background:var(--dsw-alias-bg-layer-1);color:inherit;font:inherit}.ys-intent-form button{display:inline-flex;align-items:center;gap:6px;padding:0 14px;border:0;border-radius:6px;background:var(--dsw-alias-control-fill-brand);color:#fff;font:inherit;cursor:pointer}.ys-intent-form button:disabled{opacity:.5}.ys-intent-empty{padding:18px 0;color:var(--dsw-alias-label-secondary);font-size:13px}.ys-intent-row{display:flex;justify-content:space-between;gap:16px;padding:12px 0;border-top:1px solid var(--dsw-alias-border-l1)}.ys-intent-row div{display:grid;gap:4px;min-width:0}.ys-intent-row span,.ys-intent-row small{color:var(--dsw-alias-label-secondary);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.ys-intent-row b{flex:none;font-size:12px}.ys-metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));max-width:1120px;margin:0 auto;border-block:1px solid var(--dsw-alias-border-l1)}.ys-metric{display:grid;min-height:82px;align-content:center;gap:6px;padding:12px 16px;border-right:1px solid var(--dsw-alias-border-l1)}.ys-metric:last-child{border-right:0}.ys-metric span,.ys-lead span,.ys-lead p,.ys-action span,.ys-action small{color:var(--dsw-alias-label-secondary);font-size:12px}.ys-metric strong{font-size:24px}.ys-lead,.ys-action{display:grid;gap:6px;padding:14px 16px;border-top:1px solid var(--dsw-alias-border-l1)}.ys-action{display:flex;align-items:center;justify-content:space-between;gap:14px}.ys-action-main{display:grid;gap:4px;min-width:0}.ys-action-main strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.ys-action-buttons{display:flex;gap:6px;flex:none}.ys-action-buttons button,.ys-empty button{display:inline-flex;align-items:center;gap:6px;min-height:32px;padding:0 10px;border:1px solid var(--dsw-alias-border-l1);border-radius:6px;background:var(--dsw-alias-bg-layer-1);color:inherit;font:inherit;cursor:pointer}.ys-empty{display:grid;min-height:150px;place-items:center;align-content:center;gap:10px;color:var(--dsw-alias-label-secondary);font-size:13px;text-align:center}.ys-spinner{width:18px;height:18px;border:2px solid var(--dsw-alias-border-l2);border-top-color:var(--dsw-alias-brand-primary);border-radius:50%;animation:ys-spin .8s linear infinite}@keyframes ys-spin{to{transform:rotate(360deg)}}@media(max-width:800px){.ys-header,.ys-content{padding-left:16px;padding-right:16px}.ys-intent-form{flex-direction:column}.ys-intent-form button{min-height:36px;justify-content:center}.ys-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.ys-metric:nth-child(2){border-right:0}.ys-metric:nth-child(-n+2){border-bottom:1px solid var(--dsw-alias-border-l1)}.ys-action{align-items:flex-start;flex-direction:column}.ys-action-buttons{width:100%}.ys-action-buttons button{flex:1;justify-content:center}}`
-    const stateCss = `.ys-action-buttons button:disabled{opacity:.45;cursor:default}.ys-error-banner{max-width:1120px;box-sizing:border-box;margin:0 auto 16px;padding:10px 12px;border:1px solid var(--dsw-alias-state-error-primary);color:var(--dsw-alias-state-error-primary);font-size:13px}`
+    const stateCss = `.ys-shell{outline:0}.ys-action-buttons button:disabled{opacity:.45;cursor:default}.ys-error-banner{max-width:1120px;box-sizing:border-box;margin:0 auto 16px;padding:10px 12px;border:1px solid var(--dsw-alias-state-error-primary);color:var(--dsw-alias-state-error-primary);font-size:13px}`
     function apply(ctx) { ctx.effect(() => ctx.locale.register(NS, copy), 'dofe-yootun-sales: dictionaries'); ctx.effect(() => { window.addEventListener(OVERLAY_EVENT, closeOtherOverlay); return () => window.removeEventListener(OVERLAY_EVENT, closeOtherOverlay) }, 'dofe-yootun-sales: exclusive-overlay'); ctx.effect(() => { const style = document.createElement('style'); style.dataset.plugin = '@dofe/dsh-yootun-sales'; style.textContent = css + stateCss; document.head.appendChild(style); return () => style.remove() }, 'dofe-yootun-sales: styles'); const t = ctx.locale.bind(NS); ctx.slots.inject('sidebar.footer.action', () => ctx.slots.register({ name: 'sidebar.footer.action', id: 'dofe-yootun-sales', order: 30, inject: () => ({ t }) }, Button)); ctx.slots.inject('shell.overlay', () => ctx.slots.register({ name: 'shell.overlay', id: 'dofe-yootun-sales', order: 30, inject: () => ({ t }) }, Overlay)) }
     module.exports = { apply, inject: ['slots', 'locale'] }
 

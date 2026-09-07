@@ -43,6 +43,15 @@ test('blocks duplicate sales mutations and exposes localized action errors', asy
   assert.doesNotMatch(source, /Unable to load sales workspace/u)
 })
 
+test('moves focus into sales workspace and restores its opener', async () => {
+  const source = await readFile(new URL('src/client.js', root), 'utf8')
+  for (const token of ['document.activeElement', 'shellRef.current?.focus()', 'target.focus()', 'ref: shellRef', 'tabIndex: -1', 'closeOverlay()']) {
+    assert.match(source, new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'u'))
+  }
+  assert.match(source, /event\.key === 'Escape'\) closeOverlay\(\)/u)
+  assert.match(source, /onClick: closeOverlay/u)
+})
+
 test('uses only icons exported by the DSH primitives package', async () => {
   const source = await readFile(new URL('src/client.js', root), 'utf8')
   const imports = source.match(/const \{([^}]+)\} = require\('@deepseek-ai\/dsh-client-ui-primitives'\)/u)?.[1] || ''
