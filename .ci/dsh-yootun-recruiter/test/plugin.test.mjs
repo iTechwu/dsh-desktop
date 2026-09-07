@@ -24,6 +24,13 @@ test('keeps BOSS actions human-confirmed and does not accept raw PII', async () 
   assert.match(source, /value: stage,[\s\S]*'aria-label': t\('stage'\)/u)
 })
 
+test('blocks duplicate mutations and announces pending recruiter actions', async () => {
+  const source = await readFile(new URL('src/client.js', root), 'utf8')
+  for (const token of ["if (actionBusyRef.current) return undefined", 'actionBusyRef.current = true', "setPendingActionId(body.id || body.action)", 'disabled: busy', "'aria-busy': busy", "role: 'status'", "t('processing')", "role: 'alert'", "t('actionError')"]) {
+    assert.match(source, new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'u'))
+  }
+})
+
 test('declares the Models-authenticated data contract without exposing a client key', async () => {
   assert.deepEqual(recruiterDataContract, {
     auth: 'MODELS_API_KEY',
