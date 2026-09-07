@@ -38,7 +38,10 @@ window.__ModuleLoader__.load({
           signal: controller.signal,
           headers: { Accept: 'application/json' },
         })
-          .then(response => response.json())
+          .then(response => {
+            if (!response.ok) throw new Error('daily report request failed')
+            return response.json()
+          })
           .then(setData)
           .catch(error => { if (error?.name !== 'AbortError') setData({ activity: { status: 'unavailable', reason: 'request_failed' } }) })
           .finally(() => { if (!controller.signal.aborted) setLoading(false) })
