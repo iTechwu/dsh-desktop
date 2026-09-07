@@ -63,6 +63,7 @@ window.__ModuleLoader__.load({
         return () => { window.cancelAnimationFrame(frame); window.removeEventListener('keydown', onKey) }
       }, [visible])
       if (!visible) return null
+      const keepFocus = event => { if (event.key !== 'Tab') return; const controls = [...(shellRef.current?.querySelectorAll('button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])') || [])]; const first = controls[0]; const last = controls.at(-1); if (!first) return; if (event.shiftKey && (document.activeElement === first || document.activeElement === shellRef.current)) { event.preventDefault(); last.focus() } else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus() } }
       const current = data || { dashboard: {}, leads: [], actions: [] }
       const update = async body => {
         if (actionBusyRef.current) return
@@ -97,7 +98,7 @@ window.__ModuleLoader__.load({
         ? h('div', { role: 'alert', className: 'ys-empty ys-error' }, h('strong', null, t('loadError')), h('button', { type: 'button', onClick: () => setRevision(value => value + 1) }, t('retry')))
         : h(React.Fragment, null, error ? h('div', { role: 'alert', className: 'ys-error-banner' }, errorLabel, error === 'load' ? h('button', { type: 'button', onClick: () => setRevision(value => value + 1) }, t('retry')) : null) : null, intent, metrics, actions, leads)
       return h('div', { className: 'ys-overlay', role: 'dialog', 'aria-modal': true, 'aria-labelledby': 'ys-title' },
-        h('main', { className: 'ys-shell', ref: shellRef, tabIndex: -1, 'aria-labelledby': 'ys-title', 'aria-busy': loading || busy },
+        h('main', { className: 'ys-shell', ref: shellRef, tabIndex: -1, onKeyDown: keepFocus, 'aria-labelledby': 'ys-title', 'aria-busy': loading || busy },
           h('header', { className: 'ys-header' },
             h('div', null, h('h1', { id: 'ys-title' }, t('title')), h('p', null, t('subtitle'))),
             h('div', { className: 'ys-header-buttons' },

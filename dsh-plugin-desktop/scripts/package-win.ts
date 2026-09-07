@@ -159,9 +159,8 @@ export function packageWindowsArtifact(
     {
       ...cleanEnvironment,
       CSC_IDENTITY_AUTO_DISCOVERY: 'false',
-      // Traverse the installed tree directly: package-manager graph collection can
-      // stall on the large linked workspace and pnpm v11 drops deduplicated links.
-      DSH_ELECTRON_BUILDER_TRAVERSAL_ONLY: '1',
+      // Electron Builder's pnpm v11 collector drops deduplicated workspace links.
+      // Its npm collector only reads the installed tree and preserves the complete closure.
       npm_config_user_agent: 'npm',
       npm_execpath: '',
     },

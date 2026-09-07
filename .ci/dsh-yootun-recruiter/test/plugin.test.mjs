@@ -60,6 +60,7 @@ test('moves focus into recruiter and restores its opener', async () => {
   assert.match(source, /event\.key === 'Escape'\) closeOverlay\(\)/u)
   assert.match(source, /onClick: closeOverlay/u)
 })
+test('keeps keyboard focus inside recruiter workspace', async () => { const source = await readFile(new URL('src/client.js', root), 'utf8'); for (const token of ["event.key !== 'Tab'", 'querySelectorAll', 'event.shiftKey', 'last.focus()', 'first.focus()', 'onKeyDown: keepFocus']) assert.ok(source.includes(token), `missing focus trap token: ${token}`) })
 
 test('declares the Models-authenticated data contract without exposing a client key', async () => {
   assert.deepEqual(recruiterDataContract, {
