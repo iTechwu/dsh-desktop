@@ -17,7 +17,7 @@ vm.runInNewContext(source, {
 })
 
 const {
-  normalizeWorkspace, buildQuery, mergePage, reducer, actionLabel, surfaceLabel, effectOutcomeLabel, selectionIndex,
+  normalizeWorkspace, buildQuery, mergePage, initialState, reducer, actionLabel, surfaceLabel, effectOutcomeLabel, selectionIndex,
 } = module.exports.__test
 
 test('normalizes invalid workspace fields to honest defaults', () => {
@@ -44,6 +44,15 @@ test('moves audit selection from an empty state without skipping the first row',
   assert.equal(selectionIndex(3, 2, 'ArrowDown'), 2)
   assert.equal(selectionIndex(3, 0, 'ArrowUp'), 0)
   assert.equal(selectionIndex(0, -1, 'ArrowDown'), -1)
+})
+
+test('clears pagination state when the audit query changes', () => {
+  const state = { ...initialState(), visible: true, appending: true }
+  assert.equal(reducer(state, { type: 'filter', name: 'query', value: 'new' }).appending, false)
+  assert.equal(reducer(state, { type: 'scope', value: 'team' }).appending, false)
+  assert.equal(reducer(state, { type: 'team', value: 'team-1' }).appending, false)
+  assert.equal(reducer(state, { type: 'refresh' }).appending, false)
+  assert.equal(reducer(state, { type: 'close' }).appending, false)
 })
 
 test('keeps the event list visible until a user explicitly selects a detail', () => {

@@ -59,19 +59,19 @@ window.__ModuleLoader__.load({
     function initialState() { return { visible: false, loading: false, appending: false, retrying: false, error: '', workspace: null, selectedId: null, scope: 'self', teamId: '', teamQuery: '', teams: [], filters: { ...EMPTY_FILTERS }, revision: 0 } }
     function reducer(state, action) {
       if (action.type === 'open') return { ...state, visible: true }
-      if (action.type === 'close') return { ...state, visible: false, selectedId: null }
+      if (action.type === 'close') return { ...state, visible: false, appending: false, selectedId: null }
       if (action.type === 'loading') return { ...state, loading: !state.workspace, appending: action.append === true, error: '' }
       if (action.type === 'loaded') { const workspace = normalizeWorkspace(action.value); const events = action.append && state.workspace ? mergePage(state.workspace.events, workspace.events) : workspace.events; const merged = { ...workspace, events }; return { ...state, workspace: merged, loading: false, appending: false, error: '', selectedId: state.selectedId && events.some(item => item.id === state.selectedId) ? state.selectedId : null } }
       if (action.type === 'error') return { ...state, loading: false, appending: false, error: action.error || 'unavailable' }
-      if (action.type === 'filter') return { ...state, filters: { ...state.filters, [action.name]: action.value }, selectedId: null }
-      if (action.type === 'clear') return { ...state, filters: { ...EMPTY_FILTERS }, selectedId: null }
-      if (action.type === 'scope') return { ...state, scope: action.value, teamId: '', selectedId: null }
-      if (action.type === 'team') return { ...state, teamId: action.value, selectedId: null }
+      if (action.type === 'filter') return { ...state, filters: { ...state.filters, [action.name]: action.value }, appending: false, selectedId: null }
+      if (action.type === 'clear') return { ...state, filters: { ...EMPTY_FILTERS }, appending: false, selectedId: null }
+      if (action.type === 'scope') return { ...state, scope: action.value, teamId: '', appending: false, selectedId: null }
+      if (action.type === 'team') return { ...state, teamId: action.value, appending: false, selectedId: null }
       if (action.type === 'teamQuery') return { ...state, teamQuery: action.value }
       if (action.type === 'teams') return { ...state, teams: Array.isArray(action.value) ? action.value : [] }
       if (action.type === 'select') return { ...state, selectedId: action.id }
       if (action.type === 'retrying') return { ...state, retrying: action.value === true }
-      if (action.type === 'refresh') return { ...state, revision: state.revision + 1 }
+      if (action.type === 'refresh') return { ...state, appending: false, revision: state.revision + 1 }
       return state
     }
 
@@ -150,12 +150,16 @@ window.__ModuleLoader__.load({
       const shellRef = useRef(null)
       const retryBusyRef = useRef(false)
       const appendBusyRef = useRef(false)
+      const appendControllerRef = useRef(null)
       const queryRevisionRef = useRef(0)
       useEffect(() => { dispatch({ type: visible ? 'open' : 'close' }); if (visible) requestAnimationFrame(() => shellRef.current?.focus?.()) }, [visible])
       const workspace = state.workspace || EMPTY_WORKSPACE
       const waitingForTeam = state.scope === 'team' && workspace.scopes.isSuperAdmin && !state.teamId
       useEffect(() => {
         const requestRevision = ++queryRevisionRef.current
+        appendControllerRef.current?.abort()
+        appendControllerRef.current = null
+        appendBusyRef.current = false
         if (!state.visible || waitingForTeam) return undefined
         const controller = new AbortController()
         dispatch({ type: 'loading' })
@@ -173,15 +177,17 @@ window.__ModuleLoader__.load({
       const append = async () => {
         if (!workspace.page.nextCursor || appendBusyRef.current) return
         const requestRevision = queryRevisionRef.current
+        const controller = new AbortController()
         appendBusyRef.current = true
+        appendControllerRef.current = controller
         dispatch({ type: 'loading', append: true })
         try {
-          const value = await requestJson(buildQuery({ scope: state.scope, teamId: state.teamId, ...state.filters }, workspace.page.nextCursor))
+          const value = await requestJson(buildQuery({ scope: state.scope, teamId: state.teamId, ...state.filters }, workspace.page.nextCursor), controller.signal)
           if (queryRevisionRef.current === requestRevision) dispatch({ type: 'loaded', value, append: true })
         } catch (error) {
-          if (queryRevisionRef.current === requestRevision) dispatch({ type: 'error', error: error?.message })
+          if (error?.name !== 'AbortError' && queryRevisionRef.current === requestRevision) dispatch({ type: 'error', error: error?.message })
         } finally {
-          appendBusyRef.current = false
+          if (appendControllerRef.current === controller) { appendControllerRef.current = null; appendBusyRef.current = false }
         }
       }
       const key = event => { if (event.key === 'Escape') { if (state.selectedId) dispatch({ type: 'select', id: null }); else closeOverlay() } }
@@ -213,7 +219,7 @@ window.__ModuleLoader__.load({
       ctx.slots.inject('shell.overlay', () => ctx.slots.register({ name: 'shell.overlay', id: 'dofe-yootun-audit', order: 50, inject: () => ({ t }) }, Overlay))
     }
 
-    module.exports = { apply, inject: ['slots', 'locale'], __test: { normalizeWorkspace, buildQuery, mergePage, reducer, actionLabel, surfaceLabel, effectOutcomeLabel, selectionIndex } }
+    module.exports = { apply, inject: ['slots', 'locale'], __test: { normalizeWorkspace, buildQuery, mergePage, initialState, reducer, actionLabel, surfaceLabel, effectOutcomeLabel, selectionIndex } }
 
     exports.apply = apply; exports.inject = ['slots', 'locale']; return module.exports; },
 });
