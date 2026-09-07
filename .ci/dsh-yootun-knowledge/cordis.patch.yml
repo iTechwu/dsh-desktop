@@ -6,8 +6,7 @@
         transport: streamable-http
         serverName: knowledge
         url: 'https://ixicai.cn/mcp/knowledge'
-        headers:
-          Authorization: !!js ('Bearer ' + (process.env.MODELS_API_KEY || ''))
+        authorizationCredential: MODELS_API_KEY
         toolCallTimeoutMs: 90000
         failOnStartupError: false
         reconnect:

@@ -24,14 +24,28 @@ test('publishes a web management plugin and knowledge MCP bundle', async () => {
   const patch = await readFile(new URL('cordis.patch.yml', root), 'utf8')
   assert.match(patch, /serverName: knowledge/u)
   assert.match(patch, new RegExp(MCP_URL.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'u'))
+  assert.match(patch, /authorizationCredential:\s*MODELS_API_KEY/u)
+  assert.doesNotMatch(patch, /process\.env\.MODELS_API_KEY|Authorization:\s*!!js/u)
 })
 
 test('exposes governed knowledge, Memory, and graph tools without direct endpoints', async () => {
   const source = await readFile(new URL('index.js', root), 'utf8')
-  for (const token of ['knowledge_search', 'knowledge_recall', 'knowledge_remember', 'knowledge_confirm_memory', 'knowledge_forget', 'knowledge_graph', 'credential-store', 'youhuitun-company']) assert.match(source, new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'u'))
-  assert.doesNotMatch(source, /127\.0\.0\.1|172\.30\.30\.11|knowledge\.local\.dofe\.ai/u)
-  assert.deepEqual(Object.keys(ACTIONS), ['search', 'recall', 'remember', 'confirm_memory', 'forget', 'graph', 'ingest_file'])
-  assert.equal(COMPANY_TEMPLATES.length, 3)
+  for (const token of ['knowledge_search', 'knowledge_recall', 'knowledge_remember', 'knowledge_confirm_memory', 'knowledge_forget', 'knowledge_session_checkpoint', 'knowledge_promote', 'knowledge_loadout', 'knowledge_context_pack', 'knowledge_explain_trace', 'knowledge_entity_assertions', 'knowledge_relation_assertions', 'knowledge_entity_merges', 'knowledge_provenance_lineage', 'credential-store', 'tenant.all']) assert.match(source, new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'u'))
+  assert.doesNotMatch(source, /127\.0\.0\.1|172\.30\.30\.11|knowledge\.local\.dofe\.ai|knowledge\.dofe\.ai/u)
+  assert.match(source, /https:\/\/ixicai\.cn\/mcp\/knowledge/u)
+  assert.equal(Object.keys(ACTIONS).length, 18)
+  assert.deepEqual(new Set(Object.values(ACTIONS)), new Set([
+    'knowledge.search', 'knowledge.recall', 'knowledge.remember', 'knowledge.confirm_memory',
+    'knowledge.forget', 'knowledge.session_checkpoint', 'knowledge.promote', 'knowledge.capabilities',
+    'knowledge.overview', 'knowledge.graph', 'knowledge.ingest_file', 'knowledge.loadout',
+    'knowledge.context_pack', 'knowledge.explain_trace', 'knowledge.entity_assertions',
+    'knowledge.relation_assertions', 'knowledge.entity_merges', 'knowledge.provenance_lineage',
+  ]))
+  assert.deepEqual(COMPANY_TEMPLATES, [{
+    id: 'tenant.all', spaceKey: 'tenant.all', name: '优惠豚',
+    description: '优惠豚默认企业知识空间；公司、项目、会员与服务资料统一归档，所有优惠豚成员可读',
+    entities: ['优惠豚', '长沙优惠豚汽车销售服务有限公司', '汽车科技文创园', '会员与5S服务'],
+  }])
 })
 
 test('exposes explicit memory confirmation through the authenticated knowledge MCP route', async () => {
@@ -58,7 +72,7 @@ test('exposes explicit memory confirmation through the authenticated knowledge M
 
 test('localizes knowledge source state and isolates its overlay', async () => {
   const source = await readFile(new URL('src/client.js', root), 'utf8')
-  for (const token of ['yk-source', 'credential-store', 'stateCss', 'overviewSource', 'pendingImports', 'yk-graph-canvas', 'yk-memory-row', 'style.textContent = css + stateCss', '.yk-overlay{position:fixed', '.yk-shell{display:grid', '.yk-content{min-height:0']) assert.match(source, new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'u'))
+  for (const token of ['yk-source', 'credential-store', 'stateCss', 'overviewSource', 'pendingImports', 'yk-graph-canvas', 'yk-memory-row', '"aria-label": t("recallPlaceholder")', '"aria-label": t("graphPlaceholder")', 'style.textContent = css + stateCss', '.yk-overlay{position:fixed', '.yk-shell{display:grid', '.yk-content{min-height:0']) assert.match(source, new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'u'))
 })
 
 test('generated client bundle is valid JavaScript and has no unresolved style token', async () => {
@@ -83,6 +97,12 @@ test('normalizes real MCP recall envelopes and graph layout states', async () =>
   assert.equal(memories[0].id, 'memory-1')
   assert.equal(memories[0].status, 'CONFIRMED')
   assert.equal(Array.isArray(client.toolData({ content: [{ type: 'text', text: '{"list":[]}' }] }).list), true)
+  const t = key => ({ authRequired: 'auth', permissionDenied: 'permission', requestTimeout: 'timeout', serviceUnavailable: 'service', actionFailed: 'generic' })[key]
+  assert.equal(client.actionErrorLabel({ code: 'knowledge_mcp_http_401' }, t), 'auth')
+  assert.equal(client.actionErrorLabel({ code: 'knowledge_mcp_http_403' }, t), 'permission')
+  assert.equal(client.actionErrorLabel({ code: 'knowledge_mcp_timeout' }, t), 'timeout')
+  assert.equal(client.actionErrorLabel({ code: 'knowledge_mcp_request_failed' }, t), 'service')
+  assert.equal(client.actionErrorLabel({ code: 'unexpected_backend_detail' }, t), 'generic')
   const nodes = Array.from({ length: 12 }, (_, index) => ({ id: `memory-${index}`, type: 'MEMORY' }))
   const layout = client.graphLayout(nodes)
   assert.ok(layout.canvasHeight > 700)
@@ -172,7 +192,7 @@ test('audits knowledge writes from Agent and UI while excluding reads and input 
   assert.equal(events.length, 2)
   assert.deepEqual(events[0], {
     actionCode: 'knowledge.memory.remembered', category: 'create',
-    source: { pluginId: '@dofe/dsh-yootun-knowledge', pluginVersion: '0.1.0', surface: 'agent_tool' },
+    source: { pluginId: '@dofe/dsh-yootun-knowledge', pluginVersion: '0.2.0', surface: 'agent_tool' },
     target: { type: 'memory', id: 'memory-7' }, outcome: 'succeeded',
     changes: [{ field: 'status', after: 'candidate' }], effects: [],
   })
@@ -204,7 +224,7 @@ test('marks an MCP result envelope error as a failed knowledge write', async () 
   assert.doesNotMatch(JSON.stringify(events), /private failure detail|不得进入审计/u)
 })
 
-test('GET overview reads the public knowledge API envelope next to local route facts', async () => {
+test('GET overview reads overview and capabilities through the public MCP contract', async () => {
   let route
   const requests = []
   apply({
@@ -215,19 +235,13 @@ test('GET overview reads the public knowledge API envelope next to local route f
   }, {
     fetch: async (url, init) => {
       requests.push({ url: String(url), init })
-      if (String(url) === 'https://ixicai.cn/api/yootun/v1/knowledge/overview') {
-        return new Response(JSON.stringify({
-          data: {
-            spaces: { total: 4 },
-            document_count: 58,
-            memories: 121,
-            pending_imports: 2,
-            recent_documents: [{ id: 'd-1', title: '会员政策', updated_at: '2026-09-01T00:00:00Z' }],
-          },
-          meta: { source: 'knowledge', requestId: 'r-k', generatedAt: '2026-09-01T00:00:00.000Z' },
-        }), { status: 200, headers: { 'content-type': 'application/json' } })
-      }
-      throw new Error(`unexpected URL ${String(url)}`)
+      assert.equal(String(url), MCP_URL)
+      const rpc = JSON.parse(init.body)
+      const data = rpc.params.name === 'knowledge.overview' ? {
+        spaces: { total: 4 }, document_count: 58, memories: 121, pending_imports: 2,
+        recent_documents: [{ id: 'd-1', title: '会员政策', updated_at: '2026-09-01T00:00:00Z' }],
+      } : { contractVersion: '2026-09-05', tools: Object.values(ACTIONS) }
+      return new Response(JSON.stringify({ jsonrpc: '2.0', result: { structuredContent: data } }), { status: 200 })
     },
   })
 
@@ -235,16 +249,16 @@ test('GET overview reads the public knowledge API envelope next to local route f
   assert.equal(response.status, 200)
   assert.equal(response.body.status, 'ready')
   assert.equal(response.body.mcp.auth, 'credential-store')
-  assert.equal(response.body.templates.length, 3)
-  assert.equal(response.body.overview.status, 'ready')
+  assert.equal(response.body.templates.length, 1)
+  assert.equal(response.body.contract.status, 'ready')
   assert.deepEqual(response.body.overview.data, {
     spaces: 4, documents: 58, memories: 121, pendingImports: 2,
     recentDocuments: [{ id: 'd-1', title: '会员政策', content: '', status: '', type: '', scope: '', sourceType: '', updatedAt: '2026-09-01T00:00:00Z' }],
     recentMemories: [], ingestion: { queued: null, processing: null, failed: null }, health: {},
   })
-  const overviewRequest = requests[0]
-  assert.equal(overviewRequest.url, 'https://ixicai.cn/api/yootun/v1/knowledge/overview')
-  assert.equal(overviewRequest.init.headers.Authorization, 'Bearer test-key')
+  assert.equal(requests.length, 2)
+  assert.ok(requests.every(request => request.url === MCP_URL))
+  assert.ok(requests.every(request => request.init.headers.Authorization === 'Bearer test-key'))
 })
 
 test('GET overview failure stays isolated from route facts and templates', async () => {
@@ -256,7 +270,7 @@ test('GET overview failure stays isolated from route facts and templates', async
     webServer: { register(value) { route = value; return () => {} } },
   }, {
     fetch: async url => {
-      if (String(url).includes('/api/yootun/v1/knowledge/')) return new Response('upstream failed', { status: 503 })
+      if (String(url) === MCP_URL) return new Response('upstream failed', { status: 503 })
       throw new Error(`unexpected URL ${String(url)}`)
     },
   })
@@ -265,10 +279,11 @@ test('GET overview failure stays isolated from route facts and templates', async
   assert.equal(response.status, 200)
   assert.equal(response.body.status, 'ready')
   assert.equal(response.body.mcp.route, MCP_URL)
-  assert.equal(response.body.templates.length, 3)
+  assert.equal(response.body.templates.length, 1)
+  assert.equal(response.body.contract.status, 'error')
+  assert.equal(response.body.contract.reason, 'knowledge_mcp_http_503')
   assert.equal(response.body.overview.status, 'error')
-  assert.equal(response.body.overview.reason, 'knowledge_http_503')
-  assert.equal(response.body.overview.data, undefined)
+  assert.equal(response.body.overview.reason, 'knowledge_mcp_http_503')
 })
 
 async function invoke(route, method, body) {

@@ -8,6 +8,7 @@ window.__ModuleLoader__.load({
       createElement: h,
       useEffect,
       useMemo,
+      useRef,
       useState,
       useSyncExternalStore,
     } = React;
@@ -81,6 +82,10 @@ window.__ModuleLoader__.load({
         graphLoading: "图谱加载中…",
         graphEmpty: "选择一个业务实体查看授权关系",
         graphNoResult: "该实体暂无可见关系",
+        authRequired: "请先配置 Models 凭据后重试",
+        permissionDenied: "当前租户无权访问此知识内容",
+        serviceUnavailable: "知识服务暂不可用，请稍后重试",
+        requestTimeout: "请求超时，请稍后重试",
         nodes: "节点",
         edges: "关系",
         nodeTypes: "节点类型",
@@ -156,6 +161,10 @@ window.__ModuleLoader__.load({
         graphLoading: "Loading graph…",
         graphEmpty: "Choose a business entity to view authorized relations",
         graphNoResult: "No visible relations for this entity",
+        authRequired: "Configure the Models credential and try again",
+        permissionDenied: "This tenant is not allowed to access this knowledge",
+        serviceUnavailable: "Knowledge service is temporarily unavailable",
+        requestTimeout: "The request timed out. Try again shortly.",
         nodes: "Nodes",
         edges: "Edges",
         nodeTypes: "Node types",
@@ -177,15 +186,21 @@ window.__ModuleLoader__.load({
       },
     };
     let opened = false;
+    let lastTrigger = null;
     const listeners = new Set();
     const emit = () => listeners.forEach((listener) => listener());
     const setOpened = (value) => {
       opened = value;
       emit();
     };
-    const openOverlay = () => {
+    const openOverlay = (event) => {
+      lastTrigger = event?.currentTarget || document.activeElement;
       window.dispatchEvent(new CustomEvent(OVERLAY_EVENT, { detail: { id: OVERLAY_ID } }));
       setOpened(true);
+    };
+    const closeOverlay = () => {
+      setOpened(false);
+      requestAnimationFrame(() => lastTrigger?.focus?.());
     };
     const closeOtherOverlay = (event) => {
       if (event.detail?.id !== OVERLAY_ID) setOpened(false);
@@ -212,10 +227,21 @@ window.__ModuleLoader__.load({
         body: JSON.stringify(body),
       });
       const value = await response.json().catch(() => ({}));
-      if (!response.ok || value?.ok === false || value?.status === "error")
-        throw new Error(value?.error || "knowledge mutation failed");
+      if (!response.ok || value?.ok === false || value?.status === "error") {
+        const error = new Error("knowledge mutation failed");
+        error.code = typeof value?.error === "string" ? value.error : `knowledge_mcp_http_${response.status}`;
+        throw error;
+      }
       return value;
     }
+    const actionErrorLabel = (error, t) => {
+      const code = String(error?.code || error?.message || "").toLowerCase();
+      if (code.includes("model_api_key_unavailable") || code.includes("401") || code.includes("auth")) return t("authRequired");
+      if (code.includes("403") || code.includes("forbidden") || code.includes("permission")) return t("permissionDenied");
+      if (code.includes("timeout")) return t("requestTimeout");
+      if (code.includes("request_failed") || code.includes("knowledge_mcp_http_5") || code.includes("knowledge service")) return t("serviceUnavailable");
+      return t("actionFailed");
+    };
     const count = (value) =>
       value !== null && value !== "" && Number.isFinite(Number(value))
         ? new Intl.NumberFormat().format(Number(value))
@@ -575,6 +601,7 @@ window.__ModuleLoader__.load({
               value: query,
               maxLength: 500,
               placeholder: t("recallPlaceholder"),
+              "aria-label": t("recallPlaceholder"),
               onChange: (event) => setQuery(event.target.value),
               onKeyDown: (event) => {
                 if (event.key === "Enter") onRecall();
@@ -873,6 +900,7 @@ window.__ModuleLoader__.load({
               value: query,
               maxLength: 500,
               placeholder: t("graphPlaceholder"),
+              "aria-label": t("graphPlaceholder"),
               onChange: (event) => setQuery(event.target.value),
               onKeyDown: (event) => {
                 if (event.key === "Enter") onRun();
@@ -914,7 +942,7 @@ window.__ModuleLoader__.load({
               "div",
               { className: "yk-inline-error", role: "alert" },
               h(IconWarningOutline16, { size: 15 }),
-              t("actionFailed"),
+              actionErrorLabel(graphError, t),
             )
           : graph
             ? h(
@@ -936,6 +964,7 @@ window.__ModuleLoader__.load({
     }
     function Overlay({ t }) {
       const visible = useSyncExternalStore(subscribe, snapshot, snapshot);
+      const shellRef = useRef(null);
       const [tab, setTab] = useState("overview");
       const [revision, setRevision] = useState(0);
       const [data, setData] = useState(null);
@@ -973,10 +1002,13 @@ window.__ModuleLoader__.load({
       useEffect(() => {
         if (!visible) return undefined;
         const key = (event) => {
-          if (event.key === "Escape") setOpened(false);
+          if (event.key === "Escape") closeOverlay();
         };
         window.addEventListener("keydown", key);
         return () => window.removeEventListener("keydown", key);
+      }, [visible]);
+      useEffect(() => {
+        if (visible) requestAnimationFrame(() => shellRef.current?.focus?.());
       }, [visible]);
       if (!visible) return null;
       const runGraph = async (value) => {
@@ -991,8 +1023,8 @@ window.__ModuleLoader__.load({
             input: { query, limit: 200 },
           });
           setGraph(normalizeGraph(response.result || response));
-        } catch {
-          setGraphError(true);
+        } catch (cause) {
+          setGraphError(cause);
         } finally {
           setGraphBusy(false);
         }
@@ -1008,9 +1040,9 @@ window.__ModuleLoader__.load({
             input: { query, topK: 8, includeDocuments: false },
           });
           setRecallResults(recallItems(response.result || response));
-        } catch {
+        } catch (cause) {
           setRecallResults([]);
-          setActionError(true);
+          setActionError(cause);
         } finally {
           setRecallBusy(false);
         }
@@ -1020,8 +1052,8 @@ window.__ModuleLoader__.load({
           setData(await load());
           setRecallResults([]);
           setActionError(false);
-        } catch {
-          setActionError(true);
+        } catch (cause) {
+          setActionError(cause);
         }
       };
       const confirmMemory = async (item) => {
@@ -1032,8 +1064,8 @@ window.__ModuleLoader__.load({
             input: { memoryId: item.id, reason: "user-confirmed" },
           });
           await reload();
-        } catch {
-          setActionError(true);
+        } catch (cause) {
+          setActionError(cause);
         }
       };
       const forgetMemory = async (item) => {
@@ -1044,8 +1076,8 @@ window.__ModuleLoader__.load({
             input: { memoryId: item.id, reason: "user-requested-forget" },
           });
           await reload();
-        } catch {
-          setActionError(true);
+        } catch (cause) {
+          setActionError(cause);
         }
       };
       const current = data || {
@@ -1139,7 +1171,7 @@ window.__ModuleLoader__.load({
             "div",
             { className: "yk-inline-error", role: "alert" },
             h(IconWarningOutline16, { size: 15 }),
-            t("actionFailed"),
+            actionErrorLabel(actionError, t),
           ),
           body,
         );
@@ -1148,7 +1180,7 @@ window.__ModuleLoader__.load({
         { className: "yk-overlay", role: "dialog", "aria-modal": true, "aria-labelledby": "yk-title" },
         h(
           "main",
-          { className: "yk-shell", "aria-labelledby": "yk-title" },
+          { className: "yk-shell", "aria-labelledby": "yk-title", ref: shellRef, tabIndex: -1 },
           h(
             "header",
             { className: "yk-header" },
@@ -1186,7 +1218,7 @@ window.__ModuleLoader__.load({
                     type: "button",
                     className: "yk-icon-button",
                     "aria-label": t("close"),
-                    onClick: () => setOpened(false),
+                    onClick: closeOverlay,
                   },
                   h(IconCloseOutline16, { size: 16 }),
                 ),
@@ -1285,6 +1317,7 @@ window.__ModuleLoader__.load({
       apply,
       inject: ["slots", "locale"],
       __test: {
+        actionErrorLabel,
         graphLayout,
         graphTypeCounts,
         normalizeGraph,

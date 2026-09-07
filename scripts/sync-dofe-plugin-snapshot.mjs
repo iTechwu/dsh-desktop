@@ -20,12 +20,20 @@ import { join, resolve } from 'node:path'
 
 const root = resolve(import.meta.dirname, '..')
 const write = process.argv.includes('--write')
+const specialSnapshots = new Map([
+  ['dsh-knowledge-capture', 'scripts/ci-snapshots/dsh-knowledge-capture'],
+])
+
+function snapshotPath(name) {
+  return resolve(root, specialSnapshots.get(name) ?? `.ci/${name}`)
+}
 
 /** Snapshot is a plain copy; verify everything that exists in the snapshot. */
 async function collect(dir, base = dir) {
   const files = []
   if (!existsSync(dir)) return files
   for (const entry of await readdir(dir, { withFileTypes: true })) {
+    if (entry.name === 'node_modules') continue
     const full = join(base, entry.name)
     if (entry.isDirectory()) files.push(...await collect(join(dir, entry.name), full))
     else files.push(full)
@@ -35,7 +43,7 @@ async function collect(dir, base = dir) {
 
 async function diffSnapshot(name) {
   const source = resolve(root, `../docker-helm.dofe.ai/plugins/${name}`)
-  const snapshot = resolve(root, `.ci/${name}`)
+  const snapshot = snapshotPath(name)
   if (!existsSync(join(source, 'package.json'))) {
     return [`source package.json missing at ${source}`]
   }
@@ -74,6 +82,7 @@ async function diffSnapshot(name) {
 const snapshotPlugins = (await readdir(resolve(root, '.ci'), { withFileTypes: true }))
   .filter(entry => entry.isDirectory())
   .map(entry => entry.name)
+  .concat([...specialSnapshots.keys()])
 // Optional positional filter: sync/verify only the named plugins.
 const requested = process.argv.slice(2).filter(arg => !arg.startsWith('--'))
 if (requested.some(name => !snapshotPlugins.includes(name))) {
@@ -93,7 +102,7 @@ for (const name of targets) {
   for (const problem of problems) console.error(`dofe-snapshot: ${name}: ${problem}`)
   if (write) {
     const source = resolve(root, `../docker-helm.dofe.ai/plugins/${name}`)
-    const snapshot = resolve(root, `.ci/${name}`)
+    const snapshot = snapshotPath(name)
     await rm(snapshot, { recursive: true, force: true })
     await mkdir(snapshot, { recursive: true })
     await cp(source, snapshot, { recursive: true })

@@ -1,7 +1,5 @@
-# Register the yootun-agent Knowledge capture host into the DSH bundle.
-# Wires createYootunAgentAdapter() (from @repo/capture-sdk, vendored via file:)
-# as a Cordis apply module that emits the six lifecycle events and flushes
-# the bounded spool on shutdown.
+# Register the runtime bridge. It derives identity from MODELS_API_KEY at the
+# public MCP gateway, captures DSH session events, and injects ContextPack data.
 - insert:
     - id: yootun-agent-knowledge-capture
       name: '@dofe/dsh-knowledge-capture'

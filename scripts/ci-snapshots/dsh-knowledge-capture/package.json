@@ -1,7 +1,7 @@
 {
   "name": "@dofe/dsh-knowledge-capture",
-  "version": "0.1.0",
-  "description": "Yootun-Agent Knowledge capture host: wraps @repo/capture-sdk as a Cordis apply module",
+  "version": "0.2.0",
+  "description": "Yootun-Agent runtime Knowledge bridge over the authenticated public MCP gateway",
   "type": "module",
   "main": "./index.js",
   "exports": {
@@ -18,9 +18,6 @@
     "build": "node scripts/build.mjs",
     "test": "node --test test/plugin.test.mjs",
     "check": "npm run build && npm test"
-  },
-  "dependencies": {
-    "@repo/capture-sdk": "file:../../knowledge.dofe.ai/packages/capture-sdk"
   },
   "license": "MIT",
   "private": true

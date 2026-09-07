@@ -1,7 +1,5 @@
 const MCP_URL = 'https://ixicai.cn/mcp/knowledge'
-const KNOWLEDGE_OVERVIEW_URL = 'https://ixicai.cn/api/yootun/v1/knowledge/overview'
 const REQUEST_TIMEOUT_MS = 30000
-const OVERVIEW_TIMEOUT_MS = 20000
 
 const TOOL_OUTPUT = {
   schema: {
@@ -22,10 +20,22 @@ export const inject = ['tools', 'systemPrompt', 'credentials', 'webServer', 'yoo
 const TOOL_DEFINITIONS = {
   knowledge_search: ['knowledge.search', 'Search ACL-scoped enterprise documents with citations.'],
   knowledge_recall: ['knowledge.recall', 'Recall ACL-scoped Memory and evidence.'],
-  knowledge_remember: ['knowledge.remember', 'Create a Memory candidate or confirmed Memory.'],
+  knowledge_remember: ['knowledge.remember', 'Create a Memory candidate in a server-resolved role space.'],
   knowledge_confirm_memory: ['knowledge.confirm_memory', 'Confirm a Memory candidate after explicit user approval.'],
   knowledge_forget: ['knowledge.forget', 'Forget a Memory by id.'],
+  knowledge_session_checkpoint: ['knowledge.session_checkpoint', 'Checkpoint a bounded runtime session segment and optional Memory candidates.'],
+  knowledge_promote: ['knowledge.promote', 'Propose promotion of confirmed Memory into immutable Knowledge.'],
+  knowledge_capabilities: ['knowledge.capabilities', 'Read the current Knowledge MCP capability manifest.'],
+  knowledge_overview: ['knowledge.overview', 'Read ACL-scoped Knowledge and Memory aggregates.'],
   knowledge_graph: ['knowledge.graph', 'Read an ACL-scoped knowledge graph around an entity.'],
+  knowledge_ingest_file: ['knowledge.ingest_file', 'Ingest an external file into a server-resolved Knowledge space.'],
+  knowledge_loadout: ['knowledge.loadout', 'Read the verified runtime Loadout and its immutable digest.'],
+  knowledge_context_pack: ['knowledge.context_pack', 'Assemble bounded stable and dynamic context for the current runtime session.'],
+  knowledge_explain_trace: ['knowledge.explain_trace', 'Explain the evidence and ranking path for a previous retrieval trace.'],
+  knowledge_entity_assertions: ['knowledge.entity_assertions', 'Read ACL-scoped canonical entity assertions.'],
+  knowledge_relation_assertions: ['knowledge.relation_assertions', 'Read ACL-scoped canonical relation assertions.'],
+  knowledge_entity_merges: ['knowledge.entity_merges', 'Read entity merge decisions and provenance.'],
+  knowledge_provenance_lineage: ['knowledge.provenance_lineage', 'Read bounded provenance lineage for an entity.'],
 }
 
 export function apply(ctx, overrides = {}) {
@@ -56,7 +66,7 @@ export function apply(ctx, overrides = {}) {
   disposers.push(ctx.systemPrompt.section({
     name: 'yootun-knowledge:governance',
     order: 9,
-    text: '企业知识、Memory 与知识图谱统一使用 knowledge.dofe.ai 的 MCP 能力，通过 mcp__knowledge__* 工具或 knowledge_search/knowledge_recall 等封装工具访问。所有查询遵循租户与空间 ACL，并保留文档、版本或 Session 引用；没有引用不得把模型推断写成企业事实。remember 默认创建候选，只有用户明确确认才进入 confirmed；forget 立即执行。图谱只作为有证据的关联视图，不能绕过文档权限。涉及优惠豚汽车科技文创园时，优先使用已授权的“优惠豚企业空间”与业务模板。',
+    text: '企业 Knowledge、Memory 与知识图谱统一通过 https://ixicai.cn/mcp/knowledge 的公开 MCP 网关访问。运行时先用 knowledge_loadout 获取服务端解析的空间绑定，按需用 knowledge_context_pack 注入稳定规则、已确认 Memory 与会话交接；不要在客户端保存或猜测 space UUID。优惠豚公司资料统一属于 tenant.all 对应的“优惠豚”默认空间，所有优惠豚成员可读；个人资料使用 user.personal，会话与工作记忆使用 user.agent_runtime，团队资料只使用服务端授权的 team.<groupId>。所有事实必须保留文档、版本、Memory 或 Session 引用；remember 只创建候选，明确确认后才可进入 confirmed；forget 立即执行。',
   }))
 
   if (ctx.webServer) {
@@ -66,12 +76,17 @@ export function apply(ctx, overrides = {}) {
       async handler(req, res) {
         const credential = await resolveModelsKey(ctx)
         if (req.method === 'GET') {
+          const contract = await loadKnowledgeContract(fetchImpl, credential)
           sendJson(res, 200, {
             status: credential ? 'ready' : 'unavailable',
             mcp: { route: MCP_URL, auth: credential ? 'credential-store' : 'missing' },
             capabilities: Object.keys(TOOL_DEFINITIONS),
             templates: COMPANY_TEMPLATES,
-            overview: await loadKnowledgeOverview(fetchImpl, credential),
+            contract,
+            // Preserve the 0.1 management-page envelope while sourcing it from MCP.
+            overview: contract.overview
+              ? { status: contract.status, data: contract.overview }
+              : { status: contract.status, reason: contract.reason || contract.errors?.[0] || 'knowledge_contract_unavailable' },
           })
           return
         }
@@ -105,38 +120,49 @@ const ACTIONS = {
   remember: 'knowledge.remember',
   confirm_memory: 'knowledge.confirm_memory',
   forget: 'knowledge.forget',
+  session_checkpoint: 'knowledge.session_checkpoint',
+  promote: 'knowledge.promote',
+  capabilities: 'knowledge.capabilities',
+  overview: 'knowledge.overview',
   graph: 'knowledge.graph',
   ingest_file: 'knowledge.ingest_file',
+  loadout: 'knowledge.loadout',
+  context_pack: 'knowledge.context_pack',
+  explain_trace: 'knowledge.explain_trace',
+  entity_assertions: 'knowledge.entity_assertions',
+  relation_assertions: 'knowledge.relation_assertions',
+  entity_merges: 'knowledge.entity_merges',
+  provenance_lineage: 'knowledge.provenance_lineage',
 }
 
 const COMPANY_TEMPLATES = [
-  { id: 'youhuitun-company', name: '优惠豚企业空间', description: '公司介绍、政策依据、合作伙伴、品牌与项目事实', entities: ['长沙优惠豚汽车销售服务有限公司', '浙江山子有谦汽车新零售有限公司', '传化集团', '山子高科', '酷旅传媒'] },
-  { id: 'youhuitun-park', name: '汽车科技文创园项目', description: '7500m²园区、首发经济、改装、科技市集与青年创业场景', entities: ['红星BOX1', '智能驾驶', '车载机器人', '科技市集', '青年创业'] },
-  { id: 'youhuitun-service', name: '会员与5S服务', description: '会员制用车专家、透明一口价和5S服务标准', entities: ['微笑', '专业', '迅速', '诚恳', '灵巧'] },
+  { id: 'tenant.all', spaceKey: 'tenant.all', name: '优惠豚', description: '优惠豚默认企业知识空间；公司、项目、会员与服务资料统一归档，所有优惠豚成员可读', entities: ['优惠豚', '长沙优惠豚汽车销售服务有限公司', '汽车科技文创园', '会员与5S服务'] },
 ]
 
-async function loadKnowledgeOverview(fetchImpl, apiKey) {
+async function loadKnowledgeContract(fetchImpl, apiKey) {
   if (!apiKey) return { status: 'unavailable', reason: 'model_api_key_unavailable' }
-  const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), OVERVIEW_TIMEOUT_MS)
-  try {
-    const response = await fetchImpl(KNOWLEDGE_OVERVIEW_URL, {
-      signal: controller.signal,
-      headers: { Authorization: `Bearer ${apiKey}`, Accept: 'application/json' },
-    })
-    if (!response.ok) {
-      if (response.status === 401 || response.status === 403) return { status: 'unavailable', reason: 'knowledge_auth_unavailable' }
-      return { status: 'error', reason: `knowledge_http_${response.status}` }
-    }
-    const payload = await response.json()
-    const data = payload?.data
-    if (!data || typeof data !== 'object') return { status: 'error', reason: 'knowledge_invalid_response' }
-    return { status: 'ready', data: normalizeOverview(data) }
-  } catch (error) {
-    return { status: 'error', reason: error?.name === 'AbortError' ? 'knowledge_overview_timeout' : 'knowledge_overview_request_failed' }
-  } finally {
-    clearTimeout(timer)
+  const [overview, capabilities] = await Promise.all([
+    callMcp(fetchImpl, apiKey, 'knowledge.overview', {}),
+    callMcp(fetchImpl, apiKey, 'knowledge.capabilities', {}),
+  ])
+  if (!overview.ok && !capabilities.ok) {
+    return { status: 'error', reason: overview.error || capabilities.error || 'knowledge_contract_unavailable' }
   }
+  return {
+    status: overview.ok && capabilities.ok ? 'ready' : 'degraded',
+    overview: overview.ok ? normalizeOverview(mcpData(overview.result)) : null,
+    capabilities: capabilities.ok ? mcpData(capabilities.result) : null,
+    errors: [overview.ok ? null : overview.error, capabilities.ok ? null : capabilities.error].filter(Boolean),
+  }
+}
+
+function mcpData(result) {
+  if (result?.structuredContent && typeof result.structuredContent === 'object') return result.structuredContent
+  const text = result?.content?.find?.(item => item?.type === 'text')?.text
+  if (typeof text === 'string') {
+    try { return JSON.parse(text) } catch {}
+  }
+  return result && typeof result === 'object' ? result : {}
 }
 
 function normalizeOverview(data) {
@@ -233,6 +259,8 @@ const KNOWLEDGE_AUDIT_ACTIONS = {
   'knowledge.confirm_memory': ['knowledge.memory.confirmed', 'update', 'memory', 'confirmed'],
   'knowledge.forget': ['knowledge.memory.forgotten', 'delete', 'memory', 'forgotten'],
   'knowledge.ingest_file': ['knowledge.file.imported', 'create', 'knowledge_document', 'accepted'],
+  'knowledge.session_checkpoint': ['knowledge.session.checkpointed', 'create', 'knowledge_session', 'accepted'],
+  'knowledge.promote': ['knowledge.promotion.proposed', 'create', 'knowledge_promotion', 'proposed'],
 }
 
 async function executeKnowledge(ctx, fetchImpl, credential, tool, input, surface, signal) {
@@ -241,14 +269,16 @@ async function executeKnowledge(ctx, fetchImpl, credential, tool, input, surface
   if (!definition) return result
   const [actionCode, category, targetType, defaultStatus] = definition
   const data = result?.result?.structuredContent || result?.result || {}
-  const fallbackId = targetType === 'knowledge_document' ? input?.documentId : input?.memoryId
-  const rawId = data.id ?? data.memoryId ?? data.documentId ?? fallbackId ?? 'unresolved'
+  const fallbackId = targetType === 'knowledge_document' ? input?.documentId
+    : targetType === 'knowledge_session' ? input?.externalSessionId
+      : input?.memoryId
+  const rawId = data.id ?? data.memoryId ?? data.documentId ?? data.proposalId ?? fallbackId ?? 'unresolved'
   const id = String(rawId).slice(0, 160) || 'unresolved'
   const rawStatus = typeof data.status === 'string' ? data.status.toLowerCase() : defaultStatus
   const errorCode = typeof result?.error === 'string' && /^[a-z0-9_:-]{1,80}$/u.test(result.error) ? result.error : 'knowledge_write_failed'
   await recordKnowledgeAudit(ctx, {
     actionCode, category,
-    source: { pluginId: '@dofe/dsh-yootun-knowledge', pluginVersion: '0.1.0', surface },
+    source: { pluginId: '@dofe/dsh-yootun-knowledge', pluginVersion: '0.2.0', surface },
     target: { type: targetType, id },
     outcome: result?.ok ? 'succeeded' : 'failed',
     changes: [{ field: 'status', after: result?.ok ? rawStatus.slice(0, 160) : 'failed' }], effects: [],

@@ -6,11 +6,11 @@ import { DOFE_MCP_BASE_URL, MODELS_API_KEY } from '../src/dofe-managed.ts'
 const managedSource = readFileSync(new URL('../src/dofe-managed.ts', import.meta.url), 'utf8')
 const desktopPatch = readFileSync(new URL('../cordis.patch.yml', import.meta.url), 'utf8')
 const captureSource = readFileSync(
-  new URL('../../../docker-helm.dofe.ai/plugins/dsh-knowledge-capture/index.js', import.meta.url),
+  new URL('../../scripts/ci-snapshots/dsh-knowledge-capture/index.js', import.meta.url),
   'utf8',
 )
 const knowledgeSource = readFileSync(
-  new URL('../../../docker-helm.dofe.ai/plugins/dsh-yootun-knowledge/index.js', import.meta.url),
+  new URL('../../.ci/dsh-yootun-knowledge/index.js', import.meta.url),
   'utf8',
 )
 
