@@ -184,8 +184,9 @@ describe('packaged desktop runtime verification', () => {
 
   it('tracks every generated DSH CLI chunk without pinning one release hash', () => {
     expect(REQUIRED_DSH_CLI_RUNTIME_ENTRIES).toContain('node_modules/@deepseek-ai/dsh/lib/bin.js')
-    expect(REQUIRED_DSH_CLI_RUNTIME_ENTRIES).toContain('node_modules/@deepseek-ai/dsh/lib/plugin-9WYrweD3.js')
-    expect(REQUIRED_DSH_CLI_RUNTIME_ENTRIES).not.toContain('node_modules/@deepseek-ai/dsh/lib/plugin-9h8shc4d.js')
+    expect(REQUIRED_DSH_CLI_RUNTIME_ENTRIES).toEqual(expect.arrayContaining([
+      expect.stringMatching(/^node_modules\/@deepseek-ai\/dsh\/lib\/plugin-[\w-]+\.js$/u),
+    ]))
   })
 
   it('keeps stable root files explicit without hand-listing desktop lib output', () => {
