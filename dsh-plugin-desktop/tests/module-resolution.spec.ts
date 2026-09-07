@@ -330,7 +330,7 @@ describe('installProfilePackageResolver', () => {
     )).toBe('ordinary:@deepseek-ai/dsh-client-modules/package.json')
     expect(resolveFilename(
       '@deepseek-ai/dsh-client-modules/client.js',
-      { filename: '/tmp/dsh-profile/package.json' },
+      { filename: join(tmpdir(), 'unrelated-profile', 'package.json') },
       false,
     )).toBe('ordinary:@deepseek-ai/dsh-client-modules/client.js')
 

@@ -1,48 +1,21 @@
-import { spawnSync } from 'node:child_process'
 import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterEach, describe, expect, it } from 'vitest'
 
 const require = createRequire(import.meta.url)
 const asarCli = require.resolve('@electron/asar/bin/asar.js')
 
-const APP_BUILDER_LIB_VERSION = '26.15.7'
 const NSIS_EXTRACT_TEMPLATE_PATH =
   'templates/nsis/include/extractAppPackage.nsh'
 
-function readOriginalExtractAppPackage(): string {
-  // pnpm always installs the patched variant; reach into the published tarball
-  // to recover the upstream-of-the-patch baseline the reverse test expects.
-  const registryProbe = spawnSync('npm', ['config', 'get', 'registry'], { encoding: 'utf8' })
-  const registryUrl = (registryProbe.status === 0 ? registryProbe.stdout.trim() : '')
-    || process.env.npm_config_registry
-    || 'https://registry.npmjs.org'
-  const metadata = spawnSync('node', [
-    '-e',
-    `fetch(${JSON.stringify(`${registryUrl.replace(/\/$/, '')}/app-builder-lib/${APP_BUILDER_LIB_VERSION}`)})` +
-      `.then(r=>r.json()).then(m=>process.stdout.write(m.dist.tarball))`,
-  ], { encoding: 'utf8' })
-  if (metadata.status !== 0) {
-    throw new Error(`failed to resolve upstream tarball: ${metadata.stderr}`)
-  }
-  const tarball = metadata.stdout.trim()
-  const tarballLocal = join(tmpdir(), `app-builder-lib-${APP_BUILDER_LIB_VERSION}.tgz`)
-  const download = spawnSync('curl', ['-fsSL', '-o', tarballLocal, tarball], { encoding: 'utf8' })
-  if (download.status !== 0) {
-    throw new Error(`failed to download tarball: ${download.stderr}`)
-  }
-  const extract = spawnSync('tar', ['-xzOf', tarballLocal, `package/${NSIS_EXTRACT_TEMPLATE_PATH}`], {
-    encoding: 'utf8',
-  })
-  rmSync(tarballLocal, { force: true })
-  if (extract.status !== 0) {
-    throw new Error(`failed to extract template: ${extract.stderr}`)
-  }
-  return extract.stdout
+function readPatchedExtractAppPackage(): string {
+  const electronBuilderManifest = require.resolve('electron-builder/package.json')
+  const appBuilderManifest = createRequire(electronBuilderManifest).resolve('app-builder-lib/package.json')
+  return readFileSync(join(dirname(appBuilderManifest), NSIS_EXTRACT_TEMPLATE_PATH), 'utf8')
 }
 import {
   assertIsolatedAppBuilderLibResolution,
@@ -190,7 +163,6 @@ describe('Windows NSIS A/B packaging', () => {
     )
     expect(calls[3]?.args).toContain('--reverse')
     expect(calls[3]?.args).toContain('--unsafe-paths')
-    expect(calls[3]?.args).toContain('--directory=.')
     expect(calls[3]?.args).toContain('--include=templates/nsis/include/extractAppPackage.nsh')
     expect(calls[3]?.env.GIT_CEILING_DIRECTORIES)
       .toBe(join(options.outputRoot, '.staged-builder', 'node_modules'))
@@ -291,7 +263,7 @@ describe('Windows NSIS A/B packaging', () => {
     roots.push(isolatedRoot)
     const template = join(isolatedRoot, 'templates', 'nsis', 'include', 'extractAppPackage.nsh')
     mkdirSync(join(isolatedRoot, 'templates', 'nsis', 'include'), { recursive: true })
-    writeFileSync(template, readOriginalExtractAppPackage())
+    writeFileSync(template, readPatchedExtractAppPackage())
 
     execFileSync('git', [
       '-C',
@@ -299,7 +271,6 @@ describe('Windows NSIS A/B packaging', () => {
       'apply',
       '--reverse',
       '--unsafe-paths',
-      '--directory=.',
       '--include=templates/nsis/include/extractAppPackage.nsh',
       fileURLToPath(new URL('../../patches/app-builder-lib@26.15.7.patch', import.meta.url)),
     ], {
