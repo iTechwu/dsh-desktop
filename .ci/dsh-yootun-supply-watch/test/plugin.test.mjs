@@ -34,6 +34,13 @@ test('prevents duplicate review submissions and announces progress', async () =>
   }
 })
 
+test('distinguishes loading from an empty supply watch workspace', async () => {
+  const source = await readFile(new URL('src/client.js', root), 'utf8')
+  for (const token of ["loading: '正在读取供应链预警…'", 'setLoading(true)', 'loading && !data', "role: 'status'", "'aria-busy': loading || busy", 'disabled: loading']) {
+    assert.match(source, new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'u'))
+  }
+})
+
 test('moves focus into supply watch and restores its opener', async () => {
   const source = await readFile(new URL('src/client.js', root), 'utf8')
   for (const token of ['document.activeElement', 'shellRef.current?.focus()', 'target.focus()', 'ref: shellRef', 'tabIndex: -1', 'closeOverlay()']) {
