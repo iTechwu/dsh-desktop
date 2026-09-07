@@ -95,6 +95,7 @@ export const ALLOWED_SMART_UNPACK_PACKAGE_ROOTS = [
   'node_modules/dsh-better-sidebar',
   'node_modules/fs-ext',
   'node_modules/koffi',
+  'node_modules/koffi-win32-x64-3-1-1',
   'node_modules/ssh2',
   'node_modules/node-addon-require-builtin',
   'node_modules/node-pty',
