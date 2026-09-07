@@ -12,6 +12,10 @@ import { DEFAULT_DOFE_PLUGIN_IDS, DOFE_PLUGIN_CATALOG } from '../src/dofe-plugin
 const managedSource = readFileSync(new URL('../src/dofe-managed.ts', import.meta.url), 'utf8')
 
 describe('dofe-managed media route', () => {
+  it('accepts the Knowledge capability exposed by the access setup UI', () => {
+    expect(DOFE_PLUGIN_CATALOG).toContainEqual(expect.objectContaining({ id: 'knowledge' }))
+  })
+
   it('registers the fixed public media route with a normal API timeout', () => {
     expect(managedSource).toMatch(
       /\{ plugin: 'media', serverName: 'media', path: 'media', timeoutMs: 60_000 \}/,

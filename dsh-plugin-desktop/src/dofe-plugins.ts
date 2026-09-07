@@ -34,6 +34,11 @@ export const DOFE_PLUGIN_CATALOG = [
     name: 'OpenCLI Research',
     description: '受控的互联网只读调研',
   },
+  {
+    id: 'knowledge',
+    name: '企业知识与 Memory',
+    description: '知识库、Memory 与知识图谱治理',
+  },
 ] as const
 
 export type DofePluginId = typeof DOFE_PLUGIN_CATALOG[number]['id']
