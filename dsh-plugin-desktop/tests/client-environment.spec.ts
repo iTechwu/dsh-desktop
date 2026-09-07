@@ -515,6 +515,13 @@ describe('independent Desktop frame', () => {
       expect(appendChild).toHaveBeenCalledWith(style)
       dispose()
       expect(remove).toHaveBeenCalledOnce()
+
+      const removeOwned = installDesktopOwnedStyles()
+      expect(css).toContain('--dsh-plugin-control-height: 36px;')
+      expect(css).toMatch(/\[role="dialog"\]\[aria-modal="true"\] :is\(button, input, select, textarea\):focus-visible \{[\s\S]*outline: 2px solid var\(--dsw-alias-brand-primary/)
+      expect(css).toMatch(/\[role="dialog"\]\[aria-modal="true"\] :is\(button, input, select, textarea\):disabled \{[\s\S]*cursor: not-allowed;/)
+      expect(css).toContain('@media (max-width: 767px)')
+      removeOwned()
     } finally {
       vi.unstubAllGlobals()
     }

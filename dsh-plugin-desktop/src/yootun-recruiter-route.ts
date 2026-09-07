@@ -1029,7 +1029,7 @@ export interface RecruiterRouteDependencies {
 }
 
 const RECRUITER_AUDIT_SOURCE = Object.freeze({
-  pluginId: 'dsh-plugin-desktop/yootun-recruiter', pluginVersion: '2.0.6-beta.1', surface: 'human_ui' as const,
+  pluginId: 'dsh-plugin-desktop/yootun-recruiter', pluginVersion: '2.0.7-beta.1', surface: 'human_ui' as const,
 })
 
 async function recordRecruiterAudit(audit: YootunAuditRecorder | undefined, input: YootunAuditRecordInput | undefined): Promise<void> {
