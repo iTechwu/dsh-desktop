@@ -21,7 +21,7 @@ window.__ModuleLoader__.load({
         distribution: '线索分布', levelDistribution: '意向级别', platformDistribution: '来源平台', cityDistribution: '重点城市', insight: '跟进提示', insightText: 'A 级线索优先处理，先确认车型、预算与购车时机。', topCity: '线索最多城市', noCity: '暂无城市信息',
         filter: '筛选级别', allLevels: '全部', sort: '排序', sortIntent: '意向分优先', sortRecent: '来源顺序', leads: '线索列表', noLeads: '没有匹配的公开购车线索', noFilteredLeads: '当前筛选条件下暂无线索', loadMore: '加载更多', source: '查看原文',
         intent: '意向分', city: '城市', budget: '预算', timing: '购车时机', action: '建议动作', noSummary: '暂无摘要', noAction: '暂无建议动作', unavailable: '线索工具暂不可用', error: '读取失败，请稍后重试', storeUnavailable: '候选存储暂不可用，请稍后重试', loadMoreError: '更多线索加载失败，当前结果已保留。', loading: '正在读取…', retry: '重新检索', retryLoadMore: '重试加载',
-        candidatesEmpty: '还没有已存候选', candidatesBody: '完成检索后，符合条件的线索会沉淀到候选列表。', storedCount: '已存候选', updated: '抓取时间', databaseSource: '定时数据', liveSource: '即时检索',
+        candidatesEmpty: '还没有已存候选', candidatesBody: '完成检索后，符合条件的线索会沉淀到候选列表。', storedCount: '已存候选', updated: '数据时间', databaseSource: '定时数据', liveSource: '即时检索',
       },
       en: {
         open: 'Car-lead discovery', title: 'Car-lead discovery', subtitle: 'Identify clear purchase intent from public content', close: 'Close car-lead discovery', refresh: 'Refresh current result',
@@ -31,17 +31,17 @@ window.__ModuleLoader__.load({
         distribution: 'Lead distribution', levelDistribution: 'Intent level', platformDistribution: 'Source platform', cityDistribution: 'Top cities', insight: 'Follow-up note', insightText: 'Prioritize A-level leads and confirm model, budget, and timing first.', topCity: 'Top city', noCity: 'No city data',
         filter: 'Filter level', allLevels: 'All', sort: 'Sort', sortIntent: 'Intent first', sortRecent: 'Source order', leads: 'Lead list', noLeads: 'No matching public car-purchase signals', noFilteredLeads: 'No leads match this filter', loadMore: 'Load more', source: 'Open source',
         intent: 'Intent', city: 'City', budget: 'Budget', timing: 'Buying window', action: 'Next step', noSummary: 'No summary', noAction: 'No suggested action', unavailable: 'Lead tool unavailable', error: 'Could not load results. Try again.', storeUnavailable: 'Candidate storage is temporarily unavailable. Try again.', loadMoreError: 'More leads could not be loaded. Current results are preserved.', loading: 'Loading…', retry: 'Try again', retryLoadMore: 'Retry loading',
-        candidatesEmpty: 'No saved candidates yet', candidatesBody: 'Leads that meet your criteria can be kept in the candidate list after discovery.', storedCount: 'Saved candidates', updated: 'Retrieved', databaseSource: 'Scheduled data', liveSource: 'Live search',
+        candidatesEmpty: 'No saved candidates yet', candidatesBody: 'Leads that meet your criteria can be kept in the candidate list after discovery.', storedCount: 'Saved candidates', updated: 'Data time', databaseSource: 'Scheduled data', liveSource: 'Live search',
       },
     }
 
     let opened = false
-    let opener = null
+    let lastTrigger = null
     const listeners = new Set()
     const emit = () => listeners.forEach(listener => listener())
     const setOpened = value => { opened = value; emit() }
-    const openOverlay = () => { opener = document.activeElement; window.dispatchEvent(new CustomEvent(OVERLAY_EVENT, { detail: { id: OVERLAY_ID } })); setOpened(true) }
-    const closeOverlay = () => { const target = opener; opener = null; setOpened(false); window.requestAnimationFrame(() => { if (target?.isConnected) target.focus() }) }
+    const openOverlay = event => { lastTrigger = event?.currentTarget || document.activeElement; window.dispatchEvent(new CustomEvent(OVERLAY_EVENT, { detail: { id: OVERLAY_ID } })); setOpened(true) }
+    const closeOverlay = () => { setOpened(false); requestAnimationFrame(() => lastTrigger?.focus?.()) }
     const closeOtherOverlay = event => { if (event.detail?.id !== OVERLAY_ID) setOpened(false) }
     const subscribe = listener => { listeners.add(listener); return () => listeners.delete(listener) }
     const snapshot = () => opened
@@ -92,7 +92,6 @@ window.__ModuleLoader__.load({
       const cityCount = stats.cityCount ?? (Array.isArray(stats.cities) ? stats.cities.length : 0)
       return h('div', { className: 'yl-metrics' }, h(Metric, { label: t('total'), value: stats.total, tone: 'brand' }), h(Metric, { label: t('highIntent'), value: stats.highIntent, tone: 'success' }), h(Metric, { label: t('avgIntent'), value: stats.avgIntent, tone: 'warning' }), h(Metric, { label: t('cities'), value: cityCount, tone: 'neutral' }))
     }
-    function DataSource({ source, t }) { return h('p', { className: 'yl-data-source' }, `${source === 'database' ? t('databaseSource') : t('liveSource')}`) }
     function Distribution({ stats, t }) {
       const maxLevel = Math.max(1, ...LEVELS.map(level => number(stats.levels?.[level])))
       const maxPlatform = Math.max(1, ...(stats.platforms || []).map(item => number(item.count)))
@@ -143,15 +142,15 @@ window.__ModuleLoader__.load({
       const availableLabel = stats.totalAvailable && stats.totalAvailable > stats.total ? ` · ${t('totalAvailable')} ${stats.totalAvailable}` : ''
       return h('section', { className: 'yl-list-section' }, h('div', { className: 'yl-list-heading' }, h('div', null, h('h2', null, t('leads')), h('span', { className: 'yl-panel-meta' }, `${filtered.length} / ${stats.total} ${t('sample')}${availableLabel}`)), h('div', { className: 'yl-list-controls' }, h('div', { className: 'yl-segmented', role: 'group', 'aria-label': t('filter') }, h('button', { type: 'button', 'aria-pressed': level === 'all', className: level === 'all' ? 'is-active' : '', onClick: () => setLevel('all') }, t('allLevels')), LEVELS.map(item => h('button', { type: 'button', key: item, 'aria-pressed': level === item, className: level === item ? 'is-active' : '', onClick: () => setLevel(item) }, item))), h('label', { className: 'yl-sort' }, h('span', null, t('sort')), h('select', { value: sort, onChange: event => setSort(event.target.value), 'aria-label': t('sort') }, h('option', { value: 'intent' }, t('sortIntent')), h('option', { value: 'recent' }, t('sortRecent')))))), filtered.length ? h('div', { className: 'yl-list' }, filtered.map((item, index) => h(LeadCard, { key: `${item.sourceUrl || item.aiSummary || 'lead'}-${index}`, item, t }))) : h('div', { className: 'yl-empty-list' }, h(IconDataOutline16, { size: 22 }), h('p', null, items.length ? t('noFilteredLeads') : t('noLeads'))))
     }
-    function SearchPanelRedesigned({ query, setQuery, platform, setPlatform, busy, disabled, onRun, t, hasResult }) {
+    function SearchPanelRedesigned({ query, setQuery, platform, setPlatform, busy, onRun, t, hasResult }) {
       const examples = [t('example1'), t('example2'), t('example3')]
       return h('section', { className: `yl-search-panel${hasResult ? ' yl-search-compact' : ''}` },
         h('div', { className: 'yl-search-intro' }, h('div', { className: 'yl-search-eyebrow' }, h('span', { className: 'yl-eyebrow-line' }), t('discover')), h('h2', null, t('searchHeading')), h('p', null, t('searchBody'))),
         h('div', { className: 'yl-search-row' },
-          h('div', { className: 'yl-platform-picker' }, h('span', { className: 'yl-field-label' }, t('platform')), h('div', { className: 'yl-platform-options', role: 'group', 'aria-label': t('platform') }, [['xiaohongshu-v2', t('platformXhs')], ['douyin', t('platformDouyin')]].map(([value, label]) => h('button', { type: 'button', key: value, className: platform === value ? 'is-active' : '', 'aria-pressed': platform === value, onClick: () => setPlatform(value), disabled }, label)))),
-          h('div', { className: 'yl-query-wrap' }, h('input', { value: query, disabled, maxLength: 500, placeholder: t('placeholder'), onChange: event => setQuery(event.target.value), onKeyDown: event => { if (event.key === 'Enter') onRun() }, 'aria-label': t('placeholder') }), h('button', { type: 'button', className: 'yl-primary', onClick: onRun, disabled: disabled || !query.trim() }, h(IconSearchOutline16, { size: 16 }), busy ? t('searching') : t('search')))),
+          h('div', { className: 'yl-platform-picker' }, h('span', { className: 'yl-field-label' }, t('platform')), h('div', { className: 'yl-platform-options', role: 'group', 'aria-label': t('platform') }, [['xiaohongshu-v2', t('platformXhs')], ['douyin', t('platformDouyin')]].map(([value, label]) => h('button', { type: 'button', key: value, className: platform === value ? 'is-active' : '', 'aria-pressed': platform === value, onClick: () => setPlatform(value) }, label)))),
+          h('div', { className: 'yl-query-wrap' }, h('input', { value: query, maxLength: 500, placeholder: t('placeholder'), onChange: event => setQuery(event.target.value), onKeyDown: event => { if (event.key === 'Enter') onRun() }, 'aria-label': t('placeholder') }), h('button', { type: 'button', className: 'yl-primary', onClick: onRun, disabled: busy || !query.trim() }, h(IconSearchOutline16, { size: 16 }), busy ? t('searching') : t('search')))),
         h('p', { className: 'yl-privacy' }, t('privacy')),
-        !query ? h('div', { className: 'yl-examples' }, h('span', null, t('examples')), examples.map(example => h('button', { type: 'button', key: example, onClick: () => setQuery(example), disabled }, example))) : null)
+        !query ? h('div', { className: 'yl-examples' }, h('span', null, t('examples')), examples.map(example => h('button', { type: 'button', key: example, onClick: () => setQuery(example) }, example))) : null)
     }
 
     function EmptyStateRedesigned({ t, onExample }) {
@@ -164,9 +163,6 @@ window.__ModuleLoader__.load({
     function Overlay({ t }) {
       const visible = useSyncExternalStore(subscribe, snapshot, snapshot)
       const shellRef = useRef(null)
-      const searchBusyRef = useRef(false)
-      const pageBusyRef = useRef(false)
-      const candidatesBusyRef = useRef(false)
       const [tab, setTab] = useState('discover')
       const [query, setQuery] = useState('')
       const [platform, setPlatform] = useState('xiaohongshu-v2')
@@ -180,15 +176,15 @@ window.__ModuleLoader__.load({
       const [candidateBusy, setCandidateBusy] = useState(false)
       useEffect(() => {
         if (!visible) return undefined
-        const frame = window.requestAnimationFrame(() => shellRef.current?.focus())
         const onKeyDown = event => { if (event.key === 'Escape') closeOverlay() }
         document.addEventListener('keydown', onKeyDown)
-        return () => { window.cancelAnimationFrame(frame); document.removeEventListener('keydown', onKeyDown) }
+        return () => document.removeEventListener('keydown', onKeyDown)
       }, [visible])
+      useEffect(() => { if (visible) requestAnimationFrame(() => shellRef.current?.focus?.()) }, [visible])
       if (!visible) return null
-      const run = async () => { if (!query.trim() || searchBusyRef.current || pageBusyRef.current) return; searchBusyRef.current = true; setBusy(true); setLoadMoreError(false); setTab('discover'); try { const response = await post({ action: 'discover', keyword: query.trim(), platform }); setData(response); setItems(Array.isArray(response.items) ? response.items : []) } catch { setData({ status: 'error' }); setItems([]) } finally { searchBusyRef.current = false; setBusy(false) } }
-      const loadMore = async () => { if (pageBusyRef.current || !data?.resultRef || !data?.hasMore) return; pageBusyRef.current = true; setLoadingMore(true); setLoadMoreError(false); try { const response = await post({ action: 'page', resultRef: data.resultRef, cursor: data.nextCursor }); if (response.status !== 'ready') throw new Error(response.reason || 'lead discovery page unavailable'); setData(prev => ({ ...prev, nextCursor: response.nextCursor, hasMore: response.hasMore, stats: { totalAvailable: prev.totalAvailable ?? prev.stats?.totalAvailable ?? null } })); setItems(prev => prev.concat(response.items || [])) } catch { setLoadMoreError(true) } finally { pageBusyRef.current = false; setLoadingMore(false) } }
-      const loadCandidates = async (force = false) => { setTab('saved'); if ((candidates && !force) || candidatesBusyRef.current) return; candidatesBusyRef.current = true; setCandidateBusy(true); try { const response = await post({ action: 'candidates' }); setCandidates(response); setCandidateItems(Array.isArray(response.items) ? response.items : []) } catch { setCandidates({ status: 'error' }); setCandidateItems([]) } finally { candidatesBusyRef.current = false; setCandidateBusy(false) } }
+      const run = async () => { if (!query.trim() || busy) return; setBusy(true); setLoadMoreError(false); setTab('discover'); try { const response = await post({ action: 'discover', keyword: query.trim(), platform }); setData(response); setItems(Array.isArray(response.items) ? response.items : []) } catch { setData({ status: 'error' }); setItems([]) } finally { setBusy(false) } }
+      const loadMore = async () => { if (loadingMore || !data?.resultRef || !data?.hasMore) return; setLoadingMore(true); setLoadMoreError(false); try { const response = await post({ action: 'page', resultRef: data.resultRef, cursor: data.nextCursor }); if (response.status !== 'ready') throw new Error(response.reason || 'lead discovery page unavailable'); setData(prev => ({ ...prev, nextCursor: response.nextCursor, hasMore: response.hasMore, stats: { totalAvailable: prev.totalAvailable ?? prev.stats?.totalAvailable ?? null } })); setItems(prev => prev.concat(response.items || [])) } catch { setLoadMoreError(true) } finally { setLoadingMore(false) } }
+      const loadCandidates = async (force = false) => { setTab('saved'); if (candidates && !force) return; setCandidateBusy(true); try { const response = await post({ action: 'candidates' }); setCandidates(response); setCandidateItems(Array.isArray(response.items) ? response.items : []) } catch { setCandidates({ status: 'error' }); setCandidateItems([]) } finally { setCandidateBusy(false) } }
       const refresh = () => tab === 'saved' ? loadCandidates(true) : run()
       const stats = deriveStats(tab === 'saved' ? candidateItems : items, tab === 'saved' ? candidates?.stats : data?.stats)
       const state = tab === 'saved' ? candidates?.status : data?.status
@@ -202,10 +198,9 @@ window.__ModuleLoader__.load({
       else if (tab === 'discover' && state === 'error') body = h(StatusMessage, { kind: 'error', title: t('error'), action: t('retry'), onAction: run })
       else if (tab === 'discover' && state === 'unavailable') body = h(StatusMessage, { kind: 'unavailable', title: t('unavailable') })
       else if (!items.length && tab === 'discover') body = h(StatusMessage, { kind: 'empty', title: t('noLeads') })
-      else body = h(React.Fragment, null, h(DataSource, { source: tab === 'saved' ? 'database' : data?.dataSource, t }), h(StatsGrid, { stats, t }), h(Distribution, { stats, t }), h(LeadList, { items: tab === 'saved' ? candidateItems : items, stats, t }), tab === 'discover' && data?.hasMore ? h('div', { className: 'yl-more' }, loadMoreError ? h('span', { role: 'alert' }, t('loadMoreError')) : null, h('button', { type: 'button', onClick: loadMore, disabled: loadingMore }, loadingMore ? t('loading') : loadMoreError ? t('retryLoadMore') : t('loadMore'))) : null)
-      const interactionBusy = busy || loadingMore
-      const refreshDisabled = interactionBusy || candidateBusy || (tab === 'discover' && !query.trim())
-      return h('div', { className: 'yl-overlay', role: 'dialog', 'aria-modal': true, 'aria-labelledby': 'yl-title' }, h('main', { className: 'yl-shell', ref: shellRef, tabIndex: -1, 'aria-busy': busy || loadingMore || candidateBusy }, h('header', { className: 'yl-header' }, h('div', null, h('div', { className: 'yl-title-row' }, h('h1', { id: 'yl-title' }, t('title')), state === 'ready' ? h('span', { className: 'yl-ready-dot', 'aria-hidden': true }, '●') : null), h('p', null, t('subtitle'))), h('div', { className: 'yl-header-actions' }, h(Tooltip, { label: t('refresh') }, h('button', { type: 'button', 'aria-label': t('refresh'), onClick: refresh, disabled: refreshDisabled }, h(IconRefreshOutline16, { size: 17 }))), h(Tooltip, { label: t('close') }, h('button', { type: 'button', 'aria-label': t('close'), onClick: closeOverlay }, h(IconCloseOutline16, { size: 17 }))))), h('nav', { className: 'yl-tabs', role: 'tablist', 'aria-label': t('title') }, h('button', { type: 'button', role: 'tab', 'aria-selected': tab === 'discover', className: tab === 'discover' ? 'is-active' : '', onClick: () => setTab('discover') }, h(IconSearchOutline16, { size: 15 }), t('discover')), h('button', { type: 'button', role: 'tab', 'aria-selected': tab === 'saved', className: tab === 'saved' ? 'is-active' : '', onClick: () => loadCandidates() }, h(IconDataOutline16, { size: 15 }), t('saved'), candidates?.count !== null && candidates?.count !== undefined ? h('span', { className: 'yl-tab-count' }, String(candidates.count)) : null)), h('div', { className: 'yl-content' }, tab === 'discover' ? h(SearchPanelRedesigned, { query, setQuery, platform, setPlatform, busy, disabled: interactionBusy, onRun: run, t, hasResult: Boolean(data) }) : null, body, tab === 'discover' && data?.retrievedAt ? h('p', { className: 'yl-updated' }, `${t('updated')}: ${data.retrievedAt}`) : null)))
+      else body = h(React.Fragment, null, h(StatsGrid, { stats, t }), h(Distribution, { stats, t }), h(LeadList, { items: tab === 'saved' ? candidateItems : items, stats, t }), tab === 'discover' && data?.hasMore ? h('div', { className: 'yl-more' }, loadMoreError ? h('span', { role: 'alert' }, t('loadMoreError')) : null, h('button', { type: 'button', onClick: loadMore, disabled: loadingMore }, loadingMore ? t('loading') : loadMoreError ? t('retryLoadMore') : t('loadMore'))) : null)
+      const refreshDisabled = busy || candidateBusy || (tab === 'discover' && !query.trim())
+      return h('div', { className: 'yl-overlay', role: 'dialog', 'aria-modal': true, 'aria-labelledby': 'yl-title' }, h('main', { className: 'yl-shell', ref: shellRef, tabIndex: -1 }, h('header', { className: 'yl-header' }, h('div', null, h('div', { className: 'yl-title-row' }, h('h1', { id: 'yl-title' }, t('title')), state === 'ready' ? h('span', { className: 'yl-ready-dot', 'aria-hidden': true }, '●') : null), h('p', null, t('subtitle'))), h('div', { className: 'yl-header-actions' }, h(Tooltip, { label: t('refresh') }, h('button', { type: 'button', 'aria-label': t('refresh'), onClick: refresh, disabled: refreshDisabled }, h(IconRefreshOutline16, { size: 17 }))), h(Tooltip, { label: t('close') }, h('button', { type: 'button', 'aria-label': t('close'), onClick: closeOverlay }, h(IconCloseOutline16, { size: 17 }))))), h('nav', { className: 'yl-tabs', role: 'tablist', 'aria-label': t('title') }, h('button', { type: 'button', role: 'tab', 'aria-selected': tab === 'discover', className: tab === 'discover' ? 'is-active' : '', onClick: () => setTab('discover') }, h(IconSearchOutline16, { size: 15 }), t('discover')), h('button', { type: 'button', role: 'tab', 'aria-selected': tab === 'saved', className: tab === 'saved' ? 'is-active' : '', onClick: () => loadCandidates() }, h(IconDataOutline16, { size: 15 }), t('saved'), candidates?.count !== null && candidates?.count !== undefined ? h('span', { className: 'yl-tab-count' }, String(candidates.count)) : null)), h('div', { className: 'yl-content' }, tab === 'discover' ? h(SearchPanelRedesigned, { query, setQuery, platform, setPlatform, busy, onRun: run, t, hasResult: Boolean(data) }) : null, body, tab === 'discover' && data?.retrievedAt ? h('p', { className: 'yl-updated' }, h('span', { className: 'yl-data-source' }, t(data.dataSource === 'database' ? 'databaseSource' : 'liveSource')), `${t('updated')}: ${data.retrievedAt}`) : null)))
     }
 
     function Button({ wide, t }) { return h(Tooltip, { label: t('open'), disabled: wide }, h('button', { type: 'button', className: `yl-button${wide ? ' yl-wide' : ''}`, 'aria-label': t('open'), onClick: openOverlay }, h(IconSearchOutline16, { size: wide ? 14 : 18 }), wide ? h('span', null, t('open')) : null)) }

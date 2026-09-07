@@ -143,24 +143,18 @@ window.__ModuleLoader__.load({
     }
 
     let opened = false
-    let opener = null
+    let lastTrigger = null
     const listeners = new Set()
     function emit() { for (const listener of listeners) listener() }
     function setOpened(value) { opened = value; emit() }
-    function openOverlay() {
-      const activeElement = typeof document === 'undefined' ? null : document.activeElement
-      opener = activeElement && typeof activeElement.focus === 'function' ? activeElement : null
+    function openOverlay(event) {
+      lastTrigger = event?.currentTarget || document.activeElement
       if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
         window.dispatchEvent(new CustomEvent(OVERLAY_EVENT, { detail: { id: OVERLAY_ID } }))
       }
       setOpened(true)
     }
-    function closeOverlay() {
-      setOpened(false)
-      const target = opener
-      opener = null
-      if (target && target.isConnected !== false) window.requestAnimationFrame(() => target.focus())
-    }
+    function closeOverlay() { setOpened(false); requestAnimationFrame(() => lastTrigger?.focus?.()) }
     function closeOtherOverlay(event) { if (event.detail?.id !== OVERLAY_ID) setOpened(false) }
     function subscribe(listener) { listeners.add(listener); return () => listeners.delete(listener) }
     function getSnapshot() { return opened }
@@ -998,23 +992,14 @@ window.__ModuleLoader__.load({
 
       useEffect(() => {
         if (!visible) return undefined
-        const frame = window.requestAnimationFrame(() => shellRef.current?.focus())
         const onKeyDown = event => { if (event.key === 'Escape') closeOverlay() }
         window.addEventListener('keydown', onKeyDown)
-        return () => { window.cancelAnimationFrame(frame); window.removeEventListener('keydown', onKeyDown) }
+        return () => window.removeEventListener('keydown', onKeyDown)
       }, [visible])
+      useEffect(() => { if (visible) requestAnimationFrame(() => shellRef.current?.focus?.()) }, [visible])
 
       const periodLabel = useMemo(() => data?.period?.date || data?.period?.label || '', [data?.period?.date, data?.period?.label])
       if (!visible) return null
-      const keepFocus = event => {
-        if (event.key !== 'Tab') return
-        const controls = [...(shellRef.current?.querySelectorAll('button:not([disabled]),a[href],input:not([disabled]),select:not([disabled]),textarea:not([disabled]),summary,[tabindex]:not([tabindex="-1"])') || [])]
-        const first = controls[0]
-        const last = controls.at(-1)
-        if (!first) return
-        if (event.shiftKey && (document.activeElement === first || document.activeElement === shellRef.current)) { event.preventDefault(); last.focus() }
-        else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus() }
-      }
       let body
       if (loading && !data) body = h('div', { className: 'yd-loading', role: 'status' }, h('span', { className: 'yd-spinner' }), t('loading'))
       else if (failed && !data) body = h('div', { className: 'yd-fatal', role: 'alert' }, h('strong', null, t('error')), h('button', { type: 'button', onClick: () => setRevision(value => value + 1) }, t('retry')))
@@ -1027,7 +1012,7 @@ window.__ModuleLoader__.load({
       }
 
       return h('div', { className: 'yd-overlay', role: 'dialog', 'aria-modal': true, 'aria-labelledby': 'yd-title' },
-        h('main', { className: 'yd-shell', ref: shellRef, tabIndex: -1, onKeyDown: keepFocus, 'aria-labelledby': 'yd-title', 'aria-busy': loading },
+        h('main', { className: 'yd-shell', 'aria-labelledby': 'yd-title', ref: shellRef, tabIndex: -1 },
           h('header', { className: 'yd-header' },
             h('div', null,
               h('div', { className: 'yd-title-line' },
@@ -1052,7 +1037,7 @@ window.__ModuleLoader__.load({
               h(Tooltip, { label: t('close'), side: 'bottom' }, h('button', { type: 'button', className: 'yd-icon-button', onClick: closeOverlay, 'aria-label': t('close') }, h(IconCloseOutline16, { size: 16 }))))),
           h('nav', { className: 'yd-tabs', 'aria-label': t('title') }, ...TABS.map(item =>
             h('button', { type: 'button', key: item.id, 'aria-current': tab === item.id ? 'page' : undefined, onClick: () => setTab(item.id) }, t(item.label)))),
-          failed && data ? h('div', { className: 'yd-stale yd-stale-error', role: 'alert' }, t('error')) : null,
+          failed && data ? h('div', { className: 'yd-stale', role: 'status' }, t('error')) : null,
           h('div', { className: `yd-content${loading && data ? ' yd-refreshing' : ''}` }, body)))
     }
 
@@ -1099,7 +1084,6 @@ window.__ModuleLoader__.load({
     .yd-activity-grid{gap:var(--yd-space-6);margin-top:var(--yd-space-6)}
     .yd-empty,.yd-loading,.yd-fatal{gap:var(--yd-space-2)}
     .yd-stale{padding:var(--yd-space-2) var(--yd-content-gutter)}
-    .yd-stale-error{background:color-mix(in srgb,var(--dsw-alias-state-error-primary) 10%,transparent);color:var(--dsw-alias-state-error-primary)}
     .yd-inline-empty{margin:var(--yd-space-4) 0}
     .yd-detail-stack{display:grid;gap:var(--yd-space-6);align-content:start}
     .yd-detail-stack>.yd-metrics,.yd-detail-stack>.yd-table-section{min-width:0}
@@ -1117,7 +1101,7 @@ window.__ModuleLoader__.load({
     @media(max-width:800px){.yd-overlay{--yd-content-gutter:16px}.yd-content{padding-top:var(--yd-space-5)}.yd-domain-grid{gap:var(--yd-space-4)}}
     @media(max-width:480px){.yd-header{padding-top:var(--yd-space-3);padding-bottom:var(--yd-space-3)}.yd-content{padding-top:var(--yd-space-4)}}
     `
-    const capabilityCss = '.yd-capability-group h3{margin:0 0 var(--yd-space-2);font-size:13px}.yd-shell:focus{outline:0}'
+    const capabilityCss = '.yd-capability-group h3{margin:0 0 var(--yd-space-2);font-size:13px}'
 
     function apply(ctx) {
       ctx.effect(() => ctx.locale.register(NS, copy), 'dofe-yootun-dashboard: dictionaries')

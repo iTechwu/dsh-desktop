@@ -13,8 +13,11 @@ const READ_ONLY_COMMANDS = new Map([
   ['duckduckgo', new Set(['search', 'suggest'])],
   ['exa', new Set(['fetch', 'search'])],
   ['google', new Set(['news', 'search', 'suggest', 'trends'])],
+  ['kuaishou', new Set(['search'])],
+  ['lemon8', new Set(['search'])],
   ['toutiao', new Set(['articles', 'hot', 'recommend'])],
   ['weibo', new Set(['comments', 'hot', 'search', 'user', 'user-posts'])],
+  ['youtube', new Set(['search'])],
   ['xiaohongshu', new Set(['comments', 'feed', 'note', 'search', 'user'])],
   ['zhihu', new Set(['answer-comments', 'answer-detail', 'hot', 'question', 'search', 'user-answers', 'user-articles'])],
 ])
@@ -117,7 +120,7 @@ function render(value) {
 export function apply(ctx) {
   const disposeTool = ctx.tools.register({
     name: 'agent_reach',
-    description: 'Use agent-reach read-only research backends. Prefer ["exa","search",query,"--limit","5"] for unattended web search; use approved OpenCLI site routes for supplemental social research.',
+    description: 'Use agent-reach read-only research backends across Xiaohongshu, Douyin, Kuaishou, Bilibili, Weibo, Toutiao, Lemon8, and YouTube. Prefer ["exa","search",query,"--limit","5"] for unattended web search; use approved OpenCLI site routes for supplemental social research.',
     parameters: {
       type: 'object',
       additionalProperties: false,
@@ -164,7 +167,7 @@ export function apply(ctx) {
   const disposePrompt = ctx.systemPrompt.section({
     name: 'agent-reach:guidance',
     order: 6,
-    text: '互联网调研遵循 agent-reach 路由。无人值守任务先用 agent_reach 的 exa search（格式：["exa","search",查询,"--limit","5"]），必要时用 exa fetch 回读 HTTPS 来源；再按可用性补充 OpenCLI 社交来源。登录态或平台受限时不得绕过限制，改用可用来源并披露覆盖缺口。不得发帖、评论、点赞或执行其他写操作。',
+    text: '互联网调研遵循 agent-reach 路由。无人值守任务先用 agent_reach 的 exa search（格式：["exa","search",查询,"--limit","5"]），必要时用 exa fetch 回读 HTTPS 来源；平台补充覆盖小红书、抖音、快手、哔哩哔哩、微博、今日头条、Lemon8 和 YouTube 的公开只读 search。登录态或平台受限时不得绕过限制，改用可用来源并披露覆盖缺口。不得发帖、评论、点赞或执行其他写操作。',
   })
   return () => {
     disposePrompt?.()

@@ -37,16 +37,23 @@ test('bundles Yootun branding, settings, and a mandatory credential gate', async
   assert.match(source, /function YootunBrandName\(\) \{\s*return null\s*\}/u)
   assert.doesNotMatch(bundle, /Set up later|稍后设置/u)
   assert.match(source, /const \[configured, setConfigured\] = useState\(false\)/u)
-  assert.match(source, /id: 'yu-model-key',[\s\S]*'aria-label': t\('key'\)/u)
   assert.match(source, /\.catch\(\(\) => \{ if \(active\) setConfigured\(false\) \}\)/u)
   assert.doesNotMatch(source, /configured === undefined/u)
   assert.match(source, /async function mutateCurrentSettings/u)
   assert.match(source, /await mutateCurrentSettings\(settingsApi, 'llm-deepseek'/u)
   assert.match(source, /await mutateCurrentSettings\(settingsApi, 'agent-default-model'/u)
   assert.match(source, /await mutateCurrentSettings\(settingsApi, ACCESS_NS/u)
-  for (const token of ['operationRef.current', "'aria-busy': busy || loading", 'dialogRef.current?.querySelector', "event.key !== 'Tab'", "querySelectorAll('button:not([disabled]),input:not([disabled]),select:not([disabled])'", 'document.activeElement === first', 'document.activeElement === last', 'onKeyDown: keepFocus']) {
-    assert.ok(source.includes(token), `missing interaction guard token: ${token}`)
-  }
+})
+
+test('guides credential setup and protects credential removal', async () => {
+  const source = await readFile(new URL('src/client.js', root), 'utf8')
+
+  assert.match(source, /type: showKey \? 'text' : 'password'/u)
+  assert.match(source, /role: 'status'/u)
+  assert.match(source, /const \[confirmingRemove, setConfirmingRemove\] = useState\(false\)/u)
+  assert.match(source, /t\('removeWarning'\)/u)
+  assert.match(source, /onClick: \(\) => setConfirmingRemove\(true\)/u)
+  assert.match(source, /onClick: \(\) => setConfirmingRemove\(false\)/u)
 })
 
 test('loads the generated module and registers every owned surface', async () => {

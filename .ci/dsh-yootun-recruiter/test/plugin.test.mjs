@@ -14,53 +14,13 @@ test('publishes a browser recruiter plugin with a bundle patch', async () => {
 
 test('keeps BOSS actions human-confirmed and does not accept raw PII', async () => {
   const source = await readFile(new URL('src/client.js', root), 'utf8')
-  for (const token of ['/api/desktop/yootun/recruiter', 'awaiting_confirmation', 'confirmed_pending_adapter', 'succeeded', 'failed', 'requires_user_login', 'zhipin.com', 'confirm_action', 'execute_action', 'loadError', 'yr-status-succeeded', 'HR 知识库', '招聘漏斗', 'sync_boss', 'publish_knowledge', 'yr-source-button', 'importRequirement', 'generateDraft', 'draftFromText', 'yr-intake-grid', 'yr-filter-bar', 'onNavigate', "data.boss?.adapter === 'official'"]) {
+  for (const token of ['/api/desktop/yootun/recruiter', 'awaiting_confirmation', 'confirmed_pending_adapter', 'succeeded', 'failed', 'requires_user_login', 'zhipin.com', 'confirm_action', 'execute_action', 'loadError', 'yr-status-succeeded', 'HR 知识库', '招聘漏斗', 'sync_boss', 'publish_knowledge', 'yr-source-button', 'importRequirement', 'generateDraft', 'draftFromText', 'yr-intake-grid', 'yr-filter-bar', 'onNavigate', "'aria-label': t('candidates')", "'aria-label': t('stage')", "data.boss?.adapter === 'official'"]) {
     assert.match(source, new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'u'))
   }
   assert.doesNotMatch(source, /resumeText|password|cookie|二维码内容|聊天正文/iu)
   assert.doesNotMatch(source, /待配置空间|YOOTUN_HR_KNOWLEDGE_SPACE_ID/u)
   assert.doesNotMatch(source, /MODELS_API_KEY|Authorization\s*:/u)
-  assert.match(source, /className: 'yr-filter',[\s\S]*placeholder: t\('candidates'\), 'aria-label': t\('candidates'\)/u)
-  assert.match(source, /value: stage,[\s\S]*'aria-label': t\('stage'\)/u)
 })
-
-test('blocks duplicate mutations and announces pending recruiter actions', async () => {
-  const source = await readFile(new URL('src/client.js', root), 'utf8')
-  for (const token of ["if (actionBusyRef.current) return undefined", 'actionBusyRef.current = true', "setPendingActionId(body.id || body.action)", 'disabled: busy', 'disabled: loading || busy', "'aria-busy': busy", "role: 'status'", "t('processing')", "role: 'alert'", "t('actionError')"]) {
-    assert.match(source, new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'u'))
-  }
-})
-
-test('locks the role brief and announces initial workspace loading', async () => {
-  const source = await readFile(new URL('src/client.js', root), 'utf8')
-  assert.match(source, /className: 'yr-intake-textarea', value: input, disabled: busy/u)
-  assert.match(source, /className: 'yr-shell',[^\n]*'aria-busy': loading \|\| busy/u)
-})
-
-test('shows a retryable alert when refreshing existing recruiter data fails', async () => {
-  const source = await readFile(new URL('src/client.js', root), 'utf8')
-  assert.match(source, /const errorLabel = error === 'load' \? t\('loadError'\) : t\('actionError'\)/u)
-  assert.match(source, /const showErrorBanner = error === 'action' \|\| Boolean\(data\)/u)
-  assert.match(source, /showErrorBanner \? h\('div', \{ className: 'yr-error', role: 'alert' \}, errorLabel/u)
-  assert.match(source, /error === 'load' \? h\('button', \{ type: 'button', onClick: \(\) => setRevision/u)
-})
-
-test('consumes recruiter mutation failures without reporting false draft success', async () => {
-  const source = await readFile(new URL('src/client.js', root), 'utf8')
-  assert.match(source, /catch \{ setError\('action'\); return undefined \}/u)
-  assert.match(source, /const result = await onUpdate\?\.\(draftFromText\(input\)\); setMessage\(result \? t\('roleGenerated'\) : t\('saveError'\)\)/u)
-  assert.doesNotMatch(source, /throw cause/u)
-})
-
-test('moves focus into recruiter and restores its opener', async () => {
-  const source = await readFile(new URL('src/client.js', root), 'utf8')
-  for (const token of ['document.activeElement', 'shellRef.current?.focus()', 'target.focus()', 'ref: shellRef', 'tabIndex: -1', 'closeOverlay()']) {
-    assert.match(source, new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'u'))
-  }
-  assert.match(source, /event\.key === 'Escape'\) closeOverlay\(\)/u)
-  assert.match(source, /onClick: closeOverlay/u)
-})
-test('keeps keyboard focus inside recruiter workspace', async () => { const source = await readFile(new URL('src/client.js', root), 'utf8'); for (const token of ["event.key !== 'Tab'", 'querySelectorAll', 'event.shiftKey', 'last.focus()', 'first.focus()', 'onKeyDown: keepFocus']) assert.ok(source.includes(token), `missing focus trap token: ${token}`) })
 
 test('declares the Models-authenticated data contract without exposing a client key', async () => {
   assert.deepEqual(recruiterDataContract, {

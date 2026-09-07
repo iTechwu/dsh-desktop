@@ -38,6 +38,7 @@ function makeMachine(overrides = {}) {
     createTask: overrides.createTask || (async body => ({ taskId: 't-1', taskStatus: 'queued', mediaType: body.mediaType })),
     queryStatus: overrides.queryStatus || (async () => ({ taskStatus: 'running', currentStep: 'copywriting' })),
     queryResult: overrides.queryResult || (async () => ({ versions: VERSIONS })),
+    cancelTask: overrides.cancelTask || (async () => {}),
     intervalMs: 30000,
     schedule: timers.schedule,
     clearSchedule: timers.clear,
@@ -154,4 +155,36 @@ test('reopening before in-flight create completes starts polling after create', 
   assert.equal(machine.get().task.taskId, 't-1')
   assert.equal(statusCalls, 1)
   assert.equal(timers.pending, true)
+})
+
+test('requestCancel stops polling and lands cancelled', async () => {
+  let statusCalls = 0
+  const { machine, timers } = makeMachine({ queryStatus: async () => { statusCalls++; return { taskStatus: 'running' } } })
+  await machine.submit({ action: 'create', mediaType: 'images', idempotencyKey: 'k1' })
+  assert.ok(timers.pending)
+  await machine.requestCancel()
+  assert.equal(machine.get().task.taskStatus, 'cancelled')
+  assert.equal(machine.get().error, 'cancelled')
+  assert.equal(timers.pending, false)
+  assert.equal(statusCalls, 1) // 取消后不再轮询
+})
+
+test('requestCancel failure resumes polling and surfaces cancelFailed', async () => {
+  const { machine, timers } = makeMachine({
+    queryStatus: async () => ({ taskStatus: 'running' }),
+    cancelTask: async () => { throw new Error('cancel_failed') },
+  })
+  await machine.submit({ action: 'create', mediaType: 'images', idempotencyKey: 'k1' })
+  await machine.requestCancel()
+  assert.equal(machine.get().task.taskStatus, 'running')
+  assert.equal(machine.get().error, 'cancelFailed')
+  assert.ok(timers.pending)
+})
+
+test('requestCancel without a task is a no-op', async () => {
+  const { machine, timers } = makeMachine()
+  await machine.requestCancel()
+  assert.equal(machine.get().task, null)
+  assert.equal(machine.get().error, '')
+  assert.equal(timers.pending, false)
 })

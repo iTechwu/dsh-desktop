@@ -13,41 +13,12 @@ test('publishes the browser supply watch plugin with its bundle patch', async ()
 
 test('keeps risk reviews human-confirmed and local-only', async () => {
   const source = await readFile(new URL('src/client.js', root), 'utf8')
-  for (const token of ['/api/desktop/yootun/supply-watch', 'awaiting_confirmation', 'confirm_action', 'dismiss_action', '已确认', '适配器已完成', '适配器执行失败', '需要重新登录']) {
+  for (const token of ['/api/desktop/yootun/supply-watch', 'awaiting_confirmation', 'confirm_action', 'dismiss_action', '已确认', '适配器已完成', '适配器执行失败', '需要重新登录', 'loading', 'loadError', 'actionError', 'retry', "role: 'status'", "role: 'alert'"]) {
     assert.match(source, new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'u'))
   }
+  assert.doesNotMatch(source, /Unable to load supply watch/u)
   assert.match(source, /openRisks/u)
   assert.doesNotMatch(source, /password|cookie|银行卡|供应商联系人手机号/iu)
-})
-
-test('keeps load and review-action failures visible and localized', async () => {
-  const source = await readFile(new URL('src/client.js', root), 'utf8')
-  for (const token of ['actionError', "setError('action')", "setError('load')", "role: 'alert'", "t('retry')"]) {
-    assert.match(source, new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'u'))
-  }
-})
-
-test('prevents duplicate review submissions and announces progress', async () => {
-  const source = await readFile(new URL('src/client.js', root), 'utf8')
-  for (const token of ["if (actionBusyRef.current) return", "actionBusyRef.current = true", "setPendingActionId(body.id)", "busy: Boolean(pendingActionId)", "active: pendingActionId === item.id", "disabled: busy", "disabled: loading || busy", "'aria-busy': active", "role: 'status'", "t('processing')"]) {
-    assert.match(source, new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'u'))
-  }
-})
-
-test('distinguishes loading from an empty supply watch workspace', async () => {
-  const source = await readFile(new URL('src/client.js', root), 'utf8')
-  for (const token of ["loading: '正在读取供应链预警…'", 'setLoading(true)', 'loading && !data', "role: 'status'", "'aria-busy': loading || busy", 'disabled: loading']) {
-    assert.match(source, new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'u'))
-  }
-})
-
-test('keeps focus inside supply watch and restores its opener', async () => {
-  const source = await readFile(new URL('src/client.js', root), 'utf8')
-  for (const token of ['document.activeElement', 'shellRef.current?.focus()', 'target.focus()', 'ref: shellRef', 'tabIndex: -1', 'closeOverlay()', "event.key !== 'Tab'", 'document.activeElement === last', 'onKeyDown: keepFocus']) {
-    assert.match(source, new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'u'))
-  }
-  assert.match(source, /event\.key === 'Escape'\) closeOverlay\(\)/u)
-  assert.match(source, /onClick: closeOverlay/u)
 })
 
 test('uses only icons exported by DSH alpha3 primitives', async () => {

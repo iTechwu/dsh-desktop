@@ -15,7 +15,7 @@ window.__ModuleLoader__.load({
     const copy = {
       zh: {
         open: '招聘工作台', title: 'HR 招聘工作台', subtitle: '从 BOSS 直聘同步人才，让招聘数据沉淀为组织知识', close: '关闭工作台', refresh: '刷新',
-        overview: '总览', roles: '岗位', candidates: '人才库', actions: '待办审批', knowledge: 'HR 知识库', analytics: '招聘分析', boss: 'BOSS 同步', loading: '正在读取招聘工作台…', processing: '正在提交…', retry: '重新加载', loadError: '招聘工作台加载失败', actionError: '操作未完成，请重试',
+        overview: '总览', roles: '岗位', candidates: '人才库', actions: '待办审批', knowledge: 'HR 知识库', analytics: '招聘分析', boss: 'BOSS 同步', loading: '正在读取招聘工作台…', retry: '重新加载', loadError: '招聘工作台加载失败',
         openRoles: '在招岗位', activeCandidates: '活跃候选人', pendingReplies: '待回复', pendingFeedback: '待反馈', pendingConfirmation: '待人工确认', todayTasks: '今日待办', responseRate: '平均响应率',
         noData: '还没有招聘数据', addRole: '在对话中创建岗位需求', funnel: '招聘漏斗', roleHealth: '岗位健康度', needsAction: '需要你处理', recent: '最近更新', source: '数据来源', ready: '已启用', unavailable: '待连接', error: '异常', empty: '暂无数据', sample: '样本', updated: '更新时间',
         rolesIntro: '把业务需求整理成可编辑的 JD 草稿，再确认发布。', importRequirement: '导入岗位需求', uploadRequirement: '上传文本需求', pasteRequirement: '粘贴或输入需求', selectFile: '选择文件', generateDraft: '生成 JD 草稿', roleDraftHint: '支持 TXT、Markdown 或直接粘贴；生成后仍可编辑。', roleGenerated: '已生成岗位草稿，请补充缺失信息。', saveError: '保存失败，请稍后重试。', fileReadError: '暂不支持读取该文件，请粘贴文本内容。', roleDraftTitle: '岗位草稿', noRolesCta: '从一段需求开始创建岗位', editAfterGenerate: '草稿会保存到岗位列表，确认后再发布。',
@@ -29,7 +29,7 @@ window.__ModuleLoader__.load({
       },
       en: {
         open: 'Recruiting workspace', title: 'HR recruiting workspace', subtitle: 'Sync talent from BOSS and turn hiring activity into organizational knowledge', close: 'Close workspace', refresh: 'Refresh',
-        overview: 'Overview', roles: 'Roles', candidates: 'Talent pool', actions: 'Approvals', knowledge: 'HR knowledge', analytics: 'Analytics', boss: 'BOSS sync', loading: 'Loading recruiting workspace…', processing: 'Submitting…', retry: 'Try again', loadError: 'Could not load recruiting workspace', actionError: 'Action could not be completed. Try again.',
+        overview: 'Overview', roles: 'Roles', candidates: 'Talent pool', actions: 'Approvals', knowledge: 'HR knowledge', analytics: 'Analytics', boss: 'BOSS sync', loading: 'Loading recruiting workspace…', retry: 'Try again', loadError: 'Could not load recruiting workspace',
         openRoles: 'Open roles', activeCandidates: 'Active candidates', pendingReplies: 'Pending replies', pendingFeedback: 'Pending feedback', pendingConfirmation: 'Awaiting approval', todayTasks: "Today's tasks", responseRate: 'Avg. response rate',
         noData: 'No recruiting data yet', addRole: 'Create a role requirement in chat', funnel: 'Hiring funnel', roleHealth: 'Role health', needsAction: 'Needs your attention', recent: 'Recently updated', source: 'Data source', ready: 'Enabled', unavailable: 'Needs connection', error: 'Error', empty: 'No data', sample: 'Sample', updated: 'Updated',
         rolesIntro: 'Turn a business brief into an editable JD draft before publishing.', importRequirement: 'Import role requirement', uploadRequirement: 'Upload text brief', pasteRequirement: 'Paste or type a brief', selectFile: 'Choose file', generateDraft: 'Generate JD draft', roleDraftHint: 'TXT, Markdown, or pasted text is supported; the draft stays editable.', roleGenerated: 'Role draft created. Fill in the missing details.', saveError: 'Could not save the draft. Try again.', fileReadError: 'This file cannot be read here. Paste the text instead.', roleDraftTitle: 'Role draft', noRolesCta: 'Start with a role brief', editAfterGenerate: 'The draft is saved to the role list and can be reviewed before publishing.',
@@ -44,12 +44,12 @@ window.__ModuleLoader__.load({
     }
 
     let opened = false
-    let opener = null
+    let lastTrigger = null
     const listeners = new Set()
     const emit = () => listeners.forEach(listener => listener())
     const setOpened = value => { opened = value; emit() }
-    const openOverlay = () => { const activeElement = document.activeElement; opener = activeElement && typeof activeElement.focus === 'function' ? activeElement : null; window.dispatchEvent(new CustomEvent(OVERLAY_EVENT, { detail: { id: OVERLAY_ID } })); setOpened(true) }
-    const closeOverlay = () => { setOpened(false); const target = opener; opener = null; if (target && target.isConnected !== false) window.requestAnimationFrame(() => target.focus()) }
+    const openOverlay = event => { lastTrigger = event?.currentTarget || document.activeElement; window.dispatchEvent(new CustomEvent(OVERLAY_EVENT, { detail: { id: OVERLAY_ID } })); setOpened(true) }
+    const closeOverlay = () => { setOpened(false); requestAnimationFrame(() => lastTrigger?.focus?.()) }
     const closeOtherOverlay = event => { if (event.detail?.id !== OVERLAY_ID) setOpened(false) }
     const subscribe = listener => { listeners.add(listener); return () => listeners.delete(listener) }
     const snapshot = () => opened
@@ -88,9 +88,9 @@ window.__ModuleLoader__.load({
         ),
       )
     }
-    function ActionRow({ item, t, onUpdate, busy, active }) { const executable = ['confirmed_pending_adapter', 'failed', 'requires_user_login'].includes(item.status); return h('article', { className: 'yr-action', 'aria-busy': active }, h('div', { className: 'yr-action-main' }, h('strong', null, item.targetLabel), h('span', null, item.summary), active ? h('span', { className: 'yr-status', role: 'status' }, t('processing')) : h(Status, { status: item.status, t })), item.status === 'awaiting_confirmation' ? h('div', { className: 'yr-action-buttons' }, h('button', { type: 'button', disabled: busy, onClick: () => onUpdate?.({ action: 'confirm_action', id: item.id }) }, h(IconCheckOutline16, { size: 14 }), t('approve')), h('button', { type: 'button', disabled: busy, onClick: () => onUpdate?.({ action: 'dismiss_action', id: item.id }) }, h(IconCloseOutline16, { size: 14 }), t('dismiss'))) : executable ? h('div', { className: 'yr-action-buttons' }, h('button', { type: 'button', disabled: busy, onClick: () => onUpdate?.({ action: 'execute_action', id: item.id }) }, h(IconRefreshOutline16, { size: 14 }), t('execute'))) : null) }
+    function ActionRow({ item, t, onUpdate }) { const executable = ['confirmed_pending_adapter', 'failed', 'requires_user_login'].includes(item.status); return h('article', { className: 'yr-action' }, h('div', { className: 'yr-action-main' }, h('strong', null, item.targetLabel), h('span', null, item.summary), h(Status, { status: item.status, t })), item.status === 'awaiting_confirmation' ? h('div', { className: 'yr-action-buttons' }, h('button', { type: 'button', onClick: () => onUpdate?.({ action: 'confirm_action', id: item.id }) }, h(IconCheckOutline16, { size: 14 }), t('approve')), h('button', { type: 'button', onClick: () => onUpdate?.({ action: 'dismiss_action', id: item.id }) }, h(IconCloseOutline16, { size: 14 }), t('dismiss'))) : executable ? h('div', { className: 'yr-action-buttons' }, h('button', { type: 'button', onClick: () => onUpdate?.({ action: 'execute_action', id: item.id }) }, h(IconRefreshOutline16, { size: 14 }), t('execute'))) : null) }
     function staleDays(role) { const time = Date.parse(role.updatedAt || ''); return Number.isFinite(time) ? Math.max(0, Math.floor((Date.now() - time) / 86400000)) : null }
-    function Overview({ data, t, onUpdate, onNavigate, pendingActionId, busy }) {
+    function Overview({ data, t, onUpdate, onNavigate }) {
       const d = data.dashboard || {}
       const localState = data.status || (data.dashboard ? 'ready' : 'unavailable')
       const sync = data.sync || {}
@@ -113,7 +113,7 @@ window.__ModuleLoader__.load({
           h(Funnel, { data, t }),
           h('section', { className: 'yr-panel' },
             h('div', { className: 'yr-panel-title' }, h('h2', null, t('needsAction')), h('strong', { className: 'yr-count' }, String(number(d.pendingConfirmation)))),
-            pending.length ? pending.map(item => h(ActionRow, { key: item.id, item, t, onUpdate, busy, active: pendingActionId === item.id })) : h('div', { className: 'yr-empty yr-empty-compact' }, t('emptyActions')),
+            pending.length ? pending.map(item => h(ActionRow, { key: item.id, item, t, onUpdate })) : h('div', { className: 'yr-empty yr-empty-compact' }, t('emptyActions')),
           ),
         ),
         h('div', { className: 'yr-dashboard-grid' },
@@ -139,7 +139,7 @@ window.__ModuleLoader__.load({
       const responsibilities = lines.slice(1, 5).filter(line => line !== skillLine).slice(0, 4)
       return { action: 'save_requirement', title, department: '待补充', location: '待补充', employmentType: '全职', headcount: 1, responsibilities, requiredSkills, preferredSkills: [], status: 'draft' }
     }
-    function Roles({ data, t, onUpdate, busy }) {
+    function Roles({ data, t, onUpdate }) {
       const roles = data.requirements || []
       const [input, setInput] = useState('')
       const [fileName, setFileName] = useState('')
@@ -152,7 +152,7 @@ window.__ModuleLoader__.load({
       }
       const generate = async () => {
         if (!input.trim()) { setMessage(t('roleDraftHint')); return }
-        try { const result = await onUpdate?.(draftFromText(input)); setMessage(result ? t('roleGenerated') : t('saveError')) } catch { setMessage(t('saveError')) }
+        try { await onUpdate?.(draftFromText(input)); setMessage(t('roleGenerated')) } catch { setMessage(t('saveError')) }
       }
       return h('div', { className: 'yr-page' },
         h('div', { className: 'yr-heading yr-workbench-toolbar' }, h('div', null, h('h2', null, t('roles')), h('p', { className: 'yr-subheading' }, t('rolesIntro'))), h('span', { className: 'yr-muted' }, `${roles.length} ${t('roles')}`)),
@@ -160,7 +160,7 @@ window.__ModuleLoader__.load({
           h('div', { className: 'yr-panel-title' }, h('div', null, h('h2', null, t('importRequirement')), h('p', { className: 'yr-subheading' }, t('roleDraftHint')))),
           h('div', { className: 'yr-intake-grid' },
             h('label', { className: 'yr-dropzone' }, h(IconFolderOpenOutline16, { size: 18 }), h('strong', null, fileName || t('uploadRequirement')), h('span', null, t('selectFile')), h('input', { type: 'file', accept: '.txt,.md,.markdown,.csv,text/plain,text/markdown', onChange: onFile })),
-            h('div', { className: 'yr-intake-editor' }, h('label', { htmlFor: 'yr-role-brief' }, t('pasteRequirement')), h('textarea', { id: 'yr-role-brief', className: 'yr-intake-textarea', value: input, disabled: busy, onChange: event => setInput(event.target.value), placeholder: t('addRole') }), h('div', { className: 'yr-intake-footer' }, h('span', { className: 'yr-muted', role: 'status' }, busy ? t('processing') : message), h('button', { type: 'button', className: 'yr-primary', disabled: busy, onClick: generate }, h(IconDataOutline16, { size: 14 }), t('generateDraft')))),
+            h('div', { className: 'yr-intake-editor' }, h('label', { htmlFor: 'yr-role-brief' }, t('pasteRequirement')), h('textarea', { id: 'yr-role-brief', className: 'yr-intake-textarea', value: input, onChange: event => setInput(event.target.value), placeholder: t('addRole') }), h('div', { className: 'yr-intake-footer' }, h('span', { className: 'yr-muted' }, message), h('button', { type: 'button', className: 'yr-primary', onClick: generate }, h(IconDataOutline16, { size: 14 }), t('generateDraft')))),
           ),
         ),
         roles.length ? h('div', { className: 'yr-list' }, roles.map(role => h('article', { className: 'yr-card', key: role.id }, h('div', { className: 'yr-card-head' }, h('div', null, h('strong', null, role.title), h('span', { className: 'yr-muted' }, `${role.department} · ${role.location}`)), h('span', { className: `yr-pill yr-pill-${role.status}` }, role.status)), h('div', { className: 'yr-role-meta' }, h('span', null, `${role.headcount} HC`), h('span', null, role.employmentType), role.salaryMin || role.salaryMax ? h('span', null, `${role.salaryMin || '—'}-${role.salaryMax || '—'}`) : null), h('p', null, list(role.requiredSkills).join(' · ')), h('small', { className: 'yr-muted' }, `${t('updated')}: ${role.updatedAt || '—'}`)))) : h('section', { className: 'yr-empty yr-empty-main' }, h('div', { className: 'yr-empty-icon' }, h(IconDataOutline16, { size: 20 })), h('strong', null, t('noRolesCta')), h('span', null, t('editAfterGenerate'))),
@@ -179,8 +179,8 @@ window.__ModuleLoader__.load({
         filtered.length ? h('div', { className: 'yr-pipeline' }, STAGES.filter(item => filtered.some(candidate => candidate.stage === item)).map(item => h('section', { className: 'yr-stage', key: item }, h('div', { className: 'yr-stage-title' }, h('strong', null, item), h('span', null, String(filtered.filter(candidate => candidate.stage === item).length))), filtered.filter(candidate => candidate.stage === item).map(candidate => h('article', { className: 'yr-card yr-candidate', key: candidate.id }, h('div', { className: 'yr-card-head' }, h('strong', null, candidate.displayName), candidate.matchScore === undefined ? null : h('span', { className: 'yr-score' }, `${candidate.matchScore}`)), h('p', null, list(candidate.evidence).join(' · ') || t('empty')), h('p', { className: 'yr-muted' }, `${t('concerns')}: ${list(candidate.concerns).join(' · ') || '—'}`), h('small', { className: 'yr-muted' }, `${t('status')}: ${candidate.feedbackStatus || 'none'}`)))))) : h('section', { className: 'yr-empty yr-empty-main' }, h('div', { className: 'yr-empty-icon' }, h(IconUserOutline16, { size: 20 })), h('strong', null, t('noData')), h('span', null, t('syncHint')), h('button', { type: 'button', className: 'yr-primary yr-empty-action', onClick: () => onNavigate?.('boss') }, h(IconLinkOutline16, { size: 14 }), t('boss'))),
       )
     }
-    function Actions({ data, t, onUpdate, pendingActionId, busy }) { const actions = data.actions || []; return h('div', { className: 'yr-page' }, h('div', { className: 'yr-heading' }, h('div', null, h('h2', null, t('actions')), h('p', { className: 'yr-subheading' }, t('pendingConfirmation'))), h('span', { className: 'yr-muted' }, String(actions.length))), actions.length ? h('div', { className: 'yr-list' }, actions.map(item => h(ActionRow, { key: item.id, item, t, onUpdate, busy, active: pendingActionId === item.id }))) : h('div', { className: 'yr-empty' }, t('emptyActions'))) }
-    function Knowledge({ data, t, onUpdate, busy }) {
+    function Actions({ data, t, onUpdate }) { const actions = data.actions || []; return h('div', { className: 'yr-page' }, h('div', { className: 'yr-heading' }, h('div', null, h('h2', null, t('actions')), h('p', { className: 'yr-subheading' }, t('pendingConfirmation'))), h('span', { className: 'yr-muted' }, String(actions.length))), actions.length ? h('div', { className: 'yr-list' }, actions.map(item => h(ActionRow, { key: item.id, item, t, onUpdate }))) : h('div', { className: 'yr-empty' }, t('emptyActions'))) }
+    function Knowledge({ data, t, onUpdate }) {
       const knowledge = data.knowledge || {}
       const recent = Array.isArray(knowledge.recent) ? knowledge.recent : []
       return h('div', { className: 'yr-page' },
@@ -198,13 +198,13 @@ window.__ModuleLoader__.load({
           recent.length ? recent.map(item => h('div', { className: 'yr-recent-row', key: item.id || item.title }, h('strong', null, item.title), h('span', { className: 'yr-muted' }, item.updatedAt || '—'))) : h('div', { className: 'yr-empty yr-empty-compact' }, t('empty')),
         ),
         h('div', { className: 'yr-knowledge-actions' },
-          h('button', { type: 'button', onClick: () => onUpdate?.({ action: 'publish_knowledge', scope: 'hr-recruiting' }), disabled: busy || knowledge.status !== 'ready' }, h(IconCheckOutline16, { size: 14 }), t('knowledgeAction')),
+          h('button', { type: 'button', onClick: () => onUpdate?.({ action: 'publish_knowledge', scope: 'hr-recruiting' }), disabled: knowledge.status !== 'ready' }, h(IconCheckOutline16, { size: 14 }), t('knowledgeAction')),
           h('a', { href: 'https://ixicai.cn', target: '_blank', rel: 'noreferrer', className: 'yr-secondary' }, h(IconLinkOutline16, { size: 14 }), t('knowledgeOpen')),
         ),
       )
     }
     function Analytics({ data, t }) { const a = data.analytics || {}; const localState = data.status || (data.dashboard ? 'ready' : 'unavailable'); return h('div', { className: 'yr-page' }, h('div', { className: 'yr-heading' }, h('div', null, h('h2', null, t('analytics')), h('p', { className: 'yr-subheading' }, `${t('updated')}: ${a.updatedAt || data.updatedAt || '—'}`)), h(SourceBadge, { label: t('srcLocal'), state: localState, t })), h('div', { className: 'yr-metrics' }, h(Metric, { label: t('responseRate'), value: a.responseRate == null ? '—' : `${number(a.responseRate)}%` }), h(Metric, { label: t('avgScreening'), value: a.avgScreeningDays == null ? '—' : `${number(a.avgScreeningDays)} ${t('days')}` }), h(Metric, { label: t('offerConversion'), value: a.offerConversion == null ? '—' : `${number(a.offerConversion)}%` }), h(Metric, { label: t('knowledgePending'), value: (data.knowledge || {}).pending })), h(Funnel, { data, t }), h('section', { className: 'yr-panel' }, h('p', { className: 'yr-note' }, a.insight || t('insightFallback')))) }
-    function Boss({ data, t, onUpdate, busy }) {
+    function Boss({ data, t, onUpdate }) {
       const sync = data.sync || {}
       const connected = sync.status === 'connected' || sync.status === 'ready'
       const canSync = data.boss?.adapter === 'official'
@@ -217,7 +217,7 @@ window.__ModuleLoader__.load({
         ),
         h('div', { className: 'yr-sync-grid' },
           h('div', { className: 'yr-panel' }, h('h2', null, t('syncRecords')), h('div', { className: 'yr-sync-number' }, `${number(sync.imported)} / ${number(sync.updated)}`), h('p', { className: 'yr-muted' }, `${t('lastSync')}: ${sync.lastSuccessAt || '—'}`), number(sync.conflictsPreserved) > 0 ? h('p', { className: 'yr-muted' }, `${number(sync.conflictsPreserved)} ${t('conflictsKept')}`) : null),
-          h('div', { className: 'yr-panel' }, h('h2', null, t('syncHint')), h('p', null, sync.reason || t('syncWaiting')), h('div', { className: 'yr-sync-actions' }, h('button', { type: 'button', className: 'yr-primary', disabled: busy || data.boss?.inAppBrowser !== true, onClick: () => onUpdate?.({ action: 'open_boss_login' }) }, h(IconUserOutline16, { size: 14 }), t('openInApp')), h('button', { type: 'button', disabled: busy, onClick: () => onUpdate?.({ action: 'sync_preview' }) }, h(IconDataOutline16, { size: 14 }), t('preview')), canSync ? h('button', { type: 'button', disabled: busy, onClick: () => onUpdate?.({ action: 'sync_boss' }) }, h(IconRefreshOutline16, { size: 14 }), t('syncNow')) : null, h('a', { className: 'yr-secondary', href: data.boss?.loginUrl || 'https://www.zhipin.com/web/user/?ka=header-login', target: '_blank', rel: 'noreferrer' }, h(IconLinkOutline16, { size: 14 }), t('openExternal')))),
+          h('div', { className: 'yr-panel' }, h('h2', null, t('syncHint')), h('p', null, sync.reason || t('syncWaiting')), h('div', { className: 'yr-sync-actions' }, h('button', { type: 'button', className: 'yr-primary', disabled: data.boss?.inAppBrowser !== true, onClick: () => onUpdate?.({ action: 'open_boss_login' }) }, h(IconUserOutline16, { size: 14 }), t('openInApp')), h('button', { type: 'button', onClick: () => onUpdate?.({ action: 'sync_preview' }) }, h(IconDataOutline16, { size: 14 }), t('preview')), canSync ? h('button', { type: 'button', onClick: () => onUpdate?.({ action: 'sync_boss' }) }, h(IconRefreshOutline16, { size: 14 }), t('syncNow')) : null, h('a', { className: 'yr-secondary', href: data.boss?.loginUrl || 'https://www.zhipin.com/web/user/?ka=header-login', target: '_blank', rel: 'noreferrer' }, h(IconLinkOutline16, { size: 14 }), t('openExternal')))),
           h('p', { className: 'yr-note' }, t('webUseHint')),
         ),
         preview ? h('section', { className: 'yr-panel' },
@@ -233,51 +233,45 @@ window.__ModuleLoader__.load({
     }
     function Overlay({ t }) {
       const visible = useSyncExternalStore(subscribe, snapshot, snapshot)
-      const actionBusyRef = useRef(false)
       const shellRef = useRef(null)
       const [tab, setTab] = useState('overview')
       const [data, setData] = useState(null)
-      const [error, setError] = useState('')
+      const [error, setError] = useState(false)
       const [loading, setLoading] = useState(false)
       const [revision, setRevision] = useState(0)
-      const [pendingActionId, setPendingActionId] = useState('')
       useEffect(() => {
         if (!visible) return undefined
         const controller = new AbortController()
-        setError('')
+        setError(false)
         setLoading(true)
-        void load(controller.signal).then(value => { setData(value); setError('') }).catch(e => { if (e?.name !== 'AbortError') setError('load') }).finally(() => { if (!controller.signal.aborted) setLoading(false) })
+        void load(controller.signal).then(value => { setData(value); setError(false) }).catch(e => { if (e?.name !== 'AbortError') setError(true) }).finally(() => { if (!controller.signal.aborted) setLoading(false) })
         return () => controller.abort()
       }, [visible, revision])
       useEffect(() => {
         if (!visible) return undefined
-        const frame = window.requestAnimationFrame(() => shellRef.current?.focus())
         const key = event => { if (event.key === 'Escape') closeOverlay() }
         window.addEventListener('keydown', key)
-        return () => { window.cancelAnimationFrame(frame); window.removeEventListener('keydown', key) }
+        return () => window.removeEventListener('keydown', key)
       }, [visible])
+      useEffect(() => { if (visible) requestAnimationFrame(() => shellRef.current?.focus?.()) }, [visible])
       if (!visible) return null
-      const keepFocus = event => { if (event.key !== 'Tab') return; const controls = [...(shellRef.current?.querySelectorAll('button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])') || [])]; const first = controls[0]; const last = controls.at(-1); if (!first) return; if (event.shiftKey && (document.activeElement === first || document.activeElement === shellRef.current)) { event.preventDefault(); last.focus() } else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus() } }
       const tData = data || { status: 'empty', dashboard: {}, requirements: [], candidates: [], actions: [], boss: {}, sync: {}, knowledge: {}, analytics: {} }
-      const update = async body => { if (actionBusyRef.current) return undefined; actionBusyRef.current = true; setPendingActionId(body.id || body.action); try { const next = await mutate(body); setData(next); setError(''); return next } catch { setError('action'); return undefined } finally { actionBusyRef.current = false; setPendingActionId('') } }
-      const busy = Boolean(pendingActionId)
-      const errorLabel = error === 'load' ? t('loadError') : t('actionError')
-      const showErrorBanner = error === 'action' || Boolean(data)
+      const update = async body => { try { const next = await mutate(body); setData(next); setError(false); return next } catch (error) { setError(true); throw error } }
       let body
       if (loading && !data) body = h('div', { className: 'yr-empty yr-loading', role: 'status' }, h('span', { className: 'yr-spinner', 'aria-hidden': true }), t('loading'))
-      else if (error === 'load' && !data) body = h('div', { className: 'yr-empty', role: 'alert' }, t('loadError'), h('button', { type: 'button', onClick: () => setRevision(value => value + 1) }, h(IconRefreshOutline16, { size: 14 }), t('retry')))
-      else if (tab === 'overview') body = h(Overview, { data: tData, t, onUpdate: update, onNavigate: setTab, pendingActionId, busy })
-      else if (tab === 'roles') body = h(Roles, { data: tData, t, onUpdate: update, busy })
+      else if (error && !data) body = h('div', { className: 'yr-empty', role: 'alert' }, t('loadError'), h('button', { type: 'button', onClick: () => setRevision(value => value + 1) }, h(IconRefreshOutline16, { size: 14 }), t('retry')))
+      else if (tab === 'overview') body = h(Overview, { data: tData, t, onUpdate: update, onNavigate: setTab })
+      else if (tab === 'roles') body = h(Roles, { data: tData, t, onUpdate: update })
       else if (tab === 'candidates') body = h(Candidates, { data: tData, t, onNavigate: setTab })
-      else if (tab === 'actions') body = h(Actions, { data: tData, t, onUpdate: update, pendingActionId, busy })
-      else if (tab === 'knowledge') body = h(Knowledge, { data: tData, t, onUpdate: update, busy })
+      else if (tab === 'actions') body = h(Actions, { data: tData, t, onUpdate: update })
+      else if (tab === 'knowledge') body = h(Knowledge, { data: tData, t, onUpdate: update })
       else if (tab === 'analytics') body = h(Analytics, { data: tData, t })
-      else body = h(Boss, { data: tData, t, onUpdate: update, busy })
+      else body = h(Boss, { data: tData, t, onUpdate: update })
       const tabs = [['overview', t('overview')], ['roles', t('roles')], ['candidates', t('candidates')], ['actions', t('actions')], ['knowledge', t('knowledge')], ['analytics', t('analytics')], ['boss', t('boss')]]
-      return h('div', { className: 'yr-overlay', role: 'dialog', 'aria-modal': true, 'aria-labelledby': 'yr-title' }, h('main', { className: 'yr-shell', ref: shellRef, tabIndex: -1, onKeyDown: keepFocus, 'aria-labelledby': 'yr-title', 'aria-busy': loading || busy },
-        h('header', { className: 'yr-header' }, h('div', null, h('h1', { id: 'yr-title' }, t('title')), h('p', null, t('subtitle'))), h('div', { className: 'yr-header-buttons' }, h(Tooltip, { label: t('refresh') }, h('button', { type: 'button', className: 'yr-icon', 'aria-label': t('refresh'), disabled: loading || busy, onClick: () => setRevision(value => value + 1) }, h(IconRefreshOutline16, { size: 16 }))), h(Tooltip, { label: t('close') }, h('button', { type: 'button', className: 'yr-icon', 'aria-label': t('close'), onClick: closeOverlay }, h(IconCloseOutline16, { size: 16 }))))),
+      return h('div', { className: 'yr-overlay', role: 'dialog', 'aria-modal': true, 'aria-labelledby': 'yr-title' }, h('main', { className: 'yr-shell', 'aria-labelledby': 'yr-title', ref: shellRef, tabIndex: -1 },
+        h('header', { className: 'yr-header' }, h('div', null, h('h1', { id: 'yr-title' }, t('title')), h('p', null, t('subtitle'))), h('div', { className: 'yr-header-buttons' }, h(Tooltip, { label: t('refresh') }, h('button', { type: 'button', className: 'yr-icon', 'aria-label': t('refresh'), disabled: loading, onClick: () => setRevision(value => value + 1) }, h(IconRefreshOutline16, { size: 16 }))), h(Tooltip, { label: t('close') }, h('button', { type: 'button', className: 'yr-icon', 'aria-label': t('close'), onClick: closeOverlay }, h(IconCloseOutline16, { size: 16 }))))),
         h('nav', { className: 'yr-tabs', 'aria-label': t('title') }, tabs.map(([id, label]) => h('button', { type: 'button', key: id, 'data-active': tab === id, 'aria-current': tab === id ? 'page' : undefined, onClick: () => setTab(id) }, label))),
-        h('div', { className: 'yr-content', 'aria-busy': busy }, showErrorBanner ? h('div', { className: 'yr-error', role: 'alert' }, errorLabel, error === 'load' ? h('button', { type: 'button', onClick: () => setRevision(value => value + 1) }, t('retry')) : null) : null, busy ? h('div', { className: 'yr-action-state', role: 'status' }, t('processing')) : null, body),
+        h('div', { className: 'yr-content' }, body),
       ))
     }
     function SidebarButton({ wide, t }) { return h(Tooltip, { label: t('open'), delayMs: 500, disabled: wide }, h('button', { type: 'button', className: `yr-sidebar-button${wide ? ' yr-sidebar-wide' : ''}`, 'aria-label': t('open'), onClick: openOverlay }, h(IconFolderOpenOutline16, { size: wide ? 14 : 18 }), wide ? h('span', null, t('open')) : null)) }
@@ -333,8 +327,7 @@ window.__ModuleLoader__.load({
     @media(max-width:720px){.yr-intake-grid{grid-template-columns:1fr}.yr-dropzone{min-height:120px}.yr-filter-bar{flex-direction:column}.yr-filter:last-child{width:100%}}
     @media(max-width:560px){.yr-header,.yr-tabs{padding-left:var(--yr-space-4);padding-right:var(--yr-space-4)}.yr-content{padding:var(--yr-space-4) var(--yr-space-4) 32px}.yr-panel,.yr-hero-panel{padding:var(--yr-space-4)}.yr-workbench-toolbar{align-items:flex-start;flex-direction:column}.yr-intake-footer{align-items:flex-start;flex-direction:column}.yr-intake-footer .yr-primary{width:100%;justify-content:center}.yr-summary-item{flex:1;min-width:100px}}
     `
-    const stateCss = `.yr-shell{outline:0}.yr-primary:disabled{opacity:.45;cursor:default}.yr-error,.yr-action-state{max-width:1160px;box-sizing:border-box;margin:0 auto 12px;padding:10px 12px;border:1px solid var(--dsw-alias-border-l1);font-size:13px}.yr-error{display:flex;align-items:center;justify-content:space-between;gap:12px;border-color:var(--dsw-alias-state-error-primary);color:var(--dsw-alias-state-error-primary)}.yr-error button{flex:none;min-height:28px;border:1px solid currentColor;border-radius:5px;background:transparent;color:inherit;font:inherit;cursor:pointer}.yr-action-state{color:var(--dsw-alias-label-secondary)}`
-    function apply(ctx) { ctx.effect(() => ctx.locale.register(NS, copy), 'dofe-yootun-recruiter: dictionaries'); ctx.effect(() => { window.addEventListener(OVERLAY_EVENT, closeOtherOverlay); return () => window.removeEventListener(OVERLAY_EVENT, closeOtherOverlay) }, 'dofe-yootun-recruiter: exclusive-overlay'); ctx.effect(() => { const style = document.createElement('style'); style.dataset.plugin = '@dofe/dsh-yootun-recruiter'; style.textContent = css + spacingCss + stateCss; document.head.appendChild(style); return () => style.remove() }, 'dofe-yootun-recruiter: styles'); const t = ctx.locale.bind(NS); ctx.slots.inject('sidebar.footer.action', () => ctx.slots.register({ name: 'sidebar.footer.action', id: 'dofe-yootun-recruiter', order: 20, inject: () => ({ t }) }, SidebarButton)); ctx.slots.inject('shell.overlay', () => ctx.slots.register({ name: 'shell.overlay', id: 'dofe-yootun-recruiter', order: 20, inject: () => ({ t }) }, Overlay)) }
+    function apply(ctx) { ctx.effect(() => ctx.locale.register(NS, copy), 'dofe-yootun-recruiter: dictionaries'); ctx.effect(() => { window.addEventListener(OVERLAY_EVENT, closeOtherOverlay); return () => window.removeEventListener(OVERLAY_EVENT, closeOtherOverlay) }, 'dofe-yootun-recruiter: exclusive-overlay'); ctx.effect(() => { const style = document.createElement('style'); style.dataset.plugin = '@dofe/dsh-yootun-recruiter'; style.textContent = css + spacingCss; document.head.appendChild(style); return () => style.remove() }, 'dofe-yootun-recruiter: styles'); const t = ctx.locale.bind(NS); ctx.slots.inject('sidebar.footer.action', () => ctx.slots.register({ name: 'sidebar.footer.action', id: 'dofe-yootun-recruiter', order: 20, inject: () => ({ t }) }, SidebarButton)); ctx.slots.inject('shell.overlay', () => ctx.slots.register({ name: 'shell.overlay', id: 'dofe-yootun-recruiter', order: 20, inject: () => ({ t }) }, Overlay)) }
     exports.apply = apply
     exports.inject = ['slots', 'locale']
 

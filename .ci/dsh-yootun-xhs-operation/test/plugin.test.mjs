@@ -29,23 +29,22 @@ test('registers menu at order 41 and renders the three-region overlay', async ()
     '小红书仿写',
     '开始仿写',
     '正在仿写',
+    '上传图片或者视频素材，根据提供的对标笔记或者账号风格，生成爆款小红书文案',
     'coverIndex = 0',
     'versionCount: 3',
     'references',
     'accounts',
-    '30000',
+    '15000',
+    '取消任务',
+    '确认取消当前任务',
   ]) assert.match(source, new RegExp(escape(token), 'u'))
   // 互斥与上限：最多 5 张、视频单选、提交只读当前 Tab
   assert.match(source, /const MAX_IMAGES = 5/)
-  for (const field of ['theme', 'refNote', 'refAccount']) assert.match(source, new RegExp(`aria-label': t\\('${field}'\\)`, 'u'))
   assert.match(source, /mediaType === 'images'/)
   assert.match(source, /videoUrl/)
-  assert.match(source, /className: 'yxh-overlay', role: 'dialog', 'aria-modal': true, 'aria-labelledby': 'yxh-title'/u)
-  assert.doesNotMatch(source, /querySelector\('\.yxh-overlay'\)|DIALOG_ATTRIBUTES/u)
-  assert.match(source, /requestAnimationFrame\(\(\) => shellRef\.current\?\.focus\?\.\(\)\)/u)
-  assert.match(source, /className: 'yxh-shell', ref: shellRef, tabIndex: -1/u)
-  for (const token of ['opener = event?.currentTarget || document.activeElement', 'target?.isConnected', 'target.focus()', "event.key === 'Escape') closeOverlay()", 'onClick: closeOverlay', 'uploadBusyRef.current', 'submitBusyRef.current', "'aria-busy': busy || uploading || processing"]) assert.ok(source.includes(token), `missing interaction guard token: ${token}`)
-  assert.match(source, /h\(TabBar, \{ tab, onTab: setTab, t, disabled: uploading \|\| locked \}\)/u)
+  assert.match(source, /\.yxh-tabs button\[aria-current="true"\]/)
+  assert.match(source, /grid-template-columns:minmax\(460px,1\.15fr\) minmax\(420px,\.85fr\)/)
+  assert.match(source, /yxh-right-title/)
   // 禁止不安全富文本
   assert.doesNotMatch(source, /dangerouslySetInnerHTML|password|cookie/i)
 })

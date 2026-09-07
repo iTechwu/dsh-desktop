@@ -12,12 +12,13 @@ window.__ModuleLoader__.load({
     const UPLOAD_SEND = '/_dsh/uploader/upload'
     const OVERLAY_ID = '@dofe/dsh-yootun-xhs-operation'
     const OVERLAY_EVENT = 'dofe:yootun-overlay:open'
-    const POLL_INTERVAL_MS = 30000
+    const DIALOG_ATTRIBUTES = { role: 'dialog', 'aria-modal': true, 'aria-labelledby': 'yxh-title' }
+    const POLL_INTERVAL_MS = 15000
     const MAX_IMAGES = 5
 
     const copy = {
       zh: {
-        open: '小红书仿写', title: '小红书仿写', subtitle: '上传素材，生成三套仿写文案',
+        open: '小红书仿写', title: '小红书仿写', subtitle: '上传图片或者视频素材，根据提供的对标笔记或者账号风格，生成爆款小红书文案',
         close: '关闭', material: '素材区', reference: '对标区', result: '仿写内容区',
         tabImages: '图片', tabVideo: '视频', theme: '主题', themePlaceholder: '可选，图片与视频共用',
         refNote: '对标笔记', refNotePlaceholder: '可选，笔记链接', refAccount: '对标账号', refAccountPlaceholder: '可选，账号名称',
@@ -26,11 +27,12 @@ window.__ModuleLoader__.load({
         empty: '上传素材后点击“开始仿写”，生成三套文案', processing: '正在生成文案', stepLabel: '当前步骤',
         versionA: '版本 A', versionB: '版本 B', versionC: '版本 C',
         failed: '生成失败', failedHint: '已保留你的输入与已上传素材，可修改后重新开始', cancelled: '已取消',
+        cancelTask: '取消任务', cancelConfirm: '确认取消当前任务？', confirmYes: '是', confirmNo: '否', cancelFailed: '取消失败，请重试',
         createFailed: '创建任务失败，请重试', pollFailed: '查询状态失败，稍后重试', resultFailed: '读取结果失败',
         copyCode: '复制', copiedCode: '已复制', footnotes: '脚注', tagsLabel: '标签', coverLabel: '封面文案', leadLabel: '评论引导',
       },
       en: {
-        open: 'XHS rewrite', title: 'XHS rewrite', subtitle: 'Upload media to generate three copies',
+        open: 'XHS rewrite', title: 'XHS rewrite', subtitle: 'Upload image or video media to create viral XHS copy from reference notes or account style',
         close: 'Close', material: 'Media', reference: 'References', result: 'Copies',
         tabImages: 'Images', tabVideo: 'Video', theme: 'Theme', themePlaceholder: 'Optional, shared by images and video',
         refNote: 'Reference note', refNotePlaceholder: 'Optional, note link', refAccount: 'Reference account', refAccountPlaceholder: 'Optional, account name',
@@ -39,13 +41,14 @@ window.__ModuleLoader__.load({
         empty: 'Upload media then press “Start” to generate three copies', processing: 'Generating copies', stepLabel: 'Current step',
         versionA: 'Version A', versionB: 'Version B', versionC: 'Version C',
         failed: 'Generation failed', failedHint: 'Your input and uploaded media are kept; adjust and retry', cancelled: 'Cancelled',
+        cancelTask: 'Cancel', cancelConfirm: 'Cancel the current task?', confirmYes: 'Yes', confirmNo: 'No', cancelFailed: 'Cancel failed, retry',
         createFailed: 'Failed to create the task, retry', pollFailed: 'Failed to query status, retry later', resultFailed: 'Failed to read the result',
         copyCode: 'Copy', copiedCode: 'Copied', footnotes: 'Footnotes', tagsLabel: 'Tags', coverLabel: 'Cover copy', leadLabel: 'Lead',
       },
     }
 
     let opened = false
-    let opener = null
+    let lastTrigger = null
     const openListeners = new Set()
     const emitOpen = () => openListeners.forEach(listener => listener())
     const setOpened = value => { opened = value; emitOpen() }
@@ -56,11 +59,15 @@ window.__ModuleLoader__.load({
     // 持有；关闭页面停止轮询但不取消任务，重新打开页面继续查询当前任务。
 
     const openOverlay = event => {
-      opener = event?.currentTarget || document.activeElement
+      lastTrigger = event?.currentTarget || document.activeElement
       window.dispatchEvent(new CustomEvent(OVERLAY_EVENT, { detail: { id: OVERLAY_ID } }))
       setOpened(true)
+      requestAnimationFrame(() => {
+        const root = document.querySelector('.yxh-overlay')
+        for (const [name, value] of Object.entries(DIALOG_ATTRIBUTES)) root?.setAttribute(name, String(value))
+      })
     }
-    const closeOverlay = () => { const target = opener; opener = null; setOpened(false); requestAnimationFrame(() => { if (target?.isConnected) target.focus() }) }
+    const closeOverlay = () => { setOpened(false); requestAnimationFrame(() => lastTrigger?.focus?.()) }
     const closeOtherOverlay = event => { if (event.detail?.id !== OVERLAY_ID) setOpened(false) }
 
     const isTerminal = status => status === 'succeeded' || status === 'failed' || status === 'cancelled'
@@ -87,7 +94,7 @@ window.__ModuleLoader__.load({
     // 小红书仿写任务状态机（纯逻辑，无 React/浏览器依赖，可被 test/task-machine.test.mjs 直接驱动）。
     // 职责：创建 → 轮询 → 读结果 → 终态；暂态失败按间隔重试；stop 停止轮询不取消任务；resume 恢复。
     // 注入 createTask/queryStatus/queryResult/schedule/clearSchedule，便于单测用假定时器与假 fetch。
-    function createTaskMachine({ createTask, queryStatus, queryResult, intervalMs = POLL_INTERVAL_MS, schedule = setTimeout, clearSchedule = clearTimeout, onChange }) {
+    function createTaskMachine({ createTask, queryStatus, queryResult, cancelTask, intervalMs = POLL_INTERVAL_MS, schedule = setTimeout, clearSchedule = clearTimeout, onChange }) {
       let snapshot = { task: null, versions: null, error: '' }
       let timer = null
       let generation = 0
@@ -163,7 +170,27 @@ window.__ModuleLoader__.load({
       const resume = async () => { active = true; await poll() }
       const stop = () => { active = false; cancel() }
 
-      return { submit, resume, stop, get: () => snapshot }
+      // 取消当前任务：先停止轮询，再调取消接口；成功后本地置终态 cancelled。
+      // 服务端取消是“请求取消”，真正落 cancelled 由 Driver 推进；前端成功后即停止轮询避免空转。
+      const requestCancel = async () => {
+        const task = snapshot.task
+        if (!task?.taskId || isTerminal(task.taskStatus)) return
+        cancel()
+        const gen = generation
+        if (!cancelTask) { update({ ...snapshot, task: { ...task, taskStatus: 'cancelled' }, error: 'cancelled' }); return }
+        try {
+          await cancelTask(task.taskId, task.idempotencyKey)
+        } catch {
+          if (gen !== generation) return
+          update({ ...snapshot, error: 'cancelFailed' })
+          if (active) timer = schedule(poll, intervalMs)
+          return
+        }
+        if (gen !== generation) return
+        update({ ...snapshot, task: { ...task, taskStatus: 'cancelled' }, error: 'cancelled' })
+      }
+
+      return { submit, resume, stop, requestCancel, get: () => snapshot }
     }
 
     // 状态机错误码 → 本地化文案。
@@ -174,6 +201,7 @@ window.__ModuleLoader__.load({
         case 'createFailed': return t('createFailed')
         case 'failed': return t('failed')
         case 'cancelled': return t('cancelled')
+        case 'cancelFailed': return t('cancelFailed')
         default: return ''
       }
     }
@@ -195,6 +223,11 @@ window.__ModuleLoader__.load({
         const res = await post({ action: 'result', taskId })
         if (!res || res.status !== 'ready') throw new Error('result_failed')
         return { versions: res.versions }
+      },
+      cancelTask: async (taskId, idempotencyKey) => {
+        const res = await post({ action: 'cancel', taskId, idempotencyKey })
+        if (!res || res.status !== 'ready') throw new Error('cancel_failed')
+        return res
       },
       onChange: () => machineListeners.forEach(listener => listener()),
     })
@@ -229,8 +262,6 @@ window.__ModuleLoader__.load({
     function Overlay({ t }) {
       const visible = useSyncExternalStore(subscribeOpen, snapshotOpen, snapshotOpen)
       const shellRef = useRef(null)
-      const uploadBusyRef = useRef(false)
-      const submitBusyRef = useRef(false)
       const [tab, setTab] = useState('images')
       const [images, setImages] = useState([])
       const [video, setVideo] = useState(null)
@@ -242,28 +273,29 @@ window.__ModuleLoader__.load({
       const machineState = useSyncExternalStore(subscribeMachine, () => machine.get(), () => machine.get())
       const { task, versions, error } = machineState
       const [busy, setBusy] = useState(false)
+      const [confirming, setConfirming] = useState(false)
 
       const taskStatus = task?.taskStatus || 'idle'
       const processing = Boolean(task?.taskId) && !isTerminal(taskStatus)
       const locked = busy || processing
+      const canCancel = Boolean(task?.taskId) && !isTerminal(taskStatus)
 
       useEffect(() => {
         if (!visible) return undefined
-        requestAnimationFrame(() => shellRef.current?.focus?.())
         const key = event => { if (event.key === 'Escape') closeOverlay() }
         window.addEventListener('keydown', key)
         return () => window.removeEventListener('keydown', key)
       }, [visible])
+      useEffect(() => { if (visible) requestAnimationFrame(() => shellRef.current?.focus?.()) }, [visible])
 
-      // 打开/关闭 overlay：恢复或停止轮询（不取消任务）。
+      // 打开/关闭 overlay：恢复或停止轮询（不取消任务），关闭时重置取消确认框。
       useEffect(() => {
         if (visible) machine.resume()
-        else machine.stop()
+        else { machine.stop(); setConfirming(false) }
       }, [visible])
 
       const pickAndUpload = async kind => {
-        if (uploadBusyRef.current || uploading || locked) return
-        uploadBusyRef.current = true
+        if (uploading || locked) return
         setUploading(true)
         setUploadError('')
         try {
@@ -279,13 +311,12 @@ window.__ModuleLoader__.load({
         } catch {
           setUploadError(t('uploadFailed'))
         } finally {
-          uploadBusyRef.current = false
           setUploading(false)
         }
       }
 
       const onSubmit = async () => {
-        if (submitBusyRef.current || busy || uploading || processing) return
+        if (busy || uploading || processing) return
         const hasMaterial = tab === 'images' ? images.length > 0 : video !== null
         if (!hasMaterial) return
         const mediaType = tab
@@ -296,14 +327,15 @@ window.__ModuleLoader__.load({
         const body = { action: 'create', mediaType, idempotencyKey, theme: input.theme || null, references, accounts, versionCount: 3 }
         if (mediaType === 'images') { body.imageUrls = input.imageUrls; body.coverIndex = 0 }
         else { body.videoUrl = input.videoUrl }
-        submitBusyRef.current = true
         setBusy(true)
-        try {
-          await machine.submit(body)
-        } finally {
-          submitBusyRef.current = false
-          setBusy(false)
-        }
+        await machine.submit(body)
+        setBusy(false)
+      }
+
+      const cancelCurrent = async () => {
+        setConfirming(false)
+        setBusy(true)
+        try { await machine.requestCancel() } finally { setBusy(false) }
       }
 
       if (!visible) return null
@@ -317,7 +349,7 @@ window.__ModuleLoader__.load({
       const left = h('div', { className: 'yxh-left' },
         h('section', { className: 'yxh-section' },
           h('h2', null, t('material')),
-          h(TabBar, { tab, onTab: setTab, t, disabled: uploading || locked }),
+          h(TabBar, { tab, onTab: setTab, t, disabled: locked }),
           tab === 'images'
             ? h('div', { className: 'yxh-media' },
               images.map((image, index) => h('figure', { className: 'yxh-thumb', key: `${index}-${image.name}` },
@@ -337,17 +369,18 @@ window.__ModuleLoader__.load({
           uploadError ? h('p', { className: 'yxh-error', role: 'alert' }, uploadError) : null,
           h('label', { className: 'yxh-field' },
             h('span', null, t('theme')),
-            h('input', { type: 'text', value: theme, maxLength: 500, placeholder: t('themePlaceholder'), 'aria-label': t('theme'), disabled: locked, onChange: event => setTheme(event.target.value) }))),
+            h('input', { type: 'text', value: theme, maxLength: 500, placeholder: t('themePlaceholder'), disabled: locked, onChange: event => setTheme(event.target.value) }))),
         h('section', { className: 'yxh-section' },
           h('h2', null, t('reference')),
           h('label', { className: 'yxh-field' },
             h('span', null, t('refNote')),
-            h('input', { type: 'text', value: refNote, maxLength: 2048, placeholder: t('refNotePlaceholder'), 'aria-label': t('refNote'), disabled: locked, onChange: event => setRefNote(event.target.value) })),
+            h('input', { type: 'text', value: refNote, maxLength: 2048, placeholder: t('refNotePlaceholder'), disabled: locked, onChange: event => setRefNote(event.target.value) })),
           h('label', { className: 'yxh-field' },
             h('span', null, t('refAccount')),
-            h('input', { type: 'text', value: refAccount, maxLength: 200, placeholder: t('refAccountPlaceholder'), 'aria-label': t('refAccount'), disabled: locked, onChange: event => setRefAccount(event.target.value) }))),
+            h('input', { type: 'text', value: refAccount, maxLength: 200, placeholder: t('refAccountPlaceholder'), disabled: locked, onChange: event => setRefAccount(event.target.value) }))),
         h('div', { className: 'yxh-actions' },
-          h('button', { type: 'button', className: 'yxh-submit', disabled: buttonDisabled, onClick: onSubmit }, buttonLabel)))
+          h('button', { type: 'button', className: 'yxh-submit', disabled: buttonDisabled, onClick: onSubmit }, buttonLabel),
+          h('button', { type: 'button', className: 'yxh-cancel', disabled: !canCancel || busy, onClick: () => setConfirming(true) }, t('cancelTask'))))
 
       let right
       if (taskStatus === 'succeeded' && Array.isArray(versions)) {
@@ -365,15 +398,23 @@ window.__ModuleLoader__.load({
         right = h('div', { className: 'yxh-state' }, h('p', null, t('empty')))
       }
 
-      return h('div', { className: 'yxh-overlay', role: 'dialog', 'aria-modal': true, 'aria-labelledby': 'yxh-title', 'aria-busy': busy || uploading || processing },
-        h('main', { className: 'yxh-shell', ref: shellRef, tabIndex: -1, 'aria-labelledby': 'yxh-title' },
+      return h('div', { className: 'yxh-overlay' },
+        h('main', { className: 'yxh-shell', 'aria-labelledby': 'yxh-title', ref: shellRef, tabIndex: -1 },
           h('header', { className: 'yxh-header' },
             h('div', null, h('h1', { id: 'yxh-title' }, t('title')), h('p', null, t('subtitle'))),
             h('div', { className: 'yxh-header-buttons' },
               h(Tooltip, { label: t('close') }, h('button', { type: 'button', 'aria-label': t('close'), onClick: closeOverlay }, h(IconCloseOutline16, { size: 16 }))))),
           h('div', { className: 'yxh-body' },
             left,
-            h('div', { className: 'yxh-right', 'aria-label': t('result') }, right))))
+            h('div', { className: 'yxh-right', 'aria-label': t('result') },
+              h('h2', { className: 'yxh-right-title' }, t('result')),
+              right))),
+        confirming ? h('div', { className: 'yxh-confirm-overlay', role: 'dialog', 'aria-modal': true, 'aria-label': t('cancelConfirm') },
+          h('div', { className: 'yxh-confirm' },
+            h('p', { className: 'yxh-confirm-title' }, t('cancelConfirm')),
+            h('div', { className: 'yxh-confirm-actions' },
+              h('button', { type: 'button', className: 'yxh-confirm-primary', onClick: cancelCurrent }, t('confirmYes')),
+              h('button', { type: 'button', className: 'yxh-confirm-secondary', onClick: () => setConfirming(false) }, t('confirmNo'))))) : null)
     }
 
     function formatBytes(value) {
@@ -384,13 +425,12 @@ window.__ModuleLoader__.load({
       return `${(num / 1024 / 1024).toFixed(1)} MB`
     }
 
-    const focusCss = `.yxh-shell{outline:0}`
-    const css = `.yxh-button{display:flex;width:36px;height:36px;align-items:center;justify-content:center;gap:8px;border:0;border-radius:6px;background:transparent;color:var(--dsw-alias-label-secondary);cursor:pointer}.yxh-button:hover{background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary)}.yxh-wide{width:100%;height:34px;justify-content:flex-start;padding:0 10px}.yxh-wide span{font-size:13px}.yxh-overlay{position:fixed;inset:0;z-index:520;background:var(--dsw-alias-bg-base);color:var(--dsw-alias-label-primary)}.yxh-shell{display:grid;grid-template-rows:auto 1fr;width:100%;height:100%;overflow:hidden}.yxh-header{display:flex;min-height:74px;align-items:center;justify-content:space-between;padding:14px 24px;border-bottom:1px solid var(--dsw-alias-border-l1)}.yxh-header h1{margin:0;font-size:20px}.yxh-header p{margin:4px 0 0;color:var(--dsw-alias-label-secondary);font-size:13px}.yxh-header-buttons{display:flex;gap:6px}.yxh-header-buttons button{display:grid;width:34px;height:34px;place-items:center;border:1px solid var(--dsw-alias-border-l1);border-radius:6px;background:var(--dsw-alias-bg-layer-1);color:inherit;cursor:pointer}.yxh-body{display:grid;grid-template-columns:minmax(360px,.85fr) minmax(480px,1.15fr);max-width:1440px;margin:0 auto;width:100%;min-height:0;overflow:hidden}.yxh-left{overflow:auto;padding:20px 24px 32px;border-right:1px solid var(--dsw-alias-border-l1)}.yxh-right{overflow:auto;padding:20px 24px 32px}.yxh-section{display:grid;gap:12px}.yxh-section+.yxh-section{margin-top:22px}.yxh-section h2{margin:0;font-size:14px}.yxh-tabs{display:flex;gap:2px;border-bottom:1px solid var(--dsw-alias-border-l1)}.yxh-tabs button{height:40px;padding:0 14px;border:0;border-bottom:2px solid transparent;background:transparent;color:var(--dsw-alias-label-secondary);font:inherit;font-size:13px;cursor:pointer}.yxh-tabs button[aria-current]{border-bottom-color:var(--dsw-alias-brand-primary);color:var(--dsw-alias-label-primary);font-weight:650}.yxh-tabs button:disabled{opacity:.45;cursor:default}.yxh-media{display:flex;flex-wrap:wrap;gap:10px}.yxh-thumb{position:relative;margin:0;width:96px;height:96px;border:1px solid var(--dsw-alias-border-l1);border-radius:6px;overflow:hidden;background:var(--dsw-alias-bg-layer-1)}.yxh-thumb img{width:100%;height:100%;object-fit:cover}.yxh-thumb-remove{position:absolute;top:4px;right:4px;display:grid;width:20px;height:20px;place-items:center;border:0;border-radius:4px;background:color-mix(in srgb,var(--dsw-alias-bg-base) 82%,transparent);color:var(--dsw-alias-label-primary);font-size:14px;line-height:1;cursor:pointer}.yxh-thumb-remove:disabled{opacity:.45;cursor:default}.yxh-add{display:grid;width:96px;height:96px;place-items:center;border:1px dashed var(--dsw-alias-border-l2);border-radius:6px;background:transparent;color:var(--dsw-alias-label-secondary);font-size:26px;cursor:pointer}.yxh-add:hover{border-color:var(--dsw-alias-brand-primary);color:var(--dsw-alias-brand-primary)}.yxh-add:disabled{opacity:.45;cursor:default}.yxh-video{position:relative;display:flex;min-width:220px;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--dsw-alias-border-l1);border-radius:6px;background:var(--dsw-alias-bg-layer-1)}.yxh-video-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px}.yxh-video-meta{color:var(--dsw-alias-label-secondary);font-size:12px}.yxh-hint{color:var(--dsw-alias-label-secondary);font-size:12px}.yxh-error{color:var(--dsw-alias-state-error-primary);font-size:12px}.yxh-field{display:grid;gap:6px}.yxh-field span{color:var(--dsw-alias-label-secondary);font-size:12px}.yxh-field input{min-height:36px;padding:0 10px;border:1px solid var(--dsw-alias-border-l1);border-radius:6px;background:var(--dsw-alias-bg-layer-1);color:inherit;font:inherit;font-size:13px}.yxh-field input:disabled{opacity:.6}.yxh-actions{margin-top:22px}.yxh-submit{min-height:38px;padding:0 16px;border:0;border-radius:6px;background:var(--dsw-alias-brand-primary);color:var(--dsw-alias-bg-base);font:inherit;font-size:13px;font-weight:600;cursor:pointer}.yxh-submit:disabled{opacity:.45;cursor:default}.yxh-versions{display:grid;gap:16px}.yxh-version{padding:16px;border:1px solid var(--dsw-alias-border-l1);border-radius:8px;background:var(--dsw-alias-bg-layer-1)}.yxh-version-head{display:flex;align-items:baseline;gap:10px;margin-bottom:8px}.yxh-version-badge{flex:none;padding:2px 8px;border-radius:4px;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-secondary);font-size:12px}.yxh-version-head h3{margin:0;font-size:15px}.yxh-version-body{font-size:13px}.yxh-tags{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}.yxh-tag{padding:2px 8px;border-radius:4px;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-secondary);font-size:12px}.yxh-extra{display:grid;gap:2px;margin-top:10px}.yxh-extra-label{color:var(--dsw-alias-label-tertiary);font-size:11px}.yxh-extra-body{font-size:13px}.yxh-page-copy{font-size:13px}.yxh-pages{margin:10px 0 0;padding-left:20px;display:grid;gap:4px}.yxh-pages li{font-size:13px}.yxh-page-index{margin-right:8px;color:var(--dsw-alias-label-tertiary);font-variant-numeric:tabular-nums}.yxh-state{display:grid;min-height:160px;place-items:center;align-content:center;gap:10px;color:var(--dsw-alias-label-secondary);font-size:13px;text-align:center}.yxh-state p{margin:0}.yxh-step{color:var(--dsw-alias-label-tertiary);font-size:12px}.yxh-state-error p:first-child{color:var(--dsw-alias-state-error-primary)}.yxh-spinner{width:18px;height:18px;border:2px solid var(--dsw-alias-border-l2);border-top-color:var(--dsw-alias-brand-primary);border-radius:50%;animation:yxh-spin .8s linear infinite}@keyframes yxh-spin{to{transform:rotate(360deg)}}@media(max-width:900px){.yxh-header,.yxh-left,.yxh-right{padding-left:16px;padding-right:16px}.yxh-body{display:block;overflow:auto}.yxh-left{overflow:visible;border-right:0;border-bottom:1px solid var(--dsw-alias-border-l1)}.yxh-right{overflow:visible;min-height:320px}}`
+    const css = `.yxh-button{display:flex;width:36px;height:36px;align-items:center;justify-content:center;gap:8px;border:0;border-radius:6px;background:transparent;color:var(--dsw-alias-label-secondary);cursor:pointer}.yxh-button:hover{background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary)}.yxh-wide{width:100%;height:34px;justify-content:flex-start;padding:0 10px}.yxh-wide span{font-size:13px}.yxh-overlay{position:fixed;inset:0;z-index:520;background:var(--dsw-alias-bg-base);color:var(--dsw-alias-label-primary)}.yxh-shell{display:grid;grid-template-rows:auto 1fr;width:100%;height:100%;overflow:hidden}.yxh-header{display:flex;min-height:82px;align-items:center;justify-content:space-between;padding:16px 28px;border-bottom:1px solid var(--dsw-alias-border-l1);gap:24px}.yxh-header h1{margin:0;font-size:24px;line-height:1.25}.yxh-header p{max-width:900px;margin:6px 0 0;color:var(--dsw-alias-label-secondary);font-size:15px;line-height:1.45}.yxh-header-buttons{display:flex;flex:none;gap:6px}.yxh-header-buttons button{display:grid;width:34px;height:34px;place-items:center;border:1px solid var(--dsw-alias-border-l1);border-radius:6px;background:var(--dsw-alias-bg-layer-1);color:inherit;cursor:pointer}.yxh-body{display:grid;grid-template-columns:minmax(460px,1.15fr) minmax(420px,.85fr);max-width:1440px;margin:0 auto;width:100%;min-height:0;overflow:hidden}.yxh-left{overflow:auto;padding:28px 32px 36px;border-right:1px solid var(--dsw-alias-border-l1)}.yxh-right{overflow:auto;padding:28px 32px 36px}.yxh-section{display:grid;gap:16px}.yxh-section+.yxh-section{margin-top:30px}.yxh-section h2,.yxh-right-title{margin:0;font-size:18px;line-height:1.35;font-weight:650}.yxh-right-title{margin-bottom:20px}.yxh-tabs{display:flex;gap:4px;border-bottom:1px solid var(--dsw-alias-border-l1)}.yxh-tabs button{height:44px;padding:0 18px;border:0;border-bottom:3px solid transparent;background:transparent;color:var(--dsw-alias-label-secondary);font:inherit;font-size:14px;cursor:pointer}.yxh-tabs button[aria-current="true"]{border-bottom-color:var(--dsw-alias-brand-primary);color:var(--dsw-alias-label-primary);font-weight:650}.yxh-tabs button:disabled{opacity:.45;cursor:default}.yxh-media{display:flex;flex-wrap:wrap;gap:12px}.yxh-thumb{position:relative;margin:0;width:104px;height:104px;border:1px solid var(--dsw-alias-border-l1);border-radius:6px;overflow:hidden;background:var(--dsw-alias-bg-layer-1)}.yxh-thumb img{width:100%;height:100%;object-fit:cover}.yxh-thumb-remove{position:absolute;top:4px;right:4px;display:grid;width:20px;height:20px;place-items:center;border:0;border-radius:4px;background:color-mix(in srgb,var(--dsw-alias-bg-base) 82%,transparent);color:var(--dsw-alias-label-primary);font-size:14px;line-height:1;cursor:pointer}.yxh-thumb-remove:disabled{opacity:.45;cursor:default}.yxh-add{display:grid;width:104px;height:104px;place-items:center;border:1px dashed var(--dsw-alias-border-l2);border-radius:6px;background:transparent;color:var(--dsw-alias-label-secondary);font-size:28px;cursor:pointer}.yxh-add:hover{border-color:var(--dsw-alias-brand-primary);color:var(--dsw-alias-brand-primary)}.yxh-add:disabled{opacity:.45;cursor:default}.yxh-video{position:relative;display:flex;min-width:260px;align-items:center;gap:10px;padding:12px 14px;border:1px solid var(--dsw-alias-border-l1);border-radius:6px;background:var(--dsw-alias-bg-layer-1)}.yxh-video-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:14px}.yxh-video-meta{color:var(--dsw-alias-label-secondary);font-size:12px}.yxh-hint{color:var(--dsw-alias-label-secondary);font-size:12px}.yxh-error{color:var(--dsw-alias-state-error-primary);font-size:12px}.yxh-field{display:grid;gap:8px}.yxh-field span{color:var(--dsw-alias-label-secondary);font-size:14px}.yxh-field input{min-height:40px;padding:0 12px;border:1px solid var(--dsw-alias-border-l1);border-radius:6px;background:var(--dsw-alias-bg-layer-1);color:inherit;font:inherit;font-size:14px}.yxh-field input:disabled{opacity:.6}.yxh-actions{margin-top:28px;display:flex;align-items:center;gap:16px}.yxh-submit{min-height:40px;padding:0 20px;border:0;border-radius:6px;background:var(--dsw-alias-brand-primary);color:var(--dsw-alias-bg-base);font:inherit;font-size:14px;font-weight:600;cursor:pointer}.yxh-submit:disabled{opacity:.45;cursor:default}.yxh-cancel{min-height:40px;padding:0 20px;border:1px solid var(--dsw-alias-border-l1);border-radius:6px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);font:inherit;font-size:14px;font-weight:600;cursor:pointer}.yxh-cancel:hover{background:var(--dsw-alias-bg-layer-2)}.yxh-cancel:disabled{opacity:.45;cursor:default}.yxh-confirm-overlay{position:fixed;inset:0;z-index:560;display:grid;place-items:center;background:color-mix(in srgb,var(--dsw-alias-bg-base) 45%,transparent)}.yxh-confirm{min-width:360px;max-width:80vw;padding:24px;border:1px solid var(--dsw-alias-border-l1);border-radius:8px;background:var(--dsw-alias-bg-layer-1);box-shadow:0 12px 40px rgba(0,0,0,.18)}.yxh-confirm-title{margin:0 0 20px;color:var(--dsw-alias-label-primary);font-size:15px;line-height:1.5}.yxh-confirm-actions{display:flex;justify-content:flex-end;gap:12px}.yxh-confirm-primary{min-height:36px;padding:0 18px;border:0;border-radius:6px;background:var(--dsw-alias-brand-primary);color:var(--dsw-alias-bg-base);font:inherit;font-size:14px;font-weight:600;cursor:pointer}.yxh-confirm-secondary{min-height:36px;padding:0 18px;border:1px solid var(--dsw-alias-border-l1);border-radius:6px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);font:inherit;font-size:14px;cursor:pointer}.yxh-versions{display:grid;gap:16px}.yxh-version{padding:18px;border:1px solid var(--dsw-alias-border-l1);border-radius:8px;background:var(--dsw-alias-bg-layer-1)}.yxh-version-head{display:flex;align-items:baseline;gap:10px;margin-bottom:10px}.yxh-version-badge{flex:none;padding:3px 9px;border-radius:4px;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-secondary);font-size:12px}.yxh-version-head h3{margin:0;font-size:16px}.yxh-version-body{font-size:14px;line-height:1.6}.yxh-tags{display:flex;flex-wrap:wrap;gap:6px;margin-top:12px}.yxh-tag{padding:2px 8px;border-radius:4px;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-secondary);font-size:12px}.yxh-extra{display:grid;gap:3px;margin-top:12px}.yxh-extra-label{color:var(--dsw-alias-label-tertiary);font-size:12px}.yxh-extra-body{font-size:14px}.yxh-page-copy{font-size:14px}.yxh-pages{margin:12px 0 0;padding-left:20px;display:grid;gap:6px}.yxh-pages li{font-size:14px}.yxh-page-index{margin-right:8px;color:var(--dsw-alias-label-tertiary);font-variant-numeric:tabular-nums}.yxh-state{display:grid;min-height:180px;place-items:center;align-content:center;gap:10px;color:var(--dsw-alias-label-secondary);font-size:14px;text-align:center}.yxh-state p{margin:0}.yxh-step{color:var(--dsw-alias-label-tertiary);font-size:12px}.yxh-state-error p:first-child{color:var(--dsw-alias-state-error-primary)}.yxh-spinner{width:18px;height:18px;border:2px solid var(--dsw-alias-border-l2);border-top-color:var(--dsw-alias-brand-primary);border-radius:50%;animation:yxh-spin .8s linear infinite}@keyframes yxh-spin{to{transform:rotate(360deg)}}@media(max-width:900px){.yxh-header,.yxh-left,.yxh-right{padding-left:16px;padding-right:16px}.yxh-header{align-items:flex-start}.yxh-header h1{font-size:21px}.yxh-header p{font-size:14px}.yxh-body{display:block;overflow:auto}.yxh-left{overflow:visible;border-right:0;border-bottom:1px solid var(--dsw-alias-border-l1)}.yxh-right{overflow:visible;min-height:360px}}`
 
     function apply(ctx) {
       ctx.effect(() => ctx.locale.register(NS, copy), 'dofe-yootun-xhs-operation: dictionaries')
       ctx.effect(() => { window.addEventListener(OVERLAY_EVENT, closeOtherOverlay); return () => window.removeEventListener(OVERLAY_EVENT, closeOtherOverlay) }, 'dofe-yootun-xhs-operation: exclusive-overlay')
-      ctx.effect(() => { const style = document.createElement('style'); style.dataset.plugin = '@dofe/dsh-yootun-xhs-operation'; style.textContent = `${css}${focusCss}`; document.head.appendChild(style); return () => style.remove() }, 'dofe-yootun-xhs-operation: styles')
+      ctx.effect(() => { const style = document.createElement('style'); style.dataset.plugin = '@dofe/dsh-yootun-xhs-operation'; style.textContent = css; document.head.appendChild(style); return () => style.remove() }, 'dofe-yootun-xhs-operation: styles')
       const t = ctx.locale.bind(NS)
       ctx.slots.inject('sidebar.footer.action', () => ctx.slots.register({ name: 'sidebar.footer.action', id: 'dofe-yootun-xhs-operation', order: 41, inject: () => ({ t }) }, Button))
       ctx.slots.inject('shell.overlay', () => ctx.slots.register({ name: 'shell.overlay', id: 'dofe-yootun-xhs-operation', order: 41, inject: () => ({ t }) }, Overlay))

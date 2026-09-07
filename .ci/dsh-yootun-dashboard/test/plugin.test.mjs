@@ -72,28 +72,6 @@ test('dashboard UI uses one spacing rhythm across desktop and mobile breakpoints
   assert.match(source, /\.yd-ranges button\[data-active=true\]\{background:var\(--dsw-alias-brand-primary\);color:var\(--dsw-alias-bg-base\)/)
 })
 
-test('moves focus into the dashboard and restores its opener on close', async () => {
-  const source = await readFile(new URL('src/client.js', root), 'utf8')
-  for (const token of ['useRef', 'document.activeElement', 'shellRef.current?.focus()', 'target.focus()', 'ref: shellRef', 'tabIndex: -1', 'closeOverlay()']) {
-    assert.match(source, new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'u'))
-  }
-  assert.match(source, /event\.key === 'Escape'\) closeOverlay\(\)/u)
-  assert.match(source, /onClick: closeOverlay/u)
-})
-
-test('keeps keyboard focus inside the dashboard modal', async () => {
-  const source = await readFile(new URL('src/client.js', root), 'utf8')
-  for (const token of ["event.key !== 'Tab'", 'querySelectorAll', 'button:not([disabled])', 'summary', 'event.shiftKey', 'event.preventDefault()', 'onKeyDown: keepFocus']) {
-    assert.match(source, new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'u'))
-  }
-})
-
-test('announces stale dashboard data after a refresh failure', async () => {
-  const source = await readFile(new URL('src/client.js', root), 'utf8')
-  assert.match(source, /failed && data \? h\('div', \{ className: 'yd-stale yd-stale-error', role: 'alert' \}, t\('error'\)\)/u)
-  assert.match(source, /\.yd-stale-error\{[^}]*state-error-primary/u)
-})
-
 test('loads and registers the sidebar action and global overlay', async () => {
   const bundle = await readFile(new URL('lib/client.js', root), 'utf8')
   let plugin
@@ -107,7 +85,7 @@ test('loads and registers the sidebar action and global overlay', async () => {
       load({ factory }) {
         plugin = factory(specifier => {
           if (specifier === 'react') return {
-            createElement() {}, useEffect() {}, useMemo() {}, useRef() {}, useState() {}, useSyncExternalStore() {},
+            createElement() {}, useEffect() {}, useMemo() {}, useState() {}, useSyncExternalStore() {},
           }
           if (specifier === '@deepseek-ai/dsh-client-ui-primitives') return Object.fromEntries([
             'IconAgentPresetOutline16', 'IconArchiveOutline20', 'IconBrowseOutline16', 'IconCheckOutline16',

@@ -1,0 +1,40 @@
+import assert from 'node:assert/strict'
+import test from 'node:test'
+
+import { buildExaToolCall, validateReadOnlyArgs } from './index.js'
+
+test('allows bounded read-only research commands', () => {
+  assert.deepEqual(
+    validateReadOnlyArgs(['xiaohongshu', 'search', '优惠豚', '-f', 'json']),
+    ['xiaohongshu', 'search', '优惠豚', '-f', 'json'],
+  )
+  assert.deepEqual(validateReadOnlyArgs(['dongchedi', 'search', '购车补贴']), ['dongchedi', 'search', '购车补贴'])
+  assert.deepEqual(validateReadOnlyArgs(['exa', 'search', '优惠豚', '--limit', '5']), ['exa', 'search', '优惠豚', '--limit', '5'])
+  for (const site of ['kuaishou', 'lemon8', 'youtube']) {
+    assert.deepEqual(validateReadOnlyArgs([site, 'search', '汽车改装']), [site, 'search', '汽车改装'])
+  }
+})
+
+test('maps the agent-reach Exa route to bounded MCP calls', () => {
+  assert.deepEqual(buildExaToolCall(['exa', 'search', '优惠豚 好车会员店', '--limit', '5']), {
+    name: 'web_search_exa',
+    arguments: { query: '优惠豚 好车会员店', numResults: 5 },
+  })
+  assert.deepEqual(buildExaToolCall(['exa', 'fetch', 'https://example.com/a']), {
+    name: 'web_fetch_exa',
+    arguments: { urls: ['https://example.com/a'], maxCharacters: 6000 },
+  })
+  assert.throws(() => buildExaToolCall(['exa', 'fetch', 'file:///etc/passwd']), /HTTPS URL/)
+})
+
+test('rejects write-capable and arbitrary commands', () => {
+  assert.throws(() => validateReadOnlyArgs(['xiaohongshu', 'publish', 'payload']), /not allowed/)
+  assert.throws(() => validateReadOnlyArgs(['weibo', 'delete', '123']), /not allowed/)
+  assert.throws(() => validateReadOnlyArgs(['browser', 'eval', '1 + 1']), /not allowed/)
+})
+
+test('rejects malformed arguments', () => {
+  assert.throws(() => validateReadOnlyArgs(['xiaohongshu']), /site and a read-only command/)
+  assert.throws(() => validateReadOnlyArgs(['google', 'search', '']), /non-empty strings/)
+  assert.throws(() => validateReadOnlyArgs(['google', 'search', 'x\0y']), /non-empty strings/)
+})

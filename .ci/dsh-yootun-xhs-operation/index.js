@@ -37,6 +37,7 @@ export function apply(ctx) {
           if (action === 'create') return await handleCreate(ctx, body, res)
           if (action === 'status') return await handleStatus(ctx, body, res)
           if (action === 'result') return await handleResult(ctx, body, res)
+          if (action === 'cancel') return await handleCancel(ctx, body, res)
           return send(res, 400, { error: 'unknown_action' })
         } catch (error) {
           const reason = safeToolErrorReason(error)
@@ -117,6 +118,33 @@ async function handleResult(ctx, body, res, signal = AbortSignal.timeout(TOOL_CA
   }
   await recordTerminalAudit(ctx, taskId, taskStatus, versions.length, firstString(payload.errorCode))
   return send(res, 200, { status: 'ready', taskId, taskStatus, versions })
+}
+
+async function handleCancel(ctx, body, res, signal = AbortSignal.timeout(TOOL_CALL_TIMEOUT_MS)) {
+  const taskId = cleanString(body.taskId, MAX_TASK_ID)
+  if (!taskId) return send(res, 400, { status: 'error', reason: 'task_id_required' })
+  const schema = findTool(ctx, 'xhs_operation_task_cancel')
+  if (!schema) return send(res, 200, { status: 'unavailable', reason: 'xhs_operation_tool_unavailable' })
+  const idempotencyKey = cleanIdempotencyKey(body.idempotencyKey)
+  const result = await ctx.tools.execute({ callId: `yootun-xhs-cancel-${Date.now()}`, name: schema.name, arguments: { taskId, confirm: true, idempotencyKey }, signal })
+  const payload = parseResult(result)
+  // 服务端取消是“请求取消”：立即返回 projection（status 通常为 cancel_requested），
+  // 真正落 cancelled 由 Driver 在安全点推进；此处透传该状态给前端。
+  const taskStatus = firstString(payload.status) || 'cancel_requested'
+  await recordCancelledAudit(ctx, taskId, taskStatus)
+  return send(res, 200, { status: 'ready', taskId, taskStatus })
+}
+
+async function recordCancelledAudit(ctx, taskId, status) {
+  // 取消是独立用户动作，记录独立的 cancelled 审计；不写入 auditedTerminalTasks，
+  // 避免抢占后续 Driver 真正落 cancelled 时的 xhs.rewrite.completed 终态审计。
+  await recordAudit(ctx, {
+    clientEventId: eventUuid(`xhs:cancel:${taskId}`), traceId: `xhs:${taskId}`,
+    actionCode: 'xhs.rewrite.cancelled', category: 'execute',
+    source: { pluginId: '@dofe/dsh-yootun-xhs-operation', pluginVersion: '0.1.0', surface: 'human_ui' },
+    target: { type: 'xhs_rewrite_task', id: taskId }, outcome: 'cancelled',
+    changes: [{ field: 'status', after: status.slice(0, 160) }], effects: [],
+  })
 }
 
 function eventUuid(seed) {

@@ -148,20 +148,24 @@ function project(usage, period, observedAt, daily) {
     const rowCost = finiteOrNull(row.cost), rowRequests = finiteOrNull(row.requests)
     return {
       id: String(row.model || 'unknown'), name: String(row.model || 'unknown'),
-      requests: rowRequests, inputTokens: finiteOrNull(row.inputTokens),
-      outputTokens: finiteOrNull(row.outputTokens), tokens: finiteOrNull(row.totalTokens),
+      requests: rowRequests, successfulRequests: finiteOrNull(row.successfulRequests ?? row.successCount ?? row.success_count), inputTokens: finiteOrNull(row.inputTokens),
+      imageInputTokens: finiteOrNull(row.imageInputTokens), outputTokens: finiteOrNull(row.outputTokens),
+      thinkingTokens: finiteOrNull(row.thinkingTokens), cacheReadTokens: finiteOrNull(row.cacheReadTokens),
+      cacheWriteTokens: finiteOrNull(row.cacheWriteTokens), totalTokens: finiteOrNull(row.totalTokens), tokens: finiteOrNull(row.totalTokens),
       cost: formatMoney(currency, rowCost), costValue: rowCost,
       costPerRequest: rowCost !== null && rowRequests !== null && rowRequests > 0 ? Number((rowCost / rowRequests).toFixed(4)) : null,
     }
   }) : []
   return {
     source,
-    attribution: data.attribution || null,
+    attribution: attributionOf(data.attribution) || attributionOf(daily?.attribution),
     summary: {
       spend: formatMoney(currency, finiteOrNull(summary.cost)), cost: finiteOrNull(summary.cost), currency,
       requests: finiteOrNull(summary.requests), successfulRequests: finiteOrNull(summary.successfulRequests),
       failedRequests: finiteOrNull(summary.failedRequests), inputTokens: finiteOrNull(summary.inputTokens),
-      outputTokens: finiteOrNull(summary.outputTokens), totalTokens: finiteOrNull(summary.totalTokens), alerts: 0,
+      imageInputTokens: finiteOrNull(summary.imageInputTokens), outputTokens: finiteOrNull(summary.outputTokens),
+      thinkingTokens: finiteOrNull(summary.thinkingTokens), cacheReadTokens: finiteOrNull(summary.cacheReadTokens),
+      cacheWriteTokens: finiteOrNull(summary.cacheWriteTokens), totalTokens: finiteOrNull(summary.totalTokens), alerts: 0,
     },
     series: usage.series || [], period,
     budget: budgetOf(daily), budgets: daily?.status === 'ready' ? daily.budgets : [],
@@ -212,11 +216,21 @@ async function loadDaily(fetchImpl, apiKey, window, logger) {
       if (response.status === 401 || response.status === 403) return { status: 'unavailable', reason: 'billing_auth_unavailable', window }
       return { status: 'error', reason: `billing_http_${response.status}`, window }
     }
-    const payload = await response.json()
+    const payload = normalizeUsageDaily(await response.json())
     if (!payload || typeof payload !== 'object' || !Array.isArray(payload.days)) {
       return { status: 'error', reason: 'billing_invalid_response', window }
     }
-    return { status: 'ready', window, payload, budgets: Array.isArray(payload.budgets) ? payload.budgets : [], attribution: payload.attribution || null }
+    const missingFields = uniqueFields(
+      usageMetricGaps(payload.days, 'days'),
+      payload.missingFields,
+    )
+    return {
+      status: 'ready', window, payload, budgets: Array.isArray(payload.budgets) ? payload.budgets : [],
+      attribution: payload.attribution || null,
+      billingStatus: payload.billingStatus || null,
+      billingCoverage: payload.billingCoverage || null,
+      sourceCompleteness: payload.sourceCompleteness === 'partial' || missingFields.length ? 'partial' : 'complete', missingFields,
+    }
   } catch (error) {
     logger?.warn?.('yootun finops: daily usage query failed: %s', safeError(error))
     return { status: 'error', reason: error?.name === 'TimeoutError' ? 'billing_timeout' : 'billing_request_failed', window }
@@ -227,7 +241,9 @@ function seriesOf(daily) {
   return (Array.isArray(daily?.payload?.days) ? daily.payload.days : []).map(row => ({
     date: String(row.date || ''),
     requests: finiteOrNull(row.requests), successfulRequests: finiteOrNull(row.successfulRequests),
-    inputTokens: finiteOrNull(row.inputTokens), outputTokens: finiteOrNull(row.outputTokens),
+    inputTokens: finiteOrNull(row.inputTokens), imageInputTokens: finiteOrNull(row.imageInputTokens),
+    outputTokens: finiteOrNull(row.outputTokens), thinkingTokens: finiteOrNull(row.thinkingTokens),
+    cacheReadTokens: finiteOrNull(row.cacheReadTokens), cacheWriteTokens: finiteOrNull(row.cacheWriteTokens),
     totalTokens: finiteOrNull(row.totalTokens), cost: finiteOrNull(row.cost),
     latencyP50Ms: finiteOrNull(row.latencyP50Ms), latencyP95Ms: finiteOrNull(row.latencyP95Ms),
   }))
@@ -248,8 +264,68 @@ async function loadSeries(fetchImpl, apiKey, params, observedAt, logger) {
     logger?.warn?.('yootun finops: series query failed: %s', safeError(currentResult.reason))
     return seriesEnvelope(failed('billing_request_failed'), params, observedAt, window, null)
   }
-  const baseline = baselineResult.status === 'fulfilled' ? baselineResult.value : null
-  return seriesEnvelope(currentResult.value, params, observedAt, window, baseline)
+  let current = currentResult.value
+  if (current.status !== 'ready') {
+    if (current.status === 'unavailable' && current.reason === 'billing_auth_unavailable') return seriesEnvelope(current, params, observedAt, window, null)
+    current = await loadSeriesFallback(fetchImpl, apiKey, window, logger)
+  }
+  let baseline = baselineResult.status === 'fulfilled' && baselineResult.value.status === 'ready' ? baselineResult.value : null
+  if (!baseline && baselineResult.status === 'fulfilled' && baselineResult.value.reason !== 'billing_auth_unavailable') {
+    baseline = await loadSeriesFallback(fetchImpl, apiKey, baselineWindow, logger)
+  }
+  return seriesEnvelope(current, params, observedAt, window, baseline)
+}
+
+function normalizeUsageDaily(payload) {
+  if (!payload || typeof payload !== 'object') return payload
+  const source = payload.data && typeof payload.data === 'object' ? { ...payload, ...payload.data } : payload
+  const pick = (...values) => values.find(value => value !== null && value !== undefined && value !== '')
+  const days = Array.isArray(source.days) ? source.days.map(row => ({
+    ...row,
+    date: String(pick(row.date, row.day) || ''),
+    requests: pick(row.requests, row.requestCount, row.request_count),
+    successfulRequests: pick(row.successfulRequests, row.successCount, row.success_count),
+    inputTokens: pick(row.inputTokens, row.input_tokens), imageInputTokens: pick(row.imageInputTokens, row.image_input_tokens),
+    outputTokens: pick(row.outputTokens, row.output_tokens), thinkingTokens: pick(row.thinkingTokens, row.thinking_tokens),
+    cacheReadTokens: pick(row.cacheReadTokens, row.cache_read_tokens), cacheWriteTokens: pick(row.cacheWriteTokens, row.cache_write_tokens),
+    totalTokens: pick(row.totalTokens, row.total_tokens), cost: pick(row.cost, row.totalCost, row.total_cost),
+    latencyP50Ms: pick(row.latencyP50Ms, row.latencyP50, row.latency_p50_ms),
+    latencyP95Ms: pick(row.latencyP95Ms, row.latencyP95, row.latency_p95_ms),
+  })) : source.days
+  return { ...source, days }
+}
+
+async function loadSeriesFallback(fetchImpl, apiKey, window, logger) {
+  const dates = []
+  let cursor = Date.parse(window.start)
+  const end = Date.parse(window.end)
+  while (cursor < end && dates.length < 31) {
+    const date = localDate(new Date(cursor)); dates.push(date); cursor += 24 * 60 * 60 * 1000
+  }
+  const results = await mapWithConcurrency(dates, 4, async date => {
+    const next = addDays(date, 1)
+    try {
+      const url = new URL(MODELS_USAGE_URL)
+      url.searchParams.set('start', `${date}T00:00:00+08:00`); url.searchParams.set('end', `${next}T00:00:00+08:00`)
+      const response = await timedFetch(fetchImpl, url, { headers: modelsHeaders(apiKey) })
+      if (!response.ok) return { date, status: response.status }
+      const payload = normalizeUsageRange(await response.json())
+      const summary = payload?.summary || {}
+      return { date, summary }
+    } catch (error) {
+      logger?.warn?.('yootun finops: series fallback failed: %s', safeError(error))
+      return { date, status: 502 }
+    }
+  })
+  if (results.some(item => item.status === 401 || item.status === 403)) return { status: 'unavailable', reason: 'billing_auth_unavailable' }
+  if (!results.some(item => item.summary)) return { status: 'error', reason: 'billing_fallback_unavailable' }
+  const failedDates = results.filter(item => !item.summary).map(item => item.date)
+  return {
+    status: 'ready', window, budgets: [], attribution: null,
+    sourceCompleteness: failedDates.length ? 'partial' : 'complete',
+    missingFields: failedDates.map(date => `days.${date}`),
+    payload: { currency: 'CNY', days: results.map(item => item.summary ? ({ date: item.date, requests: item.summary.requests, successfulRequests: item.summary.successfulRequests, inputTokens: item.summary.inputTokens, imageInputTokens: item.summary.imageInputTokens, outputTokens: item.summary.outputTokens, thinkingTokens: item.summary.thinkingTokens, cacheReadTokens: item.summary.cacheReadTokens, cacheWriteTokens: item.summary.cacheWriteTokens, totalTokens: item.summary.totalTokens, cost: item.summary.cost, latencyP50Ms: null, latencyP95Ms: null }) : ({ date: item.date, requests: null, successfulRequests: null, inputTokens: null, imageInputTokens: null, outputTokens: null, thinkingTokens: null, cacheReadTokens: null, cacheWriteTokens: null, totalTokens: null, cost: null, latencyP50Ms: null, latencyP95Ms: null })) },
+  }
 }
 
 function seriesEnvelope(daily, params, observedAt, window, baseline) {
@@ -258,8 +334,8 @@ function seriesEnvelope(daily, params, observedAt, window, baseline) {
     status: ready ? 'ready' : daily.status,
     source: 'models',
     asOf: observedAt.toISOString(),
-    sourceCompleteness: ready ? 'complete' : 'unknown',
-    missingFields: [],
+    sourceCompleteness: ready ? (daily.sourceCompleteness || 'complete') : 'unknown',
+    missingFields: Array.isArray(daily.missingFields) ? daily.missingFields : [],
   }
   if (daily.reason) source.reason = daily.reason
   const series = seriesOf(daily)
@@ -294,7 +370,7 @@ function seriesEnvelope(daily, params, observedAt, window, baseline) {
     budget: budgetOf(daily),
     budgets: ready ? daily.budgets : [],
     comparison,
-    attribution: daily.attribution || null,
+    attribution: attributionOf(daily.attribution),
     refreshedAt: observedAt.toISOString(),
   }
 }
@@ -309,6 +385,18 @@ function buildDailyUrl(window) {
 
 function modelsHeaders(apiKey) {
   return { Authorization: `Bearer ${apiKey}`, Accept: 'application/json' }
+}
+
+function attributionOf(value) {
+  if (typeof value === 'string') {
+    return ['member', 'team_only', 'service'].includes(value) ? value : null
+  }
+  if (!value || typeof value !== 'object') return null
+  if (value.scope === 'team') return 'team_only'
+  const principal = value.principal && typeof value.principal === 'object' ? value.principal : {}
+  if (principal.type === 'member' || principal.ownerType === 'human') return 'member'
+  if (principal.type === 'service' || (principal.ownerType && principal.ownerType !== 'human')) return 'service'
+  return null
 }
 
 function dayStartOffset(days, from) {
@@ -332,7 +420,10 @@ async function loadRangeUsage(fetchImpl, apiKey, period, logger) {
   const segments = usageSegments(period)
   const results = await Promise.all(segments.map(segment => loadUsage(fetchImpl, apiKey, segment, logger)))
   const successful = results.filter(item => item.status === 'ready' || item.status === 'empty')
-  if (!successful.length) return failed(results.find(item => item.reason)?.reason || 'billing_unavailable')
+  if (!successful.length) {
+    const unavailableResult = results.find(item => item.status === 'unavailable')
+    return unavailableResult || failed(results.find(item => item.reason)?.reason || 'billing_unavailable')
+  }
   const data = aggregateUsage(successful.map(item => item.data))
   const failedSegments = results.filter(item => item.status !== 'ready' && item.status !== 'empty')
   const missingFields = [...new Set(successful.flatMap(item => item.missingFields || []))]
@@ -340,7 +431,7 @@ async function loadRangeUsage(fetchImpl, apiKey, period, logger) {
     const result = results[index]
     if (result.status !== 'ready' && result.status !== 'empty') return { date: segment.date, status: result.status, reason: result.reason, cost: null, requests: null, totalTokens: null }
     const summary = result.data?.summary || {}
-    return { date: segment.date, status: result.status, cost: finiteOrNull(summary.cost), requests: finiteOrNull(summary.requests), totalTokens: finiteOrNull(summary.totalTokens), inputTokens: finiteOrNull(summary.inputTokens), outputTokens: finiteOrNull(summary.outputTokens) }
+    return { date: segment.date, status: result.status, cost: finiteOrNull(summary.cost), requests: finiteOrNull(summary.requests), successfulRequests: finiteOrNull(summary.successfulRequests), totalTokens: finiteOrNull(summary.totalTokens), inputTokens: finiteOrNull(summary.inputTokens), imageInputTokens: finiteOrNull(summary.imageInputTokens), outputTokens: finiteOrNull(summary.outputTokens), thinkingTokens: finiteOrNull(summary.thinkingTokens), cacheReadTokens: finiteOrNull(summary.cacheReadTokens), cacheWriteTokens: finiteOrNull(summary.cacheWriteTokens) }
   })
   const status = failedSegments.length ? 'warning' : data.summary.requests > 0 ? 'ready' : 'empty'
   return { status, data, series, sourceCompleteness: failedSegments.length || missingFields.length ? 'partial' : 'complete', missingFields, ...(failedSegments.length ? { reason: 'some_periods_unavailable' } : {}) }
@@ -355,18 +446,82 @@ async function loadUsage(fetchImpl, apiKey, period, logger) {
       if (response.status === 401 || response.status === 403) return unavailable('billing_auth_unavailable')
       return failed(`billing_http_${response.status}`)
     }
-    const data = await response.json()
+    const data = normalizeUsageRange(await response.json())
     if (!data || typeof data !== 'object' || !data.summary || typeof data.summary !== 'object') return failed('billing_invalid_response')
-    return { status: finiteOrNull(data.summary.requests) > 0 ? 'ready' : 'empty', data, missingFields: Array.isArray(data.byModel) ? [] : ['byModel'] }
+    const missingFields = uniqueFields(
+      usageMetricGaps([data.summary], 'summary'),
+      data.missingFields,
+    )
+    if (!Array.isArray(data.byModel)) missingFields.push('byModel')
+    for (const [index, row] of (data.byModel || []).entries()) {
+      for (const field of ['inputTokens', 'outputTokens', 'totalTokens', 'cost']) {
+        if (finiteOrNull(row?.[field]) === null) missingFields.push(`byModel.${index}.${field}`)
+      }
+    }
+    return {
+      status: finiteOrNull(data.summary.requests) > 0 ? 'ready' : 'empty',
+      data,
+      missingFields,
+      sourceCompleteness: data.sourceCompleteness === 'partial' || missingFields.length ? 'partial' : 'complete',
+    }
   } catch (error) {
     logger?.warn?.('yootun finops: usage query failed: %s', safeError(error))
     return failed(error?.name === 'TimeoutError' ? 'billing_timeout' : 'billing_request_failed')
   }
 }
 
+function normalizeUsageRange(payload) {
+  if (!payload || typeof payload !== 'object') return payload
+  const source = payload.data && typeof payload.data === 'object' ? { ...payload, ...payload.data } : payload
+  const pick = (...values) => values.find(value => value !== null && value !== undefined && value !== '')
+  const summary = source.summary && typeof source.summary === 'object' ? source.summary : {}
+  const byModel = Array.isArray(source.byModel ?? source.by_model) ? (source.byModel ?? source.by_model).map(row => ({
+    ...row,
+    model: String(pick(row.model, row.modelName, row.model_name) || 'unknown'),
+    requests: pick(row.requests, row.requestCount, row.request_count),
+    inputTokens: pick(row.inputTokens, row.input_tokens), imageInputTokens: pick(row.imageInputTokens, row.image_input_tokens),
+    outputTokens: pick(row.outputTokens, row.output_tokens), thinkingTokens: pick(row.thinkingTokens, row.thinking_tokens),
+    cacheReadTokens: pick(row.cacheReadTokens, row.cache_read_tokens), cacheWriteTokens: pick(row.cacheWriteTokens, row.cache_write_tokens),
+    totalTokens: pick(row.totalTokens, row.total_tokens), cost: pick(row.cost, row.totalCost, row.total_cost),
+    successfulRequests: pick(row.successfulRequests, row.successCount, row.success_count),
+  })) : source.byModel
+  return { ...source, summary: { ...summary,
+    requests: pick(summary.requests, summary.requestCount, summary.request_count),
+    successfulRequests: pick(summary.successfulRequests, summary.successCount, summary.success_count),
+    inputTokens: pick(summary.inputTokens, summary.input_tokens), imageInputTokens: pick(summary.imageInputTokens, summary.image_input_tokens),
+    outputTokens: pick(summary.outputTokens, summary.output_tokens), thinkingTokens: pick(summary.thinkingTokens, summary.thinking_tokens),
+    cacheReadTokens: pick(summary.cacheReadTokens, summary.cache_read_tokens), cacheWriteTokens: pick(summary.cacheWriteTokens, summary.cache_write_tokens),
+    totalTokens: pick(summary.totalTokens, summary.total_tokens), cost: pick(summary.cost, summary.totalCost, summary.total_cost),
+  }, byModel }
+}
+
+function usageMetricGaps(rows, prefix) {
+  if (!Array.isArray(rows) || !rows.length) return []
+  return ['inputTokens', 'outputTokens', 'totalTokens', 'cost']
+    .filter(field => rows.every(row => finiteOrNull(row?.[field]) === null))
+    .map(field => `${prefix}.${field}`)
+}
+
+function uniqueFields(...lists) {
+  return [...new Set(lists.flatMap(list => Array.isArray(list) ? list.filter(field => typeof field === 'string') : []))]
+}
+
+async function mapWithConcurrency(items, limit, worker) {
+  const output = new Array(items.length)
+  let cursor = 0
+  async function run() {
+    while (cursor < items.length) {
+      const index = cursor++
+      output[index] = await worker(items[index], index)
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, run))
+  return output
+}
+
 function aggregateUsage(rows) {
   const currency = String(rows.find(row => row?.currency)?.currency || 'CNY')
-  const summaryKeys = ['requests', 'successfulRequests', 'failedRequests', 'inputTokens', 'outputTokens', 'totalTokens', 'cost']
+  const summaryKeys = ['requests', 'successfulRequests', 'failedRequests', 'inputTokens', 'imageInputTokens', 'outputTokens', 'thinkingTokens', 'cacheReadTokens', 'cacheWriteTokens', 'totalTokens', 'cost']
   const summary = Object.fromEntries(summaryKeys.map(key => [key, null]))
   const models = new Map()
   for (const row of rows) {
@@ -377,13 +532,15 @@ function aggregateUsage(rows) {
     }
     for (const model of Array.isArray(row?.byModel) ? row.byModel : []) {
       const id = String(model.model || 'unknown')
-      const current = models.get(id) || { model: id, requests: 0, inputTokens: 0, outputTokens: 0, totalTokens: 0, cost: 0 }
-      current.requests += finiteOrNull(model.requests) || 0; current.inputTokens += finiteOrNull(model.inputTokens) || 0
-      current.outputTokens += finiteOrNull(model.outputTokens) || 0; current.totalTokens += finiteOrNull(model.totalTokens) || 0
-      current.cost += finiteOrNull(model.cost) || 0; models.set(id, current)
+      const current = models.get(id) || { model: id, requests: null, successfulRequests: null, inputTokens: null, imageInputTokens: null, outputTokens: null, thinkingTokens: null, cacheReadTokens: null, cacheWriteTokens: null, totalTokens: null, cost: null }
+      for (const key of ['requests', 'successfulRequests', 'inputTokens', 'imageInputTokens', 'outputTokens', 'thinkingTokens', 'cacheReadTokens', 'cacheWriteTokens', 'totalTokens', 'cost']) {
+        const value = finiteOrNull(model[key])
+        if (value !== null) current[key] = (current[key] || 0) + value
+      }
+      models.set(id, current)
     }
   }
-  return { currency, summary, byModel: [...models.values()].sort((a, b) => b.cost - a.cost || b.requests - a.requests) }
+  return { currency, summary, byModel: [...models.values()].sort((a, b) => (b.cost ?? -Infinity) - (a.cost ?? -Infinity) || (b.requests ?? -Infinity) - (a.requests ?? -Infinity)) }
 }
 
 function periodFor(range, now) {

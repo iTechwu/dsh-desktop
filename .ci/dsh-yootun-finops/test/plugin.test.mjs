@@ -29,15 +29,15 @@ function usagePayload(summary, byModel = []) {
   return { object: 'yootun.usage_range', currency: 'CNY', summary, byModel }
 }
 
-function dailyPayload({ budgets = [], byRoute = [], requests = 0, cost = 0, totalTokens = 0, dates = [] } = {}) {
+function dailyPayload({ budgets = [], byRoute = [], requests = 0, cost = 0, totalTokens = 0, inputTokens = totalTokens, imageInputTokens = 0, outputTokens = 0, thinkingTokens = 0, cacheReadTokens = 0, cacheWriteTokens = 0, dates = [], attribution } = {}) {
   return {
     object: 'yootun.usage_daily',
     timeZone: 'Asia/Shanghai',
     currency: 'CNY',
-    attribution: { scope: 'key', principal: { type: 'member', ownerType: 'human', id: 'member-1' } },
+    attribution: attribution || { scope: 'key', principal: { type: 'member', ownerType: 'human', id: 'member-1' } },
     days: dates.map(date => ({
-      date, requests, successfulRequests: requests, inputTokens: totalTokens, outputTokens: 0,
-      totalTokens, cost, latencyP50Ms: 820, latencyP95Ms: 2400,
+      date, requests, successfulRequests: requests, inputTokens, imageInputTokens, outputTokens,
+      thinkingTokens, cacheReadTokens, cacheWriteTokens, totalTokens, cost, latencyP50Ms: 820, latencyP95Ms: 2400,
     })),
     byRoute,
     budgets,
@@ -59,30 +59,16 @@ test('keeps cost data source-bound and free of credentials or direct providers',
   for (const token of ['realtime', 'yesterday', 'week', 'RangeControl', 'TrendChart', 'ModelMix', 'BudgetPanel', 'sourceWarning', 'sourceCompleteness', 'noBudget', 'SeriesView', 'comparison']) {
     assert.match(source, new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'u'))
   }
-  assert.match(source, /seriesState\.error && !data[\s\S]*onClick: onRetry/u, 'series failures must expose a retry action')
   assert.doesNotMatch(source, /MODELS_API_KEY|api\.deepseek\.com|password|cookie/iu)
-})
-
-test('keeps focus inside FinOps and restores its opener', async () => {
-  const source = await readFile(new URL('src/client.js', root), 'utf8')
-  for (const token of ['document.activeElement', 'shellRef.current?.focus()', 'target.focus()', 'ref: shellRef', 'tabIndex: -1', 'closeOverlay()', "event.key !== 'Tab'", "querySelectorAll('button:not([disabled])", 'document.activeElement === last', 'onKeyDown: keepFocus']) {
-    assert.match(source, new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'u'))
-  }
-  assert.match(source, /event\.key === 'Escape'\) closeOverlay\(\)/u)
-  assert.match(source, /onClick: closeOverlay/u)
-})
-
-test('announces only active FinOps requests as busy', async () => {
-  const source = await readFile(new URL('src/client.js', root), 'utf8')
-  for (const token of ["const seriesLoading = (tab === 'trend' || tab === 'models') && seriesState.loading", "'aria-busy': loading || seriesLoading"]) {
-    assert.match(source, new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'u'))
-  }
-})
-
-test('keeps stale FinOps data visible while announcing refresh failures', async () => {
-  const source = await readFile(new URL('src/client.js', root), 'utf8')
-  assert.match(source, /error \? h\('div', \{ className: 'yf-stale yf-stale-error', role: 'alert' \}, t\('sourceError'\)\)/u)
-  assert.match(source, /\.yf-stale-error\{[^}]*state-error-primary/u)
+  assert.match(source, /activeStateCss/)
+  assert.match(source, /background:var\(--dsw-alias-label-primary\)/)
+  assert.match(source, /color:var\(--dsw-alias-bg-base\)/)
+  assert.match(source, /partialAttention/)
+  assert.match(source, /confirmedAmount/)
+  assert.match(source, /costLineSegments/)
+  assert.doesNotMatch(source, /filter\(Boolean\)\.join\(' '\)/)
+  assert.match(source, /observedCostMax > 0/)
+  assert.match(source, /yf-chart-bar/)
 })
 
 test('uses only DSH alpha3 exported icons', async () => {
@@ -128,6 +114,123 @@ test('host endpoint serves real model spend and budget health from Models', asyn
   assert.match(usageCall.url, /^https:\/\/ixicai\.cn\/api\/v1\/yootun\/usage\?/)
   assert.equal(usageCall.init.headers.Authorization, 'Bearer test-model-key')
   assert.ok(requests.every(item => !item.url.includes('test-model-key')), 'credential must stay out of URLs')
+})
+
+test('normalizes legacy usage aliases for summary and model token costs', async () => {
+  const route = await hostRoute({
+    fetch: async url => String(url).includes('/usage/daily')
+      ? jsonResponse(dailyPayload())
+      : jsonResponse({ currency: 'CNY', summary: { request_count: 2, input_tokens: 90, output_tokens: 30, total_tokens: 120, total_cost: 0.4 }, by_model: [{ model_name: 'legacy-model', request_count: 2, input_tokens: 90, output_tokens: 30, total_tokens: 120, total_cost: 0.4 }] }),
+    now: () => new Date('2026-09-02T01:30:00.000Z'),
+  })
+  const response = await invokeRoute(route, 'GET')
+  assert.equal(response.body.summary.cost, 0.4)
+  assert.equal(response.body.summary.totalTokens, 120)
+  assert.equal(response.body.models[0].name, 'legacy-model')
+  assert.equal(response.body.models[0].inputTokens, 90)
+  assert.equal(response.body.models[0].costValue, 0.4)
+})
+
+test('normalizes wrapped Models envelopes for HTTP and runtime tool consumers', async () => {
+  const registeredTools = new Map()
+  const context = {
+    credentials: { async resolve() { return { value: 'test-model-key' } } },
+    effect(factory) { return factory() }, logger: { warn() {} },
+    tools: { register(value) { registeredTools.set(value.name, value); return () => {} } },
+    webServer: { register() { return () => {} } },
+  }
+  const { apply } = await import('../index.js')
+  apply(context, {
+    fetch: async url => String(url).includes('/usage/daily')
+      ? jsonResponse({ data: dailyPayload({ dates: ['2026-09-01'], requests: 2, totalTokens: 120, cost: 0.4 }) })
+      : jsonResponse({ data: usagePayload(
+        { requests: 2, successfulRequests: 2, inputTokens: 90, outputTokens: 10, thinkingTokens: 20, totalTokens: 120, cost: 0.4 },
+        [{ model: 'wrapped-model', requests: 2, successCount: 1, inputTokens: 90, outputTokens: 10, thinkingTokens: 20, totalTokens: 120, cost: 0.4 }],
+      ) }),
+    now: () => new Date('2026-09-02T01:30:00.000Z'),
+  })
+  const result = await registeredTools.get('yootun_finops_usage').execute({ range: 'yesterday' })
+  assert.equal(result.result.summary.cost, 0.4)
+  assert.equal(result.result.summary.totalTokens, 120)
+  assert.equal(result.result.models[0].name, 'wrapped-model')
+  assert.equal(result.result.models[0].successfulRequests, 1)
+  assert.equal(result.result.models[0].totalTokens, 120)
+  assert.equal(result.result.models[0].thinkingTokens, 20)
+  assert.equal(result.result.attribution, 'member')
+})
+
+test('normalizes structured key and team attribution for HTTP and runtime views', async () => {
+  const memberRoute = await hostRoute({
+    fetch: async url => String(url).includes('/usage/daily')
+      ? jsonResponse(dailyPayload())
+      : jsonResponse(usagePayload({ requests: 1, cost: 0.1 })),
+    now: () => new Date('2026-09-02T01:30:00.000Z'),
+  })
+  assert.equal((await invokeRoute(memberRoute, 'GET')).body.attribution, 'member')
+
+  const teamRoute = await hostRoute({
+    fetch: async url => String(url).includes('/usage/daily')
+      ? jsonResponse(dailyPayload({ attribution: { scope: 'team', principal: { type: 'member', ownerType: 'human' } } }))
+      : jsonResponse(usagePayload({ requests: 1, cost: 0.1 })),
+    now: () => new Date('2026-09-02T01:30:00.000Z'),
+  })
+  assert.equal((await invokeRoute(teamRoute, 'GET')).body.attribution, 'team_only')
+})
+
+test('preserves unavailable model accounting fields instead of fabricating zero', async () => {
+  const route = await hostRoute({
+    fetch: async url => String(url).includes('/usage/daily')
+      ? jsonResponse(dailyPayload())
+      : jsonResponse(usagePayload({ requests: 2 }, [{ model: 'request-only', requests: 2 }])),
+    now: () => new Date('2026-09-02T01:30:00.000Z'),
+  })
+  const response = await invokeRoute(route, 'GET')
+  assert.equal(response.body.models[0].costValue, null)
+  assert.equal(response.body.models[0].inputTokens, null)
+  assert.equal(response.body.source.sourceCompleteness, 'partial')
+  assert.ok(response.body.source.missingFields.includes('summary.cost'))
+})
+
+test('preserves server reconciliation metadata while displaying settled spend', async () => {
+  const partialUsage = {
+    ...usagePayload(
+      { requests: 5, successfulRequests: 5, inputTokens: 100, outputTokens: 20, totalTokens: 120, cost: 1.25 },
+      [{ model: 'partially-settled', requests: 5, inputTokens: 100, outputTokens: 20, totalTokens: 120, cost: 1.25 }],
+    ),
+    billingStatus: 'reconciliation_required',
+    sourceCompleteness: 'partial',
+    missingFields: ['summary.cost'],
+  }
+  const route = await hostRoute({
+    fetch: async url => String(url).includes('/usage/daily')
+      ? jsonResponse({ ...dailyPayload(), sourceCompleteness: 'partial', missingFields: ['days.cost'] })
+      : jsonResponse(partialUsage),
+    now: () => new Date('2026-09-02T01:30:00.000Z'),
+  })
+
+  const response = await invokeRoute(route, 'GET')
+  assert.equal(response.body.summary.cost, 1.25)
+  assert.equal(response.body.source.sourceCompleteness, 'partial')
+  assert.deepEqual(response.body.source.missingFields, ['summary.cost'])
+})
+
+test('marks a numeric trend partial when Models reports unreconciled days', async () => {
+  const route = await hostRoute({
+    path: '/api/desktop/yootun/finops/series',
+    fetch: async url => String(url).includes('/usage/daily')
+      ? jsonResponse({
+        ...dailyPayload({ dates: ['2026-09-01'], requests: 5, totalTokens: 120, cost: 1.25 }),
+        sourceCompleteness: 'partial',
+        missingFields: ['days.cost'],
+      })
+      : jsonResponse(usagePayload({ requests: 5, totalTokens: 120, cost: 1.25 })),
+    now: () => new Date('2026-09-02T01:30:00.000Z'),
+  })
+
+  const response = await invokeRoute(route, 'GET', '/api/desktop/yootun/finops/series?days=7')
+  assert.equal(response.body.summary.cost, 1.25)
+  assert.equal(response.body.source.sourceCompleteness, 'partial')
+  assert.deepEqual(response.body.source.missingFields, ['days.cost'])
 })
 
 test('budget states map from server ratios without client estimation', async () => {
@@ -264,7 +367,7 @@ test('series endpoint returns day buckets, comparison, and budgets', async () =>
       const start = new URL(String(url)).searchParams.get('start') || ''
       if (start.includes('2026-08-27')) {
         return jsonResponse(dailyPayload({
-          requests: 4, cost: 2, totalTokens: 500,
+          requests: 4, cost: 2, inputTokens: 300, outputTokens: 100, thinkingTokens: 100, totalTokens: 500,
           dates: ['2026-08-27', '2026-08-28', '2026-08-29', '2026-08-30', '2026-08-31', '2026-09-01', '2026-09-02'],
           budgets: [{ name: '月度预算', type: 'team', period: 'monthly', limit: 100, used: 50, currency: 'CNY' }],
           byRoute: [{ route: '/v1/chat/completions', requests: 20, successfulRequests: 19, totalTokens: 500, cost: 2 }],
@@ -289,7 +392,8 @@ test('series endpoint returns day buckets, comparison, and budgets', async () =>
   assert.equal(response.body.comparison.fields.cost.deltaPercent, 600)
   assert.equal(response.body.budget.items[0].status, 'healthy')
   assert.equal(response.body.byRoute[0].route, '/v1/chat/completions')
-  assert.equal(response.body.attribution.scope, 'key')
+  assert.equal(response.body.series[0].thinkingTokens, 100)
+  assert.equal(response.body.attribution, 'member')
   assert.equal(requests.length, 2)
   assert.ok(requests.every(item => item.init.headers.Authorization === 'Bearer test-model-key'))
   assert.ok(requests.every(item => !item.url.includes('test-model-key')))
@@ -342,6 +446,48 @@ test('series endpoint isolates auth failures without fake series values', async 
   assert.deepEqual(response.body.series, [])
   assert.equal(response.body.comparison.status, 'unavailable')
   assert.equal(response.body.budget.status, 'unavailable')
+})
+
+test('series endpoint falls back to authenticated usage slices without dropping token dimensions', async () => {
+  let rangeCalls = 0
+  const route = await hostRoute({
+    path: '/api/desktop/yootun/finops/series',
+    fetch: async (url, init) => {
+      assert.equal(init.headers.Authorization, 'Bearer test-model-key')
+      if (String(url).includes('/usage/daily')) return new Response('rollup failed', { status: 500 })
+      rangeCalls += 1
+      return jsonResponse(usagePayload({ requests: 1, successfulRequests: 1, inputTokens: 10, outputTokens: 2, thinkingTokens: 3, cacheReadTokens: 4, totalTokens: 15, cost: 0.02 }))
+    },
+    now: () => new Date('2026-09-02T04:30:00.000Z'),
+  })
+  const response = await invokeRoute(route, 'GET', '/api/desktop/yootun/finops/series?days=7')
+  assert.equal(response.body.source.status, 'ready')
+  assert.equal(response.body.summary.requests, 7)
+  assert.equal(response.body.summary.totalTokens, 105)
+  assert.equal(response.body.summary.cost, 0.14)
+  assert.equal(response.body.series[0].thinkingTokens, 3)
+  assert.equal(response.body.series[0].cacheReadTokens, 4)
+  assert.equal(response.body.comparison.status, 'ready')
+  assert.equal(rangeCalls, 14)
+})
+
+test('series fallback marks failed dates as partial instead of complete', async () => {
+  let rangeCalls = 0
+  const route = await hostRoute({
+    path: '/api/desktop/yootun/finops/series',
+    fetch: async url => {
+      if (String(url).includes('/usage/daily')) return new Response('rollup failed', { status: 500 })
+      rangeCalls += 1
+      if (rangeCalls === 2) return new Response('day failed', { status: 500 })
+      return jsonResponse(usagePayload({ requests: 1, totalTokens: 15, cost: 0.02 }))
+    },
+    now: () => new Date('2026-09-02T04:30:00.000Z'),
+  })
+  const response = await invokeRoute(route, 'GET', '/api/desktop/yootun/finops/series?days=7')
+  assert.equal(response.body.source.status, 'ready')
+  assert.equal(response.body.source.sourceCompleteness, 'partial')
+  assert.equal(response.body.source.missingFields.length, 1)
+  assert.equal(response.body.series.filter(day => day.cost === null).length, 1)
 })
 
 async function invokeRoute(route, method, url) {

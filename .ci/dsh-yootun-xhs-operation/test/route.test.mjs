@@ -6,6 +6,7 @@ const SCHEMAS = [
   { name: 'mcp__tools-xhs-operation__xhs_operation_task_create' },
   { name: 'mcp__tools-xhs-operation__xhs_operation_task_get' },
   { name: 'mcp__tools-xhs-operation__xhs_operation_result_get' },
+  { name: 'mcp__tools-xhs-operation__xhs_operation_task_cancel' },
 ]
 
 function makeCtx(execute, schemas = SCHEMAS, auditEvents = []) {
@@ -166,4 +167,37 @@ test('returns a stable unavailable state when the tool is missing', async () => 
   const result = await invoke(route, { action: 'status', taskId: 'xhst-1' })
   assert.equal(result.status, 200)
   assert.deepEqual(result.body, { status: 'unavailable', reason: 'xhs_operation_tool_unavailable' })
+})
+
+test('cancel delegates to task_cancel with confirm and idempotency', async () => {
+  const calls = []
+  const events = []
+  const projection = JSON.stringify({ taskId: 'xhst-cancel-1', status: 'cancel_requested' })
+  const { route } = makeCtx(async value => { calls.push(value); return { structuredContent: JSON.parse(projection) } }, SCHEMAS, events)
+  const result = await invoke(route, { action: 'cancel', taskId: 'xhst-cancel-1' })
+  assert.equal(result.status, 200)
+  assert.equal(result.body.status, 'ready')
+  assert.equal(result.body.taskStatus, 'cancel_requested')
+  assert.equal(calls[0].name, 'mcp__tools-xhs-operation__xhs_operation_task_cancel')
+  assert.equal(calls[0].arguments.taskId, 'xhst-cancel-1')
+  assert.equal(calls[0].arguments.confirm, true)
+  assert.equal(typeof calls[0].arguments.idempotencyKey, 'string')
+  assert.ok(calls[0].arguments.idempotencyKey.length > 0)
+  assert.equal(events.length, 1)
+  assert.equal(events[0].actionCode, 'xhs.rewrite.cancelled')
+  assert.equal(events[0].outcome, 'cancelled')
+})
+
+test('cancel returns unavailable when the tool is missing', async () => {
+  const { route } = makeCtx(async () => ({}), [])
+  const result = await invoke(route, { action: 'cancel', taskId: 'xhst-1' })
+  assert.equal(result.status, 200)
+  assert.deepEqual(result.body, { status: 'unavailable', reason: 'xhs_operation_tool_unavailable' })
+})
+
+test('cancel rejects missing taskId', async () => {
+  const { route } = makeCtx(async () => ({}))
+  const result = await invoke(route, { action: 'cancel' })
+  assert.equal(result.status, 400)
+  assert.equal(result.body.reason, 'task_id_required')
 })
