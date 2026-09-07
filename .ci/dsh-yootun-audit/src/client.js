@@ -53,7 +53,7 @@ function mergePage(existing, incoming) {
   const seen = new Set()
   return [...existing, ...incoming].filter(event => { const key = event.id || event.clientEventId; if (!key || seen.has(key)) return false; seen.add(key); return true })
 }
-function initialState() { return { visible: false, loading: false, appending: false, error: '', workspace: null, selectedId: null, scope: 'self', teamId: '', teamQuery: '', teams: [], filters: { ...EMPTY_FILTERS }, revision: 0 } }
+function initialState() { return { visible: false, loading: false, appending: false, retrying: false, error: '', workspace: null, selectedId: null, scope: 'self', teamId: '', teamQuery: '', teams: [], filters: { ...EMPTY_FILTERS }, revision: 0 } }
 function reducer(state, action) {
   if (action.type === 'open') return { ...state, visible: true }
   if (action.type === 'close') return { ...state, visible: false, selectedId: null }
@@ -67,6 +67,7 @@ function reducer(state, action) {
   if (action.type === 'teamQuery') return { ...state, teamQuery: action.value }
   if (action.type === 'teams') return { ...state, teams: Array.isArray(action.value) ? action.value : [] }
   if (action.type === 'select') return { ...state, selectedId: action.id }
+  if (action.type === 'retrying') return { ...state, retrying: action.value === true }
   if (action.type === 'refresh') return { ...state, revision: state.revision + 1 }
   return state
 }
@@ -108,11 +109,11 @@ const effectOutcomeLabel = value => ({ succeeded: '成功', failed: '失败', ac
 function outcomeLabel(value, t) { return value === 'succeeded' ? t('succeeded') : value === 'partial' ? t('partial') : value === 'accepted' ? t('accepted') : value === 'cancelled' ? t('cancelled') : t('failed') }
 function Metric({ label, value, tone }) { return h('div', { className: `ya-metric${tone ? ` is-${tone}` : ''}` }, h('span', null, label), h('strong', null, String(value))) }
 function IconButton({ label, onClick, icon: Icon }) { return h(Tooltip, { label }, h('button', { type: 'button', className: 'ya-icon-button', 'aria-label': label, onClick }, h(Icon, { size: 16 }))) }
-function StatusBanner({ workspace, error, t, refresh }) {
+function StatusBanner({ workspace, error, retrying, t, refresh }) {
   const status = error ? 'offline' : workspace.status
   if (status === 'ready' && workspace.sync.pending === 0 && workspace.sync.quarantine === 0) return null
   const message = status === 'cached' ? t('cached') : status === 'auth_required' ? t('auth') : status === 'local_error' ? t('localError') : status === 'ready' ? '' : t('offline')
-  return h('div', { className: 'ya-status', role: status === 'ready' ? 'status' : 'alert' }, h(IconWarningOutline16, { size: 16 }), h('span', null, [message, workspace.freshness.syncedAt ? `${t('stale')} ${formatTime(workspace.freshness.syncedAt)}` : '', workspace.sync.pending ? `${workspace.sync.pending} ${t('syncIssue')}` : '', workspace.sync.quarantine ? `${workspace.sync.quarantine} ${t('quarantine')}` : ''].filter(Boolean).join(' · ')), workspace.sync.pending ? h('button', { type: 'button', onClick: refresh }, t('retry')) : null)
+  return h('div', { className: 'ya-status', role: status === 'ready' ? 'status' : 'alert', 'aria-busy': retrying }, h(IconWarningOutline16, { size: 16 }), h('span', null, [message, workspace.freshness.syncedAt ? `${t('stale')} ${formatTime(workspace.freshness.syncedAt)}` : '', workspace.sync.pending ? `${workspace.sync.pending} ${t('syncIssue')}` : '', workspace.sync.quarantine ? `${workspace.sync.quarantine} ${t('quarantine')}` : ''].filter(Boolean).join(' · ')), workspace.sync.pending ? h('button', { type: 'button', disabled: retrying, onClick: refresh }, retrying ? t('loading') : t('retry')) : null)
 }
 function Filters({ state, dispatch, t }) {
   const set = name => event => dispatch({ type: 'filter', name, value: event.target.value })
@@ -138,6 +139,8 @@ function Overlay({ t }) {
   const visible = useSyncExternalStore(subscribe, snapshot, snapshot)
   const [state, dispatch] = useReducer(reducer, undefined, initialState)
   const shellRef = useRef(null)
+  const retryBusyRef = useRef(false)
+  const appendBusyRef = useRef(false)
   useEffect(() => { dispatch({ type: visible ? 'open' : 'close' }); if (visible) requestAnimationFrame(() => shellRef.current?.focus?.()) }, [visible])
   const workspace = state.workspace || EMPTY_WORKSPACE
   const waitingForTeam = state.scope === 'team' && workspace.scopes.isSuperAdmin && !state.teamId
@@ -146,8 +149,8 @@ function Overlay({ t }) {
   if (!state.visible) return null
   const selected = workspace.events.find(event => event.id === state.selectedId)
   const filtered = Object.values(state.filters).some(Boolean)
-  const reload = async () => { try { await retrySync(); dispatch({ type: 'refresh' }) } catch (error) { dispatch({ type: 'error', error: error?.message }) } }
-  const append = async () => { if (!workspace.page.nextCursor) return; dispatch({ type: 'loading', append: true }); try { const value = await requestJson(buildQuery({ scope: state.scope, teamId: state.teamId, ...state.filters }, workspace.page.nextCursor)); dispatch({ type: 'loaded', value, append: true }) } catch (error) { dispatch({ type: 'error', error: error?.message }) } }
+  const reload = async () => { if (retryBusyRef.current) return; retryBusyRef.current = true; dispatch({ type: 'retrying', value: true }); try { await retrySync(); dispatch({ type: 'refresh' }) } catch (error) { dispatch({ type: 'error', error: error?.message }) } finally { retryBusyRef.current = false; dispatch({ type: 'retrying', value: false }) } }
+  const append = async () => { if (!workspace.page.nextCursor || appendBusyRef.current) return; appendBusyRef.current = true; dispatch({ type: 'loading', append: true }); try { const value = await requestJson(buildQuery({ scope: state.scope, teamId: state.teamId, ...state.filters }, workspace.page.nextCursor)); dispatch({ type: 'loaded', value, append: true }) } catch (error) { dispatch({ type: 'error', error: error?.message }) } finally { appendBusyRef.current = false } }
   const key = event => { if (event.key === 'Escape') { if (state.selectedId) dispatch({ type: 'select', id: null }); else closeOverlay() } }
   const header = h('header', { className: 'ya-header' }, h('div', null, h('h1', { id: 'ya-title' }, t('title')), h('p', null, t('subtitle'))), h('div', { className: 'ya-header-status' }, h('span', null, workspace.freshness.source === 'cache' ? t('cached') : workspace.freshness.syncedAt ? `${t('stale')} ${formatTime(workspace.freshness.syncedAt)}` : ''), h(IconButton, { label: t('refresh'), onClick: () => dispatch({ type: 'refresh' }), icon: IconRefreshOutline16 }), h(IconButton, { label: t('close'), onClick: closeOverlay, icon: IconCloseOutline16 })))
   const scope = h('div', { className: 'ya-scope' }, h('div', { className: 'ya-segments', role: 'tablist' }, h('button', { type: 'button', role: 'tab', 'aria-selected': state.scope === 'self', onClick: () => dispatch({ type: 'scope', value: 'self' }) }, t('self')), workspace.scopes.available.includes('team') ? h('button', { type: 'button', role: 'tab', 'aria-selected': state.scope === 'team', onClick: () => dispatch({ type: 'scope', value: 'team' }) }, t('team')) : null), state.scope === 'team' && workspace.scopes.isSuperAdmin ? h('div', { className: 'ya-team' }, h('input', { value: state.teamQuery, placeholder: t('searchTeam'), 'aria-label': t('searchTeam'), onChange: event => dispatch({ type: 'teamQuery', value: event.target.value }) }), h('select', { value: state.teamId, 'aria-label': t('searchTeam'), onChange: event => dispatch({ type: 'team', value: event.target.value }) }, h('option', { value: '' }, t('chooseTeam')), state.teams.map(team => h('option', { key: team.id, value: team.id }, team.name)))) : workspace.scopes.currentTeam ? h('span', { className: 'ya-team-name' }, workspace.scopes.currentTeam.name) : null)
@@ -158,9 +161,9 @@ function Overlay({ t }) {
     const workspaceBody = waitingForTeam ? h('div', { className: 'ya-empty' }, t('chooseTeam')) : workspace.events.length
       ? h('div', { className: `ya-workspace${selected ? ' has-detail' : ''}` }, h('section', { className: 'ya-events' }, h(EventTable, { events: workspace.events, selectedId: state.selectedId, dispatch, t }), workspace.page.nextCursor ? h('button', { type: 'button', className: 'ya-more', disabled: state.appending, onClick: append }, state.appending ? t('loading') : t('loadMore'), h(IconChevronRightOutline14, { size: 14 })) : null), h(Detail, { event: selected, t, close: () => dispatch({ type: 'select', id: null }) }))
       : empty
-    body = h(React.Fragment, null, h('div', { className: 'ya-summary' }, h(Metric, { label: t('today'), value: workspace.summary.today }), h(Metric, { label: t('succeeded'), value: workspace.summary.succeeded }), h(Metric, { label: t('abnormal'), value: workspace.summary.abnormal, tone: workspace.summary.abnormal ? 'failed' : '' }), h(Metric, { label: t('pendingSync'), value: workspace.summary.pendingSync, tone: workspace.summary.pendingSync ? 'pending' : '' })), h(StatusBanner, { workspace, error: state.error, t, refresh: reload }), h(Filters, { state, dispatch, t }), workspaceBody)
+    body = h(React.Fragment, null, h('div', { className: 'ya-summary' }, h(Metric, { label: t('today'), value: workspace.summary.today }), h(Metric, { label: t('succeeded'), value: workspace.summary.succeeded }), h(Metric, { label: t('abnormal'), value: workspace.summary.abnormal, tone: workspace.summary.abnormal ? 'failed' : '' }), h(Metric, { label: t('pendingSync'), value: workspace.summary.pendingSync, tone: workspace.summary.pendingSync ? 'pending' : '' })), h(StatusBanner, { workspace, error: state.error, retrying: state.retrying, t, refresh: reload }), h(Filters, { state, dispatch, t }), workspaceBody)
   }
-  return h('div', { className: 'ya-overlay' }, h('main', { className: 'ya-shell', ref: shellRef, tabIndex: -1, onKeyDown: key, role: 'dialog', 'aria-modal': true, 'aria-labelledby': 'ya-title' }, header, scope, body))
+  return h('div', { className: 'ya-overlay' }, h('main', { className: 'ya-shell', ref: shellRef, tabIndex: -1, onKeyDown: key, role: 'dialog', 'aria-modal': true, 'aria-labelledby': 'ya-title', 'aria-busy': state.loading || state.appending || state.retrying }, header, scope, body))
 }
 function Button({ wide, t }) { return h(Tooltip, { label: t('open'), disabled: wide }, h('button', { type: 'button', className: `ya-button${wide ? ' ya-wide' : ''}`, 'aria-label': t('open'), onClick: openOverlay }, h(IconChecklistOutline14, { size: wide ? 14 : 18 }), wide ? h('span', null, t('open')) : null)) }
 
