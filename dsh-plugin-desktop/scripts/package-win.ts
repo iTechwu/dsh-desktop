@@ -149,7 +149,7 @@ export function packageWindowsArtifact(
       '/d',
       '/s',
       '/c',
-      'npm rebuild fs-ext --runtime=electron --target=43.4.0 --dist-url=https://electronjs.org/headers --arch=x64 --msvs_version=2022 --build-from-source',
+      'node ../node_modules/.pnpm/@electron+rebuild@4.2.0/node_modules/@electron/rebuild/lib/cli.js --version 43.4.0 --module-dir ../deepseek-harness --which-module fs-ext --arch x64',
     ],
     options.desktopRoot,
     cleanEnvironment,
