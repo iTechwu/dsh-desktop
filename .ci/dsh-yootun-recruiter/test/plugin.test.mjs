@@ -37,6 +37,14 @@ test('locks the role brief and announces initial workspace loading', async () =>
   assert.match(source, /className: 'yr-shell',[^\n]*'aria-busy': loading \|\| busy/u)
 })
 
+test('shows a retryable alert when refreshing existing recruiter data fails', async () => {
+  const source = await readFile(new URL('src/client.js', root), 'utf8')
+  assert.match(source, /const errorLabel = error === 'load' \? t\('loadError'\) : t\('actionError'\)/u)
+  assert.match(source, /const showErrorBanner = error === 'action' \|\| Boolean\(data\)/u)
+  assert.match(source, /showErrorBanner \? h\('div', \{ className: 'yr-error', role: 'alert' \}, errorLabel/u)
+  assert.match(source, /error === 'load' \? h\('button', \{ type: 'button', onClick: \(\) => setRevision/u)
+})
+
 test('consumes recruiter mutation failures without reporting false draft success', async () => {
   const source = await readFile(new URL('src/client.js', root), 'utf8')
   assert.match(source, /catch \{ setError\('action'\); return undefined \}/u)
