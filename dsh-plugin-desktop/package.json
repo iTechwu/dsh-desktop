@@ -630,6 +630,7 @@
     "@vscode/ripgrep": "1.18.0",
     "@vscode/ripgrep-darwin-arm64": "1.18.0",
     "@vscode/ripgrep-darwin-x64": "1.18.0",
+    "@vscode/ripgrep-win32-x64": "1.18.0",
     "koffi-darwin-arm64-3-1-1": "npm:@koromix/koffi-darwin-arm64@3.1.1",
     "koffi-darwin-x64-3-1-1": "npm:@koromix/koffi-darwin-x64@3.1.1",
     "koffi-win32-x64-3-1-1": "npm:@koromix/koffi-win32-x64@3.1.1",
