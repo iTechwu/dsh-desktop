@@ -35,6 +35,14 @@ test('announces intent search failures to assistive technology', async () => {
   assert.match(source, /intent\.status === 'error'.*role: 'alert'/u)
 })
 
+test('blocks duplicate sales mutations and exposes localized action errors', async () => {
+  const source = await readFile(new URL('src/client.js', root), 'utf8')
+  for (const token of ['useRef', 'if (actionBusyRef.current) return', 'actionBusyRef.current = true', 'setPendingActionId(body.id || body.action)', 'disabled: busy', "'aria-busy': active", "'aria-busy': busy", "role: 'alert'", "t('actionError')", "t('loadError')"]) {
+    assert.match(source, new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'u'))
+  }
+  assert.doesNotMatch(source, /Unable to load sales workspace/u)
+})
+
 test('uses only icons exported by the DSH primitives package', async () => {
   const source = await readFile(new URL('src/client.js', root), 'utf8')
   const imports = source.match(/const \{([^}]+)\} = require\('@deepseek-ai\/dsh-client-ui-primitives'\)/u)?.[1] || ''
