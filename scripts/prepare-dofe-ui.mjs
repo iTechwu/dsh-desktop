@@ -7,6 +7,7 @@ const root = resolve(import.meta.dirname, '..')
 const preinstalledPlugins = [
   'dsh-geoflow-mcp',
   'dsh-georank-mcp',
+  'dsh-knowledge-capture',
   'dsh-opencli',
   'dsh-plugin-console',
   'dsh-tools-mcp',
@@ -25,9 +26,36 @@ const preinstalledPlugins = [
   'dsh-yootun-tos-upload',
   'dsh-yootun-xhs-operation',
 ]
-for (const name of preinstalledPlugins) {
-  const sibling = resolve(root, `../docker-helm.dofe.ai/plugins/${name}`)
-  const snapshot = resolve(root, `.ci/${name}`)
+
+const snapshots = [
+  ...preinstalledPlugins.map(name => ({
+    name,
+    sibling: `../docker-helm.dofe.ai/plugins/${name}`,
+    snapshot: `.ci/${name}`,
+  })),
+  // dsh-knowledge-capture is a host-only plugin backed by a private sibling
+  // workspace. Keep its transitive file dependencies available to CI without
+  // requiring access to those private repositories from the runner.
+  {
+    name: '@repo/capture-sdk',
+    sibling: '../docker-helm.dofe.ai/knowledge.dofe.ai/packages/capture-sdk',
+    snapshot: 'scripts/ci-snapshots/capture-sdk',
+  },
+  {
+    name: '@repo/contracts',
+    sibling: '../docker-helm.dofe.ai/knowledge.dofe.ai/packages/contracts',
+    snapshot: 'scripts/ci-snapshots/contracts',
+  },
+  {
+    name: '@repo/config',
+    sibling: '../docker-helm.dofe.ai/knowledge.dofe.ai/packages/config',
+    snapshot: 'scripts/ci-snapshots/config',
+  },
+]
+
+for (const { name, sibling: siblingPath, snapshot: snapshotPath } of snapshots) {
+  const sibling = resolve(root, siblingPath)
+  const snapshot = resolve(root, snapshotPath)
   if (existsSync(resolve(sibling, 'package.json'))) {
     console.log(`dofe-ui: using sibling plugin at ${sibling}`)
   } else {
