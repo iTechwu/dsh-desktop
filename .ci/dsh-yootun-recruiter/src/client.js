@@ -39,10 +39,12 @@ const copy = {
 }
 
 let opened = false
+let opener = null
 const listeners = new Set()
 const emit = () => listeners.forEach(listener => listener())
 const setOpened = value => { opened = value; emit() }
-const openOverlay = () => { window.dispatchEvent(new CustomEvent(OVERLAY_EVENT, { detail: { id: OVERLAY_ID } })); setOpened(true) }
+const openOverlay = () => { const activeElement = document.activeElement; opener = activeElement && typeof activeElement.focus === 'function' ? activeElement : null; window.dispatchEvent(new CustomEvent(OVERLAY_EVENT, { detail: { id: OVERLAY_ID } })); setOpened(true) }
+const closeOverlay = () => { setOpened(false); const target = opener; opener = null; if (target && target.isConnected !== false) window.requestAnimationFrame(() => target.focus()) }
 const closeOtherOverlay = event => { if (event.detail?.id !== OVERLAY_ID) setOpened(false) }
 const subscribe = listener => { listeners.add(listener); return () => listeners.delete(listener) }
 const snapshot = () => opened
@@ -227,6 +229,7 @@ function Boss({ data, t, onUpdate, busy }) {
 function Overlay({ t }) {
   const visible = useSyncExternalStore(subscribe, snapshot, snapshot)
   const actionBusyRef = useRef(false)
+  const shellRef = useRef(null)
   const [tab, setTab] = useState('overview')
   const [data, setData] = useState(null)
   const [error, setError] = useState('')
@@ -243,9 +246,10 @@ function Overlay({ t }) {
   }, [visible, revision])
   useEffect(() => {
     if (!visible) return undefined
-    const key = event => { if (event.key === 'Escape') setOpened(false) }
+    const frame = window.requestAnimationFrame(() => shellRef.current?.focus())
+    const key = event => { if (event.key === 'Escape') closeOverlay() }
     window.addEventListener('keydown', key)
-    return () => window.removeEventListener('keydown', key)
+    return () => { window.cancelAnimationFrame(frame); window.removeEventListener('keydown', key) }
   }, [visible])
   if (!visible) return null
   const tData = data || { status: 'empty', dashboard: {}, requirements: [], candidates: [], actions: [], boss: {}, sync: {}, knowledge: {}, analytics: {} }
@@ -262,8 +266,8 @@ function Overlay({ t }) {
   else if (tab === 'analytics') body = h(Analytics, { data: tData, t })
   else body = h(Boss, { data: tData, t, onUpdate: update, busy })
   const tabs = [['overview', t('overview')], ['roles', t('roles')], ['candidates', t('candidates')], ['actions', t('actions')], ['knowledge', t('knowledge')], ['analytics', t('analytics')], ['boss', t('boss')]]
-  return h('div', { className: 'yr-overlay', role: 'dialog', 'aria-modal': true, 'aria-labelledby': 'yr-title' }, h('main', { className: 'yr-shell', 'aria-labelledby': 'yr-title' },
-    h('header', { className: 'yr-header' }, h('div', null, h('h1', { id: 'yr-title' }, t('title')), h('p', null, t('subtitle'))), h('div', { className: 'yr-header-buttons' }, h(Tooltip, { label: t('refresh') }, h('button', { type: 'button', className: 'yr-icon', 'aria-label': t('refresh'), disabled: loading, onClick: () => setRevision(value => value + 1) }, h(IconRefreshOutline16, { size: 16 }))), h(Tooltip, { label: t('close') }, h('button', { type: 'button', className: 'yr-icon', 'aria-label': t('close'), onClick: () => setOpened(false) }, h(IconCloseOutline16, { size: 16 }))))),
+  return h('div', { className: 'yr-overlay', role: 'dialog', 'aria-modal': true, 'aria-labelledby': 'yr-title' }, h('main', { className: 'yr-shell', ref: shellRef, tabIndex: -1, 'aria-labelledby': 'yr-title' },
+    h('header', { className: 'yr-header' }, h('div', null, h('h1', { id: 'yr-title' }, t('title')), h('p', null, t('subtitle'))), h('div', { className: 'yr-header-buttons' }, h(Tooltip, { label: t('refresh') }, h('button', { type: 'button', className: 'yr-icon', 'aria-label': t('refresh'), disabled: loading, onClick: () => setRevision(value => value + 1) }, h(IconRefreshOutline16, { size: 16 }))), h(Tooltip, { label: t('close') }, h('button', { type: 'button', className: 'yr-icon', 'aria-label': t('close'), onClick: closeOverlay }, h(IconCloseOutline16, { size: 16 }))))),
     h('nav', { className: 'yr-tabs', 'aria-label': t('title') }, tabs.map(([id, label]) => h('button', { type: 'button', key: id, 'data-active': tab === id, 'aria-current': tab === id ? 'page' : undefined, onClick: () => setTab(id) }, label))),
     h('div', { className: 'yr-content', 'aria-busy': busy }, error === 'action' ? h('div', { className: 'yr-error', role: 'alert' }, t('actionError')) : null, busy ? h('div', { className: 'yr-action-state', role: 'status' }, t('processing')) : null, body),
   ))
@@ -321,7 +325,7 @@ const spacingCss = `
 @media(max-width:720px){.yr-intake-grid{grid-template-columns:1fr}.yr-dropzone{min-height:120px}.yr-filter-bar{flex-direction:column}.yr-filter:last-child{width:100%}}
 @media(max-width:560px){.yr-header,.yr-tabs{padding-left:var(--yr-space-4);padding-right:var(--yr-space-4)}.yr-content{padding:var(--yr-space-4) var(--yr-space-4) 32px}.yr-panel,.yr-hero-panel{padding:var(--yr-space-4)}.yr-workbench-toolbar{align-items:flex-start;flex-direction:column}.yr-intake-footer{align-items:flex-start;flex-direction:column}.yr-intake-footer .yr-primary{width:100%;justify-content:center}.yr-summary-item{flex:1;min-width:100px}}
 `
-const stateCss = `.yr-primary:disabled{opacity:.45;cursor:default}.yr-error,.yr-action-state{max-width:1160px;box-sizing:border-box;margin:0 auto 12px;padding:10px 12px;border:1px solid var(--dsw-alias-border-l1);font-size:13px}.yr-error{border-color:var(--dsw-alias-state-error-primary);color:var(--dsw-alias-state-error-primary)}.yr-action-state{color:var(--dsw-alias-label-secondary)}`
+const stateCss = `.yr-shell{outline:0}.yr-primary:disabled{opacity:.45;cursor:default}.yr-error,.yr-action-state{max-width:1160px;box-sizing:border-box;margin:0 auto 12px;padding:10px 12px;border:1px solid var(--dsw-alias-border-l1);font-size:13px}.yr-error{border-color:var(--dsw-alias-state-error-primary);color:var(--dsw-alias-state-error-primary)}.yr-action-state{color:var(--dsw-alias-label-secondary)}`
 function apply(ctx) { ctx.effect(() => ctx.locale.register(NS, copy), 'dofe-yootun-recruiter: dictionaries'); ctx.effect(() => { window.addEventListener(OVERLAY_EVENT, closeOtherOverlay); return () => window.removeEventListener(OVERLAY_EVENT, closeOtherOverlay) }, 'dofe-yootun-recruiter: exclusive-overlay'); ctx.effect(() => { const style = document.createElement('style'); style.dataset.plugin = '@dofe/dsh-yootun-recruiter'; style.textContent = css + spacingCss + stateCss; document.head.appendChild(style); return () => style.remove() }, 'dofe-yootun-recruiter: styles'); const t = ctx.locale.bind(NS); ctx.slots.inject('sidebar.footer.action', () => ctx.slots.register({ name: 'sidebar.footer.action', id: 'dofe-yootun-recruiter', order: 20, inject: () => ({ t }) }, SidebarButton)); ctx.slots.inject('shell.overlay', () => ctx.slots.register({ name: 'shell.overlay', id: 'dofe-yootun-recruiter', order: 20, inject: () => ({ t }) }, Overlay)) }
 exports.apply = apply
 exports.inject = ['slots', 'locale']

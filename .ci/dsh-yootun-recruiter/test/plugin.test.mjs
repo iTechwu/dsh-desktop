@@ -31,6 +31,15 @@ test('blocks duplicate mutations and announces pending recruiter actions', async
   }
 })
 
+test('moves focus into recruiter and restores its opener', async () => {
+  const source = await readFile(new URL('src/client.js', root), 'utf8')
+  for (const token of ['document.activeElement', 'shellRef.current?.focus()', 'target.focus()', 'ref: shellRef', 'tabIndex: -1', 'closeOverlay()']) {
+    assert.match(source, new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'u'))
+  }
+  assert.match(source, /event\.key === 'Escape'\) closeOverlay\(\)/u)
+  assert.match(source, /onClick: closeOverlay/u)
+})
+
 test('declares the Models-authenticated data contract without exposing a client key', async () => {
   assert.deepEqual(recruiterDataContract, {
     auth: 'MODELS_API_KEY',
