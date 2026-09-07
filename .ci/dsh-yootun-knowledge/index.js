@@ -163,6 +163,8 @@ export function apply(ctx, overrides = {}) {
       timeoutMs: REQUEST_TIMEOUT_MS,
       isConcurrencySafe: () => true,
       async execute(args, exec) {
+        const violations = validateToolArguments(name, args)
+        if (violations.length > 0) return { ok: false, error: 'invalid_tool_arguments', details: violations }
         const credential = await resolveModelsKey(ctx)
         if (!credential) return { ok: false, error: 'model_api_key_unavailable' }
         return executeKnowledge(ctx, fetchImpl, credential, remoteName, args?.input || {}, 'agent_tool', exec?.signal)
@@ -220,6 +222,64 @@ export function apply(ctx, overrides = {}) {
   }
 
   return () => disposers.reverse().forEach(dispose => dispose?.())
+}
+
+function validateToolArguments(name, args) {
+  const schema = OBJECT({ input: TOOL_INPUT_SCHEMAS[name] }, ['input'])
+  return validateSchema(schema, args, 'arguments').slice(0, 8)
+}
+
+function validateSchema(schema, value, path) {
+  const violations = []
+  if (!schema.type && schema.required) {
+    if (!isPlainObject(value)) return [`${path} must be an object`]
+    for (const key of schema.required) if (!(key in value)) violations.push(`${path}.${key} is required`)
+    return violations
+  }
+  if (schema.oneOf && schema.oneOf.filter(candidate => validateSchema(candidate, value, path).length === 0).length !== 1) {
+    violations.push(`${path} must match exactly one allowed shape`)
+  }
+  if (schema.not && validateSchema(schema.not, value, path).length === 0) violations.push(`${path} contains mutually exclusive fields`)
+  if (schema.enum && !schema.enum.includes(value)) violations.push(`${path} contains an unsupported value`)
+  if (schema.type === 'object') {
+    if (!isPlainObject(value)) return [`${path} must be an object`]
+    for (const key of schema.required || []) if (!(key in value)) violations.push(`${path}.${key} is required`)
+    const properties = schema.properties || {}
+    if (schema.additionalProperties === false) {
+      for (const key of Object.keys(value)) if (!Object.hasOwn(properties, key)) violations.push(`${path}.${key} is not allowed`)
+    }
+    for (const [key, propertySchema] of Object.entries(properties)) {
+      if (key in value) violations.push(...validateSchema(propertySchema, value[key], `${path}.${key}`))
+    }
+    return violations
+  }
+  if (schema.type === 'array') {
+    if (!Array.isArray(value)) return [`${path} must be an array`]
+    if (schema.maxItems !== undefined && value.length > schema.maxItems) violations.push(`${path} has too many items`)
+    value.forEach((item, index) => violations.push(...validateSchema(schema.items, item, `${path}[${index}]`)))
+    return violations
+  }
+  if (schema.type === 'string') {
+    if (typeof value !== 'string') return [`${path} must be a string`]
+    if (schema.minLength !== undefined && value.length < schema.minLength) violations.push(`${path} is too short`)
+    if (schema.maxLength !== undefined && value.length > schema.maxLength) violations.push(`${path} is too long`)
+    if (schema.pattern && !new RegExp(schema.pattern).test(value)) violations.push(`${path} has an invalid format`)
+    if (schema.format === 'uuid' && !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(value)) violations.push(`${path} must be a UUID`)
+    if (schema.format === 'date-time' && Number.isNaN(Date.parse(value))) violations.push(`${path} must be an ISO date-time`)
+    return violations
+  }
+  if (schema.type === 'integer') {
+    if (!Number.isInteger(value)) return [`${path} must be an integer`]
+    if (schema.minimum !== undefined && value < schema.minimum) violations.push(`${path} is below the minimum`)
+    if (schema.maximum !== undefined && value > schema.maximum) violations.push(`${path} is above the maximum`)
+    return violations
+  }
+  if (schema.type === 'boolean' && typeof value !== 'boolean') return [`${path} must be a boolean`]
+  return violations
+}
+
+function isPlainObject(value) {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
 }
 
 const ACTIONS = {

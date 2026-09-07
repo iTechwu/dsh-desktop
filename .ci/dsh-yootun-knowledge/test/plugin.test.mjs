@@ -94,6 +94,22 @@ test('publishes per-tool input schemas so invalid MCP arguments fail before the 
   assert.deepEqual(promote.parameters.properties.input.oneOf.map(rule => rule.required), [['targetSpaceKey'], ['targetSpaceId']])
 })
 
+test('rejects invalid tool arguments before contacting the gateway', async () => {
+  const registered = new Map()
+  let calls = 0
+  apply({
+    credentials: { async resolve() { return { value: 'test-key' } } },
+    tools: { register(tool) { registered.set(tool.name, tool); return () => {} } },
+    systemPrompt: { section() { return () => {} } },
+  }, { fetch: async () => { calls += 1; return new Response('{}', { status: 200 }) } })
+
+  const recall = registered.get('knowledge_recall')
+  const result = await recall.execute({ input: { topK: 51 } }, {})
+  assert.equal(result.ok, false)
+  assert.equal(result.error, 'invalid_tool_arguments')
+  assert.equal(calls, 0)
+})
+
 test('exposes explicit memory confirmation through the authenticated knowledge MCP route', async () => {
   const registered = new Map()
   const requests = []
@@ -109,7 +125,7 @@ test('exposes explicit memory confirmation through the authenticated knowledge M
   })
   const tool = registered.get('knowledge_confirm_memory')
   assert.ok(tool)
-  const result = await tool.execute({ input: { memoryId: 'memory-1', reason: 'user-confirmed', shareWithSpace: true } }, {})
+  const result = await tool.execute({ input: { memoryId: '11111111-1111-4111-8111-111111111111', reason: 'user-confirmed', shareWithSpace: true } }, {})
   assert.equal(result.ok, true)
   assert.equal(requests[0].url, MCP_URL)
   assert.equal(requests[0].init.headers.Authorization, 'Bearer test-key')
