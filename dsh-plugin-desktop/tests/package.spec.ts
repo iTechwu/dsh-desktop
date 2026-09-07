@@ -138,6 +138,18 @@ describe('published package surface', () => {
     expect(recruiterSource).toContain("requiresLogin: '需要重新登录'")
   })
 
+  it('keeps the capture SDK fallback loadable as Node ESM', () => {
+    const snapshotRoot = new URL('../scripts/ci-snapshots/capture-sdk/', packageRoot)
+    const snapshotManifest = JSON.parse(readFileSync(new URL('package.json', snapshotRoot), 'utf8')) as {
+      type?: unknown
+    }
+    expect(snapshotManifest.type).toBe('module')
+    for (const file of ['index.js', 'capture-sdk.js', 'probe.js', 'adapter/yootun-agent.js']) {
+      const source = readFileSync(new URL(`dist/${file}`, snapshotRoot), 'utf8')
+      expect(source).not.toMatch(/(?:from|import) ['"]\.\.?(?:\/[^'"]+)+(?<!\.js)['"]/u)
+    }
+  })
+
   it('registers both npm launcher names', () => {
     expect(manifest.name).toBe('dsh-plugin-desktop')
     expect(manifest.bin).toEqual({

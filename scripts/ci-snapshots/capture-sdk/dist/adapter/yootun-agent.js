@@ -1,5 +1,5 @@
-import { CaptureSdk } from '../capture-sdk';
-import { SDK_VERSION } from '../config';
+import { CaptureSdk } from '../capture-sdk.js';
+import { SDK_VERSION } from '../config.js';
 /**
  * Build the Yootun Agent adapter. The runtime owns the lifecycle surface
  * (Claude Code hook, yootun-agent runtime); this builder only owns the wiring

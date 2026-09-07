@@ -1,8 +1,8 @@
 import { CaptureAckSchema, } from '@repo/contracts';
-import { DEFAULT_REDACT_KEYS, SDK_VERSION, resolveConfig, } from './config';
-import { buildCaptureEventId, checkpointPayloadHash, defaultRandomUUID, } from './idempotency';
-import { redactText, redactValue } from './redact';
-import { BoundedSpool } from './spool';
+import { DEFAULT_REDACT_KEYS, SDK_VERSION, resolveConfig, } from './config.js';
+import { buildCaptureEventId, checkpointPayloadHash, defaultRandomUUID, } from './idempotency.js';
+import { redactText, redactValue } from './redact.js';
+import { BoundedSpool } from './spool.js';
 const BACKOFF_BASE_MS = 500;
 const BACKOFF_MAX_MS = 30000;
 /**

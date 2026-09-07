@@ -1,6 +1,6 @@
 import { CaptureProbeReportSchema, } from '@repo/contracts';
-import { checkpointPayloadHash, defaultRandomUUID } from './idempotency';
-import { resolveConfig, SDK_VERSION, } from './config';
+import { checkpointPayloadHash, defaultRandomUUID } from './idempotency.js';
+import { resolveConfig, SDK_VERSION, } from './config.js';
 const MCP_PATH = '/mcp';
 const CHECKPOINT_PATH = '/api/yootun/v1/sessions/checkpoint';
 const RECALL_PATH = '/api/yootun/v1/memory/recall';
