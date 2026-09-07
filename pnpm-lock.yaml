@@ -1493,7 +1493,7 @@ importers:
         version: file:../docker-helm.dofe.ai/plugins/dsh-georank-mcp
       '@dofe/dsh-knowledge-capture':
         specifier: file:../../docker-helm.dofe.ai/plugins/dsh-knowledge-capture
-        version: file:../docker-helm.dofe.ai/plugins/dsh-knowledge-capture(@types/node@22.20.1)
+        version: file:../docker-helm.dofe.ai/plugins/dsh-knowledge-capture
       '@dofe/dsh-opencli':
         specifier: file:../../docker-helm.dofe.ai/plugins/dsh-opencli
         version: file:../docker-helm.dofe.ai/plugins/dsh-opencli
@@ -3331,9 +3331,6 @@ packages:
 
   '@quansync/fs@1.0.0':
     resolution: {integrity: sha512-4TJ3DFtlf1L5LDMaM6CanJ/0lckGNtJcMjQ1NAV6zDmA0tEHKZtxNKin8EgPaVX1YzljbxckyT2tJrpQKAtngQ==}
-
-  '@repo/capture-sdk@file:../docker-helm.dofe.ai/knowledge.dofe.ai/packages/capture-sdk':
-    resolution: {directory: ../docker-helm.dofe.ai/knowledge.dofe.ai/packages/capture-sdk, type: directory}
 
   '@repo/config@file:../docker-helm.dofe.ai/knowledge.dofe.ai/packages/config':
     resolution: {directory: ../docker-helm.dofe.ai/knowledge.dofe.ai/packages/config, type: directory}
@@ -7805,11 +7802,7 @@ snapshots:
 
   '@dofe/dsh-georank-mcp@file:../docker-helm.dofe.ai/plugins/dsh-georank-mcp': {}
 
-  '@dofe/dsh-knowledge-capture@file:../docker-helm.dofe.ai/plugins/dsh-knowledge-capture(@types/node@22.20.1)':
-    dependencies:
-      '@repo/capture-sdk': file:../docker-helm.dofe.ai/knowledge.dofe.ai/packages/capture-sdk(@types/node@22.20.1)
-    transitivePeerDependencies:
-      - '@types/node'
+  '@dofe/dsh-knowledge-capture@file:../docker-helm.dofe.ai/plugins/dsh-knowledge-capture': {}
 
   '@dofe/dsh-opencli@file:../docker-helm.dofe.ai/plugins/dsh-opencli': {}
 
@@ -8883,13 +8876,6 @@ snapshots:
   '@quansync/fs@1.0.0':
     dependencies:
       quansync: 1.0.0
-
-  '@repo/capture-sdk@file:../docker-helm.dofe.ai/knowledge.dofe.ai/packages/capture-sdk(@types/node@22.20.1)':
-    dependencies:
-      '@repo/contracts': file:../docker-helm.dofe.ai/knowledge.dofe.ai/packages/contracts(@types/node@22.20.1)
-      zod: 4.5.4
-    transitivePeerDependencies:
-      - '@types/node'
 
   '@repo/config@file:../docker-helm.dofe.ai/knowledge.dofe.ai/packages/config': {}
 

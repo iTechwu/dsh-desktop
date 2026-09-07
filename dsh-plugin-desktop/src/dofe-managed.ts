@@ -21,7 +21,18 @@ const MODELS_API_KEY_REF = credentialRef(MODELS_API_KEY)
 const McpClient = { name: mcpClientName, inject: mcpClientInject, apply: applyMcpClient }
 export const DOFE_MCP_BASE_URL = 'https://ixicai.cn/mcp'
 
-const ROUTES: readonly { plugin: Exclude<DofePluginId, 'opencli'>; serverName: string; path: string; timeoutMs: number }[] = [
+type ManagedMcpRoute = {
+  /** Omitted for required platform capabilities that were already always-on. */
+  plugin?: Exclude<DofePluginId, 'opencli'>
+  serverName: string
+  path: string
+  timeoutMs: number
+}
+
+const ROUTES: readonly ManagedMcpRoute[] = [
+  // Knowledge was historically loaded unconditionally by the Yootun bundle.
+  // Keep that compatibility while moving transport/auth ownership here.
+  { serverName: 'knowledge', path: 'knowledge', timeoutMs: 90_000 },
   { plugin: 'geoflow', serverName: 'geoflow', path: 'geoflow', timeoutMs: 60_000 },
   { plugin: 'georank', serverName: 'georank', path: 'georank', timeoutMs: 120_000 },
   { plugin: 'openmontage', serverName: 'openmontage', path: 'montage', timeoutMs: 600_000 },
@@ -62,7 +73,7 @@ export async function apply(ctx: Context): Promise<void> {
   ctx.systemPrompt.section({
     name: 'dofe:managed-access',
     order: 4,
-    text: 'DoFe 托管能力：模型请求统一使用 CI Model Router；涉及 GEO、商业工具、单张图片、5–10 秒单镜头短视频或复杂视频生成时，优先使用已加载的 mcp__geoflow__、mcp__georank__、mcp__tools-*、mcp__media__ 与 mcp__openmontage__ 工具（脚本/多镜头/复刻/字幕/配音用 mcp__openmontage__，单镜头直连用 mcp__media__）。启动引导会收集一次 model_api_key，之后不要要求用户再次提供。',
+    text: 'DoFe 托管能力：模型请求统一使用 Models API；企业 Knowledge、Memory、Loadout、ContextPack、Session checkpoint 与知识图谱统一使用 mcp__knowledge__ 工具，空间由服务端根据 tenant/team/user 权限解析；GEO、商业工具、单张图片、5–10 秒单镜头短视频或复杂视频使用已加载的 mcp__geoflow__、mcp__georank__、mcp__tools-*、mcp__media__ 与 mcp__openmontage__ 工具（脚本/多镜头/复刻/字幕/配音用 mcp__openmontage__，单镜头直连用 mcp__media__）。启动引导只收集一次 model_api_key，之后不要要求用户再次提供。',
   })
   let clients: { dispose(): void | Promise<void> }[] = []
   let activeKey: string | undefined
@@ -86,7 +97,7 @@ export async function apply(ctx: Context): Promise<void> {
     try {
       const enabled = new Set(accessSettings.enabledPlugins)
       for (const route of ROUTES) {
-        if (!enabled.has(route.plugin)) continue
+        if (route.plugin !== undefined && !enabled.has(route.plugin)) continue
         const config: McpConfig = {
           transport: 'streamable-http',
           serverName: route.serverName,

@@ -810,6 +810,7 @@ describe('published package surface', () => {
     )
 
     expect(windowsJob).not.toContain('- run: pnpm check')
+    expect(windowsJob).toContain('timeout-minutes: 60')
     expect(windowsJob).toContain('- run: pnpm --filter dsh-plugin-desktop check:win-package')
     expect(windowsJob).toContain('run: pnpm --filter dsh-plugin-desktop dist:win')
     expect(windowsJob).toContain('run: pnpm --filter dsh-plugin-desktop dist:win-portable')
