@@ -79,6 +79,12 @@ test('announces only active FinOps requests as busy', async () => {
   }
 })
 
+test('keeps stale FinOps data visible while announcing refresh failures', async () => {
+  const source = await readFile(new URL('src/client.js', root), 'utf8')
+  assert.match(source, /error \? h\('div', \{ className: 'yf-stale yf-stale-error', role: 'alert' \}, t\('sourceError'\)\)/u)
+  assert.match(source, /\.yf-stale-error\{[^}]*state-error-primary/u)
+})
+
 test('uses only DSH alpha3 exported icons', async () => {
   const source = await readFile(new URL('src/client.js', root), 'utf8')
   const imports = source.match(/const \{([^}]+)\} = require\('@deepseek-ai\/dsh-client-ui-primitives'\)/u)?.[1] || ''
