@@ -53,6 +53,31 @@ test('exposes governed knowledge, Memory, and graph tools without direct endpoin
   }])
 })
 
+test('publishes per-tool input schemas so invalid MCP arguments fail before the gateway', async () => {
+  const registered = new Map()
+  apply({
+    credentials: { async resolve() { return { value: 'test-key' } } },
+    tools: { register(tool) { registered.set(tool.name, tool); return () => {} } },
+    systemPrompt: { section() { return () => {} } },
+  }, { fetch: async () => new Response('{}', { status: 200 }) })
+
+  const recall = registered.get('knowledge_recall')
+  assert.deepEqual(recall.parameters.properties.input.required, ['query'])
+  assert.deepEqual(Object.keys(recall.parameters.properties.input.properties).sort(), [
+    'includeDocuments', 'includeMemories', 'query', 'retrievalMode', 'spaceIds', 'spaceKeys', 'topK',
+  ])
+  assert.equal(recall.parameters.properties.input.properties.topK.maximum, 50)
+
+  const loadout = registered.get('knowledge_loadout')
+  assert.deepEqual(Object.keys(loadout.parameters.properties.input.properties), ['ifNoneMatch'])
+  assert.equal(loadout.parameters.properties.input.properties.ifNoneMatch.pattern, '^[a-f0-9]{64}$')
+  assert.equal(loadout.parameters.properties.input.additionalProperties, false)
+
+  const confirm = registered.get('knowledge_confirm_memory')
+  assert.deepEqual(confirm.parameters.properties.input.required, ['memoryId'])
+  assert.equal(confirm.parameters.properties.input.properties.memoryId.format, 'uuid')
+})
+
 test('exposes explicit memory confirmation through the authenticated knowledge MCP route', async () => {
   const registered = new Map()
   const requests = []
