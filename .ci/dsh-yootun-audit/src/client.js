@@ -141,16 +141,40 @@ function Overlay({ t }) {
   const shellRef = useRef(null)
   const retryBusyRef = useRef(false)
   const appendBusyRef = useRef(false)
+  const queryRevisionRef = useRef(0)
   useEffect(() => { dispatch({ type: visible ? 'open' : 'close' }); if (visible) requestAnimationFrame(() => shellRef.current?.focus?.()) }, [visible])
   const workspace = state.workspace || EMPTY_WORKSPACE
   const waitingForTeam = state.scope === 'team' && workspace.scopes.isSuperAdmin && !state.teamId
-  useEffect(() => { if (!state.visible || waitingForTeam) return undefined; const controller = new AbortController(); dispatch({ type: 'loading' }); const query = buildQuery({ scope: state.scope, teamId: state.teamId, ...state.filters }); void requestJson(query, controller.signal).then(value => dispatch({ type: 'loaded', value })).catch(error => { if (error?.name !== 'AbortError') dispatch({ type: 'error', error: error?.message }) }); return () => controller.abort() }, [state.visible, state.scope, state.teamId, state.filters, state.revision, waitingForTeam])
+  useEffect(() => {
+    const requestRevision = ++queryRevisionRef.current
+    if (!state.visible || waitingForTeam) return undefined
+    const controller = new AbortController()
+    dispatch({ type: 'loading' })
+    const query = buildQuery({ scope: state.scope, teamId: state.teamId, ...state.filters })
+    void requestJson(query, controller.signal)
+      .then(value => { if (queryRevisionRef.current === requestRevision) dispatch({ type: 'loaded', value }) })
+      .catch(error => { if (error?.name !== 'AbortError' && queryRevisionRef.current === requestRevision) dispatch({ type: 'error', error: error?.message }) })
+    return () => controller.abort()
+  }, [state.visible, state.scope, state.teamId, state.filters, state.revision, waitingForTeam])
   useEffect(() => { if (!state.visible || state.scope !== 'team' || !workspace.scopes.isSuperAdmin) return undefined; const controller = new AbortController(); const query = new URLSearchParams({ view: 'teams', limit: '20' }); if (state.teamQuery.trim()) query.set('query', state.teamQuery.trim().slice(0, 200)); void requestJson(query.toString(), controller.signal).then(value => dispatch({ type: 'teams', value: value.teams })).catch(error => { if (error?.name !== 'AbortError') dispatch({ type: 'teams', value: [] }) }); return () => controller.abort() }, [state.visible, state.scope, state.teamQuery, workspace.scopes.isSuperAdmin])
   if (!state.visible) return null
   const selected = workspace.events.find(event => event.id === state.selectedId)
   const filtered = Object.values(state.filters).some(Boolean)
   const reload = async () => { if (retryBusyRef.current) return; retryBusyRef.current = true; dispatch({ type: 'retrying', value: true }); try { await retrySync(); dispatch({ type: 'refresh' }) } catch (error) { dispatch({ type: 'error', error: error?.message }) } finally { retryBusyRef.current = false; dispatch({ type: 'retrying', value: false }) } }
-  const append = async () => { if (!workspace.page.nextCursor || appendBusyRef.current) return; appendBusyRef.current = true; dispatch({ type: 'loading', append: true }); try { const value = await requestJson(buildQuery({ scope: state.scope, teamId: state.teamId, ...state.filters }, workspace.page.nextCursor)); dispatch({ type: 'loaded', value, append: true }) } catch (error) { dispatch({ type: 'error', error: error?.message }) } finally { appendBusyRef.current = false } }
+  const append = async () => {
+    if (!workspace.page.nextCursor || appendBusyRef.current) return
+    const requestRevision = queryRevisionRef.current
+    appendBusyRef.current = true
+    dispatch({ type: 'loading', append: true })
+    try {
+      const value = await requestJson(buildQuery({ scope: state.scope, teamId: state.teamId, ...state.filters }, workspace.page.nextCursor))
+      if (queryRevisionRef.current === requestRevision) dispatch({ type: 'loaded', value, append: true })
+    } catch (error) {
+      if (queryRevisionRef.current === requestRevision) dispatch({ type: 'error', error: error?.message })
+    } finally {
+      appendBusyRef.current = false
+    }
+  }
   const key = event => { if (event.key === 'Escape') { if (state.selectedId) dispatch({ type: 'select', id: null }); else closeOverlay() } }
   const header = h('header', { className: 'ya-header' }, h('div', null, h('h1', { id: 'ya-title' }, t('title')), h('p', null, t('subtitle'))), h('div', { className: 'ya-header-status' }, h('span', null, workspace.freshness.source === 'cache' ? t('cached') : workspace.freshness.syncedAt ? `${t('stale')} ${formatTime(workspace.freshness.syncedAt)}` : ''), h(IconButton, { label: t('refresh'), onClick: () => dispatch({ type: 'refresh' }), icon: IconRefreshOutline16 }), h(IconButton, { label: t('close'), onClick: closeOverlay, icon: IconCloseOutline16 })))
   const scope = h('div', { className: 'ya-scope' }, h('div', { className: 'ya-segments', role: 'tablist' }, h('button', { type: 'button', role: 'tab', 'aria-selected': state.scope === 'self', onClick: () => dispatch({ type: 'scope', value: 'self' }) }, t('self')), workspace.scopes.available.includes('team') ? h('button', { type: 'button', role: 'tab', 'aria-selected': state.scope === 'team', onClick: () => dispatch({ type: 'scope', value: 'team' }) }, t('team')) : null), state.scope === 'team' && workspace.scopes.isSuperAdmin ? h('div', { className: 'ya-team' }, h('input', { value: state.teamQuery, placeholder: t('searchTeam'), 'aria-label': t('searchTeam'), onChange: event => dispatch({ type: 'teamQuery', value: event.target.value }) }), h('select', { value: state.teamId, 'aria-label': t('searchTeam'), onChange: event => dispatch({ type: 'team', value: event.target.value }) }, h('option', { value: '' }, t('chooseTeam')), state.teams.map(team => h('option', { key: team.id, value: team.id }, team.name)))) : workspace.scopes.currentTeam ? h('span', { className: 'ya-team-name' }, workspace.scopes.currentTeam.name) : null)
