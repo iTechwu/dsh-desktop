@@ -59,8 +59,10 @@ const MEMORY_CANDIDATE = OBJECT({
   evidence: ARRAY(MEMORY_EVIDENCE, 20),
   captureReason: STRING(120),
 }, ['content'])
+const AT_MOST_ONE_SPACE = { not: { required: ['spaceKey', 'spaceId'] } }
 const EMPTY_INPUT = OBJECT()
-const RECALL_INPUT = OBJECT({
+const RECALL_INPUT = {
+  ...OBJECT({
   query: STRING(4000),
   spaceKeys: ARRAY(SPACE_KEY, 20),
   spaceIds: ARRAY(UUID, 20),
@@ -68,7 +70,9 @@ const RECALL_INPUT = OBJECT({
   includeMemories: { type: 'boolean' },
   includeDocuments: { type: 'boolean' },
   retrievalMode: ENUM(['lexical-v1', 'hybrid-vector-v1', 'hybrid-rrf-v1']),
-}, ['query'])
+  }, ['query']),
+  not: { required: ['spaceKeys', 'spaceIds'] },
+}
 const SEARCH_INPUT = OBJECT({
   query: STRING(4000),
   spaceIds: ARRAY(UUID, 20),
@@ -82,7 +86,7 @@ const MEMORY_ID = { memoryId: UUID }
 const TOOL_INPUT_SCHEMAS = {
   knowledge_search: SEARCH_INPUT,
   knowledge_recall: RECALL_INPUT,
-  knowledge_remember: MEMORY_CANDIDATE,
+  knowledge_remember: { ...MEMORY_CANDIDATE, ...AT_MOST_ONE_SPACE },
   knowledge_confirm_memory: OBJECT({ ...MEMORY_ID, reason: STRING(500), shareWithSpace: { type: 'boolean' } }, ['memoryId']),
   knowledge_forget: OBJECT({ ...MEMORY_ID, reason: STRING(500) }, ['memoryId', 'reason']),
   knowledge_session_checkpoint: OBJECT({
@@ -90,14 +94,20 @@ const TOOL_INPUT_SCHEMAS = {
     summary: STRING(50000), events: ARRAY(CHECKPOINT_EVENT, 50), evidence: ARRAY(CHECKPOINT_EVIDENCE, 20),
     candidateContents: ARRAY(MEMORY_CANDIDATE, 20),
   }, ['externalSessionId', 'startSeq', 'endSeq']),
-  knowledge_promote: OBJECT({
+  knowledge_promote: {
+    ...OBJECT({
     sourceMemoryIds: ARRAY(UUID, 50), targetSpaceKey: SPACE_KEY, targetSpaceId: UUID,
     title: STRING(280), classification: ENUM(['PUBLIC', 'INTERNAL', 'CONFIDENTIAL', 'RESTRICTED']), reason: STRING(500),
-  }, ['sourceMemoryIds', 'title', 'reason']),
+    }, ['sourceMemoryIds', 'title', 'reason']),
+    oneOf: [
+      { required: ['targetSpaceKey'], not: { required: ['targetSpaceId'] } },
+      { required: ['targetSpaceId'], not: { required: ['targetSpaceKey'] } },
+    ],
+  },
   knowledge_capabilities: EMPTY_INPUT,
   knowledge_overview: EMPTY_INPUT,
-  knowledge_graph: OBJECT({ spaceKey: SPACE_KEY, spaceId: UUID, query: STRING(500), limit: INTEGER(10, 500) }),
-  knowledge_ingest_file: OBJECT({ spaceKey: SPACE_KEY, spaceId: UUID, fileUrl: STRING(1000), text: STRING(1000000), title: STRING(500), mimeType: STRING(160) }, ['fileUrl', 'text']),
+  knowledge_graph: { ...OBJECT({ spaceKey: SPACE_KEY, spaceId: UUID, query: STRING(500), limit: INTEGER(10, 500) }), ...AT_MOST_ONE_SPACE },
+  knowledge_ingest_file: { ...OBJECT({ spaceKey: SPACE_KEY, spaceId: UUID, fileUrl: STRING(1000), text: STRING(1000000), title: STRING(500), mimeType: STRING(160) }, ['fileUrl', 'text']), ...AT_MOST_ONE_SPACE },
   knowledge_loadout: OBJECT({ ifNoneMatch: { type: 'string', pattern: '^[a-f0-9]{64}$' } }),
   knowledge_context_pack: OBJECT({ query: STRING(4000), sessionExternalId: STRING(255), tokenBudget: INTEGER(64, 32000), topK: INTEGER(1, 20), includeStableContext: { type: 'boolean' } }),
   knowledge_explain_trace: OBJECT({ traceId: UUID }, ['traceId']),

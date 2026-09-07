@@ -67,6 +67,7 @@ test('publishes per-tool input schemas so invalid MCP arguments fail before the 
     'includeDocuments', 'includeMemories', 'query', 'retrievalMode', 'spaceIds', 'spaceKeys', 'topK',
   ])
   assert.equal(recall.parameters.properties.input.properties.topK.maximum, 50)
+  assert.deepEqual(recall.parameters.properties.input.not.required, ['spaceKeys', 'spaceIds'])
 
   const loadout = registered.get('knowledge_loadout')
   assert.deepEqual(Object.keys(loadout.parameters.properties.input.properties), ['ifNoneMatch'])
@@ -87,6 +88,10 @@ test('publishes per-tool input schemas so invalid MCP arguments fail before the 
   assert.deepEqual(relations.parameters.properties.input.properties.status.enum, [
     'EXTRACTED', 'VALIDATED', 'CANDIDATE', 'CONFIRMED', 'CONFLICTED', 'SUPERSEDED', 'REJECTED',
   ])
+
+  const promote = registered.get('knowledge_promote')
+  assert.equal(promote.parameters.properties.input.oneOf.length, 2)
+  assert.deepEqual(promote.parameters.properties.input.oneOf.map(rule => rule.required), [['targetSpaceKey'], ['targetSpaceId']])
 })
 
 test('exposes explicit memory confirmation through the authenticated knowledge MCP route', async () => {
