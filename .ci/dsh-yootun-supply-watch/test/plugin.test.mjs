@@ -29,7 +29,7 @@ test('keeps load and review-action failures visible and localized', async () => 
 
 test('prevents duplicate review submissions and announces progress', async () => {
   const source = await readFile(new URL('src/client.js', root), 'utf8')
-  for (const token of ["if (actionBusyRef.current) return", "actionBusyRef.current = true", "setPendingActionId(body.id)", "busy: Boolean(pendingActionId)", "active: pendingActionId === item.id", "disabled: busy", "'aria-busy': active", "role: 'status'", "t('processing')"]) {
+  for (const token of ["if (actionBusyRef.current) return", "actionBusyRef.current = true", "setPendingActionId(body.id)", "busy: Boolean(pendingActionId)", "active: pendingActionId === item.id", "disabled: busy", "disabled: loading || busy", "'aria-busy': active", "role: 'status'", "t('processing')"]) {
     assert.match(source, new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'u'))
   }
 })
