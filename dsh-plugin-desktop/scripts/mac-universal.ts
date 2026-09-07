@@ -84,6 +84,7 @@ export const MACOS_UNIVERSAL_NATIVE_ENTRIES = [
 
 const CLOUDFLARED_RELATIVE_PATH = 'node_modules/cloudflared/bin/cloudflared'
 const CPU_FEATURES_RELATIVE_PATH = 'node_modules/cpu-features/build/Release/cpufeatures.node'
+const FS_EXT_RELATIVE_PATH = 'node_modules/fs-ext/build/Release/fs_ext.node'
 const SSH_CRYPTO_RELATIVE_PATH = 'node_modules/ssh2/lib/protocol/crypto/build/Release/sshcrypto.node'
 
 /** Nested executable that must be merged into a universal binary after thin packaging. */
@@ -98,11 +99,18 @@ export const MACOS_UNIVERSAL_CPU_FEATURES_ENTRIES = [
   { arch: 'x86_64', path: CPU_FEATURES_RELATIVE_PATH },
 ] as const satisfies readonly { readonly arch: MacUniversalArch; readonly path: string }[]
 
+/** Native fs-ext addon that must target Electron's ABI in each thin package. */
+export const MACOS_UNIVERSAL_FS_EXT_ENTRIES = [
+  { arch: 'arm64', path: FS_EXT_RELATIVE_PATH },
+  { arch: 'x86_64', path: FS_EXT_RELATIVE_PATH },
+] as const satisfies readonly { readonly arch: MacUniversalArch; readonly path: string }[]
+
 /** Native entries verified in the assembled application, including nested executables. */
 export const MACOS_UNIVERSAL_PACKAGED_ENTRIES = [
   ...MACOS_UNIVERSAL_NATIVE_ENTRIES,
   ...MACOS_UNIVERSAL_CLOUDFLARED_ENTRIES,
   ...MACOS_UNIVERSAL_CPU_FEATURES_ENTRIES,
+  ...MACOS_UNIVERSAL_FS_EXT_ENTRIES,
 ] as const
 
 export interface MacCloudflaredHydrationOptions {
@@ -117,6 +125,17 @@ export interface MacCloudflaredHydrationOptions {
 }
 
 export interface MacCpuFeaturesHydrationOptions {
+  readonly unpackedRoot: string
+  readonly electronBuilderArch: number | undefined
+  readonly exists: (path: string) => boolean
+  readonly copy: (source: string, target: string) => void
+  readonly chmod: (path: string, mode: number) => void
+  readonly versionOf: (unpackedRoot: string) => string
+  readonly ensureBinary: (version: string, arch: MacUniversalArch) => string
+  readonly verifyArch: (binary: string, arch: MacUniversalArch) => void
+}
+
+export interface MacFsExtHydrationOptions {
   readonly unpackedRoot: string
   readonly electronBuilderArch: number | undefined
   readonly exists: (path: string) => boolean
@@ -229,27 +248,83 @@ function packagedCpuFeaturesVersion(unpackedRoot: string): string {
   return (JSON.parse(readFileSync(manifest, 'utf8')) as { version: string }).version
 }
 
+interface ElectronNativeAddonBuildOptions {
+  readonly desktopRoot: string
+  readonly cacheName: string
+  readonly version: string
+  readonly arch: MacUniversalArch
+  readonly installedModules: string
+  readonly packageName: string
+  readonly dependencies: readonly string[]
+  readonly outputRelativePath: string
+  readonly prepare?: (buildPackage: string) => void
+}
+
+function ensureElectronNativeAddonBinary(options: ElectronNativeAddonBuildOptions): string {
+  const electronVersion = (JSON.parse(
+    readFileSync(join(options.desktopRoot, 'node_modules/electron/package.json'), 'utf8'),
+  ) as { version: string }).version
+  const cacheDir = join(
+    tmpdir(),
+    `yootun-agent-${options.cacheName}`,
+    options.version,
+    `electron-${electronVersion}`,
+    options.arch,
+  )
+  const cachedBinary = join(cacheDir, options.outputRelativePath.split('/').at(-1)!)
+  if (existsSync(cachedBinary)) {
+    verifyCloudflaredArch(cachedBinary, options.arch)
+    return cachedBinary
+  }
+
+  const sourcePackage = join(options.installedModules, options.packageName)
+  if (!existsSync(join(sourcePackage, 'binding.gyp'))) {
+    throw new Error(`cannot resolve installed ${options.packageName} ${options.version} source`)
+  }
+
+  const temporary = mkdtempSync(join(tmpdir(), `yootun-agent-${options.cacheName}-build-`))
+  try {
+    const temporaryModules = join(temporary, 'node_modules')
+    const buildPackage = join(temporaryModules, options.packageName)
+    mkdirSync(temporaryModules, { recursive: true })
+    cpSync(sourcePackage, buildPackage, { recursive: true, force: true, dereference: true })
+    rmSync(join(buildPackage, 'build'), { recursive: true, force: true })
+    for (const dependency of options.dependencies) {
+      cpSync(join(options.installedModules, dependency), join(temporaryModules, dependency), {
+        recursive: true,
+        force: true,
+        dereference: true,
+      })
+    }
+    options.prepare?.(buildPackage)
+
+    const desktopRequire = createRequire(join(options.desktopRoot, 'package.json'))
+    const builderRequire = createRequire(desktopRequire.resolve('electron-builder/package.json'))
+    const nodeGyp = builderRequire.resolve('node-gyp/bin/node-gyp.js')
+    run(process.execPath, [
+      nodeGyp,
+      'rebuild',
+      `--arch=${options.arch === 'x86_64' ? 'x64' : 'arm64'}`,
+      `--target=${electronVersion}`,
+      '--dist-url=https://electronjs.org/headers',
+    ], buildPackage)
+
+    const builtBinary = join(buildPackage, options.outputRelativePath)
+    verifyCloudflaredArch(builtBinary, options.arch)
+    mkdirSync(cacheDir, { recursive: true })
+    copyFileSync(builtBinary, cachedBinary)
+    chmodSync(cachedBinary, 0o755)
+    return cachedBinary
+  } finally {
+    rmSync(temporary, { recursive: true, force: true })
+  }
+}
+
 function ensureCpuFeaturesBinary(
   desktopRoot: string,
   version: string,
   arch: MacUniversalArch,
 ): string {
-  const electronVersion = (JSON.parse(
-    readFileSync(join(desktopRoot, 'node_modules/electron/package.json'), 'utf8'),
-  ) as { version: string }).version
-  const cacheDir = join(
-    tmpdir(),
-    'yootun-agent-cpu-features',
-    version,
-    `electron-${electronVersion}`,
-    arch,
-  )
-  const cachedBinary = join(cacheDir, 'cpufeatures.node')
-  if (existsSync(cachedBinary)) {
-    verifyCloudflaredArch(cachedBinary, arch)
-    return cachedBinary
-  }
-
   const workspaceRoot = dirname(desktopRoot)
   const installedModules = join(
     workspaceRoot,
@@ -258,50 +333,20 @@ function ensureCpuFeaturesBinary(
     `cpu-features@${version}`,
     'node_modules',
   )
-  const sourcePackage = join(installedModules, 'cpu-features')
-  if (!existsSync(join(sourcePackage, 'binding.gyp'))) {
-    throw new Error(`cannot resolve installed cpu-features ${version} source`)
-  }
-
-  const temporary = mkdtempSync(join(tmpdir(), 'yootun-agent-cpu-features-build-'))
-  try {
-    const temporaryModules = join(temporary, 'node_modules')
-    const buildPackage = join(temporaryModules, 'cpu-features')
-    mkdirSync(temporaryModules, { recursive: true })
-    cpSync(sourcePackage, buildPackage, { recursive: true, force: true, dereference: true })
-    rmSync(join(buildPackage, 'build'), { recursive: true, force: true })
-    for (const dependency of ['buildcheck', 'nan']) {
-      cpSync(join(installedModules, dependency), join(temporaryModules, dependency), {
-        recursive: true,
-        force: true,
-        dereference: true,
-      })
-    }
-    writeFileSync(
+  return ensureElectronNativeAddonBinary({
+    desktopRoot,
+    cacheName: 'cpu-features',
+    version,
+    arch,
+    installedModules,
+    packageName: 'cpu-features',
+    dependencies: ['buildcheck', 'nan'],
+    outputRelativePath: 'build/Release/cpufeatures.node',
+    prepare: buildPackage => writeFileSync(
       join(buildPackage, 'buildcheck.gypi'),
       run(process.execPath, [join(buildPackage, 'buildcheck.js')], buildPackage),
-    )
-
-    const desktopRequire = createRequire(join(desktopRoot, 'package.json'))
-    const builderRequire = createRequire(desktopRequire.resolve('electron-builder/package.json'))
-    const nodeGyp = builderRequire.resolve('node-gyp/bin/node-gyp.js')
-    run(process.execPath, [
-      nodeGyp,
-      'rebuild',
-      `--arch=${arch === 'x86_64' ? 'x64' : 'arm64'}`,
-      `--target=${electronVersion}`,
-      '--dist-url=https://electronjs.org/headers',
-    ], buildPackage)
-
-    const builtBinary = join(buildPackage, 'build/Release/cpufeatures.node')
-    verifyCloudflaredArch(builtBinary, arch)
-    mkdirSync(cacheDir, { recursive: true })
-    copyFileSync(builtBinary, cachedBinary)
-    chmodSync(cachedBinary, 0o755)
-    return cachedBinary
-  } finally {
-    rmSync(temporary, { recursive: true, force: true })
-  }
+    ),
+  })
 }
 
 /** Replace the host-built cpu-features addon with the thin package's target CPU. */
@@ -339,6 +384,84 @@ export function hydrateInstalledMacCpuFeaturesRuntime(
     chmod: chmodSync,
     versionOf: packagedCpuFeaturesVersion,
     ensureBinary: (version, arch) => ensureCpuFeaturesBinary(desktopRoot, version, arch),
+    verifyArch: verifyCloudflaredArch,
+  })
+}
+
+function packagedFsExtVersion(unpackedRoot: string): string {
+  const manifest = join(resolve(unpackedRoot), 'node_modules/fs-ext/package.json')
+  return (JSON.parse(readFileSync(manifest, 'utf8')) as { version: string }).version
+}
+
+function ensureFsExtBinary(
+  desktopRoot: string,
+  version: string,
+  arch: MacUniversalArch,
+): string {
+  const workspaceRoot = dirname(desktopRoot)
+  const candidates = [
+    join(workspaceRoot, 'node_modules', '.pnpm', `fs-ext@${version}`, 'node_modules'),
+    join(
+      workspaceRoot,
+      'deepseek-harness',
+      'node_modules',
+      '.pnpm',
+      `fs-ext@${version}`,
+      'node_modules',
+    ),
+  ]
+  const installedModules = candidates.find(candidate => (
+    existsSync(join(candidate, 'fs-ext/binding.gyp'))
+    && existsSync(join(candidate, 'nan/package.json'))
+  ))
+  if (installedModules === undefined) {
+    throw new Error(`cannot resolve installed fs-ext ${version} source and nan dependency`)
+  }
+  return ensureElectronNativeAddonBinary({
+    desktopRoot,
+    cacheName: 'fs-ext',
+    version,
+    arch,
+    installedModules,
+    packageName: 'fs-ext',
+    dependencies: ['nan'],
+    outputRelativePath: 'build/Release/fs_ext.node',
+  })
+}
+
+/** Replace the host-built fs-ext addon with the thin package's Electron target. */
+export function hydratePackagedMacFsExtRuntime(options: MacFsExtHydrationOptions): void {
+  const target = join(resolve(options.unpackedRoot), FS_EXT_RELATIVE_PATH)
+  if (!options.exists(target)) throw new Error(`packaged fs-ext is missing at ${target}`)
+
+  const arch = macArchForElectronBuilder(options.electronBuilderArch)
+  if (arch === 'universal') {
+    options.verifyArch(target, 'x86_64')
+    options.verifyArch(target, 'arm64')
+    return
+  }
+
+  const source = options.ensureBinary(options.versionOf(options.unpackedRoot), arch)
+  options.verifyArch(source, arch)
+  options.copy(source, target)
+  options.chmod(target, 0o755)
+  options.verifyArch(target, arch)
+}
+
+/** Hydrate fs-ext from the Harness workspace source for Electron's native ABI. */
+export function hydrateInstalledMacFsExtRuntime(
+  desktopRoot: string,
+  unpackedRoot: string,
+  electronBuilderArch: number | undefined,
+): void {
+  hydratePackagedMacFsExtRuntime({
+    unpackedRoot,
+    electronBuilderArch,
+    exists: existsSync,
+    copy: copyFileSync,
+    chmod: chmodSync,
+    versionOf: packagedFsExtVersion,
+    ensureBinary: (version, arch) => ensureFsExtBinary(desktopRoot, version, arch),
     verifyArch: verifyCloudflaredArch,
   })
 }

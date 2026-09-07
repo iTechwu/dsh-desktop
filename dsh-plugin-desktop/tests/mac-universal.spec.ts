@@ -15,6 +15,7 @@ import {
   hydratePackagedMacRuntime,
   hydratePackagedMacCloudflaredRuntime,
   hydratePackagedMacCpuFeaturesRuntime,
+  hydratePackagedMacFsExtRuntime,
   MACOS_UNIVERSAL_NATIVE_ENTRIES,
   prepareInstalledMacUniversalRuntime,
   prepareMacUniversalRuntime,
@@ -125,6 +126,56 @@ describe('universal macOS native runtime preparation', () => {
       '/package',
       'node_modules/cpu-features/build/Release/cpufeatures.node',
     )
+    expect(verified).toEqual([`${target}:x86_64`, `${target}:arm64`])
+  })
+
+  it.each([
+    [1, 'x86_64'],
+    [3, 'arm64'],
+  ] as const)('hydrates fs-ext for Electron Builder arch %s', (electronBuilderArch, arch) => {
+    const calls: string[] = []
+    hydratePackagedMacFsExtRuntime({
+      unpackedRoot: '/package',
+      electronBuilderArch,
+      exists: () => true,
+      copy: (source, target) => calls.push(`copy:${source}:${target}`),
+      chmod: (path, mode) => calls.push(`chmod:${path}:${mode.toString(8)}`),
+      versionOf: root => {
+        calls.push(`version:${root}`)
+        return '2.1.1'
+      },
+      ensureBinary: (version, requestedArch) => {
+        calls.push(`ensure:${version}:${requestedArch}`)
+        return `/cache/${requestedArch}/fs_ext.node`
+      },
+      verifyArch: (binary, requestedArch) => calls.push(`verify:${binary}:${requestedArch}`),
+    })
+
+    const target = join('/package', 'node_modules/fs-ext/build/Release/fs_ext.node')
+    expect(calls).toEqual([
+      'version:/package',
+      `ensure:2.1.1:${arch}`,
+      `verify:/cache/${arch}/fs_ext.node:${arch}`,
+      `copy:/cache/${arch}/fs_ext.node:${target}`,
+      `chmod:${target}:755`,
+      `verify:${target}:${arch}`,
+    ])
+  })
+
+  it('verifies both fs-ext slices after universal assembly', () => {
+    const verified: string[] = []
+    hydratePackagedMacFsExtRuntime({
+      unpackedRoot: '/package',
+      electronBuilderArch: 4,
+      exists: () => true,
+      copy: vi.fn(),
+      chmod: vi.fn(),
+      versionOf: vi.fn(() => '2.1.1'),
+      ensureBinary: vi.fn(() => '/unused'),
+      verifyArch: (binary, arch) => verified.push(`${binary}:${arch}`),
+    })
+
+    const target = join('/package', 'node_modules/fs-ext/build/Release/fs_ext.node')
     expect(verified).toEqual([`${target}:x86_64`, `${target}:arm64`])
   })
 

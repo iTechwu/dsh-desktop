@@ -15,7 +15,11 @@ import { dirname, join, parse } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { getRawHeader } from '@electron/asar'
 import {
+  disablePackagedMacSshCryptoRuntime,
   FORBIDDEN_MACOS_UNIVERSAL_ENTRIES,
+  hydrateInstalledMacCloudflaredRuntime,
+  hydrateInstalledMacCpuFeaturesRuntime,
+  hydrateInstalledMacFsExtRuntime,
   hydratePackagedMacRuntime,
   MACOS_UNIVERSAL_NATIVE_ENTRIES,
   type MacUniversalArch,
@@ -148,11 +152,17 @@ export function hydratePackagedMacRuntimeForContext(context: PackagedRuntimeCont
       `dsh-plugin-desktop: unsupported macOS package architecture ${String(context.arch)}`,
     )
   }
+  const desktopRoot = context.packager.projectDir ?? DESKTOP_PACKAGE_ROOT
+  const unpackedRoot = resolvePackagedUnpackedRoot(context)
   hydratePackagedMacRuntime({
-    desktopRoot: context.packager.projectDir ?? DESKTOP_PACKAGE_ROOT,
-    unpackedRoot: resolvePackagedUnpackedRoot(context),
+    desktopRoot,
+    unpackedRoot,
     arches,
   })
+  hydrateInstalledMacCloudflaredRuntime(unpackedRoot, context.arch)
+  hydrateInstalledMacCpuFeaturesRuntime(desktopRoot, unpackedRoot, context.arch)
+  hydrateInstalledMacFsExtRuntime(desktopRoot, unpackedRoot, context.arch)
+  disablePackagedMacSshCryptoRuntime(unpackedRoot)
 }
 
 /** Stable non-desktop archive entries required by the packaged runtime. */
