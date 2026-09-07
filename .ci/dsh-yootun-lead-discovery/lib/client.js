@@ -36,10 +36,12 @@ window.__ModuleLoader__.load({
     }
 
     let opened = false
+    let opener = null
     const listeners = new Set()
     const emit = () => listeners.forEach(listener => listener())
     const setOpened = value => { opened = value; emit() }
-    const openOverlay = () => { window.dispatchEvent(new CustomEvent(OVERLAY_EVENT, { detail: { id: OVERLAY_ID } })); setOpened(true) }
+    const openOverlay = () => { opener = document.activeElement; window.dispatchEvent(new CustomEvent(OVERLAY_EVENT, { detail: { id: OVERLAY_ID } })); setOpened(true) }
+    const closeOverlay = () => { const target = opener; opener = null; setOpened(false); window.requestAnimationFrame(() => { if (target?.isConnected) target.focus() }) }
     const closeOtherOverlay = event => { if (event.detail?.id !== OVERLAY_ID) setOpened(false) }
     const subscribe = listener => { listeners.add(listener); return () => listeners.delete(listener) }
     const snapshot = () => opened
@@ -161,6 +163,7 @@ window.__ModuleLoader__.load({
 
     function Overlay({ t }) {
       const visible = useSyncExternalStore(subscribe, snapshot, snapshot)
+      const shellRef = useRef(null)
       const searchBusyRef = useRef(false)
       const pageBusyRef = useRef(false)
       const candidatesBusyRef = useRef(false)
@@ -177,9 +180,10 @@ window.__ModuleLoader__.load({
       const [candidateBusy, setCandidateBusy] = useState(false)
       useEffect(() => {
         if (!visible) return undefined
-        const onKeyDown = event => { if (event.key === 'Escape') setOpened(false) }
+        const frame = window.requestAnimationFrame(() => shellRef.current?.focus())
+        const onKeyDown = event => { if (event.key === 'Escape') closeOverlay() }
         document.addEventListener('keydown', onKeyDown)
-        return () => document.removeEventListener('keydown', onKeyDown)
+        return () => { window.cancelAnimationFrame(frame); document.removeEventListener('keydown', onKeyDown) }
       }, [visible])
       if (!visible) return null
       const run = async () => { if (!query.trim() || searchBusyRef.current) return; searchBusyRef.current = true; setBusy(true); setLoadMoreError(false); setTab('discover'); try { const response = await post({ action: 'discover', keyword: query.trim(), platform }); setData(response); setItems(Array.isArray(response.items) ? response.items : []) } catch { setData({ status: 'error' }); setItems([]) } finally { searchBusyRef.current = false; setBusy(false) } }
@@ -200,7 +204,7 @@ window.__ModuleLoader__.load({
       else if (!items.length && tab === 'discover') body = h(StatusMessage, { kind: 'empty', title: t('noLeads') })
       else body = h(React.Fragment, null, h(DataSource, { source: tab === 'saved' ? 'database' : data?.dataSource, t }), h(StatsGrid, { stats, t }), h(Distribution, { stats, t }), h(LeadList, { items: tab === 'saved' ? candidateItems : items, stats, t }), tab === 'discover' && data?.hasMore ? h('div', { className: 'yl-more' }, loadMoreError ? h('span', { role: 'alert' }, t('loadMoreError')) : null, h('button', { type: 'button', onClick: loadMore, disabled: loadingMore }, loadingMore ? t('loading') : loadMoreError ? t('retryLoadMore') : t('loadMore'))) : null)
       const refreshDisabled = busy || candidateBusy || (tab === 'discover' && !query.trim())
-      return h('div', { className: 'yl-overlay', role: 'dialog', 'aria-modal': true, 'aria-labelledby': 'yl-title' }, h('main', { className: 'yl-shell' }, h('header', { className: 'yl-header' }, h('div', null, h('div', { className: 'yl-title-row' }, h('h1', { id: 'yl-title' }, t('title')), state === 'ready' ? h('span', { className: 'yl-ready-dot', 'aria-hidden': true }, '●') : null), h('p', null, t('subtitle'))), h('div', { className: 'yl-header-actions' }, h(Tooltip, { label: t('refresh') }, h('button', { type: 'button', 'aria-label': t('refresh'), onClick: refresh, disabled: refreshDisabled }, h(IconRefreshOutline16, { size: 17 }))), h(Tooltip, { label: t('close') }, h('button', { type: 'button', 'aria-label': t('close'), onClick: () => setOpened(false) }, h(IconCloseOutline16, { size: 17 }))))), h('nav', { className: 'yl-tabs', role: 'tablist', 'aria-label': t('title') }, h('button', { type: 'button', role: 'tab', 'aria-selected': tab === 'discover', className: tab === 'discover' ? 'is-active' : '', onClick: () => setTab('discover') }, h(IconSearchOutline16, { size: 15 }), t('discover')), h('button', { type: 'button', role: 'tab', 'aria-selected': tab === 'saved', className: tab === 'saved' ? 'is-active' : '', onClick: () => loadCandidates() }, h(IconDataOutline16, { size: 15 }), t('saved'), candidates?.count !== null && candidates?.count !== undefined ? h('span', { className: 'yl-tab-count' }, String(candidates.count)) : null)), h('div', { className: 'yl-content' }, tab === 'discover' ? h(SearchPanelRedesigned, { query, setQuery, platform, setPlatform, busy, onRun: run, t, hasResult: Boolean(data) }) : null, body, tab === 'discover' && data?.retrievedAt ? h('p', { className: 'yl-updated' }, `${t('updated')}: ${data.retrievedAt}`) : null)))
+      return h('div', { className: 'yl-overlay', role: 'dialog', 'aria-modal': true, 'aria-labelledby': 'yl-title' }, h('main', { className: 'yl-shell', ref: shellRef, tabIndex: -1 }, h('header', { className: 'yl-header' }, h('div', null, h('div', { className: 'yl-title-row' }, h('h1', { id: 'yl-title' }, t('title')), state === 'ready' ? h('span', { className: 'yl-ready-dot', 'aria-hidden': true }, '●') : null), h('p', null, t('subtitle'))), h('div', { className: 'yl-header-actions' }, h(Tooltip, { label: t('refresh') }, h('button', { type: 'button', 'aria-label': t('refresh'), onClick: refresh, disabled: refreshDisabled }, h(IconRefreshOutline16, { size: 17 }))), h(Tooltip, { label: t('close') }, h('button', { type: 'button', 'aria-label': t('close'), onClick: closeOverlay }, h(IconCloseOutline16, { size: 17 }))))), h('nav', { className: 'yl-tabs', role: 'tablist', 'aria-label': t('title') }, h('button', { type: 'button', role: 'tab', 'aria-selected': tab === 'discover', className: tab === 'discover' ? 'is-active' : '', onClick: () => setTab('discover') }, h(IconSearchOutline16, { size: 15 }), t('discover')), h('button', { type: 'button', role: 'tab', 'aria-selected': tab === 'saved', className: tab === 'saved' ? 'is-active' : '', onClick: () => loadCandidates() }, h(IconDataOutline16, { size: 15 }), t('saved'), candidates?.count !== null && candidates?.count !== undefined ? h('span', { className: 'yl-tab-count' }, String(candidates.count)) : null)), h('div', { className: 'yl-content' }, tab === 'discover' ? h(SearchPanelRedesigned, { query, setQuery, platform, setPlatform, busy, onRun: run, t, hasResult: Boolean(data) }) : null, body, tab === 'discover' && data?.retrievedAt ? h('p', { className: 'yl-updated' }, `${t('updated')}: ${data.retrievedAt}`) : null)))
     }
 
     function Button({ wide, t }) { return h(Tooltip, { label: t('open'), disabled: wide }, h('button', { type: 'button', className: `yl-button${wide ? ' yl-wide' : ''}`, 'aria-label': t('open'), onClick: openOverlay }, h(IconSearchOutline16, { size: wide ? 14 : 18 }), wide ? h('span', null, t('open')) : null)) }

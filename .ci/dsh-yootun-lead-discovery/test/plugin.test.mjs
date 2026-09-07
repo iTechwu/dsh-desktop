@@ -25,6 +25,9 @@ test('lead discovery package exposes a DSH client and guarded host route', async
   assert.match(client, /yl-start-steps/)
   assert.match(client, /yl-platform-options/)
   assert.match(client, /hasResult: Boolean\(data\)/)
+  for (const token of ['opener = document.activeElement', 'target?.isConnected', 'target.focus()', 'shellRef.current?.focus()', "ref: shellRef, tabIndex: -1", "event.key === 'Escape') closeOverlay()", 'onClick: closeOverlay']) {
+    assert.ok(client.includes(token), `missing focus lifecycle token: ${token}`)
+  }
   for (const token of ['useRef', 'if (!query.trim() || searchBusyRef.current) return', 'searchBusyRef.current = true', 'if (pageBusyRef.current', 'pageBusyRef.current = true', 'candidatesBusyRef.current) return', 'candidatesBusyRef.current = true']) {
     assert.match(client, new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'u'))
   }
