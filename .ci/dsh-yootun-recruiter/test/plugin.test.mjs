@@ -26,7 +26,7 @@ test('keeps BOSS actions human-confirmed and does not accept raw PII', async () 
 
 test('blocks duplicate mutations and announces pending recruiter actions', async () => {
   const source = await readFile(new URL('src/client.js', root), 'utf8')
-  for (const token of ["if (actionBusyRef.current) return undefined", 'actionBusyRef.current = true', "setPendingActionId(body.id || body.action)", 'disabled: busy', "'aria-busy': busy", "role: 'status'", "t('processing')", "role: 'alert'", "t('actionError')"]) {
+  for (const token of ["if (actionBusyRef.current) return undefined", 'actionBusyRef.current = true', "setPendingActionId(body.id || body.action)", 'disabled: busy', 'disabled: loading || busy', "'aria-busy': busy", "role: 'status'", "t('processing')", "role: 'alert'", "t('actionError')"]) {
     assert.match(source, new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'u'))
   }
 })

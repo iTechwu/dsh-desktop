@@ -713,7 +713,6 @@ describe('published package surface', () => {
       'lib/**',
       'package.json',
       '!node_modules/koffi-darwin-*-3-1-1/**',
-      '!node_modules/koffi-win32-x64-3-1-1/**',
       '!node_modules/node-pty/build/**',
     ])
     expect(manifest.build?.mac?.icon).toBe('build/app-icon-mac.png')
