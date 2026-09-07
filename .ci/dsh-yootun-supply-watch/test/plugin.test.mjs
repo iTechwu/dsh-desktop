@@ -27,6 +27,13 @@ test('keeps load and review-action failures visible and localized', async () => 
   }
 })
 
+test('prevents duplicate review submissions and announces progress', async () => {
+  const source = await readFile(new URL('src/client.js', root), 'utf8')
+  for (const token of ["if (actionBusyRef.current) return", "actionBusyRef.current = true", "setPendingActionId(body.id)", "disabled: busy", "'aria-busy': busy", "role: 'status'", "t('processing')"]) {
+    assert.match(source, new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'u'))
+  }
+})
+
 test('uses only icons exported by DSH alpha3 primitives', async () => {
   const source = await readFile(new URL('src/client.js', root), 'utf8')
   const imports = source.match(/const \{([^}]+)\} = require\('@deepseek-ai\/dsh-client-ui-primitives'\)/u)?.[1] || ''
