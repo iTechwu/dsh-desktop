@@ -604,6 +604,7 @@ window.__ModuleLoader__.load({
             { className: "yk-search-row" },
             h("input", {
               value: query,
+              disabled: recallBusy,
               maxLength: 500,
               placeholder: t("recallPlaceholder"),
               "aria-label": t("recallPlaceholder"),
@@ -904,6 +905,7 @@ window.__ModuleLoader__.load({
             { className: "yk-search-row" },
             h("input", {
               value: query,
+              disabled: graphBusy,
               maxLength: 500,
               placeholder: t("graphPlaceholder"),
               "aria-label": t("graphPlaceholder"),
@@ -935,6 +937,7 @@ window.__ModuleLoader__.load({
                 {
                   type: "button",
                   className: "yk-chip",
+                  disabled: graphBusy,
                   key: `${item.id}-${entity}`,
                   onClick: () => onTemplate(entity),
                 },

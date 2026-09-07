@@ -77,7 +77,10 @@ test('localizes knowledge source state and isolates its overlay', async () => {
 
 test('prevents duplicate knowledge reads and writes while exposing progress', async () => {
   const source = await readFile(new URL('src/client.js', root), 'utf8')
-  for (const token of ['graphBusyRef.current', 'recallBusyRef.current', 'mutationBusyRef.current', 'disabled: Boolean(mutation)', 'setMutation({ id: item.id, action: "confirm" })', 'setMutation({ id: item.id, action: "forget" })', 'activeMutation && mutation.action === "confirm" ? t("processing")', '"aria-busy": loading || graphBusy || recallBusy || Boolean(mutation)']) assert.ok(source.includes(token), `missing interaction guard token: ${token}`)
+  for (const token of ['graphBusyRef.current', 'recallBusyRef.current', 'mutationBusyRef.current', 'disabled: Boolean(mutation)', 'disabled: recallBusy', 'disabled: graphBusy', 'setMutation({ id: item.id, action: "confirm" })', 'setMutation({ id: item.id, action: "forget" })', 'activeMutation && mutation.action === "confirm" ? t("processing")', '"aria-busy": loading || graphBusy || recallBusy || Boolean(mutation)']) assert.ok(source.includes(token), `missing interaction guard token: ${token}`)
+  assert.match(source, /value: query,\n\s+disabled: recallBusy/u)
+  assert.match(source, /value: query,\n\s+disabled: graphBusy/u)
+  assert.match(source, /className: "yk-chip",\n\s+disabled: graphBusy/u)
 })
 
 test('generated client bundle is valid JavaScript and has no unresolved style token', async () => {
