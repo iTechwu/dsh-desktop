@@ -81,6 +81,13 @@ test('moves focus into the dashboard and restores its opener on close', async ()
   assert.match(source, /onClick: closeOverlay/u)
 })
 
+test('keeps keyboard focus inside the dashboard modal', async () => {
+  const source = await readFile(new URL('src/client.js', root), 'utf8')
+  for (const token of ["event.key !== 'Tab'", 'querySelectorAll', 'button:not([disabled])', 'summary', 'event.shiftKey', 'event.preventDefault()', 'onKeyDown: keepFocus']) {
+    assert.match(source, new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'u'))
+  }
+})
+
 test('loads and registers the sidebar action and global overlay', async () => {
   const bundle = await readFile(new URL('lib/client.js', root), 'utf8')
   let plugin

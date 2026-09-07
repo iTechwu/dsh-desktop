@@ -1001,6 +1001,15 @@ function DashboardOverlay({ t }) {
 
   const periodLabel = useMemo(() => data?.period?.date || data?.period?.label || '', [data?.period?.date, data?.period?.label])
   if (!visible) return null
+  const keepFocus = event => {
+    if (event.key !== 'Tab') return
+    const controls = [...(shellRef.current?.querySelectorAll('button:not([disabled]),a[href],input:not([disabled]),select:not([disabled]),textarea:not([disabled]),summary,[tabindex]:not([tabindex="-1"])') || [])]
+    const first = controls[0]
+    const last = controls.at(-1)
+    if (!first) return
+    if (event.shiftKey && (document.activeElement === first || document.activeElement === shellRef.current)) { event.preventDefault(); last.focus() }
+    else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus() }
+  }
   let body
   if (loading && !data) body = h('div', { className: 'yd-loading', role: 'status' }, h('span', { className: 'yd-spinner' }), t('loading'))
   else if (failed && !data) body = h('div', { className: 'yd-fatal', role: 'alert' }, h('strong', null, t('error')), h('button', { type: 'button', onClick: () => setRevision(value => value + 1) }, t('retry')))
@@ -1013,7 +1022,7 @@ function DashboardOverlay({ t }) {
   }
 
   return h('div', { className: 'yd-overlay', role: 'dialog', 'aria-modal': true, 'aria-labelledby': 'yd-title' },
-    h('main', { className: 'yd-shell', ref: shellRef, tabIndex: -1, 'aria-labelledby': 'yd-title', 'aria-busy': loading },
+    h('main', { className: 'yd-shell', ref: shellRef, tabIndex: -1, onKeyDown: keepFocus, 'aria-labelledby': 'yd-title', 'aria-busy': loading },
       h('header', { className: 'yd-header' },
         h('div', null,
           h('div', { className: 'yd-title-line' },
