@@ -104,6 +104,7 @@ import {
   type DesktopNetworkExposure,
 } from './desktop-network.ts'
 import { DESKTOP_FRAME_HEIGHT } from './window-chrome.ts'
+import { DESKTOP_PRODUCT_NAME } from './product-identity.ts'
 import {
   DEFAULT_MACOS_WINDOW_MATERIAL,
   DEFAULT_WINDOWS_WINDOW_MATERIAL,
@@ -626,8 +627,8 @@ export function apply(ctx: Context, config: Config): void {
         url,
         authenticationUrl: ctx.connection.authenticatedUrl(new URL(url).origin),
         rendererAccessHeader: browserAccess.rendererHeader,
-        productName: 'Yootun-Agent',
-        windowTitle: 'Yootun-Agent',
+        productName: DESKTOP_PRODUCT_NAME,
+        windowTitle: DESKTOP_PRODUCT_NAME,
         iconPath,
         trayIcons,
         readLocalePreference: () => {

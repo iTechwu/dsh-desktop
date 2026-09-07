@@ -1,6 +1,6 @@
 {
   "name": "dsh-plugin-desktop",
-  "version": "2.0.5",
+  "version": "2.0.6-beta.1",
   "description": "Yootun-Agent: an Electron shell composed as a DeepSeek Harness Cordis plugin",
   "license": "MIT",
   "publishConfig": {
@@ -477,8 +477,8 @@
     "vitest": "4.1.8"
   },
   "build": {
-    "appId": "ai.yootun.agent",
-    "productName": "Yootun-Agent",
+    "appId": "ai.yootun.agent.beta",
+    "productName": "Yootun-Agent Beta",
     "asar": {
       "smartUnpack": true
     },
@@ -604,7 +604,7 @@
           ]
         }
       ],
-      "artifactName": "Yootun-Agent-${version}-${arch}-Portable.${ext}",
+      "artifactName": "Yootun-Agent-Beta-${version}-${arch}-Portable.${ext}",
       "icon": "build/app-icon.ico"
     },
     "nsis": {
@@ -618,9 +618,9 @@
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "differentialPackage": false,
-      "shortcutName": "Yootun-Agent",
+      "shortcutName": "Yootun-Agent Beta",
       "useZip": false,
-      "artifactName": "Yootun-Agent-${version}-${arch}-Setup.${ext}"
+      "artifactName": "Yootun-Agent-Beta-${version}-${arch}-Setup.${ext}"
     },
     "linux": {
       "asarUnpack": [

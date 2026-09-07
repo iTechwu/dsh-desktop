@@ -8,7 +8,9 @@ export const DESKTOP_RELEASE_IDENTITIES = Object.freeze({
   }),
   beta: Object.freeze({
     releaseChannel: 'beta' as const,
-    packageName: 'dsh-plugin-desktop-beta',
+    // This checkout has one workspace package; the installed app identity is
+    // separated by appId/productName while internal plugin paths stay stable.
+    packageName: 'dsh-plugin-desktop',
     productName: 'Yootun-Agent Beta',
     appId: 'ai.yootun.agent.beta',
   }),
@@ -17,8 +19,8 @@ export const DESKTOP_RELEASE_IDENTITIES = Object.freeze({
 export type DesktopProductIdentity = typeof DESKTOP_RELEASE_IDENTITIES[keyof typeof DESKTOP_RELEASE_IDENTITIES]
 
 /** Stable release-channel identities that must stay aligned with electron-builder. */
-export const DESKTOP_PRODUCT_IDENTITY = DESKTOP_RELEASE_IDENTITIES.stable
-export const OTHER_DESKTOP_PRODUCT_IDENTITY = DESKTOP_RELEASE_IDENTITIES.beta
+export const DESKTOP_PRODUCT_IDENTITY = DESKTOP_RELEASE_IDENTITIES.beta
+export const OTHER_DESKTOP_PRODUCT_IDENTITY = DESKTOP_RELEASE_IDENTITIES.stable
 export const DESKTOP_PACKAGE_NAME = DESKTOP_PRODUCT_IDENTITY.packageName
 export const BETA_DESKTOP_PACKAGE_NAME = OTHER_DESKTOP_PRODUCT_IDENTITY.packageName
 export const DESKTOP_PRODUCT_NAME = DESKTOP_PRODUCT_IDENTITY.productName

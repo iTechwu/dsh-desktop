@@ -684,8 +684,8 @@ describe('published package surface', () => {
 
   it('fixes the installed application identity', () => {
     expect(manifest.version).toBe(workspaceManifest.version)
-    expect(manifest.build?.productName).toBe('Yootun-Agent')
-    expect(manifest.build?.appId).toBe('ai.yootun.agent')
+    expect(manifest.build?.productName).toBe('Yootun-Agent Beta')
+    expect(manifest.build?.appId).toBe('ai.yootun.agent.beta')
     expect(manifest.build?.asar).toEqual({ smartUnpack: true })
     expect(manifest.build?.asarUnpack).toBeUndefined()
     expect(manifest.build?.electronFuses).toEqual({
@@ -746,7 +746,7 @@ describe('published package surface', () => {
       target: 'nsis',
       arch: ['x64'],
     }])
-    expect(manifest.build?.win?.artifactName).toBe('Yootun-Agent-${version}-${arch}-Portable.${ext}')
+    expect(manifest.build?.win?.artifactName).toBe('Yootun-Agent-Beta-${version}-${arch}-Portable.${ext}')
     expect(manifest.build?.nsis).toEqual({
       include: 'installer.nsh',
       installerIcon: 'build/app-icon.ico',
@@ -758,9 +758,9 @@ describe('published package surface', () => {
       createDesktopShortcut: true,
       createStartMenuShortcut: true,
       differentialPackage: false,
-      shortcutName: 'Yootun-Agent',
+      shortcutName: 'Yootun-Agent Beta',
       useZip: false,
-      artifactName: 'Yootun-Agent-${version}-${arch}-Setup.${ext}',
+      artifactName: 'Yootun-Agent-Beta-${version}-${arch}-Setup.${ext}',
     })
     expect(manifest.build?.linux?.icon).toBe('build/app-icon.png')
   })

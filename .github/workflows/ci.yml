@@ -168,8 +168,8 @@ jobs:
         with:
           name: yootun-agent-windows-x64
           path: |
-            dsh-plugin-desktop/dist/Yootun-Agent-*-Setup.exe
-            dsh-plugin-desktop/dist/Yootun-Agent-*-Portable.zip
+            dsh-plugin-desktop/dist/Yootun-Agent-Beta-*-Setup.exe
+            dsh-plugin-desktop/dist/Yootun-Agent-Beta-*-Portable.zip
           if-no-files-found: error
           retention-days: 7
 

@@ -35,7 +35,7 @@ export function verifyWindowsPortable(
   const portablePath = join(
     options.desktopRoot,
     'dist',
-    `Yootun-Agent-${options.version}-x64-Portable.zip`,
+    `Yootun-Agent-Beta-${options.version}-x64-Portable.zip`,
   )
   const stat = statSync(portablePath)
   if (!stat.isFile() || stat.size === 0) {
@@ -43,9 +43,9 @@ export function verifyWindowsPortable(
   }
   const archive = new AdmZip(portablePath)
   const entries = archive.getEntries().filter(entry => !entry.isDirectory)
-  const executable = entries.find(entry => entry.entryName.replaceAll('\\', '/') === 'Yootun-Agent.exe')
+  const executable = entries.find(entry => entry.entryName.replaceAll('\\', '/') === 'Yootun-Agent Beta.exe')
   if (executable === undefined) {
-    throw new Error(`Windows portable archive is missing Yootun-Agent.exe: ${portablePath}`)
+    throw new Error(`Windows portable archive is missing Yootun-Agent Beta.exe: ${portablePath}`)
   }
   if (!entries.some(entry => entry.entryName.replaceAll('\\', '/') === 'resources/app.asar')) {
     throw new Error(`Windows portable archive is missing resources/app.asar: ${portablePath}`)
@@ -53,7 +53,7 @@ export function verifyWindowsPortable(
   assertPortableExecutableBuffer(
     executable.getData(),
     'Windows portable application',
-    `${portablePath}:Yootun-Agent.exe`,
+    `${portablePath}:Yootun-Agent Beta.exe`,
   )
   return portablePath
 }

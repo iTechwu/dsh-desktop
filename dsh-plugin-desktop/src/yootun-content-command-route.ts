@@ -239,7 +239,7 @@ async function mutateState(path: string, update: (state: ContentState) => Promis
 const finish = (res: ServerResponse, status: number, value: object, allow?: string) => { res.statusCode = status; res.setHeader('Content-Type', 'application/json; charset=utf-8'); res.setHeader('Cache-Control', 'no-store'); if (allow) res.setHeader('Allow', allow); res.end(JSON.stringify(value)) }
 async function requestBody(req: IncomingMessage) { let size = 0; const chunks: Buffer[] = []; for await (const chunk of req) { const data = Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk)); size += data.byteLength; if (size > MAX_BODY) throw new ContentBodyTooLarge(); chunks.push(data) } try { return JSON.parse(Buffer.concat(chunks).toString('utf8')) } catch { throw new InvalidContentRequest('json_invalid') } }
 
-const CONTENT_AUDIT_SOURCE = Object.freeze({ pluginId: 'dsh-plugin-desktop/yootun-content-command', pluginVersion: '2.0.5', surface: 'human_ui' as const })
+const CONTENT_AUDIT_SOURCE = Object.freeze({ pluginId: 'dsh-plugin-desktop/yootun-content-command', pluginVersion: '2.0.6-beta.1', surface: 'human_ui' as const })
 
 async function recordContentAudit(audit: YootunAuditRecorder | undefined, input: YootunAuditRecordInput | undefined): Promise<void> {
   if (audit === undefined || input === undefined) return

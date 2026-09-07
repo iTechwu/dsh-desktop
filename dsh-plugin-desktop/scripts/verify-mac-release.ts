@@ -44,7 +44,7 @@ function defaultOptions(): MacReleaseVerificationOptions {
     distDir: process.argv[2] === undefined
       ? join(packageRoot, 'dist', 'mac-release')
       : resolve(process.argv[2]),
-    productName: 'Yootun-Agent',
+    productName: 'Yootun-Agent Beta',
     listDmgs,
     makeMountPoint: () => mkdtempSync(join(tmpdir(), 'dsh-desktop-dmg-')),
     run,
