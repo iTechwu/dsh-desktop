@@ -26,6 +26,7 @@ const OBJECT = (properties = {}, required = []) => ({
   properties,
   ...(required.length > 0 ? { required } : {}),
 })
+const OPEN_OBJECT = { type: 'object', additionalProperties: true }
 const ARRAY = (items, maxItems) => ({ type: 'array', items, ...(maxItems ? { maxItems } : {}) })
 const ENUM = enumValues => ({ type: 'string', enum: enumValues })
 const EMPTY_INPUT = OBJECT()
@@ -53,14 +54,14 @@ const TOOL_INPUT_SCHEMAS = {
   knowledge_recall: RECALL_INPUT,
   knowledge_remember: OBJECT({
     content: STRING(20000), type: STRING(40), scope: ENUM(['SESSION', 'USER', 'TEAM', 'ENTERPRISE']),
-    spaceKey: STRING(200), spaceId: UUID, sourceSessionId: STRING(255), evidence: ARRAY(OBJECT({}, []), 20), captureReason: STRING(120),
+    spaceKey: STRING(200), spaceId: UUID, sourceSessionId: STRING(255), evidence: ARRAY(OPEN_OBJECT, 20), captureReason: STRING(120),
   }, ['content']),
   knowledge_confirm_memory: OBJECT({ ...MEMORY_ID, reason: STRING(500), shareWithSpace: { type: 'boolean' } }, ['memoryId']),
   knowledge_forget: OBJECT({ ...MEMORY_ID, reason: STRING(500) }, ['memoryId', 'reason']),
   knowledge_session_checkpoint: OBJECT({
     externalSessionId: STRING(255), captureReason: STRING(120), startSeq: INTEGER(0), endSeq: INTEGER(0),
-    summary: STRING(50000), events: ARRAY(OBJECT({}, []), 50), evidence: ARRAY(OBJECT({}, []), 20),
-    candidateContents: ARRAY(OBJECT({}, []), 20),
+    summary: STRING(50000), events: ARRAY(OPEN_OBJECT, 50), evidence: ARRAY(OPEN_OBJECT, 20),
+    candidateContents: ARRAY(OPEN_OBJECT, 20),
   }, ['externalSessionId', 'startSeq', 'endSeq']),
   knowledge_promote: OBJECT({
     sourceMemoryIds: ARRAY(UUID, 50), targetSpaceKey: STRING(200), targetSpaceId: UUID,

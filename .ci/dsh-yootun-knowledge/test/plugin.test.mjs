@@ -76,6 +76,10 @@ test('publishes per-tool input schemas so invalid MCP arguments fail before the 
   const confirm = registered.get('knowledge_confirm_memory')
   assert.deepEqual(confirm.parameters.properties.input.required, ['memoryId'])
   assert.equal(confirm.parameters.properties.input.properties.memoryId.format, 'uuid')
+
+  const checkpoint = registered.get('knowledge_session_checkpoint')
+  assert.equal(checkpoint.parameters.properties.input.properties.events.items.additionalProperties, true)
+  assert.equal(checkpoint.parameters.properties.input.properties.events.maxItems, 50)
 })
 
 test('exposes explicit memory confirmation through the authenticated knowledge MCP route', async () => {
