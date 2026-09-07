@@ -15,11 +15,12 @@ const knowledgeSource = readFileSync(
 )
 
 describe('dofe-managed Knowledge route', () => {
-  it('registers Knowledge on the fixed public MCP gateway with the managed key', () => {
+  it('keeps Knowledge on its wrapper-plugin surface', () => {
     expect(DOFE_MCP_BASE_URL).toBe('https://ixicai.cn/mcp')
     expect(MODELS_API_KEY).toBe('MODELS_API_KEY')
-    expect(managedSource).toMatch(/\{ serverName: 'knowledge', path: 'knowledge', timeoutMs: 90_000 \}/)
-    expect(managedSource).toContain('mcp__knowledge__')
+    expect(managedSource).not.toMatch(/serverName: 'knowledge'/)
+    expect(managedSource).toContain('knowledge_*')
+    expect(managedSource).not.toContain('mcp__knowledge__')
     expect(managedSource).not.toMatch(/KNOWLEDGE_API_KEY|knowledge\.dofe\.ai|172\.30\.30\.11|127\.0\.0\.1|localhost/)
   })
 
