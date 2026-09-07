@@ -1052,7 +1052,7 @@ window.__ModuleLoader__.load({
               h(Tooltip, { label: t('close'), side: 'bottom' }, h('button', { type: 'button', className: 'yd-icon-button', onClick: closeOverlay, 'aria-label': t('close') }, h(IconCloseOutline16, { size: 16 }))))),
           h('nav', { className: 'yd-tabs', 'aria-label': t('title') }, ...TABS.map(item =>
             h('button', { type: 'button', key: item.id, 'aria-current': tab === item.id ? 'page' : undefined, onClick: () => setTab(item.id) }, t(item.label)))),
-          failed && data ? h('div', { className: 'yd-stale', role: 'status' }, t('error')) : null,
+          failed && data ? h('div', { className: 'yd-stale yd-stale-error', role: 'alert' }, t('error')) : null,
           h('div', { className: `yd-content${loading && data ? ' yd-refreshing' : ''}` }, body)))
     }
 
@@ -1099,6 +1099,7 @@ window.__ModuleLoader__.load({
     .yd-activity-grid{gap:var(--yd-space-6);margin-top:var(--yd-space-6)}
     .yd-empty,.yd-loading,.yd-fatal{gap:var(--yd-space-2)}
     .yd-stale{padding:var(--yd-space-2) var(--yd-content-gutter)}
+    .yd-stale-error{background:color-mix(in srgb,var(--dsw-alias-state-error-primary) 10%,transparent);color:var(--dsw-alias-state-error-primary)}
     .yd-inline-empty{margin:var(--yd-space-4) 0}
     .yd-detail-stack{display:grid;gap:var(--yd-space-6);align-content:start}
     .yd-detail-stack>.yd-metrics,.yd-detail-stack>.yd-table-section{min-width:0}

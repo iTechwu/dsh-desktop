@@ -88,6 +88,12 @@ test('keeps keyboard focus inside the dashboard modal', async () => {
   }
 })
 
+test('announces stale dashboard data after a refresh failure', async () => {
+  const source = await readFile(new URL('src/client.js', root), 'utf8')
+  assert.match(source, /failed && data \? h\('div', \{ className: 'yd-stale yd-stale-error', role: 'alert' \}, t\('error'\)\)/u)
+  assert.match(source, /\.yd-stale-error\{[^}]*state-error-primary/u)
+})
+
 test('loads and registers the sidebar action and global overlay', async () => {
   const bundle = await readFile(new URL('lib/client.js', root), 'utf8')
   let plugin
