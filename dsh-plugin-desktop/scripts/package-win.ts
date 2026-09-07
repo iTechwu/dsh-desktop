@@ -149,7 +149,7 @@ export function packageWindowsArtifact(
       '/d',
       '/s',
       '/c',
-      'npm rebuild fs-ext --runtime=electron --target=43.4.0 --arch=x64 --build-from-source',
+      'npm rebuild fs-ext --runtime=electron --target=43.4.0 --dist-url=https://electronjs.org/headers --arch=x64 --build-from-source',
     ],
     options.desktopRoot,
     cleanEnvironment,
