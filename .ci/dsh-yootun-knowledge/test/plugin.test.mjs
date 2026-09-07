@@ -75,6 +75,11 @@ test('localizes knowledge source state and isolates its overlay', async () => {
   for (const token of ['yk-source', 'credential-store', 'stateCss', 'overviewSource', 'pendingImports', 'yk-graph-canvas', 'yk-memory-row', '"aria-label": t("recallPlaceholder")', '"aria-label": t("graphPlaceholder")', 'style.textContent = css + stateCss', '.yk-overlay{position:fixed', '.yk-shell{display:grid', '.yk-content{min-height:0']) assert.match(source, new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'u'))
 })
 
+test('prevents duplicate knowledge reads and writes while exposing progress', async () => {
+  const source = await readFile(new URL('src/client.js', root), 'utf8')
+  for (const token of ['graphBusyRef.current', 'recallBusyRef.current', 'mutationBusyRef.current', 'disabled: Boolean(mutation)', 'setMutation({ id: item.id, action: "confirm" })', 'setMutation({ id: item.id, action: "forget" })', 'activeMutation && mutation.action === "confirm" ? t("processing")', '"aria-busy": loading || graphBusy || recallBusy || Boolean(mutation)']) assert.ok(source.includes(token), `missing interaction guard token: ${token}`)
+})
+
 test('generated client bundle is valid JavaScript and has no unresolved style token', async () => {
   const source = await readFile(new URL('src/client.js', root), 'utf8')
   assert.doesNotMatch(source, /\$\{css\}/u)
