@@ -129,6 +129,12 @@ test('dashboard client renders health strip, attention queue, and tab switching'
   const exportButton = collect(tree, node => node.props?.['aria-label'] === 'exportCsv').at(0)
   assert.equal(exportButton.props.disabled, false)
 
+  // 刷新保留旧数据时，工作区仍需向辅助技术暴露忙碌状态。
+  states[4] = true
+  tree = render()
+  assert.equal(byClass(tree, 'yd-shell').at(0).props['aria-busy'], true)
+  states[4] = false
+
   // 模型构成：model-a 占 0.4/0.5 = 80%
   states[0] = 'usage'
   tree = render()

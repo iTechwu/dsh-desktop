@@ -1018,7 +1018,7 @@ window.__ModuleLoader__.load({
       }
 
       return h('div', { className: 'yd-overlay', role: 'dialog', 'aria-modal': true, 'aria-labelledby': 'yd-title' },
-        h('main', { className: 'yd-shell', ref: shellRef, tabIndex: -1, 'aria-labelledby': 'yd-title' },
+        h('main', { className: 'yd-shell', ref: shellRef, tabIndex: -1, 'aria-labelledby': 'yd-title', 'aria-busy': loading },
           h('header', { className: 'yd-header' },
             h('div', null,
               h('div', { className: 'yd-title-line' },
