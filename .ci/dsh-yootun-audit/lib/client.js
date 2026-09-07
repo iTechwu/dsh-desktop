@@ -128,9 +128,15 @@ window.__ModuleLoader__.load({
         h('select', { value: state.filters.timeRange, onChange: set('timeRange'), 'aria-label': t('allTime') }, h('option', { value: '' }, t('allTime')), h('option', { value: '24h' }, t('time24h')), h('option', { value: '7d' }, t('time7d')), h('option', { value: '30d' }, t('time30d')))
       )
     }
+    function selectionIndex(length, current, key) {
+      if (length <= 0) return -1
+      if (key === 'ArrowDown') return Math.min(length - 1, current + 1)
+      return current < 0 ? length - 1 : Math.max(0, current - 1)
+    }
     function EventTable({ events, selectedId, dispatch, t }) {
-      const onKeyDown = event => { const current = Math.max(0, events.findIndex(item => item.id === selectedId)); if (event.key === 'ArrowDown' || event.key === 'ArrowUp') { event.preventDefault(); const delta = event.key === 'ArrowDown' ? 1 : -1; dispatch({ type: 'select', id: events[Math.max(0, Math.min(events.length - 1, current + delta))]?.id }) } else if (event.key === 'Enter') dispatch({ type: 'select', id: events[current]?.id }) }
-      return h('div', { className: 'ya-table-wrap', tabIndex: 0, onKeyDown, role: 'grid', 'aria-label': t('title') }, h('div', { className: 'ya-table ya-table-head', role: 'row' }, h('span', null, t('time')), h('span', null, t('actor')), h('span', null, t('action')), h('span', null, t('target')), h('span', null, t('result'))), events.map(event => h('button', { type: 'button', role: 'row', key: event.id, className: `ya-table ya-row${selectedId === event.id ? ' is-selected' : ''}`, onClick: () => dispatch({ type: 'select', id: event.id }) }, h('span', null, formatTime(event.occurredAt)), h('span', { title: event.actorDisplayName }, event.actorDisplayName || '—'), h('span', { title: actionLabel(event.actionCode) }, actionLabel(event.actionCode)), h('span', { title: event.target?.label || event.target?.id }, event.target?.label || event.target?.id || '—'), h('span', null, h('b', { className: `ya-outcome is-${event.outcome}` }, outcomeLabel(event.outcome, t)), event.syncStatus === 'pending' ? h('small', { className: 'ya-pending' }, t('pendingItem')) : null))))
+      const current = events.findIndex(item => item.id === selectedId)
+      const onKeyDown = event => { if (event.key === 'ArrowDown' || event.key === 'ArrowUp') { event.preventDefault(); const next = selectionIndex(events.length, current, event.key); if (next >= 0) dispatch({ type: 'select', id: events[next].id }) } else if (event.key === 'Enter' && events.length) dispatch({ type: 'select', id: events[current >= 0 ? current : 0].id }) }
+      return h('div', { className: 'ya-table-wrap', tabIndex: 0, onKeyDown, role: 'listbox', 'aria-label': t('title'), 'aria-activedescendant': current >= 0 ? `ya-event-${current}` : undefined }, h('div', { className: 'ya-table ya-table-head', 'aria-hidden': true }, h('span', null, t('time')), h('span', null, t('actor')), h('span', null, t('action')), h('span', null, t('target')), h('span', null, t('result'))), events.map((event, index) => h('button', { type: 'button', role: 'option', tabIndex: -1, id: `ya-event-${index}`, 'aria-selected': selectedId === event.id, key: event.id, className: `ya-table ya-row${selectedId === event.id ? ' is-selected' : ''}`, onClick: () => dispatch({ type: 'select', id: event.id }) }, h('span', null, formatTime(event.occurredAt)), h('span', { title: event.actorDisplayName }, event.actorDisplayName || '—'), h('span', { title: actionLabel(event.actionCode) }, actionLabel(event.actionCode)), h('span', { title: event.target?.label || event.target?.id }, event.target?.label || event.target?.id || '—'), h('span', null, h('b', { className: `ya-outcome is-${event.outcome}` }, outcomeLabel(event.outcome, t)), event.syncStatus === 'pending' ? h('small', { className: 'ya-pending' }, t('pendingItem')) : null))))
     }
     function Detail({ event, t, close }) {
       if (!event) return h('aside', { className: 'ya-detail is-empty' }, h('span', null, t('detail')))
@@ -207,7 +213,7 @@ window.__ModuleLoader__.load({
       ctx.slots.inject('shell.overlay', () => ctx.slots.register({ name: 'shell.overlay', id: 'dofe-yootun-audit', order: 50, inject: () => ({ t }) }, Overlay))
     }
 
-    module.exports = { apply, inject: ['slots', 'locale'], __test: { normalizeWorkspace, buildQuery, mergePage, reducer, actionLabel, surfaceLabel, effectOutcomeLabel } }
+    module.exports = { apply, inject: ['slots', 'locale'], __test: { normalizeWorkspace, buildQuery, mergePage, reducer, actionLabel, surfaceLabel, effectOutcomeLabel, selectionIndex } }
 
     exports.apply = apply; exports.inject = ['slots', 'locale']; return module.exports; },
 });

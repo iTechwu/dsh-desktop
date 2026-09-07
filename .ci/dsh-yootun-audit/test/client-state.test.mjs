@@ -17,7 +17,7 @@ vm.runInNewContext(source, {
 })
 
 const {
-  normalizeWorkspace, buildQuery, mergePage, reducer, actionLabel, surfaceLabel, effectOutcomeLabel,
+  normalizeWorkspace, buildQuery, mergePage, reducer, actionLabel, surfaceLabel, effectOutcomeLabel, selectionIndex,
 } = module.exports.__test
 
 test('normalizes invalid workspace fields to honest defaults', () => {
@@ -36,6 +36,14 @@ test('merges cursor pages without duplicating events', () => {
   const first = [{ id: 'a', occurredAt: '2026-09-05T02:00:00Z' }, { id: 'b', occurredAt: '2026-09-05T01:00:00Z' }]
   const second = [{ id: 'b', occurredAt: '2026-09-05T01:00:00Z' }, { id: 'c', occurredAt: '2026-09-05T00:00:00Z' }]
   assert.deepEqual([...mergePage(first, second).map(item => item.id)], ['a', 'b', 'c'])
+})
+
+test('moves audit selection from an empty state without skipping the first row', () => {
+  assert.equal(selectionIndex(3, -1, 'ArrowDown'), 0)
+  assert.equal(selectionIndex(3, -1, 'ArrowUp'), 2)
+  assert.equal(selectionIndex(3, 2, 'ArrowDown'), 2)
+  assert.equal(selectionIndex(3, 0, 'ArrowUp'), 0)
+  assert.equal(selectionIndex(0, -1, 'ArrowDown'), -1)
 })
 
 test('keeps the event list visible until a user explicitly selects a detail', () => {
