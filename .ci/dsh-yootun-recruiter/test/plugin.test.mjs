@@ -31,6 +31,12 @@ test('blocks duplicate mutations and announces pending recruiter actions', async
   }
 })
 
+test('locks the role brief and announces initial workspace loading', async () => {
+  const source = await readFile(new URL('src/client.js', root), 'utf8')
+  assert.match(source, /className: 'yr-intake-textarea', value: input, disabled: busy/u)
+  assert.match(source, /className: 'yr-shell',[^\n]*'aria-busy': loading \|\| busy/u)
+})
+
 test('consumes recruiter mutation failures without reporting false draft success', async () => {
   const source = await readFile(new URL('src/client.js', root), 'utf8')
   assert.match(source, /catch \{ setError\('action'\); return undefined \}/u)
