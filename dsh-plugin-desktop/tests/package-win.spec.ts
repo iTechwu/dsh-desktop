@@ -74,6 +74,7 @@ describe('Windows x64 installer packaging', () => {
         PATH: 'C:\\Windows\\System32',
         SAFE_VALUE: 'kept',
         CSC_IDENTITY_AUTO_DISCOVERY: 'false',
+        DSH_ELECTRON_BUILDER_TRAVERSAL_ONLY: '1',
         npm_config_user_agent: 'npm',
         npm_execpath: '',
       },
