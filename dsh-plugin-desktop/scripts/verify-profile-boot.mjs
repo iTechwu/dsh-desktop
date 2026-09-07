@@ -194,9 +194,17 @@ try {
   if (agentPresets === undefined) {
     throw new Error('assembled Windows profile is missing the agent preset roster')
   }
-  const presetIds = (await agentPresets.list()).map(preset => preset.id)
-  if (!presetIds.includes('minimal') || !presetIds.includes('standard')) {
+  const presets = await agentPresets.list()
+  const presetIds = presets.map(preset => preset.id)
+  const expectedPresetIds = ['minimal', 'standard', 'ptc', 'cordis']
+  if (!expectedPresetIds.every(id => presetIds.includes(id))) {
     throw new Error(`assembled Windows profile exposes unexpected presets: ${presetIds.join(', ')}`)
+  }
+  const brokenPresets = presets.filter(preset => preset.broken !== undefined)
+  if (brokenPresets.length > 0) {
+    throw new Error(`assembled Windows profile reports broken presets: ${brokenPresets
+      .map(preset => `${preset.id}: ${preset.broken}`)
+      .join('; ')}`)
   }
   if (agentPresets.defaultId !== 'minimal') {
     throw new Error(`assembled Windows profile selected unexpected default ${agentPresets.defaultId}`)
