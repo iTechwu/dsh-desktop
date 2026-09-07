@@ -40,6 +40,8 @@ test('registers menu at order 41 and renders the three-region overlay', async ()
   for (const field of ['theme', 'refNote', 'refAccount']) assert.match(source, new RegExp(`aria-label': t\\('${field}'\\)`, 'u'))
   assert.match(source, /mediaType === 'images'/)
   assert.match(source, /videoUrl/)
+  assert.match(source, /className: 'yxh-overlay', role: 'dialog', 'aria-modal': true, 'aria-labelledby': 'yxh-title'/u)
+  assert.doesNotMatch(source, /querySelector\('\.yxh-overlay'\)|DIALOG_ATTRIBUTES/u)
   // 禁止不安全富文本
   assert.doesNotMatch(source, /dangerouslySetInnerHTML|password|cookie/i)
 })

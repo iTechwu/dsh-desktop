@@ -7,7 +7,6 @@ const UPLOAD_PICK = '/_dsh/uploader/pick-file'
 const UPLOAD_SEND = '/_dsh/uploader/upload'
 const OVERLAY_ID = '@dofe/dsh-yootun-xhs-operation'
 const OVERLAY_EVENT = 'dofe:yootun-overlay:open'
-const DIALOG_ATTRIBUTES = { role: 'dialog', 'aria-modal': true, 'aria-labelledby': 'yxh-title' }
 const POLL_INTERVAL_MS = 30000
 const MAX_IMAGES = 5
 
@@ -53,10 +52,6 @@ const snapshotOpen = () => opened
 const openOverlay = () => {
   window.dispatchEvent(new CustomEvent(OVERLAY_EVENT, { detail: { id: OVERLAY_ID } }))
   setOpened(true)
-  requestAnimationFrame(() => {
-    const root = document.querySelector('.yxh-overlay')
-    for (const [name, value] of Object.entries(DIALOG_ATTRIBUTES)) root?.setAttribute(name, String(value))
-  })
 }
 const closeOtherOverlay = event => { if (event.detail?.id !== OVERLAY_ID) setOpened(false) }
 
@@ -351,7 +346,7 @@ function Overlay({ t }) {
     right = h('div', { className: 'yxh-state' }, h('p', null, t('empty')))
   }
 
-  return h('div', { className: 'yxh-overlay' },
+  return h('div', { className: 'yxh-overlay', role: 'dialog', 'aria-modal': true, 'aria-labelledby': 'yxh-title' },
     h('main', { className: 'yxh-shell', 'aria-labelledby': 'yxh-title' },
       h('header', { className: 'yxh-header' },
         h('div', null, h('h1', { id: 'yxh-title' }, t('title')), h('p', null, t('subtitle'))),
