@@ -78,8 +78,15 @@ test('publishes per-tool input schemas so invalid MCP arguments fail before the 
   assert.equal(confirm.parameters.properties.input.properties.memoryId.format, 'uuid')
 
   const checkpoint = registered.get('knowledge_session_checkpoint')
-  assert.equal(checkpoint.parameters.properties.input.properties.events.items.additionalProperties, true)
+  assert.equal(checkpoint.parameters.properties.input.properties.events.items.additionalProperties, false)
+  assert.deepEqual(Object.keys(checkpoint.parameters.properties.input.properties.events.items.properties).sort(), ['seq', 'text', 'time', 'type'])
+  assert.equal(checkpoint.parameters.properties.input.properties.candidateContents.items.properties.content.maxLength, 20000)
   assert.equal(checkpoint.parameters.properties.input.properties.events.maxItems, 50)
+
+  const relations = registered.get('knowledge_relation_assertions')
+  assert.deepEqual(relations.parameters.properties.input.properties.status.enum, [
+    'EXTRACTED', 'VALIDATED', 'CANDIDATE', 'CONFIRMED', 'CONFLICTED', 'SUPERSEDED', 'REJECTED',
+  ])
 })
 
 test('exposes explicit memory confirmation through the authenticated knowledge MCP route', async () => {
