@@ -3335,12 +3335,6 @@ packages:
   '@quansync/fs@1.0.0':
     resolution: {integrity: sha512-4TJ3DFtlf1L5LDMaM6CanJ/0lckGNtJcMjQ1NAV6zDmA0tEHKZtxNKin8EgPaVX1YzljbxckyT2tJrpQKAtngQ==}
 
-  '@repo/config@file:../docker-helm.dofe.ai/knowledge.dofe.ai/packages/config':
-    resolution: {directory: ../docker-helm.dofe.ai/knowledge.dofe.ai/packages/config, type: directory}
-
-  '@repo/contracts@file:../docker-helm.dofe.ai/knowledge.dofe.ai/packages/contracts':
-    resolution: {directory: ../docker-helm.dofe.ai/knowledge.dofe.ai/packages/contracts, type: directory}
-
   '@rolldown/binding-android-arm-eabi@1.2.5':
     resolution: {integrity: sha512-DLe/i+l8ynIBY7XEQ191TeZvCoowIGa18R+dIV30GW7DiOtp74i/xX8hs8GUjW5ARV7VZuie3d6AumSmCwbeRA==}
     engines: {node: ^20.19.0 || >=22.12.0}
@@ -3660,14 +3654,6 @@ packages:
 
   '@ts-morph/common@0.27.0':
     resolution: {integrity: sha512-Wf29UqxWDpc+i61k3oIOzcUfQt79PIT9y/MWfAGlrkjg6lBC1hwDECLXPVJAhWjiGbfBCxZd65F/LIZF3+jeJQ==}
-
-  '@ts-rest/core@3.53.0-rc.1':
-    resolution: {integrity: sha512-hDMXqKHSys6w+kXFW1Q6EvN8QgRvtXKXJ2TpYByKI4TquaPjiTOv99aLD26X4LNRzdna8Ci1PVyzr0jYZv0oNQ==}
-    peerDependencies:
-      '@types/node': ^18.18.7 || >=20.8.4
-    peerDependenciesMeta:
-      '@types/node':
-        optional: true
 
   '@tybys/wasm-util@0.10.3':
     resolution: {integrity: sha512-F3fo1MYrRJYL3zER0OUOmkutjr1Vp23m7OsSgp7nq4SP6OqX6C/56XFIPAl5bt3zaBRjmW7SGz3u/6LwFpYcOg==}
@@ -8880,16 +8866,6 @@ snapshots:
     dependencies:
       quansync: 1.0.0
 
-  '@repo/config@file:../docker-helm.dofe.ai/knowledge.dofe.ai/packages/config': {}
-
-  '@repo/contracts@file:../docker-helm.dofe.ai/knowledge.dofe.ai/packages/contracts(@types/node@22.20.1)':
-    dependencies:
-      '@repo/config': file:../docker-helm.dofe.ai/knowledge.dofe.ai/packages/config
-      '@ts-rest/core': 3.53.0-rc.1(@types/node@22.20.1)
-      zod: 4.5.4
-    transitivePeerDependencies:
-      - '@types/node'
-
   '@rolldown/binding-android-arm-eabi@1.2.5':
     optional: true
 
@@ -9086,10 +9062,6 @@ snapshots:
       fast-glob: 3.3.3
       minimatch: 10.2.6
       path-browserify: 1.0.1
-
-  '@ts-rest/core@3.53.0-rc.1(@types/node@22.20.1)':
-    optionalDependencies:
-      '@types/node': 22.20.1
 
   '@tybys/wasm-util@0.10.3':
     dependencies:
