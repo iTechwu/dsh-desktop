@@ -44,6 +44,7 @@ test('registers menu at order 41 and renders the three-region overlay', async ()
   assert.doesNotMatch(source, /querySelector\('\.yxh-overlay'\)|DIALOG_ATTRIBUTES/u)
   assert.match(source, /requestAnimationFrame\(\(\) => shellRef\.current\?\.focus\?\.\(\)\)/u)
   assert.match(source, /className: 'yxh-shell', ref: shellRef, tabIndex: -1/u)
+  for (const token of ['opener = event?.currentTarget || document.activeElement', 'target?.isConnected', 'target.focus()', "event.key === 'Escape') closeOverlay()", 'onClick: closeOverlay', 'uploadBusyRef.current', 'submitBusyRef.current', "'aria-busy': busy || uploading || processing"]) assert.ok(source.includes(token), `missing interaction guard token: ${token}`)
   // 禁止不安全富文本
   assert.doesNotMatch(source, /dangerouslySetInnerHTML|password|cookie/i)
 })

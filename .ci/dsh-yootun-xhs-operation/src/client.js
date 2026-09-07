@@ -40,6 +40,7 @@ const copy = {
 }
 
 let opened = false
+let opener = null
 const openListeners = new Set()
 const emitOpen = () => openListeners.forEach(listener => listener())
 const setOpened = value => { opened = value; emitOpen() }
@@ -49,10 +50,12 @@ const snapshotOpen = () => opened
 // 同一应用进程内跨开关保留的当前任务（docs/0904/xhs §5.2）：由下方模块级 task machine
 // 持有；关闭页面停止轮询但不取消任务，重新打开页面继续查询当前任务。
 
-const openOverlay = () => {
+const openOverlay = event => {
+  opener = event?.currentTarget || document.activeElement
   window.dispatchEvent(new CustomEvent(OVERLAY_EVENT, { detail: { id: OVERLAY_ID } }))
   setOpened(true)
 }
+const closeOverlay = () => { const target = opener; opener = null; setOpened(false); requestAnimationFrame(() => { if (target?.isConnected) target.focus() }) }
 const closeOtherOverlay = event => { if (event.detail?.id !== OVERLAY_ID) setOpened(false) }
 
 const isTerminal = status => status === 'succeeded' || status === 'failed' || status === 'cancelled'
@@ -221,6 +224,8 @@ function Version({ version, index, t }) {
 function Overlay({ t }) {
   const visible = useSyncExternalStore(subscribeOpen, snapshotOpen, snapshotOpen)
   const shellRef = useRef(null)
+  const uploadBusyRef = useRef(false)
+  const submitBusyRef = useRef(false)
   const [tab, setTab] = useState('images')
   const [images, setImages] = useState([])
   const [video, setVideo] = useState(null)
@@ -240,7 +245,7 @@ function Overlay({ t }) {
   useEffect(() => {
     if (!visible) return undefined
     requestAnimationFrame(() => shellRef.current?.focus?.())
-    const key = event => { if (event.key === 'Escape') setOpened(false) }
+    const key = event => { if (event.key === 'Escape') closeOverlay() }
     window.addEventListener('keydown', key)
     return () => window.removeEventListener('keydown', key)
   }, [visible])
@@ -252,7 +257,8 @@ function Overlay({ t }) {
   }, [visible])
 
   const pickAndUpload = async kind => {
-    if (uploading || locked) return
+    if (uploadBusyRef.current || uploading || locked) return
+    uploadBusyRef.current = true
     setUploading(true)
     setUploadError('')
     try {
@@ -268,12 +274,13 @@ function Overlay({ t }) {
     } catch {
       setUploadError(t('uploadFailed'))
     } finally {
+      uploadBusyRef.current = false
       setUploading(false)
     }
   }
 
   const onSubmit = async () => {
-    if (busy || uploading || processing) return
+    if (submitBusyRef.current || busy || uploading || processing) return
     const hasMaterial = tab === 'images' ? images.length > 0 : video !== null
     if (!hasMaterial) return
     const mediaType = tab
@@ -284,9 +291,14 @@ function Overlay({ t }) {
     const body = { action: 'create', mediaType, idempotencyKey, theme: input.theme || null, references, accounts, versionCount: 3 }
     if (mediaType === 'images') { body.imageUrls = input.imageUrls; body.coverIndex = 0 }
     else { body.videoUrl = input.videoUrl }
+    submitBusyRef.current = true
     setBusy(true)
-    await machine.submit(body)
-    setBusy(false)
+    try {
+      await machine.submit(body)
+    } finally {
+      submitBusyRef.current = false
+      setBusy(false)
+    }
   }
 
   if (!visible) return null
@@ -348,12 +360,12 @@ function Overlay({ t }) {
     right = h('div', { className: 'yxh-state' }, h('p', null, t('empty')))
   }
 
-  return h('div', { className: 'yxh-overlay', role: 'dialog', 'aria-modal': true, 'aria-labelledby': 'yxh-title' },
+  return h('div', { className: 'yxh-overlay', role: 'dialog', 'aria-modal': true, 'aria-labelledby': 'yxh-title', 'aria-busy': busy || uploading || processing },
     h('main', { className: 'yxh-shell', ref: shellRef, tabIndex: -1, 'aria-labelledby': 'yxh-title' },
       h('header', { className: 'yxh-header' },
         h('div', null, h('h1', { id: 'yxh-title' }, t('title')), h('p', null, t('subtitle'))),
         h('div', { className: 'yxh-header-buttons' },
-          h(Tooltip, { label: t('close') }, h('button', { type: 'button', 'aria-label': t('close'), onClick: () => setOpened(false) }, h(IconCloseOutline16, { size: 16 }))))),
+          h(Tooltip, { label: t('close') }, h('button', { type: 'button', 'aria-label': t('close'), onClick: closeOverlay }, h(IconCloseOutline16, { size: 16 }))))),
       h('div', { className: 'yxh-body' },
         left,
         h('div', { className: 'yxh-right', 'aria-label': t('result') }, right))))
