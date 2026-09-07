@@ -22,6 +22,9 @@ test('retrofit package exposes a complete database-first workspace', async () =>
   assert.match(client, /h\('h1', \{ id: 'yr-title' \}/u)
   assert.match(client, /data\.status === 'error'.*role: 'alert'/u)
   assert.match(client, /if \(!response\.ok\) throw new Error\('retrofit request failed'\)/u)
+  for (const token of ['useRef', 'if (!query.trim() || searchBusyRef.current) return', 'searchBusyRef.current = true', 'searchBusyRef.current = false', "'aria-busy': busy", "role: 'status'", "t('searching')"]) {
+    assert.match(client, new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'u'))
+  }
 })
 
 test('host delegates to a query-capable custom-car tool without exposing credentials', async () => {
