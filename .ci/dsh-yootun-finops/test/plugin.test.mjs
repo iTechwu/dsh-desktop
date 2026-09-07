@@ -63,9 +63,9 @@ test('keeps cost data source-bound and free of credentials or direct providers',
   assert.doesNotMatch(source, /MODELS_API_KEY|api\.deepseek\.com|password|cookie/iu)
 })
 
-test('moves focus into FinOps and restores its opener', async () => {
+test('keeps focus inside FinOps and restores its opener', async () => {
   const source = await readFile(new URL('src/client.js', root), 'utf8')
-  for (const token of ['document.activeElement', 'shellRef.current?.focus()', 'target.focus()', 'ref: shellRef', 'tabIndex: -1', 'closeOverlay()']) {
+  for (const token of ['document.activeElement', 'shellRef.current?.focus()', 'target.focus()', 'ref: shellRef', 'tabIndex: -1', 'closeOverlay()', "event.key !== 'Tab'", "querySelectorAll('button:not([disabled])", 'document.activeElement === last', 'onKeyDown: keepFocus']) {
     assert.match(source, new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'u'))
   }
   assert.match(source, /event\.key === 'Escape'\) closeOverlay\(\)/u)
