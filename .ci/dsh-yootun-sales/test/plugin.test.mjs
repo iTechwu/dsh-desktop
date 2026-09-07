@@ -59,6 +59,13 @@ test('announces sales workspace reads as busy', async () => {
   assert.match(source, /'aria-busy': loading \|\| busy/u)
 })
 
+test('shows a retryable alert when refreshing existing sales data fails', async () => {
+  const source = await readFile(new URL('src/client.js', root), 'utf8')
+  assert.match(source, /const errorLabel = error === 'load' \? t\('loadError'\) : t\('actionError'\)/u)
+  assert.match(source, /error \? h\('div', \{ role: 'alert', className: 'ys-error-banner' \}, errorLabel/u)
+  assert.match(source, /error === 'load' \? h\('button', \{ type: 'button', onClick: \(\) => setRevision/u)
+})
+
 test('moves focus into sales workspace and restores its opener', async () => {
   const source = await readFile(new URL('src/client.js', root), 'utf8')
   for (const token of ['document.activeElement', 'shellRef.current?.focus()', 'target.focus()', 'ref: shellRef', 'tabIndex: -1', 'closeOverlay()']) {
