@@ -72,6 +72,13 @@ test('moves focus into FinOps and restores its opener', async () => {
   assert.match(source, /onClick: closeOverlay/u)
 })
 
+test('announces only active FinOps requests as busy', async () => {
+  const source = await readFile(new URL('src/client.js', root), 'utf8')
+  for (const token of ["const seriesLoading = (tab === 'trend' || tab === 'models') && seriesState.loading", "'aria-busy': loading || seriesLoading"]) {
+    assert.match(source, new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'u'))
+  }
+})
+
 test('uses only DSH alpha3 exported icons', async () => {
   const source = await readFile(new URL('src/client.js', root), 'utf8')
   const imports = source.match(/const \{([^}]+)\} = require\('@deepseek-ai\/dsh-client-ui-primitives'\)/u)?.[1] || ''
