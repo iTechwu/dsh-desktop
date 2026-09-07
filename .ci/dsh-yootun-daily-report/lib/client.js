@@ -40,7 +40,7 @@ window.__ModuleLoader__.load({
         })
           .then(response => response.json())
           .then(setData)
-          .catch(() => setData({ activity: { status: 'unavailable', reason: 'request_failed' } }))
+          .catch(error => { if (error?.name !== 'AbortError') setData({ activity: { status: 'unavailable', reason: 'request_failed' } }) })
           .finally(() => { if (!controller.signal.aborted) setLoading(false) })
         return () => controller.abort()
       }, [visible, revision])
