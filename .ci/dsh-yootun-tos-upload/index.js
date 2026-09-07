@@ -20,7 +20,19 @@
 import { loadConfig } from './config.js'
 import { createFilePicker } from './picker.js'
 import { createTosDriver } from './drivers/tos.js'
-import { handlePickFileRequest, handleUploadRequest, PICK_FILE_PATH, UPLOAD_PATH } from './routes.js'
+import {
+  handlePickFileRequest,
+  handleUploadRequest,
+  handleUploadStartRequest,
+  handleUploadStatusRequest,
+  handleMediaRequest,
+  PICK_FILE_PATH,
+  UPLOAD_PATH,
+  UPLOAD_START_PATH,
+  UPLOAD_STATUS_PATH,
+  MEDIA_PATH,
+} from './routes.js'
+import { createUploadRegistry } from './uploads.js'
 import { registerMediaUploadTool } from './tool.js'
 
 export const name = 'yootun-tos-upload'
@@ -51,13 +63,15 @@ export async function apply(ctx, config = {}, overrides = {}) {
   const disposers = []
   let disposed = false
   /** 已分配资源的登记处（disposeAll 与正常注销共用）。 */
-  const state = { picker: null, driver: null }
+  const state = { picker: null, driver: null, registry: null }
 
-  /** 一次性事务性清理：注销已注册内容、释放允许清单与驱动。 */
+  /** 一次性事务性清理：注销已注册内容、释放允许清单、后台上传与驱动。 */
   const disposeAll = () => {
     if (disposed) return
     disposed = true
     unwindDisposers(disposers, logger)
+    // 先中止后台上传并清空注册表（未完成 upload Promise 被 reject），再销毁驱动。
+    state.registry?.destroy?.()
     state.picker?.store.clear()
     state.driver?.destroy?.()
   }
@@ -97,6 +111,9 @@ export async function apply(ctx, config = {}, overrides = {}) {
       const reportError = (cause) => {
         logger?.error?.('yootun-tos-upload: route failed: %s', cause instanceof Error ? cause.message : String(cause))
       }
+      // 后台上传注册表：uploadStart 启动的任务在这里持有生命周期（TTL/孤儿中止）。
+      const registry = createUploadRegistry({ driver, audit: ctx.yootunAudit, logger })
+      state.registry = registry
       disposers.push(ctx.webServer.register({
         kind: 'exact',
         path: PICK_FILE_PATH,
@@ -118,6 +135,38 @@ export async function apply(ctx, config = {}, overrides = {}) {
           reportError,
           audit: ctx.yootunAudit,
           logger,
+        }),
+      }))
+      disposers.push(ctx.webServer.register({
+        kind: 'exact',
+        path: UPLOAD_START_PATH,
+        handler: (req, res) => handleUploadStartRequest(req, res, {
+          expectedOrigin,
+          store: picker.store,
+          driver,
+          tools: ctx.tools,
+          maxBytes: effectiveConfig.limits.maxBytes,
+          registry,
+          reportError,
+          audit: ctx.yootunAudit,
+          logger,
+        }),
+      }))
+      disposers.push(ctx.webServer.register({
+        kind: 'exact',
+        path: UPLOAD_STATUS_PATH,
+        handler: (req, res) => handleUploadStatusRequest(req, res, {
+          expectedOrigin,
+          registry,
+        }),
+      }))
+      disposers.push(ctx.webServer.register({
+        kind: 'exact',
+        path: MEDIA_PATH,
+        handler: (req, res) => handleMediaRequest(req, res, {
+          expectedOrigin,
+          store: picker.store,
+          maxBytes: effectiveConfig.limits.maxBytes,
         }),
       }))
     }

@@ -14,7 +14,19 @@ import { PickedFileStore, validateUploadableFile, revalidateAdmittedFile } from 
 import { createFilePicker } from '../picker.js'
 import { createTosDriver, MAX_UPLOAD_ATTEMPTS, DEFAULT_TIMEOUTS } from '../drivers/tos.js'
 import { ERROR_CODES, toPublicCode, makeCodedError } from '../lib/errors.js'
-import { handlePickFileRequest, handleUploadRequest, PICK_FILE_PATH, UPLOAD_PATH } from '../routes.js'
+import {
+  handlePickFileRequest,
+  handleUploadRequest,
+  handleUploadStartRequest,
+  handleUploadStatusRequest,
+  handleMediaRequest,
+  PICK_FILE_PATH,
+  UPLOAD_PATH,
+  UPLOAD_START_PATH,
+  UPLOAD_STATUS_PATH,
+  MEDIA_PATH,
+} from '../routes.js'
+import { createUploadRegistry } from '../uploads.js'
 import { registerMediaUploadTool } from '../tool.js'
 import {
   AUTHORIZE_PUBLIC_NAME,
@@ -156,7 +168,7 @@ test('publishes a host-only plugin manifest without client declaration or runtim
 })
 
 test('every shipped source file is valid JavaScript', async () => {
-  const files = ['index.js', 'config.js', 'mime.js', 'allowlist.js', 'picker.js', 'routes.js', 'tool.js', 'authorize.js', 'lib/errors.js', 'drivers/tos.js', 'drivers/types.js', 'lib/client.js']
+  const files = ['index.js', 'config.js', 'mime.js', 'allowlist.js', 'picker.js', 'routes.js', 'tool.js', 'authorize.js', 'uploads.js', 'lib/errors.js', 'drivers/tos.js', 'drivers/types.js', 'lib/client.js']
   for (const file of files) {
     const result = spawnSync(process.execPath, ['--check', fileURLToPath(new URL(file, root))], { encoding: 'utf8' })
     assert.equal(result.status, 0, `${file}: ${result.stderr}`)
@@ -950,7 +962,7 @@ test('apply leaves no duplicate tools or routes across reloads', async () => {
 
   assert.notEqual(firstTool, secondTool, '重载后必须替换为新工具实例')
   assert.equal(registered.tools.size, 1, '同名工具只允许存在一个')
-  assert.equal(registered.routes.size, 2, '同路径路由只允许一组')
+  assert.equal(registered.routes.size, 5, '同路径路由只允许一组（pick-file/upload/uploadStart/uploadStatus/media）')
   assert.equal(registered.sections.filter((section) => section.name === 'tool:media-upload').length, 2, '重载期新旧 prompt 区块共存')
 
   dispose1()
@@ -1018,4 +1030,483 @@ test('tool maps an authorize failure to the server-derived code', async () => {
   const result = await registered.tools.get('media_upload').execute({}, {})
   assert.deepEqual(result, { ok: false, error: 'extension_not_allowed' })
   dispose()
+})
+
+// ---------- 进度与重试回调（docs/0907/xhs 测试计划锚点 3） ----------
+
+test('driver reports throttled progress during upload and finishes at total bytes', async () => {
+  const server = await startStorageServer()
+  const SIZE = 64 * 1024
+  const { path } = await tempFile('y'.repeat(SIZE))
+  let sent = 0
+  const slowStream = new Readable({
+    read() {
+      if (sent >= SIZE) {
+        this.push(null)
+        return
+      }
+      setTimeout(() => {
+        const chunk = Math.min(8192, SIZE - sent)
+        this.push(Buffer.alloc(chunk, 0x79))
+        sent += chunk
+      }, 30)
+    },
+  })
+  const driver = await createTosDriver({ createReadStream: () => slowStream })
+  const events = []
+  await driver.upload(path, uploadTarget(server), undefined, {
+    onProgress: (progress) => events.push({ ...progress }),
+  })
+
+  assert.ok(events.length >= 2, `进度回调必须至少出现首帧与终帧两次（实际 ${events.length}）`)
+  for (const event of events) {
+    assert.equal(event.bytesTotal, SIZE, '每次回调都带 bytesTotal')
+  }
+  const written = events.map((event) => event.bytesWritten)
+  for (let i = 1; i < written.length; i++) {
+    assert.ok(written[i] >= written[i - 1], 'bytesWritten 单调不减')
+  }
+  assert.equal(written[0], 0, '首个进度从 0 开始')
+  assert.equal(written[written.length - 1], SIZE, '终帧进度等于文件总字节')
+  assert.equal(server.requests[0].body.length, SIZE, '文件体仍必须完整到达')
+  await server.close()
+})
+
+test('driver reports attempt increments and resets progress on retry', async () => {
+  const server = await startStorageServer()
+  server.state.seq = [503, 200]
+  const { path } = await tempFile('retry-progress')
+  const driver = await createTosDriver()
+  const attempts = []
+  const progress = []
+  await driver.upload(path, uploadTarget(server), undefined, {
+    onAttempt: (attempt) => attempts.push(attempt),
+    onProgress: (event) => progress.push({ ...event }),
+  })
+  assert.deepEqual(attempts, [0, 1], '重试时 attempt 递增')
+  // 第二次尝试开始时进度必须归零（客户端可显示「重试中」）。
+  const firstRetryProgress = progress.find((event) => event.bytesWritten === 0 && progress.indexOf(event) > 0)
+  assert.ok(firstRetryProgress, '重试开始时必须存在 bytesWritten=0 的归零回调')
+  assert.equal(server.requests.length, 2)
+  await server.close()
+})
+
+// ---------- uploadStart / uploadStatus 路由契约 ----------
+
+function controlledDriver() {
+  const state = { resolve: null, reject: null }
+  const uploads = []
+  const driver = {
+    destroyed: 0,
+    upload(path, target, signal, handlers) {
+      uploads.push({ path, target, signal, handlers })
+      handlers?.onAttempt?.(0)
+      handlers?.onProgress?.({ bytesWritten: 0, bytesTotal: 100 })
+      return new Promise((resolve, reject) => {
+        state.resolve = resolve
+        state.reject = reject
+      })
+    },
+    destroy() { this.destroyed++ },
+  }
+  return {
+    driver,
+    uploads,
+    succeed() { state.resolve({ etag: 'ok' }) },
+    fail(cause) { state.reject(cause ?? new Error('boom')) },
+  }
+}
+
+async function flushAsync(times = 4) {
+  for (let i = 0; i < times; i++) await new Promise((resolve) => setImmediate(resolve))
+}
+
+function startDeps(overrides = {}) {
+  const controlled = overrides.driver ? null : controlledDriver()
+  const auditEvents = []
+  const registry = overrides.registry ?? createUploadRegistry({
+    driver: overrides.driver ?? controlled.driver,
+    doneTtlMs: overrides.doneTtlMs ?? 60_000,
+    orphanMs: overrides.orphanMs ?? 30 * 60_000,
+    sweepMs: 0,
+    now: overrides.now,
+    audit: { async record(event) { auditEvents.push(event) } },
+    logger: { warn() {}, error() {} },
+  })
+  return {
+    controlled,
+    auditEvents,
+    registry,
+    deps: {
+      expectedOrigin: ORIGIN,
+      store: overrides.store,
+      driver: overrides.driver ?? controlled.driver,
+      tools: overrides.tools ?? okTools(),
+      maxBytes: 1024,
+      registry,
+      audit: { async record(event) { auditEvents.push(event) } },
+      logger: { warn() {}, error() {} },
+    },
+  }
+}
+
+test('uploadStart authorizes, launches in background and returns uploadId immediately', async () => {
+  const { path } = await tempFile()
+  const store = new PickedFileStore()
+  store.admit(path, { name: 'video.mp4', size: 4 })
+  const { controlled, deps, registry } = startDeps({ store })
+
+  const res = mockRes()
+  await handleUploadStartRequest(mockReq({ body: { path }, contentType: 'application/json' }), res, deps)
+  assert.equal(res.statusCode, 200)
+  const body = res.json()
+  assert.equal(typeof body.uploadId, 'string')
+  assert.ok(body.uploadId.length > 0)
+  assert.equal(body.name, 'video.mp4')
+  assert.equal(body.size, 4)
+  assert.equal(body.mime, 'video/mp4')
+  assert.equal(JSON.stringify(body).includes(path), false, '响应不得回传本地绝对路径')
+  assert.equal(controlled.uploads.length, 1, '后台上传已启动')
+  assert.equal(controlled.uploads[0].target.method, 'PUT')
+
+  // 轮询：uploading -> done（含公网 URL，且不泄漏预签名 URL/路径）。
+  const polling = mockRes()
+  await handleUploadStatusRequest(mockReq({ body: { uploadId: body.uploadId }, contentType: 'application/json' }), polling, { expectedOrigin: ORIGIN, registry })
+  assert.equal(polling.json().status, 'uploading')
+  assert.equal(polling.json().attempt, 0)
+  assert.equal(typeof polling.json().progress, 'number')
+
+  controlled.succeed()
+  await flushAsync()
+  const doneRes = mockRes()
+  await handleUploadStatusRequest(mockReq({ body: { uploadId: body.uploadId }, contentType: 'application/json' }), doneRes, { expectedOrigin: ORIGIN, registry })
+  const done = doneRes.json()
+  assert.equal(done.status, 'done')
+  assert.equal(done.progress, 100)
+  assert.equal(done.url, 'https://cdn.example.com/media/uuid.mp4')
+  assert.equal(done.name, 'video.mp4')
+  assert.equal(JSON.stringify(done).includes('X-Amz-Signature'), false, 'done 响应不得泄漏预签名 URL')
+  registry.destroy()
+})
+
+test('uploadStart fails fast on unadmitted path, driverless host and authorize rejection', async () => {
+  const { path } = await tempFile()
+  const store = new PickedFileStore()
+  const { deps } = startDeps({ store })
+
+  const unadmitted = mockRes()
+  await handleUploadStartRequest(mockReq({ body: { path }, contentType: 'application/json' }), unadmitted, deps)
+  assert.equal(unadmitted.statusCode, 400)
+  assert.equal(unadmitted.json().error, 'file_not_found', '未登记路径不解释允许清单语义')
+
+  store.admit(path, { name: 'video.mp4', size: 4 })
+  const noDriver = mockRes()
+  await handleUploadStartRequest(mockReq({ body: { path }, contentType: 'application/json' }), noDriver, { ...deps, driver: null })
+  assert.equal(noDriver.statusCode, 503)
+  assert.equal(noDriver.json().error, 'uploader_not_configured')
+
+  const rejectedTools = okTools({ execute: async () => ({ isError: true, error: { message: 'UPLOAD_SIZE_EXCEEDED' } }) })
+  const rejected = mockRes()
+  await handleUploadStartRequest(mockReq({ body: { path }, contentType: 'application/json' }), rejected, { ...deps, tools: rejectedTools })
+  assert.equal(rejected.statusCode, 400)
+  assert.equal(rejected.json().error, 'file_too_large')
+
+  const badBody = mockRes()
+  await handleUploadStartRequest(mockReq({ body: {}, contentType: 'application/json' }), badBody, deps)
+  assert.equal(badBody.statusCode, 400)
+})
+
+test('uploadStatus maps background failure to fixed error code and records audit', async () => {
+  const { path } = await tempFile()
+  const store = new PickedFileStore()
+  store.admit(path, { name: 'video.mp4', size: 4 })
+  const { controlled, auditEvents, deps, registry } = startDeps({ store })
+
+  const started = mockRes()
+  await handleUploadStartRequest(mockReq({ body: { path }, contentType: 'application/json' }), started, deps)
+  const { uploadId } = started.json()
+
+  controlled.fail(Object.assign(new Error('storage PUT HTTP 503'), { statusCode: 503, isStorageNetwork: true }))
+  await flushAsync()
+  const res = mockRes()
+  await handleUploadStatusRequest(mockReq({ body: { uploadId }, contentType: 'application/json' }), res, { expectedOrigin: ORIGIN, registry })
+  const body = res.json()
+  assert.equal(body.status, 'failed')
+  assert.equal(body.error, 'storage_unavailable')
+  assert.equal(JSON.stringify(body).includes(path), false)
+
+  await flushAsync()
+  assert.ok(auditEvents.some((event) => event.outcome === 'failed' && event.source.surface === 'human_ui'), '后台上传失败必须落审计（P7）')
+  assert.doesNotMatch(JSON.stringify(auditEvents), /video\.mp4|X-Amz-Signature/u, '审计不得带本地路径/签名')
+  registry.destroy()
+})
+
+test('uploadStatus returns not_found for unknown ids and rejects invalid bodies', async () => {
+  const { deps, registry } = startDeps({ store: new PickedFileStore() })
+  const missing = mockRes()
+  await handleUploadStatusRequest(mockReq({ body: { uploadId: 'nope' }, contentType: 'application/json' }), missing, { expectedOrigin: ORIGIN, registry })
+  assert.equal(missing.statusCode, 200)
+  assert.deepEqual(missing.json(), { status: 'not_found' })
+
+  const invalid = mockRes()
+  await handleUploadStatusRequest(mockReq({ body: {}, contentType: 'application/json' }), invalid, { expectedOrigin: ORIGIN, registry })
+  assert.equal(invalid.statusCode, 400)
+
+  const wrongMethod = mockReq({ method: 'GET', body: { uploadId: 'x' }, contentType: 'application/json' })
+  const wrongMethodRes = mockRes()
+  await handleUploadStatusRequest(wrongMethod, wrongMethodRes, { expectedOrigin: ORIGIN, registry })
+  assert.equal(wrongMethodRes.statusCode, 405)
+  registry.destroy()
+})
+
+test('uploadStart rejects cross-site and non-loopback like the v1 upload route', async () => {
+  const { path } = await tempFile()
+  const store = new PickedFileStore()
+  store.admit(path, { name: 'video.mp4', size: 4 })
+  const { deps } = startDeps({ store })
+  const crossSite = mockRes()
+  await handleUploadStartRequest(mockReq({ body: { path }, contentType: 'application/json', secFetchSite: 'cross-site' }), crossSite, deps)
+  assert.equal(crossSite.statusCode, 403)
+  const external = mockRes({ remoteAddress: '192.168.1.10' })
+  await handleUploadStartRequest(mockReq({ body: { path }, contentType: 'application/json', remoteAddress: '192.168.1.10' }), external, deps)
+  assert.equal(external.statusCode, 403)
+})
+
+test('uploadStart validates the kind contract and ignores it when absent', async () => {
+  const { path } = await tempFile()
+  const store = new PickedFileStore()
+  store.admit(path, { name: 'video.mp4', size: 4 })
+  const { deps, registry } = startDeps({ store })
+
+  // 合法 kind（media/image/video）都能正常启动。
+  for (const kind of ['media', 'image', 'video']) {
+    const ok = mockRes()
+    await handleUploadStartRequest(mockReq({ body: { path, kind }, contentType: 'application/json' }), ok, deps)
+    assert.equal(ok.statusCode, 200, `kind=${kind} 应被接受`)
+    assert.equal(typeof ok.json().uploadId, 'string')
+  }
+  // 缺省 kind 同样按 media 处理。
+  const absent = mockRes()
+  await handleUploadStartRequest(mockReq({ body: { path }, contentType: 'application/json' }), absent, deps)
+  assert.equal(absent.statusCode, 200)
+  // 非法 kind 按请求错误拒绝（契约防漂移）。
+  const bad = mockRes()
+  await handleUploadStartRequest(mockReq({ body: { path, kind: 'text' }, contentType: 'application/json' }), bad, deps)
+  assert.equal(bad.statusCode, 400)
+  assert.equal(bad.json().error, 'invalid_request')
+  registry.destroy()
+})
+
+test('uploadStatus never leaks path or internal controller through registry.get', async () => {
+  const { path } = await tempFile()
+  const store = new PickedFileStore()
+  store.admit(path, { name: 'video.mp4', size: 4 })
+  const { deps, registry } = startDeps({ store })
+
+  const started = mockRes()
+  await handleUploadStartRequest(mockReq({ body: { path }, contentType: 'application/json' }), started, deps)
+  const { uploadId } = started.json()
+  const status = mockRes()
+  await handleUploadStatusRequest(mockReq({ body: { uploadId }, contentType: 'application/json' }), status, { expectedOrigin: ORIGIN, registry })
+  const payload = status.json()
+  assert.equal(payload.status, 'uploading')
+  assert.equal('path' in payload, false, 'uploadStatus 响应不得含本地路径')
+  assert.equal('controller' in payload, false, 'uploadStatus 响应不得含内部 controller')
+  assert.equal(JSON.stringify(payload).includes(path), false, '响应不得序列化出本地路径')
+  registry.destroy()
+})
+
+// ---------- 注册表 TTL / 孤儿 / destroy（docs/0907/xhs 测试计划锚点 2） ----------
+
+test('registry keeps done results queryable within TTL and returns not_found after', async () => {
+  const { path } = await tempFile()
+  const store = new PickedFileStore()
+  store.admit(path, { name: 'video.mp4', size: 4 })
+  let clock = 1_000_000
+  const controlled = controlledDriver()
+  const registry = createUploadRegistry({
+    driver: controlled.driver,
+    doneTtlMs: 60_000,
+    sweepMs: 0,
+    now: () => clock,
+  })
+  const deps = { expectedOrigin: ORIGIN, store, driver: controlled.driver, tools: okTools(), maxBytes: 1024, registry }
+
+  const started = mockRes()
+  await handleUploadStartRequest(mockReq({ body: { path }, contentType: 'application/json' }), started, deps)
+  const { uploadId } = started.json()
+  controlled.succeed()
+  await flushAsync()
+
+  const inTtl = mockRes()
+  await handleUploadStatusRequest(mockReq({ body: { uploadId }, contentType: 'application/json' }), inTtl, { expectedOrigin: ORIGIN, registry })
+  assert.equal(inTtl.json().status, 'done', 'TTL 内 done 可重复查询（P2 竞态兜底）')
+
+  clock += 61_000
+  const afterTtl = mockRes()
+  await handleUploadStatusRequest(mockReq({ body: { uploadId }, contentType: 'application/json' }), afterTtl, { expectedOrigin: ORIGIN, registry })
+  assert.deepEqual(afterTtl.json(), { status: 'not_found' }, 'TTL 过后返回 not_found')
+  registry.destroy()
+})
+
+test('registry aborts orphaned uploads past orphanMs and marks them failed', async () => {
+  let clock = 5_000_000
+  const controlled = controlledDriver()
+  const registry = createUploadRegistry({
+    driver: controlled.driver,
+    orphanMs: 1_000,
+    sweepMs: 0,
+    now: () => clock,
+  })
+  const { id } = registry.launch({ path: '/tmp/x.mp4', entry: { name: 'x.mp4', mime: 'video/mp4' }, size: 10, auth: validAuth() })
+  assert.equal(registry.get(id).status, 'uploading', '启动初期仍是 uploading')
+  clock += 2_000
+  const item = registry.get(id)
+  assert.equal(item.status, 'failed', '超 orphanMs 的孤儿上传被中止并置 failed')
+  assert.equal(item.error, 'upload_cancelled')
+  registry.destroy()
+})
+
+test('registry destroy aborts in-flight uploads and afterwards everything is not_found', async () => {
+  let clock = 7_000_000
+  const controlled = controlledDriver()
+  const registry = createUploadRegistry({ driver: controlled.driver, sweepMs: 0, now: () => clock })
+  const { id } = registry.launch({ path: '/tmp/x.mp4', entry: { name: 'x.mp4', mime: 'video/mp4' }, size: 10, auth: validAuth() })
+  assert.equal(registry.get(id).status, 'uploading')
+  registry.destroy()
+  assert.equal(registry.get(id), null, 'destroy 后 uploadStatus 一律 not_found')
+  assert.equal(controlled.driver.destroyed, 0, '注册表 destroy 不代替驱动 destroy')
+})
+
+// ---------- media 本地媒体路由（docs/0907/xhs 测试计划锚点 1 + P9） ----------
+
+function mockMediaReq({ url, origin, secFetchSite, range, remoteAddress = '127.0.0.1' } = {}) {
+  const req = Readable.from([])
+  req.method = 'GET'
+  req.url = url
+  req.headers = {}
+  if (origin !== undefined) req.headers.origin = origin
+  if (secFetchSite !== undefined) req.headers['sec-fetch-site'] = secFetchSite
+  if (range !== undefined) req.headers.range = range
+  req.socket = { remoteAddress }
+  return req
+}
+
+function mockMediaRes() {
+  const chunks = []
+  const res = new Writable({
+    write(chunk, _enc, cb) { chunks.push(Buffer.from(chunk)); cb() },
+  })
+  res.statusCode = 0
+  res.headers = {}
+  res.setHeader = (key, value) => { res.headers[key] = value }
+  return { res, body: () => Buffer.concat(chunks) }
+}
+
+test('media serves admitted files to loopback GETs without an Origin header (P1)', async () => {
+  const { path } = await tempFile('media-body-123')
+  const store = new PickedFileStore()
+  store.admit(path, { name: 'video.mp4', size: 14 })
+  const deps = { expectedOrigin: ORIGIN, store, maxBytes: 1024 }
+
+  const { res, body } = mockMediaRes()
+  await handleMediaRequest(mockMediaReq({ url: `${MEDIA_PATH}?path=${encodeURIComponent(path)}` }), res, deps)
+  assert.equal(res.statusCode, 200)
+  assert.equal(body().toString(), 'media-body-123')
+  assert.equal(res.headers['content-length'], 14)
+  assert.equal(res.headers['content-type'], 'video/mp4')
+  assert.equal(res.headers['x-content-type-options'], 'nosniff')
+  assert.equal(res.headers['cache-control'], 'no-store')
+  assert.equal(res.headers['accept-ranges'], 'bytes')
+})
+
+test('media rejects cross-site, external origins, non-loopback and unadmitted paths (P1/P9)', async () => {
+  const { path } = await tempFile('secret')
+  const store = new PickedFileStore()
+  store.admit(path, { name: 'video.mp4', size: 6 })
+  const deps = { expectedOrigin: ORIGIN, store, maxBytes: 1024 }
+
+  const cases = [
+    ['sec-fetch-site cross-site 拒绝', mockMediaReq({ url: `${MEDIA_PATH}?path=${encodeURIComponent(path)}`, secFetchSite: 'cross-site' })],
+    ['Origin 不匹配拒绝', mockMediaReq({ url: `${MEDIA_PATH}?path=${encodeURIComponent(path)}`, origin: 'http://evil.example' })],
+    ['非 loopback 拒绝', mockMediaReq({ url: `${MEDIA_PATH}?path=${encodeURIComponent(path)}`, remoteAddress: '192.168.1.10' })],
+    ['未登记路径拒绝', mockMediaReq({ url: `${MEDIA_PATH}?path=${encodeURIComponent('/etc/passwd')}` })],
+  ]
+  for (const [label, req] of cases) {
+    const { res } = mockMediaRes()
+    await handleMediaRequest(req, res, deps)
+    assert.equal(res.statusCode, 403, label)
+  }
+
+  // 缺少 path 参数属于请求格式错误：400。
+  const missingPath = mockMediaRes()
+  await handleMediaRequest(mockMediaReq({ url: MEDIA_PATH }), missingPath.res, deps)
+  assert.equal(missingPath.res.statusCode, 400)
+
+  // sec-fetch-site: none（地址栏直接访问）与 same-origin 均放行。
+  for (const site of ['same-origin', 'none']) {
+    const { res, body } = mockMediaRes()
+    await handleMediaRequest(mockMediaReq({ url: `${MEDIA_PATH}?path=${encodeURIComponent(path)}`, secFetchSite: site }), res, deps)
+    assert.equal(res.statusCode, 200, `sec-fetch-site: ${site} 放行`)
+    assert.equal(body().toString(), 'secret')
+  }
+  // 匹配的 Origin 放行。
+  const { res: okRes } = mockMediaRes()
+  await handleMediaRequest(mockMediaReq({ url: `${MEDIA_PATH}?path=${encodeURIComponent(path)}`, origin: ORIGIN }), okRes, deps)
+  assert.equal(okRes.statusCode, 200)
+})
+
+test('media serves single-part Range requests with 206 and rejects unsatisfiable ranges', async () => {
+  const { path } = await tempFile('0123456789')
+  const store = new PickedFileStore()
+  store.admit(path, { name: 'video.mp4', size: 10 })
+  const deps = { expectedOrigin: ORIGIN, store, maxBytes: 1024 }
+
+  const partial = mockMediaRes()
+  await handleMediaRequest(mockMediaReq({ url: `${MEDIA_PATH}?path=${encodeURIComponent(path)}`, range: 'bytes=2-5' }), partial.res, deps)
+  assert.equal(partial.res.statusCode, 206)
+  assert.equal(partial.body().toString(), '2345')
+  assert.equal(partial.res.headers['content-range'], 'bytes 2-5/10')
+  assert.equal(partial.res.headers['content-length'], 4)
+
+  const openEnded = mockMediaRes()
+  await handleMediaRequest(mockMediaReq({ url: `${MEDIA_PATH}?path=${encodeURIComponent(path)}`, range: 'bytes=7-' }), openEnded.res, deps)
+  assert.equal(openEnded.res.statusCode, 206)
+  assert.equal(openEnded.body().toString(), '789')
+
+  const suffix = mockMediaRes()
+  await handleMediaRequest(mockMediaReq({ url: `${MEDIA_PATH}?path=${encodeURIComponent(path)}`, range: 'bytes=-3' }), suffix.res, deps)
+  assert.equal(suffix.res.statusCode, 206)
+  assert.equal(suffix.body().toString(), '789')
+
+  const unsatisfiable = mockMediaRes()
+  await handleMediaRequest(mockMediaReq({ url: `${MEDIA_PATH}?path=${encodeURIComponent(path)}`, range: 'bytes=50-60' }), unsatisfiable.res, deps)
+  assert.equal(unsatisfiable.res.statusCode, 416)
+  assert.equal(unsatisfiable.res.headers['content-range'], 'bytes */10')
+
+  const malformed = mockMediaRes()
+  await handleMediaRequest(mockMediaReq({ url: `${MEDIA_PATH}?path=${encodeURIComponent(path)}`, range: 'bytes=abc' }), malformed.res, deps)
+  assert.equal(malformed.res.statusCode, 200, '无法解析的 Range 按全量处理')
+})
+
+test('media rejects files swapped after admission (TOCTOU) and non-GET methods', async () => {
+  const { path } = await tempFile('original')
+  const store = new PickedFileStore()
+  store.admit(path, { name: 'video.mp4', size: 8 })
+  const deps = { expectedOrigin: ORIGIN, store, maxBytes: 1024 }
+
+  const { writeFile } = await import('node:fs/promises')
+  await writeFile(path, 'changed-content!')
+  const swapped = mockMediaRes()
+  await handleMediaRequest(mockMediaReq({ url: `${MEDIA_PATH}?path=${encodeURIComponent(path)}` }), swapped.res, deps)
+  assert.equal(swapped.res.statusCode, 403, '文件被替换后拒绝供流（P9 TOCTOU）')
+
+  const post = Readable.from([])
+  post.method = 'POST'
+  post.url = `${MEDIA_PATH}?path=${encodeURIComponent(path)}`
+  post.headers = {}
+  post.socket = { remoteAddress: '127.0.0.1' }
+  const postRes = mockRes()
+  await handleMediaRequest(post, postRes, deps)
+  assert.equal(postRes.statusCode, 405)
 })

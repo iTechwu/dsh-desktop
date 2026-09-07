@@ -5,6 +5,9 @@
  *
  * 稳定性契约：
  * - 流式上传，文件不整块读内存；请求结束/失败/取消都会关闭文件流与 HTTP 请求；
+ * - 进度反馈：字节计数 Transform 串在文件流与请求之间，节流（~180ms）上抛
+ *   onProgress({ bytesWritten, bytesTotal })；每次尝试开始（含重试）上报
+ *   onAttempt(attempt) 并把进度归零，客户端据此区分「重试中」与「进度静止」；
  * - 分层超时：建连 / 响应头 / 整体上传，均会中止底层请求并等待流关闭；
  * - destroy() 取消所有未完成请求（插件卸载路径）；
  * - 有限重试：仅网络错误与 5xx/429，指数退避；认证失败/参数错误/4xx（含 403
@@ -17,12 +20,15 @@ import { createReadStream } from 'node:fs'
 import { stat } from 'node:fs/promises'
 import http from 'node:http'
 import https from 'node:https'
+import { Transform } from 'node:stream'
 import { makeCodedError } from '../lib/errors.js'
 
 /** 上传尝试次数（首次 + 2 次重试），禁止无限重试。 */
 export const MAX_UPLOAD_ATTEMPTS = 3
 /** 重试退避上限（毫秒）。 */
 export const MAX_BACKOFF_MS = 8000
+/** 进度回调节流间隔（毫秒）：宿主侧 ~180ms 上抛一次，避免高频回调拖慢流水线。 */
+export const PROGRESS_THROTTLE_MS = 180
 
 /** 默认分层超时（毫秒）：建连 / 响应头 / 整体上传。 */
 export const DEFAULT_TIMEOUTS = Object.freeze({
@@ -84,6 +90,47 @@ function streamClosed(stream) {
 }
 
 /**
+ * 计数 Transform：透传字节流的同时累计已写字节，节流上抛进度。
+ * - 首个 chunk 立即上报（进度条尽快出现），此后每 throttleMs 上抛一次；
+ * - _flush 兜底上报最终值（确保 done 前能观察到 100%）；
+ * - 定时器 unref：进度回调绝不阻塞进程退出，flush 时同步清理。
+ * @param {(progress:{bytesWritten:number,bytesTotal:number})=>void} [onProgress]
+ * @param {number} bytesTotal 本次尝试的字节总数。
+ * @param {number} [throttleMs] 节流间隔。
+ * @returns {import('node:stream').Transform}
+ */
+export function createCountingTransform(onProgress, bytesTotal, throttleMs = PROGRESS_THROTTLE_MS) {
+  let bytesWritten = 0
+  let lastEmit = 0
+  let timer = null
+  const emit = () => {
+    lastEmit = Date.now()
+    if (timer) { clearTimeout(timer); timer = null }
+    onProgress?.({ bytesWritten, bytesTotal })
+  }
+  const scheduleEmit = () => {
+    if (timer) return
+    const elapsed = Date.now() - lastEmit
+    if (elapsed >= throttleMs) { emit(); return }
+    timer = setTimeout(() => { timer = null; emit() }, throttleMs - elapsed)
+    timer.unref?.()
+  }
+  const transform = new Transform({
+    transform(chunk, _encoding, callback) {
+      bytesWritten += chunk.length
+      scheduleEmit()
+      callback(null, chunk)
+    },
+    flush(callback) {
+      emit()
+      callback()
+    },
+  })
+  transform.once('close', () => { if (timer) { clearTimeout(timer); timer = null } })
+  return transform
+}
+
+/**
  * 用 node:http/https 发一次 PUT，把文件流 pipe 到预签名 URL。
  * 超时/取消/失败都会销毁请求并等待文件流关闭。
  * @param {object} target { url, method, headers }（headers 含授权服务返回的 Content-Type）。
@@ -94,9 +141,10 @@ function streamClosed(stream) {
  * @param {(req:import('node:http').ClientRequest)=>()=>void} onPending 登记未完成请求。
  * @param {object} [injectedTransport] 测试注入的 http/https 替身。
  * @param {(path:string)=>import('node:fs').ReadStream} [streamFactory] 测试注入的读流工厂。
+ * @param {object} [handlers] 进度回调 { onProgress?({bytesWritten,bytesTotal}) }。
  * @returns {Promise<{statusCode:number,etag:string|null}>}
  */
-function putObject(target, localPath, size, signal, timeouts, onPending, injectedTransport = null, streamFactory = createReadStream) {
+function putObject(target, localPath, size, signal, timeouts, onPending, injectedTransport = null, streamFactory = createReadStream, handlers = {}) {
   const url = new URL(target.url)
   const method = typeof target.method === 'string' ? target.method : 'PUT'
   const headers = { ...(target.headers ?? {}) }
@@ -118,6 +166,8 @@ function putObject(target, localPath, size, signal, timeouts, onPending, injecte
     let req
     /** @type {import('node:fs').ReadStream|undefined} */
     let fileStream
+    /** @type {import('node:stream').Transform|undefined} 计数 Transform（进度管道）。 */
+    let counting
     /** 定时器集合：整体 / 建连 / 响应头。 */
     const timers = new Set()
     let settled = false
@@ -127,14 +177,15 @@ function putObject(target, localPath, size, signal, timeouts, onPending, injecte
       timers.clear()
     }
 
-    /** 以固定原因终结本次尝试（只终结一次），并回收文件流与请求。 */
+    /** 以固定原因终结本次尝试（只终结一次），并回收文件流、计数流与请求。 */
     const finish = (fn, value) => {
       if (settled) return
       settled = true
       clearTimers()
       unregister?.()
-      // 确保文件流与底层请求都被回收（Windows 句柄释放关键路径）。
+      // 确保文件流、计数流与底层请求都被回收（Windows 句柄释放关键路径）。
       fileStream?.destroy()
+      counting?.destroy()
       if (req && !req.destroyed) req.destroy()
       void streamClosed(fileStream).then(() => fn(value))
     }
@@ -223,7 +274,9 @@ function putObject(target, localPath, size, signal, timeouts, onPending, injecte
       const error = cause instanceof Error ? cause : new Error(String(cause))
       rejectWith(error)
     })
-    fileStream.pipe(req)
+    // 计数 Transform 串在文件流与请求之间：透传字节流并节流上抛进度。
+    counting = createCountingTransform(handlers.onProgress, size)
+    fileStream.pipe(counting).pipe(req)
   })
 }
 
@@ -274,9 +327,13 @@ export function createTosDriver(options = {}) {
      * @param {string} localPath 本地文件绝对路径。
      * @param {object} target { url, method, headers }（来自授权工具）。
      * @param {AbortSignal} [signal] 取消信号。
+     * @param {object} [handlers] 进度回调：
+     *   - onProgress({ bytesWritten, bytesTotal })：传输过程中节流上报；
+     *   - onAttempt(attempt)：每次尝试（含重试）开始时上报，attempt 从 0 起，
+     *     递增即「重试中」；同时进度归零（onProgress({bytesWritten:0,bytesTotal})）。
      * @returns {Promise<{etag?:string}>} 上传成功（2xx）时返回，失败抛出诊断错误。
      */
-    async upload(localPath, target, signal) {
+    async upload(localPath, target, signal, handlers = {}) {
       const info = await stat(localPath)
       if (!info.isFile()) {
         throw makeCodedError('not_a_regular_file', 'not a regular file')
@@ -289,9 +346,12 @@ export function createTosDriver(options = {}) {
       let lastError
       for (let attempt = 0; attempt < MAX_UPLOAD_ATTEMPTS; attempt++) {
         if (effectiveSignal.aborted) throw makeAbortError()
+        // 每次尝试开始时上报 attempt 并把进度归零，客户端可区分「重试中」与「进度静止」。
+        handlers.onAttempt?.(attempt)
+        handlers.onProgress?.({ bytesWritten: 0, bytesTotal: info.size })
         try {
           const { statusCode, etag, error } = await putObject(
-            target, localPath, info.size, effectiveSignal, timeouts, onPending, injectedTransport, streamFactory,
+            target, localPath, info.size, effectiveSignal, timeouts, onPending, injectedTransport, streamFactory, handlers,
           )
           if (statusCode >= 200 && statusCode < 300) {
             const out = {}

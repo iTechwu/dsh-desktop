@@ -180,7 +180,7 @@ if (!cordis || !Loader) {
     const second = state.tools.get('media_upload')
     assert.notEqual(first, second, '重载后必须是新实例')
     assert.equal(state.tools.size, 1, '只允许一个 media_upload')
-    assert.equal(state.routes.size, 2, '同路径路由只允许一组')
+    assert.equal(state.routes.size, 5, '同路径路由只允许一组（pick-file/upload/uploadStart/uploadStatus/media）')
 
     await loader.remove('dofe-yootun-tos-upload')
     assert.equal(state.tools.size, 0, '卸载后 media_upload 消失')
