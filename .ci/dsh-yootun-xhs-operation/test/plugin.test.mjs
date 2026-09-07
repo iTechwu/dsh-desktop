@@ -42,6 +42,8 @@ test('registers menu at order 41 and renders the three-region overlay', async ()
   assert.match(source, /videoUrl/)
   assert.match(source, /className: 'yxh-overlay', role: 'dialog', 'aria-modal': true, 'aria-labelledby': 'yxh-title'/u)
   assert.doesNotMatch(source, /querySelector\('\.yxh-overlay'\)|DIALOG_ATTRIBUTES/u)
+  assert.match(source, /requestAnimationFrame\(\(\) => shellRef\.current\?\.focus\?\.\(\)\)/u)
+  assert.match(source, /className: 'yxh-shell', ref: shellRef, tabIndex: -1/u)
   // 禁止不安全富文本
   assert.doesNotMatch(source, /dangerouslySetInnerHTML|password|cookie/i)
 })

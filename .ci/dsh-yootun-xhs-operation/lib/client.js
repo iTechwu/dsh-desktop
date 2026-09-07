@@ -4,7 +4,7 @@ window.__ModuleLoader__.load({
     var module = { exports: {} };
     var exports = module.exports;
     const React = require('react')
-    const { createElement: h, useEffect, useState, useSyncExternalStore } = React
+    const { createElement: h, useEffect, useRef, useState, useSyncExternalStore } = React
     const { IconCloseOutline16, IconEditOutline16, MarkdownText, Tooltip } = require('@deepseek-ai/dsh-client-ui-primitives')
     const NS = 'dofe.yootun-xhs-operation'
     const PATH = '/api/desktop/yootun/xhs-operation'
@@ -225,6 +225,7 @@ window.__ModuleLoader__.load({
 
     function Overlay({ t }) {
       const visible = useSyncExternalStore(subscribeOpen, snapshotOpen, snapshotOpen)
+      const shellRef = useRef(null)
       const [tab, setTab] = useState('images')
       const [images, setImages] = useState([])
       const [video, setVideo] = useState(null)
@@ -243,6 +244,7 @@ window.__ModuleLoader__.load({
 
       useEffect(() => {
         if (!visible) return undefined
+        requestAnimationFrame(() => shellRef.current?.focus?.())
         const key = event => { if (event.key === 'Escape') setOpened(false) }
         window.addEventListener('keydown', key)
         return () => window.removeEventListener('keydown', key)
@@ -352,7 +354,7 @@ window.__ModuleLoader__.load({
       }
 
       return h('div', { className: 'yxh-overlay', role: 'dialog', 'aria-modal': true, 'aria-labelledby': 'yxh-title' },
-        h('main', { className: 'yxh-shell', 'aria-labelledby': 'yxh-title' },
+        h('main', { className: 'yxh-shell', ref: shellRef, tabIndex: -1, 'aria-labelledby': 'yxh-title' },
           h('header', { className: 'yxh-header' },
             h('div', null, h('h1', { id: 'yxh-title' }, t('title')), h('p', null, t('subtitle'))),
             h('div', { className: 'yxh-header-buttons' },
@@ -370,12 +372,13 @@ window.__ModuleLoader__.load({
       return `${(num / 1024 / 1024).toFixed(1)} MB`
     }
 
+    const focusCss = `.yxh-shell{outline:0}`
     const css = `.yxh-button{display:flex;width:36px;height:36px;align-items:center;justify-content:center;gap:8px;border:0;border-radius:6px;background:transparent;color:var(--dsw-alias-label-secondary);cursor:pointer}.yxh-button:hover{background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary)}.yxh-wide{width:100%;height:34px;justify-content:flex-start;padding:0 10px}.yxh-wide span{font-size:13px}.yxh-overlay{position:fixed;inset:0;z-index:520;background:var(--dsw-alias-bg-base);color:var(--dsw-alias-label-primary)}.yxh-shell{display:grid;grid-template-rows:auto 1fr;width:100%;height:100%;overflow:hidden}.yxh-header{display:flex;min-height:74px;align-items:center;justify-content:space-between;padding:14px 24px;border-bottom:1px solid var(--dsw-alias-border-l1)}.yxh-header h1{margin:0;font-size:20px}.yxh-header p{margin:4px 0 0;color:var(--dsw-alias-label-secondary);font-size:13px}.yxh-header-buttons{display:flex;gap:6px}.yxh-header-buttons button{display:grid;width:34px;height:34px;place-items:center;border:1px solid var(--dsw-alias-border-l1);border-radius:6px;background:var(--dsw-alias-bg-layer-1);color:inherit;cursor:pointer}.yxh-body{display:grid;grid-template-columns:minmax(360px,.85fr) minmax(480px,1.15fr);max-width:1440px;margin:0 auto;width:100%;min-height:0;overflow:hidden}.yxh-left{overflow:auto;padding:20px 24px 32px;border-right:1px solid var(--dsw-alias-border-l1)}.yxh-right{overflow:auto;padding:20px 24px 32px}.yxh-section{display:grid;gap:12px}.yxh-section+.yxh-section{margin-top:22px}.yxh-section h2{margin:0;font-size:14px}.yxh-tabs{display:flex;gap:2px;border-bottom:1px solid var(--dsw-alias-border-l1)}.yxh-tabs button{height:40px;padding:0 14px;border:0;border-bottom:2px solid transparent;background:transparent;color:var(--dsw-alias-label-secondary);font:inherit;font-size:13px;cursor:pointer}.yxh-tabs button[aria-current]{border-bottom-color:var(--dsw-alias-brand-primary);color:var(--dsw-alias-label-primary);font-weight:650}.yxh-tabs button:disabled{opacity:.45;cursor:default}.yxh-media{display:flex;flex-wrap:wrap;gap:10px}.yxh-thumb{position:relative;margin:0;width:96px;height:96px;border:1px solid var(--dsw-alias-border-l1);border-radius:6px;overflow:hidden;background:var(--dsw-alias-bg-layer-1)}.yxh-thumb img{width:100%;height:100%;object-fit:cover}.yxh-thumb-remove{position:absolute;top:4px;right:4px;display:grid;width:20px;height:20px;place-items:center;border:0;border-radius:4px;background:color-mix(in srgb,var(--dsw-alias-bg-base) 82%,transparent);color:var(--dsw-alias-label-primary);font-size:14px;line-height:1;cursor:pointer}.yxh-thumb-remove:disabled{opacity:.45;cursor:default}.yxh-add{display:grid;width:96px;height:96px;place-items:center;border:1px dashed var(--dsw-alias-border-l2);border-radius:6px;background:transparent;color:var(--dsw-alias-label-secondary);font-size:26px;cursor:pointer}.yxh-add:hover{border-color:var(--dsw-alias-brand-primary);color:var(--dsw-alias-brand-primary)}.yxh-add:disabled{opacity:.45;cursor:default}.yxh-video{position:relative;display:flex;min-width:220px;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--dsw-alias-border-l1);border-radius:6px;background:var(--dsw-alias-bg-layer-1)}.yxh-video-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px}.yxh-video-meta{color:var(--dsw-alias-label-secondary);font-size:12px}.yxh-hint{color:var(--dsw-alias-label-secondary);font-size:12px}.yxh-error{color:var(--dsw-alias-state-error-primary);font-size:12px}.yxh-field{display:grid;gap:6px}.yxh-field span{color:var(--dsw-alias-label-secondary);font-size:12px}.yxh-field input{min-height:36px;padding:0 10px;border:1px solid var(--dsw-alias-border-l1);border-radius:6px;background:var(--dsw-alias-bg-layer-1);color:inherit;font:inherit;font-size:13px}.yxh-field input:disabled{opacity:.6}.yxh-actions{margin-top:22px}.yxh-submit{min-height:38px;padding:0 16px;border:0;border-radius:6px;background:var(--dsw-alias-brand-primary);color:var(--dsw-alias-bg-base);font:inherit;font-size:13px;font-weight:600;cursor:pointer}.yxh-submit:disabled{opacity:.45;cursor:default}.yxh-versions{display:grid;gap:16px}.yxh-version{padding:16px;border:1px solid var(--dsw-alias-border-l1);border-radius:8px;background:var(--dsw-alias-bg-layer-1)}.yxh-version-head{display:flex;align-items:baseline;gap:10px;margin-bottom:8px}.yxh-version-badge{flex:none;padding:2px 8px;border-radius:4px;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-secondary);font-size:12px}.yxh-version-head h3{margin:0;font-size:15px}.yxh-version-body{font-size:13px}.yxh-tags{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}.yxh-tag{padding:2px 8px;border-radius:4px;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-secondary);font-size:12px}.yxh-extra{display:grid;gap:2px;margin-top:10px}.yxh-extra-label{color:var(--dsw-alias-label-tertiary);font-size:11px}.yxh-extra-body{font-size:13px}.yxh-page-copy{font-size:13px}.yxh-pages{margin:10px 0 0;padding-left:20px;display:grid;gap:4px}.yxh-pages li{font-size:13px}.yxh-page-index{margin-right:8px;color:var(--dsw-alias-label-tertiary);font-variant-numeric:tabular-nums}.yxh-state{display:grid;min-height:160px;place-items:center;align-content:center;gap:10px;color:var(--dsw-alias-label-secondary);font-size:13px;text-align:center}.yxh-state p{margin:0}.yxh-step{color:var(--dsw-alias-label-tertiary);font-size:12px}.yxh-state-error p:first-child{color:var(--dsw-alias-state-error-primary)}.yxh-spinner{width:18px;height:18px;border:2px solid var(--dsw-alias-border-l2);border-top-color:var(--dsw-alias-brand-primary);border-radius:50%;animation:yxh-spin .8s linear infinite}@keyframes yxh-spin{to{transform:rotate(360deg)}}@media(max-width:900px){.yxh-header,.yxh-left,.yxh-right{padding-left:16px;padding-right:16px}.yxh-body{display:block;overflow:auto}.yxh-left{overflow:visible;border-right:0;border-bottom:1px solid var(--dsw-alias-border-l1)}.yxh-right{overflow:visible;min-height:320px}}`
 
     function apply(ctx) {
       ctx.effect(() => ctx.locale.register(NS, copy), 'dofe-yootun-xhs-operation: dictionaries')
       ctx.effect(() => { window.addEventListener(OVERLAY_EVENT, closeOtherOverlay); return () => window.removeEventListener(OVERLAY_EVENT, closeOtherOverlay) }, 'dofe-yootun-xhs-operation: exclusive-overlay')
-      ctx.effect(() => { const style = document.createElement('style'); style.dataset.plugin = '@dofe/dsh-yootun-xhs-operation'; style.textContent = css; document.head.appendChild(style); return () => style.remove() }, 'dofe-yootun-xhs-operation: styles')
+      ctx.effect(() => { const style = document.createElement('style'); style.dataset.plugin = '@dofe/dsh-yootun-xhs-operation'; style.textContent = `${css}${focusCss}`; document.head.appendChild(style); return () => style.remove() }, 'dofe-yootun-xhs-operation: styles')
       const t = ctx.locale.bind(NS)
       ctx.slots.inject('sidebar.footer.action', () => ctx.slots.register({ name: 'sidebar.footer.action', id: 'dofe-yootun-xhs-operation', order: 41, inject: () => ({ t }) }, Button))
       ctx.slots.inject('shell.overlay', () => ctx.slots.register({ name: 'shell.overlay', id: 'dofe-yootun-xhs-operation', order: 41, inject: () => ({ t }) }, Overlay))
