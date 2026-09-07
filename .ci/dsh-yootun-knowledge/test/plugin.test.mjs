@@ -75,6 +75,11 @@ test('localizes knowledge source state and isolates its overlay', async () => {
   for (const token of ['yk-source', 'credential-store', 'stateCss', 'overviewSource', 'pendingImports', 'yk-graph-canvas', 'yk-memory-row', '"aria-label": t("recallPlaceholder")', '"aria-label": t("graphPlaceholder")', 'style.textContent = css + stateCss', '.yk-overlay{position:fixed', '.yk-shell{display:grid', '.yk-content{min-height:0']) assert.match(source, new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'u'))
 })
 
+test('keeps keyboard focus inside the knowledge overlay', async () => {
+  const source = await readFile(new URL('src/client.js', root), 'utf8')
+  for (const token of ['event.key !== "Tab"', 'querySelectorAll', 'event.shiftKey', 'last.focus()', 'first.focus()', 'onKeyDown: keepFocus']) assert.ok(source.includes(token), `missing focus trap token: ${token}`)
+})
+
 test('prevents duplicate knowledge reads and writes while exposing progress', async () => {
   const source = await readFile(new URL('src/client.js', root), 'utf8')
   for (const token of ['graphBusyRef.current', 'recallBusyRef.current', 'mutationBusyRef.current', 'disabled: Boolean(mutation)', 'disabled: recallBusy', 'disabled: graphBusy', 'setMutation({ id: item.id, action: "confirm" })', 'setMutation({ id: item.id, action: "forget" })', 'activeMutation && mutation.action === "confirm" ? t("processing")', '"aria-busy": loading || graphBusy || recallBusy || Boolean(mutation)']) assert.ok(source.includes(token), `missing interaction guard token: ${token}`)
