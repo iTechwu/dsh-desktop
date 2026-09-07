@@ -44,6 +44,9 @@ test('bundles Yootun branding, settings, and a mandatory credential gate', async
   assert.match(source, /await mutateCurrentSettings\(settingsApi, 'llm-deepseek'/u)
   assert.match(source, /await mutateCurrentSettings\(settingsApi, 'agent-default-model'/u)
   assert.match(source, /await mutateCurrentSettings\(settingsApi, ACCESS_NS/u)
+  for (const token of ['operationRef.current', "'aria-busy': busy || loading", 'dialogRef.current?.querySelector', "event.key !== 'Tab'", "querySelectorAll('button:not([disabled]),input:not([disabled]),select:not([disabled])'", 'document.activeElement === first', 'document.activeElement === last', 'onKeyDown: keepFocus']) {
+    assert.ok(source.includes(token), `missing interaction guard token: ${token}`)
+  }
 })
 
 test('loads the generated module and registers every owned surface', async () => {
