@@ -314,6 +314,14 @@ describe('published package surface', () => {
     }
   })
 
+  it('allows the session lock native addon to build in the combined workspace', () => {
+    const workspaceConfig = parseYaml(
+      readFileSync(new URL('pnpm-workspace.yaml', workspaceRoot), 'utf8'),
+    ) as { allowBuilds?: Record<string, boolean> }
+
+    expect(workspaceConfig.allowBuilds?.['fs-ext']).toBe(true)
+  })
+
   it('pins the requested Web UI aggregate bundle in the published runtime', () => {
     expect(manifest.dependencies).toMatchObject({
       '@linxin666/dsh-web-ui-all': '0.3.6',

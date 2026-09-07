@@ -15,6 +15,7 @@ allowBuilds:
   electron: true
   electron-winstaller: false
   esbuild: true
+  fs-ext: true
   koffi: true
   lefthook: true
   node-addon-require-builtin: false
