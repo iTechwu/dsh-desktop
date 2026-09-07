@@ -7,7 +7,6 @@ const root = resolve(import.meta.dirname, '..')
 const preinstalledPlugins = [
   'dsh-geoflow-mcp',
   'dsh-georank-mcp',
-  'dsh-knowledge-capture',
   'dsh-opencli',
   'dsh-plugin-console',
   'dsh-tools-mcp',
@@ -33,6 +32,11 @@ const snapshots = [
     sibling: `../docker-helm.dofe.ai/plugins/${name}`,
     snapshot: `.ci/${name}`,
   })),
+  {
+    name: 'dsh-knowledge-capture',
+    sibling: '../docker-helm.dofe.ai/plugins/dsh-knowledge-capture',
+    snapshot: 'scripts/ci-snapshots/dsh-knowledge-capture',
+  },
   // dsh-knowledge-capture is a host-only plugin backed by a private sibling
   // workspace. Keep its transitive file dependencies available to CI without
   // requiring access to those private repositories from the runner.
