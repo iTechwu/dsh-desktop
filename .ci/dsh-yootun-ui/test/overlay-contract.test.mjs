@@ -15,6 +15,7 @@ const overlayPlugins = [
   'dsh-yootun-audit',
   'dsh-yootun-daily-report',
   'dsh-yootun-finops',
+  'dsh-yootun-xhs-operation',
 ]
 
 test('every Yootun business overlay participates in the exclusive accessible dialog contract', async () => {
@@ -28,5 +29,9 @@ test('every Yootun business overlay participates in the exclusive accessible dia
     assert.match(source, /role: ['"]dialog['"]/u, plugin)
     assert.match(source, /['"]aria-modal['"]: true/u, plugin)
     assert.match(source, /event\.key === ['"]Escape['"]/u, plugin)
+    assert.match(source, /document\.activeElement|event\?\.currentTarget/u, `${plugin}: opener`)
+    assert.match(source, /shellRef\.current\?\.focus/u, `${plugin}: initial focus`)
+    assert.match(source, /tabIndex: -1/u, `${plugin}: focusable shell`)
+    assert.match(source, /closeOverlay/u, `${plugin}: focus restore close path`)
   }
 })
