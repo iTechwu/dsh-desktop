@@ -241,6 +241,7 @@ export class DesktopStartupRecoveryWindow {
   private profiles: readonly DesktopStartupRecoveryProfile[] | undefined
   private resolveResult: ((result: RecoveryWindowResult) => void) | undefined
   private settled = false
+  private renderTail: Promise<void> = Promise.resolve()
 
   constructor(private readonly options: DesktopStartupRecoveryWindowOptions) {}
 
@@ -280,6 +281,9 @@ export class DesktopStartupRecoveryWindow {
     app.on('activate', activate)
     if (process.platform === 'darwin') app.on('did-become-active', activate)
     window.once('ready-to-show', show)
+    window.on('close', event => {
+      if (this.busy && !this.settled) event.preventDefault()
+    })
     window.on('closed', () => {
       app.off('activate', activate)
       if (process.platform === 'darwin') app.off('did-become-active', activate)
@@ -514,8 +518,12 @@ export class DesktopStartupRecoveryWindow {
   }
   private async runBusy(operation: () => Promise<void>): Promise<void> {
     this.busy = true
-    await this.render()
-    try { await operation() } finally { this.busy = false }
+    try {
+      await this.render()
+      await operation()
+    } finally {
+      this.busy = false
+    }
   }
 
   private async refreshSnapshot(): Promise<void> {
@@ -579,7 +587,13 @@ export class DesktopStartupRecoveryWindow {
     }
   }
 
-  private async render(): Promise<void> {
+  private render(): Promise<void> {
+    const task = this.renderTail.then(async () => { await this.renderDocument() })
+    this.renderTail = task.catch(() => {})
+    return task
+  }
+
+  private async renderDocument(): Promise<void> {
     const window = this.window
     if (window === undefined || window.isDestroyed()) return
     const notice = this.notice

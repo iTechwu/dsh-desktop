@@ -162,8 +162,9 @@ describe('published package surface', () => {
     expect(main).toContain('const profileUserDataDir = safeModePaths?.userDataDir ?? desktopUserDataDir')
     expect(main).toContain('const homeDir = safeModePaths?.homeDir ?? resolveDshHome()')
     expect(main).toContain('if (safeModePaths !== undefined) process.env.DSH_HOME = homeDir')
-    expect(main).toContain('createDesktopWebProfile(paths.homeDir, DESKTOP_SAFE_MODE_PROFILE_NAME)')
-    expect(main).toContain("join(paths.userDataDir, 'profile-selection', 'state.json')")
+    expect(main).toContain('const desktopLaunchEnvironment = withDesktopDshHome(environment, homeDir)')
+    expect(main).toContain('hostCtx.provide(DSH_LAUNCH_ENVIRONMENT_KEY, desktopLaunchEnvironment)')
+    expect(main).toContain('prepareDesktopSafeModeEnvironment(desktopUserDataDir)')
     expect(main).toContain('selectDesktopProfile(')
     expect(main).toContain('cleanupDesktopSafeModeEnvironment(desktopUserDataDir)')
     expect(main).toContain('if (safeModeRequested) {')
@@ -173,6 +174,9 @@ describe('published package surface', () => {
     expect(main).toContain('failed to remove the Safe Mode environment')
     expect(main).toContain('desktopSafeModeRelaunchArguments()')
     expect(main).toContain("desktopTrayLabel(runtime.locale, 'exitSafeMode')")
+    expect(main).toContain("desktopTrayLabel(runtime.locale, 'enterSafeMode')")
+    expect(main).toContain('invoke: () => runtime.requestSafeModeRestart()')
+    expect(main).toContain('prepareSafeMode()\n    }\n    restartRequested = true')
     expect(main).toContain('notifyDesktopSafeModeActive(runtime, electronLogger)')
     expect(main).toContain('safeModePaths !== undefined && DESKTOP_SAFE_MODE_DEFAULTS.settings.notifications.enabled')
     expect(main).toContain('const setupWizardState = safeModePaths === undefined')
@@ -684,6 +688,7 @@ describe('published package surface', () => {
     })
     expect(manifest.build?.toolsets).toEqual({ nsis: '1.2.1' })
     expect(manifest.files).toEqual(expect.arrayContaining([
+      'build/app-icon.ico',
       'build/app-icon.png',
       'build/app-icon-mac.png',
       'build/brand-logo.png',
@@ -691,6 +696,7 @@ describe('published package surface', () => {
       'docs/**',
     ]))
     expect(manifest.build?.files).toEqual([
+      'build/app-icon.ico',
       'build/app-icon.png',
       'build/app-icon-mac.png',
       'build/tray-icon.svg',
@@ -710,7 +716,7 @@ describe('published package surface', () => {
     ])
     expect(manifest.build?.mac?.mergeASARs).toBe(false)
     expect(manifest.build?.mac?.signIgnore).toEqual(['\\.(?:pak|dat|wasm)$'])
-    expect(manifest.build?.win?.icon).toBe('build/app-icon.png')
+    expect(manifest.build?.win?.icon).toBe('build/app-icon.ico')
     expect(manifest.build?.win?.target).toEqual([{
       target: 'nsis',
       arch: ['x64'],
@@ -718,6 +724,7 @@ describe('published package surface', () => {
     expect(manifest.build?.win?.artifactName).toBe('Yootun-Agent-${version}-${arch}-Portable.${ext}')
     expect(manifest.build?.nsis).toEqual({
       include: 'installer.nsh',
+      installerIcon: 'build/app-icon.ico',
       license: 'THIRD_PARTY_NOTICES.md',
       oneClick: false,
       perMachine: false,
@@ -736,6 +743,7 @@ describe('published package surface', () => {
   it('separates unsigned smoke packaging from the signed macOS release', () => {
     const packageDir = readFileSync(new URL('scripts/package-dir.mjs', packageRoot), 'utf8')
 
+    expect(manifest.scripts?.build).toContain('node scripts/generate-windows-app-icon.mjs')
     expect(manifest.scripts?.build).toContain('node scripts/generate-mac-app-icon.mjs')
     expect(manifest.scripts?.build).toContain('node scripts/generate-brand-assets.mjs')
     expect(manifest.scripts?.['package:dir']).toBe('corepack pnpm run build && node scripts/package-dir.mjs')

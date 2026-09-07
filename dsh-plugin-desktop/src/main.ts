@@ -17,7 +17,11 @@ import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import { DSH_LAUNCH_ENVIRONMENT_KEY } from '@deepseek-ai/dsh-launch-environment'
 import type {} from '@deepseek-ai/dsh-web-app'
 import type {} from '@deepseek-ai/dsh-client-connection'
-import { isDesktopInstallerQuitRequest } from './desktop-installer-quit.ts'
+import {
+  isDesktopBackgroundNodeRequest,
+  isDesktopInstallerQuitRequest,
+} from './desktop-installer-quit.ts'
+import { withDesktopDshHome } from './launch-environment.ts'
 import { createDesktopBrowserAccess } from './desktop-browser-access.ts'
 import {
   installDesktopDshRuntime,
@@ -174,9 +178,8 @@ import {
 import {
   cleanupDesktopSafeModeEnvironment,
   DESKTOP_SAFE_MODE_DEFAULTS,
-  DESKTOP_SAFE_MODE_PROFILE_NAME,
   ensureDesktopSafeModeEnvironment,
-  resetDesktopSafeModeEnvironment,
+  prepareDesktopSafeModeEnvironment,
   desktopSafeModePaths,
   type DesktopSafeModePaths,
 } from './safe-mode.ts'
@@ -516,11 +519,17 @@ async function start(): Promise<void> {
       throw new Error('dsh-plugin-desktop: shutdown coordinator is not ready')
     }
     if (restartRequested) return
+    if (target === 'safe-mode') {
+      if (prepareSafeMode === undefined) throw new Error(`${BIN_NAME}: Safe Mode is unavailable`)
+      prepareSafeMode()
+    }
     restartRequested = true
     nativeExit.requestRelaunch(
-      target === 'recovery'
-        ? desktopRecoveryRelaunchArguments()
-        : desktopDefaultRelaunchArguments(),
+      target === 'safe-mode'
+        ? desktopSafeModeRelaunchArguments()
+        : target === 'recovery'
+          ? desktopRecoveryRelaunchArguments()
+          : desktopDefaultRelaunchArguments(),
     )
     await shutdown.request(0)
   }, (report) => {
@@ -610,6 +619,9 @@ async function start(): Promise<void> {
       requestQuit(0)
       return
     }
+    if (isDesktopBackgroundNodeRequest(argv)) {
+      return
+    }
     if (!showPreHostSurface()) runtime.show()
   })
   try {
@@ -633,18 +645,7 @@ async function start(): Promise<void> {
     await repairDofeVisionModelSettings(homeDir)
     prepareSafeMode = safeModePaths === undefined
       ? () => {
-          const paths = resetDesktopSafeModeEnvironment(desktopUserDataDir)
-          try {
-            createDesktopWebProfile(paths.homeDir, DESKTOP_SAFE_MODE_PROFILE_NAME)
-            selectDesktopProfile(
-              join(paths.userDataDir, 'profile-selection', 'state.json'),
-              paths.homeDir,
-              DESKTOP_SAFE_MODE_PROFILE_NAME,
-            )
-          } catch (cause) {
-            cleanupDesktopSafeModeEnvironment(desktopUserDataDir)
-            throw cause
-          }
+          prepareDesktopSafeModeEnvironment(desktopUserDataDir)
         }
       : undefined
     const projectionCacheRecovery = recoverOversizedSessionProjectionCache(homeDir)
@@ -793,6 +794,14 @@ async function start(): Promise<void> {
           nativeExit.requestRelaunch(desktopDefaultRelaunchArguments())
           await shutdown.request(0)
         },
+      })
+      generation.own(() => { safeModeTray.dispose() })
+    } else {
+      const safeModeTray = runtime.registerTrayItem({
+        group: 'tools',
+        order: 100,
+        label: () => desktopTrayLabel(runtime.locale, 'enterSafeMode'),
+        invoke: () => runtime.requestSafeModeRestart(),
       })
       generation.own(() => { safeModeTray.dispose() })
     }
@@ -1329,7 +1338,7 @@ async function start(): Promise<void> {
           () => releasePackageResolver,
           'dsh-plugin-desktop: profile package resolution',
         )
-        hostCtx.provide(DSH_LAUNCH_ENVIRONMENT_KEY, environment)
+        hostCtx.provide(DSH_LAUNCH_ENVIRONMENT_KEY, desktopLaunchEnvironment)
         hostCtx.provide('desktopBrowserAccess', browserAccess)
         hostCtx.provide('desktopLanHttps', lanHttps)
         hostCtx.provide('desktopRuntime', runtime)

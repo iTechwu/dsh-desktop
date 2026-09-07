@@ -2,9 +2,21 @@ import { describe, expect, it } from 'vitest'
 import { desktopNativeCopy } from '../src/native-dialog-copy.ts'
 import { desktopProfileCreateCopy } from '../src/profile-create-copy.ts'
 import { desktopRecoveryCopy } from '../src/recovery-copy.ts'
-import { desktopTrayLabel } from '../src/tray-locale.ts'
+import { desktopRestartConfirmationCopy, desktopTrayLabel } from '../src/tray-locale.ts'
 
 describe('Desktop product copy', () => {
+  it.each(['en', 'zh'] as const)('reuses the Safe Mode confirmation in %s native menus', locale => {
+    const copy = desktopRecoveryCopy(locale)
+    expect(desktopTrayLabel(locale, 'enterSafeMode')).toBe(locale === 'zh' ? '进入安全模式…' : 'Enter Safe Mode…')
+    expect(desktopRestartConfirmationCopy(locale, 'safe-mode')).toEqual({
+      title: copy.confirmSafeMode,
+      message: copy.confirmSafeModeMessage,
+      detail: copy.confirmSafeModeBody,
+      confirm: copy.confirmSafeModeAction,
+      cancel: copy.cancel,
+    })
+  })
+
   it('uses Profile consistently for product-level configuration sets', () => {
     expect(desktopProfileCreateCopy('zh')).toMatchObject({
       title: '新建 Profile',

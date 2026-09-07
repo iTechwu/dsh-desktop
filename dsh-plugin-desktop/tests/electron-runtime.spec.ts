@@ -2,6 +2,7 @@ import { unlinkSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { DesktopShellSpec } from '../src/runtime.ts'
+import { desktopTrayLabel } from '../src/tray-locale.ts'
 import { DESKTOP_FRAME_HEIGHT } from '../src/window-chrome.ts'
 
 const terminal = vi.hoisted(() => ({ open: vi.fn() }))
@@ -1861,7 +1862,7 @@ describe('Electron desktop runtime', () => {
     vi.spyOn(process, 'platform', 'get').mockReturnValue('darwin')
     electron.dialog.showMessageBox.mockResolvedValueOnce({ response: 1, checkboxChecked: false })
     const { ElectronDesktopRuntime } = await import('../src/electron-runtime.ts')
-    const restart = vi.fn(async (_target?: 'recovery') => {})
+    const restart = vi.fn(async (_target?: 'recovery' | 'safe-mode') => {})
     const runtime = new ElectronDesktopRuntime(restart)
 
     await runtime.requestRestart()
@@ -1881,7 +1882,7 @@ describe('Electron desktop runtime', () => {
     vi.spyOn(process, 'platform', 'get').mockReturnValue('darwin')
     electron.dialog.showMessageBox.mockResolvedValueOnce({ response: 0, checkboxChecked: false })
     const { ElectronDesktopRuntime } = await import('../src/electron-runtime.ts')
-    const restart = vi.fn(async (_target?: 'recovery') => {})
+    const restart = vi.fn(async (_target?: 'recovery' | 'safe-mode') => {})
     const runtime = new ElectronDesktopRuntime(restart)
 
     await runtime.requestRecoveryRestart()
@@ -1891,6 +1892,91 @@ describe('Electron desktop runtime', () => {
     }))
     expect(restart).toHaveBeenCalledOnce()
     expect(restart).toHaveBeenCalledWith('recovery')
+  })
+
+  it.each([
+    { platform: 'win32', surface: 'tray' },
+    { platform: 'darwin', surface: 'tray' },
+    { platform: 'darwin', surface: 'application' },
+  ] as const)('enters Safe Mode from the localized $platform $surface menu', async ({ platform, surface }) => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue(platform)
+    const { ElectronDesktopRuntime } = await import('../src/electron-runtime.ts')
+    const restart = vi.fn(async () => {})
+    const runtime = new ElectronDesktopRuntime(restart)
+    const registration = runtime.registerTrayItem({
+      group: 'tools',
+      order: 100,
+      label: () => desktopTrayLabel(runtime.locale, 'enterSafeMode'),
+      invoke: () => runtime.requestSafeModeRestart(),
+    })
+    const release = runtime.schedule(spec)
+    await runtime.mountScheduled()
+
+    type MenuCommand = { label?: string, enabled?: boolean, click?: () => void }
+    const menuItems = (): MenuCommand[] => surface === 'application'
+      ? (electron.applicationMenuTemplates.at(-1)?.[0] as { submenu: MenuCommand[] }).submenu
+      : electron.menuTemplates.at(-1) as MenuCommand[]
+    expect(menuItems()).toEqual(expect.arrayContaining([
+      expect.objectContaining({ label: 'Enter Safe Mode…', enabled: true }),
+    ]))
+
+    runtime.setLocalePreference('zh')
+    const command = menuItems().find(item => item.label === '进入安全模式…')
+    expect(command?.click).toEqual(expect.any(Function))
+    command?.click?.()
+
+    await vi.waitFor(() => { expect(restart).toHaveBeenCalledWith('safe-mode') })
+    expect(restart).toHaveBeenCalledOnce()
+    expect(electron.dialog.showMessageBox.mock.calls.at(-1)?.at(-1)).toMatchObject({
+      type: 'question', title: '进入安全模式？', buttons: ['重启到安全模式', '取消'], defaultId: 1, cancelId: 1,
+    })
+
+    registration.dispose()
+    expect(menuItems()).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ label: '进入安全模式…' }),
+    ]))
+    await release()
+  })
+
+  it('cancels, coalesces, and suppresses Safe Mode restart requests while quitting', async () => {
+    const { ElectronDesktopRuntime } = await import('../src/electron-runtime.ts')
+    const restart = vi.fn(async () => {})
+    const runtime = new ElectronDesktopRuntime(restart)
+    electron.dialog.showMessageBox.mockResolvedValueOnce({ response: 1, checkboxChecked: false })
+
+    await runtime.requestSafeModeRestart()
+    expect(restart).not.toHaveBeenCalled()
+    expect(electron.dialog.showMessageBox.mock.calls.at(-1)?.at(-1)).toMatchObject({
+      title: 'Enter Safe Mode?', buttons: ['Restart in Safe Mode', 'Cancel'], defaultId: 1, cancelId: 1,
+    })
+
+    await Promise.all([
+      runtime.requestSafeModeRestart(),
+      runtime.requestSafeModeRestart(),
+      runtime.requestRestart(),
+      runtime.requestRecoveryRestart(),
+    ])
+    expect(electron.dialog.showMessageBox).toHaveBeenCalledTimes(2)
+    expect(restart).toHaveBeenCalledOnce()
+    expect(restart).toHaveBeenCalledWith('safe-mode')
+
+    runtime.prepareToQuit()
+    await runtime.requestSafeModeRestart()
+    expect(electron.dialog.showMessageBox).toHaveBeenCalledTimes(2)
+    expect(restart).toHaveBeenCalledOnce()
+  })
+
+  it('allows retrying Safe Mode after preparation fails', async () => {
+    const { ElectronDesktopRuntime } = await import('../src/electron-runtime.ts')
+    const restart = vi.fn(async () => {}).mockRejectedValueOnce(new Error('Safe Mode preparation failed'))
+    const runtime = new ElectronDesktopRuntime(restart)
+
+    await expect(runtime.requestSafeModeRestart()).rejects.toThrow('Safe Mode preparation failed')
+    await runtime.requestSafeModeRestart()
+
+    expect(electron.dialog.showMessageBox).toHaveBeenCalledTimes(2)
+    expect(restart).toHaveBeenCalledTimes(2)
+    expect(restart).toHaveBeenLastCalledWith('safe-mode')
   })
 
   it('uses Electron networking and confirmation-gated macOS update handoff', async () => {

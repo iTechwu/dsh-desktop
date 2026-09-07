@@ -134,7 +134,7 @@ export class ElectronDesktopRuntime implements DesktopRuntime {
   private restartRequest: Promise<void> | undefined
 
   constructor(
-    private readonly restart: (target?: 'recovery') => Promise<void>,
+    private readonly restart: (target?: 'recovery' | 'safe-mode') => Promise<void>,
     private readonly onRendererBoot: (report: RendererBootReport) => boolean | void = () => {},
     private readonly logger: DesktopLogger | undefined = undefined,
     workspaceVolumeQuery: WindowsVolumeQuery | undefined = undefined,
@@ -540,7 +540,17 @@ export class ElectronDesktopRuntime implements DesktopRuntime {
     await request
   }
 
-  private async confirmAndRestart(target: 'normal' | 'recovery'): Promise<void> {
+  async requestSafeModeRestart(): Promise<void> {
+    if (this.quitting) return
+    if (this.restartRequest !== undefined) return await this.restartRequest
+    const request = this.confirmAndRestart('safe-mode').finally(() => {
+      if (this.restartRequest === request) this.restartRequest = undefined
+    })
+    this.restartRequest = request
+    await request
+  }
+
+  private async confirmAndRestart(target: 'normal' | 'recovery' | 'safe-mode'): Promise<void> {
     const copy = desktopRestartConfirmationCopy(this.currentLocale, target)
     const options: Electron.MessageBoxOptions = {
       type: 'question',
@@ -553,7 +563,7 @@ export class ElectronDesktopRuntime implements DesktopRuntime {
       noLink: true,
     }
     const result = await this.showDesktopMessageBox(options)
-    if (result.response === 0) await this.restart(target === 'recovery' ? 'recovery' : undefined)
+    if (result.response === 0) await this.restart(target === 'normal' ? undefined : target)
   }
 
   /** @inheritdoc */

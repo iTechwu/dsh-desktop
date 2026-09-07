@@ -1,12 +1,14 @@
 /** Desktop-owned native tray copy for the locales shipped by DSH. */
 
 import type { DesktopLocale } from './runtime.ts'
+import { desktopRecoveryCopy } from './recovery-copy.ts'
 
 export type DesktopTrayLabelKey =
   | 'addProfile'
   | 'checkForUpdates'
   | 'checkingForUpdates'
   | 'downloadingUpdate'
+  | 'enterSafeMode'
   | 'exportDiagnostics'
   | 'exitSafeMode'
   | 'openDesktop'
@@ -149,7 +151,17 @@ export function desktopDiagnosticsPrivacyCopy(locale: DesktopLocale): DesktopDia
 /** Resolve the native confirmation shown before every ordinary relaunch request. */
 export function desktopRestartConfirmationCopy(
   locale: DesktopLocale,
-  target: 'normal' | 'recovery' = 'normal',
+  target: 'normal' | 'recovery' | 'safe-mode' = 'normal',
 ): DesktopRestartConfirmationCopy {
+  if (target === 'safe-mode') {
+    const copy = desktopRecoveryCopy(locale)
+    return {
+      title: copy.confirmSafeMode,
+      message: copy.confirmSafeModeMessage,
+      detail: copy.confirmSafeModeBody,
+      confirm: copy.confirmSafeModeAction,
+      cancel: copy.cancel,
+    }
+  }
   return restartConfirmationCopy[locale][target]
 }

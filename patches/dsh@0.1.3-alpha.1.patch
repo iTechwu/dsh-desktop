@@ -1,7 +1,6 @@
-diff --git a/lib/plugin-F7ZVfRyo.js b/lib/plugin-F7ZVfRyo.js
-index 0ec8349..cd44312 100644
---- a/lib/plugin-F7ZVfRyo.js
-+++ b/lib/plugin-F7ZVfRyo.js
+diff --git a/lib/plugin-WDISvmGc.js b/lib/plugin-WDISvmGc.js
+--- a/lib/plugin-WDISvmGc.js
++++ b/lib/plugin-WDISvmGc.js
 @@ -109,7 +109,8 @@ function runPlugin(profile, args) {
  	const result = spawnSync("pnpm", args.map((argument) => anchorPathSpec(argument, process.cwd())), {
  		cwd: dir,
