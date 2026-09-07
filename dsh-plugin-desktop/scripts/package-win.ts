@@ -144,6 +144,17 @@ export function packageWindowsArtifact(
     options.log('Skipping the Windows package preflight; the package gate already passed.')
   }
   options.run(
+    options.commandShell,
+    [
+      '/d',
+      '/s',
+      '/c',
+      'npm rebuild fs-ext --runtime=electron --target=43.4.0 --arch=x64 --build-from-source',
+    ],
+    options.desktopRoot,
+    cleanEnvironment,
+  )
+  options.run(
     options.nodeExecutable,
     [
       options.builderCli,
