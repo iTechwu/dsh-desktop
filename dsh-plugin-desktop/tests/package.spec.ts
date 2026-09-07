@@ -699,7 +699,6 @@ describe('published package surface', () => {
       'build/app-icon.ico',
       'build/app-icon.png',
       'build/app-icon-mac.png',
-      'build/tray-icon.svg',
       'build/brand-logo.png',
       'build/tray-icon*.png',
       'cordis.patch.yml',

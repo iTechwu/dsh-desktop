@@ -674,6 +674,7 @@ async function start(): Promise<void> {
     startupStage = 'runtime-bootstrap'
     lifecycleRecorder.transitionStartupStage(startupStage)
     const environment = restrictModelLaunchEnvironment(loadLayeredEnv(BIN_NAME, process.cwd()))
+    const desktopLaunchEnvironment = withDesktopDshHome(environment, homeDir)
     removeModelCredentialEnvironment(process.env)
     const electronVersion = process.versions.electron
     if (electronVersion === undefined) {

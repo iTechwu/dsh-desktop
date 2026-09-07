@@ -97,7 +97,6 @@
     "build/app-icon.ico",
     "build/app-icon.png",
     "build/app-icon-mac.png",
-    "build/tray-icon.svg",
     "build/brand-logo.png",
     "build/hero-brand.png",
     "build/sidebar-brand.png",
@@ -133,7 +132,7 @@
     }
   },
   "scripts": {
-    "build": "node scripts/generate-brand-assets.mjs && node scripts/generate-client-brand-module.mjs && node scripts/generate-mac-app-icon.mjs && node scripts/generate-tray-icons.mjs && node scripts/clean.mjs && tsdown && vite build --config vite.native-ui.config.ts && tsc -p tsconfig.json --emitDeclarationOnly && tsc -p tsconfig.client.json --emitDeclarationOnly",
+    "build": "node scripts/generate-brand-assets.mjs && node scripts/generate-client-brand-module.mjs && node scripts/generate-mac-app-icon.mjs && node scripts/generate-tray-icons.mjs && node scripts/generate-windows-app-icon.mjs && node scripts/clean.mjs && tsdown && vite build --config vite.native-ui.config.ts && tsc -p tsconfig.json --emitDeclarationOnly && tsc -p tsconfig.client.json --emitDeclarationOnly",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.client.json --noEmit && tsc -p tsconfig.native-ui.json --noEmit && tsc -p tsconfig.tests.json --noEmit && tsc -p tsconfig.tests.client.json --noEmit",
     "test": "vitest run",
     "test:audit-ui": "node tests/browser/yootun-audit.visual.mjs",
@@ -508,7 +507,6 @@
       "build/app-icon.ico",
       "build/app-icon.png",
       "build/app-icon-mac.png",
-      "build/tray-icon.svg",
       "build/brand-logo.png",
       "build/tray-icon*.png",
       "cordis.patch.yml",
@@ -526,7 +524,6 @@
       "files": [
         "build/app-icon.png",
         "build/app-icon-mac.png",
-        "build/tray-icon.svg",
         "build/brand-logo.png",
         "build/tray-icon*.png",
         "cordis.patch.yml",
@@ -590,7 +587,7 @@
         }
       ],
       "artifactName": "Yootun-Agent-${version}-${arch}-Portable.${ext}",
-      "icon": "build/app-icon.png"
+      "icon": "build/app-icon.ico"
     },
     "nsis": {
       "include": "installer.nsh",

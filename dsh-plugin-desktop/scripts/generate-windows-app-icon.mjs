@@ -27,34 +27,24 @@ export const WINDOWS_APP_ICON_SIZES = Object.freeze([
 
 const SOURCE_CANVAS_SIZE = 1024
 const SMALL_FRAME_MAX_SIZE = 40
-const BRAND_BLUE = '#4D6BFE'
 const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
 const packageRoot = dirname(dirname(fileURLToPath(import.meta.url)))
 const sourcePath = join(packageRoot, 'build', 'app-icon.png')
-const markPath = join(packageRoot, 'build', 'tray-icon.svg')
+const smallArtworkPath = join(packageRoot, 'build', 'brand-logo.png')
 const outputPath = join(packageRoot, 'build', 'app-icon.ico')
 
 /**
- * Reuse the repository's vector whale for frames where the full shaded artwork
- * loses recognizable detail. The flat dark-on-light treatment preserves the
- * stable icon's silhouette at native Windows chrome sizes.
- * @returns {Promise<Buffer>} Self-contained SVG for small Windows frames.
+ * Reuse the repository-owned product mark for frames where the full application
+ * artwork loses recognizable detail at native Windows chrome sizes.
+ * @returns {Promise<Buffer>} Product artwork for small Windows frames.
  */
 async function loadSmallFrameArtwork() {
-  const source = await readFile(markPath, 'utf8')
-  if (!source.includes(`fill="${BRAND_BLUE}"`) || /<style\b/iu.test(source)) {
-    throw new Error(`generate-windows-app-icon: tray-icon.svg must use the fixed brand color ${BRAND_BLUE}`)
+  const source = await readFile(smallArtworkPath)
+  const metadata = await sharp(source).metadata()
+  if (metadata.format !== 'png' || metadata.hasAlpha !== true) {
+    throw new Error('generate-windows-app-icon: brand-logo.png must be a PNG with an alpha channel')
   }
-  const mark = source
-    .replace(/^<svg[^>]*>\s*/u, '')
-    .replace(/<\/svg>\s*$/u, '')
-    .replaceAll(BRAND_BLUE, '#000000')
-  return Buffer.from(
-    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 50 50">'
-    + '<rect width="50" height="50" rx="11" fill="#FFFFFF"/>'
-    + `<g transform="translate(5 5) scale(0.8)">${mark}</g>`
-    + '</svg>',
-  )
+  return source
 }
 
 /**
