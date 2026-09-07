@@ -25,6 +25,11 @@ test('retrofit package exposes a complete database-first workspace', async () =>
   for (const token of ['useRef', 'if (!query.trim() || searchBusyRef.current) return', 'searchBusyRef.current = true', 'searchBusyRef.current = false', "'aria-busy': busy", "role: 'status'", "t('searching')"]) {
     assert.match(client, new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'u'))
   }
+  for (const token of ['document.activeElement', 'shellRef.current?.focus()', 'target.focus()', 'ref: shellRef', 'tabIndex: -1', 'closeOverlay()']) {
+    assert.match(client, new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'u'))
+  }
+  assert.match(client, /opened && event\.key === 'Escape'\) closeOverlay\(\)/u)
+  assert.match(client, /onClick: closeOverlay/u)
 })
 
 test('host delegates to a query-capable custom-car tool without exposing credentials', async () => {
