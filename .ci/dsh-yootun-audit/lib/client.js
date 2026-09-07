@@ -190,7 +190,15 @@ window.__ModuleLoader__.load({
           if (appendControllerRef.current === controller) { appendControllerRef.current = null; appendBusyRef.current = false }
         }
       }
-      const key = event => { if (event.key === 'Escape') { if (state.selectedId) dispatch({ type: 'select', id: null }); else closeOverlay() } }
+      const key = event => {
+        if (event.key === 'Escape') { if (state.selectedId) dispatch({ type: 'select', id: null }); else closeOverlay(); return }
+        if (event.key !== 'Tab') return
+        const controls = [...(shellRef.current?.querySelectorAll('button:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])') || [])]
+        const first = controls[0]; const last = controls.at(-1)
+        if (!first) return
+        if (event.shiftKey && (document.activeElement === first || document.activeElement === shellRef.current)) { event.preventDefault(); last.focus() }
+        else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus() }
+      }
       const header = h('header', { className: 'ya-header' }, h('div', null, h('h1', { id: 'ya-title' }, t('title')), h('p', null, t('subtitle'))), h('div', { className: 'ya-header-status' }, h('span', null, workspace.freshness.source === 'cache' ? t('cached') : workspace.freshness.syncedAt ? `${t('stale')} ${formatTime(workspace.freshness.syncedAt)}` : ''), h(IconButton, { label: t('refresh'), onClick: () => dispatch({ type: 'refresh' }), icon: IconRefreshOutline16 }), h(IconButton, { label: t('close'), onClick: closeOverlay, icon: IconCloseOutline16 })))
       const scope = h('div', { className: 'ya-scope' }, h('div', { className: 'ya-segments', role: 'tablist' }, h('button', { type: 'button', role: 'tab', 'aria-selected': state.scope === 'self', onClick: () => dispatch({ type: 'scope', value: 'self' }) }, t('self')), workspace.scopes.available.includes('team') ? h('button', { type: 'button', role: 'tab', 'aria-selected': state.scope === 'team', onClick: () => dispatch({ type: 'scope', value: 'team' }) }, t('team')) : null), state.scope === 'team' && workspace.scopes.isSuperAdmin ? h('div', { className: 'ya-team' }, h('input', { value: state.teamQuery, placeholder: t('searchTeam'), 'aria-label': t('searchTeam'), onChange: event => dispatch({ type: 'teamQuery', value: event.target.value }) }), h('select', { value: state.teamId, 'aria-label': t('searchTeam'), onChange: event => dispatch({ type: 'team', value: event.target.value }) }, h('option', { value: '' }, t('chooseTeam')), state.teams.map(team => h('option', { key: team.id, value: team.id }, team.name)))) : workspace.scopes.currentTeam ? h('span', { className: 'ya-team-name' }, workspace.scopes.currentTeam.name) : null)
       let body
