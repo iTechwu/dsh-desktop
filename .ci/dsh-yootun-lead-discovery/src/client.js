@@ -1,5 +1,5 @@
 const React = require('react')
-const { createElement: h, useEffect, useState, useSyncExternalStore } = React
+const { createElement: h, useEffect, useRef, useState, useSyncExternalStore } = React
 const { IconCloseOutline16, IconDataOutline16, IconLinkOutline16, IconLoadingOutline16, IconRefreshOutline16, IconSearchOutline16, IconWarningOutline16, Tooltip } = require('@deepseek-ai/dsh-client-ui-primitives')
 
 const NS = 'dofe.yootun-lead-discovery'
@@ -156,6 +156,9 @@ function EmptyStateRedesigned({ t, onExample }) {
 
 function Overlay({ t }) {
   const visible = useSyncExternalStore(subscribe, snapshot, snapshot)
+  const searchBusyRef = useRef(false)
+  const pageBusyRef = useRef(false)
+  const candidatesBusyRef = useRef(false)
   const [tab, setTab] = useState('discover')
   const [query, setQuery] = useState('')
   const [platform, setPlatform] = useState('xiaohongshu-v2')
@@ -174,9 +177,9 @@ function Overlay({ t }) {
     return () => document.removeEventListener('keydown', onKeyDown)
   }, [visible])
   if (!visible) return null
-  const run = async () => { if (!query.trim() || busy) return; setBusy(true); setLoadMoreError(false); setTab('discover'); try { const response = await post({ action: 'discover', keyword: query.trim(), platform }); setData(response); setItems(Array.isArray(response.items) ? response.items : []) } catch { setData({ status: 'error' }); setItems([]) } finally { setBusy(false) } }
-  const loadMore = async () => { if (loadingMore || !data?.resultRef || !data?.hasMore) return; setLoadingMore(true); setLoadMoreError(false); try { const response = await post({ action: 'page', resultRef: data.resultRef, cursor: data.nextCursor }); if (response.status !== 'ready') throw new Error(response.reason || 'lead discovery page unavailable'); setData(prev => ({ ...prev, nextCursor: response.nextCursor, hasMore: response.hasMore, stats: { totalAvailable: prev.totalAvailable ?? prev.stats?.totalAvailable ?? null } })); setItems(prev => prev.concat(response.items || [])) } catch { setLoadMoreError(true) } finally { setLoadingMore(false) } }
-  const loadCandidates = async (force = false) => { setTab('saved'); if (candidates && !force) return; setCandidateBusy(true); try { const response = await post({ action: 'candidates' }); setCandidates(response); setCandidateItems(Array.isArray(response.items) ? response.items : []) } catch { setCandidates({ status: 'error' }); setCandidateItems([]) } finally { setCandidateBusy(false) } }
+  const run = async () => { if (!query.trim() || searchBusyRef.current) return; searchBusyRef.current = true; setBusy(true); setLoadMoreError(false); setTab('discover'); try { const response = await post({ action: 'discover', keyword: query.trim(), platform }); setData(response); setItems(Array.isArray(response.items) ? response.items : []) } catch { setData({ status: 'error' }); setItems([]) } finally { searchBusyRef.current = false; setBusy(false) } }
+  const loadMore = async () => { if (pageBusyRef.current || !data?.resultRef || !data?.hasMore) return; pageBusyRef.current = true; setLoadingMore(true); setLoadMoreError(false); try { const response = await post({ action: 'page', resultRef: data.resultRef, cursor: data.nextCursor }); if (response.status !== 'ready') throw new Error(response.reason || 'lead discovery page unavailable'); setData(prev => ({ ...prev, nextCursor: response.nextCursor, hasMore: response.hasMore, stats: { totalAvailable: prev.totalAvailable ?? prev.stats?.totalAvailable ?? null } })); setItems(prev => prev.concat(response.items || [])) } catch { setLoadMoreError(true) } finally { pageBusyRef.current = false; setLoadingMore(false) } }
+  const loadCandidates = async (force = false) => { setTab('saved'); if ((candidates && !force) || candidatesBusyRef.current) return; candidatesBusyRef.current = true; setCandidateBusy(true); try { const response = await post({ action: 'candidates' }); setCandidates(response); setCandidateItems(Array.isArray(response.items) ? response.items : []) } catch { setCandidates({ status: 'error' }); setCandidateItems([]) } finally { candidatesBusyRef.current = false; setCandidateBusy(false) } }
   const refresh = () => tab === 'saved' ? loadCandidates(true) : run()
   const stats = deriveStats(tab === 'saved' ? candidateItems : items, tab === 'saved' ? candidates?.stats : data?.stats)
   const state = tab === 'saved' ? candidates?.status : data?.status

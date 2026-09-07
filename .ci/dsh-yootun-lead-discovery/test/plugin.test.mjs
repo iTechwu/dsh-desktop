@@ -25,6 +25,9 @@ test('lead discovery package exposes a DSH client and guarded host route', async
   assert.match(client, /yl-start-steps/)
   assert.match(client, /yl-platform-options/)
   assert.match(client, /hasResult: Boolean\(data\)/)
+  for (const token of ['useRef', 'if (!query.trim() || searchBusyRef.current) return', 'searchBusyRef.current = true', 'if (pageBusyRef.current', 'pageBusyRef.current = true', 'candidatesBusyRef.current) return', 'candidatesBusyRef.current = true']) {
+    assert.match(client, new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'u'))
+  }
 })
 
 test('host delegates discover to lead_discovery_discover and forwards only safe fields', async () => {
