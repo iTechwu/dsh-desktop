@@ -77,6 +77,19 @@ export function installProfilePackageResolver(profileBaseUrl: string): () => voi
     }
   }
 
+  const canUseLinkedProfileDependency = (
+    url: string,
+    source: PackageOverlaySource | undefined,
+    ownerParentURL: string | undefined,
+  ): boolean => {
+    if (source !== 'profile' || ownerParentURL === undefined || !isObsoleteSharedFallback(url)) return false
+    try {
+      return !isInsideDirectory(fileURLToPath(ownerParentURL), profileDirectory)
+    } catch {
+      return false
+    }
+  }
+
   // ClientModuleRegistry intentionally uses createRequire(ctx.baseUrl) to
   // resolve each browser bundle from the config tree. Node's ESM resolve hook
   // does not observe that CommonJS manifest lookup, so without this narrow
@@ -194,12 +207,14 @@ export function installProfilePackageResolver(profileBaseUrl: string): () => voi
         return resolved
       }
       const source = overlayModuleSources.get(context.parentURL)
+      const ownerParentURL = context.parentURL
       let lastCause: unknown = new Error(
         `dsh-plugin-desktop: ignored obsolete shared Profile fallback for ${JSON.stringify(specifier)}`,
       )
       try {
         const resolved = nextResolve(specifier, context)
-        if (!isObsoleteSharedFallback(resolved.url)) {
+        if (!isObsoleteSharedFallback(resolved.url)
+          || canUseLinkedProfileDependency(resolved.url, source, ownerParentURL)) {
           overlayModuleUrls.add(resolved.url)
           if (source !== undefined) overlayModuleSources.set(resolved.url, source)
           return resolved
@@ -214,7 +229,8 @@ export function installProfilePackageResolver(profileBaseUrl: string): () => voi
       for (const parentURL of [profileBaseUrl, DESKTOP_ENTRY_URL]) {
         try {
           const resolved = nextResolve(specifier, { ...context, parentURL })
-          if (isObsoleteSharedFallback(resolved.url)) continue
+          if (isObsoleteSharedFallback(resolved.url)
+            && !canUseLinkedProfileDependency(resolved.url, source, ownerParentURL)) continue
           overlayModuleUrls.add(resolved.url)
           if (source !== undefined) overlayModuleSources.set(resolved.url, source)
           return resolved
