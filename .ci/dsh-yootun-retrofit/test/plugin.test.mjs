@@ -28,6 +28,9 @@ test('retrofit package exposes a complete database-first workspace', async () =>
   for (const token of ['document.activeElement', 'shellRef.current?.focus()', 'target.focus()', 'ref: shellRef', 'tabIndex: -1', 'closeOverlay()']) {
     assert.match(client, new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'u'))
   }
+  for (const token of ["event.key !== 'Tab'", 'querySelectorAll', 'event.shiftKey', 'event.preventDefault()', 'onKeyDown: keepFocus']) {
+    assert.match(client, new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'u'))
+  }
   assert.match(client, /opened && event\.key === 'Escape'\) closeOverlay\(\)/u)
   assert.match(client, /onClick: closeOverlay/u)
 })
