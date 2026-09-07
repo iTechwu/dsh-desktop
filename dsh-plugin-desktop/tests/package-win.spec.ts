@@ -63,7 +63,7 @@ describe('Windows x64 installer packaging', () => {
         '/d',
         '/s',
         '/c',
-        'npm rebuild fs-ext --runtime=electron --target=43.4.0 --dist-url=https://electronjs.org/headers --arch=x64 --build-from-source',
+        'npm rebuild fs-ext --runtime=electron --target=43.4.0 --dist-url=https://electronjs.org/headers --arch=x64 --msvs_version=2022 --build-from-source',
       ],
       cwd: 'C:\\repo\\dsh-plugin-desktop',
       env: { PATH: 'C:\\Windows\\System32', SAFE_VALUE: 'kept' },
@@ -115,7 +115,7 @@ describe('Windows x64 installer packaging', () => {
       '/d',
       '/s',
       '/c',
-      'npm rebuild fs-ext --runtime=electron --target=43.4.0 --dist-url=https://electronjs.org/headers --arch=x64 --build-from-source',
+      'npm rebuild fs-ext --runtime=electron --target=43.4.0 --dist-url=https://electronjs.org/headers --arch=x64 --msvs_version=2022 --build-from-source',
     ])
     expect(calls[2]?.args).toEqual([
       'C:\\repo\\node_modules\\electron-builder\\cli.js',
@@ -153,7 +153,7 @@ describe('Windows x64 installer packaging', () => {
       '/d',
       '/s',
       '/c',
-      'npm rebuild fs-ext --runtime=electron --target=43.4.0 --dist-url=https://electronjs.org/headers --arch=x64 --build-from-source',
+      'npm rebuild fs-ext --runtime=electron --target=43.4.0 --dist-url=https://electronjs.org/headers --arch=x64 --msvs_version=2022 --build-from-source',
     ])
     expect(calls[1]?.args).toEqual([
       'C:\\repo\\node_modules\\electron-builder\\cli.js',
