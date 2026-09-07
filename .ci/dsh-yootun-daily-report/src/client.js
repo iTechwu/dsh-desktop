@@ -82,7 +82,7 @@ function Overlay({ t }) {
     { className: 'ydr-overlay', role: 'dialog', 'aria-modal': true, 'aria-labelledby': 'ydr-title' },
     h(
       'main',
-      { className: 'ydr-shell', ref: shellRef, tabIndex: -1 },
+      { className: 'ydr-shell', ref: shellRef, tabIndex: -1, 'aria-busy': loading },
       h(
         'header',
         { className: 'ydr-header' },
