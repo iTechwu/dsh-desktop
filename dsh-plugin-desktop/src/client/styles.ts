@@ -106,6 +106,10 @@ body:is([data-dsh-desktop-mode="compatibility"], [data-dsh-desktop-mode="extende
   transition: background-color 160ms ease, border-color 160ms ease, color 160ms ease, opacity 160ms ease;
 }
 body:is([data-dsh-desktop-mode="compatibility"], [data-dsh-desktop-mode="extended"], [data-dsh-desktop-mode="advanced"])
+  [role="dialog"][aria-modal="true"] :is(button, [role="button"], [role="tab"], [role="option"]):active:not(:disabled) {
+  transform: translateY(1px);
+}
+body:is([data-dsh-desktop-mode="compatibility"], [data-dsh-desktop-mode="extended"], [data-dsh-desktop-mode="advanced"])
   [role="dialog"][aria-modal="true"] :is(input, select, textarea) {
   min-height: var(--dsh-plugin-control-height-compact);
 }
@@ -132,6 +136,7 @@ body:is([data-dsh-desktop-mode="compatibility"], [data-dsh-desktop-mode="extende
   body:is([data-dsh-desktop-mode="compatibility"], [data-dsh-desktop-mode="extended"], [data-dsh-desktop-mode="advanced"])
     [role="dialog"][aria-modal="true"] * {
     transition: none !important;
+    transform: none !important;
   }
 }
 `
