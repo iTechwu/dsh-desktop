@@ -312,7 +312,7 @@ function Overlay({ t }) {
   const left = h('div', { className: 'yxh-left' },
     h('section', { className: 'yxh-section' },
       h('h2', null, t('material')),
-      h(TabBar, { tab, onTab: setTab, t, disabled: locked }),
+      h(TabBar, { tab, onTab: setTab, t, disabled: uploading || locked }),
       tab === 'images'
         ? h('div', { className: 'yxh-media' },
           images.map((image, index) => h('figure', { className: 'yxh-thumb', key: `${index}-${image.name}` },
