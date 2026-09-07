@@ -37,7 +37,7 @@ test('announces intent search failures to assistive technology', async () => {
 
 test('blocks duplicate sales mutations and exposes localized action errors', async () => {
   const source = await readFile(new URL('src/client.js', root), 'utf8')
-  for (const token of ['useRef', 'if (actionBusyRef.current) return', 'actionBusyRef.current = true', 'setPendingActionId(body.id || body.action)', 'disabled: busy', "'aria-busy': active", "role: 'alert'", "t('actionError')", "t('loadError')"]) {
+  for (const token of ['useRef', 'if (actionBusyRef.current) return', 'actionBusyRef.current = true', 'setPendingActionId(body.id || body.action)', 'disabled: busy', 'disabled: loading || busy', "'aria-busy': active", "role: 'alert'", "t('actionError')", "t('loadError')"]) {
     assert.match(source, new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'u'))
   }
   assert.doesNotMatch(source, /Unable to load sales workspace/u)

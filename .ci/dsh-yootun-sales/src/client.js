@@ -95,7 +95,7 @@ function Overlay({ t }) {
       h('header', { className: 'ys-header' },
         h('div', null, h('h1', { id: 'ys-title' }, t('title')), h('p', null, t('subtitle'))),
         h('div', { className: 'ys-header-buttons' },
-          h(Tooltip, { label: t('refresh') }, h('button', { type: 'button', 'aria-label': t('refresh'), disabled: loading, onClick: () => setRevision(value => value + 1) }, h(IconRefreshOutline16, { size: 16 }))),
+          h(Tooltip, { label: t('refresh') }, h('button', { type: 'button', 'aria-label': t('refresh'), disabled: loading || busy, onClick: () => setRevision(value => value + 1) }, h(IconRefreshOutline16, { size: 16 }))),
           h(Tooltip, { label: t('close') }, h('button', { type: 'button', 'aria-label': t('close'), onClick: closeOverlay }, h(IconCloseOutline16, { size: 16 }))),
         ),
       ),
