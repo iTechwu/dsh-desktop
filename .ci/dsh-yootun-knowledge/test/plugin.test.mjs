@@ -22,9 +22,14 @@ test('publishes a web management plugin and knowledge MCP bundle', async () => {
   assert.equal(manifest.dsh.client.platform, 'web')
   assert.equal(manifest.dsh.bundle.patch, './cordis.patch.yml')
   const patch = await readFile(new URL('cordis.patch.yml', root), 'utf8')
-  assert.match(patch, /serverName: knowledge/u)
-  assert.match(patch, new RegExp(MCP_URL.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'u'))
-  assert.match(patch, /authorizationCredential:\s*MODELS_API_KEY/u)
+  assert.match(patch, /id:\s*yootun-knowledge-tools/u)
+  assert.match(patch, /name:\s*'@dofe\/dsh-yootun-knowledge'/u)
+  // The wrapper plugin owns the public MCP gateway contract; the direct
+  // `@deepseek-ai/dsh-mcp-client` route is intentionally not registered here
+  // so the model only sees one tool surface with one parameter protocol.
+  assert.doesNotMatch(patch, /serverName:\s*knowledge/u)
+  assert.doesNotMatch(patch, /authorizationCredential:\s*MODELS_API_KEY/u)
+  assert.doesNotMatch(patch, /@deepseek-ai\/dsh-mcp-client/u)
   assert.doesNotMatch(patch, /process\.env\.MODELS_API_KEY|Authorization:\s*!!js/u)
 })
 
