@@ -44,6 +44,10 @@ function findNonAdaptiveForegroundOnAdaptiveFill(source) {
     .map(rule => rule.slice(0, rule.indexOf('{')).trim())
 }
 
+function findLegacySemanticColors(source) {
+  return [...new Set(source.match(/#(?:22c55e|ef4444|f59e0b|31a46c|d9902f)\b/giu) || [])]
+}
+
 if (!desktopStyles.includes('[aria-modal="true"] :is(')) failures.push('dsh-plugin-desktop: modal focus indicator is missing')
 if (!desktopStyles.includes('prefers-reduced-motion: reduce') || !desktopStyles.includes('[aria-modal="true"] *')) {
   failures.push('dsh-plugin-desktop: reduced-motion coverage for plugin overlays is missing')
@@ -71,6 +75,9 @@ for (const name of ciEntries) {
       }
       for (const selector of findNonAdaptiveForegroundOnAdaptiveFill(clientArtifact)) {
         failures.push(`${name}/${relativePath}: ${selector} uses a non-adaptive foreground on an adaptive theme fill`)
+      }
+      for (const color of findLegacySemanticColors(clientArtifact)) {
+        failures.push(`${name}/${relativePath}: ${color} bypasses the shared semantic theme aliases`)
       }
     } catch (error) {
       if (error?.code !== 'ENOENT') throw error
