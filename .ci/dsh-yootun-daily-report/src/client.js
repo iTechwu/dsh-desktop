@@ -28,7 +28,7 @@ function Overlay({ t }) {
       signal: controller.signal,
       headers: { Accept: 'application/json' },
     })
-      .then(response => response.json())
+      .then(response => { if (!response.ok) throw new Error(`daily_report_${response.status}`); return response.json() })
       .then(setData)
       .catch(() => setData({ activity: { status: 'unavailable', reason: 'request_failed' } }))
       .finally(() => { if (!controller.signal.aborted) setLoading(false) })

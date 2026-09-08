@@ -11,7 +11,7 @@ test('generated client bundle is valid JavaScript', () => {
 })
 test('localizes source states and keeps unavailable metrics explicit', async () => {
   const source = await readFile(new URL('../src/client.js', import.meta.url), 'utf8')
-  for (const token of ['sourceReady', 'sourceUnavailable', 'sourceError', 'toolsSource', 'request_failed', '不可用', '.ydr-overlay{position:fixed', '.ydr-shell{display:grid', '.ydr-content{min-height:0']) assert.match(source, new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'u'))
+  for (const token of ['sourceReady', 'sourceUnavailable', 'sourceError', 'toolsSource', 'request_failed', 'response.ok', '不可用', '.ydr-overlay{position:fixed', '.ydr-shell{display:grid', '.ydr-content{min-height:0']) assert.match(source, new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'u'))
 })
 test('daily report aggregates yesterday session events', async () => {
   let route
