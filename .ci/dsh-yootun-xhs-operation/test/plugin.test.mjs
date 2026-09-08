@@ -108,6 +108,14 @@ test('prevents duplicate picker, task creation, and cancellation requests', asyn
   assert.match(source, /if \(busyRef\.current \|\| !canCancel\) return/u)
 })
 
+test('reports picker failures while keeping user cancellation quiet', async () => {
+  const source = await readFile(new URL('src/client.js', root), 'utf8')
+  assert.match(source, /if \(!picked\) \{\s*setUploadError\(t\('uploadFailed'\)\)/u)
+  assert.match(source, /if \(!picked\.picked\) return/u)
+  assert.match(source, /if \(!picked\.path\) \{\s*setUploadError\(t\('uploadFailed'\)\)/u)
+  assert.match(source, /await uploads\.start\([\s\S]*?\}\)\s*\} catch \{\s*setUploadError\(t\('uploadFailed'\)\)/u)
+})
+
 test('uses adaptive foregrounds for brand actions', async () => {
   const source = await readFile(new URL('src/client.js', root), 'utf8')
   assert.match(source, /\.yxh-submit\{[^}]*background:var\(--dsw-alias-brand-primary\);color:var\(--dsw-alias-label-primary-foreground\)/u)

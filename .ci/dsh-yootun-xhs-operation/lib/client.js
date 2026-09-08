@@ -534,8 +534,16 @@ window.__ModuleLoader__.load({
         setUploadError('')
         try {
           const picked = await uploadFetch(UPLOAD_PICK, { kind })
-          // 用户在原生对话框取消（picked:false）或选择器不可用：静默返回。
-          if (!picked || !picked.picked || !picked.path) return
+          if (!picked) {
+            setUploadError(t('uploadFailed'))
+            return
+          }
+          // 用户在原生对话框主动取消时保持安静；畸形的已选结果必须可见地失败。
+          if (!picked.picked) return
+          if (!picked.path) {
+            setUploadError(t('uploadFailed'))
+            return
+          }
           if (kind === 'image') {
             // 竞态保护：对话框打开期间列表可能已被补满。
             if (uploads.list('image').length >= MAX_IMAGES) return
@@ -551,6 +559,8 @@ window.__ModuleLoader__.load({
             size: picked.size,
             mime: picked.mime,
           })
+        } catch {
+          setUploadError(t('uploadFailed'))
         } finally {
           pickingRef.current = false
           setPicking(false)
