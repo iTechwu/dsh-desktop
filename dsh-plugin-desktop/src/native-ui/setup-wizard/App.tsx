@@ -708,7 +708,9 @@ export function SetupWizardApp(): JSX.Element {
 
   const submit = (next: DesktopSetupWizardSelection): void => {
     setStarting(true)
-    window.requestAnimationFrame(() => { finish(next) })
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => { finish(next) })
+    })
   }
 
   const startUsing = (): void => {
