@@ -31,10 +31,20 @@ for (const name of clientPlugins) {
   const hasAccessibleName = /aria-label/.test(source) || /aria-labelledby/.test(source)
   const hasClientBuild = manifest.exports?.['./client'] === './lib/client.js'
   const hasCheckScript = typeof manifest.scripts?.check === 'string'
+  const isMandatoryAccessGate = name === 'dsh-yootun-ui'
+  const hasEscapeClose = /event\.key\s*===\s*['"]Escape['"]/.test(source)
+  const restoresTriggerFocus = /requestAnimationFrame\(\(\)\s*=>\s*lastTrigger\?\.focus/.test(source)
+  const themeAliasCount = (source.match(/var\(--dsw-alias-[^)]+\)/g) || []).length
+  const hasThemeAliases = themeAliasCount >= 4
+    && /var\(--dsw-alias-bg-base\)/.test(source)
+    && /var\(--dsw-alias-label-primary\)/.test(source)
   if (!hasDialog) failures.push(`${name}: client overlay has no dialog role`)
   if (!hasAccessibleName) failures.push(`${name}: client surface has no accessible name`)
   if (!hasClientBuild) failures.push(`${name}: client export is not wired to lib/client.js`)
   if (!hasCheckScript) failures.push(`${name}: package check script is missing`)
+  if (!isMandatoryAccessGate && !hasEscapeClose) failures.push(`${name}: dismissible overlay has no Escape handler`)
+  if (!isMandatoryAccessGate && !restoresTriggerFocus) failures.push(`${name}: dismissible overlay does not restore trigger focus`)
+  if (!hasThemeAliases) failures.push(`${name}: client styles do not use desktop theme aliases`)
 }
 
 if (failures.length) {
