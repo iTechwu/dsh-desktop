@@ -12,6 +12,7 @@ const workspaceRoot = resolve(packageRoot, '..')
 const harnessRoot = resolve(here, 'yootun-audit')
 const evidenceRoot = resolve(workspaceRoot, 'docs/superpowers/evidence/2026-09-08-search-locks')
 const sources = {
+  content: resolve(workspaceRoot, '.ci/dsh-yootun-content-command/src/client.js'),
   dashboard: resolve(workspaceRoot, '.ci/dsh-yootun-dashboard/src/client.js'),
   daily: resolve(workspaceRoot, '.ci/dsh-yootun-daily-report/src/client.js'),
   finops: resolve(workspaceRoot, '.ci/dsh-yootun-finops/src/client.js'),
@@ -131,6 +132,21 @@ const supplyWatch = {
   risks: [{ id: 'risk-1', targetLabel: '华南供应商 01', severity: 'p0', status: 'open' }],
   actions: [{ id: 'risk-1', targetLabel: '华南供应商 01', severity: 'p0', status: 'awaiting_confirmation' }],
 }
+const contentCommand = {
+  status: 'ready',
+  dashboard: { articles: 1, pendingReview: 1, reviewed: 0, publishReady: 0 },
+  sources: {
+    geoflow: { status: 'ready', data: {} },
+    georank: { status: 'empty', data: {} },
+  },
+  platforms: [],
+  articles: [{
+    id: 'article:41', articleId: 41, title: '新能源用车指南', summary: '面向城市通勤场景的选车建议',
+    content: '# 新能源用车指南\n\n根据通勤里程与补能条件选择车型。', status: 'draft', reviewStatus: 'pending',
+    taskName: '内容生产', categoryName: '用车知识', authorName: '内容团队', generatedAt: '2026-09-08T03:00:00.000Z',
+    humanize: { status: 'processed', score: 18, issues: [] }, selectedPlatforms: [], platformStatus: {},
+  }],
+}
 let recruiterActionRequests = 0
 let releaseRecruiterAction
 const recruiterActionReady = new Promise(resolve => { releaseRecruiterAction = resolve })
@@ -194,6 +210,9 @@ await page.route('**/api/desktop/yootun/supply-watch', async route => {
     contentType: 'application/json',
     body: JSON.stringify(confirmed ? { ...supplyWatch, actions: supplyWatch.actions.map(action => ({ ...action, status: 'adapter_pending' })) } : supplyWatch),
   })
+})
+await page.route('**/api/desktop/yootun/content-command', async route => {
+  await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(contentCommand) })
 })
 await page.route('**/api/desktop/yootun/finops?*', async route => {
   if (finopsRefreshFails) {
@@ -311,6 +330,24 @@ try {
   assert.equal(await page.getByText('p0', { exact: true }).count(), 0)
   await assertViewport()
   await page.screenshot({ path: resolve(evidenceRoot, '390-supply-statuses.png'), fullPage: true })
+
+  await page.goto(`${url}?source=content`)
+  await page.getByRole('button', { name: 'GEO工作台' }).click()
+  await page.getByRole('heading', { name: 'GEO 内容运营' }).waitFor()
+  await page.waitForFunction(() => document.querySelector('.ycc-shell')?.getAttribute('aria-busy') === 'false')
+  await page.getByRole('button', { name: /内容审核与发布/u }).click()
+  await page.getByRole('heading', { name: '新能源用车指南' }).waitFor()
+  assert.equal(await page.locator('.ycc-meta dd').first().innerText(), '草稿')
+  assert.equal(await page.getByText('draft', { exact: true }).count(), 0)
+  const contentGeometry = await page.evaluate(() => {
+    const toolbar = document.querySelector('.ycc-queue-toolbar')?.getBoundingClientRect()
+    const detail = document.querySelector('.ycc-detail')?.getBoundingClientRect()
+    return toolbar && detail ? { toolbarBottom: toolbar.bottom, detailTop: detail.top } : null
+  })
+  assert(contentGeometry, 'content review geometry must be measurable')
+  assert(contentGeometry.detailTop >= contentGeometry.toolbarBottom, 'article detail must not overlap the mobile review toolbar')
+  await assertViewport()
+  await page.screenshot({ path: resolve(evidenceRoot, '390-content-workflow.png'), fullPage: true })
 
   await page.goto(`${url}?source=daily`)
   await page.getByRole('button', { name: '昨日工作' }).click()
@@ -461,7 +498,7 @@ try {
   await page.waitForFunction(() => document.querySelector('.yr-content')?.getAttribute('aria-busy') === 'false')
 
   assert.deepEqual(consoleProblems, [])
-  process.stdout.write('search-locks-browser: 8 plugins, 9 screenshots, request locks, localized statuses, and theme mappings verified with stable mobile layout\n')
+  process.stdout.write('search-locks-browser: 9 plugins, 10 screenshots, request locks, localized statuses, and theme mappings verified with stable mobile layout\n')
 } finally {
   releaseDailyRefresh()
   releaseFinopsRefresh()
