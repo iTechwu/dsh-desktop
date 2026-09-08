@@ -62,6 +62,23 @@ for (const selector of findFixedWhiteOnAdaptiveFill(desktopClientStyles)) {
 for (const selector of findNonAdaptiveForegroundOnAdaptiveFill(desktopClientStyles)) {
   failures.push(`dsh-plugin-desktop: ${selector} uses a non-adaptive foreground on an adaptive theme fill`)
 }
+if (!dofeAccessSource.includes('const loadingRef = useRef(false)') || !dofeAccessSource.includes('const busyRef = useRef(false)')) {
+  failures.push('dsh-plugin-desktop: native access form has no synchronous request locks')
+}
+if (!dofeAccessSource.includes('aria-busy={interactionBusy}')) {
+  failures.push('dsh-plugin-desktop: native access form does not expose its combined busy state')
+}
+const defaultModelWrite = dofeAccessSource.indexOf("const defaultModel = descriptor.find(item => item.ns === 'agent-default-model')")
+const authorizationWrite = dofeAccessSource.indexOf('await mutateDofeAccessSettings(settingsApi', defaultModelWrite)
+if (defaultModelWrite < 0 || authorizationWrite < defaultModelWrite) {
+  failures.push('dsh-plugin-desktop: native access form must commit authorization after default model configuration')
+}
+const accessRemoval = dofeAccessSource.indexOf('export async function removeDofeAccess')
+const authorizationRemoval = dofeAccessSource.indexOf('await mutateDofeAccessSettings(settingsApi', accessRemoval)
+const credentialRemoval = dofeAccessSource.indexOf('await credentials.unset(DOFE_ACCESS_KEY)', accessRemoval)
+if (accessRemoval < 0 || authorizationRemoval < accessRemoval || credentialRemoval < authorizationRemoval) {
+  failures.push('dsh-plugin-desktop: native access removal must revoke authorization before deleting the credential')
+}
 
 for (const name of ciEntries) {
   for (const relativePath of ['src/client.js', 'lib/client.js']) {
@@ -131,5 +148,5 @@ if (failures.length) {
   for (const failure of failures) console.error(`- ${failure}`)
   process.exitCode = 1
 } else {
-  console.log(`Plugin UX audit passed for ${clientPlugins.length} Yootun client plugins.`)
+  console.log(`Plugin UX audit passed for ${clientPlugins.length} Yootun client plugins and the native access surface.`)
 }
