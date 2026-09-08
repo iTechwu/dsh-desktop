@@ -123,7 +123,7 @@ window.__ModuleLoader__.load({
           ),
           h(
             'div',
-            { className: 'ydr-content' },
+            { className: 'ydr-content', 'aria-busy': loading },
             h(
               'div',
               { className: 'ydr-metrics' },

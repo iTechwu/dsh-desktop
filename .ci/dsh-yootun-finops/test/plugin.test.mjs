@@ -70,6 +70,7 @@ test('keeps cost data source-bound and free of credentials or direct providers',
   assert.doesNotMatch(source, /filter\(Boolean\)\.join\(' '\)/)
   assert.match(source, /observedCostMax > 0/)
   assert.match(source, /yf-chart-bar/)
+  assert.match(source, /'aria-busy': loading/u)
 })
 
 test('uses only DSH alpha3 exported icons', async () => {

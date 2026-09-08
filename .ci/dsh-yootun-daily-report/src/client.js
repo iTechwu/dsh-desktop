@@ -118,7 +118,7 @@ function Overlay({ t }) {
       ),
       h(
         'div',
-        { className: 'ydr-content' },
+        { className: 'ydr-content', 'aria-busy': loading },
         h(
           'div',
           { className: 'ydr-metrics' },

@@ -42,6 +42,7 @@ test('renders all requested dashboard domains and explicit source states', async
     // P0 验收：状态语义、健康摘要、异常队列、基线占位与 tab 可达性
     "'aria-current'", 'noBaseline', 'attentionItems', 'HealthStrip', 'DomainCard', 'ShareBar',
     'metricDisplay', 'missingFields', 'asOfLabel', 'refreshing', 'sourcePartial', 'workerDown',
+    "'aria-busy': loading",
   ]) assert.match(source, new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'u'))
   // 健康状态必须是固定枚举精确匹配，未知值保守映射为 unavailable，不得用自然语言正则默认 ready
   assert.match(source, /HEALTH_STATES = \{/)

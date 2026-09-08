@@ -18,6 +18,7 @@ test('keeps risk reviews human-confirmed and local-only', async () => {
   }
   assert.doesNotMatch(source, /Unable to load supply watch/u)
   assert.match(source, /openRisks/u)
+  assert.match(source, /'aria-busy': loading/u)
   assert.doesNotMatch(source, /password|cookie|银行卡|供应商联系人手机号/iu)
 })
 

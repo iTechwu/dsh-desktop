@@ -1038,7 +1038,7 @@ window.__ModuleLoader__.load({
           h('nav', { className: 'yd-tabs', 'aria-label': t('title') }, ...TABS.map(item =>
             h('button', { type: 'button', key: item.id, 'aria-current': tab === item.id ? 'page' : undefined, onClick: () => setTab(item.id) }, t(item.label)))),
           failed && data ? h('div', { className: 'yd-stale', role: 'status' }, t('error')) : null,
-          h('div', { className: `yd-content${loading && data ? ' yd-refreshing' : ''}` }, body)))
+          h('div', { className: `yd-content${loading && data ? ' yd-refreshing' : ''}`, 'aria-busy': loading }, body)))
     }
 
     const css = `

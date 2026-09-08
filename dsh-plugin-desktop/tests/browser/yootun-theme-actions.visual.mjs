@@ -60,6 +60,8 @@ const dashboard = {
     georank: { status: 'ready' }, openmontage: { status: 'ready' },
   },
 }
+let releaseDashboard
+const dashboardReady = new Promise(resolve => { releaseDashboard = resolve })
 const contentCommand = {
   dashboard: { articles: 4, pendingReview: 2, reviewed: 2 },
   sources: {
@@ -106,7 +108,10 @@ page.on('console', message => {
   if (message.type() === 'error' || message.type() === 'warning') consoleProblems.push(`${message.type()}: ${message.text()}`)
 })
 page.on('pageerror', error => consoleProblems.push(`pageerror: ${error.message}`))
-await page.route('**/api/desktop/yootun/dashboard/**', route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(dashboard) }))
+await page.route('**/api/desktop/yootun/dashboard/**', async route => {
+  await dashboardReady
+  await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(dashboard) })
+})
 await page.route('**/api/desktop/yootun/content-command', route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(contentCommand) }))
 await page.route('**/api/desktop/yootun/retrofit', route => {
   const body = route.request().postDataJSON()
@@ -177,8 +182,11 @@ try {
   await page.setViewportSize({ width: 390, height: 844 })
   await page.goto(`${url}?source=dashboard`)
   await page.getByRole('button', { name: '企业看板' }).click()
+  await page.locator('.yd-content[aria-busy="true"]').waitFor()
+  releaseDashboard()
   const activeRange = page.getByRole('button', { name: '昨日' })
   await activeRange.waitFor()
+  assert.equal(await page.locator('.yd-content').getAttribute('aria-busy'), 'false')
   await assertActionContrast(activeRange)
   await assertViewport()
   await page.screenshot({ path: resolve(evidenceRoot, '390-dashboard-range.png'), fullPage: true })
