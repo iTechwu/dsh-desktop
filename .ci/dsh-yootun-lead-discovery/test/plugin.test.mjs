@@ -139,6 +139,27 @@ test('host preserves a safe MCP error category for diagnosis', async () => {
   assert.deepEqual(result.body, { status: 'error', reason: 'RESULT_STORE_UNAVAILABLE' })
 })
 
+test('host drops non-web source URLs before returning lead cards', async () => {
+  let route
+  apply({
+    tools: {
+      schemas: () => [{ name: 'lead_discovery_database_search' }],
+      execute: async () => ({ structuredContent: {
+        count: 2,
+        candidates: [
+          { leadLevel: 'A', sourceUrl: 'javascript:alert(1)' },
+          { leadLevel: 'B', sourceUrl: 'https://example.com/lead' },
+        ],
+      } }),
+    },
+    webServer: { register(value) { route = value; return () => {} } },
+    effect(factory) { return factory() },
+  })
+  const result = await invoke(route, { action: 'discover', keyword: 'SUV' })
+  assert.equal(result.body.items[0].sourceUrl, undefined)
+  assert.equal(result.body.items[1].sourceUrl, 'https://example.com/lead')
+})
+
 test('audits persisted discovery once and keeps pages and stored candidates read-only', async () => {
   let route
   const events = []

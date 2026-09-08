@@ -76,13 +76,15 @@ window.__ModuleLoader__.load({
       const timestamp = data?.result?.retrievedAt || data?.retrievedAt
       return h('div', { className: `yr-source-bar ${external ? 'is-external' : ''}` }, h('span', { className: 'yr-source-dot', 'aria-hidden': true }), h('span', null, `${t('sourceLabel')}：${t(external ? 'sourceExternal' : 'sourceSaved')}`), timestamp ? h('span', { className: 'yr-source-time' }, `${t('updated')}：${displayTime(timestamp)}`) : null)
     }
+    function safeExternalUrl(value) { if (typeof value !== 'string' || value.length > 2048) return null; try { const url = new URL(value); return url.protocol === 'http:' || url.protocol === 'https:' ? url.href : null } catch { return null } }
     function Metrics({ data, t }) {
       const stats = getStats(data)
       const values = [[t('total'), stats.total, t('records')], [t('returned'), stats.returned, t('records')], [t('coverage'), stats.platforms, t('platforms')], [t('engagement'), stats.engagement, t('records')]]
       return h('section', { className: 'yr-metrics', 'aria-label': t('sourceSaved') }, values.map(([label, value, unit]) => h('div', { className: 'yr-metric', key: label }, h('span', null, label), h('strong', null, value), h('small', null, unit))))
     }
     function ResultItem({ item, t }) {
-      return h('article', { className: 'yr-item' }, h('div', { className: 'yr-item-main' }, h('div', { className: 'yr-item-head' }, h('span', { className: 'yr-platform' }, platformName(item.platform, t)), item.publishedAt ? h('time', null, displayTime(item.publishedAt)) : null), h('h3', null, item.title || item.text || t('untitled')), h('p', null, item.text && item.text !== item.title ? item.text : t('noText'))), h('div', { className: 'yr-item-side' }, h('div', { className: 'yr-counts' }, h('span', null, h('b', null, item.commentCount ?? '—'), t('comments')), h('span', null, h('b', null, item.shareCount ?? '—'), t('shares'))), item.sourceUrl ? h('a', { href: item.sourceUrl, target: '_blank', rel: 'noreferrer' }, h(IconLinkOutline16, { size: 14 }), t('openSource')) : null))
+      const sourceUrl = safeExternalUrl(item.sourceUrl)
+      return h('article', { className: 'yr-item' }, h('div', { className: 'yr-item-main' }, h('div', { className: 'yr-item-head' }, h('span', { className: 'yr-platform' }, platformName(item.platform, t)), item.publishedAt ? h('time', null, displayTime(item.publishedAt)) : null), h('h3', null, item.title || item.text || t('untitled')), h('p', null, item.text && item.text !== item.title ? item.text : t('noText'))), h('div', { className: 'yr-item-side' }, h('div', { className: 'yr-counts' }, h('span', null, h('b', null, item.commentCount ?? '—'), t('comments')), h('span', null, h('b', null, item.shareCount ?? '—'), t('shares'))), sourceUrl ? h('a', { href: sourceUrl, target: '_blank', rel: 'noreferrer' }, h(IconLinkOutline16, { size: 14 }), t('openSource')) : null))
     }
     function EmptyState({ matched, t, onExample }) {
       return h('div', { className: 'yr-empty', role: 'status' }, h('span', { className: 'yr-empty-icon' }, h(IconDatabaseOutline16, { size: 22 })), h('h3', null, t(matched ? 'noMatchesTitle' : 'emptyTitle')), h('p', null, t(matched ? 'noMatchesBody' : 'emptyBody')), h('div', { className: 'yr-examples' }, h('span', null, t('queryExamples')), ['example1', 'example2', 'example3'].map(key => h('button', { type: 'button', key, onClick: () => onExample(t(key)) }, t(key)))))
@@ -103,13 +105,14 @@ window.__ModuleLoader__.load({
         'div',
         { className: 'yr-list' },
         items.map((item, index) => {
-          const sourceLink = item.url
+          const sourceUrl = safeExternalUrl(item.url)
+          const sourceLink = sourceUrl
             ? h(
               'div',
               { className: 'yr-item-side' },
               h(
                 'a',
-                { href: item.url, target: '_blank', rel: 'noreferrer' },
+                { href: sourceUrl, target: '_blank', rel: 'noreferrer' },
                 h(IconLinkOutline16, { size: 14 }),
                 t('openSource'),
               ),

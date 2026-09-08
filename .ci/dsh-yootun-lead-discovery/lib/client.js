@@ -83,6 +83,7 @@ window.__ModuleLoader__.load({
     }
 
     function SourceBadge({ item, t }) { return h('span', { className: 'yl-source-badge' }, platformName(item.platform, t)) }
+    function safeExternalUrl(value) { if (typeof value !== 'string' || value.length > 2048) return null; try { const url = new URL(value); return url.protocol === 'http:' || url.protocol === 'https:' ? url.href : null } catch { return null } }
     function Metric({ label, value, tone }) { return h('div', { className: `yl-metric yl-metric-${tone || 'neutral'}` }, h('span', null, label), h('strong', null, value === null || value === undefined ? '—' : String(value))) }
     function StatusMessage({ kind, title, body, action, onAction }) {
       const Icon = kind === 'loading' ? IconLoadingOutline16 : kind === 'error' || kind === 'unavailable' ? IconWarningOutline16 : IconDataOutline16
@@ -128,11 +129,12 @@ window.__ModuleLoader__.load({
     }
     function LeadCard({ item, t }) {
       const score = Number.isFinite(Number(item.intentScore)) ? Math.max(0, Math.min(100, Number(item.intentScore))) : null
+      const sourceUrl = safeExternalUrl(item.sourceUrl)
       return h('article', { className: 'yl-card' },
         h('div', { className: 'yl-card-head' }, h('div', { className: 'yl-card-title' }, h('span', { className: `yl-level yl-level-${String(item.leadLevel || '').toLowerCase()}` }, levelName(String(item.leadLevel || '').toUpperCase())), h(SourceBadge, { item, t })), score === null ? null : h('div', { className: 'yl-score-wrap' }, h('span', null, `${t('intent')} ${score}`), h('div', { className: 'yl-score-track' }, h('span', { style: { width: `${score}%` } })))),
         h('p', { className: `yl-summary${item.aiSummary ? '' : ' yl-summary-empty'}` }, item.aiSummary || t('noSummary')),
         h('div', { className: 'yl-tags' }, item.city ? h('span', null, `${t('city')} ${item.city}`) : null, (item.budgetMin !== undefined || item.budgetMax !== undefined) ? h('span', null, `${t('budget')} ${formatBudget(item.budgetMin, item.budgetMax)}`) : null, item.purchaseTiming ? h('span', null, `${t('timing')} ${item.purchaseTiming}`) : null),
-        h('div', { className: 'yl-card-foot' }, h('p', { className: item.recommendedAction ? 'yl-action' : 'yl-action yl-action-empty' }, `${t('action')}：${item.recommendedAction || t('noAction')}`), item.sourceUrl ? h('a', { className: 'yl-link', href: item.sourceUrl, target: '_blank', rel: 'noreferrer' }, h(IconLinkOutline16, { size: 14 }), t('source')) : null),
+        h('div', { className: 'yl-card-foot' }, h('p', { className: item.recommendedAction ? 'yl-action' : 'yl-action yl-action-empty' }, `${t('action')}：${item.recommendedAction || t('noAction')}`), sourceUrl ? h('a', { className: 'yl-link', href: sourceUrl, target: '_blank', rel: 'noreferrer' }, h(IconLinkOutline16, { size: 14 }), t('source')) : null),
       )
     }
     function LeadList({ items, stats, t }) {
