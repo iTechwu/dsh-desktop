@@ -154,6 +154,16 @@ test('localizes knowledge source state and isolates its overlay', async () => {
   for (const token of ['yk-source', 'credential-store', 'stateCss', 'overviewSource', 'pendingImports', 'yk-graph-canvas', 'yk-memory-row', '"aria-label": t("recallPlaceholder")', '"aria-label": t("graphPlaceholder")', 'style.textContent = css + stateCss', '.yk-overlay{position:fixed', '.yk-shell{display:grid', '.yk-content{min-height:0']) assert.match(source, new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'u'))
 })
 
+test('maps knowledge structure and action hierarchy to desktop theme tokens', async () => {
+  const source = await readFile(new URL('src/client.js', root), 'utf8')
+  assert.match(source, /const themeRefinementCss =/u)
+  assert.match(source, /\.yk-metric,\.yk-record,\.yk-memory-row\{border-color:var\(--dsw-alias-border-l1\)!important\}/u)
+  assert.match(source, /\.yk-row-actions \.yk-quiet,\.yk-error button\{border-color:var\(--dsw-alias-border-l1\)!important/u)
+  assert.match(source, /\.yk-node\.is-selected text\{fill:var\(--dsw-alias-label-primary\)!important\}/u)
+  assert.match(source, /style\.textContent = css \+ stateCss \+ themeCss \+ themeRefinementCss/u)
+  assert.match(source, /stateLabel\(normalizeSourceState\(item\.status\), t\)/u)
+})
+
 test('announces local empty and degraded knowledge states', async () => {
   const source = await readFile(new URL('src/client.js', root), 'utf8')
 

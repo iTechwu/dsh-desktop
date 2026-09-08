@@ -14,6 +14,7 @@ const evidenceRoot = resolve(workspaceRoot, 'docs/superpowers/evidence/2026-09-0
 const sources = {
   daily: resolve(workspaceRoot, '.ci/dsh-yootun-daily-report/src/client.js'),
   finops: resolve(workspaceRoot, '.ci/dsh-yootun-finops/src/client.js'),
+  knowledge: resolve(workspaceRoot, '.ci/dsh-yootun-knowledge/src/client.js'),
   lead: resolve(workspaceRoot, '.ci/dsh-yootun-lead-discovery/src/client.js'),
   recruiter: resolve(workspaceRoot, '.ci/dsh-yootun-recruiter/src/client.js'),
   retrofit: resolve(workspaceRoot, '.ci/dsh-yootun-retrofit/src/client.js'),
@@ -82,6 +83,24 @@ const finops = {
   alerts: [],
   refreshedAt: '2026-09-08T03:00:00.000Z',
 }
+const knowledge = {
+  status: 'ready',
+  mcp: { auth: 'credential-store' },
+  overview: {
+    status: 'ready',
+    data: {
+      spaces: 3,
+      documents: 12,
+      memories: 5,
+      pendingImports: 1,
+      health: { neo4j: 'healthy' },
+      ingestion: { queued: 1, processing: 2, failed: 0 },
+      recentDocuments: [{ id: 'doc-1', title: '渠道政策', source: '企业空间', status: 'ready', updatedAt: '2026-09-08T03:00:00.000Z' }],
+      recentMemories: [{ id: 'memory-1', title: '重点客户偏好', content: '关注新能源 SUV 与交付周期', status: 'CANDIDATE', sourceType: 'session', confidence: 0.88, updatedAt: '2026-09-08T03:00:00.000Z' }],
+    },
+  },
+  templates: [{ id: 'space-1', name: '销售知识空间', description: '客户与渠道资料', entities: ['customer', 'channel'] }],
+}
 let recruiterActionRequests = 0
 let releaseRecruiterAction
 const recruiterActionReady = new Promise(resolve => { releaseRecruiterAction = resolve })
@@ -143,6 +162,9 @@ await page.route('**/api/desktop/yootun/finops?*', async route => {
     return
   }
   await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(finops) })
+})
+await page.route('**/api/desktop/yootun/knowledge', async route => {
+  await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(knowledge) })
 })
 await page.route('**/api/desktop/yootun/lead-discovery', async route => {
   const body = route.request().postDataJSON()
@@ -258,6 +280,46 @@ try {
   await page.mouse.move(0, 0)
   await page.screenshot({ path: resolve(evidenceRoot, '390-finops-refresh-error.png'), fullPage: true })
 
+  await page.goto(`${url}?source=knowledge`)
+  await page.getByRole('button', { name: '企业知识' }).click()
+  await page.getByRole('heading', { name: '企业知识与记忆' }).waitFor()
+  await page.getByText('渠道政策').waitFor()
+  assert.equal(await page.getByText('已就绪', { exact: true }).count() > 0, true)
+  assert.equal(await page.getByText('ready', { exact: true }).count(), 0)
+  const knowledgeTheme = await page.evaluate(() => {
+    const token = name => {
+      const probe = document.createElement('span')
+      probe.style.color = `var(${name})`
+      document.body.appendChild(probe)
+      const value = getComputedStyle(probe).color
+      probe.remove()
+      return value
+    }
+    const style = selector => {
+      const element = document.querySelector(selector)
+      if (!element) throw new Error(`missing knowledge fixture element: ${selector}`)
+      return getComputedStyle(element)
+    }
+    return {
+      border: token('--dsw-alias-border-l1'),
+      layer1: token('--dsw-alias-bg-layer-1'),
+      layer2: token('--dsw-alias-bg-layer-2'),
+      secondary: token('--dsw-alias-label-secondary'),
+      metricBorder: style('.yk-metric').borderRightColor,
+      recordIcon: style('.yk-record-icon').backgroundColor,
+      templateIcon: style('.yk-template b').backgroundColor,
+      quietBackground: style('.yk-quiet').backgroundColor,
+      quietColor: style('.yk-quiet').color,
+    }
+  })
+  assert.equal(knowledgeTheme.metricBorder, knowledgeTheme.border)
+  assert.equal(knowledgeTheme.recordIcon, knowledgeTheme.layer2)
+  assert.equal(knowledgeTheme.templateIcon, knowledgeTheme.layer2)
+  assert.equal(knowledgeTheme.quietBackground, knowledgeTheme.layer1)
+  assert.equal(knowledgeTheme.quietColor, knowledgeTheme.secondary)
+  await assertViewport()
+  await page.screenshot({ path: resolve(evidenceRoot, '390-knowledge-theme.png'), fullPage: true })
+
   await page.goto(`${url}?source=lead`)
   await page.getByRole('button', { name: '购车线索发现' }).click()
   const leadInput = page.getByRole('textbox', { name: '输入城市、车型或购车意向，例如：长沙 想买新能源 SUV' })
@@ -329,7 +391,7 @@ try {
   await page.waitForFunction(() => document.querySelector('.yr-content')?.getAttribute('aria-busy') === 'false')
 
   assert.deepEqual(consoleProblems, [])
-  process.stdout.write('search-locks-browser: 5 plugins, 6 screenshots, duplicate and overlapping requests blocked with stable mobile layout\n')
+  process.stdout.write('search-locks-browser: 6 plugins, 7 screenshots, request locks and theme mappings verified with stable mobile layout\n')
 } finally {
   releaseDailyRefresh()
   releaseFinopsRefresh()
