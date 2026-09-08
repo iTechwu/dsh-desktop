@@ -85,7 +85,7 @@ window.__ModuleLoader__.load({
       return h('article', { className: 'yr-item' }, h('div', { className: 'yr-item-main' }, h('div', { className: 'yr-item-head' }, h('span', { className: 'yr-platform' }, platformName(item.platform, t)), item.publishedAt ? h('time', null, displayTime(item.publishedAt)) : null), h('h3', null, item.title || item.text || t('untitled')), h('p', null, item.text && item.text !== item.title ? item.text : t('noText'))), h('div', { className: 'yr-item-side' }, h('div', { className: 'yr-counts' }, h('span', null, h('b', null, item.commentCount ?? '—'), t('comments')), h('span', null, h('b', null, item.shareCount ?? '—'), t('shares'))), item.sourceUrl ? h('a', { href: item.sourceUrl, target: '_blank', rel: 'noreferrer' }, h(IconLinkOutline16, { size: 14 }), t('openSource')) : null))
     }
     function EmptyState({ matched, t, onExample }) {
-      return h('div', { className: 'yr-empty' }, h('span', { className: 'yr-empty-icon' }, h(IconDatabaseOutline16, { size: 22 })), h('h3', null, t(matched ? 'noMatchesTitle' : 'emptyTitle')), h('p', null, t(matched ? 'noMatchesBody' : 'emptyBody')), h('div', { className: 'yr-examples' }, h('span', null, t('queryExamples')), ['example1', 'example2', 'example3'].map(key => h('button', { type: 'button', key, onClick: () => onExample(t(key)) }, t(key)))))
+      return h('div', { className: 'yr-empty', role: 'status' }, h('span', { className: 'yr-empty-icon' }, h(IconDatabaseOutline16, { size: 22 })), h('h3', null, t(matched ? 'noMatchesTitle' : 'emptyTitle')), h('p', null, t(matched ? 'noMatchesBody' : 'emptyBody')), h('div', { className: 'yr-examples' }, h('span', null, t('queryExamples')), ['example1', 'example2', 'example3'].map(key => h('button', { type: 'button', key, onClick: () => onExample(t(key)) }, t(key)))))
     }
     function StoredResults({ data, t, onExample }) {
       const items = getStoredItems(data)
@@ -137,7 +137,7 @@ window.__ModuleLoader__.load({
     }
     function StateMessage({ kind, t, onRetry }) {
       const unavailable = kind === 'unavailable'
-      return h('div', { className: 'yr-state' }, h('span', { className: 'yr-state-icon' }, h(IconWarningOutline16, { size: 22 })), h('h2', null, t(unavailable ? 'unavailableTitle' : 'errorTitle')), h('p', null, t(unavailable ? 'unavailableBody' : 'errorBody')), h('button', { type: 'button', onClick: onRetry }, h(IconRefreshOutline16, { size: 15 }), t('search')))
+      return h('div', { className: 'yr-state', role: 'alert' }, h('span', { className: 'yr-state-icon' }, h(IconWarningOutline16, { size: 22 })), h('h2', null, t(unavailable ? 'unavailableTitle' : 'errorTitle')), h('p', null, t(unavailable ? 'unavailableBody' : 'errorBody')), h('button', { type: 'button', onClick: onRetry }, h(IconRefreshOutline16, { size: 15 }), t('search')))
     }
     function Overlay({ t }) {
       const visible = useSyncExternalStore(subscribe, snapshot, snapshot)
@@ -152,7 +152,7 @@ window.__ModuleLoader__.load({
       if (!visible) return null
       const useExample = value => { setQuery(value); requestAnimationFrame(() => document.querySelector('.yr-search-input')?.focus()) }
       let body = h(EmptyState, { matched: false, t, onExample: useExample })
-      if (busy && !data) body = h('div', { className: 'yr-loading' }, h(IconLoadingOutline16, { size: 22 }), t('refreshing'))
+      if (busy && !data) body = h('div', { className: 'yr-loading', role: 'status' }, h(IconLoadingOutline16, { size: 22 }), t('refreshing'))
       else if (data?.status === 'unavailable') body = h(StateMessage, { kind: 'unavailable', t, onRetry: () => load('list') })
       else if (data?.status === 'error') body = h(StateMessage, { kind: 'error', t, onRetry: () => load('list') })
       else if (data?.source === 'agent_reach') body = h(ExternalResults, { data, t })

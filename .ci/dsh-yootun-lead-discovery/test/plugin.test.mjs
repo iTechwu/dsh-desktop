@@ -25,6 +25,7 @@ test('lead discovery package exposes a DSH client and guarded host route', async
   assert.match(client, /yl-start-steps/)
   assert.match(client, /yl-platform-options/)
   assert.match(client, /hasResult: Boolean\(data\)/)
+  assert.match(client, /role: kind === 'error' \? 'alert' : 'status'/u)
 })
 
 test('host delegates discover to lead_discovery_discover and forwards only safe fields', async () => {

@@ -41,6 +41,7 @@ for (const name of clientPlugins) {
   const fetchCount = (source.match(/\bfetch\s*\(/g) || []).length
   const sameOriginCount = (source.match(/credentials:\s*['"]same-origin['"]/g) || []).length
   const rejectRedirectCount = (source.match(/redirect:\s*['"]error['"]/g) || []).length
+  const hasDynamicStatus = /aria-live/.test(source) || /role:\s*[^}\n]*['"](?:status|alert)['"]/.test(source)
   if (!hasDialog) failures.push(`${name}: client overlay has no dialog role`)
   if (!hasAccessibleName) failures.push(`${name}: client surface has no accessible name`)
   if (!hasClientBuild) failures.push(`${name}: client export is not wired to lib/client.js`)
@@ -50,6 +51,7 @@ for (const name of clientPlugins) {
   if (!hasThemeAliases) failures.push(`${name}: client styles do not use desktop theme aliases`)
   if (sameOriginCount !== fetchCount) failures.push(`${name}: every fetch must use same-origin credentials`)
   if (rejectRedirectCount !== fetchCount) failures.push(`${name}: every fetch must reject redirects`)
+  if (!hasDynamicStatus) failures.push(`${name}: client has no announced loading, empty, or error state`)
 }
 
 if (failures.length) {

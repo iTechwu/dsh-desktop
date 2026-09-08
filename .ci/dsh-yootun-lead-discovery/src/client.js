@@ -81,7 +81,7 @@ function SourceBadge({ item, t }) { return h('span', { className: 'yl-source-bad
 function Metric({ label, value, tone }) { return h('div', { className: `yl-metric yl-metric-${tone || 'neutral'}` }, h('span', null, label), h('strong', null, value === null || value === undefined ? '—' : String(value))) }
 function StatusMessage({ kind, title, body, action, onAction }) {
   const Icon = kind === 'loading' ? IconLoadingOutline16 : kind === 'error' || kind === 'unavailable' ? IconWarningOutline16 : IconDataOutline16
-  return h('div', { className: `yl-status-message yl-status-${kind}`, role: kind === 'error' ? 'alert' : undefined }, h('div', { className: 'yl-status-icon' }, h(Icon, { size: 20 })), h('div', null, h('strong', null, title), body ? h('p', null, body) : null, action ? h('button', { type: 'button', onClick: onAction }, action) : null))
+  return h('div', { className: `yl-status-message yl-status-${kind}`, role: kind === 'error' ? 'alert' : 'status' }, h('div', { className: 'yl-status-icon' }, h(Icon, { size: 20 })), h('div', null, h('strong', null, title), body ? h('p', null, body) : null, action ? h('button', { type: 'button', onClick: onAction }, action) : null))
 }
 function StatsGrid({ stats, t }) {
   const cityCount = stats.cityCount ?? (Array.isArray(stats.cities) ? stats.cities.length : 0)

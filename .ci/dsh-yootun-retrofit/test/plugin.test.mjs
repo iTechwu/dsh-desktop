@@ -17,6 +17,9 @@ test('retrofit package exposes a complete database-first workspace', async () =>
   assert.match(client, /今日头条/)
   assert.match(client, /Lemon8/)
   assert.match(client, /setAttribute\('aria-label', t\('placeholder'\)\)/)
+  assert.match(client, /className: 'yr-empty', role: 'status'/u)
+  assert.match(client, /className: 'yr-loading', role: 'status'/u)
+  assert.match(client, /className: 'yr-state', role: 'alert'/u)
 })
 
 test('host delegates to a query-capable custom-car tool without exposing credentials', async () => {
