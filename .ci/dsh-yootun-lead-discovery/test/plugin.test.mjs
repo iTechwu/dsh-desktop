@@ -27,6 +27,12 @@ test('lead discovery package exposes a DSH client and guarded host route', async
   assert.match(client, /hasResult: Boolean\(data\)/)
   assert.match(client, /role: kind === 'error' \? 'alert' : 'status'/u)
   assert.match(client, /'aria-busy': busy \|\| loadingMore \|\| candidateBusy/u)
+  assert.match(client, /if \(!query\.trim\(\) \|\| searchRef\.current\) return/u)
+  assert.match(client, /if \(pageRef\.current \|\| !data\?\.resultRef/u)
+  assert.match(client, /if \(candidateRef\.current \|\| \(candidates && !force\)\) return/u)
+  assert.match(client, /disabled: busy, placeholder: t\('placeholder'\)/u)
+  assert.match(client, /const refreshDisabled = busy \|\| loadingMore \|\| candidateBusy/u)
+  assert.match(client, /\.yl-platform-options button:disabled,.yl-query-wrap input:disabled/u)
 })
 
 test('announces initial and filtered empty lead states', async () => {
