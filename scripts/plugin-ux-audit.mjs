@@ -105,6 +105,9 @@ for (const name of clientPlugins) {
   const hasDynamicStatus = /aria-live/.test(source) || /role:\s*[^}\n]*['"](?:status|alert)['"]/.test(source)
   const hasAsyncUiState = /set(?:Loading|Busy)\(/.test(source)
   const exposesAsyncUiState = /aria-busy/.test(source)
+  const usesRevisionReload = /\bsetRevision\s*\(/.test(source)
+  const hasSynchronousReloadLock = /loadingRef\.current/.test(source)
+  const hasDirectRevisionHandler = /onClick\s*:\s*\(\s*\)\s*=>\s*(?:\{[^}\n]*)?setRevision\s*\(/.test(source)
   const newWindowLinkCount = (source.match(/target:\s*['"]_blank['"]/g) || []).length
   const noreferrerLinkCount = (source.match(/rel:\s*['"]noreferrer['"]/g) || []).length
   if (!hasDialog) failures.push(`${name}: client overlay has no dialog role`)
@@ -118,6 +121,8 @@ for (const name of clientPlugins) {
   if (rejectRedirectCount !== fetchCount) failures.push(`${name}: every fetch must reject redirects`)
   if (!hasDynamicStatus) failures.push(`${name}: client has no announced loading, empty, or error state`)
   if (hasAsyncUiState && !exposesAsyncUiState) failures.push(`${name}: asynchronous UI state is not exposed with aria-busy`)
+  if (usesRevisionReload && !hasSynchronousReloadLock) failures.push(`${name}: revision-triggered reload has no synchronous request lock`)
+  if (hasDirectRevisionHandler) failures.push(`${name}: reload control bypasses its guarded refresh handler`)
   if (newWindowLinkCount !== noreferrerLinkCount) failures.push(`${name}: every new-window link must use noreferrer`)
 }
 
