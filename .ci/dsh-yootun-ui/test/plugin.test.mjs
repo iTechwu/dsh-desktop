@@ -54,6 +54,7 @@ test('guides credential setup and protects credential removal', async () => {
   assert.match(source, /t\('removeWarning'\)/u)
   assert.match(source, /onClick: \(\) => setConfirmingRemove\(true\)/u)
   assert.match(source, /onClick: \(\) => setConfirmingRemove\(false\)/u)
+  assert.match(source, /className: 'yu-form', 'aria-busy': busy \|\| loading/u)
 })
 
 test('loads the generated module and registers every owned surface', async () => {

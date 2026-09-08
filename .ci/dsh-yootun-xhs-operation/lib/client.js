@@ -678,7 +678,7 @@ window.__ModuleLoader__.load({
       }
 
       return h('div', { className: 'yxh-overlay' },
-        h('main', { className: 'yxh-shell', 'aria-labelledby': 'yxh-title', ref: shellRef, tabIndex: -1 },
+        h('main', { className: 'yxh-shell', 'aria-labelledby': 'yxh-title', ref: shellRef, tabIndex: -1, 'aria-busy': busy || uploadingInGroup },
           h('header', { className: 'yxh-header' },
             h('div', null, h('h1', { id: 'yxh-title' }, t('title')), h('p', null, t('subtitle'))),
             h('div', { className: 'yxh-header-buttons' },

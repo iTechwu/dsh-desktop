@@ -17,6 +17,7 @@ test('announces tab-specific empty states', async () => {
   assert.match(source, /className: 'yr-empty yr-empty-compact', role: 'status'/u)
   assert.match(source, /className: 'yr-empty yr-empty-main', role: 'status'/u)
   assert.ok(source.includes("className: 'yr-empty', role: 'status' }, t('emptyActions')"))
+  assert.match(source, /className: 'yr-content', 'aria-busy': loading/u)
 })
 
 test('keeps BOSS actions human-confirmed and does not accept raw PII', async () => {

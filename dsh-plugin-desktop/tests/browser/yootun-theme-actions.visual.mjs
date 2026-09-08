@@ -106,6 +106,10 @@ let releaseRetrofitStored
 let releaseRetrofitExternal
 const retrofitStoredReady = new Promise(resolve => { releaseRetrofitStored = resolve })
 const retrofitExternalReady = new Promise(resolve => { releaseRetrofitExternal = resolve })
+let releaseUpload
+let releaseXhsCreate
+const uploadReady = new Promise(resolve => { releaseUpload = resolve })
+const xhsCreateReady = new Promise(resolve => { releaseXhsCreate = resolve })
 
 const browser = await chromium.launch({ headless: true, executablePath: browserExecutable })
 const page = await browser.newPage()
@@ -129,10 +133,14 @@ await page.route('**/api/desktop/yootun/retrofit', async route => {
 })
 await page.route('**/_dsh/uploader/pick-file', route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ picked: true, path: '/tmp/theme-action.png', name: 'theme-action.png', size: 1024, mime: 'image/png' }) }))
 await page.route('**/_dsh/uploader/uploadStart', route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ uploadId: 'upload-1', name: 'theme-action.png', size: 1024 }) }))
-await page.route('**/_dsh/uploader/uploadStatus', route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ status: 'done', url: 'https://cdn.example.test/theme-action.png' }) }))
+await page.route('**/_dsh/uploader/uploadStatus', async route => {
+  await uploadReady
+  await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ status: 'done', url: 'https://cdn.example.test/theme-action.png' }) })
+})
 await page.route('**/_dsh/uploader/media*', route => route.fulfill({ status: 200, contentType: 'image/png', body: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64') }))
 await page.route('**/api/desktop/yootun/xhs-operation', async route => {
   const body = route.request().postDataJSON()
+  if (body.action === 'create') await xhsCreateReady
   const response = body.action === 'create'
     ? { status: 'created', taskId: 'task-1', taskStatus: 'queued' }
     : body.action === 'status'
@@ -204,11 +212,16 @@ try {
   await page.goto(`${url}?source=xhs`)
   await page.getByRole('button', { name: '小红书仿写' }).click()
   await page.getByRole('button', { name: '添加图片' }).click()
+  await page.locator('.yxh-shell[aria-busy="true"]').waitFor()
+  releaseUpload()
   const submit = page.getByRole('button', { name: '开始仿写' })
   await submit.waitFor()
   await page.waitForFunction(() => !document.querySelector('.yxh-submit')?.disabled)
+  await page.waitForFunction(() => document.querySelector('.yxh-shell')?.getAttribute('aria-busy') === 'false')
   await assertActionContrast(submit)
   await submit.click()
+  await page.locator('.yxh-shell[aria-busy="true"]').waitFor()
+  releaseXhsCreate()
   await page.getByRole('button', { name: '取消任务' }).click()
   const confirm = page.getByRole('button', { name: '是' })
   await confirm.waitFor()

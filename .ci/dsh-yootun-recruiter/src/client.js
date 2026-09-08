@@ -266,7 +266,7 @@ function Overlay({ t }) {
   return h('div', { className: 'yr-overlay', role: 'dialog', 'aria-modal': true, 'aria-labelledby': 'yr-title' }, h('main', { className: 'yr-shell', 'aria-labelledby': 'yr-title', ref: shellRef, tabIndex: -1 },
     h('header', { className: 'yr-header' }, h('div', null, h('h1', { id: 'yr-title' }, t('title')), h('p', null, t('subtitle'))), h('div', { className: 'yr-header-buttons' }, h(Tooltip, { label: t('refresh') }, h('button', { type: 'button', className: 'yr-icon', 'aria-label': t('refresh'), disabled: loading, onClick: () => setRevision(value => value + 1) }, h(IconRefreshOutline16, { size: 16 }))), h(Tooltip, { label: t('close') }, h('button', { type: 'button', className: 'yr-icon', 'aria-label': t('close'), onClick: closeOverlay }, h(IconCloseOutline16, { size: 16 }))))),
     h('nav', { className: 'yr-tabs', 'aria-label': t('title') }, tabs.map(([id, label]) => h('button', { type: 'button', key: id, 'data-active': tab === id, 'aria-current': tab === id ? 'page' : undefined, onClick: () => setTab(id) }, label))),
-    h('div', { className: 'yr-content' }, body),
+    h('div', { className: 'yr-content', 'aria-busy': loading }, body),
   ))
 }
 function SidebarButton({ wide, t }) { return h(Tooltip, { label: t('open'), delayMs: 500, disabled: wide }, h('button', { type: 'button', className: `yr-sidebar-button${wide ? ' yr-sidebar-wide' : ''}`, 'aria-label': t('open'), onClick: openOverlay }, h(IconFolderOpenOutline16, { size: wide ? 14 : 18 }), wide ? h('span', null, t('open')) : null)) }

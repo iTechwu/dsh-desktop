@@ -184,7 +184,7 @@ window.__ModuleLoader__.load({
         }
       }
 
-      return h('div', { className: 'yu-form' },
+      return h('div', { className: 'yu-form', 'aria-busy': busy || loading },
         h('div', { className: 'yu-field' },
           h('div', { className: 'yu-label-row' }, h('label', { htmlFor: 'yu-model-key' }, t('key')), h('label', { className: 'yu-key-visibility' }, h('input', { type: 'checkbox', checked: showKey, onChange: event => setShowKey(event.currentTarget.checked) }), t(showKey ? 'hideKey' : 'showKey'))),
           h('input', { id: 'yu-model-key', type: showKey ? 'text' : 'password', autoComplete: 'off', autoFocus: onboarding, value: key, placeholder: t('keyPlaceholder'), onChange: event => { setKey(event.currentTarget.value); setModels([]); setModelId(''); setError('') }, onKeyDown: event => { if (event.key === 'Enter') void loadModels() } }),

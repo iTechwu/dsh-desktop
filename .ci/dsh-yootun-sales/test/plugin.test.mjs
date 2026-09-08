@@ -26,6 +26,8 @@ test('announces intent and workspace empty states', async () => {
   assert.match(source, /className: 'ys-intent-empty', role: 'status'/u)
   assert.match(source, /className: 'ys-intent-empty', role: 'alert'/u)
   assert.match(source, /className: 'ys-empty', role: 'status'/u)
+  assert.match(source, /className: 'ys-intent', 'aria-busy': busy/u)
+  assert.match(source, /className: 'ys-content', 'aria-busy': loading/u)
 })
 
 test('builds a syntactically valid browser module', async () => {
