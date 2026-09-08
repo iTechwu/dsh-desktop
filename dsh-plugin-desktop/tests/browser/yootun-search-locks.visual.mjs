@@ -157,6 +157,7 @@ const contentCommand = {
     humanize: { status: 'processed', score: 18, issues: [] }, selectedPlatforms: [], platformStatus: {},
   }],
 }
+let contentUnavailable = false
 let recruiterActionRequests = 0
 let releaseRecruiterAction
 const recruiterActionReady = new Promise(resolve => { releaseRecruiterAction = resolve })
@@ -232,7 +233,7 @@ await page.route('**/api/desktop/yootun/sales', async route => {
   })
 })
 await page.route('**/api/desktop/yootun/content-command', async route => {
-  await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(contentCommand) })
+  await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(contentUnavailable ? { status: 'error', dashboard: { articles: 0, pendingReview: 0, reviewed: 0, publishReady: 0 }, sources: {}, platforms: [], articles: [] } : contentCommand) })
 })
 await page.route('**/api/desktop/yootun/finops?*', async route => {
   if (finopsRefreshFails) {
@@ -402,6 +403,14 @@ try {
   assert(contentGeometry.detailTop >= contentGeometry.toolbarBottom, 'article detail must not overlap the mobile review toolbar')
   await assertViewport()
   await page.screenshot({ path: resolve(evidenceRoot, '390-content-workflow.png'), fullPage: true })
+  contentUnavailable = true
+  await page.getByRole('button', { name: '刷新数据' }).click()
+  await page.getByRole('alert').getByText('GEO 运营数据暂时无法加载', { exact: true }).waitFor()
+  assert.equal(await page.locator('.ycc-overview,.ycc-review-workspace').count(), 0)
+  await page.mouse.move(195, 420)
+  await settleStrictMode()
+  await assertViewport()
+  await page.screenshot({ path: resolve(evidenceRoot, '390-content-unavailable.png'), fullPage: true })
 
   await page.goto(`${url}?source=daily`)
   await page.getByRole('button', { name: '昨日工作' }).click()
@@ -566,7 +575,7 @@ try {
   await page.waitForFunction(() => document.querySelector('.yr-content')?.getAttribute('aria-busy') === 'false')
 
   assert.deepEqual(consoleProblems, [])
-  process.stdout.write('search-locks-browser: 10 plugins, 14 screenshots, request locks, localized statuses, and theme mappings verified with stable mobile layout\n')
+  process.stdout.write('search-locks-browser: 10 plugins, 15 screenshots, request locks, localized statuses, and theme mappings verified with stable mobile layout\n')
 } finally {
   releaseDailyRefresh()
   releaseFinopsRefresh()
