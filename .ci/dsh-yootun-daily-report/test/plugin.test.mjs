@@ -50,5 +50,12 @@ test('prevents duplicate refresh requests', async () => {
   assert.match(source, /const refresh = \(\) => \{ if \(loadingRef\.current\) return/u)
   assert.match(source, /disabled: loading, onClick: refresh/u)
 })
+test('keeps the previous report when refresh fails and ignores request cancellation', async () => {
+  const source = await readFile(new URL('../src/client.js', import.meta.url), 'utf8')
+  assert.match(source, /if \(cause\?\.name === 'AbortError'\) return/u)
+  assert.match(source, /setData\(current => current \|\| \{ activity:/u)
+  assert.match(source, /refreshError: '刷新失败，当前保留上次结果。'/u)
+  assert.match(source, /className: 'ydr-inline-status ydr-inline-error', role: 'alert'/u)
+})
 
 async function invoke(route) { let status; let headers; let raw = ''; await route.handler({ method: 'GET' }, { writeHead(value, valueHeaders) { status = value; headers = valueHeaders; return this }, end(value) { raw += value } }); return { status, headers, body: JSON.parse(raw) } }

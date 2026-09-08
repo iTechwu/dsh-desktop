@@ -12,6 +12,7 @@ const workspaceRoot = resolve(packageRoot, '..')
 const harnessRoot = resolve(here, 'yootun-audit')
 const evidenceRoot = resolve(workspaceRoot, 'docs/superpowers/evidence/2026-09-08-search-locks')
 const sources = {
+  daily: resolve(workspaceRoot, '.ci/dsh-yootun-daily-report/src/client.js'),
   lead: resolve(workspaceRoot, '.ci/dsh-yootun-lead-discovery/src/client.js'),
   recruiter: resolve(workspaceRoot, '.ci/dsh-yootun-recruiter/src/client.js'),
   retrofit: resolve(workspaceRoot, '.ci/dsh-yootun-retrofit/src/client.js'),
@@ -47,6 +48,24 @@ let releaseLeadSearch
 const leadSearchReady = new Promise(resolve => { releaseLeadSearch = resolve })
 let releaseLeadPage
 const leadPageReady = new Promise(resolve => { releaseLeadPage = resolve })
+let dailyRefreshFails = false
+let dailyRefreshRequests = 0
+let releaseDailyRefresh
+const dailyRefreshReady = new Promise(resolve => { releaseDailyRefresh = resolve })
+const dailyReport = {
+  activity: {
+    status: 'ready',
+    totals: { sessions: 1, turns: 6, completed: 5, failed: 1, toolCalls: 9 },
+    sessions: [{ workspace: '华东项目', title: '渠道复盘', turns: 6 }],
+  },
+  sources: {
+    local: { status: 'ready' },
+    tools: { status: 'ready' },
+    salesIntent: { status: 'ready' },
+    retrofit: { status: 'ready' },
+    knowledge: { status: 'ready' },
+  },
+}
 let recruiterActionRequests = 0
 let releaseRecruiterAction
 const recruiterActionReady = new Promise(resolve => { releaseRecruiterAction = resolve })
@@ -91,6 +110,15 @@ page.on('console', message => {
   if (message.type() === 'error' || message.type() === 'warning') consoleProblems.push(`${message.type()}: ${message.text()}`)
 })
 page.on('pageerror', error => consoleProblems.push(`pageerror: ${error.message}`))
+await page.route('**/api/desktop/yootun/daily-report', async route => {
+  if (dailyRefreshFails) {
+    dailyRefreshRequests += 1
+    await dailyRefreshReady
+    await route.fulfill({ status: 200, contentType: 'application/json', body: '{' })
+    return
+  }
+  await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(dailyReport) })
+})
 await page.route('**/api/desktop/yootun/lead-discovery', async route => {
   const body = route.request().postDataJSON()
   if (body.action === 'page') {
@@ -167,6 +195,24 @@ async function assertViewport() {
 }
 
 try {
+  await page.goto(`${url}?source=daily`)
+  await page.getByRole('button', { name: '昨日工作' }).click()
+  await page.getByText('渠道复盘').waitFor()
+  dailyRefreshFails = true
+  const dailyRefresh = page.getByRole('button', { name: '刷新' })
+  await dailyRefresh.click()
+  await page.locator('.ydr-content[aria-busy="true"]').waitFor()
+  await dailyRefresh.evaluate(button => button.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+  assert.equal(dailyRefreshRequests, 1, 'an active daily report refresh must reject duplicate submissions')
+  assert.equal(await dailyRefresh.isDisabled(), true)
+  releaseDailyRefresh()
+  await page.getByRole('alert').getByText('刷新失败，当前保留上次结果。').waitFor()
+  assert.equal(await page.getByText('渠道复盘').isVisible(), true, 'failed refresh must keep the previous report')
+  assert.equal(await page.getByRole('button', { name: '重新加载' }).isEnabled(), true)
+  await assertViewport()
+  await page.mouse.move(0, 0)
+  await page.screenshot({ path: resolve(evidenceRoot, '390-daily-refresh-error.png'), fullPage: true })
+
   await page.goto(`${url}?source=lead`)
   await page.getByRole('button', { name: '购车线索发现' }).click()
   const leadInput = page.getByRole('textbox', { name: '输入城市、车型或购车意向，例如：长沙 想买新能源 SUV' })
@@ -238,8 +284,9 @@ try {
   await page.waitForFunction(() => document.querySelector('.yr-content')?.getAttribute('aria-busy') === 'false')
 
   assert.deepEqual(consoleProblems, [])
-  process.stdout.write('search-locks-browser: 3 plugins, 4 screenshots, duplicate and overlapping requests blocked with stable mobile layout\n')
+  process.stdout.write('search-locks-browser: 4 plugins, 5 screenshots, duplicate and overlapping requests blocked with stable mobile layout\n')
 } finally {
+  releaseDailyRefresh()
   releaseLeadSearch()
   releaseLeadPage()
   releaseRecruiterAction()
