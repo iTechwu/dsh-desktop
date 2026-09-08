@@ -153,6 +153,16 @@ test('localizes knowledge source state and isolates its overlay', async () => {
   for (const token of ['yk-source', 'credential-store', 'stateCss', 'overviewSource', 'pendingImports', 'yk-graph-canvas', 'yk-memory-row', '"aria-label": t("recallPlaceholder")', '"aria-label": t("graphPlaceholder")', 'style.textContent = css + stateCss', '.yk-overlay{position:fixed', '.yk-shell{display:grid', '.yk-content{min-height:0']) assert.match(source, new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'u'))
 })
 
+test('announces local empty and degraded knowledge states', async () => {
+  const source = await readFile(new URL('src/client.js', root), 'utf8')
+
+  assert.match(source, /className: "yk-empty-compact", role: "status"/u)
+  assert.match(source, /className: "yk-empty", role: "status"/u)
+  assert.match(source, /className: "yk-graph-empty", role: "status"/u)
+  assert.match(source, /className: "yk-node-detail yk-node-detail-empty", role: "status"/u)
+  assert.match(source, /className: "yk-inline-warning", role: "status"/u)
+})
+
 test('generated client bundle is valid JavaScript and has no unresolved style token', async () => {
   const source = await readFile(new URL('src/client.js', root), 'utf8')
   assert.doesNotMatch(source, /\$\{css\}/u)

@@ -502,7 +502,7 @@ function Overview({ data, t, onGraph, onTemplate, onConfirm, onForget }) {
           ? docs.map((item) =>
               h(RecentDocument, { key: item.id || item.title, item, t }),
             )
-          : h("div", { className: "yk-empty-compact" }, t("emptyDocuments")),
+          : h("div", { className: "yk-empty-compact", role: "status" }, t("emptyDocuments")),
       ),
     ),
     h(
@@ -523,7 +523,7 @@ function Overview({ data, t, onGraph, onTemplate, onConfirm, onForget }) {
                 onForget,
               }),
             )
-          : h("div", { className: "yk-empty-compact" }, t("emptyMemories")),
+          : h("div", { className: "yk-empty-compact", role: "status" }, t("emptyMemories")),
       ),
       h(
         "section",
@@ -650,7 +650,7 @@ function Memories({
               onForget,
             }),
           )
-        : h("div", { className: "yk-empty" }, t("emptyMemories")),
+        : h("div", { className: "yk-empty", role: "status" }, t("emptyMemories")),
     ),
   );
 }
@@ -790,7 +790,7 @@ function GraphCanvas({ graph, t, onOpenMemory }) {
       )
     : h(
         "div",
-        { className: "yk-graph-empty" },
+        { className: "yk-graph-empty", role: "status" },
         h(IconDataOutline16, { size: 25 }),
         h("p", null, t("graphNoResult")),
       );
@@ -812,7 +812,7 @@ function GraphCanvas({ graph, t, onOpenMemory }) {
       )
     : h(
         "div",
-        { className: "yk-node-detail yk-node-detail-empty" },
+        { className: "yk-node-detail yk-node-detail-empty", role: "status" },
         t("noSelection"),
       );
   const typeStats = h(
@@ -853,7 +853,7 @@ function GraphCanvas({ graph, t, onOpenMemory }) {
         : null,
     ),
     graph?.projection?.message
-      ? h("div", { className: "yk-inline-warning" }, graph.projection.message)
+      ? h("div", { className: "yk-inline-warning", role: "status" }, graph.projection.message)
       : null,
     typeStats,
     svg,
@@ -952,7 +952,7 @@ function Graph({
             { className: "yk-panel yk-graph-panel" },
             h(
               "div",
-              { className: "yk-graph-empty" },
+              { className: "yk-graph-empty", role: "status" },
               h(IconDataOutline16, { size: 25 }),
               h("p", null, graphBusy ? t("graphLoading") : t("graphEmpty")),
             ),
