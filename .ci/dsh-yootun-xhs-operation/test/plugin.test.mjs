@@ -47,6 +47,8 @@ test('registers menu at order 41 and renders the three-region overlay', async ()
   assert.match(source, /\.yxh-tabs button\[aria-current="true"\]/)
   assert.match(source, /grid-template-columns:minmax\(460px,1\.15fr\) minmax\(420px,\.85fr\)/)
   assert.match(source, /yxh-right-title/)
+  assert.match(source, /width:min\(360px,calc\(100vw - 32px\)\)/)
+  assert.match(source, /max-width:calc\(100vw - 32px\)/)
   // 禁止不安全富文本
   assert.doesNotMatch(source, /dangerouslySetInnerHTML|password|cookie/i)
 })
