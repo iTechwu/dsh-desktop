@@ -30,9 +30,12 @@ test('daily report aggregates yesterday session events', async () => {
   }, { now: () => new Date('2026-09-01T00:00:00+08:00') })
   const result = await invoke(route)
   assert.equal(result.status, 200)
+  assert.equal(result.headers['X-Content-Type-Options'], 'nosniff')
+  assert.equal(result.headers['Cache-Control'], 'no-store')
+  assert.equal(result.headers['Content-Type'], 'application/json; charset=utf-8')
   assert.equal(result.body.activity.totals.sessions, 1)
   assert.equal(result.body.activity.totals.toolCalls, 1)
   assert.equal(result.body.sources.salesIntent.status, 'ready')
   assert.equal(result.body.sources.retrofit.status, 'unavailable')
 })
-async function invoke(route) { let status; let raw = ''; await route.handler({ method: 'GET' }, { writeHead(value) { status = value; return this }, end(value) { raw += value } }); return { status, body: JSON.parse(raw) } }
+async function invoke(route) { let status; let headers; let raw = ''; await route.handler({ method: 'GET' }, { writeHead(value, valueHeaders) { status = value; headers = valueHeaders; return this }, end(value) { raw += value } }); return { status, headers, body: JSON.parse(raw) } }

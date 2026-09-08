@@ -110,4 +110,4 @@ async function recordRefreshAudit(ctx, input, result) {
     })
   } catch { ctx.logger?.warn?.('yootun audit record failed: audit_record_failed') }
 }
-function send(res, status, body) { res.writeHead(status, { 'Cache-Control': 'no-store', 'Content-Type': 'application/json; charset=utf-8' }); res.end(JSON.stringify(body)) }
+function send(res, status, body) { res.writeHead(status, { 'Cache-Control': 'no-store', 'Content-Type': 'application/json; charset=utf-8', 'X-Content-Type-Options': 'nosniff' }); res.end(JSON.stringify(body)) }

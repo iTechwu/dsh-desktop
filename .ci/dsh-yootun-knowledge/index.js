@@ -202,7 +202,7 @@ export function apply(ctx, overrides = {}) {
           return
         }
         if (req.method !== 'POST') {
-          res.writeHead(405, { Allow: 'GET, POST' })
+          res.writeHead(405, { Allow: 'GET, POST', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' })
           res.end()
           return
         }
@@ -481,7 +481,7 @@ async function readJson(req) {
 
 function sendJson(res, status, body) {
   const payload = JSON.stringify(body)
-  res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' })
+  res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' })
   res.end(payload)
 }
 

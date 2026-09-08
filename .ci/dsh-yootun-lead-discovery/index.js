@@ -262,6 +262,6 @@ async function readBody(req) {
   return raw ? JSON.parse(raw) : {}
 }
 function send(res, status, body) {
-  res.writeHead(status, { 'Cache-Control': 'no-store', 'Content-Type': 'application/json; charset=utf-8' })
+  res.writeHead(status, { 'Cache-Control': 'no-store', 'Content-Type': 'application/json; charset=utf-8', 'X-Content-Type-Options': 'nosniff' })
   res.end(JSON.stringify(body))
 }
