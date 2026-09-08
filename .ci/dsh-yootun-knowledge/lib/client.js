@@ -213,6 +213,7 @@ window.__ModuleLoader__.load({
     async function load(signal) {
       const response = await fetch(PATH, {
         credentials: "same-origin",
+        redirect: "error",
         signal,
         headers: { Accept: "application/json" },
       });
@@ -223,6 +224,7 @@ window.__ModuleLoader__.load({
       const response = await fetch(PATH, {
         method: "POST",
         credentials: "same-origin",
+        redirect: "error",
         headers: { "Content-Type": "application/json", Accept: "application/json" },
         body: JSON.stringify(body),
       });

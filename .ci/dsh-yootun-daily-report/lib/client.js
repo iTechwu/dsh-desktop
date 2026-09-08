@@ -30,6 +30,7 @@ window.__ModuleLoader__.load({
         setLoading(true)
         void fetch(PATH, {
           credentials: 'same-origin',
+          redirect: 'error',
           signal: controller.signal,
           headers: { Accept: 'application/json' },
         })

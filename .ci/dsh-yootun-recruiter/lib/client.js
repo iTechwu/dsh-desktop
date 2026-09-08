@@ -53,8 +53,8 @@ window.__ModuleLoader__.load({
     const closeOtherOverlay = event => { if (event.detail?.id !== OVERLAY_ID) setOpened(false) }
     const subscribe = listener => { listeners.add(listener); return () => listeners.delete(listener) }
     const snapshot = () => opened
-    async function load(signal) { const response = await fetch(PATH, { credentials: 'same-origin', signal, headers: { Accept: 'application/json' } }); if (!response.ok) throw new Error('recruiter request failed'); return response.json() }
-    async function mutate(body) { const response = await fetch(PATH, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify(body) }); if (!response.ok) throw new Error('recruiter mutation failed'); return response.json() }
+    async function load(signal) { const response = await fetch(PATH, { credentials: 'same-origin', redirect: 'error', signal, headers: { Accept: 'application/json' } }); if (!response.ok) throw new Error('recruiter request failed'); return response.json() }
+    async function mutate(body) { const response = await fetch(PATH, { method: 'POST', credentials: 'same-origin', redirect: 'error', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify(body) }); if (!response.ok) throw new Error('recruiter mutation failed'); return response.json() }
     function number(value, fallback = 0) { return Number.isFinite(Number(value)) ? Number(value) : fallback }
     function list(value) { return Array.isArray(value) ? value.filter(item => typeof item === 'string').slice(0, 8) : [] }
     function sourceState(value) { return ['ready', 'empty', 'unavailable', 'error'].includes(value) ? value : 'unavailable' }

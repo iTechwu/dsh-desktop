@@ -50,12 +50,12 @@ const closeOverlay = () => { setOpened(false); requestAnimationFrame(() => lastT
 const closeOtherOverlay = event => { if (event.detail?.id !== OVERLAY_ID) setOpened(false) }
 
 async function load(signal) {
-  const response = await fetch(PATH, { credentials: 'same-origin', signal, headers: { Accept: 'application/json' } })
+  const response = await fetch(PATH, { credentials: 'same-origin', redirect: 'error', signal, headers: { Accept: 'application/json' } })
   if (!response.ok) throw new Error('content request failed')
   return response.json()
 }
 async function mutate(body) {
-  const response = await fetch(PATH, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify(body) })
+  const response = await fetch(PATH, { method: 'POST', credentials: 'same-origin', redirect: 'error', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify(body) })
   const value = await response.json().catch(() => ({}))
   if (!response.ok) throw new Error(value.error || 'content mutation failed')
   return value

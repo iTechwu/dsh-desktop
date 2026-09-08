@@ -38,6 +38,9 @@ for (const name of clientPlugins) {
   const hasThemeAliases = themeAliasCount >= 4
     && /var\(--dsw-alias-bg-base\)/.test(source)
     && /var\(--dsw-alias-label-primary\)/.test(source)
+  const fetchCount = (source.match(/\bfetch\s*\(/g) || []).length
+  const sameOriginCount = (source.match(/credentials:\s*['"]same-origin['"]/g) || []).length
+  const rejectRedirectCount = (source.match(/redirect:\s*['"]error['"]/g) || []).length
   if (!hasDialog) failures.push(`${name}: client overlay has no dialog role`)
   if (!hasAccessibleName) failures.push(`${name}: client surface has no accessible name`)
   if (!hasClientBuild) failures.push(`${name}: client export is not wired to lib/client.js`)
@@ -45,6 +48,8 @@ for (const name of clientPlugins) {
   if (!isMandatoryAccessGate && !hasEscapeClose) failures.push(`${name}: dismissible overlay has no Escape handler`)
   if (!isMandatoryAccessGate && !restoresTriggerFocus) failures.push(`${name}: dismissible overlay does not restore trigger focus`)
   if (!hasThemeAliases) failures.push(`${name}: client styles do not use desktop theme aliases`)
+  if (sameOriginCount !== fetchCount) failures.push(`${name}: every fetch must use same-origin credentials`)
+  if (rejectRedirectCount !== fetchCount) failures.push(`${name}: every fetch must reject redirects`)
 }
 
 if (failures.length) {

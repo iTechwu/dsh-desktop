@@ -78,13 +78,13 @@ window.__ModuleLoader__.load({
     const isTerminal = status => status === 'succeeded' || status === 'failed' || status === 'cancelled'
 
     async function post(body) {
-      const response = await fetch(PATH, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify(body) })
+      const response = await fetch(PATH, { method: 'POST', credentials: 'same-origin', redirect: 'error', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify(body) })
       if (!response.ok) throw new Error('xhs operation failed')
       return response.json()
     }
 
     async function uploadFetch(path, body) {
-      const response = await fetch(path, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify(body) })
+      const response = await fetch(path, { method: 'POST', credentials: 'same-origin', redirect: 'error', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify(body) })
       if (!response.ok) return null
       return response.json()
     }

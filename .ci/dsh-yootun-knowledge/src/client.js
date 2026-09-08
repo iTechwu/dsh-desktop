@@ -208,6 +208,7 @@ const snapshot = () => opened;
 async function load(signal) {
   const response = await fetch(PATH, {
     credentials: "same-origin",
+    redirect: "error",
     signal,
     headers: { Accept: "application/json" },
   });
@@ -218,6 +219,7 @@ async function mutate(body) {
   const response = await fetch(PATH, {
     method: "POST",
     credentials: "same-origin",
+    redirect: "error",
     headers: { "Content-Type": "application/json", Accept: "application/json" },
     body: JSON.stringify(body),
   });
