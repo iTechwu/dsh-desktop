@@ -77,6 +77,7 @@ let finopsRefreshRequests = 0
 let releaseFinopsRefresh
 const finopsRefreshReady = new Promise(resolve => { releaseFinopsRefresh = resolve })
 const salesRequestMethods = []
+let salesUnavailable = false
 const finops = {
   period: { label: '昨日', timeZone: 'Asia/Shanghai' },
   summary: { currency: 'CNY', cost: 12.5, requests: 24, successfulRequests: 23, totalTokens: 188000, inputTokens: 120000, outputTokens: 68000 },
@@ -227,7 +228,7 @@ await page.route('**/api/desktop/yootun/sales', async route => {
   await route.fulfill({
     status: 200,
     contentType: 'application/json',
-    body: JSON.stringify(confirmed ? { ...sales, dashboard: { ...sales.dashboard, pending: 0 }, actions: sales.actions.map(action => ({ ...action, status: 'adapter_pending' })) } : sales),
+    body: JSON.stringify(salesUnavailable ? { status: 'error', dashboard: {}, leads: [], actions: [], intent: { status: 'error' } } : confirmed ? { ...sales, dashboard: { ...sales.dashboard, pending: 0 }, actions: sales.actions.map(action => ({ ...action, status: 'adapter_pending' })) } : sales),
   })
 })
 await page.route('**/api/desktop/yootun/content-command', async route => {
@@ -375,6 +376,14 @@ try {
   assert.deepEqual(salesRequestMethods, ['GET', 'POST'])
   await assertViewport()
   await page.screenshot({ path: resolve(evidenceRoot, '390-sales-status.png'), fullPage: true })
+  salesUnavailable = true
+  await page.getByRole('button', { name: '刷新' }).click()
+  await page.getByRole('alert').getByText('销售工作区暂时无法加载', { exact: true }).waitFor()
+  assert.equal(await page.locator('.ys-metrics').count(), 0)
+  await page.mouse.move(195, 420)
+  await settleStrictMode()
+  await assertViewport()
+  await page.screenshot({ path: resolve(evidenceRoot, '390-sales-unavailable.png'), fullPage: true })
 
   await page.goto(`${url}?source=content`)
   await page.getByRole('button', { name: 'GEO工作台' }).click()
@@ -557,7 +566,7 @@ try {
   await page.waitForFunction(() => document.querySelector('.yr-content')?.getAttribute('aria-busy') === 'false')
 
   assert.deepEqual(consoleProblems, [])
-  process.stdout.write('search-locks-browser: 10 plugins, 13 screenshots, request locks, localized statuses, and theme mappings verified with stable mobile layout\n')
+  process.stdout.write('search-locks-browser: 10 plugins, 14 screenshots, request locks, localized statuses, and theme mappings verified with stable mobile layout\n')
 } finally {
   releaseDailyRefresh()
   releaseFinopsRefresh()

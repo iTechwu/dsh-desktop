@@ -20,6 +20,8 @@ test('keeps follow-ups human-confirmed and points only at the Desktop route', as
   assert.doesNotMatch(source, /Unable to load sales workspace/u)
   assert.match(source, /status === 'confirmed_pending_adapter' \|\| status === 'adapter_pending'/u)
   assert.match(source, /current\.dashboard\.pendingConfirmation \?\? current\.dashboard\.pending/u)
+  assert.match(source, /data\?\.status && data\.status !== 'ready'/u)
+  assert.match(source, /data\.status === 'error' \? 'alert' : 'status'/u)
   assert.doesNotMatch(source, /contactPhone|password|cookie|聊天正文/iu)
 })
 
