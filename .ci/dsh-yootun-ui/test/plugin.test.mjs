@@ -107,6 +107,52 @@ test('re-reads and retries a settings mutation once after a revision conflict', 
   assert.equal(rejectedCalls, 1)
 })
 
+test('revokes access before removing the credential and stops on settings failure', async () => {
+  const { removeAccess } = await loadClientTestApi()
+  const calls = []
+  const settingsApi = {
+    async describe() {
+      calls.push('describe')
+      return { ok: true, value: { namespaces: [{ ns: 'dofe-access', revision: 7 }] } }
+    },
+    async mutate(namespace, operations, revision) {
+      calls.push(['mutate', namespace, operations, revision])
+      return { ok: true, value: {} }
+    },
+  }
+  const credentials = {
+    async unset(ref) {
+      calls.push(['unset', ref])
+      return { ok: true, value: {} }
+    },
+  }
+
+  await removeAccess(settingsApi, credentials)
+  assert.equal(calls[0], 'describe')
+  assert.equal(JSON.stringify(calls[1]), JSON.stringify(['mutate', 'dofe-access', [
+    { op: 'set', path: ['setupComplete'], value: false },
+    { op: 'set', path: ['validationVersion'], value: 0 },
+    { op: 'set', path: ['modelId'], value: '' },
+  ], 7]))
+  assert.deepEqual(calls[2], ['unset', 'MODELS_API_KEY'])
+
+  let unsetCalls = 0
+  await assert.rejects(() => removeAccess({
+    async describe() {
+      return { ok: true, value: { namespaces: [{ ns: 'dofe-access', revision: 8 }] } }
+    },
+    async mutate() {
+      return { ok: false, error: { code: 'settings/rejected' } }
+    },
+  }, {
+    async unset() {
+      unsetCalls += 1
+      return { ok: true, value: {} }
+    },
+  }), /dofe-access rejected/u)
+  assert.equal(unsetCalls, 0)
+})
+
 test('loads the generated module and registers every owned surface', async () => {
   const bundle = await readFile(new URL('lib/client.js', root), 'utf8')
   let plugin

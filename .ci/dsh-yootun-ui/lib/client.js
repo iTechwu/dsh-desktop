@@ -87,6 +87,17 @@ window.__ModuleLoader__.load({
       }
     }
 
+    async function removeAccess(settingsApi, credentials) {
+      // Revoke authorization first so a partial removal can never leave an unlocked gate without a key.
+      await mutateCurrentSettings(settingsApi, ACCESS_NS, [
+        { op: 'set', path: ['setupComplete'], value: false },
+        { op: 'set', path: ['validationVersion'], value: 0 },
+        { op: 'set', path: ['modelId'], value: '' },
+      ])
+      const result = await credentials.unset(ACCESS_KEY)
+      if (!result.ok) throw new Error('credential removal rejected')
+    }
+
     function AccessForm({ credentials, settingsApi, useAccess, initialConfigured, onboarding, onConfigured, t }) {
       const access = useAccess(snapshot => snapshot)
       const [configured, setConfigured] = useState(initialConfigured)
@@ -182,13 +193,7 @@ window.__ModuleLoader__.load({
         setBusy(true)
         setError('')
         try {
-          const result = await credentials.unset(ACCESS_KEY)
-          if (!result.ok) throw new Error('credential removal rejected')
-          await access.mutate([
-            { op: 'set', path: ['setupComplete'], value: false },
-            { op: 'set', path: ['validationVersion'], value: 0 },
-            { op: 'set', path: ['modelId'], value: '' },
-          ])
+          await removeAccess(settingsApi, credentials)
           setConfigured(false)
           setModels([])
           setModelId('')
@@ -304,7 +309,7 @@ window.__ModuleLoader__.load({
 
     exports.apply = apply
     exports.inject = inject
-    exports.__test = { mutateCurrentSettings }
+    exports.__test = { mutateCurrentSettings, removeAccess }
 
     return module.exports;
   },
