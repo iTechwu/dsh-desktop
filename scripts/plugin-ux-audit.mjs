@@ -48,6 +48,22 @@ function findLegacySemanticColors(source) {
   return [...new Set(source.match(/#(?:22c55e|ef4444|f59e0b|31a46c|d9902f)\b/giu) || [])]
 }
 
+function hasCanonicalHeader(source) {
+  return /\.[a-z0-9-]*header\{[^}]*min-height:72px/u.test(source)
+}
+
+function hasCanonicalIconButton(source) {
+  return /\.[a-z0-9-]*(?:icon-button|header-buttons button|header-actions button|actions button|icon)\{[^}]*width:36px;height:36px/u.test(source)
+}
+
+const actionLifecyclePlugins = new Set([
+  'dsh-yootun-content-command',
+  'dsh-yootun-recruiter',
+  'dsh-yootun-sales',
+  'dsh-yootun-supply-watch',
+  'dsh-yootun-xhs-operation',
+])
+
 if (!desktopStyles.includes('[aria-modal="true"] :is(')) failures.push('dsh-plugin-desktop: modal focus indicator is missing')
 if (!desktopStyles.includes('prefers-reduced-motion: reduce') || !desktopStyles.includes('[aria-modal="true"] *')) {
   failures.push('dsh-plugin-desktop: reduced-motion coverage for plugin overlays is missing')
@@ -122,6 +138,9 @@ for (const name of clientPlugins) {
   const hasDynamicStatus = /aria-live/.test(source) || /role:\s*[^}\n]*['"](?:status|alert)['"]/.test(source)
   const hasAsyncUiState = /set(?:Loading|Busy)\(/.test(source)
   const exposesAsyncUiState = /aria-busy/.test(source)
+  const hasCanonicalShell = name === 'dsh-yootun-ui' || (hasCanonicalHeader(source) && hasCanonicalIconButton(source))
+  const hasActionLifecycle = /awaiting_confirmation|confirmed_pending_adapter|adapter_pending/.test(source)
+    || (name === 'dsh-yootun-xhs-operation' && /cancelConfirm|confirmYes|confirmNo/.test(source))
   const usesRevisionReload = /\bsetRevision\s*\(/.test(source)
   const hasSynchronousReloadLock = /loadingRef\.current/.test(source)
   const hasDirectRevisionHandler = /onClick\s*:\s*\(\s*\)\s*=>\s*(?:\{[^}\n]*)?setRevision\s*\(/.test(source)
@@ -138,6 +157,8 @@ for (const name of clientPlugins) {
   if (rejectRedirectCount !== fetchCount) failures.push(`${name}: every fetch must reject redirects`)
   if (!hasDynamicStatus) failures.push(`${name}: client has no announced loading, empty, or error state`)
   if (hasAsyncUiState && !exposesAsyncUiState) failures.push(`${name}: asynchronous UI state is not exposed with aria-busy`)
+  if (!hasCanonicalShell) failures.push(`${name}: shell header and icon buttons do not follow the 72px/36px baseline`)
+  if (actionLifecyclePlugins.has(name) && !hasActionLifecycle) failures.push(`${name}: action lifecycle is missing confirmation or adapter-pending state`)
   if (usesRevisionReload && !hasSynchronousReloadLock) failures.push(`${name}: revision-triggered reload has no synchronous request lock`)
   if (hasDirectRevisionHandler) failures.push(`${name}: reload control bypasses its guarded refresh handler`)
   if (newWindowLinkCount !== noreferrerLinkCount) failures.push(`${name}: every new-window link must use noreferrer`)

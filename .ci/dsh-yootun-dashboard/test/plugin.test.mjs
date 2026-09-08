@@ -66,7 +66,7 @@ test('dashboard UI uses one spacing rhythm across desktop and mobile breakpoints
   assert.match(source, /--yd-space-4:16px/)
   assert.match(source, /--yd-space-6:24px/)
   assert.match(source, /--yd-content-gutter:24px/)
-  assert.match(source, /--yd-control-height:34px/)
+  assert.match(source, /--yd-control-height:36px/)
   assert.match(source, /--yd-row-height:48px/)
   assert.match(source, /\.yd-detail-stack\{display:grid;gap:var\(--yd-space-6\)/)
   assert.match(source, /\.yd-geo-detail \.yd-inline-empty\{display:flex;min-height:var\(--yd-row-height\)/)
