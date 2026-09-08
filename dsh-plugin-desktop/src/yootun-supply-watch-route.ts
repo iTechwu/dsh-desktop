@@ -6,6 +6,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import { dirname } from 'node:path'
 import { writeFileAtomic } from '@deepseek-ai/dsh-atomic-write'
 import { safeYootunAuditTargetId, type YootunAuditRecordInput, type YootunAuditRecorder } from './yootun-audit-contract.ts'
+import { sameYootunOrigin } from './yootun-route-security.ts'
 
 export const YOOTUN_SUPPLY_WATCH_PATH = '/api/desktop/yootun/supply-watch'
 const STATE_VERSION = 1
@@ -128,14 +129,14 @@ function failedSupplyMutationAudit(request: JsonRecord, errorCode: string): Yoot
 }
 
 export async function handleYootunSupplyWatchRequest(req: IncomingMessage, res: ServerResponse, rendererOrigin: string, options: SupplyRouteDependencies): Promise<void> {
-  if (req.headers.origin && req.headers.origin !== rendererOrigin) return finish(res, 403, { error: 'origin_forbidden' })
+  if (!sameYootunOrigin(req, rendererOrigin)) return finish(res, 403, { error: 'origin_forbidden' })
+  if (req.method !== 'GET' && req.method !== 'POST') return finish(res, 405, { error: 'method_not_allowed' }, 'GET, POST')
   const path = options.statePath
   if (!path) return finish(res, 503, { error: 'state_unavailable' })
   const now = (options.now ?? (() => new Date()))().toISOString()
   let auditRequest: JsonRecord | undefined
   try {
     if (req.method === 'GET') return finish(res, 200, supplySnapshot(await readSupplyState(path, now), new Date(now)))
-    if (req.method !== 'POST') return finish(res, 405, { error: 'method_not_allowed' }, 'GET, POST')
     const payload = await body(req)
     const request = record(payload)
     auditRequest = request

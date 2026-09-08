@@ -6,6 +6,7 @@ import { writeFileAtomic } from '@deepseek-ai/dsh-atomic-write'
 import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import type { ToolExecutionInput } from '@deepseek-ai/dsh-tools'
 import { safeYootunAuditTargetId, type YootunAuditEffect, type YootunAuditRecordInput, type YootunAuditRecorder } from './yootun-audit-contract.ts'
+import { sameYootunOrigin } from './yootun-route-security.ts'
 
 export const YOOTUN_CONTENT_COMMAND_PATH = '/api/desktop/yootun/content-command'
 const VERSION = 2
@@ -277,10 +278,10 @@ function failedContentMutationAudit(body: RecordValue, errorCode: string): Yootu
 }
 
 export async function handleYootunContentCommandRequest(req: IncomingMessage, res: ServerResponse, rendererOrigin: string, dependencies: ContentRouteDependencies): Promise<void> {
-  if (req.headers.origin && req.headers.origin !== rendererOrigin) return finish(res, 403, { error: 'origin_forbidden' })
+  if (!sameYootunOrigin(req, rendererOrigin)) return finish(res, 403, { error: 'origin_forbidden' })
+  if (req.method !== 'GET' && req.method !== 'POST') return finish(res, 405, { error: 'method_not_allowed' }, 'GET, POST')
   if (!dependencies.statePath) return finish(res, 503, { error: 'state_unavailable' })
   if (req.method === 'GET') { try { return finish(res, 200, await snapshot(await readContentState(dependencies.statePath), dependencies.tools)) } catch { return finish(res, 200, { status: 'error', dashboard: emptyDashboard(), sources: emptySources(), platforms: CONTENT_PLATFORMS, articles: [] }) } }
-  if (req.method !== 'POST') return finish(res, 405, { error: 'method_not_allowed' }, 'GET, POST')
   let auditRequest: RecordValue | undefined
   try {
     const body = record(await requestBody(req))

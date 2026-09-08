@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { describe, expect, it, vi } from 'vitest'
 import { handleYootunContentCommandRequest, YOOTUN_CONTENT_COMMAND_PATH } from '../src/yootun-content-command-route.ts'
 
-function request(method: string, body?: string): any { const chunks = body === undefined ? [] : [Buffer.from(body)]; return { method, headers: { origin: 'http://127.0.0.1:43120', 'content-type': 'application/json' }, socket: { remoteAddress: '127.0.0.1' }, async *[Symbol.asyncIterator]() { yield* chunks } } }
+function request(method: string, body?: string, origin = 'http://127.0.0.1:43120'): any { const chunks = body === undefined ? [] : [Buffer.from(body)]; const headers: Record<string, string> = { host: '127.0.0.1:43120', 'content-type': 'application/json' }; if (origin !== undefined) headers.origin = origin; return { method, headers, socket: { remoteAddress: '127.0.0.1' }, async *[Symbol.asyncIterator]() { yield* chunks } } }
 function response() { let raw = ''; return { statusCode: 0, setHeader() {}, end(value = '') { raw += value }, get status() { return this.statusCode }, body() { return raw ? JSON.parse(raw) : undefined } } as any }
 function tools(): any { return { schemas: () => [
   { name: 'mcp__geoflow__geoflow_articles_list' },
@@ -23,6 +23,17 @@ function tools(): any { return { schemas: () => [
 }) } }
 
 describe('Yootun content command route', () => {
+  it('rejects originless writes and reports unsupported methods before storage checks', async () => {
+    const originless = response()
+    const originlessRequest = request('POST', '{}')
+    delete originlessRequest.headers.origin
+    await handleYootunContentCommandRequest(originlessRequest, originless, 'http://127.0.0.1:43120', { statePath: undefined })
+    expect(originless.statusCode).toBe(403)
+    const unsupported = response()
+    await handleYootunContentCommandRequest(request('PUT'), unsupported, 'http://127.0.0.1:43120', { statePath: undefined })
+    expect(unsupported.statusCode).toBe(405)
+  })
+
   it('loads GeoFlow article bodies and persists review/channel decisions only', async () => {
     const root = await mkdtemp(join(tmpdir(), 'yootun-content-'))
     const statePath = join(root, 'state.json')
