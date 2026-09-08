@@ -13,6 +13,7 @@ const harnessRoot = resolve(here, 'yootun-audit')
 const evidenceRoot = resolve(workspaceRoot, 'docs/superpowers/evidence/2026-09-08-search-locks')
 const sources = {
   daily: resolve(workspaceRoot, '.ci/dsh-yootun-daily-report/src/client.js'),
+  finops: resolve(workspaceRoot, '.ci/dsh-yootun-finops/src/client.js'),
   lead: resolve(workspaceRoot, '.ci/dsh-yootun-lead-discovery/src/client.js'),
   recruiter: resolve(workspaceRoot, '.ci/dsh-yootun-recruiter/src/client.js'),
   retrofit: resolve(workspaceRoot, '.ci/dsh-yootun-retrofit/src/client.js'),
@@ -66,6 +67,21 @@ const dailyReport = {
     knowledge: { status: 'ready' },
   },
 }
+let finopsRefreshFails = false
+let finopsRefreshRequests = 0
+let releaseFinopsRefresh
+const finopsRefreshReady = new Promise(resolve => { releaseFinopsRefresh = resolve })
+const finops = {
+  period: { label: '昨日', timeZone: 'Asia/Shanghai' },
+  summary: { currency: 'CNY', cost: 12.5, requests: 24, successfulRequests: 23, totalTokens: 188000, inputTokens: 120000, outputTokens: 68000 },
+  source: { status: 'ready', sourceCompleteness: 'complete', asOf: '2026-09-08T03:00:00.000Z' },
+  attribution: 'member',
+  series: [],
+  budget: { status: 'empty', items: [] },
+  models: [],
+  alerts: [],
+  refreshedAt: '2026-09-08T03:00:00.000Z',
+}
 let recruiterActionRequests = 0
 let releaseRecruiterAction
 const recruiterActionReady = new Promise(resolve => { releaseRecruiterAction = resolve })
@@ -118,6 +134,15 @@ await page.route('**/api/desktop/yootun/daily-report', async route => {
     return
   }
   await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(dailyReport) })
+})
+await page.route('**/api/desktop/yootun/finops?*', async route => {
+  if (finopsRefreshFails) {
+    finopsRefreshRequests += 1
+    await finopsRefreshReady
+    await route.fulfill({ status: 200, contentType: 'application/json', body: '{' })
+    return
+  }
+  await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(finops) })
 })
 await page.route('**/api/desktop/yootun/lead-discovery', async route => {
   const body = route.request().postDataJSON()
@@ -213,6 +238,26 @@ try {
   await page.mouse.move(0, 0)
   await page.screenshot({ path: resolve(evidenceRoot, '390-daily-refresh-error.png'), fullPage: true })
 
+  await page.goto(`${url}?source=finops`)
+  await page.getByRole('button', { name: '模型与预算' }).click()
+  await page.getByRole('heading', { name: '模型与预算治理' }).waitFor()
+  await page.waitForFunction(() => document.querySelector('.yf-content')?.getAttribute('aria-busy') === 'false')
+  assert.match(await page.locator('.yf-metric').first().innerText(), /12\.50/u)
+  finopsRefreshFails = true
+  const finopsRefresh = page.getByRole('button', { name: '刷新数据' })
+  await finopsRefresh.click()
+  await page.locator('.yf-content[aria-busy="true"]').waitFor()
+  await finopsRefresh.evaluate(button => button.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+  assert.equal(finopsRefreshRequests, 1, 'an active FinOps refresh must reject duplicate submissions')
+  assert.equal(await finopsRefresh.isDisabled(), true)
+  releaseFinopsRefresh()
+  await page.getByRole('alert').getByText('刷新失败，当前仍显示上次数据。').waitFor()
+  assert.match(await page.locator('.yf-metric').first().innerText(), /12\.50/u, 'failed refresh must keep the previous spend')
+  assert.equal(await page.getByRole('button', { name: '重新加载' }).isEnabled(), true)
+  await assertViewport()
+  await page.mouse.move(0, 0)
+  await page.screenshot({ path: resolve(evidenceRoot, '390-finops-refresh-error.png'), fullPage: true })
+
   await page.goto(`${url}?source=lead`)
   await page.getByRole('button', { name: '购车线索发现' }).click()
   const leadInput = page.getByRole('textbox', { name: '输入城市、车型或购车意向，例如：长沙 想买新能源 SUV' })
@@ -284,9 +329,10 @@ try {
   await page.waitForFunction(() => document.querySelector('.yr-content')?.getAttribute('aria-busy') === 'false')
 
   assert.deepEqual(consoleProblems, [])
-  process.stdout.write('search-locks-browser: 4 plugins, 5 screenshots, duplicate and overlapping requests blocked with stable mobile layout\n')
+  process.stdout.write('search-locks-browser: 5 plugins, 6 screenshots, duplicate and overlapping requests blocked with stable mobile layout\n')
 } finally {
   releaseDailyRefresh()
+  releaseFinopsRefresh()
   releaseLeadSearch()
   releaseLeadPage()
   releaseRecruiterAction()

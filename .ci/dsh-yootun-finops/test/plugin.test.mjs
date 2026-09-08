@@ -76,6 +76,9 @@ test('keeps cost data source-bound and free of credentials or direct providers',
   assert.match(source, /\[visible, needsSeries, days, revision\]/u)
   assert.match(source, /disabled: interactionBusy/u)
   assert.match(source, /\.yf-range-control button:disabled\{opacity:\.45;cursor:default\}/u)
+  assert.match(source, /refreshError: '刷新失败，当前仍显示上次数据。'/u)
+  assert.match(source, /className: 'yf-stale yf-refresh-error', role: 'alert'/u)
+  assert.match(source, /error \? h\('div', \{ className: 'yf-stale yf-refresh-error'/u)
 })
 
 test('uses only DSH alpha3 exported icons', async () => {
