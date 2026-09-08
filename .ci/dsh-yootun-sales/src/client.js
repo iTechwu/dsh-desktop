@@ -62,12 +62,13 @@ function Overlay({ t }) {
   if (!visible) return null
   const current = data || { dashboard: {}, leads: [], actions: [] }
   const update = async body => {
-    if (busyRef.current) return null
+    if (loading || busyRef.current) return null
     busyRef.current = true
     setBusy(true)
     try { const next = await mutate(body); setData(next); setError(false); return next } catch { setError(true); return null } finally { busyRef.current = false; setBusy(false) }
   }
-  const intent = h(IntentSearch, { t, current, update, disabled: busy })
+  const interactionBusy = loading || busy
+  const intent = h(IntentSearch, { t, current, update, disabled: interactionBusy })
   const metrics = h('div', { className: 'ys-metrics' },
     h(Metric, { label: t('leads'), value: current.dashboard.leads }),
     h(Metric, { label: t('qualified'), value: current.dashboard.qualified }),
@@ -76,7 +77,7 @@ function Overlay({ t }) {
   )
   const actions = h('section', { className: 'ys-section' },
     h('h2', null, t('actions')),
-    current.actions.map(item => h(Action, { key: item.id, item, t, update, busy })),
+    current.actions.map(item => h(Action, { key: item.id, item, t, update, busy: interactionBusy })),
   )
   const leads = h('section', { className: 'ys-section' },
     h('h2', null, t('leads')),

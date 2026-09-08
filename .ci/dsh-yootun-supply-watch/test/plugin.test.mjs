@@ -18,8 +18,17 @@ test('keeps risk reviews human-confirmed and local-only', async () => {
   }
   assert.doesNotMatch(source, /Unable to load supply watch/u)
   assert.match(source, /openRisks/u)
-  assert.match(source, /'aria-busy': loading/u)
+  assert.match(source, /'aria-busy': interactionBusy/u)
   assert.doesNotMatch(source, /password|cookie|银行卡|供应商联系人手机号/iu)
+})
+
+test('locks review mutations and disables conflicting controls', async () => {
+  const source = await readFile(new URL('src/client.js', root), 'utf8')
+  assert.match(source, /if \(loading \|\| busyRef\.current\) return null/u)
+  assert.match(source, /const interactionBusy = loading \|\| busy/u)
+  assert.match(source, /type: 'button', disabled: busy, onClick: \(\) => void update\(\{ action: 'confirm_action'/u)
+  assert.match(source, /'aria-label': t\('refresh'\), disabled: interactionBusy/u)
+  assert.match(source, /\.ysw-action-buttons button:disabled\{opacity:\.45;cursor:default\}/u)
 })
 
 test('uses only icons exported by DSH alpha3 primitives', async () => {

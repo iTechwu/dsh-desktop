@@ -41,7 +41,8 @@ test('labels and locks an active intent search', async () => {
 
 test('locks all workspace mutations and disables conflicting controls', async () => {
   const source = await readFile(new URL('src/client.js', root), 'utf8')
-  assert.match(source, /if \(busyRef\.current\) return null/u)
+  assert.match(source, /if \(loading \|\| busyRef\.current\) return null/u)
+  assert.match(source, /const interactionBusy = loading \|\| busy/u)
   assert.match(source, /'aria-busy': loading \|\| busy/u)
   assert.match(source, /'aria-label': t\('refresh'\), disabled: loading \|\| busy/u)
   assert.match(source, /type: 'button', disabled: busy, onClick: \(\) => void update\(\{ action: 'confirm_action'/u)
