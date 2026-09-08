@@ -28,6 +28,12 @@ test('lead discovery package exposes a DSH client and guarded host route', async
   assert.match(client, /role: kind === 'error' \? 'alert' : 'status'/u)
 })
 
+test('announces initial and filtered empty lead states', async () => {
+  const client = await readFile(new URL('../src/client.js', import.meta.url), 'utf8')
+  assert.match(client, /className: 'yl-empty-list', role: 'status'/u)
+  assert.match(client, /className: 'yl-empty-state', role: 'status'/u)
+})
+
 test('host delegates discover to lead_discovery_discover and forwards only safe fields', async () => {
   let route
   const calls = []

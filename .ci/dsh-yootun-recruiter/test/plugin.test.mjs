@@ -12,6 +12,13 @@ test('publishes a browser recruiter plugin with a bundle patch', async () => {
   assert.equal(manifest.dsh.bundle.patch, './cordis.patch.yml')
 })
 
+test('announces tab-specific empty states', async () => {
+  const source = await readFile(new URL('src/client.js', root), 'utf8')
+  assert.match(source, /className: 'yr-empty yr-empty-compact', role: 'status'/u)
+  assert.match(source, /className: 'yr-empty yr-empty-main', role: 'status'/u)
+  assert.ok(source.includes("className: 'yr-empty', role: 'status' }, t('emptyActions')"))
+})
+
 test('keeps BOSS actions human-confirmed and does not accept raw PII', async () => {
   const source = await readFile(new URL('src/client.js', root), 'utf8')
   for (const token of ['/api/desktop/yootun/recruiter', 'awaiting_confirmation', 'confirmed_pending_adapter', 'succeeded', 'failed', 'requires_user_login', 'zhipin.com', 'confirm_action', 'execute_action', 'loadError', 'yr-status-succeeded', 'HR 知识库', '招聘漏斗', 'sync_boss', 'publish_knowledge', 'yr-source-button', 'importRequirement', 'generateDraft', 'draftFromText', 'yr-intake-grid', 'yr-filter-bar', 'onNavigate', "'aria-label': t('candidates')", "'aria-label': t('stage')", "data.boss?.adapter === 'official'"]) {
