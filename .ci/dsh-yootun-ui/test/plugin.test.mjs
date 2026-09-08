@@ -5,6 +5,20 @@ import vm from 'node:vm'
 
 const root = new URL('../', import.meta.url)
 
+async function loadClientTestApi() {
+  const source = await readFile(new URL('src/client.js', root), 'utf8')
+  const exports = {}
+  vm.runInNewContext(source, {
+    exports,
+    fetch() {},
+    require(specifier) {
+      if (specifier === 'react-dom/client') return { createRoot() {} }
+      return { createElement() {}, useEffect() {}, useMemo() {}, useRef() {}, useState() {}, useSyncExternalStore() {} }
+    },
+  })
+  return exports.__test
+}
+
 test('publishes a discoverable DSH client plugin', async () => {
   const manifest = JSON.parse(await readFile(new URL('package.json', root), 'utf8'))
 
@@ -51,10 +65,46 @@ test('guides credential setup and protects credential removal', async () => {
   assert.match(source, /type: showKey \? 'text' : 'password'/u)
   assert.match(source, /role: 'status'/u)
   assert.match(source, /const \[confirmingRemove, setConfirmingRemove\] = useState\(false\)/u)
+  assert.match(source, /setConfigured\(initialConfigured\)[\s\S]*?\[initialConfigured\]/u)
   assert.match(source, /t\('removeWarning'\)/u)
   assert.match(source, /onClick: \(\) => setConfirmingRemove\(true\)/u)
   assert.match(source, /onClick: \(\) => setConfirmingRemove\(false\)/u)
-  assert.match(source, /className: 'yu-form', 'aria-busy': busy \|\| loading/u)
+  assert.match(source, /className: 'yu-form', 'aria-busy': interactionBusy/u)
+  assert.match(source, /if \(!entered \|\| loadingRef\.current \|\| busyRef\.current\) return/u)
+  assert.match(source, /if \(busyRef\.current \|\| loadingRef\.current/u)
+  assert.match(source, /disabled: interactionBusy/u)
+})
+
+test('re-reads and retries a settings mutation once after a revision conflict', async () => {
+  const { mutateCurrentSettings } = await loadClientTestApi()
+  const revisions = [4, 5]
+  const used = []
+  const settingsApi = {
+    async describe() {
+      return { ok: true, value: { namespaces: [{ ns: 'dofe-access', revision: revisions.shift() }] } }
+    },
+    async mutate(_namespace, _operations, revision) {
+      used.push(revision)
+      return used.length === 1
+        ? { ok: false, error: { code: 'settings/conflict' } }
+        : { ok: true, value: {} }
+    },
+  }
+
+  await mutateCurrentSettings(settingsApi, 'dofe-access', [{ op: 'set', path: ['modelId'], value: 'deepseek-chat' }])
+  assert.deepEqual(used, [4, 5])
+
+  let rejectedCalls = 0
+  await assert.rejects(() => mutateCurrentSettings({
+    async describe() {
+      return { ok: true, value: { namespaces: [{ ns: 'dofe-access', revision: 6 }] } }
+    },
+    async mutate() {
+      rejectedCalls += 1
+      return { ok: false, error: { code: 'settings/rejected' } }
+    },
+  }, 'dofe-access', []), /dofe-access rejected/u)
+  assert.equal(rejectedCalls, 1)
 })
 
 test('loads the generated module and registers every owned surface', async () => {

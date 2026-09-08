@@ -1,5 +1,5 @@
 const React = require('react')
-const { createElement: h, useEffect, useMemo, useState, useSyncExternalStore } = React
+const { createElement: h, useEffect, useMemo, useRef, useState, useSyncExternalStore } = React
 const { createRoot } = require('react-dom/client')
 
 const NS = 'dofe.yootun-ui'
@@ -69,12 +69,17 @@ async function jsonPost(path, body) {
 }
 
 async function mutateCurrentSettings(settingsApi, namespace, operations) {
-  const described = await settingsApi.describe()
-  if (!described.ok) throw new Error('settings unavailable')
-  const target = described.value.namespaces.find(item => item.ns === namespace)
-  if (!target) throw new Error(`${namespace} unavailable`)
-  const result = await settingsApi.mutate(namespace, operations, target.revision)
-  if (!result.ok) throw new Error(`${namespace} rejected`)
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const described = await settingsApi.describe()
+    if (!described.ok) throw new Error('settings unavailable')
+    const target = described.value.namespaces.find(item => item.ns === namespace)
+    if (!target) throw new Error(`${namespace} unavailable`)
+    const result = await settingsApi.mutate(namespace, operations, target.revision)
+    if (result.ok) return
+    if (result.error?.code !== 'settings/conflict' || attempt === 1) {
+      throw new Error(`${namespace} rejected`)
+    }
+  }
 }
 
 function AccessForm({ credentials, settingsApi, useAccess, initialConfigured, onboarding, onConfigured, t }) {
@@ -86,7 +91,9 @@ function AccessForm({ credentials, settingsApi, useAccess, initialConfigured, on
   const [modelId, setModelId] = useState(access.value?.modelId || '')
   const [enabled, setEnabled] = useState(access.value?.enabledPlugins || DEFAULT_PLUGIN_IDS)
   const [busy, setBusy] = useState(false)
+  const busyRef = useRef(false)
   const [loading, setLoading] = useState(false)
+  const loadingRef = useRef(false)
   const [error, setError] = useState('')
   const [confirmingRemove, setConfirmingRemove] = useState(false)
 
@@ -94,10 +101,14 @@ function AccessForm({ credentials, settingsApi, useAccess, initialConfigured, on
     if (access.value?.modelId) setModelId(access.value.modelId)
     if (Array.isArray(access.value?.enabledPlugins)) setEnabled(access.value.enabledPlugins)
   }, [access.value?.modelId, access.value?.enabledPlugins])
+  useEffect(() => {
+    setConfigured(initialConfigured)
+  }, [initialConfigured])
 
   const loadModels = async () => {
     const entered = key.trim()
-    if (!entered) return
+    if (!entered || loadingRef.current || busyRef.current) return
+    loadingRef.current = true
     setLoading(true)
     setError('')
     try {
@@ -111,13 +122,15 @@ function AccessForm({ credentials, settingsApi, useAccess, initialConfigured, on
       setModelId('')
       setError(t('modelError'))
     } finally {
+      loadingRef.current = false
       setLoading(false)
     }
   }
 
   const save = async () => {
     const entered = key.trim()
-    if (!entered || !modelId || models.length === 0 || enabled.length === 0) return
+    if (busyRef.current || loadingRef.current || !entered || !modelId || models.length === 0 || enabled.length === 0) return
+    busyRef.current = true
     setBusy(true)
     setError('')
     try {
@@ -153,11 +166,14 @@ function AccessForm({ credentials, settingsApi, useAccess, initialConfigured, on
     } catch {
       setError(t('saveError'))
     } finally {
+      busyRef.current = false
       setBusy(false)
     }
   }
 
   const remove = async () => {
+    if (busyRef.current || loadingRef.current) return
+    busyRef.current = true
     setBusy(true)
     setError('')
     try {
@@ -175,34 +191,36 @@ function AccessForm({ credentials, settingsApi, useAccess, initialConfigured, on
     } catch {
       setError(t('removeError'))
     } finally {
+      busyRef.current = false
       setBusy(false)
     }
   }
 
-  return h('div', { className: 'yu-form', 'aria-busy': busy || loading },
+  const interactionBusy = busy || loading
+  return h('div', { className: 'yu-form', 'aria-busy': interactionBusy },
     h('div', { className: 'yu-field' },
-      h('div', { className: 'yu-label-row' }, h('label', { htmlFor: 'yu-model-key' }, t('key')), h('label', { className: 'yu-key-visibility' }, h('input', { type: 'checkbox', checked: showKey, onChange: event => setShowKey(event.currentTarget.checked) }), t(showKey ? 'hideKey' : 'showKey'))),
-      h('input', { id: 'yu-model-key', type: showKey ? 'text' : 'password', autoComplete: 'off', autoFocus: onboarding, value: key, placeholder: t('keyPlaceholder'), onChange: event => { setKey(event.currentTarget.value); setModels([]); setModelId(''); setError('') }, onKeyDown: event => { if (event.key === 'Enter') void loadModels() } }),
-      h('div', { className: 'yu-actions' }, h('button', { type: 'button', className: 'yu-button', disabled: loading || !key.trim(), onClick: () => { void loadModels() } }, loading ? t('loading') : t('load'))),
+      h('div', { className: 'yu-label-row' }, h('label', { htmlFor: 'yu-model-key' }, t('key')), h('label', { className: 'yu-key-visibility' }, h('input', { type: 'checkbox', checked: showKey, disabled: interactionBusy, onChange: event => setShowKey(event.currentTarget.checked) }), t(showKey ? 'hideKey' : 'showKey'))),
+      h('input', { id: 'yu-model-key', type: showKey ? 'text' : 'password', autoComplete: 'off', autoFocus: onboarding, value: key, disabled: interactionBusy, placeholder: t('keyPlaceholder'), onChange: event => { setKey(event.currentTarget.value); setModels([]); setModelId(''); setError('') }, onKeyDown: event => { if (event.key === 'Enter') void loadModels() } }),
+      h('div', { className: 'yu-actions' }, h('button', { type: 'button', className: 'yu-button', disabled: interactionBusy || !key.trim(), onClick: () => { void loadModels() } }, loading ? t('loading') : t('load'))),
       models.length ? h('p', { className: 'yu-status', role: 'status' }, t('modelsLoaded').replace('{count}', String(models.length))) : null),
     h('div', { className: 'yu-field' },
       h('label', { htmlFor: 'yu-model-select' }, t('model')),
-      h('select', { id: 'yu-model-select', disabled: models.length === 0, value: modelId, onChange: event => { setModelId(event.currentTarget.value) } },
+      h('select', { id: 'yu-model-select', disabled: interactionBusy || models.length === 0, value: modelId, onChange: event => { setModelId(event.currentTarget.value) } },
         h('option', { value: '' }, t('modelPlaceholder')),
         ...models.map(model => h('option', { key: model.id, value: model.id }, `${model.name} (${model.id})`)))),
     h('div', { className: 'yu-field' },
       h('div', { className: 'yu-label-row' }, h('span', null, t('plugins')), h('span', null, t('selected').replace('{count}', String(enabled.length)))),
       h('div', { className: 'yu-plugins' }, ...PLUGINS.map(plugin => h('label', { className: 'yu-plugin', key: plugin.id },
-        h('input', { type: 'checkbox', checked: enabled.includes(plugin.id), onChange: event => { setEnabled(current => event.currentTarget.checked ? [...new Set([...current, plugin.id])] : current.filter(id => id !== plugin.id)) } }),
+        h('input', { type: 'checkbox', checked: enabled.includes(plugin.id), disabled: interactionBusy, onChange: event => { setEnabled(current => event.currentTarget.checked ? [...new Set([...current, plugin.id])] : current.filter(id => id !== plugin.id)) } }),
         h('span', null, h('strong', null, plugin.name), h('span', null, plugin.description))))),
     onboarding ? h('p', { className: 'yu-help' }, t('help')) : null,
     error ? h('p', { className: 'yu-error', role: 'alert' }, error) : null,
     !onboarding && confirmingRemove ? h('p', { className: 'yu-warning', role: 'alert' }, t('removeWarning')) : null,
     h('div', { className: 'yu-actions' },
-      h('button', { type: 'button', className: 'yu-button', 'data-primary': true, disabled: busy || loading || !key.trim() || !modelId || enabled.length === 0, onClick: () => { void save() } }, busy ? t('saving') : t('submit')),
-      !onboarding && !confirmingRemove ? h('button', { type: 'button', className: 'yu-button', disabled: busy || !configured, onClick: () => setConfirmingRemove(true) }, t('remove')) : null,
-      !onboarding && confirmingRemove ? h('button', { type: 'button', className: 'yu-button', 'data-danger': true, disabled: busy, onClick: () => { void remove() } }, t('confirmRemove')) : null,
-      !onboarding && confirmingRemove ? h('button', { type: 'button', className: 'yu-button', disabled: busy, onClick: () => setConfirmingRemove(false) }, t('cancel')) : null)))
+      h('button', { type: 'button', className: 'yu-button', 'data-primary': true, disabled: interactionBusy || !key.trim() || !modelId || enabled.length === 0, onClick: () => { void save() } }, busy ? t('saving') : t('submit')),
+      !onboarding && !confirmingRemove ? h('button', { type: 'button', className: 'yu-button', disabled: interactionBusy || !configured, onClick: () => setConfirmingRemove(true) }, t('remove')) : null,
+      !onboarding && confirmingRemove ? h('button', { type: 'button', className: 'yu-button', 'data-danger': true, disabled: interactionBusy, onClick: () => { void remove() } }, t('confirmRemove')) : null,
+      !onboarding && confirmingRemove ? h('button', { type: 'button', className: 'yu-button', disabled: interactionBusy, onClick: () => setConfirmingRemove(false) }, t('cancel')) : null)))
 }
 
 function AccessOnboarding({ complete, credentials, settingsApi, useAccess, t }) {
@@ -281,3 +299,4 @@ function apply(ctx) {
 
 exports.apply = apply
 exports.inject = inject
+exports.__test = { mutateCurrentSettings }
