@@ -7,7 +7,7 @@ import { ArrowRight, Check, Eye, EyeOff, Phone, ShieldCheck } from 'lucide-react
 import type { SettingsScope } from '@deepseek-ai/dsh-client-ui-settings/client'
 import { DofeOnboardingModal } from './DofeOnboardingModal.tsx'
 import { DOFE_ACCESS_KEY, type DofeAccessLocaleKey } from './dofe-access.ts'
-import { DOFE_PLUGIN_CATALOG, DOFE_ACCESS_VALIDATION_VERSION, type DofeAccessSettings, type DofePluginId, DEFAULT_DOFE_PLUGIN_IDS } from '../dofe-plugins.ts'
+import { DOFE_PLUGIN_CATALOG, DOFE_ACCESS_SETTINGS_NAMESPACE, DOFE_ACCESS_VALIDATION_VERSION, type DofeAccessSettings, type DofePluginId, DEFAULT_DOFE_PLUGIN_IDS } from '../dofe-plugins.ts'
 import { DOFE_ACCESS_MODELS_PATH, DOFE_ACCESS_VALIDATE_PATH } from '../dofe-access-route.ts'
 import { parseDofeModelCatalog, type DofeModel } from '../dofe-models.ts'
 
@@ -90,6 +90,7 @@ async function validateModelApiKey(key: string): Promise<boolean> {
 
 type Credentials = Pick<ClientRemote['credentials'], 'describe' | 'set' | 'unset'>
 type SettingsApi = Pick<ClientRemote['settings'], 'describe' | 'mutate'>
+type SettingsOperations = Parameters<SettingsApi['mutate']>[1]
 export interface DofeAccessInjected {
   credentials: Credentials
   settingsApi: SettingsApi
@@ -101,6 +102,29 @@ type DofeAccessRoot = Pick<Root, 'render' | 'unmount'>
 type DofeAccessRootFactory = (container: Element | DocumentFragment) => DofeAccessRoot
 
 declare module '@deepseek-ai/dsh-client-ui-slots' { interface LocaleNamespaceMap { 'dofe.access': DofeAccessLocaleKey } }
+
+export async function mutateDofeAccessSettings(settingsApi: SettingsApi, operations: SettingsOperations): Promise<void> {
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const described = await settingsApi.describe()
+    if (!described.ok) throw new Error(described.error.message)
+    const access = described.value.namespaces.find(item => item.ns === DOFE_ACCESS_SETTINGS_NAMESPACE)
+    if (access === undefined) throw new Error(`${DOFE_ACCESS_SETTINGS_NAMESPACE} unavailable`)
+    const result = await settingsApi.mutate(DOFE_ACCESS_SETTINGS_NAMESPACE, operations, access.revision)
+    if (result.ok) return
+    if (result.error.code !== 'settings/conflict' || attempt === 1) throw new Error(result.error.message)
+  }
+}
+
+export async function removeDofeAccess(settingsApi: SettingsApi, credentials: Credentials): Promise<void> {
+  // Fail closed: authorization must be revoked before the underlying key is removed.
+  await mutateDofeAccessSettings(settingsApi, [
+    { op: 'set', path: ['setupComplete'], value: false },
+    { op: 'set', path: ['validationVersion'], value: 0 },
+    { op: 'set', path: ['modelId'], value: '' },
+  ])
+  const result = await credentials.unset(DOFE_ACCESS_KEY)
+  if (!result.ok) throw new Error(result.error.message)
+}
 
 /** Adapt receiver-dependent SettingsScope methods for React's callback contract. */
 export function dofeAccessSettingsStore(settingsScope: SettingsScope<DofeAccessSettings>) {
@@ -224,12 +248,6 @@ function AccessForm({ credentials, settingsApi, settingsScope, t, onboarding, on
         const result = await credentials.set(DOFE_ACCESS_KEY, key)
         if (!result.ok) throw new Error(result.error.message)
       }
-      await settingsScope.mutate([
-        { op: 'set', path: ['setupComplete'], value: true },
-        { op: 'set', path: ['validationVersion'], value: DOFE_ACCESS_VALIDATION_VERSION },
-        { op: 'set', path: ['enabledPlugins'], value: enabledPlugins },
-        { op: 'set', path: ['modelId'], value: selectedModel },
-      ])
       const defaultModel = descriptor.find(item => item.ns === 'agent-default-model')
       if (defaultModel !== undefined) {
         const result = await settingsApi.mutate('agent-default-model', [
@@ -238,6 +256,13 @@ function AccessForm({ credentials, settingsApi, settingsScope, t, onboarding, on
         ], defaultModel.revision)
         if (!result.ok) throw new Error(result.error.message)
       }
+      // Commit authorization last so partial configuration cannot unlock the application.
+      await mutateDofeAccessSettings(settingsApi, [
+        { op: 'set', path: ['setupComplete'], value: true },
+        { op: 'set', path: ['validationVersion'], value: DOFE_ACCESS_VALIDATION_VERSION },
+        { op: 'set', path: ['enabledPlugins'], value: enabledPlugins },
+        { op: 'set', path: ['modelId'], value: selectedModel },
+      ])
     } catch (cause) {
       setBusy(false)
       const detail = cause instanceof Error && cause.message.length > 0 ? cause.message : ''
@@ -252,13 +277,13 @@ function AccessForm({ credentials, settingsApi, settingsScope, t, onboarding, on
   const remove = async (): Promise<void> => {
     setBusy(true)
     setError(undefined)
-    const result = await credentials.unset(DOFE_ACCESS_KEY)
-    if (!result.ok) { setBusy(false); setError(t('removeError')); return }
-    try { await settingsScope.mutate([
-      { op: 'set', path: ['setupComplete'], value: false },
-      { op: 'set', path: ['validationVersion'], value: 0 },
-      { op: 'set', path: ['modelId'], value: '' },
-    ]) } catch { /* key removal still succeeded */ }
+    try {
+      await removeDofeAccess(settingsApi, credentials)
+    } catch {
+      setBusy(false)
+      setError(t('removeError'))
+      return
+    }
     setBusy(false)
     setConfigured(false)
   }

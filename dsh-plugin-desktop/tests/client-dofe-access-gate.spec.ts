@@ -2,7 +2,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { blockDofeApplicationRoot, dofeAccessSettingsStore, installDofeAccessGate, installDofeAccessStyles } from '../src/client/DofeAccessSection.tsx'
+import { blockDofeApplicationRoot, dofeAccessSettingsStore, installDofeAccessGate, installDofeAccessStyles, mutateDofeAccessSettings, removeDofeAccess } from '../src/client/DofeAccessSection.tsx'
 import { DofeOnboardingModal } from '../src/client/DofeOnboardingModal.tsx'
 
 describe('mandatory DoFe access gate', () => {
@@ -98,5 +98,57 @@ describe('mandatory DoFe access gate', () => {
     expect(markup).toContain('Yootun Agent')
     expect(markup).toContain('激活 Yootun-Agent')
     expect(markup).not.toContain('aria-label="关闭"')
+  })
+
+  it('retries access setting conflicts and reports a final rejection', async () => {
+    const revisions = [4, 5]
+    const used: number[] = []
+    const settingsApi = {
+      describe: vi.fn(async () => ({ ok: true, value: { namespaces: [{ ns: 'dofe-access', revision: revisions.shift() }] } })),
+      mutate: vi.fn(async (_namespace, _operations, revision) => {
+        used.push(revision)
+        return used.length === 1
+          ? { ok: false, error: { code: 'settings/conflict', message: 'conflict' } }
+          : { ok: true, value: {} }
+      }),
+    }
+
+    await mutateDofeAccessSettings(settingsApi as never, [{ op: 'set', path: ['modelId'], value: 'deepseek-chat' }])
+    expect(used).toEqual([4, 5])
+
+    await expect(mutateDofeAccessSettings({
+      describe: vi.fn(async () => ({ ok: true, value: { namespaces: [{ ns: 'dofe-access', revision: 6 }] } })),
+      mutate: vi.fn(async () => ({ ok: false, error: { code: 'settings/rejected', message: 'rejected' } })),
+    } as never, [])).rejects.toThrow('rejected')
+  })
+
+  it('revokes access before deleting the key and stops when revocation fails', async () => {
+    const calls: string[] = []
+    const settingsApi = {
+      describe: vi.fn(async () => {
+        calls.push('describe')
+        return { ok: true, value: { namespaces: [{ ns: 'dofe-access', revision: 7 }] } }
+      }),
+      mutate: vi.fn(async () => {
+        calls.push('revoke')
+        return { ok: true, value: {} }
+      }),
+    }
+    const credentials = {
+      unset: vi.fn(async () => {
+        calls.push('unset')
+        return { ok: true, value: undefined }
+      }),
+    }
+
+    await removeDofeAccess(settingsApi as never, credentials as never)
+    expect(calls).toEqual(['describe', 'revoke', 'unset'])
+
+    const unset = vi.fn()
+    await expect(removeDofeAccess({
+      describe: vi.fn(async () => ({ ok: true, value: { namespaces: [{ ns: 'dofe-access', revision: 8 }] } })),
+      mutate: vi.fn(async () => ({ ok: false, error: { code: 'settings/rejected', message: 'rejected' } })),
+    } as never, { unset } as never)).rejects.toThrow('rejected')
+    expect(unset).not.toHaveBeenCalled()
   })
 })
