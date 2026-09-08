@@ -83,6 +83,8 @@ const contentCommand = {
   platforms: [],
   articles: [],
 }
+let releaseContentCommand
+const contentCommandReady = new Promise(resolve => { releaseContentCommand = resolve })
 const retrofitStored = {
   status: 'ready',
   source: 'database',
@@ -100,6 +102,10 @@ const retrofitExternal = {
   retrievedAt: '2026-09-08T02:00:00.000Z',
   result: { stdout: JSON.stringify([{ title: 'LED lighting reference', text: 'Public reference only', url: 'https://example.test/retrofit' }]) },
 }
+let releaseRetrofitStored
+let releaseRetrofitExternal
+const retrofitStoredReady = new Promise(resolve => { releaseRetrofitStored = resolve })
+const retrofitExternalReady = new Promise(resolve => { releaseRetrofitExternal = resolve })
 
 const browser = await chromium.launch({ headless: true, executablePath: browserExecutable })
 const page = await browser.newPage()
@@ -112,10 +118,14 @@ await page.route('**/api/desktop/yootun/dashboard/**', async route => {
   await dashboardReady
   await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(dashboard) })
 })
-await page.route('**/api/desktop/yootun/content-command', route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(contentCommand) }))
-await page.route('**/api/desktop/yootun/retrofit', route => {
+await page.route('**/api/desktop/yootun/content-command', async route => {
+  await contentCommandReady
+  await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(contentCommand) })
+})
+await page.route('**/api/desktop/yootun/retrofit', async route => {
   const body = route.request().postDataJSON()
-  return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body.action === 'refresh' ? retrofitExternal : retrofitStored) })
+  await (body.action === 'refresh' ? retrofitExternalReady : retrofitStoredReady)
+  await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body.action === 'refresh' ? retrofitExternal : retrofitStored) })
 })
 await page.route('**/_dsh/uploader/pick-file', route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ picked: true, path: '/tmp/theme-action.png', name: 'theme-action.png', size: 1024, mime: 'image/png' }) }))
 await page.route('**/_dsh/uploader/uploadStart', route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ uploadId: 'upload-1', name: 'theme-action.png', size: 1024 }) }))
@@ -208,7 +218,10 @@ try {
 
   await page.goto(`${url}?source=contentCommand`)
   await page.getByRole('button', { name: 'GEO工作台' }).click()
+  await page.locator('.ycc-shell[aria-busy="true"]').waitFor()
+  releaseContentCommand()
   await page.getByRole('heading', { name: 'GEO 内容运营' }).waitFor()
+  await page.waitForFunction(() => document.querySelector('.ycc-shell')?.getAttribute('aria-busy') === 'false')
   assert.equal(await page.locator('style[data-plugin="@dofe/dsh-yootun-content-command"]').count(), 1)
   await assertThemeColor(page.locator('.ycc-certified'), '--dsw-alias-state-success-primary')
   await assertThemeColor(page.locator('.ycc-kpi[data-tone="warning"] > strong').first(), '--dsw-alias-state-warn-primary')
@@ -218,10 +231,15 @@ try {
 
   await page.goto(`${url}?source=retrofit`)
   await page.getByRole('button', { name: '改装方案库' }).click()
+  await page.locator('.yr-content[aria-busy="true"]').waitFor()
+  releaseRetrofitStored()
   await page.getByRole('heading', { name: '车辆改装方案库' }).waitFor()
+  await page.waitForFunction(() => document.querySelector('.yr-content')?.getAttribute('aria-busy') === 'false')
   await assertThemeBackground(page.locator('.yr-source-dot'), '--dsw-alias-state-success-primary')
   await page.getByRole('textbox', { name: '输入车型、改装项目或使用场景' }).fill('SUV LED')
   await page.getByRole('button', { name: '刷新公开来源' }).click()
+  await page.locator('.yr-content[aria-busy="true"]').waitFor()
+  releaseRetrofitExternal()
   await page.getByRole('heading', { name: '公开来源参考' }).waitFor()
   await assertThemeBackground(page.locator('.yr-source-dot'), '--dsw-alias-state-warn-primary')
   await assertThemeColor(page.locator('.yr-external-note'), '--dsw-alias-state-warn-primary')

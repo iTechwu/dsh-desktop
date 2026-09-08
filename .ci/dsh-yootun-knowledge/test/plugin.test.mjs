@@ -162,6 +162,7 @@ test('announces local empty and degraded knowledge states', async () => {
   assert.match(source, /className: "yk-graph-empty", role: "status"/u)
   assert.match(source, /className: "yk-node-detail yk-node-detail-empty", role: "status"/u)
   assert.match(source, /className: "yk-inline-warning", role: "status"/u)
+  assert.match(source, /"aria-busy": loading \|\| graphBusy \|\| recallBusy/u)
 })
 
 test('generated client bundle is valid JavaScript and has no unresolved style token', async () => {

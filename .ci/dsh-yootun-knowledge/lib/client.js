@@ -1250,7 +1250,7 @@ window.__ModuleLoader__.load({
           ),
           h(
             "div",
-            { className: `yk-content${loading && data ? " yk-refreshing" : ""}` },
+            { className: `yk-content${loading && data ? " yk-refreshing" : ""}`, "aria-busy": loading || graphBusy || recallBusy },
             body,
           ),
         ),

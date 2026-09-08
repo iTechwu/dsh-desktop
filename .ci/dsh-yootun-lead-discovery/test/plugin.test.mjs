@@ -26,6 +26,7 @@ test('lead discovery package exposes a DSH client and guarded host route', async
   assert.match(client, /yl-platform-options/)
   assert.match(client, /hasResult: Boolean\(data\)/)
   assert.match(client, /role: kind === 'error' \? 'alert' : 'status'/u)
+  assert.match(client, /'aria-busy': busy \|\| loadingMore \|\| candidateBusy/u)
 })
 
 test('announces initial and filtered empty lead states', async () => {

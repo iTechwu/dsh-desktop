@@ -20,6 +20,7 @@ test('retrofit package exposes a complete database-first workspace', async () =>
   assert.match(client, /className: 'yr-empty', role: 'status'/u)
   assert.match(client, /className: 'yr-loading', role: 'status'/u)
   assert.match(client, /className: 'yr-state', role: 'alert'/u)
+  assert.match(client, /'aria-busy': busy/u)
   assert.match(client, /url\.protocol === 'http:' \|\| url\.protocol === 'https:'/u)
   assert.match(client, /background:var\(--dsw-alias-state-success-primary\)/u)
   assert.match(client, /color:var\(--dsw-alias-state-warn-primary\)/u)
