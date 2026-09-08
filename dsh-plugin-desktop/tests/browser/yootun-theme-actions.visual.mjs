@@ -89,11 +89,14 @@ const contentCommandReady = new Promise(resolve => { releaseContentCommand = res
 const sales = {
   dashboard: { leads: 0, qualified: 0, dueToday: 0, pendingConfirmation: 0 },
   leads: [],
-  actions: [],
+  actions: [{ id: 'follow-up-1', summary: '联系高意向客户', channel: '电话', status: 'awaiting_confirmation' }],
 }
 let salesSearchRequests = 0
 let releaseSalesSearch
 const salesSearchReady = new Promise(resolve => { releaseSalesSearch = resolve })
+let salesActionRequests = 0
+let releaseSalesAction
+const salesActionReady = new Promise(resolve => { releaseSalesAction = resolve })
 const retrofitStored = {
   status: 'ready',
   source: 'database',
@@ -137,9 +140,20 @@ await page.route('**/api/desktop/yootun/content-command', async route => {
 })
 await page.route('**/api/desktop/yootun/sales', async route => {
   if (route.request().method() === 'POST') {
-    salesSearchRequests += 1
-    await salesSearchReady
-    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ...sales, intent: { status: 'ready', items: [] } }) })
+    const body = route.request().postDataJSON()
+    if (body.action === 'intent_search') {
+      salesSearchRequests += 1
+      await salesSearchReady
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ...sales, intent: { status: 'ready', items: [] } }) })
+      return
+    }
+    salesActionRequests += 1
+    await salesActionReady
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ ...sales, actions: sales.actions.map(action => ({ ...action, status: 'confirmed_pending_adapter' })) }),
+    })
     return
   }
   await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(sales) })
@@ -280,6 +294,15 @@ try {
   releaseSalesSearch()
   await page.waitForFunction(() => document.querySelector('.ys-intent')?.getAttribute('aria-busy') === 'false')
   assert.equal(await page.getByRole('button', { name: '开始检索' }).isEnabled(), true)
+  const approveSalesAction = page.getByRole('button', { name: '确认', exact: true })
+  await approveSalesAction.click()
+  await page.locator('.ys-content[aria-busy="true"]').waitFor()
+  assert.equal(await approveSalesAction.isDisabled(), true)
+  await approveSalesAction.evaluate(button => button.click())
+  assert.equal(salesActionRequests, 1, 'an active follow-up action must reject duplicate submissions')
+  releaseSalesAction()
+  await page.getByText('已确认，等待适配器').waitFor()
+  await page.waitForFunction(() => document.querySelector('.ys-content')?.getAttribute('aria-busy') === 'false')
 
   await page.goto(`${url}?source=retrofit`)
   await page.getByRole('button', { name: '改装方案库' }).click()

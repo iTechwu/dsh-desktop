@@ -34,9 +34,18 @@ test('labels and locks an active intent search', async () => {
   const source = await readFile(new URL('src/client.js', root), 'utf8')
   assert.match(source, /intentSearching: '正在检索…'/u)
   assert.match(source, /intentSearching: 'Searching…'/u)
-  assert.match(source, /if \(busyRef\.current \|\| !query\.trim\(\)\) return/u)
+  assert.match(source, /if \(disabled \|\| busyRef\.current \|\| !query\.trim\(\)\) return/u)
   assert.match(source, /busy \? t\('intentSearching'\) : t\('intentSearch'\)/u)
   assert.doesNotMatch(source, /busy \? '…'/u)
+})
+
+test('locks all workspace mutations and disables conflicting controls', async () => {
+  const source = await readFile(new URL('src/client.js', root), 'utf8')
+  assert.match(source, /if \(busyRef\.current\) return null/u)
+  assert.match(source, /'aria-busy': loading \|\| busy/u)
+  assert.match(source, /'aria-label': t\('refresh'\), disabled: loading \|\| busy/u)
+  assert.match(source, /type: 'button', disabled: busy, onClick: \(\) => void update\(\{ action: 'confirm_action'/u)
+  assert.match(source, /\.ys-action-buttons button:disabled\{opacity:\.5;cursor:default\}/u)
 })
 
 test('builds a syntactically valid browser module', async () => {
