@@ -24,11 +24,15 @@ test('keeps risk reviews human-confirmed and local-only', async () => {
 
 test('locks review mutations and disables conflicting controls', async () => {
   const source = await readFile(new URL('src/client.js', root), 'utf8')
-  assert.match(source, /if \(loading \|\| busyRef\.current\) return null/u)
+  assert.match(source, /const loadingRef = useRef\(false\)/u)
+  assert.match(source, /if \(loadingRef\.current \|\| busyRef\.current\) return null/u)
+  assert.match(source, /const refresh = \(\) => \{ if \(loadingRef\.current \|\| busyRef\.current\) return/u)
   assert.match(source, /const interactionBusy = loading \|\| busy/u)
   assert.match(source, /type: 'button', disabled: busy, onClick: \(\) => void update\(\{ action: 'confirm_action'/u)
   assert.match(source, /'aria-label': t\('refresh'\), disabled: interactionBusy/u)
+  assert.match(source, /className: 'ysw-inline-error'[^\n]+disabled: interactionBusy, onClick: refresh/u)
   assert.match(source, /\.ysw-action-buttons button:disabled\{opacity:\.45;cursor:default\}/u)
+  assert.match(source, /\.ysw-empty button:disabled,.ysw-inline-error button:disabled\{opacity:\.45;cursor:default\}/u)
 })
 
 test('uses only icons exported by DSH alpha3 primitives', async () => {
