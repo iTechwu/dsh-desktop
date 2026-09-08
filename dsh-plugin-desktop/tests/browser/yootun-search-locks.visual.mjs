@@ -40,9 +40,12 @@ assert(address && typeof address === 'object')
 const url = `http://127.0.0.1:${address.port}`
 await mkdir(evidenceRoot, { recursive: true })
 
-let leadRequests = 0
-let releaseLead
-const leadReady = new Promise(resolve => { releaseLead = resolve })
+let leadSearchRequests = 0
+let leadPageRequests = 0
+let releaseLeadSearch
+const leadSearchReady = new Promise(resolve => { releaseLeadSearch = resolve })
+let releaseLeadPage
+const leadPageReady = new Promise(resolve => { releaseLeadPage = resolve })
 let retrofitStoredRequests = 0
 let retrofitRefreshRequests = 0
 let releaseRetrofitRefresh
@@ -73,12 +76,39 @@ page.on('console', message => {
 })
 page.on('pageerror', error => consoleProblems.push(`pageerror: ${error.message}`))
 await page.route('**/api/desktop/yootun/lead-discovery', async route => {
-  leadRequests += 1
-  await leadReady
+  const body = route.request().postDataJSON()
+  if (body.action === 'page') {
+    leadPageRequests += 1
+    await leadPageReady
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ status: 'ready', items: [], nextCursor: null, hasMore: false }),
+    })
+    return
+  }
+  leadSearchRequests += 1
+  await leadSearchReady
   await route.fulfill({
     status: 200,
     contentType: 'application/json',
-    body: JSON.stringify({ status: 'ready', items: [], stats: { total: 0 }, hasMore: false, retrievedAt: '2026-09-08T03:00:00.000Z' }),
+    body: JSON.stringify({
+      status: 'ready',
+      resultRef: 'lead-ref',
+      nextCursor: 'cursor-1',
+      hasMore: true,
+      stats: { total: 1, totalAvailable: 2 },
+      items: [{
+        leadLevel: 'A',
+        platform: 'xiaohongshu-v2',
+        intentScore: 88,
+        aiSummary: '近期计划购买新能源 SUV，正在比较车型。',
+        city: '长沙',
+        recommendedAction: '优先联系并确认预算。',
+        sourceUrl: 'https://example.test/lead',
+      }],
+      retrievedAt: '2026-09-08T03:00:00.000Z',
+    }),
   })
 })
 await page.route('**/api/desktop/yootun/retrofit', async route => {
@@ -117,13 +147,28 @@ try {
   await leadInput.press('Enter')
   await page.locator('.yl-content[aria-busy="true"]').waitFor()
   await leadInput.evaluate(input => input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })))
-  assert.equal(leadRequests, 1, 'an active lead search must reject duplicate Enter submissions')
+  assert.equal(leadSearchRequests, 1, 'an active lead search must reject duplicate Enter submissions')
   assert.equal(await leadInput.isDisabled(), true)
   assert.equal(await page.getByRole('button', { name: '小红书' }).isDisabled(), true)
   assert.equal(await page.getByRole('button', { name: '正在检索' }).isDisabled(), true)
   await assertViewport()
   await page.screenshot({ path: resolve(evidenceRoot, '390-lead-search-lock.png'), fullPage: true })
-  releaseLead()
+  releaseLeadSearch()
+  await page.waitForFunction(() => document.querySelector('.yl-content')?.getAttribute('aria-busy') === 'false')
+
+  const loadMore = page.getByRole('button', { name: '加载更多' })
+  await loadMore.click()
+  await page.locator('.yl-content[aria-busy="true"]').waitFor()
+  await leadInput.evaluate(input => input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })))
+  assert.equal(leadPageRequests, 1, 'lead pagination must execute once')
+  assert.equal(leadSearchRequests, 1, 'active pagination must reject a new lead search')
+  assert.equal(await leadInput.isDisabled(), true)
+  assert.equal(await page.getByRole('tab', { name: '发现线索' }).isDisabled(), true)
+  assert.equal(await page.getByRole('tab', { name: '已存候选' }).isDisabled(), true)
+  assert.equal(await page.getByRole('button', { name: '正在读取…' }).isDisabled(), true)
+  await assertViewport()
+  await page.screenshot({ path: resolve(evidenceRoot, '390-lead-page-lock.png'), fullPage: true })
+  releaseLeadPage()
   await page.waitForFunction(() => document.querySelector('.yl-content')?.getAttribute('aria-busy') === 'false')
 
   await page.goto(`${url}?source=retrofit`)
@@ -147,8 +192,11 @@ try {
   await page.waitForFunction(() => document.querySelector('.yr-content')?.getAttribute('aria-busy') === 'false')
 
   assert.deepEqual(consoleProblems, [])
-  process.stdout.write('search-locks-browser: 2 plugins, 2 screenshots, duplicate requests blocked with stable mobile layout\n')
+  process.stdout.write('search-locks-browser: 2 plugins, 3 screenshots, duplicate and overlapping requests blocked with stable mobile layout\n')
 } finally {
+  releaseLeadSearch()
+  releaseLeadPage()
+  releaseRetrofitRefresh()
   await page.close()
   await browser.close()
   await vite.close()
