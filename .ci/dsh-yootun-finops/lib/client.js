@@ -126,12 +126,12 @@ window.__ModuleLoader__.load({
       return h('article', { className: `yf-metric${muted ? ' yf-metric-muted' : ''}` }, h('div', { className: 'yf-metric-label' }, h(Glyph, { name: icon, size: 15 }), h('span', null, label)), h('strong', null, value ?? '—'), hint ? h('small', null, hint) : null)
     }
 
-    function RangeControl({ range, onChange, t }) {
-      return h('div', { className: 'yf-range-control', role: 'group', 'aria-label': t('period') }, ...RANGES.map(([id, key]) => h('button', { type: 'button', key: id, className: range === id ? 'is-active' : '', 'aria-pressed': range === id, onClick: () => onChange(id) }, t(key))))
+    function RangeControl({ range, onChange, disabled, t }) {
+      return h('div', { className: 'yf-range-control', role: 'group', 'aria-label': t('period') }, ...RANGES.map(([id, key]) => h('button', { type: 'button', key: id, disabled, className: range === id ? 'is-active' : '', 'aria-pressed': range === id, onClick: () => onChange(id) }, t(key))))
     }
 
-    function DaysControl({ days, onChange, t }) {
-      return h('div', { className: 'yf-range-control yf-range-small', role: 'group', 'aria-label': t('trendTitle') }, ...SERIES_DAYS.map(([value, key]) => h('button', { type: 'button', key: value, className: days === value ? 'is-active' : '', 'aria-pressed': days === value, onClick: () => onChange(value) }, t(key))))
+    function DaysControl({ days, onChange, disabled, t }) {
+      return h('div', { className: 'yf-range-control yf-range-small', role: 'group', 'aria-label': t('trendTitle') }, ...SERIES_DAYS.map(([value, key]) => h('button', { type: 'button', key: value, disabled, className: days === value ? 'is-active' : '', 'aria-pressed': days === value, onClick: () => onChange(value) }, t(key))))
     }
 
     function costLineSegments(points, x, y) {
@@ -302,10 +302,10 @@ window.__ModuleLoader__.load({
       return available.length ? available.reduce((sum, value) => sum + value, 0) : null
     }
 
-    function SeriesView({ seriesState, days, onDays, t }) {
+    function SeriesView({ seriesState, days, onDays, controlsDisabled, t }) {
       const data = seriesState.data, currency = data?.summary?.currency || 'CNY'
       return h('div', { className: 'yf-detail-view' },
-        h('div', { className: 'yf-trend-toolbar' }, h(DaysControl, { days, onChange: onDays, t }),
+        h('div', { className: 'yf-trend-toolbar' }, h(DaysControl, { days, onChange: onDays, disabled: controlsDisabled, t }),
           h(ComparisonChips, { comparison: data?.comparison, currency, t }),
           data ? h(SourceBadge, { source: data.source, t }) : null),
         seriesState.error && !data
@@ -314,8 +314,8 @@ window.__ModuleLoader__.load({
             seriesState.loading && !data ? h('div', { className: 'yf-loading', role: 'status' }, h(Glyph, { name: 'loading' }), t('loading')) : data ? h(TrendChart, { series: data.series, currency, source: data.source, t }) : null))
     }
 
-    function Detail({ tab, data, seriesState, days, onDays, t }) {
-      if (tab === 'trend') return h(SeriesView, { seriesState, days, onDays, t })
+    function Detail({ tab, data, seriesState, days, onDays, controlsDisabled, t }) {
+      if (tab === 'trend') return h(SeriesView, { seriesState, days, onDays, controlsDisabled, t })
       if (tab === 'models') {
         const currency = data?.summary?.currency || 'CNY'
         return h('div', { className: 'yf-detail-view' },
@@ -333,34 +333,60 @@ window.__ModuleLoader__.load({
     function Overlay({ t }) {
       const visible = useSyncExternalStore(subscribe, snapshot, snapshot)
       const shellRef = useRef(null)
-      const [range, setRange] = useState('yesterday'), [tab, setTab] = useState('overview'), [data, setData] = useState(null), [loading, setLoading] = useState(false), [error, setError] = useState(false), [revision, setRevision] = useState(0)
+      const loadingRef = useRef(false), seriesLoadingRef = useRef(false)
+      const [range, setRange] = useState('yesterday'), [tab, setTab] = useState('overview'), [dataState, setDataState] = useState(null), [loading, setLoading] = useState(false), [error, setError] = useState(false), [revision, setRevision] = useState(0)
       const [days, setDays] = useState(7), [seriesState, setSeriesState] = useState({ days: 7, data: null, loading: false, error: false })
       const seriesCache = useRef(new Map())
+      const data = dataState?.range === range ? dataState.value : null
+      const needsSeries = tab === 'trend' || tab === 'models'
       useEffect(() => {
-        if (!visible) return undefined
-        const controller = new AbortController(); setLoading(true); setError(false)
-        void load(range, controller.signal).then(value => { setData(value); setError(false) }).catch(cause => { if (cause?.name !== 'AbortError') setError(true) }).finally(() => { if (!controller.signal.aborted) setLoading(false) })
-        return () => controller.abort()
+        if (!visible) { loadingRef.current = false; return undefined }
+        const controller = new AbortController(); loadingRef.current = true; setLoading(true); setError(false)
+        void load(range, controller.signal).then(value => { setDataState({ range, value }); setError(false) }).catch(cause => { if (cause?.name !== 'AbortError') setError(true) }).finally(() => { if (!controller.signal.aborted) { loadingRef.current = false; setLoading(false) } })
+        return () => { controller.abort(); loadingRef.current = false }
       }, [visible, range, revision])
       // Trend/model tabs fetch their own series window once per days+revision; the
       // result is cached so switching tabs does not re-request unseen data.
       useEffect(() => {
-        if (!visible || (tab !== 'trend' && tab !== 'models')) return undefined
+        if (!visible || !needsSeries) { seriesLoadingRef.current = false; return undefined }
         const cached = seriesCache.current.get(days)
-        if (cached) { setSeriesState({ days, data: cached, loading: false, error: false }); return undefined }
+        if (cached) { seriesLoadingRef.current = false; setSeriesState({ days, data: cached, loading: false, error: false }); return undefined }
         const controller = new AbortController()
+        seriesLoadingRef.current = true
         setSeriesState(state => ({ ...state, days, loading: true, error: false }))
         void loadSeries(days, controller.signal)
           .then(value => { seriesCache.current.set(days, value); setSeriesState({ days, data: value, loading: false, error: false }) })
           .catch(cause => { if (cause?.name !== 'AbortError') setSeriesState({ days, data: null, loading: false, error: true }) })
-        return () => controller.abort()
-      }, [visible, tab, days, revision])
+          .finally(() => { if (!controller.signal.aborted) seriesLoadingRef.current = false })
+        return () => { controller.abort(); seriesLoadingRef.current = false }
+      }, [visible, needsSeries, days, revision])
       useEffect(() => { if (!visible) return undefined; const key = event => { if (event.key === 'Escape') closeOverlay() }; window.addEventListener('keydown', key); return () => window.removeEventListener('keydown', key) }, [visible])
       useEffect(() => { if (visible) requestAnimationFrame(() => shellRef.current?.focus?.()) }, [visible])
       if (!visible) return null
-      const refresh = () => { seriesCache.current.clear(); setRevision(value => value + 1) }
-      const body = loading && !data ? h('div', { className: 'yf-loading', role: 'status' }, h(Glyph, { name: 'loading' }), t('loading')) : error && !data ? h('div', { className: 'yf-fatal', role: 'alert' }, h(Glyph, { name: 'warning' }), h('strong', null, t('sourceError')), h('button', { type: 'button', onClick: refresh }, t('retry'))) : data ? h(React.Fragment, null, loading ? h('div', { className: 'yf-stale', role: 'status' }, t('loading')) : null, tab === 'overview' ? h(Overview, { data, t }) : h(Detail, { tab, data, seriesState: seriesState.days === days ? seriesState : { ...seriesState, loading: true }, days, onDays: setDays, t })) : null
-      return h('div', { className: 'yf-overlay', role: 'dialog', 'aria-modal': true, 'aria-labelledby': 'yf-title' }, h('main', { className: 'yf-shell', 'aria-labelledby': 'yf-title', ref: shellRef, tabIndex: -1 }, h('header', { className: 'yf-header' }, h('div', null, h('div', { className: 'yf-title-row' }, h('h1', { id: 'yf-title' }, t('title')), data?.period?.label ? h('span', { className: 'yf-period-label' }, data.period.label) : null), h('p', null, t('subtitle'))), h('div', { className: 'yf-header-buttons' }, h(Tooltip, { label: t('refresh') }, h('button', { type: 'button', className: 'yf-icon-button', disabled: loading, 'aria-label': t('refresh'), onClick: refresh }, h(IconRefreshOutline16, { size: 16 }))), h(Tooltip, { label: t('close') }, h('button', { type: 'button', className: 'yf-icon-button', 'aria-label': t('close'), onClick: closeOverlay }, h(IconCloseOutline16, { size: 16 }))))), h('div', { className: 'yf-toolbar' }, h(RangeControl, { range, onChange: value => { setRange(value); setTab('overview') }, t }), data?.period?.timeZone ? h('span', { className: 'yf-toolbar-meta' }, `${t('timeZone')}: ${data.period.timeZone}`) : null), h('nav', { className: 'yf-tabs', 'aria-label': t('title') }, ...TABS.map(([id, key]) => h('button', { type: 'button', key: id, 'aria-current': tab === id ? 'page' : undefined, onClick: () => setTab(id) }, t(key)))), h('div', { className: `yf-content${loading && data ? ' yf-refreshing' : ''}`, 'aria-busy': loading }, body)))
+      const interactionBusy = loading || (needsSeries && seriesState.loading)
+      const refresh = () => {
+        if (loadingRef.current || seriesLoadingRef.current) return
+        loadingRef.current = true
+        setLoading(true)
+        seriesCache.current.clear()
+        setRevision(value => value + 1)
+      }
+      const selectRange = value => {
+        if (loadingRef.current || seriesLoadingRef.current || value === range) return
+        loadingRef.current = true
+        setLoading(true)
+        setError(false)
+        setRange(value)
+        setTab('overview')
+      }
+      const selectDays = value => {
+        if (loadingRef.current || seriesLoadingRef.current || value === days) return
+        seriesLoadingRef.current = true
+        setSeriesState(state => ({ ...state, days: value, loading: true, error: false }))
+        setDays(value)
+      }
+      const body = loading && !data ? h('div', { className: 'yf-loading', role: 'status' }, h(Glyph, { name: 'loading' }), t('loading')) : error && !data ? h('div', { className: 'yf-fatal', role: 'alert' }, h(Glyph, { name: 'warning' }), h('strong', null, t('sourceError')), h('button', { type: 'button', disabled: interactionBusy, onClick: refresh }, t('retry'))) : data ? h(React.Fragment, null, loading ? h('div', { className: 'yf-stale', role: 'status' }, t('loading')) : null, tab === 'overview' ? h(Overview, { data, t }) : h(Detail, { tab, data, seriesState: seriesState.days === days ? seriesState : { ...seriesState, loading: true }, days, onDays: selectDays, controlsDisabled: interactionBusy, t })) : null
+      return h('div', { className: 'yf-overlay', role: 'dialog', 'aria-modal': true, 'aria-labelledby': 'yf-title' }, h('main', { className: 'yf-shell', 'aria-labelledby': 'yf-title', ref: shellRef, tabIndex: -1 }, h('header', { className: 'yf-header' }, h('div', null, h('div', { className: 'yf-title-row' }, h('h1', { id: 'yf-title' }, t('title')), data?.period?.label ? h('span', { className: 'yf-period-label' }, data.period.label) : null), h('p', null, t('subtitle'))), h('div', { className: 'yf-header-buttons' }, h(Tooltip, { label: t('refresh') }, h('button', { type: 'button', className: 'yf-icon-button', disabled: interactionBusy, 'aria-label': t('refresh'), onClick: refresh }, h(IconRefreshOutline16, { size: 16 }))), h(Tooltip, { label: t('close') }, h('button', { type: 'button', className: 'yf-icon-button', 'aria-label': t('close'), onClick: closeOverlay }, h(IconCloseOutline16, { size: 16 }))))), h('div', { className: 'yf-toolbar' }, h(RangeControl, { range, onChange: selectRange, disabled: interactionBusy, t }), data?.period?.timeZone ? h('span', { className: 'yf-toolbar-meta' }, `${t('timeZone')}: ${data.period.timeZone}`) : null), h('nav', { className: 'yf-tabs', 'aria-label': t('title') }, ...TABS.map(([id, key]) => h('button', { type: 'button', key: id, 'aria-current': tab === id ? 'page' : undefined, onClick: () => setTab(id) }, t(key)))), h('div', { className: `yf-content${loading && data ? ' yf-refreshing' : ''}`, 'aria-busy': interactionBusy }, body)))
     }
 
     const css = `
@@ -369,7 +395,7 @@ window.__ModuleLoader__.load({
 
     // Invert stable foreground/background tokens so active controls keep contrast
     // even when a host theme maps its brand token to white or black.
-    const activeStateCss = `.yf-range-control button.is-active,.yf-range-small button.is-active{background:var(--dsw-alias-label-primary);color:var(--dsw-alias-bg-base);font-weight:650}.yf-table-scroll{max-width:100%;overflow-x:auto}.yf-table{min-width:940px}@media(max-width:480px){.yf-table th:nth-child(n+5),.yf-table td:nth-child(n+5){display:table-cell}}`
+    const activeStateCss = `.yf-range-control button.is-active,.yf-range-small button.is-active{background:var(--dsw-alias-label-primary);color:var(--dsw-alias-bg-base);font-weight:650}.yf-range-control button:disabled{opacity:.45;cursor:default}.yf-table-scroll{max-width:100%;overflow-x:auto}.yf-table{min-width:940px}@media(max-width:480px){.yf-table th:nth-child(n+5),.yf-table td:nth-child(n+5){display:table-cell}}`
 
     function apply(ctx) {
       ctx.effect(() => ctx.locale.register(NS, copy), 'dofe-yootun-finops: dictionaries')

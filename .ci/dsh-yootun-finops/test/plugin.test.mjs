@@ -70,7 +70,12 @@ test('keeps cost data source-bound and free of credentials or direct providers',
   assert.doesNotMatch(source, /filter\(Boolean\)\.join\(' '\)/)
   assert.match(source, /observedCostMax > 0/)
   assert.match(source, /yf-chart-bar/)
-  assert.match(source, /'aria-busy': loading/u)
+  assert.match(source, /'aria-busy': interactionBusy/u)
+  assert.match(source, /const loadingRef = useRef\(false\), seriesLoadingRef = useRef\(false\)/u)
+  assert.match(source, /const data = dataState\?\.range === range \? dataState\.value : null/u)
+  assert.match(source, /\[visible, needsSeries, days, revision\]/u)
+  assert.match(source, /disabled: interactionBusy/u)
+  assert.match(source, /\.yf-range-control button:disabled\{opacity:\.45;cursor:default\}/u)
 })
 
 test('uses only DSH alpha3 exported icons', async () => {
