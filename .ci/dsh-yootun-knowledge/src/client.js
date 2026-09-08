@@ -991,6 +991,7 @@ function Overlay({ t }) {
   const [error, setError] = useState(false);
   const [actionError, setActionError] = useState(false);
   const [loading, setLoading] = useState(false);
+  const loadingRef = useRef(false);
   const [graphQuery, setGraphQuery] = useState("");
   const [graph, setGraph] = useState(null);
   const [graphBusy, setGraphBusy] = useState(false);
@@ -1004,8 +1005,12 @@ function Overlay({ t }) {
   const [actionBusy, setActionBusy] = useState(false);
   const actionBusyRef = useRef(false);
   useEffect(() => {
-    if (!visible) return undefined;
+    if (!visible) {
+      loadingRef.current = false;
+      return undefined;
+    }
     const controller = new AbortController();
+    loadingRef.current = true;
     setError(false);
     setActionError(false);
     setLoading(true);
@@ -1019,9 +1024,15 @@ function Overlay({ t }) {
         if (cause?.name !== "AbortError") setError(true);
       })
       .finally(() => {
-        if (!controller.signal.aborted) setLoading(false);
+        if (!controller.signal.aborted) {
+          loadingRef.current = false;
+          setLoading(false);
+        }
       });
-    return () => controller.abort();
+    return () => {
+      controller.abort();
+      loadingRef.current = false;
+    };
   }, [visible, revision]);
   useEffect(() => {
     if (!visible) return undefined;
@@ -1035,6 +1046,19 @@ function Overlay({ t }) {
     if (visible) requestAnimationFrame(() => shellRef.current?.focus?.());
   }, [visible]);
   if (!visible) return null;
+  const interactionBusy = loading || graphBusy || recallBusy || actionBusy;
+  const refresh = () => {
+    if (
+      loadingRef.current ||
+      graphBusyRef.current ||
+      recallBusyRef.current ||
+      actionBusyRef.current
+    )
+      return;
+    loadingRef.current = true;
+    setLoading(true);
+    setRevision((value) => value + 1);
+  };
   const runGraph = async (value) => {
     const query = String(value || graphQuery).trim();
     if (!query || graphBusyRef.current) return;
@@ -1153,7 +1177,7 @@ function Overlay({ t }) {
       t("retryOverview"),
       h(
         "button",
-        { type: "button", onClick: () => setRevision((value) => value + 1) },
+        { type: "button", disabled: interactionBusy, onClick: refresh },
         h(IconRefreshOutline16, { size: 14 }),
         t("retry"),
       ),
@@ -1245,8 +1269,8 @@ function Overlay({ t }) {
                 type: "button",
                 className: "yk-icon-button",
                 "aria-label": t("refresh"),
-                disabled: loading || actionBusy,
-                onClick: () => setRevision((value) => value + 1),
+                disabled: interactionBusy,
+                onClick: refresh,
               },
               h(IconRefreshOutline16, { size: 16 }),
             ),
@@ -1292,7 +1316,7 @@ function Overlay({ t }) {
         "div",
         {
           className: `yk-content${loading && data ? " yk-refreshing" : ""}`,
-          "aria-busy": loading || graphBusy || recallBusy || actionBusy,
+          "aria-busy": interactionBusy,
         },
         body,
       ),
