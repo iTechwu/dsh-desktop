@@ -214,7 +214,7 @@ try {
   await page.screenshot({ path: resolve(evidenceRoot, '1024-filtered-empty.png'), fullPage: true })
 
   await open(1024, 800, 'loading')
-  await page.locator('[aria-busy="true"]').waitFor()
+  await page.locator('.ya-shell[aria-busy="true"]').waitFor()
   await page.screenshot({ path: resolve(evidenceRoot, '1024-loading.png'), fullPage: true })
   await page.getByRole('grid', { name: '操作审计' }).waitFor()
 
