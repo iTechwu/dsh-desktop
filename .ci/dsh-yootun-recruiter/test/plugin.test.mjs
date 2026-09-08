@@ -42,12 +42,13 @@ test('locks recruiter mutations and disables every write surface', async () => {
 
 test('keeps BOSS actions human-confirmed and does not accept raw PII', async () => {
   const source = await readFile(new URL('src/client.js', root), 'utf8')
-  for (const token of ['/api/desktop/yootun/recruiter', 'awaiting_confirmation', 'confirmed_pending_adapter', 'succeeded', 'failed', 'requires_user_login', 'zhipin.com', 'confirm_action', 'execute_action', 'loadError', 'yr-status-succeeded', 'HR 知识库', '招聘漏斗', 'sync_boss', 'publish_knowledge', 'yr-source-button', 'importRequirement', 'generateDraft', 'draftFromText', 'yr-intake-grid', 'yr-filter-bar', 'onNavigate', "'aria-label': t('candidates')", "'aria-label': t('stage')", "data.boss?.adapter === 'official'"]) {
+  for (const token of ['/api/desktop/yootun/recruiter', 'awaiting_confirmation', 'confirmed_pending_adapter', 'succeeded', 'failed', 'requires_user_login', 'zhipin.com', 'confirm_action', 'loadError', 'yr-status-succeeded', 'HR 知识库', '招聘漏斗', 'sync_boss', 'publish_knowledge', 'yr-source-button', 'importRequirement', 'generateDraft', 'draftFromText', 'yr-intake-grid', 'yr-filter-bar', 'onNavigate', "'aria-label': t('candidates')", "'aria-label': t('stage')", "data.boss?.adapter === 'official'"]) {
     assert.match(source, new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'u'))
   }
   assert.doesNotMatch(source, /resumeText|password|cookie|二维码内容|聊天正文/iu)
   assert.doesNotMatch(source, /待配置空间|YOOTUN_HR_KNOWLEDGE_SPACE_ID/u)
   assert.doesNotMatch(source, /MODELS_API_KEY|Authorization\s*:/u)
+  assert.doesNotMatch(source, /execute_action/u)
 })
 
 test('localizes recruiter stages and status enums before rendering them', async () => {
