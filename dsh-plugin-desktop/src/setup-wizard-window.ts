@@ -128,6 +128,7 @@ export function parseDesktopSetupWizardAction(
 /** One-shot native Setup Wizard; close is distinct from the explicit Skip action. */
 export class DesktopSetupWizardWindow {
   private started = false
+  private startupPending = false
   private window: BrowserWindow | undefined
 
   constructor(private readonly options: DesktopSetupWizardWindowOptions) {}
@@ -137,6 +138,14 @@ export class DesktopSetupWizardWindow {
     const window = this.window
     if (window === undefined || window.isDestroyed()) return
     revealApplication(window, this.options.input.platform)
+  }
+
+  /** Close the progress surface only after the main renderer is ready or startup failed. */
+  closeStartupSurface(): void {
+    this.startupPending = false
+    const window = this.window
+    this.window = undefined
+    if (window !== undefined && !window.isDestroyed()) window.destroy()
   }
 
   async run(): Promise<DesktopSetupWizardResult> {
@@ -177,6 +186,11 @@ export class DesktopSetupWizardWindow {
       const finish = (result: DesktopSetupWizardResult): void => {
         if (settled) return
         settled = true
+        if (result.action === 'complete') {
+          this.startupPending = true
+          resolve(result)
+          return
+        }
         if (this.window === window) this.window = undefined
         if (!window.isDestroyed()) window.destroy()
         resolve(result)
@@ -199,6 +213,9 @@ export class DesktopSetupWizardWindow {
       window.on('closed', () => {
         if (this.window === window) this.window = undefined
         finish(Object.freeze({ action: 'quit' }))
+      })
+      window.on('close', event => {
+        if (this.startupPending) event.preventDefault()
       })
       void window.loadFile(SETUP_WIZARD_DOCUMENT, {
         query: {

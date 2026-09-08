@@ -70,6 +70,8 @@ export interface DesktopSetupWizardCopy {
   readonly successTitle: string
   readonly successBody: string
   readonly startUsing: string
+  readonly startingTitle: string
+  readonly startingBody: string
   readonly invalidState: string
 }
 
@@ -142,6 +144,8 @@ const COPY: Record<DesktopLocale, DesktopSetupWizardCopy> = {
     successTitle: 'Setup complete',
     successBody: 'Yootun-Agent is ready for this Profile.',
     startUsing: 'Start using Yootun-Agent',
+    startingTitle: 'Preparing your workspace',
+    startingBody: 'Applying your settings and starting the selected plugins. This window will close when Yootun-Agent is ready.',
     invalidState: 'Setup information could not be loaded. Close this window and try again.',
   },
   zh: {
@@ -212,6 +216,8 @@ const COPY: Record<DesktopLocale, DesktopSetupWizardCopy> = {
     successTitle: '设置成功',
     successBody: '这个 Profile 的 Yootun-Agent 已准备就绪。',
     startUsing: '开始使用',
+    startingTitle: '正在准备工作区',
+    startingBody: '正在应用设置并启动所选插件。Yootun-Agent 准备就绪后，此窗口会自动关闭。',
     invalidState: '无法加载设置信息。请关闭此窗口后重试。',
   },
 }

@@ -43,7 +43,7 @@ export type DesktopProfileUsageProbe =
   | { readonly status: 'invalid', readonly problem: string }
 
 export type DesktopProfileChannelAdmission =
-  | { readonly status: 'allow', readonly reason: 'new-profile' | 'current-channel-latest' }
+  | { readonly status: 'allow', readonly reason: 'new-profile' | 'current-channel-latest' | 'compatible-dsh' }
   | { readonly status: 'warn', readonly reason: 'other-channel-latest', readonly previous: DesktopProfileUsageEvidence }
   | { readonly status: 'warn', readonly reason: 'uncertain' }
 
@@ -123,6 +123,7 @@ export function inspectDesktopProfileChannelAdmission(
   locations: DesktopReleaseUserDataLocations,
   profileDir: string,
   profileName: string,
+  currentDshVersion?: string,
 ): DesktopProfileChannelAdmission {
   const current = inspectDesktopReleaseProfileUsage(locations.current, profileDir, profileName)
   const other = inspectDesktopReleaseProfileUsage(locations.other, profileDir, profileName)
@@ -142,6 +143,11 @@ export function inspectDesktopProfileChannelAdmission(
     return { status: 'allow', reason: 'new-profile' }
   }
   if (other.status === 'none') return { status: 'allow', reason: 'current-channel-latest' }
+  // Stable and Beta use separate app data but share the same DSH Profile. A
+  // Desktop-only release change does not make sessions or plugins incompatible.
+  if (currentDshVersion !== undefined && other.evidence.dshVersion === currentDshVersion) {
+    return { status: 'allow', reason: 'compatible-dsh' }
+  }
   if (current.status === 'none') {
     return { status: 'warn', reason: 'other-channel-latest', previous: other.evidence }
   }

@@ -1456,9 +1456,11 @@ describe('Electron desktop runtime', () => {
     await vi.waitFor(() => { expect(electron.loadURL).toHaveBeenCalledOnce() })
     expect(electron.trays).toHaveLength(0)
     expect(beforeInteractive).not.toHaveBeenCalled()
+    expect(electron.browserWindows[0]?.show).not.toHaveBeenCalled()
 
     finishLoad()
     await mounted
+    expect(electron.browserWindows[0]?.show).toHaveBeenCalledOnce()
     expect(beforeInteractive).toHaveBeenCalledOnce()
     expect(electron.trays).toHaveLength(1)
 

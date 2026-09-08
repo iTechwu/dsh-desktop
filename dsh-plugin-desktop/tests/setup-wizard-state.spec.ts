@@ -144,7 +144,7 @@ describe('Desktop Setup Wizard state', () => {
     })
   })
 
-  it('requires Setup only for monotonic Desktop, DSH, or Wizard revision upgrades', async () => {
+  it('requires Setup only for monotonic DSH or Wizard revision upgrades', async () => {
     const userData = temporaryDirectory('dsh-setup-state-user-')
     const profile = temporaryDirectory('dsh-setup-state-profile-')
     await recordSetup(userData, profile, 'completed')
@@ -155,7 +155,7 @@ describe('Desktop Setup Wizard state', () => {
     expect(desktopSetupWizardRequired(state, {
       ...CURRENT_VERSIONS,
       desktopVersion: '2.0.4',
-    })).toBe(true)
+    })).toBe(false)
     expect(desktopSetupWizardRequired(state, {
       ...CURRENT_VERSIONS,
       dshVersion: '0.1.2-alpha.2',
@@ -177,7 +177,7 @@ describe('Desktop Setup Wizard state', () => {
       ...CURRENT_VERSIONS,
       desktopVersion: '2.0.4',
       dshVersion: '0.1.1-rc.1',
-    })).toBe(true)
+    })).toBe(false)
   })
 
   it('strictly rejects malformed V2 version evidence and write inputs', async () => {
