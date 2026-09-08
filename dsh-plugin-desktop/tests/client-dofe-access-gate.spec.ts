@@ -1,5 +1,7 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from 'vitest'
+import { readFile } from 'node:fs/promises'
+import { resolve } from 'node:path'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { blockDofeApplicationRoot, dofeAccessSettingsStore, installDofeAccessGate, installDofeAccessStyles, mutateDofeAccessSettings, removeDofeAccess } from '../src/client/DofeAccessSection.tsx'
@@ -150,5 +152,17 @@ describe('mandatory DoFe access gate', () => {
       mutate: vi.fn(async () => ({ ok: false, error: { code: 'settings/rejected', message: 'rejected' } })),
     } as never, { unset } as never)).rejects.toThrow('rejected')
     expect(unset).not.toHaveBeenCalled()
+  })
+
+  it('locks every access form operation while a request is active', async () => {
+    const source = await readFile(resolve(process.cwd(), 'src/client/DofeAccessSection.tsx'), 'utf8')
+
+    expect(source).toContain('const loadingRef = useRef(false)')
+    expect(source).toContain('const busyRef = useRef(false)')
+    expect(source).toContain('if (!key || loadingRef.current || busyRef.current) return')
+    expect(source).toContain('if (busyRef.current || loadingRef.current || (!key && !useStoredCredential)')
+    expect(source).toContain('if (busyRef.current || loadingRef.current) return')
+    expect(source).toContain('aria-busy={interactionBusy}')
+    expect(source).toContain('disabled={interactionBusy}')
   })
 })
