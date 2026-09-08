@@ -22,13 +22,18 @@ test('announces tab-specific empty states', async () => {
 
 test('locks recruiter mutations and disables every write surface', async () => {
   const source = await readFile(new URL('src/client.js', root), 'utf8')
-  assert.match(source, /if \(loading \|\| busyRef\.current\) return null/u)
+  assert.match(source, /const loadingRef = useRef\(false\)/u)
+  assert.match(source, /if \(loadingRef\.current \|\| busyRef\.current\) return null/u)
+  assert.match(source, /const refresh = \(\) => \{ if \(loadingRef\.current \|\| busyRef\.current\) return/u)
   assert.match(source, /const interactionBusy = loading \|\| busy/u)
   assert.match(source, /disabled: busy, onClick: \(\) => void onUpdate\?\.\(\{ action: 'confirm_action'/u)
   assert.match(source, /disabled: busy \|\| knowledge\.status !== 'ready'/u)
   assert.match(source, /disabled: busy \|\| data\.boss\?\.inAppBrowser !== true/u)
   assert.match(source, /className: 'yr-intake-textarea', value: input, disabled: busy/u)
-  assert.match(source, /'aria-label': t\('refresh'\), disabled: interactionBusy/u)
+  assert.match(source, /'aria-label': t\('refresh'\), disabled: interactionBusy, onClick: refresh/u)
+  assert.match(source, /className: 'yr-inline-error', role: 'alert'/u)
+  assert.match(source, /setMessage\(next \? t\('roleGenerated'\) : t\('saveError'\)\)/u)
+  assert.match(source, /\.yr-empty button:disabled,.yr-inline-error button:disabled\{opacity:\.45;cursor:default\}/u)
 })
 
 test('keeps BOSS actions human-confirmed and does not accept raw PII', async () => {

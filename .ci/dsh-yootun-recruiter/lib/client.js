@@ -15,7 +15,7 @@ window.__ModuleLoader__.load({
     const copy = {
       zh: {
         open: '招聘工作台', title: 'HR 招聘工作台', subtitle: '从 BOSS 直聘同步人才，让招聘数据沉淀为组织知识', close: '关闭工作台', refresh: '刷新',
-        overview: '总览', roles: '岗位', candidates: '人才库', actions: '待办审批', knowledge: 'HR 知识库', analytics: '招聘分析', boss: 'BOSS 同步', loading: '正在读取招聘工作台…', retry: '重新加载', loadError: '招聘工作台加载失败',
+        overview: '总览', roles: '岗位', candidates: '人才库', actions: '待办审批', knowledge: 'HR 知识库', analytics: '招聘分析', boss: 'BOSS 同步', loading: '正在读取招聘工作台…', retry: '重新加载', loadError: '招聘工作台加载失败', actionError: '操作未完成，现有招聘数据已保留',
         openRoles: '在招岗位', activeCandidates: '活跃候选人', pendingReplies: '待回复', pendingFeedback: '待反馈', pendingConfirmation: '待人工确认', todayTasks: '今日待办', responseRate: '平均响应率',
         noData: '还没有招聘数据', addRole: '在对话中创建岗位需求', funnel: '招聘漏斗', roleHealth: '岗位健康度', needsAction: '需要你处理', recent: '最近更新', source: '数据来源', ready: '已启用', unavailable: '待连接', error: '异常', empty: '暂无数据', sample: '样本', updated: '更新时间',
         rolesIntro: '把业务需求整理成可编辑的 JD 草稿，再确认发布。', importRequirement: '导入岗位需求', uploadRequirement: '上传文本需求', pasteRequirement: '粘贴或输入需求', selectFile: '选择文件', generateDraft: '生成 JD 草稿', roleDraftHint: '支持 TXT、Markdown 或直接粘贴；生成后仍可编辑。', roleGenerated: '已生成岗位草稿，请补充缺失信息。', saveError: '保存失败，请稍后重试。', fileReadError: '暂不支持读取该文件，请粘贴文本内容。', roleDraftTitle: '岗位草稿', noRolesCta: '从一段需求开始创建岗位', editAfterGenerate: '草稿会保存到岗位列表，确认后再发布。',
@@ -29,7 +29,7 @@ window.__ModuleLoader__.load({
       },
       en: {
         open: 'Recruiting workspace', title: 'HR recruiting workspace', subtitle: 'Sync talent from BOSS and turn hiring activity into organizational knowledge', close: 'Close workspace', refresh: 'Refresh',
-        overview: 'Overview', roles: 'Roles', candidates: 'Talent pool', actions: 'Approvals', knowledge: 'HR knowledge', analytics: 'Analytics', boss: 'BOSS sync', loading: 'Loading recruiting workspace…', retry: 'Try again', loadError: 'Could not load recruiting workspace',
+        overview: 'Overview', roles: 'Roles', candidates: 'Talent pool', actions: 'Approvals', knowledge: 'HR knowledge', analytics: 'Analytics', boss: 'BOSS sync', loading: 'Loading recruiting workspace…', retry: 'Reload', loadError: 'Could not load recruiting workspace', actionError: 'The action failed. Existing recruiting data was preserved.',
         openRoles: 'Open roles', activeCandidates: 'Active candidates', pendingReplies: 'Pending replies', pendingFeedback: 'Pending feedback', pendingConfirmation: 'Awaiting approval', todayTasks: "Today's tasks", responseRate: 'Avg. response rate',
         noData: 'No recruiting data yet', addRole: 'Create a role requirement in chat', funnel: 'Hiring funnel', roleHealth: 'Role health', needsAction: 'Needs your attention', recent: 'Recently updated', source: 'Data source', ready: 'Enabled', unavailable: 'Needs connection', error: 'Error', empty: 'No data', sample: 'Sample', updated: 'Updated',
         rolesIntro: 'Turn a business brief into an editable JD draft before publishing.', importRequirement: 'Import role requirement', uploadRequirement: 'Upload text brief', pasteRequirement: 'Paste or type a brief', selectFile: 'Choose file', generateDraft: 'Generate JD draft', roleDraftHint: 'TXT, Markdown, or pasted text is supported; the draft stays editable.', roleGenerated: 'Role draft created. Fill in the missing details.', saveError: 'Could not save the draft. Try again.', fileReadError: 'This file cannot be read here. Paste the text instead.', roleDraftTitle: 'Role draft', noRolesCta: 'Start with a role brief', editAfterGenerate: 'The draft is saved to the role list and can be reviewed before publishing.',
@@ -153,7 +153,8 @@ window.__ModuleLoader__.load({
       const generate = async () => {
         if (busy) return
         if (!input.trim()) { setMessage(t('roleDraftHint')); return }
-        try { await onUpdate?.(draftFromText(input)); setMessage(t('roleGenerated')) } catch { setMessage(t('saveError')) }
+        const next = await onUpdate?.(draftFromText(input))
+        setMessage(next ? t('roleGenerated') : t('saveError'))
       }
       return h('div', { className: 'yr-page' },
         h('div', { className: 'yr-heading yr-workbench-toolbar' }, h('div', null, h('h2', null, t('roles')), h('p', { className: 'yr-subheading' }, t('rolesIntro'))), h('span', { className: 'yr-muted' }, `${roles.length} ${t('roles')}`)),
@@ -240,15 +241,17 @@ window.__ModuleLoader__.load({
       const [error, setError] = useState(false)
       const [loading, setLoading] = useState(false)
       const [busy, setBusy] = useState(false)
+      const loadingRef = useRef(false)
       const busyRef = useRef(false)
       const [revision, setRevision] = useState(0)
       useEffect(() => {
-        if (!visible) return undefined
+        if (!visible) { loadingRef.current = false; return undefined }
         const controller = new AbortController()
+        loadingRef.current = true
         setError(false)
         setLoading(true)
-        void load(controller.signal).then(value => { setData(value); setError(false) }).catch(e => { if (e?.name !== 'AbortError') setError(true) }).finally(() => { if (!controller.signal.aborted) setLoading(false) })
-        return () => controller.abort()
+        void load(controller.signal).then(value => { setData(value); setError(false) }).catch(e => { if (e?.name !== 'AbortError') setError(true) }).finally(() => { if (!controller.signal.aborted) { loadingRef.current = false; setLoading(false) } })
+        return () => { controller.abort(); loadingRef.current = false }
       }, [visible, revision])
       useEffect(() => {
         if (!visible) return undefined
@@ -259,11 +262,12 @@ window.__ModuleLoader__.load({
       useEffect(() => { if (visible) requestAnimationFrame(() => shellRef.current?.focus?.()) }, [visible])
       if (!visible) return null
       const tData = data || { status: 'empty', dashboard: {}, requirements: [], candidates: [], actions: [], boss: {}, sync: {}, knowledge: {}, analytics: {} }
-      const update = async body => { if (loading || busyRef.current) return null; busyRef.current = true; setBusy(true); try { const next = await mutate(body); setData(next); setError(false); return next } catch (error) { setError(true); throw error } finally { busyRef.current = false; setBusy(false) } }
+      const update = async body => { if (loadingRef.current || busyRef.current) return null; busyRef.current = true; setBusy(true); try { const next = await mutate(body); setData(next); setError(false); return next } catch { setError(true); return null } finally { busyRef.current = false; setBusy(false) } }
       const interactionBusy = loading || busy
+      const refresh = () => { if (loadingRef.current || busyRef.current) return; loadingRef.current = true; setLoading(true); setError(false); setRevision(value => value + 1) }
       let body
       if (loading && !data) body = h('div', { className: 'yr-empty yr-loading', role: 'status' }, h('span', { className: 'yr-spinner', 'aria-hidden': true }), t('loading'))
-      else if (error && !data) body = h('div', { className: 'yr-empty', role: 'alert' }, t('loadError'), h('button', { type: 'button', onClick: () => setRevision(value => value + 1) }, h(IconRefreshOutline16, { size: 14 }), t('retry')))
+      else if (error && !data) body = h('div', { className: 'yr-empty', role: 'alert' }, t('loadError'), h('button', { type: 'button', disabled: interactionBusy, onClick: refresh }, h(IconRefreshOutline16, { size: 14 }), t('retry')))
       else if (tab === 'overview') body = h(Overview, { data: tData, t, onUpdate: update, onNavigate: setTab, busy: interactionBusy })
       else if (tab === 'roles') body = h(Roles, { data: tData, t, onUpdate: update, busy: interactionBusy })
       else if (tab === 'candidates') body = h(Candidates, { data: tData, t, onNavigate: setTab })
@@ -271,9 +275,10 @@ window.__ModuleLoader__.load({
       else if (tab === 'knowledge') body = h(Knowledge, { data: tData, t, onUpdate: update, busy: interactionBusy })
       else if (tab === 'analytics') body = h(Analytics, { data: tData, t })
       else body = h(Boss, { data: tData, t, onUpdate: update, busy: interactionBusy })
+      if (error && data) body = h(React.Fragment, null, h('div', { className: 'yr-inline-error', role: 'alert' }, h('span', null, t('actionError')), h('button', { type: 'button', disabled: interactionBusy, onClick: refresh }, t('retry'))), body)
       const tabs = [['overview', t('overview')], ['roles', t('roles')], ['candidates', t('candidates')], ['actions', t('actions')], ['knowledge', t('knowledge')], ['analytics', t('analytics')], ['boss', t('boss')]]
       return h('div', { className: 'yr-overlay', role: 'dialog', 'aria-modal': true, 'aria-labelledby': 'yr-title' }, h('main', { className: 'yr-shell', 'aria-labelledby': 'yr-title', ref: shellRef, tabIndex: -1 },
-        h('header', { className: 'yr-header' }, h('div', null, h('h1', { id: 'yr-title' }, t('title')), h('p', null, t('subtitle'))), h('div', { className: 'yr-header-buttons' }, h(Tooltip, { label: t('refresh') }, h('button', { type: 'button', className: 'yr-icon', 'aria-label': t('refresh'), disabled: interactionBusy, onClick: () => setRevision(value => value + 1) }, h(IconRefreshOutline16, { size: 16 }))), h(Tooltip, { label: t('close') }, h('button', { type: 'button', className: 'yr-icon', 'aria-label': t('close'), onClick: closeOverlay }, h(IconCloseOutline16, { size: 16 }))))),
+        h('header', { className: 'yr-header' }, h('div', null, h('h1', { id: 'yr-title' }, t('title')), h('p', null, t('subtitle'))), h('div', { className: 'yr-header-buttons' }, h(Tooltip, { label: t('refresh') }, h('button', { type: 'button', className: 'yr-icon', 'aria-label': t('refresh'), disabled: interactionBusy, onClick: refresh }, h(IconRefreshOutline16, { size: 16 }))), h(Tooltip, { label: t('close') }, h('button', { type: 'button', className: 'yr-icon', 'aria-label': t('close'), onClick: closeOverlay }, h(IconCloseOutline16, { size: 16 }))))),
         h('nav', { className: 'yr-tabs', 'aria-label': t('title') }, tabs.map(([id, label]) => h('button', { type: 'button', key: id, 'data-active': tab === id, 'aria-current': tab === id ? 'page' : undefined, onClick: () => setTab(id) }, label))),
         h('div', { className: 'yr-content', 'aria-busy': interactionBusy }, body),
       ))
@@ -328,8 +333,11 @@ window.__ModuleLoader__.load({
     .yr-filter{min-height:34px;box-sizing:border-box;padding:0 var(--yr-space-3);border:1px solid var(--dsw-alias-border-l1);border-radius:6px;background:var(--dsw-alias-bg-layer-1);color:inherit;font:inherit;font-size:12px}
     .yr-filter:first-child{flex:1;min-width:0}
     .yr-filter:last-child{width:150px}
+    .yr-inline-error{display:flex;width:100%;max-width:1160px;box-sizing:border-box;align-items:center;justify-content:space-between;gap:var(--yr-space-3);margin:0 auto;padding:10px 12px;border:1px solid var(--dsw-alias-state-error-primary);border-radius:6px;color:var(--dsw-alias-state-error-primary);font-size:13px}
+    .yr-inline-error button{min-height:30px;padding:0 10px;border:1px solid currentColor;border-radius:6px;background:transparent;color:inherit;font:inherit;cursor:pointer}
+    .yr-empty button:disabled,.yr-inline-error button:disabled{opacity:.45;cursor:default}
     @media(max-width:720px){.yr-intake-grid{grid-template-columns:1fr}.yr-dropzone{min-height:120px}.yr-filter-bar{flex-direction:column}.yr-filter:last-child{width:100%}}
-    @media(max-width:560px){.yr-header,.yr-tabs{padding-left:var(--yr-space-4);padding-right:var(--yr-space-4)}.yr-content{padding:var(--yr-space-4) var(--yr-space-4) 32px}.yr-panel,.yr-hero-panel{padding:var(--yr-space-4)}.yr-workbench-toolbar{align-items:flex-start;flex-direction:column}.yr-intake-footer{align-items:flex-start;flex-direction:column}.yr-intake-footer .yr-primary{width:100%;justify-content:center}.yr-summary-item{flex:1;min-width:100px}}
+    @media(max-width:560px){.yr-header,.yr-tabs{padding-left:var(--yr-space-4);padding-right:var(--yr-space-4)}.yr-content{padding:var(--yr-space-4) var(--yr-space-4) 32px}.yr-panel,.yr-hero-panel{padding:var(--yr-space-4)}.yr-workbench-toolbar,.yr-inline-error{align-items:flex-start;flex-direction:column}.yr-intake-footer{align-items:flex-start;flex-direction:column}.yr-intake-footer .yr-primary{width:100%;justify-content:center}.yr-summary-item{flex:1;min-width:100px}}
     `
     function apply(ctx) { ctx.effect(() => ctx.locale.register(NS, copy), 'dofe-yootun-recruiter: dictionaries'); ctx.effect(() => { window.addEventListener(OVERLAY_EVENT, closeOtherOverlay); return () => window.removeEventListener(OVERLAY_EVENT, closeOtherOverlay) }, 'dofe-yootun-recruiter: exclusive-overlay'); ctx.effect(() => { const style = document.createElement('style'); style.dataset.plugin = '@dofe/dsh-yootun-recruiter'; style.textContent = css + spacingCss; document.head.appendChild(style); return () => style.remove() }, 'dofe-yootun-recruiter: styles'); const t = ctx.locale.bind(NS); ctx.slots.inject('sidebar.footer.action', () => ctx.slots.register({ name: 'sidebar.footer.action', id: 'dofe-yootun-recruiter', order: 20, inject: () => ({ t }) }, SidebarButton)); ctx.slots.inject('shell.overlay', () => ctx.slots.register({ name: 'shell.overlay', id: 'dofe-yootun-recruiter', order: 20, inject: () => ({ t }) }, Overlay)) }
     exports.apply = apply
