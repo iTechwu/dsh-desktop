@@ -44,6 +44,10 @@ test('renders all requested dashboard domains and explicit source states', async
     'metricDisplay', 'missingFields', 'asOfLabel', 'refreshing', 'sourcePartial', 'workerDown',
     "'aria-busy': loading",
   ]) assert.match(source, new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'u'))
+  assert.match(source, /const loadingRef = useRef\(false\)/u)
+  assert.match(source, /if \(loadingRef\.current\) return/u)
+  assert.match(source, /disabled: loading, 'data-active': range === item\.id/u)
+  assert.match(source, /disabled: loading, 'data-active': usageScope === id/u)
   // 健康状态必须是固定枚举精确匹配，未知值保守映射为 unavailable，不得用自然语言正则默认 ready
   assert.match(source, /HEALTH_STATES = \{/)
   assert.match(source, /'not ready': 'error'/u)
@@ -72,6 +76,7 @@ test('dashboard UI uses one spacing rhythm across desktop and mobile breakpoints
   assert.match(source, /@media\(max-width:800px\)\{\.yd-overlay\{--yd-content-gutter:16px\}/)
   assert.match(source, /style\.textContent = css \+ spacingCss \+ capabilityCss/)
   assert.match(source, /\.yd-ranges button\[data-active=true\]\{background:var\(--dsw-alias-brand-primary\);color:var\(--dsw-alias-label-primary-foreground\)/)
+  assert.match(source, /\.yd-ranges button:disabled\{opacity:\.45;cursor:default\}/)
 })
 
 test('loads and registers the sidebar action and global overlay', async () => {

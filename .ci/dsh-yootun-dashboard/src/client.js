@@ -963,6 +963,7 @@ function DashboardButton({ wide, t }) {
 function DashboardOverlay({ t }) {
   const visible = useSyncExternalStore(subscribe, getSnapshot, getSnapshot)
   const shellRef = useRef(null)
+  const loadingRef = useRef(false)
   const [tab, setTab] = useState('overview')
   const [range, setRange] = useState(() => loadPrefs().range || 'yesterday')
   const [usageScope, setUsageScope] = useState(() => loadPrefs().usageScope || 'key')
@@ -974,15 +975,16 @@ function DashboardOverlay({ t }) {
   const data = dataByRange[dataKey]
 
   useEffect(() => {
-    if (!visible) return undefined
+    if (!visible) { loadingRef.current = false; return undefined }
     const controller = new AbortController()
+    loadingRef.current = true
     setLoading(true)
     setFailed(false)
     void loadDashboard(range, usageScope, controller.signal)
       .then(value => { setDataByRange(previous => ({ ...previous, [dataKey]: value })); setFailed(false) })
       .catch(error => { if (error?.name !== 'AbortError') setFailed(true) })
-      .finally(() => { if (!controller.signal.aborted) setLoading(false) })
-    return () => controller.abort()
+      .finally(() => { if (!controller.signal.aborted) { loadingRef.current = false; setLoading(false) } })
+    return () => { controller.abort(); loadingRef.current = false }
   }, [visible, revision, range, usageScope, dataKey])
 
   useEffect(() => {
@@ -995,9 +997,29 @@ function DashboardOverlay({ t }) {
 
   const periodLabel = useMemo(() => data?.period?.date || data?.period?.label || '', [data?.period?.date, data?.period?.label])
   if (!visible) return null
+  const refresh = () => {
+    if (loadingRef.current) return
+    loadingRef.current = true
+    setLoading(true)
+    setRevision(value => value + 1)
+  }
+  const selectRange = value => {
+    if (loadingRef.current || value === range) return
+    loadingRef.current = true
+    setLoading(true)
+    setRange(value)
+    savePrefs({ range: value, usageScope })
+  }
+  const selectUsageScope = value => {
+    if (loadingRef.current || value === usageScope) return
+    loadingRef.current = true
+    setLoading(true)
+    setUsageScope(value)
+    savePrefs({ range, usageScope: value })
+  }
   let body
   if (loading && !data) body = h('div', { className: 'yd-loading', role: 'status' }, h('span', { className: 'yd-spinner' }), t('loading'))
-  else if (failed && !data) body = h('div', { className: 'yd-fatal', role: 'alert' }, h('strong', null, t('error')), h('button', { type: 'button', onClick: () => setRevision(value => value + 1) }, t('retry')))
+  else if (failed && !data) body = h('div', { className: 'yd-fatal', role: 'alert' }, h('strong', null, t('error')), h('button', { type: 'button', disabled: loading, onClick: refresh }, t('retry')))
   else if (data) {
     body = tab === 'overview' ? h(Overview, { data, t, onOpenTab: setTab })
       : tab === 'geo' ? h(React.Fragment, null, h(GeoMetrics, { source: data.geo, t, detailed: true }), data.georank?.status === 'ready' || data.georank?.status === 'empty' ? h(GeorankView, { source: data.georank, t, detailed: true }) : null)
@@ -1020,15 +1042,15 @@ function DashboardOverlay({ t }) {
           h(Tooltip, { label: t('exportCsv'), side: 'bottom' }, h('button', { type: 'button', className: 'yd-icon-button', disabled: !hasExportableData(data), onClick: () => exportCsv(data, t), 'aria-label': t('exportCsv') }, h(IconDownloadOutline16, { size: 16 }))),
           h('div', { className: 'yd-ranges', role: 'group', 'aria-label': t('rangeControl') }, ...RANGES.map(item =>
             h('button', {
-              type: 'button', key: item.id, 'data-active': range === item.id, 'aria-pressed': range === item.id,
-              onClick: () => { setRange(item.id); savePrefs({ range: item.id, usageScope }) },
+              type: 'button', key: item.id, disabled: loading, 'data-active': range === item.id, 'aria-pressed': range === item.id,
+              onClick: () => selectRange(item.id),
             }, t(item.label)))),
           range === 'yesterday' ? null : h('div', { className: 'yd-ranges', role: 'group', 'aria-label': t('scopeControl') }, ...['key', 'team'].map(id =>
             h('button', {
-              type: 'button', key: id, 'data-active': usageScope === id, 'aria-pressed': usageScope === id,
-              onClick: () => { setUsageScope(id); savePrefs({ range, usageScope: id }) },
+              type: 'button', key: id, disabled: loading, 'data-active': usageScope === id, 'aria-pressed': usageScope === id,
+              onClick: () => selectUsageScope(id),
             }, t(id === 'team' ? 'scopeTeam' : 'scopeKey')))),
-          h(Tooltip, { label: t('refresh'), side: 'bottom' }, h('button', { type: 'button', className: 'yd-icon-button', disabled: loading, onClick: () => setRevision(value => value + 1), 'aria-label': t('refresh') }, h(IconRefreshOutline16, { size: 16 }))),
+          h(Tooltip, { label: t('refresh'), side: 'bottom' }, h('button', { type: 'button', className: 'yd-icon-button', disabled: loading, onClick: refresh, 'aria-label': t('refresh') }, h(IconRefreshOutline16, { size: 16 }))),
           h(Tooltip, { label: t('close'), side: 'bottom' }, h('button', { type: 'button', className: 'yd-icon-button', onClick: closeOverlay, 'aria-label': t('close') }, h(IconCloseOutline16, { size: 16 }))))),
       h('nav', { className: 'yd-tabs', 'aria-label': t('title') }, ...TABS.map(item =>
         h('button', { type: 'button', key: item.id, 'aria-current': tab === item.id ? 'page' : undefined, onClick: () => setTab(item.id) }, t(item.label)))),
@@ -1050,6 +1072,7 @@ const spacingCss = `
 .yd-icon-button{width:var(--yd-control-height);height:var(--yd-control-height);border-radius:var(--yd-card-radius)}
 .yd-ranges{gap:var(--yd-space-1);padding:var(--yd-space-1);border-radius:var(--yd-card-radius)}
 .yd-ranges button{min-height:var(--yd-control-height);padding:0 var(--yd-space-3)}
+.yd-ranges button:disabled{opacity:.45;cursor:default}
 .yd-tabs{gap:var(--yd-space-1);padding:0 var(--yd-content-gutter)}
 .yd-tabs button{height:44px;padding:0 var(--yd-space-4)}
 .yd-content{padding:var(--yd-space-6) var(--yd-content-gutter) var(--yd-space-7)}
