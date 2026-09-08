@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { handleYootunContentCommandRequest, YOOTUN_CONTENT_COMMAND_PATH } from '../src/yootun-content-command-route.ts'
 
 function request(method: string, body?: string, origin = 'http://127.0.0.1:43120'): any { const chunks = body === undefined ? [] : [Buffer.from(body)]; const headers: Record<string, string> = { host: '127.0.0.1:43120', 'content-type': 'application/json' }; if (origin !== undefined) headers.origin = origin; return { method, headers, socket: { remoteAddress: '127.0.0.1' }, async *[Symbol.asyncIterator]() { yield* chunks } } }
-function response() { let raw = ''; return { statusCode: 0, setHeader() {}, end(value = '') { raw += value }, get status() { return this.statusCode }, body() { return raw ? JSON.parse(raw) : undefined } } as any }
+function response() { let raw = ''; const headers: Record<string, string | number> = {}; return { statusCode: 0, headers, setHeader(name: string, value: string | number) { headers[name.toLowerCase()] = value }, end(value = '') { raw += value }, get status() { return this.statusCode }, body() { return raw ? JSON.parse(raw) : undefined } } as any }
 function tools(): any { return { schemas: () => [
   { name: 'mcp__geoflow__geoflow_articles_list' },
   { name: 'mcp__geoflow__geoflow_articles_get' },
@@ -32,6 +32,7 @@ describe('Yootun content command route', () => {
     const unsupported = response()
     await handleYootunContentCommandRequest(request('PUT'), unsupported, 'http://127.0.0.1:43120', { statePath: undefined })
     expect(unsupported.statusCode).toBe(405)
+    expect(unsupported.headers['x-content-type-options']).toBe('nosniff')
   })
 
   it('loads GeoFlow article bodies and persists review/channel decisions only', async () => {
@@ -41,6 +42,7 @@ describe('Yootun content command route', () => {
     const now = () => new Date('2026-09-01T02:00:00.000Z')
     const loaded = response()
     await handleYootunContentCommandRequest(request('GET'), loaded, 'http://127.0.0.1:43120', { statePath, tools: source, now })
+    expect(loaded.headers['x-content-type-options']).toBe('nosniff')
     expect(loaded.body()).toMatchObject({
       dashboard: { articles: 1, pendingReview: 1 },
       articles: [{ articleId: 42, content: '# 正文', reviewStatus: 'pending', humanize: { status: 'processed', score: 18, classification: 'HUMAN_ONLY', issues: ['术语密度偏高 - 拆分长句'] } }],
