@@ -13,6 +13,7 @@ const harnessRoot = resolve(here, 'yootun-audit')
 const evidenceRoot = resolve(workspaceRoot, 'docs/superpowers/evidence/2026-09-08-search-locks')
 const sources = {
   lead: resolve(workspaceRoot, '.ci/dsh-yootun-lead-discovery/src/client.js'),
+  recruiter: resolve(workspaceRoot, '.ci/dsh-yootun-recruiter/src/client.js'),
   retrofit: resolve(workspaceRoot, '.ci/dsh-yootun-retrofit/src/client.js'),
 }
 const browserExecutable = process.env.DSH_AUDIT_BROWSER_EXECUTABLE
@@ -46,6 +47,21 @@ let releaseLeadSearch
 const leadSearchReady = new Promise(resolve => { releaseLeadSearch = resolve })
 let releaseLeadPage
 const leadPageReady = new Promise(resolve => { releaseLeadPage = resolve })
+let recruiterActionRequests = 0
+let releaseRecruiterAction
+const recruiterActionReady = new Promise(resolve => { releaseRecruiterAction = resolve })
+const recruiter = {
+  status: 'ready',
+  dashboard: { openRoles: 1, activeCandidates: 2, pendingReplies: 1, pendingFeedback: 0, pendingConfirmation: 1, responseRate: 75 },
+  requirements: [],
+  candidates: [],
+  actions: [{ id: 'recruiter-action-1', targetLabel: '候选人 A', summary: '发送面试邀请', status: 'awaiting_confirmation' }],
+  boss: { status: 'ready', adapter: 'official', inAppBrowser: true },
+  sync: { status: 'ready', imported: 2, updated: 1 },
+  knowledge: { status: 'ready', spaces: 1, documents: 4, memories: 2, pending: 1 },
+  analytics: {},
+  updatedAt: '2026-09-08T03:00:00.000Z',
+}
 let retrofitStoredRequests = 0
 let retrofitRefreshRequests = 0
 let releaseRetrofitRefresh
@@ -111,6 +127,19 @@ await page.route('**/api/desktop/yootun/lead-discovery', async route => {
     }),
   })
 })
+await page.route('**/api/desktop/yootun/recruiter', async route => {
+  if (route.request().method() === 'POST') {
+    recruiterActionRequests += 1
+    await recruiterActionReady
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ ...recruiter, actions: recruiter.actions.map(action => ({ ...action, status: 'confirmed_pending_adapter' })) }),
+    })
+    return
+  }
+  await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(recruiter) })
+})
 await page.route('**/api/desktop/yootun/retrofit', async route => {
   const body = route.request().postDataJSON()
   if (body.action === 'refresh') {
@@ -171,6 +200,23 @@ try {
   releaseLeadPage()
   await page.waitForFunction(() => document.querySelector('.yl-content')?.getAttribute('aria-busy') === 'false')
 
+  await page.goto(`${url}?source=recruiter`)
+  await page.getByRole('button', { name: '招聘工作台' }).click()
+  await page.getByRole('heading', { name: 'HR 招聘工作台' }).waitFor()
+  await page.waitForFunction(() => document.querySelector('.yr-content')?.getAttribute('aria-busy') === 'false')
+  const recruiterApprove = page.getByRole('button', { name: '确认动作' })
+  await recruiterApprove.click()
+  await page.locator('.yr-content[aria-busy="true"]').waitFor()
+  await recruiterApprove.evaluate(button => button.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+  assert.equal(recruiterActionRequests, 1, 'an active recruiter action must reject duplicate submissions')
+  assert.equal(await recruiterApprove.isDisabled(), true)
+  assert.equal(await page.locator('.yr-tabs button:not(:disabled)').count(), 0)
+  assert.equal(await page.locator('.yr-source-button:not(:disabled)').count(), 0)
+  await assertViewport()
+  await page.screenshot({ path: resolve(evidenceRoot, '390-recruiter-action-lock.png'), fullPage: true })
+  releaseRecruiterAction()
+  await page.waitForFunction(() => document.querySelector('.yr-content')?.getAttribute('aria-busy') === 'false')
+
   await page.goto(`${url}?source=retrofit`)
   await page.getByRole('button', { name: '改装方案库' }).click()
   await page.getByRole('heading', { name: '车辆改装方案库' }).waitFor()
@@ -192,10 +238,11 @@ try {
   await page.waitForFunction(() => document.querySelector('.yr-content')?.getAttribute('aria-busy') === 'false')
 
   assert.deepEqual(consoleProblems, [])
-  process.stdout.write('search-locks-browser: 2 plugins, 3 screenshots, duplicate and overlapping requests blocked with stable mobile layout\n')
+  process.stdout.write('search-locks-browser: 3 plugins, 4 screenshots, duplicate and overlapping requests blocked with stable mobile layout\n')
 } finally {
   releaseLeadSearch()
   releaseLeadPage()
+  releaseRecruiterAction()
   releaseRetrofitRefresh()
   await page.close()
   await browser.close()
