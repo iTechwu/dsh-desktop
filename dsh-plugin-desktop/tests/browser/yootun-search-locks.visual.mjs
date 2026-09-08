@@ -301,7 +301,7 @@ await page.route('**/api/desktop/yootun/recruiter', async route => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
-      body: JSON.stringify({ ...recruiter, actions: recruiter.actions.map(action => ({ ...action, status: 'confirmed_pending_adapter' })) }),
+      body: JSON.stringify({ ...recruiter, actions: recruiter.actions.map(action => ({ ...action, status: 'adapter_pending' })) }),
     })
     return
   }
@@ -529,6 +529,12 @@ try {
   await page.screenshot({ path: resolve(evidenceRoot, '390-recruiter-action-lock.png'), fullPage: true })
   releaseRecruiterAction()
   await page.waitForFunction(() => document.querySelector('.yr-content')?.getAttribute('aria-busy') === 'false')
+  await page.getByRole('button', { name: '待办审批' }).click()
+  await page.getByText('已确认，等待适配器', { exact: true }).waitFor()
+  assert.equal(await page.getByText('adapter_pending', { exact: true }).count(), 0)
+  assert.equal(await page.getByRole('button', { name: '执行动作' }).count(), 0)
+  await assertViewport()
+  await page.screenshot({ path: resolve(evidenceRoot, '390-recruiter-status.png'), fullPage: true })
 
   await page.goto(`${url}?source=retrofit`)
   await page.getByRole('button', { name: '改装方案库' }).click()
@@ -551,7 +557,7 @@ try {
   await page.waitForFunction(() => document.querySelector('.yr-content')?.getAttribute('aria-busy') === 'false')
 
   assert.deepEqual(consoleProblems, [])
-  process.stdout.write('search-locks-browser: 10 plugins, 12 screenshots, request locks, localized statuses, and theme mappings verified with stable mobile layout\n')
+  process.stdout.write('search-locks-browser: 10 plugins, 13 screenshots, request locks, localized statuses, and theme mappings verified with stable mobile layout\n')
 } finally {
   releaseDailyRefresh()
   releaseFinopsRefresh()
