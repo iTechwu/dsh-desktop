@@ -2,10 +2,11 @@ import { readdir, readFile, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 
 const ciRoot = new URL('../.ci/', import.meta.url)
-const entries = (await readdir(ciRoot, { withFileTypes: true }))
-  .filter(entry => entry.isDirectory() && entry.name.startsWith('dsh-yootun-'))
+const ciEntries = (await readdir(ciRoot, { withFileTypes: true }))
+  .filter(entry => entry.isDirectory())
   .map(entry => entry.name)
   .sort()
+const entries = ciEntries.filter(name => name.startsWith('dsh-yootun-'))
 
 const clientPlugins = []
 for (const name of entries) {
@@ -19,9 +20,26 @@ for (const name of entries) {
 
 const failures = []
 const desktopStyles = await readFile(new URL('../dsh-plugin-desktop/src/client/styles.ts', import.meta.url), 'utf8')
+const desktopSettingsStyles = await readFile(new URL('../dsh-plugin-desktop/src/client/desktop-settings-styles.ts', import.meta.url), 'utf8')
 if (!desktopStyles.includes('[aria-modal="true"] :is(')) failures.push('dsh-plugin-desktop: modal focus indicator is missing')
 if (!desktopStyles.includes('prefers-reduced-motion: reduce') || !desktopStyles.includes('[aria-modal="true"] *')) {
   failures.push('dsh-plugin-desktop: reduced-motion coverage for plugin overlays is missing')
+}
+if (desktopSettingsStyles.includes('--dsw-alias-state-warning-primary')) {
+  failures.push('dsh-plugin-desktop: settings styles use the undefined state-warning theme alias')
+}
+
+for (const name of ciEntries) {
+  for (const relativePath of ['src/client.js', 'lib/client.js']) {
+    try {
+      const clientArtifact = await readFile(new URL(`../.ci/${name}/${relativePath}`, import.meta.url), 'utf8')
+      if (clientArtifact.includes('--dsw-alias-state-warning-primary')) {
+        failures.push(`${name}/${relativePath}: uses the undefined state-warning theme alias`)
+      }
+    } catch (error) {
+      if (error?.code !== 'ENOENT') throw error
+    }
+  }
 }
 
 for (const name of clientPlugins) {
