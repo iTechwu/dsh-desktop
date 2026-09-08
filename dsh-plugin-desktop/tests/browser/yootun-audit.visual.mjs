@@ -10,7 +10,7 @@ const here = fileURLToPath(new URL('.', import.meta.url))
 const packageRoot = resolve(here, '../..')
 const workspaceRoot = resolve(packageRoot, '..')
 const harnessRoot = resolve(here, 'yootun-audit')
-const auditSourcePath = resolve(workspaceRoot, '../docker-helm.dofe.ai/plugins/dsh-yootun-audit/src/client.js')
+const auditSourcePath = resolve(workspaceRoot, '.ci/dsh-yootun-audit/src/client.js')
 const evidenceRoot = resolve(workspaceRoot, 'docs/superpowers/evidence/2026-09-05-yootun-audit')
 const browserExecutable = process.env.DSH_AUDIT_BROWSER_EXECUTABLE
   || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'

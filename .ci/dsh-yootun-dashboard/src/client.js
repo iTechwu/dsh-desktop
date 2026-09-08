@@ -1067,7 +1067,7 @@ const spacingCss = `
 .yd-domain-card .yd-metric{min-height:72px;padding:var(--yd-space-3)}
 .yd-metric-head{gap:var(--yd-space-1)}
 .yd-source{gap:var(--yd-space-2)}
-.yd-ranges button[data-active=true]{background:var(--dsw-alias-brand-primary);color:var(--dsw-alias-bg-base);font-weight:600}
+.yd-ranges button[data-active=true]{background:var(--dsw-alias-brand-primary);color:var(--dsw-alias-label-primary-foreground);font-weight:600}
 .yd-source-row{gap:var(--yd-space-4);min-height:var(--yd-row-height)}
 .yd-source-row>div{gap:var(--yd-space-1)}
 .yd-source-meta{gap:var(--yd-space-3)}

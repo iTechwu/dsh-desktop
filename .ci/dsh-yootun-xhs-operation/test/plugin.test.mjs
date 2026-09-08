@@ -97,3 +97,9 @@ test('announces the initial copy result empty state', async () => {
   const source = await readFile(new URL('src/client.js', root), 'utf8')
   assert.match(source, /className: 'yxh-state', role: 'status'/u)
 })
+
+test('uses adaptive foregrounds for brand actions', async () => {
+  const source = await readFile(new URL('src/client.js', root), 'utf8')
+  assert.match(source, /\.yxh-submit\{[^}]*background:var\(--dsw-alias-brand-primary\);color:var\(--dsw-alias-label-primary-foreground\)/u)
+  assert.match(source, /\.yxh-confirm-primary\{[^}]*background:var\(--dsw-alias-brand-primary\);color:var\(--dsw-alias-label-primary-foreground\)/u)
+})

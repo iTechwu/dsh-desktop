@@ -70,7 +70,7 @@ test('dashboard UI uses one spacing rhythm across desktop and mobile breakpoints
   assert.match(source, /sourceEmptyContext/)
   assert.match(source, /@media\(max-width:800px\)\{\.yd-overlay\{--yd-content-gutter:16px\}/)
   assert.match(source, /style\.textContent = css \+ spacingCss \+ capabilityCss/)
-  assert.match(source, /\.yd-ranges button\[data-active=true\]\{background:var\(--dsw-alias-brand-primary\);color:var\(--dsw-alias-bg-base\)/)
+  assert.match(source, /\.yd-ranges button\[data-active=true\]\{background:var\(--dsw-alias-brand-primary\);color:var\(--dsw-alias-label-primary-foreground\)/)
 })
 
 test('loads and registers the sidebar action and global overlay', async () => {
