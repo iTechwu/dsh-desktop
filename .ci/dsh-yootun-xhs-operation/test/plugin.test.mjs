@@ -92,3 +92,8 @@ test('uses only DSH alpha3 exported icons', async () => {
     assert.match(exported, new RegExp(`export const ${name}\\b`, 'u'))
   }
 })
+
+test('announces the initial copy result empty state', async () => {
+  const source = await readFile(new URL('src/client.js', root), 'utf8')
+  assert.match(source, /className: 'yxh-state', role: 'status'/u)
+})

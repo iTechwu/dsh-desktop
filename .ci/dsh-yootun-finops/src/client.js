@@ -112,7 +112,7 @@ function SourceBadge({ source, t }) {
 
 function EmptyState({ title, source, t }) {
   const meta = [source?.reason ? `${t('reason')}: ${source.reason}` : null, source?.missingFields?.length ? `${t('partial')}: ${source.missingFields.join(', ')}` : null].filter(Boolean)
-  return h('div', { className: `yf-empty yf-empty-${source?.status || 'unavailable'}`, role: source?.status === 'error' ? 'alert' : undefined }, h(Glyph, { name: iconFor(source?.status), size: 20 }), h('strong', null, title), meta.length ? h('details', null, h('summary', null, t('details')), h('code', null, meta.join(' · '))) : null)
+  return h('div', { className: `yf-empty yf-empty-${source?.status || 'unavailable'}`, role: source?.status === 'error' ? 'alert' : 'status' }, h(Glyph, { name: iconFor(source?.status), size: 20 }), h('strong', null, title), meta.length ? h('details', null, h('summary', null, t('details')), h('code', null, meta.join(' · '))) : null)
 }
 
 function StatusBadge({ status, t }) {

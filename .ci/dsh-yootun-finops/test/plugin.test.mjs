@@ -61,6 +61,7 @@ test('keeps cost data source-bound and free of credentials or direct providers',
   }
   assert.doesNotMatch(source, /MODELS_API_KEY|api\.deepseek\.com|password|cookie/iu)
   assert.match(source, /activeStateCss/)
+  assert.match(source, /role: source\?\.status === 'error' \? 'alert' : 'status'/u)
   assert.match(source, /background:var\(--dsw-alias-label-primary\)/)
   assert.match(source, /color:var\(--dsw-alias-bg-base\)/)
   assert.match(source, /partialAttention/)

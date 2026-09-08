@@ -674,7 +674,7 @@ window.__ModuleLoader__.load({
           h('p', null, t('processing')),
           task?.currentStep ? h('p', { className: 'yxh-step' }, `${t('stepLabel')} · ${task.currentStep}`) : null)
       } else {
-        right = h('div', { className: 'yxh-state' }, h('p', null, t('empty')))
+        right = h('div', { className: 'yxh-state', role: 'status' }, h('p', null, t('empty')))
       }
 
       return h('div', { className: 'yxh-overlay' },

@@ -66,6 +66,7 @@ test('dashboard UI uses one spacing rhythm across desktop and mobile breakpoints
   assert.match(source, /\.yd-montage-detail>\.yd-activity-grid\{margin-top:0\}/)
   assert.match(source, /\.yd-table-row\.yd-table-head\{min-height:var\(--yd-control-height\)\}/)
   assert.match(source, /const emptyCompact = compact && status === 'empty'/)
+  assert.match(source, /role: status === 'error' \? 'alert' : 'status'/u)
   assert.match(source, /sourceEmptyContext/)
   assert.match(source, /@media\(max-width:800px\)\{\.yd-overlay\{--yd-content-gutter:16px\}/)
   assert.match(source, /style\.textContent = css \+ spacingCss \+ capabilityCss/)

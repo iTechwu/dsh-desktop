@@ -231,7 +231,7 @@ function EmptyState({ source, t }) {
     Array.isArray(source?.missingFields) && source.missingFields.length ? `missing: ${source.missingFields.join(', ')}` : null,
   ].filter(Boolean)
   const forbidden = source?.reason === 'billing_team_forbidden'
-  return h('div', { className: `yd-empty yd-empty-${status}`, role: status === 'error' ? 'alert' : undefined },
+  return h('div', { className: `yd-empty yd-empty-${status}`, role: status === 'error' ? 'alert' : 'status' },
     h(Glyph, { name: STATUS_GLYPH[status] || 'close', size: 18 }),
     h('strong', null, label),
     forbidden ? h('p', { className: 'yd-text-danger' }, t('teamForbidden')) : null,
