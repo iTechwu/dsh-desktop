@@ -61,7 +61,7 @@ function Overlay({ t }) {
     : activity?.status === 'unavailable' || activity?.status === 'error'
     ? h('div', { className: 'ydr-empty ydr-error', role: 'alert' }, h('strong', null, t('unavailable')), h('button', { type: 'button', onClick: () => setRevision(value => value + 1) }, t('retry')))
     : activity?.status === 'empty'
-      ? h('div', { className: 'ydr-empty' }, t('empty'))
+      ? h('div', { className: 'ydr-empty', role: 'status' }, t('empty'))
       : h(
         'section',
         { className: 'ydr-section' },

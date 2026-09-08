@@ -21,10 +21,11 @@ test('keeps follow-ups human-confirmed and points only at the Desktop route', as
   assert.doesNotMatch(source, /contactPhone|password|cookie|聊天正文/iu)
 })
 
-test('announces intent source states', async () => {
+test('announces intent and workspace empty states', async () => {
   const source = await readFile(new URL('src/client.js', root), 'utf8')
   assert.match(source, /className: 'ys-intent-empty', role: 'status'/u)
   assert.match(source, /className: 'ys-intent-empty', role: 'alert'/u)
+  assert.match(source, /className: 'ys-empty', role: 'status'/u)
 })
 
 test('builds a syntactically valid browser module', async () => {

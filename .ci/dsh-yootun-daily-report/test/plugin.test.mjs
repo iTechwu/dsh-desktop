@@ -38,4 +38,9 @@ test('daily report aggregates yesterday session events', async () => {
   assert.equal(result.body.sources.salesIntent.status, 'ready')
   assert.equal(result.body.sources.retrofit.status, 'unavailable')
 })
+test('announces the empty activity state', async () => {
+  const source = await readFile(new URL('../src/client.js', import.meta.url), 'utf8')
+  assert.match(source, /className: 'ydr-empty', role: 'status'/u)
+})
+
 async function invoke(route) { let status; let headers; let raw = ''; await route.handler({ method: 'GET' }, { writeHead(value, valueHeaders) { status = value; headers = valueHeaders; return this }, end(value) { raw += value } }); return { status, headers, body: JSON.parse(raw) } }

@@ -78,7 +78,7 @@ function Overlay({ t }) {
       ? current.leads.slice(0, 20).map(lead => h('article', { className: 'ys-lead', key: lead.id },
         h('strong', null, lead.company), h('span', null, `${lead.stage} · ${lead.source}`), lead.note ? h('p', null, lead.note) : null,
       ))
-      : h('div', { className: 'ys-empty' }, t('empty')),
+      : h('div', { className: 'ys-empty', role: 'status' }, t('empty')),
   )
   const inlineError = error && data
     ? h('div', { role: 'alert', className: 'ys-inline-error' }, h('span', null, t('actionError')), h('button', { type: 'button', onClick: () => { setError(false); setRevision(value => value + 1) } }, t('retry')))
