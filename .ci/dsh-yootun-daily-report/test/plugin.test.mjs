@@ -11,7 +11,8 @@ test('generated client bundle is valid JavaScript', () => {
 })
 test('localizes source states and keeps unavailable metrics explicit', async () => {
   const source = await readFile(new URL('../src/client.js', import.meta.url), 'utf8')
-  for (const token of ['sourceReady', 'sourceUnavailable', 'sourceError', 'toolsSource', 'request_failed', 'response.ok', '不可用', '.ydr-overlay{position:fixed', '.ydr-shell{display:grid', '.ydr-content{min-height:0']) assert.match(source, new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'u'))
+  for (const token of ['sourceReady', 'sourceUnavailable', 'sourceError', 'toolsSource', 'request_failed', 'response.ok', "t('sourceUnavailable')", '.ydr-overlay{position:fixed', '.ydr-shell{display:grid', '.ydr-content{min-height:0']) assert.match(source, new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'u'))
+  assert.doesNotMatch(source, /\? '不可用'/u)
 })
 test('daily report aggregates yesterday session events', async () => {
   let route
@@ -42,6 +43,12 @@ test('announces the empty activity state', async () => {
   const source = await readFile(new URL('../src/client.js', import.meta.url), 'utf8')
   assert.match(source, /className: 'ydr-empty', role: 'status'/u)
   assert.match(source, /'aria-busy': loading/u)
+})
+test('prevents duplicate refresh requests', async () => {
+  const source = await readFile(new URL('../src/client.js', import.meta.url), 'utf8')
+  assert.match(source, /const loadingRef = useRef\(false\)/u)
+  assert.match(source, /const refresh = \(\) => \{ if \(loadingRef\.current\) return/u)
+  assert.match(source, /disabled: loading, onClick: refresh/u)
 })
 
 async function invoke(route) { let status; let headers; let raw = ''; await route.handler({ method: 'GET' }, { writeHead(value, valueHeaders) { status = value; headers = valueHeaders; return this }, end(value) { raw += value } }); return { status, headers, body: JSON.parse(raw) } }
