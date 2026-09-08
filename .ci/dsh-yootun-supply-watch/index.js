@@ -69,6 +69,7 @@ async function buildState(ctx, signal = AbortSignal.timeout(TOOL_CALL_TIMEOUT_MS
       id: String(alert.alertId || ''),
       targetLabel: String(alert.supplierId || '供应商'),
       summary: `${alert.priority || 'P?'} · ${alert.status || 'open'}`,
+      severity: String(alert.priority || '').toLowerCase(),
       status: handledActions.has(String(alert.alertId)) ? 'adapter_pending' : 'awaiting_confirmation',
     }))
     .filter(item => item.id)

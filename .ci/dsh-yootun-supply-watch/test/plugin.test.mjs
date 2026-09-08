@@ -18,6 +18,11 @@ test('keeps risk reviews human-confirmed and local-only', async () => {
   }
   assert.doesNotMatch(source, /Unable to load supply watch/u)
   assert.match(source, /openRisks/u)
+  assert.match(source, /current\.dashboard\.openRisks \?\? current\.dashboard\.open/u)
+  assert.match(source, /status === 'confirmed_pending_adapter' \|\| status === 'adapter_pending'/u)
+  assert.match(source, /item\.targetLabel \|\| t\('supplier'\)/u)
+  assert.doesNotMatch(source, /item\.(title|supplierLabel|category|signal|source)/u)
+  assert.match(source, /data\?\.status && data\.status !== 'ready'/u)
   assert.match(source, /'aria-busy': interactionBusy/u)
   assert.doesNotMatch(source, /password|cookie|银行卡|供应商联系人手机号/iu)
 })

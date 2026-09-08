@@ -39,6 +39,7 @@ test('builds risks and review actions from live supply chain alerts', async () =
   assert.equal(state.body.risks[0].targetLabel, 'sup-9')
   assert.equal(state.body.actions.length, 1)
   assert.equal(state.body.actions[0].id, 'a-1')
+  assert.equal(state.body.actions[0].severity, 'p0')
   assert.equal(executed[0].arguments.pageSize, 20)
   assert.ok(executed[0].signal instanceof AbortSignal)
   assert.equal(executed[0].signal.aborted, false)

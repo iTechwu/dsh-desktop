@@ -19,6 +19,7 @@ const sources = {
   lead: resolve(workspaceRoot, '.ci/dsh-yootun-lead-discovery/src/client.js'),
   recruiter: resolve(workspaceRoot, '.ci/dsh-yootun-recruiter/src/client.js'),
   retrofit: resolve(workspaceRoot, '.ci/dsh-yootun-retrofit/src/client.js'),
+  supply: resolve(workspaceRoot, '.ci/dsh-yootun-supply-watch/src/client.js'),
 }
 const browserExecutable = process.env.DSH_AUDIT_BROWSER_EXECUTABLE
   || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
@@ -124,6 +125,12 @@ const dashboard = {
   capabilities: {},
   refreshedAt: '2026-09-08T03:00:00.000Z',
 }
+const supplyWatch = {
+  status: 'ready',
+  dashboard: { risks: 1, critical: 1, openRisks: 1, dueToday: 0, pending: 1 },
+  risks: [{ id: 'risk-1', targetLabel: '华南供应商 01', severity: 'p0', status: 'open' }],
+  actions: [{ id: 'risk-1', targetLabel: '华南供应商 01', severity: 'p0', status: 'awaiting_confirmation' }],
+}
 let recruiterActionRequests = 0
 let releaseRecruiterAction
 const recruiterActionReady = new Promise(resolve => { releaseRecruiterAction = resolve })
@@ -179,6 +186,14 @@ await page.route('**/api/desktop/yootun/daily-report', async route => {
 })
 await page.route('**/api/desktop/yootun/dashboard/yesterday', async route => {
   await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(dashboard) })
+})
+await page.route('**/api/desktop/yootun/supply-watch', async route => {
+  const confirmed = route.request().method() === 'POST'
+  await route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify(confirmed ? { ...supplyWatch, actions: supplyWatch.actions.map(action => ({ ...action, status: 'adapter_pending' })) } : supplyWatch),
+  })
 })
 await page.route('**/api/desktop/yootun/finops?*', async route => {
   if (finopsRefreshFails) {
@@ -281,6 +296,21 @@ try {
   assert.equal(await page.getByText('asr', { exact: true }).count(), 0)
   await assertViewport()
   await page.screenshot({ path: resolve(evidenceRoot, '390-dashboard-statuses.png'), fullPage: true })
+
+  await page.goto(`${url}?source=supply`)
+  await page.getByRole('button', { name: '供应链预警' }).click()
+  await page.getByRole('heading', { name: '供应链预警' }).waitFor()
+  await page.getByText('风险等级: P0 · 紧急', { exact: true }).first().waitFor()
+  assert.equal(await page.getByText('风险状态: 未关闭', { exact: true }).count(), 1)
+  assert.equal(await page.getByText('未关闭', { exact: true }).count() > 0, true)
+  await page.getByRole('button', { name: '确认复核' }).click()
+  await page.getByText('已确认，等待适配器', { exact: true }).waitFor()
+  const supplyText = await page.locator('.ysw-content').innerText()
+  assert.doesNotMatch(supplyText, /undefined|adapter_pending/iu)
+  assert.equal(await page.getByText('open', { exact: true }).count(), 0)
+  assert.equal(await page.getByText('p0', { exact: true }).count(), 0)
+  await assertViewport()
+  await page.screenshot({ path: resolve(evidenceRoot, '390-supply-statuses.png'), fullPage: true })
 
   await page.goto(`${url}?source=daily`)
   await page.getByRole('button', { name: '昨日工作' }).click()
@@ -431,7 +461,7 @@ try {
   await page.waitForFunction(() => document.querySelector('.yr-content')?.getAttribute('aria-busy') === 'false')
 
   assert.deepEqual(consoleProblems, [])
-  process.stdout.write('search-locks-browser: 7 plugins, 8 screenshots, request locks, localized statuses, and theme mappings verified with stable mobile layout\n')
+  process.stdout.write('search-locks-browser: 8 plugins, 9 screenshots, request locks, localized statuses, and theme mappings verified with stable mobile layout\n')
 } finally {
   releaseDailyRefresh()
   releaseFinopsRefresh()
