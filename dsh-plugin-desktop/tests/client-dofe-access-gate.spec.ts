@@ -57,6 +57,17 @@ describe('mandatory DoFe access gate', () => {
     dispose()
   })
 
+  it('keeps filled controls legible across light and dark themes', () => {
+    const dispose = installDofeAccessStyles()
+    const css = document.getElementById('dsh-dofe-access-styles')?.textContent ?? ''
+
+    expect(css).toContain('color: var(--dsw-alias-label-primary-foreground, #fff)')
+    expect(css).toContain('background: var(--dsw-alias-button-primary-hover, #1d4fc7)')
+    expect(css).not.toMatch(/color:\s*#fff;\s*background:\s*var\(--dsw-alias-brand-primary/)
+
+    dispose()
+  })
+
   it('restores root and document interaction when the mandatory gate is released', () => {
     document.body.innerHTML = '<div id="root"></div>'
     const root = document.getElementById('root') as HTMLElement

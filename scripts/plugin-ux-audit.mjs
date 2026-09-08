@@ -21,6 +21,7 @@ for (const name of entries) {
 const failures = []
 const desktopStyles = await readFile(new URL('../dsh-plugin-desktop/src/client/styles.ts', import.meta.url), 'utf8')
 const desktopSettingsStyles = await readFile(new URL('../dsh-plugin-desktop/src/client/desktop-settings-styles.ts', import.meta.url), 'utf8')
+const dofeAccessSource = await readFile(new URL('../dsh-plugin-desktop/src/client/DofeAccessSection.tsx', import.meta.url), 'utf8')
 const themeSource = await readFile(new URL('../deepseek-harness/packages/client/ui-theme/src/styles/design-platform.css', import.meta.url), 'utf8')
 const definedThemeAliases = new Set(themeSource.match(/--dsw-alias-[a-z0-9-]+(?=\s*:)/g) || [])
 
@@ -29,12 +30,23 @@ function findUndefinedThemeAliases(source) {
   return [...usedAliases].filter(alias => !definedThemeAliases.has(alias)).sort()
 }
 
+function findFixedWhiteOnAdaptiveFill(source) {
+  return (source.match(/[^{}]+\{[^{}]*\}/g) || [])
+    .filter(rule => /background\s*:\s*var\(--dsw-alias-(?:brand-primary|button-primary-fill|state-(?:error|success|warn)-primary)/.test(rule))
+    .filter(rule => /color\s*:\s*(?:#fff(?:fff)?|white)\b/.test(rule))
+    .map(rule => rule.slice(0, rule.indexOf('{')).trim())
+}
+
 if (!desktopStyles.includes('[aria-modal="true"] :is(')) failures.push('dsh-plugin-desktop: modal focus indicator is missing')
 if (!desktopStyles.includes('prefers-reduced-motion: reduce') || !desktopStyles.includes('[aria-modal="true"] *')) {
   failures.push('dsh-plugin-desktop: reduced-motion coverage for plugin overlays is missing')
 }
-for (const alias of findUndefinedThemeAliases(`${desktopStyles}\n${desktopSettingsStyles}`)) {
+const desktopClientStyles = `${desktopStyles}\n${desktopSettingsStyles}\n${dofeAccessSource}`
+for (const alias of findUndefinedThemeAliases(desktopClientStyles)) {
   failures.push(`dsh-plugin-desktop: client styles use undefined theme alias ${alias}`)
+}
+for (const selector of findFixedWhiteOnAdaptiveFill(desktopClientStyles)) {
+  failures.push(`dsh-plugin-desktop: ${selector} fixes white text on an adaptive theme fill`)
 }
 
 for (const name of ciEntries) {
@@ -43,6 +55,9 @@ for (const name of ciEntries) {
       const clientArtifact = await readFile(new URL(`../.ci/${name}/${relativePath}`, import.meta.url), 'utf8')
       for (const alias of findUndefinedThemeAliases(clientArtifact)) {
         failures.push(`${name}/${relativePath}: uses undefined theme alias ${alias}`)
+      }
+      for (const selector of findFixedWhiteOnAdaptiveFill(clientArtifact)) {
+        failures.push(`${name}/${relativePath}: ${selector} fixes white text on an adaptive theme fill`)
       }
     } catch (error) {
       if (error?.code !== 'ENOENT') throw error
