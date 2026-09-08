@@ -162,6 +162,8 @@ test('maps knowledge structure and action hierarchy to desktop theme tokens', as
   assert.match(source, /\.yk-node\.is-selected text\{fill:var\(--dsw-alias-label-primary\)!important\}/u)
   assert.match(source, /style\.textContent = css \+ stateCss \+ themeCss \+ themeRefinementCss/u)
   assert.match(source, /stateLabel\(normalizeSourceState\(item\.status\), t\)/u)
+  assert.match(source, /graphStatusLabel\(selectedNode\.status, t\)/u)
+  assert.doesNotMatch(source, /h\("small", null, selectedNode\.status\)/u)
 })
 
 test('announces local empty and degraded knowledge states', async () => {
@@ -211,6 +213,10 @@ test('normalizes real MCP recall envelopes and graph layout states', async () =>
   assert.equal(client.actionErrorLabel({ code: 'knowledge_mcp_timeout' }, t), 'timeout')
   assert.equal(client.actionErrorLabel({ code: 'knowledge_mcp_request_failed' }, t), 'service')
   assert.equal(client.actionErrorLabel({ code: 'unexpected_backend_detail' }, t), 'generic')
+  const statusText = key => key
+  assert.equal(client.graphStatusLabel('CONFIRMED', statusText), 'confirmed')
+  assert.equal(client.graphStatusLabel('projected', statusText), 'ready')
+  assert.equal(client.graphStatusLabel('CUSTOM_STATE', statusText), 'CUSTOM_STATE')
   const nodes = Array.from({ length: 12 }, (_, index) => ({ id: `memory-${index}`, type: 'MEMORY' }))
   const layout = client.graphLayout(nodes)
   assert.ok(layout.canvasHeight > 700)

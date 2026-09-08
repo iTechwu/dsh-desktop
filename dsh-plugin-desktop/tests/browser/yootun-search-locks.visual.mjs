@@ -224,6 +224,19 @@ await page.route('**/api/desktop/yootun/finops?*', async route => {
   await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(finops) })
 })
 await page.route('**/api/desktop/yootun/knowledge', async route => {
+  if (route.request().method() === 'POST' && route.request().postDataJSON()?.action === 'graph') {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ result: {
+        nodes: [{ id: 'memory-1', entityId: 'memory-1', type: 'MEMORY', label: '重点客户偏好', status: 'CONFIRMED' }],
+        edges: [],
+        generatedAt: '2026-09-08T03:00:00.000Z',
+        projection: { status: 'projected' },
+      } }),
+    })
+    return
+  }
   await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(knowledge) })
 })
 await page.route('**/api/desktop/yootun/lead-discovery', async route => {
@@ -426,6 +439,14 @@ try {
   assert.equal(knowledgeTheme.quietColor, knowledgeTheme.secondary)
   await assertViewport()
   await page.screenshot({ path: resolve(evidenceRoot, '390-knowledge-theme.png'), fullPage: true })
+  await page.getByRole('button', { name: '知识图谱' }).click()
+  await page.getByRole('button', { name: '重点客户偏好' }).waitFor()
+  await page.getByRole('button', { name: '重点客户偏好' }).click()
+  await page.locator('.yk-node-detail').getByText('已确认', { exact: true }).waitFor()
+  assert.equal(await page.locator('.yk-node-detail').getByText('CONFIRMED', { exact: true }).count(), 0)
+  await page.locator('.yk-node-detail').scrollIntoViewIfNeeded()
+  await assertViewport()
+  await page.screenshot({ path: resolve(evidenceRoot, '390-knowledge-node-status.png'), fullPage: true })
 
   await page.goto(`${url}?source=lead`)
   await page.getByRole('button', { name: '购车线索发现' }).click()
@@ -498,7 +519,7 @@ try {
   await page.waitForFunction(() => document.querySelector('.yr-content')?.getAttribute('aria-busy') === 'false')
 
   assert.deepEqual(consoleProblems, [])
-  process.stdout.write('search-locks-browser: 9 plugins, 10 screenshots, request locks, localized statuses, and theme mappings verified with stable mobile layout\n')
+  process.stdout.write('search-locks-browser: 9 plugins, 11 screenshots, request locks, localized statuses, and theme mappings verified with stable mobile layout\n')
 } finally {
   releaseDailyRefresh()
   releaseFinopsRefresh()

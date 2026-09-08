@@ -285,6 +285,17 @@ const memoryStatus = (value, t) =>
     : value === "FORGOTTEN"
       ? t("forgotten")
       : t("candidate");
+const graphStatusLabel = (value, t) => {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  const memoryState = raw.toUpperCase();
+  if (["CANDIDATE", "CONFIRMED", "FORGOTTEN"].includes(memoryState))
+    return memoryStatus(memoryState, t);
+  const sourceState = raw.toLowerCase();
+  if (["ready", "healthy", "projected", "queued", "degraded", "error"].includes(sourceState))
+    return stateLabel(normalizeSourceState(sourceState), t);
+  return raw;
+};
 function SourceBadge({ label, state, t }) {
   const normalized = normalizeSourceState(state);
   return h(
@@ -822,7 +833,7 @@ function GraphCanvas({ graph, t, onOpenMemory }) {
         h("span", { className: "yk-eyebrow" }, typeLabel(selectedNode.type, t)),
         h("strong", null, selectedNode.label),
         h("small", null, selectedNode.entityId || selectedNode.id),
-        selectedNode.status ? h("small", null, selectedNode.status) : null,
+        selectedNode.status ? h("small", null, graphStatusLabel(selectedNode.status, t)) : null,
         selectedNode.type === "MEMORY" && onOpenMemory
           ? h(
               "button",
@@ -1392,6 +1403,7 @@ module.exports = {
   __test: {
     actionErrorLabel,
     graphLayout,
+    graphStatusLabel,
     graphTypeCounts,
     normalizeGraph,
     normalizeSourceState,
