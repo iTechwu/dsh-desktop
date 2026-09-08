@@ -67,7 +67,7 @@ export interface SupplyRouteDependencies {
   audit?: YootunAuditRecorder | undefined
 }
 
-const SUPPLY_AUDIT_SOURCE = Object.freeze({ pluginId: 'dsh-plugin-desktop/yootun-supply-watch', pluginVersion: '2.0.7-beta.1', surface: 'human_ui' as const })
+const SUPPLY_AUDIT_SOURCE = Object.freeze({ pluginId: 'dsh-plugin-desktop/yootun-supply-watch', pluginVersion: '2.0.7-beta.2', surface: 'human_ui' as const })
 
 async function recordSupplyAudit(audit: YootunAuditRecorder | undefined, input: YootunAuditRecordInput | undefined): Promise<void> {
   if (audit === undefined || input === undefined) return
