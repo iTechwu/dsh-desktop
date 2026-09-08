@@ -30,6 +30,15 @@ test('announces intent and workspace empty states', async () => {
   assert.match(source, /className: 'ys-content', 'aria-busy': loading/u)
 })
 
+test('labels and locks an active intent search', async () => {
+  const source = await readFile(new URL('src/client.js', root), 'utf8')
+  assert.match(source, /intentSearching: '正在检索…'/u)
+  assert.match(source, /intentSearching: 'Searching…'/u)
+  assert.match(source, /if \(busyRef\.current \|\| !query\.trim\(\)\) return/u)
+  assert.match(source, /busy \? t\('intentSearching'\) : t\('intentSearch'\)/u)
+  assert.doesNotMatch(source, /busy \? '…'/u)
+})
+
 test('builds a syntactically valid browser module', async () => {
   const source = await readFile(new URL('src/client.js', root), 'utf8')
   const temporary = new URL('src/.sales-client-syntax-check.cjs', root)

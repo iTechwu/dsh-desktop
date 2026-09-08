@@ -15,6 +15,7 @@ const sources = {
   contentCommand: resolve(workspaceRoot, '.ci/dsh-yootun-content-command/src/client.js'),
   dashboard: resolve(workspaceRoot, '.ci/dsh-yootun-dashboard/src/client.js'),
   retrofit: resolve(workspaceRoot, '.ci/dsh-yootun-retrofit/src/client.js'),
+  sales: resolve(workspaceRoot, '.ci/dsh-yootun-sales/src/client.js'),
   xhs: resolve(workspaceRoot, '.ci/dsh-yootun-xhs-operation/src/client.js'),
 }
 const browserExecutable = process.env.DSH_AUDIT_BROWSER_EXECUTABLE
@@ -85,6 +86,14 @@ const contentCommand = {
 }
 let releaseContentCommand
 const contentCommandReady = new Promise(resolve => { releaseContentCommand = resolve })
+const sales = {
+  dashboard: { leads: 0, qualified: 0, dueToday: 0, pendingConfirmation: 0 },
+  leads: [],
+  actions: [],
+}
+let salesSearchRequests = 0
+let releaseSalesSearch
+const salesSearchReady = new Promise(resolve => { releaseSalesSearch = resolve })
 const retrofitStored = {
   status: 'ready',
   source: 'database',
@@ -125,6 +134,15 @@ await page.route('**/api/desktop/yootun/dashboard/**', async route => {
 await page.route('**/api/desktop/yootun/content-command', async route => {
   await contentCommandReady
   await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(contentCommand) })
+})
+await page.route('**/api/desktop/yootun/sales', async route => {
+  if (route.request().method() === 'POST') {
+    salesSearchRequests += 1
+    await salesSearchReady
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ...sales, intent: { status: 'ready', items: [] } }) })
+    return
+  }
+  await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(sales) })
 })
 await page.route('**/api/desktop/yootun/retrofit', async route => {
   const body = route.request().postDataJSON()
@@ -232,15 +250,36 @@ try {
   await page.goto(`${url}?source=contentCommand`)
   await page.getByRole('button', { name: 'GEO工作台' }).click()
   await page.locator('.ycc-shell[aria-busy="true"]').waitFor()
+  const contentRefresh = page.getByRole('button', { name: '刷新数据' })
+  assert.equal(await contentRefresh.isDisabled(), true)
   releaseContentCommand()
   await page.getByRole('heading', { name: 'GEO 内容运营' }).waitFor()
   await page.waitForFunction(() => document.querySelector('.ycc-shell')?.getAttribute('aria-busy') === 'false')
+  assert.equal(await contentRefresh.isEnabled(), true)
   assert.equal(await page.locator('style[data-plugin="@dofe/dsh-yootun-content-command"]').count(), 1)
   await assertThemeColor(page.locator('.ycc-certified'), '--dsw-alias-state-success-primary')
   await assertThemeColor(page.locator('.ycc-kpi[data-tone="warning"] > strong').first(), '--dsw-alias-state-warn-primary')
   await assertThemeColor(page.locator('.ycc-kpi[data-tone="danger"] > strong').first(), '--dsw-alias-state-error-primary')
   await assertViewport()
   await page.screenshot({ path: resolve(evidenceRoot, '390-content-status.png'), fullPage: true })
+
+  await page.goto(`${url}?source=sales`)
+  await page.getByRole('button', { name: '销售协同' }).click()
+  const intentInput = page.getByRole('textbox', { name: '一句话描述要找的公开意向，例如：长沙新能源汽车改装讨论' })
+  await intentInput.waitFor()
+  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
+  await intentInput.fill('长沙新能源汽车改装讨论')
+  await intentInput.press('Enter')
+  await page.locator('.ys-intent[aria-busy="true"]').waitFor()
+  await intentInput.press('Enter')
+  const searching = page.getByRole('button', { name: '正在检索…' })
+  assert.equal(await searching.isDisabled(), true)
+  assert.equal(salesSearchRequests, 1, 'an active intent search must reject duplicate Enter submissions')
+  await assertViewport()
+  await page.screenshot({ path: resolve(evidenceRoot, '390-sales-searching.png'), fullPage: true })
+  releaseSalesSearch()
+  await page.waitForFunction(() => document.querySelector('.ys-intent')?.getAttribute('aria-busy') === 'false')
+  assert.equal(await page.getByRole('button', { name: '开始检索' }).isEnabled(), true)
 
   await page.goto(`${url}?source=retrofit`)
   await page.getByRole('button', { name: '改装方案库' }).click()
@@ -260,7 +299,7 @@ try {
   await page.screenshot({ path: resolve(evidenceRoot, '390-retrofit-external.png'), fullPage: true })
 
   assert.deepEqual(consoleProblems, [])
-  process.stdout.write('theme-actions-browser: 4 plugins, 4 screenshots, adaptive action/status contrast and mobile layout passed\n')
+  process.stdout.write('theme-actions-browser: 5 plugins, 5 screenshots, adaptive action/status contrast and mobile layout passed\n')
 } finally {
   await page.close()
   await browser.close()
