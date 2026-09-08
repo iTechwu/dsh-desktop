@@ -53,6 +53,11 @@ test('renders all requested dashboard domains and explicit source states', async
   assert.match(source, /'not ready': 'error'/u)
   assert.doesNotMatch(source, /\/ready\|ok\|healthy/)
   assert.doesNotMatch(source, /prompt|private answer|providerKey/i)
+  assert.match(source, /waiting_approval: 'montageWaitingApproval'/u)
+  assert.match(source, /cancel_requested: 'montageCancelRequested'/u)
+  assert.match(source, /MONTAGE_STAGE_LABELS = \{ research: 'stageResearch', vision: 'stageVision', asr: 'stageAsr' \}/u)
+  assert.match(source, /montageStatusLabel\(job\.status, t\)/u)
+  assert.match(source, /montageStageLabel\(job\.stage, t\)/u)
 })
 
 test('dashboard UI uses one spacing rhythm across desktop and mobile breakpoints', async () => {

@@ -12,6 +12,7 @@ const workspaceRoot = resolve(packageRoot, '..')
 const harnessRoot = resolve(here, 'yootun-audit')
 const evidenceRoot = resolve(workspaceRoot, 'docs/superpowers/evidence/2026-09-08-search-locks')
 const sources = {
+  dashboard: resolve(workspaceRoot, '.ci/dsh-yootun-dashboard/src/client.js'),
   daily: resolve(workspaceRoot, '.ci/dsh-yootun-daily-report/src/client.js'),
   finops: resolve(workspaceRoot, '.ci/dsh-yootun-finops/src/client.js'),
   knowledge: resolve(workspaceRoot, '.ci/dsh-yootun-knowledge/src/client.js'),
@@ -101,6 +102,28 @@ const knowledge = {
   },
   templates: [{ id: 'space-1', name: '销售知识空间', description: '客户与渠道资料', entities: ['customer', 'channel'] }],
 }
+const dashboard = {
+  period: { label: '昨日', date: '2026-09-07', timeZone: 'Asia/Shanghai' },
+  geo: { status: 'empty', source: 'geoflow', sourceCompleteness: 'complete', missingFields: [], data: {} },
+  usage: { status: 'empty', source: 'models', sourceCompleteness: 'complete', missingFields: [], data: {} },
+  activity: { status: 'empty', source: 'local_agent', sourceCompleteness: 'complete', missingFields: [], data: {} },
+  montage: {
+    status: 'ready', source: 'openmontage', sourceCompleteness: 'complete', missingFields: [],
+    data: {
+      jobs: { total: 2, queued: 0, running: 1, completed: 0, failed: 1 },
+      pendingApprovals: 1,
+      approvals: { oldestWaitingAt: '2026-09-08T02:00:00.000Z' },
+      recentJobs: [
+        { id: 'job-1', title: '产品讲解片', status: 'waiting_approval', stage: 'asr' },
+        { id: 'job-2', title: '品牌短片', status: 'failed', stage: 'vision' },
+      ],
+      artifacts: { total: 0, recent: [] },
+      health: { service: 'ready', workers: [{ id: 'worker-1', status: 'healthy' }] },
+    },
+  },
+  capabilities: {},
+  refreshedAt: '2026-09-08T03:00:00.000Z',
+}
 let recruiterActionRequests = 0
 let releaseRecruiterAction
 const recruiterActionReady = new Promise(resolve => { releaseRecruiterAction = resolve })
@@ -153,6 +176,9 @@ await page.route('**/api/desktop/yootun/daily-report', async route => {
     return
   }
   await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(dailyReport) })
+})
+await page.route('**/api/desktop/yootun/dashboard/yesterday', async route => {
+  await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(dashboard) })
 })
 await page.route('**/api/desktop/yootun/finops?*', async route => {
   if (finopsRefreshFails) {
@@ -242,6 +268,20 @@ async function assertViewport() {
 }
 
 try {
+  await page.goto(`${url}?source=dashboard`)
+  await page.getByRole('button', { name: '企业看板' }).click()
+  await page.getByRole('heading', { name: '企业驾驶舱' }).waitFor()
+  await page.waitForFunction(() => document.querySelector('.yd-content')?.getAttribute('aria-busy') === 'false')
+  await page.getByRole('button', { name: '视频生产', exact: true }).click()
+  await page.getByRole('heading', { name: '最近作业' }).waitFor()
+  assert.equal(await page.getByText('待审批', { exact: true }).count(), 1)
+  assert.equal(await page.getByText('语音识别', { exact: true }).count(), 1)
+  assert.equal(await page.getByText('画面分析', { exact: true }).count(), 1)
+  assert.equal(await page.getByText('waiting_approval', { exact: true }).count(), 0)
+  assert.equal(await page.getByText('asr', { exact: true }).count(), 0)
+  await assertViewport()
+  await page.screenshot({ path: resolve(evidenceRoot, '390-dashboard-statuses.png'), fullPage: true })
+
   await page.goto(`${url}?source=daily`)
   await page.getByRole('button', { name: '昨日工作' }).click()
   await page.getByText('渠道复盘').waitFor()
@@ -391,7 +431,7 @@ try {
   await page.waitForFunction(() => document.querySelector('.yr-content')?.getAttribute('aria-busy') === 'false')
 
   assert.deepEqual(consoleProblems, [])
-  process.stdout.write('search-locks-browser: 6 plugins, 7 screenshots, request locks and theme mappings verified with stable mobile layout\n')
+  process.stdout.write('search-locks-browser: 7 plugins, 8 screenshots, request locks, localized statuses, and theme mappings verified with stable mobile layout\n')
 } finally {
   releaseDailyRefresh()
   releaseFinopsRefresh()

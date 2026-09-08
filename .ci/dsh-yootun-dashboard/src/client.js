@@ -82,8 +82,10 @@ const copy = {
     topContent: 'TOP 内容', untitledContent: '未命名内容',
     montage: '视频生产', tabMontage: '视频生产', montageFlow: 'OpenMontage overview 公共契约',
     montageJobs: '作业总数', montageQueued: '排队中', montageRunning: '运行中', montageCompleted: '已完成', montageFailed: '失败',
+    montageWaitingApproval: '待审批', montageCancelRequested: '取消中', montageCancelled: '已取消',
     pendingApprovals: '待人工审批', recentJobs: '最近作业', stage: '当前阶段', artifacts: '产物',
     recentArtifacts: '最近产物', health: '服务健康', workers: 'Worker', untitledJob: '未命名作业', noStage: '未开始',
+    stageResearch: '内容研究', stageVision: '画面分析', stageAsr: '语音识别',
     healthSummary: '整体健康度', healthGood: '良好', healthAttention: '需要处理', healthLimited: '数据受限',
     sourcesReady: '数据源可用', attention: '需要关注', attentionEmpty: '当前范围没有需要处理的异常',
     viewDetail: '查看详情', noBaseline: '暂无基线', publishRate: '发布率', completeRate: '完成率', avgCost: '单次请求',
@@ -117,8 +119,10 @@ const copy = {
     topContent: 'Top content', untitledContent: 'Untitled content',
     montage: 'Montage', tabMontage: 'Montage', montageFlow: 'OpenMontage public overview contract',
     montageJobs: 'Jobs', montageQueued: 'Queued', montageRunning: 'Running', montageCompleted: 'Completed', montageFailed: 'Failed',
+    montageWaitingApproval: 'Awaiting approval', montageCancelRequested: 'Cancelling', montageCancelled: 'Cancelled',
     pendingApprovals: 'Awaiting approval', recentJobs: 'Recent jobs', stage: 'Stage', artifacts: 'Artifacts',
     recentArtifacts: 'Recent artifacts', health: 'Service health', workers: 'Workers', untitledJob: 'Untitled job', noStage: 'Not started',
+    stageResearch: 'Research', stageVision: 'Visual analysis', stageAsr: 'Speech recognition',
     healthSummary: 'Overall health', healthGood: 'Good', healthAttention: 'Needs attention', healthLimited: 'Limited data',
     sourcesReady: 'Sources up', attention: 'Needs attention', attentionEmpty: 'Nothing needs attention',
     viewDetail: 'Details', noBaseline: 'No baseline', publishRate: 'Publish rate', completeRate: 'Completion', avgCost: 'Per request',
@@ -208,6 +212,29 @@ function statusLabel(status, t) {
   if (status === 'warning') return t('sourceWarning')
   if (status === 'error') return t('sourceError')
   return t('sourceUnavailable')
+}
+
+const MONTAGE_STATUS_LABELS = {
+  queued: 'montageQueued',
+  running: 'montageRunning',
+  waiting_approval: 'montageWaitingApproval',
+  completed: 'montageCompleted',
+  succeeded: 'montageCompleted',
+  failed: 'montageFailed',
+  cancel_requested: 'montageCancelRequested',
+  cancelled: 'montageCancelled',
+}
+function montageStatusLabel(value, t) {
+  const key = MONTAGE_STATUS_LABELS[String(value || '').trim().toLowerCase()]
+  return key ? t(key) : '—'
+}
+
+const MONTAGE_STAGE_LABELS = { research: 'stageResearch', vision: 'stageVision', asr: 'stageAsr' }
+function montageStageLabel(value, t) {
+  const stage = String(value || '').trim()
+  if (!stage) return t('noStage')
+  const key = MONTAGE_STAGE_LABELS[stage.toLowerCase()]
+  return key ? t(key) : stage
 }
 
 function Glyph({ name, size = 16, className }) {
@@ -735,7 +762,7 @@ function MontageView({ source, t, detailed = false }) {
               h('span', null, t('stage')), h('span', null, t('calls')), h('span', null, t('failed')),
               h('span', null, 'P50'), h('span', null, 'P95')),
             ...data.stageStats.map(stage => h('div', { className: 'yd-table-row', role: 'row', key: stage.stage },
-              h('strong', null, stage.stage), h('span', null, formatNumber(stage.count)),
+              h('strong', null, montageStageLabel(stage.stage, t)), h('span', null, formatNumber(stage.count)),
               h('span', { className: number(stage.failed) > 0 ? 'yd-text-danger' : '' }, formatNumber(stage.failed)),
               h('span', null, stage.durationP50Ms === null ? '—' : `${formatNumber(stage.durationP50Ms)}ms`),
               h('span', null, stage.durationP95Ms === null ? '—' : `${formatNumber(stage.durationP95Ms)}ms`))))) : null)
@@ -793,8 +820,8 @@ function MontageView({ source, t, detailed = false }) {
       h('div', { className: 'yd-section-heading' }, h('h2', null, t('recentJobs')), h(SourceState, { source, t, compact: true })),
       recentJobs.length ? h('div', { className: 'yd-list' }, ...recentJobs.map((job, index) =>
         h('div', { className: 'yd-list-row yd-session-row', key: `${job.id || index}` },
-          h('div', null, h('strong', null, String(job.title || t('untitledJob'))), h('span', null, String(job.stage || t('noStage')))),
-          h('span', { className: job.status === 'failed' ? 'yd-text-danger' : '' }, String(job.status || '—')))))
+          h('div', null, h('strong', null, String(job.title || t('untitledJob'))), h('span', null, montageStageLabel(job.stage, t))),
+          h('span', { className: job.status === 'failed' ? 'yd-text-danger' : '' }, montageStatusLabel(job.status, t)))))
         : h('p', { className: 'yd-inline-empty' }, t('empty'))),
     h('div', { className: 'yd-activity-grid' },
       h('section', { className: 'yd-table-section' },
