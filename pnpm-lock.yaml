@@ -1497,6 +1497,9 @@ importers:
       '@dofe/dsh-opencli':
         specifier: file:../../docker-helm.dofe.ai/plugins/dsh-opencli
         version: file:../docker-helm.dofe.ai/plugins/dsh-opencli
+      '@dofe/dsh-openmontage-mcp':
+        specifier: workspace:*
+        version: link:../deepseek-harness/plugins/dsh-openmontage-mcp
       '@dofe/dsh-tools-mcp':
         specifier: file:../../docker-helm.dofe.ai/plugins/dsh-tools-mcp
         version: file:../docker-helm.dofe.ai/plugins/dsh-tools-mcp

@@ -77,6 +77,12 @@
       name: dsh-plugin-desktop/yootun-recruiter-tools
     - id: dofe-managed
       name: dsh-plugin-desktop/dofe-managed
+    # dofe-managed owns the OpenMontage MCP transport. This shared Host module
+    # adds workflow guidance, Agent-scoped projection, and stalled-call blocking.
+    - id: openmontage-guidance
+      name: '@dofe/dsh-openmontage-mcp'
+      config:
+        stalledOutcomeThreshold: 3
     - id: dofe-opencli
       name: dsh-plugin-desktop/dofe-opencli
 

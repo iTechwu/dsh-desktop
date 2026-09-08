@@ -5,6 +5,7 @@ packages:
   - deepseek-harness/apps/**
   - deepseek-harness/packages/**
   - deepseek-harness/native/**
+  - deepseek-harness/plugins/dsh-openmontage-mcp
   - deepseek-harness/vendor/**
 
 allowBuilds:
