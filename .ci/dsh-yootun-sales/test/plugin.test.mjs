@@ -27,7 +27,7 @@ test('announces intent and workspace empty states', async () => {
   assert.match(source, /className: 'ys-intent-empty', role: 'alert'/u)
   assert.match(source, /className: 'ys-empty', role: 'status'/u)
   assert.match(source, /className: 'ys-intent', 'aria-busy': busy/u)
-  assert.match(source, /className: 'ys-content', 'aria-busy': loading/u)
+  assert.match(source, /className: 'ys-content', 'aria-busy': interactionBusy/u)
 })
 
 test('labels and locks an active intent search', async () => {
@@ -41,12 +41,15 @@ test('labels and locks an active intent search', async () => {
 
 test('locks all workspace mutations and disables conflicting controls', async () => {
   const source = await readFile(new URL('src/client.js', root), 'utf8')
-  assert.match(source, /if \(loading \|\| busyRef\.current\) return null/u)
+  assert.match(source, /const loadingRef = useRef\(false\)/u)
+  assert.match(source, /if \(loadingRef\.current \|\| busyRef\.current\) return null/u)
+  assert.match(source, /const refresh = \(\) => \{[\s\S]+if \(loadingRef\.current \|\| busyRef\.current\) return/u)
   assert.match(source, /const interactionBusy = loading \|\| busy/u)
-  assert.match(source, /'aria-busy': loading \|\| busy/u)
-  assert.match(source, /'aria-label': t\('refresh'\), disabled: loading \|\| busy/u)
+  assert.match(source, /'aria-busy': interactionBusy/u)
+  assert.match(source, /'aria-label': t\('refresh'\), disabled: interactionBusy, onClick: refresh/u)
   assert.match(source, /type: 'button', disabled: busy, onClick: \(\) => void update\(\{ action: 'confirm_action'/u)
   assert.match(source, /\.ys-action-buttons button:disabled\{opacity:\.5;cursor:default\}/u)
+  assert.match(source, /\.ys-inline-error button:disabled,.ys-empty button:disabled\{opacity:\.45;cursor:default\}/u)
 })
 
 test('builds a syntactically valid browser module', async () => {

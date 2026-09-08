@@ -45,17 +45,19 @@ window.__ModuleLoader__.load({
       const [error, setError] = useState(false)
       const [loading, setLoading] = useState(false)
       const [busy, setBusy] = useState(false)
+      const loadingRef = useRef(false)
       const busyRef = useRef(false)
       const [revision, setRevision] = useState(0)
       useEffect(() => {
-        if (!visible) return undefined
+        if (!visible) { loadingRef.current = false; return undefined }
         const controller = new AbortController()
+        loadingRef.current = true
         setError(false)
         setLoading(true)
         void load(controller.signal).then(value => { setData(value); setError(false) }).catch(cause => {
           if (cause?.name !== 'AbortError') setError(true)
-        }).finally(() => { if (!controller.signal.aborted) setLoading(false) })
-        return () => controller.abort()
+        }).finally(() => { if (!controller.signal.aborted) { loadingRef.current = false; setLoading(false) } })
+        return () => { controller.abort(); loadingRef.current = false }
       }, [visible, revision])
       useEffect(() => {
         if (!visible) return undefined
@@ -67,12 +69,19 @@ window.__ModuleLoader__.load({
       if (!visible) return null
       const current = data || { dashboard: {}, leads: [], actions: [] }
       const update = async body => {
-        if (loading || busyRef.current) return null
+        if (loadingRef.current || busyRef.current) return null
         busyRef.current = true
         setBusy(true)
         try { const next = await mutate(body); setData(next); setError(false); return next } catch { setError(true); return null } finally { busyRef.current = false; setBusy(false) }
       }
       const interactionBusy = loading || busy
+      const refresh = () => {
+        if (loadingRef.current || busyRef.current) return
+        loadingRef.current = true
+        setLoading(true)
+        setError(false)
+        setRevision(value => value + 1)
+      }
       const intent = h(IntentSearch, { t, current, update, disabled: interactionBusy })
       const metrics = h('div', { className: 'ys-metrics' },
         h(Metric, { label: t('leads'), value: current.dashboard.leads }),
@@ -93,30 +102,31 @@ window.__ModuleLoader__.load({
           : h('div', { className: 'ys-empty', role: 'status' }, t('empty')),
       )
       const inlineError = error && data
-        ? h('div', { role: 'alert', className: 'ys-inline-error' }, h('span', null, t('actionError')), h('button', { type: 'button', onClick: () => { setError(false); setRevision(value => value + 1) } }, t('retry')))
+        ? h('div', { role: 'alert', className: 'ys-inline-error' }, h('span', null, t('actionError')), h('button', { type: 'button', disabled: interactionBusy, onClick: refresh }, t('retry')))
         : null
       const content = loading && !data
         ? h('div', { role: 'status', className: 'ys-empty ys-loading' }, h('span', { className: 'ys-spinner', 'aria-hidden': true }), t('loading'))
         : error && !data
-        ? h('div', { role: 'alert', className: 'ys-empty ys-error' }, h('strong', null, t('loadError')), h('button', { type: 'button', onClick: () => setRevision(value => value + 1) }, t('retry')))
+        ? h('div', { role: 'alert', className: 'ys-empty ys-error' }, h('strong', null, t('loadError')), h('button', { type: 'button', disabled: interactionBusy, onClick: refresh }, t('retry')))
         : h(React.Fragment, null, inlineError, intent, metrics, actions, leads)
       return h('div', { className: 'ys-overlay', role: 'dialog', 'aria-modal': true, 'aria-labelledby': 'ys-title' },
         h('main', { className: 'ys-shell', 'aria-labelledby': 'ys-title', ref: shellRef, tabIndex: -1 },
           h('header', { className: 'ys-header' },
             h('div', null, h('h1', { id: 'ys-title' }, t('title')), h('p', null, t('subtitle'))),
             h('div', { className: 'ys-header-buttons' },
-              h(Tooltip, { label: t('refresh') }, h('button', { type: 'button', 'aria-label': t('refresh'), disabled: loading || busy, onClick: () => setRevision(value => value + 1) }, h(IconRefreshOutline16, { size: 16 }))),
+              h(Tooltip, { label: t('refresh') }, h('button', { type: 'button', 'aria-label': t('refresh'), disabled: interactionBusy, onClick: refresh }, h(IconRefreshOutline16, { size: 16 }))),
               h(Tooltip, { label: t('close') }, h('button', { type: 'button', 'aria-label': t('close'), onClick: closeOverlay }, h(IconCloseOutline16, { size: 16 }))),
             ),
           ),
-          h('div', { className: 'ys-content', 'aria-busy': loading || busy }, content),
+          h('div', { className: 'ys-content', 'aria-busy': interactionBusy }, content),
         ),
       )
     }
     function Button({ wide, t }) { return h(Tooltip, { label: t('open'), disabled: wide }, h('button', { type: 'button', className: `ys-button${wide ? ' ys-wide' : ''}`, 'aria-label': t('open'), onClick: openOverlay }, h(IconDataOutline16, { size: wide ? 14 : 18 }), wide ? h('span', null, t('open')) : null)) }
     const css = `.ys-button{display:flex;width:36px;height:36px;align-items:center;justify-content:center;gap:8px;border:0;border-radius:6px;background:transparent;color:var(--dsw-alias-label-secondary);cursor:pointer}.ys-button:hover{background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary)}.ys-wide{width:100%;height:34px;justify-content:flex-start;padding:0 10px}.ys-wide span{font-size:13px}.ys-overlay{position:fixed;inset:0;z-index:510;background:var(--dsw-alias-bg-base);color:var(--dsw-alias-label-primary)}.ys-shell{display:grid;grid-template-rows:auto minmax(0,1fr);width:100%;height:100%;overflow:hidden}.ys-header{display:flex;min-height:74px;align-items:center;justify-content:space-between;padding:14px 24px;border-bottom:1px solid var(--dsw-alias-border-l1)}.ys-header h1{margin:0;font-size:20px}.ys-header p{margin:4px 0 0;color:var(--dsw-alias-label-secondary);font-size:13px}.ys-header-buttons{display:flex;gap:6px}.ys-header-buttons button{display:grid;width:34px;height:34px;place-items:center;border:1px solid var(--dsw-alias-border-l1);border-radius:6px;background:var(--dsw-alias-bg-layer-1);color:inherit;cursor:pointer}.ys-header-buttons button:disabled{opacity:.45;cursor:default}.ys-content{min-height:0;overflow:auto;padding:22px 24px 40px}.ys-intent,.ys-section{display:grid;gap:10px;max-width:1120px;margin:0 auto 24px}.ys-section{margin-top:24px}.ys-section-heading h2{margin:0;font-size:14px}.ys-intent-form{display:flex;gap:8px}.ys-intent-form input{flex:1;min-width:0;padding:10px 12px;border:1px solid var(--dsw-alias-border-l1);border-radius:6px;background:var(--dsw-alias-bg-layer-1);color:inherit;font:inherit}.ys-intent-form button{display:inline-flex;align-items:center;gap:6px;padding:0 14px;border:0;border-radius:6px;background:var(--dsw-alias-button-primary-fill);color:var(--dsw-alias-label-primary-foreground);font:inherit;cursor:pointer}.ys-intent-form input:disabled,.ys-intent-form button:disabled,.ys-action-buttons button:disabled{opacity:.5;cursor:default}.ys-intent-empty{padding:18px 0;color:var(--dsw-alias-label-secondary);font-size:13px}.ys-intent-row{display:flex;justify-content:space-between;gap:16px;padding:12px 0;border-top:1px solid var(--dsw-alias-border-l1)}.ys-intent-row div{display:grid;gap:4px;min-width:0}.ys-intent-row span,.ys-intent-row small{color:var(--dsw-alias-label-secondary);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.ys-intent-row b{flex:none;font-size:12px}.ys-metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));max-width:1120px;margin:0 auto;border-block:1px solid var(--dsw-alias-border-l1)}.ys-metric{display:grid;min-height:82px;align-content:center;gap:6px;padding:12px 16px;border-right:1px solid var(--dsw-alias-border-l1)}.ys-metric:last-child{border-right:0}.ys-metric span,.ys-lead span,.ys-lead p,.ys-action span,.ys-action small{color:var(--dsw-alias-label-secondary);font-size:12px}.ys-metric strong{font-size:24px}.ys-lead,.ys-action{display:grid;gap:6px;padding:14px 16px;border-top:1px solid var(--dsw-alias-border-l1)}.ys-action{display:flex;align-items:center;justify-content:space-between;gap:14px}.ys-action-main{display:grid;gap:4px;min-width:0}.ys-action-main strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.ys-action-buttons{display:flex;gap:6px;flex:none}.ys-action-buttons button,.ys-empty button{display:inline-flex;align-items:center;gap:6px;min-height:32px;padding:0 10px;border:1px solid var(--dsw-alias-border-l1);border-radius:6px;background:var(--dsw-alias-bg-layer-1);color:inherit;font:inherit;cursor:pointer}.ys-empty{display:grid;min-height:150px;place-items:center;align-content:center;gap:10px;color:var(--dsw-alias-label-secondary);font-size:13px;text-align:center}.ys-spinner{width:18px;height:18px;border:2px solid var(--dsw-alias-border-l2);border-top-color:var(--dsw-alias-brand-primary);border-radius:50%;animation:ys-spin .8s linear infinite}@keyframes ys-spin{to{transform:rotate(360deg)}}@media(max-width:800px){.ys-header,.ys-content{padding-left:16px;padding-right:16px}.ys-intent-form{flex-direction:column}.ys-intent-form button{min-height:36px;justify-content:center}.ys-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.ys-metric:nth-child(2){border-right:0}.ys-metric:nth-child(-n+2){border-bottom:1px solid var(--dsw-alias-border-l1)}.ys-action{align-items:flex-start;flex-direction:column}.ys-action-buttons{width:100%}.ys-action-buttons button{flex:1;justify-content:center}}`
     const feedbackCss = '.ys-inline-error{display:flex;align-items:center;justify-content:space-between;gap:12px;max-width:1120px;margin:0 auto 16px;padding:10px 12px;border:1px solid var(--dsw-alias-state-error-primary);border-radius:6px;color:var(--dsw-alias-state-error-primary);font-size:13px}.ys-inline-error button{min-height:30px;padding:0 10px;border:1px solid currentColor;border-radius:6px;background:transparent;color:inherit;font:inherit;cursor:pointer}'
-    function apply(ctx) { ctx.effect(() => ctx.locale.register(NS, copy), 'dofe-yootun-sales: dictionaries'); ctx.effect(() => { window.addEventListener(OVERLAY_EVENT, closeOtherOverlay); return () => window.removeEventListener(OVERLAY_EVENT, closeOtherOverlay) }, 'dofe-yootun-sales: exclusive-overlay'); ctx.effect(() => { const style = document.createElement('style'); style.dataset.plugin = '@dofe/dsh-yootun-sales'; style.textContent = css + feedbackCss; document.head.appendChild(style); return () => style.remove() }, 'dofe-yootun-sales: styles'); const t = ctx.locale.bind(NS); ctx.slots.inject('sidebar.footer.action', () => ctx.slots.register({ name: 'sidebar.footer.action', id: 'dofe-yootun-sales', order: 30, inject: () => ({ t }) }, Button)); ctx.slots.inject('shell.overlay', () => ctx.slots.register({ name: 'shell.overlay', id: 'dofe-yootun-sales', order: 30, inject: () => ({ t }) }, Overlay)) }
+    const disabledCss = '.ys-inline-error button:disabled,.ys-empty button:disabled{opacity:.45;cursor:default}'
+    function apply(ctx) { ctx.effect(() => ctx.locale.register(NS, copy), 'dofe-yootun-sales: dictionaries'); ctx.effect(() => { window.addEventListener(OVERLAY_EVENT, closeOtherOverlay); return () => window.removeEventListener(OVERLAY_EVENT, closeOtherOverlay) }, 'dofe-yootun-sales: exclusive-overlay'); ctx.effect(() => { const style = document.createElement('style'); style.dataset.plugin = '@dofe/dsh-yootun-sales'; style.textContent = css + feedbackCss + disabledCss; document.head.appendChild(style); return () => style.remove() }, 'dofe-yootun-sales: styles'); const t = ctx.locale.bind(NS); ctx.slots.inject('sidebar.footer.action', () => ctx.slots.register({ name: 'sidebar.footer.action', id: 'dofe-yootun-sales', order: 30, inject: () => ({ t }) }, Button)); ctx.slots.inject('shell.overlay', () => ctx.slots.register({ name: 'shell.overlay', id: 'dofe-yootun-sales', order: 30, inject: () => ({ t }) }, Overlay)) }
     module.exports = { apply, inject: ['slots', 'locale'] }
 
     return module.exports;
