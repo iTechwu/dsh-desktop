@@ -96,7 +96,16 @@ test('uses only DSH alpha3 exported icons', async () => {
 test('announces the initial copy result empty state', async () => {
   const source = await readFile(new URL('src/client.js', root), 'utf8')
   assert.match(source, /className: 'yxh-state', role: 'status'/u)
-  assert.match(source, /'aria-busy': busy \|\| uploadingInGroup/u)
+  assert.match(source, /'aria-busy': locked \|\| uploadingInGroup/u)
+})
+
+test('prevents duplicate picker, task creation, and cancellation requests', async () => {
+  const source = await readFile(new URL('src/client.js', root), 'utf8')
+  assert.match(source, /const pickingRef = useRef\(false\)/u)
+  assert.match(source, /const busyRef = useRef\(false\)/u)
+  assert.match(source, /if \(pickingRef\.current \|\| busyRef\.current \|\| processing\) return/u)
+  assert.match(source, /if \(busyRef\.current \|\| pickingRef\.current \|\| processing\) return/u)
+  assert.match(source, /if \(busyRef\.current \|\| !canCancel\) return/u)
 })
 
 test('uses adaptive foregrounds for brand actions', async () => {

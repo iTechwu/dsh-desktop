@@ -488,6 +488,7 @@ function Overlay({ t }) {
   const uploads = managerRef.current
   const [uploadError, setUploadError] = useState('')
   const [picking, setPicking] = useState(false)
+  const pickingRef = useRef(false)
   // 视频首帧预览加载失败（编码/损坏）：回退为「文件名 + 大小」。
   const [brokenPreviews, setBrokenPreviews] = useState(() => new Set())
   const [theme, setTheme] = useState('')
@@ -496,11 +497,12 @@ function Overlay({ t }) {
   const machineState = useSyncExternalStore(subscribeMachine, () => machine.get(), () => machine.get())
   const { task, versions, error } = machineState
   const [busy, setBusy] = useState(false)
+  const busyRef = useRef(false)
   const [confirming, setConfirming] = useState(false)
 
   const taskStatus = task?.taskStatus || 'idle'
   const processing = Boolean(task?.taskId) && !isTerminal(taskStatus)
-  const locked = busy || processing
+  const locked = busy || picking || processing
   const canCancel = Boolean(task?.taskId) && !isTerminal(taskStatus)
 
   const imageAssets = uploads.list('image')
@@ -521,7 +523,8 @@ function Overlay({ t }) {
   }, [visible])
 
   const pickAndUpload = async kind => {
-    if (picking || locked) return
+    if (pickingRef.current || busyRef.current || processing) return
+    pickingRef.current = true
     setPicking(true)
     setUploadError('')
     try {
@@ -544,12 +547,13 @@ function Overlay({ t }) {
         mime: picked.mime,
       })
     } finally {
+      pickingRef.current = false
       setPicking(false)
     }
   }
 
   const removeAsset = asset => {
-    if (locked) return
+    if (pickingRef.current || busyRef.current || locked) return
     uploads.remove(asset.id)
     setBrokenPreviews(prev => {
       const next = new Set(prev)
@@ -559,7 +563,7 @@ function Overlay({ t }) {
   }
 
   const onSubmit = async () => {
-    if (busy || processing) return
+    if (busyRef.current || pickingRef.current || processing) return
     // 拦截范围 = 本次提交所用素材组（当前 tab 对应的 images/video），不跨 tab 拦截。
     const groupAssets = tab === 'images' ? imageAssets : (videoAsset ? [videoAsset] : [])
     if (groupAssets.length === 0) return
@@ -580,15 +584,23 @@ function Overlay({ t }) {
     const body = { action: 'create', mediaType, idempotencyKey, theme: input.theme || null, references, accounts, versionCount: 3 }
     if (mediaType === 'images') { body.imageUrls = input.imageUrls; body.coverIndex = 0 }
     else { body.videoUrl = input.videoUrl }
+    busyRef.current = true
     setBusy(true)
-    await machine.submit(body)
-    setBusy(false)
+    try { await machine.submit(body) } finally {
+      busyRef.current = false
+      setBusy(false)
+    }
   }
 
   const cancelCurrent = async () => {
+    if (busyRef.current || !canCancel) return
+    busyRef.current = true
     setConfirming(false)
     setBusy(true)
-    try { await machine.requestCancel() } finally { setBusy(false) }
+    try { await machine.requestCancel() } finally {
+      busyRef.current = false
+      setBusy(false)
+    }
   }
 
   if (!visible) return null
@@ -600,7 +612,7 @@ function Overlay({ t }) {
   const uploadingInGroup = uploads.hasUploading(tab === 'images' ? 'image' : 'video')
   // P5：buttonDisabled 去掉 uploading 项——存在上传中素材时按钮仍可点击以触发提示；
   // 以 aria-disabled + 置灰作为无障碍提示，不阻断点击。
-  const buttonDisabled = busy || processing || !hasMaterial
+  const buttonDisabled = locked || !hasMaterial
   const buttonLabel = busy || processing ? t('submitting') : t('submit')
 
   const left = h('div', { className: 'yxh-left' },
@@ -673,7 +685,7 @@ function Overlay({ t }) {
   }
 
   return h('div', { className: 'yxh-overlay' },
-    h('main', { className: 'yxh-shell', 'aria-labelledby': 'yxh-title', ref: shellRef, tabIndex: -1, 'aria-busy': busy || uploadingInGroup },
+    h('main', { className: 'yxh-shell', 'aria-labelledby': 'yxh-title', ref: shellRef, tabIndex: -1, 'aria-busy': locked || uploadingInGroup },
       h('header', { className: 'yxh-header' },
         h('div', null, h('h1', { id: 'yxh-title' }, t('title')), h('p', null, t('subtitle'))),
         h('div', { className: 'yxh-header-buttons' },
