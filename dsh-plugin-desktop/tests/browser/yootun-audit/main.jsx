@@ -2,7 +2,9 @@ import React from 'react'
 import { createRoot } from 'react-dom/client'
 import * as primitives from '@deepseek-ai/dsh-client-ui-primitives'
 
-const source = await fetch('/__audit_source__').then(response => response.text())
+const sourceId = new URLSearchParams(window.location.search).get('source')
+const sourcePath = sourceId ? `/__audit_source__?source=${encodeURIComponent(sourceId)}` : '/__audit_source__'
+const source = await fetch(sourcePath).then(response => response.text())
 const pluginModule = { exports: {} }
 const requirePlugin = (name) => {
   if (name === 'react') return React

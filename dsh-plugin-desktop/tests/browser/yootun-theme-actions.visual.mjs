@@ -12,23 +12,27 @@ const workspaceRoot = resolve(packageRoot, '..')
 const harnessRoot = resolve(here, 'yootun-audit')
 const evidenceRoot = resolve(workspaceRoot, 'docs/superpowers/evidence/2026-09-08-theme-actions')
 const sources = {
+  contentCommand: resolve(workspaceRoot, '.ci/dsh-yootun-content-command/src/client.js'),
   dashboard: resolve(workspaceRoot, '.ci/dsh-yootun-dashboard/src/client.js'),
+  retrofit: resolve(workspaceRoot, '.ci/dsh-yootun-retrofit/src/client.js'),
   xhs: resolve(workspaceRoot, '.ci/dsh-yootun-xhs-operation/src/client.js'),
 }
 const browserExecutable = process.env.DSH_AUDIT_BROWSER_EXECUTABLE
   || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
 assert(existsSync(browserExecutable), `Chrome executable not found: ${browserExecutable}`)
 
-let activeSource = sources.dashboard
 const vite = await createServer({
   root: harnessRoot,
   server: { host: '127.0.0.1', port: 0 },
   plugins: [{
     name: 'theme-action-source',
     configureServer(server) {
-      server.middlewares.use('/__audit_source__', async (_request, response) => {
+      server.middlewares.use('/__audit_source__', async (request, response) => {
+        const sourceId = new URL(request.url || '/', 'http://127.0.0.1').searchParams.get('source')
+        const sourcePath = sources[sourceId] || sources.dashboard
         response.setHeader('Content-Type', 'text/plain; charset=utf-8')
-        response.end(await readFile(activeSource, 'utf8'))
+        response.setHeader('Cache-Control', 'no-store')
+        response.end(await readFile(sourcePath, 'utf8'))
       })
     },
   }],
@@ -56,6 +60,44 @@ const dashboard = {
     georank: { status: 'ready' }, openmontage: { status: 'ready' },
   },
 }
+const contentCommand = {
+  dashboard: { articles: 4, pendingReview: 2, reviewed: 2 },
+  sources: {
+    georank: {
+      status: 'ready',
+      data: { score: 78, scoreSource: 'company', company: { name: '优惠豚', certified: true }, reports: [] },
+    },
+    geoflow: {
+      status: 'ready',
+      data: {
+        kpis: { articles: 4, published: 2, total_views: 12800 },
+        taskHealth: { active_tasks: 4, running_jobs: 1, pending_jobs: 2, failed_jobs: 1 },
+        performance: { success_rate: 82, avg_generation_time: 46 },
+        distributionSummary: { synced: 2, pending: 1, failed: 1 },
+        goals: [{ scope: 'global', metric: 'published', actual: 8, target: 12, attainment_pct: 67, pace_pct: 54 }],
+      },
+    },
+  },
+  platforms: [],
+  articles: [],
+}
+const retrofitStored = {
+  status: 'ready',
+  source: 'database',
+  retrievedAt: '2026-09-08T02:00:00.000Z',
+  result: {
+    total: 1,
+    returned: 1,
+    items: [{ platform: 'bilibili', externalId: 'case-1', title: 'SUV 灯光升级', text: '城市通勤照明方案', commentCount: 18, shareCount: 6 }],
+  },
+}
+const retrofitExternal = {
+  status: 'ready',
+  source: 'agent_reach',
+  platform: 'youtube',
+  retrievedAt: '2026-09-08T02:00:00.000Z',
+  result: { stdout: JSON.stringify([{ title: 'LED lighting reference', text: 'Public reference only', url: 'https://example.test/retrofit' }]) },
+}
 
 const browser = await chromium.launch({ headless: true, executablePath: browserExecutable })
 const page = await browser.newPage()
@@ -65,6 +107,11 @@ page.on('console', message => {
 })
 page.on('pageerror', error => consoleProblems.push(`pageerror: ${error.message}`))
 await page.route('**/api/desktop/yootun/dashboard/**', route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(dashboard) }))
+await page.route('**/api/desktop/yootun/content-command', route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(contentCommand) }))
+await page.route('**/api/desktop/yootun/retrofit', route => {
+  const body = route.request().postDataJSON()
+  return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body.action === 'refresh' ? retrofitExternal : retrofitStored) })
+})
 await page.route('**/_dsh/uploader/pick-file', route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ picked: true, path: '/tmp/theme-action.png', name: 'theme-action.png', size: 1024, mime: 'image/png' }) }))
 await page.route('**/_dsh/uploader/uploadStart', route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ uploadId: 'upload-1', name: 'theme-action.png', size: 1024 }) }))
 await page.route('**/_dsh/uploader/uploadStatus', route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ status: 'done', url: 'https://cdn.example.test/theme-action.png' }) }))
@@ -97,6 +144,25 @@ async function assertActionContrast(locator) {
   assert.equal(styles.color, 'rgb(255, 255, 255)')
 }
 
+async function assertThemePaint(locator, alias, paintProperty) {
+  const colors = await locator.evaluate((element, { property, paint }) => {
+    const probe = document.createElement('span')
+    probe.style[paint] = `var(${property})`
+    element.appendChild(probe)
+    const expected = getComputedStyle(probe)[paint]
+    probe.remove()
+    return {
+      actual: getComputedStyle(element)[paint],
+      expected,
+      themeValue: getComputedStyle(element).getPropertyValue(property).trim(),
+    }
+  }, { property: alias, paint: paintProperty })
+  assert.equal(colors.actual, colors.expected, `${alias} must control the rendered ${paintProperty}: ${JSON.stringify(colors)}`)
+}
+
+const assertThemeColor = (locator, alias) => assertThemePaint(locator, alias, 'color')
+const assertThemeBackground = (locator, alias) => assertThemePaint(locator, alias, 'backgroundColor')
+
 async function assertViewport() {
   const viewport = await page.evaluate(() => ({
     clientWidth: document.documentElement.clientWidth,
@@ -109,8 +175,7 @@ async function assertViewport() {
 
 try {
   await page.setViewportSize({ width: 390, height: 844 })
-  activeSource = sources.dashboard
-  await page.goto(url)
+  await page.goto(`${url}?source=dashboard`)
   await page.getByRole('button', { name: '企业看板' }).click()
   const activeRange = page.getByRole('button', { name: '昨日' })
   await activeRange.waitFor()
@@ -118,8 +183,7 @@ try {
   await assertViewport()
   await page.screenshot({ path: resolve(evidenceRoot, '390-dashboard-range.png'), fullPage: true })
 
-  activeSource = sources.xhs
-  await page.goto(url)
+  await page.goto(`${url}?source=xhs`)
   await page.getByRole('button', { name: '小红书仿写' }).click()
   await page.getByRole('button', { name: '添加图片' }).click()
   const submit = page.getByRole('button', { name: '开始仿写' })
@@ -134,8 +198,30 @@ try {
   await assertViewport()
   await page.screenshot({ path: resolve(evidenceRoot, '390-xhs-confirm.png'), fullPage: true })
 
+  await page.goto(`${url}?source=contentCommand`)
+  await page.getByRole('button', { name: 'GEO工作台' }).click()
+  await page.getByRole('heading', { name: 'GEO 内容运营' }).waitFor()
+  assert.equal(await page.locator('style[data-plugin="@dofe/dsh-yootun-content-command"]').count(), 1)
+  await assertThemeColor(page.locator('.ycc-certified'), '--dsw-alias-state-success-primary')
+  await assertThemeColor(page.locator('.ycc-kpi[data-tone="warning"] > strong').first(), '--dsw-alias-state-warn-primary')
+  await assertThemeColor(page.locator('.ycc-kpi[data-tone="danger"] > strong').first(), '--dsw-alias-state-error-primary')
+  await assertViewport()
+  await page.screenshot({ path: resolve(evidenceRoot, '390-content-status.png'), fullPage: true })
+
+  await page.goto(`${url}?source=retrofit`)
+  await page.getByRole('button', { name: '改装方案库' }).click()
+  await page.getByRole('heading', { name: '车辆改装方案库' }).waitFor()
+  await assertThemeBackground(page.locator('.yr-source-dot'), '--dsw-alias-state-success-primary')
+  await page.getByRole('textbox', { name: '输入车型、改装项目或使用场景' }).fill('SUV LED')
+  await page.getByRole('button', { name: '刷新公开来源' }).click()
+  await page.getByRole('heading', { name: '公开来源参考' }).waitFor()
+  await assertThemeBackground(page.locator('.yr-source-dot'), '--dsw-alias-state-warn-primary')
+  await assertThemeColor(page.locator('.yr-external-note'), '--dsw-alias-state-warn-primary')
+  await assertViewport()
+  await page.screenshot({ path: resolve(evidenceRoot, '390-retrofit-external.png'), fullPage: true })
+
   assert.deepEqual(consoleProblems, [])
-  process.stdout.write('theme-actions-browser: 2 plugins, 2 screenshots, adaptive action contrast and mobile layout passed\n')
+  process.stdout.write('theme-actions-browser: 4 plugins, 4 screenshots, adaptive action/status contrast and mobile layout passed\n')
 } finally {
   await page.close()
   await browser.close()
