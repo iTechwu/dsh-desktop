@@ -17,7 +17,7 @@ vm.runInNewContext(source, {
 })
 
 const {
-  normalizeWorkspace, buildQuery, mergePage, reducer, actionLabel, surfaceLabel, effectOutcomeLabel,
+  normalizeWorkspace, buildQuery, mergePage, initialState, reducer, actionLabel, surfaceLabel, effectOutcomeLabel,
 } = module.exports.__test
 
 test('normalizes invalid workspace fields to honest defaults', () => {
@@ -48,6 +48,14 @@ test('keeps the event list visible until a user explicitly selects a detail', ()
     value: { events: [{ id: 'event-1' }], summary: {}, page: {}, scopes: {}, sync: {}, freshness: {} },
   })
   assert.equal(loaded.selectedId, null)
+})
+
+test('marks refreshes busy while preserving the existing workspace', () => {
+  const workspace = normalizeWorkspace({ events: [{ id: 'event-1' }] })
+  const loading = reducer({ ...initialState(), workspace }, { type: 'loading' })
+  assert.equal(loading.loading, true)
+  assert.equal(loading.workspace, workspace)
+  assert.equal(loading.appending, false)
 })
 
 test('resolves stable time-range tokens only when building the request', () => {
