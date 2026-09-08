@@ -50,6 +50,18 @@ test('keeps BOSS actions human-confirmed and does not accept raw PII', async () 
   assert.doesNotMatch(source, /MODELS_API_KEY|Authorization\s*:/u)
 })
 
+test('localizes recruiter stages and status enums before rendering them', async () => {
+  const source = await readFile(new URL('src/client.js', root), 'utf8')
+  for (const token of ['stageSourced', 'stageScreening', 'stageInterview', 'stageOffer', 'stageHired', 'stageArchived', 'roleStatusText', 'employmentText', 'feedbackText']) {
+    assert.match(source, new RegExp(token, 'u'))
+  }
+  assert.match(source, /stageText\(item\.stage, t\)/u)
+  assert.match(source, /roleStatusText\(role\.status, t\)/u)
+  assert.match(source, /employmentText\(role\.employmentType, t\)/u)
+  assert.match(source, /feedbackText\(candidate\.feedbackStatus \|\| 'none', t\)/u)
+  assert.doesNotMatch(source, /h\('strong', null, item\), h\('span'/u)
+})
+
 test('declares the Models-authenticated data contract without exposing a client key', async () => {
   assert.deepEqual(recruiterDataContract, {
     auth: 'MODELS_API_KEY',
