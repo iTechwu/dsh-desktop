@@ -412,6 +412,7 @@ async function callMcp(fetchImpl, apiKey, tool, input, signal) {
     const response = await fetchImpl(MCP_URL, {
       method: 'POST',
       signal: combinedSignal,
+      redirect: 'error',
       headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream' },
       body: JSON.stringify({ jsonrpc: '2.0', id: `yootun-knowledge-${Date.now()}`, method: 'tools/call', params: { name: tool, arguments: input } }),
     })

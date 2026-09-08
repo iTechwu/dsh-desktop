@@ -145,6 +145,7 @@ test('exposes explicit memory confirmation through the authenticated knowledge M
   assert.equal(result.ok, true)
   assert.equal(requests[0].url, MCP_URL)
   assert.equal(requests[0].init.headers.Authorization, 'Bearer test-key')
+  assert.equal(requests[0].init.redirect, 'error')
   assert.equal(JSON.parse(requests[0].init.body).params.name, 'knowledge.confirm_memory')
 })
 
@@ -221,6 +222,7 @@ test('routes host actions through the public MCP gateway and credential store', 
   assert.equal(response.status, 200)
   assert.equal(requests[0].url, MCP_URL)
   assert.equal(requests[0].init.headers.Authorization, 'Bearer test-key')
+  assert.equal(requests[0].init.redirect, 'error')
   assert.equal(JSON.parse(requests[0].init.body).params.name, 'knowledge.search')
 })
 
