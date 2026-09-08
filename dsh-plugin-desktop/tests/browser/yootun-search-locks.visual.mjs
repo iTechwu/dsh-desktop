@@ -20,6 +20,7 @@ const sources = {
   lead: resolve(workspaceRoot, '.ci/dsh-yootun-lead-discovery/src/client.js'),
   recruiter: resolve(workspaceRoot, '.ci/dsh-yootun-recruiter/src/client.js'),
   retrofit: resolve(workspaceRoot, '.ci/dsh-yootun-retrofit/src/client.js'),
+  sales: resolve(workspaceRoot, '.ci/dsh-yootun-sales/src/client.js'),
   supply: resolve(workspaceRoot, '.ci/dsh-yootun-supply-watch/src/client.js'),
 }
 const browserExecutable = process.env.DSH_AUDIT_BROWSER_EXECUTABLE
@@ -75,6 +76,7 @@ let finopsRefreshFails = false
 let finopsRefreshRequests = 0
 let releaseFinopsRefresh
 const finopsRefreshReady = new Promise(resolve => { releaseFinopsRefresh = resolve })
+const salesRequestMethods = []
 const finops = {
   period: { label: '昨日', timeZone: 'Asia/Shanghai' },
   summary: { currency: 'CNY', cost: 12.5, requests: 24, successfulRequests: 23, totalTokens: 188000, inputTokens: 120000, outputTokens: 68000 },
@@ -131,6 +133,13 @@ const supplyWatch = {
   dashboard: { risks: 1, critical: 1, openRisks: 1, dueToday: 0, pending: 1 },
   risks: [{ id: 'risk-1', targetLabel: '华南供应商 01', severity: 'p0', status: 'open' }],
   actions: [{ id: 'risk-1', targetLabel: '华南供应商 01', severity: 'p0', status: 'awaiting_confirmation' }],
+}
+const sales = {
+  status: 'ready',
+  dashboard: { leads: 1, qualified: 1, dueToday: 1, pending: 1 },
+  leads: [],
+  actions: [{ id: 'intent-0', summary: '跟进长沙新能源意向', channel: '小红书', status: 'awaiting_confirmation' }],
+  intent: null,
 }
 const contentCommand = {
   status: 'ready',
@@ -209,6 +218,16 @@ await page.route('**/api/desktop/yootun/supply-watch', async route => {
     status: 200,
     contentType: 'application/json',
     body: JSON.stringify(confirmed ? { ...supplyWatch, actions: supplyWatch.actions.map(action => ({ ...action, status: 'adapter_pending' })) } : supplyWatch),
+  })
+})
+await page.route('**/api/desktop/yootun/sales', async route => {
+  const method = route.request().method()
+  salesRequestMethods.push(method)
+  const confirmed = method === 'POST'
+  await route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify(confirmed ? { ...sales, dashboard: { ...sales.dashboard, pending: 0 }, actions: sales.actions.map(action => ({ ...action, status: 'adapter_pending' })) } : sales),
   })
 })
 await page.route('**/api/desktop/yootun/content-command', async route => {
@@ -343,6 +362,19 @@ try {
   assert.equal(await page.getByText('p0', { exact: true }).count(), 0)
   await assertViewport()
   await page.screenshot({ path: resolve(evidenceRoot, '390-supply-statuses.png'), fullPage: true })
+
+  await page.goto(`${url}?source=sales`)
+  await page.getByRole('button', { name: '销售协同' }).click()
+  await page.getByRole('heading', { name: '销售协同' }).waitFor()
+  const pendingMetric = page.locator('.ys-metric').filter({ hasText: '待确认' })
+  await pendingMetric.getByText('1', { exact: true }).waitFor()
+  assert.equal((await pendingMetric.innerText()).trim(), '待确认\n1')
+  await page.getByRole('button', { name: '确认', exact: true }).click()
+  await page.getByText('已确认，等待适配器', { exact: true }).waitFor()
+  assert.equal(await page.getByText('adapter_pending', { exact: true }).count(), 0)
+  assert.deepEqual(salesRequestMethods, ['GET', 'POST'])
+  await assertViewport()
+  await page.screenshot({ path: resolve(evidenceRoot, '390-sales-status.png'), fullPage: true })
 
   await page.goto(`${url}?source=content`)
   await page.getByRole('button', { name: 'GEO工作台' }).click()
@@ -519,7 +551,7 @@ try {
   await page.waitForFunction(() => document.querySelector('.yr-content')?.getAttribute('aria-busy') === 'false')
 
   assert.deepEqual(consoleProblems, [])
-  process.stdout.write('search-locks-browser: 9 plugins, 11 screenshots, request locks, localized statuses, and theme mappings verified with stable mobile layout\n')
+  process.stdout.write('search-locks-browser: 10 plugins, 12 screenshots, request locks, localized statuses, and theme mappings verified with stable mobile layout\n')
 } finally {
   releaseDailyRefresh()
   releaseFinopsRefresh()
