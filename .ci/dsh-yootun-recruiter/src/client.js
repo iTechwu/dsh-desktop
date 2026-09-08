@@ -54,11 +54,11 @@ function number(value, fallback = 0) { return Number.isFinite(Number(value)) ? N
 function list(value) { return Array.isArray(value) ? value.filter(item => typeof item === 'string').slice(0, 8) : [] }
 function sourceState(value) { return ['ready', 'empty', 'unavailable', 'error'].includes(value) ? value : 'unavailable' }
 function statusText(status, t) { return status === 'awaiting_confirmation' ? t('waiting') : status === 'confirmed_pending_adapter' ? t('confirmed') : status === 'succeeded' ? t('succeeded') : status === 'failed' ? t('failed') : status === 'requires_user_login' ? t('requiresLogin') : t('dismissed') }
-function SourceBadge({ label, state, t, onClick }) {
+function SourceBadge({ label, state, t, onClick, disabled }) {
   const status = sourceState(state)
   const labelText = status === 'ready' ? t('ready') : status === 'empty' ? t('empty') : status === 'error' ? t('error') : t('unavailable')
   const props = { className: `yr-source yr-source-${status}${onClick ? ' yr-source-button' : ''}`, 'aria-label': `${label} · ${labelText}` }
-  if (onClick) { props.type = 'button'; props.onClick = onClick }
+  if (onClick) { props.type = 'button'; props.disabled = disabled; props.onClick = onClick }
   return h(onClick ? 'button' : 'span', props, h('i', { 'aria-hidden': true }), `${label} · ${labelText}`)
 }
 function Metric({ label, value }) { return h('div', { className: 'yr-metric' }, h('span', null, label), h('strong', null, String(value ?? 0))) }
@@ -95,8 +95,8 @@ function Overview({ data, t, onUpdate, onNavigate, busy }) {
   return h('div', { className: 'yr-page' },
     h('div', { className: 'yr-source-row' },
       h(SourceBadge, { label: t('srcLocal'), state: localState, t }),
-      h(SourceBadge, { label: t('srcBoss'), state: sync.status === 'connected' || sync.status === 'ready' ? 'ready' : sync.status, t, onClick: () => onNavigate?.('boss') }),
-      h(SourceBadge, { label: t('srcKnowledge'), state: knowledge.status, t, onClick: () => onNavigate?.('knowledge') }),
+      h(SourceBadge, { label: t('srcBoss'), state: sync.status === 'connected' || sync.status === 'ready' ? 'ready' : sync.status, t, disabled: busy, onClick: () => onNavigate?.('boss') }),
+      h(SourceBadge, { label: t('srcKnowledge'), state: knowledge.status, t, disabled: busy, onClick: () => onNavigate?.('knowledge') }),
     ),
     h('div', { className: 'yr-metrics' },
       h(Metric, { label: t('todayTasks'), value: number(d.pendingConfirmation) + number(d.pendingFeedback) }),
@@ -117,7 +117,7 @@ function Overview({ data, t, onUpdate, onNavigate, busy }) {
         roles.length ? roles.map(role => { const days = staleDays(role); const stale = days !== null && days >= 14; return h('div', { className: 'yr-health-row', key: role.id }, h('div', null, h('strong', null, role.title), h('span', null, `${role.department} · ${role.location}`)), h('span', { className: stale ? 'yr-health-warn' : 'yr-health-good' }, stale ? `${days} ${t('stale')}` : role.status)) }) : h('div', { className: 'yr-empty yr-empty-compact', role: 'status' }, t('noData')),
       ),
       h('section', { className: 'yr-panel yr-knowledge-teaser' },
-        h('div', { className: 'yr-panel-title' }, h('h2', null, t('knowledgeTitle')), h(SourceBadge, { label: 'HR', state: knowledge.status, t, onClick: () => onNavigate?.('knowledge') })),
+        h('div', { className: 'yr-panel-title' }, h('h2', null, t('knowledgeTitle')), h(SourceBadge, { label: 'HR', state: knowledge.status, t, disabled: busy, onClick: () => onNavigate?.('knowledge') })),
         h('p', null, t('knowledgeBody')),
         h('div', { className: 'yr-mini-stats' }, h('span', null, `${number(knowledge.documents)} ${t('knowledgeDocs')}`), h('span', null, `${number(knowledge.memories)} ${t('knowledgeMemories')}`), h('span', null, `${number(knowledge.pending)} ${t('knowledgePending')}`)),
       ),
@@ -163,17 +163,17 @@ function Roles({ data, t, onUpdate, busy }) {
     roles.length ? h('div', { className: 'yr-list' }, roles.map(role => h('article', { className: 'yr-card', key: role.id }, h('div', { className: 'yr-card-head' }, h('div', null, h('strong', null, role.title), h('span', { className: 'yr-muted' }, `${role.department} · ${role.location}`)), h('span', { className: `yr-pill yr-pill-${role.status}` }, role.status)), h('div', { className: 'yr-role-meta' }, h('span', null, `${role.headcount} HC`), h('span', null, role.employmentType), role.salaryMin || role.salaryMax ? h('span', null, `${role.salaryMin || '—'}-${role.salaryMax || '—'}`) : null), h('p', null, list(role.requiredSkills).join(' · ')), h('small', { className: 'yr-muted' }, `${t('updated')}: ${role.updatedAt || '—'}`)))) : h('section', { className: 'yr-empty yr-empty-main', role: 'status' }, h('div', { className: 'yr-empty-icon' }, h(IconDataOutline16, { size: 20 })), h('strong', null, t('noRolesCta')), h('span', null, t('editAfterGenerate'))),
   )
 }
-function Candidates({ data, t, onNavigate }) {
+function Candidates({ data, t, onNavigate, busy }) {
   const candidates = data.candidates || []
   const [stage, setStage] = useState('all')
   const [query, setQuery] = useState('')
   const filtered = candidates.filter(candidate => (stage === 'all' || candidate.stage === stage) && (!query.trim() || `${candidate.displayName} ${list(candidate.evidence).join(' ')}`.toLowerCase().includes(query.trim().toLowerCase())))
   const counts = STAGES.map(item => ({ stage: item, count: candidates.filter(candidate => candidate.stage === item).length })).filter(item => item.count > 0)
   return h('div', { className: 'yr-page' },
-    h('div', { className: 'yr-heading yr-workbench-toolbar' }, h('div', null, h('h2', null, t('candidates')), h('p', { className: 'yr-subheading' }, t('evidence'))), h('button', { type: 'button', className: 'yr-secondary', onClick: () => onNavigate?.('boss') }, h(IconRefreshOutline16, { size: 14 }), t('boss'))),
+    h('div', { className: 'yr-heading yr-workbench-toolbar' }, h('div', null, h('h2', null, t('candidates')), h('p', { className: 'yr-subheading' }, t('evidence'))), h('button', { type: 'button', className: 'yr-secondary', disabled: busy, onClick: () => onNavigate?.('boss') }, h(IconRefreshOutline16, { size: 14 }), t('boss'))),
     h('div', { className: 'yr-pipeline-summary' }, counts.length ? counts.map(item => h('div', { className: 'yr-summary-item', key: item.stage }, h('span', { className: 'yr-summary-label' }, item.stage), h('strong', { className: 'yr-summary-value' }, String(item.count)))) : h('div', { className: 'yr-summary-item' }, h('span', { className: 'yr-summary-label' }, t('candidates')), h('strong', { className: 'yr-summary-value' }, '0'))),
-    h('div', { className: 'yr-filter-bar' }, h('input', { className: 'yr-filter', value: query, onChange: event => setQuery(event.target.value), placeholder: t('candidates'), 'aria-label': t('candidates') }), h('select', { className: 'yr-filter', value: stage, onChange: event => setStage(event.target.value), 'aria-label': t('stage') }, h('option', { value: 'all' }, t('stage')), STAGES.map(item => h('option', { value: item, key: item }, item)))),
-    filtered.length ? h('div', { className: 'yr-pipeline' }, STAGES.filter(item => filtered.some(candidate => candidate.stage === item)).map(item => h('section', { className: 'yr-stage', key: item }, h('div', { className: 'yr-stage-title' }, h('strong', null, item), h('span', null, String(filtered.filter(candidate => candidate.stage === item).length))), filtered.filter(candidate => candidate.stage === item).map(candidate => h('article', { className: 'yr-card yr-candidate', key: candidate.id }, h('div', { className: 'yr-card-head' }, h('strong', null, candidate.displayName), candidate.matchScore === undefined ? null : h('span', { className: 'yr-score' }, `${candidate.matchScore}`)), h('p', null, list(candidate.evidence).join(' · ') || t('empty')), h('p', { className: 'yr-muted' }, `${t('concerns')}: ${list(candidate.concerns).join(' · ') || '—'}`), h('small', { className: 'yr-muted' }, `${t('status')}: ${candidate.feedbackStatus || 'none'}`)))))) : h('section', { className: 'yr-empty yr-empty-main', role: 'status' }, h('div', { className: 'yr-empty-icon' }, h(IconUserOutline16, { size: 20 })), h('strong', null, t('noData')), h('span', null, t('syncHint')), h('button', { type: 'button', className: 'yr-primary yr-empty-action', onClick: () => onNavigate?.('boss') }, h(IconLinkOutline16, { size: 14 }), t('boss'))),
+    h('div', { className: 'yr-filter-bar' }, h('input', { className: 'yr-filter', value: query, disabled: busy, onChange: event => setQuery(event.target.value), placeholder: t('candidates'), 'aria-label': t('candidates') }), h('select', { className: 'yr-filter', value: stage, disabled: busy, onChange: event => setStage(event.target.value), 'aria-label': t('stage') }, h('option', { value: 'all' }, t('stage')), STAGES.map(item => h('option', { value: item, key: item }, item)))),
+    filtered.length ? h('div', { className: 'yr-pipeline' }, STAGES.filter(item => filtered.some(candidate => candidate.stage === item)).map(item => h('section', { className: 'yr-stage', key: item }, h('div', { className: 'yr-stage-title' }, h('strong', null, item), h('span', null, String(filtered.filter(candidate => candidate.stage === item).length))), filtered.filter(candidate => candidate.stage === item).map(candidate => h('article', { className: 'yr-card yr-candidate', key: candidate.id }, h('div', { className: 'yr-card-head' }, h('strong', null, candidate.displayName), candidate.matchScore === undefined ? null : h('span', { className: 'yr-score' }, `${candidate.matchScore}`)), h('p', null, list(candidate.evidence).join(' · ') || t('empty')), h('p', { className: 'yr-muted' }, `${t('concerns')}: ${list(candidate.concerns).join(' · ') || '—'}`), h('small', { className: 'yr-muted' }, `${t('status')}: ${candidate.feedbackStatus || 'none'}`)))))) : h('section', { className: 'yr-empty yr-empty-main', role: 'status' }, h('div', { className: 'yr-empty-icon' }, h(IconUserOutline16, { size: 20 })), h('strong', null, t('noData')), h('span', null, t('syncHint')), h('button', { type: 'button', className: 'yr-primary yr-empty-action', disabled: busy, onClick: () => onNavigate?.('boss') }, h(IconLinkOutline16, { size: 14 }), t('boss'))),
   )
 }
 function Actions({ data, t, onUpdate, busy }) { const actions = data.actions || []; return h('div', { className: 'yr-page' }, h('div', { className: 'yr-heading' }, h('div', null, h('h2', null, t('actions')), h('p', { className: 'yr-subheading' }, t('pendingConfirmation'))), h('span', { className: 'yr-muted' }, String(actions.length))), actions.length ? h('div', { className: 'yr-list' }, actions.map(item => h(ActionRow, { key: item.id, item, t, onUpdate, busy }))) : h('div', { className: 'yr-empty', role: 'status' }, t('emptyActions'))) }
@@ -265,7 +265,7 @@ function Overlay({ t }) {
   else if (error && !data) body = h('div', { className: 'yr-empty', role: 'alert' }, t('loadError'), h('button', { type: 'button', disabled: interactionBusy, onClick: refresh }, h(IconRefreshOutline16, { size: 14 }), t('retry')))
   else if (tab === 'overview') body = h(Overview, { data: tData, t, onUpdate: update, onNavigate: setTab, busy: interactionBusy })
   else if (tab === 'roles') body = h(Roles, { data: tData, t, onUpdate: update, busy: interactionBusy })
-  else if (tab === 'candidates') body = h(Candidates, { data: tData, t, onNavigate: setTab })
+  else if (tab === 'candidates') body = h(Candidates, { data: tData, t, onNavigate: setTab, busy: interactionBusy })
   else if (tab === 'actions') body = h(Actions, { data: tData, t, onUpdate: update, busy: interactionBusy })
   else if (tab === 'knowledge') body = h(Knowledge, { data: tData, t, onUpdate: update, busy: interactionBusy })
   else if (tab === 'analytics') body = h(Analytics, { data: tData, t })
@@ -274,7 +274,7 @@ function Overlay({ t }) {
   const tabs = [['overview', t('overview')], ['roles', t('roles')], ['candidates', t('candidates')], ['actions', t('actions')], ['knowledge', t('knowledge')], ['analytics', t('analytics')], ['boss', t('boss')]]
   return h('div', { className: 'yr-overlay', role: 'dialog', 'aria-modal': true, 'aria-labelledby': 'yr-title' }, h('main', { className: 'yr-shell', 'aria-labelledby': 'yr-title', ref: shellRef, tabIndex: -1 },
     h('header', { className: 'yr-header' }, h('div', null, h('h1', { id: 'yr-title' }, t('title')), h('p', null, t('subtitle'))), h('div', { className: 'yr-header-buttons' }, h(Tooltip, { label: t('refresh') }, h('button', { type: 'button', className: 'yr-icon', 'aria-label': t('refresh'), disabled: interactionBusy, onClick: refresh }, h(IconRefreshOutline16, { size: 16 }))), h(Tooltip, { label: t('close') }, h('button', { type: 'button', className: 'yr-icon', 'aria-label': t('close'), onClick: closeOverlay }, h(IconCloseOutline16, { size: 16 }))))),
-    h('nav', { className: 'yr-tabs', 'aria-label': t('title') }, tabs.map(([id, label]) => h('button', { type: 'button', key: id, 'data-active': tab === id, 'aria-current': tab === id ? 'page' : undefined, onClick: () => setTab(id) }, label))),
+    h('nav', { className: 'yr-tabs', 'aria-label': t('title') }, tabs.map(([id, label]) => h('button', { type: 'button', key: id, 'data-active': tab === id, 'aria-current': tab === id ? 'page' : undefined, disabled: interactionBusy, onClick: () => setTab(id) }, label))),
     h('div', { className: 'yr-content', 'aria-busy': interactionBusy }, body),
   ))
 }
@@ -330,7 +330,7 @@ const spacingCss = `
 .yr-filter:last-child{width:150px}
 .yr-inline-error{display:flex;width:100%;max-width:1160px;box-sizing:border-box;align-items:center;justify-content:space-between;gap:var(--yr-space-3);margin:0 auto;padding:10px 12px;border:1px solid var(--dsw-alias-state-error-primary);border-radius:6px;color:var(--dsw-alias-state-error-primary);font-size:13px}
 .yr-inline-error button{min-height:30px;padding:0 10px;border:1px solid currentColor;border-radius:6px;background:transparent;color:inherit;font:inherit;cursor:pointer}
-.yr-empty button:disabled,.yr-inline-error button:disabled{opacity:.45;cursor:default}
+.yr-empty button:disabled,.yr-inline-error button:disabled,.yr-tabs button:disabled,.yr-source-button:disabled,.yr-secondary:disabled,.yr-filter:disabled{opacity:.45;cursor:default}
 @media(max-width:720px){.yr-intake-grid{grid-template-columns:1fr}.yr-dropzone{min-height:120px}.yr-filter-bar{flex-direction:column}.yr-filter:last-child{width:100%}}
 @media(max-width:560px){.yr-header,.yr-tabs{padding-left:var(--yr-space-4);padding-right:var(--yr-space-4)}.yr-content{padding:var(--yr-space-4) var(--yr-space-4) 32px}.yr-panel,.yr-hero-panel{padding:var(--yr-space-4)}.yr-workbench-toolbar,.yr-inline-error{align-items:flex-start;flex-direction:column}.yr-intake-footer{align-items:flex-start;flex-direction:column}.yr-intake-footer .yr-primary{width:100%;justify-content:center}.yr-summary-item{flex:1;min-width:100px}}
 `

@@ -33,7 +33,11 @@ test('locks recruiter mutations and disables every write surface', async () => {
   assert.match(source, /'aria-label': t\('refresh'\), disabled: interactionBusy, onClick: refresh/u)
   assert.match(source, /className: 'yr-inline-error', role: 'alert'/u)
   assert.match(source, /setMessage\(next \? t\('roleGenerated'\) : t\('saveError'\)\)/u)
-  assert.match(source, /\.yr-empty button:disabled,.yr-inline-error button:disabled\{opacity:\.45;cursor:default\}/u)
+  assert.match(source, /function SourceBadge\(\{ label, state, t, onClick, disabled \}\)/u)
+  assert.match(source, /function Candidates\(\{ data, t, onNavigate, busy \}\)/u)
+  assert.match(source, /className: 'yr-filter', value: query, disabled: busy/u)
+  assert.match(source, /'data-active': tab === id, 'aria-current': tab === id \? 'page' : undefined, disabled: interactionBusy/u)
+  assert.match(source, /\.yr-empty button:disabled,.yr-inline-error button:disabled,.yr-tabs button:disabled,.yr-source-button:disabled,.yr-secondary:disabled,.yr-filter:disabled\{opacity:\.45;cursor:default\}/u)
 })
 
 test('keeps BOSS actions human-confirmed and does not accept raw PII', async () => {
