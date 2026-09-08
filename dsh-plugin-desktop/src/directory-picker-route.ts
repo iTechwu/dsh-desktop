@@ -9,7 +9,9 @@ const MAX_VALIDATION_BODY_BYTES = 16 * 1024
 
 function finishJson(res: ServerResponse, statusCode: number, value: object): void {
   res.statusCode = statusCode
+  res.setHeader('cache-control', 'no-store')
   res.setHeader('content-type', 'application/json; charset=utf-8')
+  res.setHeader('x-content-type-options', 'nosniff')
   res.end(JSON.stringify(value))
 }
 
