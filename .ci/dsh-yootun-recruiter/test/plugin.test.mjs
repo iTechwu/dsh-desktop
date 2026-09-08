@@ -17,7 +17,18 @@ test('announces tab-specific empty states', async () => {
   assert.match(source, /className: 'yr-empty yr-empty-compact', role: 'status'/u)
   assert.match(source, /className: 'yr-empty yr-empty-main', role: 'status'/u)
   assert.ok(source.includes("className: 'yr-empty', role: 'status' }, t('emptyActions')"))
-  assert.match(source, /className: 'yr-content', 'aria-busy': loading/u)
+  assert.match(source, /className: 'yr-content', 'aria-busy': interactionBusy/u)
+})
+
+test('locks recruiter mutations and disables every write surface', async () => {
+  const source = await readFile(new URL('src/client.js', root), 'utf8')
+  assert.match(source, /if \(loading \|\| busyRef\.current\) return null/u)
+  assert.match(source, /const interactionBusy = loading \|\| busy/u)
+  assert.match(source, /disabled: busy, onClick: \(\) => void onUpdate\?\.\(\{ action: 'confirm_action'/u)
+  assert.match(source, /disabled: busy \|\| knowledge\.status !== 'ready'/u)
+  assert.match(source, /disabled: busy \|\| data\.boss\?\.inAppBrowser !== true/u)
+  assert.match(source, /className: 'yr-intake-textarea', value: input, disabled: busy/u)
+  assert.match(source, /'aria-label': t\('refresh'\), disabled: interactionBusy/u)
 })
 
 test('keeps BOSS actions human-confirmed and does not accept raw PII', async () => {

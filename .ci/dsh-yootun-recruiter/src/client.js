@@ -83,9 +83,9 @@ function Funnel({ data, t }) {
     ),
   )
 }
-function ActionRow({ item, t, onUpdate }) { const executable = ['confirmed_pending_adapter', 'failed', 'requires_user_login'].includes(item.status); return h('article', { className: 'yr-action' }, h('div', { className: 'yr-action-main' }, h('strong', null, item.targetLabel), h('span', null, item.summary), h(Status, { status: item.status, t })), item.status === 'awaiting_confirmation' ? h('div', { className: 'yr-action-buttons' }, h('button', { type: 'button', onClick: () => onUpdate?.({ action: 'confirm_action', id: item.id }) }, h(IconCheckOutline16, { size: 14 }), t('approve')), h('button', { type: 'button', onClick: () => onUpdate?.({ action: 'dismiss_action', id: item.id }) }, h(IconCloseOutline16, { size: 14 }), t('dismiss'))) : executable ? h('div', { className: 'yr-action-buttons' }, h('button', { type: 'button', onClick: () => onUpdate?.({ action: 'execute_action', id: item.id }) }, h(IconRefreshOutline16, { size: 14 }), t('execute'))) : null) }
+function ActionRow({ item, t, onUpdate, busy }) { const executable = ['confirmed_pending_adapter', 'failed', 'requires_user_login'].includes(item.status); return h('article', { className: 'yr-action' }, h('div', { className: 'yr-action-main' }, h('strong', null, item.targetLabel), h('span', null, item.summary), h(Status, { status: item.status, t })), item.status === 'awaiting_confirmation' ? h('div', { className: 'yr-action-buttons' }, h('button', { type: 'button', disabled: busy, onClick: () => void onUpdate?.({ action: 'confirm_action', id: item.id }) }, h(IconCheckOutline16, { size: 14 }), t('approve')), h('button', { type: 'button', disabled: busy, onClick: () => void onUpdate?.({ action: 'dismiss_action', id: item.id }) }, h(IconCloseOutline16, { size: 14 }), t('dismiss'))) : executable ? h('div', { className: 'yr-action-buttons' }, h('button', { type: 'button', disabled: busy, onClick: () => void onUpdate?.({ action: 'execute_action', id: item.id }) }, h(IconRefreshOutline16, { size: 14 }), t('execute'))) : null) }
 function staleDays(role) { const time = Date.parse(role.updatedAt || ''); return Number.isFinite(time) ? Math.max(0, Math.floor((Date.now() - time) / 86400000)) : null }
-function Overview({ data, t, onUpdate, onNavigate }) {
+function Overview({ data, t, onUpdate, onNavigate, busy }) {
   const d = data.dashboard || {}
   const localState = data.status || (data.dashboard ? 'ready' : 'unavailable')
   const sync = data.sync || {}
@@ -108,7 +108,7 @@ function Overview({ data, t, onUpdate, onNavigate }) {
       h(Funnel, { data, t }),
       h('section', { className: 'yr-panel' },
         h('div', { className: 'yr-panel-title' }, h('h2', null, t('needsAction')), h('strong', { className: 'yr-count' }, String(number(d.pendingConfirmation)))),
-        pending.length ? pending.map(item => h(ActionRow, { key: item.id, item, t, onUpdate })) : h('div', { className: 'yr-empty yr-empty-compact', role: 'status' }, t('emptyActions')),
+        pending.length ? pending.map(item => h(ActionRow, { key: item.id, item, t, onUpdate, busy })) : h('div', { className: 'yr-empty yr-empty-compact', role: 'status' }, t('emptyActions')),
       ),
     ),
     h('div', { className: 'yr-dashboard-grid' },
@@ -134,7 +134,7 @@ function draftFromText(input) {
   const responsibilities = lines.slice(1, 5).filter(line => line !== skillLine).slice(0, 4)
   return { action: 'save_requirement', title, department: '待补充', location: '待补充', employmentType: '全职', headcount: 1, responsibilities, requiredSkills, preferredSkills: [], status: 'draft' }
 }
-function Roles({ data, t, onUpdate }) {
+function Roles({ data, t, onUpdate, busy }) {
   const roles = data.requirements || []
   const [input, setInput] = useState('')
   const [fileName, setFileName] = useState('')
@@ -146,6 +146,7 @@ function Roles({ data, t, onUpdate }) {
     try { setInput(await file.text()); setFileName(file.name); setMessage('') } catch { setMessage(t('fileReadError')) }
   }
   const generate = async () => {
+    if (busy) return
     if (!input.trim()) { setMessage(t('roleDraftHint')); return }
     try { await onUpdate?.(draftFromText(input)); setMessage(t('roleGenerated')) } catch { setMessage(t('saveError')) }
   }
@@ -154,8 +155,8 @@ function Roles({ data, t, onUpdate }) {
     h('section', { className: 'yr-panel yr-intake-panel' },
       h('div', { className: 'yr-panel-title' }, h('div', null, h('h2', null, t('importRequirement')), h('p', { className: 'yr-subheading' }, t('roleDraftHint')))),
       h('div', { className: 'yr-intake-grid' },
-        h('label', { className: 'yr-dropzone' }, h(IconFolderOpenOutline16, { size: 18 }), h('strong', null, fileName || t('uploadRequirement')), h('span', null, t('selectFile')), h('input', { type: 'file', accept: '.txt,.md,.markdown,.csv,text/plain,text/markdown', onChange: onFile })),
-        h('div', { className: 'yr-intake-editor' }, h('label', { htmlFor: 'yr-role-brief' }, t('pasteRequirement')), h('textarea', { id: 'yr-role-brief', className: 'yr-intake-textarea', value: input, onChange: event => setInput(event.target.value), placeholder: t('addRole') }), h('div', { className: 'yr-intake-footer' }, h('span', { className: 'yr-muted' }, message), h('button', { type: 'button', className: 'yr-primary', onClick: generate }, h(IconDataOutline16, { size: 14 }), t('generateDraft')))),
+        h('label', { className: 'yr-dropzone', 'data-disabled': busy }, h(IconFolderOpenOutline16, { size: 18 }), h('strong', null, fileName || t('uploadRequirement')), h('span', null, t('selectFile')), h('input', { type: 'file', disabled: busy, accept: '.txt,.md,.markdown,.csv,text/plain,text/markdown', onChange: onFile })),
+        h('div', { className: 'yr-intake-editor' }, h('label', { htmlFor: 'yr-role-brief' }, t('pasteRequirement')), h('textarea', { id: 'yr-role-brief', className: 'yr-intake-textarea', value: input, disabled: busy, onChange: event => setInput(event.target.value), placeholder: t('addRole') }), h('div', { className: 'yr-intake-footer' }, h('span', { className: 'yr-muted' }, message), h('button', { type: 'button', className: 'yr-primary', disabled: busy, onClick: () => void generate() }, h(IconDataOutline16, { size: 14 }), t('generateDraft')))),
       ),
     ),
     roles.length ? h('div', { className: 'yr-list' }, roles.map(role => h('article', { className: 'yr-card', key: role.id }, h('div', { className: 'yr-card-head' }, h('div', null, h('strong', null, role.title), h('span', { className: 'yr-muted' }, `${role.department} · ${role.location}`)), h('span', { className: `yr-pill yr-pill-${role.status}` }, role.status)), h('div', { className: 'yr-role-meta' }, h('span', null, `${role.headcount} HC`), h('span', null, role.employmentType), role.salaryMin || role.salaryMax ? h('span', null, `${role.salaryMin || '—'}-${role.salaryMax || '—'}`) : null), h('p', null, list(role.requiredSkills).join(' · ')), h('small', { className: 'yr-muted' }, `${t('updated')}: ${role.updatedAt || '—'}`)))) : h('section', { className: 'yr-empty yr-empty-main', role: 'status' }, h('div', { className: 'yr-empty-icon' }, h(IconDataOutline16, { size: 20 })), h('strong', null, t('noRolesCta')), h('span', null, t('editAfterGenerate'))),
@@ -174,8 +175,8 @@ function Candidates({ data, t, onNavigate }) {
     filtered.length ? h('div', { className: 'yr-pipeline' }, STAGES.filter(item => filtered.some(candidate => candidate.stage === item)).map(item => h('section', { className: 'yr-stage', key: item }, h('div', { className: 'yr-stage-title' }, h('strong', null, item), h('span', null, String(filtered.filter(candidate => candidate.stage === item).length))), filtered.filter(candidate => candidate.stage === item).map(candidate => h('article', { className: 'yr-card yr-candidate', key: candidate.id }, h('div', { className: 'yr-card-head' }, h('strong', null, candidate.displayName), candidate.matchScore === undefined ? null : h('span', { className: 'yr-score' }, `${candidate.matchScore}`)), h('p', null, list(candidate.evidence).join(' · ') || t('empty')), h('p', { className: 'yr-muted' }, `${t('concerns')}: ${list(candidate.concerns).join(' · ') || '—'}`), h('small', { className: 'yr-muted' }, `${t('status')}: ${candidate.feedbackStatus || 'none'}`)))))) : h('section', { className: 'yr-empty yr-empty-main', role: 'status' }, h('div', { className: 'yr-empty-icon' }, h(IconUserOutline16, { size: 20 })), h('strong', null, t('noData')), h('span', null, t('syncHint')), h('button', { type: 'button', className: 'yr-primary yr-empty-action', onClick: () => onNavigate?.('boss') }, h(IconLinkOutline16, { size: 14 }), t('boss'))),
   )
 }
-function Actions({ data, t, onUpdate }) { const actions = data.actions || []; return h('div', { className: 'yr-page' }, h('div', { className: 'yr-heading' }, h('div', null, h('h2', null, t('actions')), h('p', { className: 'yr-subheading' }, t('pendingConfirmation'))), h('span', { className: 'yr-muted' }, String(actions.length))), actions.length ? h('div', { className: 'yr-list' }, actions.map(item => h(ActionRow, { key: item.id, item, t, onUpdate }))) : h('div', { className: 'yr-empty', role: 'status' }, t('emptyActions'))) }
-function Knowledge({ data, t, onUpdate }) {
+function Actions({ data, t, onUpdate, busy }) { const actions = data.actions || []; return h('div', { className: 'yr-page' }, h('div', { className: 'yr-heading' }, h('div', null, h('h2', null, t('actions')), h('p', { className: 'yr-subheading' }, t('pendingConfirmation'))), h('span', { className: 'yr-muted' }, String(actions.length))), actions.length ? h('div', { className: 'yr-list' }, actions.map(item => h(ActionRow, { key: item.id, item, t, onUpdate, busy }))) : h('div', { className: 'yr-empty', role: 'status' }, t('emptyActions'))) }
+function Knowledge({ data, t, onUpdate, busy }) {
   const knowledge = data.knowledge || {}
   const recent = Array.isArray(knowledge.recent) ? knowledge.recent : []
   return h('div', { className: 'yr-page' },
@@ -193,13 +194,13 @@ function Knowledge({ data, t, onUpdate }) {
       recent.length ? recent.map(item => h('div', { className: 'yr-recent-row', key: item.id || item.title }, h('strong', null, item.title), h('span', { className: 'yr-muted' }, item.updatedAt || '—'))) : h('div', { className: 'yr-empty yr-empty-compact', role: 'status' }, t('empty')),
     ),
     h('div', { className: 'yr-knowledge-actions' },
-      h('button', { type: 'button', onClick: () => onUpdate?.({ action: 'publish_knowledge', scope: 'hr-recruiting' }), disabled: knowledge.status !== 'ready' }, h(IconCheckOutline16, { size: 14 }), t('knowledgeAction')),
+      h('button', { type: 'button', onClick: () => void onUpdate?.({ action: 'publish_knowledge', scope: 'hr-recruiting' }), disabled: busy || knowledge.status !== 'ready' }, h(IconCheckOutline16, { size: 14 }), t('knowledgeAction')),
       h('a', { href: 'https://ixicai.cn', target: '_blank', rel: 'noreferrer', className: 'yr-secondary' }, h(IconLinkOutline16, { size: 14 }), t('knowledgeOpen')),
     ),
   )
 }
 function Analytics({ data, t }) { const a = data.analytics || {}; const localState = data.status || (data.dashboard ? 'ready' : 'unavailable'); return h('div', { className: 'yr-page' }, h('div', { className: 'yr-heading' }, h('div', null, h('h2', null, t('analytics')), h('p', { className: 'yr-subheading' }, `${t('updated')}: ${a.updatedAt || data.updatedAt || '—'}`)), h(SourceBadge, { label: t('srcLocal'), state: localState, t })), h('div', { className: 'yr-metrics' }, h(Metric, { label: t('responseRate'), value: a.responseRate == null ? '—' : `${number(a.responseRate)}%` }), h(Metric, { label: t('avgScreening'), value: a.avgScreeningDays == null ? '—' : `${number(a.avgScreeningDays)} ${t('days')}` }), h(Metric, { label: t('offerConversion'), value: a.offerConversion == null ? '—' : `${number(a.offerConversion)}%` }), h(Metric, { label: t('knowledgePending'), value: (data.knowledge || {}).pending })), h(Funnel, { data, t }), h('section', { className: 'yr-panel' }, h('p', { className: 'yr-note' }, a.insight || t('insightFallback')))) }
-function Boss({ data, t, onUpdate }) {
+function Boss({ data, t, onUpdate, busy }) {
   const sync = data.sync || {}
   const connected = sync.status === 'connected' || sync.status === 'ready'
   const canSync = data.boss?.adapter === 'official'
@@ -212,7 +213,7 @@ function Boss({ data, t, onUpdate }) {
     ),
     h('div', { className: 'yr-sync-grid' },
       h('div', { className: 'yr-panel' }, h('h2', null, t('syncRecords')), h('div', { className: 'yr-sync-number' }, `${number(sync.imported)} / ${number(sync.updated)}`), h('p', { className: 'yr-muted' }, `${t('lastSync')}: ${sync.lastSuccessAt || '—'}`), number(sync.conflictsPreserved) > 0 ? h('p', { className: 'yr-muted' }, `${number(sync.conflictsPreserved)} ${t('conflictsKept')}`) : null),
-      h('div', { className: 'yr-panel' }, h('h2', null, t('syncHint')), h('p', null, sync.reason || t('syncWaiting')), h('div', { className: 'yr-sync-actions' }, h('button', { type: 'button', className: 'yr-primary', disabled: data.boss?.inAppBrowser !== true, onClick: () => onUpdate?.({ action: 'open_boss_login' }) }, h(IconUserOutline16, { size: 14 }), t('openInApp')), h('button', { type: 'button', onClick: () => onUpdate?.({ action: 'sync_preview' }) }, h(IconDataOutline16, { size: 14 }), t('preview')), canSync ? h('button', { type: 'button', onClick: () => onUpdate?.({ action: 'sync_boss' }) }, h(IconRefreshOutline16, { size: 14 }), t('syncNow')) : null, h('a', { className: 'yr-secondary', href: data.boss?.loginUrl || 'https://www.zhipin.com/web/user/?ka=header-login', target: '_blank', rel: 'noreferrer' }, h(IconLinkOutline16, { size: 14 }), t('openExternal')))),
+      h('div', { className: 'yr-panel' }, h('h2', null, t('syncHint')), h('p', null, sync.reason || t('syncWaiting')), h('div', { className: 'yr-sync-actions' }, h('button', { type: 'button', className: 'yr-primary', disabled: busy || data.boss?.inAppBrowser !== true, onClick: () => void onUpdate?.({ action: 'open_boss_login' }) }, h(IconUserOutline16, { size: 14 }), t('openInApp')), h('button', { type: 'button', disabled: busy, onClick: () => void onUpdate?.({ action: 'sync_preview' }) }, h(IconDataOutline16, { size: 14 }), t('preview')), canSync ? h('button', { type: 'button', disabled: busy, onClick: () => void onUpdate?.({ action: 'sync_boss' }) }, h(IconRefreshOutline16, { size: 14 }), t('syncNow')) : null, h('a', { className: 'yr-secondary', href: data.boss?.loginUrl || 'https://www.zhipin.com/web/user/?ka=header-login', target: '_blank', rel: 'noreferrer' }, h(IconLinkOutline16, { size: 14 }), t('openExternal')))),
       h('p', { className: 'yr-note' }, t('webUseHint')),
     ),
     preview ? h('section', { className: 'yr-panel' },
@@ -233,6 +234,8 @@ function Overlay({ t }) {
   const [data, setData] = useState(null)
   const [error, setError] = useState(false)
   const [loading, setLoading] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const busyRef = useRef(false)
   const [revision, setRevision] = useState(0)
   useEffect(() => {
     if (!visible) return undefined
@@ -251,22 +254,23 @@ function Overlay({ t }) {
   useEffect(() => { if (visible) requestAnimationFrame(() => shellRef.current?.focus?.()) }, [visible])
   if (!visible) return null
   const tData = data || { status: 'empty', dashboard: {}, requirements: [], candidates: [], actions: [], boss: {}, sync: {}, knowledge: {}, analytics: {} }
-  const update = async body => { try { const next = await mutate(body); setData(next); setError(false); return next } catch (error) { setError(true); throw error } }
+  const update = async body => { if (loading || busyRef.current) return null; busyRef.current = true; setBusy(true); try { const next = await mutate(body); setData(next); setError(false); return next } catch (error) { setError(true); throw error } finally { busyRef.current = false; setBusy(false) } }
+  const interactionBusy = loading || busy
   let body
   if (loading && !data) body = h('div', { className: 'yr-empty yr-loading', role: 'status' }, h('span', { className: 'yr-spinner', 'aria-hidden': true }), t('loading'))
   else if (error && !data) body = h('div', { className: 'yr-empty', role: 'alert' }, t('loadError'), h('button', { type: 'button', onClick: () => setRevision(value => value + 1) }, h(IconRefreshOutline16, { size: 14 }), t('retry')))
-  else if (tab === 'overview') body = h(Overview, { data: tData, t, onUpdate: update, onNavigate: setTab })
-  else if (tab === 'roles') body = h(Roles, { data: tData, t, onUpdate: update })
+  else if (tab === 'overview') body = h(Overview, { data: tData, t, onUpdate: update, onNavigate: setTab, busy: interactionBusy })
+  else if (tab === 'roles') body = h(Roles, { data: tData, t, onUpdate: update, busy: interactionBusy })
   else if (tab === 'candidates') body = h(Candidates, { data: tData, t, onNavigate: setTab })
-  else if (tab === 'actions') body = h(Actions, { data: tData, t, onUpdate: update })
-  else if (tab === 'knowledge') body = h(Knowledge, { data: tData, t, onUpdate: update })
+  else if (tab === 'actions') body = h(Actions, { data: tData, t, onUpdate: update, busy: interactionBusy })
+  else if (tab === 'knowledge') body = h(Knowledge, { data: tData, t, onUpdate: update, busy: interactionBusy })
   else if (tab === 'analytics') body = h(Analytics, { data: tData, t })
-  else body = h(Boss, { data: tData, t, onUpdate: update })
+  else body = h(Boss, { data: tData, t, onUpdate: update, busy: interactionBusy })
   const tabs = [['overview', t('overview')], ['roles', t('roles')], ['candidates', t('candidates')], ['actions', t('actions')], ['knowledge', t('knowledge')], ['analytics', t('analytics')], ['boss', t('boss')]]
   return h('div', { className: 'yr-overlay', role: 'dialog', 'aria-modal': true, 'aria-labelledby': 'yr-title' }, h('main', { className: 'yr-shell', 'aria-labelledby': 'yr-title', ref: shellRef, tabIndex: -1 },
-    h('header', { className: 'yr-header' }, h('div', null, h('h1', { id: 'yr-title' }, t('title')), h('p', null, t('subtitle'))), h('div', { className: 'yr-header-buttons' }, h(Tooltip, { label: t('refresh') }, h('button', { type: 'button', className: 'yr-icon', 'aria-label': t('refresh'), disabled: loading, onClick: () => setRevision(value => value + 1) }, h(IconRefreshOutline16, { size: 16 }))), h(Tooltip, { label: t('close') }, h('button', { type: 'button', className: 'yr-icon', 'aria-label': t('close'), onClick: closeOverlay }, h(IconCloseOutline16, { size: 16 }))))),
+    h('header', { className: 'yr-header' }, h('div', null, h('h1', { id: 'yr-title' }, t('title')), h('p', null, t('subtitle'))), h('div', { className: 'yr-header-buttons' }, h(Tooltip, { label: t('refresh') }, h('button', { type: 'button', className: 'yr-icon', 'aria-label': t('refresh'), disabled: interactionBusy, onClick: () => setRevision(value => value + 1) }, h(IconRefreshOutline16, { size: 16 }))), h(Tooltip, { label: t('close') }, h('button', { type: 'button', className: 'yr-icon', 'aria-label': t('close'), onClick: closeOverlay }, h(IconCloseOutline16, { size: 16 }))))),
     h('nav', { className: 'yr-tabs', 'aria-label': t('title') }, tabs.map(([id, label]) => h('button', { type: 'button', key: id, 'data-active': tab === id, 'aria-current': tab === id ? 'page' : undefined, onClick: () => setTab(id) }, label))),
-    h('div', { className: 'yr-content', 'aria-busy': loading }, body),
+    h('div', { className: 'yr-content', 'aria-busy': interactionBusy }, body),
   ))
 }
 function SidebarButton({ wide, t }) { return h(Tooltip, { label: t('open'), delayMs: 500, disabled: wide }, h('button', { type: 'button', className: `yr-sidebar-button${wide ? ' yr-sidebar-wide' : ''}`, 'aria-label': t('open'), onClick: openOverlay }, h(IconFolderOpenOutline16, { size: wide ? 14 : 18 }), wide ? h('span', null, t('open')) : null)) }
@@ -308,7 +312,7 @@ const spacingCss = `
 .yr-dropzone input{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
 .yr-intake-editor{display:grid;min-width:0;gap:var(--yr-space-2)}
 .yr-intake-editor label{color:var(--dsw-alias-label-secondary);font-size:12px}
-.yr-intake-textarea{width:100%;min-height:138px;box-sizing:border-box;resize:vertical;padding:var(--yr-space-3);border:1px solid var(--dsw-alias-border-l1);border-radius:6px;background:var(--dsw-alias-bg-base);color:inherit;font:inherit;font-size:13px;line-height:1.55}
+.yr-intake-textarea{width:100%;min-height:138px;box-sizing:border-box;resize:vertical;padding:var(--yr-space-3);border:1px solid var(--dsw-alias-border-l1);border-radius:6px;background:var(--dsw-alias-bg-base);color:inherit;font:inherit;font-size:13px;line-height:1.55}.yr-dropzone[data-disabled=true],.yr-intake-textarea:disabled,.yr-intake-footer button:disabled{opacity:.45;cursor:default}
 .yr-intake-footer{display:flex;min-height:36px;align-items:center;justify-content:space-between;gap:var(--yr-space-3)}
 .yr-intake-footer .yr-muted{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .yr-pipeline-summary{display:flex;flex-wrap:wrap;gap:var(--yr-space-2);padding-bottom:var(--yr-space-1);border-bottom:1px solid var(--dsw-alias-border-l1)}
