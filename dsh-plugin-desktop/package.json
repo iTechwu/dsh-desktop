@@ -434,6 +434,7 @@
     "dsh-community-market": "0.1.0-dev.0",
     "dsh-better-sidebar": "0.15.2",
     "dshmarket": "1.39.0",
+    "fs-ext": "2.1.1",
     "koffi": "3.1.5",
     "node-addon-require-builtin": "^0.1.4",
     "node-pty": "1.2.0-beta.15",
