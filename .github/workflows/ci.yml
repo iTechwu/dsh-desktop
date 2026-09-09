@@ -195,6 +195,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          pnpm --version
           find "$HOME/.cache/node/corepack" -path '*/node-gyp/gyp/gyp_main.py' -type f -exec chmod +x {} +
       - name: Fetch sibling DeepSeek Harness checkout
         shell: bash
