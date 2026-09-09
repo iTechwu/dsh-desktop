@@ -64,6 +64,22 @@ const actionLifecyclePlugins = new Set([
   'dsh-yootun-xhs-operation',
 ])
 
+const pluginClassPrefixes = {
+  'dsh-yootun-audit': 'ya-',
+  'dsh-yootun-content-command': 'ycc-',
+  'dsh-yootun-daily-report': 'ydr-',
+  'dsh-yootun-dashboard': 'yd-',
+  'dsh-yootun-finops': 'yf-',
+  'dsh-yootun-knowledge': 'yk-',
+  'dsh-yootun-lead-discovery': 'yl-',
+  'dsh-yootun-recruiter': 'yr-',
+  'dsh-yootun-retrofit': 'yro-',
+  'dsh-yootun-sales': 'ys-',
+  'dsh-yootun-supply-watch': 'ysw-',
+  'dsh-yootun-ui': 'yu-',
+  'dsh-yootun-xhs-operation': 'yxh-',
+}
+
 if (!desktopStyles.includes('[aria-modal="true"] :is(')) failures.push('dsh-plugin-desktop: modal focus indicator is missing')
 if (!desktopStyles.includes('prefers-reduced-motion: reduce') || !desktopStyles.includes('[aria-modal="true"] *')) {
   failures.push('dsh-plugin-desktop: reduced-motion coverage for plugin overlays is missing')
@@ -162,6 +178,15 @@ for (const name of clientPlugins) {
   if (usesRevisionReload && !hasSynchronousReloadLock) failures.push(`${name}: revision-triggered reload has no synchronous request lock`)
   if (hasDirectRevisionHandler) failures.push(`${name}: reload control bypasses its guarded refresh handler`)
   if (newWindowLinkCount !== noreferrerLinkCount) failures.push(`${name}: every new-window link must use noreferrer`)
+  const expectedPrefix = pluginClassPrefixes[name]
+  if (expectedPrefix) {
+    for (const [otherName, otherPrefix] of Object.entries(pluginClassPrefixes)) {
+      if (otherName !== name && source.includes(`.${otherPrefix}`)) {
+        failures.push(`${name}: client styles leak ${otherPrefix} classes from ${otherName}`)
+      }
+    }
+    if (!source.includes(`.${expectedPrefix}`)) failures.push(`${name}: client styles do not expose their own ${expectedPrefix} namespace`)
+  }
 }
 
 if (failures.length) {
