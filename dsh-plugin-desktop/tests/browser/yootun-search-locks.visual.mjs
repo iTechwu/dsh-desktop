@@ -335,10 +335,26 @@ async function assertViewport() {
   assert.equal(viewport.dialog, true)
 }
 
+async function assertDesktopViewport() {
+  const viewport = await page.evaluate(() => ({
+    clientWidth: document.documentElement.clientWidth,
+    scrollWidth: document.documentElement.scrollWidth,
+    dialog: Boolean(document.querySelector('[role="dialog"][aria-modal="true"]')),
+    headerHeight: document.querySelector('.yd-header')?.getBoundingClientRect().height ?? 0,
+    contentWidth: document.querySelector('.yd-overview')?.getBoundingClientRect().width ?? 0,
+  }))
+  assert.equal(viewport.clientWidth, 1440)
+  assert.equal(viewport.scrollWidth, viewport.clientWidth, 'desktop page must not scroll horizontally')
+  assert.equal(viewport.dialog, true, 'desktop overlay must expose modal dialog semantics')
+  assert(viewport.headerHeight >= 72, `desktop header must preserve the 72px baseline: ${JSON.stringify(viewport)}`)
+  assert(viewport.contentWidth > 0 && viewport.contentWidth <= 1440, `desktop content must render within a constrained width: ${JSON.stringify(viewport)}`)
+}
+
 try {
   await page.goto(`${url}?source=dashboard`)
   await page.getByRole('button', { name: '企业看板' }).click()
   await page.getByRole('heading', { name: '企业驾驶舱' }).waitFor()
+  await page.locator('.yd-overview').waitFor()
   await page.waitForFunction(() => document.querySelector('.yd-content')?.getAttribute('aria-busy') === 'false')
   await page.getByRole('button', { name: '视频生产', exact: true }).click()
   await page.getByRole('heading', { name: '最近作业' }).waitFor()
@@ -574,8 +590,17 @@ try {
   await page.getByRole('heading', { name: '公开来源参考' }).waitFor()
   await page.waitForFunction(() => document.querySelector('.yro-content')?.getAttribute('aria-busy') === 'false')
 
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await page.goto(`${url}?source=dashboard`)
+  await page.getByRole('button', { name: '企业看板' }).click()
+  await page.getByRole('heading', { name: '企业驾驶舱' }).waitFor()
+  await page.locator('.yd-overview').waitFor()
+  await page.waitForFunction(() => document.querySelector('.yd-content')?.getAttribute('aria-busy') === 'false')
+  await assertDesktopViewport()
+  await page.screenshot({ path: resolve(evidenceRoot, '1440-dashboard-overview.png'), fullPage: true })
+
   assert.deepEqual(consoleProblems, [])
-  process.stdout.write('search-locks-browser: 10 plugins, 15 screenshots, request locks, localized statuses, and theme mappings verified with stable mobile layout\n')
+  process.stdout.write('search-locks-browser: 10 plugins, 16 screenshots, request locks, localized statuses, and responsive theme mappings verified\n')
 } finally {
   releaseDailyRefresh()
   releaseFinopsRefresh()
