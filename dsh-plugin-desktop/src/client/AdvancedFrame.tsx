@@ -4,8 +4,8 @@ import type { PropsRenderSlots, PropsRuntime } from '@deepseek-ai/dsh-client-ui-
 import type {} from './contracts.ts'
 import type { DesktopClientPlatform } from './environment.ts'
 import {
-  collapsedSidebarWidth, computeDesktopColumns, DesktopLayoutState,
-  SIDEBAR_AUTO_COLLAPSE, SIDEBAR_COLLAPSED, SIDEBAR_DEFAULT,
+  collapsedSidebarWidth, computeDesktopColumnsWithRightbar, DesktopLayoutState,
+  RIGHTBAR_DEFAULT_RATIO, SIDEBAR_AUTO_COLLAPSE, SIDEBAR_COLLAPSED, SIDEBAR_DEFAULT,
 } from './layout-state.ts'
 import { installModalOverlayIsolation } from './modal-overlay.ts'
 
@@ -19,7 +19,7 @@ export interface AdvancedFrameInjected {
 
 /** Full enhanced-mode root slot props. */
 export type AdvancedFrameProps = PropsRuntime<'root'>
-  & PropsRenderSlots<'sidebar' | 'conversation' | 'details' | 'shell.overlay'>
+  & PropsRenderSlots<'sidebar' | 'conversation' | 'rightbar' | 'details' | 'shell.overlay'>
   & AdvancedFrameInjected
 
 /** Enhanced-mode owner preserving the original Desktop layout contract. */
@@ -81,9 +81,13 @@ export function DesktopOwnedFrame({ layout, mode, platform, renderSlot, SessionP
 
   const collapsed = narrow ? !panels.narrowExpanded : panels.sidebar === 0
   const sidebarPreference = collapsed ? 0 : panels.sidebar === 0 ? SIDEBAR_DEFAULT : panels.sidebar
-  const columns = computeDesktopColumns(
+  const rightbarPreference = panels.rightbar === 0
+    ? Math.round(viewport * RIGHTBAR_DEFAULT_RATIO)
+    : panels.rightbar
+  const columns = computeDesktopColumnsWithRightbar(
     viewport,
     sidebarPreference,
+    panels.rightbarShown && panels.rightbarTrack ? rightbarPreference : 0,
     detailsSession === undefined ? 0 : panels.details,
     collapsedSidebarWidth(mode, platform),
   )
@@ -98,6 +102,7 @@ export function DesktopOwnedFrame({ layout, mode, platform, renderSlot, SessionP
     : {}
 
   const sidebarBase = useRef(0)
+  const rightbarBase = useRef(0)
   const detailsBase = useRef(0)
   const [dragging, setDragging] = useState(false)
   const onDragEnd = useCallback(() => { setDragging(false) }, [])
@@ -109,11 +114,18 @@ export function DesktopOwnedFrame({ layout, mode, platform, renderSlot, SessionP
     detailsBase.current = columnsRef.current.details
     setDragging(true)
   }, [])
+  const onRightbarStart = useCallback(() => {
+    rightbarBase.current = columnsRef.current.rightbar
+    setDragging(true)
+  }, [])
   const onSidebarDrag = useCallback((dx: number) => {
     layout.setSidebar(sidebarBase.current + dx)
   }, [layout])
   const onDetailsDrag = useCallback((dx: number) => {
     layout.setDetails(detailsBase.current - dx)
+  }, [layout])
+  const onRightbarDrag = useCallback((dx: number) => {
+    layout.setRightbar(rightbarBase.current - dx)
   }, [layout])
 
   return (
@@ -123,9 +135,11 @@ export function DesktopOwnedFrame({ layout, mode, platform, renderSlot, SessionP
       data-desktop-mode={mode}
       data-desktop-platform={platform}
       data-sidebar-collapsed={collapsed || undefined}
+      data-rightbar-collapsed={columns.rightbar === 0 || undefined}
+      data-rightbar-fullscreen={panels.rightbarFullscreen || undefined}
       data-details-collapsed={columns.details === 0 || undefined}
       data-dragging={dragging || undefined}
-      style={{ gridTemplateColumns: `${columns.sidebar}px minmax(0, 1fr) ${columns.details}px` }}
+      style={{ gridTemplateColumns: `${columns.sidebar}px minmax(0, 1fr) ${columns.rightbar}px ${columns.details}px` }}
     >
       {mode === 'advanced' && platform === 'darwin' && <div className="dshDesktopMacCaptionRow" aria-hidden="true" />}
       <aside className="dshDesktopSidebarSurface">
@@ -134,6 +148,15 @@ export function DesktopOwnedFrame({ layout, mode, platform, renderSlot, SessionP
         </div>
       </aside>
       <main className="dshDesktopConversationSurface">{renderSlot('conversation', {})}</main>
+      <aside className="dshDesktopRightbarSurface">
+        <SessionProvider>
+          {renderSlot('rightbar', {
+            width: columns.rightbar > 0 ? columns.rightbar : Math.max(300, Math.round(viewport * RIGHTBAR_DEFAULT_RATIO)),
+            viewportWidth: viewport,
+            canShow: columns.rightbar > 0 || viewport - columns.sidebar - 640 >= 300,
+          })}
+        </SessionProvider>
+      </aside>
       <aside
         className="dshDesktopDetailsSurface"
         {...detailsIsolation}
@@ -163,12 +186,21 @@ export function DesktopOwnedFrame({ layout, mode, platform, renderSlot, SessionP
           onEnd={onDragEnd}
         />
       )}
+      {panels.rightbarShown && !panels.rightbarFullscreen && columns.rightbar > 0 && (
+        <ResizeHandle
+          side="rightbar"
+          left={viewport - columns.details - columns.rightbar}
+          onStart={onRightbarStart}
+          onDrag={onRightbarDrag}
+          onEnd={onDragEnd}
+        />
+      )}
     </div>
   )
 }
 
 function ResizeHandle(props: {
-  side: 'sidebar' | 'details'
+  side: 'sidebar' | 'rightbar' | 'details'
   left: number
   onStart: () => void
   onDrag: (dx: number) => void

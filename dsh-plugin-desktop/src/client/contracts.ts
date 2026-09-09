@@ -6,6 +6,13 @@ export interface DesktopSidebarOwnerProps {
   width: number
 }
 
+/** Rightbar geometry supplied by the Desktop-owned root frame. */
+export interface DesktopRightbarOwnerProps {
+  width: number
+  viewportWidth: number
+  canShow: boolean
+}
+
 /** Public panel transitions consumed by conversation and sidebar plugins. */
 export interface DesktopLayoutService {
   /** Toggle the sidebar between wide and compact presentation. */
@@ -14,6 +21,10 @@ export interface DesktopLayoutService {
   openDetails(): void
   /** Close the details panel. */
   closeDetails(): void
+  /** Open the current session's rightbar using upstream presentation flags. */
+  openRightbar(track: boolean, fullscreen: boolean): void
+  /** Close the current session's rightbar. */
+  closeRightbar(): void
 }
 
 /** Insets reserved by Desktop-owned native chrome in CSS pixels. */
@@ -69,6 +80,8 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
     'conversation': { kind: 'single'; scope: 'session-maybe'; owner: Record<never, never> }
     /** Unchanged upstream details surface. */
     'details': { kind: 'single'; scope: 'session'; owner: Record<never, never> }
+    /** Upstream right sidebar occupant hosted by the Desktop-owned frame. */
+    'rightbar': { kind: 'single'; scope: 'session'; owner: DesktopRightbarOwnerProps }
     /** Frame-wide additive overlays. */
     'shell.overlay': { kind: 'list'; scope: 'root' }
   }
