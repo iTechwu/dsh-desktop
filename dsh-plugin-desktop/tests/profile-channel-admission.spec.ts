@@ -126,6 +126,24 @@ describe('Desktop Profile release-channel admission', () => {
       .toEqual({ status: 'allow', reason: 'current-channel-latest' })
   })
 
+  it('allows a cross-channel record when its DSH version matches the current runtime', () => {
+    const target = fixture()
+    capture(target, target.locations.other, '2026-09-02T01:00:00.000Z')
+
+    expect(inspectDesktopProfileChannelAdmission(
+      target.locations,
+      target.profile,
+      'work',
+      '0.1.2-rc.1',
+    )).toEqual({ status: 'allow', reason: 'compatible-dsh' })
+    expect(inspectDesktopProfileChannelAdmission(
+      target.locations,
+      target.profile,
+      'work',
+      '0.1.3-alpha.1',
+    )).toMatchObject({ status: 'warn', reason: 'other-channel-latest' })
+  })
+
   it('compares healthy timestamps and treats ties as uncertain', () => {
     const currentLatest = fixture()
     capture(currentLatest, currentLatest.locations.other, '2026-09-02T01:00:00.000Z')

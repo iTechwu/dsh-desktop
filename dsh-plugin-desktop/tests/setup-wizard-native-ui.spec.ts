@@ -18,6 +18,7 @@ import {
   SetupWizardLanConfirmation,
   SetupWizardNavigation,
   SetupWizardStepPage,
+  SetupWizardStarting,
   SetupWizardSuccess,
   SetupWizardWelcome,
 } from '../src/native-ui/setup-wizard/App.tsx'
@@ -339,6 +340,14 @@ describe('Setup Wizard navigation and completion', () => {
     expect(success).not.toContain(`aria-label="${copy.back}"`)
     expect(success).not.toContain(`aria-label="${copy.next}"`)
     expect(navigation).toBe('')
+  })
+
+  it('renders a progress state while the main desktop surface is starting', () => {
+    const markup = renderToStaticMarkup(createElement(SetupWizardStarting, { copy }))
+    expect(markup).toContain('data-setup-step="starting"')
+    expect(markup).toContain(copy.startingTitle)
+    expect(markup).toContain(copy.startingBody)
+    expect(markup).toContain('animate-spin')
   })
 })
 

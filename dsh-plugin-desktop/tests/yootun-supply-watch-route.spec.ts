@@ -4,17 +4,32 @@ import { tmpdir } from 'node:os'
 import { describe, expect, it, vi } from 'vitest'
 import { handleYootunSupplyWatchRequest, YOOTUN_SUPPLY_WATCH_PATH } from '../src/yootun-supply-watch-route.ts'
 
-function request(method: string, body?: string): any {
+function request(method: string, body?: string, origin = 'http://127.0.0.1:43120'): any {
   const chunks = body === undefined ? [] : [Buffer.from(body)]
-  return { method, headers: { host: '127.0.0.1:43120', origin: 'http://127.0.0.1:43120', 'content-type': 'application/json' }, socket: { remoteAddress: '127.0.0.1' }, async *[Symbol.asyncIterator]() { yield* chunks } }
+  const headers: Record<string, string> = { host: '127.0.0.1:43120', 'content-type': 'application/json' }
+  if (origin !== undefined) headers.origin = origin
+  return { method, headers, socket: { remoteAddress: '127.0.0.1' }, async *[Symbol.asyncIterator]() { yield* chunks } }
 }
 function response() { const headers: Record<string, string | number> = {}; let raw = ''; return { statusCode: 0, headers, setHeader(name: string, value: string | number) { headers[name.toLowerCase()] = value }, end(value = '') { raw += value }, get status() { return this.statusCode }, body() { return raw ? JSON.parse(raw) : undefined } } as any }
 
 describe('Yootun supply watch route', () => {
+  it('rejects originless writes and reports unsupported methods before storage checks', async () => {
+    const originless = response()
+    const originlessRequest = request('POST', '{}')
+    delete originlessRequest.headers.origin
+    await handleYootunSupplyWatchRequest(originlessRequest, originless, 'http://127.0.0.1:43120', { statePath: undefined })
+    expect(originless.status).toBe(403)
+    const unsupported = response()
+    await handleYootunSupplyWatchRequest(request('PUT'), unsupported, 'http://127.0.0.1:43120', { statePath: undefined })
+    expect(unsupported.status).toBe(405)
+    expect(unsupported.headers.allow).toBe('GET, POST')
+    expect(unsupported.headers['x-content-type-options']).toBe('nosniff')
+  })
+
   it('persists a risk, queues review, and keeps confirmation explicit', async () => {
     const root = await mkdtemp(join(tmpdir(), 'yootun-supply-')); const statePath = join(root, 'state.json'); const now = () => new Date('2026-09-01T02:00:00.000Z')
     const invalid = response(); await handleYootunSupplyWatchRequest(request('POST', JSON.stringify({ action: 'save_risk', title: '交付周期异常', supplierLabel: '供应商 A', category: '交付', severity: 'high', status: 'open', signal: '近三日交付延迟上升', recommendedAction: '复核备选供应商与库存', source: 'supply-chain', bankAccount: '6222000000000000' })), invalid, 'http://127.0.0.1:43120', { statePath, now }); expect(invalid.status).toBe(400)
-    const saved = response(); await handleYootunSupplyWatchRequest(request('POST', JSON.stringify({ action: 'save_risk', title: '交付周期异常', supplierLabel: '供应商 A', category: '交付', severity: 'high', status: 'open', signal: '近三日交付延迟上升', recommendedAction: '复核备选供应商与库存', source: 'supply-chain', dueAt: '2026-09-01T08:00:00.000Z' })), saved, 'http://127.0.0.1:43120', { statePath, now }); expect(saved.status).toBe(200); expect(saved.body().dashboard).toMatchObject({ risks: 1, open: 1, dueToday: 1 }); const riskId = saved.body().risks[0].id
+    const saved = response(); await handleYootunSupplyWatchRequest(request('POST', JSON.stringify({ action: 'save_risk', title: '交付周期异常', supplierLabel: '供应商 A', category: '交付', severity: 'high', status: 'open', signal: '近三日交付延迟上升', recommendedAction: '复核备选供应商与库存', source: 'supply-chain', dueAt: '2026-09-01T08:00:00.000Z' })), saved, 'http://127.0.0.1:43120', { statePath, now }); expect(saved.status).toBe(200); expect(saved.body().dashboard).toMatchObject({ risks: 1, open: 1, dueToday: 1 }); expect(saved.headers['x-content-type-options']).toBe('nosniff'); const riskId = saved.body().risks[0].id
     const queued = response(); await handleYootunSupplyWatchRequest(request('POST', JSON.stringify({ action: 'queue_review', riskId, summary: '确认交付恢复计划与替代方案', idempotencyKey: 'supply-review-1' })), queued, 'http://127.0.0.1:43120', { statePath, now }); expect(queued.body().dashboard.pendingConfirmation).toBe(1); expect(queued.body().actions[0].status).toBe('awaiting_confirmation')
     const replay = response(); await handleYootunSupplyWatchRequest(request('POST', JSON.stringify({ action: 'queue_review', riskId, summary: '确认交付恢复计划与替代方案', idempotencyKey: 'supply-review-1' })), replay, 'http://127.0.0.1:43120', { statePath, now }); expect(replay.body().actions).toHaveLength(1)
     const confirmed = response(); await handleYootunSupplyWatchRequest(request('POST', JSON.stringify({ action: 'confirm_action', id: queued.body().actions[0].id })), confirmed, 'http://127.0.0.1:43120', { statePath, now }); expect(confirmed.body().actions[0].status).toBe('confirmed_pending_adapter'); expect(JSON.parse(await readFile(statePath, 'utf8')).risks[0]).not.toHaveProperty('bankAccount')

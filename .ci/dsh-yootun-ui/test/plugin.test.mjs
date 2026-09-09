@@ -5,6 +5,20 @@ import vm from 'node:vm'
 
 const root = new URL('../', import.meta.url)
 
+async function loadClientTestApi() {
+  const source = await readFile(new URL('src/client.js', root), 'utf8')
+  const exports = {}
+  vm.runInNewContext(source, {
+    exports,
+    fetch() {},
+    require(specifier) {
+      if (specifier === 'react-dom/client') return { createRoot() {} }
+      return { createElement() {}, useEffect() {}, useMemo() {}, useRef() {}, useState() {}, useSyncExternalStore() {} }
+    },
+  })
+  return exports.__test
+}
+
 test('publishes a discoverable DSH client plugin', async () => {
   const manifest = JSON.parse(await readFile(new URL('package.json', root), 'utf8'))
 
@@ -43,6 +57,10 @@ test('bundles Yootun branding, settings, and a mandatory credential gate', async
   assert.match(source, /await mutateCurrentSettings\(settingsApi, 'llm-deepseek'/u)
   assert.match(source, /await mutateCurrentSettings\(settingsApi, 'agent-default-model'/u)
   assert.match(source, /await mutateCurrentSettings\(settingsApi, ACCESS_NS/u)
+  assert.match(source, /\.yu-card\{[^}]*border-radius:6px/u)
+  assert.match(source, /\.yu-header\{[^}]*padding:16px 24px/u)
+  assert.match(source, /\.yu-form\{[^}]*padding:16px 24px 24px/u)
+  assert.match(source, /\.yu-form\{padding-left:16px;padding-right:16px/u)
 })
 
 test('guides credential setup and protects credential removal', async () => {
@@ -51,9 +69,92 @@ test('guides credential setup and protects credential removal', async () => {
   assert.match(source, /type: showKey \? 'text' : 'password'/u)
   assert.match(source, /role: 'status'/u)
   assert.match(source, /const \[confirmingRemove, setConfirmingRemove\] = useState\(false\)/u)
+  assert.match(source, /setConfigured\(initialConfigured\)[\s\S]*?\[initialConfigured\]/u)
   assert.match(source, /t\('removeWarning'\)/u)
   assert.match(source, /onClick: \(\) => setConfirmingRemove\(true\)/u)
   assert.match(source, /onClick: \(\) => setConfirmingRemove\(false\)/u)
+  assert.match(source, /className: 'yu-form', 'aria-busy': interactionBusy/u)
+  assert.match(source, /if \(!entered \|\| loadingRef\.current \|\| busyRef\.current\) return/u)
+  assert.match(source, /if \(busyRef\.current \|\| loadingRef\.current/u)
+  assert.match(source, /disabled: interactionBusy/u)
+})
+
+test('re-reads and retries a settings mutation once after a revision conflict', async () => {
+  const { mutateCurrentSettings } = await loadClientTestApi()
+  const revisions = [4, 5]
+  const used = []
+  const settingsApi = {
+    async describe() {
+      return { ok: true, value: { namespaces: [{ ns: 'dofe-access', revision: revisions.shift() }] } }
+    },
+    async mutate(_namespace, _operations, revision) {
+      used.push(revision)
+      return used.length === 1
+        ? { ok: false, error: { code: 'settings/conflict' } }
+        : { ok: true, value: {} }
+    },
+  }
+
+  await mutateCurrentSettings(settingsApi, 'dofe-access', [{ op: 'set', path: ['modelId'], value: 'deepseek-chat' }])
+  assert.deepEqual(used, [4, 5])
+
+  let rejectedCalls = 0
+  await assert.rejects(() => mutateCurrentSettings({
+    async describe() {
+      return { ok: true, value: { namespaces: [{ ns: 'dofe-access', revision: 6 }] } }
+    },
+    async mutate() {
+      rejectedCalls += 1
+      return { ok: false, error: { code: 'settings/rejected' } }
+    },
+  }, 'dofe-access', []), /dofe-access rejected/u)
+  assert.equal(rejectedCalls, 1)
+})
+
+test('revokes access before removing the credential and stops on settings failure', async () => {
+  const { removeAccess } = await loadClientTestApi()
+  const calls = []
+  const settingsApi = {
+    async describe() {
+      calls.push('describe')
+      return { ok: true, value: { namespaces: [{ ns: 'dofe-access', revision: 7 }] } }
+    },
+    async mutate(namespace, operations, revision) {
+      calls.push(['mutate', namespace, operations, revision])
+      return { ok: true, value: {} }
+    },
+  }
+  const credentials = {
+    async unset(ref) {
+      calls.push(['unset', ref])
+      return { ok: true, value: {} }
+    },
+  }
+
+  await removeAccess(settingsApi, credentials)
+  assert.equal(calls[0], 'describe')
+  assert.equal(JSON.stringify(calls[1]), JSON.stringify(['mutate', 'dofe-access', [
+    { op: 'set', path: ['setupComplete'], value: false },
+    { op: 'set', path: ['validationVersion'], value: 0 },
+    { op: 'set', path: ['modelId'], value: '' },
+  ], 7]))
+  assert.deepEqual(calls[2], ['unset', 'MODELS_API_KEY'])
+
+  let unsetCalls = 0
+  await assert.rejects(() => removeAccess({
+    async describe() {
+      return { ok: true, value: { namespaces: [{ ns: 'dofe-access', revision: 8 }] } }
+    },
+    async mutate() {
+      return { ok: false, error: { code: 'settings/rejected' } }
+    },
+  }, {
+    async unset() {
+      unsetCalls += 1
+      return { ok: true, value: {} }
+    },
+  }), /dofe-access rejected/u)
+  assert.equal(unsetCalls, 0)
 })
 
 test('loads the generated module and registers every owned surface', async () => {

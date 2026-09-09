@@ -197,10 +197,18 @@ describe('DesktopSetupWizardWindow', () => {
       market: source.market,
       notifications: source.notifications,
     }
-    const result = new DesktopSetupWizardWindow({ locale: 'en', input: input() }).run()
+    const wizard = new DesktopSetupWizardWindow({ locale: 'en', input: input() })
+    const result = wizard.run()
     await vi.waitFor(() => { expect(electron.windows).toHaveLength(1) })
     navigate(electron.windows[0]!, completeUrl(expected))
     await expect(result).resolves.toEqual({ action: 'complete', selection: expected })
+    expect(electron.windows[0]?.destroy).not.toHaveBeenCalled()
+
+    const closeEvent = { preventDefault: vi.fn() }
+    electron.windows[0]?.listeners.get('close')?.(closeEvent)
+    expect(closeEvent.preventDefault).toHaveBeenCalledOnce()
+    wizard.closeStartupSurface()
+    expect(electron.windows[0]?.destroy).toHaveBeenCalledOnce()
   })
 
   it('maps an ordinary window close to quit instead of skip', async () => {

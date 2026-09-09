@@ -1,6 +1,6 @@
 {
   "name": "dsh-plugin-desktop",
-  "version": "2.0.6-beta.1",
+  "version": "2.0.7-beta.2",
   "description": "Yootun-Agent: an Electron shell composed as a DeepSeek Harness Cordis plugin",
   "license": "MIT",
   "publishConfig": {
@@ -136,6 +136,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.client.json --noEmit && tsc -p tsconfig.native-ui.json --noEmit && tsc -p tsconfig.tests.json --noEmit && tsc -p tsconfig.tests.client.json --noEmit",
     "test": "vitest run",
     "test:audit-ui": "node tests/browser/yootun-audit.visual.mjs",
+    "test:search-locks-ui": "node tests/browser/yootun-search-locks.visual.mjs",
+    "test:theme-actions-ui": "node tests/browser/yootun-theme-actions.visual.mjs",
     "verify:closure": "node --test scripts/runtime-closure.spec.mjs && node scripts/verify-runtime-closure.mjs",
     "verify:cli": "node scripts/verify-cli-runtime.mjs",
     "verify:loader": "node scripts/verify-loader-boot.mjs",
@@ -390,6 +392,7 @@
     "@dofe/dsh-georank-mcp": "file:../../docker-helm.dofe.ai/plugins/dsh-georank-mcp",
     "@dofe/dsh-knowledge-capture": "file:../../docker-helm.dofe.ai/plugins/dsh-knowledge-capture",
     "@dofe/dsh-opencli": "file:../../docker-helm.dofe.ai/plugins/dsh-opencli",
+    "@dofe/dsh-openmontage-mcp": "workspace:*",
     "@dofe/dsh-tools-mcp": "file:../../docker-helm.dofe.ai/plugins/dsh-tools-mcp",
     "@dofe/dsh-yootun-audit": "file:../../docker-helm.dofe.ai/plugins/dsh-yootun-audit",
     "@dofe/dsh-yootun-content-command": "file:../../docker-helm.dofe.ai/plugins/dsh-yootun-content-command",

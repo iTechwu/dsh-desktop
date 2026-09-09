@@ -17,6 +17,18 @@ test('retrofit package exposes a complete database-first workspace', async () =>
   assert.match(client, /今日头条/)
   assert.match(client, /Lemon8/)
   assert.match(client, /setAttribute\('aria-label', t\('placeholder'\)\)/)
+  assert.match(client, /className: 'yro-empty', role: 'status'/u)
+  assert.match(client, /className: 'yro-loading', role: 'status'/u)
+  assert.match(client, /className: 'yro-state', role: 'alert'/u)
+  assert.match(client, /'aria-busy': busy/u)
+  assert.match(client, /if \(busyRef\.current\) return null/u)
+  assert.match(client, /value: platform, disabled: busy/u)
+  assert.match(client, /className: 'yro-search-input', value: query, maxLength: 500, disabled: busy/u)
+  assert.match(client, /\.yro-state button:disabled\{cursor:not-allowed;opacity:\.45\}/u)
+  assert.match(client, /url\.protocol === 'http:' \|\| url\.protocol === 'https:'/u)
+  assert.match(client, /background:var\(--dsw-alias-state-success-primary\)/u)
+  assert.match(client, /color:var\(--dsw-alias-state-warn-primary\)/u)
+  assert.doesNotMatch(client, /#(?:31a46c|d9902f)\b/iu)
 })
 
 test('host delegates to a query-capable custom-car tool without exposing credentials', async () => {

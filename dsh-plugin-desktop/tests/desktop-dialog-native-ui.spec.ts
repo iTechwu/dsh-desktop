@@ -27,6 +27,9 @@ describe('Desktop dialog native UI', () => {
       '2. Second',
       'Recommendation',
     ])
+    const source = readFileSync(new URL('../src/native-ui/desktop-dialog/App.tsx', import.meta.url), 'utf8')
+    expect(source).toContain('text-amber-950 dark:border-amber-400/40 dark:text-amber-100')
+    expect(source).not.toContain('bg-amber-500/10 px-3 py-2.5 text-sm leading-relaxed text-amber-100')
   })
 
   it('uses the shared ScrollArea for long default dialog details', () => {

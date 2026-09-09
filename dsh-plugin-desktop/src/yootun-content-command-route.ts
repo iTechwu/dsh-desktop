@@ -6,6 +6,7 @@ import { writeFileAtomic } from '@deepseek-ai/dsh-atomic-write'
 import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import type { ToolExecutionInput } from '@deepseek-ai/dsh-tools'
 import { safeYootunAuditTargetId, type YootunAuditEffect, type YootunAuditRecordInput, type YootunAuditRecorder } from './yootun-audit-contract.ts'
+import { sameYootunOrigin } from './yootun-route-security.ts'
 
 export const YOOTUN_CONTENT_COMMAND_PATH = '/api/desktop/yootun/content-command'
 const VERSION = 2
@@ -236,10 +237,10 @@ async function mutateState(path: string, update: (state: ContentState) => Promis
   try { const next = await update(await readContentState(path)); await writeState(path, next); return next } finally { release?.(); if (queues.get(path) === chain) queues.delete(path) }
 }
 
-const finish = (res: ServerResponse, status: number, value: object, allow?: string) => { res.statusCode = status; res.setHeader('Content-Type', 'application/json; charset=utf-8'); res.setHeader('Cache-Control', 'no-store'); if (allow) res.setHeader('Allow', allow); res.end(JSON.stringify(value)) }
+const finish = (res: ServerResponse, status: number, value: object, allow?: string) => { res.statusCode = status; res.setHeader('Content-Type', 'application/json; charset=utf-8'); res.setHeader('Cache-Control', 'no-store'); res.setHeader('X-Content-Type-Options', 'nosniff'); if (allow) res.setHeader('Allow', allow); res.end(JSON.stringify(value)) }
 async function requestBody(req: IncomingMessage) { let size = 0; const chunks: Buffer[] = []; for await (const chunk of req) { const data = Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk)); size += data.byteLength; if (size > MAX_BODY) throw new ContentBodyTooLarge(); chunks.push(data) } try { return JSON.parse(Buffer.concat(chunks).toString('utf8')) } catch { throw new InvalidContentRequest('json_invalid') } }
 
-const CONTENT_AUDIT_SOURCE = Object.freeze({ pluginId: 'dsh-plugin-desktop/yootun-content-command', pluginVersion: '2.0.6-beta.1', surface: 'human_ui' as const })
+const CONTENT_AUDIT_SOURCE = Object.freeze({ pluginId: 'dsh-plugin-desktop/yootun-content-command', pluginVersion: '2.0.7-beta.2', surface: 'human_ui' as const })
 
 async function recordContentAudit(audit: YootunAuditRecorder | undefined, input: YootunAuditRecordInput | undefined): Promise<void> {
   if (audit === undefined || input === undefined) return
@@ -277,10 +278,10 @@ function failedContentMutationAudit(body: RecordValue, errorCode: string): Yootu
 }
 
 export async function handleYootunContentCommandRequest(req: IncomingMessage, res: ServerResponse, rendererOrigin: string, dependencies: ContentRouteDependencies): Promise<void> {
-  if (req.headers.origin && req.headers.origin !== rendererOrigin) return finish(res, 403, { error: 'origin_forbidden' })
+  if (!sameYootunOrigin(req, rendererOrigin)) return finish(res, 403, { error: 'origin_forbidden' })
+  if (req.method !== 'GET' && req.method !== 'POST') return finish(res, 405, { error: 'method_not_allowed' }, 'GET, POST')
   if (!dependencies.statePath) return finish(res, 503, { error: 'state_unavailable' })
   if (req.method === 'GET') { try { return finish(res, 200, await snapshot(await readContentState(dependencies.statePath), dependencies.tools)) } catch { return finish(res, 200, { status: 'error', dashboard: emptyDashboard(), sources: emptySources(), platforms: CONTENT_PLATFORMS, articles: [] }) } }
-  if (req.method !== 'POST') return finish(res, 405, { error: 'method_not_allowed' }, 'GET, POST')
   let auditRequest: RecordValue | undefined
   try {
     const body = record(await requestBody(req))

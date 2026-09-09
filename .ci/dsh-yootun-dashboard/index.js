@@ -51,7 +51,7 @@ export function apply(ctx, overrides = {}) {
       path: DASHBOARD_PATH,
       async handler(req, res) {
         if (req.method !== 'POST') {
-          res.writeHead(405, { Allow: 'POST' })
+          res.writeHead(405, { Allow: 'POST', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' })
           res.end()
           return
         }
@@ -66,7 +66,7 @@ export function apply(ctx, overrides = {}) {
       path: DASHBOARD_SERIES_PATH,
       async handler(req, res) {
         if (req.method !== 'POST') {
-          res.writeHead(405, { Allow: 'POST' })
+          res.writeHead(405, { Allow: 'POST', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' })
           res.end()
           return
         }
@@ -1194,6 +1194,7 @@ function sendJson(res, status, body) {
   res.writeHead(status, {
     'Cache-Control': 'no-store',
     'Content-Type': 'application/json; charset=utf-8',
+    'X-Content-Type-Options': 'nosniff',
     'Content-Length': Buffer.byteLength(value),
   })
   res.end(value)

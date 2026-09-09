@@ -10,7 +10,7 @@ const here = fileURLToPath(new URL('.', import.meta.url))
 const packageRoot = resolve(here, '../..')
 const workspaceRoot = resolve(packageRoot, '..')
 const harnessRoot = resolve(here, 'yootun-audit')
-const auditSourcePath = resolve(workspaceRoot, '../docker-helm.dofe.ai/plugins/dsh-yootun-audit/src/client.js')
+const auditSourcePath = resolve(workspaceRoot, '.ci/dsh-yootun-audit/src/client.js')
 const evidenceRoot = resolve(workspaceRoot, 'docs/superpowers/evidence/2026-09-05-yootun-audit')
 const browserExecutable = process.env.DSH_AUDIT_BROWSER_EXECUTABLE
   || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
@@ -214,7 +214,7 @@ try {
   await page.screenshot({ path: resolve(evidenceRoot, '1024-filtered-empty.png'), fullPage: true })
 
   await open(1024, 800, 'loading')
-  await page.locator('[aria-busy="true"]').waitFor()
+  await page.locator('.ya-shell[aria-busy="true"]').waitFor()
   await page.screenshot({ path: resolve(evidenceRoot, '1024-loading.png'), fullPage: true })
   await page.getByRole('grid', { name: '操作审计' }).waitFor()
 

@@ -224,8 +224,12 @@ function projectItems(list) {
 function projectLead(item) {
   if (!item || typeof item !== 'object') return null
   const out = {}
-  for (const field of SAFE_LEAD_FIELDS) if (item[field] !== null && item[field] !== undefined) out[field] = item[field]
+  for (const field of SAFE_LEAD_FIELDS) if (item[field] !== null && item[field] !== undefined) out[field] = field === 'sourceUrl' ? safeExternalUrl(item[field]) : item[field]
   return out.leadLevel ? out : null
+}
+function safeExternalUrl(value) {
+  if (typeof value !== 'string' || value.length > 2048) return undefined
+  try { const url = new URL(value); return url.protocol === 'http:' || url.protocol === 'https:' ? url.href : undefined } catch { return undefined }
 }
 function firstString(...values) { for (const value of values) if (typeof value === 'string' && value) return value; return null }
 function numberOrNull(value) { return typeof value === 'number' && Number.isFinite(value) ? value : null }
@@ -262,6 +266,6 @@ async function readBody(req) {
   return raw ? JSON.parse(raw) : {}
 }
 function send(res, status, body) {
-  res.writeHead(status, { 'Cache-Control': 'no-store', 'Content-Type': 'application/json; charset=utf-8' })
+  res.writeHead(status, { 'Cache-Control': 'no-store', 'Content-Type': 'application/json; charset=utf-8', 'X-Content-Type-Options': 'nosniff' })
   res.end(JSON.stringify(body))
 }

@@ -25,6 +25,22 @@ test('lead discovery package exposes a DSH client and guarded host route', async
   assert.match(client, /yl-start-steps/)
   assert.match(client, /yl-platform-options/)
   assert.match(client, /hasResult: Boolean\(data\)/)
+  assert.match(client, /role: kind === 'error' \? 'alert' : 'status'/u)
+  assert.match(client, /const interactionBusy = busy \|\| loadingMore \|\| candidateBusy/u)
+  assert.match(client, /'aria-busy': interactionBusy/u)
+  assert.match(client, /if \(!query\.trim\(\) \|\| searchRef\.current \|\| pageRef\.current \|\| candidateRef\.current\) return/u)
+  assert.match(client, /if \(searchRef\.current \|\| pageRef\.current \|\| candidateRef\.current \|\| !data\?\.resultRef/u)
+  assert.match(client, /if \(searchRef\.current \|\| pageRef\.current \|\| candidateRef\.current\) return/u)
+  assert.match(client, /disabled: interactionBusy, 'aria-selected': tab === 'discover'/u)
+  assert.match(client, /busy: interactionBusy, onRun: run/u)
+  assert.match(client, /const refreshDisabled = interactionBusy/u)
+  assert.match(client, /\.yl-platform-options button:disabled,.yl-query-wrap input:disabled,.yl-examples button:disabled,.yl-tabs button:disabled/u)
+})
+
+test('announces initial and filtered empty lead states', async () => {
+  const client = await readFile(new URL('../src/client.js', import.meta.url), 'utf8')
+  assert.match(client, /className: 'yl-empty-list', role: 'status'/u)
+  assert.match(client, /className: 'yl-empty-state', role: 'status'/u)
 })
 
 test('host delegates discover to lead_discovery_discover and forwards only safe fields', async () => {
@@ -136,6 +152,27 @@ test('host preserves a safe MCP error category for diagnosis', async () => {
   const result = await invoke(route, { action: 'candidates' })
   assert.equal(result.status, 200)
   assert.deepEqual(result.body, { status: 'error', reason: 'RESULT_STORE_UNAVAILABLE' })
+})
+
+test('host drops non-web source URLs before returning lead cards', async () => {
+  let route
+  apply({
+    tools: {
+      schemas: () => [{ name: 'lead_discovery_database_search' }],
+      execute: async () => ({ structuredContent: {
+        count: 2,
+        candidates: [
+          { leadLevel: 'A', sourceUrl: 'javascript:alert(1)' },
+          { leadLevel: 'B', sourceUrl: 'https://example.com/lead' },
+        ],
+      } }),
+    },
+    webServer: { register(value) { route = value; return () => {} } },
+    effect(factory) { return factory() },
+  })
+  const result = await invoke(route, { action: 'discover', keyword: 'SUV' })
+  assert.equal(result.body.items[0].sourceUrl, undefined)
+  assert.equal(result.body.items[1].sourceUrl, 'https://example.com/lead')
 })
 
 test('audits persisted discovery once and keeps pages and stored candidates read-only', async () => {

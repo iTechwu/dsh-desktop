@@ -441,7 +441,6 @@ export class ElectronShellGeneration {
         origin,
         spec.rendererAccessHeader,
       )
-      revealStartupSurface()
       await window.loadURL(spec.url)
       if (spec.rendererUrl !== undefined && window.webContents.getURL() !== spec.rendererUrl) {
         // BrowserAuth redirects the token URL to a clean `/`, dropping the
@@ -449,6 +448,9 @@ export class ElectronShellGeneration {
         // handshake so the client plugin can activate native presentation.
         await window.loadURL(spec.rendererUrl)
       }
+      // Keep the hidden native background from becoming a long blank window.
+      // The Setup progress surface remains visible during first-time startup.
+      revealStartupSurface()
       if (spec.rendererUrl !== undefined) this.options.reportRendererBoot({ status: 'healthy' })
       tray = new Tray(prepareTrayIcon(spec.trayIcons, platform.platform))
       this.tray = tray

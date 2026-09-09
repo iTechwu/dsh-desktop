@@ -69,6 +69,7 @@ async function buildState(ctx, signal = AbortSignal.timeout(TOOL_CALL_TIMEOUT_MS
       id: String(alert.alertId || ''),
       targetLabel: String(alert.supplierId || '供应商'),
       summary: `${alert.priority || 'P?'} · ${alert.status || 'open'}`,
+      severity: String(alert.priority || '').toLowerCase(),
       status: handledActions.has(String(alert.alertId)) ? 'adapter_pending' : 'awaiting_confirmation',
     }))
     .filter(item => item.id)
@@ -117,6 +118,6 @@ async function readBody(req) {
   return raw ? JSON.parse(raw) : {}
 }
 function send(res, status, body) {
-  res.writeHead(status, { 'Cache-Control': 'no-store', 'Content-Type': 'application/json; charset=utf-8' })
+  res.writeHead(status, { 'Cache-Control': 'no-store', 'Content-Type': 'application/json; charset=utf-8', 'X-Content-Type-Options': 'nosniff' })
   res.end(JSON.stringify(body))
 }

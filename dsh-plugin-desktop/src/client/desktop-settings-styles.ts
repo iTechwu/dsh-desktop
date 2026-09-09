@@ -69,7 +69,7 @@ const CSS = `
 .dshDesktopSettingsToggleLabel { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
 .dshDesktopSettingsChoiceAside { flex: 0 0 auto; margin-left: 12px; }
 .dshDesktopSettingsDeleteConfirm { display: flex; align-items: flex-end; flex-direction: column; gap: 8px; max-width: 320px; }
-.dshDesktopSettingsDeleteWarning { color: var(--dsw-alias-state-warning-primary); font-size: 12px; line-height: 1.4; text-align: right; }
+.dshDesktopSettingsDeleteWarning { color: var(--dsw-alias-state-warn-primary); font-size: 12px; line-height: 1.4; text-align: right; }
 .dshDesktopSettingsDeleteActions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
 .dshDesktopSettingsChoiceTitle {
   display: flex;

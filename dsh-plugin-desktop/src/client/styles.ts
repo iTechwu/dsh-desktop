@@ -73,6 +73,72 @@ html:has([aria-modal="true"]) .dshDesktopWindowsCaptionRow::before { -webkit-app
     scroll-behavior: auto !important;
   }
 }
+/* Shared contract for built-in plugin surfaces. Individual plugins own their
+   layout, while the shell owns interaction rhythm and theme aliases. */
+body:is([data-dsh-desktop-mode="compatibility"], [data-dsh-desktop-mode="extended"], [data-dsh-desktop-mode="advanced"]) {
+  --dsh-plugin-control-height: 36px;
+  --dsh-plugin-control-height-compact: 32px;
+  --dsh-plugin-radius: 6px;
+  --dsh-plugin-content-max-width: 1180px;
+}
+body:is([data-dsh-desktop-mode="compatibility"], [data-dsh-desktop-mode="extended"], [data-dsh-desktop-mode="advanced"])
+  [role="dialog"][aria-modal="true"] {
+  box-sizing: border-box;
+  color: var(--dsw-alias-label-primary);
+  font-family: inherit;
+  letter-spacing: 0;
+  overscroll-behavior: contain;
+}
+body:is([data-dsh-desktop-mode="compatibility"], [data-dsh-desktop-mode="extended"], [data-dsh-desktop-mode="advanced"])
+  [role="dialog"][aria-modal="true"] :is(button, input, select, textarea) {
+  box-sizing: border-box;
+  font-family: inherit;
+  touch-action: manipulation;
+}
+body:is([data-dsh-desktop-mode="compatibility"], [data-dsh-desktop-mode="extended"], [data-dsh-desktop-mode="advanced"])
+  [role="dialog"][aria-modal="true"] :is(button, input, select, textarea):focus-visible {
+  outline: 2px solid var(--dsw-alias-brand-primary, #245eea);
+  outline-offset: 2px;
+}
+body:is([data-dsh-desktop-mode="compatibility"], [data-dsh-desktop-mode="extended"], [data-dsh-desktop-mode="advanced"])
+  [role="dialog"][aria-modal="true"] :is(button, [role="button"], [role="tab"], [role="option"]) {
+  min-height: var(--dsh-plugin-control-height-compact);
+  transition: background-color 160ms ease, border-color 160ms ease, color 160ms ease, opacity 160ms ease;
+}
+body:is([data-dsh-desktop-mode="compatibility"], [data-dsh-desktop-mode="extended"], [data-dsh-desktop-mode="advanced"])
+  [role="dialog"][aria-modal="true"] :is(button, [role="button"], [role="tab"], [role="option"]):active:not(:disabled) {
+  transform: translateY(1px);
+}
+body:is([data-dsh-desktop-mode="compatibility"], [data-dsh-desktop-mode="extended"], [data-dsh-desktop-mode="advanced"])
+  [role="dialog"][aria-modal="true"] :is(input, select, textarea) {
+  min-height: var(--dsh-plugin-control-height-compact);
+}
+body:is([data-dsh-desktop-mode="compatibility"], [data-dsh-desktop-mode="extended"], [data-dsh-desktop-mode="advanced"])
+  [role="dialog"][aria-modal="true"] :is(button, input, select, textarea):disabled {
+  cursor: not-allowed;
+}
+body:is([data-dsh-desktop-mode="compatibility"], [data-dsh-desktop-mode="extended"], [data-dsh-desktop-mode="advanced"])
+  [role="dialog"][aria-modal="true"] :is(button, input, select, textarea)::placeholder {
+  color: var(--dsw-alias-label-tertiary, var(--dsw-alias-label-secondary));
+  opacity: 1;
+}
+@media (max-width: 767px) {
+  body:is([data-dsh-desktop-mode="compatibility"], [data-dsh-desktop-mode="extended"], [data-dsh-desktop-mode="advanced"])
+    [role="dialog"][aria-modal="true"] {
+    --dsh-plugin-content-padding: 16px;
+  }
+  body:is([data-dsh-desktop-mode="compatibility"], [data-dsh-desktop-mode="extended"], [data-dsh-desktop-mode="advanced"])
+    [role="dialog"][aria-modal="true"] :is(button, input, select, textarea) {
+    min-height: 36px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  body:is([data-dsh-desktop-mode="compatibility"], [data-dsh-desktop-mode="extended"], [data-dsh-desktop-mode="advanced"])
+    [role="dialog"][aria-modal="true"] * {
+    transition: none !important;
+    transform: none !important;
+  }
+}
 `
 
 /** Install shared panel styles; mode selectors keep enhanced and extended chrome independent. */

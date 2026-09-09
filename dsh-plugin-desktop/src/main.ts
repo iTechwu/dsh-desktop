@@ -828,6 +828,7 @@ async function start(): Promise<void> {
           releaseUserDataLocations,
           activeProfileDir,
           activeProfileName,
+          currentDshVersion,
         )
         if (admission.status === 'allow') break
         const previous = admission.reason === 'other-channel-latest'
@@ -1112,16 +1113,20 @@ async function start(): Promise<void> {
       let setupResult: DesktopSetupWizardResult
       try {
         setupResult = await setupWizardWindow.run()
-      } finally {
+      } catch (cause) {
+        setupWizardWindow.closeStartupSurface()
         setupWizardWindow = undefined
+        throw cause
       }
       if (setupResult.action === 'quit') {
+        setupWizardWindow = undefined
         startupRecoveryController?.dispose()
         startupRecoveryController = undefined
         await shutdown.request(0)
         return
       }
       if (setupResult.action === 'skip') {
+        setupWizardWindow = undefined
         await completeOrSkipDesktopSetupWizard(
           marketUserDataDir,
           prepared.profile.dir,
@@ -1531,6 +1536,9 @@ async function start(): Promise<void> {
       )
     }
     lifecycleRecorder.completeStartup(startupStage, rendererReport)
+    setupWizardWindow?.closeStartupSurface()
+    setupWizardWindow = undefined
+    runtime.show()
     notifySkippedOptionalEntries(runtime, electronLogger, prepared.skippedOptionalEntries)
     notifyWindowsVolumeConcerns(runtime, electronLogger, windowsVolumeConcerns)
     if (safeModePaths !== undefined && DESKTOP_SAFE_MODE_DEFAULTS.settings.notifications.enabled) {
@@ -1540,6 +1548,8 @@ async function start(): Promise<void> {
       notifySessionProjectionCacheRecovery(runtime, electronLogger, sessionProjectionCacheRecovery)
     }
   } catch (cause) {
+    setupWizardWindow?.closeStartupSurface()
+    setupWizardWindow = undefined
     runtime.stopRendererBootMonitoring()
     lifecycleRecorder.failRendererBootIfPending(lifecycleRendererFailureReason(runtime.rendererBootFailureReason))
     lifecycleRecorder.failStartup(startupStage, lifecycleStartupFailureReason(cause, runtime))

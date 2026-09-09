@@ -17,6 +17,119 @@ const TOOL_OUTPUT = {
 export const name = 'yootun-knowledge-tools'
 export const inject = ['tools', 'systemPrompt', 'credentials', 'webServer', 'yootunAudit']
 
+const UUID = { type: 'string', format: 'uuid' }
+const INTEGER = (minimum, maximum) => ({ type: 'integer', minimum, ...(maximum === undefined ? {} : { maximum }) })
+const STRING = (maxLength) => ({ type: 'string', ...(maxLength ? { maxLength } : {}) })
+const OBJECT = (properties = {}, required = []) => ({
+  type: 'object',
+  additionalProperties: false,
+  properties,
+  ...(required.length > 0 ? { required } : {}),
+})
+const ARRAY = (items, maxItems) => ({ type: 'array', items, ...(maxItems ? { maxItems } : {}) })
+const ENUM = enumValues => ({ type: 'string', enum: enumValues })
+const SPACE_KEY = { type: 'string', pattern: '^(tenant\\.(all|hr|admin)|user\\.(personal|agent_runtime)|team\\.[a-zA-Z0-9_.-]{1,160})$' }
+const MEMORY_TYPE = ENUM(['WORKING', 'EPISODIC', 'SEMANTIC', 'PROCEDURAL'])
+const MEMORY_SCOPE = ENUM(['SESSION', 'USER', 'TEAM', 'ENTERPRISE'])
+const MEMORY_EVIDENCE = OBJECT({
+  kind: ENUM(['session', 'document', 'chunk']),
+  ref: STRING(500),
+  revisionId: UUID,
+  quote: STRING(2000),
+  quoteHash: { type: 'string', pattern: '^[a-f0-9]{64}$' },
+}, ['kind', 'ref'])
+const CHECKPOINT_EVENT = OBJECT({
+  seq: INTEGER(0),
+  type: STRING(120),
+  text: STRING(50000),
+  time: { type: 'string', format: 'date-time' },
+}, ['seq', 'type'])
+const CHECKPOINT_EVIDENCE = OBJECT({
+  kind: STRING(80),
+  ref: STRING(500),
+  excerpt: STRING(2000),
+}, ['kind', 'ref'])
+const MEMORY_CANDIDATE = OBJECT({
+  content: STRING(20000),
+  type: MEMORY_TYPE,
+  scope: MEMORY_SCOPE,
+  spaceKey: SPACE_KEY,
+  spaceId: UUID,
+  sourceSessionId: STRING(255),
+  evidence: ARRAY(MEMORY_EVIDENCE, 20),
+  captureReason: STRING(120),
+}, ['content'])
+const AT_MOST_ONE_SPACE = { not: { required: ['spaceKey', 'spaceId'] } }
+const EMPTY_INPUT = OBJECT()
+const RECALL_INPUT = {
+  ...OBJECT({
+  query: STRING(4000),
+  spaceKeys: ARRAY(SPACE_KEY, 20),
+  spaceIds: ARRAY(UUID, 20),
+  topK: INTEGER(1, 50),
+  includeMemories: { type: 'boolean' },
+  includeDocuments: { type: 'boolean' },
+  retrievalMode: ENUM(['lexical-v1', 'hybrid-vector-v1', 'hybrid-rrf-v1']),
+  }, ['query']),
+  not: { required: ['spaceKeys', 'spaceIds'] },
+}
+const SEARCH_INPUT = OBJECT({
+  query: STRING(4000),
+  spaceIds: ARRAY(UUID, 20),
+  topK: INTEGER(1, 50),
+  includeMemories: { type: 'boolean' },
+  includeDocuments: { type: 'boolean' },
+  retrievalMode: ENUM(['lexical-v1', 'hybrid-vector-v1', 'hybrid-rrf-v1']),
+  graphSeeds: ARRAY(OBJECT({ candidateId: STRING(200), canonicalKey: STRING(200) }, ['candidateId', 'canonicalKey']), 50),
+}, ['query'])
+const MEMORY_ID = { memoryId: UUID }
+const TOOL_INPUT_SCHEMAS = {
+  knowledge_search: SEARCH_INPUT,
+  knowledge_recall: RECALL_INPUT,
+  knowledge_remember: { ...MEMORY_CANDIDATE, ...AT_MOST_ONE_SPACE },
+  knowledge_confirm_memory: OBJECT({ ...MEMORY_ID, reason: STRING(500), shareWithSpace: { type: 'boolean' } }, ['memoryId']),
+  knowledge_forget: OBJECT({ ...MEMORY_ID, reason: STRING(500) }, ['memoryId', 'reason']),
+  knowledge_session_checkpoint: OBJECT({
+    externalSessionId: STRING(255), captureReason: STRING(120), startSeq: INTEGER(0), endSeq: INTEGER(0),
+    summary: STRING(50000), events: ARRAY(CHECKPOINT_EVENT, 50), evidence: ARRAY(CHECKPOINT_EVIDENCE, 20),
+    candidateContents: ARRAY(MEMORY_CANDIDATE, 20),
+  }, ['externalSessionId', 'startSeq', 'endSeq']),
+  knowledge_promote: {
+    ...OBJECT({
+    sourceMemoryIds: ARRAY(UUID, 50), targetSpaceKey: SPACE_KEY, targetSpaceId: UUID,
+    title: STRING(280), classification: ENUM(['PUBLIC', 'INTERNAL', 'CONFIDENTIAL', 'RESTRICTED']), reason: STRING(500),
+    }, ['sourceMemoryIds', 'title', 'reason']),
+    oneOf: [
+      { required: ['targetSpaceKey'], not: { required: ['targetSpaceId'] } },
+      { required: ['targetSpaceId'], not: { required: ['targetSpaceKey'] } },
+    ],
+  },
+  knowledge_capabilities: EMPTY_INPUT,
+  knowledge_overview: EMPTY_INPUT,
+  knowledge_graph: { ...OBJECT({ spaceKey: SPACE_KEY, spaceId: UUID, query: STRING(500), limit: INTEGER(10, 500) }), ...AT_MOST_ONE_SPACE },
+  knowledge_ingest_file: { ...OBJECT({ spaceKey: SPACE_KEY, spaceId: UUID, fileUrl: STRING(1000), text: STRING(1000000), title: STRING(500), mimeType: STRING(160) }, ['fileUrl', 'text']), ...AT_MOST_ONE_SPACE },
+  knowledge_loadout: OBJECT({ ifNoneMatch: { type: 'string', pattern: '^[a-f0-9]{64}$' } }),
+  knowledge_context_pack: OBJECT({ query: STRING(4000), sessionExternalId: STRING(255), tokenBudget: INTEGER(64, 32000), topK: INTEGER(1, 20), includeStableContext: { type: 'boolean' } }),
+  knowledge_explain_trace: OBJECT({ traceId: UUID }, ['traceId']),
+  knowledge_entity_assertions: OBJECT({
+    page: INTEGER(1), limit: INTEGER(1, 100),
+    status: ENUM(['EXTRACTED', 'VALIDATED', 'CANDIDATE', 'CANONICAL', 'CONFLICTED', 'REJECTED', 'SUPERSEDED', 'MERGED']),
+    entityType: STRING(40), canonicalKey: STRING(200),
+  }),
+  knowledge_relation_assertions: OBJECT({
+    page: INTEGER(1), limit: INTEGER(1, 100),
+    status: ENUM(['EXTRACTED', 'VALIDATED', 'CANDIDATE', 'CONFIRMED', 'CONFLICTED', 'SUPERSEDED', 'REJECTED']),
+    predicate: ENUM(['WORKS_FOR', 'LOCATED_IN', 'PART_OF', 'OWNS', 'MANAGES', 'PRODUCES', 'MENTIONS', 'REFERENCES', 'CONTRADICTS', 'PRECEDENT_FOR', 'INFLUENCED', 'CAUSED', 'SUPERSEDES']),
+    subjectKey: STRING(200), objectKey: STRING(200),
+  }),
+  knowledge_entity_merges: OBJECT({
+    page: INTEGER(1), limit: INTEGER(1, 100),
+    status: ENUM(['PROPOSED', 'ACCEPTED', 'REJECTED', 'REVERSED']),
+    canonicalEntityId: UUID, sourceEntityId: UUID,
+  }),
+  knowledge_provenance_lineage: OBJECT({ entityId: UUID, maxDepth: INTEGER(1, 20) }, ['entityId']),
+}
+
 const TOOL_DEFINITIONS = {
   knowledge_search: ['knowledge.search', 'Search ACL-scoped enterprise documents with citations.'],
   knowledge_recall: ['knowledge.recall', 'Recall ACL-scoped Memory and evidence.'],
@@ -37,6 +150,7 @@ const TOOL_DEFINITIONS = {
   knowledge_entity_merges: ['knowledge.entity_merges', 'Read entity merge decisions and provenance.'],
   knowledge_provenance_lineage: ['knowledge.provenance_lineage', 'Read bounded provenance lineage for an entity.'],
 }
+const TOOL_NAMES_BY_REMOTE = Object.fromEntries(Object.entries(TOOL_DEFINITIONS).map(([name, [remoteName]]) => [remoteName, name]))
 
 export function apply(ctx, overrides = {}) {
   const fetchImpl = overrides.fetch || globalThis.fetch
@@ -45,16 +159,13 @@ export function apply(ctx, overrides = {}) {
     const dispose = ctx.tools.register({
       name,
       description,
-      parameters: {
-        type: 'object',
-        additionalProperties: false,
-        properties: { input: { type: 'object', additionalProperties: true } },
-        required: ['input'],
-      },
+      parameters: OBJECT({ input: TOOL_INPUT_SCHEMAS[name] }, ['input']),
       output: TOOL_OUTPUT,
       timeoutMs: REQUEST_TIMEOUT_MS,
       isConcurrencySafe: () => true,
       async execute(args, exec) {
+        const violations = validateToolArguments(name, args)
+        if (violations.length > 0) return { ok: false, error: 'invalid_tool_arguments', details: violations }
         const credential = await resolveModelsKey(ctx)
         if (!credential) return { ok: false, error: 'model_api_key_unavailable' }
         return executeKnowledge(ctx, fetchImpl, credential, remoteName, args?.input || {}, 'agent_tool', exec?.signal)
@@ -91,7 +202,7 @@ export function apply(ctx, overrides = {}) {
           return
         }
         if (req.method !== 'POST') {
-          res.writeHead(405, { Allow: 'GET, POST' })
+          res.writeHead(405, { Allow: 'GET, POST', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' })
           res.end()
           return
         }
@@ -105,6 +216,11 @@ export function apply(ctx, overrides = {}) {
           sendJson(res, 400, { status: 'error', reason: 'unsupported_action' })
           return
         }
+        const violations = validateToolArguments(TOOL_NAMES_BY_REMOTE[action], { input: body.input || {} })
+        if (violations.length > 0) {
+          sendJson(res, 400, { status: 'error', reason: 'invalid_tool_arguments', details: violations })
+          return
+        }
         const result = await executeKnowledge(ctx, fetchImpl, credential, action, body.input || {}, 'human_ui')
         sendJson(res, result.ok ? 200 : 502, result)
       },
@@ -112,6 +228,64 @@ export function apply(ctx, overrides = {}) {
   }
 
   return () => disposers.reverse().forEach(dispose => dispose?.())
+}
+
+function validateToolArguments(name, args) {
+  const schema = OBJECT({ input: TOOL_INPUT_SCHEMAS[name] }, ['input'])
+  return validateSchema(schema, args, 'arguments').slice(0, 8)
+}
+
+function validateSchema(schema, value, path) {
+  const violations = []
+  if (!schema.type && schema.required) {
+    if (!isPlainObject(value)) return [`${path} must be an object`]
+    for (const key of schema.required) if (!(key in value)) violations.push(`${path}.${key} is required`)
+    return violations
+  }
+  if (schema.oneOf && schema.oneOf.filter(candidate => validateSchema(candidate, value, path).length === 0).length !== 1) {
+    violations.push(`${path} must match exactly one allowed shape`)
+  }
+  if (schema.not && validateSchema(schema.not, value, path).length === 0) violations.push(`${path} contains mutually exclusive fields`)
+  if (schema.enum && !schema.enum.includes(value)) violations.push(`${path} contains an unsupported value`)
+  if (schema.type === 'object') {
+    if (!isPlainObject(value)) return [`${path} must be an object`]
+    for (const key of schema.required || []) if (!(key in value)) violations.push(`${path}.${key} is required`)
+    const properties = schema.properties || {}
+    if (schema.additionalProperties === false) {
+      for (const key of Object.keys(value)) if (!Object.hasOwn(properties, key)) violations.push(`${path}.${key} is not allowed`)
+    }
+    for (const [key, propertySchema] of Object.entries(properties)) {
+      if (key in value) violations.push(...validateSchema(propertySchema, value[key], `${path}.${key}`))
+    }
+    return violations
+  }
+  if (schema.type === 'array') {
+    if (!Array.isArray(value)) return [`${path} must be an array`]
+    if (schema.maxItems !== undefined && value.length > schema.maxItems) violations.push(`${path} has too many items`)
+    value.forEach((item, index) => violations.push(...validateSchema(schema.items, item, `${path}[${index}]`)))
+    return violations
+  }
+  if (schema.type === 'string') {
+    if (typeof value !== 'string') return [`${path} must be a string`]
+    if (schema.minLength !== undefined && value.length < schema.minLength) violations.push(`${path} is too short`)
+    if (schema.maxLength !== undefined && value.length > schema.maxLength) violations.push(`${path} is too long`)
+    if (schema.pattern && !new RegExp(schema.pattern).test(value)) violations.push(`${path} has an invalid format`)
+    if (schema.format === 'uuid' && !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(value)) violations.push(`${path} must be a UUID`)
+    if (schema.format === 'date-time' && Number.isNaN(Date.parse(value))) violations.push(`${path} must be an ISO date-time`)
+    return violations
+  }
+  if (schema.type === 'integer') {
+    if (!Number.isInteger(value)) return [`${path} must be an integer`]
+    if (schema.minimum !== undefined && value < schema.minimum) violations.push(`${path} is below the minimum`)
+    if (schema.maximum !== undefined && value > schema.maximum) violations.push(`${path} is above the maximum`)
+    return violations
+  }
+  if (schema.type === 'boolean' && typeof value !== 'boolean') return [`${path} must be a boolean`]
+  return violations
+}
+
+function isPlainObject(value) {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
 }
 
 const ACTIONS = {
@@ -238,6 +412,7 @@ async function callMcp(fetchImpl, apiKey, tool, input, signal) {
     const response = await fetchImpl(MCP_URL, {
       method: 'POST',
       signal: combinedSignal,
+      redirect: 'error',
       headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream' },
       body: JSON.stringify({ jsonrpc: '2.0', id: `yootun-knowledge-${Date.now()}`, method: 'tools/call', params: { name: tool, arguments: input } }),
     })
@@ -307,7 +482,7 @@ async function readJson(req) {
 
 function sendJson(res, status, body) {
   const payload = JSON.stringify(body)
-  res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' })
+  res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' })
   res.end(payload)
 }
 

@@ -45,7 +45,9 @@ describe('desktop directory picker route', () => {
 
     expect(pick).toHaveBeenCalledOnce()
     expect(res.statusCode).toBe(200)
+    expect(res.setHeader).toHaveBeenCalledWith('cache-control', 'no-store')
     expect(res.setHeader).toHaveBeenCalledWith('content-type', 'application/json; charset=utf-8')
+    expect(res.setHeader).toHaveBeenCalledWith('x-content-type-options', 'nosniff')
     expect(JSON.parse(res.body)).toEqual({ path: 'C:\\Work' })
   })
 

@@ -47,6 +47,8 @@ test('registers menu at order 41 and renders the three-region overlay', async ()
   assert.match(source, /\.yxh-tabs button\[aria-current="true"\]/)
   assert.match(source, /grid-template-columns:minmax\(460px,1\.15fr\) minmax\(420px,\.85fr\)/)
   assert.match(source, /yxh-right-title/)
+  assert.match(source, /width:min\(360px,calc\(100vw - 32px\)\)/)
+  assert.match(source, /max-width:calc\(100vw - 32px\)/)
   // 禁止不安全富文本
   assert.doesNotMatch(source, /dangerouslySetInnerHTML|password|cookie/i)
 })
@@ -89,4 +91,33 @@ test('uses only DSH alpha3 exported icons', async () => {
   for (const name of imports.split(',').map(token => token.trim()).filter(token => token.startsWith('Icon'))) {
     assert.match(exported, new RegExp(`export const ${name}\\b`, 'u'))
   }
+})
+
+test('announces the initial copy result empty state', async () => {
+  const source = await readFile(new URL('src/client.js', root), 'utf8')
+  assert.match(source, /className: 'yxh-state', role: 'status'/u)
+  assert.match(source, /'aria-busy': locked \|\| uploadingInGroup/u)
+})
+
+test('prevents duplicate picker, task creation, and cancellation requests', async () => {
+  const source = await readFile(new URL('src/client.js', root), 'utf8')
+  assert.match(source, /const pickingRef = useRef\(false\)/u)
+  assert.match(source, /const busyRef = useRef\(false\)/u)
+  assert.match(source, /if \(pickingRef\.current \|\| busyRef\.current \|\| processing\) return/u)
+  assert.match(source, /if \(busyRef\.current \|\| pickingRef\.current \|\| processing\) return/u)
+  assert.match(source, /if \(busyRef\.current \|\| !canCancel\) return/u)
+})
+
+test('reports picker failures while keeping user cancellation quiet', async () => {
+  const source = await readFile(new URL('src/client.js', root), 'utf8')
+  assert.match(source, /if \(!picked\) \{\s*setUploadError\(t\('uploadFailed'\)\)/u)
+  assert.match(source, /if \(!picked\.picked\) return/u)
+  assert.match(source, /if \(!picked\.path\) \{\s*setUploadError\(t\('uploadFailed'\)\)/u)
+  assert.match(source, /await uploads\.start\([\s\S]*?\}\)\s*\} catch \{\s*setUploadError\(t\('uploadFailed'\)\)/u)
+})
+
+test('uses adaptive foregrounds for brand actions', async () => {
+  const source = await readFile(new URL('src/client.js', root), 'utf8')
+  assert.match(source, /\.yxh-submit\{[^}]*background:var\(--dsw-alias-brand-primary\);color:var\(--dsw-alias-label-primary-foreground\)/u)
+  assert.match(source, /\.yxh-confirm-primary\{[^}]*background:var\(--dsw-alias-brand-primary\);color:var\(--dsw-alias-label-primary-foreground\)/u)
 })

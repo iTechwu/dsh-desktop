@@ -42,12 +42,22 @@ test('renders all requested dashboard domains and explicit source states', async
     // P0 验收：状态语义、健康摘要、异常队列、基线占位与 tab 可达性
     "'aria-current'", 'noBaseline', 'attentionItems', 'HealthStrip', 'DomainCard', 'ShareBar',
     'metricDisplay', 'missingFields', 'asOfLabel', 'refreshing', 'sourcePartial', 'workerDown',
+    "'aria-busy': loading",
   ]) assert.match(source, new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'u'))
+  assert.match(source, /const loadingRef = useRef\(false\)/u)
+  assert.match(source, /if \(loadingRef\.current\) return/u)
+  assert.match(source, /disabled: loading, 'data-active': range === item\.id/u)
+  assert.match(source, /disabled: loading, 'data-active': usageScope === id/u)
   // 健康状态必须是固定枚举精确匹配，未知值保守映射为 unavailable，不得用自然语言正则默认 ready
   assert.match(source, /HEALTH_STATES = \{/)
   assert.match(source, /'not ready': 'error'/u)
   assert.doesNotMatch(source, /\/ready\|ok\|healthy/)
   assert.doesNotMatch(source, /prompt|private answer|providerKey/i)
+  assert.match(source, /waiting_approval: 'montageWaitingApproval'/u)
+  assert.match(source, /cancel_requested: 'montageCancelRequested'/u)
+  assert.match(source, /MONTAGE_STAGE_LABELS = \{ research: 'stageResearch', vision: 'stageVision', asr: 'stageAsr' \}/u)
+  assert.match(source, /montageStatusLabel\(job\.status, t\)/u)
+  assert.match(source, /montageStageLabel\(job\.stage, t\)/u)
 })
 
 test('dashboard UI uses one spacing rhythm across desktop and mobile breakpoints', async () => {
@@ -56,7 +66,7 @@ test('dashboard UI uses one spacing rhythm across desktop and mobile breakpoints
   assert.match(source, /--yd-space-4:16px/)
   assert.match(source, /--yd-space-6:24px/)
   assert.match(source, /--yd-content-gutter:24px/)
-  assert.match(source, /--yd-control-height:34px/)
+  assert.match(source, /--yd-control-height:36px/)
   assert.match(source, /--yd-row-height:48px/)
   assert.match(source, /\.yd-detail-stack\{display:grid;gap:var\(--yd-space-6\)/)
   assert.match(source, /\.yd-geo-detail \.yd-inline-empty\{display:flex;min-height:var\(--yd-row-height\)/)
@@ -66,10 +76,12 @@ test('dashboard UI uses one spacing rhythm across desktop and mobile breakpoints
   assert.match(source, /\.yd-montage-detail>\.yd-activity-grid\{margin-top:0\}/)
   assert.match(source, /\.yd-table-row\.yd-table-head\{min-height:var\(--yd-control-height\)\}/)
   assert.match(source, /const emptyCompact = compact && status === 'empty'/)
+  assert.match(source, /role: status === 'error' \? 'alert' : 'status'/u)
   assert.match(source, /sourceEmptyContext/)
   assert.match(source, /@media\(max-width:800px\)\{\.yd-overlay\{--yd-content-gutter:16px\}/)
   assert.match(source, /style\.textContent = css \+ spacingCss \+ capabilityCss/)
-  assert.match(source, /\.yd-ranges button\[data-active=true\]\{background:var\(--dsw-alias-brand-primary\);color:var\(--dsw-alias-bg-base\)/)
+  assert.match(source, /\.yd-ranges button\[data-active=true\]\{background:var\(--dsw-alias-brand-primary\);color:var\(--dsw-alias-label-primary-foreground\)/)
+  assert.match(source, /\.yd-ranges button:disabled\{opacity:\.45;cursor:default\}/)
 })
 
 test('loads and registers the sidebar action and global overlay', async () => {

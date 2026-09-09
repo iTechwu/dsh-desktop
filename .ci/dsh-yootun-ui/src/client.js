@@ -1,5 +1,5 @@
 const React = require('react')
-const { createElement: h, useEffect, useMemo, useState, useSyncExternalStore } = React
+const { createElement: h, useEffect, useMemo, useRef, useState, useSyncExternalStore } = React
 const { createRoot } = require('react-dom/client')
 
 const NS = 'dofe.yootun-ui'
@@ -44,7 +44,7 @@ const copy = {
 }
 
 const css = `
-.yu-brand-mark{display:block;width:32px;height:32px;object-fit:contain}.yu-brand-name{font-weight:700;white-space:nowrap}.yu-hero{display:block;object-fit:contain}.yu-modal{position:fixed;inset:0;z-index:2147483000;display:grid;place-items:center;padding:24px;background:color-mix(in srgb,var(--dsw-alias-bg-base) 62%,transparent);backdrop-filter:blur(10px)}.yu-card{width:min(680px,calc(100vw - 48px));max-height:calc(100vh - 48px);overflow:auto;border:1px solid var(--dsw-alias-border-l1);border-radius:8px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);box-shadow:0 24px 72px color-mix(in srgb,var(--dsw-alias-label-primary) 24%,transparent)}.yu-header{display:grid;grid-template-columns:48px 1fr;gap:14px;padding:24px 26px 18px;border-bottom:1px solid var(--dsw-alias-border-l1)}.yu-header img{width:48px;height:48px}.yu-eyebrow{margin:0 0 4px;color:var(--dsw-alias-brand-primary);font-size:11px;font-weight:700}.yu-header h2{margin:0;font-size:24px;line-height:1.25}.yu-header p{margin:7px 0 0;color:var(--dsw-alias-label-secondary);font-size:14px;line-height:1.5}.yu-form{display:grid;gap:18px;padding:22px 26px 26px}.yu-field{display:grid;gap:8px}.yu-label-row{display:flex;align-items:center;justify-content:space-between;gap:12px;font-size:13px;font-weight:650}.yu-key-visibility{display:inline-flex;align-items:center;gap:6px;color:var(--dsw-alias-label-secondary);font-size:12px;font-weight:500;cursor:pointer}.yu-form input,.yu-form select{box-sizing:border-box;width:100%;min-height:40px;padding:0 11px;border:1px solid var(--dsw-alias-border-l2);border-radius:6px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);font:inherit}.yu-key-visibility input{width:16px;min-height:16px;margin:0;padding:0}.yu-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.yu-button{min-height:38px;padding:0 14px;border:1px solid var(--dsw-alias-border-l2);border-radius:6px;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary);font:inherit;cursor:pointer}.yu-button[data-primary=true]{border-color:var(--dsw-alias-brand-primary);background:var(--dsw-alias-brand-primary);color:var(--dsw-alias-label-on-brand)}.yu-button[data-danger=true]{border-color:var(--dsw-alias-state-error-primary);color:var(--dsw-alias-state-error-primary)}.yu-button:disabled{opacity:.5;cursor:default}.yu-plugins{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));border-top:1px solid var(--dsw-alias-border-l1)}.yu-plugin{display:grid;grid-template-columns:20px 1fr;gap:9px;padding:11px 8px;border-bottom:1px solid var(--dsw-alias-border-l1);cursor:pointer}.yu-plugin input{width:18px;min-height:18px;margin:1px 0}.yu-plugin strong,.yu-plugin span{display:block}.yu-plugin span{margin-top:2px;color:var(--dsw-alias-label-secondary);font-size:12px}.yu-help,.yu-status{margin:0;color:var(--dsw-alias-label-secondary);font-size:13px;line-height:1.45}.yu-error,.yu-warning{margin:0;padding:9px 11px;border-left:3px solid var(--dsw-alias-state-error-primary);background:color-mix(in srgb,var(--dsw-alias-state-error-primary) 8%,transparent);color:var(--dsw-alias-state-error-primary);font-size:13px}.yu-settings{max-width:680px}.yu-settings .yu-form{padding:0}@media(max-width:640px){.yu-modal{padding:12px}.yu-card{width:calc(100vw - 24px);max-height:calc(100vh - 24px)}.yu-header,.yu-form{padding-left:18px;padding-right:18px}.yu-plugins{grid-template-columns:1fr}}
+.yu-brand-mark{display:block;width:32px;height:32px;object-fit:contain}.yu-brand-name{font-weight:700;white-space:nowrap}.yu-hero{display:block;object-fit:contain}.yu-modal{position:fixed;inset:0;z-index:2147483000;display:grid;place-items:center;padding:24px;background:color-mix(in srgb,var(--dsw-alias-bg-base) 62%,transparent);backdrop-filter:blur(10px)}.yu-card{width:min(680px,calc(100vw - 48px));max-height:calc(100vh - 48px);overflow:auto;border:1px solid var(--dsw-alias-border-l1);border-radius:6px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);box-shadow:0 24px 72px color-mix(in srgb,var(--dsw-alias-label-primary) 24%,transparent)}.yu-header{display:grid;grid-template-columns:48px 1fr;gap:14px;padding:16px 24px;border-bottom:1px solid var(--dsw-alias-border-l1)}.yu-header img{width:48px;height:48px}.yu-eyebrow{margin:0 0 4px;color:var(--dsw-alias-brand-primary);font-size:11px;font-weight:700}.yu-header h2{margin:0;font-size:24px;line-height:1.25}.yu-header p{margin:7px 0 0;color:var(--dsw-alias-label-secondary);font-size:14px;line-height:1.5}.yu-form{display:grid;gap:18px;padding:16px 24px 24px}.yu-field{display:grid;gap:8px}.yu-label-row{display:flex;align-items:center;justify-content:space-between;gap:12px;font-size:13px;font-weight:650}.yu-key-visibility{display:inline-flex;align-items:center;gap:6px;color:var(--dsw-alias-label-secondary);font-size:12px;font-weight:500;cursor:pointer}.yu-form input,.yu-form select{box-sizing:border-box;width:100%;min-height:40px;padding:0 11px;border:1px solid var(--dsw-alias-border-l2);border-radius:6px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);font:inherit}.yu-key-visibility input{width:16px;min-height:16px;margin:0;padding:0}.yu-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.yu-button{min-height:38px;padding:0 14px;border:1px solid var(--dsw-alias-border-l2);border-radius:6px;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary);font:inherit;cursor:pointer}.yu-button[data-primary=true]{border-color:var(--dsw-alias-brand-primary);background:var(--dsw-alias-brand-primary);color:var(--dsw-alias-label-primary-foreground)}.yu-button[data-danger=true]{border-color:var(--dsw-alias-state-error-primary);color:var(--dsw-alias-state-error-primary)}.yu-button:disabled{opacity:.5;cursor:default}.yu-plugins{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));border-top:1px solid var(--dsw-alias-border-l1)}.yu-plugin{display:grid;grid-template-columns:20px 1fr;gap:9px;padding:11px 8px;border-bottom:1px solid var(--dsw-alias-border-l1);cursor:pointer}.yu-plugin input{width:18px;min-height:18px;margin:1px 0}.yu-plugin strong,.yu-plugin span{display:block}.yu-plugin span{margin-top:2px;color:var(--dsw-alias-label-secondary);font-size:12px}.yu-help,.yu-status{margin:0;color:var(--dsw-alias-label-secondary);font-size:13px;line-height:1.45}.yu-error,.yu-warning{margin:0;padding:9px 11px;border-left:3px solid var(--dsw-alias-state-error-primary);background:color-mix(in srgb,var(--dsw-alias-state-error-primary) 8%,transparent);color:var(--dsw-alias-state-error-primary);font-size:13px}.yu-settings{max-width:680px}.yu-settings .yu-form{padding:0}@media(max-width:640px){.yu-modal{padding:12px}.yu-card{width:calc(100vw - 24px);max-height:calc(100vh - 24px)}.yu-header,.yu-form{padding-left:16px;padding-right:16px}.yu-plugins{grid-template-columns:1fr}}
 `
 
 function YootunBrandMark() {
@@ -69,12 +69,28 @@ async function jsonPost(path, body) {
 }
 
 async function mutateCurrentSettings(settingsApi, namespace, operations) {
-  const described = await settingsApi.describe()
-  if (!described.ok) throw new Error('settings unavailable')
-  const target = described.value.namespaces.find(item => item.ns === namespace)
-  if (!target) throw new Error(`${namespace} unavailable`)
-  const result = await settingsApi.mutate(namespace, operations, target.revision)
-  if (!result.ok) throw new Error(`${namespace} rejected`)
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const described = await settingsApi.describe()
+    if (!described.ok) throw new Error('settings unavailable')
+    const target = described.value.namespaces.find(item => item.ns === namespace)
+    if (!target) throw new Error(`${namespace} unavailable`)
+    const result = await settingsApi.mutate(namespace, operations, target.revision)
+    if (result.ok) return
+    if (result.error?.code !== 'settings/conflict' || attempt === 1) {
+      throw new Error(`${namespace} rejected`)
+    }
+  }
+}
+
+async function removeAccess(settingsApi, credentials) {
+  // Revoke authorization first so a partial removal can never leave an unlocked gate without a key.
+  await mutateCurrentSettings(settingsApi, ACCESS_NS, [
+    { op: 'set', path: ['setupComplete'], value: false },
+    { op: 'set', path: ['validationVersion'], value: 0 },
+    { op: 'set', path: ['modelId'], value: '' },
+  ])
+  const result = await credentials.unset(ACCESS_KEY)
+  if (!result.ok) throw new Error('credential removal rejected')
 }
 
 function AccessForm({ credentials, settingsApi, useAccess, initialConfigured, onboarding, onConfigured, t }) {
@@ -86,7 +102,9 @@ function AccessForm({ credentials, settingsApi, useAccess, initialConfigured, on
   const [modelId, setModelId] = useState(access.value?.modelId || '')
   const [enabled, setEnabled] = useState(access.value?.enabledPlugins || DEFAULT_PLUGIN_IDS)
   const [busy, setBusy] = useState(false)
+  const busyRef = useRef(false)
   const [loading, setLoading] = useState(false)
+  const loadingRef = useRef(false)
   const [error, setError] = useState('')
   const [confirmingRemove, setConfirmingRemove] = useState(false)
 
@@ -94,10 +112,14 @@ function AccessForm({ credentials, settingsApi, useAccess, initialConfigured, on
     if (access.value?.modelId) setModelId(access.value.modelId)
     if (Array.isArray(access.value?.enabledPlugins)) setEnabled(access.value.enabledPlugins)
   }, [access.value?.modelId, access.value?.enabledPlugins])
+  useEffect(() => {
+    setConfigured(initialConfigured)
+  }, [initialConfigured])
 
   const loadModels = async () => {
     const entered = key.trim()
-    if (!entered) return
+    if (!entered || loadingRef.current || busyRef.current) return
+    loadingRef.current = true
     setLoading(true)
     setError('')
     try {
@@ -111,13 +133,15 @@ function AccessForm({ credentials, settingsApi, useAccess, initialConfigured, on
       setModelId('')
       setError(t('modelError'))
     } finally {
+      loadingRef.current = false
       setLoading(false)
     }
   }
 
   const save = async () => {
     const entered = key.trim()
-    if (!entered || !modelId || models.length === 0 || enabled.length === 0) return
+    if (busyRef.current || loadingRef.current || !entered || !modelId || models.length === 0 || enabled.length === 0) return
+    busyRef.current = true
     setBusy(true)
     setError('')
     try {
@@ -153,21 +177,18 @@ function AccessForm({ credentials, settingsApi, useAccess, initialConfigured, on
     } catch {
       setError(t('saveError'))
     } finally {
+      busyRef.current = false
       setBusy(false)
     }
   }
 
   const remove = async () => {
+    if (busyRef.current || loadingRef.current) return
+    busyRef.current = true
     setBusy(true)
     setError('')
     try {
-      const result = await credentials.unset(ACCESS_KEY)
-      if (!result.ok) throw new Error('credential removal rejected')
-      await access.mutate([
-        { op: 'set', path: ['setupComplete'], value: false },
-        { op: 'set', path: ['validationVersion'], value: 0 },
-        { op: 'set', path: ['modelId'], value: '' },
-      ])
+      await removeAccess(settingsApi, credentials)
       setConfigured(false)
       setModels([])
       setModelId('')
@@ -175,34 +196,36 @@ function AccessForm({ credentials, settingsApi, useAccess, initialConfigured, on
     } catch {
       setError(t('removeError'))
     } finally {
+      busyRef.current = false
       setBusy(false)
     }
   }
 
-  return h('div', { className: 'yu-form' },
+  const interactionBusy = busy || loading
+  return h('div', { className: 'yu-form', 'aria-busy': interactionBusy },
     h('div', { className: 'yu-field' },
-      h('div', { className: 'yu-label-row' }, h('label', { htmlFor: 'yu-model-key' }, t('key')), h('label', { className: 'yu-key-visibility' }, h('input', { type: 'checkbox', checked: showKey, onChange: event => setShowKey(event.currentTarget.checked) }), t(showKey ? 'hideKey' : 'showKey'))),
-      h('input', { id: 'yu-model-key', type: showKey ? 'text' : 'password', autoComplete: 'off', autoFocus: onboarding, value: key, placeholder: t('keyPlaceholder'), onChange: event => { setKey(event.currentTarget.value); setModels([]); setModelId(''); setError('') }, onKeyDown: event => { if (event.key === 'Enter') void loadModels() } }),
-      h('div', { className: 'yu-actions' }, h('button', { type: 'button', className: 'yu-button', disabled: loading || !key.trim(), onClick: () => { void loadModels() } }, loading ? t('loading') : t('load'))),
+      h('div', { className: 'yu-label-row' }, h('label', { htmlFor: 'yu-model-key' }, t('key')), h('label', { className: 'yu-key-visibility' }, h('input', { type: 'checkbox', checked: showKey, disabled: interactionBusy, onChange: event => setShowKey(event.currentTarget.checked) }), t(showKey ? 'hideKey' : 'showKey'))),
+      h('input', { id: 'yu-model-key', type: showKey ? 'text' : 'password', autoComplete: 'off', autoFocus: onboarding, value: key, disabled: interactionBusy, placeholder: t('keyPlaceholder'), onChange: event => { setKey(event.currentTarget.value); setModels([]); setModelId(''); setError('') }, onKeyDown: event => { if (event.key === 'Enter') void loadModels() } }),
+      h('div', { className: 'yu-actions' }, h('button', { type: 'button', className: 'yu-button', disabled: interactionBusy || !key.trim(), onClick: () => { void loadModels() } }, loading ? t('loading') : t('load'))),
       models.length ? h('p', { className: 'yu-status', role: 'status' }, t('modelsLoaded').replace('{count}', String(models.length))) : null),
     h('div', { className: 'yu-field' },
       h('label', { htmlFor: 'yu-model-select' }, t('model')),
-      h('select', { id: 'yu-model-select', disabled: models.length === 0, value: modelId, onChange: event => { setModelId(event.currentTarget.value) } },
+      h('select', { id: 'yu-model-select', disabled: interactionBusy || models.length === 0, value: modelId, onChange: event => { setModelId(event.currentTarget.value) } },
         h('option', { value: '' }, t('modelPlaceholder')),
         ...models.map(model => h('option', { key: model.id, value: model.id }, `${model.name} (${model.id})`)))),
     h('div', { className: 'yu-field' },
       h('div', { className: 'yu-label-row' }, h('span', null, t('plugins')), h('span', null, t('selected').replace('{count}', String(enabled.length)))),
       h('div', { className: 'yu-plugins' }, ...PLUGINS.map(plugin => h('label', { className: 'yu-plugin', key: plugin.id },
-        h('input', { type: 'checkbox', checked: enabled.includes(plugin.id), onChange: event => { setEnabled(current => event.currentTarget.checked ? [...new Set([...current, plugin.id])] : current.filter(id => id !== plugin.id)) } }),
+        h('input', { type: 'checkbox', checked: enabled.includes(plugin.id), disabled: interactionBusy, onChange: event => { setEnabled(current => event.currentTarget.checked ? [...new Set([...current, plugin.id])] : current.filter(id => id !== plugin.id)) } }),
         h('span', null, h('strong', null, plugin.name), h('span', null, plugin.description))))),
     onboarding ? h('p', { className: 'yu-help' }, t('help')) : null,
     error ? h('p', { className: 'yu-error', role: 'alert' }, error) : null,
     !onboarding && confirmingRemove ? h('p', { className: 'yu-warning', role: 'alert' }, t('removeWarning')) : null,
     h('div', { className: 'yu-actions' },
-      h('button', { type: 'button', className: 'yu-button', 'data-primary': true, disabled: busy || loading || !key.trim() || !modelId || enabled.length === 0, onClick: () => { void save() } }, busy ? t('saving') : t('submit')),
-      !onboarding && !confirmingRemove ? h('button', { type: 'button', className: 'yu-button', disabled: busy || !configured, onClick: () => setConfirmingRemove(true) }, t('remove')) : null,
-      !onboarding && confirmingRemove ? h('button', { type: 'button', className: 'yu-button', 'data-danger': true, disabled: busy, onClick: () => { void remove() } }, t('confirmRemove')) : null,
-      !onboarding && confirmingRemove ? h('button', { type: 'button', className: 'yu-button', disabled: busy, onClick: () => setConfirmingRemove(false) }, t('cancel')) : null)))
+      h('button', { type: 'button', className: 'yu-button', 'data-primary': true, disabled: interactionBusy || !key.trim() || !modelId || enabled.length === 0, onClick: () => { void save() } }, busy ? t('saving') : t('submit')),
+      !onboarding && !confirmingRemove ? h('button', { type: 'button', className: 'yu-button', disabled: interactionBusy || !configured, onClick: () => setConfirmingRemove(true) }, t('remove')) : null,
+      !onboarding && confirmingRemove ? h('button', { type: 'button', className: 'yu-button', 'data-danger': true, disabled: interactionBusy, onClick: () => { void remove() } }, t('confirmRemove')) : null,
+      !onboarding && confirmingRemove ? h('button', { type: 'button', className: 'yu-button', disabled: interactionBusy, onClick: () => setConfirmingRemove(false) }, t('cancel')) : null)))
 }
 
 function AccessOnboarding({ complete, credentials, settingsApi, useAccess, t }) {
@@ -281,3 +304,4 @@ function apply(ctx) {
 
 exports.apply = apply
 exports.inject = inject
+exports.__test = { mutateCurrentSettings, removeAccess }

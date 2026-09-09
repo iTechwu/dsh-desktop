@@ -4,6 +4,7 @@ import {
   ArrowLeft,
   ArrowRight,
   CheckCircle2,
+  LoaderCircle,
   SkipForward,
 } from 'lucide-react'
 import {
@@ -548,6 +549,16 @@ export function SetupWizardSuccess({
   </div>
 }
 
+export function SetupWizardStarting({ copy }: { readonly copy: DesktopSetupWizardCopy }): JSX.Element {
+  return <div className="flex flex-1 items-center justify-center" data-align="center" data-setup-step="starting" role="status">
+    <div className="flex max-w-md flex-col items-center text-center">
+      <span className="mb-5 flex size-16 items-center justify-center rounded-full bg-muted text-primary"><LoaderCircle aria-hidden="true" className="size-8 animate-spin" /></span>
+      <h1 className="text-2xl font-semibold tracking-tight">{copy.startingTitle}</h1>
+      <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{copy.startingBody}</p>
+    </div>
+  </div>
+}
+
 export function SetupWizardLanConfirmation({ copy, confirm, cancel }: {
   readonly copy: DesktopSetupWizardCopy
   readonly confirm: () => void
@@ -644,6 +655,7 @@ export function SetupWizardApp(): JSX.Element {
   const [lanAcknowledged, setLanAcknowledged] = useState(false)
   const [confirmLan, setConfirmLan] = useState<LanConfirmationReason>()
   const [confirmBrowserCompatibility, setConfirmBrowserCompatibility] = useState(false)
+  const [starting, setStarting] = useState(false)
   if (input === undefined || selection === undefined) {
     return <><DesktopFrame /><main className="dshNativeContent flex h-screen items-center justify-center p-6"><div className="w-full max-w-lg space-y-4"><Alert variant="destructive"><AlertTriangle /><AlertTitle>{copy.title}</AlertTitle><AlertDescription>{copy.invalidState}</AlertDescription></Alert><div className="flex justify-end"><SetupWizardSkipDialog copy={copy} onSkip={() => { window.location.assign(`${SCHEME}//skip`) }} outlined /></div></div></main></>
   }
@@ -694,6 +706,13 @@ export function SetupWizardApp(): JSX.Element {
     setStep(next)
   }
 
+  const submit = (next: DesktopSetupWizardSelection): void => {
+    setStarting(true)
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => { finish(next) })
+    })
+  }
+
   const startUsing = (): void => {
     if (desktopSetupWizardRequiresLanAcknowledgement(
       selection.networkExposure,
@@ -703,12 +722,14 @@ export function SetupWizardApp(): JSX.Element {
       setConfirmLan('start')
       return
     }
-    finish(selection)
+    submit(selection)
   }
 
   return <><DesktopFrame /><main className="dshNativeContent h-screen overflow-hidden p-5 sm:p-6"><section className="mx-auto flex h-full w-full max-w-3xl flex-col">
     <div className="flex min-h-0 flex-1 overflow-y-auto">
-      {step === 'welcome'
+      {starting
+        ? <SetupWizardStarting copy={copy} />
+        : step === 'welcome'
         ? <SetupWizardWelcome
           copy={copy}
           onSkip={skip}
@@ -719,7 +740,7 @@ export function SetupWizardApp(): JSX.Element {
           ? <SetupWizardSuccess copy={copy} onStart={startUsing} />
           : <SetupWizardStepPage copy={copy} input={input} requestBrowserAccess={requestBrowserAccess} requestExposure={requestExposure} selection={selection} step={step} update={setSelection} />}
     </div>
-    <SetupWizardNavigation
+      {starting ? null : <SetupWizardNavigation
       copy={copy}
       onBack={() => {
         const previous = previousDesktopSetupWizardStep(step)
@@ -728,7 +749,7 @@ export function SetupWizardApp(): JSX.Element {
       onNext={advance}
       onSkip={skip}
       step={step}
-    />
+    />}
   </section></main>
   {confirmLan === undefined ? null : <SetupWizardLanConfirmation
     cancel={() => { setConfirmLan(undefined) }}
@@ -739,7 +760,7 @@ export function SetupWizardApp(): JSX.Element {
       setLanAcknowledged(true)
       setConfirmLan(undefined)
       if (reason === 'advance') setStep('success')
-      if (reason === 'start') finish(next)
+      if (reason === 'start') submit(next)
       if (reason === 'skip') window.location.assign(`${SCHEME}//skip`)
     }}
     copy={copy}

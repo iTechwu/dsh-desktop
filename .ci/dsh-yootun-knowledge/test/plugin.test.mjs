@@ -22,9 +22,14 @@ test('publishes a web management plugin and knowledge MCP bundle', async () => {
   assert.equal(manifest.dsh.client.platform, 'web')
   assert.equal(manifest.dsh.bundle.patch, './cordis.patch.yml')
   const patch = await readFile(new URL('cordis.patch.yml', root), 'utf8')
-  assert.match(patch, /serverName: knowledge/u)
-  assert.match(patch, new RegExp(MCP_URL.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'u'))
-  assert.match(patch, /authorizationCredential:\s*MODELS_API_KEY/u)
+  assert.match(patch, /id:\s*yootun-knowledge-tools/u)
+  assert.match(patch, /name:\s*'@dofe\/dsh-yootun-knowledge'/u)
+  // The wrapper plugin owns the public MCP gateway contract; the direct
+  // `@deepseek-ai/dsh-mcp-client` route is intentionally not registered here
+  // so the model only sees one tool surface with one parameter protocol.
+  assert.doesNotMatch(patch, /serverName:\s*knowledge/u)
+  assert.doesNotMatch(patch, /authorizationCredential:\s*MODELS_API_KEY/u)
+  assert.doesNotMatch(patch, /@deepseek-ai\/dsh-mcp-client/u)
   assert.doesNotMatch(patch, /process\.env\.MODELS_API_KEY|Authorization:\s*!!js/u)
 })
 
@@ -48,6 +53,79 @@ test('exposes governed knowledge, Memory, and graph tools without direct endpoin
   }])
 })
 
+test('publishes per-tool input schemas so invalid MCP arguments fail before the gateway', async () => {
+  const registered = new Map()
+  apply({
+    credentials: { async resolve() { return { value: 'test-key' } } },
+    tools: { register(tool) { registered.set(tool.name, tool); return () => {} } },
+    systemPrompt: { section() { return () => {} } },
+  }, { fetch: async () => new Response('{}', { status: 200 }) })
+
+  const recall = registered.get('knowledge_recall')
+  assert.deepEqual(recall.parameters.properties.input.required, ['query'])
+  assert.deepEqual(Object.keys(recall.parameters.properties.input.properties).sort(), [
+    'includeDocuments', 'includeMemories', 'query', 'retrievalMode', 'spaceIds', 'spaceKeys', 'topK',
+  ])
+  assert.equal(recall.parameters.properties.input.properties.topK.maximum, 50)
+  assert.deepEqual(recall.parameters.properties.input.not.required, ['spaceKeys', 'spaceIds'])
+
+  const loadout = registered.get('knowledge_loadout')
+  assert.deepEqual(Object.keys(loadout.parameters.properties.input.properties), ['ifNoneMatch'])
+  assert.equal(loadout.parameters.properties.input.properties.ifNoneMatch.pattern, '^[a-f0-9]{64}$')
+  assert.equal(loadout.parameters.properties.input.additionalProperties, false)
+
+  const confirm = registered.get('knowledge_confirm_memory')
+  assert.deepEqual(confirm.parameters.properties.input.required, ['memoryId'])
+  assert.equal(confirm.parameters.properties.input.properties.memoryId.format, 'uuid')
+
+  const checkpoint = registered.get('knowledge_session_checkpoint')
+  assert.equal(checkpoint.parameters.properties.input.properties.events.items.additionalProperties, false)
+  assert.deepEqual(Object.keys(checkpoint.parameters.properties.input.properties.events.items.properties).sort(), ['seq', 'text', 'time', 'type'])
+  assert.equal(checkpoint.parameters.properties.input.properties.candidateContents.items.properties.content.maxLength, 20000)
+  assert.equal(checkpoint.parameters.properties.input.properties.events.maxItems, 50)
+
+  const relations = registered.get('knowledge_relation_assertions')
+  assert.deepEqual(relations.parameters.properties.input.properties.status.enum, [
+    'EXTRACTED', 'VALIDATED', 'CANDIDATE', 'CONFIRMED', 'CONFLICTED', 'SUPERSEDED', 'REJECTED',
+  ])
+
+  const promote = registered.get('knowledge_promote')
+  assert.equal(promote.parameters.properties.input.oneOf.length, 2)
+  assert.deepEqual(promote.parameters.properties.input.oneOf.map(rule => rule.required), [['targetSpaceKey'], ['targetSpaceId']])
+})
+
+test('rejects invalid tool arguments before contacting the gateway', async () => {
+  const registered = new Map()
+  let calls = 0
+  apply({
+    credentials: { async resolve() { return { value: 'test-key' } } },
+    tools: { register(tool) { registered.set(tool.name, tool); return () => {} } },
+    systemPrompt: { section() { return () => {} } },
+  }, { fetch: async () => { calls += 1; return new Response('{}', { status: 200 }) } })
+
+  const recall = registered.get('knowledge_recall')
+  const result = await recall.execute({ input: { topK: 51 } }, {})
+  assert.equal(result.ok, false)
+  assert.equal(result.error, 'invalid_tool_arguments')
+  assert.equal(calls, 0)
+})
+
+test('rejects invalid management actions before contacting the gateway', async () => {
+  let route
+  let calls = 0
+  apply({
+    credentials: { async resolve() { return { value: 'test-key' } } },
+    tools: { register() { return () => {} } },
+    systemPrompt: { section() { return () => {} } },
+    webServer: { register(value) { route = value; return () => {} } },
+  }, { fetch: async () => { calls += 1; return new Response('{}', { status: 200 }) } })
+
+  const response = await invoke(route, 'POST', { action: 'recall', input: { topK: 51 } })
+  assert.equal(response.status, 400)
+  assert.equal(response.body.reason, 'invalid_tool_arguments')
+  assert.equal(calls, 0)
+})
+
 test('exposes explicit memory confirmation through the authenticated knowledge MCP route', async () => {
   const registered = new Map()
   const requests = []
@@ -63,16 +141,66 @@ test('exposes explicit memory confirmation through the authenticated knowledge M
   })
   const tool = registered.get('knowledge_confirm_memory')
   assert.ok(tool)
-  const result = await tool.execute({ input: { memoryId: 'memory-1', reason: 'user-confirmed', shareWithSpace: true } }, {})
+  const result = await tool.execute({ input: { memoryId: '11111111-1111-4111-8111-111111111111', reason: 'user-confirmed', shareWithSpace: true } }, {})
   assert.equal(result.ok, true)
   assert.equal(requests[0].url, MCP_URL)
   assert.equal(requests[0].init.headers.Authorization, 'Bearer test-key')
+  assert.equal(requests[0].init.redirect, 'error')
   assert.equal(JSON.parse(requests[0].init.body).params.name, 'knowledge.confirm_memory')
 })
 
 test('localizes knowledge source state and isolates its overlay', async () => {
   const source = await readFile(new URL('src/client.js', root), 'utf8')
   for (const token of ['yk-source', 'credential-store', 'stateCss', 'overviewSource', 'pendingImports', 'yk-graph-canvas', 'yk-memory-row', '"aria-label": t("recallPlaceholder")', '"aria-label": t("graphPlaceholder")', 'style.textContent = css + stateCss', '.yk-overlay{position:fixed', '.yk-shell{display:grid', '.yk-content{min-height:0']) assert.match(source, new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'u'))
+})
+
+test('maps knowledge structure and action hierarchy to desktop theme tokens', async () => {
+  const source = await readFile(new URL('src/client.js', root), 'utf8')
+  assert.match(source, /const themeRefinementCss =/u)
+  assert.match(source, /\.yk-metric,\.yk-record,\.yk-memory-row\{border-color:var\(--dsw-alias-border-l1\)!important\}/u)
+  assert.match(source, /\.yk-row-actions \.yk-quiet,\.yk-error button\{border-color:var\(--dsw-alias-border-l1\)!important/u)
+  assert.match(source, /\.yk-node\.is-selected text\{fill:var\(--dsw-alias-label-primary\)!important\}/u)
+  assert.match(source, /style\.textContent = css \+ stateCss \+ themeCss \+ themeRefinementCss/u)
+  assert.match(source, /stateLabel\(normalizeSourceState\(item\.status\), t\)/u)
+  assert.match(source, /graphStatusLabel\(selectedNode\.status, t\)/u)
+  assert.doesNotMatch(source, /h\("small", null, selectedNode\.status\)/u)
+})
+
+test('keeps knowledge state supplements on shared semantic theme aliases', async () => {
+  const source = await readFile(new URL('src/client.js', root), 'utf8')
+  const stateCss = source.match(/const stateCss\s*=\s*`([^`]*)`/u)?.[1]
+
+  assert.ok(stateCss)
+  assert.doesNotMatch(stateCss, /#[0-9a-f]{3,8}\b/iu)
+  for (const alias of [
+    '--dsw-alias-brand-primary',
+    '--dsw-alias-label-tertiary',
+    '--dsw-alias-state-warn-primary',
+    '--dsw-alias-border-l1',
+    '--dsw-alias-bg-layer-1',
+    '--dsw-alias-label-primary-foreground',
+  ]) {
+    assert.match(stateCss, new RegExp(`var\\(${alias}\\)`, 'u'))
+  }
+})
+
+test('announces local empty and degraded knowledge states', async () => {
+  const source = await readFile(new URL('src/client.js', root), 'utf8')
+
+  assert.match(source, /className: "yk-empty-compact", role: "status"/u)
+  assert.match(source, /className: "yk-empty", role: "status"/u)
+  assert.match(source, /className: "yk-graph-empty", role: "status"/u)
+  assert.match(source, /className: "yk-node-detail yk-node-detail-empty", role: "status"/u)
+  assert.match(source, /className: "yk-inline-warning", role: "status"/u)
+  assert.match(source, /const interactionBusy = loading \|\| graphBusy \|\| recallBusy \|\| actionBusy/u)
+  assert.match(source, /"aria-busy": interactionBusy/u)
+  assert.match(source, /const loadingRef = useRef\(false\)/u)
+  assert.match(source, /loadingRef\.current \|\|[\s\S]+graphBusyRef\.current \|\|[\s\S]+recallBusyRef\.current \|\|[\s\S]+actionBusyRef\.current/u)
+  assert.match(source, /disabled: interactionBusy,[\s\S]+onClick: refresh/u)
+  assert.match(source, /if \(!query \|\| graphBusyRef\.current\) return/u)
+  assert.match(source, /if \(!query \|\| recallBusyRef\.current\) return/u)
+  assert.match(source, /if \(actionBusyRef\.current\) return/u)
+  assert.match(source, /disabled: interactionBusy/u)
 })
 
 test('generated client bundle is valid JavaScript and has no unresolved style token', async () => {
@@ -103,6 +231,10 @@ test('normalizes real MCP recall envelopes and graph layout states', async () =>
   assert.equal(client.actionErrorLabel({ code: 'knowledge_mcp_timeout' }, t), 'timeout')
   assert.equal(client.actionErrorLabel({ code: 'knowledge_mcp_request_failed' }, t), 'service')
   assert.equal(client.actionErrorLabel({ code: 'unexpected_backend_detail' }, t), 'generic')
+  const statusText = key => key
+  assert.equal(client.graphStatusLabel('CONFIRMED', statusText), 'confirmed')
+  assert.equal(client.graphStatusLabel('projected', statusText), 'ready')
+  assert.equal(client.graphStatusLabel('CUSTOM_STATE', statusText), 'CUSTOM_STATE')
   const nodes = Array.from({ length: 12 }, (_, index) => ({ id: `memory-${index}`, type: 'MEMORY' }))
   const layout = client.graphLayout(nodes)
   assert.ok(layout.canvasHeight > 700)
@@ -133,6 +265,7 @@ test('routes host actions through the public MCP gateway and credential store', 
   assert.equal(response.status, 200)
   assert.equal(requests[0].url, MCP_URL)
   assert.equal(requests[0].init.headers.Authorization, 'Bearer test-key')
+  assert.equal(requests[0].init.redirect, 'error')
   assert.equal(JSON.parse(requests[0].init.body).params.name, 'knowledge.search')
 })
 
@@ -187,7 +320,7 @@ test('audits knowledge writes from Agent and UI while excluding reads and input 
 
   await registered.get('knowledge_search').execute({ input: { query: '不得进入审计的搜索正文' } }, {})
   await registered.get('knowledge_remember').execute({ input: { content: '不得进入审计的知识正文' } }, {})
-  await invoke(route, 'POST', { action: 'forget', input: { memoryId: 'memory-7', reason: '不得进入审计的原因正文' } })
+  await invoke(route, 'POST', { action: 'forget', input: { memoryId: '40000000-0000-4000-8000-000000000007', reason: '不得进入审计的原因正文' } })
 
   assert.equal(events.length, 2)
   assert.deepEqual(events[0], {

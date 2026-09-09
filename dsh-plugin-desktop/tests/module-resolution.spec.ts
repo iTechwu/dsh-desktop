@@ -377,7 +377,7 @@ describe('installProfilePackageResolver', () => {
       expect(resolveFilename('yaml/util', { filename: canonicalPluginPath }, false)).toBe('/install/yaml/util')
     } finally {
       dispose()
-      rmSync(aliasRoot)
+      rmSync(aliasRoot, { recursive: true, force: true })
       rmSync(actualRoot, { recursive: true, force: true })
     }
   })

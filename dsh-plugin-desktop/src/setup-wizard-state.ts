@@ -266,8 +266,8 @@ export function readDesktopSetupWizardState(
 
 /**
  * Decide whether the current installation needs the existing complete Wizard.
- * Any forward version or revision change requires it. Equal versions and pure
- * rollbacks do not rewrite the newer marker.
+ * DSH or setup-contract upgrades require it. Desktop releases alone retain the
+ * existing decision because setupRevision owns changes to the Wizard contract.
  */
 export function desktopSetupWizardRequired(
   state: DesktopSetupWizardState | undefined,
@@ -275,13 +275,12 @@ export function desktopSetupWizardRequired(
 ): boolean {
   const current = normalizedVersions(currentVersions)
   if (state === undefined || state.version === LEGACY_STATE_VERSION) return true
-  const desktop = compareSemVerVersions(current.desktopVersion, state.desktopVersion)
   const dsh = compareSemVerVersions(current.dshVersion, state.dshVersion)
-  if (desktop === null || dsh === null) {
+  if (compareSemVerVersions(current.desktopVersion, state.desktopVersion) === null || dsh === null) {
     throw new Error(`${BIN_NAME}: validated Setup Wizard versions could not be compared`)
   }
   const revision = current.setupRevision - state.setupRevision
-  return desktop > 0 || dsh > 0 || revision > 0
+  return dsh > 0 || revision > 0
 }
 
 /** Atomically record explicit completion or an explicit skip for one Profile. */

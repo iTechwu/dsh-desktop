@@ -61,6 +61,7 @@ test('keeps cost data source-bound and free of credentials or direct providers',
   }
   assert.doesNotMatch(source, /MODELS_API_KEY|api\.deepseek\.com|password|cookie/iu)
   assert.match(source, /activeStateCss/)
+  assert.match(source, /role: source\?\.status === 'error' \? 'alert' : 'status'/u)
   assert.match(source, /background:var\(--dsw-alias-label-primary\)/)
   assert.match(source, /color:var\(--dsw-alias-bg-base\)/)
   assert.match(source, /partialAttention/)
@@ -69,6 +70,15 @@ test('keeps cost data source-bound and free of credentials or direct providers',
   assert.doesNotMatch(source, /filter\(Boolean\)\.join\(' '\)/)
   assert.match(source, /observedCostMax > 0/)
   assert.match(source, /yf-chart-bar/)
+  assert.match(source, /'aria-busy': interactionBusy/u)
+  assert.match(source, /const loadingRef = useRef\(false\), seriesLoadingRef = useRef\(false\)/u)
+  assert.match(source, /const data = dataState\?\.range === range \? dataState\.value : null/u)
+  assert.match(source, /\[visible, needsSeries, days, revision\]/u)
+  assert.match(source, /disabled: interactionBusy/u)
+  assert.match(source, /\.yf-range-control button:disabled\{opacity:\.45;cursor:default\}/u)
+  assert.match(source, /refreshError: '刷新失败，当前仍显示上次数据。'/u)
+  assert.match(source, /className: 'yf-stale yf-refresh-error', role: 'alert'/u)
+  assert.match(source, /error \? h\('div', \{ className: 'yf-stale yf-refresh-error'/u)
 })
 
 test('uses only DSH alpha3 exported icons', async () => {

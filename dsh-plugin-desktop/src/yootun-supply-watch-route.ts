@@ -6,6 +6,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import { dirname } from 'node:path'
 import { writeFileAtomic } from '@deepseek-ai/dsh-atomic-write'
 import { safeYootunAuditTargetId, type YootunAuditRecordInput, type YootunAuditRecorder } from './yootun-audit-contract.ts'
+import { sameYootunOrigin } from './yootun-route-security.ts'
 
 export const YOOTUN_SUPPLY_WATCH_PATH = '/api/desktop/yootun/supply-watch'
 const STATE_VERSION = 1
@@ -56,7 +57,7 @@ const mutationQueues = new Map<string, Promise<void>>()
 async function mutateSupplyState(path: string, value: unknown, now: string): Promise<{ before: SupplyState; next: SupplyState }> { const previous = mutationQueues.get(path) ?? Promise.resolve(); let release: (() => void) | undefined; const current = new Promise<void>(resolve => { release = resolve }); const chain = previous.then(() => current); mutationQueues.set(path, chain); await previous; try { const before = await readSupplyState(path, now); const next = mutate(before, value, now); await writeState(path, next); return { before, next } } finally { release?.(); if (mutationQueues.get(path) === chain) mutationQueues.delete(path) } }
 function supplyAdapterReceipt(value: unknown, fallbackTime: string): SupplyAdapterReceipt { const item = record(value); const status = item?.status; const reasonCode = item?.reasonCode; const completedAt = item?.completedAt; const remoteRef = item?.remoteRef; if ((status !== 'succeeded' && status !== 'failed' && status !== 'requires_user_login') || typeof reasonCode !== 'string' || !/^[a-z0-9_:-]{1,80}$/u.test(reasonCode) || (completedAt !== undefined && canonicalTime(completedAt) === undefined) || (remoteRef !== undefined && (typeof remoteRef !== 'string' || remoteRef.length > 160 || /[\0\r\n]/u.test(remoteRef)))) return { status: 'failed', reasonCode: 'adapter_invalid_result', completedAt: fallbackTime }; return { status, reasonCode, completedAt: typeof completedAt === 'string' ? completedAt : fallbackTime, ...(typeof remoteRef === 'string' ? { remoteRef } : {}) } }
 export async function executeSupplyAction(path: string, actionId: string, adapter: SupplyAdapter | undefined, now = new Date().toISOString(), execution?: { performed: boolean }): Promise<SupplySnapshot> { const previous = mutationQueues.get(path) ?? Promise.resolve(); let release: (() => void) | undefined; const current = new Promise<void>(resolve => { release = resolve }); const chain = previous.then(() => current); mutationQueues.set(path, chain); await previous; try { const state = await readSupplyState(path, now); const action = state.actions.find(item => item.id === actionId); if (!action) throw new InvalidSupplyRequest('action_not_found'); if (action.status === 'awaiting_confirmation') throw new InvalidSupplyRequest('action_not_confirmed'); if (action.status === 'dismissed' || action.status === 'succeeded') return supplySnapshot(state); if (execution !== undefined) execution.performed = true; if (!adapter) throw new InvalidSupplyRequest('supply_adapter_unavailable'); let result: SupplyAdapterResult; try { result = await adapter.execute({ actionId: action.id, type: action.type, riskId: action.riskId, idempotencyKey: action.idempotencyKey, targetLabel: action.targetLabel, summary: action.summary }) } catch { result = { status: 'failed', reasonCode: 'adapter_failed' } } const receipt = supplyAdapterReceipt(result, now); const next: SupplyState = { ...state, actions: state.actions.map(item => item.id === action.id ? { ...item, status: receipt.status, adapterReceipt: receipt, updatedAt: receipt.completedAt } : item), updatedAt: receipt.completedAt }; await writeState(path, next); return supplySnapshot(next) } finally { release?.(); if (mutationQueues.get(path) === chain) mutationQueues.delete(path) } }
-function finish(res: ServerResponse, status: number, value: object, allow?: string): void { res.statusCode = status; res.setHeader('Content-Type', 'application/json; charset=utf-8'); res.setHeader('Cache-Control', 'no-store'); if (allow) res.setHeader('Allow', allow); res.end(JSON.stringify(value)) }
+function finish(res: ServerResponse, status: number, value: object, allow?: string): void { res.statusCode = status; res.setHeader('Content-Type', 'application/json; charset=utf-8'); res.setHeader('Cache-Control', 'no-store'); res.setHeader('X-Content-Type-Options', 'nosniff'); if (allow) res.setHeader('Allow', allow); res.end(JSON.stringify(value)) }
 async function body(req: IncomingMessage): Promise<unknown> { let size = 0; const chunks: Buffer[] = []; for await (const chunk of req) { const data = Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk)); size += data.byteLength; if (size > MAX_BODY_BYTES) throw new SupplyBodyTooLarge(); chunks.push(data) } try { return JSON.parse(Buffer.concat(chunks).toString('utf8')) } catch { throw new InvalidSupplyRequest('json_invalid') } }
 
 export interface SupplyRouteDependencies {
@@ -66,7 +67,7 @@ export interface SupplyRouteDependencies {
   audit?: YootunAuditRecorder | undefined
 }
 
-const SUPPLY_AUDIT_SOURCE = Object.freeze({ pluginId: 'dsh-plugin-desktop/yootun-supply-watch', pluginVersion: '2.0.6-beta.1', surface: 'human_ui' as const })
+const SUPPLY_AUDIT_SOURCE = Object.freeze({ pluginId: 'dsh-plugin-desktop/yootun-supply-watch', pluginVersion: '2.0.7-beta.2', surface: 'human_ui' as const })
 
 async function recordSupplyAudit(audit: YootunAuditRecorder | undefined, input: YootunAuditRecordInput | undefined): Promise<void> {
   if (audit === undefined || input === undefined) return
@@ -128,14 +129,14 @@ function failedSupplyMutationAudit(request: JsonRecord, errorCode: string): Yoot
 }
 
 export async function handleYootunSupplyWatchRequest(req: IncomingMessage, res: ServerResponse, rendererOrigin: string, options: SupplyRouteDependencies): Promise<void> {
-  if (req.headers.origin && req.headers.origin !== rendererOrigin) return finish(res, 403, { error: 'origin_forbidden' })
+  if (!sameYootunOrigin(req, rendererOrigin)) return finish(res, 403, { error: 'origin_forbidden' })
+  if (req.method !== 'GET' && req.method !== 'POST') return finish(res, 405, { error: 'method_not_allowed' }, 'GET, POST')
   const path = options.statePath
   if (!path) return finish(res, 503, { error: 'state_unavailable' })
   const now = (options.now ?? (() => new Date()))().toISOString()
   let auditRequest: JsonRecord | undefined
   try {
     if (req.method === 'GET') return finish(res, 200, supplySnapshot(await readSupplyState(path, now), new Date(now)))
-    if (req.method !== 'POST') return finish(res, 405, { error: 'method_not_allowed' }, 'GET, POST')
     const payload = await body(req)
     const request = record(payload)
     auditRequest = request

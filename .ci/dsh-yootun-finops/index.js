@@ -60,7 +60,7 @@ export function apply(ctx, overrides = {}) {
       path: PATH,
       async handler(req, res) {
         if (req.method !== 'GET') {
-          res.writeHead(405, { Allow: 'GET' })
+          res.writeHead(405, { Allow: 'GET', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' })
           res.end()
           return
         }
@@ -86,7 +86,7 @@ export function apply(ctx, overrides = {}) {
       path: SERIES_PATH,
       async handler(req, res) {
         if (req.method !== 'GET') {
-          res.writeHead(405, { Allow: 'GET' })
+          res.writeHead(405, { Allow: 'GET', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' })
           res.end()
           return
         }
@@ -587,4 +587,4 @@ async function timedFetch(fetchImpl, url, init) { return fetchImpl(url, { ...ini
 function unavailable(reason) { return { status: 'unavailable', reason, sourceCompleteness: 'unknown', missingFields: [] } }
 function failed(reason) { return { status: 'error', reason, sourceCompleteness: 'unknown', missingFields: [] } }
 function safeError(error) { return error instanceof Error ? error.message.slice(0, 200) : 'unknown error' }
-function sendJson(res, status, body) { const value = JSON.stringify(body); res.writeHead(status, { 'Cache-Control': 'no-store', 'Content-Type': 'application/json; charset=utf-8', 'Content-Length': Buffer.byteLength(value) }); res.end(value) }
+function sendJson(res, status, body) { const value = JSON.stringify(body); res.writeHead(status, { 'Cache-Control': 'no-store', 'Content-Type': 'application/json; charset=utf-8', 'Content-Length': Buffer.byteLength(value), 'X-Content-Type-Options': 'nosniff' }); res.end(value) }

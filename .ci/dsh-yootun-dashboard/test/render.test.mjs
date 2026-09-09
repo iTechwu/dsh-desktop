@@ -141,6 +141,10 @@ test('dashboard client renders health strip, attention queue, and tab switching'
   assert.equal(byClass(tree, 'yd-montage-detail').at(0).props.className, 'yd-detail-stack yd-montage-detail')
   assert.ok(text(tree).includes('sourceReady'))
   assert.ok(text(tree).includes('sourceError'))
+  const recentJob = byClass(tree, 'yd-session-row').at(0)
+  assert.ok(text(recentJob).includes('stageAsr'))
+  assert.ok(text(recentJob).includes('montageFailed'))
+  assert.ok(!text(recentJob).includes('asr'))
   // 作业状态构成条总和覆盖 6 个作业
   const shares = byClass(tree, 'yd-share').map(share => text(share))
   assert.equal(shares.length, 4)
@@ -207,7 +211,7 @@ test('dashboard client renders health strip, attention queue, and tab switching'
       ] } }, comparison: { status: 'ready', baseline: { articles: 4, published: 2, views: 8, failedTasks: 0 }, delta: { articles: -1, published: -1, views: 9, failedTasks: 1 }, deltaPercent: { articles: -25, published: -50, views: 113, failedTasks: null } }, ...overrides },
     usage: { status: 'ready', asOf: '', source: 'models', sourceCompleteness: 'complete', missingFields: [], data: { days: seriesDays.map(day => ({ date: day.date, requests: 2, successfulRequests: 2, totalTokens: 30, cost: 0.1, latencyP50Ms: 500, latencyP95Ms: 2100 })), totals: { requests: 6, successfulRequests: 6, totalTokens: 90, cost: 0.3 }, currency: 'CNY', byRoute: [{ route: '/v1/chat/completions', requests: 6, cost: 0.3 }], byMember: [{ memberId: 'sso-2', displayName: '李四', ownerType: 'human', requests: 4, cost: 0.2 }], budgets: [{ name: '日常预算', type: 'cost', period: 'daily', limit: 1, used: 0.9, currency: 'CNY' }], principal: { type: 'member', ownerType: 'human', id: 'sso-1' } }, comparison: { status: 'ready', baseline: { requests: 4, successfulRequests: 4, totalTokens: 60, cost: 0.2 }, delta: { requests: 2, successfulRequests: 2, totalTokens: 30, cost: 0.1 }, deltaPercent: { requests: 50, successfulRequests: 50, totalTokens: 50, cost: 50 } } },
     activity: { status: 'empty', asOf: '', source: 'local_agent', sourceCompleteness: 'complete', missingFields: [], data: { days: seriesDays.map(day => ({ date: day.date, sessions: 0, turns: 0, completedTurns: 0, failedTurns: 0, toolCalls: 0 })), totals: { sessions: 0, turns: 0, completedTurns: 0, failedTurns: 0, toolCalls: 0 } }, comparison: { status: 'ready', baseline: { sessions: 0, turns: 0, completedTurns: 0, failedTurns: 0, toolCalls: 0 }, delta: {}, deltaPercent: {} } },
-    montage: { status: 'ready', asOf: '', source: 'openmontage', sourceCompleteness: 'complete', missingFields: [], data: { days: seriesDays.map(day => ({ date: day.date, total: 1, queued: 0, running: 0, waiting_approval: 0, succeeded: 1, failed: 0, cancel_requested: 0, cancelled: 0 })), totals: { queued: 0, running: 0, waiting_approval: 0, succeeded: 3, failed: 0, cancel_requested: 0, cancelled: 0, total: 3 }, stageStats: [{ stage: 'research', count: 3, succeeded: 3, failed: 0, durationP50Ms: 3600, durationP95Ms: 7200 }] }, comparison: { status: 'ready', baseline: { queued: 0, running: 0, waiting_approval: 0, succeeded: 1, failed: 0, cancel_requested: 0, cancelled: 0, total: 1 }, delta: { total: 2 }, deltaPercent: { total: 200 } } },
+    montage: { status: 'ready', asOf: '', source: 'openmontage', sourceCompleteness: 'complete', missingFields: [], data: { days: seriesDays.map(day => ({ date: day.date, total: 1, queued: 0, running: 0, waiting_approval: 0, succeeded: 1, failed: 0, cancel_requested: 0, cancelled: 0 })), totals: { queued: 0, running: 0, waiting_approval: 0, succeeded: 3, failed: 0, cancel_requested: 0, cancelled: 0, total: 3 }, stageStats: [{ stage: 'research', count: 3, succeeded: 3, failed: 0, durationP50Ms: 3600, durationP95Ms: 7200 }, { stage: 'custom_stage', count: 1, succeeded: 1, failed: 0, durationP50Ms: null, durationP95Ms: null }] }, comparison: { status: 'ready', baseline: { queued: 0, running: 0, waiting_approval: 0, succeeded: 1, failed: 0, cancel_requested: 0, cancelled: 0, total: 1 }, delta: { total: 2 }, deltaPercent: { total: 200 } } },
     refreshedAt: '2026-09-01T01:30:00.000Z',
   })
   states[0] = 'overview'
@@ -255,10 +259,12 @@ test('dashboard client renders health strip, attention queue, and tab switching'
 
   states[0] = 'montage'
   tree = render()
-  // 阶段耗时表（数值随 locale 千分位变化，只断言键与阶段名）
+  // 已知阶段使用本地化文案；未知扩展阶段保留服务端名称。
   assert.equal(byClass(tree, 'yd-montage-detail').length, 1)
   assert.ok(text(tree).includes('stageStats'))
-  assert.ok(text(tree).includes('research'))
+  assert.ok(text(tree).includes('stageResearch'))
+  assert.ok(!text(tree).includes('research'))
+  assert.ok(text(tree).includes('custom_stage'))
 
   // 团队缓存与本人缓存必须使用不同 key；团队数据缺失时不能继续显示本人数据。
   states[2] = 'team'
