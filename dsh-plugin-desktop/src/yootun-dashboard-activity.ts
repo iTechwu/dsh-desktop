@@ -166,11 +166,12 @@ async function readSessionEvents(
     signal === undefined ? {} : { signal },
   )
   try {
-    return await handle.read(
+    const result = await handle.read(
       0,
       MAX_EVENTS_PER_SESSION + 1,
       signal === undefined ? {} : { signal },
     )
+    return result.events
   } finally {
     await handle.close()
   }

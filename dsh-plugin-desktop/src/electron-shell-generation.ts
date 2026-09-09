@@ -171,6 +171,8 @@ export interface ElectronShellGenerationOptions {
   readonly stopRendererBootMonitoring: () => void
   readonly abortRendererBootMonitoring: (cause: unknown) => void
   readonly failRendererBoot: (error: string) => void
+  readonly canRecoverRenderer: () => boolean
+  readonly rendererRecoveryCopy: () => DesktopRestartConfirmationCopy
   readonly reportRendererBoot: (report: { status: 'healthy' }) => void
   readonly logError: (message: string) => void
   readonly mainWindowState: MainWindowStateStore

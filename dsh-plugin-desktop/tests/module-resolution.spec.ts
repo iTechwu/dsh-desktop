@@ -5,6 +5,11 @@ import { tmpdir } from 'node:os'
 import { pathToFileURL } from 'node:url'
 
 const harness = vi.hoisted(() => {
+  const realpathNative = vi.fn((candidate: string) => candidate)
+  const realpathSync = Object.assign(
+    vi.fn((candidate: string) => realpathNative(candidate)),
+    { native: realpathNative },
+  )
   const cjsOriginal = vi.fn((
     request: string,
     _parent?: { filename?: string } | null,
@@ -12,6 +17,8 @@ const harness = vi.hoisted(() => {
     _options?: unknown,
   ) => `ordinary:${request}`)
   return {
+    realpathNative,
+    realpathSync,
     resolve: undefined as undefined | ((
       specifier: string,
       context: { parentURL?: string },

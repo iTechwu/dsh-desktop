@@ -57,6 +57,10 @@ import {
 import { desktopLanAddresses } from './lan-addresses.ts'
 import type { DesktopLanHttpsPrivateKeyProtector } from './lan-https-certificate.ts'
 import {
+  createLanHttpsCertificate,
+  DesktopLanHttpsCertificateError,
+} from './lan-https-certificate.ts'
+import {
   DESKTOP_LAN_HTTPS_CA_PATH,
   DesktopLanHttpsRuntime,
 } from './lan-https-runtime.ts'
@@ -633,7 +637,7 @@ async function start(): Promise<void> {
     for (const [name, value] of Object.entries(shellEnvironmentResolution.updates)) process.env[name] = value
     removeModelCredentialEnvironment(process.env)
     const profileUserDataDir = safeModePaths?.userDataDir ?? desktopUserDataDir
-    const homeDir = safeModePaths?.homeDir ?? resolveDshHome()
+    let homeDir = safeModePaths?.homeDir ?? resolveDshHome()
     if (safeModePaths !== undefined) process.env.DSH_HOME = homeDir
     await removeLegacyModelCredentials(homeDir)
     await repairDofeVisionModelSettings(homeDir)
@@ -653,7 +657,6 @@ async function start(): Promise<void> {
     startupStage = 'runtime-bootstrap'
     lifecycleRecorder.transitionStartupStage(startupStage)
     const environment = restrictModelLaunchEnvironment(loadLayeredEnv(BIN_NAME, process.cwd()))
-    const desktopLaunchEnvironment = withDesktopDshHome(environment, homeDir)
     removeModelCredentialEnvironment(process.env)
     const electronVersion = process.versions.electron
     if (electronVersion === undefined) {
@@ -674,15 +677,14 @@ async function start(): Promise<void> {
     const defaultHome = resolve(defaultDshHome())
     const fallbackSource = process.env.DSH_HOME === undefined ? 'default' : 'environment'
     let dataDirectoryLocation: DesktopDataDirectoryLocation | undefined
-    let homeDir: string
-    if (safeModePaths !== undefined) {
-      homeDir = safeModePaths.homeDir
-    } else {
+    if (safeModePaths === undefined) {
       dataDirectoryLocation = resolveDesktopDataDirectory(
         desktopUserDataDir,
         fallbackHome,
         fallbackSource,
       )
+      // Reassign the home directory chosen during boot so the rest of the
+      // runtime sees the desktop-managed data directory.
       homeDir = dataDirectoryLocation.homeDir
     }
     process.env.DSH_HOME = homeDir
@@ -1367,7 +1369,7 @@ async function start(): Promise<void> {
               desktopLanHttpsPrivateKeyProtector(),
             ),
           }
-        } catch (cause) {
+        } catch (cause: unknown) {
           const failureCode = cause instanceof DesktopLanHttpsCertificateError
             ? cause.code
             : 'certificate-state'

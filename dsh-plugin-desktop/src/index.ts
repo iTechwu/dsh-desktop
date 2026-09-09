@@ -331,21 +331,14 @@ export function apply(ctx: Context, config: Config): void {
     }),
     `dsh-plugin-desktop: private Yootun audit route ${YOOTUN_AUDIT_PATH}`,
   )
-  if (lanHttps.caCertificate !== null) {
-    const caCertificate = lanHttps.caCertificate
-    ctx.effect(
-      () => ctx.webServer.register({
-        kind: 'exact',
-        path: DESKTOP_LAN_HTTPS_CA_PATH,
-        handler: (req, res) => {
-          if (req.method !== 'GET' && req.method !== 'HEAD') {
-            res.statusCode = 405
-            res.setHeader('allow', 'GET, HEAD')
-            res.setHeader('cache-control', 'no-store')
-            res.end('method not allowed')
-            return
-          }
-          res.statusCode = 200
+  ctx.effect(
+    () => ctx.webServer.register({
+      kind: 'exact',
+      path: DESKTOP_LAN_HTTPS_CA_PATH,
+      handler: (req, res) => {
+        if (req.method !== 'GET' && req.method !== 'HEAD') {
+          res.statusCode = 405
+          res.setHeader('allow', 'GET, HEAD')
           res.setHeader('cache-control', 'no-store')
           res.end('method not allowed')
           return

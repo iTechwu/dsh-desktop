@@ -9,6 +9,7 @@ import { PNPM_IGNORE_MINIMUM_RELEASE_AGE, withDesktopPnpmPolicy } from '../src/p
 
 interface Deferred<T> { promise: Promise<T>; resolve(value: T): void; reject(cause: unknown): void }
 interface ControlledSubprocess extends SubprocessHandle {
+  pid: number
   resolveDone(outcome: SubprocessOutcome): void
   resolveTree(exited?: boolean): void
   terminate: ReturnType<typeof vi.fn<() => void>>

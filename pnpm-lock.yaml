@@ -1708,6 +1708,9 @@ importers:
       electron-builder:
         specifier: 26.15.7
         version: 26.15.7(electron-builder-squirrel-windows@26.15.7)
+      jsdom:
+        specifier: 29.1.1
+        version: 29.1.1(@noble/hashes@2.3.0)
       lucide-react:
         specifier: ^1.33.0
         version: 1.33.0(react@18.3.1)
