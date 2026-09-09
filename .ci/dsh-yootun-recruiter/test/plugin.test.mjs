@@ -40,6 +40,11 @@ test('locks recruiter mutations and disables every write surface', async () => {
   assert.match(source, /\.yr-empty button:disabled,.yr-inline-error button:disabled,.yr-tabs button:disabled,.yr-source-button:disabled,.yr-secondary:disabled,.yr-filter:disabled\{opacity:\.45;cursor:default\}/u)
 })
 
+test('uses the shared adaptive foreground for primary actions', async () => {
+  const source = await readFile(new URL('src/client.js', root), 'utf8')
+  assert.match(source, /\.yr-primary\{color:var\(--dsw-alias-label-primary-foreground\)\}/u)
+})
+
 test('keeps BOSS actions human-confirmed and does not accept raw PII', async () => {
   const source = await readFile(new URL('src/client.js', root), 'utf8')
   for (const token of ['/api/desktop/yootun/recruiter', 'awaiting_confirmation', 'confirmed_pending_adapter', 'succeeded', 'failed', 'requires_user_login', 'zhipin.com', 'confirm_action', 'loadError', 'yr-status-succeeded', 'HR 知识库', '招聘漏斗', 'sync_boss', 'publish_knowledge', 'yr-source-button', 'importRequirement', 'generateDraft', 'draftFromText', 'yr-intake-grid', 'yr-filter-bar', 'onNavigate', "'aria-label': t('candidates')", "'aria-label': t('stage')", "data.boss?.adapter === 'official'"]) {

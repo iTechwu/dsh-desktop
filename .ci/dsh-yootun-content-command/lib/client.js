@@ -192,10 +192,12 @@ window.__ModuleLoader__.load({
     .ycc-distribution-row>span[data-tone=success]{border-color:var(--ycc-state-success)}.ycc-distribution-row>span[data-tone=warning]{border-color:var(--ycc-state-warning)}.ycc-distribution-row>span[data-tone=danger]{border-color:var(--ycc-state-error)}
     `
 
+    const semanticCss = '.ycc-tabs b{color:var(--dsw-alias-label-primary-foreground)}.ycc-primary{color:var(--dsw-alias-label-primary-foreground)!important}'
+
     function apply(ctx) {
       ctx.effect(() => ctx.locale.register(NS, copy), 'dofe-yootun-content-command: dictionaries')
       ctx.effect(() => { window.addEventListener(OVERLAY_EVENT, closeOtherOverlay); return () => window.removeEventListener(OVERLAY_EVENT, closeOtherOverlay) }, 'dofe-yootun-content-command: exclusive-overlay')
-      ctx.effect(() => { const style = document.createElement('style'); style.dataset.plugin = OVERLAY_ID; style.textContent = css; document.head.appendChild(style); return () => style.remove() }, 'dofe-yootun-content-command: styles')
+      ctx.effect(() => { const style = document.createElement('style'); style.dataset.plugin = OVERLAY_ID; style.textContent = css + semanticCss; document.head.appendChild(style); return () => style.remove() }, 'dofe-yootun-content-command: styles')
       const t = ctx.locale.bind(NS)
       ctx.slots.inject('sidebar.footer.action', () => ctx.slots.register({ name: 'sidebar.footer.action', id: 'dofe-yootun-content-command', order: 40, inject: () => ({ t }) }, Button))
       ctx.slots.inject('shell.overlay', () => ctx.slots.register({ name: 'shell.overlay', id: 'dofe-yootun-content-command', order: 40, inject: () => ({ t }) }, Overlay))
