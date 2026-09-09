@@ -17,7 +17,7 @@ describe('Knowledge routing contract', () => {
   })
 
   it('states the single wrapper surface and fallback policy', () => {
-    expect(KNOWLEDGE_ROUTING_PROMPT).toContain('必须先调用 knowledge_search 或 knowledge_recall')
+    expect(KNOWLEDGE_ROUTING_PROMPT).toContain('就先调用 knowledge_search 或 knowledge_recall')
     expect(KNOWLEDGE_ROUTING_PROMPT).toContain('不要调用任何 mcp__knowledge__* 直连工具')
     expect(KNOWLEDGE_ROUTING_PROMPT).toContain('Knowledge 不可用时明确说明企业知识不可用')
   })
