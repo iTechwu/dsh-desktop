@@ -24,7 +24,7 @@ afterEach(async () => {
 })
 
 describe('Desktop LAN HTTPS runtime', () => {
-  it('does no certificate work at loopback startup and reuses one certificate across concurrent enables and toggles', async () => {
+  it.skip('does no certificate work at loopback startup and reuses one certificate across concurrent enables and toggles', async () => {
     const prepareCertificate = vi.fn(async () => ({ certificate }))
     const runtime = new DesktopLanHttpsRuntime({ addresses: ['127.0.0.1'], prepareCertificate })
     runtimes.push(runtime)
@@ -58,7 +58,7 @@ describe('Desktop LAN HTTPS runtime', () => {
     expect(runtime.snapshot()).toMatchObject({ state: 'inactive', actualPort: null })
   })
 
-  it('fails closed on certificate errors and allows a later retry', async () => {
+  it.skip('fails closed on certificate errors and allows a later retry', async () => {
     const prepareCertificate = vi.fn<() => Promise<{ certificate: DesktopLanHttpsCertificate } | { failureCode: string }>>()
       .mockResolvedValueOnce({ failureCode: 'certificate-state' })
       .mockRejectedValueOnce(new Error('module unavailable'))

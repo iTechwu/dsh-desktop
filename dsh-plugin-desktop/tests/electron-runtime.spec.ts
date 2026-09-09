@@ -1814,7 +1814,7 @@ describe('Electron desktop runtime', () => {
 
     const labels = (electron.menuTemplates.at(-1) as Array<{ label?: string }>).map(item => item.label)
     expect(labels).toEqual([
-      'Open Yootun-Agent', undefined,
+      'Open Yootun-Agent', 'Switch to Extended Window', undefined,
       'Earlier Tool', 'Later Tool', undefined,
       'Check for Updates…', undefined,
       'Mode: Compatibility Mode', undefined,

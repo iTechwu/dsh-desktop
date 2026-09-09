@@ -724,6 +724,7 @@ describe('published package surface', () => {
       'build/app-icon-mac.png',
       'build/tray-iconTemplate.png',
       'build/tray-iconTemplate@2x.png',
+      'node_modules/fs-ext/**',
     ])
     expect(manifest.build?.mac?.mergeASARs).toBe(false)
     expect(manifest.build?.mac?.signIgnore).toEqual(['\\.(?:pak|dat|wasm)$'])
