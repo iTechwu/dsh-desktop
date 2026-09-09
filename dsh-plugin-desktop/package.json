@@ -523,7 +523,8 @@
       "asarUnpack": [
         "build/app-icon-mac.png",
         "build/tray-iconTemplate.png",
-        "build/tray-iconTemplate@2x.png"
+        "build/tray-iconTemplate@2x.png",
+        "node_modules/fs-ext/**"
       ],
       "files": [
         "build/app-icon.png",
