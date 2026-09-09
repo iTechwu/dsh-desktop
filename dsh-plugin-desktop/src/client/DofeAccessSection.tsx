@@ -215,6 +215,7 @@ function AccessForm({ credentials, settingsApi, settingsScope, t, onboarding, on
           name: model.name,
           ...(model.description === undefined ? {} : { description: model.description }),
           ...(model.contextWindow === undefined ? {} : { contextWindow: model.contextWindow }),
+          ...(model.maxTokens === undefined ? {} : { maxTokens: model.maxTokens }),
           inputModalities: model.inputModalities === undefined ? ['text'] : [...model.inputModalities],
         }))
         const result = await settingsApi.mutate('llm-deepseek', [{ op: 'set', path: ['models'], value: modelConfig }], deepseek.revision)

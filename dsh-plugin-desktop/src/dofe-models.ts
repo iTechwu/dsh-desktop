@@ -8,6 +8,7 @@ export interface DofeModel {
   readonly name: string
   readonly description?: string
   readonly contextWindow?: number
+  readonly maxTokens?: number
   readonly inputModalities?: readonly ('text' | 'image')[]
 }
 
@@ -16,6 +17,14 @@ const DOFE_VISION_MODEL_IDS = new Set([
   'deepseek-v4-flash-vision',
   'deepseek-v4-flash-vision-exp',
 ])
+
+/** GLM-5.3 models expose a 128K maximum generation length on the public API. */
+const DOFE_128K_OUTPUT_MODEL_PATTERN = /^glm-5\.3(?:-flash)?$/iu
+
+export function dofeModelMaxTokens(id: string, declared?: number): number | undefined {
+  if (declared !== undefined && Number.isSafeInteger(declared) && declared > 0) return declared
+  return DOFE_128K_OUTPUT_MODEL_PATTERN.test(id) ? 131_072 : undefined
+}
 
 /** Fill capability metadata omitted by the OpenAI-compatible model listing. */
 export function dofeModelInputModalities(
@@ -67,6 +76,13 @@ export function parseDofeModelCatalog(value: unknown): DofeModel[] {
       : typeof entry.contextWindow === 'number' && Number.isSafeInteger(entry.contextWindow) && entry.contextWindow > 0
         ? entry.contextWindow
         : undefined
+    const maxTokens = dofeModelMaxTokens(
+      id,
+      typeof entry.max_tokens === 'number' ? entry.max_tokens
+        : typeof entry.max_output_tokens === 'number' ? entry.max_output_tokens
+          : typeof entry.max_completion_tokens === 'number' ? entry.max_completion_tokens
+            : typeof entry.maxTokens === 'number' ? entry.maxTokens : undefined,
+    )
     const modalities = Array.isArray(entry.input_modalities)
       ? entry.input_modalities
       : Array.isArray(entry.inputModalities) ? entry.inputModalities : undefined
@@ -81,6 +97,7 @@ export function parseDofeModelCatalog(value: unknown): DofeModel[] {
       name,
       ...(description === undefined ? {} : { description }),
       ...(contextWindow === undefined ? {} : { contextWindow }),
+      ...(maxTokens === undefined ? {} : { maxTokens }),
       ...(inputModalities === undefined || inputModalities.length === 0 ? {} : { inputModalities }),
     })
   }

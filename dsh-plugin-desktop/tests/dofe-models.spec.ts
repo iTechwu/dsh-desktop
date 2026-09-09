@@ -15,6 +15,16 @@ describe('DoFe model catalog parsing', () => {
     ])
   })
 
+  it('preserves output limits and supplies the documented GLM-5.3 128K cap', () => {
+    expect(parseDofeModelCatalog({ data: [
+      { id: 'glm-5.3-flash', context_window: 1048576 },
+      { id: 'glm-5.2', max_completion_tokens: 65536 },
+    ] })).toEqual([
+      { id: 'glm-5.3-flash', name: 'glm-5.3-flash', contextWindow: 1048576, maxTokens: 131072 },
+      { id: 'glm-5.2', name: 'glm-5.2', maxTokens: 65536 },
+    ])
+  })
+
   it('returns an empty catalog for malformed payloads', () => {
     expect(parseDofeModelCatalog({ object: 'list', data: 'bad' })).toEqual([])
     expect(parseDofeModelCatalog(undefined)).toEqual([])
