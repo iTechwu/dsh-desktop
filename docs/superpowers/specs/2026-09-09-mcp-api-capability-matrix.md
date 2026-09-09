@@ -7,6 +7,7 @@
 | Desktop 访问与模型配置 | `/api/desktop/dofe/models`、`/api/desktop/dofe/validate` | yootun-ui 门禁与设置页 | missing、loading、configured、error、conflict | 仅由托管 `MODELS_API_KEY` 凭证链路读写；模型列表失败不提交设置，冲突响应可重试 |
 | GEO 内容与分析 | `geoflow` / `geoflow_*` | content-command、dashboard、website publisher | ready、partial、empty、unavailable、error | 每次请求由 managed credential 注入；缺工具为 unavailable，单来源失败不拖垮其他来源 |
 | GEO 排名与诊断 | `georank` / `georank_*` | content-command、dashboard | ready、partial、unavailable、error | 与 geoflow 隔离；不以零值代替缺失指标 |
+| 互联网只读调研 | `agent_reach`；Exa `web_search_exa`/`web_fetch_exa` 与 OpenCLI 公开路由 | content-command、sales、retrofit、Agent | ready、partial、unavailable、error | 只允许白名单站点的只读命令；Exa 必须使用托管 `MODELS_API_KEY`，平台登录或命令受限时披露覆盖缺口，不执行发帖、评论或点赞 |
 | OpenMontage 视频工作流 | `montage` / `mcp__openmontage__*` | openmontage window、XHS operation | awaiting_confirmation、confirmed_pending_adapter、succeeded、failed | 长任务使用 600s 超时；准备、读取、提交按 Agent 工具限制分阶段暴露 |
 | 单镜头媒体 | `media` / `mcp__media__*` | XHS operation、媒体上传 | uploading、queued、succeeded、failed、requires_user_login | UI 只展示资源引用和 MIME/大小摘要，不显示凭据、签名 URL 或本地路径 |
 | 商业/平台工具 | `tools` / `mcp__tools-*` | sales、content-command、dashboard | ready、empty、degraded、error | 通过统一 MCP gateway 调用；本地 API 过滤不安全字段并保留稳定 error code |
