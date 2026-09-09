@@ -1,15 +1,16 @@
 diff --git a/lib/index.js b/lib/index.js
+index f43834f..a0dbc5f 100644
 --- a/lib/index.js
 +++ b/lib/index.js
-@@ -9,7 +9,6 @@
+@@ -8,7 +8,6 @@ import { scheduler } from "node:timers/promises";
  import { createHash, randomBytes } from "node:crypto";
  import { SessionAlreadyExistsError, SessionAlreadyOwnedError, SessionFormatUnsupportedError, SessionHandleClosedError, SessionPersistence, SessionPersistenceCorruptionError, SessionPersistenceNotFoundError, SessionPersistenceRevision, SessionReadOnlyError, assertContiguous, assertStoredId, materializeAppendBatch, materializeCreateHeader, sessionFormatVersionRefusal, validateStoredEvents } from "@deepseek-ai/dsh-session-persistence";
- import { Service } from "@deepseek-ai/cordis";
+ import { BlockAssembler, errorChain, expandAssistantStream } from "@deepseek-ai/dsh-llm";
 -import { flock } from "fs-ext";
- import { SESSION_FORMAT_VERSION, SessionId, SessionLogOffset, decodeSeqRanges, encodeSeqRanges } from "@deepseek-ai/dsh-session";
+ import { SESSION_FORMAT_VERSION, Session, SessionId, SessionLogOffset } from "@deepseek-ai/dsh-session";
  import { parseSessionFormatLogFilename, sessionFormatLogFilename } from "@deepseek-ai/dsh-session-format";
- import { constants, createZstdDecompress, zstdCompress, zstdDecompress, zstdDecompressSync } from "node:zlib";
-@@ -1943,7 +1942,8 @@ function releaseLockHandleWin32(handle) {
+ import { constants, createZstdCompress, createZstdDecompress, zstdCompress, zstdDecompress, zstdDecompressSync } from "node:zlib";
+@@ -640,7 +639,8 @@ async function createLeafDirectoryWin32(parent, target) {
  /** Base name of the kernel lock file inside a session's directory. */
  const LEASE_FILENAME = "session.lock";
  /** Promise face over fs-ext's callback flock, pinned to its string-flag overload. */

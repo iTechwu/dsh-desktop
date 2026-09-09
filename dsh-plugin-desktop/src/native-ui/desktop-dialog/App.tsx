@@ -91,6 +91,8 @@ export function DesktopDialogApp(): JSX.Element {
         <h1 className="text-base font-semibold leading-tight" id="desktop-dialog-title">{state.message}</h1>
         {state.detail === undefined
           ? null
+          : profileCompatibility
+            ? <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-muted-foreground" id="desktop-dialog-detail">{state.detail}</p>
           : diagnostic
             ? <ScrollArea className="mt-3 h-64 rounded-lg border bg-muted/40">
                 <pre className="select-text whitespace-pre-wrap break-words p-3 font-mono text-xs leading-relaxed text-muted-foreground" id="desktop-dialog-detail">{state.detail}</pre>
@@ -103,7 +105,7 @@ export function DesktopDialogApp(): JSX.Element {
         </div>}
       </div>
     </section>
-    <footer className={`mt-5 flex shrink-0 flex-wrap justify-end gap-2${profileCompatibility ? ' translate-y-2' : ''}`}>
+    <footer className="mt-5 flex shrink-0 flex-wrap justify-end gap-2">
       {state.buttons.map((label, index) => <Button autoFocus={index === state.defaultId} className={desktopDialogButtonClassName(state.presentation, index)} key={`${String(index)}:${label}`} onClick={() => { respond(index) }} type="button" variant={index === state.defaultId ? 'default' : index === state.cancelId ? 'outline' : 'secondary'}>{label}</Button>)}
     </footer>
   </main></>

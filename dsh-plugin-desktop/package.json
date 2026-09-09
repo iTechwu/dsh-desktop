@@ -467,6 +467,7 @@
     "clsx": "^2.1.1",
     "electron": "43.4.0",
     "electron-builder": "26.15.7",
+    "jsdom": "29.1.1",
     "lucide-react": "^1.33.0",
     "react-dom": "18.3.1",
     "shadcn": "^4.18.0",
@@ -522,7 +523,8 @@
       "asarUnpack": [
         "build/app-icon-mac.png",
         "build/tray-iconTemplate.png",
-        "build/tray-iconTemplate@2x.png"
+        "build/tray-iconTemplate@2x.png",
+        "node_modules/@agents-anywhere/dsh-bridge-next/lib/bundled-connector/**"
       ],
       "files": [
         "build/app-icon.png",
@@ -579,7 +581,8 @@
         "build/tray-icon-blue.png",
         "build/tray-icon-blue@1.25x.png",
         "build/tray-icon-blue@1.5x.png",
-        "build/tray-icon-blue@2x.png"
+        "build/tray-icon-blue@2x.png",
+        "node_modules/@agents-anywhere/dsh-bridge-next/lib/bundled-connector/**"
       ],
       "files": [
         "!node_modules/@img/sharp-darwin*/**",
@@ -631,7 +634,8 @@
         "build/tray-icon-blue.png",
         "build/tray-icon-blue@1.25x.png",
         "build/tray-icon-blue@1.5x.png",
-        "build/tray-icon-blue@2x.png"
+        "build/tray-icon-blue@2x.png",
+        "node_modules/@agents-anywhere/dsh-bridge-next/lib/bundled-connector/**"
       ],
       "target": [
         "dir"

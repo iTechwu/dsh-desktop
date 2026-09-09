@@ -5,8 +5,7 @@ index d29c50c..70e08b0 100644
 @@ -193,24 +193,27 @@
    overscroll-behavior-x: contain;
  }
--
-+
+ 
 -/* Wide tables reveal their horizontal bar on hover (or keyboard focus)
 -   instead of keeping it painted. Chromium never repaints state-conditioned
 -   scrollbar STYLES (neither hover-conditioned `::-webkit-scrollbar*` rules
@@ -23,8 +22,7 @@ index d29c50c..70e08b0 100644
 +  scrollbar-width: thin;
 +  scrollbar-color: var(--dsw-alias-label-tertiary, #9098a3) transparent;
  }
--
-+
+ 
 -.tableScroll:global(.md-table-wide):hover,
 -.tableScroll:global(.md-table-wide):focus-visible {
 -  overflow-x: auto;
@@ -45,6 +43,5 @@ index d29c50c..70e08b0 100644
 +.tableScroll:global(.md-table-wide)::-webkit-scrollbar-thumb:hover {
 +  background: var(--dsw-alias-label-secondary, #c9ced8);
  }
--
-+
+ 
  /* Chromium keyboard-focuses scrollable containers by default; the ring uses

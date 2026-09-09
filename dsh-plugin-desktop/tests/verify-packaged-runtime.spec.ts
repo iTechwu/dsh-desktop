@@ -482,6 +482,15 @@ describe('packaged desktop runtime verification', () => {
     },
   )
 
+  it('unpacks AA Python sources while keeping its JavaScript runtime archived', () => {
+    const source = 'node_modules/@agents-anywhere/dsh-bridge-next/lib/bundled-connector/connector/cli.py'
+    expect(() => verifySelectiveUnpackedRuntime(asarIndex([source]), '/build/resources/app.asar.unpacked',
+      [{ path: source, bytes: 100 }])).not.toThrow()
+    const host = 'node_modules/@agents-anywhere/dsh-bridge-next/lib/index.js'
+    expect(() => verifySelectiveUnpackedRuntime(asarIndex([host]), '/build/resources/app.asar.unpacked',
+      [{ path: host, bytes: 100 }])).toThrow('non-allowlisted package roots')
+  })
+
   it('rejects a new smart-unpacked package until its native root is reviewed', () => {
     const path = 'node_modules/unexpected-native/binding.node'
     expect(() => verifySelectiveUnpackedRuntime(

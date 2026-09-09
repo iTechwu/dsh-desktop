@@ -75,6 +75,20 @@ describe('installProfilePackageResolver', () => {
     harness.cjsModule._resolveFilename = harness.cjsOriginal
   })
 
+  it.each(['node:fs', 'fs', 'node:path', 'path'])('passes builtin %s through without inspecting the parent filesystem', specifier => {
+    installProfilePackageResolver('file:///profiles/desktop/package.json')
+    harness.realpathNative.mockClear()
+    const parent = join(tmpdir(), 'untracked-plugin', 'index.js')
+    const context = { parentURL: pathToFileURL(parent).href }
+    const result = { url: specifier }
+    const nextResolve = vi.fn(() => result)
+    expect(harness.resolve?.(specifier, context, nextResolve)).toBe(result)
+    expect(nextResolve).toHaveBeenCalledExactlyOnceWith(specifier, context)
+    expect(harness.cjsModule._resolveFilename(specifier, { filename: parent }, false)).toBe(`ordinary:${specifier}`)
+    expect(harness.realpathNative).not.toHaveBeenCalled()
+    expect(harness.overlay).not.toHaveBeenCalled()
+  })
+
   it('uses the overlay-selected side for every Loader package and subpath', () => {
     const profileBaseUrl = 'file:///C:/Users/test/profile/package.json'
     harness.sources.set('@deepseek-ai/dsh-web-app', 'install')

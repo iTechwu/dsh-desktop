@@ -1,4 +1,5 @@
 diff --git a/lib/plugin-WDISvmGc.js b/lib/plugin-WDISvmGc.js
+index ffed745..f09fe18 100644
 --- a/lib/plugin-WDISvmGc.js
 +++ b/lib/plugin-WDISvmGc.js
 @@ -109,7 +109,8 @@ function runPlugin(profile, args) {

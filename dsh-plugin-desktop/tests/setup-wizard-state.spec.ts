@@ -120,7 +120,7 @@ describe('Desktop Setup Wizard state', () => {
     }
   })
 
-  it('reads legacy V1 markers and replaces them with current V2 evidence after Setup', async () => {
+  it('honors legacy V1 decisions and permits explicit V2 recording', async () => {
     const userData = temporaryDirectory('dsh-setup-state-user-')
     const profile = temporaryDirectory('dsh-setup-state-profile-')
     const profileHash = desktopSetupWizardProfileHash(profile)
@@ -132,7 +132,7 @@ describe('Desktop Setup Wizard state', () => {
 
     const legacy = readDesktopSetupWizardState(userData, profile)
     expect(legacy).toEqual({ version: 1, profileHash, outcome: 'skipped' })
-    expect(desktopSetupWizardRequired(legacy, CURRENT_VERSIONS)).toBe(true)
+    expect(desktopSetupWizardRequired(legacy, CURRENT_VERSIONS)).toBe(false)
 
     await recordSetup(userData, profile, 'completed')
     expect(readDesktopSetupWizardState(userData, profile)).toEqual({
@@ -159,11 +159,11 @@ describe('Desktop Setup Wizard state', () => {
     expect(desktopSetupWizardRequired(state, {
       ...CURRENT_VERSIONS,
       dshVersion: '0.1.2-alpha.2',
-    })).toBe(true)
+    })).toBe(false)
     expect(desktopSetupWizardRequired(state, {
       ...CURRENT_VERSIONS,
       setupRevision: CURRENT_VERSIONS.setupRevision + 1,
-    })).toBe(true)
+    })).toBe(false)
 
     expect(desktopSetupWizardRequired(state, {
       ...CURRENT_VERSIONS,
