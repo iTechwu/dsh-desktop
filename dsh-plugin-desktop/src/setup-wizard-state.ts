@@ -274,13 +274,17 @@ export function desktopSetupWizardRequired(
   currentVersions: DesktopSetupWizardVersions,
 ): boolean {
   const current = normalizedVersions(currentVersions)
-  if (state === undefined || state.version === LEGACY_STATE_VERSION) return true
-  const dsh = compareSemVerVersions(current.dshVersion, state.dshVersion)
-  if (compareSemVerVersions(current.desktopVersion, state.desktopVersion) === null || dsh === null) {
+  if (state === undefined) return true
+  if (state.version === LEGACY_STATE_VERSION) return false
+  // Both legacy V1 and modern V2 markers record an explicit user decision;
+  // honouring that decision avoids re-prompting on every DSH or Desktop
+  // upgrade. The next setup-wizard contract change bumps setupRevision and
+  // ships a fresh spec that intentionally invalidates prior markers.
+  if (compareSemVerVersions(current.dshVersion, state.dshVersion) === null
+    || compareSemVerVersions(current.desktopVersion, state.desktopVersion) === null) {
     throw new Error(`${BIN_NAME}: validated Setup Wizard versions could not be compared`)
   }
-  const revision = current.setupRevision - state.setupRevision
-  return dsh > 0 || revision > 0
+  return false
 }
 
 /** Atomically record explicit completion or an explicit skip for one Profile. */
