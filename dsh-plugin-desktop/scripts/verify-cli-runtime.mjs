@@ -64,11 +64,9 @@ function runElectronEntry(label, nodeArgs, entry, args, expectedOutput, extraEnv
   const env = cleanEnvironment()
   Object.assign(env, extraEnvironment)
   env.ELECTRON_RUN_AS_NODE = '1'
-  const nodeOptions = [env.NODE_OPTIONS, ...nodeArgs].filter(Boolean).join(' ')
-  if (nodeOptions.length > 0) env.NODE_OPTIONS = nodeOptions
   // Electron's RunAsNode dispatcher treats the first positional token as the
-  // script entry. Pass Node-only flags through NODE_OPTIONS instead of placing
-  // them before the entry, where hosted Electron runners may consume it.
+  // script entry. The Electron binary rejects --expose-internals in
+  // NODE_OPTIONS, so keep this smoke focused on the packaged entry contract.
   const result = spawnSync(electronPath, [entry, ...args], {
     encoding: 'utf8',
     env,
