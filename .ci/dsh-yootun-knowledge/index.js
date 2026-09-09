@@ -152,6 +152,17 @@ const TOOL_DEFINITIONS = {
 }
 const TOOL_NAMES_BY_REMOTE = Object.fromEntries(Object.entries(TOOL_DEFINITIONS).map(([name, [remoteName]]) => [remoteName, name]))
 
+const KNOWLEDGE_ROUTING_PROMPT = [
+  '数据源路由规则（必须遵守）：',
+  '1. 企业内部事实优先使用 knowledge_search；已确认经验、会话记忆或用户偏好使用 knowledge_recall。',
+  '2. 企业内部事实包括优惠豚及其园区、公司、客户、会员、员工、招聘、销售、供应链、库存、财务、项目、制度、流程、服务标准、合同和历史复盘。',
+  '3. 公开实时信息（新闻、今天/最新/当前、价格行情、天气、赛事、股票、汇率、官方网页）才使用 web_search/web_fetch。',
+  '4. 混合问题必须先调用 Knowledge 获取企业事实，再按需调用 Web 获取外部实时信息；网页结果不能替代企业事实。',
+  '5. 只要问题可能涉及企业事实，就先调用 knowledge_search 或 knowledge_recall，不要直接凭模型记忆作答。Knowledge 不可用时明确说明企业知识不可用；只有问题本身是公开信息时才降级到 Web。',
+  '6. Knowledge 统一使用本地封装工具 knowledge_search、knowledge_recall、knowledge_loadout、knowledge_context_pack 等；不要调用任何 mcp__knowledge__* 直连工具，也不要给封装工具套用直连 MCP 的参数格式。',
+  '7. Knowledge 结果必须保留文档、版本、Memory 或 Session 引用；没有引用不得把推断写成企业事实。',
+].join('\n')
+
 export function apply(ctx, overrides = {}) {
   const fetchImpl = overrides.fetch || globalThis.fetch
   const disposers = []
@@ -177,7 +188,7 @@ export function apply(ctx, overrides = {}) {
   disposers.push(ctx.systemPrompt.section({
     name: 'yootun-knowledge:governance',
     order: 9,
-    text: '企业 Knowledge、Memory 与知识图谱统一通过 https://ixicai.cn/mcp/knowledge 的公开 MCP 网关访问。运行时先用 knowledge_loadout 获取服务端解析的空间绑定，按需用 knowledge_context_pack 注入稳定规则、已确认 Memory 与会话交接；不要在客户端保存或猜测 space UUID。优惠豚公司资料统一属于 tenant.all 对应的“优惠豚”默认空间，所有优惠豚成员可读；个人资料使用 user.personal，会话与工作记忆使用 user.agent_runtime，团队资料只使用服务端授权的 team.<groupId>。所有事实必须保留文档、版本、Memory 或 Session 引用；remember 只创建候选，明确确认后才可进入 confirmed；forget 立即执行。',
+    text: `${KNOWLEDGE_ROUTING_PROMPT}\n企业 Knowledge、Memory 与知识图谱统一通过 https://ixicai.cn/mcp/knowledge 的公开 MCP 网关访问。运行时先用 knowledge_loadout 获取服务端解析的空间绑定，按需用 knowledge_context_pack 注入稳定规则、已确认 Memory 与会话交接；不要在客户端保存或猜测 space UUID。优惠豚公司资料统一属于 tenant.all 对应的“优惠豚”默认空间，所有优惠豚成员可读；个人资料使用 user.personal，会话与工作记忆使用 user.agent_runtime，团队资料只使用服务端授权的 team.<groupId>。所有事实必须保留文档、版本、Memory 或 Session 引用；remember 只创建候选，明确确认后才可进入 confirmed；forget 立即执行。`,
   }))
 
   if (ctx.webServer) {

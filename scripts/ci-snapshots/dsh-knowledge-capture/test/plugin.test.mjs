@@ -111,11 +111,35 @@ test('injects ContextPack evidence and blocks recall-to-capture pollution', asyn
     async () => ({ sections: [], contexts: [], tools: [], variables: {} }),
   )
   assert.equal(assembly.contexts.length, 1)
+  assert.deepEqual(harness.provided.get('yootunAgentKnowledge').contextPackStatus('session-2'), { status: 'injected' })
   assert.match(assembly.contexts[0].text, /只使用已授权空间|已确认偏好/u)
   const blocked = captureSessionEvent(event('assistant/message', 3, {
     message: { role: 'assistant', content: [{ type: 'text', text: 'recalled 22222222-2222-4222-8222-222222222222' }] },
   }), new Set(['22222222-2222-4222-8222-222222222222']))
   assert.equal(blocked, null)
+})
+
+test('records unavailable ContextPack status without blocking the prompt', async () => {
+  const listeners = new Map()
+  const provided = new Map()
+  const ctx = {
+    credentials: { async resolve() { return undefined } },
+    systemPrompt: {},
+    logger: { warn() {} },
+    on(name, listener) { listeners.set(name, listener); return () => listeners.delete(name) },
+    effect() { return () => {} },
+    provide(name, value) { provided.set(name, value); return () => {} },
+  }
+  apply(ctx, { fetch: async () => { throw new Error('must not call fetch') } })
+  const assembly = await listeners.get('system-prompt/assemble')(
+    { sections: [], contexts: [], tools: [], variables: {} },
+    { agent: { session: { id: 'session-no-key', snapshotEvents: () => [] } } },
+    async () => ({ sections: [], contexts: [], tools: [], variables: {} }),
+  )
+  assert.deepEqual(assembly.contexts, [])
+  assert.deepEqual(provided.get('yootunAgentKnowledge').contextPackStatus('session-no-key'), {
+    status: 'unavailable', reason: 'model_api_key_unavailable',
+  })
 })
 
 test('renders an empty ContextPack as no prompt contribution', () => {

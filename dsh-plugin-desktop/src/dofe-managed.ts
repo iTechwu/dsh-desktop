@@ -12,6 +12,7 @@ import {
   type DofeAccessSettings,
   type DofePluginId,
 } from './dofe-plugins.ts'
+import { KNOWLEDGE_ROUTING_PROMPT } from './knowledge-routing.ts'
 
 export const name = 'dofe-managed'
 export const inject = ['credentials', 'tools', 'systemPrompt', 'desktopRuntime', 'settings']
@@ -70,7 +71,7 @@ export async function apply(ctx: Context): Promise<void> {
   ctx.systemPrompt.section({
     name: 'dofe:managed-access',
     order: 4,
-    text: 'DoFe 托管能力：模型请求统一使用 Models API；企业 Knowledge、Memory、Loadout、ContextPack、Session checkpoint 与知识图谱统一使用 knowledge_* 工具，空间由服务端根据 tenant/team/user 权限解析；GEO、商业工具、单张图片、5–10 秒单镜头短视频或复杂视频使用已加载的 mcp__geoflow__、mcp__georank__、mcp__tools-*、mcp__media__ 与 mcp__openmontage__ 工具（脚本/多镜头/复刻/字幕/配音用 mcp__openmontage__，单镜头直连用 mcp__media__）。启动引导只收集一次 model_api_key，之后不要要求用户再次提供。',
+    text: `DoFe 托管能力：模型请求统一使用 Models API；${KNOWLEDGE_ROUTING_PROMPT} 空间由服务端根据 tenant/team/user 权限解析；GEO、商业工具、单张图片、5–10 秒单镜头短视频或复杂视频使用已加载的 mcp__geoflow__、mcp__georank__、mcp__tools-*、mcp__media__ 与 mcp__openmontage__ 工具（脚本/多镜头/复刻/字幕/配音用 mcp__openmontage__，单镜头直连用 mcp__media__）。启动引导只收集一次 model_api_key，之后不要要求用户再次提供。`,
   })
   let clients: { dispose(): void | Promise<void> }[] = []
   let activeKey: string | undefined
