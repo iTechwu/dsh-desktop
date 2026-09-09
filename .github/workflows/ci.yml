@@ -191,6 +191,11 @@ jobs:
         with:
           node-version: 22.23.2
       - run: corepack enable
+      - name: Prepare node-gyp launcher permissions
+        shell: bash
+        run: |
+          set -euo pipefail
+          find "$HOME/.cache/node/corepack" -path '*/node-gyp/gyp/gyp_main.py' -type f -exec chmod +x {} +
       - name: Fetch sibling DeepSeek Harness checkout
         shell: bash
         run: |
