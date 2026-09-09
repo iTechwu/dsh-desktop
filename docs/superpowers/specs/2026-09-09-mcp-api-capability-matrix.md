@@ -4,6 +4,7 @@
 
 | 能力入口 | 托管路径/工具族 | Desktop 消费方 | 主要 UI 状态 | 认证与失败边界 |
 | --- | --- | --- | --- | --- |
+| Desktop 访问与模型配置 | `/api/desktop/dofe/models`、`/api/desktop/dofe/validate` | yootun-ui 门禁与设置页 | missing、loading、configured、error、conflict | 仅由托管 `MODELS_API_KEY` 凭证链路读写；模型列表失败不提交设置，冲突响应可重试 |
 | GEO 内容与分析 | `geoflow` / `geoflow_*` | content-command、dashboard、website publisher | ready、partial、empty、unavailable、error | 每次请求由 managed credential 注入；缺工具为 unavailable，单来源失败不拖垮其他来源 |
 | GEO 排名与诊断 | `georank` / `georank_*` | content-command、dashboard | ready、partial、unavailable、error | 与 geoflow 隔离；不以零值代替缺失指标 |
 | OpenMontage 视频工作流 | `montage` / `mcp__openmontage__*` | openmontage window、XHS operation | awaiting_confirmation、confirmed_pending_adapter、succeeded、failed | 长任务使用 600s 超时；准备、读取、提交按 Agent 工具限制分阶段暴露 |
@@ -16,6 +17,8 @@
 | 病毒视频/浏览器智能 | `viral-video`、`browser-intelligence` | content-command、sales | ready、partial、unavailable、error | 工具缺失不伪造成功；本地 route 以稳定来源 reason 映射 UI |
 | 小红书运营 | `xhs-operation` / `xhs_*` | XHS operation | awaiting_confirmation、queued、running、succeeded、failed、cancelled | 创建、轮询、取消使用同一 trace；取消需要二次确认，终态只审计一次 |
 | 知识与记忆 | `knowledge_*`、`memory_*` | knowledge | ready、degraded、empty、error；写入需确认 | 统一由 knowledge MCP 处理 tenant/team/user 权限；读取不写审计，remember/forget/confirm 写入审计 |
+| 审计事件与同步 | `/api/desktop/yootun/audit` | audit | ready、offline、cached、auth_required、forbidden、local_error；同步可重试 | 读取与 `retry_sync` 使用同源托管路由；脱机优先展示本地缓存，不把同步失败伪装成空数据 |
+| TOS 媒体上传 | `/_dsh/uploader/pick-file`、`upload`、`uploadStart`、`uploadStatus`、`media`；`media_upload` | XHS operation、Agent 媒体工具 | uploading、queued、succeeded、failed、cancelled、requires_user_login | 通过原生选取、允许清单和 TOCTOU 复查；授权仅交给 Tools MCP，不回传本地路径、预签名 URL 或对象 key |
 
 ## 统一映射规则
 
@@ -23,4 +26,3 @@
 - 写操作只允许 `awaiting_confirmation`、`confirmed_pending_adapter`、`queued`、`running`、`succeeded`、`failed`、`requires_user_login`、`cancelled`；按钮锁定范围只覆盖当前操作。
 - 每个插件的根状态必须提供可读文案、可恢复动作和 `aria-live`/`aria-busy` 语义；局部来源失败不能替换整个页面为不可恢复错误。
 - 凭据仅由托管客户端和公共 MCP gateway 注入；客户端日志、审计事件和截图不得包含 API key、签名 URL、原始请求体或本地文件路径。
-
