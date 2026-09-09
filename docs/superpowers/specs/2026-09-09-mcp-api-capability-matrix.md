@@ -10,6 +10,8 @@
 | OpenMontage 视频工作流 | `montage` / `mcp__openmontage__*` | openmontage window、XHS operation | awaiting_confirmation、confirmed_pending_adapter、succeeded、failed | 长任务使用 600s 超时；准备、读取、提交按 Agent 工具限制分阶段暴露 |
 | 单镜头媒体 | `media` / `mcp__media__*` | XHS operation、媒体上传 | uploading、queued、succeeded、failed、requires_user_login | UI 只展示资源引用和 MIME/大小摘要，不显示凭据、签名 URL 或本地路径 |
 | 商业/平台工具 | `tools` / `mcp__tools-*` | sales、content-command、dashboard | ready、empty、degraded、error | 通过统一 MCP gateway 调用；本地 API 过滤不安全字段并保留稳定 error code |
+| 昨日活动日报 | `/api/desktop/yootun/daily-report`；`yootun_daily_report` | daily-report | ready、empty、unavailable | 只读取本地 session persistence；工具能力按 schema 映射来源，不因单个来源缺失而伪造活动数据 |
+| 模型用量与 FinOps | `/api/desktop/yootun/finops`、`/api/desktop/yootun/finops/series`；`yootun_finops_usage`、`yootun_finops_series` | finops | ready、unavailable、error；预算可独立降级 | 仅由托管 `MODELS_API_KEY` 访问用量与日聚合接口；范围和粒度先校验，预算源失败不清空已成功的用量摘要 |
 | 供应链监控 | `supply-chain` / `supply_*` | supply-watch | ready、warning、empty、unavailable、error | 风险来源独立降级；确认动作进入统一 pending/succeeded/failed 生命周期 |
 | 人才发现 | `talent-discovery` / `talent_*` | recruiter | ready、empty、degraded、error | 搜索与写入动作分离；写操作需要确认，登录失效映射为 requires_user_login |
 | 线索发现与监测 | `lead-discovery`、`lead-monitor`、`hotspot-discovery` | lead-discovery、sales | ready、filtered_empty、unavailable、error | 只返回安全字段；分页、已存线索和发现失败互相隔离 |
