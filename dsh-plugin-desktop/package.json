@@ -1,6 +1,6 @@
 {
   "name": "dsh-plugin-desktop",
-  "version": "2.0.7-beta.2",
+  "version": "2.0.7-beta.3",
   "description": "Yootun-Agent: an Electron shell composed as a DeepSeek Harness Cordis plugin",
   "license": "MIT",
   "publishConfig": {
@@ -434,6 +434,7 @@
     "dsh-community-market": "0.1.0-dev.0",
     "dsh-better-sidebar": "0.15.2",
     "dshmarket": "1.39.0",
+    "fs-ext": "2.1.1",
     "koffi": "3.1.5",
     "node-addon-require-builtin": "^0.1.4",
     "node-pty": "1.2.0-beta.15",
@@ -524,7 +525,7 @@
         "build/app-icon-mac.png",
         "build/tray-iconTemplate.png",
         "build/tray-iconTemplate@2x.png",
-        "node_modules/@agents-anywhere/dsh-bridge-next/lib/bundled-connector/**"
+        "node_modules/fs-ext/**"
       ],
       "files": [
         "build/app-icon.png",

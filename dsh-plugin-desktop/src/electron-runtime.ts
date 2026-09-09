@@ -912,6 +912,11 @@ export class ElectronDesktopRuntime implements DesktopRuntime {
     const status = this.contributedTrayItems('status')
     const template: Electron.MenuItemConstructorOptions[] = [
       { label: desktopTrayLabel(this.locale, 'openDesktop', spec.productName), click: show },
+      {
+        label: desktopTrayLabel(this.locale, 'switchExtendedWindow'),
+        enabled: this.platformStrategy.canToggleShellMode,
+        click: () => { changeMode(spec.mode === 'extended' ? 'compatibility' : 'extended') },
+      },
     ]
     if (tools.length > 0) template.push({ type: 'separator' }, ...tools)
     if (profiles.length > 0) template.push({ type: 'separator' }, ...profiles)
