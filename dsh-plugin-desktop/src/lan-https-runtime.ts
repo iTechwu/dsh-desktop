@@ -128,14 +128,23 @@ export class DesktopLanHttpsRuntime {
     this.preparation = (async () => {
       try {
         const prepared = await prepareCertificate()
-        this.certificate = prepared.certificate
         this.failureCode = prepared.failureCode ?? this.failureCode
+        if (prepared.certificate === undefined) {
+          // A resolved response without a certificate is still a failure:
+          // clear the cached promise so the next setEnabled(true) retries.
+          this.preparation = undefined
+          return
+        }
+        this.certificate = prepared.certificate
         this.createIngress()
       } catch (cause) {
+        this.preparation = undefined
         const code = (cause as NodeJS.ErrnoException | null)?.code
         this.failureCode = typeof code === 'string' && code.length > 0
           ? code
-          : cause instanceof Error && cause.name.length > 0 ? cause.name : 'certificate-unavailable'
+          : cause instanceof Error && cause.name.length > 0 && cause.name !== 'Error'
+            ? cause.name
+            : 'certificate-unavailable'
       }
     })()
     await this.preparation
