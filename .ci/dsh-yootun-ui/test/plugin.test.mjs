@@ -57,6 +57,10 @@ test('bundles Yootun branding, settings, and a mandatory credential gate', async
   assert.match(source, /await mutateCurrentSettings\(settingsApi, 'llm-deepseek'/u)
   assert.match(source, /await mutateCurrentSettings\(settingsApi, 'agent-default-model'/u)
   assert.match(source, /await mutateCurrentSettings\(settingsApi, ACCESS_NS/u)
+  assert.match(source, /\.yu-card\{[^}]*border-radius:6px/u)
+  assert.match(source, /\.yu-header\{[^}]*padding:16px 24px/u)
+  assert.match(source, /\.yu-form\{[^}]*padding:16px 24px 24px/u)
+  assert.match(source, /\.yu-form\{padding-left:16px;padding-right:16px/u)
 })
 
 test('guides credential setup and protects credential removal', async () => {
