@@ -125,7 +125,7 @@ export class DesktopLanHttpsRuntime {
     if (currentIngress !== undefined) return currentIngress
     const prepareCertificate = this.prepareCertificate
     if (prepareCertificate === undefined) return undefined
-    this.preparation ??= (async () => {
+    this.preparation = (async () => {
       try {
         const prepared = await prepareCertificate()
         this.certificate = prepared.certificate

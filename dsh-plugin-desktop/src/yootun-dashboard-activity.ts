@@ -171,7 +171,10 @@ async function readSessionEvents(
       MAX_EVENTS_PER_SESSION + 1,
       signal === undefined ? {} : { signal },
     )
-    return result.events
+    // Subprocess handles return a result envelope; pre-0.1.5 callers (and test
+    // doubles) sometimes return the bare array. Accept both.
+    if (Array.isArray(result)) return result as readonly SessionEvent[]
+    return (result as { events?: readonly SessionEvent[] }).events ?? []
   } finally {
     await handle.close()
   }

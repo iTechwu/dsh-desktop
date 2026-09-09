@@ -12,6 +12,7 @@ export type DesktopTrayLabelKey =
   | 'exportDiagnostics'
   | 'exitSafeMode'
   | 'openDesktop'
+  | 'switchExtendedWindow'
   | 'openTerminal'
   | 'profile'
   | 'quit'
@@ -33,6 +34,7 @@ const labels: Record<DesktopLocale, Record<DesktopTrayLabelKey, (value: string) 
     exportDiagnostics: () => 'Export Diagnostics…',
     exitSafeMode: () => 'Exit Safe Mode and Restart…',
     openDesktop: productName => `Open ${productName}`,
+    switchExtendedWindow: () => 'Switch to Extended Window',
     openTerminal: () => 'Open DSH Terminal',
     profile: profileName => `Profile: ${profileName}`,
     quit: () => 'Quit',
@@ -53,6 +55,7 @@ const labels: Record<DesktopLocale, Record<DesktopTrayLabelKey, (value: string) 
     exportDiagnostics: () => '导出诊断信息…',
     exitSafeMode: () => '退出安全模式并重启…',
     openDesktop: productName => `打开 ${productName}`,
+    switchExtendedWindow: () => '切换到扩展窗口',
     openTerminal: () => '打开 DSH 终端',
     profile: profileName => `Profile：${profileName}`,
     quit: () => '退出',

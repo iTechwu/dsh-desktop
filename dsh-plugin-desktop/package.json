@@ -523,8 +523,7 @@
       "asarUnpack": [
         "build/app-icon-mac.png",
         "build/tray-iconTemplate.png",
-        "build/tray-iconTemplate@2x.png",
-        "node_modules/@agents-anywhere/dsh-bridge-next/lib/bundled-connector/**"
+        "build/tray-iconTemplate@2x.png"
       ],
       "files": [
         "build/app-icon.png",

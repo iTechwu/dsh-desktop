@@ -46,7 +46,7 @@ export interface DesktopSettingsSectionInjected {
   readonly setMode: (mode: DesktopShellSettings['mode']) => Promise<void>
   readonly desktopSettings: SettingsScope<DesktopShellSettings>
   readonly notificationSettings: SettingsScope<DesktopNotificationSettings>
-  readonly searchCredentials: Pick<ClientRemote['credentials'], 'describe' | 'set' | 'unset'>
+  readonly searchCredentials?: Pick<ClientRemote['credentials'], 'describe' | 'set' | 'unset'>
 }
 
 /** Renderer-composed props for the official settings section entry. */
@@ -504,7 +504,7 @@ export function DesktopSettingsSection({
         </p>
       )}
 
-      <DeepSeekSearchSettings credentials={searchCredentials} t={t} />
+      {searchCredentials !== undefined && <DeepSeekSearchSettings credentials={searchCredentials} t={t} />}
 
       <section className="dshDesktopSettingsGroup" aria-labelledby="dsh-desktop-profile-title">
         <div>
