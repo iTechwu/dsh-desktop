@@ -24,5 +24,7 @@
 
 - 数据来源只允许 `ready`、`partial`、`empty`、`degraded`、`unavailable`、`error` 六类语义；没有数据时使用 `null` 或空列表，禁止用零值伪造成功。
 - 写操作只允许 `awaiting_confirmation`、`confirmed_pending_adapter`、`queued`、`running`、`succeeded`、`failed`、`requires_user_login`、`cancelled`；按钮锁定范围只覆盖当前操作。
+- 兼容协议中的 `adapter_pending` 仅用于内容发布平台状态及历史 action payload；客户端将它与 `confirmed_pending_adapter` 映射到同一“已确认、等待适配”视觉语义，新建写操作统一输出 `confirmed_pending_adapter`。
+- 业务状态与 HTTP 状态分层：数据 route 即使返回 HTTP 200，也必须读取 body 的 `status`；访问门禁、审计和输入校验则使用 4xx/5xx 表达认证、参数或上游失败，UI 需保留稳定的 `reason`/`error` 文案映射。
 - 每个插件的根状态必须提供可读文案、可恢复动作和 `aria-live`/`aria-busy` 语义；局部来源失败不能替换整个页面为不可恢复错误。
 - 凭据仅由托管客户端和公共 MCP gateway 注入；客户端日志、审计事件和截图不得包含 API key、签名 URL、原始请求体或本地文件路径。
