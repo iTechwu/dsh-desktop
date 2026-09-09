@@ -166,6 +166,24 @@ test('maps knowledge structure and action hierarchy to desktop theme tokens', as
   assert.doesNotMatch(source, /h\("small", null, selectedNode\.status\)/u)
 })
 
+test('keeps knowledge state supplements on shared semantic theme aliases', async () => {
+  const source = await readFile(new URL('src/client.js', root), 'utf8')
+  const stateCss = source.match(/const stateCss\s*=\s*`([^`]*)`/u)?.[1]
+
+  assert.ok(stateCss)
+  assert.doesNotMatch(stateCss, /#[0-9a-f]{3,8}\b/iu)
+  for (const alias of [
+    '--dsw-alias-brand-primary',
+    '--dsw-alias-label-tertiary',
+    '--dsw-alias-state-warn-primary',
+    '--dsw-alias-border-l1',
+    '--dsw-alias-bg-layer-1',
+    '--dsw-alias-label-primary-foreground',
+  ]) {
+    assert.match(stateCss, new RegExp(`var\\(${alias}\\)`, 'u'))
+  }
+})
+
 test('announces local empty and degraded knowledge states', async () => {
   const source = await readFile(new URL('src/client.js', root), 'utf8')
 

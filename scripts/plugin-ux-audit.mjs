@@ -48,6 +48,11 @@ function findLegacySemanticColors(source) {
   return [...new Set(source.match(/#(?:22c55e|ef4444|f59e0b|31a46c|d9902f)\b/giu) || [])]
 }
 
+function findHardcodedStateColors(source) {
+  const stateCss = source.match(/const stateCss\s*=\s*`([^`]*)`/u)?.[1]
+  return [...new Set(stateCss?.match(/#[0-9a-f]{3,8}\b/giu) || [])]
+}
+
 function hasCanonicalHeader(source) {
   return /\.[a-z0-9-]*header\{[^}]*min-height:72px/u.test(source)
 }
@@ -127,6 +132,11 @@ for (const name of ciEntries) {
       }
       for (const color of findLegacySemanticColors(clientArtifact)) {
         failures.push(`${name}/${relativePath}: ${color} bypasses the shared semantic theme aliases`)
+      }
+      if (name === 'dsh-yootun-knowledge') {
+        for (const color of findHardcodedStateColors(clientArtifact)) {
+          failures.push(`${name}/${relativePath}: ${color} hardcodes a knowledge state supplement color`)
+        }
       }
     } catch (error) {
       if (error?.code !== 'ENOENT') throw error
