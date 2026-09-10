@@ -11,7 +11,9 @@ permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
+  # Include the commit so queued release candidates cannot replace one
+  # another before a runner becomes available.
+  group: ci-${{ github.workflow }}-${{ github.ref }}-${{ github.sha }}
   # Every run produces release-validation evidence; never discard a queued or
   # active macOS/Windows build when a later commit lands on the same branch.
   cancel-in-progress: false
