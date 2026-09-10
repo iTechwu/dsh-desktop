@@ -1518,7 +1518,7 @@ window.__ModuleLoader__.load({
 				aiConsentBusyRef.current = true;
 				setAiConsentBusy(true);
 				call("/plugin-console/ai-consent", { jobId, approved }).then(
-					() => { if (!approved) setMessage(t("failed") + "：已取消本地 AI 兜底（不会调用模型 API）"); pollJob(jobId); },
+					() => { setJobs((prev) => ({ ...prev, [jobId]: { ...prev[jobId], status: approved ? "installing" : "cancelled", stage: approved ? "installing" : "cancelled" } })); if (!approved) setMessage(t("failed") + "：已取消本地 AI 兜底（不会调用模型 API）"); pollJob(jobId); },
 					(error) => setMessage(t("failed") + "：" + friendlyGithubError(error).message),
 				).finally(() => { aiConsentBusyRef.current = false; setAiConsentBusy(false); });
 			};
