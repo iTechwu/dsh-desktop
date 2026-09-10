@@ -942,7 +942,15 @@ window.__ModuleLoader__.load({
 			react.useEffect(() => {
 				if (!sourcesOpen) return undefined;
 				const focusFrame = window.requestAnimationFrame(() => (modalCardRef.current?.querySelector('button[aria-label]:not([disabled])') || modalCardRef.current?.querySelector('button:not([disabled]),input:not([disabled]),textarea:not([disabled]),select:not([disabled]),a[href]'))?.focus?.());
-				return () => window.cancelAnimationFrame(focusFrame);
+				const onModalKeyDown = (event) => {
+					if (event.key !== "Tab") return;
+					const items = Array.from(modalCardRef.current?.querySelectorAll('button:not([disabled]),input:not([disabled]),textarea:not([disabled]),select:not([disabled]),a[href]') ?? []);
+					const first = items[0]; const last = items[items.length - 1];
+					if (event.shiftKey && document.activeElement === first) { event.preventDefault(); first?.focus?.(); }
+					else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus?.(); }
+				};
+				document.addEventListener("keydown", onModalKeyDown, true);
+				return () => { window.cancelAnimationFrame(focusFrame); document.removeEventListener("keydown", onModalKeyDown, true); };
 			}, [sourcesOpen]);
 			// registry 行内编辑
 			const [editReg, setEditReg] = react.useState(null);
