@@ -159,7 +159,7 @@ window.__ModuleLoader__.load({
       const shellRef = useRef(null)
       const loadingRef = useRef(false)
       const busyRef = useRef(false)
-      useEffect(() => { if (!visible) return undefined; const controller = new AbortController(); loadingRef.current = true; setError(''); setLoading(true); void load(controller.signal).then(value => { setData(value); setSelectedId(current => current || value.articles?.[0]?.articleId || null) }).catch(cause => { if (cause?.name !== 'AbortError') setError(cause.message) }).finally(() => { if (!controller.signal.aborted) { loadingRef.current = false; setLoading(false) } }); return () => controller.abort() }, [visible, revision])
+      useEffect(() => { if (!visible) return undefined; const controller = new AbortController(); loadingRef.current = true; setError(''); setLoading(true); void load(controller.signal).then(value => { if (value?.status === 'error') throw new Error('刷新失败，当前仍显示上次数据'); setData(value); setSelectedId(current => current || value.articles?.[0]?.articleId || null) }).catch(cause => { if (cause?.name !== 'AbortError') setError(cause.message) }).finally(() => { if (!controller.signal.aborted) { loadingRef.current = false; setLoading(false) } }); return () => controller.abort() }, [visible, revision])
       useEffect(() => { if (!visible) return undefined; const key = event => { if (event.key === 'Escape') closeOverlay() }; window.addEventListener('keydown', key); return () => window.removeEventListener('keydown', key) }, [visible])
       useEffect(() => { if (visible) requestAnimationFrame(() => shellRef.current?.focus?.()) }, [visible])
       if (!visible) return null
