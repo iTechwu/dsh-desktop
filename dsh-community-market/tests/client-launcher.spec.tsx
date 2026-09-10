@@ -34,6 +34,7 @@ describe('community market launcher', () => {
       actions: instance.actions,
       useStore,
       t,
+      usePanelInfo: selector => selector({ activePanelId: null }),
       useSessions: (() => undefined) as MarketLauncherProps['useSessions'],
       useSessionPendingInteraction: (() => undefined) as MarketLauncherProps['useSessionPendingInteraction'],
       useWorkspaces: (() => undefined) as MarketLauncherProps['useWorkspaces'],
