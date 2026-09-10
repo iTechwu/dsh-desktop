@@ -575,8 +575,8 @@ window.__ModuleLoader__.load({
 		}
 		async function call(path, body) {
 			const response = await fetch(path, body === undefined
-				? {}
-				: { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+				? { credentials: "same-origin", redirect: "error", cache: "no-store", signal: AbortSignal.timeout(30000) }
+				: { method: "POST", credentials: "same-origin", redirect: "error", cache: "no-store", signal: AbortSignal.timeout(30000), headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
 			let data = null;
 			try {
 				data = await response.json();
@@ -597,7 +597,7 @@ window.__ModuleLoader__.load({
 		async function githubFetch(url) {
 			const response = await fetch(url, {
 				headers: { accept: "application/vnd.github+json" },
-				signal: AbortSignal.timeout(15000),
+				 redirect: "error", cache: "no-store", signal: AbortSignal.timeout(15000),
 			});
 			if (response.status === 403) throw new Error("GitHub 匿名接口限流已用尽，请稍后再试");
 			if (!response.ok) throw new Error("GitHub 请求失败 (HTTP " + response.status + ")");
@@ -613,13 +613,13 @@ window.__ModuleLoader__.load({
 		async function fetchRawText(repo, branch, file, source = "github") {
 			if (source === "gitee") {
 				try {
-					const res = await fetch(`https://gitee.com/${repo}/raw/${branch}/${file}`, { signal: AbortSignal.timeout(15000) });
+					const res = await fetch(`https://gitee.com/${repo}/raw/${branch}/${file}`, { redirect: "error", cache: "no-store", signal: AbortSignal.timeout(15000) });
 					if (!res.ok) return null;
 					return await res.text();
 				} catch { return null; }
 			}
 			const attempts = RAW_CANDIDATES.map((build) => fetch(build(repo, branch, file), {
-				signal: AbortSignal.timeout(15000),
+				redirect: "error", cache: "no-store", signal: AbortSignal.timeout(15000),
 			}).then((res) => {
 				if (!res.ok) throw new Error("HTTP " + res.status);
 				return res.text();
