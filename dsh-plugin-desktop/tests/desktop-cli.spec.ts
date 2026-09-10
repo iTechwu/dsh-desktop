@@ -49,6 +49,20 @@ describe('packaged dsh bootstrap', () => {
     expect(load).toHaveBeenCalledOnce()
   })
 
+  it('prints the packaged DSH version without booting a Profile', async () => {
+    const output = vi.spyOn(process.stdout, 'write').mockImplementation(() => true)
+    const load = vi.fn(async () => {})
+    const argv = ['/Applications/Yootun-Agent', '/app.asar/lib/desktop-cli.js', '--version']
+
+    try {
+      await runDesktopDshCli({}, load, argv)
+      expect(output).toHaveBeenCalledWith('0.1.5-alpha.1\n')
+      expect(load).not.toHaveBeenCalled()
+    } finally {
+      output.mockRestore()
+    }
+  })
+
   it('marks the process as packaged only while loading the packaged DSH CLI', async () => {
     const environment = { DSH_HOME: join(tmpdir(), 'dsh-packaged-cli-marker') }
     const argv = ['/Applications/Yootun-Agent', '/app.asar/lib/desktop-cli.js', '--profile', 'headless', '--help']
