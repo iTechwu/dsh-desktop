@@ -56,7 +56,7 @@ async function mutate(body) { const response = await fetch(PATH, { method: 'POST
 function number(value, fallback = 0) { return Number.isFinite(Number(value)) ? Number(value) : fallback }
 function list(value) { return Array.isArray(value) ? value.filter(item => typeof item === 'string').slice(0, 8) : [] }
 function sourceState(value) { return ['ready', 'empty', 'unavailable', 'error'].includes(value) ? value : 'unavailable' }
-function statusText(status, t) { return status === 'awaiting_confirmation' ? t('waiting') : status === 'confirmed_pending_adapter' || status === 'adapter_pending' ? t('confirmed') : status === 'succeeded' ? t('succeeded') : status === 'failed' ? t('failed') : status === 'requires_user_login' ? t('requiresLogin') : t('dismissed') }
+function statusText(status, t) { return status === 'awaiting_confirmation' ? t('waiting') : status === 'confirmed_pending_adapter' || status === 'adapter_pending' ? t('confirmed') : status === 'succeeded' ? t('succeeded') : status === 'failed' ? t('failed') : status === 'requires_user_login' ? t('requiresLogin') : status === 'dismissed' ? t('dismissed') : t('unknown') }
 function enumKey(value) { return String(value || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '_') }
 function enumText(value, labels, t) { const key = labels[enumKey(value)]; return key ? t(key) : t('unknown') }
 function stageText(value, t) { return enumText(value, { sourced: 'stageSourced', screening: 'stageScreening', interview: 'stageInterview', offer: 'stageOffer', hired: 'stageHired', archived: 'stageArchived' }, t) }

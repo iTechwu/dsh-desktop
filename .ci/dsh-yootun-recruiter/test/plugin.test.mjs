@@ -66,6 +66,7 @@ test('localizes recruiter stages and status enums before rendering them', async 
   assert.match(source, /employmentText\(role\.employmentType, t\)/u)
   assert.match(source, /feedbackText\(candidate\.feedbackStatus \|\| 'none', t\)/u)
   assert.match(source, /status === 'confirmed_pending_adapter' \|\| status === 'adapter_pending'/u)
+  assert.match(source, /status === 'dismissed' \? t\('dismissed'\) : t\('unknown'\)/u)
   assert.match(source, /\.yr-status-adapter_pending i/u)
   assert.doesNotMatch(source, /h\('strong', null, item\), h\('span'/u)
 })
