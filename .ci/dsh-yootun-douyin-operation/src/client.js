@@ -45,6 +45,7 @@ const copy = {
     deleteAccount: '删除账号', deleteConfirm: '确认删除该账号？将清除本机登录状态与远端作品数据，账号记录会保留为墓碑。',
     confirmYes: '确认删除', confirmNo: '取消', deleteBlocked: '删除失败，请重试',
     deletePending: '正在删除…', deleteRetry: '重试删除', deleteFailed: '删除失败',
+    runActive: '该账号正在采集中，请先结束采集再删除',
     fanCount: '粉丝', collectAll: '采集本账号全部', refresh: '刷新', collecting: '采集中',
     collectHint: '点击「采集本账号全部」开始', sessionRequiredForCollect: '登录已过期或缺失，请先重新扫码再采集',
     progressCollect: '采集进度', progressIngest: '入库进度', progressDone: '采集完成',
@@ -77,6 +78,7 @@ const copy = {
     deleteAccount: 'Remove account', deleteConfirm: 'Remove this account? Local sign-in state and remote work data are cleared; the account record stays as a tombstone.',
     confirmYes: 'Remove', confirmNo: 'Cancel', deleteBlocked: 'Remove failed, retry',
     deletePending: 'Removing…', deleteRetry: 'Retry removal', deleteFailed: 'Removal failed',
+    runActive: 'This account is still collecting — finish or cancel the run first',
     fanCount: 'Followers', collectAll: 'Collect all works', refresh: 'Refresh', collecting: 'Collecting',
     collectHint: 'Press “Collect all works” to start', sessionRequiredForCollect: 'Session expired or missing — scan again before collecting',
     progressCollect: 'Collecting', progressIngest: 'Ingesting', progressDone: 'Done',
@@ -114,6 +116,9 @@ const ERROR_COPY = Object.freeze({
   probe_failed: 'probeFailed',
   login_timeout: 'loginTimeout',
   login_failed: 'loginFailed',
+  // 删除前置：该账号仍有进行中的 run（tools 拒绝 RUN_STILL_ACTIVE）。
+  // 未登记的 code 会原样渲染成英文大写码，因此这里必须显式映射。
+  RUN_STILL_ACTIVE: 'runActive',
 })
 
 async function post(body) {
@@ -435,8 +440,10 @@ function Overlay({ t }) {
       }
       const remote = await post({ action: 'account.removeRemote', accountId })
       if (remote.status !== 'ready') {
+        // 在途 run 会拒绝远端删除：这不是清理失败，而是「先结束采集」的前置条件，
+        // 因此给专属文案，但同样保留账号与重试入口（远端数据未被触碰）。
         setDeleteState(DELETE_LIFECYCLE.cleanupFailed)
-        setError('deleteBlocked')
+        setError(remote.reason === 'RUN_STILL_ACTIVE' ? 'RUN_STILL_ACTIVE' : 'deleteBlocked')
         return
       }
       if (selected === accountId) { setSelected(null); setWorks([]) }

@@ -14,6 +14,7 @@ import {
   collectWorkDetail,
   collectWorkList,
   fetchJson,
+  MAX_EXPECTED_WORK_COUNT,
 } from '../src/collector.js'
 
 const FIXTURE_DIR = new URL('./fixtures/', import.meta.url)
@@ -375,6 +376,28 @@ test('账号采集：单作品失败记入 failures，不阻塞其余作品', as
   assert.equal(result.failures.length, 2)
   assert.ok(result.failures[0].reason)
   assert.ok(gotos >= 3)
+})
+
+test('账号采集：作品数超出 expectedWorkCount 上限时提前失败', async () => {
+  // tools 侧 schema 上限即 MAX_EXPECTED_WORK_COUNT；超限会在 run_set_list_meta 被
+  // 确定性拒绝，因此必须在展开逐稿详情之前就抛错，而不是白跑完全部详情。
+  const works = Array.from({ length: MAX_EXPECTED_WORK_COUNT + 1 }, (_, index) => makeWork(`70000000000000${String(index).padStart(4, '0')}`))
+  let detailRequests = 0
+  const page = fakePage({
+    jsonRoutes: {
+      [WORK_LIST_PATH]: { status_code: 0, aweme_list: works, has_more: false, max_cursor: 999, cursor: 999 },
+    },
+  })
+  const originalEvaluate = page.evaluate
+  page.evaluate = async (fn, arg) => {
+    if (String(arg?.url || '').includes('work-detail')) detailRequests += 1
+    return originalEvaluate(fn, arg)
+  }
+  await assert.rejects(
+    () => collectAccountWorks(page, { intervalMs: 0 }),
+    error => error.message === 'expected_work_count_out_of_range',
+  )
+  assert.equal(detailRequests, 0, '超限时不得再逐稿打开详情页')
 })
 
 test('fetchJson：HTTP 200 但非 JSON / 非 200 均判为失败', async () => {

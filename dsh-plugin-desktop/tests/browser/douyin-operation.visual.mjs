@@ -278,13 +278,15 @@ try {
   await page.getByText('采集完成').first().waitFor()
 
   // 10) 子页面：先关详情再关 overlay，焦点最终回到触发按钮。
+  // 本步沿用第 9 步的 1024×800 视口（不再重新 open），因此证据文件名必须与真实视口一致，
+  // 否则审阅者会按文件名误判布局宽度（DS-2，2026-09-10 修订）。
   await page.locator('.ydo-table-row').first().dblclick()
   const detail = page.locator('.ydo-modal-overlay[role="dialog"]')
   await detail.waitFor()
   await page.getByText('数据缺口').waitFor()
   await page.getByText('推荐').first().waitFor()
   await assertSurface()
-  await screenshot('1440-work-detail.png')
+  await screenshot('1024-work-detail.png')
   await page.keyboard.press('Escape')
   await detail.waitFor({ state: 'detached' })
   assert.equal(await overlay().count(), 1, 'Escape 必须先关子页面')

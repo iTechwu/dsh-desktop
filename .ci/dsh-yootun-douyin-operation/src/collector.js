@@ -44,6 +44,10 @@ export const ITEM_MGET_FIELDS = 'metrics,review,play_info,dou_plus,integrated_in
 export const WORK_MANAGE_URL = 'https://creator.douyin.com/creator-micro/content/manage'
 export const WORK_DETAIL_URL = workId => `https://creator.douyin.com/creator-micro/work-management/work-detail/${workId}`
 
+// 注意：这些是**响应拦截用的 URL 片段**，不是可直接请求的完整路径——
+// `collectWorkDetail` 用 `url.includes(fragment)` 匹配，所以 `progress` 只写后缀即可
+// 命中真实 URL。抓取兜底用的完整路径（含 `/janus/douyin/creator` 前缀）定义在
+// 上面的 `*_PATH` 常量里，两者不要混用：`progress` 用完整 PROGRESS_PATH。
 export const DETAIL_TARGETS = {
   compare: '/data/diagnose/item_compare',
   source: '/data/item/play/source',
@@ -56,6 +60,11 @@ export const DETAIL_TARGETS = {
 export const DEFAULT_PAGE_SIZE = 12
 export const MAX_PAGES_LIMIT = 1000
 export const PAGE_INTERVAL_MS = 1000
+// tools 侧 `douyin_collect_run_set_list_meta.expectedWorkCount` 的 schema 上限就是 10000，
+// 超限会在 `run_set_list_meta` 处被确定性拒绝（属 DETERMINISTIC_ERRORS，不重试）。
+// 默认分页上限 1000 页 × 12 条 = 12000 条，**理论上可达**，因此这里在列表阶段就拦截：
+// 直接以稳定码失败，而不是先跑完所有详情再被服务端拒绝。
+export const MAX_EXPECTED_WORK_COUNT = 10_000
 export const ITEM_GENRES = [1, 2, 3, 4, 5, 8]
 
 
@@ -304,6 +313,11 @@ export async function collectAccountWorks(page, {
 } = {}) {
   await page.goto(WORK_MANAGE_URL, { waitUntil: 'domcontentloaded', timeout: 60_000 })
   const list = await collectWorkList(page, { maxPages, ...workListOptions })
+  if (list.works.length > MAX_EXPECTED_WORK_COUNT) {
+    // 超出 tools 侧 expectedWorkCount 上限：此时无论怎么采集都不可能诚实结算完成，
+    // 因此在展开逐稿详情（耗时最长的一段）之前就中止。
+    throw new Error('expected_work_count_out_of_range')
+  }
   const profile = await collectAccountProfile(page)
 
   let performance = new Map()

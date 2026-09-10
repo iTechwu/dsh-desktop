@@ -4,7 +4,7 @@
 // → 轮询 `sessionid`/`sessionid_ss` cookie → 命中即保存 storage_state 到设备端。
 // 无 Cookie 粘贴入口，无 Cookie 外发，无 stealth/反检测参数（docs/0909/douyin §6/§13）。
 
-import { launchChrome, resolveSystemChrome } from './chrome.js'
+import { LAUNCH_ARGS, launchChrome, resolveSystemChrome } from './chrome.js'
 import {
   clearLocalCredentials,
   ensureProfileDir,
@@ -163,7 +163,8 @@ export async function probeSession({
       channel: chromePath.channel,
       executablePath: chromePath.path,
       headless: true,
-      args: ['--no-sandbox', '--disable-dev-shm-usage'],
+      // 与登录/采集共用同一份最小启动参数，避免探测与采集的浏览器指纹不一致。
+      args: [...LAUNCH_ARGS],
     })
     const context = await browser.newContext({ storageState, viewport: { width: 1440, height: 900 } })
     try {

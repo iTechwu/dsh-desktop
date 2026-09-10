@@ -235,7 +235,17 @@ async function handleRemoveLocal(deps, ctx, body) {
   if (!accountId) return { status: 'error', reason: 'account_id_required' }
   // 删除状态机第 2 步：设备先清本地 Profile/storage_state，成功后才允许请求远端删除。
   const result = await deps.removeLocalAccount({ accountId, root: deps.root })
-  return { status: 'ready', accountId, localCleared: true, cleared: result.cleared }
+  const cleared = {
+    profile: result?.cleared?.profile === true,
+    storageState: result?.cleared?.storageState === true,
+  }
+  if (!cleared.profile || !cleared.storageState) {
+    // 任一残留都意味着设备上仍有可用登录态。此时若继续走远端删除，就会出现
+    // 「远端数据已删、设备仍能登录」的越界状态，且 UI 只认 status，会误报已删除。
+    // 因此这里必须显式失败（README §9：本地清理失败阻断远端删除），由 UI 给出重试入口。
+    return { status: 'error', reason: 'cleanup_failed', accountId, localCleared: false, cleared }
+  }
+  return { status: 'ready', accountId, localCleared: true, cleared }
 }
 
 async function handleRemoveRemote(deps, ctx, body) {

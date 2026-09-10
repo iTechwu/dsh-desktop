@@ -28,6 +28,7 @@ const ALLOWED_ERROR_CODES = new Set([
   'RUN_NOT_FOUND',
   'RUN_ACCOUNT_MISMATCH',
   'RUN_NOT_RUNNING',
+  'RUN_STILL_ACTIVE',
   'RUN_LIST_META_REQUIRED',
   'HEARTBEAT_SEQ_REGRESSED',
   'INVALID_IDEMPOTENCY_KEY',
@@ -57,9 +58,19 @@ export class ToolsCallError extends Error {
   }
 }
 
+/**
+ * 解析宿主注入的工具 schema。
+ *
+ * 宿主把工具名限定为 `mcp__<client>__<tool>`；这里要求**分段边界**匹配
+ * （整名相等，或以 `__` 相接为后缀），避免 `douyin_account_list_extra`
+ * 这类同前缀工具被误判成 `douyin_account_list`。
+ */
 export function findTool(ctx, name) {
   const schemas = ctx?.tools?.schemas?.() || []
-  return schemas.find(item => String(item?.name || '').endsWith(name)) || null
+  return schemas.find((item) => {
+    const candidate = String(item?.name || '')
+    return candidate === name || candidate.endsWith(`__${name}`)
+  }) || null
 }
 
 export function requireTool(ctx, name) {
@@ -136,5 +147,11 @@ export const heartbeatIdempotencyKey = (runId, seq) => `douyin:heartbeat:${runId
 export const ingestIdempotencyKey = (runId, batchNo) => `douyin:ingest:${runId}:${batchNo}`
 export const runFinishIdempotencyKey = runId => `douyin:run_finish:${runId}`
 export const runCancelIdempotencyKey = runId => `douyin:run_cancel:${runId}`
+// 账号保存/删除的键带**时间戳**而不是固定值，这是刻意为之：
+// - `account_save` 是 upsert，昵称/粉丝数会变；固定键会让第二次保存命中历史回执、
+//   把新资料吞掉；`account_remove` 是一次性单向清理，账号删除后可能被重新登录创建，
+//   固定键同样会把新数据的清理跳过。
+// - 时间戳让「用户每点一次 = 一次独立操作」，重试由服务端幂等/upsert 语义兜底，
+//   不依赖客户端去重（当前也没有带重试的调用路径会因此重复）。
 export const accountSaveIdempotencyKey = (accountId, stamp = Date.now()) => `douyin:account:${accountId}:${stamp}`
 export const accountRemoveIdempotencyKey = (accountId, stamp = Date.now()) => `douyin:account_remove:${accountId}:${stamp}`

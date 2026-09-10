@@ -1,7 +1,12 @@
 // 分批入库与运行恢复（设备端编排）。
 //
 // 调用序列（docs/0909/douyin §9）：run_start → run_set_list_meta → ingest_batch(≤50/批)
-// → heartbeat（并行续租）→ run_finish；异常时 run_cancel 兜底。
+// → run_finish；异常时 run_cancel 兜底。
+//
+// 心跳：`heartbeat()` 已按 tools 契约实现，但 **V1 采集流程未启用周期性心跳**，
+// 编排循环不会自动调用它。租约续期完全依赖 `ingest_batch`（每批写入都会刷新 run 租约），
+// 因此只要批与批之间不超过租约 TTL 就不会被回收；将来若需要短租约或长间隔批次，
+// 再把 `heartbeat()` 接进编排循环。
 //
 // 幂等与恢复契约：
 // - `runAttemptId` 每次用户点击采集新生成并持久化；网络重试/进程恢复复用同一 UUID，
@@ -14,7 +19,14 @@
 import { randomUUID } from 'node:crypto'
 
 import { getAccount, updateAccount } from './state.js'
-import { runStartIdempotencyKey } from './tools-client.js'
+import {
+  heartbeatIdempotencyKey,
+  ingestIdempotencyKey,
+  listMetaIdempotencyKey,
+  runCancelIdempotencyKey,
+  runFinishIdempotencyKey,
+  runStartIdempotencyKey,
+} from './tools-client.js'
 
 export const BATCH_SIZE = 50
 export const MAX_BATCH_NO = 100000
@@ -116,7 +128,7 @@ export function createIngestClient({
       runId,
       expectedWorkCount,
       listComplete,
-      idempotencyKey: `douyin:list_meta:${runId}`,
+      idempotencyKey: listMetaIdempotencyKey(runId),
     })
     listMeta = { expectedWorkCount, listComplete }
     emit({ phase: 'list_meta', expectedWorkCount, listComplete })
@@ -126,6 +138,9 @@ export function createIngestClient({
   /**
    * 心跳：序号单调递增并持久化；相同序号重试幂等，序号回退会被服务端拒绝
    * （HEARTBEAT_SEQ_REGRESSED 属确定性错误，不再重试，由上层决定是否重建运行）。
+   *
+   * 注意：V1 编排**不调用**本方法（见文件头注释），租约续期由 `ingest_batch` 承担。
+   * 保留它是为了将来切换短租约时无需改动 tools 侧契约，并已由 ingest 测试覆盖。
    */
   async function heartbeat() {
     if (!runId) throw new Error('run_not_started')
@@ -134,7 +149,7 @@ export function createIngestClient({
     return callTool('douyin_collect_run_heartbeat', {
       runId,
       heartbeatSeq,
-      idempotencyKey: `douyin:heartbeat:${runId}:${heartbeatSeq}`,
+      idempotencyKey: heartbeatIdempotencyKey(runId, heartbeatSeq),
     })
   }
 
@@ -166,7 +181,7 @@ export function createIngestClient({
             accountId,
             batchNo,
             works: batch,
-            idempotencyKey: `douyin:ingest:${runId}:${batchNo}`,
+            idempotencyKey: ingestIdempotencyKey(runId, batchNo),
           }),
           { onRecover: recoverRun, label: `batch ${batchNo}` },
         )
@@ -213,7 +228,7 @@ export function createIngestClient({
         runId,
         clientStatus,
         clientCounts: clientCounts || undefined,
-        idempotencyKey: `douyin:run_finish:${runId}`,
+        idempotencyKey: runFinishIdempotencyKey(runId),
       }),
       { label: 'run_finish' },
     )
@@ -226,7 +241,7 @@ export function createIngestClient({
     if (!runId) throw new Error('run_not_started')
     const result = await callTool('douyin_collect_run_cancel', {
       runId,
-      idempotencyKey: `douyin:run_cancel:${runId}`,
+      idempotencyKey: runCancelIdempotencyKey(runId),
     })
     emit({ phase: 'cancelled', runId })
     return result

@@ -9,6 +9,7 @@ import { createCollectController } from '../src/runner.js'
 import {
   accountRemoveIdempotencyKey,
   accountSaveIdempotencyKey,
+  findTool,
   heartbeatIdempotencyKey,
   ingestIdempotencyKey,
   listMetaIdempotencyKey,
@@ -53,7 +54,9 @@ async function withRoot(fn) {
   try {
     return await fn(root)
   } finally {
-    await rm(root, { recursive: true, force: true })
+    // 后台登录/探测可能在测试体返回后仍向 state 目录落盘（beginLogin 的
+    // .then 是异步写回），与删除竞争会偶发 ENOTEMPTY；交给 Node 的有界重试。
+    await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 })
   }
 }
 
@@ -167,6 +170,22 @@ test('账号探测上报 tools，且不上报任何 Cookie 内容', async () => 
   })
 })
 
+test('工具解析：按分段边界匹配，拒绝同前缀的更长工具名', () => {
+  const ctx = {
+    tools: {
+      schemas: () => [
+        { name: 'mcp__tools-douyin-operation__douyin_account_list_extra' },
+        { name: 'mcp__tools-douyin-operation__douyin_account_list' },
+        { name: 'douyin_account_list' },
+      ],
+    },
+  }
+  assert.equal(findTool(ctx, 'douyin_account_list').name, 'mcp__tools-douyin-operation__douyin_account_list')
+  assert.equal(findTool({ tools: { schemas: () => [{ name: 'douyin_account_list' }] } }, 'douyin_account_list').name, 'douyin_account_list')
+  assert.equal(findTool({ tools: { schemas: () => [{ name: 'mcp__x__douyin_account_list_extra' }] } }, 'douyin_account_list'), null)
+  assert.equal(findTool(ctx, 'douyin_work_list'), null)
+})
+
 test('删除流程：先清本地再请求远端清理', async () => {
   await withRoot(async root => {
     const order = []
@@ -187,6 +206,50 @@ test('删除流程：先清本地再请求远端清理', async () => {
     const remote = await call(registered[0].handler, { action: 'account.removeRemote', accountId: 'acc-1' })
     assert.equal(remote.payload.deleteState, 'remote_deleted')
     assert.deepEqual(order, ['local:acc-1', 'remote:acc-1'])
+  })
+})
+
+test('删除流程：本地清理失败必须阻断远端删除（cleanup_failed）', async () => {
+  await withRoot(async root => {
+    const order = []
+    const { ctx, registered } = createContext({
+      tools: [{ name: 'mcp__tools-douyin-operation__douyin_account_remove' }],
+      execute: async call => {
+        order.push(`remote:${call.arguments.accountId}`)
+        return { structuredContent: { deleteState: 'remote_deleted' } }
+      },
+    })
+    // 只清掉了 storage_state，Profile 目录仍留在设备上：此时设备可能仍持有有效登录态。
+    apply(ctx, {
+      root,
+      browserStatus: async () => ({ chromeAvailable: true, driverAvailable: true, platform: 'linux' }),
+      removeLocalAccount: async ({ accountId }) => {
+        order.push(`local:${accountId}`)
+        return { accountId, cleared: { profile: false, storageState: true } }
+      },
+    })
+    const local = await call(registered[0].handler, { action: 'account.removeLocal', accountId: 'acc-1' })
+    assert.equal(local.payload.status, 'error')
+    assert.equal(local.payload.reason, 'cleanup_failed')
+    assert.equal(local.payload.localCleared, false)
+    assert.deepEqual(local.payload.cleared, { profile: false, storageState: true })
+    // UI 只认 status：非 ready 时不得调用 removeRemote，远端数据与重试入口都必须保留。
+    assert.deepEqual(order, ['local:acc-1'])
+  })
+})
+
+test('删除流程：清理结果字段缺失同样按失败处理', async () => {
+  await withRoot(async root => {
+    const { ctx, registered } = createContext()
+    apply(ctx, {
+      root,
+      browserStatus: async () => ({ chromeAvailable: true, driverAvailable: true, platform: 'linux' }),
+      removeLocalAccount: async ({ accountId }) => ({ accountId }),
+    })
+    const local = await call(registered[0].handler, { action: 'account.removeLocal', accountId: 'acc-1' })
+    assert.equal(local.payload.status, 'error')
+    assert.equal(local.payload.reason, 'cleanup_failed')
+    assert.deepEqual(local.payload.cleared, { profile: false, storageState: false })
   })
 })
 
