@@ -939,6 +939,7 @@ window.__ModuleLoader__.load({
 			const [sourceName, setSourceName] = react.useState("");
 			const [sourceUrl, setSourceUrl] = react.useState("");
 			const [sourcesBusy, setSourcesBusy] = react.useState(false);
+			const sourcesBusyRef = react.useRef(false);
 			react.useEffect(() => {
 				if (!sourcesOpen) return undefined;
 				const focusFrame = window.requestAnimationFrame(() => (modalCardRef.current?.querySelector('button[aria-label]:not([disabled])') || modalCardRef.current?.querySelector('button:not([disabled]),input:not([disabled]),textarea:not([disabled]),select:not([disabled]),a[href]'))?.focus?.());
@@ -1548,6 +1549,8 @@ window.__ModuleLoader__.load({
 				);
 			};
 			const sourcesAction = (payload, done) => {
+				if (sourcesBusyRef.current) return;
+				sourcesBusyRef.current = true;
 				setSourcesBusy(true);
 				call("/plugin-console/sources", payload).then(
 					(data) => {
@@ -1557,7 +1560,7 @@ window.__ModuleLoader__.load({
 						if (done) done();
 					},
 					(error) => setMessage(t("failed") + "：" + friendlyGithubError(error).message),
-				).finally(() => setSourcesBusy(false));
+				).finally(() => { sourcesBusyRef.current = false; setSourcesBusy(false); });
 			};
 			const addSource = () => {
 				if (!isAllowedSourceUrl(sourceUrl.trim())) {
