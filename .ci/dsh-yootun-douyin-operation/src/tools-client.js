@@ -124,7 +124,7 @@ export function parseToolResult(result) {
 // MCP 网关有时会把业务失败作为已解析的 JSON 返回，而不是 reject。
 // 统一在工具边界识别这些形态，避免宿主把失败投影成 ready + 空数据。
 function toolResultFailed(raw, payload) {
-  if (raw?.isError === true || payload?.isError === true || payload?.ok === false) return true
+  if (raw?.isError === true || raw?.error || payload?.isError === true || payload?.error || payload?.ok === false) return true
   if (payload?.error && typeof payload.error === 'object') return true
   const status = typeof payload?.status === 'string' ? payload.status.toLowerCase() : ''
   return ['error', 'failed', 'failure', 'unavailable', 'blocked'].includes(status)

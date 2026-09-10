@@ -225,7 +225,7 @@ function parseResult(result) {
   return result
 }
 function toolResultFailed(raw, parsed) {
-  return raw?.isError === true || raw?.ok === false || parsed?.isError === true || parsed?.ok === false
+  return raw?.isError === true || raw?.ok === false || raw?.error || parsed?.isError === true || parsed?.error || parsed?.ok === false
     || ['error', 'failed', 'failure', 'unavailable', 'blocked'].includes(String(parsed?.status || '').toLowerCase())
 }
 function sourceState(status, reason, data) { return { status, ...(reason ? { reason } : {}), ...(data ? { data } : {}) } }

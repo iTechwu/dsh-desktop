@@ -274,6 +274,7 @@ function parseResult(result) {
 
 function resolvedToolFailure(result, payload) {
   return result?.isError === true || result?.ok === false
+    || result?.error || payload?.error
     || payload?.isError === true || payload?.ok === false
     || ['error', 'failed', 'failure', 'unavailable', 'blocked'].includes(String(payload?.status || '').toLowerCase())
 }

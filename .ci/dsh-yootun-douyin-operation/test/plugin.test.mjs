@@ -13,12 +13,18 @@ import {
   heartbeatIdempotencyKey,
   ingestIdempotencyKey,
   listMetaIdempotencyKey,
+  parseToolResult,
   runCancelIdempotencyKey,
   runFinishIdempotencyKey,
   runStartIdempotencyKey,
   sessionIdempotencyKey,
 } from '../src/tools-client.js'
 import { updateAccount } from '../src/state.js'
+
+test('tool parser treats direct and structured MCP errors as failed calls', () => {
+  assert.throws(() => parseToolResult({ error: { code: 'provider_failed' } }), /douyin_operation_request_failed/u)
+  assert.throws(() => parseToolResult({ structuredContent: { error: { code: 'provider_failed' } } }), /douyin_operation_request_failed/u)
+})
 
 function createContext({ tools = [], execute, chrome = { chromeAvailable: true, driverAvailable: true, platform: 'linux' } } = {}) {
   const registered = []

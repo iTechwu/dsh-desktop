@@ -162,7 +162,8 @@ function parseResult(result) {
 function resolvedToolFailure(result, payload) {
   const failed = result?.isError === true || result?.ok === false
     || (Number.isInteger(result?.exitCode) && result.exitCode !== 0)
-    || payload?.ok === false || ['error', 'failed', 'failure', 'unavailable', 'blocked'].includes(String(payload?.status || '').toLowerCase())
+    || result?.error || payload?.error || payload?.ok === false
+    || ['error', 'failed', 'failure', 'unavailable', 'blocked'].includes(String(payload?.status || '').toLowerCase())
   if (!failed) return null
   const raw = firstString(payload?.error?.code, payload?.errorCode, payload?.reason, result?.error?.code)
   return raw && /^[A-Za-z0-9_:-]{1,80}$/u.test(raw) ? raw.toLowerCase() : 'lead_discovery_tool_failed'

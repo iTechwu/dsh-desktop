@@ -81,6 +81,14 @@ test('create 将已解析的 MCP 失败响应投影为稳定 error', async () =>
   assert.equal(JSON.stringify(result.body).includes('leak-task'), false)
 })
 
+test('create 将 structuredContent error 信封投影为稳定 error', async () => {
+  const { route } = makeCtx(async () => ({ structuredContent: { error: { code: 'PROVIDER_ERROR' }, taskId: 'leak-task' } }))
+  const result = await invoke(route, { action: 'create', mediaType: 'video', videoUrl: 'https://example.com/v.mp4' })
+  assert.equal(result.status, 200)
+  assert.deepEqual(result.body, { status: 'error', reason: 'PROVIDER_ERROR' })
+  assert.equal(JSON.stringify(result.body).includes('leak-task'), false)
+})
+
 test('create rejects invalid mediaType and missing material', async () => {
   const calls = []
   const { route } = makeCtx(async value => { calls.push(value); return { structuredContent: {} } })

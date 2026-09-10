@@ -114,7 +114,7 @@ function parseResult(result) {
   return result
 }
 function toolResultFailed(raw, payload) {
-  return raw?.isError === true || raw?.ok === false || payload?.isError === true || payload?.ok === false
+  return raw?.isError === true || raw?.ok === false || raw?.error || payload?.isError === true || payload?.error || payload?.ok === false
     || ['error', 'failed', 'failure', 'unavailable', 'blocked'].includes(String(payload?.status || '').toLowerCase())
 }
 async function readBody(req) {
