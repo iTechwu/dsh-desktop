@@ -219,6 +219,8 @@ for (const name of ciEntries) {
 for (const name of clientPlugins) {
   const source = await readFile(new URL(`../.ci/${name}/src/client.js`, import.meta.url), 'utf8')
   const localApiPaths = new Set(source.match(/\/(?:api\/desktop|_dsh)\/[a-z0-9/_-]+/giu) || [])
+  const sidebarOrder = source.match(/name:\s*['"]sidebar\.footer\.action['"][\s\S]{0,180}?order:\s*(\d+)/u)?.[1]
+  const overlayOrder = source.match(/name:\s*['"]shell\.overlay['"][\s\S]{0,180}?order:\s*(\d+)/u)?.[1]
   const manifest = JSON.parse(await readFile(new URL(`../.ci/${name}/package.json`, import.meta.url), 'utf8'))
   const hasDialog = /role:\s*['"]dialog['"]/.test(source)
   const hasAccessibleName = /aria-label/.test(source) || /aria-labelledby/.test(source)
@@ -263,6 +265,9 @@ for (const name of clientPlugins) {
   if (newWindowLinkCount !== noreferrerLinkCount) failures.push(`${name}: every new-window link must use noreferrer`)
   for (const path of localApiPaths) {
     if (!capabilityMatrix.includes(`\`${path}\``)) failures.push(`${name}: local API ${path} is missing from the capability matrix`)
+  }
+  if (sidebarOrder !== undefined && overlayOrder !== undefined && sidebarOrder !== overlayOrder) {
+    failures.push(`${name}: sidebar and overlay registrations use different order values`)
   }
   const expectedPrefix = pluginClassPrefixes[name]
   if (expectedPrefix) {
