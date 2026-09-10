@@ -170,11 +170,26 @@ if (!pluginConsoleClient.includes('.pc_row,.pc_item,.pc_detail,.pc_floatPanel,.p
 if (!pluginConsoleClient.includes('background:color-mix(in srgb,var(--dsw-alias-bg-base) 62%,transparent)')) {
   failures.push('dsh-plugin-console: modal backdrop does not use the adaptive theme background')
 }
+if (!pluginConsoleClient.includes('.pc_modalCard{box-sizing:border-box;max-height:calc(100vh - 32px);overflow-y:auto}')
+  || !pluginConsoleClient.includes('.pc_modalCard .pc_rowTop{flex-wrap:wrap}')) {
+  failures.push('dsh-plugin-console: modal surfaces are not bounded or responsive')
+}
 if (!pluginConsoleClient.includes('@media(max-width:640px){.pc_list{grid-template-columns:1fr}')) {
   failures.push('dsh-plugin-console: mobile market list does not collapse to one column')
 }
 if (!pluginConsoleClient.includes('credentials: "same-origin"') || !pluginConsoleClient.includes('redirect: "error"')) {
   failures.push('dsh-plugin-console: local control calls must use same-origin credentials and reject redirects')
+}
+if ((pluginConsoleClient.match(/role: "dialog", "aria-modal": true/gu) || []).length < 2
+  || !pluginConsoleClient.includes('"aria-labelledby": "pc-ai-consent-title"')
+  || !pluginConsoleClient.includes('"aria-labelledby": "pc-sources-title"')) {
+  failures.push('dsh-plugin-console: modal surfaces do not expose accessible dialog semantics')
+}
+if (!pluginConsoleClient.includes('event.key === "Escape"')
+  || !pluginConsoleClient.includes('event.key !== "Tab"')
+  || !pluginConsoleClient.includes('modalReturnFocusRef')
+  || !pluginConsoleClient.includes('sourcesOpen && activeConsentJob === undefined')) {
+  failures.push('dsh-plugin-console: modal keyboard, focus-return, or stacking contract is incomplete')
 }
 if (!pluginConsoleHost.includes("const ROUTE_PREFIX = '/plugin-console'")) {
   failures.push('dsh-plugin-console: host route prefix is missing')
