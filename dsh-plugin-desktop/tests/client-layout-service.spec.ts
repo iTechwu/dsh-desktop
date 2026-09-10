@@ -56,6 +56,8 @@ function makeCtx() {
     // that here so registration assertions observe real calls.
     effect: vi.fn((factory: () => unknown) => factory()),
     slots: {
+      entries: vi.fn(() => []),
+      provideRoot: vi.fn(() => vi.fn()),
       register: vi.fn(() => ({})),
       inject: vi.fn(),
     },
@@ -71,7 +73,7 @@ describe('claimDesktopLayout', () => {
     const ctx = makeCtx()
     const dispose = vi.fn()
     ctx.reflect.provide.mockReturnValue(dispose)
-    const layout = { mark: 'state' }
+    const layout = { mark: 'state', dispose: vi.fn() }
 
     expect(claimDesktopLayout(ctx as never, layout as never)).toBe(true)
     expect(ctx.reflect.provide).toHaveBeenCalledWith('layout', layout)
@@ -83,6 +85,7 @@ describe('claimDesktopLayout', () => {
     const disposer = ctx.effect.mock.results[0]?.value
     expect(typeof disposer).toBe('function')
     ;(disposer as () => void)()
+    expect(layout.dispose).toHaveBeenCalledOnce()
     expect(dispose).toHaveBeenCalled()
   })
 
