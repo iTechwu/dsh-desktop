@@ -50,7 +50,7 @@ function Overlay({ t }) {
     loadingRef.current = true
     setError(false)
     setLoading(true)
-    void load(controller.signal).then(value => { setData(value); setError(false) }).catch(cause => {
+    void load(controller.signal).then(value => { if (value?.status === 'error') throw new Error('sales refresh failed'); setData(value); setError(false) }).catch(cause => {
       if (cause?.name !== 'AbortError') setError(true)
     }).finally(() => { if (!controller.signal.aborted) { loadingRef.current = false; setLoading(false) } })
     return () => { controller.abort(); loadingRef.current = false }
