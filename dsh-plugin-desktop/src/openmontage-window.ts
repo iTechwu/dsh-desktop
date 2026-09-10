@@ -17,7 +17,9 @@ export function isOpenMontageNavigationAllowed(href: string): boolean {
   try {
     const target = new URL(href)
     const allowed = new URL(OPENMONTAGE_URL)
-    return target.origin === allowed.origin && target.pathname.startsWith(allowed.pathname)
+    const mountPath = allowed.pathname.endsWith('/') ? allowed.pathname.slice(0, -1) : allowed.pathname
+    return target.origin === allowed.origin
+      && (target.pathname === mountPath || target.pathname.startsWith(allowed.pathname))
   } catch {
     return false
   }
@@ -66,6 +68,7 @@ export class OpenMontageWindow {
         minHeight: 640,
         show: false,
         autoHideMenuBar: true,
+        backgroundColor: '#202124',
         webPreferences: {
           contextIsolation: true,
           nodeIntegration: false,
@@ -76,6 +79,7 @@ export class OpenMontageWindow {
         },
       })
       this.window = window
+      window.accessibleTitle = 'OpenMontage'
       window.removeMenu()
       window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
       const allow = (event: Electron.Event, href: string): void => {

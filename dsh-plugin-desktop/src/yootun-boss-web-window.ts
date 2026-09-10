@@ -44,6 +44,7 @@ export class BossWebWindow {
         minHeight: 640,
         show: false,
         autoHideMenuBar: true,
+        backgroundColor: '#202124',
         webPreferences: {
           contextIsolation: true,
           nodeIntegration: false,
@@ -55,6 +56,7 @@ export class BossWebWindow {
         },
       })
       this.window = window
+      window.accessibleTitle = 'BOSS 直聘'
       window.removeMenu()
       window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
       const allow = (event: Electron.Event, href: string): void => {
