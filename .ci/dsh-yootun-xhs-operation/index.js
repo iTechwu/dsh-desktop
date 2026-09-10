@@ -253,13 +253,29 @@ function findTool(ctx, name) { return (ctx.tools.schemas?.() || []).find(item =>
 
 function parseResult(result) {
   if (!result) return {}
-  if (result && typeof result === 'object' && !Array.isArray(result) && result.structuredContent && typeof result.structuredContent === 'object') return result.structuredContent
-  if (result && typeof result === 'object' && !Array.isArray(result) && Array.isArray(result.content)) {
+  let payload = null
+  if (result && typeof result === 'object' && !Array.isArray(result) && result.structuredContent && typeof result.structuredContent === 'object') {
+    payload = result.structuredContent
+  } else if (result && typeof result === 'object' && !Array.isArray(result) && Array.isArray(result.content)) {
     const text = result.content.filter(item => item?.type === 'text').map(item => String(item.text || '')).join('')
-    if (!text) return {}
-    try { return JSON.parse(text) } catch { return {} }
+    if (!text) payload = {}
+    else {
+      try { payload = JSON.parse(text) } catch { return {} }
+    }
+  } else {
+    payload = result
   }
-  return result
+  if (resolvedToolFailure(result, payload)) {
+    const raw = firstString(payload?.error?.code, payload?.errorCode, payload?.reason, result?.error?.code)
+    throw new Error(raw && /^[A-Za-z0-9_:-]{1,80}$/u.test(raw) ? raw : 'xhs_operation_request_failed')
+  }
+  return payload && typeof payload === 'object' ? payload : {}
+}
+
+function resolvedToolFailure(result, payload) {
+  return result?.isError === true || result?.ok === false
+    || payload?.isError === true || payload?.ok === false
+    || ['error', 'failed', 'failure', 'unavailable'].includes(String(payload?.status || '').toLowerCase())
 }
 
 function safeToolErrorReason(error) {

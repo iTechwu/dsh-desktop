@@ -73,6 +73,14 @@ test('create maps video mode and omits theme/references/accounts when empty', as
   assert.deepEqual(args.accounts, [])
 })
 
+test('create 将已解析的 MCP 失败响应投影为稳定 error', async () => {
+  const { route } = makeCtx(async () => ({ isError: true, structuredContent: { status: 'error', reason: 'PROVIDER_ERROR', taskId: 'leak-task' } }))
+  const result = await invoke(route, { action: 'create', mediaType: 'video', videoUrl: 'https://example.com/v.mp4' })
+  assert.equal(result.status, 200)
+  assert.deepEqual(result.body, { status: 'error', reason: 'PROVIDER_ERROR' })
+  assert.equal(JSON.stringify(result.body).includes('leak-task'), false)
+})
+
 test('create rejects invalid mediaType and missing material', async () => {
   const calls = []
   const { route } = makeCtx(async value => { calls.push(value); return { structuredContent: {} } })
