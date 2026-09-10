@@ -78,6 +78,10 @@ test('guides credential setup and protects credential removal', async () => {
   assert.match(source, /if \(!entered \|\| loadingRef\.current \|\| busyRef\.current\) return/u)
   assert.match(source, /if \(busyRef\.current \|\| loadingRef\.current/u)
   assert.match(source, /disabled: interactionBusy/u)
+  assert.match(source, /const previousInert = root\?\.inert/u)
+  assert.match(source, /root\.inert = true/u)
+  assert.match(source, /document\.body\.style\.overflow = 'hidden'/u)
+  assert.match(source, /document\.body\.style\.overflow = previousOverflow/u)
 })
 
 test('re-reads and retries a settings mutation once after a revision conflict', async () => {

@@ -247,6 +247,18 @@ function AccessOnboarding({ complete, credentials, settingsApi, useAccess, t }) 
   useEffect(() => { if (authorized) complete() }, [authorized, complete])
   useEffect(() => {
     if (authorized) return undefined
+    const root = document.getElementById('root')
+    const previousInert = root?.inert
+    const previousOverflow = document.body.style.overflow
+    if (root) root.inert = true
+    document.body.style.overflow = 'hidden'
+    return () => {
+      if (root) root.inert = previousInert ?? false
+      document.body.style.overflow = previousOverflow
+    }
+  }, [authorized])
+  useEffect(() => {
+    if (authorized) return undefined
     const focusable = () => Array.from(cardRef.current?.querySelectorAll('button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),a[href],[tabindex]:not([tabindex="-1"])') ?? [])
       .filter(element => !element.hidden && element.getAttribute('aria-hidden') !== 'true')
     const focusFrame = requestAnimationFrame(() => (cardRef.current?.querySelector('#yu-model-key') ?? focusable()[0] ?? cardRef.current)?.focus?.())
