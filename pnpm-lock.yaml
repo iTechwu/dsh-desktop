@@ -1410,6 +1410,9 @@ importers:
       '@deepseek-ai/dsh-tool-jobs':
         specifier: workspace:*
         version: link:../deepseek-harness/packages/jobs/tool-jobs
+      '@deepseek-ai/dsh-tool-present':
+        specifier: workspace:*
+        version: link:../deepseek-harness/packages/fs/tool-present
       '@deepseek-ai/dsh-tool-pwsh':
         specifier: workspace:*
         version: link:../deepseek-harness/packages/shell/tool-pwsh
