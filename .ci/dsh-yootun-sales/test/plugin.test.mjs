@@ -63,6 +63,8 @@ test('labels refresh failures separately from action failures', async () => {
   assert.match(source, /setErrorKind\('refresh'\)/u)
   assert.match(source, /setErrorKind\('action'\)/u)
   assert.match(source, /t\(errorKind === 'refresh' \? 'refreshError' : 'actionError'\)/u)
+  assert.match(source, /setData\(previous => failed \? previous \|\| value : value\)/u)
+  assert.match(source, /if \(next\?\.status && next\.status !== 'ready'\)/u)
 })
 
 test('builds a syntactically valid browser module', async () => {

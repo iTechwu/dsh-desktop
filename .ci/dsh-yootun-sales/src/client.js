@@ -54,7 +54,7 @@ function Overlay({ t }) {
     setError(false)
     setErrorKind('')
     setLoading(true)
-    void load(controller.signal).then(value => { setData(value); setError(false); setErrorKind('') }).catch(cause => {
+    void load(controller.signal).then(value => { const failed = value?.status && value.status !== 'ready'; setData(previous => failed ? previous || value : value); setError(Boolean(failed)); setErrorKind(failed ? 'refresh' : '') }).catch(cause => {
       if (cause?.name !== 'AbortError') { setError(true); setErrorKind('refresh') }
     }).finally(() => { if (!controller.signal.aborted) { loadingRef.current = false; setLoading(false) } })
     return () => { controller.abort(); loadingRef.current = false }
@@ -72,7 +72,7 @@ function Overlay({ t }) {
     if (loadingRef.current || busyRef.current) return null
     busyRef.current = true
     setBusy(true)
-    try { const next = await mutate(body); setData(next); setError(false); setErrorKind(''); return next } catch { setError(true); setErrorKind('action'); return null } finally { busyRef.current = false; setBusy(false) }
+    try { const next = await mutate(body); if (next?.status && next.status !== 'ready') { setError(true); setErrorKind('action'); return null }; setData(next); setError(false); setErrorKind(''); return next } catch { setError(true); setErrorKind('action'); return null } finally { busyRef.current = false; setBusy(false) }
   }
   const interactionBusy = loading || busy
   const refresh = () => {
