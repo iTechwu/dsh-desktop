@@ -375,6 +375,25 @@ test('marks a structured MCP failure as a failed knowledge write', async () => {
   assert.doesNotMatch(JSON.stringify(events), /private failure detail|不得进入审计/u)
 })
 
+test('rejects direct and nested structured MCP failure envelopes', async () => {
+  for (const result of [
+    { ok: false, error: { code: 'provider_failed' } },
+    { structuredContent: { error: { code: 'provider_failed' } } },
+  ]) {
+    const registered = new Map()
+    const ctx = {
+      credentials: { async resolve() { return { value: 'test-key' } } },
+      tools: { register(tool) { registered.set(tool.name, tool); return () => {} } },
+      systemPrompt: { section() { return () => {} } },
+      webServer: { register() { return () => {} } },
+    }
+    apply(ctx, { fetch: async () => new Response(JSON.stringify({ jsonrpc: '2.0', result }), { status: 200 }) })
+    const response = await registered.get('knowledge_recall').execute({ input: { query: '优惠豚' } }, {})
+    assert.equal(response.ok, false)
+    assert.equal(response.error, 'knowledge_mcp_tool_failed')
+  }
+})
+
 test('GET overview reads overview and capabilities through the public MCP contract', async () => {
   let route
   const requests = []
