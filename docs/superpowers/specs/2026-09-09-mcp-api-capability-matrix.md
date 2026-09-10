@@ -51,6 +51,17 @@
 
 所有 server 都使用 streamable HTTP 和同一个托管凭据引用；启动失败不阻断 Desktop 壳层，重连从 500ms 指数退避到 30s、最多 10 次。凭据或启用插件集合变化时，Host 销毁旧 client 后按当前 generation 重建；任何传输错误都不得序列化 Authorization 请求元数据。
 
+## Host Agent 工具契约
+
+| 工具组 | 稳定工具名 | 行为边界 |
+| --- | --- | --- |
+| Desktop 浏览器与调研 | `browser`、`dofe_opencli` | browser 仅接受声明的 action 与稳定 session；登录凭据必须由用户在前台输入，最终发布需要明确批准。OpenCLI 只允许已批准的只读路由，参数数量和单项长度受限 |
+| Desktop CI | `ci_validate`、`ci_run` | 默认读取 `.dsh/ci.yml`；validate 不执行命令，run 严格按步骤顺序执行并按 continueOnError/stopOnFirstFailure 停止 |
+| 本地招聘工作台 | `yootun_recruiter` | 只保存岗位和脱敏候选人分析；publish_jd、send_message、write_feedback 只创建待确认动作，工具不能自行确认或外发 |
+| 业务只读投影 | `yootun_content_overview`、`yootun_daily_report`、`yootun_dashboard_overview`、`yootun_dashboard_series`、`yootun_finops_usage`、`yootun_finops_series`、`yootun_lead_discovery`、`yootun_lead_discovery_candidates`、`yootun_recruiter_overview`、`yootun_retrofit_search`、`yootun_sales_overview`、`yootun_sales_intent_search`、`yootun_supply_watch_overview` | 与对应界面使用同一安全投影和来源状态；overview/series/list 工具可并发，参数枚举和查询长度在 Host 校验 |
+| Knowledge 安全封装 | `knowledge_search`、`knowledge_recall`、`knowledge_remember`、`knowledge_confirm_memory`、`knowledge_forget`、`knowledge_session_checkpoint`、`knowledge_promote`、`knowledge_capabilities`、`knowledge_overview`、`knowledge_graph`、`knowledge_ingest_file`、`knowledge_loadout`、`knowledge_context_pack`、`knowledge_explain_trace`、`knowledge_entity_assertions`、`knowledge_relation_assertions`、`knowledge_entity_merges`、`knowledge_provenance_lineage` | 所有输入先按 bounded schema 校验，再注入托管凭据；空间由服务端 ACL 解析。写入、确认、遗忘与晋升遵守显式确认和审计规则，不允许绕过封装直连 Knowledge MCP |
+| 媒体与交付 | `media_upload`、`present` | media_upload 只能由用户原生选取文件，调用方不能提交本地路径；present 只声明 Session 已有的常规文件，不复制内容 |
+
 ## 统一映射规则
 
 - 数据来源只允许 `ready`、`partial`、`empty`、`degraded`、`unavailable`、`error` 六类语义；没有数据时使用 `null` 或空列表，禁止用零值伪造成功。

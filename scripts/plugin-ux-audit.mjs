@@ -85,6 +85,11 @@ function hasCanonicalIconButton(source) {
   return /\.[a-z0-9-]*(?:icon-button|header-buttons button|header-actions button|actions button|icon)\{[^}]*width:36px;height:36px/u.test(source)
 }
 
+function registeredToolNames(source) {
+  return [...source.matchAll(/ctx\.tools\.register\(\s*(?:defineTool\(\s*)?\{\s*name:\s*['"]([a-z][a-z0-9_-]+)['"]/giu)]
+    .map(match => match[1])
+}
+
 const actionLifecyclePlugins = new Set([
   'dsh-yootun-content-command',
   'dsh-yootun-recruiter',
@@ -121,6 +126,31 @@ const directMcpServers = [...dofeManagedSource.matchAll(/serverName:\s*'([^']+)'
 const toolsMcpPaths = dofeManagedSource.match(/\.\.\.\[([\s\S]*?)\]\.map\(path => \(\{ plugin: 'tools'/u)?.[1]
   ?.match(/'[^']+'/gu)?.map(value => value.slice(1, -1)) || []
 const managedMcpServers = new Set([...directMcpServers, ...toolsMcpPaths.map(path => `tools-${path}`)])
+const localToolSources = await Promise.all([
+  '../dsh-plugin-desktop/src/browser-tools.ts',
+  '../dsh-plugin-desktop/src/ci-tools.ts',
+  '../dsh-plugin-desktop/src/yootun-recruiter-tools.ts',
+  '../dsh-plugin-desktop/src/dofe-opencli.ts',
+  ...ciEntries.filter(name => name.startsWith('dsh-yootun-')).flatMap(name => [
+    `../.ci/${name}/index.js`,
+    `../.ci/${name}/tool.js`,
+  ]),
+].map(async path => {
+  try {
+    return await readFile(new URL(path, import.meta.url), 'utf8')
+  } catch (error) {
+    if (error?.code === 'ENOENT') return ''
+    throw error
+  }
+}))
+const localToolNames = new Set(localToolSources.flatMap(registeredToolNames))
+const knowledgeToolBlock = localToolSources.join('\n').match(/const TOOL_DEFINITIONS = \{([\s\S]*?)\n\}/u)?.[1] || ''
+for (const match of knowledgeToolBlock.matchAll(/^\s{2}(knowledge_[a-z0-9_]+):/gmu)) localToolNames.add(match[1])
+for (const toolName of localToolNames) {
+  if (!capabilityMatrix.includes(`\`${toolName}\``)) {
+    failures.push(`Host Agent tool ${toolName} is missing from the capability matrix`)
+  }
+}
 for (const alias of findUndefinedThemeAliases(desktopClientStyles)) {
   failures.push(`dsh-plugin-desktop: client styles use undefined theme alias ${alias}`)
 }
