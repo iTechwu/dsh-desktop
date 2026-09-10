@@ -14,7 +14,13 @@ const fixture = `<style>${rootVars}body{margin:0;background:var(--dsw-alias-bg-b
 
 assert.match(source, /const cssOverrides = /u)
 const browser = await chromium.launch({ headless: true, executablePath: browserExecutable })
-for (const viewport of [{ width: 390, height: 844 }, { width: 1024, height: 720 }]) {
+for (const viewport of [
+  { width: 320, height: 720 },
+  { width: 390, height: 844 },
+  { width: 768, height: 720 },
+  { width: 1024, height: 720 },
+  { width: 1440, height: 900 },
+]) {
   const page = await browser.newPage({ viewport })
   await page.setContent(fixture)
   const result = await page.locator('.pc_list').evaluate(list => ({
@@ -22,13 +28,15 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 1024, height: 720 
     rows: [...list.querySelectorAll('.pc_row')].map(row => ({
       radius: getComputedStyle(row).borderRadius,
       width: Math.round(row.getBoundingClientRect().width),
+      contentFits: row.scrollWidth <= row.clientWidth,
     })),
+    scrollWidth: document.documentElement.scrollWidth,
   }))
   assert.equal(result.columns, viewport.width <= 640 ? 1 : 2)
-  assert(result.rows.every(row => row.radius === '8px' && row.width <= viewport.width))
-  const suffix = viewport.width <= 640 ? 'mobile' : 'desktop'
-  await page.screenshot({ path: `/tmp/plugin-console-${suffix}.png`, fullPage: true })
+  assert(result.rows.every(row => row.radius === '8px' && row.width <= viewport.width && row.contentFits))
+  assert(result.scrollWidth <= viewport.width)
+  await page.screenshot({ path: `/tmp/plugin-console-${viewport.width}.png`, fullPage: true })
   await page.close()
 }
 await browser.close()
-console.log('plugin-console-browser: responsive panel radius and grid contract verified at 390px and 1024px')
+console.log('plugin-console-browser: responsive panel radius and grid contract verified at 320px, 390px, 768px, 1024px, and 1440px')
