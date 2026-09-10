@@ -61,6 +61,7 @@ async function buildState(ctx, signal = AbortSignal.timeout(TOOL_CALL_TIMEOUT_MS
     signal,
   })
   const payload = parseResult(result)
+  if (toolResultFailed(result, payload)) return { status: 'error', reason: 'supply_chain_tool_failed', dashboard: {}, risks: [], actions: [] }
   const alerts = Array.isArray(payload.alerts) ? payload.alerts : []
   const risks = alerts.map(alert => projectRisk(alert)).filter(Boolean)
   const actions = alerts
@@ -110,6 +111,10 @@ function parseResult(result) {
     try { return JSON.parse(text) } catch { return {} }
   }
   return result
+}
+function toolResultFailed(raw, payload) {
+  return raw?.isError === true || raw?.ok === false || payload?.isError === true || payload?.ok === false
+    || ['error', 'failed'].includes(String(payload?.status || '').toLowerCase())
 }
 async function readBody(req) {
   if (typeof req.body === 'object' && req.body) return req.body

@@ -64,3 +64,13 @@ test('returns a stable error state when lead discovery fails', async () => {
   assert.equal(result.body.status, 'error')
   assert.deepEqual(result.body.leads, [])
 })
+
+test('returns an error intent when lead discovery resolves with an MCP error', async () => {
+  const { ctx, refs } = makeCtx(() => ({ isError: true, error: { code: 'UPSTREAM_FAILED' } }))
+  apply(ctx)
+  const result = await invoke(refs.route, 'POST', { action: 'intent_search', query: '长沙新能源' })
+  assert.equal(result.status, 200)
+  assert.equal(result.body.status, 'ready')
+  assert.equal(result.body.intent.status, 'error')
+  assert.deepEqual(result.body.intent.items, [])
+})

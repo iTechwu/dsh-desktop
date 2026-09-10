@@ -153,6 +153,19 @@ test('marks a resolved agent-reach command failure as a failed refresh', async (
   assert.doesNotMatch(JSON.stringify(events), /private failure detail/u)
 })
 
+test('does not present a resolved database tool error as a ready empty list', async () => {
+  let route
+  const ctx = context({
+    schemas: [{ name: 'mcp__tools-custom-car-monitoring__custom_car_monitoring_search', parameters: { type: 'object', properties: { query: { type: 'string' } } } }],
+    execute: async () => ({ isError: true, structuredContent: { error: { code: 'RESULT_STORE_UNAVAILABLE' } } }),
+    onRoute: value => { route = value },
+  })
+  apply(ctx)
+  const result = await invoke(route, { query: 'SUV' })
+  assert.equal(result.body.status, 'error')
+  assert.equal(result.body.reason, 'retrofit_store_failed')
+})
+
 function agentReachSchema() {
   return { name: 'agent_reach', parameters: { type: 'object', properties: { args: { type: 'array' } } } }
 }

@@ -102,6 +102,7 @@ async function runIntentSearch(ctx, body, signal = AbortSignal.timeout(TOOL_CALL
     signal,
   })
   const payload = parseResult(result)
+  if (toolResultFailed(result, payload)) return { status: 'error', reason: 'lead_discovery_tool_failed', query, platform, items: [] }
   const items = projectItems(payload.items)
   lastIntent = { status: 'ready', query, items }
   return lastIntent
@@ -138,6 +139,10 @@ function parseResult(result) {
     try { return JSON.parse(text) } catch { return {} }
   }
   return result
+}
+function toolResultFailed(raw, payload) {
+  return raw?.isError === true || raw?.ok === false || payload?.isError === true || payload?.ok === false
+    || ['error', 'failed'].includes(String(payload?.status || '').toLowerCase())
 }
 function firstString(...values) { for (const value of values) if (typeof value === 'string' && value) return value; return null }
 function numberOrNull(value) { return typeof value === 'number' && Number.isFinite(value) ? value : null }

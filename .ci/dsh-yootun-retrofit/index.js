@@ -62,6 +62,7 @@ async function list(ctx, input, signal = AbortSignal.timeout(TOOL_CALL_TIMEOUT_M
   const arguments_ = { query, platform: platform || undefined, cursor: input?.cursor || undefined, limit: Math.min(Math.max(Number(input?.limit) || 20, 1), 100) }
   const result = await ctx.tools.execute({ callId: `yootun-retrofit-list-${Date.now()}`, name: target.name, arguments: arguments_, signal })
   const stored = sanitize(result)
+  if (toolResultFailed(result, stored)) return { status: 'error', reason: 'retrofit_store_failed', query, platform, source: 'custom_car' }
   // 案例库的列表、统计和详情始终以数据库为事实源；公开检索只通过显式
   // “刷新公开来源”动作进入临时参考，不得因空库自动产生额外成本或混淆数据。
   return { status: 'ready', query, platform, source: 'custom_car', dataSource: 'database', result: stored }
