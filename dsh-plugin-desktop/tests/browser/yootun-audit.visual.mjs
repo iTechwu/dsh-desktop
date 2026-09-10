@@ -5,13 +5,16 @@ import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createServer } from 'vite'
 import { chromium } from '../../../deepseek-harness/apps/web/node_modules/playwright/index.mjs'
+import { assertAccessibleSurface } from './assert-accessible-surface.mjs'
 
 const here = fileURLToPath(new URL('.', import.meta.url))
 const packageRoot = resolve(here, '../..')
 const workspaceRoot = resolve(packageRoot, '..')
 const harnessRoot = resolve(here, 'yootun-audit')
 const auditSourcePath = resolve(workspaceRoot, '.ci/dsh-yootun-audit/src/client.js')
-const evidenceRoot = resolve(workspaceRoot, 'docs/superpowers/evidence/2026-09-05-yootun-audit')
+const evidenceRoot = process.env.DSH_VISUAL_EVIDENCE_ROOT
+  ? resolve(process.env.DSH_VISUAL_EVIDENCE_ROOT)
+  : resolve(workspaceRoot, 'docs/superpowers/evidence/2026-09-05-yootun-audit')
 const browserExecutable = process.env.DSH_AUDIT_BROWSER_EXECUTABLE
   || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
 assert(existsSync(browserExecutable), `Chrome executable not found: ${browserExecutable}`)
@@ -121,15 +124,11 @@ async function open(width, height, nextScenario) {
 }
 
 async function assertViewport() {
+  await assertAccessibleSurface(page)
   const metrics = await page.evaluate(() => ({
     clientWidth: document.documentElement.clientWidth,
     scrollWidth: document.documentElement.scrollWidth,
     dialog: Boolean(document.querySelector('[role="dialog"][aria-modal="true"]')),
-    unnamed: [...document.querySelectorAll('button,input,select')].filter(element => {
-      const style = getComputedStyle(element)
-      if (style.display === 'none' || style.visibility === 'hidden') return false
-      return !(element.getAttribute('aria-label') || element.textContent?.trim() || element.getAttribute('placeholder'))
-    }).length,
     contrastFailures: ['.ya-header h1', '.ya-header p', '.ya-table-head', '.ya-row', '.ya-outcome.is-failed', '.ya-status']
       .flatMap(selector => [...document.querySelectorAll(selector)])
       .filter(element => {
@@ -147,7 +146,6 @@ async function assertViewport() {
   }))
   assert.equal(metrics.scrollWidth, metrics.clientWidth, 'page must not scroll horizontally')
   assert.equal(metrics.dialog, true, 'overlay must expose modal dialog semantics')
-  assert.equal(metrics.unnamed, 0, 'all visible controls must have accessible names')
   assert.deepEqual(metrics.contrastFailures, [], 'representative text must meet WCAG AA contrast')
   const content = page.locator('.ya-workspace, .ya-empty, .ya-skeletons').last()
   if (await content.count()) {

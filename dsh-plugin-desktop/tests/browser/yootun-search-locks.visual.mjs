@@ -5,12 +5,15 @@ import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createServer } from 'vite'
 import { chromium } from '../../../deepseek-harness/apps/web/node_modules/playwright/index.mjs'
+import { assertAccessibleSurface } from './assert-accessible-surface.mjs'
 
 const here = fileURLToPath(new URL('.', import.meta.url))
 const packageRoot = resolve(here, '../..')
 const workspaceRoot = resolve(packageRoot, '..')
 const harnessRoot = resolve(here, 'yootun-audit')
-const evidenceRoot = resolve(workspaceRoot, 'docs/superpowers/evidence/2026-09-08-search-locks')
+const evidenceRoot = process.env.DSH_VISUAL_EVIDENCE_ROOT
+  ? resolve(process.env.DSH_VISUAL_EVIDENCE_ROOT)
+  : resolve(workspaceRoot, 'docs/superpowers/evidence/2026-09-08-search-locks')
 const sources = {
   content: resolve(workspaceRoot, '.ci/dsh-yootun-content-command/src/client.js'),
   dashboard: resolve(workspaceRoot, '.ci/dsh-yootun-dashboard/src/client.js'),
@@ -326,26 +329,19 @@ async function settleStrictMode() {
 }
 
 async function assertViewport() {
-  const viewport = await page.evaluate(() => ({
-    clientWidth: document.documentElement.clientWidth,
-    scrollWidth: document.documentElement.scrollWidth,
-    dialog: Boolean(document.querySelector('[role="dialog"][aria-modal="true"]')),
-  }))
-  assert.equal(viewport.scrollWidth, viewport.clientWidth)
-  assert.equal(viewport.dialog, true)
+  await assertAccessibleSurface(page)
 }
 
 async function assertDesktopViewport() {
+  await assertAccessibleSurface(page)
   const viewport = await page.evaluate(() => ({
     clientWidth: document.documentElement.clientWidth,
     scrollWidth: document.documentElement.scrollWidth,
-    dialog: Boolean(document.querySelector('[role="dialog"][aria-modal="true"]')),
     headerHeight: document.querySelector('.yd-header')?.getBoundingClientRect().height ?? 0,
     contentWidth: document.querySelector('.yd-overview')?.getBoundingClientRect().width ?? 0,
   }))
   assert.equal(viewport.clientWidth, 1440)
   assert.equal(viewport.scrollWidth, viewport.clientWidth, 'desktop page must not scroll horizontally')
-  assert.equal(viewport.dialog, true, 'desktop overlay must expose modal dialog semantics')
   assert(viewport.headerHeight >= 72, `desktop header must preserve the 72px baseline: ${JSON.stringify(viewport)}`)
   assert(viewport.contentWidth > 0 && viewport.contentWidth <= 1440, `desktop content must render within a constrained width: ${JSON.stringify(viewport)}`)
 }

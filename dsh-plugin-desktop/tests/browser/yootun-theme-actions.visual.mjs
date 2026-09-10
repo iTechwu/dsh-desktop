@@ -5,12 +5,15 @@ import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createServer } from 'vite'
 import { chromium } from '../../../deepseek-harness/apps/web/node_modules/playwright/index.mjs'
+import { assertAccessibleSurface } from './assert-accessible-surface.mjs'
 
 const here = fileURLToPath(new URL('.', import.meta.url))
 const packageRoot = resolve(here, '../..')
 const workspaceRoot = resolve(packageRoot, '..')
 const harnessRoot = resolve(here, 'yootun-audit')
-const evidenceRoot = resolve(workspaceRoot, 'docs/superpowers/evidence/2026-09-08-theme-actions')
+const evidenceRoot = process.env.DSH_VISUAL_EVIDENCE_ROOT
+  ? resolve(process.env.DSH_VISUAL_EVIDENCE_ROOT)
+  : resolve(workspaceRoot, 'docs/superpowers/evidence/2026-09-08-theme-actions')
 const sources = {
   contentCommand: resolve(workspaceRoot, '.ci/dsh-yootun-content-command/src/client.js'),
   dashboard: resolve(workspaceRoot, '.ci/dsh-yootun-dashboard/src/client.js'),
@@ -219,13 +222,7 @@ const assertThemeColor = (locator, alias) => assertThemePaint(locator, alias, 'c
 const assertThemeBackground = (locator, alias) => assertThemePaint(locator, alias, 'backgroundColor')
 
 async function assertViewport() {
-  const viewport = await page.evaluate(() => ({
-    clientWidth: document.documentElement.clientWidth,
-    scrollWidth: document.documentElement.scrollWidth,
-    dialog: Boolean(document.querySelector('[role="dialog"][aria-modal="true"]')),
-  }))
-  assert.equal(viewport.scrollWidth, viewport.clientWidth, 'page must not scroll horizontally')
-  assert.equal(viewport.dialog, true, 'overlay must expose modal dialog semantics')
+  await assertAccessibleSurface(page)
 }
 
 try {
