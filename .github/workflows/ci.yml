@@ -105,9 +105,9 @@ jobs:
       # The sibling fork keeps its own frozen lockfile; pnpm cannot freeze an
       # external symlink workspace against the Desktop-only root lockfile.
       - if: needs.changes.outputs.product == 'true'
-        run: pnpm install --no-frozen-lockfile
+        run: pnpm install --no-frozen-lockfile --config.minimumReleaseAge=0
       - if: needs.changes.outputs.product == 'true'
-        run: pnpm --dir ../deepseek-harness install --no-frozen-lockfile
+        run: pnpm --dir ../deepseek-harness install --no-frozen-lockfile --config.minimumReleaseAge=0
       - if: needs.changes.outputs.product == 'true'
         run: pnpm upstream:build
       - if: needs.changes.outputs.product == 'true'
@@ -156,8 +156,8 @@ jobs:
           path: ${{ steps.pnpm-store.outputs.dir }}
           key: pnpm-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml', 'pnpm-workspace.yaml', 'upstream.json') }}
       # The following upstream install validates the sibling's own lockfile.
-      - run: pnpm install --no-frozen-lockfile
-      - run: pnpm --dir ../deepseek-harness install --no-frozen-lockfile
+      - run: pnpm install --no-frozen-lockfile --config.minimumReleaseAge=0
+      - run: pnpm --dir ../deepseek-harness install --no-frozen-lockfile --config.minimumReleaseAge=0
       - run: pnpm upstream:build
       - run: pnpm --filter dsh-plugin-desktop check:win-package
       - name: Build Windows installer
@@ -223,8 +223,8 @@ jobs:
           path: ${{ steps.pnpm-store.outputs.dir }}
           key: pnpm-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml', 'pnpm-workspace.yaml', 'upstream.json') }}
       # The following upstream install validates the sibling's own lockfile.
-      - run: pnpm install --no-frozen-lockfile
-      - run: pnpm --dir ../deepseek-harness install --no-frozen-lockfile
+      - run: pnpm install --no-frozen-lockfile --config.minimumReleaseAge=0
+      - run: pnpm --dir ../deepseek-harness install --no-frozen-lockfile --config.minimumReleaseAge=0
       - run: pnpm upstream:build
       - run: pnpm --filter dsh-plugin-desktop check:mac-package
       - name: Build macOS smoke artifact
