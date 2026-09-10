@@ -293,6 +293,10 @@ if (!dofeAccessSource.includes('const loadingRef = useRef(false)') || !dofeAcces
 if (!dofeAccessSource.includes('aria-busy={interactionBusy}')) {
   failures.push('dsh-plugin-desktop: native access form does not expose its combined busy state')
 }
+if (!dofeAccessSource.includes('const ACCESS_REQUEST_TIMEOUT_MS = 15000')
+  || (dofeAccessSource.match(/signal:\s*AbortSignal\.timeout\(ACCESS_REQUEST_TIMEOUT_MS\)/gu) || []).length !== 2) {
+  failures.push('dsh-plugin-desktop: native access API calls have no bounded timeout policy')
+}
 const defaultModelWrite = dofeAccessSource.indexOf("const defaultModel = descriptor.find(item => item.ns === 'agent-default-model')")
 const authorizationWrite = dofeAccessSource.indexOf('await mutateDofeAccessSettings(settingsApi', defaultModelWrite)
 if (defaultModelWrite < 0 || authorizationWrite < defaultModelWrite) {
