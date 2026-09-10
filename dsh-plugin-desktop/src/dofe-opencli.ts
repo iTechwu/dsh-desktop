@@ -8,6 +8,35 @@ export const inject = ['tools', 'settings']
 
 const TIMEOUT_MS = 90_000
 const MAX_OUTPUT_BYTES = 2 * 1024 * 1024
+const READ_ONLY_COMMANDS = new Map<string, ReadonlySet<string>>([
+  ['autohome', new Set(['brand', 'score'])],
+  ['bilibili', new Set(['comments', 'hot', 'ranking', 'search', 'subtitle', 'summary', 'user-videos', 'video'])],
+  ['dongchedi', new Set(['koubei', 'models', 'score', 'search', 'series', 'specs'])],
+  ['duckduckgo', new Set(['search', 'suggest'])],
+  ['exa', new Set(['fetch', 'search'])],
+  ['google', new Set(['news', 'search', 'suggest', 'trends'])],
+  ['kuaishou', new Set(['search'])],
+  ['lemon8', new Set(['search'])],
+  ['toutiao', new Set(['articles', 'hot', 'recommend'])],
+  ['weibo', new Set(['comments', 'hot', 'search', 'user', 'user-posts'])],
+  ['youtube', new Set(['search'])],
+  ['xiaohongshu', new Set(['comments', 'feed', 'note', 'search', 'user'])],
+  ['zhihu', new Set(['answer-comments', 'answer-detail', 'hot', 'question', 'search', 'user-answers', 'user-articles'])],
+])
+
+export function validateDofeOpenCliArgs(value: unknown): string[] {
+  if (!Array.isArray(value) || value.length < 2 || value.length > 16
+    || value.some(item => typeof item !== 'string' || item.length === 0 || item.length > 2048 || item.includes('\0'))) {
+    throw new Error('dofe_opencli args must be a bounded string array with a read-only route')
+  }
+  const args = value as string[]
+  const site = args[0]!
+  const command = args[1]!
+  if (!READ_ONLY_COMMANDS.get(site)?.has(command)) {
+    throw new Error('dofe_opencli route is not allowed: ' + site + ' ' + command)
+  }
+  return args
+}
 
 function runOpenCli(args: string[], signal: AbortSignal): Promise<{ ok: boolean; stdout: string; stderr: string }> {
   return new Promise(resolve => {
@@ -52,10 +81,7 @@ export function apply(ctx: Context): void | (() => void) {
         || !access.enabledPlugins.includes('opencli')) {
         throw new Error('DoFe OpenCLI is not enabled in the startup plugin selection')
       }
-      if (!Array.isArray(args.args) || args.args.length === 0 || args.args.some(value => typeof value !== 'string')) {
-        throw new Error('dofe_opencli args must be a non-empty string array')
-      }
-      return runOpenCli(args.args as string[], exec.signal)
+      return runOpenCli(validateDofeOpenCliArgs(args.args), exec.signal)
     },
   })
   return dispose

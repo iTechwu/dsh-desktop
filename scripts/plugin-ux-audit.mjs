@@ -143,6 +143,7 @@ const desktopClientStyles = `${desktopStyles}\n${desktopSettingsStyles}\n${deskt
 const pluginConsoleClient = await readFile(new URL('../.ci/dsh-plugin-console/lib/client.js', import.meta.url), 'utf8')
 const pluginConsoleHost = await readFile(new URL('../.ci/dsh-plugin-console/lib/index.js', import.meta.url), 'utf8')
 const openCliSource = await readFile(new URL('../.ci/dsh-opencli/index.js', import.meta.url), 'utf8')
+const dofeOpenCliSource = await readFile(new URL('../dsh-plugin-desktop/src/dofe-opencli.ts', import.meta.url), 'utf8')
 const directMcpServers = [...dofeManagedSource.matchAll(/serverName:\s*'([^']+)'/gu)].map(match => match[1])
 const toolsMcpPaths = dofeManagedSource.match(/\.\.\.\[([\s\S]*?)\]\.map\(path => \(\{ plugin: 'tools'/u)?.[1]
   ?.match(/'[^']+'/gu)?.map(value => value.slice(1, -1)) || []
@@ -265,6 +266,10 @@ for (const route of pluginConsoleRoutes) {
 }
 if (!openCliSource.includes("redirect: 'error'") || !openCliSource.includes("cache: 'no-store'")) {
   failures.push('dsh-opencli: Exa MCP requests must reject redirects and disable caching')
+}
+if (!dofeOpenCliSource.includes('const READ_ONLY_COMMANDS')
+  || !dofeOpenCliSource.includes('validateDofeOpenCliArgs(args.args)')) {
+  failures.push('dsh-plugin-desktop: dofe_opencli must enforce approved read-only routes at execution time')
 }
 for (const serverName of managedMcpServers) {
   if (!capabilityMatrix.includes(`\`${serverName}\``)) {
