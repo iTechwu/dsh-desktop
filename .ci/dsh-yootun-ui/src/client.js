@@ -29,7 +29,7 @@ const copy = {
     key: 'Model API Key', keyPlaceholder: '输入 model_api_key', showKey: '显示 Key', hideKey: '隐藏 Key', load: '获取可用模型', loading: '正在获取…', modelsLoaded: '已获取 {count} 个可用模型',
     model: '默认模型', modelPlaceholder: '输入 Key 后获取模型列表', plugins: '预装 DoFe 能力',
     selected: '已选择 {count} 项', submit: '验证并进入', saving: '正在验证…', remove: '移除 Key', confirmRemove: '确认移除', cancel: '取消', removeWarning: '移除后将退出当前授权状态，需要重新输入 Key 才能继续使用。',
-    configured: '已配置', missing: '未配置', help: '获取 model_api_key，请联系优惠豚 AI 部小伙伴：19996936963',
+    configured: '已配置', missing: '未配置', loadError: '暂时无法读取凭据状态。', help: '获取 model_api_key，请联系优惠豚 AI 部小伙伴：19996936963',
     modelError: '无法获取模型列表，请检查 Key 与模型服务。', invalid: 'Key 验证失败，请检查后重试。',
     saveError: '保存失败，请检查配置后重试。', removeError: '移除失败，请稍后重试。',
   },
@@ -39,7 +39,7 @@ const copy = {
     key: 'Model API Key', keyPlaceholder: 'Enter model_api_key', showKey: 'Show key', hideKey: 'Hide key', load: 'Load available models', loading: 'Loading…', modelsLoaded: '{count} models available',
     model: 'Default model', modelPlaceholder: 'Enter the key to load models', plugins: 'Bundled DoFe capabilities',
     selected: '{count} selected', submit: 'Verify and enter', saving: 'Verifying…', remove: 'Remove key', confirmRemove: 'Confirm removal', cancel: 'Cancel', removeWarning: 'Removing the key signs you out. You will need to enter it again to continue.',
-    configured: 'Configured', missing: 'Not configured', help: 'For model_api_key, contact the Yootun AI team at 19996936963.',
+    configured: 'Configured', missing: 'Not configured', loadError: 'Credential status is temporarily unavailable.', help: 'For model_api_key, contact the Yootun AI team at 19996936963.',
     modelError: 'Could not load models. Check the key and model service.', invalid: 'The key could not be verified.',
     saveError: 'Could not save the configuration.', removeError: 'Could not remove the key.',
   },
@@ -291,8 +291,17 @@ function AccessOnboarding({ complete, credentials, settingsApi, useAccess, t }) 
 
 function AccessSettings({ credentials, settingsApi, useAccess, t }) {
   const [configured, setConfigured] = useState(false)
-  useEffect(() => { void credentials.describe([ACCESS_KEY]).then(result => { setConfigured(result.ok && result.value[ACCESS_KEY]?.configured === true) }) }, [credentials])
-  return h('section', { className: 'yu-settings' }, h('h2', null, t('nav')), h('p', { className: 'yu-status' }, t('intro')), h(AccessForm, { credentials, settingsApi, useAccess, initialConfigured: configured, onboarding: false, t }))
+  const [loadError, setLoadError] = useState(false)
+  useEffect(() => {
+    let active = true
+    void credentials.describe([ACCESS_KEY]).then(result => {
+      if (!active) return
+      if (result.ok) setConfigured(result.value[ACCESS_KEY]?.configured === true)
+      else setLoadError(true)
+    }).catch(() => { if (active) setLoadError(true) })
+    return () => { active = false }
+  }, [credentials])
+  return h('section', { className: 'yu-settings' }, h('h2', null, t('nav')), h('p', { className: 'yu-status' }, t('intro')), loadError ? h('p', { className: 'yu-error', role: 'alert' }, t('loadError')) : null, h(AccessForm, { credentials, settingsApi, useAccess, initialConfigured: configured, onboarding: false, t }))
 }
 
 function installMandatoryGate(props) {

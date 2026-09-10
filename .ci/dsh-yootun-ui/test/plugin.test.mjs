@@ -82,6 +82,8 @@ test('guides credential setup and protects credential removal', async () => {
   assert.match(source, /root\.inert = true/u)
   assert.match(source, /document\.body\.style\.overflow = 'hidden'/u)
   assert.match(source, /document\.body\.style\.overflow = previousOverflow/u)
+  assert.match(source, /const \[loadError, setLoadError\] = useState\(false\)/u)
+  assert.match(source, /role: 'alert'.*t\('loadError'\)/u)
 })
 
 test('re-reads and retries a settings mutation once after a revision conflict', async () => {
