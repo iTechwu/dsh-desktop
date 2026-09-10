@@ -40,6 +40,7 @@ const ROUTES: readonly ManagedMcpRoute[] = [
   ...[
     'platform', 'supply-chain', 'talent-discovery', 'lead-discovery', 'lead-monitor',
     'hotspot-discovery', 'custom-car-monitoring', 'viral-video', 'browser-intelligence', 'tos-upload', 'xhs-operation',
+    'douyin-operation',
   ].map(path => ({ plugin: 'tools' as const, serverName: `tools-${path}`, path: `tools/${path}`, timeoutMs: 60_000 })),
 ]
 

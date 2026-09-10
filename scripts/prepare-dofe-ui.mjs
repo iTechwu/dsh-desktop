@@ -12,6 +12,7 @@ const preinstalledPlugins = [
   'dsh-tools-mcp',
   'dsh-yootun-ui',
   'dsh-yootun-dashboard',
+  'dsh-yootun-douyin-operation',
   'dsh-yootun-recruiter',
   'dsh-yootun-sales',
   'dsh-yootun-supply-watch',

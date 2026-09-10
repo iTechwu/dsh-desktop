@@ -410,6 +410,7 @@
     "@dofe/dsh-yootun-content-command": "file:../../docker-helm.dofe.ai/plugins/dsh-yootun-content-command",
     "@dofe/dsh-yootun-daily-report": "file:../../docker-helm.dofe.ai/plugins/dsh-yootun-daily-report",
     "@dofe/dsh-yootun-dashboard": "file:../../docker-helm.dofe.ai/plugins/dsh-yootun-dashboard",
+    "@dofe/dsh-yootun-douyin-operation": "file:../../docker-helm.dofe.ai/plugins/dsh-yootun-douyin-operation",
     "@dofe/dsh-yootun-finops": "file:../../docker-helm.dofe.ai/plugins/dsh-yootun-finops",
     "@dofe/dsh-yootun-knowledge": "file:../../docker-helm.dofe.ai/plugins/dsh-yootun-knowledge",
     "@dofe/dsh-yootun-lead-discovery": "file:../../docker-helm.dofe.ai/plugins/dsh-yootun-lead-discovery",

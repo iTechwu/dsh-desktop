@@ -26,6 +26,7 @@
 | 改装检索 | `/api/desktop/yootun/retrofit`；`custom-car-monitoring` | retrofit | ready、empty、unavailable、error | 读操作不写审计；服务不可用时保留重试入口和上下文 |
 | 病毒视频/浏览器智能 | `viral-video`、`browser-intelligence` | content-command、sales | ready、partial、unavailable、error | 工具缺失不伪造成功；本地 route 以稳定来源 reason 映射 UI |
 | 小红书运营 | `/api/desktop/yootun/xhs-operation`；`xhs-operation` / `xhs_*` | XHS operation | awaiting_confirmation、queued、running、succeeded、failed、cancelled | 创建、轮询、取消使用同一 trace；取消需要二次确认，终态只审计一次 |
+| 抖音运营 | `/api/desktop/yootun/douyin-operation`；`douyin-operation` / `douyin_*` | douyin-operation | ready、partial、empty、unavailable、error；删除为 awaiting_confirmation、confirmed_pending_adapter、cleanup_failed | 采集在设备端由系统 Google Chrome（Playwright `channel="chrome"`，无 Chrome 阻断且不回退 Chromium）执行，Cookie 与 `storage_state` 永不离开设备；tools 只接收 `vault://` 会话引用与设备上报的会话状态，页面只访问本地同源路由，不接收 `MODELS_API_KEY`、内部地址或原始传输错误。作品字段本次未暴露时显示 `—`，不回填历史值 |
 | 知识与记忆 | `/api/desktop/yootun/knowledge`；`knowledge_*`、`memory_*` | knowledge | ready、degraded、empty、error；写入需确认 | 统一由 knowledge MCP 处理 tenant/team/user 权限；读取不写审计，remember/forget/confirm 写入审计 |
 | 审计事件与同步 | `/api/desktop/yootun/audit` | audit | ready、offline、cached、auth_required、forbidden、local_error；同步可重试 | 读取与 `retry_sync` 使用同源托管路由；脱机优先展示本地缓存，不把同步失败伪装成空数据 |
 | TOS 媒体上传 | `/_dsh/uploader/pick-file`、`/_dsh/uploader/upload`、`/_dsh/uploader/uploadStart`、`/_dsh/uploader/uploadStatus`、`/_dsh/uploader/media`；`media_upload` | XHS operation、Agent 媒体工具 | uploading、queued、succeeded、failed、cancelled、requires_user_login | 通过原生选取、允许清单和 TOCTOU 复查；授权仅交给 Tools MCP，不回传本地路径、预签名 URL 或对象 key |
@@ -50,6 +51,7 @@
 | `tools-browser-intelligence` | `/mcp/tools/browser-intelligence` | 60s | tools |
 | `tools-tos-upload` | `/mcp/tools/tos-upload` | 60s | tools |
 | `tools-xhs-operation` | `/mcp/tools/xhs-operation` | 60s | tools |
+| `tools-douyin-operation` | `/mcp/tools/douyin-operation` | 60s | tools |
 
 所有 server 都使用 streamable HTTP 和同一个托管凭据引用；启动失败不阻断 Desktop 壳层，重连从 500ms 指数退避到 30s、最多 10 次。凭据或启用插件集合变化时，Host 销毁旧 client 后按当前 generation 重建；任何传输错误都不得序列化 Authorization 请求元数据。
 

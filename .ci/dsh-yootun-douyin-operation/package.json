@@ -1,0 +1,41 @@
+{
+  "name": "@dofe/dsh-yootun-douyin-operation",
+  "version": "0.1.0",
+  "description": "Yootun 抖音运营工作台：设备端扫码登录、创作者中心数据采集与展示",
+  "type": "module",
+  "main": "./index.js",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./lib/client.js",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-ui-primitives",
+        "@deepseek-ai/dsh-client-ui-sidebar"
+      ]
+    }
+  },
+  "dependencies": {
+    "playwright-core": "^1.62.0"
+  },
+  "files": [
+    "cordis.patch.yml",
+    "index.js",
+    "lib",
+    "src"
+  ],
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "test": "node --test",
+    "check": "npm run build && npm test"
+  },
+  "license": "MIT",
+  "private": true
+}

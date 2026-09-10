@@ -1,0 +1,25 @@
+{
+  "_note": "脱敏样例：高播放作品 item_compare（有数据；metric 名真实，值为占位）。用于验证完整解析路径。",
+  "status_code": 0,
+  "selected_metrics": [],
+  "compare_item_ids": ["7000000000000000011", "7000000000000000012"],
+  "item": {
+    "id": "7000000000000000001",
+    "metrics": {
+      "view_count": 10000,
+      "avg_view_second": 13.46,
+      "completion_rate": 0.0309,
+      "completion_rate_5s": 0.4017,
+      "bounce_rate_2s": 0.3173,
+      "avg_view_proportion": 0.1761,
+      "cover_click_rate": 0.0123,
+      "fan_view_proportion": 0.0053,
+      "like_rate": 0.0091,
+      "comment_rate": 0.0009,
+      "share_rate": 0.0003,
+      "favorite_rate": 0.0005
+    }
+  },
+  "view_count_metric": {},
+  "punish_info": {}
+}

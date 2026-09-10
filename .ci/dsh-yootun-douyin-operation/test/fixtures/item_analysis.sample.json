@@ -1,0 +1,19 @@
+{
+  "_note": "脱敏样例：批量作品分析 item_performance（表格 2s/5s/平均时长 的主要来源）。字段名真实，值为占位。",
+  "status_code": 0,
+  "status_msg": "",
+  "items": [
+    {
+      "item_id": "7000000000000000001",
+      "title": "示例作品标题 #示例话题",
+      "publish_time": "2026-09-06 17:29",
+      "play_count": 10000,
+      "average_play_duration": 13.46,
+      "completion_rate_5s": 0.4017,
+      "bounce_rate_2s": 0.3173,
+      "cover": { "url_list": ["https://example.invalid/cover.jpeg"] },
+      "play_count_per_client": { "4": 8000, "3": 2000 },
+      "average_play_duration_per_client": { "4": 13.5, "3": 13.2 }
+    }
+  ]
+}

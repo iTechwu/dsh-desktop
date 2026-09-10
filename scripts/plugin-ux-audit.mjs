@@ -112,6 +112,7 @@ const actionLifecyclePlugins = new Set([
   'dsh-yootun-sales',
   'dsh-yootun-supply-watch',
   'dsh-yootun-xhs-operation',
+  'dsh-yootun-douyin-operation',
 ])
 
 const pluginClassPrefixes = {
@@ -119,6 +120,7 @@ const pluginClassPrefixes = {
   'dsh-yootun-content-command': 'ycc-',
   'dsh-yootun-daily-report': 'ydr-',
   'dsh-yootun-dashboard': 'yd-',
+  'dsh-yootun-douyin-operation': 'ydo-',
   'dsh-yootun-finops': 'yf-',
   'dsh-yootun-knowledge': 'yk-',
   'dsh-yootun-lead-discovery': 'yl-',

@@ -84,9 +84,6 @@ importers:
       '@deepseek-ai/dsh-api-settings-controller':
         specifier: workspace:*
         version: link:../deepseek-harness/packages/api/settings-controller
-      '@deepseek-ai/dsh-api-workspace-files':
-        specifier: workspace:*
-        version: link:../deepseek-harness/packages/api/workspace-files
       '@deepseek-ai/dsh-api-workspace-controller':
         specifier: workspace:*
         version: link:../deepseek-harness/packages/api/workspace-controller
@@ -129,9 +126,6 @@ importers:
       '@deepseek-ai/dsh-client-modules':
         specifier: workspace:*
         version: link:../deepseek-harness/packages/client/modules
-      '@deepseek-ai/dsh-client-resources':
-        specifier: workspace:*
-        version: link:../deepseek-harness/packages/client/resources
       '@deepseek-ai/dsh-client-store':
         specifier: workspace:*
         version: link:../deepseek-harness/packages/client/store
@@ -189,9 +183,6 @@ importers:
       '@deepseek-ai/dsh-client-ui-model-selection':
         specifier: workspace:*
         version: link:../deepseek-harness/packages/client/ui-model-selection
-      '@deepseek-ai/dsh-client-ui-open-in-app':
-        specifier: workspace:*
-        version: link:../deepseek-harness/packages/client/ui-open-in-app
       '@deepseek-ai/dsh-client-ui-permission-presets':
         specifier: workspace:*
         version: link:../deepseek-harness/packages/client/ui-permission-presets
@@ -228,15 +219,6 @@ importers:
       '@deepseek-ai/dsh-client-ui-sidebar':
         specifier: workspace:*
         version: link:../deepseek-harness/packages/client/ui-sidebar
-      '@deepseek-ai/dsh-client-ui-sidebar-documentpreview':
-        specifier: workspace:*
-        version: link:../deepseek-harness/packages/client/ui-sidebar-documentpreview
-      '@deepseek-ai/dsh-client-ui-sidebar-files':
-        specifier: workspace:*
-        version: link:../deepseek-harness/packages/client/ui-sidebar-files
-      '@deepseek-ai/dsh-client-ui-sidebar-right':
-        specifier: workspace:*
-        version: link:../deepseek-harness/packages/client/ui-sidebar-right
       '@deepseek-ai/dsh-client-ui-skill':
         specifier: workspace:*
         version: link:../deepseek-harness/packages/client/ui-skill
@@ -375,9 +357,6 @@ importers:
       '@deepseek-ai/dsh-host-frontend-static':
         specifier: workspace:*
         version: link:../deepseek-harness/packages/host/frontend-static
-      '@deepseek-ai/dsh-host-open-in-app':
-        specifier: workspace:*
-        version: link:../deepseek-harness/packages/host/open-in-app
       '@deepseek-ai/dsh-host-plugin-inventory':
         specifier: workspace:*
         version: link:../deepseek-harness/packages/host/plugin-inventory
@@ -885,6 +864,9 @@ importers:
       '@deepseek-ai/dsh-api-workspace-controller':
         specifier: workspace:*
         version: link:../deepseek-harness/packages/api/workspace-controller
+      '@deepseek-ai/dsh-api-workspace-files':
+        specifier: workspace:*
+        version: link:../deepseek-harness/packages/api/workspace-files
       '@deepseek-ai/dsh-app-boot':
         specifier: workspace:*
         version: link:../deepseek-harness/packages/boot/app-boot
@@ -927,6 +909,9 @@ importers:
       '@deepseek-ai/dsh-client-modules':
         specifier: workspace:*
         version: link:../deepseek-harness/packages/client/modules
+      '@deepseek-ai/dsh-client-resources':
+        specifier: workspace:*
+        version: link:../deepseek-harness/packages/client/resources
       '@deepseek-ai/dsh-client-store':
         specifier: workspace:*
         version: link:../deepseek-harness/packages/client/store
@@ -981,6 +966,9 @@ importers:
       '@deepseek-ai/dsh-client-ui-model-selection':
         specifier: workspace:*
         version: link:../deepseek-harness/packages/client/ui-model-selection
+      '@deepseek-ai/dsh-client-ui-open-in-app':
+        specifier: workspace:*
+        version: link:../deepseek-harness/packages/client/ui-open-in-app
       '@deepseek-ai/dsh-client-ui-permission-presets':
         specifier: workspace:*
         version: link:../deepseek-harness/packages/client/ui-permission-presets
@@ -1020,6 +1008,15 @@ importers:
       '@deepseek-ai/dsh-client-ui-sidebar':
         specifier: workspace:*
         version: link:../deepseek-harness/packages/client/ui-sidebar
+      '@deepseek-ai/dsh-client-ui-sidebar-documentpreview':
+        specifier: workspace:*
+        version: link:../deepseek-harness/packages/client/ui-sidebar-documentpreview
+      '@deepseek-ai/dsh-client-ui-sidebar-files':
+        specifier: workspace:*
+        version: link:../deepseek-harness/packages/client/ui-sidebar-files
+      '@deepseek-ai/dsh-client-ui-sidebar-right':
+        specifier: workspace:*
+        version: link:../deepseek-harness/packages/client/ui-sidebar-right
       '@deepseek-ai/dsh-client-ui-skill':
         specifier: workspace:*
         version: link:../deepseek-harness/packages/client/ui-skill
@@ -1149,6 +1146,9 @@ importers:
       '@deepseek-ai/dsh-host-frontend-static':
         specifier: workspace:*
         version: link:../deepseek-harness/packages/host/frontend-static
+      '@deepseek-ai/dsh-host-open-in-app':
+        specifier: workspace:*
+        version: link:../deepseek-harness/packages/host/open-in-app
       '@deepseek-ai/dsh-host-plugin-inventory':
         specifier: workspace:*
         version: link:../deepseek-harness/packages/host/plugin-inventory
@@ -1539,6 +1539,9 @@ importers:
       '@dofe/dsh-yootun-dashboard':
         specifier: file:../../docker-helm.dofe.ai/plugins/dsh-yootun-dashboard
         version: file:../docker-helm.dofe.ai/plugins/dsh-yootun-dashboard
+      '@dofe/dsh-yootun-douyin-operation':
+        specifier: file:../../docker-helm.dofe.ai/plugins/dsh-yootun-douyin-operation
+        version: file:../docker-helm.dofe.ai/plugins/dsh-yootun-douyin-operation
       '@dofe/dsh-yootun-finops':
         specifier: file:../../docker-helm.dofe.ai/plugins/dsh-yootun-finops
         version: file:../docker-helm.dofe.ai/plugins/dsh-yootun-finops
@@ -2491,6 +2494,9 @@ packages:
 
   '@dofe/dsh-yootun-dashboard@file:../docker-helm.dofe.ai/plugins/dsh-yootun-dashboard':
     resolution: {directory: ../docker-helm.dofe.ai/plugins/dsh-yootun-dashboard, type: directory}
+
+  '@dofe/dsh-yootun-douyin-operation@file:../docker-helm.dofe.ai/plugins/dsh-yootun-douyin-operation':
+    resolution: {directory: ../docker-helm.dofe.ai/plugins/dsh-yootun-douyin-operation, type: directory}
 
   '@dofe/dsh-yootun-finops@file:../docker-helm.dofe.ai/plugins/dsh-yootun-finops':
     resolution: {directory: ../docker-helm.dofe.ai/plugins/dsh-yootun-finops, type: directory}
@@ -6059,6 +6065,11 @@ packages:
     resolution: {integrity: sha512-emEcLuomt2j03vxD54giVB4SxTjnsqkU692xZOZXHDVoYyypEm+b3jpiTcc+Cf+myooc+/Ly0z01jqeNHVgJGw==}
     engines: {node: '>=16.0.0'}
 
+  playwright-core@1.63.0:
+    resolution: {integrity: sha512-rYCsBF/M5HjUch52bbtVONEFjv6Xu8sm8h72dNlR5bzIE1fvC/bxgspzkjSfU+MweEMmPM8KJebG6nnyxo5mCg==}
+    engines: {node: '>=20'}
+    hasBin: true
+
   plist@3.1.0:
     resolution: {integrity: sha512-uysumyrvkUX0rX/dEVqt8gC3sTBzd4zoWfLeS29nb53imdaXVvLINYXTI2GNqzaMuvacNx4uJQ8+b3zXR0pkgQ==}
     engines: {node: '>=10.4.0'}
@@ -7841,6 +7852,10 @@ snapshots:
   '@dofe/dsh-yootun-daily-report@file:../docker-helm.dofe.ai/plugins/dsh-yootun-daily-report': {}
 
   '@dofe/dsh-yootun-dashboard@file:../docker-helm.dofe.ai/plugins/dsh-yootun-dashboard': {}
+
+  '@dofe/dsh-yootun-douyin-operation@file:../docker-helm.dofe.ai/plugins/dsh-yootun-douyin-operation':
+    dependencies:
+      playwright-core: 1.63.0
 
   '@dofe/dsh-yootun-finops@file:../docker-helm.dofe.ai/plugins/dsh-yootun-finops': {}
 
@@ -11382,6 +11397,8 @@ snapshots:
       pvtsutils: 1.3.6
       pvutils: 1.2.0
       tslib: 2.8.1
+
+  playwright-core@1.63.0: {}
 
   plist@3.1.0:
     dependencies:

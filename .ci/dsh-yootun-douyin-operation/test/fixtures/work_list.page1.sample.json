@@ -1,0 +1,17 @@
+{
+  "_note": "脱敏样例：结构与类型真实，数值/ID/文案为占位。",
+  "status_code": 0,
+  "aweme_list": [
+    {
+      "aweme_id": "7000000000000000001",
+      "desc": "示例作品标题 #示例话题",
+      "create_time": 1787000000,
+      "statistics": { "play_count": 10000, "digg_count": 100, "comment_count": 10, "collect_count": 5, "share_count": 3 },
+      "video": { "duration": 60000, "cover": { "url_list": ["https://example.invalid/cover.jpeg"] } },
+      "status": { "is_private": false, "aweme_id": "7000000000000000001" }
+    }
+  ],
+  "has_more": true,
+  "max_cursor": 1787000000000,
+  "cursor": 1787000000000
+}

@@ -20,6 +20,7 @@ const PLUGINS = [
   { id: 'knowledge', name: '企业知识与 Memory', description: '知识库、Memory 与知识图谱治理' },
 ]
 const DEFAULT_PLUGIN_IDS = PLUGINS.map(plugin => plugin.id)
+// 统一 UX audit 要求：每个 fetch 都必须带共享的有界超时策略。
 const REQUEST_TIMEOUT_MS = 30000
 
 const copy = {
@@ -259,6 +260,7 @@ function AccessOnboarding({ complete, credentials, settingsApi, useAccess, t }) 
   }, [authorized])
   useEffect(() => {
     if (authorized) return undefined
+    // 首屏引导是模态卡片：进入时聚焦首个可操作项，Tab 循环不逃出卡片。
     const focusable = () => Array.from(cardRef.current?.querySelectorAll('button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),a[href],[tabindex]:not([tabindex="-1"])') ?? [])
       .filter(element => !element.hidden && element.getAttribute('aria-hidden') !== 'true')
     const focusFrame = requestAnimationFrame(() => (cardRef.current?.querySelector('#yu-model-key') ?? focusable()[0] ?? cardRef.current)?.focus?.())
