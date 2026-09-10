@@ -846,6 +846,7 @@ window.__ModuleLoader__.load({
 			const [installedSkills, setInstalledSkills] = react.useState([]);
 			// 原始页面标题（AI 授权标题闪烁后恢复用）
 			const originalTitleRef = react.useRef("");
+			const modalCardRef = react.useRef(null);
 			// 技能删除两步确认：存待确认技能名
 			const [confirmSkillDelete, setConfirmSkillDelete] = react.useState(null);
 			// 技能停用/启用进行中
