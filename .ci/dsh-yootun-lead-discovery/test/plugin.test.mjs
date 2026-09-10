@@ -145,6 +145,22 @@ test('host delegates pagination and stored candidates to their read-only tools',
   assert.equal(candidatesResult.body.items[0].leadId, undefined)
 })
 
+test('分页工具已解析失败时不得返回 ready 空列表', async () => {
+  let route
+  apply({
+    tools: {
+      schemas: () => [{ name: 'lead_discovery_result_page_get' }],
+      execute: async () => ({ structuredContent: { status: 'failed', reason: 'RESULT_STORE_UNAVAILABLE', items: [] } }),
+    },
+    webServer: { register(value) { route = value; return () => {} } },
+    effect(factory) { return factory() },
+  })
+  const result = await invoke(route, { action: 'page', resultRef: 'ref-abc' })
+  assert.equal(result.body.status, 'error')
+  assert.equal(result.body.reason, 'result_store_unavailable')
+  assert.equal(result.body.items, undefined)
+})
+
 test('host preserves a safe MCP error category for diagnosis', async () => {
   let route
   apply({

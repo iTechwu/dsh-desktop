@@ -118,6 +118,8 @@ async function handlePage(ctx, body, res, signal = AbortSignal.timeout(TOOL_CALL
   if (!schema) return send(res, 200, { status: 'unavailable', reason: 'lead_discovery_tool_unavailable' })
   const result = await ctx.tools.execute({ callId: `yootun-lead-page-${Date.now()}`, name: schema.name, arguments: { resultRef, cursor }, signal })
   const payload = parseResult(result)
+  const failure = resolvedToolFailure(result, payload)
+  if (failure) return send(res, 200, { status: 'error', reason: failure, resultRef })
   const items = projectItems(payload.items)
   const refs = pickRefs(payload)
   return send(res, 200, { status: 'ready', ...refs, items, stats: summarizeItems(items, refs.totalAvailable) })
