@@ -930,6 +930,8 @@ window.__ModuleLoader__.load({
 			const [aiFallback, setAiFallback] = react.useState(() => {
 				try { return localStorage.getItem("pc-ai-fallback-v2") !== "off"; } catch { return true; }
 			});
+			const [aiConsentBusyJobs, setAiConsentBusyJobs] = react.useState(() => new Set());
+			const aiConsentBusyJobsRef = react.useRef(new Set());
 			const aiAutoDeclinedRef = react.useRef({});
 			// 已关闭的失败提示（用户点 × 后不再显示，服务重启后重置）
 			const [dismissedFailures, setDismissedFailures] = react.useState({});
@@ -939,6 +941,7 @@ window.__ModuleLoader__.load({
 			const [sourceName, setSourceName] = react.useState("");
 			const [sourceUrl, setSourceUrl] = react.useState("");
 			const [sourcesBusy, setSourcesBusy] = react.useState(false);
+			const sourcesBusyRef = react.useRef(false);
 			// registry 行内编辑
 			const [editReg, setEditReg] = react.useState(null);
 			// 搜索源列表（内置 + 自定义，来自配置）
@@ -1496,10 +1499,30 @@ window.__ModuleLoader__.load({
 			};
 			/** 本地 AI 兜底授权：调用模型 API 产生费用，必须用户明确同意。 */
 			const aiConsent = (jobId, approved) => {
-				call("/plugin-console/ai-consent", { jobId, approved }).then(
-					() => { if (!approved) setMessage(t("failed") + "：已取消本地 AI 兜底（不会调用模型 API）"); },
-					(error) => setMessage(t("failed") + "：" + friendlyGithubError(error).message),
-				);
+				if (aiConsentBusyJobsRef.current.has(jobId)) return Promise.resolve(false);
+				aiConsentBusyJobsRef.current.add(jobId);
+				setAiConsentBusyJobs((prev) => new Set(prev).add(jobId));
+				return call("/plugin-console/ai-consent", { jobId, approved }).then(
+					() => {
+						setJobs((prev) => prev[jobId] === undefined
+							? prev
+							: { ...prev, [jobId]: { ...prev[jobId], stage: "ai-consent-submitted" } });
+						if (!approved) setMessage(t("failed") + "：已取消本地 AI 兜底（不会调用模型 API）");
+						return true;
+					},
+					(error) => {
+						modalEscapeBusyRef.current = false;
+						setMessage(t("failed") + "：" + friendlyGithubError(error).message);
+						return false;
+					},
+				).finally(() => {
+					aiConsentBusyJobsRef.current.delete(jobId);
+					setAiConsentBusyJobs((prev) => {
+						const next = new Set(prev);
+						next.delete(jobId);
+						return next;
+					});
+				});
 			};
 			/** 软件源管理：打开时拉取当前配置。 */
 			const openSources = () => {
@@ -1580,16 +1603,25 @@ window.__ModuleLoader__.load({
 				);
 			};
 			const sourcesAction = (payload, done) => {
+				if (sourcesBusyRef.current) return Promise.resolve(false);
+				sourcesBusyRef.current = true;
 				setSourcesBusy(true);
-				call("/plugin-console/sources", payload).then(
+				return call("/plugin-console/sources", payload).then(
 					(data) => {
 						setSourcesData(data.sources);
 						setSearchSourcesList(data.sources.searchSources ?? []);
 						setMessage(t("sourcesUpdated"));
 						if (done) done();
+						return true;
 					},
-					(error) => setMessage(t("failed") + "：" + friendlyGithubError(error).message),
-				).finally(() => setSourcesBusy(false));
+					(error) => {
+						setMessage(t("failed") + "：" + friendlyGithubError(error).message);
+						return false;
+					},
+				).finally(() => {
+					sourcesBusyRef.current = false;
+					setSourcesBusy(false);
+				});
 			};
 			const addSource = () => {
 				if (!isAllowedSourceUrl(sourceUrl.trim())) {
@@ -2556,7 +2588,7 @@ onClick: () => window.open(`https://github.com/Noob-stupid/dsh-plugin-hub/releas
 					return consentJob === undefined
 						? null
 						: el("div", { className: styles.modalBackdrop },
-							el("div", { className: styles.modalCard, role: "dialog", "aria-modal": true, "aria-labelledby": "pc-ai-consent-title", "aria-describedby": "pc-ai-consent-description", ref: modalCardRef, tabIndex: -1 },
+							el("div", { className: styles.modalCard, role: "dialog", "aria-modal": true, "aria-labelledby": "pc-ai-consent-title", "aria-describedby": "pc-ai-consent-description", "aria-busy": aiConsentBusyJobs.has(consentJob.jobId), ref: modalCardRef, tabIndex: -1 },
 								el("strong", { id: "pc-ai-consent-title", className: styles.name }, t("installingLocal") + "：" + (consentJob.packageName ?? consentJob.repo)),
 								el("p", { id: "pc-ai-consent-description", className: styles.message }, t("aiConsentText")),
 								el("label", { className: styles.consentRemember },
@@ -2571,12 +2603,12 @@ onClick: () => window.open(`https://github.com/Noob-stupid/dsh-plugin-hub/releas
 									}),
 									t("aiConsentRemember")),
 								el("div", { className: styles.rowTop },
-									el("button", { type: "button", className: styles.toggle, onClick: () => { try { localStorage.setItem("pc-ai-remember", aiRemember ? "1" : "0"); } catch {} aiConsent(consentJob.jobId, true); } }, t("aiConsentApprove")),
-									el("button", { type: "button", className: styles.toggle, onClick: () => aiConsent(consentJob.jobId, false) }, t("aiConsentDecline")))));
+									el("button", { type: "button", className: styles.toggle, disabled: aiConsentBusyJobs.has(consentJob.jobId), onClick: () => { try { localStorage.setItem("pc-ai-remember", aiRemember ? "1" : "0"); } catch {} aiConsent(consentJob.jobId, true); } }, t("aiConsentApprove")),
+									el("button", { type: "button", className: styles.toggle, disabled: aiConsentBusyJobs.has(consentJob.jobId), onClick: () => aiConsent(consentJob.jobId, false) }, t("aiConsentDecline")))));
 				})(),
 				sourcesOpen && activeConsentJob === undefined
 					? el("div", { className: styles.modalBackdrop },
-						el("div", { className: styles.modalCard, role: "dialog", "aria-modal": true, "aria-labelledby": "pc-sources-title", "aria-describedby": "pc-sources-description", ref: modalCardRef, tabIndex: -1 },
+						el("div", { className: styles.modalCard, role: "dialog", "aria-modal": true, "aria-labelledby": "pc-sources-title", "aria-describedby": "pc-sources-description", "aria-busy": sourcesBusy, ref: modalCardRef, tabIndex: -1 },
 							el("div", { className: styles.rowTop, style: { justifyContent: "space-between" } },
 								el("strong", { id: "pc-sources-title", className: styles.name }, t("sourcesTitle")),
 								el("button", { type: "button", className: styles.trashBtn, style: { fontSize: 14, padding: "4px 8px" }, title: t("closeModal"), "aria-label": t("closeModal"), onClick: () => setSourcesOpen(false) }, "✕")),

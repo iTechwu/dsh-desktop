@@ -191,6 +191,16 @@ if (!pluginConsoleClient.includes('event.key === "Escape"')
   || !pluginConsoleClient.includes('sourcesOpen && activeConsentJob === undefined')) {
   failures.push('dsh-plugin-console: modal keyboard, focus-return, or stacking contract is incomplete')
 }
+if (!pluginConsoleClient.includes('const aiConsentBusyJobsRef = react.useRef(new Set())')
+  || !pluginConsoleClient.includes('if (aiConsentBusyJobsRef.current.has(jobId)) return Promise.resolve(false)')
+  || !pluginConsoleClient.includes('"aria-busy": aiConsentBusyJobs.has(consentJob.jobId)')) {
+  failures.push('dsh-plugin-console: AI consent has no synchronous request lock or busy semantics')
+}
+if (!pluginConsoleClient.includes('const sourcesBusyRef = react.useRef(false)')
+  || !pluginConsoleClient.includes('if (sourcesBusyRef.current) return Promise.resolve(false)')
+  || !pluginConsoleClient.includes('"aria-busy": sourcesBusy')) {
+  failures.push('dsh-plugin-console: source mutations have no synchronous request lock or busy semantics')
+}
 for (const label of ['sourceName', 'sourceUrl', 'searchUrlPlaceholder', 'headersPlaceholder', 'giteeClientId', 'giteeClientSecret']) {
   if (!pluginConsoleClient.includes(`"aria-label": t("${label}")`)) {
     failures.push(`dsh-plugin-console: source form field ${label} has no accessible name`)
