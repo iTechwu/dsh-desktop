@@ -8,6 +8,13 @@ const ciEntries = (await readdir(ciRoot, { withFileTypes: true }))
   .sort()
 const entries = ciEntries.filter(name => name.startsWith('dsh-yootun-'))
 
+async function readSourceTree(root, extensions) {
+  const paths = await readdir(root, { recursive: true })
+  return Promise.all(paths
+    .filter(path => !path.includes('node_modules/') && extensions.some(extension => path.endsWith(extension)))
+    .map(path => readFile(new URL(path, root), 'utf8')))
+}
+
 const clientPlugins = []
 for (const name of entries) {
   try {
@@ -27,6 +34,12 @@ const dofeManagedSource = await readFile(new URL('../dsh-plugin-desktop/src/dofe
 const themeSource = await readFile(new URL('../deepseek-harness/packages/client/ui-theme/src/styles/design-platform.css', import.meta.url), 'utf8')
 const deliverablesStyles = await readFile(new URL('../deepseek-harness/packages/client/ui-deliverables/src/client/Deliverables.module.css', import.meta.url), 'utf8')
 const capabilityMatrix = await readFile(new URL('../docs/superpowers/specs/2026-09-09-mcp-api-capability-matrix.md', import.meta.url), 'utf8')
+const localRouteSources = await Promise.all([
+  readSourceTree(new URL('../dsh-plugin-desktop/src/', import.meta.url), ['.ts', '.tsx']),
+  readSourceTree(ciRoot, ['.js']),
+])
+const locallyHostedApiPaths = new Set(localRouteSources.flat(2).flatMap(source =>
+  [...source.matchAll(/['"`](\/(?:api\/desktop|_dsh)\/[a-z0-9/_-]+)/giu)].map(match => match[1])))
 const definedThemeAliases = new Set(themeSource.match(/--dsw-alias-[a-z0-9-]+(?=\s*:)/g) || [])
 
 function findUndefinedThemeAliases(source) {
@@ -156,6 +169,11 @@ for (const match of knowledgeToolBlock.matchAll(/^\s{2}(knowledge_[a-z0-9_]+):/g
 for (const toolName of localToolNames) {
   if (!capabilityMatrix.includes(`\`${toolName}\``)) {
     failures.push(`Host Agent tool ${toolName} is missing from the capability matrix`)
+  }
+}
+for (const path of locallyHostedApiPaths) {
+  if (!capabilityMatrix.includes(`\`${path}\``)) {
+    failures.push(`Local Host route ${path} is missing from the capability matrix`)
   }
 }
 for (const alias of findUndefinedThemeAliases(desktopClientStyles)) {
