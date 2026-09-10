@@ -11,13 +11,10 @@ window.__ModuleLoader__.load({
     const OVERLAY_ID = '@dofe/dsh-yootun-sales'
     const OVERLAY_EVENT = 'dofe:yootun-overlay:open'
     const PATH = '/api/desktop/yootun/sales'
-    const REQUEST_TIMEOUT_MS = 30000
     const copy = {
-      zh: { open: '销售协同', title: '销售协同', subtitle: '公开意向发现、线索跟进与确认动作', close: '关闭销售协同', refresh: '刷新', loading: '正在读取销售工作区…', loadError: '销售工作区暂时无法加载', refreshError: '刷新失败，当前仍显示上次数据', unavailable: '销售数据源暂不可用', retry: '重新加载', leads: '线索', qualified: '合格线索', dueToday: '今日待跟进', pending: '待确认', empty: '还没有销售线索', actions: '跟进动作', approve: '确认', dismiss: '撤销', adapter: '已确认，等待适配器', succeeded: '适配器已完成', failed: '适配器执行失败', requiresLogin: '需要重新登录', source: '来源', intent: '意向发现', intentPlaceholder: '一句话描述要找的公开意向，例如：长沙新能源汽车改装讨论', intentSearch: '开始检索', intentSearching: '正在检索…', intentEmpty: '输入需求后查找公开讨论', intentUnavailable: 'Tools 意向检索暂不可用', intentError: '意向检索失败', actionError: '操作未完成，请重试', confidence: '置信度' },
-      en: { open: 'Sales workspace', title: 'Sales workspace', subtitle: 'Public intent discovery, follow-ups, and approvals', close: 'Close sales workspace', refresh: 'Refresh', loading: 'Loading sales workspace…', loadError: 'The sales workspace is temporarily unavailable', refreshError: 'Refresh failed. Showing the previous data.', unavailable: 'Sales data source unavailable', retry: 'Try again', leads: 'Leads', qualified: 'Qualified', dueToday: 'Due today', pending: 'Awaiting approval', empty: 'No sales leads yet', actions: 'Follow-up actions', approve: 'Approve', dismiss: 'Dismiss', adapter: 'Approved, adapter pending', succeeded: 'Adapter completed', failed: 'Adapter failed', requiresLogin: 'Login required', source: 'Source', intent: 'Intent discovery', intentPlaceholder: 'Describe the public intent to find in one sentence', intentSearch: 'Search', intentSearching: 'Searching…', intentEmpty: 'Enter a requirement to find public discussions', intentUnavailable: 'Tools intent discovery is unavailable', intentError: 'Intent search failed', actionError: 'Action failed. Try again.', confidence: 'Confidence' },
+      zh: { open: '销售协同', title: '销售协同', subtitle: '公开意向发现、线索跟进与确认动作', close: '关闭销售协同', refresh: '刷新', loading: '正在读取销售工作区…', loadError: '销售工作区暂时无法加载', unavailable: '销售数据源暂不可用', retry: '重新加载', leads: '线索', qualified: '合格线索', dueToday: '今日待跟进', pending: '待确认', empty: '还没有销售线索', actions: '跟进动作', approve: '确认', dismiss: '撤销', adapter: '已确认，等待适配器', succeeded: '适配器已完成', failed: '适配器执行失败', requiresLogin: '需要重新登录', source: '来源', intent: '意向发现', intentPlaceholder: '一句话描述要找的公开意向，例如：长沙新能源汽车改装讨论', intentSearch: '开始检索', intentSearching: '正在检索…', intentEmpty: '输入需求后查找公开讨论', intentUnavailable: 'Tools 意向检索暂不可用', intentError: '意向检索失败', actionError: '操作未完成，请重试', confidence: '置信度' },
+      en: { open: 'Sales workspace', title: 'Sales workspace', subtitle: 'Public intent discovery, follow-ups, and approvals', close: 'Close sales workspace', refresh: 'Refresh', loading: 'Loading sales workspace…', loadError: 'The sales workspace is temporarily unavailable', unavailable: 'Sales data source unavailable', retry: 'Try again', leads: 'Leads', qualified: 'Qualified', dueToday: 'Due today', pending: 'Awaiting approval', empty: 'No sales leads yet', actions: 'Follow-up actions', approve: 'Approve', dismiss: 'Dismiss', adapter: 'Approved, adapter pending', succeeded: 'Adapter completed', failed: 'Adapter failed', requiresLogin: 'Login required', source: 'Source', intent: 'Intent discovery', intentPlaceholder: 'Describe the public intent to find in one sentence', intentSearch: 'Search', intentSearching: 'Searching…', intentEmpty: 'Enter a requirement to find public discussions', intentUnavailable: 'Tools intent discovery is unavailable', intentError: 'Intent search failed', actionError: 'Action failed. Try again.', confidence: 'Confidence' },
     }
-    copy.zh.actionUnknown = '状态未知'
-    copy.en.actionUnknown = 'Unknown status'
     let opened = false
     let lastTrigger = null
     const listeners = new Set()
@@ -28,8 +25,8 @@ window.__ModuleLoader__.load({
     const closeOtherOverlay = event => { if (event.detail?.id !== OVERLAY_ID) setOpened(false) }
     const subscribe = listener => { listeners.add(listener); return () => listeners.delete(listener) }
     const snapshot = () => opened
-    async function load(signal) { const response = await fetch(PATH, { credentials: 'same-origin', redirect: 'error', signal: AbortSignal.any([signal, AbortSignal.timeout(REQUEST_TIMEOUT_MS)]), headers: { Accept: 'application/json' } }); if (!response.ok) throw new Error('sales request failed'); return response.json() }
-    async function mutate(body) { const response = await fetch(PATH, { method: 'POST', credentials: 'same-origin', redirect: 'error', signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS), headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify(body) }); if (!response.ok) throw new Error('sales mutation failed'); return response.json() }
+    async function load(signal) { const response = await fetch(PATH, { credentials: 'same-origin', redirect: 'error', signal, headers: { Accept: 'application/json' } }); if (!response.ok) throw new Error('sales request failed'); return response.json() }
+    async function mutate(body) { const response = await fetch(PATH, { method: 'POST', credentials: 'same-origin', redirect: 'error', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify(body) }); if (!response.ok) throw new Error('sales mutation failed'); return response.json() }
     function Metric({ label, value }) { return h('div', { className: 'ys-metric' }, h('span', null, label), h('strong', null, String(value ?? 0))) }
     function IntentSearch({ t, current, update, disabled }) {
       const [query, setQuery] = useState('')
@@ -39,14 +36,13 @@ window.__ModuleLoader__.load({
       const intent = current.intent
       return h('section', { className: 'ys-intent', 'aria-busy': busy }, h('div', { className: 'ys-section-heading' }, h('h2', null, t('intent'))), h('div', { className: 'ys-intent-form' }, h('input', { value: query, maxLength: 500, disabled, placeholder: t('intentPlaceholder'), 'aria-label': t('intentPlaceholder'), onChange: event => setQuery(event.target.value), onKeyDown: event => { if (event.key === 'Enter') void run() } }), h('button', { type: 'button', disabled: disabled || busy || !query.trim(), onClick: () => void run() }, h(IconDataOutline16, { size: 14 }), busy ? t('intentSearching') : t('intentSearch'))), !intent ? h('div', { className: 'ys-intent-empty', role: 'status' }, t('intentEmpty')) : intent.status === 'unavailable' ? h('div', { className: 'ys-intent-empty', role: 'status' }, t('intentUnavailable')) : intent.status === 'error' ? h('div', { className: 'ys-intent-empty', role: 'alert' }, t('intentError')) : intent.items?.length ? intent.items.slice(0, 10).map((item, index) => h('article', { className: 'ys-intent-row', key: `${item.sourceUrl || item.topic || 'result'}-${index}` }, h('div', null, h('strong', null, item.topic || item.platform || t('source')), h('span', null, item.sourceUrl || ''), item.intentSignals?.length ? h('small', null, item.intentSignals.join(' · ')) : null), h('b', null, item.confidence === undefined ? '' : `${t('confidence')} ${Math.round(Number(item.confidence) * 100)}%`))) : h('div', { className: 'ys-intent-empty', role: 'status' }, t('intentEmpty')))
     }
-    function statusText(status, t) { return status === 'awaiting_confirmation' ? t('pending') : status === 'confirmed_pending_adapter' || status === 'adapter_pending' ? t('adapter') : status === 'succeeded' ? t('succeeded') : status === 'failed' ? t('failed') : status === 'requires_user_login' ? t('requiresLogin') : status === 'dismissed' ? t('dismiss') : t('actionUnknown') }
+    function statusText(status, t) { return status === 'awaiting_confirmation' ? t('pending') : status === 'confirmed_pending_adapter' || status === 'adapter_pending' ? t('adapter') : status === 'succeeded' ? t('succeeded') : status === 'failed' ? t('failed') : status === 'requires_user_login' ? t('requiresLogin') : t('dismiss') }
     function Action({ item, t, update, busy }) { return h('article', { className: `ys-action ys-action-${item.status}`, 'data-status': item.status }, h('div', { className: 'ys-action-main' }, h('strong', null, item.summary), h('span', null, item.channel), h('small', null, statusText(item.status, t))), item.status === 'awaiting_confirmation' ? h('div', { className: 'ys-action-buttons' }, h('button', { type: 'button', disabled: busy, onClick: () => void update({ action: 'confirm_action', id: item.id }) }, h(IconCheckOutline16, { size: 14 }), t('approve')), h('button', { type: 'button', disabled: busy, onClick: () => void update({ action: 'dismiss_action', id: item.id }) }, h(IconCloseOutline16, { size: 14 }), t('dismiss'))) : null) }
     function Overlay({ t }) {
       const visible = useSyncExternalStore(subscribe, snapshot, snapshot)
       const shellRef = useRef(null)
       const [data, setData] = useState(null)
       const [error, setError] = useState(false)
-      const [errorKind, setErrorKind] = useState('')
       const [loading, setLoading] = useState(false)
       const [busy, setBusy] = useState(false)
       const loadingRef = useRef(false)
@@ -57,10 +53,9 @@ window.__ModuleLoader__.load({
         const controller = new AbortController()
         loadingRef.current = true
         setError(false)
-        setErrorKind('')
         setLoading(true)
-        void load(controller.signal).then(value => { const failed = value?.status && value.status !== 'ready'; setData(previous => failed ? previous || value : value); setError(Boolean(failed)); setErrorKind(failed ? 'refresh' : '') }).catch(cause => {
-          if (cause?.name !== 'AbortError') { setError(true); setErrorKind('refresh') }
+        void load(controller.signal).then(value => { setData(value); setError(false) }).catch(cause => {
+          if (cause?.name !== 'AbortError') setError(true)
         }).finally(() => { if (!controller.signal.aborted) { loadingRef.current = false; setLoading(false) } })
         return () => { controller.abort(); loadingRef.current = false }
       }, [visible, revision])
@@ -77,7 +72,7 @@ window.__ModuleLoader__.load({
         if (loadingRef.current || busyRef.current) return null
         busyRef.current = true
         setBusy(true)
-        try { const next = await mutate(body); if (next?.status && next.status !== 'ready') { setError(true); setErrorKind('action'); return null }; setData(next); setError(false); setErrorKind(''); return next } catch { setError(true); setErrorKind('action'); return null } finally { busyRef.current = false; setBusy(false) }
+        try { const next = await mutate(body); setData(next); setError(false); return next } catch { setError(true); return null } finally { busyRef.current = false; setBusy(false) }
       }
       const interactionBusy = loading || busy
       const refresh = () => {
@@ -85,7 +80,6 @@ window.__ModuleLoader__.load({
         loadingRef.current = true
         setLoading(true)
         setError(false)
-        setErrorKind('')
         setRevision(value => value + 1)
       }
       const intent = h(IntentSearch, { t, current, update, disabled: interactionBusy })
@@ -108,7 +102,7 @@ window.__ModuleLoader__.load({
           : h('div', { className: 'ys-empty', role: 'status' }, t('empty')),
       )
       const inlineError = error && data
-        ? h('div', { role: 'alert', className: 'ys-inline-error' }, h('span', null, t(errorKind === 'refresh' ? 'refreshError' : 'actionError')), h('button', { type: 'button', disabled: interactionBusy, onClick: refresh }, t('retry')))
+        ? h('div', { role: 'alert', className: 'ys-inline-error' }, h('span', null, t('actionError')), h('button', { type: 'button', disabled: interactionBusy, onClick: refresh }, t('retry')))
         : null
       const content = loading && !data
         ? h('div', { role: 'status', className: 'ys-empty ys-loading' }, h('span', { className: 'ys-spinner', 'aria-hidden': true }), t('loading'))

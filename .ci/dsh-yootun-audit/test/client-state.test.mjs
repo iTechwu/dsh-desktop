@@ -17,7 +17,7 @@ vm.runInNewContext(source, {
 })
 
 const {
-  normalizeWorkspace, buildQuery, mergePage, initialState, reducer, actionLabel, surfaceLabel, effectOutcomeLabel, outcomeLabel,
+  normalizeWorkspace, buildQuery, mergePage, initialState, reducer, actionLabel, surfaceLabel, effectOutcomeLabel,
 } = module.exports.__test
 
 test('normalizes invalid workspace fields to honest defaults', () => {
@@ -69,11 +69,4 @@ test('renders catalog actions and technical enums as readable audit language', (
   assert.equal(actionLabel('knowledge.memory.forgotten'), '删除知识记忆')
   assert.equal(surfaceLabel('human_ui'), '人工界面')
   assert.equal(effectOutcomeLabel('requires_user_login'), '需要用户登录')
-})
-
-test('keeps login-required and future outcome states distinct from failure', () => {
-  const t = key => ({ failed: '失败', requiresLogin: '需要用户登录' })[key] || key
-  assert.equal(outcomeLabel('requires_user_login', t), '需要用户登录')
-  assert.equal(outcomeLabel('failed', t), '失败')
-  assert.equal(outcomeLabel('provider_deferred', t), 'provider_deferred')
 })

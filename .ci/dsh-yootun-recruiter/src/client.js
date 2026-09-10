@@ -6,12 +6,11 @@ const NS = 'dofe.yootun-recruiter'
 const OVERLAY_ID = '@dofe/dsh-yootun-recruiter'
 const OVERLAY_EVENT = 'dofe:yootun-overlay:open'
 const PATH = '/api/desktop/yootun/recruiter'
-const REQUEST_TIMEOUT_MS = 30000
 const STAGES = ['sourced', 'screening', 'interview', 'offer', 'hired', 'archived']
 const copy = {
   zh: {
     open: '招聘工作台', title: 'HR 招聘工作台', subtitle: '从 BOSS 直聘同步人才，让招聘数据沉淀为组织知识', close: '关闭工作台', refresh: '刷新',
-    overview: '总览', roles: '岗位', candidates: '人才库', actions: '待办审批', knowledge: 'HR 知识库', analytics: '招聘分析', boss: 'BOSS 同步', loading: '正在读取招聘工作台…', retry: '重新加载', loadError: '招聘工作台加载失败', refreshError: '刷新失败，当前仍显示上次数据', actionError: '操作未完成，现有招聘数据已保留',
+    overview: '总览', roles: '岗位', candidates: '人才库', actions: '待办审批', knowledge: 'HR 知识库', analytics: '招聘分析', boss: 'BOSS 同步', loading: '正在读取招聘工作台…', retry: '重新加载', loadError: '招聘工作台加载失败', actionError: '操作未完成，现有招聘数据已保留',
     openRoles: '在招岗位', activeCandidates: '活跃候选人', pendingReplies: '待回复', pendingFeedback: '待反馈', pendingConfirmation: '待人工确认', todayTasks: '今日待办', responseRate: '平均响应率',
     noData: '还没有招聘数据', addRole: '在对话中创建岗位需求', funnel: '招聘漏斗', roleHealth: '岗位健康度', needsAction: '需要你处理', recent: '最近更新', source: '数据来源', ready: '已启用', unavailable: '待连接', error: '异常', empty: '暂无数据', sample: '样本', updated: '更新时间',
     rolesIntro: '把业务需求整理成可编辑的 JD 草稿，再确认发布。', importRequirement: '导入岗位需求', uploadRequirement: '上传文本需求', pasteRequirement: '粘贴或输入需求', selectFile: '选择文件', generateDraft: '生成 JD 草稿', roleDraftHint: '支持 TXT、Markdown 或直接粘贴；生成后仍可编辑。', roleGenerated: '已生成岗位草稿，请补充缺失信息。', saveError: '保存失败，请稍后重试。', fileReadError: '暂不支持读取该文件，请粘贴文本内容。', roleDraftTitle: '岗位草稿', noRolesCta: '从一段需求开始创建岗位', editAfterGenerate: '草稿会保存到岗位列表，确认后再发布。',
@@ -26,7 +25,7 @@ const copy = {
   },
   en: {
     open: 'Recruiting workspace', title: 'HR recruiting workspace', subtitle: 'Sync talent from BOSS and turn hiring activity into organizational knowledge', close: 'Close workspace', refresh: 'Refresh',
-    overview: 'Overview', roles: 'Roles', candidates: 'Talent pool', actions: 'Approvals', knowledge: 'HR knowledge', analytics: 'Analytics', boss: 'BOSS sync', loading: 'Loading recruiting workspace…', retry: 'Reload', loadError: 'Could not load recruiting workspace', refreshError: 'Refresh failed. Showing the previous data.', actionError: 'The action failed. Existing recruiting data was preserved.',
+    overview: 'Overview', roles: 'Roles', candidates: 'Talent pool', actions: 'Approvals', knowledge: 'HR knowledge', analytics: 'Analytics', boss: 'BOSS sync', loading: 'Loading recruiting workspace…', retry: 'Reload', loadError: 'Could not load recruiting workspace', actionError: 'The action failed. Existing recruiting data was preserved.',
     openRoles: 'Open roles', activeCandidates: 'Active candidates', pendingReplies: 'Pending replies', pendingFeedback: 'Pending feedback', pendingConfirmation: 'Awaiting approval', todayTasks: "Today's tasks", responseRate: 'Avg. response rate',
     noData: 'No recruiting data yet', addRole: 'Create a role requirement in chat', funnel: 'Hiring funnel', roleHealth: 'Role health', needsAction: 'Needs your attention', recent: 'Recently updated', source: 'Data source', ready: 'Enabled', unavailable: 'Needs connection', error: 'Error', empty: 'No data', sample: 'Sample', updated: 'Updated',
     rolesIntro: 'Turn a business brief into an editable JD draft before publishing.', importRequirement: 'Import role requirement', uploadRequirement: 'Upload text brief', pasteRequirement: 'Paste or type a brief', selectFile: 'Choose file', generateDraft: 'Generate JD draft', roleDraftHint: 'TXT, Markdown, or pasted text is supported; the draft stays editable.', roleGenerated: 'Role draft created. Fill in the missing details.', saveError: 'Could not save the draft. Try again.', fileReadError: 'This file cannot be read here. Paste the text instead.', roleDraftTitle: 'Role draft', noRolesCta: 'Start with a role brief', editAfterGenerate: 'The draft is saved to the role list and can be reviewed before publishing.',
@@ -51,12 +50,12 @@ const closeOverlay = () => { setOpened(false); requestAnimationFrame(() => lastT
 const closeOtherOverlay = event => { if (event.detail?.id !== OVERLAY_ID) setOpened(false) }
 const subscribe = listener => { listeners.add(listener); return () => listeners.delete(listener) }
 const snapshot = () => opened
-async function load(signal) { const response = await fetch(PATH, { credentials: 'same-origin', redirect: 'error', signal: AbortSignal.any([signal, AbortSignal.timeout(REQUEST_TIMEOUT_MS)]), headers: { Accept: 'application/json' } }); if (!response.ok) throw new Error('recruiter request failed'); return response.json() }
-async function mutate(body) { const response = await fetch(PATH, { method: 'POST', credentials: 'same-origin', redirect: 'error', signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS), headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify(body) }); if (!response.ok) throw new Error('recruiter mutation failed'); return response.json() }
+async function load(signal) { const response = await fetch(PATH, { credentials: 'same-origin', redirect: 'error', signal, headers: { Accept: 'application/json' } }); if (!response.ok) throw new Error('recruiter request failed'); return response.json() }
+async function mutate(body) { const response = await fetch(PATH, { method: 'POST', credentials: 'same-origin', redirect: 'error', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify(body) }); if (!response.ok) throw new Error('recruiter mutation failed'); return response.json() }
 function number(value, fallback = 0) { return Number.isFinite(Number(value)) ? Number(value) : fallback }
 function list(value) { return Array.isArray(value) ? value.filter(item => typeof item === 'string').slice(0, 8) : [] }
 function sourceState(value) { return ['ready', 'empty', 'unavailable', 'error'].includes(value) ? value : 'unavailable' }
-function statusText(status, t) { return status === 'awaiting_confirmation' ? t('waiting') : status === 'confirmed_pending_adapter' || status === 'adapter_pending' ? t('confirmed') : status === 'succeeded' ? t('succeeded') : status === 'failed' ? t('failed') : status === 'requires_user_login' ? t('requiresLogin') : status === 'dismissed' ? t('dismissed') : t('unknown') }
+function statusText(status, t) { return status === 'awaiting_confirmation' ? t('waiting') : status === 'confirmed_pending_adapter' || status === 'adapter_pending' ? t('confirmed') : status === 'succeeded' ? t('succeeded') : status === 'failed' ? t('failed') : status === 'requires_user_login' ? t('requiresLogin') : t('dismissed') }
 function enumKey(value) { return String(value || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '_') }
 function enumText(value, labels, t) { const key = labels[enumKey(value)]; return key ? t(key) : t('unknown') }
 function stageText(value, t) { return enumText(value, { sourced: 'stageSourced', screening: 'stageScreening', interview: 'stageInterview', offer: 'stageOffer', hired: 'stageHired', archived: 'stageArchived' }, t) }
@@ -243,7 +242,6 @@ function Overlay({ t }) {
   const [tab, setTab] = useState('overview')
   const [data, setData] = useState(null)
   const [error, setError] = useState(false)
-  const [errorKind, setErrorKind] = useState('')
   const [loading, setLoading] = useState(false)
   const [busy, setBusy] = useState(false)
   const loadingRef = useRef(false)
@@ -254,9 +252,8 @@ function Overlay({ t }) {
     const controller = new AbortController()
     loadingRef.current = true
     setError(false)
-    setErrorKind('')
     setLoading(true)
-    void load(controller.signal).then(value => { const failed = value?.status && value.status !== 'ready'; setData(previous => failed ? previous || value : value); setError(Boolean(failed)); setErrorKind(failed ? 'refresh' : '') }).catch(e => { if (e?.name !== 'AbortError') { setError(true); setErrorKind('refresh') } }).finally(() => { if (!controller.signal.aborted) { loadingRef.current = false; setLoading(false) } })
+    void load(controller.signal).then(value => { setData(value); setError(false) }).catch(e => { if (e?.name !== 'AbortError') setError(true) }).finally(() => { if (!controller.signal.aborted) { loadingRef.current = false; setLoading(false) } })
     return () => { controller.abort(); loadingRef.current = false }
   }, [visible, revision])
   useEffect(() => {
@@ -268,9 +265,9 @@ function Overlay({ t }) {
   useEffect(() => { if (visible) requestAnimationFrame(() => shellRef.current?.focus?.()) }, [visible])
   if (!visible) return null
   const tData = data || { status: 'empty', dashboard: {}, requirements: [], candidates: [], actions: [], boss: {}, sync: {}, knowledge: {}, analytics: {} }
-  const update = async body => { if (loadingRef.current || busyRef.current) return null; busyRef.current = true; setBusy(true); try { const next = await mutate(body); if (next?.status && next.status !== 'ready') { setError(true); setErrorKind('action'); return null }; setData(next); setError(false); setErrorKind(''); return next } catch { setError(true); setErrorKind('action'); return null } finally { busyRef.current = false; setBusy(false) } }
+  const update = async body => { if (loadingRef.current || busyRef.current) return null; busyRef.current = true; setBusy(true); try { const next = await mutate(body); setData(next); setError(false); return next } catch { setError(true); return null } finally { busyRef.current = false; setBusy(false) } }
   const interactionBusy = loading || busy
-  const refresh = () => { if (loadingRef.current || busyRef.current) return; loadingRef.current = true; setLoading(true); setError(false); setErrorKind(''); setRevision(value => value + 1) }
+  const refresh = () => { if (loadingRef.current || busyRef.current) return; loadingRef.current = true; setLoading(true); setError(false); setRevision(value => value + 1) }
   let body
   if (loading && !data) body = h('div', { className: 'yr-empty yr-loading', role: 'status' }, h('span', { className: 'yr-spinner', 'aria-hidden': true }), t('loading'))
   else if (error && !data) body = h('div', { className: 'yr-empty', role: 'alert' }, t('loadError'), h('button', { type: 'button', disabled: interactionBusy, onClick: refresh }, h(IconRefreshOutline16, { size: 14 }), t('retry')))
@@ -281,7 +278,7 @@ function Overlay({ t }) {
   else if (tab === 'knowledge') body = h(Knowledge, { data: tData, t, onUpdate: update, busy: interactionBusy })
   else if (tab === 'analytics') body = h(Analytics, { data: tData, t })
   else body = h(Boss, { data: tData, t, onUpdate: update, busy: interactionBusy })
-  if (error && data) body = h(React.Fragment, null, h('div', { className: 'yr-inline-error', role: 'alert' }, h('span', null, t(errorKind === 'refresh' ? 'refreshError' : 'actionError')), h('button', { type: 'button', disabled: interactionBusy, onClick: refresh }, t('retry'))), body)
+  if (error && data) body = h(React.Fragment, null, h('div', { className: 'yr-inline-error', role: 'alert' }, h('span', null, t('actionError')), h('button', { type: 'button', disabled: interactionBusy, onClick: refresh }, t('retry'))), body)
   const tabs = [['overview', t('overview')], ['roles', t('roles')], ['candidates', t('candidates')], ['actions', t('actions')], ['knowledge', t('knowledge')], ['analytics', t('analytics')], ['boss', t('boss')]]
   return h('div', { className: 'yr-overlay', role: 'dialog', 'aria-modal': true, 'aria-labelledby': 'yr-title' }, h('main', { className: 'yr-shell', 'aria-labelledby': 'yr-title', ref: shellRef, tabIndex: -1 },
     h('header', { className: 'yr-header' }, h('div', null, h('h1', { id: 'yr-title' }, t('title')), h('p', null, t('subtitle'))), h('div', { className: 'yr-header-buttons' }, h(Tooltip, { label: t('refresh') }, h('button', { type: 'button', className: 'yr-icon', 'aria-label': t('refresh'), disabled: interactionBusy, onClick: refresh }, h(IconRefreshOutline16, { size: 16 }))), h(Tooltip, { label: t('close') }, h('button', { type: 'button', className: 'yr-icon', 'aria-label': t('close'), onClick: closeOverlay }, h(IconCloseOutline16, { size: 16 }))))),
@@ -345,7 +342,6 @@ const spacingCss = `
 .yr-empty button:disabled,.yr-inline-error button:disabled,.yr-tabs button:disabled,.yr-source-button:disabled,.yr-secondary:disabled,.yr-filter:disabled{opacity:.45;cursor:default}
 @media(max-width:720px){.yr-intake-grid{grid-template-columns:1fr}.yr-dropzone{min-height:120px}.yr-filter-bar{flex-direction:column}.yr-filter:last-child{width:100%}}
 @media(max-width:560px){.yr-header,.yr-tabs{padding-left:var(--yr-space-4);padding-right:var(--yr-space-4)}.yr-content{padding:var(--yr-space-4) var(--yr-space-4) 32px}.yr-panel,.yr-hero-panel{padding:var(--yr-space-4)}.yr-workbench-toolbar,.yr-inline-error{align-items:flex-start;flex-direction:column}.yr-intake-footer{align-items:flex-start;flex-direction:column}.yr-intake-footer .yr-primary{width:100%;justify-content:center}.yr-summary-item{flex:1;min-width:100px}}
-.yr-primary{color:var(--dsw-alias-label-primary-foreground)}
 `
 function apply(ctx) { ctx.effect(() => ctx.locale.register(NS, copy), 'dofe-yootun-recruiter: dictionaries'); ctx.effect(() => { window.addEventListener(OVERLAY_EVENT, closeOtherOverlay); return () => window.removeEventListener(OVERLAY_EVENT, closeOtherOverlay) }, 'dofe-yootun-recruiter: exclusive-overlay'); ctx.effect(() => { const style = document.createElement('style'); style.dataset.plugin = '@dofe/dsh-yootun-recruiter'; style.textContent = css + spacingCss; document.head.appendChild(style); return () => style.remove() }, 'dofe-yootun-recruiter: styles'); const t = ctx.locale.bind(NS); ctx.slots.inject('sidebar.footer.action', () => ctx.slots.register({ name: 'sidebar.footer.action', id: 'dofe-yootun-recruiter', order: 20, inject: () => ({ t }) }, SidebarButton)); ctx.slots.inject('shell.overlay', () => ctx.slots.register({ name: 'shell.overlay', id: 'dofe-yootun-recruiter', order: 20, inject: () => ({ t }) }, Overlay)) }
 exports.apply = apply

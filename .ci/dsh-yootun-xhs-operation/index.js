@@ -90,8 +90,7 @@ async function handleStatus(ctx, body, res, signal = AbortSignal.timeout(TOOL_CA
   if (!schema) return send(res, 200, { status: 'unavailable', reason: 'xhs_operation_tool_unavailable' })
   const result = await ctx.tools.execute({ callId: `yootun-xhs-status-${Date.now()}`, name: schema.name, arguments: { taskId }, signal })
   const payload = parseResult(result)
-  const taskStatus = firstString(payload.status)
-  if (!taskStatus) return send(res, 200, { status: 'error', reason: 'task_status_missing', taskId })
+  const taskStatus = firstString(payload.status) || 'unknown'
   await recordTerminalAudit(ctx, taskId, taskStatus, taskStatus === 'succeeded' ? 3 : 0, firstString(payload.errorCode))
   return send(res, 200, {
     status: 'ready',
@@ -111,8 +110,7 @@ async function handleResult(ctx, body, res, signal = AbortSignal.timeout(TOOL_CA
   if (!schema) return send(res, 200, { status: 'unavailable', reason: 'xhs_operation_tool_unavailable' })
   const result = await ctx.tools.execute({ callId: `yootun-xhs-result-${Date.now()}`, name: schema.name, arguments: { taskId }, signal })
   const payload = parseResult(result)
-  const taskStatus = firstString(payload.status)
-  if (!taskStatus) return send(res, 200, { status: 'error', reason: 'task_status_missing', taskId })
+  const taskStatus = firstString(payload.status) || 'unknown'
   const versions = projectVersions(payload.versions)
   // 契约：客户端固定 versionCount=3，succeeded 必须返回三套文案；否则按读取失败处理，避免空白或静默少版本。
   if (taskStatus === 'succeeded' && versions.length !== 3) {
@@ -253,30 +251,13 @@ function findTool(ctx, name) { return (ctx.tools.schemas?.() || []).find(item =>
 
 function parseResult(result) {
   if (!result) return {}
-  let payload = null
-  if (result && typeof result === 'object' && !Array.isArray(result) && result.structuredContent && typeof result.structuredContent === 'object') {
-    payload = result.structuredContent
-  } else if (result && typeof result === 'object' && !Array.isArray(result) && Array.isArray(result.content)) {
+  if (result && typeof result === 'object' && !Array.isArray(result) && result.structuredContent && typeof result.structuredContent === 'object') return result.structuredContent
+  if (result && typeof result === 'object' && !Array.isArray(result) && Array.isArray(result.content)) {
     const text = result.content.filter(item => item?.type === 'text').map(item => String(item.text || '')).join('')
-    if (!text) payload = {}
-    else {
-      try { payload = JSON.parse(text) } catch { return {} }
-    }
-  } else {
-    payload = result
+    if (!text) return {}
+    try { return JSON.parse(text) } catch { return {} }
   }
-  if (resolvedToolFailure(result, payload)) {
-    const raw = firstString(payload?.error?.code, payload?.errorCode, payload?.reason, result?.error?.code)
-    throw new Error(raw && /^[A-Za-z0-9_:-]{1,80}$/u.test(raw) ? raw : 'xhs_operation_request_failed')
-  }
-  return payload && typeof payload === 'object' ? payload : {}
-}
-
-function resolvedToolFailure(result, payload) {
-  return result?.isError === true || result?.ok === false
-    || result?.error || payload?.error
-    || payload?.isError === true || payload?.ok === false
-    || ['error', 'failed', 'failure', 'unavailable', 'blocked'].includes(String(payload?.status || '').toLowerCase())
+  return result
 }
 
 function safeToolErrorReason(error) {

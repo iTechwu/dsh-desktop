@@ -73,22 +73,6 @@ test('create maps video mode and omits theme/references/accounts when empty', as
   assert.deepEqual(args.accounts, [])
 })
 
-test('create 将已解析的 MCP 失败响应投影为稳定 error', async () => {
-  const { route } = makeCtx(async () => ({ isError: true, structuredContent: { status: 'error', reason: 'PROVIDER_ERROR', taskId: 'leak-task' } }))
-  const result = await invoke(route, { action: 'create', mediaType: 'video', videoUrl: 'https://example.com/v.mp4' })
-  assert.equal(result.status, 200)
-  assert.deepEqual(result.body, { status: 'error', reason: 'PROVIDER_ERROR' })
-  assert.equal(JSON.stringify(result.body).includes('leak-task'), false)
-})
-
-test('create 将 structuredContent error 信封投影为稳定 error', async () => {
-  const { route } = makeCtx(async () => ({ structuredContent: { error: { code: 'PROVIDER_ERROR' }, taskId: 'leak-task' } }))
-  const result = await invoke(route, { action: 'create', mediaType: 'video', videoUrl: 'https://example.com/v.mp4' })
-  assert.equal(result.status, 200)
-  assert.deepEqual(result.body, { status: 'error', reason: 'PROVIDER_ERROR' })
-  assert.equal(JSON.stringify(result.body).includes('leak-task'), false)
-})
-
 test('create rejects invalid mediaType and missing material', async () => {
   const calls = []
   const { route } = makeCtx(async value => { calls.push(value); return { structuredContent: {} } })
@@ -115,13 +99,6 @@ test('status delegates to task_get and projects the safe task view', async () =>
   assert.equal(calls[0].arguments.taskId, 'xhst-1')
 })
 
-test('status rejects an MCP response without a task status', async () => {
-  const { route } = makeCtx(async () => ({ structuredContent: { taskId: 'xhst-missing-status' } }))
-  const result = await invoke(route, { action: 'status', taskId: 'xhst-missing-status' })
-  assert.equal(result.status, 200)
-  assert.deepEqual(result.body, { status: 'error', reason: 'task_status_missing', taskId: 'xhst-missing-status' })
-})
-
 test('result delegates to result_get and projects only display fields', async () => {
   const calls = []
   const payload = JSON.stringify({ taskId: 'xhst-1', status: 'succeeded', versions: [
@@ -141,13 +118,6 @@ test('result delegates to result_get and projects only display fields', async ()
   assert.equal(result.body.versions[0].internalId, undefined)
   assert.deepEqual(result.body.versions[0].pages, [{ pageIndex: 0, copy: '页1' }])
   assert.deepEqual(result.body.versions[1].tags, [])
-})
-
-test('result rejects an MCP response without a task status', async () => {
-  const { route } = makeCtx(async () => ({ structuredContent: { taskId: 'xhst-result-missing-status', versions: [] } }))
-  const result = await invoke(route, { action: 'result', taskId: 'xhst-result-missing-status' })
-  assert.equal(result.status, 200)
-  assert.deepEqual(result.body, { status: 'error', reason: 'task_status_missing', taskId: 'xhst-result-missing-status' })
 })
 
 test('records task creation and the first terminal observation exactly once', async () => {

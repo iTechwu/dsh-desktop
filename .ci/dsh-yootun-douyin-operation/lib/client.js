@@ -152,7 +152,7 @@ window.__ModuleLoader__.load({
         gapTitle: '数据缺口', gapNotExposed: '本次接口未提供', gapBelowMinView: '播放量低于抖音最小观看门槛',
         gapRequestFailed: '接口请求失败，展示的是上一次成功采集的热词', gapNoData: '该作品暂无此数据', gapOther: '本次未取到',
         partialBadge: '部分缺失', privateBadge: '已设为私密', trendCount: '历史采集 {count} 次',
-        collectFailed: '采集失败，请重试', collectBlocked: '采集未启动', refreshFailed: '刷新失败', retryDetail: '重试加载', probeFailed: '会话检测失败，请重试',
+        collectFailed: '采集失败，请重试', collectBlocked: '采集未启动', refreshFailed: '刷新失败', probeFailed: '会话检测失败，请重试',
         seconds: '秒', noHotword: '暂无热词', noSearch: '暂无搜索词',
       },
       en: {
@@ -185,7 +185,7 @@ window.__ModuleLoader__.load({
         gapTitle: 'Data gaps', gapNotExposed: 'not returned by this call', gapBelowMinView: 'below Douyin minimum view threshold',
         gapRequestFailed: 'request failed; hotwords shown are from the last successful collect', gapNoData: 'this work has no such data', gapOther: 'not collected this run',
         partialBadge: 'Partial', privateBadge: 'Private', trendCount: '{count} snapshots',
-        collectFailed: 'Collect failed, retry', collectBlocked: 'Collect did not start', refreshFailed: 'Refresh failed', retryDetail: 'Retry loading', probeFailed: 'Session check failed, retry',
+        collectFailed: 'Collect failed, retry', collectBlocked: 'Collect did not start', refreshFailed: 'Refresh failed', probeFailed: 'Session check failed, retry',
         seconds: 's', noHotword: 'No hotwords', noSearch: 'No search keywords',
       },
     }
@@ -300,7 +300,7 @@ window.__ModuleLoader__.load({
             h('span', null, `${row.key} ${trimNumber(row.pct)}%`)))))
     }
 
-    function WorkDetailModal({ accountId, workId, detail, trend, loading, error, onRetry, onClose, t }) {
+    function WorkDetailModal({ accountId, workId, detail, trend, loading, onClose, t }) {
       const work = detail && detail.work ? detail.work : null
       const audience = detail && detail.audience ? detail.audience : null
       const gaps = work && work.data_gap ? Object.entries(work.data_gap) : []
@@ -317,11 +317,7 @@ window.__ModuleLoader__.load({
               h('button', { type: 'button', 'aria-label': t('close'), onClick: onClose }, h(IconCloseOutline16, { size: 16 })))),
           loading
             ? h('div', { className: 'ydo-state', role: 'status' }, h('span', { className: 'ydo-spinner' }), h('p', null, t('collecting')))
-            : error
-              ? h('div', { className: 'ydo-state ydo-state-error', role: 'alert', 'aria-live': 'assertive' },
-                h('p', { className: 'ydo-state-title' }, t('refreshFailed')),
-                h('button', { type: 'button', className: 'ydo-secondary', onClick: onRetry }, t('retryDetail')))
-              : h('div', { className: 'ydo-modal-body' },
+            : h('div', { className: 'ydo-modal-body' },
               h('section', { className: 'ydo-panel' }, h('h4', null, t('gender')), h(GenderDonut, { rows: convertDistribution(audience && audience.gender), t })),
               h('section', { className: 'ydo-panel' }, h('h4', null, t('age')), h(BarList, { rows: convertDistribution(audience && audience.age), label: t('age'), t })),
               h('section', { className: 'ydo-panel' }, h('h4', null, t('trafficSource')), h(BarList, { rows: convertSource(work && work.traffic_source), label: t('trafficSource'), t })),
@@ -425,7 +421,6 @@ window.__ModuleLoader__.load({
       const [works, setWorks] = useState([])
       const [collect, setCollect] = useState(null)
       const [detail, setDetail] = useState(null)
-      const [detailError, setDetailError] = useState(null)
       const [detailWorkId, setDetailWorkId] = useState(null)
       const [trend, setTrend] = useState(null)
       const loginPollRef = useRef(null)
@@ -433,12 +428,9 @@ window.__ModuleLoader__.load({
 
       const current = useMemo(() => accounts.find(item => item.accountId === selected) || null, [accounts, selected])
 
-      const loadWorks = useCallback(async (accountId, { clearError = false } = {}) => {
+      const loadWorks = useCallback(async accountId => {
         const result = await post({ action: 'works.list', accountId })
-        if (result.status === 'ready') {
-          setWorks(result.works || [])
-          if (clearError) setError(null)
-        }
+        if (result.status === 'ready') setWorks(result.works || [])
         else setError(result.reason || 'refresh_failed')
       }, [])
 
@@ -449,8 +441,6 @@ window.__ModuleLoader__.load({
           setAccounts(list.accounts || [])
           setSelected(currentId => currentId || (list.accounts && list.accounts[0] ? list.accounts[0].accountId : null))
         }
-        if (status.status !== 'ready' || list.status !== 'ready' || list.remoteError) setError('refresh_failed')
-        else setError(null)
       }, [])
 
       useEffect(() => {
@@ -579,7 +569,7 @@ window.__ModuleLoader__.load({
             if (!result.collect || result.collect.status === 'running') return
             stopPolling(collectPollRef)
             setBusy(false)
-            if (result.collect.status === 'completed') await loadWorks(accountId, { clearError: true }).catch(() => {})
+            if (result.collect.status === 'completed') await loadWorks(accountId).catch(() => {})
             else setError('collectFailed')
             await refresh().catch(() => {})
           }, COLLECT_POLL_INTERVAL_MS)
@@ -592,7 +582,6 @@ window.__ModuleLoader__.load({
       const openDetail = useCallback(async workId => {
         setDetailWorkId(workId)
         setDetail(null)
-        setDetailError(null)
         setTrend(null)
         try {
           const [detailResult, trendResult] = await Promise.all([
@@ -600,18 +589,12 @@ window.__ModuleLoader__.load({
             post({ action: 'work.trend', accountId: selected, workId }).catch(() => null),
           ])
           if (detailResult.status === 'ready') setDetail(detailResult)
-          else setDetailError('refresh_failed')
+          else setError(detailResult.reason || 'refresh_failed')
           if (trendResult && trendResult.status === 'ready') setTrend({ total: trendResult.total })
         } catch {
-          setDetailError('refresh_failed')
+          setError('refresh_failed')
         }
       }, [selected])
-
-      const errorCopyKey = reason => {
-        if (ERROR_COPY[reason]) return ERROR_COPY[reason]
-        if (copy.zh[reason]) return reason
-        return 'refreshFailed'
-      }
 
       if (!visible) return null
 
@@ -702,10 +685,10 @@ window.__ModuleLoader__.load({
                   type: 'button', className: 'ydo-primary', disabled: busy || !sessionUsable,
                   onClick: () => startCollect(selected),
                 }, collect && collect.status === 'running' ? t('collecting') : t('collectAll')),
-                h('button', { type: 'button', className: 'ydo-secondary', disabled: busy, onClick: () => loadWorks(selected, { clearError: true }).catch(() => setError('refreshFailed')) }, t('refresh')),
+                h('button', { type: 'button', className: 'ydo-secondary', disabled: busy, onClick: () => loadWorks(selected).catch(() => setError('refreshFailed')) }, t('refresh')),
                 current && current.lastCollectedAt ? h('span', { className: 'ydo-hint' }, `${t('lastCollected')} ${String(current.lastCollectedAt).slice(0, 16).replace('T', ' ')}`) : null,
                 works.length ? h('span', { className: 'ydo-hint' }, `${t('workCount')} ${works.length}`) : null),
-              error ? h('p', { className: 'ydo-error', role: 'alert', 'aria-live': 'assertive' }, t(errorCopyKey(error))) : null,
+              error ? h('p', { className: 'ydo-error', role: 'alert', 'aria-live': 'assertive' }, t(ERROR_COPY[error] || error) || t('collectFailed')) : null,
               runBanner,
               collect && collect.status === 'running'
                 ? h('div', { className: 'ydo-progress', role: 'status', 'aria-live': 'polite', 'aria-busy': true },
@@ -713,9 +696,8 @@ window.__ModuleLoader__.load({
                 : null,
               right))),
         detailWorkId ? h(WorkDetailModal, {
-          accountId: selected, workId: detailWorkId, detail, trend, loading: !detail && !detailError, error: detailError, t,
-          onRetry: () => openDetail(detailWorkId),
-          onClose: () => { setDetailWorkId(null); setDetail(null); setDetailError(null); setTrend(null) },
+          accountId: selected, workId: detailWorkId, detail, trend, loading: !detail, t,
+          onClose: () => { setDetailWorkId(null); setDetail(null); setTrend(null) },
         }) : null,
         confirming
           ? h('div', { className: 'ydo-confirm-overlay', role: 'dialog', 'aria-modal': true, 'aria-label': t('deleteConfirm') },

@@ -4,6 +4,7 @@ const MCP_GEOFLOW_URL = 'https://ixicai.cn/mcp/geoflow'
 const GEOFLOW_GOALS_URL = 'https://ixicai.cn/api/yootun/v1/geoflow/goals'
 const GEORANK_OVERVIEW_URL = 'https://ixicai.cn/api/yootun/v1/georank/overview'
 const MCP_GEORANK_URL = 'https://ixicai.cn/mcp/georank'
+const GEORANK_TARGET_URL = 'https://yootun.ixicai.cn'
 const MODELS_USAGE_URL = 'https://ixicai.cn/api/v1/yootun/usage'
 const MODELS_USAGE_DAILY_URL = 'https://ixicai.cn/api/v1/yootun/usage/daily'
 const MONTAGE_OVERVIEW_URL = 'https://ixicai.cn/api/yootun/v1/montage/overview'
@@ -179,9 +180,7 @@ async function loadGeo(fetchImpl, apiKey, logger) {
     }
     const message = await mcpMessage(response)
     if (message?.error) return failed('geoflow_mcp_error')
-    const result = message?.result
-    const value = result?.structuredContent
-    if (mcpResultFailed(result, value)) return failed('geoflow_mcp_error')
+    const value = message?.result?.structuredContent
     if (!value || typeof value !== 'object') return failed('geoflow_invalid_response')
     const trafficViews = value.traffic?.kpis?.pv ?? value.traffic?.kpis?.views
     const missingFields = []
@@ -209,6 +208,8 @@ async function loadGeo(fetchImpl, apiKey, logger) {
 async function loadGeorankOverview(fetchImpl, apiKey, logger) {
   if (!apiKey) return unavailable('model_api_key_unavailable')
   const benchmark = await loadGeorankBenchmark(fetchImpl, apiKey, logger)
+  const diagnosticScore = numberOrNull(benchmark.data?.diagnosticScore)
+  const aiFriendlinessScore = numberOrNull(benchmark.data?.aiFriendlinessScore ?? benchmark.data?.score)
   try {
     const response = await timedFetch(fetchImpl, GEORANK_OVERVIEW_URL, {
       headers: { Authorization: `Bearer ${apiKey}`, Accept: 'application/json' },
@@ -233,11 +234,12 @@ async function loadGeorankOverview(fetchImpl, apiKey, logger) {
         scope: string(data.scope) || 'public_directory',
         totals: { publishedCompanies: numberOrNull(data.totals?.publishedCompanies), scoredCompanies: numberOrNull(data.totals?.scoredCompanies) },
         averageGeoScore: numberOrNull(data.averageGeoScore),
-        aiFriendlinessScore: benchmark.data?.score ?? null,
-        benchmarkScore: benchmark.data?.score ?? numberOrNull(data.averageGeoScore),
-        benchmarkBasis: benchmark.data?.score != null ? 'youhuitun_ai_friendliness' : 'public_directory_average',
+        aiFriendlinessScore,
+        benchmarkScore: diagnosticScore ?? aiFriendlinessScore ?? numberOrNull(data.averageGeoScore),
+        benchmarkBasis: diagnosticScore != null ? 'youhuitun_url_async_diagnostic' : aiFriendlinessScore != null ? 'youhuitun_ai_friendliness' : 'public_directory_average',
         benchmarkReasons: benchmark.data?.reasons || [],
         benchmarkSuggestions: benchmark.data?.suggestions || [],
+        latestDiagnostic: benchmark.data?.latestDiagnostic || null,
         scoreDistribution: object(data.scoreDistribution),
         recentCompanies: list(data.recentCompanies).slice(0, 8).map(item => ({
           id: string(item?.id), name: string(item?.name), url: string(item?.url), category: string(item?.category), geoScore: numberOrNull(item?.geoScore), isGeoCertified: item?.isGeoCertified === true,
@@ -269,17 +271,53 @@ async function loadGeorankBenchmark(fetchImpl, apiKey, logger) {
       params: { name: 'georank_score_ai_friendliness', arguments: { brief: '优惠豚：https://yootun.ixicai.cn。优惠豚面向中国大陆汽车消费者提供好车会员服务和购车决策信息，通过可核验来源、结构化内容、Schema、FAQ 与 GEO 提升 AI 搜索可见性。' } },
     }, sessionId)
     const result = called.payload?.result
-    const text = result?.content?.find(item => item?.type === 'text')?.text
-    let parsedText = null
-    try { parsedText = text ? JSON.parse(text) : null } catch {}
-    const data = result?.structuredContent || parsedText
+    const data = georankToolData(result)
     const score = numberOrNull(data?.score)
-    if (mcpResultFailed(result, data) || score === null) return failed('georank_benchmark_invalid_response')
-    return { status: 'ready', data: { score, reasons: list(data.reasons).map(string).filter(Boolean), suggestions: list(data.suggestions).map(string).filter(Boolean) } }
+    if (result?.isError || score === null) return failed('georank_benchmark_invalid_response')
+    let latestDiagnostic = null
+    try {
+      const historyCalled = await georankMcpRequest(fetchImpl, apiKey, {
+        jsonrpc: '2.0', id: 3, method: 'tools/call',
+        params: { name: 'georank_diagnostic_history', arguments: { limit: 100 } },
+      }, sessionId)
+      const historyData = georankToolData(historyCalled.payload?.result)
+      const history = Array.isArray(historyData) ? historyData : list(historyData?.result)
+      latestDiagnostic = history
+        .filter(item => item?.url === GEORANK_TARGET_URL && item?.status === 'completed' && numberOrNull(item?.overall_score) !== null)
+        .sort((left, right) => String(right?.created_at || '').localeCompare(String(left?.created_at || '')))[0] || null
+    } catch (error) {
+      logger?.warn?.('yootun dashboard: GEORank diagnostic history failed: %s', safeError(error))
+    }
+    return {
+      status: 'ready',
+      data: {
+        score,
+        aiFriendlinessScore: score,
+        diagnosticScore: numberOrNull(latestDiagnostic?.overall_score),
+        latestDiagnostic: latestDiagnostic ? {
+          reportId: string(latestDiagnostic.report_id),
+          status: string(latestDiagnostic.status),
+          score: numberOrNull(latestDiagnostic.overall_score),
+          createdAt: string(latestDiagnostic.created_at),
+          url: GEORANK_TARGET_URL,
+        } : null,
+        reasons: list(data.reasons).map(string).filter(Boolean),
+        suggestions: list(data.suggestions).map(string).filter(Boolean),
+      },
+    }
   } catch (error) {
     logger?.warn?.('yootun dashboard: GEORank benchmark failed: %s', safeError(error))
     return failed(error?.name === 'TimeoutError' ? 'georank_benchmark_timeout' : 'georank_benchmark_request_failed')
   }
+}
+
+function georankToolData(result) {
+  if (result?.structuredContent && typeof result.structuredContent === 'object') return result.structuredContent
+  const parsed = list(result?.content).flatMap(item => {
+    if (item?.type !== 'text' || typeof item.text !== 'string') return []
+    try { return [JSON.parse(item.text)] } catch { return [] }
+  })
+  return parsed.length === 1 ? parsed[0] : parsed
 }
 
 async function georankMcpRequest(fetchImpl, apiKey, body, sessionId = '') {
@@ -299,8 +337,11 @@ function georankBenchmarkOnly(benchmark, reason) {
     status: 'ready',
     data: {
       scope: 'youhuitun_site', totals: { publishedCompanies: null, scoredCompanies: null }, averageGeoScore: null,
-      aiFriendlinessScore: benchmark.data.score, benchmarkScore: benchmark.data.score, benchmarkBasis: 'youhuitun_ai_friendliness',
+      aiFriendlinessScore: benchmark.data.aiFriendlinessScore ?? benchmark.data.score,
+      benchmarkScore: benchmark.data.diagnosticScore ?? benchmark.data.score,
+      benchmarkBasis: benchmark.data.diagnosticScore != null ? 'youhuitun_url_async_diagnostic' : 'youhuitun_ai_friendliness',
       benchmarkReasons: benchmark.data.reasons, benchmarkSuggestions: benchmark.data.suggestions, scoreDistribution: {}, recentCompanies: [],
+      latestDiagnostic: benchmark.data.latestDiagnostic || null,
     },
     sourceCompleteness: 'partial',
     missingFields: ['publicDirectory'],
@@ -352,9 +393,7 @@ function normalizeMontage(data) {
       total: numberOrNull(jobs.total ?? jobs.total_count ?? data.total_jobs),
       queued: statusOf('queued'),
       running: statusOf('running'),
-      // OpenMontage 的概览接口与趋势接口分别使用 completed / succeeded；
-      // 在桌面端统一投影为 completed，避免标准响应落成“—”。
-      completed: statusOf('completed') ?? statusOf('succeeded'),
+      completed: statusOf('completed'),
       failed: statusOf('failed'),
     },
     pendingApprovals: numberOrNull(data.pendingApprovals ?? data.pending_approvals ?? approvals.pending ?? data.awaitingApproval ?? data.awaiting_approval),
@@ -712,9 +751,7 @@ async function loadGeoSeries(fetchImpl, apiKey, window, now, logger) {
     }
     const message = await mcpMessage(response)
     if (message?.error) return failed('geoflow_mcp_error')
-    const result = message?.result
-    const value = result?.structuredContent
-    if (mcpResultFailed(result, value)) return failed('geoflow_mcp_error')
+    const value = message?.result?.structuredContent
     if (!value || typeof value !== 'object') return failed('geoflow_invalid_response')
 
     const publication = list(value.publication_trend)
@@ -1178,11 +1215,6 @@ async function mcpMessage(response) {
     if (value?.result || value?.error) return value
   }
   throw new Error('MCP response contained no result')
-}
-
-function mcpResultFailed(raw, value) {
-  if (raw?.isError === true || raw?.ok === false || value?.isError === true || value?.ok === false) return true
-  return ['error', 'failed', 'failure', 'unavailable', 'blocked'].includes(String(value?.status || '').toLowerCase())
 }
 
 function workspaceName(cwd) {

@@ -32,18 +32,12 @@ test('locks recruiter mutations and disables every write surface', async () => {
   assert.match(source, /className: 'yr-intake-textarea', value: input, disabled: busy/u)
   assert.match(source, /'aria-label': t\('refresh'\), disabled: interactionBusy, onClick: refresh/u)
   assert.match(source, /className: 'yr-inline-error', role: 'alert'/u)
-  assert.match(source, /refreshError: '刷新失败，当前仍显示上次数据'/u)
   assert.match(source, /setMessage\(next \? t\('roleGenerated'\) : t\('saveError'\)\)/u)
   assert.match(source, /function SourceBadge\(\{ label, state, t, onClick, disabled \}\)/u)
   assert.match(source, /function Candidates\(\{ data, t, onNavigate, busy \}\)/u)
   assert.match(source, /className: 'yr-filter', value: query, disabled: busy/u)
   assert.match(source, /'data-active': tab === id, 'aria-current': tab === id \? 'page' : undefined, disabled: interactionBusy/u)
   assert.match(source, /\.yr-empty button:disabled,.yr-inline-error button:disabled,.yr-tabs button:disabled,.yr-source-button:disabled,.yr-secondary:disabled,.yr-filter:disabled\{opacity:\.45;cursor:default\}/u)
-})
-
-test('uses the shared adaptive foreground for primary actions', async () => {
-  const source = await readFile(new URL('src/client.js', root), 'utf8')
-  assert.match(source, /\.yr-primary\{color:var\(--dsw-alias-label-primary-foreground\)\}/u)
 })
 
 test('keeps BOSS actions human-confirmed and does not accept raw PII', async () => {
@@ -67,18 +61,8 @@ test('localizes recruiter stages and status enums before rendering them', async 
   assert.match(source, /employmentText\(role\.employmentType, t\)/u)
   assert.match(source, /feedbackText\(candidate\.feedbackStatus \|\| 'none', t\)/u)
   assert.match(source, /status === 'confirmed_pending_adapter' \|\| status === 'adapter_pending'/u)
-  assert.match(source, /status === 'dismissed' \? t\('dismissed'\) : t\('unknown'\)/u)
   assert.match(source, /\.yr-status-adapter_pending i/u)
   assert.doesNotMatch(source, /h\('strong', null, item\), h\('span'/u)
-})
-
-test('labels refresh failures separately from action failures', async () => {
-  const source = await readFile(new URL('src/client.js', root), 'utf8')
-  assert.match(source, /setErrorKind\('refresh'\)/u)
-  assert.match(source, /setErrorKind\('action'\)/u)
-  assert.match(source, /t\(errorKind === 'refresh' \? 'refreshError' : 'actionError'\)/u)
-  assert.match(source, /setData\(previous => failed \? previous \|\| value : value\)/u)
-  assert.match(source, /if \(next\?\.status && next\.status !== 'ready'\)/u)
 })
 
 test('declares the Models-authenticated data contract without exposing a client key', async () => {

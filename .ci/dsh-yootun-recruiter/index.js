@@ -55,7 +55,7 @@ export function apply(ctx, config = {}) {
         return send(res, 400, { error: 'unknown_action' })
       } catch (error) {
         ctx.logger?.warn?.('yootun recruiter failed: %s', safeError(error))
-        return send(res, 200, { status: 'error', reason: 'recruiter_request_failed', dashboard: {}, requirements: [], candidates: [], actions: [], sync: { provider: SYNC_PROVIDER, status: 'error', reason: 'recruiter_request_failed' }, knowledge: { status: 'unavailable', route: PUBLIC_KNOWLEDGE_MCP, reason: 'recruiter_request_failed' } })
+        return send(res, 200, { status: 'error', dashboard: {}, requirements: [], candidates: [], actions: [], sync: { provider: SYNC_PROVIDER, status: 'error', reason: 'recruiter_request_failed' }, knowledge: { status: 'unavailable', route: PUBLIC_KNOWLEDGE_MCP, reason: 'recruiter_request_failed' } })
       }
     },
     }))
@@ -132,22 +132,12 @@ function projectCandidate(row) {
 function findTool(ctx, name) { return (ctx.tools.schemas?.() || []).find(item => String(item.name || '').includes(name)) }
 function parseResult(result) {
   if (!result) return {}
-  let payload = null
-  if (result && typeof result === 'object' && !Array.isArray(result) && result.structuredContent && typeof result.structuredContent === 'object') {
-    payload = result.structuredContent
-  } else if (result && typeof result === 'object' && !Array.isArray(result) && Array.isArray(result.content)) {
+  if (result && typeof result === 'object' && !Array.isArray(result) && Array.isArray(result.content)) {
     const text = result.content.filter(item => item?.type === 'text').map(item => String(item.text || '')).join('')
-    if (!text) payload = {}
-    else {
-      try { payload = JSON.parse(text) } catch { return {} }
-    }
-  } else {
-    payload = result
+    if (!text) return {}
+    try { return JSON.parse(text) } catch { return {} }
   }
-  if (result?.isError === true || result?.ok === false || payload?.isError === true || payload?.ok === false || ['error', 'failed', 'failure', 'unavailable', 'blocked'].includes(String(payload?.status || '').toLowerCase()) || payload?.error) {
-    throw new Error('recruiter_tool_failed')
-  }
-  return payload && typeof payload === 'object' ? payload : {}
+  return result
 }
 function asStringList(value) {
   if (!Array.isArray(value)) return []

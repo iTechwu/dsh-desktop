@@ -281,42 +281,6 @@ test('host endpoint reads the montage overview through the public API contract e
   assert.ok(!JSON.stringify(response.body).includes('test-model-key'))
 })
 
-test('host endpoint aliases montage succeeded counts to the completed overview metric', async () => {
-  let route
-  applyHost({
-    credentials: { async resolve() { return { value: 'test-model-key', source: 'memory' } } },
-    effect(factory) { return factory() },
-    logger: { warn() {} },
-    sessionPersistence: { async list() { return [] } },
-    webServer: {
-      register(value) {
-        if (value.path === '/api/desktop/yootun/dashboard/yesterday') route = value
-        return () => {}
-      },
-    },
-  }, {
-    fetch: async url => {
-      if (String(url).includes('/api/yootun/v1/montage/overview')) {
-        return new Response(JSON.stringify({
-          data: {
-            jobs: { total: 7, queued: 1, running: 2, succeeded: 3, failed: 1 },
-            pendingApprovals: 0,
-            artifacts: { total: 3 },
-            health: { service: 'ready', workers: [] },
-          },
-          meta: { generatedAt: '2026-09-01T00:00:00.000Z' },
-        }), { status: 200, headers: { 'content-type': 'application/json' } })
-      }
-      return new Response(JSON.stringify({ currency: 'CNY', summary: { requests: 0, totalTokens: 0, cost: 0 }, byModel: [] }), { status: 200 })
-    },
-    now: () => new Date('2026-09-01T01:30:00.000Z'),
-  })
-
-  const response = await invokeRoute(route, 'POST')
-  assert.equal(response.status, 200)
-  assert.deepEqual(response.body.montage.data.jobs, { total: 7, queued: 1, running: 2, completed: 3, failed: 1 })
-})
-
 test('host endpoint isolates an MCP failure without losing other dashboard sources', async () => {
   let route
   applyHost({
@@ -585,6 +549,41 @@ test('host endpoint exposes the GEORank benchmark as an isolated GEO source', as
   assert.ok(!JSON.stringify(response.body).includes('test-model-key'))
 })
 
+test('host endpoint prefers the latest completed daily GEORank diagnostic for the target site', async () => {
+  let route
+  applyHost({
+    credentials: { async resolve() { return { value: 'test-model-key' } } },
+    effect(factory) { return factory() },
+    logger: { warn() {} },
+    sessionPersistence: { async list() { return [] } },
+    tools: { schemas() { return [{ name: 'mcp__georank__get_company' }] } },
+    webServer: { register(value) { if (value.path === '/api/desktop/yootun/dashboard/yesterday') route = value; return () => {} } },
+  }, {
+    fetch: async (url, init) => {
+      if (String(url) === 'https://ixicai.cn/mcp/geoflow') return new Response(JSON.stringify({ jsonrpc: '2.0', result: { structuredContent: { kpis: { total_views: 1 }, top_content: [] } } }), { status: 200 })
+      if (String(url) === 'https://ixicai.cn/mcp/georank') {
+        const body = JSON.parse(init.body)
+        if (body.method === 'initialize') return new Response(JSON.stringify({ jsonrpc: '2.0', id: 1, result: {} }), { status: 200, headers: { 'mcp-session-id': 'session-2' } })
+        if (body.method === 'notifications/initialized') return new Response('', { status: 202 })
+        if (body.params?.name === 'georank_score_ai_friendliness') return new Response(JSON.stringify({ jsonrpc: '2.0', id: body.id, result: { structuredContent: { score: 90, reasons: [], suggestions: [] } } }), { status: 200 })
+        if (body.params?.name === 'georank_diagnostic_history') return new Response(JSON.stringify({ jsonrpc: '2.0', id: body.id, result: { structuredContent: [{ report_id: 'report-1', url: 'https://yootun.ixicai.cn', status: 'completed', overall_score: 59, created_at: '2026-09-09T01:00:00Z' }, { report_id: 'report-old', url: 'https://other.example', status: 'completed', overall_score: 99, created_at: '2026-09-09T02:00:00Z' }] } }), { status: 200 })
+        throw new Error(`unexpected GEORank tool ${body.params?.name}`)
+      }
+      if (String(url) === 'https://ixicai.cn/api/yootun/v1/georank/overview') return new Response(JSON.stringify({ data: { scope: 'public_directory', totals: { publishedCompanies: 0, scoredCompanies: 0 }, averageGeoScore: null, scoreDistribution: {}, recentCompanies: [] }, meta: {} }), { status: 200 })
+      if (String(url) === 'https://ixicai.cn/api/yootun/v1/montage/overview') return new Response(JSON.stringify({ data: { jobs: { total: 0 }, pendingApprovals: 0, artifacts: {}, health: {} }, meta: {} }), { status: 200 })
+      return new Response(JSON.stringify({ summary: { requests: 0, totalTokens: 0, cost: 0 }, byModel: [] }), { status: 200 })
+    },
+    now: () => new Date('2026-09-09T03:00:00Z'),
+  })
+  const response = await invokeRoute(route, 'POST')
+  assert.equal(response.status, 200)
+  assert.equal(response.body.georank.status, 'ready')
+  assert.equal(response.body.georank.data.benchmarkScore, 59)
+  assert.equal(response.body.georank.data.aiFriendlinessScore, 90)
+  assert.equal(response.body.georank.data.benchmarkBasis, 'youhuitun_url_async_diagnostic')
+  assert.equal(response.body.georank.data.latestDiagnostic.reportId, 'report-1')
+})
+
 test('host endpoint preserves missing montage counts as null instead of zero', async () => {
   let route
   applyHost({
@@ -783,41 +782,6 @@ test('host endpoint returns four-source daily series with honest baselines', asy
   assert.ok(!JSON.stringify(response.body).includes('test-model-key'))
 })
 
-test('host treats resolved MCP error envelopes as failed dashboard sources', async () => {
-  let route
-  applyHost({
-    credentials: { async resolve() { return { value: 'test-model-key' } } },
-    effect(factory) { return factory() },
-    logger: { warn() {} },
-    sessionPersistence: { async list() { return [] } },
-    tools: { schemas() { return [] } },
-    webServer: {
-      register(value) {
-        if (value.path === '/api/desktop/yootun/dashboard/yesterday') route = value
-        return () => {}
-      },
-    },
-  }, {
-    fetch: async url => {
-      const target = String(url)
-      if (target.includes('/mcp/geoflow')) {
-        return new Response(JSON.stringify({ jsonrpc: '2.0', result: { isError: true, structuredContent: { status: 'error', reason: 'upstream_down', kpis: {}, top_content: [] } } }), { status: 200 })
-      }
-      if (target.includes('/mcp/georank')) {
-        return new Response(JSON.stringify({ jsonrpc: '2.0', result: { structuredContent: { score: 0 } } }), { status: 200, headers: { 'content-type': 'application/json' } })
-      }
-      if (target.includes('/api/yootun/v1/georank/overview')) return new Response(JSON.stringify({ data: {} }), { status: 200 })
-      if (target.includes('/montage/overview')) return new Response(JSON.stringify({ data: {} }), { status: 200 })
-      return new Response(JSON.stringify({ summary: { requests: 0, totalTokens: 0, cost: 0 }, byModel: [] }), { status: 200 })
-    },
-    now: () => new Date('2026-09-01T01:30:00.000Z'),
-  })
-  const response = await invokeRoute(route, 'POST')
-  assert.equal(response.status, 200)
-  assert.equal(response.body.geo.status, 'error')
-  assert.equal(response.body.geo.reason, 'geoflow_mcp_error')
-})
-
 test('host endpoint keeps series sources isolated when one upstream fails', async () => {
   let route
   applyHost({
@@ -862,29 +826,6 @@ test('host endpoint keeps series sources isolated when one upstream fails', asyn
   assert.equal(teamResponse.body.usage.status, 'unavailable')
   assert.equal(teamResponse.body.usage.reason, 'billing_team_forbidden')
   assert.equal(teamResponse.body.geo.status, 'error')
-})
-
-test('treats a resolved blocked MCP source as an error', async () => {
-  let route
-  applyHost({
-    credentials: { async resolve() { return { value: 'test-model-key', source: 'memory' } } },
-    effect(factory) { return factory() },
-    logger: { warn() {} },
-    sessionPersistence: { async list() { return [] } },
-    tools: { schemas() { return [] } },
-    webServer: { register(value) { if (value.path === '/api/desktop/yootun/dashboard/yesterday') route = value; return () => {} } },
-  }, {
-    fetch: async url => {
-      const target = String(url)
-      if (target.includes('/mcp/geoflow')) return new Response(JSON.stringify({ result: { structuredContent: { status: 'blocked' } } }), { status: 200, headers: { 'content-type': 'application/json' } })
-      if (target.includes('/mcp/georank')) return new Response(JSON.stringify({ result: { structuredContent: {} } }), { status: 200, headers: { 'content-type': 'application/json' } })
-      return new Response(JSON.stringify({ summary: {}, byModel: [] }), { status: 200, headers: { 'content-type': 'application/json' } })
-    },
-    now: () => new Date('2026-09-01T01:30:00.000Z'),
-  })
-  const response = await invokeRoute(route, 'POST')
-  assert.equal(response.body.geo.status, 'error')
-  assert.equal(response.body.geo.reason, 'geoflow_mcp_error')
 })
 
 async function invokeRoute(route, method, body) {

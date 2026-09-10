@@ -76,20 +76,3 @@ test('returns a stable error state when the supply tool fails', async () => {
   assert.equal(state.body.status, 'error')
   assert.deepEqual(state.body.risks, [])
 })
-
-test('returns an error state for a resolved supply tool error', async () => {
-  let route
-  apply({
-    effect(factory) { return factory() },
-    logger: { warn() {} },
-    tools: {
-      schemas() { return [{ name: 'supply_chain_alerts_list' }] },
-      async execute() { return { isError: true, content: [{ type: 'text', text: JSON.stringify({ error: { code: 'UPSTREAM_FAILED' } }) }] } },
-    },
-    webServer: { register(value) { route = value; return () => {} } },
-  })
-  const state = await invoke(route, 'GET')
-  assert.equal(state.body.status, 'error')
-  assert.equal(state.body.reason, 'supply_chain_tool_failed')
-  assert.deepEqual(state.body.risks, [])
-})

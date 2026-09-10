@@ -31,7 +31,6 @@ const OVERLAY_ID = '@dofe/dsh-yootun-dashboard'
 const OVERLAY_EVENT = 'dofe:yootun-overlay:open'
 const YOOTUN_DASHBOARD_PATH = '/api/desktop/yootun/dashboard/yesterday'
 const DASHBOARD_SERIES_PATH = '/api/desktop/yootun/dashboard/series'
-const REQUEST_TIMEOUT_MS = 30000
 const TABS = [
   { id: 'overview', label: 'tabOverview' },
   { id: 'geo', label: 'tabGeo' },
@@ -169,7 +168,7 @@ const RANGE_DAYS = { '7d': 7, '30d': 30 }
 async function loadDashboard(range, usageScope, signal) {
   const days = RANGE_DAYS[range]
   const response = await fetch(days ? DASHBOARD_SERIES_PATH : YOOTUN_DASHBOARD_PATH, {
-    method: 'POST', credentials: 'same-origin', redirect: 'error', signal: AbortSignal.any([signal, AbortSignal.timeout(REQUEST_TIMEOUT_MS)]),
+    method: 'POST', credentials: 'same-origin', redirect: 'error', signal,
     headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
     body: JSON.stringify(days ? { days, scope: usageScope } : {}),
   })

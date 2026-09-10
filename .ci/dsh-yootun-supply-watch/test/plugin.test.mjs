@@ -23,9 +23,6 @@ test('keeps risk reviews human-confirmed and local-only', async () => {
   assert.match(source, /item\.targetLabel \|\| t\('supplier'\)/u)
   assert.doesNotMatch(source, /item\.(title|supplierLabel|category|signal|source)/u)
   assert.match(source, /data\?\.status && data\.status !== 'ready'/u)
-  assert.match(source, /setData\(previous => failed \? previous \|\| value : value\)/u)
-  assert.match(source, /if \(next\?\.status && next\.status !== 'ready'\)/u)
-  assert.match(source, /loadError \? h\('div', \{ role: 'alert', className: 'ysw-inline-error'/u)
   assert.match(source, /'aria-busy': interactionBusy/u)
   assert.doesNotMatch(source, /password|cookie|银行卡|供应商联系人手机号/iu)
 })
@@ -50,10 +47,4 @@ test('uses only icons exported by DSH alpha3 primitives', async () => {
   for (const name of imports.split(',').map(token => token.trim()).filter(token => token.startsWith('Icon'))) {
     assert.match(exported, new RegExp(`export const ${name}\\b`, 'u'))
   }
-})
-
-test('reads structured MCP output and preserves resolved failure states', async () => {
-  const host = await readFile(new URL('index.js', root), 'utf8')
-  assert.match(host, /result\.structuredContent && typeof result\.structuredContent === 'object'/u)
-  assert.match(host, /'failure', 'unavailable', 'blocked'/u)
 })

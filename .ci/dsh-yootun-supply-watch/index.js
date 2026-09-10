@@ -61,7 +61,6 @@ async function buildState(ctx, signal = AbortSignal.timeout(TOOL_CALL_TIMEOUT_MS
     signal,
   })
   const payload = parseResult(result)
-  if (toolResultFailed(result, payload)) return { status: 'error', reason: 'supply_chain_tool_failed', dashboard: {}, risks: [], actions: [] }
   const alerts = Array.isArray(payload.alerts) ? payload.alerts : []
   const risks = alerts.map(alert => projectRisk(alert)).filter(Boolean)
   const actions = alerts
@@ -105,17 +104,12 @@ function findTool(ctx, name) { return (ctx.tools.schemas?.() || []).find(item =>
 function safeError(error) { return error instanceof Error ? error.message.slice(0, 200) : 'unknown error' }
 function parseResult(result) {
   if (!result) return {}
-  if (result && typeof result === 'object' && !Array.isArray(result) && result.structuredContent && typeof result.structuredContent === 'object') return result.structuredContent
   if (result && typeof result === 'object' && !Array.isArray(result) && Array.isArray(result.content)) {
     const text = result.content.filter(item => item?.type === 'text').map(item => String(item.text || '')).join('')
     if (!text) return {}
     try { return JSON.parse(text) } catch { return {} }
   }
   return result
-}
-function toolResultFailed(raw, payload) {
-  return raw?.isError === true || raw?.ok === false || raw?.error || payload?.isError === true || payload?.error || payload?.ok === false
-    || ['error', 'failed', 'failure', 'unavailable', 'blocked'].includes(String(payload?.status || '').toLowerCase())
 }
 async function readBody(req) {
   if (typeof req.body === 'object' && req.body) return req.body

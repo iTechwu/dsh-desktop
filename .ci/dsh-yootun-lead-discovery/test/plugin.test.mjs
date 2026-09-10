@@ -15,12 +15,6 @@ test('lead discovery package exposes a DSH client and guarded host route', async
   assert.match(client, /role: 'dialog'/)
   assert.match(client, /event\.key === 'Escape'/)
   assert.match(client, /setLoadMoreError\(true\)/)
-  assert.match(client, /refreshError: '刷新失败，当前仍显示上次数据'/)
-  assert.match(client, /const hasPreviousCandidates = candidates\?\.status === 'ready'/)
-  assert.match(client, /response\?\.status && response\.status !== 'ready'/)
-  assert.match(client, /String\(candidates\?\.reason \|\| ''\)\.toUpperCase\(\)/)
-  assert.match(client, /candidateError/)
-  assert.match(client, /className: 'yl-inline-error', role: 'alert'/u)
   assert.match(client, /response\.status !== 'ready'/)
   assert.match(client, /prev\.totalAvailable \?\? prev\.stats\?\.totalAvailable/)
   assert.match(client, /动态统计必须以当前已展示样本为准/)
@@ -145,52 +139,6 @@ test('host delegates pagination and stored candidates to their read-only tools',
   assert.equal(candidatesResult.body.items[0].leadId, undefined)
 })
 
-test('分页工具已解析失败时不得返回 ready 空列表', async () => {
-  let route
-  apply({
-    tools: {
-      schemas: () => [{ name: 'lead_discovery_result_page_get' }],
-      execute: async () => ({ structuredContent: { status: 'failed', reason: 'RESULT_STORE_UNAVAILABLE', items: [] } }),
-    },
-    webServer: { register(value) { route = value; return () => {} } },
-    effect(factory) { return factory() },
-  })
-  const result = await invoke(route, { action: 'page', resultRef: 'ref-abc' })
-  assert.equal(result.body.status, 'error')
-  assert.equal(result.body.reason, 'result_store_unavailable')
-  assert.equal(result.body.items, undefined)
-})
-
-test('数据库工具已解析失败时不得回退成空成功', async () => {
-  let route
-  apply({
-    tools: {
-      schemas: () => [{ name: 'lead_discovery_database_search' }],
-      execute: async () => ({ structuredContent: { status: 'unavailable', reason: 'RESULT_STORE_UNAVAILABLE', candidates: [] } }),
-    },
-    webServer: { register(value) { route = value; return () => {} } },
-    effect(factory) { return factory() },
-  })
-  const result = await invoke(route, { action: 'discover', keyword: 'SUV' })
-  assert.equal(result.body.status, 'error')
-  assert.equal(result.body.reason, 'result_store_unavailable')
-})
-
-test('数据库工具的结构化 error 信封不得回退成空成功', async () => {
-  let route
-  apply({
-    tools: {
-      schemas: () => [{ name: 'lead_discovery_database_search' }],
-      execute: async () => ({ structuredContent: { error: { code: 'RESULT_STORE_UNAVAILABLE' }, candidates: [] } }),
-    },
-    webServer: { register(value) { route = value; return () => {} } },
-    effect(factory) { return factory() },
-  })
-  const result = await invoke(route, { action: 'discover', keyword: 'SUV' })
-  assert.equal(result.body.status, 'error')
-  assert.equal(result.body.reason, 'result_store_unavailable')
-})
-
 test('host preserves a safe MCP error category for diagnosis', async () => {
   let route
   apply({
@@ -204,21 +152,6 @@ test('host preserves a safe MCP error category for diagnosis', async () => {
   const result = await invoke(route, { action: 'candidates' })
   assert.equal(result.status, 200)
   assert.deepEqual(result.body, { status: 'error', reason: 'RESULT_STORE_UNAVAILABLE' })
-})
-
-test('host maps resolved candidate tool errors without presenting an empty ready list', async () => {
-  let route
-  apply({
-    tools: {
-      schemas: () => [{ name: 'lead_discovery_candidates_list' }],
-      execute: async () => ({ isError: true, content: [{ type: 'text', text: JSON.stringify({ error: { code: 'RESULT_STORE_UNAVAILABLE' } }) }] }),
-    },
-    webServer: { register(value) { route = value; return () => {} } },
-    effect(factory) { return factory() },
-  })
-  const result = await invoke(route, { action: 'candidates' })
-  assert.equal(result.status, 200)
-  assert.deepEqual(result.body, { status: 'error', reason: 'result_store_unavailable' })
 })
 
 test('host drops non-web source URLs before returning lead cards', async () => {

@@ -98,50 +98,24 @@ export async function callTool(ctx, name, args, { signal = AbortSignal.timeout(T
 
 export function parseToolResult(result) {
   if (!result || typeof result !== 'object') return {}
-  let payload = null
   if (result.structuredContent && typeof result.structuredContent === 'object' && !Array.isArray(result.structuredContent)) {
-    payload = result.structuredContent
-  } else if (Array.isArray(result.content)) {
+    return result.structuredContent
+  }
+  if (Array.isArray(result.content)) {
     const text = result.content.filter(item => item?.type === 'text').map(item => String(item.text || '')).join('')
-    if (text) {
-      try {
-        payload = JSON.parse(text)
-      } catch {
-        return {}
+    if (!text) return {}
+    try {
+      const parsed = JSON.parse(text)
+      if (parsed && typeof parsed === 'object' && parsed.error && parsed.error.code) {
+        throw new ToolsCallError('unknown', safeErrorCode(parsed.error.code))
       }
-    } else {
-      payload = {}
+      return parsed
+    } catch (error) {
+      if (error instanceof ToolsCallError) throw error
+      return {}
     }
-  } else {
-    payload = result
   }
-  if (toolResultFailed(result, payload)) {
-    throw new ToolsCallError('unknown', toolErrorCode(result, payload))
-  }
-  return payload && typeof payload === 'object' ? payload : {}
-}
-
-// MCP 网关有时会把业务失败作为已解析的 JSON 返回，而不是 reject。
-// 统一在工具边界识别这些形态，避免宿主把失败投影成 ready + 空数据。
-function toolResultFailed(raw, payload) {
-  if (raw?.isError === true || raw?.error || payload?.isError === true || payload?.error || payload?.ok === false) return true
-  if (payload?.error && typeof payload.error === 'object') return true
-  const status = typeof payload?.status === 'string' ? payload.status.toLowerCase() : ''
-  return ['error', 'failed', 'failure', 'unavailable', 'blocked'].includes(status)
-}
-
-function toolErrorCode(raw, payload) {
-  const candidates = [
-    payload?.error?.code,
-    payload?.reason,
-    payload?.code,
-    raw?.error?.code,
-    raw?.reason,
-  ]
-  for (const candidate of candidates) {
-    if (typeof candidate === 'string' && ALLOWED_ERROR_CODES.has(candidate)) return candidate
-  }
-  return 'douyin_operation_request_failed'
+  return result
 }
 
 /** 把宿主/网关错误收敛为稳定码：白名单外一律 unknown，不透传原文。 */

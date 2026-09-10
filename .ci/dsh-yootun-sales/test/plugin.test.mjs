@@ -19,11 +19,9 @@ test('keeps follow-ups human-confirmed and points only at the Desktop route', as
   }
   assert.doesNotMatch(source, /Unable to load sales workspace/u)
   assert.match(source, /status === 'confirmed_pending_adapter' \|\| status === 'adapter_pending'/u)
-  assert.match(source, /status === 'dismissed' \? t\('dismiss'\) : t\('actionUnknown'\)/u)
   assert.match(source, /current\.dashboard\.pendingConfirmation \?\? current\.dashboard\.pending/u)
   assert.match(source, /data\?\.status && data\.status !== 'ready'/u)
   assert.match(source, /data\.status === 'error' \? 'alert' : 'status'/u)
-  assert.match(source, /refreshError: '刷新失败，当前仍显示上次数据'/u)
   assert.doesNotMatch(source, /contactPhone|password|cookie|聊天正文/iu)
 })
 
@@ -58,15 +56,6 @@ test('locks all workspace mutations and disables conflicting controls', async ()
   assert.match(source, /\.ys-inline-error button:disabled,.ys-empty button:disabled\{opacity:\.45;cursor:default\}/u)
 })
 
-test('labels refresh failures separately from action failures', async () => {
-  const source = await readFile(new URL('src/client.js', root), 'utf8')
-  assert.match(source, /setErrorKind\('refresh'\)/u)
-  assert.match(source, /setErrorKind\('action'\)/u)
-  assert.match(source, /t\(errorKind === 'refresh' \? 'refreshError' : 'actionError'\)/u)
-  assert.match(source, /setData\(previous => failed \? previous \|\| value : value\)/u)
-  assert.match(source, /if \(next\?\.status && next\.status !== 'ready'\)/u)
-})
-
 test('builds a syntactically valid browser module', async () => {
   const source = await readFile(new URL('src/client.js', root), 'utf8')
   const temporary = new URL('src/.sales-client-syntax-check.cjs', root)
@@ -84,12 +73,6 @@ test('uses only icons exported by the DSH primitives package', async () => {
   for (const name of imports.split(',').map(token => token.trim()).filter(token => token.startsWith('Icon'))) {
     assert.match(exported, new RegExp(`export const ${name}\\b`, 'u'), `${name} is not exported by DSH primitives`)
   }
-})
-
-test('reads structured MCP output and preserves resolved failure states', async () => {
-  const host = await readFile(new URL('index.js', root), 'utf8')
-  assert.match(host, /result\.structuredContent && typeof result\.structuredContent === 'object'/u)
-  assert.match(host, /'failure', 'unavailable', 'blocked'/u)
 })
 
 test('applies the browser plugin without runtime reference errors', async () => {

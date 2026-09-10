@@ -93,20 +93,6 @@ test('submits DSH session checkpoints through MCP with server-resolved space key
   assert.equal(checkpoint.params.arguments.userId, undefined)
 })
 
-test('projects direct and nested structured MCP failures as unavailable results', async () => {
-  const failureResponses = [
-    new Response(JSON.stringify({ jsonrpc: '2.0', result: { ok: false, error: { code: 'provider_failed' } } }), { status: 200 }),
-    new Response(JSON.stringify({ jsonrpc: '2.0', result: { structuredContent: { status: 'failed', error: { code: 'provider_failed' } } } }), { status: 200 }),
-  ]
-  for (const response of failureResponses) {
-    const harness = context(async () => response)
-    await harness.start()
-    const handle = harness.provided.get('yootunAgentKnowledge')
-    assert.equal(await handle.loadout(), null)
-    assert.equal(await handle.contextPack('session-failure', 'query'), null)
-  }
-})
-
 test('injects ContextPack evidence and blocks recall-to-capture pollution', async () => {
   const harness = context(async (_url, init) => {
     const rpc = JSON.parse(init.body)

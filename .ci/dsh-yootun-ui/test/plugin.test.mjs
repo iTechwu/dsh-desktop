@@ -31,10 +31,9 @@ test('publishes a discoverable DSH client plugin', async () => {
 test('ships all DoFe capabilities enabled by default', async () => {
   const source = await readFile(new URL('src/client.js', root), 'utf8')
 
-  for (const id of ['geoflow', 'georank', 'tools', 'openmontage', 'media', 'opencli', 'knowledge']) {
+  for (const id of ['geoflow', 'georank', 'tools', 'openmontage', 'opencli', 'knowledge']) {
     assert.match(source, new RegExp(`id: ['"]${id}['"]`))
   }
-  assert.match(source, /单张图片与 5–10 秒单镜头视频直连生成（复杂视频走 OpenMontage）/u)
   assert.match(source, /const DEFAULT_PLUGIN_IDS = PLUGINS\.map/u)
 })
 
@@ -78,12 +77,6 @@ test('guides credential setup and protects credential removal', async () => {
   assert.match(source, /if \(!entered \|\| loadingRef\.current \|\| busyRef\.current\) return/u)
   assert.match(source, /if \(busyRef\.current \|\| loadingRef\.current/u)
   assert.match(source, /disabled: interactionBusy/u)
-  assert.match(source, /const previousInert = root\?\.inert/u)
-  assert.match(source, /root\.inert = true/u)
-  assert.match(source, /document\.body\.style\.overflow = 'hidden'/u)
-  assert.match(source, /document\.body\.style\.overflow = previousOverflow/u)
-  assert.match(source, /const \[loadError, setLoadError\] = useState\(false\)/u)
-  assert.match(source, /role: 'alert'.*t\('loadError'\)/u)
 })
 
 test('re-reads and retries a settings mutation once after a revision conflict', async () => {

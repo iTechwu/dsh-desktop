@@ -102,7 +102,6 @@ async function runIntentSearch(ctx, body, signal = AbortSignal.timeout(TOOL_CALL
     signal,
   })
   const payload = parseResult(result)
-  if (toolResultFailed(result, payload)) return { status: 'error', reason: 'lead_discovery_tool_failed', query, platform, items: [] }
   const items = projectItems(payload.items)
   lastIntent = { status: 'ready', query, items }
   return lastIntent
@@ -133,17 +132,12 @@ function findTool(ctx, name) { return (ctx.tools.schemas?.() || []).find(item =>
 function stableKey(scope, keyword, platform) { return createHash('sha256').update(`${scope}:${keyword}:${platform}`).digest('hex').slice(0, 40) }
 function parseResult(result) {
   if (!result) return {}
-  if (result && typeof result === 'object' && !Array.isArray(result) && result.structuredContent && typeof result.structuredContent === 'object') return result.structuredContent
   if (result && typeof result === 'object' && !Array.isArray(result) && Array.isArray(result.content)) {
     const text = result.content.filter(item => item?.type === 'text').map(item => String(item.text || '')).join('')
     if (!text) return {}
     try { return JSON.parse(text) } catch { return {} }
   }
   return result
-}
-function toolResultFailed(raw, payload) {
-  return raw?.isError === true || raw?.ok === false || raw?.error || payload?.isError === true || payload?.error || payload?.ok === false
-    || ['error', 'failed', 'failure', 'unavailable', 'blocked'].includes(String(payload?.status || '').toLowerCase())
 }
 function firstString(...values) { for (const value of values) if (typeof value === 'string' && value) return value; return null }
 function numberOrNull(value) { return typeof value === 'number' && Number.isFinite(value) ? value : null }

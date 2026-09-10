@@ -338,19 +338,7 @@ async function callKnowledgeMcp(fetchImpl, apiKey, tool, input, signal) {
     })
     if (!response.ok) return { ok: false, error: `knowledge_mcp_http_${response.status}` }
     const message = parseMcpMessage(await response.text())
-    const result = message?.result
-    const structured = result?.structuredContent
-    const structuredStatus = String(structured?.status || '').toLowerCase()
-    if (
-      message?.error ||
-      result?.isError === true ||
-      result?.ok === false ||
-      result?.error ||
-      structured?.isError === true ||
-      structured?.ok === false ||
-      structured?.error ||
-      ['error', 'failed', 'failure', 'unavailable', 'blocked'].includes(structuredStatus)
-    ) return { ok: false, error: 'knowledge_mcp_tool_failed' }
+    if (message?.error || message?.result?.isError === true) return { ok: false, error: 'knowledge_mcp_tool_failed' }
     return { ok: true, result: message?.result || null }
   } catch (error) {
     return { ok: false, error: error?.name === 'AbortError' ? 'knowledge_mcp_timeout' : 'knowledge_mcp_request_failed' }

@@ -59,24 +59,15 @@ export function buildExaToolCall(args) {
   return { name: 'web_fetch_exa', arguments: { urls, maxCharacters: 6000 } }
 }
 
-export function exaText(payload) {
-  let invalidEvent = false
+function exaText(payload) {
   const messages = payload.split('\n').filter(line => line.startsWith('data: '))
   for (const message of messages) {
-    const value = message.slice(6).trim()
-    if (!value || value === '[DONE]') continue
-    let parsed
-    try { parsed = JSON.parse(value) } catch { invalidEvent = true; continue }
+    const parsed = JSON.parse(message.slice(6))
     if (parsed.error) throw new Error(parsed.error.message || 'Exa MCP returned an error')
-    const result = parsed.result
-    const structured = result?.structuredContent
-    if (result?.isError === true || structured?.isError === true || structured?.ok === false || ['error', 'failed', 'failure', 'unavailable', 'blocked'].includes(String(structured?.status || '').toLowerCase())) {
-      throw new Error('Exa MCP returned a tool failure')
-    }
-    const content = result?.content
+    const content = parsed.result?.content
     if (Array.isArray(content)) return content.filter(item => item?.type === 'text').map(item => item.text).join('\n')
   }
-  throw new Error(invalidEvent ? 'Exa MCP returned invalid events' : 'Exa MCP returned no result')
+  throw new Error('Exa MCP returned no result')
 }
 
 async function runExa(args, timeoutMs, signal, apiKey) {
@@ -86,8 +77,6 @@ async function runExa(args, timeoutMs, signal, apiKey) {
   try {
     const response = await fetch(EXA_MCP_URL, {
       method: 'POST',
-      redirect: 'error',
-      cache: 'no-store',
       headers: {
         Authorization: `Bearer ${apiKey}`,
         'content-type': 'application/json',

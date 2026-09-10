@@ -137,8 +137,6 @@ test('加载、空态与失败态文案齐备', () => {
     assert.ok(clientSource.includes(`${key}: `), `缺少状态文案 ${key}`)
   }
   assert.ok(clientSource.includes('点击「采集本账号全部」开始'))
-  assert.ok(clientSource.includes("retryDetail: '重试加载'"), '详情失败必须提供重试文案')
-  assert.match(clientSource, /setDetailError\('refresh_failed'\)/u, '详情失败不得无限停在加载态')
 })
 
 test('产物入口 id 与插件包名一致', () => {

@@ -75,21 +75,3 @@ test('returns a stable error state when talent discovery fails', async () => {
   assert.equal(state.body.status, 'error')
   assert.deepEqual(state.body.candidates, [])
 })
-
-test('does not project an already-resolved MCP error as an empty ready state', async () => {
-  let route
-  apply({
-    effect(factory) { return factory() },
-    logger: { warn() {} },
-    credentials: { async resolve() { return { value: 'test-only-model-key', source: 'env' } } },
-    tools: {
-      schemas() { return [{ name: 'talent_candidates_list' }] },
-      async execute() { return { isError: true, structuredContent: { status: 'error', reason: 'provider_down', candidates: [] } } },
-    },
-    webServer: { register(value) { route = value; return () => {} } },
-  })
-  const state = await invoke(route, 'GET')
-  assert.equal(state.body.status, 'error')
-  assert.deepEqual(state.body.candidates, [])
-  assert.equal(state.body.reason, 'recruiter_request_failed')
-})

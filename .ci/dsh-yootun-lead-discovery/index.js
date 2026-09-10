@@ -69,8 +69,6 @@ async function discover(ctx, body, signal = AbortSignal.timeout(TOOL_CALL_TIMEOU
   if (databaseSchema) {
     const storedResult = await ctx.tools.execute({ callId: `yootun-lead-db-${Date.now()}`, name: databaseSchema.name, arguments: { query: keyword, platform, limit: 20 }, signal })
     const storedPayload = parseResult(storedResult)
-    const storedFailure = resolvedToolFailure(storedResult, storedPayload)
-    if (storedFailure) return { status: 'error', reason: storedFailure, keyword, platform }
     const storedItems = projectItems(storedPayload.candidates)
     if (storedItems.length > 0) {
       return {
@@ -120,8 +118,6 @@ async function handlePage(ctx, body, res, signal = AbortSignal.timeout(TOOL_CALL
   if (!schema) return send(res, 200, { status: 'unavailable', reason: 'lead_discovery_tool_unavailable' })
   const result = await ctx.tools.execute({ callId: `yootun-lead-page-${Date.now()}`, name: schema.name, arguments: { resultRef, cursor }, signal })
   const payload = parseResult(result)
-  const failure = resolvedToolFailure(result, payload)
-  if (failure) return send(res, 200, { status: 'error', reason: failure, resultRef })
   const items = projectItems(payload.items)
   const refs = pickRefs(payload)
   return send(res, 200, { status: 'ready', ...refs, items, stats: summarizeItems(items, refs.totalAvailable) })
@@ -140,8 +136,6 @@ async function candidates(ctx, body, signal = AbortSignal.timeout(TOOL_CALL_TIME
   if (levels) args.levels = levels
   const result = await ctx.tools.execute({ callId: `yootun-lead-candidates-${Date.now()}`, name: schema.name, arguments: args, signal })
   const payload = parseResult(result)
-  const failure = resolvedToolFailure(result, payload)
-  if (failure) return { status: 'error', reason: failure }
   const items = projectItems(payload.candidates)
   return { status: 'ready', count: typeof payload.count === 'number' ? payload.count : null, items, stats: summarizeItems(items, payload?.count) }
 }
@@ -162,8 +156,7 @@ function parseResult(result) {
 function resolvedToolFailure(result, payload) {
   const failed = result?.isError === true || result?.ok === false
     || (Number.isInteger(result?.exitCode) && result.exitCode !== 0)
-    || result?.error || payload?.error || payload?.ok === false
-    || ['error', 'failed', 'failure', 'unavailable', 'blocked'].includes(String(payload?.status || '').toLowerCase())
+    || payload?.ok === false || ['error', 'failed'].includes(String(payload?.status || '').toLowerCase())
   if (!failed) return null
   const raw = firstString(payload?.error?.code, payload?.errorCode, payload?.reason, result?.error?.code)
   return raw && /^[A-Za-z0-9_:-]{1,80}$/u.test(raw) ? raw.toLowerCase() : 'lead_discovery_tool_failed'

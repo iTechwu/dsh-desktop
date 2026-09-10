@@ -227,11 +227,6 @@ test('normalizes real MCP recall envelopes and graph layout states', async () =>
   assert.equal(client.actionErrorLabel({ code: 'knowledge_mcp_timeout' }, t), 'timeout')
   assert.equal(client.actionErrorLabel({ code: 'knowledge_mcp_request_failed' }, t), 'service')
   assert.equal(client.actionErrorLabel({ code: 'unexpected_backend_detail' }, t), 'generic')
-  for (const status of ['error', 'failed', 'failure', 'unavailable', 'blocked']) {
-    assert.equal(client.mutationFailed({ status }), true)
-  }
-  assert.equal(client.mutationFailed({ ok: false }), true)
-  assert.equal(client.mutationFailed({ status: 'ready' }), false)
   const statusText = key => key
   assert.equal(client.graphStatusLabel('CONFIRMED', statusText), 'confirmed')
   assert.equal(client.graphStatusLabel('projected', statusText), 'ready')
@@ -356,47 +351,6 @@ test('marks an MCP result envelope error as a failed knowledge write', async () 
   assert.equal(events[0].outcome, 'failed')
   assert.equal(events[0].errorCode, 'knowledge_mcp_tool_failed')
   assert.doesNotMatch(JSON.stringify(events), /private failure detail|不得进入审计/u)
-})
-
-test('marks a structured MCP failure as a failed knowledge write', async () => {
-  const registered = new Map()
-  const events = []
-  const ctx = {
-    credentials: { async resolve() { return { value: 'test-key' } } },
-    yootunAudit: { async record(event) { events.push(event); return { status: 'stored' } } },
-    tools: { register(tool) { registered.set(tool.name, tool); return () => {} } },
-    systemPrompt: { section() { return () => {} } },
-    webServer: { register() { return () => {} } },
-  }
-  apply(ctx, { fetch: async () => new Response(JSON.stringify({
-    jsonrpc: '2.0', result: { structuredContent: { status: 'unavailable', reason: 'private failure detail' } },
-  }), { status: 200 }) })
-
-  await registered.get('knowledge_remember').execute({ input: { content: '不得进入审计' } }, {})
-
-  assert.equal(events.length, 1)
-  assert.equal(events[0].outcome, 'failed')
-  assert.equal(events[0].errorCode, 'knowledge_mcp_tool_failed')
-  assert.doesNotMatch(JSON.stringify(events), /private failure detail|不得进入审计/u)
-})
-
-test('rejects direct and nested structured MCP failure envelopes', async () => {
-  for (const result of [
-    { ok: false, error: { code: 'provider_failed' } },
-    { structuredContent: { error: { code: 'provider_failed' } } },
-  ]) {
-    const registered = new Map()
-    const ctx = {
-      credentials: { async resolve() { return { value: 'test-key' } } },
-      tools: { register(tool) { registered.set(tool.name, tool); return () => {} } },
-      systemPrompt: { section() { return () => {} } },
-      webServer: { register() { return () => {} } },
-    }
-    apply(ctx, { fetch: async () => new Response(JSON.stringify({ jsonrpc: '2.0', result }), { status: 200 }) })
-    const response = await registered.get('knowledge_recall').execute({ input: { query: '优惠豚' } }, {})
-    assert.equal(response.ok, false)
-    assert.equal(response.error, 'knowledge_mcp_tool_failed')
-  }
 })
 
 test('GET overview reads overview and capabilities through the public MCP contract', async () => {

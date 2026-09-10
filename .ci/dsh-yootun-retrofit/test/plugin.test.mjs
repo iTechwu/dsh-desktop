@@ -20,14 +20,8 @@ test('retrofit package exposes a complete database-first workspace', async () =>
   assert.match(client, /className: 'yro-empty', role: 'status'/u)
   assert.match(client, /className: 'yro-loading', role: 'status'/u)
   assert.match(client, /className: 'yro-state', role: 'alert'/u)
-  assert.match(client, /function InlineError\(/u)
-  assert.match(client, /setData\(previous => previous \|\| next\)/u)
-  assert.match(client, /className: 'yro-inline-error', role: 'alert'/u)
   assert.match(client, /'aria-busy': busy/u)
   assert.match(client, /if \(busyRef\.current\) return null/u)
-  assert.match(client, /const isErrorStatus = status => \['error', 'failed', 'failure', 'blocked'\]/u)
-  assert.match(client, /next\?\.status === 'unavailable' \|\| isErrorStatus\(next\?\.status\)/u)
-  assert.match(client, /else if \(isErrorStatus\(data\?\.status\)\)/u)
   assert.match(client, /value: platform, disabled: busy/u)
   assert.match(client, /className: 'yro-search-input', value: query, maxLength: 500, disabled: busy/u)
   assert.match(client, /\.yro-state button:disabled\{cursor:not-allowed;opacity:\.45\}/u)
@@ -154,19 +148,6 @@ test('marks a resolved agent-reach command failure as a failed refresh', async (
   assert.equal(events[0].outcome, 'failed')
   assert.equal(events[0].errorCode, 'retrofit_tool_failed')
   assert.doesNotMatch(JSON.stringify(events), /private failure detail/u)
-})
-
-test('does not present a resolved database tool error as a ready empty list', async () => {
-  let route
-  const ctx = context({
-    schemas: [{ name: 'mcp__tools-custom-car-monitoring__custom_car_monitoring_search', parameters: { type: 'object', properties: { query: { type: 'string' } } } }],
-    execute: async () => ({ isError: true, structuredContent: { error: { code: 'RESULT_STORE_UNAVAILABLE' } } }),
-    onRoute: value => { route = value },
-  })
-  apply(ctx)
-  const result = await invoke(route, { query: 'SUV' })
-  assert.equal(result.body.status, 'error')
-  assert.equal(result.body.reason, 'retrofit_store_failed')
 })
 
 function agentReachSchema() {
