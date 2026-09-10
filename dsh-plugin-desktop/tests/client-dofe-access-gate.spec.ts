@@ -5,7 +5,7 @@ import { resolve } from 'node:path'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { blockDofeApplicationRoot, dofeAccessSettingsStore, installDofeAccessGate, installDofeAccessStyles, mutateDofeAccessSettings, removeDofeAccess } from '../src/client/DofeAccessSection.tsx'
-import { DofeOnboardingModal } from '../src/client/DofeOnboardingModal.tsx'
+import { DofeOnboardingModal, installDofeModalFocusTrap } from '../src/client/DofeOnboardingModal.tsx'
 
 describe('mandatory DoFe access gate', () => {
   it('preserves the SettingsScope receiver for subscriptions and snapshots', () => {
@@ -100,6 +100,27 @@ describe('mandatory DoFe access gate', () => {
     expect(markup).toContain('Yootun Agent')
     expect(markup).toContain('激活 Yootun-Agent')
     expect(markup).not.toContain('aria-label="关闭"')
+  })
+
+  it('keeps keyboard focus inside the standalone activation dialog', () => {
+    const modal = document.createElement('section')
+    const first = document.createElement('button')
+    const last = document.createElement('button')
+    const outside = document.createElement('button')
+    modal.append(first, last)
+    document.body.append(modal, outside)
+
+    const dispose = installDofeModalFocusTrap(modal)
+    first.focus()
+    first.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', shiftKey: true, bubbles: true }))
+    expect(document.activeElement).toBe(last)
+    last.focus()
+    last.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true }))
+    expect(document.activeElement).toBe(first)
+
+    outside.focus()
+    expect(document.activeElement).toBe(first)
+    dispose()
   })
 
   it('retries access setting conflicts and reports a final rejection', async () => {
