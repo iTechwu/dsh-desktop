@@ -31,7 +31,7 @@ function Overlay({ t }) {
     void fetch(PATH, {
       credentials: 'same-origin',
       redirect: 'error',
-      signal: controller.signal,
+      signal: AbortSignal.any([controller.signal, AbortSignal.timeout(REQUEST_TIMEOUT_MS)]),
       headers: { Accept: 'application/json' },
     })
       .then(response => { if (!response.ok) throw new Error(`daily_report_${response.status}`); return response.json() })

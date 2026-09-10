@@ -215,7 +215,7 @@ window.__ModuleLoader__.load({
       const response = await fetch(PATH, {
         credentials: "same-origin",
         redirect: "error",
-        signal: signal ?? AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+        signal: AbortSignal.any([signal, AbortSignal.timeout(REQUEST_TIMEOUT_MS)].filter(Boolean)),
         headers: { Accept: "application/json" },
       });
       if (!response.ok) throw new Error("knowledge request failed");

@@ -174,9 +174,9 @@ window.__ModuleLoader__.load({
     async function loadDashboard(range, usageScope, signal) {
       const days = RANGE_DAYS[range]
       const response = await fetch(days ? DASHBOARD_SERIES_PATH : YOOTUN_DASHBOARD_PATH, {
-        method: 'POST', credentials: 'same-origin', redirect: 'error', signal,
+        method: 'POST', credentials: 'same-origin', redirect: 'error',
         headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS), body: JSON.stringify(days ? { days, scope: usageScope } : {}),
+        signal: AbortSignal.any([signal, AbortSignal.timeout(REQUEST_TIMEOUT_MS)].filter(Boolean)), body: JSON.stringify(days ? { days, scope: usageScope } : {}),
       })
       if (!response.ok) throw new Error('dashboard request failed')
       return response.json()

@@ -21,7 +21,7 @@ const closeOverlay = () => { setOpened(false); requestAnimationFrame(() => lastT
 const closeOtherOverlay = event => { if (event.detail?.id !== OVERLAY_ID) setOpened(false) }
 const subscribe = listener => { listeners.add(listener); return () => listeners.delete(listener) }
 const snapshot = () => opened
-async function load(signal) { const response = await fetch(PATH, { credentials: 'same-origin', redirect: 'error', signal: signal ?? AbortSignal.timeout(REQUEST_TIMEOUT_MS), headers: { Accept: 'application/json' } }); if (!response.ok) throw new Error('sales request failed'); return response.json() }
+async function load(signal) { const response = await fetch(PATH, { credentials: 'same-origin', redirect: 'error', signal: AbortSignal.any([signal, AbortSignal.timeout(REQUEST_TIMEOUT_MS)].filter(Boolean)), headers: { Accept: 'application/json' } }); if (!response.ok) throw new Error('sales request failed'); return response.json() }
 async function mutate(body) { const response = await fetch(PATH, { method: 'POST', credentials: 'same-origin', redirect: 'error', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS), body: JSON.stringify(body) }); if (!response.ok) throw new Error('sales mutation failed'); return response.json() }
 function Metric({ label, value }) { return h('div', { className: 'ys-metric' }, h('span', null, label), h('strong', null, String(value ?? 0))) }
 function IntentSearch({ t, current, update, disabled }) {

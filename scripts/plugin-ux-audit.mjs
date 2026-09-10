@@ -1,5 +1,6 @@
 import { readdir, readFile, stat } from 'node:fs/promises'
 import { join } from 'node:path'
+import { auditPluginRequestCancellation } from './plugin-request-policy.mjs'
 
 const ciRoot = new URL('../.ci/', import.meta.url)
 const ciEntries = (await readdir(ciRoot, { withFileTypes: true }))
@@ -435,6 +436,8 @@ for (const name of clientPlugins) {
     if (!source.includes(`.${expectedPrefix}`)) failures.push(`${name}: client styles do not expose their own ${expectedPrefix} namespace`)
   }
 }
+
+failures.push(...await auditPluginRequestCancellation(ciRoot))
 
 if (failures.length) {
   console.error('Plugin UX audit failed:')
