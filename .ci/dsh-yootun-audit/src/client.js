@@ -108,11 +108,13 @@ const effectOutcomeLabel = value => ({ succeeded: '成功', failed: '失败', ac
 function outcomeLabel(value, t) { return value === 'succeeded' ? t('succeeded') : value === 'partial' ? t('partial') : value === 'accepted' ? t('accepted') : value === 'requires_user_login' ? t('requiresLogin') : value === 'failed' ? t('failed') : value || '—' }
 function Metric({ label, value, tone }) { return h('div', { className: `ya-metric${tone ? ` is-${tone}` : ''}` }, h('span', null, label), h('strong', null, String(value))) }
 function IconButton({ label, onClick, icon: Icon, disabled = false }) { return h(Tooltip, { label }, h('button', { type: 'button', className: 'ya-icon-button', 'aria-label': label, disabled, onClick }, h(Icon, { size: 16 }))) }
-function StatusBanner({ workspace, error, t, refresh, busy }) {
+function StatusBanner({ workspace, error, t, refresh, syncRetry, busy }) {
   const status = error ? 'offline' : workspace.status
   if (status === 'ready' && workspace.sync.pending === 0 && workspace.sync.quarantine === 0) return null
   const message = status === 'cached' ? t('cached') : status === 'auth_required' ? t('auth') : status === 'local_error' ? t('localError') : status === 'ready' ? '' : t('offline')
-  return h('div', { className: 'ya-status', role: status === 'ready' ? 'status' : 'alert' }, h(IconWarningOutline16, { size: 16 }), h('span', null, [message, workspace.freshness.syncedAt ? `${t('stale')} ${formatTime(workspace.freshness.syncedAt)}` : '', workspace.sync.pending ? `${workspace.sync.pending} ${t('syncIssue')}` : '', workspace.sync.quarantine ? `${workspace.sync.quarantine} ${t('quarantine')}` : ''].filter(Boolean).join(' · ')), workspace.sync.pending ? h('button', { type: 'button', disabled: busy, onClick: refresh }, t('retry')) : null)
+  const canRetry = status !== 'ready' || workspace.sync.pending > 0 || workspace.sync.quarantine > 0
+  const onRetry = status === 'ready' ? syncRetry : refresh
+  return h('div', { className: 'ya-status', role: status === 'ready' ? 'status' : 'alert' }, h(IconWarningOutline16, { size: 16 }), h('span', null, [message, workspace.freshness.syncedAt ? `${t('stale')} ${formatTime(workspace.freshness.syncedAt)}` : '', workspace.sync.pending ? `${workspace.sync.pending} ${t('syncIssue')}` : '', workspace.sync.quarantine ? `${workspace.sync.quarantine} ${t('quarantine')}` : ''].filter(Boolean).join(' · ')), canRetry ? h('button', { type: 'button', disabled: busy, onClick: onRetry }, t('retry')) : null)
 }
 function Filters({ state, dispatch, t, busy }) {
   const set = name => event => dispatch({ type: 'filter', name, value: event.target.value })
@@ -161,7 +163,7 @@ function Overlay({ t }) {
     const workspaceBody = waitingForTeam ? h('div', { className: 'ya-empty', role: 'status' }, t('chooseTeam')) : workspace.events.length
       ? h('div', { className: `ya-workspace${selected ? ' has-detail' : ''}` }, h('section', { className: 'ya-events' }, h(EventTable, { events: workspace.events, selectedId: state.selectedId, dispatch, t }), workspace.page.nextCursor ? h('button', { type: 'button', className: 'ya-more', disabled: interactionBusy, onClick: append }, state.appending ? t('loading') : t('loadMore'), h(IconChevronRightOutline14, { size: 14 })) : null), h(Detail, { event: selected, t, close: () => dispatch({ type: 'select', id: null }) }))
       : empty
-    body = h(React.Fragment, null, h('div', { className: 'ya-summary' }, h(Metric, { label: t('today'), value: workspace.summary.today }), h(Metric, { label: t('succeeded'), value: workspace.summary.succeeded }), h(Metric, { label: t('abnormal'), value: workspace.summary.abnormal, tone: workspace.summary.abnormal ? 'failed' : '' }), h(Metric, { label: t('pendingSync'), value: workspace.summary.pendingSync, tone: workspace.summary.pendingSync ? 'pending' : '' })), h(StatusBanner, { workspace, error: state.error, t, refresh: reload, busy: interactionBusy }), h(Filters, { state, dispatch, t, busy: interactionBusy }), workspaceBody)
+    body = h(React.Fragment, null, h('div', { className: 'ya-summary' }, h(Metric, { label: t('today'), value: workspace.summary.today }), h(Metric, { label: t('succeeded'), value: workspace.summary.succeeded }), h(Metric, { label: t('abnormal'), value: workspace.summary.abnormal, tone: workspace.summary.abnormal ? 'failed' : '' }), h(Metric, { label: t('pendingSync'), value: workspace.summary.pendingSync, tone: workspace.summary.pendingSync ? 'pending' : '' })), h(StatusBanner, { workspace, error: state.error, t, refresh, syncRetry: reload, busy: interactionBusy }), h(Filters, { state, dispatch, t, busy: interactionBusy }), workspaceBody)
   }
   return h('div', { className: 'ya-overlay' }, h('main', { className: 'ya-shell', ref: shellRef, tabIndex: -1, onKeyDown: key, role: 'dialog', 'aria-modal': true, 'aria-labelledby': 'ya-title', 'aria-busy': interactionBusy }, header, scope, body))
 }

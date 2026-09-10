@@ -178,6 +178,7 @@ try {
 
   await open(768, 800, 'cached')
   await page.getByText('远端暂不可用，已保留最近记录').waitFor()
+  await page.getByRole('button', { name: '立即重试' }).waitFor()
   await assertViewport()
   await page.screenshot({ path: resolve(evidenceRoot, '768-offline-cache.png'), fullPage: true })
 
