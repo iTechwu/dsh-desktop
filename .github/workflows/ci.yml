@@ -119,8 +119,13 @@ jobs:
   desktop-windows:
     needs: changes
     if: needs.changes.outputs.product == 'true'
-    runs-on: windows-latest
+    runs-on: windows-2022
     timeout-minutes: 60
+    env:
+      # node-gyp 11 cannot parse the VS 18 metadata on windows-latest yet.
+      # Keep native fs-ext builds on the supported VS 2022 toolchain.
+      GYP_MSVS_VERSION: '2022'
+      npm_config_msvs_version: '2022'
     steps:
       - uses: actions/checkout@v6
         with:
@@ -240,7 +245,7 @@ jobs:
   upstream-command-windows:
     needs: changes
     if: needs.changes.outputs.product == 'true'
-    runs-on: windows-latest
+    runs-on: windows-2022
     steps:
       - uses: actions/checkout@v6
         with:
