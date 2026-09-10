@@ -23,6 +23,7 @@ test('keeps follow-ups human-confirmed and points only at the Desktop route', as
   assert.match(source, /current\.dashboard\.pendingConfirmation \?\? current\.dashboard\.pending/u)
   assert.match(source, /data\?\.status && data\.status !== 'ready'/u)
   assert.match(source, /data\.status === 'error' \? 'alert' : 'status'/u)
+  assert.match(source, /refreshError: '刷新失败，当前仍显示上次数据'/u)
   assert.doesNotMatch(source, /contactPhone|password|cookie|聊天正文/iu)
 })
 
@@ -55,6 +56,13 @@ test('locks all workspace mutations and disables conflicting controls', async ()
   assert.match(source, /type: 'button', disabled: busy, onClick: \(\) => void update\(\{ action: 'confirm_action'/u)
   assert.match(source, /\.ys-action-buttons button:disabled\{opacity:\.5;cursor:default\}/u)
   assert.match(source, /\.ys-inline-error button:disabled,.ys-empty button:disabled\{opacity:\.45;cursor:default\}/u)
+})
+
+test('labels refresh failures separately from action failures', async () => {
+  const source = await readFile(new URL('src/client.js', root), 'utf8')
+  assert.match(source, /setErrorKind\('refresh'\)/u)
+  assert.match(source, /setErrorKind\('action'\)/u)
+  assert.match(source, /t\(errorKind === 'refresh' \? 'refreshError' : 'actionError'\)/u)
 })
 
 test('builds a syntactically valid browser module', async () => {
