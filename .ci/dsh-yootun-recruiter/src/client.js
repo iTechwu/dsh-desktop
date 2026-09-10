@@ -256,7 +256,7 @@ function Overlay({ t }) {
     setError(false)
     setErrorKind('')
     setLoading(true)
-    void load(controller.signal).then(value => { setData(value); setError(false); setErrorKind('') }).catch(e => { if (e?.name !== 'AbortError') { setError(true); setErrorKind('refresh') } }).finally(() => { if (!controller.signal.aborted) { loadingRef.current = false; setLoading(false) } })
+    void load(controller.signal).then(value => { const failed = value?.status && value.status !== 'ready'; setData(previous => failed ? previous || value : value); setError(Boolean(failed)); setErrorKind(failed ? 'refresh' : '') }).catch(e => { if (e?.name !== 'AbortError') { setError(true); setErrorKind('refresh') } }).finally(() => { if (!controller.signal.aborted) { loadingRef.current = false; setLoading(false) } })
     return () => { controller.abort(); loadingRef.current = false }
   }, [visible, revision])
   useEffect(() => {
@@ -268,7 +268,7 @@ function Overlay({ t }) {
   useEffect(() => { if (visible) requestAnimationFrame(() => shellRef.current?.focus?.()) }, [visible])
   if (!visible) return null
   const tData = data || { status: 'empty', dashboard: {}, requirements: [], candidates: [], actions: [], boss: {}, sync: {}, knowledge: {}, analytics: {} }
-  const update = async body => { if (loadingRef.current || busyRef.current) return null; busyRef.current = true; setBusy(true); try { const next = await mutate(body); setData(next); setError(false); setErrorKind(''); return next } catch { setError(true); setErrorKind('action'); return null } finally { busyRef.current = false; setBusy(false) } }
+  const update = async body => { if (loadingRef.current || busyRef.current) return null; busyRef.current = true; setBusy(true); try { const next = await mutate(body); if (next?.status && next.status !== 'ready') { setError(true); setErrorKind('action'); return null }; setData(next); setError(false); setErrorKind(''); return next } catch { setError(true); setErrorKind('action'); return null } finally { busyRef.current = false; setBusy(false) } }
   const interactionBusy = loading || busy
   const refresh = () => { if (loadingRef.current || busyRef.current) return; loadingRef.current = true; setLoading(true); setError(false); setErrorKind(''); setRevision(value => value + 1) }
   let body
