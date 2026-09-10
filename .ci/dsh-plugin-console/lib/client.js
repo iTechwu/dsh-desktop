@@ -2511,9 +2511,9 @@ onClick: () => window.open(`https://github.com/Noob-stupid/dsh-plugin-hub/releas
 					return consentJob === undefined
 						? null
 						: el("div", { className: styles.modalBackdrop },
-							el("div", { className: styles.modalCard },
-								el("strong", { className: styles.name }, t("installingLocal") + "：" + (consentJob.packageName ?? consentJob.repo)),
-								el("p", { className: styles.message }, t("aiConsentText")),
+							el("div", { className: styles.modalCard, role: "dialog", "aria-modal": true, "aria-labelledby": "pc-ai-consent-title", "aria-describedby": "pc-ai-consent-description", ref: modalCardRef, tabIndex: -1 },
+								el("strong", { className: styles.name, id: "pc-ai-consent-title" }, t("installingLocal") + "：" + (consentJob.packageName ?? consentJob.repo)),
+								el("p", { className: styles.message, id: "pc-ai-consent-description" }, t("aiConsentText")),
 								el("label", { className: styles.consentRemember },
 									el("input", {
 										type: "checkbox",
@@ -2531,11 +2531,11 @@ onClick: () => window.open(`https://github.com/Noob-stupid/dsh-plugin-hub/releas
 				})(),
 				sourcesOpen
 					? el("div", { className: styles.modalBackdrop },
-						el("div", { className: styles.modalCard },
+						el("div", { className: styles.modalCard, role: "dialog", "aria-modal": true, "aria-labelledby": "pc-sources-title", "aria-describedby": "pc-sources-description", ref: modalCardRef, tabIndex: -1 },
 							el("div", { className: styles.rowTop, style: { justifyContent: "space-between" } },
-								el("strong", { className: styles.name }, t("sourcesTitle")),
+								el("strong", { className: styles.name, id: "pc-sources-title" }, t("sourcesTitle")),
 								el("button", { type: "button", className: styles.trashBtn, style: { fontSize: 14, padding: "4px 8px" }, title: t("closeModal"), "aria-label": t("closeModal"), onClick: () => setSourcesOpen(false) }, "✕")),
-							el("p", { className: styles.message }, t("sourcesDesc")),
+							el("p", { className: styles.message, id: "pc-sources-description" }, t("sourcesDesc")),
 							sourcesData === null
 								? el("p", { className: styles.status }, t("loading"))
 								: el("div", { style: { flexDirection: "column", gap: "8px", display: "flex" } },
