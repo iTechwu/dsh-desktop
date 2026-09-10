@@ -21,6 +21,7 @@ for (const name of entries) {
 const failures = []
 const desktopStyles = await readFile(new URL('../dsh-plugin-desktop/src/client/styles.ts', import.meta.url), 'utf8')
 const desktopSettingsStyles = await readFile(new URL('../dsh-plugin-desktop/src/client/desktop-settings-styles.ts', import.meta.url), 'utf8')
+const desktopExtendedStyles = await readFile(new URL('../dsh-plugin-desktop/src/client/extended-styles.ts', import.meta.url), 'utf8')
 const dofeAccessSource = await readFile(new URL('../dsh-plugin-desktop/src/client/DofeAccessSection.tsx', import.meta.url), 'utf8')
 const themeSource = await readFile(new URL('../deepseek-harness/packages/client/ui-theme/src/styles/design-platform.css', import.meta.url), 'utf8')
 const definedThemeAliases = new Set(themeSource.match(/--dsw-alias-[a-z0-9-]+(?=\s*:)/g) || [])
@@ -109,7 +110,7 @@ if (!desktopStyles.includes('[aria-modal="true"] :is(')) failures.push('dsh-plug
 if (!desktopStyles.includes('prefers-reduced-motion: reduce') || !desktopStyles.includes('[aria-modal="true"] *')) {
   failures.push('dsh-plugin-desktop: reduced-motion coverage for plugin overlays is missing')
 }
-const desktopClientStyles = `${desktopStyles}\n${desktopSettingsStyles}\n${dofeAccessSource}`
+const desktopClientStyles = `${desktopStyles}\n${desktopSettingsStyles}\n${desktopExtendedStyles}\n${dofeAccessSource}`
 const pluginConsoleClient = await readFile(new URL('../.ci/dsh-plugin-console/lib/client.js', import.meta.url), 'utf8')
 const pluginConsoleHost = await readFile(new URL('../.ci/dsh-plugin-console/lib/index.js', import.meta.url), 'utf8')
 const openCliSource = await readFile(new URL('../.ci/dsh-opencli/index.js', import.meta.url), 'utf8')
