@@ -545,6 +545,8 @@ window.__ModuleLoader__.load({
 		const PHASE_KEYS = { pending: "pending", loading: "loadingPhase", active: "active", failed: "failed", unloading: "unloading" };
 		const GITHUB_API = "https://api.github.com";
 		const GITHUB_RAW = "https://raw.githubusercontent.com";
+		const LOCAL_CALL_TIMEOUT_MS = 30000;
+		const EXTERNAL_FETCH_POLICY = { credentials: "omit", redirect: "error", referrerPolicy: "no-referrer", cache: "no-store" };
 		const el = react.createElement;
 		function moduleShortName(moduleName) {
 			return (moduleName.startsWith("@") ? moduleName.slice(moduleName.indexOf("/") + 1) : moduleName)
@@ -576,8 +578,8 @@ window.__ModuleLoader__.load({
 		}
 		async function call(path, body) {
 			const response = await fetch(path, body === undefined
-				? { credentials: "same-origin", redirect: "error" }
-				: { method: "POST", credentials: "same-origin", redirect: "error", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+				? { credentials: "same-origin", redirect: "error", signal: AbortSignal.timeout(LOCAL_CALL_TIMEOUT_MS) }
+				: { method: "POST", credentials: "same-origin", redirect: "error", signal: AbortSignal.timeout(LOCAL_CALL_TIMEOUT_MS), headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
 			let data = null;
 			try {
 				data = await response.json();
@@ -597,6 +599,7 @@ window.__ModuleLoader__.load({
 		}
 		async function githubFetch(url) {
 			const response = await fetch(url, {
+				...EXTERNAL_FETCH_POLICY,
 				headers: { accept: "application/vnd.github+json" },
 				signal: AbortSignal.timeout(15000),
 			});
@@ -614,12 +617,13 @@ window.__ModuleLoader__.load({
 		async function fetchRawText(repo, branch, file, source = "github") {
 			if (source === "gitee") {
 				try {
-					const res = await fetch(`https://gitee.com/${repo}/raw/${branch}/${file}`, { signal: AbortSignal.timeout(15000) });
+					const res = await fetch(`https://gitee.com/${repo}/raw/${branch}/${file}`, { ...EXTERNAL_FETCH_POLICY, signal: AbortSignal.timeout(15000) });
 					if (!res.ok) return null;
 					return await res.text();
 				} catch { return null; }
 			}
 			const attempts = RAW_CANDIDATES.map((build) => fetch(build(repo, branch, file), {
+				...EXTERNAL_FETCH_POLICY,
 				signal: AbortSignal.timeout(15000),
 			}).then((res) => {
 				if (!res.ok) throw new Error("HTTP " + res.status);

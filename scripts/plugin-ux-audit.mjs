@@ -205,6 +205,14 @@ if (!pluginConsoleClient.includes('@media(max-width:640px){.pc_list{grid-templat
 if (!pluginConsoleClient.includes('credentials: "same-origin"') || !pluginConsoleClient.includes('redirect: "error"')) {
   failures.push('dsh-plugin-console: local control calls must use same-origin credentials and reject redirects')
 }
+if (!pluginConsoleClient.includes('const LOCAL_CALL_TIMEOUT_MS = 30000')
+  || (pluginConsoleClient.match(/AbortSignal\.timeout\(LOCAL_CALL_TIMEOUT_MS\)/gu) || []).length < 2) {
+  failures.push('dsh-plugin-console: local control calls have no bounded timeout')
+}
+if (!pluginConsoleClient.includes('const EXTERNAL_FETCH_POLICY = { credentials: "omit", redirect: "error", referrerPolicy: "no-referrer", cache: "no-store" }')
+  || (pluginConsoleClient.match(/\.\.\.EXTERNAL_FETCH_POLICY/gu) || []).length < 3) {
+  failures.push('dsh-plugin-console: external API reads do not share the no-credential redirect and cache policy')
+}
 if ((pluginConsoleClient.match(/role: "dialog", "aria-modal": true/gu) || []).length < 2
   || !pluginConsoleClient.includes('"aria-labelledby": "pc-ai-consent-title"')
   || !pluginConsoleClient.includes('"aria-labelledby": "pc-sources-title"')) {
