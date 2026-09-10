@@ -191,6 +191,11 @@ if (!pluginConsoleClient.includes('event.key === "Escape"')
   || !pluginConsoleClient.includes('sourcesOpen && activeConsentJob === undefined')) {
   failures.push('dsh-plugin-console: modal keyboard, focus-return, or stacking contract is incomplete')
 }
+for (const label of ['sourceName', 'sourceUrl', 'searchUrlPlaceholder', 'headersPlaceholder', 'giteeClientId', 'giteeClientSecret']) {
+  if (!pluginConsoleClient.includes(`"aria-label": t("${label}")`)) {
+    failures.push(`dsh-plugin-console: source form field ${label} has no accessible name`)
+  }
+}
 if (!pluginConsoleHost.includes("const ROUTE_PREFIX = '/plugin-console'")) {
   failures.push('dsh-plugin-console: host route prefix is missing')
 }

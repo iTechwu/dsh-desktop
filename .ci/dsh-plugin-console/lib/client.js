@@ -2444,7 +2444,7 @@ onClick: () => window.open(`https://github.com/Noob-stupid/dsh-plugin-hub/releas
 				repoInfo !== null
 					? el("aside", { className: styles.floatPanel },
 						el("div", { className: styles.descTopbar },
-							el("button", { type: "button", className: styles.toggle, onClick: () => setRepoInfo(null) }, "✕")),
+							el("button", { type: "button", className: styles.toggle, title: t("closeModal"), "aria-label": t("closeModal"), onClick: () => setRepoInfo(null) }, "✕")),
 						detail)
 					: null,
 				el("div", { id: "pc-installed-search-area" },
@@ -2587,8 +2587,8 @@ onClick: () => window.open(`https://github.com/Noob-stupid/dsh-plugin-hub/releas
 									sourcesData.registries.map((src) =>
 										editReg !== null && editReg.id === src.id
 											? el("div", { key: src.id, className: styles.rowTop, style: { justifyContent: "space-between" } },
-												el("input", { type: "text", value: editReg.name, onChange: (event) => setEditReg({ ...editReg, name: event.currentTarget.value }), style: { flex: 1, minWidth: 80 } }),
-												el("input", { type: "text", value: editReg.url, onChange: (event) => setEditReg({ ...editReg, url: event.currentTarget.value }), style: { flex: 2, minWidth: 120 } }),
+												el("input", { type: "text", value: editReg.name, "aria-label": t("sourceName"), onChange: (event) => setEditReg({ ...editReg, name: event.currentTarget.value }), style: { flex: 1, minWidth: 80 } }),
+												el("input", { type: "text", value: editReg.url, "aria-label": t("sourceUrl"), onChange: (event) => setEditReg({ ...editReg, url: event.currentTarget.value }), style: { flex: 2, minWidth: 120 } }),
 												el("button", { type: "button", className: styles.toggle, disabled: sourcesBusy, onClick: saveEditReg }, t("saveSource")),
 												el("button", { type: "button", className: styles.toggle, onClick: () => setEditReg(null) }, t("cancelEdit")))
 											: el("div", { key: src.id, className: styles.rowTop, style: { justifyContent: "space-between" } },
@@ -2599,8 +2599,8 @@ onClick: () => window.open(`https://github.com/Noob-stupid/dsh-plugin-hub/releas
 													src.primary ? null : el("button", { type: "button", className: styles.toggle, disabled: sourcesBusy, onClick: () => sourcesAction({ action: "set-primary", id: src.id }) }, t("setPrimary")),
 													el("button", { type: "button", className: styles.toggle, disabled: sourcesBusy, onClick: () => setEditReg({ id: src.id, name: src.name, url: src.url }) }, t("editSource"))))),
 									el("div", { className: styles.rowTop },
-										el("input", { type: "text", placeholder: t("sourceName"), value: sourceName, onChange: (event) => setSourceName(event.currentTarget.value), style: { flex: 1, minWidth: 0 } }),
-										el("input", { type: "text", placeholder: t("sourceUrl"), value: sourceUrl, onChange: (event) => setSourceUrl(event.currentTarget.value), style: { flex: 2, minWidth: 0 } }),
+									el("input", { type: "text", placeholder: t("sourceName"), "aria-label": t("sourceName"), value: sourceName, onChange: (event) => setSourceName(event.currentTarget.value), style: { flex: 1, minWidth: 0 } }),
+									el("input", { type: "text", placeholder: t("sourceUrl"), "aria-label": t("sourceUrl"), value: sourceUrl, onChange: (event) => setSourceUrl(event.currentTarget.value), style: { flex: 2, minWidth: 0 } }),
 										el("button", { type: "button", className: styles.toggle, disabled: sourcesBusy, onClick: addSource }, t("addSource"))),
 									el("strong", { className: styles.name }, t("searchSourcesTitle")),
 									el("p", { className: styles.message }, t("searchSourcesDesc")),
@@ -2616,12 +2616,13 @@ onClick: () => window.open(`https://github.com/Noob-stupid/dsh-plugin-hub/releas
 												? el("button", { type: "button", className: styles.toggle, disabled: sourcesBusy, onClick: () => sourcesAction({ action: "remove-search", id: s.id }) }, t("removeSource"))
 												: null)),
 									el("div", { className: styles.rowTop },
-										el("input", { type: "text", placeholder: t("sourceName"), value: searchSourceName, onChange: (event) => setSearchSourceName(event.currentTarget.value), style: { flex: 1, minWidth: 0 } }),
-										el("input", { type: "text", placeholder: t("searchUrlPlaceholder"), value: searchSourceUrl, onChange: (event) => setSearchSourceUrl(event.currentTarget.value), style: { flex: 2, minWidth: 0 } }),
+									el("input", { type: "text", placeholder: t("sourceName"), "aria-label": t("sourceName"), value: searchSourceName, onChange: (event) => setSearchSourceName(event.currentTarget.value), style: { flex: 1, minWidth: 0 } }),
+									el("input", { type: "text", placeholder: t("searchUrlPlaceholder"), "aria-label": t("searchUrlPlaceholder"), value: searchSourceUrl, onChange: (event) => setSearchSourceUrl(event.currentTarget.value), style: { flex: 2, minWidth: 0 } }),
 										el("button", { type: "button", className: styles.toggle, disabled: sourcesBusy, onClick: addSearchSource }, t("addSearchSource"))),
 									el("textarea", {
 										rows: 2,
 										placeholder: t("headersPlaceholder"),
+										"aria-label": t("headersPlaceholder"),
 										value: searchSourceHeaders,
 										onChange: (event) => setSearchSourceHeaders(event.currentTarget.value),
 										style: { width: "100%", boxSizing: "border-box", font: "inherit", resize: "vertical" },
@@ -2634,8 +2635,8 @@ onClick: () => window.open(`https://github.com/Noob-stupid/dsh-plugin-hub/releas
 												? t("giteeLoggedIn") + (giteeStatus.login || "—")
 												: (giteeStatus !== null && giteeStatus.clientConfigured ? t("giteeSetupHint") : t("giteeLoginPrompt")))),
 									el("div", { className: styles.rowTop },
-										el("input", { type: "text", placeholder: t("giteeClientId"), value: giteeClientId, onChange: (event) => setGiteeClientId(event.currentTarget.value), style: { flex: 1, minWidth: 0 } }),
-										el("input", { type: "password", placeholder: t("giteeClientSecret"), value: giteeClientSecret, onChange: (event) => setGiteeClientSecret(event.currentTarget.value), style: { flex: 2, minWidth: 0 } }),
+									el("input", { type: "text", placeholder: t("giteeClientId"), "aria-label": t("giteeClientId"), value: giteeClientId, onChange: (event) => setGiteeClientId(event.currentTarget.value), style: { flex: 1, minWidth: 0 } }),
+									el("input", { type: "password", placeholder: t("giteeClientSecret"), "aria-label": t("giteeClientSecret"), value: giteeClientSecret, onChange: (event) => setGiteeClientSecret(event.currentTarget.value), style: { flex: 2, minWidth: 0 } }),
 										el("button", { type: "button", className: styles.toggle, disabled: sourcesBusy || !giteeClientId.trim() || !giteeClientSecret.trim(), onClick: saveGiteeSetup }, t("giteeSave"))),
 									el("div", { className: styles.rowTop },
 										el("button", { type: "button", className: styles.toggle, disabled: giteeStatus !== null && !giteeStatus.clientConfigured, onClick: startGiteeOauth }, t("giteeLoginBtn")),
