@@ -170,6 +170,35 @@ test('账号探测上报 tools，且不上报任何 Cookie 内容', async () => 
   })
 })
 
+test('已解析的 MCP 失败响应不会被包装成 ready 空数据', async () => {
+  await withRoot(async root => {
+    const { ctx, registered } = createContext({
+      tools: [{ name: 'mcp__tools-douyin-operation__douyin_work_list' }],
+      execute: async () => ({ structuredContent: { status: 'error', reason: 'ACCOUNT_NOT_FOUND', works: [] } }),
+    })
+    apply(ctx, { root, browserStatus: async () => ({ chromeAvailable: true, driverAvailable: true, platform: 'linux' }) })
+    const result = await call(registered[0].handler, { action: 'works.list', accountId: 'acc-1' })
+    assert.equal(result.payload.status, 'error')
+    assert.equal(result.payload.reason, 'ACCOUNT_NOT_FOUND')
+    assert.equal('works' in result.payload, false)
+  })
+})
+
+test('账号列表远端已解析失败时保留本地账号并提供稳定错误码', async () => {
+  await withRoot(async root => {
+    await updateAccount('acc-1', { nickname: '本地名' }, root)
+    const { ctx, registered } = createContext({
+      tools: [{ name: 'mcp__tools-douyin-operation__douyin_account_list' }],
+      execute: async () => ({ isError: true, structuredContent: { reason: 'gateway_down' } }),
+    })
+    apply(ctx, { root, browserStatus: async () => ({ chromeAvailable: true, driverAvailable: true, platform: 'linux' }) })
+    const result = await call(registered[0].handler, { action: 'accounts.list' })
+    assert.equal(result.payload.status, 'ready')
+    assert.equal(result.payload.accounts.length, 1)
+    assert.equal(result.payload.remoteError, 'douyin_operation_request_failed')
+  })
+})
+
 test('工具解析：按分段边界匹配，拒绝同前缀的更长工具名', () => {
   const ctx = {
     tools: {
