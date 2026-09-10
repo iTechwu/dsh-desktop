@@ -90,7 +90,7 @@ function findOversizedSurfaceRadii(source) {
     const radius = Number(rule.match(/border-radius\s*:\s*(\d+(?:\.\d+)?)px/iu)?.[1])
     if (radius <= 8) return []
     const selector = rule.slice(0, rule.indexOf('{')).trim()
-    return selector.split(',').map(value => value.trim()).filter(value => /\.(?:[a-z0-9-]*(?:panel|dialog|popover|menu|choice|toggle-row|material-field|urls|card))\b/iu.test(value))
+    return selector.split(',').map(value => value.trim()).filter(value => /\.(?:[a-z0-9-]*(?:panel|dialog|modal|popover|menu|choice|toggle-row|material-field|urls|card))\b/iu.test(value))
   })
 }
 
