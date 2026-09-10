@@ -5,24 +5,28 @@
 | 能力入口 | 托管路径/工具族 | Desktop 消费方 | 主要 UI 状态 | 认证与失败边界 |
 | --- | --- | --- | --- | --- |
 | Desktop 访问与模型配置 | `/api/desktop/dofe/models`、`/api/desktop/dofe/validate` | yootun-ui 门禁与设置页 | missing、loading、configured、error、conflict | 仅由托管 `MODELS_API_KEY` 凭证链路读写；模型列表失败不提交设置，冲突响应可重试 |
+| Desktop 配置与运行控制 | `/api/desktop/settings`、`profiles/create`、`profiles/select`、`profiles/delete`、`aa/select`、`market/select`、`terminal/open`、`restart`、`restart/recovery`、`developer/reload`、`developer/devtools`、`updates/check`、`diagnostics/export` | Desktop 设置页与恢复界面 | loading、ready、saving、restart_required、failed、done | 只接受 loopback、精确 Host 和同源浏览器请求，响应禁用缓存；客户端先校验有限字段投影，需重启的操作必须明确展示 accepted 与 restartRequired，不能伪装为即时生效 |
+| 工作区目录桥 | `/_dsh/desktop/pick-directory`、`/_dsh/desktop/validate-directory` | Desktop 工作区设置与首次配置 | idle、picking、selected、invalid、failed | 仅接受同源 POST；原生选择结果在持久化前必须再次验证为允许目录，请求体受 16 KiB 上限约束，UI 不在日志或错误文案中暴露完整本地路径 |
+| 插件 UI 承载面 | `settings.section`、`settings.action`、`settings.plugins.tab`、`sidebar.footer.action`、`shell.overlay`；`slots`、`locale`、`settingsScope`、`remote.settings`、`remote.credentials` | Desktop 壳层、设置页、Plugin Console 与全部 Yootun 客户端 | loading、ready、active、busy、empty、error、dismissed | 插件只在已声明 slot/service 上注册；overlay 使用互斥事件、Escape 与焦点恢复，异步状态暴露 `aria-live`/`aria-busy`，同一 slot 的顺序由稳定 id/order 决定 |
 | 插件管理与市场 | `/plugin-console/state`、`search`、`repo`、`install`、`install-status`、`toggle`、`uninstall`、`sources`、`framework-upgrade`、`restart` | Plugin Console 设置页 | loading、ready、empty、installing、consent、failed、done | 仅接受 loopback 且校验 Host；所有写请求还校验同源 `Origin`/`Sec-Fetch-Site`，安装与 AI 兜底均需保留进度、授权和失败恢复状态 |
-| GEO 内容与分析 | `geoflow` / `geoflow_*` | content-command、dashboard、website publisher | ready、partial、empty、unavailable、error | 每次请求由 managed credential 注入；缺工具为 unavailable，单来源失败不拖垮其他来源 |
+| GEO 内容与分析 | `/api/desktop/yootun/content-command`；`geoflow` / `geoflow_*` | content-command、dashboard、website publisher | ready、partial、empty、unavailable、error | 每次请求由 managed credential 注入；缺工具为 unavailable，单来源失败不拖垮其他来源 |
 | GEO 排名与诊断 | `georank` / `georank_*` | content-command、dashboard | ready、partial、unavailable、error | 与 geoflow 隔离；不以零值代替缺失指标 |
 | 互联网只读调研 | `agent_reach`；Exa `web_search_exa`/`web_fetch_exa` 与 OpenCLI 公开路由 | content-command、sales、retrofit、Agent | ready、partial、unavailable、error | 只允许白名单站点的只读命令；Exa 必须使用托管 `MODELS_API_KEY`，平台登录或命令受限时披露覆盖缺口，不执行发帖、评论或点赞 |
 | OpenMontage 视频工作流 | `montage` / `mcp__openmontage__*` | openmontage window、XHS operation | awaiting_confirmation、confirmed_pending_adapter、succeeded、failed | 长任务使用 600s 超时；准备、读取、提交按 Agent 工具限制分阶段暴露 |
 | 单镜头媒体 | `media` / `mcp__media__*` | XHS operation、媒体上传 | uploading、queued、succeeded、failed、requires_user_login | UI 只展示资源引用和 MIME/大小摘要，不显示凭据、签名 URL 或本地路径 |
 | 商业/平台工具 | `tools` / `mcp__tools-*` | sales、content-command、dashboard | ready、empty、degraded、error | 通过统一 MCP gateway 调用；本地 API 过滤不安全字段并保留稳定 error code |
+| 业务总览聚合 | `/api/desktop/yootun/dashboard/yesterday`、`/api/desktop/yootun/dashboard/series` | dashboard | ready、partial、empty、unavailable、error | 昨日摘要与趋势序列独立加载和降级；来源健康、worker 与路由归因必须保留各自状态，不以空数组或零值覆盖上游失败 |
 | 昨日活动日报 | `/api/desktop/yootun/daily-report`；`yootun_daily_report` | daily-report | ready、empty、unavailable | 只读取本地 session persistence；工具能力按 schema 映射来源，不因单个来源缺失而伪造活动数据 |
 | 模型用量与 FinOps | `/api/desktop/yootun/finops`、`/api/desktop/yootun/finops/series`；`yootun_finops_usage`、`yootun_finops_series` | finops | ready、unavailable、error；预算可独立降级 | 仅由托管 `MODELS_API_KEY` 访问用量与日聚合接口；范围和粒度先校验，预算源失败不清空已成功的用量摘要 |
-| 供应链监控 | `supply-chain` / `supply_*` | supply-watch | ready、warning、empty、unavailable、error | 风险来源独立降级；确认动作进入统一 pending/succeeded/failed 生命周期 |
-| 人才发现 | `talent-discovery` / `talent_*` | recruiter | ready、empty、degraded、error | 搜索与写入动作分离；写操作需要确认，登录失效映射为 requires_user_login |
-| 线索发现与监测 | `lead-discovery`、`lead-monitor`、`hotspot-discovery` | lead-discovery、sales | ready、filtered_empty、unavailable、error | 只返回安全字段；分页、已存线索和发现失败互相隔离 |
-| 改装检索 | `custom-car-monitoring` | retrofit | ready、empty、unavailable、error | 读操作不写审计；服务不可用时保留重试入口和上下文 |
+| 供应链监控 | `/api/desktop/yootun/supply-watch`；`supply-chain` / `supply_*` | supply-watch | ready、warning、empty、unavailable、error | 风险来源独立降级；确认动作进入统一 pending/succeeded/failed 生命周期 |
+| 人才发现 | `/api/desktop/yootun/recruiter`；`talent-discovery` / `talent_*` | recruiter | ready、empty、degraded、error | 搜索与写入动作分离；写操作需要确认，登录失效映射为 requires_user_login |
+| 线索发现与监测 | `/api/desktop/yootun/lead-discovery`、`/api/desktop/yootun/sales`；`lead-discovery`、`lead-monitor`、`hotspot-discovery` | lead-discovery、sales | ready、filtered_empty、unavailable、error | 只返回安全字段；分页、已存线索和发现失败互相隔离 |
+| 改装检索 | `/api/desktop/yootun/retrofit`；`custom-car-monitoring` | retrofit | ready、empty、unavailable、error | 读操作不写审计；服务不可用时保留重试入口和上下文 |
 | 病毒视频/浏览器智能 | `viral-video`、`browser-intelligence` | content-command、sales | ready、partial、unavailable、error | 工具缺失不伪造成功；本地 route 以稳定来源 reason 映射 UI |
-| 小红书运营 | `xhs-operation` / `xhs_*` | XHS operation | awaiting_confirmation、queued、running、succeeded、failed、cancelled | 创建、轮询、取消使用同一 trace；取消需要二次确认，终态只审计一次 |
-| 知识与记忆 | `knowledge_*`、`memory_*` | knowledge | ready、degraded、empty、error；写入需确认 | 统一由 knowledge MCP 处理 tenant/team/user 权限；读取不写审计，remember/forget/confirm 写入审计 |
+| 小红书运营 | `/api/desktop/yootun/xhs-operation`；`xhs-operation` / `xhs_*` | XHS operation | awaiting_confirmation、queued、running、succeeded、failed、cancelled | 创建、轮询、取消使用同一 trace；取消需要二次确认，终态只审计一次 |
+| 知识与记忆 | `/api/desktop/yootun/knowledge`；`knowledge_*`、`memory_*` | knowledge | ready、degraded、empty、error；写入需确认 | 统一由 knowledge MCP 处理 tenant/team/user 权限；读取不写审计，remember/forget/confirm 写入审计 |
 | 审计事件与同步 | `/api/desktop/yootun/audit` | audit | ready、offline、cached、auth_required、forbidden、local_error；同步可重试 | 读取与 `retry_sync` 使用同源托管路由；脱机优先展示本地缓存，不把同步失败伪装成空数据 |
-| TOS 媒体上传 | `/_dsh/uploader/pick-file`、`upload`、`uploadStart`、`uploadStatus`、`media`；`media_upload` | XHS operation、Agent 媒体工具 | uploading、queued、succeeded、failed、cancelled、requires_user_login | 通过原生选取、允许清单和 TOCTOU 复查；授权仅交给 Tools MCP，不回传本地路径、预签名 URL 或对象 key |
+| TOS 媒体上传 | `/_dsh/uploader/pick-file`、`/_dsh/uploader/upload`、`/_dsh/uploader/uploadStart`、`/_dsh/uploader/uploadStatus`、`/_dsh/uploader/media`；`media_upload` | XHS operation、Agent 媒体工具 | uploading、queued、succeeded、failed、cancelled、requires_user_login | 通过原生选取、允许清单和 TOCTOU 复查；授权仅交给 Tools MCP，不回传本地路径、预签名 URL 或对象 key |
 | 文件交付声明 | `present`；`deliverables/presented` Session 事件 | Web Deliverables 文件卡片与默认应用打开 | declared、blocked、opened | 仅接受 Session 工作区可访问的常规文件，单次受 `maxFiles` 限制；记录路径和描述，不复制文件内容，子 Agent 的交付由父 Session 显式声明 |
 
 ## 统一映射规则
