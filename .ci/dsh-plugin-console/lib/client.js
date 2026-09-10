@@ -946,8 +946,7 @@ window.__ModuleLoader__.load({
 					if (event.key !== "Tab") return;
 					const items = Array.from(modalCardRef.current?.querySelectorAll('button:not([disabled]),input:not([disabled]),textarea:not([disabled]),select:not([disabled]),a[href]') ?? []);
 					const first = items[0]; const last = items[items.length - 1];
-					if (event.shiftKey && document.activeElement === first) { event.preventDefault(); first?.focus?.(); }
-					else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus?.(); }
+					if (document.activeElement === first || (!event.shiftKey && document.activeElement === last)) { event.preventDefault(); first?.focus?.(); }
 				};
 				document.addEventListener("keydown", onModalKeyDown, true);
 				return () => { window.cancelAnimationFrame(focusFrame); document.removeEventListener("keydown", onModalKeyDown, true); };
