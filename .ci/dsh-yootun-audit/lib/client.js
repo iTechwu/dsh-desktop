@@ -115,7 +115,7 @@ window.__ModuleLoader__.load({
       const status = error ? 'offline' : workspace.status
       if (status === 'ready' && workspace.sync.pending === 0 && workspace.sync.quarantine === 0) return null
       const message = status === 'cached' ? t('cached') : status === 'auth_required' ? t('auth') : status === 'local_error' ? t('localError') : status === 'ready' ? '' : t('offline')
-      return h('div', { className: 'ya-status', role: status === 'ready' ? 'status' : 'alert' }, h(IconWarningOutline16, { size: 16 }), h('span', null, [message, workspace.freshness.syncedAt ? `${t('stale')} ${formatTime(workspace.freshness.syncedAt)}` : '', workspace.sync.pending ? `${workspace.sync.pending} ${t('syncIssue')}` : '', workspace.sync.quarantine ? `${workspace.sync.quarantine} ${t('quarantine')}` : ''].filter(Boolean).join(' · ')), workspace.sync.pending ? h('button', { type: 'button', disabled: busy, onClick: refresh }, t('retry')) : null)
+      return h('div', { className: 'ya-status', role: status === 'ready' ? 'status' : 'alert' }, h(IconWarningOutline16, { size: 16 }), h('span', null, [message, workspace.freshness.syncedAt ? `${t('stale')} ${formatTime(workspace.freshness.syncedAt)}` : '', workspace.sync.pending ? `${workspace.sync.pending} ${t('syncIssue')}` : '', workspace.sync.quarantine ? `${workspace.sync.quarantine} ${t('quarantine')}` : ''].filter(Boolean).join(' · ')), status !== 'ready' || workspace.sync.pending ? h('button', { type: 'button', disabled: busy, onClick: refresh }, t('retry')) : null)
     }
     function Filters({ state, dispatch, t, busy }) {
       const set = name => event => dispatch({ type: 'filter', name, value: event.target.value })
