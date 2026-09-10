@@ -940,8 +940,10 @@ window.__ModuleLoader__.load({
 			const [sourceUrl, setSourceUrl] = react.useState("");
 			const [sourcesBusy, setSourcesBusy] = react.useState(false);
 			const sourcesBusyRef = react.useRef(false);
+			const modalReturnFocusRef = react.useRef(null);
 			react.useEffect(() => {
 				if (!sourcesOpen) return undefined;
+				modalReturnFocusRef.current = document.activeElement;
 				const focusFrame = window.requestAnimationFrame(() => (modalCardRef.current?.querySelector('button[aria-label]:not([disabled])') || modalCardRef.current?.querySelector('button:not([disabled]),input:not([disabled]),textarea:not([disabled]),select:not([disabled]),a[href]'))?.focus?.());
 				const onModalKeyDown = (event) => {
 					if (event.key === "Escape") { event.preventDefault(); setSourcesOpen(false); return; }
@@ -951,7 +953,7 @@ window.__ModuleLoader__.load({
 					if (document.activeElement === first || (!event.shiftKey && document.activeElement === last)) { event.preventDefault(); first?.focus?.(); }
 				};
 				document.addEventListener("keydown", onModalKeyDown, true);
-				return () => { window.cancelAnimationFrame(focusFrame); document.removeEventListener("keydown", onModalKeyDown, true); };
+				return () => { window.cancelAnimationFrame(focusFrame); document.removeEventListener("keydown", onModalKeyDown, true); window.requestAnimationFrame(() => modalReturnFocusRef.current?.focus?.()); };
 			}, [sourcesOpen]);
 			// registry 行内编辑
 			const [editReg, setEditReg] = react.useState(null);
