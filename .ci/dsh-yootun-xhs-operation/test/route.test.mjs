@@ -99,6 +99,13 @@ test('status delegates to task_get and projects the safe task view', async () =>
   assert.equal(calls[0].arguments.taskId, 'xhst-1')
 })
 
+test('status rejects an MCP response without a task status', async () => {
+  const { route } = makeCtx(async () => ({ structuredContent: { taskId: 'xhst-missing-status' } }))
+  const result = await invoke(route, { action: 'status', taskId: 'xhst-missing-status' })
+  assert.equal(result.status, 200)
+  assert.deepEqual(result.body, { status: 'error', reason: 'task_status_missing', taskId: 'xhst-missing-status' })
+})
+
 test('result delegates to result_get and projects only display fields', async () => {
   const calls = []
   const payload = JSON.stringify({ taskId: 'xhst-1', status: 'succeeded', versions: [

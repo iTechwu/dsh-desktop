@@ -90,7 +90,8 @@ async function handleStatus(ctx, body, res, signal = AbortSignal.timeout(TOOL_CA
   if (!schema) return send(res, 200, { status: 'unavailable', reason: 'xhs_operation_tool_unavailable' })
   const result = await ctx.tools.execute({ callId: `yootun-xhs-status-${Date.now()}`, name: schema.name, arguments: { taskId }, signal })
   const payload = parseResult(result)
-  const taskStatus = firstString(payload.status) || 'unknown'
+  const taskStatus = firstString(payload.status)
+  if (!taskStatus) return send(res, 200, { status: 'error', reason: 'task_status_missing', taskId })
   await recordTerminalAudit(ctx, taskId, taskStatus, taskStatus === 'succeeded' ? 3 : 0, firstString(payload.errorCode))
   return send(res, 200, {
     status: 'ready',

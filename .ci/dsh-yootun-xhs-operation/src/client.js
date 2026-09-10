@@ -68,7 +68,9 @@ const openOverlay = event => {
 const closeOverlay = () => { setOpened(false); requestAnimationFrame(() => lastTrigger?.focus?.()) }
 const closeOtherOverlay = event => { if (event.detail?.id !== OVERLAY_ID) setOpened(false) }
 
-const isTerminal = status => status === 'succeeded' || status === 'failed' || status === 'cancelled'
+const TASK_STATUSES = new Set(['queued', 'running', 'succeeded', 'failed', 'cancel_requested', 'cancelled'])
+const normalizeTaskStatus = status => TASK_STATUSES.has(status) ? status : 'unknown'
+const isTerminal = status => status === 'succeeded' || status === 'failed' || status === 'cancelled' || status === 'unknown'
 
 async function post(body) {
   const response = await fetch(PATH, { method: 'POST', credentials: 'same-origin', redirect: 'error', signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS), headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify(body) })
@@ -130,18 +132,22 @@ function createTaskMachine({ createTask, queryStatus, queryResult, cancelTask, i
       if (task.taskStatus === 'succeeded') {
         if (snapshot.versions === null) await loadResult(task.taskId, gen)
       } else {
-        update({ ...snapshot, error: task.taskStatus === 'cancelled' ? 'cancelled' : 'failed' })
+        update({ ...snapshot, error: task.taskStatus === 'cancelled' ? 'cancelled' : task.taskStatus === 'unknown' ? 'pollFailed' : 'failed' })
       }
       return
     }
     try {
       const status = await queryStatus(task.taskId)
       if (gen !== generation) return
-      const next = { ...task, taskStatus: status.taskStatus, currentStep: status.currentStep || status.nextStep || '' }
+      const next = { ...task, taskStatus: normalizeTaskStatus(status.taskStatus), currentStep: status.currentStep || status.nextStep || '' }
       update({ ...snapshot, task: next, error: '' })
       if (status.taskStatus === 'succeeded') { await loadResult(task.taskId, gen); return }
       if (status.taskStatus === 'failed' || status.taskStatus === 'cancelled') {
         update({ ...snapshot, error: status.taskStatus === 'cancelled' ? 'cancelled' : 'failed' })
+        return
+      }
+      if (next.taskStatus === 'unknown') {
+        update({ ...snapshot, error: 'pollFailed' })
         return
       }
       timer = schedule(poll, intervalMs)
@@ -165,7 +171,7 @@ function createTaskMachine({ createTask, queryStatus, queryResult, cancelTask, i
     }
     if (submissionId !== submission) return
     // 创建期间允许页面开关：始终保存最新任务，只有页面当前激活时才开始轮询。
-    update({ task: { taskId: created.taskId, idempotencyKey: body.idempotencyKey, taskStatus: created.taskStatus || 'queued', mediaType: body.mediaType, input: body }, versions: null, error: '' })
+    update({ task: { taskId: created.taskId, idempotencyKey: body.idempotencyKey, taskStatus: normalizeTaskStatus(created.taskStatus || 'queued'), mediaType: body.mediaType, input: body }, versions: null, error: '' })
     if (!active) return
     await poll()
   }

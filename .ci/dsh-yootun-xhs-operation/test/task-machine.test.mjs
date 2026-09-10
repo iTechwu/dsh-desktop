@@ -89,6 +89,15 @@ test('transient status failure retries and eventually succeeds', async () => {
   assert.equal(machine.get().error, '')
 })
 
+test('unknown task statuses stop polling and surface a retryable error', async () => {
+  const { machine, timers } = makeMachine({ queryStatus: async () => ({ taskStatus: 'provider_deferred' }) })
+  await machine.submit({ action: 'create', mediaType: 'images', idempotencyKey: 'k1' })
+  assert.equal(machine.get().task.taskStatus, 'unknown')
+  assert.equal(machine.get().error, 'pollFailed')
+  assert.equal(timers.pending, false)
+  assert.equal(machine.get().task.taskStatus, 'unknown')
+})
+
 test('stop() halts polling; resume() continues', async () => {
   let statusCalls = 0
   const { machine, timers } = makeMachine({ queryStatus: async () => { statusCalls++; return { taskStatus: 'running' } } })
