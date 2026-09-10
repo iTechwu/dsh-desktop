@@ -144,6 +144,13 @@ const localToolSources = await Promise.all([
   }
 }))
 const localToolNames = new Set(localToolSources.flatMap(registeredToolNames))
+const auditedClientPlugins = new Set(['dsh-plugin-console', ...clientPlugins])
+for (const name of ciEntries) {
+  const manifest = JSON.parse(await readFile(new URL(`../.ci/${name}/package.json`, import.meta.url), 'utf8'))
+  if (manifest.dsh?.client !== undefined && !auditedClientPlugins.has(name)) {
+    failures.push(`${name}: declared client package is missing from the unified UX audit`)
+  }
+}
 const knowledgeToolBlock = localToolSources.join('\n').match(/const TOOL_DEFINITIONS = \{([\s\S]*?)\n\}/u)?.[1] || ''
 for (const match of knowledgeToolBlock.matchAll(/^\s{2}(knowledge_[a-z0-9_]+):/gmu)) localToolNames.add(match[1])
 for (const toolName of localToolNames) {
@@ -214,6 +221,13 @@ if (!pluginConsoleHost.includes('isAllowedWriteOrigin')) {
 }
 if (!pluginConsoleHost.includes('127.0.0.1') || !pluginConsoleHost.includes('[::1]')) {
   failures.push('dsh-plugin-console: loopback host allowlist is incomplete')
+}
+const pluginConsoleRoutes = new Set([...pluginConsoleHost.matchAll(/\$\{ROUTE_PREFIX\}(\/[a-z0-9-]+)/gu)]
+  .map(match => `/plugin-console${match[1]}`))
+for (const route of pluginConsoleRoutes) {
+  if (!capabilityMatrix.includes(`\`${route}\``)) {
+    failures.push(`dsh-plugin-console: route ${route} is missing from the capability matrix`)
+  }
 }
 if (!openCliSource.includes("redirect: 'error'") || !openCliSource.includes("cache: 'no-store'")) {
   failures.push('dsh-opencli: Exa MCP requests must reject redirects and disable caching')
