@@ -864,6 +864,29 @@ test('host endpoint keeps series sources isolated when one upstream fails', asyn
   assert.equal(teamResponse.body.geo.status, 'error')
 })
 
+test('treats a resolved blocked MCP source as an error', async () => {
+  let route
+  applyHost({
+    credentials: { async resolve() { return { value: 'test-model-key', source: 'memory' } } },
+    effect(factory) { return factory() },
+    logger: { warn() {} },
+    sessionPersistence: { async list() { return [] } },
+    tools: { schemas() { return [] } },
+    webServer: { register(value) { if (value.path === '/api/desktop/yootun/dashboard/yesterday') route = value; return () => {} } },
+  }, {
+    fetch: async url => {
+      const target = String(url)
+      if (target.includes('/mcp/geoflow')) return new Response(JSON.stringify({ result: { structuredContent: { status: 'blocked' } } }), { status: 200, headers: { 'content-type': 'application/json' } })
+      if (target.includes('/mcp/georank')) return new Response(JSON.stringify({ result: { structuredContent: {} } }), { status: 200, headers: { 'content-type': 'application/json' } })
+      return new Response(JSON.stringify({ summary: {}, byModel: [] }), { status: 200, headers: { 'content-type': 'application/json' } })
+    },
+    now: () => new Date('2026-09-01T01:30:00.000Z'),
+  })
+  const response = await invokeRoute(route, 'POST')
+  assert.equal(response.body.geo.status, 'error')
+  assert.equal(response.body.geo.reason, 'geoflow_mcp_error')
+})
+
 async function invokeRoute(route, method, body) {
   let status = 0
   let raw = ''

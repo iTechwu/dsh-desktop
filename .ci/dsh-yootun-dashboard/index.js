@@ -1182,7 +1182,7 @@ async function mcpMessage(response) {
 
 function mcpResultFailed(raw, value) {
   if (raw?.isError === true || raw?.ok === false || value?.isError === true || value?.ok === false) return true
-  return ['error', 'failed', 'failure', 'unavailable'].includes(String(value?.status || '').toLowerCase())
+  return ['error', 'failed', 'failure', 'unavailable', 'blocked'].includes(String(value?.status || '').toLowerCase())
 }
 
 function workspaceName(cwd) {
