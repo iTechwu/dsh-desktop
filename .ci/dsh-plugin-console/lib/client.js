@@ -932,6 +932,7 @@ window.__ModuleLoader__.load({
 			});
 			const aiAutoDeclinedRef = react.useRef({});
 			const aiConsentBusyRef = react.useRef(false);
+			const [aiConsentBusy, setAiConsentBusy] = react.useState(false);
 			// 已关闭的失败提示（用户点 × 后不再显示，服务重启后重置）
 			const [dismissedFailures, setDismissedFailures] = react.useState({});
 			// 软件源管理
@@ -1515,10 +1516,11 @@ window.__ModuleLoader__.load({
 			const aiConsent = (jobId, approved) => {
 				if (aiConsentBusyRef.current) return;
 				aiConsentBusyRef.current = true;
+				setAiConsentBusy(true);
 				call("/plugin-console/ai-consent", { jobId, approved }).then(
 					() => { if (!approved) setMessage(t("failed") + "：已取消本地 AI 兜底（不会调用模型 API）"); },
 					(error) => setMessage(t("failed") + "：" + friendlyGithubError(error).message),
-				).finally(() => { aiConsentBusyRef.current = false; });
+				).finally(() => { aiConsentBusyRef.current = false; setAiConsentBusy(false); });
 			};
 			/** 软件源管理：打开时拉取当前配置。 */
 			const openSources = () => {
@@ -2533,7 +2535,7 @@ onClick: () => window.open(`https://github.com/Noob-stupid/dsh-plugin-hub/releas
 					return consentJob === undefined
 						? null
 						: el("div", { className: styles.modalBackdrop },
-							el("div", { className: styles.modalCard, role: "dialog", "aria-modal": true, "aria-labelledby": "pc-ai-consent-title", "aria-describedby": "pc-ai-consent-description", ref: modalCardRef, tabIndex: -1 },
+							el("div", { className: styles.modalCard, role: "dialog", "aria-modal": true, "aria-labelledby": "pc-ai-consent-title", "aria-describedby": "pc-ai-consent-description", "aria-busy": aiConsentBusy, ref: modalCardRef, tabIndex: -1 },
 								el("strong", { className: styles.name, id: "pc-ai-consent-title" }, t("installingLocal") + "：" + (consentJob.packageName ?? consentJob.repo)),
 								el("p", { className: styles.message, id: "pc-ai-consent-description" }, t("aiConsentText")),
 								el("label", { className: styles.consentRemember },
@@ -2548,8 +2550,8 @@ onClick: () => window.open(`https://github.com/Noob-stupid/dsh-plugin-hub/releas
 									}),
 									t("aiConsentRemember")),
 								el("div", { className: styles.rowTop },
-									el("button", { type: "button", className: styles.toggle, onClick: () => { try { localStorage.setItem("pc-ai-remember", aiRemember ? "1" : "0"); } catch {} aiConsent(consentJob.jobId, true); } }, t("aiConsentApprove")),
-									el("button", { type: "button", className: styles.toggle, onClick: () => aiConsent(consentJob.jobId, false) }, t("aiConsentDecline")))));
+									el("button", { type: "button", className: styles.toggle, disabled: aiConsentBusy, onClick: () => { try { localStorage.setItem("pc-ai-remember", aiRemember ? "1" : "0"); } catch {} aiConsent(consentJob.jobId, true); } }, t("aiConsentApprove")),
+									el("button", { type: "button", className: styles.toggle, disabled: aiConsentBusy, onClick: () => aiConsent(consentJob.jobId, false) }, t("aiConsentDecline")))));
 				})(),
 				sourcesOpen
 					? el("div", { className: styles.modalBackdrop },
