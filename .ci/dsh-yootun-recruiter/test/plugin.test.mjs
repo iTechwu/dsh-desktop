@@ -32,6 +32,7 @@ test('locks recruiter mutations and disables every write surface', async () => {
   assert.match(source, /className: 'yr-intake-textarea', value: input, disabled: busy/u)
   assert.match(source, /'aria-label': t\('refresh'\), disabled: interactionBusy, onClick: refresh/u)
   assert.match(source, /className: 'yr-inline-error', role: 'alert'/u)
+  assert.match(source, /refreshError: '刷新失败，当前仍显示上次数据'/u)
   assert.match(source, /setMessage\(next \? t\('roleGenerated'\) : t\('saveError'\)\)/u)
   assert.match(source, /function SourceBadge\(\{ label, state, t, onClick, disabled \}\)/u)
   assert.match(source, /function Candidates\(\{ data, t, onNavigate, busy \}\)/u)
@@ -69,6 +70,13 @@ test('localizes recruiter stages and status enums before rendering them', async 
   assert.match(source, /status === 'dismissed' \? t\('dismissed'\) : t\('unknown'\)/u)
   assert.match(source, /\.yr-status-adapter_pending i/u)
   assert.doesNotMatch(source, /h\('strong', null, item\), h\('span'/u)
+})
+
+test('labels refresh failures separately from action failures', async () => {
+  const source = await readFile(new URL('src/client.js', root), 'utf8')
+  assert.match(source, /setErrorKind\('refresh'\)/u)
+  assert.match(source, /setErrorKind\('action'\)/u)
+  assert.match(source, /t\(errorKind === 'refresh' \? 'refreshError' : 'actionError'\)/u)
 })
 
 test('declares the Models-authenticated data contract without exposing a client key', async () => {
