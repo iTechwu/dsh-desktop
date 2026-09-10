@@ -43,7 +43,7 @@ const CSS = `
   min-width: 0;
   padding: 13px 14px;
   border: 1px solid var(--dsw-alias-border-l1);
-  border-radius: 10px;
+  border-radius: 8px;
   background: var(--dsw-alias-bg-layer-1);
 }
 .dshDesktopSettingsChoice {
@@ -213,7 +213,7 @@ const CSS = `
   min-width: 220px;
   padding: 5px;
   border: 1px solid var(--dsw-alias-border-l1);
-  border-radius: 10px;
+  border-radius: 8px;
   background: var(--dsw-alias-bg-layer-1);
   box-shadow: 0 12px 32px color-mix(in srgb, #000 28%, transparent);
   -webkit-app-region: no-drag;
@@ -270,7 +270,7 @@ const CSS = `
   gap: 16px;
   padding: 12px 14px;
   border: 1px solid var(--dsw-alias-border-l1);
-  border-radius: 10px;
+  border-radius: 8px;
   background: var(--dsw-alias-bg-layer-1);
 }
 .dshDesktopSettingsMaterialCopy { min-width: 0; }
@@ -367,7 +367,7 @@ const CSS = `
   gap: 5px;
   padding: 12px 14px;
   border: 1px solid var(--dsw-alias-border-l1);
-  border-radius: 10px;
+  border-radius: 8px;
   background: var(--dsw-alias-bg-layer-1);
 }
 .dshDesktopSettingsUrls a {
@@ -392,7 +392,7 @@ const CSS = `
   box-sizing: border-box;
   padding: 20px;
   border: 1px solid var(--dsw-alias-border-l1);
-  border-radius: 14px;
+  border-radius: 8px;
   background: var(--dsw-alias-bg-layer-1);
   box-shadow: 0 24px 64px color-mix(in srgb, #000 38%, transparent);
 }

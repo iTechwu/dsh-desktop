@@ -63,6 +63,16 @@ function findOversizedPanelRadii(source) {
   })
 }
 
+function findOversizedSurfaceRadii(source) {
+  const rules = source.match(/[^{}]+\{[^{}]*border-radius\s*:\s*(\d+(?:\.\d+)?)px[^{}]*\}/giu) || []
+  return rules.flatMap(rule => {
+    const radius = Number(rule.match(/border-radius\s*:\s*(\d+(?:\.\d+)?)px/iu)?.[1])
+    if (radius <= 8) return []
+    const selector = rule.slice(0, rule.indexOf('{')).trim()
+    return selector.split(',').map(value => value.trim()).filter(value => /\.(?:[a-z0-9-]*(?:panel|dialog|popover|menu|choice|toggle-row|material-field|urls|card))\b/iu.test(value))
+  })
+}
+
 function hasCanonicalHeader(source) {
   return /\.[a-z0-9-]*header\{[^}]*min-height:72px/u.test(source)
 }
@@ -110,6 +120,9 @@ for (const selector of findFixedWhiteOnAdaptiveFill(desktopClientStyles)) {
 }
 for (const selector of findNonAdaptiveForegroundOnAdaptiveFill(desktopClientStyles)) {
   failures.push(`dsh-plugin-desktop: ${selector} uses a non-adaptive foreground on an adaptive theme fill`)
+}
+for (const selector of findOversizedSurfaceRadii(desktopClientStyles)) {
+  failures.push(`dsh-plugin-desktop: ${selector} exceeds the 8px shared surface radius contract`)
 }
 if (!pluginConsoleClient.includes('const cssOverrides =')) failures.push('dsh-plugin-console: shared visual overrides are missing')
 if (!pluginConsoleClient.includes('.pc_row,.pc_item,.pc_detail,.pc_floatPanel,.pc_modalCard{border-radius:8px}')) {
