@@ -235,6 +235,7 @@ window.__ModuleLoader__.load({
 
     function AccessOnboarding({ complete, credentials, settingsApi, useAccess, t }) {
       const access = useAccess(snapshot => snapshot)
+      const cardRef = useRef(null)
       // Fail closed while the credential service is starting or unavailable.
       const [configured, setConfigured] = useState(false)
       useEffect(() => {
@@ -246,9 +247,35 @@ window.__ModuleLoader__.load({
       }, [credentials])
       const authorized = configured === true && access.value?.setupComplete === true && access.value?.validationVersion === VALIDATION_VERSION
       useEffect(() => { if (authorized) complete() }, [authorized, complete])
+      useEffect(() => {
+        if (authorized) return undefined
+        const focusable = () => Array.from(cardRef.current?.querySelectorAll('button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),a[href],[tabindex]:not([tabindex="-1"])') ?? [])
+          .filter(element => !element.hidden && element.getAttribute('aria-hidden') !== 'true')
+        const focusFrame = requestAnimationFrame(() => (cardRef.current?.querySelector('#yu-model-key') ?? focusable()[0] ?? cardRef.current)?.focus?.())
+        const onKeyDown = event => {
+          if (event.key !== 'Tab') return
+          const items = focusable()
+          const first = items[0]
+          const last = items[items.length - 1]
+          if (first === undefined) {
+            event.preventDefault()
+            cardRef.current?.focus?.()
+          } else if ((event.shiftKey && document.activeElement === first)
+            || (!event.shiftKey && document.activeElement === last)
+            || !cardRef.current?.contains(document.activeElement)) {
+            event.preventDefault()
+            ;(event.shiftKey ? last : first).focus()
+          }
+        }
+        document.addEventListener('keydown', onKeyDown, true)
+        return () => {
+          cancelAnimationFrame(focusFrame)
+          document.removeEventListener('keydown', onKeyDown, true)
+        }
+      }, [authorized])
       if (authorized) return null
-      return h('div', { className: 'yu-modal' }, h('section', { className: 'yu-card', role: 'dialog', 'aria-modal': true, 'aria-labelledby': 'yu-title' },
-        h('header', { className: 'yu-header' }, h('img', { alt: '', src: LOGO }), h('div', null, h('p', { className: 'yu-eyebrow' }, t('eyebrow')), h('h2', { id: 'yu-title' }, t('title')), h('p', null, t('intro')))),
+      return h('div', { className: 'yu-modal' }, h('section', { className: 'yu-card', role: 'dialog', 'aria-modal': true, 'aria-labelledby': 'yu-title', 'aria-describedby': 'yu-intro', ref: cardRef, tabIndex: -1 },
+        h('header', { className: 'yu-header' }, h('img', { alt: '', src: LOGO }), h('div', null, h('p', { className: 'yu-eyebrow' }, t('eyebrow')), h('h2', { id: 'yu-title' }, t('title')), h('p', { id: 'yu-intro' }, t('intro')))),
         h(AccessForm, { credentials, settingsApi, useAccess, initialConfigured: configured, onboarding: true, onConfigured: () => { setConfigured(true) }, t })))
     }
 
