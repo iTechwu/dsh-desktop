@@ -114,6 +114,9 @@ jobs:
           npm_config_minimum_release_age: '0'
         run: pnpm upstream:build
       - if: needs.changes.outputs.product == 'true'
+        env:
+          CI: 'false'
+          npm_config_minimum_release_age: '0'
         run: pnpm check
 
   # Windows-only logic and unsigned NSIS/portable builds on a real Windows runner:
@@ -166,7 +169,11 @@ jobs:
           CI: 'false'
           npm_config_minimum_release_age: '0'
         run: pnpm upstream:build
-      - run: pnpm --filter dsh-plugin-desktop check:win-package
+      - name: Run Windows package gate
+        env:
+          CI: 'false'
+          npm_config_minimum_release_age: '0'
+        run: pnpm --filter dsh-plugin-desktop check:win-package
       - name: Build Windows installer
         env:
           DSH_PACKAGE_CHECK_ALREADY_RAN: '1'
@@ -237,7 +244,11 @@ jobs:
           CI: 'false'
           npm_config_minimum_release_age: '0'
         run: pnpm upstream:build
-      - run: pnpm --filter dsh-plugin-desktop check:mac-package
+      - name: Run macOS package gate
+        env:
+          CI: 'false'
+          npm_config_minimum_release_age: '0'
+        run: pnpm --filter dsh-plugin-desktop check:mac-package
       - name: Build macOS smoke artifact
         env:
           DSH_PACKAGE_CHECK_ALREADY_RAN: '1'
