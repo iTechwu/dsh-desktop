@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { apply, buildExaToolCall, validateReadOnlyArgs } from './index.js'
+import { apply, buildExaToolCall, exaText, validateReadOnlyArgs } from './index.js'
 
 test('allows bounded read-only research commands', () => {
   assert.deepEqual(
@@ -25,6 +25,14 @@ test('maps the agent-reach Exa route to bounded MCP calls', () => {
     arguments: { urls: ['https://example.com/a'], maxCharacters: 6000 },
   })
   assert.throws(() => buildExaToolCall(['exa', 'fetch', 'file:///etc/passwd']), /HTTPS URL/)
+})
+
+test('accepts terminal SSE markers without hiding malformed or MCP error events', () => {
+  assert.equal(exaText('data: [DONE]\n\ndata: {"jsonrpc":"2.0","result":{"content":[{"type":"text","text":"ok"}]}}\n'), 'ok')
+  assert.equal(exaText('data: heartbeat\n\ndata: {"jsonrpc":"2.0","result":{"content":[{"type":"text","text":"ok"}]}}\n'), 'ok')
+  assert.throws(() => exaText('data: [DONE]\n'), /no result/u)
+  assert.throws(() => exaText('data: {not-json}\n'), /invalid events/u)
+  assert.throws(() => exaText('data: {"error":{"message":"denied"}}\n'), /denied/u)
 })
 
 test('rejects write-capable and arbitrary commands', () => {

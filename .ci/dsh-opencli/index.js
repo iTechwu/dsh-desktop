@@ -59,15 +59,19 @@ export function buildExaToolCall(args) {
   return { name: 'web_fetch_exa', arguments: { urls, maxCharacters: 6000 } }
 }
 
-function exaText(payload) {
+export function exaText(payload) {
+  let invalidEvent = false
   const messages = payload.split('\n').filter(line => line.startsWith('data: '))
   for (const message of messages) {
-    const parsed = JSON.parse(message.slice(6))
+    const value = message.slice(6).trim()
+    if (!value || value === '[DONE]') continue
+    let parsed
+    try { parsed = JSON.parse(value) } catch { invalidEvent = true; continue }
     if (parsed.error) throw new Error(parsed.error.message || 'Exa MCP returned an error')
     const content = parsed.result?.content
     if (Array.isArray(content)) return content.filter(item => item?.type === 'text').map(item => item.text).join('\n')
   }
-  throw new Error('Exa MCP returned no result')
+  throw new Error(invalidEvent ? 'Exa MCP returned invalid events' : 'Exa MCP returned no result')
 }
 
 async function runExa(args, timeoutMs, signal, apiKey) {
