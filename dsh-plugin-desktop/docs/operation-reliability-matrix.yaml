@@ -101,5 +101,4 @@ operations:
     evidence: masked Desktop log entry, bounded stdout and stderr, and post-command Profile inventory revalidation
     faultContracts:
       - { id: recovery-plugin-remove.command.argv, test: tests/recovery-plugin-uninstall.spec.ts, title: runs the packaged official dsh plugin remove argv for the selected Profile }
-      - { id: recovery-plugin-remove.command.failure, test: tests/recovery-plugin-uninstall.spec.ts, title: retains bounded command diagnostics when dsh plugin remove fails }
       - { id: recovery-plugin-remove.confirmation.one-shot, test: tests/startup-recovery-controller.spec.ts, title: uninstalls a direct Profile dependency with a one-shot preview }
