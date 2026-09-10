@@ -576,8 +576,8 @@ window.__ModuleLoader__.load({
 		}
 		async function call(path, body) {
 			const response = await fetch(path, body === undefined
-				? {}
-				: { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+				? { credentials: "same-origin", redirect: "error" }
+				: { method: "POST", credentials: "same-origin", redirect: "error", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
 			let data = null;
 			try {
 				data = await response.json();

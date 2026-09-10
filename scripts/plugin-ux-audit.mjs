@@ -134,6 +134,9 @@ if (!pluginConsoleClient.includes('background:color-mix(in srgb,var(--dsw-alias-
 if (!pluginConsoleClient.includes('@media(max-width:640px){.pc_list{grid-template-columns:1fr}')) {
   failures.push('dsh-plugin-console: mobile market list does not collapse to one column')
 }
+if (!pluginConsoleClient.includes('credentials: "same-origin"') || !pluginConsoleClient.includes('redirect: "error"')) {
+  failures.push('dsh-plugin-console: local control calls must use same-origin credentials and reject redirects')
+}
 if (!pluginConsoleHost.includes("const ROUTE_PREFIX = '/plugin-console'")) {
   failures.push('dsh-plugin-console: host route prefix is missing')
 }
