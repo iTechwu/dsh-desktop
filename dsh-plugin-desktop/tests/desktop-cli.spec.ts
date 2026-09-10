@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { describe, expect, it, vi } from 'vitest'
-import dshManifest from '@deepseek-ai/dsh/package.json'
+import dshManifest from '@deepseek-ai/dsh/package.json' with { type: 'json' }
 import {
   clearElectronRunAsNode,
   desktopCliProfileManifestUrl,
