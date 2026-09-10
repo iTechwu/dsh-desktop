@@ -23,6 +23,7 @@
 | 知识与记忆 | `knowledge_*`、`memory_*` | knowledge | ready、degraded、empty、error；写入需确认 | 统一由 knowledge MCP 处理 tenant/team/user 权限；读取不写审计，remember/forget/confirm 写入审计 |
 | 审计事件与同步 | `/api/desktop/yootun/audit` | audit | ready、offline、cached、auth_required、forbidden、local_error；同步可重试 | 读取与 `retry_sync` 使用同源托管路由；脱机优先展示本地缓存，不把同步失败伪装成空数据 |
 | TOS 媒体上传 | `/_dsh/uploader/pick-file`、`upload`、`uploadStart`、`uploadStatus`、`media`；`media_upload` | XHS operation、Agent 媒体工具 | uploading、queued、succeeded、failed、cancelled、requires_user_login | 通过原生选取、允许清单和 TOCTOU 复查；授权仅交给 Tools MCP，不回传本地路径、预签名 URL 或对象 key |
+| 文件交付声明 | `present`；`deliverables/presented` Session 事件 | Web Deliverables 文件卡片与默认应用打开 | declared、blocked、opened | 仅接受 Session 工作区可访问的常规文件，单次受 `maxFiles` 限制；记录路径和描述，不复制文件内容，子 Agent 的交付由父 Session 显式声明 |
 
 ## 统一映射规则
 
