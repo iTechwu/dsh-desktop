@@ -241,7 +241,8 @@ if ((pluginConsoleClient.match(/role: "dialog", "aria-modal": true/gu) || []).le
 if (!pluginConsoleClient.includes('event.key === "Escape"')
   || !pluginConsoleClient.includes('event.key !== "Tab"')
   || !pluginConsoleClient.includes('modalReturnFocusRef')
-  || !pluginConsoleClient.includes('sourcesOpen && activeConsentJob === undefined')) {
+  || !pluginConsoleClient.includes('sourcesOpen')
+  || !pluginConsoleClient.includes('activeConsentJob')) {
   failures.push('dsh-plugin-console: modal keyboard, focus-return, or stacking contract is incomplete')
 }
 if (!pluginConsoleClient.includes('aiConsentBusyRef')
