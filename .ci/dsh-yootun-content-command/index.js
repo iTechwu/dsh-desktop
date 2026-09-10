@@ -75,13 +75,19 @@ async function buildState(ctx, signal = AbortSignal.timeout(TOOL_CALL_TIMEOUT_MS
   if (!listTool || !getTool) return { ...emptyState('unavailable', 'geoflow_article_tools_unavailable'), sources: { geoflow, georank } }
   let articles = []
   try {
-    const listed = asRecord(parseResult(await execute(ctx, listTool.name, { page: 1, per_page: MAX_ARTICLES }, signal)))
+    const listedRaw = await execute(ctx, listTool.name, { page: 1, per_page: MAX_ARTICLES }, signal)
+    const listedParsed = parseResult(listedRaw)
+    if (toolResultFailed(listedRaw, listedParsed)) throw new Error('geoflow_articles_unavailable')
+    const listed = asRecord(listedParsed)
     const rows = Array.isArray(listed.items) ? listed.items : []
     articles = (await Promise.all(rows.map(async row => {
       const articleId = positiveInteger(row?.id)
       if (!articleId) return null
       try {
-        const detail = asRecord(parseResult(await execute(ctx, getTool.name, { article_id: articleId }, signal)))
+        const detailRaw = await execute(ctx, getTool.name, { article_id: articleId }, signal)
+        const detailParsed = parseResult(detailRaw)
+        if (toolResultFailed(detailRaw, detailParsed)) throw new Error('geoflow_article_unavailable')
+        const detail = asRecord(detailParsed)
         return projectArticle({ ...row, ...detail })
       } catch (error) {
         ctx.logger?.warn?.('yootun content article %s failed: %s', articleId, safeError(error))
@@ -111,8 +117,10 @@ async function loadGeoFlowInsights(ctx, signal) {
     overviewTool ? execute(ctx, overviewTool.name, { preset: '7d' }, signal) : Promise.resolve(null),
     goalsTool ? execute(ctx, goalsTool.name, {}, signal) : Promise.resolve(null),
   ])
-  const overview = overviewResult.status === 'fulfilled' ? asRecord(parseResult(overviewResult.value)) : {}
-  const goals = goalsResult.status === 'fulfilled' ? asRecord(parseResult(goalsResult.value)) : {}
+  const overviewParsed = overviewResult.status === 'fulfilled' ? parseResult(overviewResult.value) : null
+  const goalsParsed = goalsResult.status === 'fulfilled' ? parseResult(goalsResult.value) : null
+  const overview = overviewResult.status === 'fulfilled' && !toolResultFailed(overviewResult.value, overviewParsed) ? asRecord(overviewParsed) : {}
+  const goals = goalsResult.status === 'fulfilled' && !toolResultFailed(goalsResult.value, goalsParsed) ? asRecord(goalsParsed) : {}
   if (!Object.keys(overview).length && !Object.keys(goals).length) return sourceState('error', 'geoflow_analytics_unavailable')
   return sourceState('ready', null, {
     filter: asRecord(overview.filter),
@@ -135,8 +143,10 @@ async function loadGeoRankInsights(ctx, signal) {
     historyTool ? execute(ctx, historyTool.name, { limit: 20 }, signal) : Promise.resolve(null),
     companyTool ? execute(ctx, companyTool.name, { query: '优惠豚', page: 1, size: 10, sort: 'geo_score' }, signal) : Promise.resolve(null),
   ])
-  const historyValue = historyResult.status === 'fulfilled' ? parseResult(historyResult.value) : null
-  const companyValue = companyResult.status === 'fulfilled' ? asRecord(parseResult(companyResult.value)) : {}
+  const historyParsed = historyResult.status === 'fulfilled' ? parseResult(historyResult.value) : null
+  const companyParsed = companyResult.status === 'fulfilled' ? parseResult(companyResult.value) : null
+  const historyValue = historyResult.status === 'fulfilled' && !toolResultFailed(historyResult.value, historyParsed) ? historyParsed : null
+  const companyValue = companyResult.status === 'fulfilled' && !toolResultFailed(companyResult.value, companyParsed) ? asRecord(companyParsed) : {}
   if (historyResult.status === 'rejected' && companyResult.status === 'rejected') return sourceState('error', 'georank_unavailable')
   const reports = (Array.isArray(historyValue) ? historyValue : recordList(asRecord(historyValue).items))
     .map(projectReport).filter(Boolean).filter(item => isYootunUrl(item.url)).slice(0, 8)
@@ -212,6 +222,10 @@ function parseResult(result) {
     try { return JSON.parse(text) } catch { return null }
   }
   return result
+}
+function toolResultFailed(raw, parsed) {
+  return raw?.isError === true || raw?.ok === false || parsed?.isError === true || parsed?.ok === false
+    || ['error', 'failed'].includes(String(parsed?.status || '').toLowerCase())
 }
 function sourceState(status, reason, data) { return { status, ...(reason ? { reason } : {}), ...(data ? { data } : {}) } }
 function asRecord(value) { return value && typeof value === 'object' && !Array.isArray(value) ? value : {} }
