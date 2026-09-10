@@ -24,6 +24,7 @@ test('keeps risk reviews human-confirmed and local-only', async () => {
   assert.doesNotMatch(source, /item\.(title|supplierLabel|category|signal|source)/u)
   assert.match(source, /data\?\.status && data\.status !== 'ready'/u)
   assert.match(source, /setData\(previous => failed \? previous \|\| value : value\)/u)
+  assert.match(source, /if \(next\?\.status && next\.status !== 'ready'\)/u)
   assert.match(source, /loadError \? h\('div', \{ role: 'alert', className: 'ysw-inline-error'/u)
   assert.match(source, /'aria-busy': interactionBusy/u)
   assert.doesNotMatch(source, /password|cookie|银行卡|供应商联系人手机号/iu)
