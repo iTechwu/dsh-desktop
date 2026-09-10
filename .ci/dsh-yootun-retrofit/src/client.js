@@ -138,6 +138,7 @@ function StateMessage({ kind, t, onRetry, busy }) {
   const unavailable = kind === 'unavailable'
   return h('div', { className: 'yro-state', role: 'alert' }, h('span', { className: 'yro-state-icon' }, h(IconWarningOutline16, { size: 22 })), h('h2', null, t(unavailable ? 'unavailableTitle' : 'errorTitle')), h('p', null, t(unavailable ? 'unavailableBody' : 'errorBody')), h('button', { type: 'button', disabled: busy, onClick: onRetry }, h(IconRefreshOutline16, { size: 15 }), t('search')))
 }
+const isErrorStatus = status => ['error', 'failed', 'failure', 'blocked'].includes(String(status || '').toLowerCase())
 function InlineError({ t, busy, onRetry }) {
   return h('div', { className: 'yro-inline-error', role: 'alert' },
     h(IconWarningOutline16, { size: 16 }),
@@ -159,7 +160,7 @@ function Overlay({ t }) {
     setBusy(true)
     try {
       const next = await post({ action, query, platform: platform || undefined })
-      if (next?.status === 'error' || next?.status === 'unavailable') {
+      if (next?.status === 'unavailable' || isErrorStatus(next?.status)) {
         setRequestError(true)
         setData(previous => previous || next)
         return next
@@ -183,7 +184,7 @@ function Overlay({ t }) {
   let body = h(EmptyState, { matched: false, t, onExample: useExample })
   if (busy && !data) body = h('div', { className: 'yro-loading', role: 'status' }, h(IconLoadingOutline16, { size: 22 }), t('refreshing'))
   else if (data?.status === 'unavailable') body = h(StateMessage, { kind: 'unavailable', t, busy, onRetry: () => void load('list') })
-  else if (data?.status === 'error') body = h(StateMessage, { kind: 'error', t, busy, onRetry: () => void load('list') })
+  else if (isErrorStatus(data?.status)) body = h(StateMessage, { kind: 'error', t, busy, onRetry: () => void load('list') })
   else if (data?.source === 'agent_reach') body = h(ExternalResults, { data, t })
   else if (data) body = h(StoredResults, { data, t, onExample: useExample })
   if (requestError && data?.status === 'ready') {
