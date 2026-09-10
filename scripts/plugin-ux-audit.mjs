@@ -23,6 +23,7 @@ const desktopStyles = await readFile(new URL('../dsh-plugin-desktop/src/client/s
 const desktopSettingsStyles = await readFile(new URL('../dsh-plugin-desktop/src/client/desktop-settings-styles.ts', import.meta.url), 'utf8')
 const desktopExtendedStyles = await readFile(new URL('../dsh-plugin-desktop/src/client/extended-styles.ts', import.meta.url), 'utf8')
 const dofeAccessSource = await readFile(new URL('../dsh-plugin-desktop/src/client/DofeAccessSection.tsx', import.meta.url), 'utf8')
+const dofeManagedSource = await readFile(new URL('../dsh-plugin-desktop/src/dofe-managed.ts', import.meta.url), 'utf8')
 const themeSource = await readFile(new URL('../deepseek-harness/packages/client/ui-theme/src/styles/design-platform.css', import.meta.url), 'utf8')
 const deliverablesStyles = await readFile(new URL('../deepseek-harness/packages/client/ui-deliverables/src/client/Deliverables.module.css', import.meta.url), 'utf8')
 const capabilityMatrix = await readFile(new URL('../docs/superpowers/specs/2026-09-09-mcp-api-capability-matrix.md', import.meta.url), 'utf8')
@@ -116,6 +117,10 @@ const desktopClientStyles = `${desktopStyles}\n${desktopSettingsStyles}\n${deskt
 const pluginConsoleClient = await readFile(new URL('../.ci/dsh-plugin-console/lib/client.js', import.meta.url), 'utf8')
 const pluginConsoleHost = await readFile(new URL('../.ci/dsh-plugin-console/lib/index.js', import.meta.url), 'utf8')
 const openCliSource = await readFile(new URL('../.ci/dsh-opencli/index.js', import.meta.url), 'utf8')
+const directMcpServers = [...dofeManagedSource.matchAll(/serverName:\s*'([^']+)'/gu)].map(match => match[1])
+const toolsMcpPaths = dofeManagedSource.match(/\.\.\.\[([\s\S]*?)\]\.map\(path => \(\{ plugin: 'tools'/u)?.[1]
+  ?.match(/'[^']+'/gu)?.map(value => value.slice(1, -1)) || []
+const managedMcpServers = new Set([...directMcpServers, ...toolsMcpPaths.map(path => `tools-${path}`)])
 for (const alias of findUndefinedThemeAliases(desktopClientStyles)) {
   failures.push(`dsh-plugin-desktop: client styles use undefined theme alias ${alias}`)
 }
@@ -152,6 +157,16 @@ if (!pluginConsoleHost.includes('127.0.0.1') || !pluginConsoleHost.includes('[::
 }
 if (!openCliSource.includes("redirect: 'error'") || !openCliSource.includes("cache: 'no-store'")) {
   failures.push('dsh-opencli: Exa MCP requests must reject redirects and disable caching')
+}
+for (const serverName of managedMcpServers) {
+  if (!capabilityMatrix.includes(`\`${serverName}\``)) {
+    failures.push(`dofe-managed: MCP server ${serverName} is missing from the capability matrix`)
+  }
+}
+if (!dofeManagedSource.includes("transport: 'streamable-http'")
+  || !dofeManagedSource.includes('failOnStartupError: false')
+  || !dofeManagedSource.includes('initialDelayMs: 500, maxDelayMs: 30_000, maxAttempts: 10')) {
+  failures.push('dofe-managed: resilient streamable HTTP transport contract is incomplete')
 }
 if (!deliverablesStyles.includes('--deliverable-fill: var(--dsw-alias-bg-layer-2)')
   || !deliverablesStyles.includes('--deliverable-hover: var(--dsw-alias-interactive-bg-hover)')) {

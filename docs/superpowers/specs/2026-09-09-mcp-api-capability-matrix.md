@@ -29,6 +29,28 @@
 | TOS 媒体上传 | `/_dsh/uploader/pick-file`、`/_dsh/uploader/upload`、`/_dsh/uploader/uploadStart`、`/_dsh/uploader/uploadStatus`、`/_dsh/uploader/media`；`media_upload` | XHS operation、Agent 媒体工具 | uploading、queued、succeeded、failed、cancelled、requires_user_login | 通过原生选取、允许清单和 TOCTOU 复查；授权仅交给 Tools MCP，不回传本地路径、预签名 URL 或对象 key |
 | 文件交付声明 | `present`；`deliverables/presented` Session 事件 | Web Deliverables 文件卡片与默认应用打开 | declared、blocked、opened | 仅接受 Session 工作区可访问的常规文件，单次受 `maxFiles` 限制；记录路径和描述，不复制文件内容，子 Agent 的交付由父 Session 显式声明 |
 
+## 托管 MCP 传输契约
+
+| Server name | 托管路径 | 工具调用超时 | 设置门控 |
+| --- | --- | --- | --- |
+| `geoflow` | `/mcp/geoflow` | 60s | geoflow |
+| `georank` | `/mcp/georank` | 120s | georank |
+| `openmontage` | `/mcp/montage` | 600s | openmontage |
+| `media` | `/mcp/media` | 60s | media |
+| `tools-platform` | `/mcp/tools/platform` | 60s | tools |
+| `tools-supply-chain` | `/mcp/tools/supply-chain` | 60s | tools |
+| `tools-talent-discovery` | `/mcp/tools/talent-discovery` | 60s | tools |
+| `tools-lead-discovery` | `/mcp/tools/lead-discovery` | 60s | tools |
+| `tools-lead-monitor` | `/mcp/tools/lead-monitor` | 60s | tools |
+| `tools-hotspot-discovery` | `/mcp/tools/hotspot-discovery` | 60s | tools |
+| `tools-custom-car-monitoring` | `/mcp/tools/custom-car-monitoring` | 60s | tools |
+| `tools-viral-video` | `/mcp/tools/viral-video` | 60s | tools |
+| `tools-browser-intelligence` | `/mcp/tools/browser-intelligence` | 60s | tools |
+| `tools-tos-upload` | `/mcp/tools/tos-upload` | 60s | tools |
+| `tools-xhs-operation` | `/mcp/tools/xhs-operation` | 60s | tools |
+
+所有 server 都使用 streamable HTTP 和同一个托管凭据引用；启动失败不阻断 Desktop 壳层，重连从 500ms 指数退避到 30s、最多 10 次。凭据或启用插件集合变化时，Host 销毁旧 client 后按当前 generation 重建；任何传输错误都不得序列化 Authorization 请求元数据。
+
 ## 统一映射规则
 
 - 数据来源只允许 `ready`、`partial`、`empty`、`degraded`、`unavailable`、`error` 六类语义；没有数据时使用 `null` 或空列表，禁止用零值伪造成功。
