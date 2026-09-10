@@ -1,4 +1,5 @@
 const React = require('react')
+const REQUEST_TIMEOUT_MS = 30000
 const { createElement: h, useEffect, useRef, useState, useSyncExternalStore } = React
 const { IconCloseOutline16, IconDataOutline16, IconLinkOutline16, IconLoadingOutline16, IconRefreshOutline16, IconSearchOutline16, IconWarningOutline16, Tooltip } = require('@deepseek-ai/dsh-client-ui-primitives')
 
@@ -42,7 +43,7 @@ const subscribe = listener => { listeners.add(listener); return () => listeners.
 const snapshot = () => opened
 
 async function post(body) {
-  const response = await fetch(PATH, { method: 'POST', credentials: 'same-origin', redirect: 'error', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify(body) })
+  const response = await fetch(PATH, { method: 'POST', credentials: 'same-origin', redirect: 'error', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS), body: JSON.stringify(body) })
   if (!response.ok) throw new Error('lead discovery request failed')
   return response.json()
 }

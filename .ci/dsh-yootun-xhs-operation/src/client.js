@@ -1,4 +1,5 @@
 const React = require('react')
+const REQUEST_TIMEOUT_MS = 30000
 const { createElement: h, useEffect, useRef, useState, useSyncExternalStore } = React
 const { IconCloseOutline16, IconEditOutline16, MarkdownText, Tooltip } = require('@deepseek-ai/dsh-client-ui-primitives')
 const NS = 'dofe.yootun-xhs-operation'
@@ -73,13 +74,13 @@ const closeOtherOverlay = event => { if (event.detail?.id !== OVERLAY_ID) setOpe
 const isTerminal = status => status === 'succeeded' || status === 'failed' || status === 'cancelled'
 
 async function post(body) {
-  const response = await fetch(PATH, { method: 'POST', credentials: 'same-origin', redirect: 'error', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify(body) })
+  const response = await fetch(PATH, { method: 'POST', credentials: 'same-origin', redirect: 'error', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS), body: JSON.stringify(body) })
   if (!response.ok) throw new Error('xhs operation failed')
   return response.json()
 }
 
 async function uploadFetch(path, body) {
-  const response = await fetch(path, { method: 'POST', credentials: 'same-origin', redirect: 'error', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify(body) })
+  const response = await fetch(path, { method: 'POST', credentials: 'same-origin', redirect: 'error', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS), body: JSON.stringify(body) })
   if (!response.ok) return null
   return response.json()
 }

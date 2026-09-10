@@ -4,6 +4,7 @@ window.__ModuleLoader__.load({
     var module = { exports: {} };
     var exports = module.exports;
     const React = require('react')
+    const REQUEST_TIMEOUT_MS = 30000
     const { createElement: h, useEffect, useRef, useState, useSyncExternalStore } = React
     const {
       IconCloseOutline16,
@@ -45,7 +46,7 @@ window.__ModuleLoader__.load({
     const closeOnEscape = event => { if (opened && event.key === 'Escape') closeOverlay() }
 
     async function post(body) {
-      const response = await fetch(PATH, { method: 'POST', credentials: 'same-origin', redirect: 'error', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify(body) })
+      const response = await fetch(PATH, { method: 'POST', credentials: 'same-origin', redirect: 'error', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS), body: JSON.stringify(body) })
       if (!response.ok) throw new Error('retrofit request failed')
       return response.json()
     }

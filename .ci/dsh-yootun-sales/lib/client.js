@@ -4,6 +4,7 @@ window.__ModuleLoader__.load({
     var module = { exports: {} };
     var exports = module.exports;
     const React = require('react')
+    const REQUEST_TIMEOUT_MS = 30000
     const { createElement: h, useEffect, useRef, useState, useSyncExternalStore } = React
     const { IconCheckOutline16, IconCloseOutline16, IconDataOutline16, IconRefreshOutline16, Tooltip } = require('@deepseek-ai/dsh-client-ui-primitives')
 
@@ -25,8 +26,8 @@ window.__ModuleLoader__.load({
     const closeOtherOverlay = event => { if (event.detail?.id !== OVERLAY_ID) setOpened(false) }
     const subscribe = listener => { listeners.add(listener); return () => listeners.delete(listener) }
     const snapshot = () => opened
-    async function load(signal) { const response = await fetch(PATH, { credentials: 'same-origin', redirect: 'error', signal, headers: { Accept: 'application/json' } }); if (!response.ok) throw new Error('sales request failed'); return response.json() }
-    async function mutate(body) { const response = await fetch(PATH, { method: 'POST', credentials: 'same-origin', redirect: 'error', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify(body) }); if (!response.ok) throw new Error('sales mutation failed'); return response.json() }
+    async function load(signal) { const response = await fetch(PATH, { credentials: 'same-origin', redirect: 'error', signal: signal ?? AbortSignal.timeout(REQUEST_TIMEOUT_MS), headers: { Accept: 'application/json' } }); if (!response.ok) throw new Error('sales request failed'); return response.json() }
+    async function mutate(body) { const response = await fetch(PATH, { method: 'POST', credentials: 'same-origin', redirect: 'error', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS), body: JSON.stringify(body) }); if (!response.ok) throw new Error('sales mutation failed'); return response.json() }
     function Metric({ label, value }) { return h('div', { className: 'ys-metric' }, h('span', null, label), h('strong', null, String(value ?? 0))) }
     function IntentSearch({ t, current, update, disabled }) {
       const [query, setQuery] = useState('')

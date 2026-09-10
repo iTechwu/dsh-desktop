@@ -2,6 +2,7 @@ window.__ModuleLoader__.load({
   id: "@dofe/dsh-yootun-audit",
   factory: (require) => { var module = { exports: {} }; var exports = module.exports;
     const React = require('react')
+    const REQUEST_TIMEOUT_MS = 30000
     const { createElement: h, useEffect, useReducer, useRef, useSyncExternalStore } = React
     const {
       IconChecklistOutline14, IconChevronRightOutline14,
@@ -83,8 +84,8 @@ window.__ModuleLoader__.load({
     function openOverlay(event) { lastTrigger = event?.currentTarget || document.activeElement; window.dispatchEvent(new CustomEvent(OVERLAY_EVENT, { detail: { id: OVERLAY_ID } })); setOpened(true) }
     function closeOverlay() { setOpened(false); requestAnimationFrame(() => lastTrigger?.focus?.()) }
     const closeOtherOverlay = event => { if (event.detail?.id !== OVERLAY_ID) setOpened(false) }
-    async function requestJson(query, signal) { const response = await fetch(`${PATH}?${query}`, { credentials: 'same-origin', redirect: 'error', signal, headers: { Accept: 'application/json' } }); if (!response.ok) throw new Error(`audit_${response.status}`); return response.json() }
-    async function retrySync() { const response = await fetch(PATH, { method: 'POST', credentials: 'same-origin', redirect: 'error', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify({ action: 'retry_sync' }) }); if (!response.ok) throw new Error(`audit_${response.status}`) }
+    async function requestJson(query, signal) { const response = await fetch(`${PATH}?${query}`, { credentials: 'same-origin', redirect: 'error', signal: signal ?? AbortSignal.timeout(REQUEST_TIMEOUT_MS), headers: { Accept: 'application/json' } }); if (!response.ok) throw new Error(`audit_${response.status}`); return response.json() }
+    async function retrySync() { const response = await fetch(PATH, { method: 'POST', credentials: 'same-origin', redirect: 'error', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS), body: JSON.stringify({ action: 'retry_sync' }) }); if (!response.ok) throw new Error(`audit_${response.status}`) }
     const formatTime = value => { if (!value) return '—'; const date = new Date(value); return Number.isFinite(date.getTime()) ? date.toLocaleString(undefined, { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—' }
     const ACTION_LABELS = Object.freeze({
       'recruiter.requirement.created': '创建招聘岗位', 'recruiter.requirement.updated': '更新招聘岗位',

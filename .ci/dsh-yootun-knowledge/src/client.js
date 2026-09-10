@@ -1,4 +1,5 @@
 const React = require("react");
+const REQUEST_TIMEOUT_MS = 30000
 const {
   createElement: h,
   useEffect,
@@ -209,7 +210,7 @@ async function load(signal) {
   const response = await fetch(PATH, {
     credentials: "same-origin",
     redirect: "error",
-    signal,
+    signal: signal ?? AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     headers: { Accept: "application/json" },
   });
   if (!response.ok) throw new Error("knowledge request failed");
@@ -221,7 +222,7 @@ async function mutate(body) {
     credentials: "same-origin",
     redirect: "error",
     headers: { "Content-Type": "application/json", Accept: "application/json" },
-    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS), body: JSON.stringify(body),
   });
   const value = await response.json().catch(() => ({}));
   if (!response.ok || value?.ok === false || value?.status === "error") {

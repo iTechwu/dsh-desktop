@@ -1,4 +1,5 @@
 const React = require('react')
+const REQUEST_TIMEOUT_MS = 30000
 const { createElement: h, useEffect, useRef, useState, useSyncExternalStore } = React
 const { IconCloseOutline16, IconRefreshOutline16, IconDataOutline16, Tooltip } = require('@deepseek-ai/dsh-client-ui-primitives')
 const NS = 'dofe.yootun-daily-report'; const PATH = '/api/desktop/yootun/daily-report'

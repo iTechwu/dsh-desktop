@@ -1,4 +1,5 @@
 const React = require('react')
+const REQUEST_TIMEOUT_MS = 30000
 const { createElement: h, useEffect, useRef, useState, useSyncExternalStore } = React
 const {
   IconCheckOutline16, IconChevronRightOutline14, IconCloseOutline16, IconDataOutline16,
@@ -50,12 +51,12 @@ const closeOverlay = () => { setOpened(false); requestAnimationFrame(() => lastT
 const closeOtherOverlay = event => { if (event.detail?.id !== OVERLAY_ID) setOpened(false) }
 
 async function load(signal) {
-  const response = await fetch(PATH, { credentials: 'same-origin', redirect: 'error', signal, headers: { Accept: 'application/json' } })
+  const response = await fetch(PATH, { credentials: 'same-origin', redirect: 'error', signal: signal ?? AbortSignal.timeout(REQUEST_TIMEOUT_MS), headers: { Accept: 'application/json' } })
   if (!response.ok) throw new Error('content request failed')
   return response.json()
 }
 async function mutate(body) {
-  const response = await fetch(PATH, { method: 'POST', credentials: 'same-origin', redirect: 'error', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify(body) })
+  const response = await fetch(PATH, { method: 'POST', credentials: 'same-origin', redirect: 'error', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS), body: JSON.stringify(body) })
   const value = await response.json().catch(() => ({}))
   if (!response.ok) throw new Error(value.error || 'content mutation failed')
   return value
