@@ -49,6 +49,8 @@ test('registers menu at order 41 and renders the three-region overlay', async ()
   assert.match(source, /yxh-right-title/)
   assert.match(source, /width:min\(360px,calc\(100vw - 32px\)\)/)
   assert.match(source, /max-width:calc\(100vw - 32px\)/)
+  assert.match(source, /return h\('div', \{ className: 'yxh-overlay', \.\.\.DIALOG_ATTRIBUTES \}/u)
+  assert.doesNotMatch(source, /querySelector\('\.yxh-overlay'\)[\s\S]*setAttribute/u)
   // 禁止不安全富文本
   assert.doesNotMatch(source, /dangerouslySetInnerHTML|password|cookie/i)
 })

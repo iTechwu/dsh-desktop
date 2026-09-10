@@ -64,10 +64,6 @@ const openOverlay = event => {
   lastTrigger = event?.currentTarget || document.activeElement
   window.dispatchEvent(new CustomEvent(OVERLAY_EVENT, { detail: { id: OVERLAY_ID } }))
   setOpened(true)
-  requestAnimationFrame(() => {
-    const root = document.querySelector('.yxh-overlay')
-    for (const [name, value] of Object.entries(DIALOG_ATTRIBUTES)) root?.setAttribute(name, String(value))
-  })
 }
 const closeOverlay = () => { setOpened(false); requestAnimationFrame(() => lastTrigger?.focus?.()) }
 const closeOtherOverlay = event => { if (event.detail?.id !== OVERLAY_ID) setOpened(false) }
@@ -696,7 +692,7 @@ function Overlay({ t }) {
     right = h('div', { className: 'yxh-state', role: 'status' }, h('p', null, t('empty')))
   }
 
-  return h('div', { className: 'yxh-overlay' },
+  return h('div', { className: 'yxh-overlay', ...DIALOG_ATTRIBUTES },
     h('main', { className: 'yxh-shell', 'aria-labelledby': 'yxh-title', ref: shellRef, tabIndex: -1, 'aria-busy': locked || uploadingInGroup },
       h('header', { className: 'yxh-header' },
         h('div', null, h('h1', { id: 'yxh-title' }, t('title')), h('p', null, t('subtitle'))),
