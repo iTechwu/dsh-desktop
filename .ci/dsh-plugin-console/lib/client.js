@@ -2595,10 +2595,10 @@ onClick: () => window.open(`https://github.com/Noob-stupid/dsh-plugin-hub/releas
 												? el("button", { type: "button", className: styles.toggle, disabled: sourcesBusy, onClick: () => sourcesAction({ action: "remove-search", id: s.id }) }, t("removeSource"))
 												: null)),
 									el("div", { className: styles.rowTop },
-										el("input", { type: "text", placeholder: t("sourceName"), value: searchSourceName, onChange: (event) => setSearchSourceName(event.currentTarget.value), style: { flex: 1, minWidth: 0 } }),
-										el("input", { type: "text", placeholder: t("searchUrlPlaceholder"), value: searchSourceUrl, onChange: (event) => setSearchSourceUrl(event.currentTarget.value), style: { flex: 2, minWidth: 0 } }),
+										el("input", { type: "text", "aria-label": t("sourceName"), placeholder: t("sourceName"), value: searchSourceName, onChange: (event) => setSearchSourceName(event.currentTarget.value), style: { flex: 1, minWidth: 0 } }),
+										el("input", { type: "text", "aria-label": t("searchUrlPlaceholder"), placeholder: t("searchUrlPlaceholder"), value: searchSourceUrl, onChange: (event) => setSearchSourceUrl(event.currentTarget.value), style: { flex: 2, minWidth: 0 } }),
 										el("button", { type: "button", className: styles.toggle, disabled: sourcesBusy, onClick: addSearchSource }, t("addSearchSource"))),
-									el("textarea", {
+					el("textarea", { "aria-label": t("headersPlaceholder"),
 										rows: 2,
 										placeholder: t("headersPlaceholder"),
 										value: searchSourceHeaders,
@@ -2613,8 +2613,8 @@ onClick: () => window.open(`https://github.com/Noob-stupid/dsh-plugin-hub/releas
 												? t("giteeLoggedIn") + (giteeStatus.login || "—")
 												: (giteeStatus !== null && giteeStatus.clientConfigured ? t("giteeSetupHint") : t("giteeLoginPrompt")))),
 									el("div", { className: styles.rowTop },
-										el("input", { type: "text", placeholder: t("giteeClientId"), value: giteeClientId, onChange: (event) => setGiteeClientId(event.currentTarget.value), style: { flex: 1, minWidth: 0 } }),
-										el("input", { type: "password", placeholder: t("giteeClientSecret"), value: giteeClientSecret, onChange: (event) => setGiteeClientSecret(event.currentTarget.value), style: { flex: 2, minWidth: 0 } }),
+						el("input", { type: "text", "aria-label": t("giteeClientId"), placeholder: t("giteeClientId"), value: giteeClientId, onChange: (event) => setGiteeClientId(event.currentTarget.value), style: { flex: 1, minWidth: 0 } }),
+						el("input", { type: "password", "aria-label": t("giteeClientSecret"), placeholder: t("giteeClientSecret"), value: giteeClientSecret, onChange: (event) => setGiteeClientSecret(event.currentTarget.value), style: { flex: 2, minWidth: 0 } }),
 										el("button", { type: "button", className: styles.toggle, disabled: sourcesBusy || !giteeClientId.trim() || !giteeClientSecret.trim(), onClick: saveGiteeSetup }, t("giteeSave"))),
 									el("div", { className: styles.rowTop },
 										el("button", { type: "button", className: styles.toggle, disabled: giteeStatus !== null && !giteeStatus.clientConfigured, onClick: startGiteeOauth }, t("giteeLoginBtn")),
