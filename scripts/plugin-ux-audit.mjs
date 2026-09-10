@@ -112,6 +112,7 @@ if (!desktopStyles.includes('prefers-reduced-motion: reduce') || !desktopStyles.
 const desktopClientStyles = `${desktopStyles}\n${desktopSettingsStyles}\n${dofeAccessSource}`
 const pluginConsoleClient = await readFile(new URL('../.ci/dsh-plugin-console/lib/client.js', import.meta.url), 'utf8')
 const pluginConsoleHost = await readFile(new URL('../.ci/dsh-plugin-console/lib/index.js', import.meta.url), 'utf8')
+const openCliSource = await readFile(new URL('../.ci/dsh-opencli/index.js', import.meta.url), 'utf8')
 for (const alias of findUndefinedThemeAliases(desktopClientStyles)) {
   failures.push(`dsh-plugin-desktop: client styles use undefined theme alias ${alias}`)
 }
@@ -145,6 +146,9 @@ if (!pluginConsoleHost.includes('isAllowedWriteOrigin')) {
 }
 if (!pluginConsoleHost.includes('127.0.0.1') || !pluginConsoleHost.includes('[::1]')) {
   failures.push('dsh-plugin-console: loopback host allowlist is incomplete')
+}
+if (!openCliSource.includes("redirect: 'error'") || !openCliSource.includes("cache: 'no-store'")) {
+  failures.push('dsh-opencli: Exa MCP requests must reject redirects and disable caching')
 }
 if (!dofeAccessSource.includes('const loadingRef = useRef(false)') || !dofeAccessSource.includes('const busyRef = useRef(false)')) {
   failures.push('dsh-plugin-desktop: native access form has no synchronous request locks')
