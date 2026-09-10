@@ -15,6 +15,7 @@ const PLUGINS = [
   { id: 'georank', name: 'GEORank', description: 'GEO 诊断、拓词与内容生成' },
   { id: 'tools', name: 'DoFe Tools', description: '优惠豚调研与热点工具集' },
   { id: 'openmontage', name: 'OpenMontage', description: '视频生成与素材编排' },
+  { id: 'media', name: 'Media 生成', description: '单张图片与 5–10 秒单镜头视频直连生成（复杂视频走 OpenMontage）' },
   { id: 'opencli', name: 'OpenCLI Research', description: '受控的互联网只读调研' },
   { id: 'knowledge', name: '企业知识与 Memory', description: '知识库、Memory 与知识图谱治理' },
 ]

@@ -31,9 +31,10 @@ test('publishes a discoverable DSH client plugin', async () => {
 test('ships all DoFe capabilities enabled by default', async () => {
   const source = await readFile(new URL('src/client.js', root), 'utf8')
 
-  for (const id of ['geoflow', 'georank', 'tools', 'openmontage', 'opencli', 'knowledge']) {
+  for (const id of ['geoflow', 'georank', 'tools', 'openmontage', 'media', 'opencli', 'knowledge']) {
     assert.match(source, new RegExp(`id: ['"]${id}['"]`))
   }
+  assert.match(source, /单张图片与 5–10 秒单镜头视频直连生成（复杂视频走 OpenMontage）/u)
   assert.match(source, /const DEFAULT_PLUGIN_IDS = PLUGINS\.map/u)
 })
 
