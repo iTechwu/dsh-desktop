@@ -179,7 +179,9 @@ async function loadGeo(fetchImpl, apiKey, logger) {
     }
     const message = await mcpMessage(response)
     if (message?.error) return failed('geoflow_mcp_error')
-    const value = message?.result?.structuredContent
+    const result = message?.result
+    const value = result?.structuredContent
+    if (mcpResultFailed(result, value)) return failed('geoflow_mcp_error')
     if (!value || typeof value !== 'object') return failed('geoflow_invalid_response')
     const trafficViews = value.traffic?.kpis?.pv ?? value.traffic?.kpis?.views
     const missingFields = []
@@ -272,7 +274,7 @@ async function loadGeorankBenchmark(fetchImpl, apiKey, logger) {
     try { parsedText = text ? JSON.parse(text) : null } catch {}
     const data = result?.structuredContent || parsedText
     const score = numberOrNull(data?.score)
-    if (result?.isError || score === null) return failed('georank_benchmark_invalid_response')
+    if (mcpResultFailed(result, data) || score === null) return failed('georank_benchmark_invalid_response')
     return { status: 'ready', data: { score, reasons: list(data.reasons).map(string).filter(Boolean), suggestions: list(data.suggestions).map(string).filter(Boolean) } }
   } catch (error) {
     logger?.warn?.('yootun dashboard: GEORank benchmark failed: %s', safeError(error))
@@ -710,7 +712,9 @@ async function loadGeoSeries(fetchImpl, apiKey, window, now, logger) {
     }
     const message = await mcpMessage(response)
     if (message?.error) return failed('geoflow_mcp_error')
-    const value = message?.result?.structuredContent
+    const result = message?.result
+    const value = result?.structuredContent
+    if (mcpResultFailed(result, value)) return failed('geoflow_mcp_error')
     if (!value || typeof value !== 'object') return failed('geoflow_invalid_response')
 
     const publication = list(value.publication_trend)
@@ -1174,6 +1178,11 @@ async function mcpMessage(response) {
     if (value?.result || value?.error) return value
   }
   throw new Error('MCP response contained no result')
+}
+
+function mcpResultFailed(raw, value) {
+  if (raw?.isError === true || raw?.ok === false || value?.isError === true || value?.ok === false) return true
+  return ['error', 'failed', 'failure', 'unavailable'].includes(String(value?.status || '').toLowerCase())
 }
 
 function workspaceName(cwd) {

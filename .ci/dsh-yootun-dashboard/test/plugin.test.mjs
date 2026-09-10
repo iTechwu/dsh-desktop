@@ -783,6 +783,41 @@ test('host endpoint returns four-source daily series with honest baselines', asy
   assert.ok(!JSON.stringify(response.body).includes('test-model-key'))
 })
 
+test('host treats resolved MCP error envelopes as failed dashboard sources', async () => {
+  let route
+  applyHost({
+    credentials: { async resolve() { return { value: 'test-model-key' } } },
+    effect(factory) { return factory() },
+    logger: { warn() {} },
+    sessionPersistence: { async list() { return [] } },
+    tools: { schemas() { return [] } },
+    webServer: {
+      register(value) {
+        if (value.path === '/api/desktop/yootun/dashboard/yesterday') route = value
+        return () => {}
+      },
+    },
+  }, {
+    fetch: async url => {
+      const target = String(url)
+      if (target.includes('/mcp/geoflow')) {
+        return new Response(JSON.stringify({ jsonrpc: '2.0', result: { isError: true, structuredContent: { status: 'error', reason: 'upstream_down', kpis: {}, top_content: [] } } }), { status: 200 })
+      }
+      if (target.includes('/mcp/georank')) {
+        return new Response(JSON.stringify({ jsonrpc: '2.0', result: { structuredContent: { score: 0 } } }), { status: 200, headers: { 'content-type': 'application/json' } })
+      }
+      if (target.includes('/api/yootun/v1/georank/overview')) return new Response(JSON.stringify({ data: {} }), { status: 200 })
+      if (target.includes('/montage/overview')) return new Response(JSON.stringify({ data: {} }), { status: 200 })
+      return new Response(JSON.stringify({ summary: { requests: 0, totalTokens: 0, cost: 0 }, byModel: [] }), { status: 200 })
+    },
+    now: () => new Date('2026-09-01T01:30:00.000Z'),
+  })
+  const response = await invokeRoute(route, 'POST')
+  assert.equal(response.status, 200)
+  assert.equal(response.body.geo.status, 'error')
+  assert.equal(response.body.geo.reason, 'geoflow_mcp_error')
+})
+
 test('host endpoint keeps series sources isolated when one upstream fails', async () => {
   let route
   applyHost({
