@@ -84,6 +84,9 @@ importers:
       '@deepseek-ai/dsh-api-settings-controller':
         specifier: workspace:*
         version: link:../deepseek-harness/packages/api/settings-controller
+      '@deepseek-ai/dsh-api-workspace-files':
+        specifier: workspace:*
+        version: link:../deepseek-harness/packages/api/workspace-files
       '@deepseek-ai/dsh-api-workspace-controller':
         specifier: workspace:*
         version: link:../deepseek-harness/packages/api/workspace-controller
@@ -126,6 +129,9 @@ importers:
       '@deepseek-ai/dsh-client-modules':
         specifier: workspace:*
         version: link:../deepseek-harness/packages/client/modules
+      '@deepseek-ai/dsh-client-resources':
+        specifier: workspace:*
+        version: link:../deepseek-harness/packages/client/resources
       '@deepseek-ai/dsh-client-store':
         specifier: workspace:*
         version: link:../deepseek-harness/packages/client/store
@@ -183,6 +189,9 @@ importers:
       '@deepseek-ai/dsh-client-ui-model-selection':
         specifier: workspace:*
         version: link:../deepseek-harness/packages/client/ui-model-selection
+      '@deepseek-ai/dsh-client-ui-open-in-app':
+        specifier: workspace:*
+        version: link:../deepseek-harness/packages/client/ui-open-in-app
       '@deepseek-ai/dsh-client-ui-permission-presets':
         specifier: workspace:*
         version: link:../deepseek-harness/packages/client/ui-permission-presets
@@ -219,6 +228,15 @@ importers:
       '@deepseek-ai/dsh-client-ui-sidebar':
         specifier: workspace:*
         version: link:../deepseek-harness/packages/client/ui-sidebar
+      '@deepseek-ai/dsh-client-ui-sidebar-documentpreview':
+        specifier: workspace:*
+        version: link:../deepseek-harness/packages/client/ui-sidebar-documentpreview
+      '@deepseek-ai/dsh-client-ui-sidebar-files':
+        specifier: workspace:*
+        version: link:../deepseek-harness/packages/client/ui-sidebar-files
+      '@deepseek-ai/dsh-client-ui-sidebar-right':
+        specifier: workspace:*
+        version: link:../deepseek-harness/packages/client/ui-sidebar-right
       '@deepseek-ai/dsh-client-ui-skill':
         specifier: workspace:*
         version: link:../deepseek-harness/packages/client/ui-skill
@@ -357,6 +375,9 @@ importers:
       '@deepseek-ai/dsh-host-frontend-static':
         specifier: workspace:*
         version: link:../deepseek-harness/packages/host/frontend-static
+      '@deepseek-ai/dsh-host-open-in-app':
+        specifier: workspace:*
+        version: link:../deepseek-harness/packages/host/open-in-app
       '@deepseek-ai/dsh-host-plugin-inventory':
         specifier: workspace:*
         version: link:../deepseek-harness/packages/host/plugin-inventory
