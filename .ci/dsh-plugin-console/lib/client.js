@@ -931,6 +931,7 @@ window.__ModuleLoader__.load({
 				try { return localStorage.getItem("pc-ai-fallback-v2") !== "off"; } catch { return true; }
 			});
 			const aiAutoDeclinedRef = react.useRef({});
+			const aiConsentBusyRef = react.useRef(false);
 			// 已关闭的失败提示（用户点 × 后不再显示，服务重启后重置）
 			const [dismissedFailures, setDismissedFailures] = react.useState({});
 			// 软件源管理
@@ -1512,10 +1513,12 @@ window.__ModuleLoader__.load({
 			};
 			/** 本地 AI 兜底授权：调用模型 API 产生费用，必须用户明确同意。 */
 			const aiConsent = (jobId, approved) => {
+				if (aiConsentBusyRef.current) return;
+				aiConsentBusyRef.current = true;
 				call("/plugin-console/ai-consent", { jobId, approved }).then(
 					() => { if (!approved) setMessage(t("failed") + "：已取消本地 AI 兜底（不会调用模型 API）"); },
 					(error) => setMessage(t("failed") + "：" + friendlyGithubError(error).message),
-				);
+				).finally(() => { aiConsentBusyRef.current = false; });
 			};
 			/** 软件源管理：打开时拉取当前配置。 */
 			const openSources = () => {
