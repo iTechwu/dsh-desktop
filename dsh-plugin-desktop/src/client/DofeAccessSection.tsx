@@ -171,7 +171,17 @@ function AccessForm({ credentials, settingsApi, settingsScope, t, onboarding, on
   useEffect(() => {
     if (settings.value?.modelId !== undefined) setSelectedModel(settings.value.modelId)
   }, [settings.value?.modelId])
-  useEffect(() => { void credentials.describe([DOFE_ACCESS_KEY]).then(result => { if (result.ok) setConfigured(result.value[DOFE_ACCESS_KEY]?.configured === true); else setError(t('loadError')) }) }, [credentials, t])
+  useEffect(() => {
+    let cancelled = false
+    void credentials.describe([DOFE_ACCESS_KEY]).then(result => {
+      if (cancelled) return
+      if (result.ok) setConfigured(result.value[DOFE_ACCESS_KEY]?.configured === true)
+      else setError(t('loadError'))
+    }).catch(() => {
+      if (!cancelled) setError(t('loadError'))
+    })
+    return () => { cancelled = true }
+  }, [credentials, t])
   useEffect(() => {
     let cancelled = false
     void settingsApi.describe().then(result => {
@@ -339,7 +349,7 @@ export function DofeAccessGate({ credentials, settingsApi, settingsScope, t }: D
   useEffect(() => {
     void credentials.describe([DOFE_ACCESS_KEY]).then(result => {
       setCredentialConfigured(result.ok && result.value[DOFE_ACCESS_KEY]?.configured === true)
-    })
+    }).catch(() => { setCredentialConfigured(false) })
   }, [credentials, settings.value?.setupComplete, settings.value?.validationVersion])
   const authorized = credentialConfigured
     && settings.value?.setupComplete === true

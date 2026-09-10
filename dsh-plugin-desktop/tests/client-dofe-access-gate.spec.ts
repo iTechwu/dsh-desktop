@@ -186,4 +186,11 @@ describe('mandatory DoFe access gate', () => {
     expect(source).toContain('aria-busy={interactionBusy}')
     expect(source).toContain('disabled={interactionBusy}')
   })
+
+  it('surfaces credential read failures instead of leaving the gate silent', async () => {
+    const source = await readFile(resolve(process.cwd(), 'src/client/DofeAccessSection.tsx'), 'utf8')
+
+    expect(source).toContain("if (!cancelled) setError(t('loadError'))")
+    expect(source).toContain("}).catch(() => { setCredentialConfigured(false) })")
+  })
 })
