@@ -939,6 +939,11 @@ window.__ModuleLoader__.load({
 			const [sourceName, setSourceName] = react.useState("");
 			const [sourceUrl, setSourceUrl] = react.useState("");
 			const [sourcesBusy, setSourcesBusy] = react.useState(false);
+			react.useEffect(() => {
+				if (!sourcesOpen) return undefined;
+				const focusFrame = window.requestAnimationFrame(() => modalCardRef.current?.querySelector('button:not([disabled]),input:not([disabled]),textarea:not([disabled]),select:not([disabled]),a[href]')?.focus?.());
+				return () => window.cancelAnimationFrame(focusFrame);
+			}, [sourcesOpen]);
 			// registry 行内编辑
 			const [editReg, setEditReg] = react.useState(null);
 			// 搜索源列表（内置 + 自定义，来自配置）
