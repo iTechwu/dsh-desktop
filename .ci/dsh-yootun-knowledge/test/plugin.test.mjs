@@ -227,6 +227,11 @@ test('normalizes real MCP recall envelopes and graph layout states', async () =>
   assert.equal(client.actionErrorLabel({ code: 'knowledge_mcp_timeout' }, t), 'timeout')
   assert.equal(client.actionErrorLabel({ code: 'knowledge_mcp_request_failed' }, t), 'service')
   assert.equal(client.actionErrorLabel({ code: 'unexpected_backend_detail' }, t), 'generic')
+  for (const status of ['error', 'failed', 'failure', 'unavailable', 'blocked']) {
+    assert.equal(client.mutationFailed({ status }), true)
+  }
+  assert.equal(client.mutationFailed({ ok: false }), true)
+  assert.equal(client.mutationFailed({ status: 'ready' }), false)
   const statusText = key => key
   assert.equal(client.graphStatusLabel('CONFIRMED', statusText), 'confirmed')
   assert.equal(client.graphStatusLabel('projected', statusText), 'ready')

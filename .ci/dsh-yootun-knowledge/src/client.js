@@ -226,12 +226,16 @@ async function mutate(body) {
     body: JSON.stringify(body),
   });
   const value = await response.json().catch(() => ({}));
-  if (!response.ok || value?.ok === false || value?.status === "error") {
+  if (!response.ok || mutationFailed(value)) {
     const error = new Error("knowledge mutation failed");
     error.code = typeof value?.error === "string" ? value.error : `knowledge_mcp_http_${response.status}`;
     throw error;
   }
   return value;
+}
+function mutationFailed(value) {
+  return value?.ok === false || value?.error !== undefined
+    || ['error', 'failed', 'failure', 'unavailable', 'blocked'].includes(String(value?.status || '').toLowerCase());
 }
 const actionErrorLabel = (error, t) => {
   const code = String(error?.code || error?.message || "").toLowerCase();
@@ -1404,6 +1408,7 @@ module.exports = {
   inject: ["slots", "locale"],
   __test: {
     actionErrorLabel,
+    mutationFailed,
     graphLayout,
     graphStatusLabel,
     graphTypeCounts,
