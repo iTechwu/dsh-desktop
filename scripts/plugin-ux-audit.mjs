@@ -53,6 +53,16 @@ function findHardcodedStateColors(source) {
   return [...new Set(stateCss?.match(/#[0-9a-f]{3,8}\b/giu) || [])]
 }
 
+function findOversizedPanelRadii(source) {
+  const rules = source.match(/[^{}]+\{[^{}]*border-radius\s*:\s*(\d+(?:\.\d+)?)px[^{}]*\}/giu) || []
+  return rules.flatMap(rule => {
+    const radius = Number(rule.match(/border-radius\s*:\s*(\d+(?:\.\d+)?)px/iu)?.[1])
+    if (radius <= 8) return []
+    const selector = rule.slice(0, rule.indexOf('{')).trim()
+    return selector.split(',').map(value => value.trim()).filter(value => /\.(?:[a-z0-9-]*(?:panel|metrics|recall|graph-hero|card))\b/iu.test(value))
+  })
+}
+
 function hasCanonicalHeader(source) {
   return /\.[a-z0-9-]*header\{[^}]*min-height:72px/u.test(source)
 }
@@ -136,6 +146,11 @@ for (const name of ciEntries) {
       if (name === 'dsh-yootun-knowledge') {
         for (const color of findHardcodedStateColors(clientArtifact)) {
           failures.push(`${name}/${relativePath}: ${color} hardcodes a knowledge state supplement color`)
+        }
+      }
+      if (name.startsWith('dsh-yootun-')) {
+        for (const selector of findOversizedPanelRadii(clientArtifact)) {
+          failures.push(`${name}/${relativePath}: ${selector} exceeds the 8px content-panel radius contract`)
         }
       }
     } catch (error) {
