@@ -110,7 +110,7 @@ jobs:
         run: pnpm --dir ../deepseek-harness install --no-frozen-lockfile --config.minimumReleaseAge=0
       - if: needs.changes.outputs.product == 'true'
         env:
-          npm_config_frozen_lockfile: 'false'
+          CI: 'false'
           npm_config_minimum_release_age: '0'
         run: pnpm upstream:build
       - if: needs.changes.outputs.product == 'true'
@@ -163,7 +163,7 @@ jobs:
       - run: pnpm --dir ../deepseek-harness install --no-frozen-lockfile --config.minimumReleaseAge=0
       - name: Build upstream Harness
         env:
-          npm_config_frozen_lockfile: 'false'
+          CI: 'false'
           npm_config_minimum_release_age: '0'
         run: pnpm upstream:build
       - run: pnpm --filter dsh-plugin-desktop check:win-package
@@ -234,7 +234,7 @@ jobs:
       - run: pnpm --dir ../deepseek-harness install --no-frozen-lockfile --config.minimumReleaseAge=0
       - name: Build upstream Harness
         env:
-          npm_config_frozen_lockfile: 'false'
+          CI: 'false'
           npm_config_minimum_release_age: '0'
         run: pnpm upstream:build
       - run: pnpm --filter dsh-plugin-desktop check:mac-package
