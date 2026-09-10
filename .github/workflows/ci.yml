@@ -109,6 +109,9 @@ jobs:
       - if: needs.changes.outputs.product == 'true'
         run: pnpm --dir ../deepseek-harness install --no-frozen-lockfile --config.minimumReleaseAge=0
       - if: needs.changes.outputs.product == 'true'
+        env:
+          npm_config_frozen_lockfile: 'false'
+          npm_config_minimum_release_age: '0'
         run: pnpm upstream:build
       - if: needs.changes.outputs.product == 'true'
         run: pnpm check
@@ -158,7 +161,11 @@ jobs:
       # The following upstream install validates the sibling's own lockfile.
       - run: pnpm install --no-frozen-lockfile --config.minimumReleaseAge=0
       - run: pnpm --dir ../deepseek-harness install --no-frozen-lockfile --config.minimumReleaseAge=0
-      - run: pnpm upstream:build
+      - name: Build upstream Harness
+        env:
+          npm_config_frozen_lockfile: 'false'
+          npm_config_minimum_release_age: '0'
+        run: pnpm upstream:build
       - run: pnpm --filter dsh-plugin-desktop check:win-package
       - name: Build Windows installer
         env:
@@ -225,7 +232,11 @@ jobs:
       # The following upstream install validates the sibling's own lockfile.
       - run: pnpm install --no-frozen-lockfile --config.minimumReleaseAge=0
       - run: pnpm --dir ../deepseek-harness install --no-frozen-lockfile --config.minimumReleaseAge=0
-      - run: pnpm upstream:build
+      - name: Build upstream Harness
+        env:
+          npm_config_frozen_lockfile: 'false'
+          npm_config_minimum_release_age: '0'
+        run: pnpm upstream:build
       - run: pnpm --filter dsh-plugin-desktop check:mac-package
       - name: Build macOS smoke artifact
         env:
