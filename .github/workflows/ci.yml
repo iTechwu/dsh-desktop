@@ -12,7 +12,10 @@ permissions:
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  # Direct branch pushes are release/build candidates; let them finish so a
+  # macOS or Windows artifact is not discarded by a later documentation/UI
+  # commit. Pull requests may still cancel superseded validation runs.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   DSH_TELEMETRY_DISABLED: '1'
