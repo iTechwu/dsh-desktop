@@ -111,7 +111,8 @@ async function handleResult(ctx, body, res, signal = AbortSignal.timeout(TOOL_CA
   if (!schema) return send(res, 200, { status: 'unavailable', reason: 'xhs_operation_tool_unavailable' })
   const result = await ctx.tools.execute({ callId: `yootun-xhs-result-${Date.now()}`, name: schema.name, arguments: { taskId }, signal })
   const payload = parseResult(result)
-  const taskStatus = firstString(payload.status) || 'unknown'
+  const taskStatus = firstString(payload.status)
+  if (!taskStatus) return send(res, 200, { status: 'error', reason: 'task_status_missing', taskId })
   const versions = projectVersions(payload.versions)
   // 契约：客户端固定 versionCount=3，succeeded 必须返回三套文案；否则按读取失败处理，避免空白或静默少版本。
   if (taskStatus === 'succeeded' && versions.length !== 3) {

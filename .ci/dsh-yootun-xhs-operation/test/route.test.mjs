@@ -127,6 +127,13 @@ test('result delegates to result_get and projects only display fields', async ()
   assert.deepEqual(result.body.versions[1].tags, [])
 })
 
+test('result rejects an MCP response without a task status', async () => {
+  const { route } = makeCtx(async () => ({ structuredContent: { taskId: 'xhst-result-missing-status', versions: [] } }))
+  const result = await invoke(route, { action: 'result', taskId: 'xhst-result-missing-status' })
+  assert.equal(result.status, 200)
+  assert.deepEqual(result.body, { status: 'error', reason: 'task_status_missing', taskId: 'xhst-result-missing-status' })
+})
+
 test('records task creation and the first terminal observation exactly once', async () => {
   const events = []
   const versions = Array.from({ length: 3 }, (_, index) => ({ version: String(index + 1), title: `不得进入审计 ${index}`, body: '不得进入审计的正文' }))
