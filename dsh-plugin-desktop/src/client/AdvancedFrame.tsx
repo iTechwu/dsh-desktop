@@ -19,7 +19,7 @@ export interface AdvancedFrameInjected {
 
 /** Full enhanced-mode root slot props. */
 export type AdvancedFrameProps = PropsRuntime<'root'>
-  & PropsRenderSlots<'sidebar' | 'conversation' | 'rightbar' | 'details' | 'shell.overlay'>
+  & PropsRenderSlots<'sidebar' | 'main' | 'rightbar' | 'details' | 'shell.overlay'>
   & AdvancedFrameInjected
 
 /** Enhanced-mode owner preserving the original Desktop layout contract. */
@@ -28,7 +28,7 @@ export function AdvancedFrame(props: AdvancedFrameProps) {
 }
 
 /** Shared panel mechanics below the two mode-specific root boundaries. */
-export function DesktopOwnedFrame({ layout, mode, platform, renderSlot, SessionProvider, useSessions }: AdvancedFrameProps & {
+export function DesktopOwnedFrame({ layout, mode, platform, renderSlot, SessionProvider, usePanelInfo, useSessions }: AdvancedFrameProps & {
   readonly mode: 'extended' | 'advanced'
 }) {
   const subscribeLayout = useCallback((listener: () => void) => layout.subscribe(listener), [layout])
@@ -41,6 +41,7 @@ export function DesktopOwnedFrame({ layout, mode, platform, renderSlot, SessionP
     const current = state.current
     return current !== undefined && state.byId[current]?.blank === false ? current : undefined
   })
+  const activePanelId = usePanelInfo(info => info.activePanelId)
 
   useEffect(() => {
     const element = frameRef.current
@@ -147,7 +148,9 @@ export function DesktopOwnedFrame({ layout, mode, platform, renderSlot, SessionP
           {renderSlot('sidebar', { collapsed, width: sidebarOwnerWidth })}
         </div>
       </aside>
-      <main className="dshDesktopConversationSurface">{renderSlot('conversation', {})}</main>
+      <main className="dshDesktopConversationSurface">
+        {renderSlot('main', {}, { entryKey: activePanelId ?? 'conversation' })}
+      </main>
       <aside className="dshDesktopRightbarSurface">
         <SessionProvider>
           {renderSlot('rightbar', {

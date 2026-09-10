@@ -62,6 +62,24 @@ describe('desktop renderer boot health', () => {
     expect(loader.await).toHaveBeenCalledOnce()
   })
 
+  it('rejects a settled loader when required desktop surfaces are missing', async () => {
+    const loader = {
+      await: vi.fn(async () => {}),
+      * entries() {
+        yield { options: { name: 'dsh-plugin-desktop' }, fiber: { state: 2 } }
+      },
+    }
+
+    await expect(rendererBootReport(
+      loader,
+      () => 'required desktop surfaces are unavailable: main:conversation, sidebar.workspaces',
+    )).resolves.toEqual({
+      status: 'failed',
+      plugins: [],
+      error: 'required desktop surfaces are unavailable: main:conversation, sidebar.workspaces',
+    })
+  })
+
   it('posts the terminal boot report to the same-origin desktop Host', async () => {
     const loader = {
       await: vi.fn(async () => {}),
@@ -97,6 +115,24 @@ describe('desktop renderer boot health', () => {
     expect(loader.await).toHaveBeenCalledOnce()
     expect(request).toHaveBeenCalledOnce()
     dispose()
+  })
+
+  it('forwards desktop surface readiness through the deferred reporter', async () => {
+    vi.useFakeTimers()
+    const loader = {
+      await: vi.fn(async () => {}),
+      * entries() {
+        yield { options: { name: 'dsh-plugin-desktop' }, fiber: { state: 2 } }
+      },
+    }
+    const request = vi.fn(async () => new Response(null, { status: 204 }))
+
+    startRendererBootReporter(loader, request, () => 'main conversation is missing')
+    await vi.runAllTimersAsync()
+
+    expect(request).toHaveBeenCalledWith(RENDERER_BOOT_REPORT_PATH, expect.objectContaining({
+      body: JSON.stringify({ status: 'failed', plugins: [], error: 'main conversation is missing' }),
+    }))
   })
 
   it('does not send a late report after the renderer generation is disposed', async () => {

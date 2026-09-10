@@ -141,6 +141,8 @@ describe('advanced desktop layout', () => {
     const props = {
       layout,
       platform: 'darwin',
+      usePanelInfo: (select: (state: { activePanelId: null }) => unknown) =>
+        select({ activePanelId: null }),
       useSessions: (select: (state: { current?: string; byId: Record<string, { blank: boolean }> }) => unknown) =>
         select({ byId: {} }),
       SessionProvider: ({ children }: { children?: ReactNode }) =>
@@ -167,6 +169,36 @@ describe('advanced desktop layout', () => {
       expect(expandedMarkup).toContain('<aside class="dshDesktopDetailsSurface">')
       expect(expandedMarkup).not.toContain('<aside class="dshDesktopDetailsSurface" aria-hidden="true"')
       expect(expandedMarkup).not.toContain('inert=""')
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it.each([
+    ['advanced', AdvancedFrame],
+    ['extended', ExtendedFrame],
+  ] as const)('renders the selected keyed main panel in %s mode', (_mode, Frame) => {
+    vi.stubGlobal('window', { innerWidth: 1440 })
+    const rendered: Array<{ name: string; options?: { entryKey?: string } }> = []
+    const props = {
+      layout: new DesktopLayoutState(),
+      platform: 'darwin',
+      usePanelInfo: (select: (state: { activePanelId: string | null }) => unknown) =>
+        select({ activePanelId: null }),
+      useSessions: (select: (state: { current?: string; byId: Record<string, { blank: boolean }> }) => unknown) =>
+        select({ byId: {} }),
+      SessionProvider: ({ children }: { children?: ReactNode }) => children,
+      renderSlot: (name: string, _owner: unknown, options?: { entryKey?: string }) => {
+        rendered.push({ name, ...(options === undefined ? {} : { options }) })
+        return createElement('span', { 'data-slot': name })
+      },
+    } as unknown as AdvancedFrameProps
+
+    try {
+      const markup = renderToStaticMarkup(createElement(Frame, props))
+      expect(markup).toContain('<main class="dshDesktopConversationSurface"><span data-slot="main"></span></main>')
+      expect(rendered).toContainEqual({ name: 'main', options: { entryKey: 'conversation' } })
+      expect(rendered.some(entry => entry.name === 'conversation')).toBe(false)
     } finally {
       vi.unstubAllGlobals()
     }
@@ -260,6 +292,8 @@ describe('advanced desktop layout', () => {
   it('releases the Cordis layout service with its owning effect', () => {
     let disposed = false
     let uninstall: unknown
+    const layout = new DesktopLayoutState()
+    const navigation = layout.beginNavigation()
     const ctx = {
       reflect: {
         provide: (name: string, value: unknown) => {
@@ -273,11 +307,12 @@ describe('advanced desktop layout', () => {
       effect: (factory: () => unknown) => { uninstall = factory() },
     } as unknown as ClientContext
 
-    expect(claimDesktopLayout(ctx, new DesktopLayoutState())).toBe(true)
+    expect(claimDesktopLayout(ctx, layout)).toBe(true)
     expect(disposed).toBe(false)
     expect(typeof uninstall).toBe('function')
     ;(uninstall as () => void)()
     expect(disposed).toBe(true)
+    expect(navigation.aborted).toBe(true)
   })
 
   it('keeps the enhanced root registration independent from the extended frame', () => {
@@ -316,6 +351,7 @@ describe('advanced desktop layout', () => {
       },
       on: vi.fn(() => () => {}),
       slots: {
+        provideRoot: vi.fn(() => () => {}),
         register: vi.fn((options: Record<string, unknown>, occupant: unknown) => {
           registrations.push(options)
           occupants.push(occupant)
@@ -334,6 +370,19 @@ describe('advanced desktop layout', () => {
       })
       expect(registrations).toHaveLength(1)
       expect(occupants).toEqual([AdvancedFrame])
+      expect(registrations[0]).toMatchObject({
+        name: 'root',
+        children: {
+          sidebar: { kind: 'single', scope: 'root' },
+          main: { kind: 'keyed', scope: 'root' },
+          rightbar: { kind: 'single', scope: 'root' },
+          'shell.overlay': { kind: 'list', scope: 'root' },
+        },
+      })
+      expect((registrations[0]?.children as Record<string, unknown>)).not.toHaveProperty('conversation')
+      expect(ctx.slots.provideRoot).toHaveBeenCalledWith({
+        hooks: { panelInfo: expect.any(DesktopLayoutState) },
+      })
       const rootInject = (registrations[0]?.inject as () => Record<string, unknown>)()
       expect(rootInject).toMatchObject({ platform: 'darwin' })
       expect(rootInject).not.toHaveProperty('mode')
@@ -461,6 +510,22 @@ describe('advanced desktop layout', () => {
       ])
   })
 
+  it('selects registered main panels and cancels superseded navigation', () => {
+    const layout = new DesktopLayoutState(id => id === 'plugin-market')
+    const firstNavigation = layout.beginNavigation()
+    const snapshots: Array<ReturnType<DesktopLayoutState['getSnapshot']>> = []
+    layout.subscribe(() => { snapshots.push(layout.getSnapshot()) })
+
+    layout.selectPanel('plugin-market')
+    expect(firstNavigation.aborted).toBe(true)
+    expect(layout.getSnapshot().activePanelId).toBe('plugin-market')
+    expect(() => { layout.selectPanel('missing-panel') }).toThrow('is not registered')
+    expect(layout.getSnapshot().activePanelId).toBe('plugin-market')
+    layout.selectPanel(null)
+    expect(layout.getSnapshot().activePanelId).toBeNull()
+    expect(snapshots.map(snapshot => snapshot.activePanelId)).toEqual(['plugin-market', null])
+  })
+
   it('publishes the upstream rightbar presentation contract', () => {
     const layout = new DesktopLayoutState()
     layout.openRightbar(false, false)
@@ -584,6 +649,7 @@ describe('independent Desktop frame', () => {
       on: vi.fn(() => () => {}),
       slots: {
         inject: vi.fn((_name: string, mount: () => unknown) => mount()),
+        provideRoot: vi.fn(() => () => {}),
         register: vi.fn((options: Record<string, unknown>, occupant: unknown) => {
           registrations.push(options)
           occupants.push(occupant)
@@ -604,10 +670,15 @@ describe('independent Desktop frame', () => {
         name: 'root',
         children: {
           sidebar: { kind: 'single', scope: 'root' },
-          conversation: { kind: 'single', scope: 'session-maybe' },
+          main: { kind: 'keyed', scope: 'root' },
           details: { kind: 'single', scope: 'session' },
+          rightbar: { kind: 'single', scope: 'root' },
           'shell.overlay': { kind: 'list', scope: 'root' },
         },
+      })
+      expect((registrations[0]?.children as Record<string, unknown>)).not.toHaveProperty('conversation')
+      expect(ctx.slots.provideRoot).toHaveBeenCalledWith({
+        hooks: { panelInfo: expect.any(DesktopLayoutState) },
       })
       expect(registrations[0]?.inject).toBeTypeOf('function')
       const rootInject = (registrations[0]?.inject as () => Record<string, unknown>)()

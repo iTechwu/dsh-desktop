@@ -1,5 +1,7 @@
 /** Advanced-shell panel state shared by the root slot and layout-service adapter. */
 export interface DesktopLayoutSnapshot {
+  /** Selected global panel; null displays the current conversation. */
+  activePanelId: string | null
   /** Preferred sidebar width; zero means the compact rail. */
   sidebar: number
   /** Preferred details width; zero means closed. */
@@ -131,6 +133,7 @@ function clamp(value: number, min: number, max: number): number {
 /** Small observable panel controller used by the advanced root registration. */
 export class DesktopLayoutState {
   private snapshot: DesktopLayoutSnapshot = Object.freeze({
+    activePanelId: null,
     sidebar: SIDEBAR_DEFAULT,
     details: 0,
     rightbar: 0,
@@ -141,6 +144,9 @@ export class DesktopLayoutState {
     narrowExpanded: false,
   })
   private readonly listeners = new Set<() => void>()
+  private navigation = new AbortController()
+
+  constructor(private readonly hasMainPanel: (id: string) => boolean = () => true) {}
 
   /** @returns the immutable current panel snapshot. */
   getSnapshot(): DesktopLayoutSnapshot {
@@ -151,6 +157,28 @@ export class DesktopLayoutState {
   subscribe(listener: () => void): () => void {
     this.listeners.add(listener)
     return () => { this.listeners.delete(listener) }
+  }
+
+  /** Select a registered global panel, or return to the conversation. */
+  selectPanel(panelId: string | null): void {
+    if (panelId !== null && !this.hasMainPanel(panelId)) {
+      throw new Error(`layout.selectPanel: main panel "${panelId}" is not registered`)
+    }
+    this.navigation.abort()
+    if (this.snapshot.activePanelId === panelId) return
+    this.publish({ ...this.snapshot, activePanelId: panelId })
+  }
+
+  /** Start a navigation operation, superseding the previous one. */
+  beginNavigation(): AbortSignal {
+    this.navigation.abort()
+    this.navigation = new AbortController()
+    return this.navigation.signal
+  }
+
+  /** Cancel pending navigation when the layout owner unloads. */
+  dispose(): void {
+    this.navigation.abort()
   }
 
   /** Toggle the wide sidebar and the platform-selected compact rail. */

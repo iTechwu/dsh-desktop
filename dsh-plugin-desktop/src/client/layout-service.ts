@@ -24,7 +24,10 @@ export function claimDesktopLayout(ctx: ClientContext, layout: DesktopLayoutStat
   try {
     ctx.effect(() => {
       const dispose = ctx.reflect.provide('layout', layout)
-      return () => { void dispose() }
+      return () => {
+        layout.dispose()
+        void dispose()
+      }
     }, 'desktop: layout service')
     return true
   } catch (cause) {

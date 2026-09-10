@@ -91,7 +91,19 @@ export function apply(ctx: ClientContext): void {
   )
   const desktopSettings = applyDesktopSettings(ctx, environment)
   ctx.effect(
-    () => startRendererBootReporter(ctx.loader),
+    () => startRendererBootReporter(ctx.loader, globalThis.fetch, () => {
+      const missing = [
+        ctx.slots.entries('main').some(entry => entry.options.key === 'conversation')
+          ? undefined
+          : 'main:conversation',
+        ctx.slots.entries('sidebar.workspaces').length > 0
+          ? undefined
+          : 'sidebar.workspaces',
+      ].filter((name): name is string => name !== undefined)
+      return missing.length === 0
+        ? undefined
+        : `required desktop surfaces are unavailable: ${missing.join(', ')}`
+    }),
     'dsh-plugin-desktop: renderer boot health report',
   )
   if (environment.platform === 'win32') {

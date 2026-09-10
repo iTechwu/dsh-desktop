@@ -15,6 +15,10 @@ export interface DesktopRightbarOwnerProps {
 
 /** Public panel transitions consumed by conversation and sidebar plugins. */
 export interface DesktopLayoutService {
+  /** Select a global main panel, or null for the current conversation. */
+  selectPanel(panelId: string | null): void
+  /** Start a cancellable navigation operation. */
+  beginNavigation(): AbortSignal
   /** Toggle the sidebar between wide and compact presentation. */
   toggleSidebar(): void
   /** Open the current session's details panel. */
@@ -76,12 +80,12 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface SlotMap {
     /** Upstream sidebar occupant hosted by the Desktop-owned frame. */
     'sidebar': { kind: 'single'; scope: 'root'; owner: DesktopSidebarOwnerProps }
-    /** Unchanged upstream conversation surface. */
-    'conversation': { kind: 'single'; scope: 'session-maybe'; owner: Record<never, never> }
+    /** Root-scoped keyed main surface; the conversation uses the reserved conversation key. */
+    'main': { kind: 'keyed'; scope: 'root' }
     /** Unchanged upstream details surface. */
     'details': { kind: 'single'; scope: 'session'; owner: Record<never, never> }
     /** Upstream right sidebar occupant hosted by the Desktop-owned frame. */
-    'rightbar': { kind: 'single'; scope: 'session'; owner: DesktopRightbarOwnerProps }
+    'rightbar': { kind: 'single'; scope: 'root'; owner: DesktopRightbarOwnerProps }
     /** Frame-wide additive overlays. */
     'shell.overlay': { kind: 'list'; scope: 'root' }
   }

@@ -21,7 +21,8 @@ export function applyAdvancedShell(ctx: ClientContext, environment: DesktopClien
     throw new Error(`dsh-plugin-desktop: advanced shell received mode ${JSON.stringify(environment.mode)}`)
   }
 
-  const desktopLayout = new DesktopLayoutState()
+  const desktopLayout = new DesktopLayoutState(id =>
+    ctx.slots.entries('main').some(entry => entry.options.key === id))
   const upstreamOwnsLayout = !claimDesktopLayout(ctx, desktopLayout)
 
   if (upstreamOwnsLayout) {
@@ -61,15 +62,22 @@ export function applyAdvancedShell(ctx: ClientContext, environment: DesktopClien
     }
   }, 'desktop: theme presenter')
 
-  ctx.effect(() => ctx.slots.register({
-    name: 'root',
-    children: {
-      'sidebar': { kind: 'single', scope: 'root' },
-      'conversation': { kind: 'single', scope: 'session-maybe' },
-      'details': { kind: 'single', scope: 'session' },
-      'rightbar': { kind: 'single', scope: 'session' },
-      'shell.overlay': { kind: 'list', scope: 'root' },
-    },
-    inject: () => ({ layout: desktopLayout, platform: environment.platform }),
-  }, AdvancedFrame), 'desktop: advanced root slot')
+  ctx.effect(() => {
+    const disposePanelInfo = ctx.slots.provideRoot({ hooks: { panelInfo: desktopLayout } })
+    const disposeRegistration = ctx.slots.register({
+      name: 'root',
+      children: {
+        'sidebar': { kind: 'single', scope: 'root' },
+        'main': { kind: 'keyed', scope: 'root' },
+        'details': { kind: 'single', scope: 'session' },
+        'rightbar': { kind: 'single', scope: 'root' },
+        'shell.overlay': { kind: 'list', scope: 'root' },
+      },
+      inject: () => ({ layout: desktopLayout, platform: environment.platform }),
+    }, AdvancedFrame)
+    return () => {
+      disposeRegistration()
+      disposePanelInfo()
+    }
+  }, 'desktop: advanced root slot')
 }
