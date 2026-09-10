@@ -106,6 +106,11 @@ function registeredToolNames(source) {
     .map(match => match[1])
 }
 
+function declaredToolNames(source) {
+  const block = source.match(/(?:export\s+)?const\s+TOOL_NAMES\s*=\s*\[([\s\S]*?)\]/u)?.[1] || ''
+  return [...block.matchAll(/['"]([a-z][a-z0-9_-]+)['"]/giu)].map(match => match[1])
+}
+
 const actionLifecyclePlugins = new Set([
   'dsh-yootun-content-command',
   'dsh-yootun-recruiter',
@@ -159,6 +164,7 @@ const localToolSources = await Promise.all([
     `../.ci/${name}/index.js`,
     `../.ci/${name}/tool.js`,
   ]),
+  '../.ci/dsh-yootun-douyin-operation/src/tools-client.js',
 ].map(async path => {
   try {
     return await readFile(new URL(path, import.meta.url), 'utf8')
@@ -167,7 +173,10 @@ const localToolSources = await Promise.all([
     throw error
   }
 }))
-const localToolNames = new Set(localToolSources.flatMap(registeredToolNames))
+const localToolNames = new Set(localToolSources.flatMap(source => [
+  ...registeredToolNames(source),
+  ...declaredToolNames(source),
+]))
 const auditedClientPlugins = new Set(['dsh-plugin-console', ...clientPlugins])
 for (const name of ciEntries) {
   const manifest = JSON.parse(await readFile(new URL(`../.ci/${name}/package.json`, import.meta.url), 'utf8'))
