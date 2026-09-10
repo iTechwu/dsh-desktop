@@ -151,6 +151,24 @@ describe('Yootun sales workspace route', () => {
     expect(calls[0]).toMatchObject({ name: 'mcp__tools-lead-discovery__search', arguments: { query: expect.any(String) } })
   })
 
+  it('projects structured MCP errors as an error intent state', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'yootun-sales-intent-error-'))
+    const result = response()
+    await handleYootunSalesRequest(request('POST', JSON.stringify({
+      action: 'intent_search', query: '查找公开讨论',
+    })), result, 'http://127.0.0.1:43120', {
+      statePath: join(root, 'state.json'),
+      tools: {
+        schemas: () => [{ name: 'mcp__tools-lead-discovery__search', description: 'lead discovery' }],
+        async execute(): Promise<any> {
+          return { value: { structuredContent: { status: 'failed', error: { code: 'provider_failed' }, items: [] } }, content: [] }
+        },
+      },
+    })
+    expect(result.status).toBe(200)
+    expect(result.body().intent).toMatchObject({ status: 'error', items: [] })
+  })
+
   it('records only state-changing sales attempts without exposing business text', async () => {
     const root = await mkdtemp(join(tmpdir(), 'yootun-sales-audit-'))
     const statePath = join(root, 'state.json')

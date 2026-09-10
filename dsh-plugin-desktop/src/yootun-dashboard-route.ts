@@ -195,8 +195,19 @@ function sanitizeGeo(value: unknown): JsonRecord | undefined {
   return Object.keys(selected).length > 0 ? selected : undefined
 }
 
+function mcpResultFailed(value: unknown): boolean {
+  const root = record(value)
+  const envelope = record(root?.value) ?? root
+  const structured = record(envelope?.structuredContent) ?? record(root?.structuredContent) ?? envelope
+  const status = String(structured?.status || '').toLowerCase()
+  return root?.isError === true || root?.ok === false || root?.error !== undefined
+    || envelope?.isError === true || envelope?.ok === false || envelope?.error !== undefined
+    || structured?.isError === true || structured?.ok === false || structured?.error !== undefined
+    || ['error', 'failed', 'failure', 'unavailable', 'blocked'].includes(status)
+}
+
 function parseGeoResult(result: Awaited<ReturnType<ToolRuntime['execute']>>): JsonRecord | undefined {
-  if (result.isError) return undefined
+  if (mcpResultFailed(result)) return undefined
   const value = record(result.value)
   const structured = sanitizeGeo(value?.structuredContent)
   if (structured !== undefined) return structured
@@ -229,7 +240,7 @@ async function geoSource(
     })
     const data = parseGeoResult(result as Awaited<ReturnType<ToolRuntime['execute']>>)
     if (data === undefined || JSON.stringify(data).length > MAX_RESPONSE_BYTES) {
-      return unavailable('error', result.isError ? 'geoflow_query_failed' : 'geoflow_response_invalid')
+      return unavailable('error', mcpResultFailed(result) ? 'geoflow_query_failed' : 'geoflow_response_invalid')
     }
     return available('ready', data)
   } catch {

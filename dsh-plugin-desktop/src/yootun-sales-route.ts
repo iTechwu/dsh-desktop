@@ -484,9 +484,20 @@ function sanitizeIntentResult(value: unknown): JsonRecord {
     }
   }
   return {
-    status: root?.isError === true ? 'error' : 'ready',
+    status: mcpResultFailed(value) ? 'error' : 'ready',
     items: items.slice(0, 50).map(item => sanitizeIntentItem(item)).filter(item => item !== undefined),
   }
+}
+
+function mcpResultFailed(value: unknown): boolean {
+  const root = record(value)
+  const envelope = record(root?.value) ?? root
+  const structured = record(envelope?.structuredContent) ?? record(envelope?.data) ?? envelope
+  const status = String(structured?.status || '').toLowerCase()
+  return root?.isError === true || root?.ok === false || root?.error !== undefined
+    || envelope?.isError === true || envelope?.ok === false || envelope?.error !== undefined
+    || structured?.isError === true || structured?.ok === false || structured?.error !== undefined
+    || ['error', 'failed', 'failure', 'unavailable', 'blocked'].includes(status)
 }
 
 function sanitizeIntentItem(value: unknown): JsonRecord | undefined {
