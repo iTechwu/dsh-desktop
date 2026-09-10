@@ -24,6 +24,7 @@ const desktopSettingsStyles = await readFile(new URL('../dsh-plugin-desktop/src/
 const desktopExtendedStyles = await readFile(new URL('../dsh-plugin-desktop/src/client/extended-styles.ts', import.meta.url), 'utf8')
 const dofeAccessSource = await readFile(new URL('../dsh-plugin-desktop/src/client/DofeAccessSection.tsx', import.meta.url), 'utf8')
 const themeSource = await readFile(new URL('../deepseek-harness/packages/client/ui-theme/src/styles/design-platform.css', import.meta.url), 'utf8')
+const deliverablesStyles = await readFile(new URL('../deepseek-harness/packages/client/ui-deliverables/src/client/Deliverables.module.css', import.meta.url), 'utf8')
 const definedThemeAliases = new Set(themeSource.match(/--dsw-alias-[a-z0-9-]+(?=\s*:)/g) || [])
 
 function findUndefinedThemeAliases(source) {
@@ -150,6 +151,19 @@ if (!pluginConsoleHost.includes('127.0.0.1') || !pluginConsoleHost.includes('[::
 }
 if (!openCliSource.includes("redirect: 'error'") || !openCliSource.includes("cache: 'no-store'")) {
   failures.push('dsh-opencli: Exa MCP requests must reject redirects and disable caching')
+}
+if (!deliverablesStyles.includes('--deliverable-fill: var(--dsw-alias-bg-layer-2)')
+  || !deliverablesStyles.includes('--deliverable-hover: var(--dsw-alias-interactive-bg-hover)')) {
+  failures.push('ui-deliverables: delivery surfaces do not use adaptive theme fills')
+}
+if (deliverablesStyles.includes('dsw-static-neutral-')) {
+  failures.push('ui-deliverables: delivery surfaces still use static neutral theme tokens')
+}
+for (const selector of ['.file', '.fileIcon', '.split']) {
+  const selectorRule = deliverablesStyles.match(new RegExp(`\\${selector} \\{[^}]*\\}`, 'u'))?.[0] || ''
+  if (!selectorRule.includes('border-radius: 8px')) {
+    failures.push(`ui-deliverables: ${selector} does not follow the 8px surface radius contract`)
+  }
 }
 if (!dofeAccessSource.includes('const loadingRef = useRef(false)') || !dofeAccessSource.includes('const busyRef = useRef(false)')) {
   failures.push('dsh-plugin-desktop: native access form has no synchronous request locks')
