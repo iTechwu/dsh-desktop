@@ -275,7 +275,7 @@ function parseResult(result) {
 function resolvedToolFailure(result, payload) {
   return result?.isError === true || result?.ok === false
     || payload?.isError === true || payload?.ok === false
-    || ['error', 'failed', 'failure', 'unavailable'].includes(String(payload?.status || '').toLowerCase())
+    || ['error', 'failed', 'failure', 'unavailable', 'blocked'].includes(String(payload?.status || '').toLowerCase())
 }
 
 function safeToolErrorReason(error) {

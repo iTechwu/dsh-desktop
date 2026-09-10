@@ -144,7 +144,7 @@ function parseResult(result) {
   } else {
     payload = result
   }
-  if (result?.isError === true || result?.ok === false || payload?.isError === true || payload?.ok === false || ['error', 'failed', 'failure', 'unavailable'].includes(String(payload?.status || '').toLowerCase()) || payload?.error) {
+  if (result?.isError === true || result?.ok === false || payload?.isError === true || payload?.ok === false || ['error', 'failed', 'failure', 'unavailable', 'blocked'].includes(String(payload?.status || '').toLowerCase()) || payload?.error) {
     throw new Error('recruiter_tool_failed')
   }
   return payload && typeof payload === 'object' ? payload : {}

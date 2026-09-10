@@ -431,7 +431,8 @@ async function callMcp(fetchImpl, apiKey, tool, input, signal) {
     const payload = await response.text()
     const message = parseMcpMessage(payload)
     if (message?.error) return { ok: false, error: message.error.message || 'knowledge_mcp_error' }
-    if (message?.result?.isError === true) return { ok: false, error: 'knowledge_mcp_tool_failed' }
+    const structured = message?.result?.structuredContent
+    if (message?.result?.isError === true || structured?.isError === true || structured?.ok === false || ['error', 'failed', 'failure', 'unavailable', 'blocked'].includes(String(structured?.status || '').toLowerCase())) return { ok: false, error: 'knowledge_mcp_tool_failed' }
     return { ok: true, result: message?.result || null }
   } catch (error) {
     return { ok: false, error: error?.name === 'AbortError' ? 'knowledge_mcp_timeout' : 'knowledge_mcp_request_failed' }
