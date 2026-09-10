@@ -941,7 +941,7 @@ window.__ModuleLoader__.load({
 			const [sourcesBusy, setSourcesBusy] = react.useState(false);
 			react.useEffect(() => {
 				if (!sourcesOpen) return undefined;
-				const focusFrame = window.requestAnimationFrame(() => modalCardRef.current?.querySelector('button:not([disabled]),input:not([disabled]),textarea:not([disabled]),select:not([disabled]),a[href]')?.focus?.());
+				const focusFrame = window.requestAnimationFrame(() => (modalCardRef.current?.querySelector('button[aria-label]:not([disabled])') || modalCardRef.current?.querySelector('button:not([disabled]),input:not([disabled]),textarea:not([disabled]),select:not([disabled]),a[href]'))?.focus?.());
 				return () => window.cancelAnimationFrame(focusFrame);
 			}, [sourcesOpen]);
 			// registry 行内编辑
