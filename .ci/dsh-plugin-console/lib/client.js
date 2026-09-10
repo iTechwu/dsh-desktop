@@ -2548,7 +2548,7 @@ onClick: () => window.open(`https://github.com/Noob-stupid/dsh-plugin-hub/releas
 						el("div", { className: styles.modalCard, role: "dialog", "aria-modal": true, "aria-labelledby": "pc-sources-title", "aria-describedby": "pc-sources-description", ref: modalCardRef, tabIndex: -1 },
 							el("div", { className: styles.rowTop, style: { justifyContent: "space-between" } },
 								el("strong", { className: styles.name, id: "pc-sources-title" }, t("sourcesTitle")),
-								el("button", { type: "button", className: styles.trashBtn, style: { fontSize: 14, padding: "4px 8px" }, title: t("closeModal"), "aria-label": t("closeModal"), onClick: () => setSourcesOpen(false) }, "✕")),
+								el("button", { type: "button", className: styles.trashBtn, style: { fontSize: 14, padding: "4px 8px" }, title: t("closeModal"), "aria-label": t("closeModal"), onClick: () => setSourcesOpen(false) }, t("closeModal"))),
 							el("p", { className: styles.message, id: "pc-sources-description" }, t("sourcesDesc")),
 							sourcesData === null
 								? el("p", { className: styles.status }, t("loading"))
