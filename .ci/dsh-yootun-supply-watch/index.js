@@ -105,6 +105,7 @@ function findTool(ctx, name) { return (ctx.tools.schemas?.() || []).find(item =>
 function safeError(error) { return error instanceof Error ? error.message.slice(0, 200) : 'unknown error' }
 function parseResult(result) {
   if (!result) return {}
+  if (result && typeof result === 'object' && !Array.isArray(result) && result.structuredContent && typeof result.structuredContent === 'object') return result.structuredContent
   if (result && typeof result === 'object' && !Array.isArray(result) && Array.isArray(result.content)) {
     const text = result.content.filter(item => item?.type === 'text').map(item => String(item.text || '')).join('')
     if (!text) return {}
@@ -114,7 +115,7 @@ function parseResult(result) {
 }
 function toolResultFailed(raw, payload) {
   return raw?.isError === true || raw?.ok === false || payload?.isError === true || payload?.ok === false
-    || ['error', 'failed'].includes(String(payload?.status || '').toLowerCase())
+    || ['error', 'failed', 'failure', 'unavailable', 'blocked'].includes(String(payload?.status || '').toLowerCase())
 }
 async function readBody(req) {
   if (typeof req.body === 'object' && req.body) return req.body

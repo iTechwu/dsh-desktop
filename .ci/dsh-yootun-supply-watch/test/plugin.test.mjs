@@ -51,3 +51,9 @@ test('uses only icons exported by DSH alpha3 primitives', async () => {
     assert.match(exported, new RegExp(`export const ${name}\\b`, 'u'))
   }
 })
+
+test('reads structured MCP output and preserves resolved failure states', async () => {
+  const host = await readFile(new URL('index.js', root), 'utf8')
+  assert.match(host, /result\.structuredContent && typeof result\.structuredContent === 'object'/u)
+  assert.match(host, /'failure', 'unavailable', 'blocked'/u)
+})

@@ -72,3 +72,8 @@ test('sends Exa MCP requests without following redirects or caching responses', 
     globalThis.fetch = originalFetch
   }
 })
+
+test('rejects resolved Exa MCP tool failures', () => {
+  assert.throws(() => exaText('data: {"jsonrpc":"2.0","result":{"isError":true,"content":[]}}\n'), /tool failure/u)
+  assert.throws(() => exaText('data: {"jsonrpc":"2.0","result":{"structuredContent":{"status":"unavailable"}}}\n'), /tool failure/u)
+})

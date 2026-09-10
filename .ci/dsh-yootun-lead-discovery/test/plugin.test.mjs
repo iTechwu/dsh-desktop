@@ -161,6 +161,21 @@ test('分页工具已解析失败时不得返回 ready 空列表', async () => {
   assert.equal(result.body.items, undefined)
 })
 
+test('数据库工具已解析失败时不得回退成空成功', async () => {
+  let route
+  apply({
+    tools: {
+      schemas: () => [{ name: 'lead_discovery_database_search' }],
+      execute: async () => ({ structuredContent: { status: 'unavailable', reason: 'RESULT_STORE_UNAVAILABLE', candidates: [] } }),
+    },
+    webServer: { register(value) { route = value; return () => {} } },
+    effect(factory) { return factory() },
+  })
+  const result = await invoke(route, { action: 'discover', keyword: 'SUV' })
+  assert.equal(result.body.status, 'error')
+  assert.equal(result.body.reason, 'result_store_unavailable')
+})
+
 test('host preserves a safe MCP error category for diagnosis', async () => {
   let route
   apply({

@@ -69,6 +69,8 @@ async function discover(ctx, body, signal = AbortSignal.timeout(TOOL_CALL_TIMEOU
   if (databaseSchema) {
     const storedResult = await ctx.tools.execute({ callId: `yootun-lead-db-${Date.now()}`, name: databaseSchema.name, arguments: { query: keyword, platform, limit: 20 }, signal })
     const storedPayload = parseResult(storedResult)
+    const storedFailure = resolvedToolFailure(storedResult, storedPayload)
+    if (storedFailure) return { status: 'error', reason: storedFailure, keyword, platform }
     const storedItems = projectItems(storedPayload.candidates)
     if (storedItems.length > 0) {
       return {
@@ -160,7 +162,7 @@ function parseResult(result) {
 function resolvedToolFailure(result, payload) {
   const failed = result?.isError === true || result?.ok === false
     || (Number.isInteger(result?.exitCode) && result.exitCode !== 0)
-    || payload?.ok === false || ['error', 'failed'].includes(String(payload?.status || '').toLowerCase())
+    || payload?.ok === false || ['error', 'failed', 'failure', 'unavailable', 'blocked'].includes(String(payload?.status || '').toLowerCase())
   if (!failed) return null
   const raw = firstString(payload?.error?.code, payload?.errorCode, payload?.reason, result?.error?.code)
   return raw && /^[A-Za-z0-9_:-]{1,80}$/u.test(raw) ? raw.toLowerCase() : 'lead_discovery_tool_failed'

@@ -93,6 +93,7 @@ function toolResultFailed(raw, projected) {
     || (Number.isInteger(raw?.exitCode) && raw.exitCode !== 0)
     || projected?.isError === true || projected?.ok === false
     || (Number.isInteger(projected?.exitCode) && projected.exitCode !== 0)
+    || ['error', 'failed', 'failure', 'unavailable', 'blocked'].includes(String(projected?.status || '').toLowerCase())
 }
 async function recordRefreshAudit(ctx, input, result) {
   if (!ctx.yootunAudit?.record) return

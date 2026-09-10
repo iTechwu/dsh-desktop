@@ -68,7 +68,12 @@ export function exaText(payload) {
     let parsed
     try { parsed = JSON.parse(value) } catch { invalidEvent = true; continue }
     if (parsed.error) throw new Error(parsed.error.message || 'Exa MCP returned an error')
-    const content = parsed.result?.content
+    const result = parsed.result
+    const structured = result?.structuredContent
+    if (result?.isError === true || structured?.isError === true || structured?.ok === false || ['error', 'failed', 'failure', 'unavailable', 'blocked'].includes(String(structured?.status || '').toLowerCase())) {
+      throw new Error('Exa MCP returned a tool failure')
+    }
+    const content = result?.content
     if (Array.isArray(content)) return content.filter(item => item?.type === 'text').map(item => item.text).join('\n')
   }
   throw new Error(invalidEvent ? 'Exa MCP returned invalid events' : 'Exa MCP returned no result')

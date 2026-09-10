@@ -216,6 +216,7 @@ function findTool(ctx, name) { return (ctx.tools.schemas?.() || []).find(item =>
 async function execute(ctx, name, arguments_, signal) { return ctx.tools.execute({ callId: `yootun-content-${Date.now()}-${Math.random().toString(16).slice(2)}`, name, arguments: arguments_, signal }) }
 function parseResult(result) {
   if (!result) return {}
+  if (result && typeof result === 'object' && !Array.isArray(result) && result.structuredContent && typeof result.structuredContent === 'object') return result.structuredContent
   if (result && typeof result === 'object' && !Array.isArray(result) && Array.isArray(result.content)) {
     const text = result.content.filter(item => item?.type === 'text').map(item => String(item.text || '')).join('')
     if (!text) return {}
@@ -225,7 +226,7 @@ function parseResult(result) {
 }
 function toolResultFailed(raw, parsed) {
   return raw?.isError === true || raw?.ok === false || parsed?.isError === true || parsed?.ok === false
-    || ['error', 'failed'].includes(String(parsed?.status || '').toLowerCase())
+    || ['error', 'failed', 'failure', 'unavailable', 'blocked'].includes(String(parsed?.status || '').toLowerCase())
 }
 function sourceState(status, reason, data) { return { status, ...(reason ? { reason } : {}), ...(data ? { data } : {}) } }
 function asRecord(value) { return value && typeof value === 'object' && !Array.isArray(value) ? value : {} }

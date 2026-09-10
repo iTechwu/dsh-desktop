@@ -133,6 +133,7 @@ function findTool(ctx, name) { return (ctx.tools.schemas?.() || []).find(item =>
 function stableKey(scope, keyword, platform) { return createHash('sha256').update(`${scope}:${keyword}:${platform}`).digest('hex').slice(0, 40) }
 function parseResult(result) {
   if (!result) return {}
+  if (result && typeof result === 'object' && !Array.isArray(result) && result.structuredContent && typeof result.structuredContent === 'object') return result.structuredContent
   if (result && typeof result === 'object' && !Array.isArray(result) && Array.isArray(result.content)) {
     const text = result.content.filter(item => item?.type === 'text').map(item => String(item.text || '')).join('')
     if (!text) return {}
@@ -142,7 +143,7 @@ function parseResult(result) {
 }
 function toolResultFailed(raw, payload) {
   return raw?.isError === true || raw?.ok === false || payload?.isError === true || payload?.ok === false
-    || ['error', 'failed'].includes(String(payload?.status || '').toLowerCase())
+    || ['error', 'failed', 'failure', 'unavailable', 'blocked'].includes(String(payload?.status || '').toLowerCase())
 }
 function firstString(...values) { for (const value of values) if (typeof value === 'string' && value) return value; return null }
 function numberOrNull(value) { return typeof value === 'number' && Number.isFinite(value) ? value : null }

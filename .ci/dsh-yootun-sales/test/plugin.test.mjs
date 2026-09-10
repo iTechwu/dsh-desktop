@@ -86,6 +86,12 @@ test('uses only icons exported by the DSH primitives package', async () => {
   }
 })
 
+test('reads structured MCP output and preserves resolved failure states', async () => {
+  const host = await readFile(new URL('index.js', root), 'utf8')
+  assert.match(host, /result\.structuredContent && typeof result\.structuredContent === 'object'/u)
+  assert.match(host, /'failure', 'unavailable', 'blocked'/u)
+})
+
 test('applies the browser plugin without runtime reference errors', async () => {
   const source = await readFile(new URL('src/client.js', root), 'utf8')
   const module = { exports: {} }
