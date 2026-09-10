@@ -350,7 +350,9 @@ function normalizeMontage(data) {
       total: numberOrNull(jobs.total ?? jobs.total_count ?? data.total_jobs),
       queued: statusOf('queued'),
       running: statusOf('running'),
-      completed: statusOf('completed'),
+      // OpenMontage 的概览接口与趋势接口分别使用 completed / succeeded；
+      // 在桌面端统一投影为 completed，避免标准响应落成“—”。
+      completed: statusOf('completed') ?? statusOf('succeeded'),
       failed: statusOf('failed'),
     },
     pendingApprovals: numberOrNull(data.pendingApprovals ?? data.pending_approvals ?? approvals.pending ?? data.awaitingApproval ?? data.awaiting_approval),

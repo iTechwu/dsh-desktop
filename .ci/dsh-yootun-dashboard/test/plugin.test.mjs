@@ -281,6 +281,42 @@ test('host endpoint reads the montage overview through the public API contract e
   assert.ok(!JSON.stringify(response.body).includes('test-model-key'))
 })
 
+test('host endpoint aliases montage succeeded counts to the completed overview metric', async () => {
+  let route
+  applyHost({
+    credentials: { async resolve() { return { value: 'test-model-key', source: 'memory' } } },
+    effect(factory) { return factory() },
+    logger: { warn() {} },
+    sessionPersistence: { async list() { return [] } },
+    webServer: {
+      register(value) {
+        if (value.path === '/api/desktop/yootun/dashboard/yesterday') route = value
+        return () => {}
+      },
+    },
+  }, {
+    fetch: async url => {
+      if (String(url).includes('/api/yootun/v1/montage/overview')) {
+        return new Response(JSON.stringify({
+          data: {
+            jobs: { total: 7, queued: 1, running: 2, succeeded: 3, failed: 1 },
+            pendingApprovals: 0,
+            artifacts: { total: 3 },
+            health: { service: 'ready', workers: [] },
+          },
+          meta: { generatedAt: '2026-09-01T00:00:00.000Z' },
+        }), { status: 200, headers: { 'content-type': 'application/json' } })
+      }
+      return new Response(JSON.stringify({ currency: 'CNY', summary: { requests: 0, totalTokens: 0, cost: 0 }, byModel: [] }), { status: 200 })
+    },
+    now: () => new Date('2026-09-01T01:30:00.000Z'),
+  })
+
+  const response = await invokeRoute(route, 'POST')
+  assert.equal(response.status, 200)
+  assert.deepEqual(response.body.montage.data.jobs, { total: 7, queued: 1, running: 2, completed: 3, failed: 1 })
+})
+
 test('host endpoint isolates an MCP failure without losing other dashboard sources', async () => {
   let route
   applyHost({
