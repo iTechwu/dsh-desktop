@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { describe, expect, it, vi } from 'vitest'
+import dshManifest from '@deepseek-ai/dsh/package.json'
 import {
   clearElectronRunAsNode,
   desktopCliProfileManifestUrl,
@@ -56,7 +57,7 @@ describe('packaged dsh bootstrap', () => {
 
     try {
       await runDesktopDshCli({}, load, argv)
-      expect(output).toHaveBeenCalledWith('0.1.5-alpha.1\n')
+      expect(output).toHaveBeenCalledWith(`${dshManifest.version}\n`)
       expect(load).not.toHaveBeenCalled()
     } finally {
       output.mockRestore()
