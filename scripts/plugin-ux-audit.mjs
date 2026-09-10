@@ -100,6 +100,8 @@ if (!desktopStyles.includes('prefers-reduced-motion: reduce') || !desktopStyles.
   failures.push('dsh-plugin-desktop: reduced-motion coverage for plugin overlays is missing')
 }
 const desktopClientStyles = `${desktopStyles}\n${desktopSettingsStyles}\n${dofeAccessSource}`
+const pluginConsoleClient = await readFile(new URL('../.ci/dsh-plugin-console/lib/client.js', import.meta.url), 'utf8')
+const pluginConsoleHost = await readFile(new URL('../.ci/dsh-plugin-console/lib/index.js', import.meta.url), 'utf8')
 for (const alias of findUndefinedThemeAliases(desktopClientStyles)) {
   failures.push(`dsh-plugin-desktop: client styles use undefined theme alias ${alias}`)
 }
@@ -108,6 +110,25 @@ for (const selector of findFixedWhiteOnAdaptiveFill(desktopClientStyles)) {
 }
 for (const selector of findNonAdaptiveForegroundOnAdaptiveFill(desktopClientStyles)) {
   failures.push(`dsh-plugin-desktop: ${selector} uses a non-adaptive foreground on an adaptive theme fill`)
+}
+if (!pluginConsoleClient.includes('const cssOverrides =')) failures.push('dsh-plugin-console: shared visual overrides are missing')
+if (!pluginConsoleClient.includes('.pc_row,.pc_item,.pc_detail,.pc_floatPanel,.pc_modalCard{border-radius:8px}')) {
+  failures.push('dsh-plugin-console: content panels do not use the 8px radius contract')
+}
+if (!pluginConsoleClient.includes('background:color-mix(in srgb,var(--dsw-alias-bg-base) 62%,transparent)')) {
+  failures.push('dsh-plugin-console: modal backdrop does not use the adaptive theme background')
+}
+if (!pluginConsoleClient.includes('@media(max-width:640px){.pc_list{grid-template-columns:1fr}')) {
+  failures.push('dsh-plugin-console: mobile market list does not collapse to one column')
+}
+if (!pluginConsoleHost.includes("const ROUTE_PREFIX = '/plugin-console'")) {
+  failures.push('dsh-plugin-console: host route prefix is missing')
+}
+if (!pluginConsoleHost.includes('isAllowedWriteOrigin')) {
+  failures.push('dsh-plugin-console: write route origin guard is missing')
+}
+if (!pluginConsoleHost.includes('127.0.0.1') || !pluginConsoleHost.includes('[::1]')) {
+  failures.push('dsh-plugin-console: loopback host allowlist is incomplete')
 }
 if (!dofeAccessSource.includes('const loadingRef = useRef(false)') || !dofeAccessSource.includes('const busyRef = useRef(false)')) {
   failures.push('dsh-plugin-desktop: native access form has no synchronous request locks')
