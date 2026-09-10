@@ -391,8 +391,8 @@ try {
   await page.screenshot({ path: resolve(evidenceRoot, '390-sales-status.png'), fullPage: true })
   salesUnavailable = true
   await page.getByRole('button', { name: '刷新' }).click()
-  await page.getByRole('alert').getByText('销售工作区暂时无法加载', { exact: true }).waitFor()
-  assert.equal(await page.locator('.ys-metrics').count(), 0)
+  await page.getByRole('alert').getByText('刷新失败，当前仍显示上次数据', { exact: true }).waitFor()
+  assert.equal(await page.locator('.ys-metrics').count(), 1)
   await page.mouse.move(195, 420)
   await settleStrictMode()
   await assertViewport()
@@ -417,8 +417,8 @@ try {
   await page.screenshot({ path: resolve(evidenceRoot, '390-content-workflow.png'), fullPage: true })
   contentUnavailable = true
   await page.getByRole('button', { name: '刷新数据' }).click()
-  await page.getByRole('alert').getByText('GEO 运营数据暂时无法加载', { exact: true }).waitFor()
-  assert.equal(await page.locator('.ycc-overview,.ycc-review-workspace').count(), 0)
+  await page.getByRole('alert').getByText('刷新失败，当前仍显示上次数据', { exact: true }).waitFor()
+  assert.equal(await page.locator('.ycc-overview,.ycc-review-workspace').count(), 1)
   await page.mouse.move(195, 420)
   await settleStrictMode()
   await assertViewport()

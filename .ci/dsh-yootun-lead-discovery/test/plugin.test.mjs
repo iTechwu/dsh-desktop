@@ -17,6 +17,8 @@ test('lead discovery package exposes a DSH client and guarded host route', async
   assert.match(client, /setLoadMoreError\(true\)/)
   assert.match(client, /refreshError: '刷新失败，当前仍显示上次数据'/)
   assert.match(client, /const hasPreviousCandidates = candidates\?\.status === 'ready'/)
+  assert.match(client, /response\?\.status && response\.status !== 'ready'/)
+  assert.match(client, /String\(candidates\?\.reason \|\| ''\)\.toUpperCase\(\)/)
   assert.match(client, /candidateError/)
   assert.match(client, /className: 'yl-inline-error', role: 'alert'/u)
   assert.match(client, /response\.status !== 'ready'/)
@@ -156,6 +158,21 @@ test('host preserves a safe MCP error category for diagnosis', async () => {
   const result = await invoke(route, { action: 'candidates' })
   assert.equal(result.status, 200)
   assert.deepEqual(result.body, { status: 'error', reason: 'RESULT_STORE_UNAVAILABLE' })
+})
+
+test('host maps resolved candidate tool errors without presenting an empty ready list', async () => {
+  let route
+  apply({
+    tools: {
+      schemas: () => [{ name: 'lead_discovery_candidates_list' }],
+      execute: async () => ({ isError: true, content: [{ type: 'text', text: JSON.stringify({ error: { code: 'RESULT_STORE_UNAVAILABLE' } }) }] }),
+    },
+    webServer: { register(value) { route = value; return () => {} } },
+    effect(factory) { return factory() },
+  })
+  const result = await invoke(route, { action: 'candidates' })
+  assert.equal(result.status, 200)
+  assert.deepEqual(result.body, { status: 'error', reason: 'result_store_unavailable' })
 })
 
 test('host drops non-web source URLs before returning lead cards', async () => {

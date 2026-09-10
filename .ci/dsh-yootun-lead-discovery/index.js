@@ -136,6 +136,8 @@ async function candidates(ctx, body, signal = AbortSignal.timeout(TOOL_CALL_TIME
   if (levels) args.levels = levels
   const result = await ctx.tools.execute({ callId: `yootun-lead-candidates-${Date.now()}`, name: schema.name, arguments: args, signal })
   const payload = parseResult(result)
+  const failure = resolvedToolFailure(result, payload)
+  if (failure) return { status: 'error', reason: failure }
   const items = projectItems(payload.candidates)
   return { status: 'ready', count: typeof payload.count === 'number' ? payload.count : null, items, stats: summarizeItems(items, payload?.count) }
 }
