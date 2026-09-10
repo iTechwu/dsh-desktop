@@ -5,6 +5,7 @@
 | 能力入口 | 托管路径/工具族 | Desktop 消费方 | 主要 UI 状态 | 认证与失败边界 |
 | --- | --- | --- | --- | --- |
 | Desktop 访问与模型配置 | `/api/desktop/dofe/models`、`/api/desktop/dofe/validate` | yootun-ui 门禁与设置页 | missing、loading、configured、error、conflict | 仅由托管 `MODELS_API_KEY` 凭证链路读写；模型列表失败不提交设置，冲突响应可重试 |
+| 插件管理与市场 | `/plugin-console/state`、`search`、`repo`、`install`、`install-status`、`toggle`、`uninstall`、`sources`、`framework-upgrade`、`restart` | Plugin Console 设置页 | loading、ready、empty、installing、consent、failed、done | 仅接受 loopback 且校验 Host；所有写请求还校验同源 `Origin`/`Sec-Fetch-Site`，安装与 AI 兜底均需保留进度、授权和失败恢复状态 |
 | GEO 内容与分析 | `geoflow` / `geoflow_*` | content-command、dashboard、website publisher | ready、partial、empty、unavailable、error | 每次请求由 managed credential 注入；缺工具为 unavailable，单来源失败不拖垮其他来源 |
 | GEO 排名与诊断 | `georank` / `georank_*` | content-command、dashboard | ready、partial、unavailable、error | 与 geoflow 隔离；不以零值代替缺失指标 |
 | 互联网只读调研 | `agent_reach`；Exa `web_search_exa`/`web_fetch_exa` 与 OpenCLI 公开路由 | content-command、sales、retrofit、Agent | ready、partial、unavailable、error | 只允许白名单站点的只读命令；Exa 必须使用托管 `MODELS_API_KEY`，平台登录或命令受限时披露覆盖缺口，不执行发帖、评论或点赞 |
