@@ -231,7 +231,7 @@ export async function authorizeUpload(tools, meta, signal) {
         contentType: meta.contentType,
         size: meta.size,
       },
-      signal: signal ?? AbortSignal.timeout(AUTHORIZE_TIMEOUT_MS),
+      signal: AbortSignal.any([signal, AbortSignal.timeout(AUTHORIZE_TIMEOUT_MS)].filter(Boolean)),
     })
   } catch (cause) {
     // transport / 注册表层错误：授权网关不可达，按存储不可用处理。
