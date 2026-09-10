@@ -24,7 +24,7 @@ window.__ModuleLoader__.load({
         productionHealth: '任务运行状况', currentStatus: '当前状态', lastSevenDaysPerformance: '近 7 天执行表现', activeTasks: '已启用任务', runningJobs: '运行中任务', pendingJobs: '排队中任务', failedJobs: '失败任务', successRate: '任务成功率', avgTime: '平均生成耗时', seconds: '秒',
         monthlyGoal: '本月目标', goalPublished: '文章发布', goalViews: '内容浏览', noGoal: '本月未设置目标', pace: '时间进度', attainment: '目标进度', distributionHealth: '分发状态', synced: '已同步', pendingDistribution: '待发送', failedDistribution: '失败',
         articles: '内容任务', pendingReview: '待审核', reviewed: '已通过', publishReady: '待发布', all: '全部', search: '搜索标题或摘要', empty: '暂无生成内容', emptyDetail: 'GeoFlow 生成新文章后会进入这里',
-        approve: '审核通过', reject: '退回修改', publish: '同步发送', platforms: '发布渠道', bind: '绑定 / 登录', system: '系统直发', login: '需要登录', pending: '等待执行', succeeded: '已发布', failed: '执行失败', rejected: '已退回', approved: '已通过', reviewPending: '待审核',
+        approve: '审核通过', reject: '退回修改', publish: '同步发送', platforms: '发布渠道', bind: '绑定 / 登录', system: '系统直发', login: '需要登录', unknown: '未知状态', pending: '等待执行', succeeded: '已发布', failed: '执行失败', rejected: '已退回', approved: '已通过', reviewPending: '待审核',
         contentMissing: '正文尚未返回，可刷新重试', websiteHint: '生成 Markdown 并同步到官网', externalHint: '通过 AgentRuntime 打开平台工作台', selectArticle: '选择一篇文章查看', source: 'GeoFlow', generatedAt: '生成时间',
         aiAudit: 'AI 风格审查', aiRisk: 'AI 风格风险', auditDone: '已完成润色', auditPending: '等待审查', auditFailed: '审查失败', lowRisk: '低风险', mediumRisk: '中风险', highRisk: '高风险', workflow: '内容状态', workflowDraft: '草稿', workflowPublished: '已发布', articleMeta: '内容信息', task: '任务', category: '分类', author: '作者', loading: '正在汇总 GEO 运营数据',
       },
@@ -36,7 +36,7 @@ window.__ModuleLoader__.load({
         productionHealth: 'Task runtime', currentStatus: 'Current status', lastSevenDaysPerformance: 'Last 7 days', activeTasks: 'Enabled tasks', runningJobs: 'Running tasks', pendingJobs: 'Queued tasks', failedJobs: 'Failed tasks', successRate: 'Task success rate', avgTime: 'Average generation time', seconds: 'sec',
         monthlyGoal: 'Monthly goal', goalPublished: 'Published articles', goalViews: 'Views', noGoal: 'No monthly goal', pace: 'Time elapsed', attainment: 'Goal progress', distributionHealth: 'Distribution status', synced: 'Synced', pendingDistribution: 'Pending', failedDistribution: 'Failed',
         articles: 'Content tasks', pendingReview: 'Pending review', reviewed: 'Approved', publishReady: 'Ready to publish', all: 'All', search: 'Search title or summary', empty: 'No generated content', emptyDetail: 'New GeoFlow articles will appear here',
-        approve: 'Approve', reject: 'Return', publish: 'Publish selected', platforms: 'Channels', bind: 'Connect / sign in', system: 'System publish', login: 'Login required', pending: 'Pending', succeeded: 'Published', failed: 'Failed', rejected: 'Rejected', approved: 'Approved', reviewPending: 'Pending review',
+        approve: 'Approve', reject: 'Return', publish: 'Publish selected', platforms: 'Channels', bind: 'Connect / sign in', system: 'System publish', login: 'Login required', unknown: 'Unknown status', pending: 'Pending', succeeded: 'Published', failed: 'Failed', rejected: 'Rejected', approved: 'Approved', reviewPending: 'Pending review',
         contentMissing: 'Content is not available yet. Refresh to retry.', websiteHint: 'Generate Markdown and sync to the website', externalHint: 'Open the platform workspace with AgentRuntime', selectArticle: 'Select an article', source: 'GeoFlow', generatedAt: 'Generated',
         aiAudit: 'AI style audit', aiRisk: 'AI style risk', auditDone: 'Polished', auditPending: 'Pending audit', auditFailed: 'Audit failed', lowRisk: 'Low risk', mediumRisk: 'Medium risk', highRisk: 'High risk', workflow: 'Workflow', workflowDraft: 'Draft', workflowPublished: 'Published', articleMeta: 'Article details', task: 'Task', category: 'Category', author: 'Author', loading: 'Loading GEO operations',
       },
@@ -81,7 +81,7 @@ window.__ModuleLoader__.load({
     const sourceTone = status => status === 'ready' ? 'ready' : status === 'empty' ? 'empty' : status === 'error' ? 'error' : 'unavailable'
     const sourceText = (status, t) => status === 'ready' ? t('sourceOnline') : status === 'empty' ? t('sourceEmpty') : status === 'error' ? t('sourceError') : t('sourceUnavailable')
     const reviewLabel = (status, t) => status === 'approved' ? t('approved') : status === 'rejected' ? t('rejected') : t('reviewPending')
-    const platformLabel = (status, t) => status === 'succeeded' ? t('succeeded') : status === 'failed' ? t('failed') : status === 'adapter_pending' ? t('pending') : t('login')
+    const platformLabel = (status, t) => status === 'succeeded' ? t('succeeded') : status === 'failed' ? t('failed') : status === 'adapter_pending' ? t('pending') : status === 'requires_user_login' ? t('login') : status ? t('unknown') : '—'
     const workflowLabel = (status, t) => { const value = String(status || '').trim(); const key = { draft: 'workflowDraft', published: 'workflowPublished' }[value.toLowerCase()]; return key ? t(key) : value || '—' }
     const riskTone = score => score === null ? 'unknown' : score >= 60 ? 'high' : score >= 30 ? 'medium' : 'low'
     const riskLabel = (score, t) => score === null ? t('auditPending') : score >= 60 ? t('highRisk') : score >= 30 ? t('mediumRisk') : t('lowRisk')
