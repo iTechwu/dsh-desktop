@@ -90,12 +90,13 @@ describe('desktop renderer boot health', () => {
     const request = vi.fn(async () => new Response(null, { status: 204 }))
 
     await expect(sendRendererBootReport(loader, request)).resolves.toEqual({ status: 'healthy' })
-    expect(request).toHaveBeenCalledWith(RENDERER_BOOT_REPORT_PATH, {
+    expect(request).toHaveBeenCalledWith(RENDERER_BOOT_REPORT_PATH, expect.objectContaining({
       method: 'POST',
       cache: 'no-store',
+      signal: expect.any(AbortSignal),
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ status: 'healthy' }),
-    })
+    }))
   })
 
   it('defers Loader settlement until the desktop client apply has returned', async () => {

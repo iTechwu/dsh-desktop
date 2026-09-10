@@ -30,6 +30,8 @@ const desktopStyles = await readFile(new URL('../dsh-plugin-desktop/src/client/s
 const desktopSettingsStyles = await readFile(new URL('../dsh-plugin-desktop/src/client/desktop-settings-styles.ts', import.meta.url), 'utf8')
 const desktopExtendedStyles = await readFile(new URL('../dsh-plugin-desktop/src/client/extended-styles.ts', import.meta.url), 'utf8')
 const dofeAccessSource = await readFile(new URL('../dsh-plugin-desktop/src/client/DofeAccessSection.tsx', import.meta.url), 'utf8')
+const desktopSettingsApiSource = await readFile(new URL('../dsh-plugin-desktop/src/client/desktop-settings-api.ts', import.meta.url), 'utf8')
+const bootHealthSource = await readFile(new URL('../dsh-plugin-desktop/src/client/boot-health.ts', import.meta.url), 'utf8')
 const dofeManagedSource = await readFile(new URL('../dsh-plugin-desktop/src/dofe-managed.ts', import.meta.url), 'utf8')
 const themeSource = await readFile(new URL('../deepseek-harness/packages/client/ui-theme/src/styles/design-platform.css', import.meta.url), 'utf8')
 const layoutFrameSource = await readFile(new URL('../deepseek-harness/packages/client/ui-layout/src/client/AppFrame.tsx', import.meta.url), 'utf8')
@@ -296,6 +298,14 @@ if (!dofeAccessSource.includes('aria-busy={interactionBusy}')) {
 if (!dofeAccessSource.includes('const ACCESS_REQUEST_TIMEOUT_MS = 15000')
   || (dofeAccessSource.match(/signal:\s*AbortSignal\.timeout\(ACCESS_REQUEST_TIMEOUT_MS\)/gu) || []).length !== 2) {
   failures.push('dsh-plugin-desktop: native access API calls have no bounded timeout policy')
+}
+if (!desktopSettingsApiSource.includes('const DESKTOP_REQUEST_TIMEOUT_MS = 30000')
+  || (desktopSettingsApiSource.match(/signal:\s*AbortSignal\.timeout\(DESKTOP_REQUEST_TIMEOUT_MS\)/gu) || []).length !== 2) {
+  failures.push('dsh-plugin-desktop: Desktop settings API calls have no bounded timeout policy')
+}
+if (!bootHealthSource.includes('const BOOT_REPORT_TIMEOUT_MS = 15_000')
+  || !bootHealthSource.includes('signal: AbortSignal.timeout(BOOT_REPORT_TIMEOUT_MS)')) {
+  failures.push('dsh-plugin-desktop: renderer boot report has no bounded timeout policy')
 }
 const defaultModelWrite = dofeAccessSource.indexOf("const defaultModel = descriptor.find(item => item.ns === 'agent-default-model')")
 const authorizationWrite = dofeAccessSource.indexOf('await mutateDofeAccessSettings(settingsApi', defaultModelWrite)

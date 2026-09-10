@@ -20,6 +20,7 @@ export type RendererSurfaceReadiness = () => string | undefined
 
 const ACTIVE_FIBER_STATE = 2
 const LOADER_SETTLEMENT_GRACE_MS = 5_000
+const BOOT_REPORT_TIMEOUT_MS = 15_000
 
 /**
  * Wait briefly for client Loader settlement and summarize entries that did not activate.
@@ -74,6 +75,7 @@ async function postRendererBootReport(
   const response = await request(RENDERER_BOOT_REPORT_PATH, {
     method: 'POST',
     cache: 'no-store',
+    signal: AbortSignal.timeout(BOOT_REPORT_TIMEOUT_MS),
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(report),
   })
