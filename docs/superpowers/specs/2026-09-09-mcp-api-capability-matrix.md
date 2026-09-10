@@ -4,7 +4,7 @@
 
 | 能力入口 | 托管路径/工具族 | Desktop 消费方 | 主要 UI 状态 | 认证与失败边界 |
 | --- | --- | --- | --- | --- |
-| Desktop 访问与模型配置 | `/api/desktop/dofe/models`、`/api/desktop/dofe/validate` | yootun-ui 门禁与设置页 | missing、loading、configured、error、conflict | 仅由托管 `MODELS_API_KEY` 凭证链路读写；模型列表失败不提交设置，冲突响应可重试 |
+| Desktop 访问与模型配置 | `/api/desktop/dofe/models`、`/api/desktop/dofe/validate` | `dsh-yootun-ui` web/client 门禁、Desktop 原生门禁与设置页 | missing、loading、configured、error、conflict | 两套门禁共享同一 `MODELS_API_KEY`、7 项内置能力清单和遮罩焦点契约；模型列表失败不提交设置，冲突响应可重试 |
 | Desktop 配置与运行控制 | `/api/desktop/settings`、`/api/desktop/profiles/create`、`/api/desktop/profiles/select`、`/api/desktop/profiles/delete`、`/api/desktop/aa/select`、`/api/desktop/market/select`、`/api/desktop/terminal/open`、`/api/desktop/restart`、`/api/desktop/restart/recovery`、`/api/desktop/developer/reload`、`/api/desktop/developer/devtools`、`/api/desktop/updates/check`、`/api/desktop/diagnostics/export` | Desktop 设置页与恢复界面 | loading、ready、saving、restart_required、failed、done | 只接受 loopback、精确 Host 和同源浏览器请求，响应禁用缓存；客户端先校验有限字段投影，需重启的操作必须明确展示 accepted 与 restartRequired，不能伪装为即时生效 |
 | 工作区目录桥 | `/_dsh/desktop/pick-directory`、`/_dsh/desktop/validate-directory` | Desktop 工作区设置与首次配置 | idle、picking、selected、invalid、failed | 仅接受同源 POST；原生选择结果在持久化前必须再次验证为允许目录，请求体受 16 KiB 上限约束，UI 不在日志或错误文案中暴露完整本地路径 |
 | 渲染器启动健康 | `/_dsh/desktop/renderer-boot` | Desktop 壳层启动与原生恢复窗口 | pending、healthy、failed、timeout | 仅接受当前渲染器同源 POST，请求体受 16 KiB 上限约束；失败插件名和有界错误摘要用于本代恢复判断，不携带凭据或业务请求体 |
