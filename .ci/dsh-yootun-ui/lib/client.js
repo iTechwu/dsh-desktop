@@ -24,6 +24,7 @@ window.__ModuleLoader__.load({
       { id: 'knowledge', name: '企业知识与 Memory', description: '知识库、Memory 与知识图谱治理' },
     ]
     const DEFAULT_PLUGIN_IDS = PLUGINS.map(plugin => plugin.id)
+    const REQUEST_TIMEOUT_MS = 30000
 
     const copy = {
       zh: {
@@ -67,6 +68,7 @@ window.__ModuleLoader__.load({
     async function jsonPost(path, body) {
       const response = await fetch(path, {
         method: 'POST', credentials: 'same-origin', redirect: 'error',
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
         headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
         body: JSON.stringify(body),
       })

@@ -17,6 +17,8 @@ window.__ModuleLoader__.load({
     const DIALOG_ATTRIBUTES = { role: 'dialog', 'aria-modal': true, 'aria-labelledby': 'yxh-title' }
     const POLL_INTERVAL_MS = 15000
     const UPLOAD_POLL_INTERVAL_MS = 350
+    const REQUEST_TIMEOUT_MS = 30000
+    const PICKER_TIMEOUT_MS = 300000
     const MAX_IMAGES = 5
 
     const copy = {
@@ -78,13 +80,13 @@ window.__ModuleLoader__.load({
     const isTerminal = status => status === 'succeeded' || status === 'failed' || status === 'cancelled'
 
     async function post(body) {
-      const response = await fetch(PATH, { method: 'POST', credentials: 'same-origin', redirect: 'error', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify(body) })
+      const response = await fetch(PATH, { method: 'POST', credentials: 'same-origin', redirect: 'error', signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS), headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify(body) })
       if (!response.ok) throw new Error('xhs operation failed')
       return response.json()
     }
 
-    async function uploadFetch(path, body) {
-      const response = await fetch(path, { method: 'POST', credentials: 'same-origin', redirect: 'error', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify(body) })
+    async function uploadFetch(path, body, timeoutMs = REQUEST_TIMEOUT_MS) {
+      const response = await fetch(path, { method: 'POST', credentials: 'same-origin', redirect: 'error', signal: AbortSignal.timeout(timeoutMs), headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify(body) })
       if (!response.ok) return null
       return response.json()
     }
@@ -533,7 +535,7 @@ window.__ModuleLoader__.load({
         setPicking(true)
         setUploadError('')
         try {
-          const picked = await uploadFetch(UPLOAD_PICK, { kind })
+          const picked = await uploadFetch(UPLOAD_PICK, { kind }, PICKER_TIMEOUT_MS)
           if (!picked) {
             setUploadError(t('uploadFailed'))
             return

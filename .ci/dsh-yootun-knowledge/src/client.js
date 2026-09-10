@@ -20,6 +20,7 @@ const NS = "dofe.yootun-knowledge";
 const OVERLAY_ID = "@dofe/dsh-yootun-knowledge";
 const OVERLAY_EVENT = "dofe:yootun-overlay:open";
 const PATH = "/api/desktop/yootun/knowledge";
+const REQUEST_TIMEOUT_MS = 30000;
 const copy = {
   zh: {
     open: "企业知识",
@@ -209,7 +210,7 @@ async function load(signal) {
   const response = await fetch(PATH, {
     credentials: "same-origin",
     redirect: "error",
-    signal,
+    signal: AbortSignal.any([signal, AbortSignal.timeout(REQUEST_TIMEOUT_MS)]),
     headers: { Accept: "application/json" },
   });
   if (!response.ok) throw new Error("knowledge request failed");
@@ -220,6 +221,7 @@ async function mutate(body) {
     method: "POST",
     credentials: "same-origin",
     redirect: "error",
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     headers: { "Content-Type": "application/json", Accept: "application/json" },
     body: JSON.stringify(body),
   });

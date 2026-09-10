@@ -351,6 +351,7 @@ for (const name of clientPlugins) {
   const fetchCount = (source.match(/\bfetch\s*\(/g) || []).length
   const sameOriginCount = (source.match(/credentials:\s*['"]same-origin['"]/g) || []).length
   const rejectRedirectCount = (source.match(/redirect:\s*['"]error['"]/g) || []).length
+  const boundedFetchCount = (source.match(/\bsignal:\s*/g) || []).length
   const hasDynamicStatus = /aria-live/.test(source) || /role:\s*[^}\n]*['"](?:status|alert)['"]/.test(source)
   const hasAsyncUiState = /set(?:Loading|Busy)\(/.test(source)
   const exposesAsyncUiState = /aria-busy/.test(source)
@@ -371,6 +372,9 @@ for (const name of clientPlugins) {
   if (!hasThemeAliases) failures.push(`${name}: client styles do not use desktop theme aliases`)
   if (sameOriginCount !== fetchCount) failures.push(`${name}: every fetch must use same-origin credentials`)
   if (rejectRedirectCount !== fetchCount) failures.push(`${name}: every fetch must reject redirects`)
+  if (!source.includes('const REQUEST_TIMEOUT_MS = 30000') || boundedFetchCount !== fetchCount) {
+    failures.push(`${name}: every fetch must have the shared bounded timeout policy`)
+  }
   if (!hasDynamicStatus) failures.push(`${name}: client has no announced loading, empty, or error state`)
   if (hasAsyncUiState && !exposesAsyncUiState) failures.push(`${name}: asynchronous UI state is not exposed with aria-busy`)
   if (!hasCanonicalShell) failures.push(`${name}: shell header and icon buttons do not follow the 72px/36px baseline`)

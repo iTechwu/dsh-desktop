@@ -7,6 +7,7 @@ window.__ModuleLoader__.load({
     const { createElement: h, useEffect, useRef, useState, useSyncExternalStore } = React
     const { IconCloseOutline16, IconRefreshOutline16, IconDataOutline16, Tooltip } = require('@deepseek-ai/dsh-client-ui-primitives')
     const NS = 'dofe.yootun-daily-report'; const PATH = '/api/desktop/yootun/daily-report'
+    const REQUEST_TIMEOUT_MS = 30000
     const OVERLAY_ID = '@dofe/dsh-yootun-daily-report'
     const OVERLAY_EVENT = 'dofe:yootun-overlay:open'
     const copy = { zh: { open: '昨日工作', title: '昨日工作日报', subtitle: '汇总本机 Agent 会话与工具调用', close: '关闭昨日工作日报', refresh: '刷新', loading: '正在读取昨日工作…', refreshError: '刷新失败，当前保留上次结果。', retry: '重新加载', sessions: '会话', turns: '轮次', completed: '完成', failed: '异常', tools: '工具调用', empty: '昨日没有可汇总的工作记录', unavailable: '本机事件暂不可用', privacy: '仅展示标题、工作区与聚合计数，不展示会话正文。', sources: '数据源状态', local: '本机事件', toolsSource: '工具目录', salesIntent: '销售意向', retrofit: '改装检索', knowledge: '企业知识', sourceReady: '已就绪', sourceEmpty: '无数据', sourceUnavailable: '不可用', sourceError: '异常', reason: '原因' }, en: { open: 'Yesterday', title: 'Yesterday at a glance', subtitle: 'Local Agent sessions and tool calls', close: 'Close yesterday report', refresh: 'Refresh', loading: 'Loading yesterday’s work…', refreshError: 'Refresh failed. Keeping the previous report.', retry: 'Try again', sessions: 'Sessions', turns: 'Turns', completed: 'Completed', failed: 'Failed', tools: 'Tool calls', empty: 'No local work recorded yesterday', unavailable: 'Local events unavailable', privacy: 'Titles, workspaces, and aggregates only; conversation text is excluded.', sources: 'Source status', local: 'Local events', toolsSource: 'Tool catalog', salesIntent: 'Sales intent', retrofit: 'Retrofit', knowledge: 'Knowledge', sourceReady: 'Ready', sourceEmpty: 'No data', sourceUnavailable: 'Unavailable', sourceError: 'Error', reason: 'Reason' } }
@@ -35,7 +36,7 @@ window.__ModuleLoader__.load({
         void fetch(PATH, {
           credentials: 'same-origin',
           redirect: 'error',
-          signal: controller.signal,
+          signal: AbortSignal.any([controller.signal, AbortSignal.timeout(REQUEST_TIMEOUT_MS)]),
           headers: { Accept: 'application/json' },
         })
           .then(response => { if (!response.ok) throw new Error(`daily_report_${response.status}`); return response.json() })

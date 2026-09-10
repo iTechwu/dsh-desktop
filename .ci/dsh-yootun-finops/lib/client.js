@@ -24,6 +24,7 @@ window.__ModuleLoader__.load({
     const OVERLAY_EVENT = 'dofe:yootun-overlay:open'
     const PATH = '/api/desktop/yootun/finops'
     const SERIES_PATH = '/api/desktop/yootun/finops/series'
+    const REQUEST_TIMEOUT_MS = 30000
     const RANGES = [['realtime', 'realtime'], ['yesterday', 'yesterday'], ['week', 'week']]
     const SERIES_DAYS = [[7, 'days7'], [30, 'days30']]
     const TABS = [['overview', 'overview'], ['trend', 'trend'], ['models', 'modelsTab'], ['budget', 'budgetTab']]
@@ -78,13 +79,13 @@ window.__ModuleLoader__.load({
     const snapshot = () => opened
 
     async function load(range, signal) {
-      const response = await fetch(`${PATH}?range=${encodeURIComponent(range)}`, { credentials: 'same-origin', signal, redirect: 'error', headers: { Accept: 'application/json' } })
+      const response = await fetch(`${PATH}?range=${encodeURIComponent(range)}`, { credentials: 'same-origin', signal: AbortSignal.any([signal, AbortSignal.timeout(REQUEST_TIMEOUT_MS)]), redirect: 'error', headers: { Accept: 'application/json' } })
       if (!response.ok) throw new Error('finops request failed')
       return response.json()
     }
 
     async function loadSeries(days, signal) {
-      const response = await fetch(`${SERIES_PATH}?days=${encodeURIComponent(days)}`, { credentials: 'same-origin', signal, redirect: 'error', headers: { Accept: 'application/json' } })
+      const response = await fetch(`${SERIES_PATH}?days=${encodeURIComponent(days)}`, { credentials: 'same-origin', signal: AbortSignal.any([signal, AbortSignal.timeout(REQUEST_TIMEOUT_MS)]), redirect: 'error', headers: { Accept: 'application/json' } })
       if (!response.ok) throw new Error('finops series request failed')
       return response.json()
     }

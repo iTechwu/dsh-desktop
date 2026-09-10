@@ -19,6 +19,7 @@ window.__ModuleLoader__.load({
 
     const NS = 'dofe.yootun-retrofit'
     const PATH = '/api/desktop/yootun/retrofit'
+    const REQUEST_TIMEOUT_MS = 30000
     const OVERLAY_ID = '@dofe/dsh-yootun-retrofit'
     const OVERLAY_EVENT = 'dofe:yootun-overlay:open'
     const PLATFORMS = ['xiaohongshu-v2', 'douyin', 'kuaishou', 'bilibili', 'weibo', 'toutiao', 'lemon8', 'youtube']
@@ -45,7 +46,7 @@ window.__ModuleLoader__.load({
     const closeOnEscape = event => { if (opened && event.key === 'Escape') closeOverlay() }
 
     async function post(body) {
-      const response = await fetch(PATH, { method: 'POST', credentials: 'same-origin', redirect: 'error', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify(body) })
+      const response = await fetch(PATH, { method: 'POST', credentials: 'same-origin', redirect: 'error', signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS), headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify(body) })
       if (!response.ok) throw new Error('retrofit request failed')
       return response.json()
     }

@@ -6,6 +6,7 @@ const NS = 'dofe.yootun-lead-discovery'
 const OVERLAY_ID = '@dofe/dsh-yootun-lead-discovery'
 const OVERLAY_EVENT = 'dofe:yootun-overlay:open'
 const PATH = '/api/desktop/yootun/lead-discovery'
+const REQUEST_TIMEOUT_MS = 30000
 const LEVELS = ['A', 'B', 'C', 'D']
 const copy = {
   zh: {
@@ -42,7 +43,7 @@ const subscribe = listener => { listeners.add(listener); return () => listeners.
 const snapshot = () => opened
 
 async function post(body) {
-  const response = await fetch(PATH, { method: 'POST', credentials: 'same-origin', redirect: 'error', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify(body) })
+  const response = await fetch(PATH, { method: 'POST', credentials: 'same-origin', redirect: 'error', signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS), headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify(body) })
   if (!response.ok) throw new Error('lead discovery request failed')
   return response.json()
 }
