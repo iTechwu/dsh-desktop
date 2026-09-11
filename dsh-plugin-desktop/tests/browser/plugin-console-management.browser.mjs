@@ -60,7 +60,7 @@ async function openPage(mode, width = 390, framework = false, upgradeStatus = 'i
   await page.clock.install()
   page.setDefaultTimeout(10_000)
   const state = { entries: [...entries], skills: skills.map(skill => ({ ...skill })), requests: [], refreshGate: null, refreshError: false,
-    upgradeStatus, statusReads: 0, frameworkChecks: 0, installJobs: {}, installReads: [], installStatusGate: null }
+    upgradeStatus, statusReads: 0, frameworkChecks: 0, installJobs: {}, installReads: [], installStatusGate: null, holdDetails: false, detailRequests: [] }
   if (installation === 'restored') state.installJobs = {
     'restored-a': { jobId: 'restored-a', repo: 'example/old-plugin', status: 'installing', stage: 'preparing' },
     'restored-b': { jobId: 'restored-b', repo: 'example/old-skill', status: 'installing', stage: 'preparing' },
@@ -78,19 +78,31 @@ async function openPage(mode, width = 390, framework = false, upgradeStatus = 'i
     const originalFetch = window.fetch.bind(window)
     window.managementWrites = {}
     window.managementSignals = {}
+    window.completedDetailResponses = []
     window.fetch = (input, init = {}) => {
       const pathname = new URL(typeof input === 'string' ? input : input.url, location.href).pathname
       if (init.method === 'POST' && /\/(install|uninstall|toggle|skill-toggle|skill-remove|restart|framework-relaunch|framework-upgrade|updates\/check)$/.test(pathname)) {
         window.managementWrites[pathname] = (window.managementWrites[pathname] || 0) + 1
         window.managementSignals[pathname] = init.signal instanceof AbortSignal
       }
-      return originalFetch(input, init)
+      return originalFetch(input, init).then(response => {
+        if (/\/(details|check-update)$/.test(pathname)) {
+          const json = response.json.bind(response)
+          response.json = async () => {
+            const data = await json()
+            if (data?.testReadId !== undefined) window.completedDetailResponses.push(data.testReadId)
+            return data
+          }
+        }
+        return response
+      })
     }
   }, { mode })
   const handleRoute = async route => {
     const pathname = new URL(route.request().url()).pathname
     const endpoint = pathname === '/api/desktop/updates/check' ? 'desktop-update-check' : pathname.split('/').at(-1)
-    if (['install', 'uninstall', 'toggle', 'skill-toggle', 'skill-remove', 'restart', 'framework-relaunch', 'framework-upgrade', 'desktop-update-check'].includes(endpoint)) {
+    const detailRead = state.holdDetails && ['details', 'check-update'].includes(endpoint)
+    if (detailRead || ['install', 'uninstall', 'toggle', 'skill-toggle', 'skill-remove', 'restart', 'framework-relaunch', 'framework-upgrade', 'desktop-update-check'].includes(endpoint)) {
       let resolveResponse
       let markDone
       const response = new Promise(resolve => { resolveResponse = resolve })
@@ -98,7 +110,7 @@ async function openPage(mode, width = 390, framework = false, upgradeStatus = 'i
         endpoint, body: route.request().postDataJSON(), resolve: resolveResponse,
         done: new Promise(resolve => { markDone = resolve }),
       }
-      state.requests.push(request)
+      ;(detailRead ? state.detailRequests : state.requests).push(request)
       pending.push(request)
       try {
         await route.fulfill({ contentType: 'application/json', body: JSON.stringify(await response) })
@@ -565,6 +577,83 @@ try {
     await page.getByText('操作失败：第二个任务失败', { exact: true }).waitFor()
     assert.equal(await install.isEnabled(), true)
     await shot(page, '390-install-restored-jobs-retry')
+    await page.close()
+  }
+  {
+    const { page, state } = await openPage('plugins')
+    state.holdDetails = true
+    const a = row(page, 'plugin-a')
+    const b = row(page, 'plugin-b')
+    const details = (description, version = '1.0.0') => ({ meta: { description, version }, readme: null })
+    const finishRead = async (index, body) => {
+      await finish(state.detailRequests[index], { ...body, testReadId: index })
+      await page.waitForFunction(index => window.completedDetailResponses.includes(index), index)
+      // Advance rendering only after the application has consumed the response.
+      await page.clock.runFor(50)
+    }
+    await a.getByRole('button', { name: '详情', exact: true }).click()
+    await b.getByRole('button', { name: '详情', exact: true }).click()
+    await waitRequests({ requests: state.detailRequests }, 2)
+    await finishRead(1, details('插件 B 的当前详情'))
+    await b.getByText('插件 B 的当前详情', { exact: true }).waitFor()
+    await finishRead(0, details('插件 A 的过期详情'))
+    assert.equal(await b.getByText('插件 B 的当前详情', { exact: true }).count(), 1)
+    assert.equal(await page.getByText('插件 A 的过期详情', { exact: true }).count(), 0)
+    await b.getByRole('button', { name: '检测更新', exact: true }).evaluate(button => { button.click(); button.click() })
+    await waitRequests({ requests: state.detailRequests }, 3)
+    await a.getByRole('button', { name: '详情', exact: true }).click()
+    await waitRequests({ requests: state.detailRequests }, 4)
+    await finishRead(3, details('插件 A 的当前详情'))
+    await a.getByRole('button', { name: '检测更新', exact: true }).click()
+    await waitRequests({ requests: state.detailRequests }, 5)
+    await finishRead(4, { latest: '2.0.0', error: null })
+    await a.getByText('发现新版本：1.0.0 → 2.0.0', { exact: true }).waitFor()
+    await finishRead(2, { latest: '9.0.0', error: null })
+    assert.equal(await a.getByText('发现新版本：1.0.0 → 2.0.0', { exact: true }).count(), 1)
+    assert.equal(await page.getByText(/9\.0\.0/).count(), 0)
+    await shot(page, '390-details-current-version')
+    await a.getByRole('button', { name: '检测更新', exact: true }).click()
+    await waitRequests({ requests: state.detailRequests }, 6)
+    await finishRead(5, { ok: false, error: '版本服务暂不可用' })
+    await a.getByText('检测失败：版本服务暂不可用', { exact: true }).waitFor()
+    assert.equal(await a.getByRole('button', { name: '检测更新', exact: true }).isEnabled(), true)
+    await a.getByRole('button', { name: '检测更新', exact: true }).click()
+    await waitRequests({ requests: state.detailRequests }, 7)
+    await a.getByRole('button', { name: '详情', exact: true }).click()
+    await a.getByRole('button', { name: '详情', exact: true }).click()
+    await waitRequests({ requests: state.detailRequests }, 8)
+    await finishRead(7, details('重新打开的插件 A'))
+    await a.getByText('重新打开的插件 A', { exact: true }).waitFor()
+    await finishRead(6, { ok: false, error: '已经关闭的检测失败' })
+    assert.equal(await page.getByText(/已经关闭的检测失败/).count(), 0)
+    assert.equal(await a.getByText('重新打开的插件 A', { exact: true }).count(), 1)
+    await b.getByRole('button', { name: '详情', exact: true }).click()
+    await waitRequests({ requests: state.detailRequests }, 9)
+    await b.getByRole('button', { name: '详情', exact: true }).click()
+    await b.getByRole('button', { name: '详情', exact: true }).click()
+    await waitRequests({ requests: state.detailRequests }, 10)
+    await finishRead(9, details('重新打开的插件 B'))
+    await b.getByText('重新打开的插件 B', { exact: true }).waitFor()
+    await finishRead(8, { ok: false, error: '已关闭的详情请求失败' })
+    assert.equal(await b.getByText('重新打开的插件 B', { exact: true }).count(), 1)
+    assert.equal(await page.getByText(/已关闭的详情请求失败/).count(), 0)
+    await b.getByRole('button', { name: '检测更新', exact: true }).click()
+    await waitRequests({ requests: state.detailRequests }, 11)
+    await finishRead(10, {})
+    await b.getByText('检测失败：暂时无法读取版本信息，请重试。', { exact: true }).waitFor()
+    assert.equal(await b.getByRole('button', { name: '检测更新', exact: true }).isEnabled(), true)
+    await b.getByRole('button', { name: '详情', exact: true }).click()
+    await b.getByRole('button', { name: '详情', exact: true }).click()
+    await waitRequests({ requests: state.detailRequests }, 12)
+    await finishRead(11, {})
+    await b.getByText('操作失败：暂时无法读取插件详情，请重试。', { exact: true }).waitFor()
+    await shot(page, '390-details-invalid-response')
+    await b.getByRole('button', { name: '重试', exact: true }).evaluate(button => { button.click(); button.click() })
+    await waitRequests({ requests: state.detailRequests }, 13)
+    await finishRead(12, details('插件 B 重试成功'))
+    await b.getByText('插件 B 重试成功', { exact: true }).waitFor()
+    await page.setViewportSize({ width: 1280, height: 900 })
+    await shot(page, '1280-details-reopened')
     await page.close()
   }
   assert.deepEqual(problems, [])

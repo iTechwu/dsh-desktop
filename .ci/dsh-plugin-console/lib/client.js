@@ -252,6 +252,8 @@ window.__ModuleLoader__.load({
 			checkUpdate: "检测更新",
 			checkingUpdate: "检测中…",
 			updateCheckFailed: "检测失败",
+			invalidDetailsResponse: "暂时无法读取插件详情，请重试。",
+			invalidUpdateResponse: "暂时无法读取版本信息，请重试。",
 			updateAvailable: "发现新版本",
 			upToDate: "已是最新版本",
 			updateNow: "更新",
@@ -503,6 +505,8 @@ window.__ModuleLoader__.load({
 			checkUpdate: "Check update",
 			checkingUpdate: "Checking…",
 			updateCheckFailed: "Check failed",
+			invalidDetailsResponse: "Plugin details could not be read. Please try again.",
+			invalidUpdateResponse: "Version information could not be read. Please try again.",
 			updateAvailable: "New version available",
 			upToDate: "Up to date",
 			updateNow: "Update",
@@ -899,6 +903,8 @@ window.__ModuleLoader__.load({
 			const activeInstallJobsRef = react.useRef(new Set());
 			const installationBlocked = installing !== null || Object.values(jobs).some((job) => job.status === "installing");
 			const [details, setDetails] = react.useState(null);
+			const detailsRequestRef = react.useRef(null);
+			const updateRequestRef = react.useRef(null);
 			// 已安装插件"检测更新"：null=未检测 / {status:'checking'} / {status:'ready', latest, error}
 			const [updateCheck, setUpdateCheck] = react.useState(null);
 			// 静态插件索引（dsh-plugin topic 全量浏览）：null=未加载 / {items, skills, loaded}
@@ -1226,26 +1232,46 @@ window.__ModuleLoader__.load({
 				);
 			}, []);
 			react.useEffect(() => { refresh(); }, [refresh]);
-			const loadDetails = (entry) => {
-				if (details !== null && details.entryId === entry.entryId) {
+			const loadDetails = (entry, retry = false) => {
+				if (retry && detailsRequestRef.current?.loading) return;
+				updateRequestRef.current = null;
+				setUpdateCheck(null);
+				if (!retry && detailsRequestRef.current?.entryId === entry.entryId) {
+					detailsRequestRef.current = null;
 					setDetails(null);
-					setUpdateCheck(null);
 					return;
 				}
+				const selection = { entryId: entry.entryId, loading: true };
+				detailsRequestRef.current = selection;
 				setDetails({ entryId: entry.entryId, status: "loading" });
-				setUpdateCheck(null);
-				call("/plugin-console/details", { entryId: entry.entryId }).then(
-					(data) => setDetails({ entryId: entry.entryId, status: "ready", data }),
-					(error) => setDetails({ entryId: entry.entryId, status: "error", error }),
-				);
+				call("/plugin-console/details", { entryId: entry.entryId }).then((data) => {
+					if (detailsRequestRef.current !== selection) return;
+					if (!data || typeof data !== "object" || !("meta" in data) || (data.meta !== null && (typeof data.meta !== "object" || Array.isArray(data.meta)))) throw new Error(t("invalidDetailsResponse"));
+					selection.loading = false;
+					setDetails({ entryId: entry.entryId, status: "ready", data });
+				}).catch((error) => {
+					if (detailsRequestRef.current !== selection) return;
+					selection.loading = false;
+					setDetails({ entryId: entry.entryId, status: "error", error });
+				});
 			};
 			const checkUpdate = (entry) => {
+				const selection = detailsRequestRef.current;
+				if (selection?.entryId !== entry.entryId || updateRequestRef.current !== null) return;
+				const request = { selection };
+				updateRequestRef.current = request;
 				const pkgName = entry.moduleName;
-				setUpdateCheck({ status: "checking" });
-				call("/plugin-console/check-update", { packageName: pkgName }).then(
-					(data) => setUpdateCheck({ status: "ready", latest: data.latest ?? null, source: data.source ?? "npm", error: data.error ?? null }),
-					(error) => setUpdateCheck({ status: "ready", latest: null, source: "npm", error: friendlyGithubError(error).message }),
-				);
+				setUpdateCheck({ entryId: entry.entryId, status: "checking" });
+				const showResult = (result) => {
+					if (detailsRequestRef.current === selection && updateRequestRef.current === request) {
+						updateRequestRef.current = null;
+						setUpdateCheck({ entryId: entry.entryId, status: "ready", ...result });
+					}
+				};
+				call("/plugin-console/check-update", { packageName: pkgName }).then((data) => {
+					if (!data || typeof data !== "object" || !("latest" in data) || (data.latest !== null && typeof data.latest !== "string")) throw new Error(t("invalidUpdateResponse"));
+					showResult({ latest: data.latest, source: data.source ?? "npm", error: data.error ?? null });
+				}).catch((error) => showResult({ latest: null, source: "npm", error: friendlyGithubError(error).message }));
 			};
 			const toggle = (entry, enabled) => {
 				if (!entry.toggleable || pluginMutationRef.current !== null) return;
@@ -1780,6 +1806,8 @@ window.__ModuleLoader__.load({
 				};
 				document.addEventListener("visibilitychange", onVisible);
 				return () => {
+					detailsRequestRef.current = null;
+					updateRequestRef.current = null;
 					document.removeEventListener("visibilitychange", onVisible);
 					for (const timer of Object.values(jobTimersRef.current)) window.clearInterval(timer);
 				};
@@ -1974,7 +2002,8 @@ window.__ModuleLoader__.load({
 								el("p", { className: styles.status }, t("loadingDetails")));
 						} else if (details.status === "error") {
 							detailPanel = el("div", { className: styles.detail },
-								el("p", { className: styles.status, "data-error": "true" }, t("failed") + "：" + details.error.message));
+								el("p", { className: styles.status, "data-error": "true", role: "status" }, t("failed") + "：" + details.error.message),
+								el("button", { type: "button", className: styles.toggle, onClick: () => loadDetails(entry, true) }, t("retry")));
 						} else {
 							const meta = details.data.meta;
 							const readme = details.data.readme;
