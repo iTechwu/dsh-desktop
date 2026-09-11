@@ -55,12 +55,16 @@ const finish = async (request, body) => {
   request.resolve(body)
   await request.done
 }
-async function openPage(mode, width = 390, framework = false, upgradeStatus = 'idle', nativeRestartConfirmation = false) {
+async function openPage(mode, width = 390, framework = false, upgradeStatus = 'idle', nativeRestartConfirmation = false, installation = false) {
   const page = await browser.newPage({ viewport: { width, height: 900 } })
   await page.clock.install()
   page.setDefaultTimeout(10_000)
   const state = { entries: [...entries], skills: skills.map(skill => ({ ...skill })), requests: [], refreshGate: null, refreshError: false,
-    upgradeStatus, statusReads: 0, frameworkChecks: 0 }
+    upgradeStatus, statusReads: 0, frameworkChecks: 0, installJobs: {}, installReads: [], installStatusGate: null }
+  if (installation === 'restored') state.installJobs = {
+    'restored-a': { jobId: 'restored-a', repo: 'example/old-plugin', status: 'installing', stage: 'preparing' },
+    'restored-b': { jobId: 'restored-b', repo: 'example/old-skill', status: 'installing', stage: 'preparing' },
+  }
   if (framework && nativeRestartConfirmation) state.entries.push({
     entryId: 'framework-core', rowId: 'framework-core', moduleName: '@deepseek-ai/dsh-client-ui',
     enabled: true, toggleable: false, extra: false, fiberPhase: 'active',
@@ -76,7 +80,7 @@ async function openPage(mode, width = 390, framework = false, upgradeStatus = 'i
     window.managementSignals = {}
     window.fetch = (input, init = {}) => {
       const pathname = new URL(typeof input === 'string' ? input : input.url, location.href).pathname
-      if (init.method === 'POST' && /\/(uninstall|toggle|skill-toggle|skill-remove|restart|framework-relaunch|framework-upgrade|updates\/check)$/.test(pathname)) {
+      if (init.method === 'POST' && /\/(install|uninstall|toggle|skill-toggle|skill-remove|restart|framework-relaunch|framework-upgrade|updates\/check)$/.test(pathname)) {
         window.managementWrites[pathname] = (window.managementWrites[pathname] || 0) + 1
         window.managementSignals[pathname] = init.signal instanceof AbortSignal
       }
@@ -86,7 +90,7 @@ async function openPage(mode, width = 390, framework = false, upgradeStatus = 'i
   const handleRoute = async route => {
     const pathname = new URL(route.request().url()).pathname
     const endpoint = pathname === '/api/desktop/updates/check' ? 'desktop-update-check' : pathname.split('/').at(-1)
-    if (['uninstall', 'toggle', 'skill-toggle', 'skill-remove', 'restart', 'framework-relaunch', 'framework-upgrade', 'desktop-update-check'].includes(endpoint)) {
+    if (['install', 'uninstall', 'toggle', 'skill-toggle', 'skill-remove', 'restart', 'framework-relaunch', 'framework-upgrade', 'desktop-update-check'].includes(endpoint)) {
       let resolveResponse
       let markDone
       const response = new Promise(resolve => { resolveResponse = resolve })
@@ -106,15 +110,24 @@ async function openPage(mode, width = 390, framework = false, upgradeStatus = 'i
       return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ ok: false, error: '刷新失败' }) })
     }
     if (endpoint === 'framework-upgrade-status') state.statusReads += 1
+    if (endpoint === 'install-status') {
+      state.installReads.push(route.request().postDataJSON().jobId)
+      if (state.installStatusGate) await state.installStatusGate
+    }
     if (endpoint === 'check-update' && route.request().postDataJSON()?.packageName === '@deepseek-ai/dsh') state.frameworkChecks += 1
     const frameworkItems = framework ? [{ fullName: 'deepseek-ai/deepseek-harness', description: 'DSH framework', stars: 1 }] : []
+    const installItems = installation ? [
+      { fullName: 'example/new-plugin', description: 'A plugin to install', stars: 1 },
+      { fullName: 'example/new-skill', description: 'A skill to install', stars: 1, hasSkill: true },
+    ] : []
     const body = endpoint === 'state'
-      ? { entries: state.entries, installJobs: [], compat: { supported: true, dshVersion: '0.1.5-rc.2' }, framework: null, nativeRestartConfirmation,
+      ? { entries: state.entries, installJobs: Object.values(state.installJobs).filter(job => job.status === 'installing'), compat: { supported: true, dshVersion: '0.1.5-rc.2' }, framework: null, nativeRestartConfirmation,
         frameworkUpgradeOwner: nativeRestartConfirmation ? 'desktop' : 'standalone',
         github: { loggedIn: false }, patch: { inserts: [] }, recentFailures: [], selfVersion: null }
       : endpoint === 'skills-installed' ? { skills: state.skills }
       : endpoint === 'sources' ? { sources: { registries: [], searchSources: [], gitee: {} } }
-      : endpoint === 'market-index' || endpoint === 'search' ? { items: frameworkItems, skills: [] }
+      : endpoint === 'market-index' || endpoint === 'search' ? { items: [...frameworkItems, ...installItems], skills: installItems }
+      : endpoint === 'install-status' ? state.installJobs[route.request().postDataJSON().jobId] ?? { status: 'installing', stage: 'preparing' }
       : endpoint === 'check-update' ? { latest: '0.1.6', error: null }
       : endpoint === 'details' ? { meta: { description: 'Desktop framework component', version: '0.1.5-rc.2' }, readme: null }
       : endpoint === 'framework-upgrade-status' ? { status: state.upgradeStatus, message: state.upgradeStatus === 'failed' ? '升级失败，请重试' : null } : {}
@@ -468,6 +481,90 @@ try {
     assert.equal(state.requests.every(request => request.endpoint === 'desktop-update-check'), true)
     await page.setViewportSize({ width: 1280, height: 900 })
     await shot(page, '1280-desktop-update-finished')
+    await page.close()
+  }
+  {
+    const { page, state } = await openPage('plugins', 390, false, 'idle', false, true)
+    await page.locator('#pc-market-search').getByRole('button', { name: '搜索', exact: true }).click()
+    const pluginCard = page.locator('.pc_item').filter({ hasText: 'example/new-plugin' })
+    const skillCard = page.locator('.pc_item').filter({ hasText: 'example/new-skill' })
+    await pluginCard.getByRole('button', { name: '添加到本地', exact: true }).waitFor()
+    await row(page, 'plugin-a').getByRole('button', { name: '详情', exact: true }).click()
+    await row(page, 'plugin-a').getByRole('button', { name: '检测更新', exact: true }).click()
+    const detailUpdate = row(page, 'plugin-a').getByRole('button', { name: /^(更新|正在安装…)$/ })
+    await detailUpdate.waitFor()
+    await page.evaluate(() => {
+      const card = [...document.querySelectorAll('.pc_item')].find(item => item.textContent.includes('example/new-plugin'))
+      const install = [...card.querySelectorAll('button')].find(button => button.textContent === '添加到本地')
+      const update = [...document.querySelectorAll('.pc_row button')].find(button => button.textContent === '更新')
+      install.click(); install.click(); update.click()
+    })
+    await waitRequests(state, 1)
+    assert.deepEqual(await page.evaluate(() => window.managementWrites), { '/plugin-console/install': 1 })
+    assert.equal(await detailUpdate.isDisabled(), true)
+    assert.equal(await skillCard.getByRole('button', { name: '添加到本地', exact: true }).isDisabled(), true)
+    await shot(page, '390-install-request-pending')
+    await finish(state.requests[0], {})
+    await page.getByText('操作失败：服务未确认接受请求，请刷新状态后重试', { exact: true }).waitFor()
+    assert.equal(await detailUpdate.isEnabled(), true)
+    await shot(page, '390-install-invalid-response')
+    await detailUpdate.click()
+    await waitRequests(state, 2)
+    assert.equal(state.requests[1].body.packageName, '@example/plugin-a')
+    await finish(state.requests[1], { jobId: 'test-plugin-job' })
+    assert.equal(await detailUpdate.isDisabled(), true)
+    let releaseStatus
+    state.installStatusGate = new Promise(resolve => { releaseStatus = resolve })
+    await page.clock.fastForward(2100)
+    await waitRequests({ requests: state.installReads }, 1)
+    await page.clock.fastForward(6000)
+    assert.equal(state.installReads.length, 1, 'slow installation status requests must not overlap')
+    state.installJobs['test-plugin-job'] = { jobId: 'test-plugin-job', status: 'unexpected' }
+    state.installStatusGate = null
+    releaseStatus()
+    await page.clock.fastForward(2100)
+    assert.equal(await detailUpdate.isDisabled(), true, 'unknown progress must not unlock an active installation')
+    state.installJobs['test-plugin-job'] = { jobId: 'test-plugin-job', status: 'failed', error: '安装失败，请重试' }
+    await page.clock.fastForward(2100)
+    await page.getByText('操作失败：安装失败，请重试', { exact: true }).waitFor()
+    assert.equal(await detailUpdate.isEnabled(), true)
+    await skillCard.getByRole('button', { name: '添加到本地', exact: true }).click()
+    await waitRequests(state, 3)
+    assert.equal(state.requests[2].body.kind, 'skill')
+    await finish(state.requests[2], { jobId: 'test-skill-job' })
+    state.installJobs['test-skill-job'] = { jobId: 'test-skill-job', status: 'done', kind: 'skill', skillName: 'new-skill' }
+    await page.clock.fastForward(2100)
+    await page.getByText(/技能安装完成：new-skill/).waitFor()
+    await pluginCard.getByRole('button', { name: '添加到本地', exact: true }).waitFor()
+    await page.waitForFunction(() => [...document.querySelectorAll('.pc_item button')].some(button => button.textContent === '添加到本地' && !button.disabled))
+    await page.setViewportSize({ width: 1280, height: 900 })
+    await shot(page, '1280-install-skill-complete')
+    await pluginCard.getByRole('button', { name: '添加到本地', exact: true }).click()
+    await waitRequests(state, 4)
+    await finish(state.requests[3], { jobId: 'test-bundle-job' })
+    state.installJobs['test-bundle-job'] = { jobId: 'test-bundle-job', status: 'done', kind: 'plugin', packageName: '@example/new-plugin', bundle: true }
+    await page.clock.fastForward(2100)
+    await page.locator('.pc_messageRow').getByRole('button', { name: '重启服务', exact: true }).waitFor()
+    assert.equal(await detailUpdate.isDisabled(), true, 'completed plugin installations remain locked until applied')
+    await pluginCard.getByRole('button', { name: '等待刷新或重启', exact: true }).waitFor()
+    assert.equal(await pluginCard.getByRole('button', { name: '等待刷新或重启', exact: true }).getAttribute('aria-busy'), 'false')
+    await shot(page, '1280-install-awaiting-restart')
+    await page.close()
+  }
+  {
+    const { page, state } = await openPage('plugins', 390, false, 'idle', false, 'restored')
+    await page.locator('#pc-market-search').getByRole('button', { name: '搜索', exact: true }).click()
+    const install = page.locator('.pc_item').filter({ hasText: 'example/new-plugin' }).getByRole('button', { name: '添加到本地', exact: true })
+    assert.equal(await install.isDisabled(), true)
+    state.installJobs['restored-a'] = { jobId: 'restored-a', status: 'failed', error: '第一个任务失败' }
+    await page.clock.fastForward(2100)
+    await page.getByText('操作失败：第一个任务失败', { exact: true }).waitFor()
+    assert.equal(await install.isDisabled(), true, 'one finished restored job must not release another active job')
+    state.installJobs['restored-b'] = { jobId: 'restored-b', status: 'failed', error: '第二个任务失败' }
+    await page.clock.fastForward(2100)
+    await page.getByText('操作失败：第二个任务失败', { exact: true }).waitFor()
+    assert.equal(await install.isEnabled(), true)
+    await shot(page, '390-install-restored-jobs-retry')
     await page.close()
   }
   assert.deepEqual(problems, [])
