@@ -161,6 +161,9 @@ function requiredPhysicalEntries(runtimeContext: PackagedRuntimeContext): string
     return [
       ...desktopAssets,
       REQUIRED_POSIX_FS_EXT_ENTRIES[runtimeContext.electronPlatformName][architecture],
+      ...(runtimeContext.electronPlatformName === 'darwin'
+        ? [`node_modules/@deepseek-ai/node-addon-system-darwin-${architecture}/bin/system.node`]
+        : []),
     ]
   }
   return [...desktopAssets]
@@ -327,6 +330,10 @@ describe('packaged desktop runtime verification', () => {
     expect(() => verify(paths)).not.toThrow()
     expect(() => verify(paths.filter(path => path !== binding)))
       .toThrow(`missing required physical entries: ${binding}`)
+    for (const native of paths.filter(path => path.includes('/node-addon-system-darwin-'))) {
+      expect(() => verify(paths.filter(path => path !== native)))
+        .toThrow(`missing required physical entries: ${native}`)
+    }
   })
 
   it('rejects an fs-ext addon built for a different Electron ABI', () => {
@@ -564,6 +571,7 @@ describe('packaged desktop runtime verification', () => {
     expect(requiredPhysicalEntries(mac)).toEqual([
       ...REQUIRED_MACOS_UNPACKED_RUNTIME_ENTRIES,
       REQUIRED_POSIX_FS_EXT_ENTRIES.darwin.arm64,
+      'node_modules/@deepseek-ai/node-addon-system-darwin-arm64/bin/system.node',
     ])
     expect(requiredPhysicalEntries(windows)).toEqual([
       ...REQUIRED_NON_MACOS_UNPACKED_RUNTIME_ENTRIES,

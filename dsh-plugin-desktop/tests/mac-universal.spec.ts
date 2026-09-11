@@ -198,7 +198,8 @@ describe('universal macOS native runtime preparation', () => {
     }
   })
 
-  it('prepares every native file from the installed desktop deploy root', () => {
+  // The actual macOS build needs Apple's compiler; injected inventory tests run on every host.
+  it.skipIf(process.platform !== 'darwin')('prepares every native file from the installed desktop deploy root', () => {
     const desktopRoot = fileURLToPath(new URL('../', import.meta.url))
 
     expect(() => prepareInstalledMacUniversalRuntime(desktopRoot)).not.toThrow()
@@ -293,9 +294,24 @@ describe('universal macOS native runtime preparation', () => {
       writeFileSync(join(sharpNative, 'sharp.node'), 'sharp-arm64')
       writeFileSync(join(dirname(sharpNative), 'README.md'), 'source documentation')
       writeFileSync(join(packagedSharpNative, 'sharp.node'), 'stale-arm64')
+      const persistence = join(installedModules, '@deepseek-ai/dsh-session-persistence-jsonl')
+      const system = join(persistence, 'node_modules/@deepseek-ai/node-addon-system')
+      mkdirSync(system, { recursive: true })
+      writeFileSync(join(persistence, 'package.json'), '{}')
+      writeFileSync(join(system, 'package.json'), '{}')
+      for (const arch of ['arm64', 'x64']) {
+        const platform = join(system, `node_modules/@deepseek-ai/node-addon-system-darwin-${arch}`)
+        mkdirSync(join(platform, 'bin'), { recursive: true })
+        writeFileSync(join(platform, 'package.json'), JSON.stringify({ version: '0.1.2' }))
+        writeFileSync(join(platform, 'bin/system.node'), `system-${arch}`)
+      }
 
       hydratePackagedMacRuntime({ desktopRoot, unpackedRoot, arches: ['arm64', 'x86_64'] })
 
+      for (const arch of ['arm64', 'x64']) {
+        expect(readFileSync(join(packagedModules,
+          `@deepseek-ai/node-addon-system-darwin-${arch}/bin/system.node`), 'utf8')).toBe(`system-${arch}`)
+      }
       expect(readFileSync(join(
         packagedModules,
         '@img',

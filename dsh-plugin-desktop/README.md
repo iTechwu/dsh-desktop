@@ -100,6 +100,8 @@ pnpm check
 
 The check verifies that every required first-party peer in the production graph is declared by the desktop deploy root. Headless Loader smokes activate the launcher-owned desktop row and a profile-local third-party row, then boot the published Web profile and inspect its loopback root and client manifest. Unit and type tests cover both profile compositions, restart fencing, client environment validation, desktop layout state, and platform-native window options.
 
+On macOS, the native-runtime check compiles the fork's Node-API v8 file-lock binding for arm64 and x64 using Apple's `cc`, `lipo`, and the running Node installation's development headers. The `beforePack` hook also builds each package target before dependency collection. Platform payloads resolve through the session-persistence package, so a direct Desktop dependency link is not required. Compilation publishes complete files atomically; missing headers, unsupported payload declarations, and compiler or architecture-check failures stop packaging. The Electron ASAR regression exercises lock contention and release without opening a window.
+
 Start the desktop application explicitly when a graphical session is available:
 
 ```sh
