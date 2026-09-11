@@ -86,7 +86,7 @@ async function openPage(mode, width = 390, framework = false, upgradeStatus = 'i
         window.managementSignals[pathname] = init.signal instanceof AbortSignal
       }
       return originalFetch(input, init).then(response => {
-        if (/\/(details|check-update)$/.test(pathname)) {
+        if (/\/(details|check-update|install-status)$/.test(pathname)) {
           const json = response.json.bind(response)
           response.json = async () => {
             const data = await json()
@@ -534,8 +534,35 @@ try {
     state.installJobs['test-plugin-job'] = { jobId: 'test-plugin-job', status: 'unexpected' }
     state.installStatusGate = null
     releaseStatus()
-    await page.clock.fastForward(2100)
+    const unavailable = page.getByText('暂时无法获取安装进度，任务可能仍在后台运行。将自动重试，也可手动查询。', { exact: true })
+    await unavailable.waitFor()
     assert.equal(await detailUpdate.isDisabled(), true, 'unknown progress must not unlock an active installation')
+    await page.getByText(/上次获取的阶段/).waitFor()
+    await shot(page, '390-install-progress-unavailable')
+    state.installStatusGate = new Promise(resolve => { releaseStatus = resolve })
+    const readsBeforeRetry = state.installReads.length
+    await page.getByRole('button', { name: '重试获取进度', exact: true }).evaluate(button => { button.click(); button.click() })
+    await waitRequests({ requests: state.installReads }, readsBeforeRetry + 1)
+    assert.equal(await page.getByRole('button', { name: '正在获取进度…', exact: true }).isDisabled(), true)
+    await page.clock.fastForward(4100)
+    assert.equal(state.installReads.length, readsBeforeRetry + 1, 'manual retries share the automatic poll lock')
+    assert.equal(state.requests.length, 2, 'retrying progress must not submit another installation')
+    await shot(page, '390-install-progress-retrying')
+    state.installJobs['test-plugin-job'] = { ok: false, error: 'internal-path-must-not-be-shown' }
+    state.installStatusGate = null
+    releaseStatus()
+    await page.getByRole('button', { name: '重试获取进度', exact: true }).waitFor()
+    assert.equal(await page.getByText(/internal-path-must-not-be-shown/).count(), 0)
+    state.installJobs['test-plugin-job'] = { jobId: 'wrong-job', status: 'done', testReadId: 'progress-mismatch' }
+    await page.getByRole('button', { name: '重试获取进度', exact: true }).click()
+    await page.waitForFunction(() => window.completedDetailResponses.includes('progress-mismatch'))
+    await page.getByRole('button', { name: '重试获取进度', exact: true }).waitFor()
+    assert.equal(await detailUpdate.isDisabled(), true, 'another job response must not finish this installation')
+    state.installJobs['test-plugin-job'] = { jobId: 'test-plugin-job', status: 'installing', stage: 'configuring' }
+    await page.getByRole('button', { name: '重试获取进度', exact: true }).click()
+    await unavailable.waitFor({ state: 'detached' })
+    assert.equal(await detailUpdate.isDisabled(), true)
+    assert.equal(state.requests.length, 2)
     state.installJobs['test-plugin-job'] = { jobId: 'test-plugin-job', status: 'failed', error: '安装失败，请重试' }
     await page.clock.fastForward(2100)
     await page.getByText('操作失败：安装失败，请重试', { exact: true }).waitFor()

@@ -130,6 +130,10 @@ window.__ModuleLoader__.load({
 			install: "添加并启用",
 			installing: "正在安装…",
 			installAwaitingApply: "等待刷新或重启",
+			installProgressUnavailable: "暂时无法获取安装进度，任务可能仍在后台运行。将自动重试，也可手动查询。",
+			installProgressRetry: "重试获取进度",
+			installProgressRetrying: "正在获取进度…",
+			installLastKnownStage: "上次获取的阶段",
 			marketLoading: "正在搜索 GitHub…",
 			marketLoadingOther: "正在搜索 {source}…",
 			directOther: "通过服务端通道检索 {source} 平台（自定义源不走浏览器直连）",
@@ -383,6 +387,10 @@ window.__ModuleLoader__.load({
 			install: "Add & enable",
 			installing: "Installing…",
 			installAwaitingApply: "Awaiting reload or restart",
+			installProgressUnavailable: "Installation progress is temporarily unavailable. The task may still be running. Checking will retry automatically, or you can retry now.",
+			installProgressRetry: "Retry progress check",
+			installProgressRetrying: "Checking progress…",
+			installLastKnownStage: "Last known stage",
 			marketLoading: "Searching GitHub…",
 			marketLoadingOther: "Searching {source}…",
 			directOther: "Searching {source} through the server channel (custom sources do not use browser-direct)",
@@ -1572,10 +1580,12 @@ window.__ModuleLoader__.load({
 			/** 后台安装任务：/install 立即返回 jobId，轮询 /install-status 更新进度。 */
 			const jobTimersRef = react.useRef({});
 			const jobPollsRef = react.useRef(new Set());
+			const jobPollersRef = react.useRef({});
 			const stopJobPolling = (jobId) => {
 				if (jobTimersRef.current[jobId]) {
 					window.clearInterval(jobTimersRef.current[jobId]);
 					delete jobTimersRef.current[jobId];
+					delete jobPollersRef.current[jobId];
 				}
 			};
 			const releaseInstallation = (jobId) => {
@@ -1586,13 +1596,15 @@ window.__ModuleLoader__.load({
 			};
 			const pollJob = (jobId) => {
 				if (jobTimersRef.current[jobId]) return;
-				jobTimersRef.current[jobId] = window.setInterval(() => {
-					if (jobPollsRef.current.has(jobId)) return;
+				const queryStatus = () => {
+					if (!jobTimersRef.current[jobId] || jobPollsRef.current.has(jobId)) return;
 					jobPollsRef.current.add(jobId);
+					setJobs((prev) => ({ ...prev, [jobId]: { ...prev[jobId], polling: true } }));
 					call("/plugin-console/install-status", { jobId }).then(
 						(data) => {
-							if (!jobTimersRef.current[jobId] || !data || !["installing", "done", "failed", "cancelled"].includes(data.status)) return;
-							setJobs((prev) => ({ ...prev, [jobId]: data }));
+							if (!jobTimersRef.current[jobId]) return;
+							if (!data || !["installing", "done", "failed", "cancelled"].includes(data.status) || (data.jobId !== undefined && data.jobId !== jobId)) throw new Error("Invalid installation progress");
+							setJobs((prev) => ({ ...prev, [jobId]: { ...prev[jobId], ...data, polling: false, progressUnavailable: false } }));
 							// 需要用户授权时（面板页后台/失焦也能看到）：系统通知 + 标题闪烁提示
 							if (data.status === "installing" && data.stage === "ai-consent" && aiFallback && !aiRemember && !aiAutoDeclinedRef.current[jobId]) {
 								aiAutoDeclinedRef.current[jobId] = true;
@@ -1667,9 +1679,12 @@ window.__ModuleLoader__.load({
 								setTimeout(refresh, 1500);
 							}
 						},
-						() => {},
-					).finally(() => jobPollsRef.current.delete(jobId));
-				}, 2000);
+					).catch(() => {
+						if (jobTimersRef.current[jobId]) setJobs((prev) => ({ ...prev, [jobId]: { ...prev[jobId], polling: false, progressUnavailable: true } }));
+					}).finally(() => jobPollsRef.current.delete(jobId));
+				};
+				jobPollersRef.current[jobId] = queryStatus;
+				jobTimersRef.current[jobId] = window.setInterval(queryStatus, 2000);
 			};
 			/** 本地 AI 兜底授权：调用模型 API 产生费用，必须用户明确同意。 */
 			const aiConsent = (jobId, approved) => {
@@ -1809,7 +1824,7 @@ window.__ModuleLoader__.load({
 					detailsRequestRef.current = null;
 					updateRequestRef.current = null;
 					document.removeEventListener("visibilitychange", onVisible);
-					for (const timer of Object.values(jobTimersRef.current)) window.clearInterval(timer);
+					for (const jobId of Object.keys(jobTimersRef.current)) stopJobPolling(jobId);
 				};
 			}, []);
 			/** 搜索结果卡片上的"添加到本地"：直接启动安装任务（服务端解析包名与类型），
@@ -2611,6 +2626,10 @@ onClick: () => window.open(`https://github.com/Noob-stupid/dsh-plugin-hub/releas
 						}, loadingMore ? t("loadingMore") : t("loadMore")))
 					: null,
 				Object.values(jobs).filter((job) => job.status === "installing").map((job) => {
+					const progressRecovery = job.progressUnavailable ? el("div", null,
+						el("p", { className: styles.message, role: "status" }, t("installProgressUnavailable")),
+						el("button", { type: "button", className: styles.toggle, disabled: job.polling === true, "aria-busy": job.polling === true,
+							onClick: () => jobPollersRef.current[job.jobId]?.() }, t(job.polling ? "installProgressRetrying" : "installProgressRetry"))) : null;
 					if (job.stage === "ai-consent") {
 						// 需要用户同意时由最上层模态框负责展示，列表内只留状态行；
 						// 已关闭兜底或已勾选"不再提醒"时显示对应说明
@@ -2619,7 +2638,7 @@ onClick: () => window.open(`https://github.com/Noob-stupid/dsh-plugin-hub/releas
 							el("div", { className: styles.rowTop },
 								el("span", { className: styles.spinner }),
 								el("strong", { className: styles.name }, t("installingLocal") + "：" + (job.packageName ?? job.repo))),
-							el("p", { className: styles.message }, autoNote));
+							el("p", { className: styles.message }, autoNote), progressRecovery);
 					}
 					const stageKey = job.stage === "preparing" ? "stagePreparing" : job.stage === "configuring" ? "stageConfiguring" : job.stage === "repairing" ? "stageRepairing" : "stageInstalling";
 					const elapsed = Math.max(0, Math.round((Date.now() - (job.startedAt ?? Date.now())) / 1000));
@@ -2628,7 +2647,7 @@ onClick: () => window.open(`https://github.com/Noob-stupid/dsh-plugin-hub/releas
 							el("span", { className: styles.spinner }),
 							el("strong", { className: styles.name }, t("installingLocal") + "：" + (job.packageName ?? job.repo))),
 						el("p", { className: styles.status },
-							t("stageLabel") + "：" + t(stageKey) + " · " + t("elapsed") + " " + elapsed + "s"));
+							t(job.progressUnavailable ? "installLastKnownStage" : "stageLabel") + "：" + t(stageKey) + " · " + t("elapsed") + " " + elapsed + "s"), progressRecovery);
 				}),
 				Object.entries(suiteReports).map(([jobId, report]) =>
 					el("div", { key: "suite-" + jobId, className: styles.detail },
