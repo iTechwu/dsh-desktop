@@ -193,6 +193,29 @@ window.__ModuleLoader__.load({
       return Number.isFinite(parsed) ? parsed : 0
     }
 
+    function finiteNumber(value) {
+      if (value === undefined || value === null || value === '') return null
+      const parsed = Number(value)
+      return Number.isFinite(parsed) ? parsed : null
+    }
+
+    function boundedPercent(value) {
+      const parsed = finiteNumber(value)
+      return parsed === null ? null : Math.max(0, Math.min(100, Math.round(parsed)))
+    }
+
+    function ratioPercent(value, total) {
+      const numerator = finiteNumber(value)
+      const denominator = finiteNumber(total)
+      if (numerator === null || denominator === null || denominator <= 0) return null
+      return boundedPercent((numerator / denominator) * 100)
+    }
+
+    function percentLabel(value) {
+      const percent = boundedPercent(value)
+      return percent === null ? '—' : `${percent}%`
+    }
+
     function formatNumber(value) {
       return new Intl.NumberFormat(undefined, { notation: number(value) >= 100000 ? 'compact' : 'standard', maximumFractionDigits: 1 }).format(number(value))
     }
@@ -287,7 +310,7 @@ window.__ModuleLoader__.load({
     }
 
     function ShareBar({ label, value, total, display, tone }) {
-      const share = total > 0 ? Math.round((number(value) / total) * 100) : null
+      const share = ratioPercent(value, total)
       const text = display ?? metricDisplay(value) ?? '—'
       return h('div', { className: 'yd-share' },
         h('div', { className: 'yd-share-head' }, h('strong', null, label), h('span', null, share === null ? text : `${text} · ${share}%`)),
@@ -431,8 +454,8 @@ window.__ModuleLoader__.load({
 
     function geoRateHint(source, t) {
       const kpis = source?.data?.kpis || {}
-      const articles = number(kpis.articles)
-      return articles > 0 ? `${t('publishRate')} ${Math.round((number(kpis.published) / articles) * 100)}%` : t('noBaseline')
+      const rate = ratioPercent(kpis.published, kpis.articles)
+      return rate === null ? t('noBaseline') : `${t('publishRate')} ${rate}%`
     }
 
     function usageRateHint(source, t) {
@@ -444,8 +467,8 @@ window.__ModuleLoader__.load({
 
     function activityRateHint(source, t) {
       const totals = source?.data?.totals || {}
-      const turns = number(totals.turns)
-      const rate = turns > 0 ? `${t('completeRate')} ${Math.round((number(totals.completedTurns) / turns) * 100)}%` : t('noBaseline')
+      const rateValue = ratioPercent(totals.completedTurns, totals.turns)
+      const rate = rateValue === null ? t('noBaseline') : `${t('completeRate')} ${rateValue}%`
       return `${rate} · ${t('toolCalls')} ${formatNumber(totals.toolCalls)}`
     }
 
@@ -500,20 +523,24 @@ window.__ModuleLoader__.load({
         // 渲染；无目标月份按 docs/03 口径不显示，不伪造百分比
         Array.isArray(data?.insight?.goals) && data.insight.goals.length ? h('section', { className: 'yd-table-section' },
           h('div', { className: 'yd-section-heading' }, h('h2', null, t('goalTitle'))),
-          h('div', { className: 'yd-list' }, ...data.insight.goals.map(goal =>
-            h('div', { className: 'yd-list-row', key: goal.goalId },
+          h('div', { className: 'yd-list' }, ...data.insight.goals.map(goal => {
+              const attainment = boundedPercent(goal.attainmentPct)
+              const pace = boundedPercent(goal.pacePct)
+              return h('div', { className: 'yd-list-row', key: goal.goalId },
               h('span', { className: 'yd-rank' }, '·'),
               h('div', null,
                 h('strong', null, goal.categoryName || t('goalGlobal')),
-                h('span', null, `${t('goalTarget')} ${formatNumber(goal.target)} · ${t('goalActual')} ${formatNumber(goal.actual)} · ${t('goalPace')} ${goal.pacePct ?? 0}%`)),
+                h('span', null, `${t('goalTarget')} ${formatNumber(goal.target)} · ${t('goalActual')} ${formatNumber(goal.actual)} · ${t('goalPace')} ${percentLabel(pace)}`)),
               h(ShareBar, {
                 label: t('goalAttained'),
-                value: Math.min(goal.attainmentPct ?? 0, 100),
+                value: attainment,
                 total: 100,
-                display: `${goal.attainmentPct ?? 0}%`,
-                tone: (goal.attainmentPct ?? 0) >= 100 ? undefined
-                  : (goal.pacePct ?? 0) > (goal.attainmentPct ?? 0) ? 'danger' : undefined,
-              }))))) : null
+                display: percentLabel(attainment),
+                tone: attainment === null ? undefined
+                    : attainment >= 100 ? undefined
+                    : pace !== null && pace > attainment ? 'danger' : undefined,
+              }))
+            }))) : null
       )
     }
 

@@ -44,6 +44,16 @@ test('renders all requested dashboard domains and explicit source states', async
     'metricDisplay', 'missingFields', 'asOfLabel', 'refreshing', 'sourcePartial', 'workerDown',
     "'aria-busy': loading",
   ]) assert.match(source, new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'u'))
+  assert.match(source, /function boundedPercent\(value\)/u)
+  assert.match(source, /Math\.max\(0, Math\.min\(100, Math\.round\(parsed\)\)\)/u)
+  assert.match(source, /function ratioPercent\(value, total\)/u)
+  assert.match(source, /const share = ratioPercent\(value, total\)/u)
+  assert.match(source, /const rate = ratioPercent\(kpis\.published, kpis\.articles\)/u)
+  assert.match(source, /const rateValue = ratioPercent\(totals\.completedTurns, totals\.turns\)/u)
+  assert.match(source, /const attainment = boundedPercent\(goal\.attainmentPct\)/u)
+  assert.match(source, /const pace = boundedPercent\(goal\.pacePct\)/u)
+  assert.doesNotMatch(source, /Math\.round\(\(number\(kpis\.published\) \/ articles\) \* 100\)/u)
+  assert.doesNotMatch(source, /goal\.attainmentPct \?\? 0/u)
   assert.match(source, /const loadingRef = useRef\(false\)/u)
   assert.match(source, /if \(loadingRef\.current\) return/u)
   assert.match(source, /disabled: loading, 'data-active': range === item\.id/u)
