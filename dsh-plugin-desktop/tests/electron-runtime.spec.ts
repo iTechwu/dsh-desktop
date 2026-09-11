@@ -1,4 +1,4 @@
-import { readFileSync, unlinkSync } from 'node:fs'
+import { unlinkSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { DesktopShellSpec } from '../src/runtime.ts'
@@ -41,10 +41,6 @@ const childProcess = vi.hoisted(() => {
 })
 
 const MAIN_WINDOW_STATE_PATH = '/tmp/dsh-desktop-user-data/main-window-state.json'
-const PRODUCT_VERSION = (JSON.parse(
-  readFileSync(new URL('../package.json', import.meta.url), 'utf8'),
-) as { readonly version: string }).version
-
 function clearMainWindowState(): void {
   try {
     unlinkSync(MAIN_WINDOW_STATE_PATH)

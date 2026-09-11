@@ -111,6 +111,9 @@ export function createHostRuntime(rpc: HostRpc, snapshot: RuntimeSnapshot): Desk
       })
       void send('native:openProfileCreateWindow', [callback.id])
     },
+    openOpenMontage: apiKey => send('native:openOpenMontage', [apiKey]),
+    openBossWeb: url => send('native:openBossWeb', [url]),
+    openContentPlatformWeb: (platform, url) => send('native:openContentPlatformWeb', [platform, url]),
   }
   return runtime
 }
@@ -136,6 +139,10 @@ export function bindNativeRuntime(rpc: HostRpc, runtime: DesktopRuntime): () => 
   handle('native:openProfileCreateWindow', ([id]) => runtime.openProfileCreateWindow({
     onSubmit: name => callback(`${id}:submit`, [name]), onCancel: () => report(callback(`${id}:cancel`)),
   }))
+  handle('native:openOpenMontage', ([apiKey]) => runtime.openOpenMontage(apiKey as string))
+  handle('native:openBossWeb', ([url]) => runtime.openBossWeb(url as string | undefined))
+  handle('native:openContentPlatformWeb', ([platform, url]) =>
+    runtime.openContentPlatformWeb(platform as 'toutiao' | 'baidu' | 'xiaohongshu' | 'sohu', url as string))
   handle('shell:schedule', ([id, data, locale, theme, remoteControl]) => {
     if (shells.has(id)) throw new Error('Duplicate Host shell')
     const state = { locale, theme }

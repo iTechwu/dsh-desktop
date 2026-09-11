@@ -6,10 +6,7 @@ import { homedir } from 'node:os'
 import { posix, resolve, win32 } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { exportDesktopDiagnostics } from './diagnostic-export.ts'
-import {
-  DESKTOP_PACKAGE_NAME,
-  DESKTOP_PRODUCT_NAME,
-} from './product-identity.ts'
+import { DESKTOP_PACKAGE_NAME } from './product-identity.ts'
 
 /** Parsed launcher action. */
 export type DesktopCliAction = 'export-diagnostics' | 'help' | 'version' | 'launch'

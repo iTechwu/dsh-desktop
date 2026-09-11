@@ -183,7 +183,7 @@ export function packageWindowsArtifact(
       DSH_ELECTRON_BUILDER_TRAVERSAL_ONLY: '1',
       npm_config_user_agent: 'npm',
       npm_execpath: '',
-    },
+    }),
   )
   options.run(
     options.nodeExecutable,

@@ -8,7 +8,6 @@ import {
 } from './auxiliary-window-options.ts'
 import { revealApplication } from './electron-reveal.ts'
 import { createDesktopLocalWindow } from './local-window-policy.ts'
-import { DESKTOP_PRODUCT_NAME } from './product-identity.ts'
 
 const DIALOG_SCHEME = 'dsh-desktop-dialog:'
 const DIALOG_DOCUMENT = fileURLToPath(new URL('./native-ui/desktop-dialog.html', import.meta.url))

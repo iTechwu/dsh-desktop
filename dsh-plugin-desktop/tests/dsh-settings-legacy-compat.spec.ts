@@ -2,8 +2,8 @@ import { createRequire } from 'node:module'
 import { dirname, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import type { Context } from '@deepseek-ai/cordis'
+import { deepEqualJson } from '@deepseek-ai/dsh-util-values'
 import {
-  deepEqualJson,
   installSettingsSection,
   settingsNamespace,
   type SettingsSectionHooks,

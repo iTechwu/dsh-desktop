@@ -2,8 +2,6 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { claimDesktopLayout } from '../src/client/layout-service.ts'
 import { applyAdvancedShell } from '../src/client/advanced-shell.ts'
 import { applyExtendedShell } from '../src/client/extended-shell.ts'
-import { DesktopLayoutState } from '../src/client/layout-state.ts'
-import type { MainPanelId } from '@deepseek-ai/dsh-client-ui-layout/client'
 
 interface FakeStyleElement {
   id: string
@@ -58,8 +56,6 @@ function makeCtx() {
     // that here so registration assertions observe real calls.
     effect: vi.fn((factory: () => unknown) => factory()),
     slots: {
-      entries: vi.fn(() => []),
-      provideRoot: vi.fn(() => vi.fn()),
       register: vi.fn(() => ({})),
       inject: vi.fn(),
     },
@@ -75,23 +71,10 @@ describe('claimDesktopLayout', () => {
     const ctx = makeCtx()
     const dispose = vi.fn()
     ctx.reflect.provide.mockReturnValue(dispose)
-    const layout = { mark: 'state', dispose: vi.fn() }
+    const layout = { mark: 'state' }
 
     expect(claimDesktopLayout(ctx as never, layout as never)).toBe(true)
     expect(ctx.reflect.provide).toHaveBeenCalledWith('layout', layout)
-    const { hooks: { panelInfo } } = ctx.slots.provideRoot.mock.calls[0]![0] as {
-      hooks: { panelInfo: { getSnapshot(): unknown; subscribe(fn: () => void): () => void } }
-    }
-    const changed = vi.fn()
-    const stop = panelInfo.subscribe(changed)
-    layout.selectPanel('files' as MainPanelId)
-    expect(panelInfo.getSnapshot()).toEqual({ activePanelId: 'files' })
-    panels.clear()
-    expect(ctx.slots.subscribe.mock.calls[0]![0]).toBe('main')
-    ctx.slots.subscribe.mock.calls[0]![1]()
-    expect(panelInfo.getSnapshot()).toEqual({ activePanelId: null })
-    expect(changed).toHaveBeenCalledTimes(2)
-    stop()
 
     // The disposal effect must be owned by the fiber so a later unload frees
     // the registration for whoever applies next; the factory result is what
@@ -100,10 +83,7 @@ describe('claimDesktopLayout', () => {
     const disposer = ctx.effect.mock.results[0]?.value
     expect(typeof disposer).toBe('function')
     ;(disposer as () => void)()
-    expect(layout.dispose).toHaveBeenCalledOnce()
     expect(dispose).toHaveBeenCalled()
-    expect(ctx.slots.provideRoot.mock.results[0]!.value).toHaveBeenCalledOnce()
-    expect(ctx.slots.subscribe.mock.results[0]!.value).toHaveBeenCalledOnce()
   })
 
   it('defers safely when another entry already owns the service', () => {

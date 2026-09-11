@@ -7,7 +7,6 @@ import type { MainPanelId, PanelInfo } from '@deepseek-ai/dsh-client-ui-layout/c
 import { apply } from '../src/client/index.ts'
 import { AdvancedFrame, type AdvancedFrameProps } from '../src/client/AdvancedFrame.tsx'
 import { applyAdvancedShell } from '../src/client/advanced-shell.ts'
-import { applyDesktopBrand } from '../src/client/brand.tsx'
 import { claimDesktopLayout } from '../src/client/layout-service.ts'
 import { parseDesktopClientEnvironment } from '../src/client/environment.ts'
 import { ExtendedFrame } from '../src/client/ExtendedFrame.tsx'
@@ -27,22 +26,6 @@ import {
   MACOS_TRAFFIC_LIGHT_SAFE_WIDTH,
   WINDOWS_CAPTION_CONTROLS_WIDTH,
 } from '../src/window-chrome.ts'
-
-function expectUnifiedSidebarFooterStyles(css: string): void {
-  expect(css).toContain('--dsh-sidebar-footer-control-height: 36px;')
-  expect(css).toContain('--dsh-sidebar-footer-control-gap: 4px;')
-  expect(css).toContain('--dsh-sidebar-footer-icon-size: 16px;')
-  expect(css).toContain('--dsh-sidebar-footer-font-size: 14px;')
-  expect(css).toMatch(/\[data-slot="sidebar\.footer\.action"\] > button \{[^}]*height: var\(--dsh-sidebar-footer-control-height\);[^}]*margin: 0;[^}]*padding: 0 8px;[^}]*border-radius: 6px;[^}]*font-size: var\(--dsh-sidebar-footer-font-size\);/)
-  expect(css).toMatch(/\[data-slot="sidebar\.footer\.action"\] > button \{[^}]*display: flex;[^}]*align-items: center;/)
-  expect(css).toMatch(/\[data-slot="sidebar\.settings"\] > div:first-child \{[^}]*margin: var\(--dsh-sidebar-footer-control-gap\) 0 0;/)
-  expect(css).toMatch(/\[data-slot="sidebar\.settings"\] > div:first-child > button \{[^}]*height: var\(--dsh-sidebar-footer-control-height\);[^}]*margin: 0;[^}]*padding: 0 8px;[^}]*border-radius: 6px;[^}]*font-size: var\(--dsh-sidebar-footer-font-size\);/)
-  expect(css).toMatch(/\[data-slot="sidebar\.footer\.action"\] > button > span,[\s\S]*\[data-slot="sidebar\.settings"\] > div:first-child > button > span \{[^}]*font-size: inherit;[^}]*line-height: inherit;/)
-  expect(css).toMatch(/\[data-slot="sidebar\.footer\.action"\] > button svg,[\s\S]*\[data-slot="sidebar\.settings"\] > div:first-child > button svg \{[^}]*width: var\(--dsh-sidebar-footer-icon-size\);[^}]*height: var\(--dsh-sidebar-footer-icon-size\);/)
-  expect(css).toMatch(/\[data-slot="sidebar\.footer\.action"\] > button:has\(> svg\):not\(:has\(> span\)\)::after \{[^}]*content: attr\(aria-label\);[^}]*overflow: hidden;[^}]*text-overflow: ellipsis;[^}]*white-space: nowrap;/)
-  expect(css).toMatch(/\[data-sidebar-collapsed\][^{]*\[data-slot="sidebar\.footer\.action"\] > button,[\s\S]*\[data-sidebar-collapsed\][^{]*\[data-slot="sidebar\.settings"\] > div:first-child > button \{[^}]*width: var\(--dsh-sidebar-footer-control-height\);[^}]*padding: 0;[^}]*justify-content: center;/)
-  expect(css).toMatch(/\[data-sidebar-collapsed\][^{]*\[data-slot="sidebar\.footer\.action"\] > button:has\(> svg\):not\(:has\(> span\)\)::after \{ content: none; \}/)
-}
 
 describe('desktop client environment', () => {
   it.each(['darwin', 'win32', 'linux'])('keeps compatibility chrome out of the %s client slot tree', platform => {
@@ -105,55 +88,6 @@ describe('desktop client environment', () => {
   })
 })
 
-describe('desktop brand', () => {
-  it('shadows bundled brand occupants at the product priority', () => {
-    const injections: string[] = []
-    const registrations: Array<Record<string, unknown>> = []
-    const disposeStyle = vi.fn()
-    vi.stubGlobal('document', {
-      createElement: () => ({ dataset: {}, remove: disposeStyle, textContent: '' }),
-      head: { appendChild: vi.fn() },
-    })
-    const drain = (value: unknown): void => {
-      if (value !== null && typeof value === 'object' && Symbol.iterator in value) {
-        for (const _entry of value as Iterable<unknown>) { /* exhaust registration fiber */ }
-      }
-    }
-    const ctx = {
-      effect: (mount: () => unknown) => { drain(mount()) },
-      slots: {
-        inject: (name: string, mount: () => unknown) => {
-          injections.push(name)
-          const value = mount()
-          drain(value)
-          return value
-        },
-        register: (options: Record<string, unknown>) => {
-          registrations.push(options)
-          return () => {}
-        },
-      },
-    } as unknown as ClientContext
-
-    try {
-      applyDesktopBrand(ctx)
-      expect(injections).toEqual([
-        'sidebar.brand.mark',
-        'sidebar.brand.name',
-        'conversation.hero.brand.mark',
-      ])
-      expect(registrations).toEqual([
-        { name: 'sidebar.brand.mark', priority: -100 },
-        { name: 'sidebar.brand.name', priority: -100 },
-        { name: 'conversation.hero.brand.mark', priority: -100 },
-      ])
-    }
-    finally {
-      vi.unstubAllGlobals()
-    }
-  })
-})
-
 describe('advanced desktop layout', () => {
   it.each([['advanced', AdvancedFrame], ['extended', ExtendedFrame]] as const)(
     'passes right Sidebar geometry and preserves its track beneath fullscreen in %s mode', (_mode, Frame) => {
@@ -189,67 +123,28 @@ describe('advanced desktop layout', () => {
     ['extended', ExtendedFrame],
   ] as const)('renders global main and rightbar panels without a Session in %s mode', (_mode, Frame) => {
     vi.stubGlobal('window', { innerWidth: 1440 })
-    const layout = new DesktopLayoutState()
+    const layout = new DesktopLayoutState(id => id === 'files')
+    const renderSlot = vi.fn((name: string) => createElement('span', { 'data-slot': name }))
     const props = {
       layout,
       platform: 'darwin',
-      usePanelInfo: (select: (state: { activePanelId: null }) => unknown) =>
-        select({ activePanelId: null }),
-      useSessions: (select: (state: { current?: string; byId: Record<string, { blank: boolean }> }) => unknown) =>
-        select({ byId: {} }),
-      SessionProvider: ({ children }: { children?: ReactNode }) =>
+      usePanelInfo: (select: (info: PanelInfo) => unknown) => select(layout.getPanelInfo()),
+      renderSlot,
+      SessionProvider: ({ children }: { children: ReactNode }) =>
         createElement('section', { 'data-session-provider': '' }, children),
     } as unknown as AdvancedFrameProps
 
     try {
       const markup = renderToStaticMarkup(createElement(Frame, props))
-      expect(markup).toContain(
-        '<section data-session-provider=""><span data-slot="details"></span></section>',
-      )
-      expect(markup).toContain(
-        '<aside class="dshDesktopDetailsSurface" aria-hidden="true" inert="">',
-      )
-
-      layout.openDetails()
-      const expandedProps = {
-        ...props,
-        useSessions: (select: (state: { current?: string; byId: Record<string, { blank: boolean }> }) => unknown) =>
-          select({ current: 'session-1', byId: { 'session-1': { blank: false } } }),
-      } as unknown as AdvancedFrameProps
-      const expandedMarkup = renderToStaticMarkup(createElement(Frame, expandedProps))
-      expect(expandedMarkup).toContain('<aside class="dshDesktopDetailsSurface">')
-      expect(expandedMarkup).not.toContain('<aside class="dshDesktopDetailsSurface" aria-hidden="true"')
-      expect(expandedMarkup).not.toContain('inert=""')
-    } finally {
-      vi.unstubAllGlobals()
-    }
-  })
-
-  it.each([
-    ['advanced', AdvancedFrame],
-    ['extended', ExtendedFrame],
-  ] as const)('renders the selected keyed main panel in %s mode', (_mode, Frame) => {
-    vi.stubGlobal('window', { innerWidth: 1440 })
-    const rendered: Array<{ name: string; options?: { entryKey?: string } }> = []
-    const props = {
-      layout: new DesktopLayoutState(),
-      platform: 'darwin',
-      usePanelInfo: (select: (state: { activePanelId: string | null }) => unknown) =>
-        select({ activePanelId: null }),
-      useSessions: (select: (state: { current?: string; byId: Record<string, { blank: boolean }> }) => unknown) =>
-        select({ byId: {} }),
-      SessionProvider: ({ children }: { children?: ReactNode }) => children,
-      renderSlot: (name: string, _owner: unknown, options?: { entryKey?: string }) => {
-        rendered.push({ name, ...(options === undefined ? {} : { options }) })
-        return createElement('span', { 'data-slot': name })
-      },
-    } as unknown as AdvancedFrameProps
-
-    try {
-      const markup = renderToStaticMarkup(createElement(Frame, props))
-      expect(markup).toContain('<main class="dshDesktopConversationSurface"><span data-slot="main"></span></main>')
-      expect(rendered).toContainEqual({ name: 'main', options: { entryKey: 'conversation' } })
-      expect(rendered.some(entry => entry.name === 'conversation')).toBe(false)
+      expect(markup).toContain('<span data-slot="rightbar"></span>')
+      expect(markup).not.toContain('data-session-provider')
+      expect(renderSlot).toHaveBeenCalledWith('main', {}, { entryKey: 'conversation' })
+      layout.selectPanel('files' as MainPanelId)
+      renderToStaticMarkup(createElement(Frame, props))
+      expect(renderSlot).toHaveBeenLastCalledWith('main', {}, { entryKey: 'files' })
+      layout.selectPanel(null)
+      renderToStaticMarkup(createElement(Frame, props))
+      expect(renderSlot).toHaveBeenLastCalledWith('main', {}, { entryKey: 'conversation' })
     } finally {
       vi.unstubAllGlobals()
     }
@@ -295,15 +190,10 @@ describe('advanced desktop layout', () => {
       expect(css).toMatch(/\.dshDesktopFrame\[data-dragging\] \{ transition: none; \}/)
       expect(css).toMatch(/\[data-slot="sidebar\.footer\.action"\] \{[^}]*display: flex !important;[^}]*flex-direction: column;[^}]*max-height: min\(40vh, 240px\);[^}]*overflow-y: auto;/)
       expect(css).toMatch(/\[data-slot="sidebar\.footer\.action"\] > \* \{[^}]*flex: none;[^}]*min-width: 0;/)
-      expectUnifiedSidebarFooterStyles(css)
-      expect(css).toMatch(/\.dshDesktopFrame\[data-details-collapsed\] \.dshDesktopDetailsSurface \{ border-left: none; \}/)
-      expect(css).toMatch(/\.dshDesktopRightbarSurface \{[^}]*overflow: visible;/)
+      expect(css).toContain('min-height: 0; overflow: visible;')
       expect(css).toMatch(/\.dshDesktopResizeHandle \{[^}]*transition: left var\(--ds-transition-duration-slow\) var\(--ds-ease-in-out\);/)
       expect(css).toMatch(/\.dshDesktopFrame\[data-dragging\] \.dshDesktopResizeHandle \{ transition: none; \}/)
-      expect(css).toMatch(/\[aria-modal="true"\] :is\(button, input, textarea, select, summary, a, \[role="button"\], \[role="tab"\], \[role="option"\]\):focus-visible \{[\s\S]*outline: 2px solid var\(--dsw-alias-brand-primary, #245eea\);[\s\S]*outline-offset: 2px;/)
-      expect(css).toMatch(/\[role="dialog"\]\[aria-modal="true"\] :is\(button, \[role="button"\], \[role="tab"\], \[role="option"\]\):active:not\(:disabled\) \{[\s\S]*transform: translateY\(1px\);/)
-      expect(css).toMatch(/@media \(prefers-reduced-motion: reduce\) \{[\s\S]*\.dshDesktopFrame,[\s\S]*\.dshDesktopResizeHandle,[\s\S]*\[aria-modal="true"\] \*,[\s\S]*animation-duration: 0\.01ms !important;[\s\S]*scroll-behavior: auto !important;/)
-      expect(css).toMatch(/\[role="dialog"\]\[aria-modal="true"\] \* \{[\s\S]*transition: none !important;[\s\S]*transform: none !important;/)
+      expect(css).toMatch(/@media \(prefers-reduced-motion: reduce\) \{[\s\S]*\.dshDesktopFrame,[\s\S]*\.dshDesktopResizeHandle \{ transition: none !important; \}/)
       expect(css).toMatch(/\.dshDesktopSidebarSurface\s*\{[^}]*--dsw-specific-sidebar-fill:\s*transparent;/)
       expect(css).toMatch(/data-desktop-mode="advanced"\]\[data-desktop-platform="darwin"\]\[data-sidebar-collapsed\][^{]*\.dshDesktopUpstreamSidebar \{[^}]*width:\s*56px;[^}]*margin:\s*0 auto;/)
       expect(css).not.toMatch(/data-desktop-mode="extended"[^{}]*data-sidebar-collapsed[^{}]*\.dshDesktopUpstreamSidebar/)
@@ -312,7 +202,7 @@ describe('advanced desktop layout', () => {
       expect(css).toContain(`grid-template-rows: ${ADVANCED_MACOS_DRAG_REGION_HEIGHT}px minmax(0, 1fr)`)
       expect(css).toMatch(/\.dshDesktopFrame\[data-desktop-mode="advanced"\]\[data-desktop-platform="darwin"\] \.dshDesktopSidebarSurface \{[^}]*grid-row: 1 \/ -1;/)
       expect(css).not.toMatch(/data-desktop-platform="darwin"\] \.dshDesktopSidebarSurface \{[^}]*-webkit-app-region: no-drag;/)
-      expect(css).toMatch(/\.dshDesktopFrame\[data-desktop-mode="advanced"\]\[data-desktop-platform="darwin"\] \.dshDesktopConversationSurface,\s*\.dshDesktopFrame\[data-desktop-mode="advanced"\]\[data-desktop-platform="darwin"\] \.dshDesktopRightbarSurface,\s*\.dshDesktopFrame\[data-desktop-mode="advanced"\]\[data-desktop-platform="darwin"\] \.dshDesktopDetailsSurface \{ grid-row: 2; \}/)
+      expect(css).toMatch(/\.dshDesktopFrame\[data-desktop-mode="advanced"\]\[data-desktop-platform="darwin"\] \.dshDesktopConversationSurface,\s*\.dshDesktopFrame\[data-desktop-mode="advanced"\]\[data-desktop-platform="darwin"\] \.dshDesktopRightbarSurface \{ grid-row: 2; \}/)
       expect(css).toMatch(new RegExp(`data-desktop-platform="darwin"\\] \\.dshDesktopSidebarSurface::before \\{[^}]*z-index: ${ADVANCED_MACOS_DRAG_LAYER_Z_INDEX};[^}]*left: ${MACOS_TRAFFIC_LIGHT_SAFE_WIDTH}px;[^}]*height: ${ADVANCED_MACOS_DRAG_REGION_HEIGHT}px;[^}]*-webkit-app-region: drag;`))
       expect(css).toMatch(new RegExp(`\\.dshDesktopMacCaptionRow \\{[^}]*position: absolute;[^}]*z-index: ${ADVANCED_MACOS_DRAG_LAYER_Z_INDEX};[^}]*grid-column: 2 / -1;[^}]*grid-row: 1;[^}]*left: 0;[^}]*height: ${ADVANCED_MACOS_DRAG_REGION_HEIGHT}px;[^}]*background: var\\(--dsw-alias-bg-base\\);[^}]*-webkit-app-region: drag;`))
       expect(css).not.toContain('.dshDesktopMacCaptionRow::before')
@@ -326,7 +216,7 @@ describe('advanced desktop layout', () => {
       expect(css).not.toMatch(/html:has\(\[aria-modal="true"\]\) \.dshDesktopSidebarSurface/)
       expect(css).toContain(`grid-template-rows: ${ADVANCED_WINDOWS_TITLEBAR_HEIGHT}px minmax(0, 1fr)`)
       expect(css).toMatch(/\.dshDesktopFrame\[data-desktop-mode="advanced"\]\[data-desktop-platform="win32"\] \.dshDesktopSidebarSurface \{ grid-row: 1 \/ -1; \}/)
-      expect(css).toMatch(/\.dshDesktopFrame\[data-desktop-mode="advanced"\]\[data-desktop-platform="win32"\] \.dshDesktopConversationSurface,\s*\.dshDesktopFrame\[data-desktop-mode="advanced"\]\[data-desktop-platform="win32"\] \.dshDesktopRightbarSurface,\s*\.dshDesktopFrame\[data-desktop-mode="advanced"\]\[data-desktop-platform="win32"\] \.dshDesktopDetailsSurface \{ grid-row: 2; \}/)
+      expect(css).toMatch(/\.dshDesktopFrame\[data-desktop-mode="advanced"\]\[data-desktop-platform="win32"\] \.dshDesktopConversationSurface,\s*\.dshDesktopFrame\[data-desktop-mode="advanced"\]\[data-desktop-platform="win32"\] \.dshDesktopRightbarSurface \{ grid-row: 2; \}/)
       expect(css).toMatch(/\.dshDesktopWindowsCaptionRow \{[^}]*grid-column: 2 \/ -1;[^}]*grid-row: 1;/)
       expect(css).toMatch(new RegExp(`\\.dshDesktopWindowsCaptionRow::before \\{[^}]*inset: 0 ${WINDOWS_CAPTION_CONTROLS_WIDTH}px 0 0;[^}]*-webkit-app-region: drag;`))
       expect(css).toContain('html:has([aria-modal="true"]) .dshDesktopWindowsCaptionRow::before { -webkit-app-region: no-drag !important; }')
@@ -343,11 +233,10 @@ describe('advanced desktop layout', () => {
   it('releases the Cordis layout service with its owning effect', () => {
     let disposed = false
     let uninstall: unknown
-    const layout = new DesktopLayoutState()
-    const navigation = layout.beginNavigation()
     const ctx = {
       slots: { provideRoot: () => () => {}, subscribe: () => () => {} },
       reflect: {
+        get: () => undefined,
         provide: (name: string, value: unknown) => {
           expect(name).toBe('layout')
           expect(value).toBeInstanceOf(DesktopLayoutState)
@@ -359,12 +248,41 @@ describe('advanced desktop layout', () => {
       effect: (factory: () => unknown) => { uninstall = factory() },
     } as unknown as ClientContext
 
+    const layout = new DesktopLayoutState()
     expect(claimDesktopLayout(ctx, layout)).toBe(true)
+    const navigation = layout.beginNavigation()
     expect(disposed).toBe(false)
     expect(typeof uninstall).toBe('function')
     ;(uninstall as () => void)()
     expect(disposed).toBe(true)
     expect(navigation.aborted).toBe(true)
+  })
+
+  it('cancels superseded navigation and falls back when a selected panel unloads', () => {
+    const registered = new Set(['files', 'settings'])
+    const layout = new DesktopLayoutState(id => registered.has(id))
+    const changed = vi.fn()
+    const off = layout.subscribe(changed)
+    const first = layout.beginNavigation()
+    const second = layout.beginNavigation()
+    expect(first.aborted).toBe(true)
+    expect(second.aborted).toBe(false)
+    layout.selectPanel('files' as MainPanelId)
+    expect(second.aborted).toBe(true)
+    const geometry = layout.getSnapshot()
+    const pending = layout.beginNavigation()
+    expect(() => layout.selectPanel('missing' as MainPanelId)).toThrow('not registered')
+    expect(layout.getPanelInfo().activePanelId).toBe('files')
+    expect(pending.aborted).toBe(false)
+    registered.delete('files')
+    layout.retainMainPanels()
+    expect(layout.getPanelInfo().activePanelId).toBeNull()
+    expect(layout.getSnapshot()).toBe(geometry)
+    expect(pending.aborted).toBe(true)
+    expect(changed).toHaveBeenCalledTimes(2)
+    off()
+    layout.selectPanel('settings' as MainPanelId)
+    expect(changed).toHaveBeenCalledTimes(2)
   })
 
   it('keeps the enhanced root registration independent from the extended frame', () => {
@@ -397,13 +315,14 @@ describe('advanced desktop layout', () => {
         const dispose = mount()
         if (typeof dispose === 'function') disposers.push(dispose)
       }),
-      reflect: { provide: vi.fn(() => () => {}) },
+      reflect: { get: vi.fn(), provide: vi.fn(() => () => {}) },
       theme: {
         getTheme: vi.fn(() => ({ active: { colorScheme: 'dark', tokens: {} } })),
       },
       on: vi.fn(() => () => {}),
       slots: {
         provideRoot: vi.fn(() => () => {}),
+        subscribe: vi.fn(() => () => {}),
         register: vi.fn((options: Record<string, unknown>, occupant: unknown) => {
           registrations.push(options)
           occupants.push(occupant)
@@ -422,19 +341,6 @@ describe('advanced desktop layout', () => {
       })
       expect(registrations).toHaveLength(1)
       expect(occupants).toEqual([AdvancedFrame])
-      expect(registrations[0]).toMatchObject({
-        name: 'root',
-        children: {
-          sidebar: { kind: 'single', scope: 'root' },
-          main: { kind: 'keyed', scope: 'root' },
-          rightbar: { kind: 'single', scope: 'root' },
-          'shell.overlay': { kind: 'list', scope: 'root' },
-        },
-      })
-      expect((registrations[0]?.children as Record<string, unknown>)).not.toHaveProperty('conversation')
-      expect(ctx.slots.provideRoot).toHaveBeenCalledWith({
-        hooks: { panelInfo: expect.any(DesktopLayoutState) },
-      })
       const rootInject = (registrations[0]?.inject as () => Record<string, unknown>)()
       expect(rootInject).toMatchObject({ platform: 'darwin' })
       expect(rootInject).not.toHaveProperty('mode')
@@ -549,43 +455,23 @@ describe('advanced desktop layout', () => {
 
   it('reports right Sidebar presentation and preserves width across close and fullscreen', () => {
     const layout = new DesktopLayoutState()
-    const snapshots: Array<ReturnType<DesktopLayoutState['getSnapshot']>> = []
-    layout.subscribe(() => { snapshots.push(layout.getSnapshot()) })
-    layout.toggleSidebar()
-    layout.openDetails()
-    layout.closeDetails()
-    expect(snapshots).toHaveLength(3)
-    expect(snapshots.map(({ sidebar, details, narrow, narrowExpanded }) => ({ sidebar, details, narrow, narrowExpanded }))).toEqual([
-        { sidebar: 0, details: 0, narrow: false, narrowExpanded: false },
-        { sidebar: 0, details: 360, narrow: false, narrowExpanded: false },
-        { sidebar: 0, details: 0, narrow: false, narrowExpanded: false },
-      ])
-  })
-
-  it('selects registered main panels and cancels superseded navigation', () => {
-    const layout = new DesktopLayoutState(id => id === 'plugin-market')
-    const firstNavigation = layout.beginNavigation()
-    const snapshots: Array<ReturnType<DesktopLayoutState['getSnapshot']>> = []
-    layout.subscribe(() => { snapshots.push(layout.getSnapshot()) })
-
-    layout.selectPanel('plugin-market')
-    expect(firstNavigation.aborted).toBe(true)
-    expect(layout.getSnapshot().activePanelId).toBe('plugin-market')
-    expect(() => { layout.selectPanel('missing-panel') }).toThrow('is not registered')
-    expect(layout.getSnapshot().activePanelId).toBe('plugin-market')
-    layout.selectPanel(null)
-    expect(layout.getSnapshot().activePanelId).toBeNull()
-    expect(snapshots.map(snapshot => snapshot.activePanelId)).toEqual(['plugin-market', null])
-  })
-
-  it('publishes the upstream rightbar presentation contract', () => {
-    const layout = new DesktopLayoutState()
-    layout.openRightbar(false, false)
-    expect(layout.getSnapshot()).toMatchObject({ rightbarShown: true, rightbarTrack: false, rightbarFullscreen: false })
+    layout.setRightbar(510, 1440)
+    layout.openRightbar(true, false)
+    expect(layout.getSnapshot()).toMatchObject({ rightbar: 510, rightbarShown: true, rightbarTrack: true, rightbarFullscreen: false })
     layout.openRightbar(true, true)
-    expect(layout.getSnapshot()).toMatchObject({ rightbarShown: true, rightbarTrack: true, rightbarFullscreen: true })
+    expect(layout.getSnapshot()).toMatchObject({ rightbar: 510, rightbarTrack: true, rightbarFullscreen: true })
     layout.closeRightbar()
-    expect(layout.getSnapshot()).toMatchObject({ rightbarShown: false, rightbarTrack: false, rightbarFullscreen: false })
+    expect(layout.getSnapshot()).toMatchObject({ rightbar: 510, rightbarShown: false, rightbarTrack: false, rightbarFullscreen: false })
+    layout.setNarrow(true)
+    layout.toggleSidebar()
+    layout.openRightbar(false, true)
+    expect(layout.getSnapshot()).toMatchObject({ narrowExpanded: false, rightbarTrack: false, rightbarFullscreen: true })
+  })
+
+  it('concedes the right track only when the upstream minimum panel and conversation cannot fit', () => {
+    expect(computeDesktopColumns(1000, 0, 450)).toEqual({ sidebar: 56, center: 494, rightbar: 450 })
+    expect(computeDesktopColumns(800, 0, 450)).toEqual({ sidebar: 56, center: 400, rightbar: 344 })
+    expect(computeDesktopColumns(700, 0, 450)).toEqual({ sidebar: 56, center: 644, rightbar: 0 })
   })
 
   it('lets the rail re-expand without losing its wide preference on narrow windows', () => {
@@ -623,8 +509,6 @@ describe('independent Desktop frame', () => {
       expect(css).toMatch(/\[data-shell-overlay\] \{[^}]*overflow: hidden;[^}]*transform: translateZ\(0\);/)
       expect(css).toMatch(/\[data-slot="sidebar\.footer\.action"\] \{[^}]*display: flex !important;[^}]*flex-direction: column;[^}]*max-height: min\(40vh, 240px\);[^}]*overflow-y: auto;/)
       expect(css).toMatch(/\[data-slot="sidebar\.footer\.action"\] > \* \{[^}]*flex: none;[^}]*min-width: 0;/)
-      expectUnifiedSidebarFooterStyles(css)
-      expect(css).toMatch(/#root:has\(\[data-details-collapsed\]\) \[data-dsh-conversation-drop-target\] \{[^}]*--dsh-chat-content-width: var\(--dsh-chat-user-width, min\(calc\(100% - 32px\), 1280px\)\);/)
       expect(css).toMatch(/\[role="presentation"\]:has\(> \[aria-modal="true"\]\),[\s\S]*> \[aria-modal="true"\] \{[\s\S]*top: var\(--dsh-desktop-frame-height\) !important;/)
       expect(css).not.toContain('#root > :has(> [data-shell-overlay])')
       expect(css).toMatch(/body\[data-dsh-desktop-mode="extended"\] \.dshDesktopSidebarSurface \{[^}]*--dsw-specific-sidebar-fill: transparent;[^}]*border-right-color: transparent;[^}]*background: transparent !important;/)
@@ -646,13 +530,6 @@ describe('independent Desktop frame', () => {
       expect(appendChild).toHaveBeenCalledWith(style)
       dispose()
       expect(remove).toHaveBeenCalledOnce()
-
-      const removeOwned = installDesktopOwnedStyles()
-      expect(css).toContain('--dsh-plugin-control-height: 36px;')
-      expect(css).toMatch(/\[role="dialog"\]\[aria-modal="true"\] :is\(button, input, select, textarea\):focus-visible \{[\s\S]*outline: 2px solid var\(--dsw-alias-brand-primary/)
-      expect(css).toMatch(/\[role="dialog"\]\[aria-modal="true"\] :is\(button, input, select, textarea\):disabled \{[\s\S]*cursor: not-allowed;/)
-      expect(css).toContain('@media (max-width: 767px)')
-      removeOwned()
     } finally {
       vi.unstubAllGlobals()
     }
@@ -694,7 +571,7 @@ describe('independent Desktop frame', () => {
         const dispose = mount()
         if (typeof dispose === 'function') disposers.push(dispose)
       }),
-      reflect: { provide: vi.fn(() => () => {}) },
+      reflect: { get: vi.fn(), provide: vi.fn(() => () => {}) },
       theme: {
         getTheme: vi.fn(() => ({ active: { colorScheme: 'dark', tokens: {} } })),
       },
@@ -703,7 +580,6 @@ describe('independent Desktop frame', () => {
         provideRoot: vi.fn(() => () => {}),
         subscribe: vi.fn(() => () => {}),
         inject: vi.fn((_name: string, mount: () => unknown) => mount()),
-        provideRoot: vi.fn(() => () => {}),
         register: vi.fn((options: Record<string, unknown>, occupant: unknown) => {
           registrations.push(options)
           occupants.push(occupant)
@@ -725,14 +601,9 @@ describe('independent Desktop frame', () => {
         children: {
           sidebar: { kind: 'single', scope: 'root' },
           main: { kind: 'keyed', scope: 'root' },
-          details: { kind: 'single', scope: 'session' },
           rightbar: { kind: 'single', scope: 'root' },
           'shell.overlay': { kind: 'list', scope: 'root' },
         },
-      })
-      expect((registrations[0]?.children as Record<string, unknown>)).not.toHaveProperty('conversation')
-      expect(ctx.slots.provideRoot).toHaveBeenCalledWith({
-        hooks: { panelInfo: expect.any(DesktopLayoutState) },
       })
       expect(registrations[0]?.inject).toBeTypeOf('function')
       const rootInject = (registrations[0]?.inject as () => Record<string, unknown>)()

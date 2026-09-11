@@ -27,6 +27,7 @@ function child(): ControlledSubprocess {
   const outcome = deferred<SubprocessOutcome>()
   const tree = deferred<boolean>()
   return {
+    pid: 43120,
     stdin: undefined,
     stdout: new PassThrough(),
     stderr: new PassThrough(),

@@ -144,7 +144,7 @@ export function packageMacSmoke(options: MacSmokePackageOptions = defaultOptions
       ...cleanEnvironment,
       CSC_IDENTITY_AUTO_DISCOVERY: 'false',
       // Preserve pnpm metadata so Electron Builder selects its v11 collector.
-    },
+    }),
   )
   options.run(
     options.nodeExecutable,
