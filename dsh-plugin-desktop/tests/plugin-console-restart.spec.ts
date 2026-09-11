@@ -56,7 +56,10 @@ async function mount(confirmRestart: (acknowledge: () => Promise<void>) => Promi
     get: (name: string) => name === 'desktopActions'
       ? (legacy === 'missing' ? undefined : legacy ? { requestRestart() {} } : ctx.desktopActions)
       : name === 'desktopRuntime' ? {} : undefined,
-    loader: { entries: () => [{ id: 'webserver', options: { name: '@deepseek-ai/dsh-host-webserver', config: { port: address.port } } }] },
+    loader: { entries: () => [
+      { id: 'webserver', options: { name: '@deepseek-ai/dsh-host-webserver', config: { port: address.port } } },
+      { id: 'plugin-a', options: { name: '@example/plugin-a' } },
+    ] },
     webServer: { register: (route: { handler: typeof handler }) => { handler = route.handler; return () => {} } },
   })
   return { events, received: () => received, request: (path = 'restart', init: RequestInit = {}) => fetch(`${origin}/plugin-console/${path}`, {
@@ -151,5 +154,28 @@ describe('Plugin Console desktop-owned restart route', () => {
     const missing = await mount(confirmRestart, 'missing')
     expect((await missing.request()).status).toBe(503)
     expect(confirmRestart).toHaveBeenCalledOnce()
+  })
+
+  it('rejects profile mutations from other windows while an install job is active', async () => {
+    processes.execFile.mockImplementation((() => {
+      return { on() {} }
+    }) as never)
+    const harness = await mount(async () => false)
+    const install = await harness.request('install', { body: JSON.stringify({ packageName: '@example/active-plugin' }) })
+    expect(install.status).toBe(200)
+    expect(await install.json()).toMatchObject({ ok: true, status: 'installing' })
+
+    for (const [path, body] of [
+      ['toggle', { entryId: 'plugin-a', enabled: false }],
+      ['uninstall', { entryId: 'plugin-a' }],
+      ['skill-toggle', { name: 'alpha-skill', enabled: false }],
+    ] as const) {
+      const response = await harness.request(path, { body: JSON.stringify(body) })
+      expect(response.status).toBe(409)
+      expect(await response.json()).toMatchObject({ ok: false, error: expect.stringContaining('安装任务进行中') })
+    }
+    expect(processes.execFile).toHaveBeenCalled()
+    // Keep the background command suspended so the test proves the active-job branch.
+    processes.execFile.mockClear()
   })
 })

@@ -3,6 +3,7 @@ import { spawnSync } from 'node:child_process'
 import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import test from 'node:test'
+import { runInNewContext } from 'node:vm'
 import { apply } from '../index.js'
 test('daily report package exposes a standalone client', async () => { const manifest = JSON.parse(await readFile(new URL('../package.json', import.meta.url))); assert.equal(manifest.name, '@dofe/dsh-yootun-daily-report'); assert.equal(manifest.exports['./client'], './lib/client.js') })
 test('generated client bundle is valid JavaScript', () => {
@@ -13,6 +14,16 @@ test('localizes source states and keeps unavailable metrics explicit', async () 
   const source = await readFile(new URL('../src/client.js', import.meta.url), 'utf8')
   for (const token of ['sourceReady', 'sourceUnavailable', 'sourceError', 'toolsSource', 'request_failed', 'response.ok', "t('sourceUnavailable')", '.ydr-overlay{position:fixed', '.ydr-shell{display:grid', '.ydr-content{min-height:0']) assert.match(source, new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'u'))
   assert.doesNotMatch(source, /\? '不可用'/u)
+})
+test('degraded sources keep partial availability semantics instead of becoming unavailable', async () => {
+  const source = await readFile(new URL('../src/client.js', import.meta.url), 'utf8')
+  const { statusLabel, stateCss } = runInNewContext(`${source}\n;({ statusLabel, stateCss })`, { require: () => ({}), module: { exports: {} } })
+  const t = key => key
+  for (const status of ['partial', 'degraded', 'warning']) assert.equal(statusLabel(status, t), 'sourcePartial')
+  for (const status of [undefined, 'unavailable', 'unexpected']) assert.equal(statusLabel(status, t), 'sourceUnavailable')
+  assert.equal(statusLabel('ready', t), 'sourceReady')
+  assert.equal(statusLabel('error', t), 'sourceError')
+  assert.match(stateCss, /\.ydr-source-partial,\.ydr-source-degraded,\.ydr-source-warning\{color:color-mix/u)
 })
 test('daily report aggregates yesterday session events', async () => {
   let route
