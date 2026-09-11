@@ -975,7 +975,11 @@ window.__ModuleLoader__.load({
 			react.useEffect(() => {
 				if (!sourcesOpen) return undefined;
 				modalReturnFocusRef.current = document.activeElement;
-				const focusFrame = window.requestAnimationFrame(() => (modalCardRef.current?.querySelector('button[aria-label]:not([disabled])') || modalCardRef.current?.querySelector('button:not([disabled]),input:not([disabled]),textarea:not([disabled]),select:not([disabled]),a[href]'))?.focus?.());
+				const focusFrame = window.requestAnimationFrame(() => {
+					const card = modalCardRef.current;
+					if (card?.contains(document.activeElement)) return;
+					(card?.querySelector('button[aria-label]:not([disabled])') || card?.querySelector('button:not([disabled]),input:not([disabled]),textarea:not([disabled]),select:not([disabled]),a[href]'))?.focus?.();
+				});
 				const onModalKeyDown = (event) => {
 					if (event.key === "Escape") { event.preventDefault(); setSourcesOpen(false); return; }
 					if (event.key !== "Tab") return;

@@ -1,5 +1,6 @@
 import React from 'react'
 import { createRoot } from 'react-dom/client'
+import { installModalOverlayIsolation } from '../../../../deepseek-harness/packages/client/ui-layout/src/client/modal-overlay.ts'
 
 const source = await fetch('/__plugin_console_source__').then(response => response.text())
 let plugin
@@ -31,8 +32,14 @@ plugin.apply(context)
 const PluginConsoleTab = components.get('settings.plugins.tab')
 const t = key => dictionaries.zh?.[key] ?? key
 
+function ConsoleFrame() {
+  const frame = React.useRef(null)
+  React.useEffect(() => installModalOverlayIsolation(frame.current), [])
+  return <div ref={frame}><PluginConsoleTab t={t} /></div>
+}
+
 createRoot(document.getElementById('root')).render(
   <React.StrictMode>
-    <PluginConsoleTab t={t} />
+    <ConsoleFrame />
   </React.StrictMode>,
 )
