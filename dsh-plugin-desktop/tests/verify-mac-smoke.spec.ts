@@ -56,7 +56,7 @@ function options(
   const value: MacSmokeVerificationOptions = {
     distDir: '/release/dist',
     productName: 'Yootun-Agent Beta',
-    listDmgs: () => ['/release/dist/Yootun-Agent-Beta-2.0.7-beta.4.dmg'],
+    listDmgs: () => ['/release/dist/Yootun-Agent-Beta-2.0.7-beta.5.dmg'],
     makeMountPoint: () => '/private/tmp/dsh-desktop-dmg-smoke-test',
     run: (command, args) => { calls.push({ command, args: [...args] }) },
     removeMountPoint,
@@ -102,14 +102,14 @@ describe('macOS DMG smoke artifact verification', () => {
 
     expect(verifyMacSmoke(harness.value)).toEqual({
       appPath,
-      dmgPath: '/release/dist/Yootun-Agent-Beta-2.0.7-beta.4.dmg',
+      dmgPath: '/release/dist/Yootun-Agent-Beta-2.0.7-beta.5.dmg',
     })
 
     expect(harness.calls).toEqual([
       {
         command: 'hdiutil',
         args: [
-          'attach', '/release/dist/Yootun-Agent-Beta-2.0.7-beta.4.dmg',
+          'attach', '/release/dist/Yootun-Agent-Beta-2.0.7-beta.5.dmg',
           '-mountpoint', value.root, '-nobrowse', '-readonly',
         ],
       },
@@ -145,7 +145,7 @@ describe('macOS DMG smoke artifact verification', () => {
     expect(harness.calls).toEqual([
       {
         command: 'hdiutil',
-        args: ['attach', '/release/dist/Yootun-Agent-Beta-2.0.7-beta.4.dmg', '-mountpoint', value.root, '-nobrowse', '-readonly'],
+        args: ['attach', '/release/dist/Yootun-Agent-Beta-2.0.7-beta.5.dmg', '-mountpoint', value.root, '-nobrowse', '-readonly'],
       },
       { command: 'hdiutil', args: ['detach', value.root] },
     ])

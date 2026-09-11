@@ -157,8 +157,14 @@ try {
   assert.equal(await page.evaluate(() => document.activeElement?.getAttribute('aria-label')), '关闭')
 
   await page.keyboard.press('Shift+Tab')
-  assert.equal(await page.evaluate(() => document.activeElement?.textContent), '关闭')
+  assert.equal(await dialog.getByRole('button', { name: '关闭', exact: true }).last()
+    .evaluate(button => button === document.activeElement), true, 'Shift+Tab from the first control must reach the footer close button')
   await page.keyboard.press('Tab')
+  assert.equal(await page.evaluate(() => document.activeElement?.getAttribute('aria-label')), '关闭')
+  await page.keyboard.press('Tab')
+  assert.equal(await dialog.getByRole('button', { name: '编辑', exact: true })
+    .evaluate(button => button === document.activeElement), true, 'Tab must move into the dialog contents')
+  await page.keyboard.press('Shift+Tab')
   assert.equal(await page.evaluate(() => document.activeElement?.getAttribute('aria-label')), '关闭')
   const focus = await page.evaluate(() => ({
     width: getComputedStyle(document.activeElement).outlineWidth,
