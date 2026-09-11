@@ -11,6 +11,7 @@ test('renders missing sales metrics as an unknown dash', async () => {
   assert.match(source, /const dashboard = current\.dashboard \|\| \{\}/u)
 })
 
+test('formats missing and malformed intent confidence as an explicit unknown', async () => { const source = await readFile(new URL('src/client.js', root), 'utf8'); assert.match(source, /function confidenceLabel\(value, t\)/u); assert.match(source, /value === null \|\| value === undefined \|\| value === '' \|\| !Number\.isFinite\(parsed\)/u); assert.match(source, /Math\.max\(0, Math\.min\(1, parsed\)\)/u); assert.match(source, /confidenceLabel\(item\.confidence, t\)/u); assert.doesNotMatch(source, /Math\.round\(Number\(item\.confidence\) \* 100\)/u) })
 test('publishes the browser sales plugin with its bundle patch', async () => {
   const manifest = JSON.parse(await readFile(new URL('package.json', root), 'utf8'))
   assert.equal(manifest.name, '@dofe/dsh-yootun-sales')
