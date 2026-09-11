@@ -11,9 +11,16 @@ const here = fileURLToPath(new URL('.', import.meta.url))
 const packageRoot = resolve(here, '../..')
 const workspaceRoot = resolve(packageRoot, '..')
 const harnessRoot = resolve(here, 'yootun-audit')
+// Keep the custom blue palette as a token-mapping regression, and exercise the
+// actual application palettes with DSH_VISUAL_THEME=official-light/official-dark.
+const visualTheme = process.env.DSH_VISUAL_THEME || 'custom'
+assert(['custom', 'official-light', 'official-dark'].includes(visualTheme), `Unknown visual theme: ${visualTheme}`)
+const officialThemeCss = visualTheme === 'custom' ? null : await readFile(
+  resolve(workspaceRoot, 'deepseek-harness/packages/client/ui-theme/src/styles/design-platform.css'), 'utf8',
+)
 const evidenceRoot = process.env.DSH_VISUAL_EVIDENCE_ROOT
   ? resolve(process.env.DSH_VISUAL_EVIDENCE_ROOT)
-  : resolve(workspaceRoot, 'docs/superpowers/evidence/2026-09-08-search-locks')
+  : resolve(workspaceRoot, 'docs/superpowers/evidence/2026-09-08-search-locks', visualTheme)
 const sources = {
   content: resolve(workspaceRoot, '.ci/dsh-yootun-content-command/src/client.js'),
   dashboard: resolve(workspaceRoot, '.ci/dsh-yootun-dashboard/src/client.js'),
@@ -35,6 +42,18 @@ const vite = await createServer({
   server: { host: '127.0.0.1', port: 0 },
   plugins: [{
     name: 'search-lock-source',
+    transformIndexHtml(html) {
+      if (!officialThemeCss) return html
+      const dark = visualTheme === 'official-dark'
+      return {
+        html: html.replace('<body>', dark ? '<body data-ds-dark-theme>' : '<body>'),
+        tags: [{
+          tag: 'style',
+          children: `${officialThemeCss}\n:root { color-scheme: ${dark ? 'dark' : 'light'}; }`,
+          injectTo: 'head',
+        }],
+      }
+    },
     configureServer(server) {
       server.middlewares.use('/__audit_source__', async (request, response) => {
         const sourceId = new URL(request.url || '/', 'http://127.0.0.1').searchParams.get('source')
@@ -369,6 +388,17 @@ async function assertDesktopViewport(header = '.yd-header', content = '.yd-overv
 
 try {
   await page.goto(`${url}?source=dashboard`)
+  if (officialThemeCss) {
+    const themeState = await page.evaluate(() => ({
+      dark: document.body.hasAttribute('data-ds-dark-theme'),
+      scheme: getComputedStyle(document.documentElement).colorScheme,
+      brand: getComputedStyle(document.body).getPropertyValue('--dsw-alias-brand-primary').trim(),
+    }))
+    const dark = visualTheme === 'official-dark'
+    assert.equal(themeState.dark, dark)
+    assert.equal(themeState.scheme, dark ? 'dark' : 'light')
+    assert.equal(themeState.brand, dark ? 'rgb(249, 250, 251)' : 'rgb(15, 17, 21)')
+  }
   await page.getByRole('button', { name: '企业看板' }).click()
   await page.getByRole('heading', { name: '企业驾驶舱' }).waitFor()
   await page.locator('.yd-overview').waitFor()
@@ -733,7 +763,7 @@ try {
   await page.screenshot({ path: resolve(evidenceRoot, '1440-dashboard-overview.png'), fullPage: true })
 
   assert.deepEqual(consoleProblems, [])
-  process.stdout.write('search-locks-browser: 10 plugins, 26 screenshots, request locks, report coverage, long text, keyboard selection, and responsive theme mappings verified\n')
+  process.stdout.write(`search-locks-browser: ${visualTheme}, 10 plugins, 26 screenshots, request locks, report coverage, long text, keyboard selection, and responsive theme mappings verified\n`)
 } finally {
   releaseDailyRefresh()
   releaseFinopsRefresh()
