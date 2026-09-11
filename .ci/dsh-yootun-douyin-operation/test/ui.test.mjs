@@ -220,6 +220,7 @@ test('账号状态：仅登录有效时可采集，过期/未知需重新扫码'
   assert.deepEqual(accountState({ sessionStatus: 'ok' }), { status: 'ok', collectable: true, needsRescan: false })
   assert.deepEqual(accountState({ sessionStatus: 'expired' }), { status: 'expired', collectable: false, needsRescan: true })
   assert.deepEqual(accountState({}), { status: 'unknown', collectable: false, needsRescan: true })
+  assert.equal(accountState({ sessionStatus: 'unexpected' }).status, 'unknown')
 })
 
 test('采集进度文案：采集阶段按作品、入库阶段按批次', () => {
