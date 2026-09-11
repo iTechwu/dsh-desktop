@@ -395,7 +395,7 @@ export interface SalesRouteDependencies {
 
 const SALES_AUDIT_SOURCE = Object.freeze({
   pluginId: 'dsh-plugin-desktop/yootun-sales',
-  pluginVersion: '2.0.7-beta.4',
+  pluginVersion: '2.0.7-beta.5',
   surface: 'human_ui' as const,
 })
 
