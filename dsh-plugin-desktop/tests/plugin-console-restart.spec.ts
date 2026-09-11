@@ -1,18 +1,35 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
+import { mkdtemp, readdir, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import DesktopActionsService from '../src/desktop-actions.ts'
 
-const processes = vi.hoisted(() => ({ execFile: vi.fn(() => { throw new Error('Plugin must not launch a restart script') }) }))
+const processes = vi.hoisted(() => ({
+  execFile: vi.fn(() => { throw new Error('Plugin must not launch a restart script') }),
+  write: vi.fn(() => { throw new Error('Desktop framework routes must not write files') }),
+  https: vi.fn(() => { throw new Error('Desktop framework routes must not query npm') }),
+}))
 vi.mock('node:child_process', async importOriginal => ({
   ...await importOriginal<typeof import('node:child_process')>(), execFile: processes.execFile,
+}))
+vi.mock('node:fs', async importOriginal => ({
+  ...await importOriginal<typeof import('node:fs')>(),
+  writeFileSync: processes.write, mkdirSync: processes.write, copyFileSync: processes.write, rmSync: processes.write,
+}))
+vi.mock('node:https', async importOriginal => ({
+  ...await importOriginal<typeof import('node:https')>(), request: processes.https,
 }))
 
 const cleanup: Array<() => Promise<unknown>> = []
 afterEach(async () => {
   for (const dispose of cleanup.splice(0).reverse()) await dispose()
   expect(processes.execFile).not.toHaveBeenCalled()
+  expect(processes.write).not.toHaveBeenCalled()
+  expect(processes.https).not.toHaveBeenCalled()
   vi.clearAllMocks()
+  vi.unstubAllEnvs()
 })
 
 async function mount(confirmRestart: (acknowledge: () => Promise<void>) => Promise<boolean>, legacy: boolean | 'missing' = false) {
@@ -39,7 +56,7 @@ async function mount(confirmRestart: (acknowledge: () => Promise<void>) => Promi
     get: (name: string) => name === 'desktopActions'
       ? (legacy === 'missing' ? undefined : legacy ? { requestRestart() {} } : ctx.desktopActions)
       : name === 'desktopRuntime' ? {} : undefined,
-    loader: { entries: () => [{ options: { name: '@deepseek-ai/dsh-host-webserver', config: { port: address.port } } }] },
+    loader: { entries: () => [{ id: 'webserver', options: { name: '@deepseek-ai/dsh-host-webserver', config: { port: address.port } } }] },
     webServer: { register: (route: { handler: typeof handler }) => { handler = route.handler; return () => {} } },
   })
   return { events, received: () => received, request: (path = 'restart', init: RequestInit = {}) => fetch(`${origin}/plugin-console/${path}`, {
@@ -48,6 +65,29 @@ async function mount(confirmRestart: (acknowledge: () => Promise<void>) => Promi
 }
 
 describe('Plugin Console desktop-owned restart route', () => {
+  it('keeps desktop state reads free of framework patches and legacy progress files', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'plugin-console-framework-'))
+    cleanup.push(() => rm(root, { recursive: true, force: true }))
+    vi.stubEnv('DSH_HOME', root)
+    const harness = await mount(async () => false)
+    const response = await harness.request('state', { method: 'GET', body: null })
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject({ framework: null, frameworkUpgradeOwner: 'desktop', nativeRestartConfirmation: true })
+    expect(await (await harness.request('framework-upgrade-status', { method: 'GET', body: null })).json())
+      .toEqual({ ok: true, status: 'idle', message: null, owner: 'desktop' })
+    expect(await readdir(root)).toEqual([])
+  })
+
+  it('blocks in-place desktop framework upgrades and returns the application owner for version checks', async () => {
+    const harness = await mount(async () => false)
+    expect((await harness.request('framework-upgrade')).status).toBe(409)
+    for (const packageName of ['@deepseek-ai/dsh', '@deepseek-ai/dsh-root', '@deepseek-ai/cordis']) {
+      const checked = await harness.request('check-update', { body: JSON.stringify({ packageName }) })
+      expect(await checked.json()).toMatchObject({ ok: true, source: 'desktop', managed: true, latest: null })
+      expect((await harness.request('install', { body: JSON.stringify({ packageName }) })).status).toBe(409)
+    }
+  })
+
   it.each(['restart', 'framework-relaunch'])('delegates %s and flushes acceptance before teardown', async path => {
     let harness!: Awaited<ReturnType<typeof mount>>
     const confirmRestart = vi.fn(async (acknowledge: () => Promise<void>) => {

@@ -317,6 +317,11 @@ window.__ModuleLoader__.load({
 			frameworkPatchApplied: "已重新应用",
 			frameworkPatchSkipped: "无需应用",
 			frameworkUpgradeBtn: "框架升级",
+			desktopUpdateBtn: "检查应用更新",
+			desktopUpdateChecking: "正在检查应用更新，请留意桌面对话框…",
+			desktopUpdateFinished: "应用更新流程已结束。版本与下载结果请以桌面对话框为准。",
+			desktopUpdateFailed: "暂时无法检查更新，请稍后再试。",
+			frameworkDesktopManaged: "框架及官方组件随桌面应用统一更新。",
 			frameworkUpgradeTitle: "框架升级：自动打包备份现有配置 → 停止并重启 DSH 服务 → npm 升级框架与配套包（失败自动回滚）→ 拉起服务并适配",
 			frameworkUpgradeConfirm: "确认升级？（服务将自动重启）",
 			frameworkUpgradeDone: "框架升级请求已接受",
@@ -562,6 +567,11 @@ window.__ModuleLoader__.load({
 			frameworkPatchApplied: "reapplied",
 			frameworkPatchSkipped: "not needed",
 			frameworkUpgradeBtn: "Framework upgrade",
+			desktopUpdateBtn: "Check for app updates",
+			desktopUpdateChecking: "Checking for app updates. Watch for the desktop dialog…",
+			desktopUpdateFinished: "The app update flow has ended. See the desktop dialog for version and download results.",
+			desktopUpdateFailed: "Updates could not be checked just now. Please try again shortly.",
+			frameworkDesktopManaged: "The framework and official components update with the desktop app.",
 			frameworkUpgradeTitle: "Framework upgrade: backup config → stop & restart DSH service → npm upgrade framework + official packages (auto rollback on failure) → relaunch and adapt",
 			frameworkUpgradeConfirm: "Confirm upgrade? (service will restart)",
 			frameworkUpgradeDone: "Framework upgrade request accepted",
@@ -620,7 +630,7 @@ window.__ModuleLoader__.load({
 		const LOCAL_CALL_TIMEOUT_MS = 30000;
 		const EXTERNAL_FETCH_POLICY = { credentials: "omit", redirect: "error", referrerPolicy: "no-referrer", cache: "no-store" };
 		async function call(path, body, nativeConfirmation = false) {
-			const interactive = nativeConfirmation && (path === "/plugin-console/restart" || path === "/plugin-console/framework-relaunch");
+			const interactive = nativeConfirmation && (path === "/plugin-console/restart" || path === "/plugin-console/framework-relaunch" || path === "/api/desktop/updates/check");
 			const timeout = interactive ? {} : { signal: AbortSignal.timeout(LOCAL_CALL_TIMEOUT_MS) };
 			const response = await fetch(path, body === undefined
 				? { credentials: "same-origin", redirect: "error", cache: "no-store", ...timeout }
@@ -917,6 +927,7 @@ window.__ModuleLoader__.load({
 			const [frameworkStatus, setFrameworkStatus] = react.useState(null);
 			const frameworkActive = frameworkStatus !== null && !["idle", "done", "failed"].includes(frameworkStatus.status);
 			const serviceBlocked = serviceOperation !== null || frameworkActive || state.status !== "ready";
+			const desktopManagedFramework = state.status === "ready" && state.data.frameworkUpgradeOwner === "desktop";
 			// Hub 自身更新：仅在检测到远程新版时显示下载/更新按钮
 			const [selfUpdate, setSelfUpdate] = react.useState(null);
 			// 进度条步骤（与 host 脚本 SetState 的阶段对应）
@@ -1106,7 +1117,7 @@ window.__ModuleLoader__.load({
 				// 框架本体特判：deepseek-harness 仓库 → 查 @deepseek-ai/dsh（框架包）版本，
 				// 有新版则卡片显示「框架升级 → vX」（点击走 /framework-upgrade：备份配置 + 升级指引 + 适配）
 				const fwItem = market.data.find((item) => item.fullName === "deepseek-ai/deepseek-harness");
-				if (fwItem) {
+				if (fwItem && state.data.frameworkUpgradeOwner !== "desktop") {
 					call("/plugin-console/check-update", { packageName: "@deepseek-ai/dsh" }).then(
 						(data) => {
 							if (data && data.error === null) {
@@ -1852,6 +1863,22 @@ window.__ModuleLoader__.load({
 					setMessage(t("failed") + "：" + friendlyGithubError(error).message);
 				});
 			};
+			const checkDesktopUpdate = () => {
+				if (serviceOperationRef.current !== null || frameworkActive || !desktopManagedFramework) return;
+				const operation = { kind: "desktop-update", phase: "pending" };
+				serviceOperationRef.current = operation;
+				setServiceOperation(operation);
+				setMessage(t("desktopUpdateChecking"));
+				call("/api/desktop/updates/check", {}, true).then((data) => {
+					if (!data || data.accepted !== true) throw new Error(t("invalidServiceResponse"));
+					setMessage(t("desktopUpdateFinished"));
+				}).catch(() => {
+					setMessage(t("desktopUpdateFailed"));
+				}).finally(() => {
+					serviceOperationRef.current = null;
+					setServiceOperation(null);
+				});
+			};
 			/** Only an accepted upgrade starts progress; a version check or backup is not an upgrade. */
 			const doFrameworkUpgrade = () => {
 				if (serviceOperationRef.current !== null || frameworkActive) return;
@@ -1922,6 +1949,7 @@ window.__ModuleLoader__.load({
 					return [entry.moduleName, entry.entryId, entry.rowId]
 						.some((value) => String(value ?? "").toLowerCase().includes(installedQueryNorm));
 				}).map((entry) => {
+					const managedEntry = desktopManagedFramework && String(entry.moduleName).startsWith("@deepseek-ai/");
 					const open = details !== null && details.entryId === entry.entryId;
 					let detailPanel = null;
 					if (open) {
@@ -1936,14 +1964,16 @@ window.__ModuleLoader__.load({
 							const readme = details.data.readme;
 							detailPanel = el("div", { className: styles.detail },
 								meta !== null ? el("p", { className: styles.desc }, meta.description ?? t("noDetail")) : null,
+								managedEntry ? el("p", { className: styles.note }, t("frameworkDesktopManaged")) : null,
 								meta !== null && meta.version ? el("div", { className: styles.rowTop },
 									el("p", { className: styles.status }, t("versionLabel") + "：" + meta.version),
 									el("button", {
 										type: "button",
 										className: styles.toggle,
-										disabled: (updateCheck !== null && updateCheck.status === "checking") || installing === entry.moduleName,
-										onClick: () => checkUpdate(entry),
-									}, updateCheck !== null && updateCheck.status === "checking" ? t("checkingUpdate") : t("checkUpdate"))) : null,
+										disabled: managedEntry ? serviceBlocked : (updateCheck !== null && updateCheck.status === "checking") || installing === entry.moduleName,
+										"aria-busy": managedEntry ? serviceOperation?.kind === "desktop-update" : updateCheck?.status === "checking",
+										onClick: managedEntry ? checkDesktopUpdate : () => checkUpdate(entry),
+									}, managedEntry ? t(serviceOperation?.kind === "desktop-update" ? "loadingPhase" : "desktopUpdateBtn") : updateCheck !== null && updateCheck.status === "checking" ? t("checkingUpdate") : t("checkUpdate"))) : null,
 								updateCheck !== null && updateCheck.status === "ready"
 									? (updateCheck.error
 										? el("p", { className: styles.status, "data-error": "true" }, t("updateCheckFailed") + "：" + updateCheck.error)
@@ -2112,7 +2142,9 @@ window.__ModuleLoader__.load({
 												onClick: () => setExpandedDescs((prev) => ({ ...prev, [item.fullName]: true })),
 											}, t("expandDesc"))))
 									: el("p", { className: styles.desc }, desc))
-								: null,
+									: null,
+								item.fullName === "deepseek-ai/deepseek-harness" && desktopManagedFramework
+									? el("p", { className: styles.note }, t("frameworkDesktopManaged")) : null,
 								el("div", { className: styles.rowTop },
 									el("button", {
 										type: "button",
@@ -2132,6 +2164,14 @@ window.__ModuleLoader__.load({
 												onClick: () => startSkillJob(item),
 											}, installing === item.fullName ? t("installingLocal") : (already ? t("skillInstalledTag") : t("installSkill")));
 										})()
+										: item.fullName === "deepseek-ai/deepseek-harness" && desktopManagedFramework
+											? el("button", {
+												type: "button", className: styles.toggle,
+												disabled: serviceBlocked,
+												"aria-busy": serviceOperation?.kind === "desktop-update",
+												title: t("frameworkDesktopManaged"),
+												onClick: checkDesktopUpdate,
+											}, t(serviceOperation?.kind === "desktop-update" ? "loadingPhase" : "desktopUpdateBtn"))
 										: item.fullName === "deepseek-ai/deepseek-harness"
 											? (updateMap[item.fullName] !== undefined
 												? (confirmFrameworkUpgrade

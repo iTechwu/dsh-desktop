@@ -60,7 +60,11 @@ async function openPage(mode, width = 390, framework = false, upgradeStatus = 'i
   await page.clock.install()
   page.setDefaultTimeout(10_000)
   const state = { entries: [...entries], skills: skills.map(skill => ({ ...skill })), requests: [], refreshGate: null, refreshError: false,
-    upgradeStatus, statusReads: 0 }
+    upgradeStatus, statusReads: 0, frameworkChecks: 0 }
+  if (framework && nativeRestartConfirmation) state.entries.push({
+    entryId: 'framework-core', rowId: 'framework-core', moduleName: '@deepseek-ai/dsh-client-ui',
+    enabled: true, toggleable: false, extra: false, fiberPhase: 'active',
+  })
   page.on('pageerror', error => problems.push(error.message))
   page.on('console', message => {
     if (['error', 'warning'].includes(message.type())) problems.push(message.text())
@@ -72,16 +76,17 @@ async function openPage(mode, width = 390, framework = false, upgradeStatus = 'i
     window.managementSignals = {}
     window.fetch = (input, init = {}) => {
       const pathname = new URL(typeof input === 'string' ? input : input.url, location.href).pathname
-      if (init.method === 'POST' && /\/(uninstall|toggle|skill-toggle|skill-remove|restart|framework-relaunch|framework-upgrade)$/.test(pathname)) {
+      if (init.method === 'POST' && /\/(uninstall|toggle|skill-toggle|skill-remove|restart|framework-relaunch|framework-upgrade|updates\/check)$/.test(pathname)) {
         window.managementWrites[pathname] = (window.managementWrites[pathname] || 0) + 1
         window.managementSignals[pathname] = init.signal instanceof AbortSignal
       }
       return originalFetch(input, init)
     }
   }, { mode })
-  await page.route('**/plugin-console/**', async route => {
-    const endpoint = new URL(route.request().url()).pathname.split('/').at(-1)
-    if (['uninstall', 'toggle', 'skill-toggle', 'skill-remove', 'restart', 'framework-relaunch', 'framework-upgrade'].includes(endpoint)) {
+  const handleRoute = async route => {
+    const pathname = new URL(route.request().url()).pathname
+    const endpoint = pathname === '/api/desktop/updates/check' ? 'desktop-update-check' : pathname.split('/').at(-1)
+    if (['uninstall', 'toggle', 'skill-toggle', 'skill-remove', 'restart', 'framework-relaunch', 'framework-upgrade', 'desktop-update-check'].includes(endpoint)) {
       let resolveResponse
       let markDone
       const response = new Promise(resolve => { resolveResponse = resolve })
@@ -101,17 +106,22 @@ async function openPage(mode, width = 390, framework = false, upgradeStatus = 'i
       return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ ok: false, error: '刷新失败' }) })
     }
     if (endpoint === 'framework-upgrade-status') state.statusReads += 1
+    if (endpoint === 'check-update' && route.request().postDataJSON()?.packageName === '@deepseek-ai/dsh') state.frameworkChecks += 1
     const frameworkItems = framework ? [{ fullName: 'deepseek-ai/deepseek-harness', description: 'DSH framework', stars: 1 }] : []
     const body = endpoint === 'state'
       ? { entries: state.entries, installJobs: [], compat: { supported: true, dshVersion: '0.1.5-rc.2' }, framework: null, nativeRestartConfirmation,
+        frameworkUpgradeOwner: nativeRestartConfirmation ? 'desktop' : 'standalone',
         github: { loggedIn: false }, patch: { inserts: [] }, recentFailures: [], selfVersion: null }
       : endpoint === 'skills-installed' ? { skills: state.skills }
       : endpoint === 'sources' ? { sources: { registries: [], searchSources: [], gitee: {} } }
       : endpoint === 'market-index' || endpoint === 'search' ? { items: frameworkItems, skills: [] }
       : endpoint === 'check-update' ? { latest: '0.1.6', error: null }
+      : endpoint === 'details' ? { meta: { description: 'Desktop framework component', version: '0.1.5-rc.2' }, readme: null }
       : endpoint === 'framework-upgrade-status' ? { status: state.upgradeStatus, message: state.upgradeStatus === 'failed' ? '升级失败，请重试' : null } : {}
     await route.fulfill({ contentType: 'application/json', body: JSON.stringify(body) })
-  })
+  }
+  await page.route('**/plugin-console/**', handleRoute)
+  await page.route('**/api/desktop/updates/check', handleRoute)
   await page.goto(url)
   assert.equal(page.url(), url)
   assert.equal(await page.title(), 'Plugin Console modal contract')
@@ -408,6 +418,56 @@ try {
     await finish(state.requests[1], { ok: true, accepted: true, owner: 'desktop' })
     await page.getByText('重启请求已接受。服务恢复后请刷新页面。', { exact: true }).waitFor()
     assert.equal(await restart.isDisabled(), true)
+    await page.close()
+  }
+  {
+    const { page, state } = await openPage('plugins', 390, true, 'idle', true)
+    await page.locator('#pc-market-search').getByRole('button', { name: '搜索', exact: true }).click()
+    await page.getByRole('button', { name: '检查应用更新', exact: true }).waitFor()
+    assert.equal(state.frameworkChecks, 0, 'desktop frameworks must not be checked against standalone npm versions')
+    assert.equal(await page.getByRole('button', { name: /框架升级|已是最新框架/ }).count(), 0)
+    await page.locator('#pc-installed-search-area').getByRole('button', { name: '搜索', exact: true }).click()
+    await page.getByRole('button', { name: '切换：已装（后装/第三方插件）/ 全部', exact: true }).click()
+    await page.locator('#pc-installed-search-area').getByRole('button', { name: '搜索', exact: true }).click()
+    await page.locator('.pc_row').filter({ has: page.locator('.pc_name[title="@deepseek-ai/dsh-client-ui"]') })
+      .getByRole('button', { name: '详情', exact: true }).click()
+    const updateButtons = page.getByRole('button', { name: '检查应用更新', exact: true })
+    await updateButtons.nth(1).waitFor()
+    const statusReads = state.statusReads
+    await updateButtons.evaluateAll(buttons => {
+      buttons[0].click(); buttons[0].click(); buttons[1].click()
+      document.querySelector('.pc_restartBtn').click()
+    })
+    await waitRequests(state, 1)
+    assert.equal(state.requests[0].endpoint, 'desktop-update-check')
+    assert.deepEqual(state.requests[0].body, {})
+    assert.deepEqual(await page.evaluate(() => window.managementWrites), { '/api/desktop/updates/check': 1 })
+    assert.equal(await page.evaluate(() => window.managementSignals['/api/desktop/updates/check']), false)
+    await page.getByText('正在检查应用更新，请留意桌面对话框…', { exact: true }).waitFor()
+    assert.equal(await page.locator('.pc_restartBtn').isDisabled(), true)
+    await shot(page, '390-desktop-update-pending')
+    await finish(state.requests[0], { ok: false, error: '更新服务暂不可用' })
+    await page.getByText('暂时无法检查更新，请稍后再试。', { exact: true }).waitFor()
+    assert.equal(await page.getByText('更新服务暂不可用', { exact: false }).count(), 0)
+    assert.equal(await updateButtons.nth(0).isEnabled(), true)
+    assert.equal(await updateButtons.nth(1).isEnabled(), true)
+    await shot(page, '390-desktop-update-error')
+    await updateButtons.nth(1).click()
+    await waitRequests(state, 2)
+    await finish(state.requests[1], {})
+    await page.getByText('暂时无法检查更新，请稍后再试。', { exact: true }).waitFor()
+    await updateButtons.nth(0).click()
+    await waitRequests(state, 3)
+    await finish(state.requests[2], { accepted: true })
+    await page.getByText('应用更新流程已结束。版本与下载结果请以桌面对话框为准。', { exact: true }).waitFor()
+    assert.equal(await updateButtons.nth(0).isEnabled(), true)
+    assert.equal(await page.locator('.pc_restartBtn').isEnabled(), true)
+    await page.clock.fastForward(7000)
+    assert.equal(state.statusReads, statusReads, 'the app update flow must not poll legacy framework progress')
+    assert.equal(state.frameworkChecks, 0)
+    assert.equal(state.requests.every(request => request.endpoint === 'desktop-update-check'), true)
+    await page.setViewportSize({ width: 1280, height: 900 })
+    await shot(page, '1280-desktop-update-finished')
     await page.close()
   }
   assert.deepEqual(problems, [])
