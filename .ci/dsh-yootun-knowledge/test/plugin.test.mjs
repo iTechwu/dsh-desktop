@@ -212,6 +212,7 @@ test('generated client bundle is valid JavaScript and has no unresolved style to
   assert.equal(result.status, 0, result.stderr)
 })
 
+test('normalizes memory confidence for safe percentage display', async () => { const source = await readFile(new URL('src/client.js', root), 'utf8'); assert.match(source, /const confidenceLabel = \(value, t\) =>/u); assert.match(source, /const normalized = parsed > 1 \? parsed \/ 100 : parsed/u); assert.match(source, /Math\.max\(0, Math\.min\(1, normalized\)\)/u); assert.match(source, /confidenceLabel\(item\.confidence \?\? item\.score, t\)/u); const client = await loadClientTestApi(); const label = key => key; assert.equal(client.confidenceLabel(null, label), 'confidence —'); assert.equal(client.confidenceLabel(0.8, label), 'confidence · 80%'); assert.equal(client.confidenceLabel(80, label), 'confidence · 80%'); assert.equal(client.confidenceLabel(-2, label), 'confidence · 0%'); assert.equal(client.confidenceLabel(140, label), 'confidence · 100%') })
 test('normalizes real MCP recall envelopes and graph layout states', async () => {
   const client = await loadClientTestApi()
   assert.equal(client.normalizeSourceState('healthy'), 'ready')

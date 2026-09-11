@@ -6,7 +6,7 @@
 // - 本次未取到的字段显示 `—`（dataGap），**不用历史值冒充当前值**；
 // - 双击行打开子页面（性别/年龄/地域/城市级/流量来源/进度/搜索词/热词）。
 
-import { COLUMNS, DEFAULT_SORT_STATE, EMPTY, accountState, formatCell, formatCount, gapFieldLabel, gapReasonText, genderColor, genderLabel, hasGap, nextSortState, progressStatus, progressStatusText, progressText, safeAvatarSrc, safeWorkUrl, sortWorks, tableTemplate, trimNumber } from './ui-format.js'
+import { COLUMNS, DEFAULT_SORT_STATE, EMPTY, accountState, formatCell, formatCount, formatPercent, gapFieldLabel, gapReasonText, genderColor, genderLabel, hasGap, nextSortState, progressStatus, progressStatusText, progressText, safeAvatarSrc, safeWorkUrl, sortWorks, tableTemplate } from './ui-format.js'
 
 const React = require('react')
 const { createElement: h, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } = React
@@ -249,14 +249,19 @@ function AccountCard({ account, selected, busy, onSelect, onRescan, onProbe, onD
 
 function BarList({ rows, label, t, unit = '%' }) {
   if (!rows || !rows.length) return h('p', { className: 'ydo-hint' }, t('none'))
-  const max = rows.reduce((acc, row) => Math.max(acc, Number(row.pct ?? row.value ?? 0)), 0) || 1
+  const valueOf = row => {
+    const value = Number(row.pct ?? row.value)
+    return Number.isFinite(value) ? Math.max(0, Math.min(100, value)) : null
+  }
+  const max = rows.reduce((acc, row) => Math.max(acc, valueOf(row) ?? 0), 0) || 1
   return h('ul', { className: 'ydo-bars', 'aria-label': label },
     ...rows.map(row => {
-      const value = Number(row.pct ?? row.value ?? 0)
+      const value = valueOf(row)
+      const display = unit === '%' ? formatPercent(value) : value === null ? EMPTY : `${value}${unit}`
       return h('li', { key: `${row.key ?? row.source_key ?? row.keyword ?? row.word}` },
         h('span', { className: 'ydo-bar-label' }, row.key || row.source_label || row.keyword || row.word),
-        h('span', { className: 'ydo-bar-track' }, h('span', { className: 'ydo-bar-fill', style: { width: `${Math.min(100, (value / max) * 100)}%` } })),
-        h('span', { className: 'ydo-bar-value' }, `${trimNumber(value)}${unit}`))
+        h('span', { className: 'ydo-bar-track' }, h('span', { className: 'ydo-bar-fill', style: { width: `${value === null ? 0 : Math.min(100, (value / max) * 100)}%` } })),
+        h('span', { className: 'ydo-bar-value' }, display))
     }))
 }
 
@@ -268,17 +273,18 @@ function GenderDonut({ rows, t }) {
   let acc = 0
   const stops = rows.map(row => {
     const start = acc
-    acc += Number(row.pct || 0)
+    const value = Number(row.pct)
+    acc += Number.isFinite(value) ? Math.max(0, Math.min(100, value)) : 0
     return `${genderColor(row.key)} ${start}% ${acc}%`
   })
-  const legendText = rows.map(row => `${genderLabel(row.key, t)} ${trimNumber(row.pct)}%`).join('，')
+  const legendText = rows.map(row => `${genderLabel(row.key, t)} ${formatPercent(row.pct)}`).join('，')
   return h('div', { className: 'ydo-donut-wrap' },
     h('div', { className: 'ydo-donut', role: 'img', 'aria-label': `${t('gender')}：${legendText}`, style: { background: `conic-gradient(${stops.join(',')})` } },
       h('span', { className: 'ydo-donut-hole' })),
     h('ul', { className: 'ydo-legend' },
       ...rows.map(row => h('li', { key: row.key },
         h('span', { className: 'ydo-legend-dot', style: { background: genderColor(row.key) }, 'aria-hidden': true }),
-        h('span', null, `${genderLabel(row.key, t)} ${trimNumber(row.pct)}%`)))))
+        h('span', null, `${genderLabel(row.key, t)} ${formatPercent(row.pct)}`)))))
 }
 
 function WorkDetailModal({ accountId, workId, detail, trend, loading, onClose, t }) {
@@ -312,7 +318,7 @@ function WorkDetailModal({ accountId, workId, detail, trend, loading, onClose, t
           h('section', { className: 'ydo-panel' }, h('h4', null, t('searchKeywords')),
             h('div', { className: 'ydo-tags' },
               ...(work && Array.isArray(work.search_keywords) && work.search_keywords.length
-                ? work.search_keywords.map(item => h('span', { className: 'ydo-tag', key: item.keyword }, `${item.keyword} ${trimNumber(item.percent)}%`))
+                ? work.search_keywords.map(item => h('span', { className: 'ydo-tag', key: item.keyword }, `${item.keyword} ${formatPercent(item.percent)}`))
                 : [h('span', { className: 'ydo-hint', key: 'none' }, t('noSearch'))]))),
           h('section', { className: 'ydo-panel' }, h('h4', null, t('hotwords')),
             h('div', { className: 'ydo-tags' },
@@ -796,4 +802,4 @@ function apply(ctx) {
   ctx.slots.inject('shell.overlay', () => ctx.slots.register({ name: 'shell.overlay', id: OVERLAY_ID, order: 43, inject: () => ({ t }) }, Overlay))
 }
 
-module.exports = { apply, inject: ['slots', 'locale'], downloadWorkbook, formatCell, formatCount, gapReasonText, hasGap, progressText, trimNumber, WorkTable, WorkDetailModal }
+module.exports = { apply, inject: ['slots', 'locale'], downloadWorkbook, formatCell, formatCount, formatPercent, gapReasonText, hasGap, progressText, WorkTable, WorkDetailModal }

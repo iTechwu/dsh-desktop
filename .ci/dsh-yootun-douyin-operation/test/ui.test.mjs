@@ -12,6 +12,7 @@ import {
   compareNullableNumbers,
   formatCell,
   formatCount,
+  formatPercent,
   gapFieldLabel,
   gapReasonText,
   genderColor,
@@ -149,6 +150,16 @@ test('缺失值显示 —（不显示 0，也不回填历史值）', () => {
   assert.equal(formatCell(290, 'count', t), '290')
 })
 
+test('百分比格式化：缺失/非法统一为 —，真实 0 保留，数值限制在 0–100', () => {
+  assert.equal(formatPercent(null), EMPTY)
+  assert.equal(formatPercent(undefined), EMPTY)
+  assert.equal(formatPercent(Number.NaN), EMPTY)
+  assert.equal(formatPercent(0), '0%')
+  assert.equal(formatPercent(3.09), '3.09%')
+  assert.equal(formatPercent(140), '100%')
+  assert.equal(formatPercent(-2), '0%')
+})
+
 test('缺口原因映射为可读文案，未知原因收敛为「其他」', () => {
   assert.equal(gapReasonText('not_exposed', t), '本次接口未提供')
   assert.equal(gapReasonText('below_min_view', t), '播放量低于抖音最小观看门槛')
@@ -271,6 +282,7 @@ test('构建产物 lib/client.js 可加载，且内联了展示逻辑', async ()
   // 跨 realm 数组：展开到本 realm 再比较
   assert.deepEqual([...moduleExports.inject], ['slots', 'locale'])
   assert.equal(moduleExports.formatCell(null, 'pct', t), EMPTY)
+  assert.equal(moduleExports.formatPercent(Number.NaN), EMPTY)
   assert.equal(moduleExports.hasGap({ data_gap: { a: {} } }), true)
   assert.equal(typeof moduleExports.progressText, 'function')
   assert.deepEqual(moduleExports.COLUMNS || [], [], 'COLUMNS 为模块内部细节，不对外导出')
@@ -372,6 +384,32 @@ test('构建产物渲染详情子页面：性别圆环/年龄/流量来源/进�
   assert.ok(joined.includes('男 92.66%'), '性别图例中文化（male→男）')
   assert.ok(joined.includes('女 7.34%'), '性别图例中文化（female→女）')
   assert.ok(joined.includes('3'), '展示历史采集次数')
+})
+
+test('构建产物详情非法百分比：文本回退 —，图表宽度和圆环不产生 NaN', async () => {
+  const { moduleExports } = await loadBundle()
+  const detail = {
+    work: {
+      title: '异常数据',
+      search_keywords: [{ keyword: '缺失词', percent: Number.NaN }],
+      traffic_source: [{ source_label: '未知来源', share_pct: Number.NaN }],
+    },
+    audience: { gender: [{ key: 'male', pct: Number.NaN }, { key: 'female', pct: 140 }], age: [{ key: '未知年龄', pct: null }] },
+  }
+  const tree = renderNode(moduleExports.WorkDetailModal({ accountId: 'acc-1', workId: 'w1', detail, trend: null, loading: false, onClose: () => {}, t: tRender }))
+  const flat = collectFlat(tree)
+  const text = flat.flatMap(node => {
+    const children = Array.isArray(node.children) ? node.children : [node.children]
+    return children.filter(child => child !== null && child !== undefined && typeof child !== 'object').map(String)
+  }).join('|')
+  assert.ok(text.includes('缺失词 —'), '搜索词缺失百分比回退 —')
+  assert.ok(text.includes('未知来源'), '非法流量来源仍保留标签')
+  assert.ok(text.includes('男 —'), '性别非法百分比回退 —')
+  assert.ok(text.includes('女 100%'), '性别越界百分比限制到 100%')
+  const fills = flat.filter(node => node.props && node.props.className === 'ydo-bar-fill')
+  assert.ok(fills.length > 0 && fills.every(node => !String(node.props.style.width).includes('NaN')), '柱状图宽度始终是有限 CSS 百分比')
+  const donut = flat.find(node => node.props && node.props.className === 'ydo-donut')
+  assert.ok(donut && !String(donut.props.style.background).includes('NaN'), '圆环背景始终不含 NaN')
 })
 
 test('构建产物渲染链接单元格：白名单内为锚点并隔离冒泡，白名单外为纯文本', async () => {

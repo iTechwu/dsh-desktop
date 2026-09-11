@@ -249,6 +249,12 @@ window.__ModuleLoader__.load({
       value !== null && value !== "" && Number.isFinite(Number(value))
         ? new Intl.NumberFormat().format(Number(value))
         : "-";
+    const confidenceLabel = (value, t) => {
+      const parsed = Number(value);
+      if (value === null || value === undefined || value === "" || !Number.isFinite(parsed)) return `${t("confidence")} —`;
+      const normalized = parsed > 1 ? parsed / 100 : parsed;
+      return `${t("confidence")} · ${Math.round(Math.max(0, Math.min(1, normalized)) * 100)}%`;
+    };
     const date = (value) => {
       const time = Date.parse(value || "");
       return Number.isFinite(time)
@@ -398,9 +404,7 @@ window.__ModuleLoader__.load({
       const trace = [
         source ? `${t("sourceType")} · ${source}` : null,
         item.citationHealth ? `${t("citation")} · ${item.citationHealth}` : null,
-        Number.isFinite(Number(item.confidence ?? item.score))
-          ? `${t("confidence")} · ${Math.round(Number(item.confidence ?? item.score) * 100)}%`
-          : null,
+        confidenceLabel(item.confidence ?? item.score, t),
         `${t("evidence")} · ${date(item.updatedAt || item.updated_at || item.createdAt || item.created_at)}`,
       ]
         .filter(Boolean)
@@ -1410,6 +1414,7 @@ window.__ModuleLoader__.load({
       inject: ["slots", "locale"],
       __test: {
         actionErrorLabel,
+        confidenceLabel,
         graphLayout,
         graphStatusLabel,
         graphTypeCounts,

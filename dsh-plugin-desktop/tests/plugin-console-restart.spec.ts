@@ -174,7 +174,7 @@ describe('Plugin Console desktop-owned restart route', () => {
       expect(response.status).toBe(409)
       expect(await response.json()).toMatchObject({ ok: false, error: expect.stringContaining('安装任务进行中') })
     }
-    expect(processes.execFile).toHaveBeenCalled()
+    await vi.waitFor(() => expect(processes.execFile).toHaveBeenCalled())
     // Keep the background command suspended so the test proves the active-job branch.
     processes.execFile.mockClear()
   })
