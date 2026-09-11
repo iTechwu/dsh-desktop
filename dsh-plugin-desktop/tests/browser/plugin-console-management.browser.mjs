@@ -60,7 +60,7 @@ async function openPage(mode, width = 390, framework = false, upgradeStatus = 'i
   await page.clock.install()
   page.setDefaultTimeout(10_000)
   const state = { entries: [...entries], skills: skills.map(skill => ({ ...skill })), requests: [], refreshGate: null, refreshError: false,
-    upgradeStatus, statusReads: 0, frameworkChecks: 0, installJobs: {}, installReads: [], installStatusGate: null, holdDetails: false, detailRequests: [] }
+    upgradeStatus, statusReads: 0, frameworkChecks: 0, installJobs: {}, installReads: [], installStatusGate: null, holdDetails: false, detailRequests: [], holdSearch: false, searchRequests: [] }
   if (installation === 'restored') state.installJobs = {
     'restored-a': { jobId: 'restored-a', repo: 'example/old-plugin', status: 'installing', stage: 'preparing' },
     'restored-b': { jobId: 'restored-b', repo: 'example/old-skill', status: 'installing', stage: 'preparing' },
@@ -102,7 +102,8 @@ async function openPage(mode, width = 390, framework = false, upgradeStatus = 'i
     const pathname = new URL(route.request().url()).pathname
     const endpoint = pathname === '/api/desktop/updates/check' ? 'desktop-update-check' : pathname.split('/').at(-1)
     const detailRead = state.holdDetails && ['details', 'check-update'].includes(endpoint)
-    if (detailRead || ['install', 'uninstall', 'toggle', 'skill-toggle', 'skill-remove', 'restart', 'framework-relaunch', 'framework-upgrade', 'desktop-update-check'].includes(endpoint)) {
+    const searchRead = state.holdSearch && endpoint === 'search'
+    if (detailRead || searchRead || ['install', 'uninstall', 'toggle', 'skill-toggle', 'skill-remove', 'restart', 'framework-relaunch', 'framework-upgrade', 'desktop-update-check'].includes(endpoint)) {
       let resolveResponse
       let markDone
       const response = new Promise(resolve => { resolveResponse = resolve })
@@ -110,7 +111,7 @@ async function openPage(mode, width = 390, framework = false, upgradeStatus = 'i
         endpoint, body: route.request().postDataJSON(), resolve: resolveResponse,
         done: new Promise(resolve => { markDone = resolve }),
       }
-      ;(detailRead ? state.detailRequests : state.requests).push(request)
+      ;(detailRead ? state.detailRequests : searchRead ? state.searchRequests : state.requests).push(request)
       pending.push(request)
       try {
         await route.fulfill({ contentType: 'application/json', body: JSON.stringify(await response) })
@@ -132,13 +133,17 @@ async function openPage(mode, width = 390, framework = false, upgradeStatus = 'i
       { fullName: 'example/new-plugin', description: 'A plugin to install', stars: 1 },
       { fullName: 'example/new-skill', description: 'A skill to install', stars: 1, hasSkill: true },
     ] : []
+    const requestBody = route.request().postDataJSON?.() ?? {}
+    const searchItems = endpoint === 'search' && state.holdSearch
+      ? [{ fullName: `example/${String(requestBody.q || 'empty')}-skill`, description: `Search result for ${String(requestBody.q || 'empty')}`, stars: 1, hasSkill: true, skillTopics: ['search'] }]
+      : [...frameworkItems, ...installItems]
     const body = endpoint === 'state'
       ? { entries: state.entries, installJobs: Object.values(state.installJobs).filter(job => job.status === 'installing'), compat: { supported: true, dshVersion: '0.1.5-rc.2' }, framework: null, nativeRestartConfirmation,
         frameworkUpgradeOwner: nativeRestartConfirmation ? 'desktop' : 'standalone',
         github: { loggedIn: false }, patch: { inserts: [] }, recentFailures: [], selfVersion: null }
       : endpoint === 'skills-installed' ? { skills: state.skills }
       : endpoint === 'sources' ? { sources: { registries: [], searchSources: [], gitee: {} } }
-      : endpoint === 'market-index' || endpoint === 'search' ? { items: [...frameworkItems, ...installItems], skills: installItems }
+      : endpoint === 'market-index' || endpoint === 'search' ? { items: searchItems, skills: searchItems }
       : endpoint === 'install-status' ? state.installJobs[route.request().postDataJSON().jobId] ?? { status: 'installing', stage: 'preparing' }
       : endpoint === 'check-update' ? { latest: '0.1.6', error: null }
       : endpoint === 'details' ? { meta: { description: 'Desktop framework component', version: '0.1.5-rc.2' }, readme: null }
@@ -616,6 +621,27 @@ try {
     await page.getByText('操作失败：第二个任务失败', { exact: true }).waitFor()
     assert.equal(await install.isEnabled(), true)
     await shot(page, '390-install-restored-jobs-retry')
+    await page.close()
+  }
+  {
+    const { page, state } = await openPage('skills', 390)
+    state.holdSearch = true
+    const input = page.locator('#pc-market-search input')
+    const searchButton = page.locator('#pc-market-search').getByRole('button', { name: '搜索', exact: true })
+    await input.fill('alpha')
+    await searchButton.click()
+    await waitRequests({ requests: state.searchRequests }, 1)
+    await input.fill('beta')
+    await searchButton.click()
+    await waitRequests({ requests: state.searchRequests }, 2)
+    await finish(state.searchRequests[1], { items: [{ fullName: 'example/beta-skill', description: 'Search result for beta', stars: 1, hasSkill: true, skillTopics: ['search'] }] })
+    await page.getByText('example/beta-skill', { exact: true }).waitFor()
+    assert.equal(await page.getByText('example/alpha-skill', { exact: true }).count(), 0)
+    await finish(state.searchRequests[0], { items: [{ fullName: 'example/alpha-skill', description: 'Search result for alpha', stars: 1, hasSkill: true, skillTopics: ['search'] }] })
+    await page.clock.runFor(50)
+    assert.equal(await page.getByText('example/beta-skill', { exact: true }).count(), 1)
+    assert.equal(await page.getByText('example/alpha-skill', { exact: true }).count(), 0)
+    await shot(page, '390-search-out-of-order-isolated')
     await page.close()
   }
   {
