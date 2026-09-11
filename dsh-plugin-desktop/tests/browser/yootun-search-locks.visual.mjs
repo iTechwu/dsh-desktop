@@ -92,6 +92,7 @@ const finops = {
   alerts: [],
   refreshedAt: '2026-09-08T03:00:00.000Z',
 }
+let knowledgeNodeLabel = '重点客户偏好'
 const knowledge = {
   status: 'ready',
   mcp: { auth: 'credential-store' },
@@ -264,7 +265,7 @@ await page.route('**/api/desktop/yootun/knowledge', async route => {
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify({ result: {
-        nodes: [{ id: 'memory-1', entityId: 'memory-1', type: 'MEMORY', label: '重点客户偏好', status: 'CONFIRMED' }],
+        nodes: [{ id: 'memory-1', entityId: 'memory-1', type: 'MEMORY', label: knowledgeNodeLabel, status: 'CONFIRMED' }],
         edges: [],
         generatedAt: '2026-09-08T03:00:00.000Z',
         projection: { status: 'projected' },
@@ -540,6 +541,23 @@ try {
   assert.equal(await page.getByText('昨日没有可汇总的工作记录', { exact: true }).count(), 0)
   await assertDesktopViewport('.ydr-header', '.ydr-metrics')
   await page.screenshot({ path: resolve(evidenceRoot, '1440-daily-unavailable.png'), fullPage: true })
+  const longSessionTitle = '华东汽车渠道季度复盘与长周期客户跟进记录'
+  dailyReport.activity = { ...completeActivity, sessions: [{
+    ...completeActivity.sessions[0], title: longSessionTitle,
+    workspace: 'LongWorkspaceNameWithoutSpacesForRegionalCustomerOperations',
+  }] }
+  dailyReport.sources.local = { status: 'ready' }
+  await page.getByRole('button', { name: '刷新', exact: true }).click()
+  await page.getByText(longSessionTitle, { exact: true }).waitFor()
+  for (const width of [320, 1440]) {
+    await page.setViewportSize({ width, height: width === 320 ? 568 : 900 })
+    await page.locator('.ydr-row').scrollIntoViewIfNeeded()
+    await assertViewport()
+    const rowFits = await page.locator('.ydr-row').evaluate(row => [...row.children]
+      .every(element => element.scrollWidth <= element.clientWidth + 1))
+    assert(rowFits, 'long session and workspace names must remain readable inside the report row')
+    await page.screenshot({ path: resolve(evidenceRoot, `${width}-daily-long-title.png`), fullPage: true })
+  }
   await page.setViewportSize({ width: 390, height: 844 })
 
   await page.goto(`${url}?source=finops`)
@@ -609,6 +627,25 @@ try {
   await page.locator('.yk-node-detail').scrollIntoViewIfNeeded()
   await assertViewport()
   await page.screenshot({ path: resolve(evidenceRoot, '390-knowledge-node-status.png'), fullPage: true })
+  knowledgeNodeLabel = 'CustomerPreferencesAndLongTermChannelFollowUpWithoutSpaces'
+  await page.reload()
+  await page.getByRole('button', { name: '企业知识' }).click()
+  await page.getByText('渠道政策').waitFor()
+  await page.getByRole('button', { name: '知识图谱' }).click()
+  const longNode = page.getByRole('button', { name: knowledgeNodeLabel, exact: true })
+  await longNode.waitFor()
+  await longNode.focus()
+  await longNode.press('Enter')
+  await page.locator('.yk-node-detail').getByText(knowledgeNodeLabel, { exact: true }).waitFor()
+  for (const width of [320, 1440]) {
+    await page.setViewportSize({ width, height: width === 320 ? 568 : 900 })
+    await page.locator('.yk-node-detail').scrollIntoViewIfNeeded()
+    await assertViewport()
+    const detailFits = await page.locator('.yk-node-detail strong').evaluate(element => element.scrollWidth <= element.clientWidth + 1)
+    assert(detailFits, 'a selected node name must wrap inside its detail card')
+    await page.screenshot({ path: resolve(evidenceRoot, `${width}-knowledge-long-node.png`), fullPage: true })
+  }
+  await page.setViewportSize({ width: 390, height: 844 })
 
   await page.goto(`${url}?source=lead`)
   await page.getByRole('button', { name: '购车线索发现' }).click()
@@ -696,7 +733,7 @@ try {
   await page.screenshot({ path: resolve(evidenceRoot, '1440-dashboard-overview.png'), fullPage: true })
 
   assert.deepEqual(consoleProblems, [])
-  process.stdout.write('search-locks-browser: 10 plugins, 22 screenshots, request locks, report coverage, localized statuses, and responsive theme mappings verified\n')
+  process.stdout.write('search-locks-browser: 10 plugins, 26 screenshots, request locks, report coverage, long text, keyboard selection, and responsive theme mappings verified\n')
 } finally {
   releaseDailyRefresh()
   releaseFinopsRefresh()

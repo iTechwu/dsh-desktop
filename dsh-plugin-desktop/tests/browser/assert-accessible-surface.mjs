@@ -32,6 +32,10 @@ export async function assertAccessibleSurface(page, { requireModal = true } = {}
       unnamedControls: controls.filter(control => !accessibleName(control)).map(control => control.outerHTML.slice(0, 180)),
       unnamedDialogs: dialogs.slice(-1).filter(dialog => !accessibleName(dialog)).map(dialog => dialog.outerHTML.slice(0, 180)),
       duplicateIds,
+      overflowingContent: [...scope.querySelectorAll('[aria-busy]')].filter(visible)
+        .filter(element => ['auto', 'scroll'].includes(getComputedStyle(element).overflowY)
+          && element.scrollWidth > element.clientWidth + 1)
+        .map(element => ({ className: element.className, width: element.clientWidth, contentWidth: element.scrollWidth })),
     }
   })
   assert.equal(result.scrollWidth, result.clientWidth, 'page must not scroll horizontally')
@@ -39,5 +43,6 @@ export async function assertAccessibleSurface(page, { requireModal = true } = {}
   assert.deepEqual(result.unnamedControls, [], `visible controls must have accessible names: ${JSON.stringify(result.unnamedControls)}`)
   assert.deepEqual(result.unnamedDialogs, [], `dialogs must have accessible names: ${JSON.stringify(result.unnamedDialogs)}`)
   assert.deepEqual(result.duplicateIds, [], `rendered surface must not contain duplicate ids: ${JSON.stringify(result.duplicateIds)}`)
+  assert.deepEqual(result.overflowingContent, [], `plugin content must fit its scroll container: ${JSON.stringify(result.overflowingContent)}`)
   return result
 }
