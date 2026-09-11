@@ -41,6 +41,11 @@ test('lead discovery package exposes a DSH client and guarded host route', async
   assert.match(client, /busy: interactionBusy, onRun: run/u)
   assert.match(client, /const refreshDisabled = interactionBusy/u)
   assert.match(client, /\.yl-platform-options button:disabled,.yl-query-wrap input:disabled,.yl-examples button:disabled,.yl-tabs button:disabled/u)
+  assert.match(client, /function ratioPercent\(value, total\)/u)
+  assert.match(client, /Math\.max\(0, Math\.min\(100, Math\.round\(numerator \/ denominator \* 100\)\)\)/u)
+  assert.match(client, /function barPercent\(value, total, min = 0\)/u)
+  assert.match(client, /style: \{ width: `\$\{barPercent\(stats\.levels\?\.\[level\], maxLevel, 6\)\}%` \}/u)
+  assert.doesNotMatch(client, /Math\.round\(number\(stats\.levels\?\.\[level\]\) \/ stats\.total \* 100\)/u)
 })
 
 test('announces initial and filtered empty lead states', async () => {

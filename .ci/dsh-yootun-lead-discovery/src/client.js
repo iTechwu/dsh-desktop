@@ -49,6 +49,16 @@ async function post(body) {
 }
 
 function number(value, fallback = 0) { return Number.isFinite(Number(value)) ? Number(value) : fallback }
+function ratioPercent(value, total) {
+  const numerator = Number(value)
+  const denominator = Number(total)
+  if (!Number.isFinite(numerator) || !Number.isFinite(denominator) || denominator <= 0) return null
+  return Math.max(0, Math.min(100, Math.round(numerator / denominator * 100)))
+}
+function barPercent(value, total, min = 0) {
+  const ratio = ratioPercent(value, total)
+  return ratio === null ? 0 : Math.max(ratio > 0 ? min : 0, ratio)
+}
 function platformName(value, t) { return value === 'douyin' ? t('platformDouyin') : value === 'xiaohongshu-v2' ? t('platformXhs') : (value || '—') }
 function formatBudget(min, max) {
   const format = value => value === undefined || value === null || value === '' ? '—' : Number.isFinite(Number(value)) ? `¥${Math.round(Number(value) / 10000 * 10) / 10}万` : String(value)
@@ -99,9 +109,9 @@ function Distribution({ stats, t }) {
       h('div', { className: 'yl-panel-heading' }, h('h2', null, t('levelDistribution')), h('span', { className: 'yl-panel-meta' }, `${stats.total} ${t('sample')}`)),
       h('div', { className: 'yl-bars' }, LEVELS.map(level => h('div', { className: 'yl-bar-row', key: level },
         h('span', { className: `yl-level yl-level-${level.toLowerCase()}` }, levelName(level)),
-        h('div', { className: 'yl-bar-track' }, h('span', { className: `yl-bar yl-bar-${level.toLowerCase()}`, style: { width: `${Math.max(stats.levels?.[level] ? 6 : 0, number(stats.levels?.[level]) / maxLevel * 100)}%` } })),
+        h('div', { className: 'yl-bar-track' }, h('span', { className: `yl-bar yl-bar-${level.toLowerCase()}`, style: { width: `${barPercent(stats.levels?.[level], maxLevel, 6)}%` } })),
         h('strong', null, String(number(stats.levels?.[level]))),
-        h('small', null, stats.total ? `${Math.round(number(stats.levels?.[level]) / stats.total * 100)}%` : '0%'),
+        h('small', null, `${ratioPercent(stats.levels?.[level], stats.total) ?? 0}%`),
       ))),
       h('div', { className: 'yl-insight' }, h('span', null, t('insight')), h('p', null, stats.highIntent ? `${t('insightText')} ${stats.highIntent} ${t('sample')}` : t('noLeads'))),
     ),
@@ -109,16 +119,16 @@ function Distribution({ stats, t }) {
       h('div', { className: 'yl-panel-heading' }, h('h2', null, t('platformDistribution')), h('span', { className: 'yl-panel-meta' }, topCity ? `${t('topCity')} ${topCity.key}` : t('noCity'))),
       (stats.platforms || []).length ? h('div', { className: 'yl-bars' }, stats.platforms.map(item => h('div', { className: 'yl-bar-row yl-platform-row', key: item.key },
         h('span', null, platformName(item.key, t)),
-        h('div', { className: 'yl-bar-track' }, h('span', { className: 'yl-bar yl-bar-platform', style: { width: `${Math.max(6, number(item.count) / maxPlatform * 100)}%` } })),
+        h('div', { className: 'yl-bar-track' }, h('span', { className: 'yl-bar yl-bar-platform', style: { width: `${barPercent(item.count, maxPlatform, 6)}%` } })),
         h('strong', null, String(number(item.count))),
-        h('small', null, stats.total ? `${Math.round(number(item.count) / stats.total * 100)}%` : '0%'),
+        h('small', null, `${ratioPercent(item.count, stats.total) ?? 0}%`),
       ))) : h('p', { className: 'yl-muted-block' }, t('noLeads')),
       h('div', { className: 'yl-subsection-heading' }, h('span', null, t('cityDistribution'))),
       (stats.cities || []).length ? h('div', { className: 'yl-bars' }, stats.cities.slice(0, 4).map(item => h('div', { className: 'yl-bar-row yl-platform-row', key: `city-${item.key}` },
         h('span', null, item.key),
-        h('div', { className: 'yl-bar-track' }, h('span', { className: 'yl-bar yl-bar-city', style: { width: `${Math.max(6, number(item.count) / maxCity * 100)}%` } })),
+        h('div', { className: 'yl-bar-track' }, h('span', { className: 'yl-bar yl-bar-city', style: { width: `${barPercent(item.count, maxCity, 6)}%` } })),
         h('strong', null, String(number(item.count))),
-        h('small', null, stats.total ? `${Math.round(number(item.count) / stats.total * 100)}%` : '0%'),
+        h('small', null, `${ratioPercent(item.count, stats.total) ?? 0}%`),
       ))) : h('p', { className: 'yl-muted-block' }, t('noCity')),
     ),
   )
