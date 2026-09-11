@@ -55,14 +55,27 @@ const entries = [
 let consentMode = false
 let releaseSourceWrite
 let releaseConsentWrite
+let releaseToggleFailure
+let releaseToggleSuccess
+let toggleRequests = 0
 const sourceWriteGate = new Promise(resolveGate => { releaseSourceWrite = resolveGate })
 const consentWriteGate = new Promise(resolveGate => { releaseConsentWrite = resolveGate })
+const toggleFailureGate = new Promise(resolveGate => { releaseToggleFailure = resolveGate })
+const toggleSuccessGate = new Promise(resolveGate => { releaseToggleSuccess = resolveGate })
 page.on('console', message => {
   if (message.type() === 'error' || message.type() === 'warning') problems.push(`${message.type()}: ${message.text()}`)
 })
 page.on('pageerror', error => problems.push(`pageerror: ${error.message}`))
 await page.route('**/plugin-console/**', async route => {
   const pathname = new URL(route.request().url()).pathname
+  if (route.request().method() === 'POST' && pathname.endsWith('/toggle')) {
+    assert.deepEqual(route.request().postDataJSON(), { entryId: 'example/active', enabled: false })
+    const attempt = ++toggleRequests
+    await (attempt === 1 ? toggleFailureGate : toggleSuccessGate)
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(
+      attempt === 1 ? { ok: false, error: '切换未完成，请重试' } : { ok: true },
+    ) })
+  }
   if (route.request().method() === 'POST' && pathname.endsWith('/sources')) await sourceWriteGate
   if (route.request().method() === 'POST' && pathname.endsWith('/ai-consent')) await consentWriteGate
   const body = pathname.endsWith('/install-status') && consentMode
@@ -160,6 +173,41 @@ try {
   await dialog.waitFor({ state: 'detached' })
   await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === '软件源')
 
+  await page.evaluate(() => {
+    const originalFetch = window.fetch.bind(window)
+    window.__toggleWrites = 0
+    window.fetch = (input, init = {}) => {
+      const url = new URL(typeof input === 'string' ? input : input.url, window.location.href)
+      if (init.method === 'POST' && url.pathname.endsWith('/toggle')) window.__toggleWrites += 1
+      return originalFetch(input, init)
+    }
+  })
+  const doubleToggle = () => page.evaluate(() => {
+    const button = [...document.querySelectorAll('.pc_row button')].find(button => button.textContent === '停用')
+    if (!button) throw new Error('disable control missing')
+    button.click()
+    button.click()
+    const other = [...document.querySelectorAll('.pc_row button')].find(button => button.textContent === '启用')
+    if (!other) throw new Error('enable control missing')
+    other.click()
+    return window.__toggleWrites
+  })
+  assert.equal(await doubleToggle(), 1, 'synchronous repeated clicks must send one toggle request')
+  await page.waitForFunction(() => {
+    const toggles = [...document.querySelectorAll('.pc_row button[aria-busy]')]
+    return toggles.length === 2 && toggles.every(button => button.disabled)
+  })
+  releaseToggleFailure()
+  await page.getByText('操作失败：切换未完成，请重试', { exact: true }).waitFor()
+  assert.equal(await page.getByRole('button', { name: '停用', exact: true }).isEnabled(), true)
+  await page.screenshot({ path: resolve(evidenceRoot, '390-toggle-error.png'), fullPage: true })
+  assert.equal(await doubleToggle(), 2, 'a failed toggle must allow one retry')
+  releaseToggleSuccess()
+  await page.getByText('已请求停用：example/active。页面即将自动刷新…', { exact: true }).waitFor()
+  assert.equal(await page.locator('.pc_row button[aria-busy]:not(:disabled)').count(), 0, 'successful toggles remain locked until reload')
+  await page.waitForEvent('load')
+  assert.equal(toggleRequests, 2)
+
   consentMode = true
   await page.reload()
   await installWriteCounter()
@@ -181,10 +229,12 @@ try {
   releaseConsentWrite()
   await consentDialog.waitFor({ state: 'detached' })
   assert.deepEqual(problems, [])
-  console.log(`plugin-console-modal-browser: ${visualTheme}, 5 screenshots, readable plugin states, source editing, dialog focus, and source/consent mutation locks verified`)
+  console.log(`plugin-console-modal-browser: ${visualTheme}, 6 screenshots, readable plugin states, source editing, dialog focus, and source/consent/toggle mutation locks verified`)
 } finally {
   releaseSourceWrite?.()
   releaseConsentWrite?.()
+  releaseToggleFailure?.()
+  releaseToggleSuccess?.()
   await page.close()
   await browser.close()
   await vite.close()

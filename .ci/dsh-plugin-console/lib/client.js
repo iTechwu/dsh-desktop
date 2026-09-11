@@ -836,6 +836,7 @@ window.__ModuleLoader__.load({
 		function PluginConsoleTab({ t }) {
 			const [state, setState] = react.useState({ status: "loading" });
 			const [busy, setBusy] = react.useState(null);
+			const toggleBusyRef = react.useRef(null);
 			const [message, setMessage] = react.useState(null);
 			const [reloadHint, setReloadHint] = react.useState(false);
 			const [restartHint, setRestartHint] = react.useState(false);
@@ -1181,6 +1182,8 @@ window.__ModuleLoader__.load({
 				);
 			};
 			const toggle = (entry, enabled) => {
+				if (!entry.toggleable || toggleBusyRef.current !== null) return;
+				toggleBusyRef.current = entry.entryId;
 				setBusy(entry.entryId);
 				setMessage(null);
 				call("/plugin-console/toggle", { entryId: entry.entryId, enabled }).then(
@@ -1189,8 +1192,12 @@ window.__ModuleLoader__.load({
 						// HMR 应用补丁后自动强刷页面，让客户端插件的挂载/卸载即时可见
 						window.setTimeout(() => window.location.reload(), 1500);
 					},
-					(error) => setMessage(t("failed") + "：" + friendlyGithubError(error).message),
-				).finally(() => setBusy(null));
+					(error) => {
+						toggleBusyRef.current = null;
+						setBusy(null);
+						setMessage(t("failed") + "：" + friendlyGithubError(error).message);
+					},
+				);
 			};
 			const search = () => {
 				setMarket({ status: "loading" });
@@ -1867,7 +1874,8 @@ window.__ModuleLoader__.load({
 								el("button", {
 									type: "button",
 									className: styles.toggle,
-									disabled: !entry.toggleable || busy === entry.entryId,
+									disabled: !entry.toggleable || busy !== null,
+									"aria-busy": busy === entry.entryId,
 									onClick: () => toggle(entry, !entry.enabled),
 								}, busy === entry.entryId ? t("loadingPhase") : t(entry.enabled ? "off" : "on")),
 								el("button", {
