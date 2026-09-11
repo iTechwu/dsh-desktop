@@ -27,7 +27,7 @@ test('retrofit package exposes a complete database-first workspace', async () =>
   assert.match(client, /\.yro-state button:disabled\{cursor:not-allowed;opacity:\.45\}/u)
   assert.match(client, /url\.protocol === 'http:' \|\| url\.protocol === 'https:'/u)
   assert.match(client, /background:var\(--dsw-alias-state-success-primary\)/u)
-  assert.match(client, /color:var\(--dsw-alias-state-warn-primary\)/u)
+  assert.match(client, /color:color-mix\(in srgb,var\(--dsw-alias-state-warn-primary\) 50%,var\(--dsw-alias-label-primary\)\)/u)
   assert.doesNotMatch(client, /#(?:31a46c|d9902f)\b/iu)
 })
 

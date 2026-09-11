@@ -6,14 +6,20 @@ import { fileURLToPath } from 'node:url'
 import { createServer } from 'vite'
 import { chromium } from '../../../deepseek-harness/apps/web/node_modules/playwright/index.mjs'
 import { assertAccessibleSurface } from './assert-accessible-surface.mjs'
+import { assertTextContrast } from './assert-text-contrast.mjs'
 
 const here = fileURLToPath(new URL('.', import.meta.url))
 const packageRoot = resolve(here, '../..')
 const workspaceRoot = resolve(packageRoot, '..')
 const harnessRoot = resolve(here, 'yootun-audit')
+const visualTheme = process.env.DSH_VISUAL_THEME || 'custom'
+assert(['custom', 'official-light', 'official-dark'].includes(visualTheme), `Unknown visual theme: ${visualTheme}`)
+const officialThemeCss = visualTheme === 'custom' ? null : await readFile(
+  resolve(workspaceRoot, 'deepseek-harness/packages/client/ui-theme/src/styles/design-platform.css'), 'utf8',
+)
 const evidenceRoot = process.env.DSH_VISUAL_EVIDENCE_ROOT
   ? resolve(process.env.DSH_VISUAL_EVIDENCE_ROOT)
-  : resolve(workspaceRoot, 'docs/superpowers/evidence/2026-09-08-theme-actions')
+  : resolve(workspaceRoot, 'docs/superpowers/evidence/2026-09-08-theme-actions', visualTheme)
 const sources = {
   contentCommand: resolve(workspaceRoot, '.ci/dsh-yootun-content-command/src/client.js'),
   dashboard: resolve(workspaceRoot, '.ci/dsh-yootun-dashboard/src/client.js'),
@@ -30,6 +36,14 @@ const vite = await createServer({
   server: { host: '127.0.0.1', port: 0 },
   plugins: [{
     name: 'theme-action-source',
+    transformIndexHtml(html) {
+      if (!officialThemeCss) return html
+      const dark = visualTheme === 'official-dark'
+      return {
+        html: html.replace('<body>', dark ? '<body data-ds-dark-theme>' : '<body>'),
+        tags: [{ tag: 'style', children: `${officialThemeCss}\n:root { color-scheme: ${dark ? 'dark' : 'light'}; }`, injectTo: 'head' }],
+      }
+    },
     configureServer(server) {
       server.middlewares.use('/__audit_source__', async (request, response) => {
         const sourceId = new URL(request.url || '/', 'http://127.0.0.1').searchParams.get('source')
@@ -199,13 +213,15 @@ async function assertActionContrast(locator) {
   const background = luminance(styles.background)
   const ratio = (Math.max(foreground, background) + 0.05) / (Math.min(foreground, background) + 0.05)
   assert(ratio >= 4.5, `action contrast must meet WCAG AA: ${JSON.stringify({ ...styles, ratio })}`)
-  assert.equal(styles.color, 'rgb(255, 255, 255)')
+  await assertThemeColor(locator, '--dsw-alias-label-primary-foreground')
 }
 
 async function assertThemePaint(locator, alias, paintProperty) {
   const colors = await locator.evaluate((element, { property, paint }) => {
     const probe = document.createElement('span')
-    probe.style[paint] = `var(${property})`
+    probe.style[paint] = paint === 'color' && /--dsw-alias-state-(success|warn|error)-primary/u.test(property)
+      ? `color-mix(in srgb,var(${property}) 50%,var(--dsw-alias-label-primary))`
+      : `var(${property})`
     element.appendChild(probe)
     const expected = getComputedStyle(probe)[paint]
     probe.remove()
@@ -223,11 +239,16 @@ const assertThemeBackground = (locator, alias) => assertThemePaint(locator, alia
 
 async function assertViewport() {
   await assertAccessibleSurface(page)
+  await assertTextContrast(page, '.ycc-kpi > strong,.ycc-distribution-row > span,.yro-external-note,.yxh-error')
 }
 
 try {
   await page.setViewportSize({ width: 390, height: 844 })
   await page.goto(`${url}?source=dashboard`)
+  if (officialThemeCss) {
+    const brand = await page.evaluate(() => getComputedStyle(document.body).getPropertyValue('--dsw-alias-brand-primary').trim())
+    assert.equal(brand, visualTheme === 'official-dark' ? 'rgb(249, 250, 251)' : 'rgb(15, 17, 21)')
+  }
   await page.getByRole('button', { name: '企业看板' }).click()
   await page.locator('.yd-content[aria-busy="true"]').waitFor()
   releaseDashboard()
@@ -347,7 +368,7 @@ try {
   await page.screenshot({ path: resolve(evidenceRoot, '390-retrofit-external.png'), fullPage: true })
 
   assert.deepEqual(consoleProblems, [])
-  process.stdout.write('theme-actions-browser: 5 plugins, 8 screenshots, adaptive action/status contrast and scrollable overview passed\n')
+  process.stdout.write(`theme-actions-browser: ${visualTheme}, 5 plugins, 8 screenshots, adaptive action/status contrast and scrollable overview passed\n`)
 } finally {
   await page.close()
   await browser.close()

@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url'
 import { createServer } from 'vite'
 import { chromium } from '../../../deepseek-harness/apps/web/node_modules/playwright/index.mjs'
 import { assertAccessibleSurface } from './assert-accessible-surface.mjs'
+import { assertTextContrast } from './assert-text-contrast.mjs'
 
 const here = fileURLToPath(new URL('.', import.meta.url))
 const packageRoot = resolve(here, '../..')
@@ -370,10 +371,11 @@ async function settleStrictMode() {
 
 async function assertViewport() {
   await assertAccessibleSurface(page)
+  await assertTextContrast(page, '.yd-activity-notice,.ydr-source-row b,.ydr-inline-status,.yf-refresh-error,.yf-status-pill,.yk-source,.yl-level,.yl-ready-dot,.yr-source,.ys-inline-error,.ysw-root-state,.yro-external-note,.ycc-error,.ycc-risk-mini,.ycc-list-status,.ycc-review-badge,.ycc-audit-score > strong,.ycc-audit-score b,.ycc-channel-action > span[data-status]')
 }
 
 async function assertDesktopViewport(header = '.yd-header', content = '.yd-overview') {
-  await assertAccessibleSurface(page)
+  await assertViewport()
   const viewport = await page.evaluate(({ header, content }) => ({
     clientWidth: document.documentElement.clientWidth,
     scrollWidth: document.documentElement.scrollWidth,
@@ -532,11 +534,15 @@ try {
       })))
       assert.equal(statusPaint.length, reviewStatus === 'approved' ? 7 : 5, 'risk, review, and eligible channel status labels must all be rendered')
       assert(statusPaint.every(item => item.background === 'rgba(0, 0, 0, 0)'), `status text must not receive solid indicator fills: ${JSON.stringify(statusPaint)}`)
-      const progressPaint = await page.locator('.ycc-audit .ycc-progress span').evaluate(element => ({
-        background: getComputedStyle(element).backgroundColor,
-        color: getComputedStyle(element).color,
-      }))
-      assert.equal(progressPaint.background, progressPaint.color, 'risk progress must retain its semantic fill')
+      const progressPaint = await page.locator('.ycc-audit .ycc-progress span').evaluate((element, tone) => {
+        const probe = document.createElement('i')
+        probe.style.backgroundColor = `var(--ycc-state-${tone === 'high' ? 'error' : tone === 'medium' ? 'warning' : 'success'})`
+        element.appendChild(probe)
+        const expected = getComputedStyle(probe).backgroundColor
+        probe.remove()
+        return { background: getComputedStyle(element).backgroundColor, expected }
+      }, tone)
+      assert.equal(progressPaint.background, progressPaint.expected, 'risk progress must retain its semantic fill')
       await page.locator('.ycc-audit').scrollIntoViewIfNeeded()
       await assertViewport()
       await page.screenshot({ path: resolve(evidenceRoot, `${width}-content-risk-${tone}.png`), fullPage: true })
