@@ -10,6 +10,14 @@ test('renders missing recruiter metrics as an unknown dash', async () => {
   assert.match(source, /String\(value \?\? '—'\)/u)
 })
 
+test('bounds recruiter percentage text and preserves missing values', async () => {
+  const source = await readFile(new URL('src/client.js', root), 'utf8')
+  assert.match(source, /function formatPercent\(value\)/u)
+  assert.match(source, /Math\.max\(0, Math\.min\(100, parsed\)\)/u)
+  assert.match(source, /formatPercent\(d\.responseRate\)/u)
+  assert.match(source, /formatPercent\(a\.offerConversion\)/u)
+})
+
 test('publishes a browser recruiter plugin with a bundle patch', async () => {
   const manifest = JSON.parse(await readFile(new URL('package.json', root), 'utf8'))
   assert.equal(manifest.name, '@dofe/dsh-yootun-recruiter')

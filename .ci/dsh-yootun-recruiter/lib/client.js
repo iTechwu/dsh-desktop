@@ -59,6 +59,12 @@ window.__ModuleLoader__.load({
     async function load(signal) { const response = await fetch(PATH, { credentials: 'same-origin', redirect: 'error', signal: AbortSignal.any([signal, AbortSignal.timeout(REQUEST_TIMEOUT_MS)].filter(Boolean)), headers: { Accept: 'application/json' } }); if (!response.ok) throw new Error('recruiter request failed'); return response.json() }
     async function mutate(body) { const response = await fetch(PATH, { method: 'POST', credentials: 'same-origin', redirect: 'error', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS), body: JSON.stringify(body) }); if (!response.ok) throw new Error('recruiter mutation failed'); return response.json() }
     function number(value, fallback = 0) { return Number.isFinite(Number(value)) ? Number(value) : fallback }
+    function formatPercent(value) {
+      if (value === null || value === undefined || value === '') return '—'
+      const parsed = Number(value)
+      if (!Number.isFinite(parsed)) return '—'
+      return `${Math.round(Math.max(0, Math.min(100, parsed)))}%`
+    }
     function list(value) { return Array.isArray(value) ? value.filter(item => typeof item === 'string').slice(0, 8) : [] }
     function sourceState(value) { if (value === 'partial' || value === 'degraded' || value === 'warning') return 'partial'; return ['ready', 'empty', 'unavailable', 'error'].includes(value) ? value : 'unavailable' }
     function statusText(status, t) { return status === 'awaiting_confirmation' ? t('waiting') : status === 'confirmed_pending_adapter' || status === 'adapter_pending' ? t('confirmed') : status === 'succeeded' ? t('succeeded') : status === 'failed' ? t('failed') : status === 'requires_user_login' ? t('requiresLogin') : t('dismissed') }
@@ -92,7 +98,7 @@ window.__ModuleLoader__.load({
             h('span', null, stageText(item.stage, t)),
             h('div', { className: 'yr-bar-track' }, h('span', { className: 'yr-bar', style: { width: `${Math.max(4, number(item.count) / max * 100)}%` } })),
             h('strong', null, String(number(item.count))),
-            index > 0 && number(rows[index - 1].count) > 0 ? h('small', null, `${Math.round(number(item.count) / number(rows[index - 1].count) * 100)}%`) : null,
+            index > 0 && number(rows[index - 1].count) > 0 ? h('small', null, formatPercent(number(item.count) / number(rows[index - 1].count) * 100)) : null,
           )),
         ),
       )
@@ -116,7 +122,7 @@ window.__ModuleLoader__.load({
           h(Metric, { label: t('todayTasks'), value: number(d.pendingConfirmation) + number(d.pendingFeedback) }),
           h(Metric, { label: t('openRoles'), value: d.openRoles }),
           h(Metric, { label: t('activeCandidates'), value: d.activeCandidates }),
-          h(Metric, { label: t('responseRate'), value: d.responseRate == null ? '—' : `${number(d.responseRate)}%` }),
+          h(Metric, { label: t('responseRate'), value: formatPercent(d.responseRate) }),
         ),
         h('div', { className: 'yr-dashboard-grid' },
           h(Funnel, { data, t }),
@@ -214,7 +220,7 @@ window.__ModuleLoader__.load({
         ),
       )
     }
-    function Analytics({ data, t }) { const a = data.analytics || {}; const localState = data.status || (data.dashboard ? 'ready' : 'unavailable'); return h('div', { className: 'yr-page' }, h('div', { className: 'yr-heading' }, h('div', null, h('h2', null, t('analytics')), h('p', { className: 'yr-subheading' }, `${t('updated')}: ${a.updatedAt || data.updatedAt || '—'}`)), h(SourceBadge, { label: t('srcLocal'), state: localState, t })), h('div', { className: 'yr-metrics' }, h(Metric, { label: t('responseRate'), value: a.responseRate == null ? '—' : `${number(a.responseRate)}%` }), h(Metric, { label: t('avgScreening'), value: a.avgScreeningDays == null ? '—' : `${number(a.avgScreeningDays)} ${t('days')}` }), h(Metric, { label: t('offerConversion'), value: a.offerConversion == null ? '—' : `${number(a.offerConversion)}%` }), h(Metric, { label: t('knowledgePending'), value: (data.knowledge || {}).pending })), h(Funnel, { data, t }), h('section', { className: 'yr-panel' }, h('p', { className: 'yr-note' }, a.insight || t('insightFallback')))) }
+    function Analytics({ data, t }) { const a = data.analytics || {}; const localState = data.status || (data.dashboard ? 'ready' : 'unavailable'); return h('div', { className: 'yr-page' }, h('div', { className: 'yr-heading' }, h('div', null, h('h2', null, t('analytics')), h('p', { className: 'yr-subheading' }, `${t('updated')}: ${a.updatedAt || data.updatedAt || '—'}`)), h(SourceBadge, { label: t('srcLocal'), state: localState, t })), h('div', { className: 'yr-metrics' }, h(Metric, { label: t('responseRate'), value: formatPercent(a.responseRate) }), h(Metric, { label: t('avgScreening'), value: a.avgScreeningDays == null ? '—' : `${number(a.avgScreeningDays)} ${t('days')}` }), h(Metric, { label: t('offerConversion'), value: formatPercent(a.offerConversion) }), h(Metric, { label: t('knowledgePending'), value: (data.knowledge || {}).pending })), h(Funnel, { data, t }), h('section', { className: 'yr-panel' }, h('p', { className: 'yr-note' }, a.insight || t('insightFallback')))) }
     function Boss({ data, t, onUpdate, busy }) {
       const sync = data.sync || {}
       const connected = sync.status === 'connected' || sync.status === 'ready'
