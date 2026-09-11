@@ -18,7 +18,7 @@ window.__ModuleLoader__.load({
     const copy = {
       zh: {
         open: 'GEO工作台', title: 'GEO 内容运营', subtitle: '诊断、生产、审核与分发', close: '关闭', refresh: '刷新数据', loadError: 'GEO 运营数据暂时无法加载', unavailable: 'GEO 内容数据源暂不可用', retry: '重新加载',
-        overview: '运营总览', reviewPublish: '内容审核与发布', sourceOnline: '数据正常', sourceEmpty: '暂无数据', sourceError: '连接异常', sourceUnavailable: '未接入',
+        overview: '运营总览', reviewPublish: '内容审核与发布', sourceOnline: '数据正常', sourceEmpty: '暂无数据', sourcePartial: '部分可用', sourceError: '连接异常', sourceUnavailable: '未接入',
         geoBaseline: 'GEO 基准分', companyScore: '品牌资料', diagnosticScore: '最近诊断', noScore: '尚无基准', certified: '已认证', recentDiagnostics: '最近诊断', noDiagnostics: '暂无优惠豚诊断记录', score: '分',
         contentPipeline: '内容工程漏斗', lastSevenDays: '近 7 天', generated: '已生成', published: '已发布', views: '内容浏览', productionTrend: '生产趋势', created: '生成',
         productionHealth: '任务运行状况', currentStatus: '当前状态', lastSevenDaysPerformance: '近 7 天执行表现', activeTasks: '已启用任务', runningJobs: '运行中任务', pendingJobs: '排队中任务', failedJobs: '失败任务', successRate: '任务成功率', avgTime: '平均生成耗时', seconds: '秒',
@@ -30,7 +30,7 @@ window.__ModuleLoader__.load({
       },
       en: {
         open: 'Content command', title: 'GEO content operations', subtitle: 'Diagnostics, production, review and distribution', close: 'Close', refresh: 'Refresh data', loadError: 'GEO operations data is temporarily unavailable', unavailable: 'GEO content source unavailable', retry: 'Try again',
-        overview: 'Overview', reviewPublish: 'Review & publish', sourceOnline: 'Connected', sourceEmpty: 'No data', sourceError: 'Connection error', sourceUnavailable: 'Not connected',
+        overview: 'Overview', reviewPublish: 'Review & publish', sourceOnline: 'Connected', sourceEmpty: 'No data', sourcePartial: 'Partially available', sourceError: 'Connection error', sourceUnavailable: 'Not connected',
         geoBaseline: 'GEO baseline', companyScore: 'Company profile', diagnosticScore: 'Latest diagnostic', noScore: 'No baseline', certified: 'Certified', recentDiagnostics: 'Recent diagnostics', noDiagnostics: 'No diagnostics found', score: 'pts',
         contentPipeline: 'Content pipeline', lastSevenDays: 'Last 7 days', generated: 'Generated', published: 'Published', views: 'Views', productionTrend: 'Production trend', created: 'Created',
         productionHealth: 'Task runtime', currentStatus: 'Current status', lastSevenDaysPerformance: 'Last 7 days', activeTasks: 'Enabled tasks', runningJobs: 'Running tasks', pendingJobs: 'Queued tasks', failedJobs: 'Failed tasks', successRate: 'Task success rate', avgTime: 'Average generation time', seconds: 'sec',
@@ -78,8 +78,8 @@ window.__ModuleLoader__.load({
       return Number.isNaN(parsed.getTime()) ? String(value) : new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }).format(parsed)
     }
     const formatDay = value => String(value || '').slice(5).replace('-', '/') || '—'
-    const sourceTone = status => status === 'ready' ? 'ready' : status === 'empty' ? 'empty' : status === 'error' ? 'error' : 'unavailable'
-    const sourceText = (status, t) => status === 'ready' ? t('sourceOnline') : status === 'empty' ? t('sourceEmpty') : status === 'error' ? t('sourceError') : t('sourceUnavailable')
+    const sourceTone = status => status === 'ready' ? 'ready' : status === 'empty' ? 'empty' : status === 'partial' || status === 'degraded' || status === 'warning' ? 'partial' : status === 'error' ? 'error' : 'unavailable'
+    const sourceText = (status, t) => status === 'ready' ? t('sourceOnline') : status === 'empty' ? t('sourceEmpty') : status === 'partial' || status === 'degraded' || status === 'warning' ? t('sourcePartial') : status === 'error' ? t('sourceError') : t('sourceUnavailable')
     const reviewLabel = (status, t) => status === 'approved' ? t('approved') : status === 'rejected' ? t('rejected') : t('reviewPending')
     const platformLabel = (status, t) => status === 'succeeded' ? t('succeeded') : status === 'failed' ? t('failed') : status === 'adapter_pending' ? t('pending') : t('login')
     const workflowLabel = (status, t) => { const value = String(status || '').trim(); const key = { draft: 'workflowDraft', published: 'workflowPublished' }[value.toLowerCase()]; return key ? t(key) : value || '—' }
