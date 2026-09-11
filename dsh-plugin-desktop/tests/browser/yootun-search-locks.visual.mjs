@@ -5,12 +5,15 @@ import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createServer } from 'vite'
 import { chromium } from '../../../deepseek-harness/apps/web/node_modules/playwright/index.mjs'
+import { assertAccessibleSurface } from './assert-accessible-surface.mjs'
 
 const here = fileURLToPath(new URL('.', import.meta.url))
 const packageRoot = resolve(here, '../..')
 const workspaceRoot = resolve(packageRoot, '..')
 const harnessRoot = resolve(here, 'yootun-audit')
-const evidenceRoot = resolve(workspaceRoot, 'docs/superpowers/evidence/2026-09-08-search-locks')
+const evidenceRoot = process.env.DSH_VISUAL_EVIDENCE_ROOT
+  ? resolve(process.env.DSH_VISUAL_EVIDENCE_ROOT)
+  : resolve(workspaceRoot, 'docs/superpowers/evidence/2026-09-08-search-locks')
 const sources = {
   content: resolve(workspaceRoot, '.ci/dsh-yootun-content-command/src/client.js'),
   dashboard: resolve(workspaceRoot, '.ci/dsh-yootun-dashboard/src/client.js'),
@@ -326,19 +329,28 @@ async function settleStrictMode() {
 }
 
 async function assertViewport() {
+  await assertAccessibleSurface(page)
+}
+
+async function assertDesktopViewport() {
+  await assertAccessibleSurface(page)
   const viewport = await page.evaluate(() => ({
     clientWidth: document.documentElement.clientWidth,
     scrollWidth: document.documentElement.scrollWidth,
-    dialog: Boolean(document.querySelector('[role="dialog"][aria-modal="true"]')),
+    headerHeight: document.querySelector('.yd-header')?.getBoundingClientRect().height ?? 0,
+    contentWidth: document.querySelector('.yd-overview')?.getBoundingClientRect().width ?? 0,
   }))
-  assert.equal(viewport.scrollWidth, viewport.clientWidth)
-  assert.equal(viewport.dialog, true)
+  assert.equal(viewport.clientWidth, 1440)
+  assert.equal(viewport.scrollWidth, viewport.clientWidth, 'desktop page must not scroll horizontally')
+  assert(viewport.headerHeight >= 72, `desktop header must preserve the 72px baseline: ${JSON.stringify(viewport)}`)
+  assert(viewport.contentWidth > 0 && viewport.contentWidth <= 1440, `desktop content must render within a constrained width: ${JSON.stringify(viewport)}`)
 }
 
 try {
   await page.goto(`${url}?source=dashboard`)
   await page.getByRole('button', { name: '企业看板' }).click()
   await page.getByRole('heading', { name: '企业驾驶舱' }).waitFor()
+  await page.locator('.yd-overview').waitFor()
   await page.waitForFunction(() => document.querySelector('.yd-content')?.getAttribute('aria-busy') === 'false')
   await page.getByRole('button', { name: '视频生产', exact: true }).click()
   await page.getByRole('heading', { name: '最近作业' }).waitFor()
@@ -379,8 +391,8 @@ try {
   await page.screenshot({ path: resolve(evidenceRoot, '390-sales-status.png'), fullPage: true })
   salesUnavailable = true
   await page.getByRole('button', { name: '刷新' }).click()
-  await page.getByRole('alert').getByText('销售工作区暂时无法加载', { exact: true }).waitFor()
-  assert.equal(await page.locator('.ys-metrics').count(), 0)
+  await page.getByRole('alert').getByText('刷新失败，当前仍显示上次数据', { exact: true }).waitFor()
+  assert.equal(await page.locator('.ys-metrics').count(), 1)
   await page.mouse.move(195, 420)
   await settleStrictMode()
   await assertViewport()
@@ -405,8 +417,8 @@ try {
   await page.screenshot({ path: resolve(evidenceRoot, '390-content-workflow.png'), fullPage: true })
   contentUnavailable = true
   await page.getByRole('button', { name: '刷新数据' }).click()
-  await page.getByRole('alert').getByText('GEO 运营数据暂时无法加载', { exact: true }).waitFor()
-  assert.equal(await page.locator('.ycc-overview,.ycc-review-workspace').count(), 0)
+  await page.getByRole('alert').getByText('刷新失败，当前仍显示上次数据', { exact: true }).waitFor()
+  assert.equal(await page.locator('.ycc-overview,.ycc-review-workspace').count(), 1)
   await page.mouse.move(195, 420)
   await settleStrictMode()
   await assertViewport()
@@ -574,8 +586,17 @@ try {
   await page.getByRole('heading', { name: '公开来源参考' }).waitFor()
   await page.waitForFunction(() => document.querySelector('.yro-content')?.getAttribute('aria-busy') === 'false')
 
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await page.goto(`${url}?source=dashboard`)
+  await page.getByRole('button', { name: '企业看板' }).click()
+  await page.getByRole('heading', { name: '企业驾驶舱' }).waitFor()
+  await page.locator('.yd-overview').waitFor()
+  await page.waitForFunction(() => document.querySelector('.yd-content')?.getAttribute('aria-busy') === 'false')
+  await assertDesktopViewport()
+  await page.screenshot({ path: resolve(evidenceRoot, '1440-dashboard-overview.png'), fullPage: true })
+
   assert.deepEqual(consoleProblems, [])
-  process.stdout.write('search-locks-browser: 10 plugins, 15 screenshots, request locks, localized statuses, and theme mappings verified with stable mobile layout\n')
+  process.stdout.write('search-locks-browser: 10 plugins, 16 screenshots, request locks, localized statuses, and responsive theme mappings verified\n')
 } finally {
   releaseDailyRefresh()
   releaseFinopsRefresh()

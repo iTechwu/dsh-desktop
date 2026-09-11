@@ -1,0 +1,17 @@
+{
+  "_note": "脱敏样例：分页末页——has_more=false，且下一页游标与当前相同（触发终止）。",
+  "status_code": 0,
+  "aweme_list": [
+    {
+      "aweme_id": "7000000000000000099",
+      "desc": "示例末页作品",
+      "create_time": 1785000000,
+      "statistics": { "play_count": 1, "digg_count": 0, "comment_count": 0, "collect_count": 0, "share_count": 0 },
+      "video": { "duration": 30000 },
+      "status": { "is_private": false }
+    }
+  ],
+  "has_more": false,
+  "max_cursor": 1785820989000,
+  "cursor": 1785820989000
+}

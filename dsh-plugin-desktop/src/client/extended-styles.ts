@@ -16,7 +16,7 @@ body:is([data-dsh-desktop-mode="compatibility"], [data-dsh-desktop-mode="extende
   height: 100%;
 }
 body:is([data-dsh-desktop-mode="compatibility"], [data-dsh-desktop-mode="extended"]) {
-  --dsh-desktop-frame-height: ${DESKTOP_FRAME_HEIGHT}px;
+  --dsh-desktop-frame-height: 0px;
   margin: 0;
   overflow: hidden;
   background: transparent !important;
@@ -24,7 +24,7 @@ body:is([data-dsh-desktop-mode="compatibility"], [data-dsh-desktop-mode="extende
 body:is([data-dsh-desktop-mode="compatibility"], [data-dsh-desktop-mode="extended"]) #root {
   box-sizing: border-box;
   position: fixed;
-  top: ${DESKTOP_FRAME_HEIGHT}px;
+  top: 0;
   right: 0;
   bottom: 0;
   left: 0;
@@ -269,7 +269,7 @@ body[data-dsh-desktop-mode="extended"]:not([data-dsh-desktop-material="off"]) {
   width: 210px;
   padding: 10px;
   border: 1px solid var(--dsw-alias-border-l1);
-  border-radius: 10px;
+  border-radius: 8px;
   background: var(--dsw-alias-bg-layer-1);
   box-shadow: 0 12px 32px color-mix(in srgb, #000 28%, transparent);
   -webkit-app-region: no-drag;
@@ -455,7 +455,7 @@ body[data-dsh-desktop-mode="extended"]:not([data-dsh-desktop-material="off"]) {
   min-width: 190px;
   padding: 5px;
   border: 1px solid var(--dsw-alias-border-l1);
-  border-radius: 10px;
+  border-radius: 8px;
   background: var(--dsw-alias-bg-layer-1);
   box-shadow: 0 12px 32px color-mix(in srgb, #000 28%, transparent);
   -webkit-app-region: no-drag;

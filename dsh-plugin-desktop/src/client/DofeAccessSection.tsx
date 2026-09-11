@@ -12,6 +12,7 @@ import { DOFE_ACCESS_MODELS_PATH, DOFE_ACCESS_VALIDATE_PATH } from '../dofe-acce
 import { parseDofeModelCatalog, type DofeModel } from '../dofe-models.ts'
 
 const STYLE_ID = 'dsh-dofe-access-styles'
+const ACCESS_REQUEST_TIMEOUT_MS = 15000
 const CSS = `
 #dsh-dofe-access-gate { position: fixed; inset: 0; z-index: 2147483000; pointer-events: none; }
 .dshDofeGate { position: fixed; inset: 0; display: grid; place-items: center; padding: 32px; background: rgba(14, 18, 24, .58); backdrop-filter: blur(10px) saturate(.8); pointer-events: auto; }
@@ -79,6 +80,7 @@ async function validateModelApiKey(key: string): Promise<boolean> {
       method: 'POST',
       credentials: 'same-origin',
       redirect: 'error',
+      signal: AbortSignal.timeout(ACCESS_REQUEST_TIMEOUT_MS),
       headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
       body: JSON.stringify({ key }),
     })
@@ -169,7 +171,17 @@ function AccessForm({ credentials, settingsApi, settingsScope, t, onboarding, on
   useEffect(() => {
     if (settings.value?.modelId !== undefined) setSelectedModel(settings.value.modelId)
   }, [settings.value?.modelId])
-  useEffect(() => { void credentials.describe([DOFE_ACCESS_KEY]).then(result => { if (result.ok) setConfigured(result.value[DOFE_ACCESS_KEY]?.configured === true); else setError(t('loadError')) }) }, [credentials, t])
+  useEffect(() => {
+    let cancelled = false
+    void credentials.describe([DOFE_ACCESS_KEY]).then(result => {
+      if (cancelled) return
+      if (result.ok) setConfigured(result.value[DOFE_ACCESS_KEY]?.configured === true)
+      else setError(t('loadError'))
+    }).catch(() => {
+      if (!cancelled) setError(t('loadError'))
+    })
+    return () => { cancelled = true }
+  }, [credentials, t])
   useEffect(() => {
     let cancelled = false
     void settingsApi.describe().then(result => {
@@ -196,6 +208,7 @@ function AccessForm({ credentials, settingsApi, settingsScope, t, onboarding, on
         method: 'POST',
         credentials: 'same-origin',
         redirect: 'error',
+        signal: AbortSignal.timeout(ACCESS_REQUEST_TIMEOUT_MS),
         headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
         body: JSON.stringify({ key }),
       })
@@ -336,7 +349,7 @@ export function DofeAccessGate({ credentials, settingsApi, settingsScope, t }: D
   useEffect(() => {
     void credentials.describe([DOFE_ACCESS_KEY]).then(result => {
       setCredentialConfigured(result.ok && result.value[DOFE_ACCESS_KEY]?.configured === true)
-    })
+    }).catch(() => { setCredentialConfigured(false) })
   }, [credentials, settings.value?.setupComplete, settings.value?.validationVersion])
   const authorized = credentialConfigured
     && settings.value?.setupComplete === true

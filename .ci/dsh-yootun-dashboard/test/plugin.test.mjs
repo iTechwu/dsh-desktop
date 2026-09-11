@@ -549,6 +549,41 @@ test('host endpoint exposes the GEORank benchmark as an isolated GEO source', as
   assert.ok(!JSON.stringify(response.body).includes('test-model-key'))
 })
 
+test('host endpoint prefers the latest completed daily GEORank diagnostic for the target site', async () => {
+  let route
+  applyHost({
+    credentials: { async resolve() { return { value: 'test-model-key' } } },
+    effect(factory) { return factory() },
+    logger: { warn() {} },
+    sessionPersistence: { async list() { return [] } },
+    tools: { schemas() { return [{ name: 'mcp__georank__get_company' }] } },
+    webServer: { register(value) { if (value.path === '/api/desktop/yootun/dashboard/yesterday') route = value; return () => {} } },
+  }, {
+    fetch: async (url, init) => {
+      if (String(url) === 'https://ixicai.cn/mcp/geoflow') return new Response(JSON.stringify({ jsonrpc: '2.0', result: { structuredContent: { kpis: { total_views: 1 }, top_content: [] } } }), { status: 200 })
+      if (String(url) === 'https://ixicai.cn/mcp/georank') {
+        const body = JSON.parse(init.body)
+        if (body.method === 'initialize') return new Response(JSON.stringify({ jsonrpc: '2.0', id: 1, result: {} }), { status: 200, headers: { 'mcp-session-id': 'session-2' } })
+        if (body.method === 'notifications/initialized') return new Response('', { status: 202 })
+        if (body.params?.name === 'georank_score_ai_friendliness') return new Response(JSON.stringify({ jsonrpc: '2.0', id: body.id, result: { structuredContent: { score: 90, reasons: [], suggestions: [] } } }), { status: 200 })
+        if (body.params?.name === 'georank_diagnostic_history') return new Response(JSON.stringify({ jsonrpc: '2.0', id: body.id, result: { structuredContent: [{ report_id: 'report-1', url: 'https://yootun.ixicai.cn', status: 'completed', overall_score: 59, created_at: '2026-09-09T01:00:00Z' }, { report_id: 'report-old', url: 'https://other.example', status: 'completed', overall_score: 99, created_at: '2026-09-09T02:00:00Z' }] } }), { status: 200 })
+        throw new Error(`unexpected GEORank tool ${body.params?.name}`)
+      }
+      if (String(url) === 'https://ixicai.cn/api/yootun/v1/georank/overview') return new Response(JSON.stringify({ data: { scope: 'public_directory', totals: { publishedCompanies: 0, scoredCompanies: 0 }, averageGeoScore: null, scoreDistribution: {}, recentCompanies: [] }, meta: {} }), { status: 200 })
+      if (String(url) === 'https://ixicai.cn/api/yootun/v1/montage/overview') return new Response(JSON.stringify({ data: { jobs: { total: 0 }, pendingApprovals: 0, artifacts: {}, health: {} }, meta: {} }), { status: 200 })
+      return new Response(JSON.stringify({ summary: { requests: 0, totalTokens: 0, cost: 0 }, byModel: [] }), { status: 200 })
+    },
+    now: () => new Date('2026-09-09T03:00:00Z'),
+  })
+  const response = await invokeRoute(route, 'POST')
+  assert.equal(response.status, 200)
+  assert.equal(response.body.georank.status, 'ready')
+  assert.equal(response.body.georank.data.benchmarkScore, 59)
+  assert.equal(response.body.georank.data.aiFriendlinessScore, 90)
+  assert.equal(response.body.georank.data.benchmarkBasis, 'youhuitun_url_async_diagnostic')
+  assert.equal(response.body.georank.data.latestDiagnostic.reportId, 'report-1')
+})
+
 test('host endpoint preserves missing montage counts as null instead of zero', async () => {
   let route
   applyHost({

@@ -2,6 +2,7 @@ window.__ModuleLoader__.load({
   id: "@dofe/dsh-yootun-content-command",
   factory: (require) => { var module = { exports: {} }; var exports = module.exports;
     const React = require('react')
+    const REQUEST_TIMEOUT_MS = 30000
     const { createElement: h, useEffect, useRef, useState, useSyncExternalStore } = React
     const {
       IconCheckOutline16, IconChevronRightOutline14, IconCloseOutline16, IconDataOutline16,
@@ -53,12 +54,12 @@ window.__ModuleLoader__.load({
     const closeOtherOverlay = event => { if (event.detail?.id !== OVERLAY_ID) setOpened(false) }
 
     async function load(signal) {
-      const response = await fetch(PATH, { credentials: 'same-origin', redirect: 'error', signal, headers: { Accept: 'application/json' } })
+      const response = await fetch(PATH, { credentials: 'same-origin', redirect: 'error', signal: AbortSignal.any([signal, AbortSignal.timeout(REQUEST_TIMEOUT_MS)].filter(Boolean)), headers: { Accept: 'application/json' } })
       if (!response.ok) throw new Error('content request failed')
       return response.json()
     }
     async function mutate(body) {
-      const response = await fetch(PATH, { method: 'POST', credentials: 'same-origin', redirect: 'error', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify(body) })
+      const response = await fetch(PATH, { method: 'POST', credentials: 'same-origin', redirect: 'error', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS), body: JSON.stringify(body) })
       const value = await response.json().catch(() => ({}))
       if (!response.ok) throw new Error(value.error || 'content mutation failed')
       return value
@@ -158,7 +159,7 @@ window.__ModuleLoader__.load({
       const shellRef = useRef(null)
       const loadingRef = useRef(false)
       const busyRef = useRef(false)
-      useEffect(() => { if (!visible) return undefined; const controller = new AbortController(); loadingRef.current = true; setError(''); setLoading(true); void load(controller.signal).then(value => { setData(value); setSelectedId(current => current || value.articles?.[0]?.articleId || null) }).catch(cause => { if (cause?.name !== 'AbortError') setError(cause.message) }).finally(() => { if (!controller.signal.aborted) { loadingRef.current = false; setLoading(false) } }); return () => controller.abort() }, [visible, revision])
+      useEffect(() => { if (!visible) return undefined; const controller = new AbortController(); loadingRef.current = true; setError(''); setLoading(true); void load(controller.signal).then(value => { if (value?.status === 'error') throw new Error('刷新失败，当前仍显示上次数据'); setData(value); setSelectedId(current => current || value.articles?.[0]?.articleId || null) }).catch(cause => { if (cause?.name !== 'AbortError') setError(cause.message) }).finally(() => { if (!controller.signal.aborted) { loadingRef.current = false; setLoading(false) } }); return () => controller.abort() }, [visible, revision])
       useEffect(() => { if (!visible) return undefined; const key = event => { if (event.key === 'Escape') closeOverlay() }; window.addEventListener('keydown', key); return () => window.removeEventListener('keydown', key) }, [visible])
       useEffect(() => { if (visible) requestAnimationFrame(() => shellRef.current?.focus?.()) }, [visible])
       if (!visible) return null

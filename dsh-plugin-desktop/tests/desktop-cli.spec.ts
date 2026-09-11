@@ -25,48 +25,44 @@ describe('packaged dsh bootstrap', () => {
     expect(environment).toEqual({ Path: 'C:\\Windows' })
   })
 
-  it('clears Node mode before loading the fixed packaged CLI entry', async () => {
+  it('clears Node mode and dispatches the imported CLI exactly once', async () => {
     const environment = {
       ELECTRON_RUN_AS_NODE: '1',
       DSH_DESKTOP_DEFAULT_PROFILE: 'desktop',
       KEEP: 'value',
     }
-    const argv = ['/Applications/Yootun-Agent', '/app.asar/lib/desktop-cli.js', '--dump-config']
+    const argv = ['/Applications/DSH Desktop', '/app.asar/lib/desktop-cli.js', '--dump-config']
+    const runCli = vi.fn(async () => {})
     const load = vi.fn(async (url: string) => {
       expect(environment).toEqual({ KEEP: 'value' })
       expect(argv).toEqual([
-        '/Applications/Yootun-Agent',
+        '/Applications/DSH Desktop',
         '/app.asar/lib/desktop-cli.js',
         '--profile',
         'desktop',
         '--dump-config',
       ])
-      expect(url).toMatch(/(?:\/node_modules\/@deepseek-ai\/dsh|\/deepseek-harness\/apps\/cli)\/lib\/bin\.js$/u)
+      expect(url).toMatch(/\/node_modules\/@deepseek-ai\/dsh\/lib\/bin\.js$/u)
+      return { runCli }
     })
 
     await runDesktopDshCli(environment, load, argv)
 
     expect(load).toHaveBeenCalledOnce()
+    expect(runCli).toHaveBeenCalledOnce()
+    expect(runCli).toHaveBeenCalledWith({ allowDesktopProfile: true })
   })
 
-  it('marks the process as packaged only while loading the packaged DSH CLI', async () => {
-    const environment = { DSH_HOME: join(tmpdir(), 'dsh-packaged-cli-marker') }
-    const argv = ['/Applications/Yootun-Agent', '/app.asar/lib/desktop-cli.js', '--profile', 'headless', '--help']
-    const before = Object.getOwnPropertyDescriptor(process, 'pkg')
-    const observed: unknown[] = []
-
-    await runDesktopDshCli(environment, async () => {
-      observed.push((process as NodeJS.Process & { pkg?: unknown }).pkg)
-    }, argv, true)
-
-    expect(observed).toEqual([{ runtime: 'electron-asar' }])
-    expect(Object.getOwnPropertyDescriptor(process, 'pkg')).toEqual(before)
+  it('propagates a rejected upstream CLI invocation', async () => {
+    const failure = new Error('CLI startup failed')
+    const load = async () => ({ runCli: async () => { throw failure } })
+    await expect(runDesktopDshCli({}, load, ['node', 'desktop-cli', '--version'])).rejects.toBe(failure)
   })
 
   it('leaves the release-age policy to the final pnpm shim exactly once', async () => {
-    const load = vi.fn(async () => {})
+    const load = vi.fn(async () => ({ runCli: async () => {} }))
     const defaulted = [
-      '/Applications/Yootun-Agent',
+      '/Applications/DSH Desktop',
       '/app.asar/lib/desktop-cli.js',
       'plugin',
       '--config.minimumReleaseAge=0',
@@ -83,7 +79,7 @@ describe('packaged dsh bootstrap', () => {
     ])
 
     const explicit = [
-      '/Applications/Yootun-Agent',
+      '/Applications/DSH Desktop',
       '/app.asar/lib/desktop-cli.js',
       'plugin',
       '--profile=work',
@@ -143,12 +139,12 @@ describe('packaged dsh bootstrap', () => {
   })
 
   it('uses the physical unpacked dependency tree only inside an Electron package', () => {
-    expect(unpackedAsarPath('/Applications/Yootun-Agent.app/Contents/Resources/app.asar/node_modules/pkg'))
-      .toBe('/Applications/Yootun-Agent.app/Contents/Resources/app.asar.unpacked/node_modules/pkg')
-    expect(unpackedAsarPath('C:\\Program Files\\Yootun-Agent\\resources\\app.asar\\node_modules\\pkg'))
-      .toBe('C:\\Program Files\\Yootun-Agent\\resources\\app.asar.unpacked\\node_modules\\pkg')
-    expect(unpackedAsarPath('/Applications/Yootun-Agent.app/Contents/Resources/app.asar/package.json'))
-      .toBe('/Applications/Yootun-Agent.app/Contents/Resources/app.asar.unpacked/package.json')
+    expect(unpackedAsarPath('/Applications/DSH Desktop.app/Contents/Resources/app.asar/node_modules/pkg'))
+      .toBe('/Applications/DSH Desktop.app/Contents/Resources/app.asar.unpacked/node_modules/pkg')
+    expect(unpackedAsarPath('C:\\Program Files\\DSH Desktop\\resources\\app.asar\\node_modules\\pkg'))
+      .toBe('C:\\Program Files\\DSH Desktop\\resources\\app.asar.unpacked\\node_modules\\pkg')
+    expect(unpackedAsarPath('/Applications/DSH Desktop.app/Contents/Resources/app.asar/package.json'))
+      .toBe('/Applications/DSH Desktop.app/Contents/Resources/app.asar.unpacked/package.json')
     expect(unpackedAsarPath('/workspace/node_modules/pkg')).toBe('/workspace/node_modules/pkg')
     expect(() => packagedDependencyPath(import.meta.url, '../outside.js'))
       .toThrow('relative POSIX path')

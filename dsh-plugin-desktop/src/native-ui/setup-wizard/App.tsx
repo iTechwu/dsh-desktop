@@ -496,11 +496,13 @@ function SetupWizardSkipDialog({
 }
 
 export function SetupWizardWelcome({
+  appVersion,
   copy,
   profileName,
   onStart,
   onSkip,
 }: {
+  readonly appVersion: string
   readonly copy: DesktopSetupWizardCopy
   readonly profileName: string
   readonly onStart: () => void
@@ -508,7 +510,14 @@ export function SetupWizardWelcome({
 }): JSX.Element {
   return <div className="flex flex-1 items-center justify-center py-5" data-align="center" data-setup-step="welcome">
     <div className="flex w-full max-w-xl flex-col items-stretch text-left">
-      <h1 className="text-2xl font-semibold tracking-tight">{copy.welcomeTitle}</h1>
+      <div className="flex flex-wrap items-end gap-x-2 gap-y-1">
+        <h1 className="text-2xl font-semibold tracking-tight">{copy.welcomeTitle}</h1>
+        <Badge
+          className="mb-0.5 px-1.5 py-0 text-[10px] leading-4"
+          data-beta-placement="title-bottom-right"
+          variant="secondary"
+        >{copy.beta} · v{appVersion}</Badge>
+      </div>
       <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{copy.welcomeBody}</p>
       <Card className="mt-7 w-full text-left">
         <CardContent className="space-y-3 p-5">
@@ -749,6 +758,7 @@ export function SetupWizardApp(): JSX.Element {
         ? <SetupWizardStarting copy={copy} />
         : step === 'welcome'
         ? <SetupWizardWelcome
+          appVersion={input.appVersion}
           copy={copy}
           onSkip={skip}
           onStart={() => { setStep('mode') }}

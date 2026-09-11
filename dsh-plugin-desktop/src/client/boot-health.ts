@@ -15,8 +15,12 @@ export interface RendererBootLoader {
   }>
 }
 
+/** Returns a diagnostic while required desktop UI surfaces are not composed. */
+export type RendererSurfaceReadiness = () => string | undefined
+
 const ACTIVE_FIBER_STATE = 2
 const LOADER_SETTLEMENT_GRACE_MS = 5_000
+const BOOT_REPORT_TIMEOUT_MS = 15_000
 
 /**
  * Wait briefly for client Loader settlement and summarize entries that did not activate.
@@ -25,7 +29,10 @@ const LOADER_SETTLEMENT_GRACE_MS = 5_000
  * indefinitely for those fibers would prevent the desktop shell from becoming usable,
  * so a pending Loader is treated as healthy when no settled fiber has failed.
  */
-export async function rendererBootReport(loader: RendererBootLoader): Promise<RendererBootReport> {
+export async function rendererBootReport(
+  loader: RendererBootLoader,
+  surfaceReadiness?: RendererSurfaceReadiness,
+): Promise<RendererBootReport> {
   let error: string | undefined
   let timeout: ReturnType<typeof setTimeout> | undefined
   try {
@@ -45,6 +52,7 @@ export async function rendererBootReport(loader: RendererBootLoader): Promise<Re
   const plugins = [...loader.entries()]
     .filter(entry => entry.fiber !== undefined && entry.fiber.state !== ACTIVE_FIBER_STATE)
     .map(entry => entry.options.name)
+  error ??= surfaceReadiness?.()
   return error === undefined && plugins.length === 0
     ? { status: 'healthy' }
     : { status: 'failed', plugins, ...(error === undefined ? {} : { error }) }
@@ -67,6 +75,7 @@ async function postRendererBootReport(
   const response = await request(RENDERER_BOOT_REPORT_PATH, {
     method: 'POST',
     cache: 'no-store',
+    signal: AbortSignal.timeout(BOOT_REPORT_TIMEOUT_MS),
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(report),
   })
@@ -79,10 +88,11 @@ async function postRendererBootReport(
 export function startRendererBootReporter(
   loader: RendererBootLoader,
   request: typeof globalThis.fetch = globalThis.fetch,
+  surfaceReadiness?: RendererSurfaceReadiness,
 ): () => void {
   let active = true
   const timer = setTimeout(() => {
-    void rendererBootReport(loader)
+    void rendererBootReport(loader, surfaceReadiness)
       .then(async (report) => {
         if (active) await postRendererBootReport(report, request)
       })

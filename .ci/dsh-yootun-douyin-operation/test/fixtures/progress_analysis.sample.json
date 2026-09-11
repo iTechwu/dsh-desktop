@@ -1,0 +1,7 @@
+{
+  "_note": "脱敏样例：进度分析 progress/analysis/v2（拖回/拖前分布，按播放秒；此处为占位）。",
+  "status_code": 0,
+  "status_msg": "",
+  "jump_backward": [ { "key": "1", "value": 0.01 }, { "key": "2", "value": 0.008 } ],
+  "jump_forward": [ { "key": "1", "value": 0.02 }, { "key": "2", "value": 0.015 } ]
+}

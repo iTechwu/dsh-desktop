@@ -4,6 +4,7 @@ window.__ModuleLoader__.load({
     var module = { exports: {} };
     var exports = module.exports;
     const React = require('react')
+    const REQUEST_TIMEOUT_MS = 30000
     const { createElement: h, useEffect, useRef, useState, useSyncExternalStore } = React
     const { IconCheckOutline16, IconCloseOutline16, IconDataOutline16, IconRefreshOutline16, Tooltip } = require('@deepseek-ai/dsh-client-ui-primitives')
 
@@ -12,8 +13,8 @@ window.__ModuleLoader__.load({
     const OVERLAY_EVENT = 'dofe:yootun-overlay:open'
     const PATH = '/api/desktop/yootun/sales'
     const copy = {
-      zh: { open: '销售协同', title: '销售协同', subtitle: '公开意向发现、线索跟进与确认动作', close: '关闭销售协同', refresh: '刷新', loading: '正在读取销售工作区…', loadError: '销售工作区暂时无法加载', unavailable: '销售数据源暂不可用', retry: '重新加载', leads: '线索', qualified: '合格线索', dueToday: '今日待跟进', pending: '待确认', empty: '还没有销售线索', actions: '跟进动作', approve: '确认', dismiss: '撤销', adapter: '已确认，等待适配器', succeeded: '适配器已完成', failed: '适配器执行失败', requiresLogin: '需要重新登录', source: '来源', intent: '意向发现', intentPlaceholder: '一句话描述要找的公开意向，例如：长沙新能源汽车改装讨论', intentSearch: '开始检索', intentSearching: '正在检索…', intentEmpty: '输入需求后查找公开讨论', intentUnavailable: 'Tools 意向检索暂不可用', intentError: '意向检索失败', actionError: '操作未完成，请重试', confidence: '置信度' },
-      en: { open: 'Sales workspace', title: 'Sales workspace', subtitle: 'Public intent discovery, follow-ups, and approvals', close: 'Close sales workspace', refresh: 'Refresh', loading: 'Loading sales workspace…', loadError: 'The sales workspace is temporarily unavailable', unavailable: 'Sales data source unavailable', retry: 'Try again', leads: 'Leads', qualified: 'Qualified', dueToday: 'Due today', pending: 'Awaiting approval', empty: 'No sales leads yet', actions: 'Follow-up actions', approve: 'Approve', dismiss: 'Dismiss', adapter: 'Approved, adapter pending', succeeded: 'Adapter completed', failed: 'Adapter failed', requiresLogin: 'Login required', source: 'Source', intent: 'Intent discovery', intentPlaceholder: 'Describe the public intent to find in one sentence', intentSearch: 'Search', intentSearching: 'Searching…', intentEmpty: 'Enter a requirement to find public discussions', intentUnavailable: 'Tools intent discovery is unavailable', intentError: 'Intent search failed', actionError: 'Action failed. Try again.', confidence: 'Confidence' },
+      zh: { open: '销售协同', title: '销售协同', subtitle: '公开意向发现、线索跟进与确认动作', close: '关闭销售协同', refresh: '刷新', loading: '正在读取销售工作区…', loadError: '销售工作区暂时无法加载', unavailable: '销售数据源暂不可用', retry: '重新加载', leads: '线索', qualified: '合格线索', dueToday: '今日待跟进', pending: '待确认', empty: '还没有销售线索', actions: '跟进动作', approve: '确认', dismiss: '撤销', adapter: '已确认，等待适配器', succeeded: '适配器已完成', failed: '适配器执行失败', requiresLogin: '需要重新登录', source: '来源', intent: '意向发现', intentPlaceholder: '一句话描述要找的公开意向，例如：长沙新能源汽车改装讨论', intentSearch: '开始检索', intentSearching: '正在检索…', intentEmpty: '输入需求后查找公开讨论', intentUnavailable: 'Tools 意向检索暂不可用', intentError: '意向检索失败', actionError: '操作未完成，请重试', refreshError: '刷新失败，当前仍显示上次数据', confidence: '置信度' },
+      en: { open: 'Sales workspace', title: 'Sales workspace', subtitle: 'Public intent discovery, follow-ups, and approvals', close: 'Close sales workspace', refresh: 'Refresh', loading: 'Loading sales workspace…', loadError: 'The sales workspace is temporarily unavailable', unavailable: 'Sales data source unavailable', retry: 'Try again', leads: 'Leads', qualified: 'Qualified', dueToday: 'Due today', pending: 'Awaiting approval', empty: 'No sales leads yet', actions: 'Follow-up actions', approve: 'Approve', dismiss: 'Dismiss', adapter: 'Approved, adapter pending', succeeded: 'Adapter completed', failed: 'Adapter failed', requiresLogin: 'Login required', source: 'Source', intent: 'Intent discovery', intentPlaceholder: 'Describe the public intent to find in one sentence', intentSearch: 'Search', intentSearching: 'Searching…', intentEmpty: 'Enter a requirement to find public discussions', intentUnavailable: 'Tools intent discovery is unavailable', intentError: 'Intent search failed', actionError: 'Action failed. Try again.', refreshError: 'Refresh failed; showing the previous data', confidence: 'Confidence' },
     }
     let opened = false
     let lastTrigger = null
@@ -25,8 +26,8 @@ window.__ModuleLoader__.load({
     const closeOtherOverlay = event => { if (event.detail?.id !== OVERLAY_ID) setOpened(false) }
     const subscribe = listener => { listeners.add(listener); return () => listeners.delete(listener) }
     const snapshot = () => opened
-    async function load(signal) { const response = await fetch(PATH, { credentials: 'same-origin', redirect: 'error', signal, headers: { Accept: 'application/json' } }); if (!response.ok) throw new Error('sales request failed'); return response.json() }
-    async function mutate(body) { const response = await fetch(PATH, { method: 'POST', credentials: 'same-origin', redirect: 'error', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify(body) }); if (!response.ok) throw new Error('sales mutation failed'); return response.json() }
+    async function load(signal) { const response = await fetch(PATH, { credentials: 'same-origin', redirect: 'error', signal: AbortSignal.any([signal, AbortSignal.timeout(REQUEST_TIMEOUT_MS)].filter(Boolean)), headers: { Accept: 'application/json' } }); if (!response.ok) throw new Error('sales request failed'); return response.json() }
+    async function mutate(body) { const response = await fetch(PATH, { method: 'POST', credentials: 'same-origin', redirect: 'error', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS), body: JSON.stringify(body) }); if (!response.ok) throw new Error('sales mutation failed'); return response.json() }
     function Metric({ label, value }) { return h('div', { className: 'ys-metric' }, h('span', null, label), h('strong', null, String(value ?? 0))) }
     function IntentSearch({ t, current, update, disabled }) {
       const [query, setQuery] = useState('')
@@ -54,7 +55,7 @@ window.__ModuleLoader__.load({
         loadingRef.current = true
         setError(false)
         setLoading(true)
-        void load(controller.signal).then(value => { setData(value); setError(false) }).catch(cause => {
+        void load(controller.signal).then(value => { if (value?.status === 'error') throw new Error('sales refresh failed'); setData(value); setError(false) }).catch(cause => {
           if (cause?.name !== 'AbortError') setError(true)
         }).finally(() => { if (!controller.signal.aborted) { loadingRef.current = false; setLoading(false) } })
         return () => { controller.abort(); loadingRef.current = false }
@@ -102,7 +103,7 @@ window.__ModuleLoader__.load({
           : h('div', { className: 'ys-empty', role: 'status' }, t('empty')),
       )
       const inlineError = error && data
-        ? h('div', { role: 'alert', className: 'ys-inline-error' }, h('span', null, t('actionError')), h('button', { type: 'button', disabled: interactionBusy, onClick: refresh }, t('retry')))
+        ? h('div', { role: 'alert', className: 'ys-inline-error' }, h('span', null, t('refreshError')), h('button', { type: 'button', disabled: interactionBusy, onClick: refresh }, t('retry')))
         : null
       const content = loading && !data
         ? h('div', { role: 'status', className: 'ys-empty ys-loading' }, h('span', { className: 'ys-spinner', 'aria-hidden': true }), t('loading'))

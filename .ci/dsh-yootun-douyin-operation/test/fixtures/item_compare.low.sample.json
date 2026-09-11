@@ -1,0 +1,11 @@
+{
+  "_note": "脱敏样例：低播放作品 item_compare——服务端最小观看门槛，item 为空。解析必须记为 dataGap，且不影响其它字段。",
+  "status_code": 10001,
+  "status_msg": "view count less than min view count",
+  "selected_metrics": [],
+  "compare_item_ids": [],
+  "item": {},
+  "metrics": [],
+  "view_count_metric": {},
+  "punish_info": {}
+}

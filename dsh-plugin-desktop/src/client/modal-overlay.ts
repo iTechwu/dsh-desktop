@@ -84,7 +84,12 @@ export function installModalOverlayIsolation(frame: HTMLElement, overlayLayer: H
   }
 
   const observer = new MutationObserver(syncModal)
-  observer.observe(overlayLayer, { childList: true, subtree: true })
+  observer.observe(overlayLayer, {
+    attributeFilter: ['role', 'aria-modal', 'hidden', 'inert'],
+    attributes: true,
+    childList: true,
+    subtree: true,
+  })
   document.addEventListener('keydown', trapFocus, true)
   syncModal()
 

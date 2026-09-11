@@ -1,4 +1,5 @@
 const React = require('react')
+const REQUEST_TIMEOUT_MS = 30000
 const { createElement: h, useEffect, useRef, useState, useSyncExternalStore } = React
 const { IconCloseOutline16, IconRefreshOutline16, IconDataOutline16, Tooltip } = require('@deepseek-ai/dsh-client-ui-primitives')
 const NS = 'dofe.yootun-daily-report'; const PATH = '/api/desktop/yootun/daily-report'
@@ -30,7 +31,7 @@ function Overlay({ t }) {
     void fetch(PATH, {
       credentials: 'same-origin',
       redirect: 'error',
-      signal: controller.signal,
+      signal: AbortSignal.any([controller.signal, AbortSignal.timeout(REQUEST_TIMEOUT_MS)]),
       headers: { Accept: 'application/json' },
     })
       .then(response => { if (!response.ok) throw new Error(`daily_report_${response.status}`); return response.json() })

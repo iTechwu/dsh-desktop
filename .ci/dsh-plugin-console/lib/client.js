@@ -7,12 +7,13 @@ window.__ModuleLoader__.load({
 		let react = require("react");
 		//#region styles
 		const css = ".pc_section{width:100%;max-width:760px;color:var(--dsw-alias-label-primary);flex-direction:column;gap:14px;display:flex}.pc_section h3{margin:0;font-size:13px;font-weight:600;line-height:20px}.pc_message{color:var(--dsw-alias-label-tertiary);font-size:13px;line-height:20px;margin:0}.pc_messageRow{display:flex;align-items:center;gap:10px}.pc_spinner{width:14px;height:14px;border:2px solid var(--dsw-alias-border-l2);border-top-color:var(--dsw-alias-state-business-primary);border-radius:50%;animation:pcspin 1s linear infinite;flex:none}@keyframes pcspin{to{transform:rotate(360deg)}}.pc_message[data-error=true]{color:var(--dsw-alias-state-error-primary)}.pc_list{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:0;padding:0;list-style:none;display:grid}.pc_row{border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-3);border-radius:10px;min-width:0;padding:10px 12px;flex-direction:column;gap:6px;display:flex}.pc_rowTop{align-items:center;gap:8px;display:flex}.pc_name{font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}.pc_tag{border:1px solid var(--dsw-alias-border-l2);color:var(--dsw-alias-label-tertiary);border-radius:999px;padding:1px 8px;font-size:11px;line-height:16px;flex:none}.pc_tag[data-enabled=true]{border-color:var(--dsw-alias-state-success-primary);color:var(--dsw-alias-state-success-primary)}.pc_tag[data-user=true]{border-color:var(--dsw-alias-state-business-primary);color:var(--dsw-alias-state-business-primary)}.pc_tag[data-skill=true]{border-color:var(--dsw-alias-state-warn-primary);color:var(--dsw-alias-state-warn-primary)}.pc_tag[data-system=true]{border-color:var(--dsw-alias-border-l2);color:var(--dsw-alias-label-tertiary);background:var(--dsw-alias-bg-layer-2)}.pc_tag[data-disabled=true]{border-color:var(--dsw-alias-state-error-primary);color:var(--dsw-alias-state-error-primary)}.pc_tag[data-suite=true]{border-color:var(--dsw-alias-state-success-primary);color:var(--dsw-alias-state-success-primary)}.pc_tag[data-error=true]{border-color:var(--dsw-alias-state-error-primary);color:var(--dsw-alias-state-error-primary)}.pc_tabGroup{display:inline-flex;gap:4px;align-items:center}.pc_meta{color:var(--dsw-alias-label-tertiary);font-size:11px;line-height:16px;gap:6px;display:flex;align-items:center}.pc_phase[data-phase=failed]{color:var(--dsw-alias-state-error-primary)}.pc_phase[data-phase=active]{color:var(--dsw-alias-state-success-primary)}.pc_toggle{border:1px solid var(--dsw-alias-border-l2);color:var(--dsw-alias-label-primary);background:0 0;font:inherit;cursor:pointer;border-radius:6px;padding:4px 12px;align-self:flex-start}.pc_toggle:hover:not(:disabled){border-color:var(--dsw-alias-state-business-primary)}.pc_toggle:disabled{opacity:.5;cursor:default}.pc_search{gap:8px;display:flex}.pc_search input{border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-1);height:34px;flex:1;color:var(--dsw-alias-label-primary);font:inherit;border-radius:8px;outline:none;padding:0 12px;font-size:13px}.pc_search input:focus-visible{border-color:var(--dsw-alias-state-business-primary)}.pc_search button{border:1px solid var(--dsw-alias-border-l2);color:var(--dsw-alias-label-primary);background:var(--dsw-alias-bg-layer-2);font:inherit;cursor:pointer;border-radius:8px;padding:0 14px;font-size:13px}.pc_search button:hover{border-color:var(--dsw-alias-state-business-primary)}.pc_market{flex-direction:column;gap:10px;margin:0;padding:0;list-style:none;display:flex}.pc_item{border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-3);border-radius:10px;min-width:0;padding:10px 12px;flex-direction:column;gap:6px;display:flex}.pc_itemTop{align-items:center;gap:8px;display:flex}.pc_itemTop a{color:var(--dsw-alias-state-business-primary);font-size:13px;font-weight:600;text-decoration:none;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.pc_stars{color:var(--dsw-alias-label-tertiary);font-size:11px;flex:none}.pc_desc{color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:18px;margin:0}.pc_item button{border:1px solid var(--dsw-alias-border-l2);color:var(--dsw-alias-label-primary);background:0 0;font:inherit;cursor:pointer;border-radius:6px;padding:3px 10px;align-self:flex-start;font-size:12px}.pc_item button:hover:not(:disabled){border-color:var(--dsw-alias-state-business-primary)}.pc_item button:disabled{opacity:.5;cursor:default}.pc_detail{border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-3);border-radius:10px;padding:10px 12px;flex-direction:column;gap:6px;display:flex}.pc_status{color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:18px;margin:0}.pc_note{color:var(--dsw-alias-label-tertiary);font-size:11px;line-height:16px;margin:0}.pc_marketHead{display:flex;align-items:center;justify-content:space-between;gap:10px}.pc_descWrap{flex-direction:column;display:flex}.pc_installedHead{display:flex;align-items:center;gap:10px}.pc_backTopWrap{position:fixed;top:56px;right:20px;z-index:100;display:flex;flex-direction:column;gap:8px}.pc_backTop{width:34px;height:34px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;background:rgba(22,27,34,.72);border:1px solid var(--dsw-alias-border-l2);color:var(--dsw-alias-label-primary);cursor:pointer;backdrop-filter:blur(4px);opacity:.7}.pc_backTop:hover{opacity:1;border-color:var(--dsw-alias-state-business-primary)}.pc_descTopbar{display:flex;justify-content:flex-end;margin:2px 0}.pc_ghpill{border:1px solid var(--dsw-alias-border-l2);color:var(--dsw-alias-label-tertiary);border-radius:999px;padding:1px 10px;font-size:11px;line-height:18px}.pc_ghpill[data-on=true]{border-color:var(--dsw-alias-state-success-primary);color:var(--dsw-alias-state-success-primary)}.pc_extraBtn{opacity:.75;border:1px solid var(--dsw-alias-border-l2);color:var(--dsw-alias-label-primary);background:0 0;font:inherit;cursor:pointer;border-radius:6px;padding:4px 10px;font-size:12px;line-height:16px;flex:none;transition:opacity .15s ease,border-color 1.5s ease,color 1.5s ease}.pc_extraBtn:hover{opacity:1}.pc_extraBtn[data-active=true]{opacity:1;border-color:var(--dsw-alias-state-business-primary);color:var(--dsw-alias-state-business-primary)}.pc_extraBtn[data-flash=true]{border-color:var(--dsw-alias-state-business-primary);color:var(--dsw-alias-state-business-primary)}.pc_view{border:1px solid var(--dsw-alias-border-l2);color:var(--dsw-alias-label-primary);background:0 0;font:inherit;cursor:pointer;border-radius:6px;padding:2px 10px;font-size:12px;line-height:18px;flex:none}.pc_floatPanel{position:fixed;left:20px;top:50%;transform:translateY(-50%);width:340px;max-height:75vh;overflow-y:auto;border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-3);border-radius:10px;padding:12px;box-shadow:0 8px 24px rgba(0,0,0,.18);z-index:50;flex-direction:column;gap:8px;display:flex}.pc_refresh{position:sticky;bottom:14px;align-self:flex-end;margin-top:8px;z-index:60;opacity:.45;border:1px solid var(--dsw-alias-border-l2);color:var(--dsw-alias-label-secondary);background:transparent;font:inherit;cursor:pointer;border-radius:8px;padding:6px 10px;display:flex;align-items:center;gap:6px;font-size:12px;line-height:16px;transition:opacity .15s ease}.pc_refresh:hover{opacity:.9}.pc_date{color:var(--dsw-alias-label-tertiary);font-size:11px;line-height:16px;flex:none}.pc_searchInner{position:relative;flex:1;display:flex;align-items:center;min-width:0}.pc_searchInner input{padding-right:32px;width:100%}.pc_starBtn{border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-tertiary);cursor:pointer;font-size:13px;line-height:1;padding:4px 8px;border-radius:6px;opacity:.75;transition:opacity .15s ease;flex:none}.pc_starBtn:hover{opacity:1}.pc_starBtn[data-active=true]{opacity:1;color:var(--dsw-alias-state-business-primary)}.pc_restartBtn{position:fixed;right:20px;top:50%;transform:translateY(-50%);z-index:60;opacity:.45;border:1px solid var(--dsw-alias-border-l2);color:var(--dsw-alias-label-secondary);background:transparent;font:inherit;cursor:pointer;border-radius:8px;padding:6px 10px;display:flex;align-items:center;gap:6px;font-size:12px;line-height:16px;transition:opacity .15s ease}.pc_restartBtn:hover{opacity:.9}.pc_relaunchFloat{position:fixed;left:20px;top:50%;transform:translateY(-50%);z-index:70;opacity:.85;border:1px solid var(--dsw-alias-state-business-primary);color:var(--dsw-alias-state-business-primary);background:var(--dsw-alias-bg-layer-3);font:inherit;cursor:pointer;border-radius:8px;padding:6px 10px;display:flex;align-items:center;gap:6px;font-size:12px;line-height:16px;transition:opacity .15s ease}.pc_relaunchFloat:hover{opacity:1}.pc_aiToggle{position:fixed;right:20px;top:20px;z-index:70;opacity:.45;border:1px solid var(--dsw-alias-border-l2);color:var(--dsw-alias-label-secondary);background:transparent;font:inherit;cursor:pointer;border-radius:8px;padding:6px 10px;display:flex;align-items:center;gap:6px;font-size:12px;line-height:16px;transition:opacity .15s ease}.pc_aiToggle:hover{opacity:.9}.pc_aiToggle[data-active=true]{opacity:1;border-color:var(--dsw-alias-state-business-primary);color:var(--dsw-alias-state-business-primary)}.pc_sourcesFloat{position:fixed;right:20px;top:76px;z-index:70;opacity:.85;border:1px solid var(--dsw-alias-border-l2);color:var(--dsw-alias-label-primary);background:var(--dsw-alias-bg-layer-3);font:inherit;cursor:pointer;border-radius:8px;padding:6px 10px;display:flex;align-items:center;gap:6px;font-size:12px;line-height:16px;transition:opacity .15s ease}.pc_sourcesFloat:hover{opacity:1;border-color:var(--dsw-alias-state-business-primary);color:var(--dsw-alias-state-business-primary)}.pc_modeFloat{position:fixed;right:20px;top:176px;z-index:70;opacity:.85;border:1px solid var(--dsw-alias-border-l2);color:var(--dsw-alias-label-primary);background:var(--dsw-alias-bg-layer-3);font:inherit;cursor:pointer;border-radius:8px;padding:6px 10px;display:flex;align-items:center;gap:6px;font-size:12px;line-height:16px;transition:opacity .15s ease}.pc_modeFloat:hover{opacity:1;border-color:var(--dsw-alias-state-business-primary);color:var(--dsw-alias-state-business-primary)}.pc_modeFloat[data-mode=true]{opacity:1;border-color:var(--dsw-alias-state-warn-primary);color:var(--dsw-alias-state-warn-primary)}.pc_trashBtn{border:0;background:0 0;color:var(--dsw-alias-label-tertiary);cursor:pointer;font-size:12px;line-height:16px;padding:2px 6px;flex:none;display:flex;align-items:center;border-radius:6px;transition:color .15s ease}.pc_trashBtn:hover{color:var(--dsw-alias-state-error-primary)}.pc_consentRemember{display:flex;align-items:center;gap:6px;font-size:12px;line-height:16px;color:var(--dsw-alias-label-secondary);cursor:pointer}.pc_modalBackdrop{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:1000;display:flex;align-items:center;justify-content:center}.pc_modalCard{border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-1);border-radius:12px;padding:16px 18px;max-width:420px;width:calc(100% - 48px);flex-direction:column;gap:10px;display:flex;box-shadow:0 12px 32px rgba(0,0,0,.25)}.pc_ghpill{background:0 0;cursor:pointer}.pc_ghwrap{position:relative;display:inline-flex}.pc_sourceMenu{position:absolute;right:0;top:calc(100% + 6px);z-index:90;border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-1);border-radius:8px;padding:4px;flex-direction:column;display:flex;min-width:120px;box-shadow:0 8px 24px rgba(0,0,0,.18)}.pc_sourceOpt{border:0;background:0 0;color:var(--dsw-alias-label-primary);font:inherit;cursor:pointer;border-radius:6px;padding:6px 10px;text-align:left;font-size:12px;line-height:16px}.pc_sourceOpt[data-active=true]{color:var(--dsw-alias-state-business-primary);font-weight:600}.pc_sourceOpt:hover{background:var(--dsw-alias-bg-layer-3)}";
+		const cssOverrides = ".pc_row,.pc_item,.pc_detail,.pc_floatPanel,.pc_modalCard{border-radius:8px}.pc_backTop{background:var(--dsw-alias-bg-layer-2)}.pc_modalBackdrop{background:color-mix(in srgb,var(--dsw-alias-bg-base) 62%,transparent)}.pc_modalCard{box-sizing:border-box;max-height:calc(100vh - 32px);overflow-y:auto}.pc_modalCard .pc_rowTop{flex-wrap:wrap}.pc_modalCard input:not([type=checkbox]),.pc_modalCard textarea{box-sizing:border-box;width:100%!important;min-width:0!important;flex-basis:100%!important}@media(max-width:640px){.pc_list{grid-template-columns:1fr}.pc_floatPanel{left:12px;right:12px;width:auto;max-height:70vh}.pc_restartBtn{right:12px}.pc_relaunchFloat{left:12px}.pc_aiToggle,.pc_sourcesFloat,.pc_modeFloat{right:12px}}";
 		const tagId = "@noob-stupid/dsh-plugin-console/PluginConsoleTab.css";
 		if (typeof document !== "undefined" && document.querySelector("style[data-plugin-css=" + JSON.stringify(tagId) + "]") === null) {
 			const tag = document.createElement("style");
 			tag.dataset.plugin = "@noob-stupid/dsh-plugin-console";
 			tag.dataset.pluginCss = tagId;
-			tag.textContent = css;
+			tag.textContent = css + cssOverrides;
 			document.head.appendChild(tag);
 		}
 		const styles = {
@@ -572,10 +573,12 @@ window.__ModuleLoader__.load({
 		function phaseLabel(phase, t) {
 			return phase === null ? t("unobserved") : t(PHASE_KEYS[phase]);
 		}
+		const LOCAL_CALL_TIMEOUT_MS = 30000;
+		const EXTERNAL_FETCH_POLICY = { credentials: "omit", redirect: "error", referrerPolicy: "no-referrer", cache: "no-store" };
 		async function call(path, body) {
 			const response = await fetch(path, body === undefined
-				? {}
-				: { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+				? { credentials: "same-origin", redirect: "error", cache: "no-store", signal: AbortSignal.timeout(LOCAL_CALL_TIMEOUT_MS) }
+				: { method: "POST", credentials: "same-origin", redirect: "error", cache: "no-store", signal: AbortSignal.timeout(LOCAL_CALL_TIMEOUT_MS), headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
 			let data = null;
 			try {
 				data = await response.json();
@@ -595,7 +598,7 @@ window.__ModuleLoader__.load({
 		}
 		async function githubFetch(url) {
 			const response = await fetch(url, {
-				headers: { accept: "application/vnd.github+json" },
+				...EXTERNAL_FETCH_POLICY, headers: { accept: "application/vnd.github+json" },
 				signal: AbortSignal.timeout(15000),
 			});
 			if (response.status === 403) throw new Error("GitHub 匿名接口限流已用尽，请稍后再试");
@@ -612,13 +615,13 @@ window.__ModuleLoader__.load({
 		async function fetchRawText(repo, branch, file, source = "github") {
 			if (source === "gitee") {
 				try {
-					const res = await fetch(`https://gitee.com/${repo}/raw/${branch}/${file}`, { signal: AbortSignal.timeout(15000) });
+					const res = await fetch(`https://gitee.com/${repo}/raw/${branch}/${file}`, { ...EXTERNAL_FETCH_POLICY, signal: AbortSignal.timeout(15000) });
 					if (!res.ok) return null;
 					return await res.text();
 				} catch { return null; }
 			}
 			const attempts = RAW_CANDIDATES.map((build) => fetch(build(repo, branch, file), {
-				signal: AbortSignal.timeout(15000),
+				...EXTERNAL_FETCH_POLICY, signal: AbortSignal.timeout(15000),
 			}).then((res) => {
 				if (!res.ok) throw new Error("HTTP " + res.status);
 				return res.text();
@@ -845,6 +848,7 @@ window.__ModuleLoader__.load({
 			const [installedSkills, setInstalledSkills] = react.useState([]);
 			// 原始页面标题（AI 授权标题闪烁后恢复用）
 			const originalTitleRef = react.useRef("");
+			const modalCardRef = react.useRef(null);
 			// 技能删除两步确认：存待确认技能名
 			const [confirmSkillDelete, setConfirmSkillDelete] = react.useState(null);
 			// 技能停用/启用进行中
@@ -929,6 +933,8 @@ window.__ModuleLoader__.load({
 				try { return localStorage.getItem("pc-ai-fallback-v2") !== "off"; } catch { return true; }
 			});
 			const aiAutoDeclinedRef = react.useRef({});
+			const aiConsentBusyRef = react.useRef(false);
+			const [aiConsentBusy, setAiConsentBusy] = react.useState(false);
 			// 已关闭的失败提示（用户点 × 后不再显示，服务重启后重置）
 			const [dismissedFailures, setDismissedFailures] = react.useState({});
 			// 软件源管理
@@ -937,6 +943,22 @@ window.__ModuleLoader__.load({
 			const [sourceName, setSourceName] = react.useState("");
 			const [sourceUrl, setSourceUrl] = react.useState("");
 			const [sourcesBusy, setSourcesBusy] = react.useState(false);
+			const sourcesBusyRef = react.useRef(false);
+			const modalReturnFocusRef = react.useRef(null);
+			react.useEffect(() => {
+				if (!sourcesOpen) return undefined;
+				modalReturnFocusRef.current = document.activeElement;
+				const focusFrame = window.requestAnimationFrame(() => (modalCardRef.current?.querySelector('button[aria-label]:not([disabled])') || modalCardRef.current?.querySelector('button:not([disabled]),input:not([disabled]),textarea:not([disabled]),select:not([disabled]),a[href]'))?.focus?.());
+				const onModalKeyDown = (event) => {
+					if (event.key === "Escape") { event.preventDefault(); setSourcesOpen(false); return; }
+					if (event.key !== "Tab") return;
+					const items = Array.from(modalCardRef.current?.querySelectorAll('button:not([disabled]),input:not([disabled]),textarea:not([disabled]),select:not([disabled]),a[href]') ?? []);
+					const first = items[0]; const last = items[items.length - 1];
+					if (document.activeElement === first || (!event.shiftKey && document.activeElement === last)) { event.preventDefault(); first?.focus?.(); }
+				};
+				document.addEventListener("keydown", onModalKeyDown, true);
+				return () => { window.cancelAnimationFrame(focusFrame); document.removeEventListener("keydown", onModalKeyDown, true); window.requestAnimationFrame(() => modalReturnFocusRef.current?.focus?.()); };
+			}, [sourcesOpen]);
 			// registry 行内编辑
 			const [editReg, setEditReg] = react.useState(null);
 			// 搜索源列表（内置 + 自定义，来自配置）
@@ -1494,10 +1516,13 @@ window.__ModuleLoader__.load({
 			};
 			/** 本地 AI 兜底授权：调用模型 API 产生费用，必须用户明确同意。 */
 			const aiConsent = (jobId, approved) => {
+				if (aiConsentBusyRef.current) return;
+				aiConsentBusyRef.current = true;
+				setAiConsentBusy(true);
 				call("/plugin-console/ai-consent", { jobId, approved }).then(
-					() => { if (!approved) setMessage(t("failed") + "：已取消本地 AI 兜底（不会调用模型 API）"); },
+					() => { setJobs((prev) => ({ ...prev, [jobId]: { ...prev[jobId], status: approved ? "installing" : "cancelled", stage: approved ? "installing" : "cancelled" } })); if (!approved) setMessage(t("failed") + "：已取消本地 AI 兜底（不会调用模型 API）"); pollJob(jobId); },
 					(error) => setMessage(t("failed") + "：" + friendlyGithubError(error).message),
-				);
+				).finally(() => { aiConsentBusyRef.current = false; setAiConsentBusy(false); });
 			};
 			/** 软件源管理：打开时拉取当前配置。 */
 			const openSources = () => {
@@ -1534,6 +1559,8 @@ window.__ModuleLoader__.load({
 				);
 			};
 			const sourcesAction = (payload, done) => {
+				if (sourcesBusyRef.current) return;
+				sourcesBusyRef.current = true;
 				setSourcesBusy(true);
 				call("/plugin-console/sources", payload).then(
 					(data) => {
@@ -1543,7 +1570,7 @@ window.__ModuleLoader__.load({
 						if (done) done();
 					},
 					(error) => setMessage(t("failed") + "：" + friendlyGithubError(error).message),
-				).finally(() => setSourcesBusy(false));
+				).finally(() => { sourcesBusyRef.current = false; setSourcesBusy(false); });
 			};
 			const addSource = () => {
 				if (!isAllowedSourceUrl(sourceUrl.trim())) {
@@ -2510,9 +2537,9 @@ onClick: () => window.open(`https://github.com/Noob-stupid/dsh-plugin-hub/releas
 					return consentJob === undefined
 						? null
 						: el("div", { className: styles.modalBackdrop },
-							el("div", { className: styles.modalCard },
-								el("strong", { className: styles.name }, t("installingLocal") + "：" + (consentJob.packageName ?? consentJob.repo)),
-								el("p", { className: styles.message }, t("aiConsentText")),
+							el("div", { className: styles.modalCard, role: "dialog", "aria-modal": true, "aria-labelledby": "pc-ai-consent-title", "aria-describedby": "pc-ai-consent-description", "aria-busy": aiConsentBusy, ref: modalCardRef, tabIndex: -1 },
+								el("strong", { className: styles.name, id: "pc-ai-consent-title" }, t("installingLocal") + "：" + (consentJob.packageName ?? consentJob.repo)),
+								el("p", { className: styles.message, id: "pc-ai-consent-description" }, t("aiConsentText")),
 								el("label", { className: styles.consentRemember },
 									el("input", {
 										type: "checkbox",
@@ -2525,16 +2552,16 @@ onClick: () => window.open(`https://github.com/Noob-stupid/dsh-plugin-hub/releas
 									}),
 									t("aiConsentRemember")),
 								el("div", { className: styles.rowTop },
-									el("button", { type: "button", className: styles.toggle, onClick: () => { try { localStorage.setItem("pc-ai-remember", aiRemember ? "1" : "0"); } catch {} aiConsent(consentJob.jobId, true); } }, t("aiConsentApprove")),
-									el("button", { type: "button", className: styles.toggle, onClick: () => aiConsent(consentJob.jobId, false) }, t("aiConsentDecline")))));
+									el("button", { type: "button", className: styles.toggle, disabled: aiConsentBusy, onClick: () => { try { localStorage.setItem("pc-ai-remember", aiRemember ? "1" : "0"); } catch {} aiConsent(consentJob.jobId, true); } }, t("aiConsentApprove")),
+									el("button", { type: "button", className: styles.toggle, disabled: aiConsentBusy, onClick: () => aiConsent(consentJob.jobId, false) }, t("aiConsentDecline")))));
 				})(),
 				sourcesOpen
 					? el("div", { className: styles.modalBackdrop },
-						el("div", { className: styles.modalCard },
+						el("div", { className: styles.modalCard, role: "dialog", "aria-modal": true, "aria-labelledby": "pc-sources-title", "aria-describedby": "pc-sources-description", "aria-busy": sourcesBusy, ref: modalCardRef, tabIndex: -1 },
 							el("div", { className: styles.rowTop, style: { justifyContent: "space-between" } },
-								el("strong", { className: styles.name }, t("sourcesTitle")),
-								el("button", { type: "button", className: styles.trashBtn, style: { fontSize: 14, padding: "4px 8px" }, title: t("closeModal"), "aria-label": t("closeModal"), onClick: () => setSourcesOpen(false) }, "✕")),
-							el("p", { className: styles.message }, t("sourcesDesc")),
+								el("strong", { className: styles.name, id: "pc-sources-title" }, t("sourcesTitle")),
+								el("button", { type: "button", className: styles.trashBtn, style: { fontSize: 14, padding: "4px 8px" }, title: t("closeModal"), "aria-label": t("closeModal"), onClick: () => setSourcesOpen(false) }, t("closeModal"))),
+							el("p", { className: styles.message, id: "pc-sources-description" }, t("sourcesDesc")),
 							sourcesData === null
 								? el("p", { className: styles.status }, t("loading"))
 								: el("div", { style: { flexDirection: "column", gap: "8px", display: "flex" } },
@@ -2553,8 +2580,8 @@ onClick: () => window.open(`https://github.com/Noob-stupid/dsh-plugin-hub/releas
 													src.primary ? null : el("button", { type: "button", className: styles.toggle, disabled: sourcesBusy, onClick: () => sourcesAction({ action: "set-primary", id: src.id }) }, t("setPrimary")),
 													el("button", { type: "button", className: styles.toggle, disabled: sourcesBusy, onClick: () => setEditReg({ id: src.id, name: src.name, url: src.url }) }, t("editSource"))))),
 									el("div", { className: styles.rowTop },
-										el("input", { type: "text", placeholder: t("sourceName"), value: sourceName, onChange: (event) => setSourceName(event.currentTarget.value), style: { flex: 1, minWidth: 0 } }),
-										el("input", { type: "text", placeholder: t("sourceUrl"), value: sourceUrl, onChange: (event) => setSourceUrl(event.currentTarget.value), style: { flex: 2, minWidth: 0 } }),
+										el("input", { type: "text", "aria-label": t("sourceName"), placeholder: t("sourceName"), value: sourceName, onChange: (event) => setSourceName(event.currentTarget.value), style: { flex: 1, minWidth: 0 } }),
+										el("input", { type: "text", "aria-label": t("sourceUrl"), placeholder: t("sourceUrl"), value: sourceUrl, onChange: (event) => setSourceUrl(event.currentTarget.value), style: { flex: 2, minWidth: 0 } }),
 										el("button", { type: "button", className: styles.toggle, disabled: sourcesBusy, onClick: addSource }, t("addSource"))),
 									el("strong", { className: styles.name }, t("searchSourcesTitle")),
 									el("p", { className: styles.message }, t("searchSourcesDesc")),
@@ -2570,10 +2597,10 @@ onClick: () => window.open(`https://github.com/Noob-stupid/dsh-plugin-hub/releas
 												? el("button", { type: "button", className: styles.toggle, disabled: sourcesBusy, onClick: () => sourcesAction({ action: "remove-search", id: s.id }) }, t("removeSource"))
 												: null)),
 									el("div", { className: styles.rowTop },
-										el("input", { type: "text", placeholder: t("sourceName"), value: searchSourceName, onChange: (event) => setSearchSourceName(event.currentTarget.value), style: { flex: 1, minWidth: 0 } }),
-										el("input", { type: "text", placeholder: t("searchUrlPlaceholder"), value: searchSourceUrl, onChange: (event) => setSearchSourceUrl(event.currentTarget.value), style: { flex: 2, minWidth: 0 } }),
+										el("input", { type: "text", "aria-label": t("sourceName"), placeholder: t("sourceName"), value: searchSourceName, onChange: (event) => setSearchSourceName(event.currentTarget.value), style: { flex: 1, minWidth: 0 } }),
+										el("input", { type: "text", "aria-label": t("searchUrlPlaceholder"), placeholder: t("searchUrlPlaceholder"), value: searchSourceUrl, onChange: (event) => setSearchSourceUrl(event.currentTarget.value), style: { flex: 2, minWidth: 0 } }),
 										el("button", { type: "button", className: styles.toggle, disabled: sourcesBusy, onClick: addSearchSource }, t("addSearchSource"))),
-									el("textarea", {
+					el("textarea", { "aria-label": t("headersPlaceholder"),
 										rows: 2,
 										placeholder: t("headersPlaceholder"),
 										value: searchSourceHeaders,
@@ -2588,8 +2615,8 @@ onClick: () => window.open(`https://github.com/Noob-stupid/dsh-plugin-hub/releas
 												? t("giteeLoggedIn") + (giteeStatus.login || "—")
 												: (giteeStatus !== null && giteeStatus.clientConfigured ? t("giteeSetupHint") : t("giteeLoginPrompt")))),
 									el("div", { className: styles.rowTop },
-										el("input", { type: "text", placeholder: t("giteeClientId"), value: giteeClientId, onChange: (event) => setGiteeClientId(event.currentTarget.value), style: { flex: 1, minWidth: 0 } }),
-										el("input", { type: "password", placeholder: t("giteeClientSecret"), value: giteeClientSecret, onChange: (event) => setGiteeClientSecret(event.currentTarget.value), style: { flex: 2, minWidth: 0 } }),
+						el("input", { type: "text", "aria-label": t("giteeClientId"), placeholder: t("giteeClientId"), value: giteeClientId, onChange: (event) => setGiteeClientId(event.currentTarget.value), style: { flex: 1, minWidth: 0 } }),
+						el("input", { type: "password", "aria-label": t("giteeClientSecret"), placeholder: t("giteeClientSecret"), value: giteeClientSecret, onChange: (event) => setGiteeClientSecret(event.currentTarget.value), style: { flex: 2, minWidth: 0 } }),
 										el("button", { type: "button", className: styles.toggle, disabled: sourcesBusy || !giteeClientId.trim() || !giteeClientSecret.trim(), onClick: saveGiteeSetup }, t("giteeSave"))),
 									el("div", { className: styles.rowTop },
 										el("button", { type: "button", className: styles.toggle, disabled: giteeStatus !== null && !giteeStatus.clientConfigured, onClick: startGiteeOauth }, t("giteeLoginBtn")),

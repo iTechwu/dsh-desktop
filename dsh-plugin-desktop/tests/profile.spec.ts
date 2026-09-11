@@ -12,7 +12,13 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { afterEach, describe, expect, it } from 'vitest'
-import { composeEntries, initProfile, PROFILE_TEMPLATES } from '@deepseek-ai/dsh-app-boot'
+import {
+  composeEntries,
+  healProfilesModuleFallback,
+  initProfile,
+  PROFILE_TEMPLATES,
+} from '@deepseek-ai/dsh-app-boot'
+import { retainAsarModuleResolver } from '../src/asar-module-resolver-state.ts'
 import {
   DESKTOP_PACKAGE_NAME,
   desktopShellModeFromSettings,
@@ -76,6 +82,26 @@ afterEach(() => {
 describe('desktop profile composition', {
   timeout: process.platform === 'win32' ? 10_000 : 5_000,
 }, () => {
+  it('does not recreate the shared Profile fallback while the packaged ASAR resolver is active', async () => {
+    const home = temporaryHome()
+    const installAnchor = join(
+      home,
+      'resources',
+      'app.asar',
+      'node_modules',
+      '@deepseek-ai',
+      'dsh',
+      'package.json',
+    )
+    const releaseResolver = retainAsarModuleResolver()
+    try {
+      await expect(healProfilesModuleFallback({ home, installAnchor })).resolves.toBeUndefined()
+      expect(existsSync(join(home, 'profiles', 'node_modules'))).toBe(false)
+    } finally {
+      releaseResolver()
+    }
+  })
+
   it('removes only provably managed legacy shared fallbacks', () => {
     const home = temporaryHome()
     const sharedModules = join(home, 'profiles', 'node_modules')
@@ -186,6 +212,7 @@ describe('desktop profile composition', {
       '@deepseek-ai/dsh-base',
       '@linxin666/dsh-web-ui-all',
       'third-party-one',
+      'dsh-plugin-desktop',
       DESKTOP_PACKAGE_NAME,
       'third-party-two',
     ])).toEqual([
@@ -390,8 +417,20 @@ virtualStoreDirMaxLength: 60
     }))
     expect(patches).toContainEqual(expect.objectContaining({
       id: 'agent-presets',
-      config: expect.objectContaining({ roots: [expect.objectContaining({ trust: 'system' })] }),
+      config: expect.objectContaining({
+        roots: [
+          { path: shippedPresetRoot(), trust: 'system' },
+          { path: join(home, '.agent-presets'), trust: 'user' },
+        ],
+        includeUserRoot: false,
+      }),
     }))
+    expect(existsSync(join(
+      prepared.profile.dir,
+      'agent-preset-compat',
+      'code',
+      'agent.cordis.yml',
+    ))).toBe(false)
     expect(readFileSync(prepared.rootConfig, 'utf8')).toBe('[]\n')
     expect(prepared.homeDir).toBe(home)
     expect(fileURLToPath(prepared.bareModuleBaseUrl)).toBe(join(prepared.profile.dir, 'package.json'))
@@ -1068,7 +1107,11 @@ virtualStoreDirMaxLength: 60
     expect(rows.find(row => row.id === 'agent-presets')).toEqual(expect.objectContaining({
       name: '@deepseek-ai/dsh-agent-presets',
       config: expect.objectContaining({
-        roots: [{ path: shippedPresetRoot(), trust: 'system' }],
+        roots: [
+          { path: shippedPresetRoot(), trust: 'system' },
+          { path: join(home, '.agent-presets'), trust: 'user' },
+        ],
+        includeUserRoot: false,
       }),
     }))
     expect(rows.find(row => row.id === 'agent-presets')?.disabled).toBeFalsy()

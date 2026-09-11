@@ -1,0 +1,8 @@
+{
+  "_note": "脱敏样例：搜索词 search/keyword。show_from 为空即无搜索词（该作品实测为空）。",
+  "status_code": 0,
+  "status_msg": "",
+  "id": "7000000000000000001",
+  "show_from": [],
+  "inspire_search": []
+}

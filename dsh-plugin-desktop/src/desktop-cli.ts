@@ -1,5 +1,6 @@
 /** Private RunAsNode bootstrap for the packaged DeepSeek Harness CLI. */
 
+import { readFileSync } from 'node:fs'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { dirname, join } from 'node:path'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
@@ -15,6 +16,13 @@ const DEFAULT_PROFILE = 'DSH_DESKTOP_DEFAULT_PROFILE'
 const DSH_ENTRY_URL = pathToFileURL(
   packagedDependencyPath(import.meta.url, '@deepseek-ai/dsh/lib/bin.js'),
 ).href
+
+function readDshVersion(): string {
+  const manifest = JSON.parse(
+    readFileSync(packagedDependencyPath(import.meta.url, '@deepseek-ai/dsh/package.json'), 'utf8'),
+  ) as { version?: unknown }
+  return typeof manifest.version === 'string' ? manifest.version : '0.0.0'
+}
 
 export function clearElectronRunAsNode(environment: NodeJS.ProcessEnv): void {
   for (const key of Object.keys(environment)) {
@@ -87,7 +95,7 @@ export function desktopCliProfileManifestUrl(
  */
 export async function runDesktopDshCli(
   environment: NodeJS.ProcessEnv = process.env,
-  load: (url: string) => Promise<unknown> = url => import(url),
+  load: (url: string) => Promise<{ runCli(options: { allowDesktopProfile: boolean }): Promise<void> }> = url => import(url),
   argv: string[] = process.argv,
   packagedEntry: boolean = /([\\/])app\.asar\1/u.test(fileURLToPath(DSH_ENTRY_URL)),
 ): Promise<void> {
@@ -97,6 +105,10 @@ export async function runDesktopDshCli(
     ? argv.slice(2)
     : withDefaultDesktopProfile(argv.slice(2), profileName)
   argv.splice(2, argv.length - 2, ...withoutForwardedDesktopPnpmPolicy(selected))
+  if (selected.length === 1 && (selected[0] === '--version' || selected[0] === '-V')) {
+    process.stdout.write(`${readDshVersion()}\n`)
+    return
+  }
   const selectedProfile = selectedDesktopCliProfile(argv.slice(2))
   const releaseResolver = selectedProfile !== undefined
     && packagedEntry
@@ -107,7 +119,7 @@ export async function runDesktopDshCli(
     : load(DSH_ENTRY_URL)
   // The DSH module finishes evaluating once a long-lived Profile is ready;
   // later HMR and Loader imports still need the same process-wide resolver.
-  // Keep it until process exit rather than treating import settlement as app
+  // Keep it until process exit rather than treating CLI settlement as app
   // shutdown. A packaged CLI process owns exactly one Profile invocation.
   if (releaseResolver === undefined) {
     await loadDsh()

@@ -1,6 +1,6 @@
 {
   "name": "deepseek-harness-desktop",
-  "version": "2.0.7-beta.3",
+  "version": "2.0.7-beta.4",
   "private": true,
   "description": "DSH Desktop product workspace",
   "license": "MIT",
@@ -9,6 +9,7 @@
     "node": "^22.19.0 || >=24.0.0"
   },
   "scripts": {
+    "preinstall": "node scripts/prepare-node-gyp.mjs",
     "build": "pnpm --filter dsh-community-market build && pnpm --filter dsh-plugin-desktop build",
     "typecheck": "pnpm --filter dsh-plugin-desktop typecheck && pnpm --filter dsh-community-market typecheck",
     "test": "pnpm --filter dsh-plugin-desktop test && pnpm --filter dsh-community-market test",

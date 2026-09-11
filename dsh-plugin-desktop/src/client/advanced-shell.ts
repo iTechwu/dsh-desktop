@@ -8,23 +8,18 @@ import { claimDesktopLayout } from './layout-service.ts'
 import { installDesktopOwnedStyles } from './styles.ts'
 import { DesktopThemePresenter } from './theme-presenter.ts'
 
-/**
- * Own the enhanced layout and root slot without installing an independent frame.
- *
- * When the upstream `dsh-client-ui-layout` wins the shared `layout` service,
- * this shell keeps only its mode markers (owned by a dedicated cleanup effect)
- * and leaves presentation — root slot, theme presenter, and desktop-owned
- * chrome — entirely to upstream (#517).
- */
+/** Own the enhanced layout and root slot without installing an independent frame. */
 export function applyAdvancedShell(ctx: ClientContext, environment: DesktopClientEnvironment): void {
   if (environment.mode !== 'advanced') {
     throw new Error(`dsh-plugin-desktop: advanced shell received mode ${JSON.stringify(environment.mode)}`)
   }
 
-  const desktopLayout = new DesktopLayoutState()
+  const desktopLayout = new DesktopLayoutState(id => ctx.slots.entries('main').some(entry => entry.options.key === id))
   const upstreamOwnsLayout = !claimDesktopLayout(ctx, desktopLayout)
 
   if (upstreamOwnsLayout) {
+    // Harness 自带的 dsh-client-ui-layout 赢得所有权时,降级为仅保留模式
+    // 标记,避免在同一呈现之上堆叠第二套 frame(#517)。
     ctx.effect(() => {
       document.body.dataset.dshDesktopMode = 'advanced'
       document.body.dataset.dshDesktopPlatform = environment.platform
@@ -65,9 +60,8 @@ export function applyAdvancedShell(ctx: ClientContext, environment: DesktopClien
     name: 'root',
     children: {
       'sidebar': { kind: 'single', scope: 'root' },
-      'conversation': { kind: 'single', scope: 'session-maybe' },
-      'details': { kind: 'single', scope: 'session' },
-      'rightbar': { kind: 'single', scope: 'session' },
+      'main': { kind: 'keyed', scope: 'root' },
+      'rightbar': { kind: 'single', scope: 'root' },
       'shell.overlay': { kind: 'list', scope: 'root' },
     },
     inject: () => ({ layout: desktopLayout, platform: environment.platform }),

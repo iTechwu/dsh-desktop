@@ -77,6 +77,8 @@ async function runExa(args, timeoutMs, signal, apiKey) {
   try {
     const response = await fetch(EXA_MCP_URL, {
       method: 'POST',
+      redirect: 'error',
+      cache: 'no-store',
       headers: {
         Authorization: `Bearer ${apiKey}`,
         'content-type': 'application/json',

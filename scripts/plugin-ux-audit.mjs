@@ -1,5 +1,6 @@
 import { readdir, readFile, stat } from 'node:fs/promises'
 import { join } from 'node:path'
+import { auditPluginRequestCancellation } from './plugin-request-policy.mjs'
 
 const ciRoot = new URL('../.ci/', import.meta.url)
 const ciEntries = (await readdir(ciRoot, { withFileTypes: true }))
@@ -7,6 +8,13 @@ const ciEntries = (await readdir(ciRoot, { withFileTypes: true }))
   .map(entry => entry.name)
   .sort()
 const entries = ciEntries.filter(name => name.startsWith('dsh-yootun-'))
+
+async function readSourceTree(root, extensions) {
+  const paths = await readdir(root, { recursive: true })
+  return Promise.all(paths
+    .filter(path => !path.includes('node_modules/') && extensions.some(extension => path.endsWith(extension)))
+    .map(path => readFile(new URL(path, root), 'utf8')))
+}
 
 const clientPlugins = []
 for (const name of entries) {
@@ -21,8 +29,21 @@ for (const name of entries) {
 const failures = []
 const desktopStyles = await readFile(new URL('../dsh-plugin-desktop/src/client/styles.ts', import.meta.url), 'utf8')
 const desktopSettingsStyles = await readFile(new URL('../dsh-plugin-desktop/src/client/desktop-settings-styles.ts', import.meta.url), 'utf8')
+const desktopExtendedStyles = await readFile(new URL('../dsh-plugin-desktop/src/client/extended-styles.ts', import.meta.url), 'utf8')
 const dofeAccessSource = await readFile(new URL('../dsh-plugin-desktop/src/client/DofeAccessSection.tsx', import.meta.url), 'utf8')
+const desktopSettingsApiSource = await readFile(new URL('../dsh-plugin-desktop/src/client/desktop-settings-api.ts', import.meta.url), 'utf8')
+const bootHealthSource = await readFile(new URL('../dsh-plugin-desktop/src/client/boot-health.ts', import.meta.url), 'utf8')
+const dofeManagedSource = await readFile(new URL('../dsh-plugin-desktop/src/dofe-managed.ts', import.meta.url), 'utf8')
 const themeSource = await readFile(new URL('../deepseek-harness/packages/client/ui-theme/src/styles/design-platform.css', import.meta.url), 'utf8')
+const layoutFrameSource = await readFile(new URL('../deepseek-harness/packages/client/ui-layout/src/client/AppFrame.tsx', import.meta.url), 'utf8')
+const deliverablesStyles = await readFile(new URL('../deepseek-harness/packages/client/ui-deliverables/src/client/Deliverables.module.css', import.meta.url), 'utf8')
+const capabilityMatrix = await readFile(new URL('../docs/superpowers/specs/2026-09-09-mcp-api-capability-matrix.md', import.meta.url), 'utf8')
+const localRouteSources = await Promise.all([
+  readSourceTree(new URL('../dsh-plugin-desktop/src/', import.meta.url), ['.ts', '.tsx']),
+  readSourceTree(ciRoot, ['.js']),
+])
+const locallyHostedApiPaths = new Set(localRouteSources.flat(2).flatMap(source =>
+  [...source.matchAll(/['"`](\/(?:api\/desktop|_dsh)\/[a-z0-9/_-]+)/giu)].map(match => match[1])))
 const definedThemeAliases = new Set(themeSource.match(/--dsw-alias-[a-z0-9-]+(?=\s*:)/g) || [])
 
 function findUndefinedThemeAliases(source) {
@@ -53,6 +74,26 @@ function findHardcodedStateColors(source) {
   return [...new Set(stateCss?.match(/#[0-9a-f]{3,8}\b/giu) || [])]
 }
 
+function findOversizedPanelRadii(source) {
+  const rules = source.match(/[^{}]+\{[^{}]*border-radius\s*:\s*(\d+(?:\.\d+)?)px[^{}]*\}/giu) || []
+  return rules.flatMap(rule => {
+    const radius = Number(rule.match(/border-radius\s*:\s*(\d+(?:\.\d+)?)px/iu)?.[1])
+    if (radius <= 8) return []
+    const selector = rule.slice(0, rule.indexOf('{')).trim()
+    return selector.split(',').map(value => value.trim()).filter(value => /\.(?:[a-z0-9-]*(?:panel|metrics|recall|graph-hero|card))\b/iu.test(value))
+  })
+}
+
+function findOversizedSurfaceRadii(source) {
+  const rules = source.match(/[^{}]+\{[^{}]*border-radius\s*:\s*(\d+(?:\.\d+)?)px[^{}]*\}/giu) || []
+  return rules.flatMap(rule => {
+    const radius = Number(rule.match(/border-radius\s*:\s*(\d+(?:\.\d+)?)px/iu)?.[1])
+    if (radius <= 8) return []
+    const selector = rule.slice(0, rule.indexOf('{')).trim()
+    return selector.split(',').map(value => value.trim()).filter(value => /\.(?:[a-z0-9-]*(?:panel|dialog|modal|popover|menu|choice|toggle-row|material-field|urls|card))\b/iu.test(value))
+  })
+}
+
 function hasCanonicalHeader(source) {
   return /\.[a-z0-9-]*header\{[^}]*min-height:72px/u.test(source)
 }
@@ -61,12 +102,23 @@ function hasCanonicalIconButton(source) {
   return /\.[a-z0-9-]*(?:icon-button|header-buttons button|header-actions button|actions button|icon)\{[^}]*width:36px;height:36px/u.test(source)
 }
 
+function registeredToolNames(source) {
+  return [...source.matchAll(/ctx\.tools\.register\(\s*(?:defineTool\(\s*)?\{\s*name:\s*['"]([a-z][a-z0-9_-]+)['"]/giu)]
+    .map(match => match[1])
+}
+
+function declaredToolNames(source) {
+  const block = source.match(/(?:export\s+)?const\s+TOOL_NAMES\s*=\s*\[([\s\S]*?)\]/u)?.[1] || ''
+  return [...block.matchAll(/['"]([a-z][a-z0-9_-]+)['"]/giu)].map(match => match[1])
+}
+
 const actionLifecyclePlugins = new Set([
   'dsh-yootun-content-command',
   'dsh-yootun-recruiter',
   'dsh-yootun-sales',
   'dsh-yootun-supply-watch',
   'dsh-yootun-xhs-operation',
+  'dsh-yootun-douyin-operation',
 ])
 
 const pluginClassPrefixes = {
@@ -74,6 +126,7 @@ const pluginClassPrefixes = {
   'dsh-yootun-content-command': 'ycc-',
   'dsh-yootun-daily-report': 'ydr-',
   'dsh-yootun-dashboard': 'yd-',
+  'dsh-yootun-douyin-operation': 'ydo-',
   'dsh-yootun-finops': 'yf-',
   'dsh-yootun-knowledge': 'yk-',
   'dsh-yootun-lead-discovery': 'yl-',
@@ -89,7 +142,61 @@ if (!desktopStyles.includes('[aria-modal="true"] :is(')) failures.push('dsh-plug
 if (!desktopStyles.includes('prefers-reduced-motion: reduce') || !desktopStyles.includes('[aria-modal="true"] *')) {
   failures.push('dsh-plugin-desktop: reduced-motion coverage for plugin overlays is missing')
 }
-const desktopClientStyles = `${desktopStyles}\n${desktopSettingsStyles}\n${dofeAccessSource}`
+if (!layoutFrameSource.includes('installModalOverlayIsolation')
+  || !layoutFrameSource.includes('overlayRef')
+  || !layoutFrameSource.includes('ref={overlayRef}')) {
+  failures.push('ui-layout: compatibility AppFrame is missing shared modal focus isolation')
+}
+const desktopClientStyles = `${desktopStyles}\n${desktopSettingsStyles}\n${desktopExtendedStyles}\n${dofeAccessSource}`
+const pluginConsoleClient = await readFile(new URL('../.ci/dsh-plugin-console/lib/client.js', import.meta.url), 'utf8')
+const pluginConsoleHost = await readFile(new URL('../.ci/dsh-plugin-console/lib/index.js', import.meta.url), 'utf8')
+const openCliSource = await readFile(new URL('../.ci/dsh-opencli/index.js', import.meta.url), 'utf8')
+const dofeOpenCliSource = await readFile(new URL('../dsh-plugin-desktop/src/dofe-opencli.ts', import.meta.url), 'utf8')
+const directMcpServers = [...dofeManagedSource.matchAll(/serverName:\s*'([^']+)'/gu)].map(match => match[1])
+const toolsMcpPaths = dofeManagedSource.match(/\.\.\.\[([\s\S]*?)\]\.map\(path => \(\{ plugin: 'tools'/u)?.[1]
+  ?.match(/'[^']+'/gu)?.map(value => value.slice(1, -1)) || []
+const managedMcpServers = new Set([...directMcpServers, ...toolsMcpPaths.map(path => `tools-${path}`)])
+const localToolSources = await Promise.all([
+  '../dsh-plugin-desktop/src/browser-tools.ts',
+  '../dsh-plugin-desktop/src/ci-tools.ts',
+  '../dsh-plugin-desktop/src/yootun-recruiter-tools.ts',
+  '../dsh-plugin-desktop/src/dofe-opencli.ts',
+  ...ciEntries.filter(name => name.startsWith('dsh-yootun-')).flatMap(name => [
+    `../.ci/${name}/index.js`,
+    `../.ci/${name}/tool.js`,
+  ]),
+  '../.ci/dsh-yootun-douyin-operation/src/tools-client.js',
+].map(async path => {
+  try {
+    return await readFile(new URL(path, import.meta.url), 'utf8')
+  } catch (error) {
+    if (error?.code === 'ENOENT') return ''
+    throw error
+  }
+}))
+const localToolNames = new Set(localToolSources.flatMap(source => [
+  ...registeredToolNames(source),
+  ...declaredToolNames(source),
+]))
+const auditedClientPlugins = new Set(['dsh-plugin-console', ...clientPlugins])
+for (const name of ciEntries) {
+  const manifest = JSON.parse(await readFile(new URL(`../.ci/${name}/package.json`, import.meta.url), 'utf8'))
+  if (manifest.dsh?.client !== undefined && !auditedClientPlugins.has(name)) {
+    failures.push(`${name}: declared client package is missing from the unified UX audit`)
+  }
+}
+const knowledgeToolBlock = localToolSources.join('\n').match(/const TOOL_DEFINITIONS = \{([\s\S]*?)\n\}/u)?.[1] || ''
+for (const match of knowledgeToolBlock.matchAll(/^\s{2}(knowledge_[a-z0-9_]+):/gmu)) localToolNames.add(match[1])
+for (const toolName of localToolNames) {
+  if (!capabilityMatrix.includes(`\`${toolName}\``)) {
+    failures.push(`Host Agent tool ${toolName} is missing from the capability matrix`)
+  }
+}
+for (const path of locallyHostedApiPaths) {
+  if (!capabilityMatrix.includes(`\`${path}\``)) {
+    failures.push(`Local Host route ${path} is missing from the capability matrix`)
+  }
+}
 for (const alias of findUndefinedThemeAliases(desktopClientStyles)) {
   failures.push(`dsh-plugin-desktop: client styles use undefined theme alias ${alias}`)
 }
@@ -99,11 +206,126 @@ for (const selector of findFixedWhiteOnAdaptiveFill(desktopClientStyles)) {
 for (const selector of findNonAdaptiveForegroundOnAdaptiveFill(desktopClientStyles)) {
   failures.push(`dsh-plugin-desktop: ${selector} uses a non-adaptive foreground on an adaptive theme fill`)
 }
+for (const selector of findOversizedSurfaceRadii(desktopClientStyles)) {
+  failures.push(`dsh-plugin-desktop: ${selector} exceeds the 8px shared surface radius contract`)
+}
+if (!pluginConsoleClient.includes('const cssOverrides =')) failures.push('dsh-plugin-console: shared visual overrides are missing')
+if (!pluginConsoleClient.includes('.pc_row,.pc_item,.pc_detail,.pc_floatPanel,.pc_modalCard{border-radius:8px}')) {
+  failures.push('dsh-plugin-console: content panels do not use the 8px radius contract')
+}
+if (!pluginConsoleClient.includes('background:color-mix(in srgb,var(--dsw-alias-bg-base) 62%,transparent)')) {
+  failures.push('dsh-plugin-console: modal backdrop does not use the adaptive theme background')
+}
+if (!pluginConsoleClient.includes('.pc_modalCard{box-sizing:border-box;max-height:calc(100vh - 32px);overflow-y:auto}')
+  || !pluginConsoleClient.includes('.pc_modalCard .pc_rowTop{flex-wrap:wrap}')) {
+  failures.push('dsh-plugin-console: modal surfaces are not bounded or responsive')
+}
+if (!pluginConsoleClient.includes('@media(max-width:640px){.pc_list{grid-template-columns:1fr}')) {
+  failures.push('dsh-plugin-console: mobile market list does not collapse to one column')
+}
+if (!pluginConsoleClient.includes('credentials: "same-origin"') || !pluginConsoleClient.includes('redirect: "error"')) {
+  failures.push('dsh-plugin-console: local control calls must use same-origin credentials and reject redirects')
+}
+if (!pluginConsoleClient.includes('const LOCAL_CALL_TIMEOUT_MS = 30000')
+  || (pluginConsoleClient.match(/AbortSignal\.timeout\(LOCAL_CALL_TIMEOUT_MS\)/gu) || []).length < 2) {
+  failures.push('dsh-plugin-console: local control calls have no bounded timeout')
+}
+if (!pluginConsoleClient.includes('const EXTERNAL_FETCH_POLICY = { credentials: "omit", redirect: "error", referrerPolicy: "no-referrer", cache: "no-store" }')
+  || (pluginConsoleClient.match(/\.\.\.EXTERNAL_FETCH_POLICY/gu) || []).length < 3) {
+  failures.push('dsh-plugin-console: external API reads do not share the no-credential redirect and cache policy')
+}
+if ((pluginConsoleClient.match(/role: "dialog", "aria-modal": true/gu) || []).length < 2
+  || !pluginConsoleClient.includes('"aria-labelledby": "pc-ai-consent-title"')
+  || !pluginConsoleClient.includes('"aria-labelledby": "pc-sources-title"')) {
+  failures.push('dsh-plugin-console: modal surfaces do not expose accessible dialog semantics')
+}
+if (!pluginConsoleClient.includes('event.key === "Escape"')
+  || !pluginConsoleClient.includes('event.key !== "Tab"')
+  || !pluginConsoleClient.includes('modalReturnFocusRef')
+  || !pluginConsoleClient.includes('sourcesOpen')
+  || !pluginConsoleClient.includes('consentJob')) {
+  failures.push('dsh-plugin-console: modal keyboard, focus-return, or stacking contract is incomplete')
+}
+if (!pluginConsoleClient.includes('aiConsentBusyRef')
+  || !pluginConsoleClient.includes('setAiConsentBusy(true)')
+  || !pluginConsoleClient.includes('"aria-busy": aiConsentBusy')) {
+  failures.push('dsh-plugin-console: AI consent has no synchronous request lock or busy semantics')
+}
+if (!pluginConsoleClient.includes('const sourcesBusyRef = react.useRef(false)')
+  || !pluginConsoleClient.includes('if (sourcesBusyRef.current) return;')
+  || !pluginConsoleClient.includes('"aria-busy": sourcesBusy')) {
+  failures.push('dsh-plugin-console: source mutations have no synchronous request lock or busy semantics')
+}
+for (const label of ['sourceName', 'sourceUrl', 'searchUrlPlaceholder', 'headersPlaceholder', 'giteeClientId', 'giteeClientSecret']) {
+  if (!pluginConsoleClient.includes(`"aria-label": t("${label}")`)) {
+    failures.push(`dsh-plugin-console: source form field ${label} has no accessible name`)
+  }
+}
+if (!pluginConsoleHost.includes("const ROUTE_PREFIX = '/plugin-console'")) {
+  failures.push('dsh-plugin-console: host route prefix is missing')
+}
+if (!pluginConsoleHost.includes('isAllowedWriteOrigin')) {
+  failures.push('dsh-plugin-console: write route origin guard is missing')
+}
+if (!pluginConsoleHost.includes('127.0.0.1') || !pluginConsoleHost.includes('[::1]')) {
+  failures.push('dsh-plugin-console: loopback host allowlist is incomplete')
+}
+const pluginConsoleRoutes = new Set([...pluginConsoleHost.matchAll(/\$\{ROUTE_PREFIX\}(\/[a-z0-9-]+)/gu)]
+  .map(match => `/plugin-console${match[1]}`))
+for (const route of pluginConsoleRoutes) {
+  if (!capabilityMatrix.includes(`\`${route}\``)) {
+    failures.push(`dsh-plugin-console: route ${route} is missing from the capability matrix`)
+  }
+}
+if (!openCliSource.includes("redirect: 'error'") || !openCliSource.includes("cache: 'no-store'")) {
+  failures.push('dsh-opencli: Exa MCP requests must reject redirects and disable caching')
+}
+if (!dofeOpenCliSource.includes('const READ_ONLY_COMMANDS')
+  || !dofeOpenCliSource.includes('validateDofeOpenCliArgs(args.args)')) {
+  failures.push('dsh-plugin-desktop: dofe_opencli must enforce approved read-only routes at execution time')
+}
+for (const serverName of managedMcpServers) {
+  if (!capabilityMatrix.includes(`\`${serverName}\``)) {
+    failures.push(`dofe-managed: MCP server ${serverName} is missing from the capability matrix`)
+  }
+}
+if (!dofeManagedSource.includes("transport: 'streamable-http'")
+  || !dofeManagedSource.includes('failOnStartupError: false')
+  || !dofeManagedSource.includes('initialDelayMs: 500, maxDelayMs: 30_000, maxAttempts: 10')) {
+  failures.push('dofe-managed: resilient streamable HTTP transport contract is incomplete')
+}
+if (!deliverablesStyles.includes('--deliverable-fill:')
+  || !deliverablesStyles.includes('--deliverable-hover:')) {
+  failures.push('ui-deliverables: delivery surfaces do not declare themed fill variables')
+}
+if (!deliverablesStyles.includes('[data-ds-dark-theme]')) {
+  failures.push('ui-deliverables: delivery surfaces have no dark-theme adaptation')
+}
+// Sibling 0.1.5-rc.2 aligned delivery cards with the upstream 18px/10px radius
+// and static-neutral fills (deepseek-harness 215bf40ad3); the audit follows.
+for (const [selector, radius] of [['.file', '18px'], ['.fileIcon', '10px'], ['.split', '10px']]) {
+  const selectorRule = deliverablesStyles.match(new RegExp(`\\${selector} \\{[^}]*\\}`, 'u'))?.[0] || ''
+  if (!selectorRule.includes(`border-radius: ${radius}`)) {
+    failures.push(`ui-deliverables: ${selector} does not follow the ${radius} surface radius contract`)
+  }
+}
 if (!dofeAccessSource.includes('const loadingRef = useRef(false)') || !dofeAccessSource.includes('const busyRef = useRef(false)')) {
   failures.push('dsh-plugin-desktop: native access form has no synchronous request locks')
 }
 if (!dofeAccessSource.includes('aria-busy={interactionBusy}')) {
   failures.push('dsh-plugin-desktop: native access form does not expose its combined busy state')
+}
+if (!dofeAccessSource.includes('const ACCESS_REQUEST_TIMEOUT_MS = 15000')
+  || (dofeAccessSource.match(/signal:\s*AbortSignal\.timeout\(ACCESS_REQUEST_TIMEOUT_MS\)/gu) || []).length !== 2) {
+  failures.push('dsh-plugin-desktop: native access API calls have no bounded timeout policy')
+}
+if (!desktopSettingsApiSource.includes('const DESKTOP_REQUEST_TIMEOUT_MS = 30000')
+  || (desktopSettingsApiSource.match(/signal:\s*AbortSignal\.timeout\(DESKTOP_REQUEST_TIMEOUT_MS\)/gu) || []).length !== 2) {
+  failures.push('dsh-plugin-desktop: Desktop settings API calls have no bounded timeout policy')
+}
+if (!bootHealthSource.includes('const BOOT_REPORT_TIMEOUT_MS = 15_000')
+  || !bootHealthSource.includes('signal: AbortSignal.timeout(BOOT_REPORT_TIMEOUT_MS)')) {
+  failures.push('dsh-plugin-desktop: renderer boot report has no bounded timeout policy')
 }
 const defaultModelWrite = dofeAccessSource.indexOf("const defaultModel = descriptor.find(item => item.ns === 'agent-default-model')")
 const authorizationWrite = dofeAccessSource.indexOf('await mutateDofeAccessSettings(settingsApi', defaultModelWrite)
@@ -138,6 +360,11 @@ for (const name of ciEntries) {
           failures.push(`${name}/${relativePath}: ${color} hardcodes a knowledge state supplement color`)
         }
       }
+      if (name.startsWith('dsh-yootun-')) {
+        for (const selector of findOversizedPanelRadii(clientArtifact)) {
+          failures.push(`${name}/${relativePath}: ${selector} exceeds the 8px content-panel radius contract`)
+        }
+      }
     } catch (error) {
       if (error?.code !== 'ENOENT') throw error
     }
@@ -146,6 +373,9 @@ for (const name of ciEntries) {
 
 for (const name of clientPlugins) {
   const source = await readFile(new URL(`../.ci/${name}/src/client.js`, import.meta.url), 'utf8')
+  const localApiPaths = new Set(source.match(/\/(?:api\/desktop|_dsh)\/[a-z0-9/_-]+/giu) || [])
+  const sidebarOrder = source.match(/name:\s*['"]sidebar\.footer\.action['"][\s\S]{0,180}?order:\s*(\d+)/u)?.[1]
+  const overlayOrder = source.match(/name:\s*['"]shell\.overlay['"][\s\S]{0,180}?order:\s*(\d+)/u)?.[1]
   const manifest = JSON.parse(await readFile(new URL(`../.ci/${name}/package.json`, import.meta.url), 'utf8'))
   const hasDialog = /role:\s*['"]dialog['"]/.test(source)
   const hasAccessibleName = /aria-label/.test(source) || /aria-labelledby/.test(source)
@@ -161,6 +391,7 @@ for (const name of clientPlugins) {
   const fetchCount = (source.match(/\bfetch\s*\(/g) || []).length
   const sameOriginCount = (source.match(/credentials:\s*['"]same-origin['"]/g) || []).length
   const rejectRedirectCount = (source.match(/redirect:\s*['"]error['"]/g) || []).length
+  const boundedFetchCount = (source.match(/\bsignal:\s*/g) || []).length
   const hasDynamicStatus = /aria-live/.test(source) || /role:\s*[^}\n]*['"](?:status|alert)['"]/.test(source)
   const hasAsyncUiState = /set(?:Loading|Busy)\(/.test(source)
   const exposesAsyncUiState = /aria-busy/.test(source)
@@ -181,6 +412,9 @@ for (const name of clientPlugins) {
   if (!hasThemeAliases) failures.push(`${name}: client styles do not use desktop theme aliases`)
   if (sameOriginCount !== fetchCount) failures.push(`${name}: every fetch must use same-origin credentials`)
   if (rejectRedirectCount !== fetchCount) failures.push(`${name}: every fetch must reject redirects`)
+  if (!source.includes('const REQUEST_TIMEOUT_MS = 30000') || boundedFetchCount !== fetchCount) {
+    failures.push(`${name}: every fetch must have the shared bounded timeout policy`)
+  }
   if (!hasDynamicStatus) failures.push(`${name}: client has no announced loading, empty, or error state`)
   if (hasAsyncUiState && !exposesAsyncUiState) failures.push(`${name}: asynchronous UI state is not exposed with aria-busy`)
   if (!hasCanonicalShell) failures.push(`${name}: shell header and icon buttons do not follow the 72px/36px baseline`)
@@ -188,6 +422,12 @@ for (const name of clientPlugins) {
   if (usesRevisionReload && !hasSynchronousReloadLock) failures.push(`${name}: revision-triggered reload has no synchronous request lock`)
   if (hasDirectRevisionHandler) failures.push(`${name}: reload control bypasses its guarded refresh handler`)
   if (newWindowLinkCount !== noreferrerLinkCount) failures.push(`${name}: every new-window link must use noreferrer`)
+  for (const path of localApiPaths) {
+    if (!capabilityMatrix.includes(`\`${path}\``)) failures.push(`${name}: local API ${path} is missing from the capability matrix`)
+  }
+  if (sidebarOrder !== undefined && overlayOrder !== undefined && sidebarOrder !== overlayOrder) {
+    failures.push(`${name}: sidebar and overlay registrations use different order values`)
+  }
   const expectedPrefix = pluginClassPrefixes[name]
   if (expectedPrefix) {
     for (const [otherName, otherPrefix] of Object.entries(pluginClassPrefixes)) {
@@ -198,6 +438,8 @@ for (const name of clientPlugins) {
     if (!source.includes(`.${expectedPrefix}`)) failures.push(`${name}: client styles do not expose their own ${expectedPrefix} namespace`)
   }
 }
+
+failures.push(...await auditPluginRequestCancellation(ciRoot))
 
 if (failures.length) {
   console.error('Plugin UX audit failed:')

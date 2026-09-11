@@ -43,6 +43,10 @@
       name: '@dofe/dsh-yootun-lead-discovery'
     - id: dofe-yootun-xhs-operation
       name: '@dofe/dsh-yootun-xhs-operation'
+    # 抖音运营：设备端系统 Chrome 采集 + 本地同源路由；采集与入库业务逻辑归
+    # docker-helm 插件与 tools.dofe.ai 域所有，Desktop 侧只做登记与发行打包。
+    - id: dofe-yootun-douyin-operation
+      name: '@dofe/dsh-yootun-douyin-operation'
     # Yootun 通用媒体上传能力（纯宿主插件，无客户端半）。凭证与 TOS 拓扑不写进
     # 本文件：上传授权由 dofe-managed 注册的 tools-tos-upload MCP 工具下发，
     # 凭证走 credential store 的 MODELS_API_KEY，装完即用。

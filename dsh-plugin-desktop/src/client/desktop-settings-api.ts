@@ -13,6 +13,7 @@ const RENDERER_RELOAD_PATH = '/api/desktop/developer/reload'
 const DEVELOPER_TOOLS_TOGGLE_PATH = '/api/desktop/developer/devtools'
 const UPDATE_CHECK_PATH = '/api/desktop/updates/check'
 const DIAGNOSTICS_EXPORT_PATH = '/api/desktop/diagnostics/export'
+const DESKTOP_REQUEST_TIMEOUT_MS = 30000
 const MAX_PROFILES = 256
 const MAX_PROFILE_NAME_LENGTH = 255
 const MAX_LAN_URLS = 32
@@ -297,6 +298,7 @@ function post(fetcher: FetchLike, path: string, body: object): Promise<Response>
     method: 'POST',
     credentials: 'same-origin',
     redirect: 'error',
+    signal: AbortSignal.timeout(DESKTOP_REQUEST_TIMEOUT_MS),
     headers: {
       'Accept': 'application/json',
       'Content-Type': 'application/json',
@@ -313,6 +315,7 @@ export function createDesktopSettingsApi(fetcher: FetchLike = globalThis.fetch.b
         method: 'GET',
         credentials: 'same-origin',
         redirect: 'error',
+        signal: AbortSignal.timeout(DESKTOP_REQUEST_TIMEOUT_MS),
         cache: 'no-store',
         headers: { 'Accept': 'application/json' },
       })

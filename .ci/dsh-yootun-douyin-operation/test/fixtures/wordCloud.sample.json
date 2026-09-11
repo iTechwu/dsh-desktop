@@ -1,0 +1,12 @@
+{
+  "_note": "脱敏样例：词已替换为占位词，仅保留结构与类型；真实数据不入仓库。",
+  "status_code": 0,
+  "status_msg": "",
+  "extra": { "logid": "EXAMPLE" },
+  "word_cloud_list": [
+    { "rank": 1, "score": "2", "word": "示例词A" },
+    { "rank": 2, "score": "2", "word": "示例词B" },
+    { "rank": 3, "score": "1", "word": "示例词C" },
+    { "rank": 4, "score": "1", "word": "示例词D" }
+  ]
+}

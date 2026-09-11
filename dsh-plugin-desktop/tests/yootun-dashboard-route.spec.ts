@@ -79,6 +79,21 @@ describe('Yootun dashboard route', () => {
     expect(result.activity.status).toBe('unavailable')
   })
 
+  it('projects structured MCP errors as an unavailable GeoFlow source', async () => {
+    const result = await buildYootunDashboard({
+      tools: {
+        schemas: () => [{ name: 'mcp__geoflow__geoflow_analytics_overview_hash' }],
+        execute: vi.fn(async () => ({
+          isError: false,
+          value: { structuredContent: { status: 'failed', error: { code: 'provider_failed' }, kpis: {} } },
+          content: [],
+        })),
+      } as never,
+      now: () => new Date('2026-09-01T04:00:00.000Z'),
+    })
+    expect(result.geo).toEqual({ status: 'error', reason: 'geoflow_query_failed' })
+  })
+
   it('rejects a cross-origin request before collecting data', async () => {
     const res = response()
     const resolve = vi.fn()

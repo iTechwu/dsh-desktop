@@ -16,7 +16,7 @@
 import { readdir, readFile, writeFile, mkdir, rm } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { cp } from 'node:fs/promises'
-import { join, resolve } from 'node:path'
+import { basename, join, resolve } from 'node:path'
 
 const root = resolve(import.meta.dirname, '..')
 const write = process.argv.includes('--write')
@@ -105,7 +105,15 @@ for (const name of targets) {
     const snapshot = snapshotPath(name)
     await rm(snapshot, { recursive: true, force: true })
     await mkdir(snapshot, { recursive: true })
-    await cp(source, snapshot, { recursive: true })
+    // 快照必须是不带依赖的纯源拷贝：`collect()` 校验时本就跳过 node_modules，
+    // 但 `cp` 会把 sibling 源目录里 `pnpm run build` 产生的 node_modules 一并复制，
+    // 于是校验"通过"而快照里其实多出一棵树——`package.spec.ts` /
+    // `douyin-operation-integration.spec.ts` 明确断言快照不得含 node_modules。
+    // 因此拷贝与校验必须用同一条忽略规则。
+    await cp(source, snapshot, {
+      recursive: true,
+      filter: source => basename(source) !== 'node_modules',
+    })
     const remaining = await diffSnapshot(name)
     if (remaining.length > 0) throw new Error(`sync failed for ${name}: ${remaining.join('; ')}`)
     console.log(`dofe-snapshot: ${name} re-synced from source`)

@@ -1,0 +1,12 @@
+{
+  "_note": "脱敏样例：流量来源 play_source（key 为真实枚举，value 为 0..1 占比，此处为占位）。",
+  "status_code": 0,
+  "status_msg": "",
+  "play_source": [
+    { "app_id": 1128, "key": "homepage_hot", "value": 0.9936, "history_difference": 0.0 },
+    { "app_id": 1128, "key": "homepage", "value": 0.0024, "history_difference": 0.0 },
+    { "app_id": 1128, "key": "familiar", "value": 0.0021, "history_difference": 0.0 },
+    { "app_id": 1128, "key": "follow", "value": 0.0007, "history_difference": 0.0 },
+    { "app_id": 1128, "key": "search", "value": 0.0007, "history_difference": 0.0 }
+  ]
+}

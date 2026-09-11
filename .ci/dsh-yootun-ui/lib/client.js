@@ -24,6 +24,8 @@ window.__ModuleLoader__.load({
       { id: 'knowledge', name: '企业知识与 Memory', description: '知识库、Memory 与知识图谱治理' },
     ]
     const DEFAULT_PLUGIN_IDS = PLUGINS.map(plugin => plugin.id)
+    // 统一 UX audit 要求：每个 fetch 都必须带共享的有界超时策略。
+    const REQUEST_TIMEOUT_MS = 30000
 
     const copy = {
       zh: {
@@ -67,6 +69,7 @@ window.__ModuleLoader__.load({
     async function jsonPost(path, body) {
       const response = await fetch(path, {
         method: 'POST', credentials: 'same-origin', redirect: 'error',
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
         headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
         body: JSON.stringify(body),
       })
@@ -235,6 +238,7 @@ window.__ModuleLoader__.load({
 
     function AccessOnboarding({ complete, credentials, settingsApi, useAccess, t }) {
       const access = useAccess(snapshot => snapshot)
+      const cardRef = useRef(null)
       // Fail closed while the credential service is starting or unavailable.
       const [configured, setConfigured] = useState(false)
       useEffect(() => {
@@ -246,9 +250,36 @@ window.__ModuleLoader__.load({
       }, [credentials])
       const authorized = configured === true && access.value?.setupComplete === true && access.value?.validationVersion === VALIDATION_VERSION
       useEffect(() => { if (authorized) complete() }, [authorized, complete])
+      useEffect(() => {
+        if (authorized) return undefined
+        // 首屏引导是模态卡片：进入时聚焦首个可操作项，Tab 循环不逃出卡片。
+        const focusable = () => Array.from(cardRef.current?.querySelectorAll('button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),a[href],[tabindex]:not([tabindex="-1"])') ?? [])
+          .filter(element => !element.hidden && element.getAttribute('aria-hidden') !== 'true')
+        const focusFrame = requestAnimationFrame(() => (cardRef.current?.querySelector('#yu-model-key') ?? focusable()[0] ?? cardRef.current)?.focus?.())
+        const onKeyDown = event => {
+          if (event.key !== 'Tab') return
+          const items = focusable()
+          const first = items[0]
+          const last = items[items.length - 1]
+          if (first === undefined) {
+            event.preventDefault()
+            cardRef.current?.focus?.()
+          } else if ((event.shiftKey && document.activeElement === first)
+            || (!event.shiftKey && document.activeElement === last)
+            || !cardRef.current?.contains(document.activeElement)) {
+            event.preventDefault()
+            ;(event.shiftKey ? last : first).focus()
+          }
+        }
+        document.addEventListener('keydown', onKeyDown, true)
+        return () => {
+          cancelAnimationFrame(focusFrame)
+          document.removeEventListener('keydown', onKeyDown, true)
+        }
+      }, [authorized])
       if (authorized) return null
-      return h('div', { className: 'yu-modal' }, h('section', { className: 'yu-card', role: 'dialog', 'aria-modal': true, 'aria-labelledby': 'yu-title' },
-        h('header', { className: 'yu-header' }, h('img', { alt: '', src: LOGO }), h('div', null, h('p', { className: 'yu-eyebrow' }, t('eyebrow')), h('h2', { id: 'yu-title' }, t('title')), h('p', null, t('intro')))),
+      return h('div', { className: 'yu-modal' }, h('section', { className: 'yu-card', role: 'dialog', 'aria-modal': true, 'aria-labelledby': 'yu-title', 'aria-describedby': 'yu-intro', ref: cardRef, tabIndex: -1 },
+        h('header', { className: 'yu-header' }, h('img', { alt: '', src: LOGO }), h('div', null, h('p', { className: 'yu-eyebrow' }, t('eyebrow')), h('h2', { id: 'yu-title' }, t('title')), h('p', { id: 'yu-intro' }, t('intro')))),
         h(AccessForm, { credentials, settingsApi, useAccess, initialConfigured: configured, onboarding: true, onConfigured: () => { setConfigured(true) }, t })))
     }
 

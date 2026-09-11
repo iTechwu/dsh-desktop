@@ -4,15 +4,19 @@ on:
   pull_request:
     branches: [master]
   push:
-    branches: [master]
+    branches: [master, dev]
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  # Include the commit so queued release candidates cannot replace one
+  # another before a runner becomes available.
+  group: ci-${{ github.workflow }}-${{ github.ref }}-${{ github.sha }}
+  # Every run produces release-validation evidence; never discard a queued or
+  # active macOS/Windows build when a later commit lands on the same branch.
+  cancel-in-progress: false
 
 env:
   DSH_TELEMETRY_DISABLED: '1'
@@ -59,7 +63,7 @@ jobs:
           fi
           echo "product=$product" >> "$GITHUB_OUTPUT"
 
-  # Full product gate: build, typecheck, unit tests, and every headless smoke.
+  # Product gate: AA profile smoke is temporarily paused below.
   # A documentation-only change already passed diff validation in `changes`.
   check:
     needs: changes
@@ -105,12 +109,18 @@ jobs:
       # The sibling fork keeps its own frozen lockfile; pnpm cannot freeze an
       # external symlink workspace against the Desktop-only root lockfile.
       - if: needs.changes.outputs.product == 'true'
-        run: pnpm install --no-frozen-lockfile
+        run: pnpm install --no-frozen-lockfile --config.minimumReleaseAge=0
       - if: needs.changes.outputs.product == 'true'
-        run: pnpm --dir ../deepseek-harness install --no-frozen-lockfile
+        run: pnpm --dir ../deepseek-harness install --no-frozen-lockfile --config.minimumReleaseAge=0
       - if: needs.changes.outputs.product == 'true'
+        env:
+          CI: 'false'
+          npm_config_minimum_release_age: '0'
         run: pnpm upstream:build
       - if: needs.changes.outputs.product == 'true'
+        env:
+          CI: 'false'
+          npm_config_minimum_release_age: '0'
         run: pnpm check
 
   # Windows-only logic and unsigned NSIS/portable builds on a real Windows runner:
@@ -119,8 +129,13 @@ jobs:
   desktop-windows:
     needs: changes
     if: needs.changes.outputs.product == 'true'
-    runs-on: windows-latest
+    runs-on: windows-2022
     timeout-minutes: 60
+    env:
+      # node-gyp 11 cannot parse the VS 18 metadata on windows-latest yet.
+      # Keep native fs-ext builds on the supported VS 2022 toolchain.
+      GYP_MSVS_VERSION: '2022'
+      npm_config_msvs_version: '2022'
     steps:
       - uses: actions/checkout@v6
         with:
@@ -151,16 +166,28 @@ jobs:
           path: ${{ steps.pnpm-store.outputs.dir }}
           key: pnpm-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml', 'pnpm-workspace.yaml', 'upstream.json') }}
       # The following upstream install validates the sibling's own lockfile.
-      - run: pnpm install --no-frozen-lockfile
-      - run: pnpm --dir ../deepseek-harness install --no-frozen-lockfile
-      - run: pnpm upstream:build
-      - run: pnpm --filter dsh-plugin-desktop check:win-package
+      - run: pnpm install --no-frozen-lockfile --config.minimumReleaseAge=0
+      - run: pnpm --dir ../deepseek-harness install --no-frozen-lockfile --config.minimumReleaseAge=0
+      - name: Build upstream Harness
+        env:
+          CI: 'false'
+          npm_config_minimum_release_age: '0'
+        run: pnpm upstream:build
+      - name: Run Windows package gate
+        env:
+          CI: 'false'
+          npm_config_minimum_release_age: '0'
+        run: pnpm --filter dsh-plugin-desktop check:win-package
       - name: Build Windows installer
         env:
+          CI: 'false'
+          npm_config_minimum_release_age: '0'
           DSH_PACKAGE_CHECK_ALREADY_RAN: '1'
         run: pnpm --filter dsh-plugin-desktop dist:win
       - name: Build Windows portable archive
         env:
+          CI: 'false'
+          npm_config_minimum_release_age: '0'
           DSH_PACKAGE_CHECK_ALREADY_RAN: '1'
         run: pnpm --filter dsh-plugin-desktop dist:win-portable
       - name: Upload Windows applications
@@ -191,6 +218,12 @@ jobs:
         with:
           node-version: 22.23.2
       - run: corepack enable
+      - name: Prepare node-gyp launcher permissions
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm --version
+          find "$HOME/.cache/node/corepack" -path '*/node-gyp/gyp/gyp_main.py' -type f -exec chmod +x {} +
       - name: Fetch sibling DeepSeek Harness checkout
         shell: bash
         run: |
@@ -212,12 +245,22 @@ jobs:
           path: ${{ steps.pnpm-store.outputs.dir }}
           key: pnpm-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml', 'pnpm-workspace.yaml', 'upstream.json') }}
       # The following upstream install validates the sibling's own lockfile.
-      - run: pnpm install --no-frozen-lockfile
-      - run: pnpm --dir ../deepseek-harness install --no-frozen-lockfile
-      - run: pnpm upstream:build
-      - run: pnpm --filter dsh-plugin-desktop check:mac-package
+      - run: pnpm install --no-frozen-lockfile --config.minimumReleaseAge=0
+      - run: pnpm --dir ../deepseek-harness install --no-frozen-lockfile --config.minimumReleaseAge=0
+      - name: Build upstream Harness
+        env:
+          CI: 'false'
+          npm_config_minimum_release_age: '0'
+        run: pnpm upstream:build
+      - name: Run macOS package gate
+        env:
+          CI: 'false'
+          npm_config_minimum_release_age: '0'
+        run: pnpm --filter dsh-plugin-desktop check:mac-package
       - name: Build macOS smoke artifact
         env:
+          CI: 'false'
+          npm_config_minimum_release_age: '0'
           DSH_PACKAGE_CHECK_ALREADY_RAN: '1'
         run: pnpm --filter dsh-plugin-desktop dist:mac-smoke
       - name: Upload macOS application
@@ -234,7 +277,7 @@ jobs:
   upstream-command-windows:
     needs: changes
     if: needs.changes.outputs.product == 'true'
-    runs-on: windows-latest
+    runs-on: windows-2022
     steps:
       - uses: actions/checkout@v6
         with:

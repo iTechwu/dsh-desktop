@@ -1,4 +1,5 @@
 const React = require('react')
+const REQUEST_TIMEOUT_MS = 30000
 const { createElement: h, useEffect, useRef, useState, useSyncExternalStore } = React
 const { IconCheckOutline16, IconCloseOutline16, IconDataOutline16, IconRefreshOutline16, Tooltip } = require('@deepseek-ai/dsh-client-ui-primitives')
 
@@ -20,8 +21,8 @@ const closeOverlay = () => { setOpened(false); requestAnimationFrame(() => lastT
 const closeOtherOverlay = event => { if (event.detail?.id !== OVERLAY_ID) setOpened(false) }
 const subscribe = listener => { listeners.add(listener); return () => listeners.delete(listener) }
 const snapshot = () => opened
-async function load(signal) { const response = await fetch(PATH, { credentials: 'same-origin', redirect: 'error', signal, headers: { Accept: 'application/json' } }); if (!response.ok) throw new Error('supply request failed'); return response.json() }
-async function mutate(body) { const response = await fetch(PATH, { method: 'POST', credentials: 'same-origin', redirect: 'error', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify(body) }); if (!response.ok) throw new Error('supply mutation failed'); return response.json() }
+async function load(signal) { const response = await fetch(PATH, { credentials: 'same-origin', redirect: 'error', signal: AbortSignal.any([signal, AbortSignal.timeout(REQUEST_TIMEOUT_MS)].filter(Boolean)), headers: { Accept: 'application/json' } }); if (!response.ok) throw new Error('supply request failed'); return response.json() }
+async function mutate(body) { const response = await fetch(PATH, { method: 'POST', credentials: 'same-origin', redirect: 'error', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS), body: JSON.stringify(body) }); if (!response.ok) throw new Error('supply mutation failed'); return response.json() }
 function Metric({ label, value }) { return h('div', { className: 'ysw-metric' }, h('span', null, label), h('strong', null, String(value ?? 0))) }
 const severityKey = value => ({ p0: 'severityP0', p1: 'severityP1', p2: 'severityP2', p3: 'severityP3', critical: 'severityCritical', high: 'severityHigh', medium: 'severityMedium', low: 'severityLow' })[String(value || '').trim().toLowerCase()] || 'severityUnknown'
 const severityTone = value => ['p0', 'p1', 'critical', 'high'].includes(String(value || '').trim().toLowerCase()) ? 'danger' : ['p2', 'medium'].includes(String(value || '').trim().toLowerCase()) ? 'warning' : 'neutral'

@@ -1,3 +1,5 @@
+import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
+
 /** Sidebar geometry passed by the desktop root slot. */
 export interface DesktopSidebarOwnerProps {
   /** Whether the sidebar is showing its compact rail. */
@@ -6,26 +8,8 @@ export interface DesktopSidebarOwnerProps {
   width: number
 }
 
-/** Rightbar geometry supplied by the Desktop-owned root frame. */
-export interface DesktopRightbarOwnerProps {
-  width: number
-  viewportWidth: number
-  canShow: boolean
-}
-
 /** Public panel transitions consumed by conversation and sidebar plugins. */
-export interface DesktopLayoutService {
-  /** Toggle the sidebar between wide and compact presentation. */
-  toggleSidebar(): void
-  /** Open the current session's details panel. */
-  openDetails(): void
-  /** Close the details panel. */
-  closeDetails(): void
-  /** Open the current session's rightbar using upstream presentation flags. */
-  openRightbar(track: boolean, fullscreen: boolean): void
-  /** Close the current session's rightbar. */
-  closeRightbar(): void
-}
+export type DesktopLayoutService = import('@deepseek-ai/dsh-client-ui-layout/client').ILayout
 
 /** Insets reserved by Desktop-owned native chrome in CSS pixels. */
 export interface DesktopWindowInsets {
@@ -65,24 +49,7 @@ export interface DesktopWindowService {
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
-    /** Desktop-owned layout service in extended and enhanced modes. */
-    layout: DesktopLayoutService
     /** Native window geometry for the current Desktop renderer generation. */
     desktopWindow: DesktopWindowService
-  }
-}
-
-declare module '@deepseek-ai/dsh-client-ui-slots' {
-  interface SlotMap {
-    /** Upstream sidebar occupant hosted by the Desktop-owned frame. */
-    'sidebar': { kind: 'single'; scope: 'root'; owner: DesktopSidebarOwnerProps }
-    /** Unchanged upstream conversation surface. */
-    'conversation': { kind: 'single'; scope: 'session-maybe'; owner: Record<never, never> }
-    /** Unchanged upstream details surface. */
-    'details': { kind: 'single'; scope: 'session'; owner: Record<never, never> }
-    /** Upstream right sidebar occupant hosted by the Desktop-owned frame. */
-    'rightbar': { kind: 'single'; scope: 'session'; owner: DesktopRightbarOwnerProps }
-    /** Frame-wide additive overlays. */
-    'shell.overlay': { kind: 'list'; scope: 'root' }
   }
 }

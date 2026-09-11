@@ -95,6 +95,7 @@ describe('published package surface', () => {
       ['@dofe/dsh-yootun-content-command', 'dsh-yootun-content-command'],
       ['@dofe/dsh-yootun-daily-report', 'dsh-yootun-daily-report'],
       ['@dofe/dsh-yootun-dashboard', 'dsh-yootun-dashboard'],
+      ['@dofe/dsh-yootun-douyin-operation', 'dsh-yootun-douyin-operation'],
       ['@dofe/dsh-yootun-finops', 'dsh-yootun-finops'],
       ['@dofe/dsh-yootun-knowledge', 'dsh-yootun-knowledge'],
       ['@dofe/dsh-yootun-lead-discovery', 'dsh-yootun-lead-discovery'],
@@ -123,6 +124,7 @@ describe('published package surface', () => {
       ['dsh-plugin-console', 'lib/index.js'], ['dsh-tools-mcp', 'index.js'],
       ['dsh-yootun-audit', 'index.js'], ['dsh-yootun-content-command', 'index.js'],
       ['dsh-yootun-daily-report', 'index.js'], ['dsh-yootun-dashboard', 'index.js'],
+      ['dsh-yootun-douyin-operation', 'index.js'],
       ['dsh-yootun-finops', 'index.js'], ['dsh-yootun-knowledge', 'index.js'],
       ['dsh-yootun-lead-discovery', 'index.js'], ['dsh-yootun-recruiter', 'index.js'],
       ['dsh-yootun-retrofit', 'index.js'], ['dsh-yootun-sales', 'index.js'],
@@ -136,6 +138,49 @@ describe('published package surface', () => {
     const recruiterSource = readFileSync(new URL('../.ci/dsh-yootun-recruiter/src/client.js', packageRoot), 'utf8')
     expect(recruiterSource).toContain("succeeded: '适配器已完成'")
     expect(recruiterSource).toContain("requiresLogin: '需要重新登录'")
+  })
+
+  it('ships the Douyin operation plugin snapshot and bundle wiring', () => {
+    // 快照必须与 sibling 源同一版本，且四个入口都来自同一次快照。
+    const snapshotRoot = new URL('../.ci/dsh-yootun-douyin-operation/', packageRoot)
+    const snapshotManifest = JSON.parse(readFileSync(new URL('package.json', snapshotRoot), 'utf8')) as {
+      name?: unknown
+      main?: unknown
+      exports?: Record<string, unknown>
+      dsh?: { bundle?: { patch?: unknown }; client?: { platform?: unknown } }
+      dependencies?: Record<string, unknown>
+    }
+    expect(snapshotManifest.name).toBe('@dofe/dsh-yootun-douyin-operation')
+    expect(snapshotManifest.main).toBe('./index.js')
+    expect(snapshotManifest.exports?.['./client']).toBe('./lib/client.js')
+    expect(snapshotManifest.dsh?.bundle?.patch).toBe('./cordis.patch.yml')
+    expect(snapshotManifest.dsh?.client?.platform).toBe('web')
+    // 运行依赖必须由 desktop 的解析链管理，不能只靠开发机 node_modules。
+    expect(snapshotManifest.dependencies?.['playwright-core']).toBeDefined()
+    for (const file of ['package.json', 'index.js', 'cordis.patch.yml', 'src/client.js', 'lib/client.js']) {
+      expect(existsSync(new URL(file, snapshotRoot)), file).toBe(true)
+    }
+    expect(existsSync(new URL('node_modules', snapshotRoot))).toBe(false)
+
+    // Host 路由与 cordis bundle entry 与插件自身声明一致。
+    const patch = readFileSync(new URL('cordis.patch.yml', packageRoot), 'utf8')
+    expect(patch).toContain("id: dofe-yootun-douyin-operation")
+    expect(patch).toContain("name: '@dofe/dsh-yootun-douyin-operation'")
+    const hostSource = readFileSync(new URL('index.js', snapshotRoot), 'utf8')
+    expect(hostSource).toContain("export const PATH = '/api/desktop/yootun/douyin-operation'")
+    expect(hostSource).toContain("export const inject = ['webServer', 'tools']")
+
+    // 客户端只使用独占的 ydo- 命名空间，且本地请求带同源凭证、拒绝重定向和超时。
+    const clientSource = readFileSync(new URL('src/client.js', snapshotRoot), 'utf8')
+    expect(clientSource).toContain('.ydo-overlay')
+    expect(clientSource).not.toMatch(/\.yd-/u)
+    expect(clientSource).toContain("const REQUEST_TIMEOUT_MS = 30000")
+    expect(clientSource).toContain("credentials: 'same-origin'")
+    expect(clientSource).toContain("redirect: 'error'")
+    expect(clientSource).toContain('AbortSignal.timeout(REQUEST_TIMEOUT_MS)')
+    expect(clientSource).not.toContain('MODELS_API_KEY')
+    // 凭证只允许出现在注释里说明边界，不能出现在可执行代码中。
+    expect(clientSource).not.toMatch(/storage_state\s*[:=]/u)
   })
 
   it('keeps the capture SDK fallback loadable as Node ESM', () => {
@@ -163,8 +208,8 @@ describe('published package surface', () => {
     expect(main).toContain('if (safeModePaths !== undefined) {\n      homeDir = safeModePaths.homeDir')
     expect(main).toContain('process.env.DSH_HOME = homeDir')
     expect(main).toContain('const desktopLaunchEnvironment = withDesktopDshHome(environment, homeDir)')
-    expect(main).toContain('hostCtx.provide(DSH_LAUNCH_ENVIRONMENT_KEY, desktopLaunchEnvironment)')
-    expect(main).toContain('prepareDesktopSafeModeEnvironment(desktopUserDataDir)')
+    expect(main).toContain('createDesktopWebProfile(paths.homeDir, DESKTOP_SAFE_MODE_PROFILE_NAME)')
+    expect(main).toContain("join(paths.userDataDir, 'profile-selection', 'state.json')")
     expect(main).toContain('selectDesktopProfile(')
     expect(main).toContain('cleanupDesktopSafeModeEnvironment(desktopUserDataDir)')
     expect(main).toContain('if (safeModeRequested) {')
@@ -386,8 +431,8 @@ describe('published package surface', () => {
     expect(config).toContain("diagnostics: 'src/diagnostics.ts'")
     expect(config).toContain("notifications: 'src/notifications.ts'")
     expect(config).toContain("'diagnostic-export-worker': 'src/diagnostic-export-worker.ts'")
-    expect(config).toContain("entry: { preload: 'src/preload.ts' }")
-    expect(config).toContain("entryFileNames: 'preload.cjs'")
+    expect(config).toContain("preload: 'src/preload.ts', 'compatibility-preload': 'src/compatibility-preload.ts'")
+    expect(config).toContain("entryFileNames: '[name].cjs'")
     expect(config).toContain("terminal: 'src/terminal.ts'")
     expect(config).toContain("'update-download': 'src/update-download.ts'")
     expect(config).toContain("updates: 'src/updates.ts'")
@@ -718,6 +763,7 @@ describe('published package surface', () => {
       'package.json',
       '!node_modules/koffi-darwin-*-3-1-1/**',
       '!node_modules/node-pty/build/**',
+      '!node_modules/fs-ext/build/**',
     ])
     expect(manifest.build?.mac?.icon).toBe('build/app-icon-mac.png')
     expect(manifest.build?.mac?.asarUnpack).toEqual([
@@ -833,6 +879,7 @@ describe('published package surface', () => {
       x64ArchFiles: expect.stringContaining('node-pty/prebuilds/darwin-*'),
     }))
     expect(manifest.build?.mac?.x64ArchFiles).toContain('lightningcss-darwin-*')
+    expect(manifest.build?.mac?.x64ArchFiles).toContain('@deepseek-ai/node-addon-system-darwin-*')
     expect(manifest.build?.files).toContain('!node_modules/node-pty/build/**')
     expect(manifest.devDependencies?.['@electron/asar']).toBe('3.4.1')
   })
@@ -849,13 +896,17 @@ describe('published package surface', () => {
 
     expect(windowsJob).not.toContain('- run: pnpm check')
     expect(windowsJob).toContain('timeout-minutes: 60')
-    expect(windowsJob).toContain('- run: pnpm --filter dsh-plugin-desktop check:win-package')
+    expect(windowsJob).toContain('run: pnpm --filter dsh-plugin-desktop check:win-package')
     expect(windowsJob).toContain('run: pnpm --filter dsh-plugin-desktop dist:win')
     expect(windowsJob).toContain('run: pnpm --filter dsh-plugin-desktop dist:win-portable')
+    expect(windowsJob.match(/CI: 'false'/g)?.length).toBeGreaterThanOrEqual(3)
+    expect(windowsJob.match(/npm_config_minimum_release_age: '0'/g)?.length).toBeGreaterThanOrEqual(3)
     expect(windowsJob).toContain('DSH_PACKAGE_CHECK_ALREADY_RAN: \'1\'')
     expect(macosJob).not.toContain('- run: pnpm check')
-    expect(macosJob).toContain('- run: pnpm --filter dsh-plugin-desktop check:mac-package')
+    expect(macosJob).toContain('run: pnpm --filter dsh-plugin-desktop check:mac-package')
     expect(macosJob).toContain('run: pnpm --filter dsh-plugin-desktop dist:mac-smoke')
+    expect(macosJob).toContain("CI: 'false'")
+    expect(macosJob).toContain("npm_config_minimum_release_age: '0'")
     expect(macosJob).toContain('DSH_PACKAGE_CHECK_ALREADY_RAN: \'1\'')
     expect(macosJob).not.toContain('- run: pnpm dist:mac-smoke')
   })

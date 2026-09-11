@@ -1,5 +1,6 @@
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
+import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
 import type {} from '@deepseek-ai/cordis-plugin-loader'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
@@ -13,7 +14,7 @@ import { startRendererBootReporter } from './boot-health.ts'
 import { applyDesktopSettings } from './desktop-settings.ts'
 import { installDesktopDirectoryPickerBridge } from './directory-picker.ts'
 import { parseDesktopClientEnvironment } from './environment.ts'
-import { applyExtendedShell, applyFramedShell } from './extended-shell.ts'
+import { applyExtendedShell } from './extended-shell.ts'
 import { desktopWindowService, provideDesktopWindow } from './window-service.ts'
 
 export { applyAdvancedShell } from './advanced-shell.ts'
@@ -91,7 +92,19 @@ export function apply(ctx: ClientContext): void {
   )
   const desktopSettings = applyDesktopSettings(ctx, environment)
   ctx.effect(
-    () => startRendererBootReporter(ctx.loader),
+    () => startRendererBootReporter(ctx.loader, globalThis.fetch, () => {
+      const missing = [
+        ctx.slots.entries('main').some(entry => entry.options.key === 'conversation')
+          ? undefined
+          : 'main:conversation',
+        ctx.slots.entries('sidebar.workspaces').length > 0
+          ? undefined
+          : 'sidebar.workspaces',
+      ].filter((name): name is string => name !== undefined)
+      return missing.length === 0
+        ? undefined
+        : `required desktop surfaces are unavailable: ${missing.join(', ')}`
+    }),
     'dsh-plugin-desktop: renderer boot health report',
   )
   if (environment.platform === 'win32') {
@@ -102,7 +115,4 @@ export function apply(ctx: ClientContext): void {
   }
   if (environment.mode === 'advanced') applyAdvancedShell(ctx, environment)
   if (environment.mode === 'extended') applyExtendedShell(ctx, environment, desktopSettings)
-  if (environment.platform !== 'linux' && environment.mode === 'compatibility') {
-    applyFramedShell(ctx, environment, desktopSettings)
-  }
 }

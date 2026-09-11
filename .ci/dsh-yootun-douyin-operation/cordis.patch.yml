@@ -1,0 +1,7 @@
+# 抖音运营工作台：页面侧插件（客户端 UI）+ 本地宿主路由（同源 host endpoint）。
+# 凭证卫生：页面只访问本地同源路由 /api/desktop/yootun/douyin-operation；浏览器不读取
+# MODELS_API_KEY、不直连公网 MCP，也不接收 Cookie、storage_state、内部地址或原始传输错误。
+# 采集在设备端由系统 Google Chrome（Playwright channel=chrome）执行；tools 只做数据层。
+- insert:
+    - id: dofe-yootun-douyin-operation
+      name: '@dofe/dsh-yootun-douyin-operation'

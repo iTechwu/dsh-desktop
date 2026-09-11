@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import {
   packageWindowsArtifact,
   packageWindowsInstaller,
@@ -29,6 +29,7 @@ function options(calls: CommandCall[], logs: string[] = []): WindowsPackageOptio
     desktopRoot: 'C:\\repo\\dsh-plugin-desktop',
     commandShell: 'C:\\Windows\\System32\\cmd.exe',
     builderCli: 'C:\\repo\\node_modules\\electron-builder\\cli.js',
+    prepareRuntime: () => undefined,
     verifier: 'C:\\repo\\dsh-plugin-desktop\\scripts\\verify-win-installer.ts',
     nodeExecutable: 'C:\\Program Files\\nodejs\\node.exe',
     run: (command, args, cwd, env) => {
@@ -42,8 +43,9 @@ describe('Windows x64 installer packaging', () => {
   it('checks without credentials, builds an unsigned NSIS target, then verifies it', () => {
     const calls: CommandCall[] = []
     const logs: string[] = []
+    const prepareRuntime = vi.fn()
 
-    packageWindowsInstaller(options(calls, logs))
+    packageWindowsInstaller({ ...options(calls, logs), prepareRuntime })
 
     expect(calls).toHaveLength(4)
     expect(calls[0]).toEqual({

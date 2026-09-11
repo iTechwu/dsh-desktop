@@ -16,6 +16,7 @@ const overlayPlugins = [
   'dsh-yootun-daily-report',
   'dsh-yootun-finops',
   'dsh-yootun-xhs-operation',
+  'dsh-yootun-douyin-operation',
 ]
 
 test('every Yootun business overlay participates in the exclusive accessible dialog contract', async () => {

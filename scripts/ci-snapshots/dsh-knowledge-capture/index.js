@@ -15,6 +15,14 @@ const MAX_CANDIDATE_TEXT = 12000
 const LOADOUT_TTL_MS = 5 * 60 * 1000
 const RUNTIME_SPACE_KEY = 'user.agent_runtime'
 
+const CONTEXT_PACK_STATUS = {
+  NOT_ATTEMPTED: 'not_attempted',
+  INJECTED: 'injected',
+  EMPTY: 'empty',
+  UNAVAILABLE: 'unavailable',
+  ERROR: 'error',
+}
+
 export async function apply(ctx, overrides = {}) {
   const fetchImpl = overrides.fetch || globalThis.fetch
   const states = new Map()
@@ -25,7 +33,14 @@ export async function apply(ctx, overrides = {}) {
     const key = String(sessionId)
     let state = states.get(key)
     if (!state) {
-      state = { sessionId: key, pending: [], forbiddenCaptureIds: new Set(), tail: Promise.resolve(), dropped: 0 }
+      state = {
+        sessionId: key,
+        pending: [],
+        forbiddenCaptureIds: new Set(),
+        tail: Promise.resolve(),
+        dropped: 0,
+        contextPack: { status: CONTEXT_PACK_STATUS.NOT_ATTEMPTED },
+      }
       states.set(key, state)
     }
     return state
@@ -129,8 +144,12 @@ export async function apply(ctx, overrides = {}) {
     const resolved = await next()
     const session = context?.agent?.session
     if (!session) return resolved
+    const state = stateFor(session.id)
     const apiKey = await resolveKey()
-    if (!apiKey) return resolved
+    if (!apiKey) {
+      state.contextPack = { status: CONTEXT_PACK_STATUS.UNAVAILABLE, reason: 'model_api_key_unavailable' }
+      return resolved
+    }
     const result = await callKnowledgeMcp(fetchImpl, apiKey, 'knowledge.context_pack', {
       query: latestUserText(session),
       sessionExternalId: String(session.id),
@@ -138,12 +157,19 @@ export async function apply(ctx, overrides = {}) {
       topK: 8,
       includeStableContext: true,
     }, context.signal)
-    if (!result.ok) return resolved
+    if (!result.ok) {
+      state.contextPack = { status: CONTEXT_PACK_STATUS.ERROR, reason: result.error || 'knowledge_context_pack_failed' }
+      return resolved
+    }
     const pack = mcpData(result.result)
-    const state = stateFor(session.id)
     state.forbiddenCaptureIds = new Set(Array.isArray(pack.forbiddenCaptureIds) ? pack.forbiddenCaptureIds : [])
     const text = renderContextPack(pack)
-    if (text) resolved.contexts.push({ name: 'knowledge:context-pack', text })
+    if (text) {
+      resolved.contexts.push({ name: 'knowledge:context-pack', text })
+      state.contextPack = { status: CONTEXT_PACK_STATUS.INJECTED }
+    } else {
+      state.contextPack = { status: CONTEXT_PACK_STATUS.EMPTY }
+    }
     return resolved
   })
 
@@ -151,6 +177,7 @@ export async function apply(ctx, overrides = {}) {
     sdkVersion: '2.0.0-mcp',
     pendingCount: () => [...states.values()].reduce((total, state) => total + state.pending.length, 0),
     droppedCount: () => [...states.values()].reduce((total, state) => total + state.dropped, 0),
+    contextPackStatus: sessionId => stateFor(sessionId).contextPack,
     loadout: async signal => {
       const apiKey = await resolveKey()
       return apiKey ? getLoadout(apiKey, signal) : null

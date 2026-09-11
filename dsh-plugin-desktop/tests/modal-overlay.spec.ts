@@ -48,4 +48,34 @@ describe('desktop modal overlay isolation', () => {
     expect(document.activeElement).toBe(trigger)
     dispose()
   })
+
+  it('reacts when an existing overlay node becomes a modal dialog', async () => {
+    const frame = document.createElement('div')
+    const background = document.createElement('main')
+    const trigger = document.createElement('button')
+    background.append(trigger)
+    const overlay = document.createElement('div')
+    frame.append(background, overlay)
+    document.body.append(frame)
+    trigger.focus()
+
+    const dispose = installModalOverlayIsolation(frame, overlay)
+    const dialog = document.createElement('section')
+    const close = document.createElement('button')
+    dialog.append(close)
+    overlay.append(dialog)
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(background.inert).not.toBe(true)
+
+    dialog.setAttribute('role', 'dialog')
+    dialog.setAttribute('aria-modal', 'true')
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(background.inert).toBe(true)
+    expect(document.activeElement).toBe(close)
+    dispose()
+  })
 })

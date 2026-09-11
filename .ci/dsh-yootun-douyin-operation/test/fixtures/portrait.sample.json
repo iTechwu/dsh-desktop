@@ -1,0 +1,12 @@
+{
+  "_note": "脱敏样例：观众画像 portrait（gender/age/province/city_level 的 ratio_list；分桶 key 真实，值为占位）。",
+  "status_code": 0,
+  "status_msg": "",
+  "gender": { "ratio_list": [ { "key": "male", "value": 0.9266 }, { "key": "female", "value": 0.0734 } ] },
+  "age": { "ratio_list": [
+    { "key": "41-50", "value": 0.3444 }, { "key": "31-40", "value": 0.2712 }, { "key": "50-", "value": 0.2341 },
+    { "key": "24-30", "value": 0.0897 }, { "key": "18-23", "value": 0.0546 }, { "key": "-18", "value": 0.0060 }
+  ] },
+  "province": { "ratio_list": [ { "key": "广东", "value": 0.10 }, { "key": "江苏", "value": 0.08 } ] },
+  "city_level": { "ratio_list": [ { "key": "三线", "value": 0.2338 }, { "key": "二线", "value": 0.2066 }, { "key": "四线", "value": 0.1869 } ] }
+}

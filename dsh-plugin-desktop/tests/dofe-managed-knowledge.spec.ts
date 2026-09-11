@@ -19,7 +19,7 @@ describe('dofe-managed Knowledge route', () => {
     expect(DOFE_MCP_BASE_URL).toBe('https://ixicai.cn/mcp')
     expect(MODELS_API_KEY).toBe('MODELS_API_KEY')
     expect(managedSource).not.toMatch(/serverName: 'knowledge'/)
-    expect(managedSource).toContain('knowledge_*')
+    expect(managedSource).toContain('KNOWLEDGE_ROUTING_PROMPT')
     expect(managedSource).not.toContain('mcp__knowledge__')
     expect(managedSource).not.toMatch(/KNOWLEDGE_API_KEY|knowledge\.dofe\.ai|172\.30\.30\.11|127\.0\.0\.1|localhost/)
   })
