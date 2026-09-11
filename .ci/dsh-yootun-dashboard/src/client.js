@@ -213,7 +213,7 @@ function metricDisplay(value, format = formatNumber) {
 
 function statusLabel(status, t) {
   if (status === 'ready') return t('sourceReady')
-  if (status === 'partial') return t('sourcePartiallyAvailable')
+  if (status === 'partial' || status === 'degraded') return t('sourcePartiallyAvailable')
   if (status === 'empty') return t('sourceEmpty')
   if (status === 'warning') return t('sourceWarning')
   if (status === 'error') return t('sourceError')
@@ -258,7 +258,7 @@ function SourceState({ source, t, compact = false }) {
 
 function EmptyState({ source, t }) {
   const status = source?.status || 'unavailable'
-  const label = status === 'empty' ? t('empty') : status === 'error' ? t('error') : t('unavailable')
+  const label = status === 'empty' ? t('empty') : status === 'error' ? t('error') : status === 'partial' || status === 'degraded' ? t('sourcePartiallyAvailable') : t('unavailable')
   const meta = [
     source?.reason ? `reason: ${source.reason}` : null,
     Array.isArray(source?.missingFields) && source.missingFields.length ? `missing: ${source.missingFields.join(', ')}` : null,

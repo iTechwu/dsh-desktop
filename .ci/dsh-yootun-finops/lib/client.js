@@ -95,8 +95,8 @@ window.__ModuleLoader__.load({
     function formatMoney(value, currency = 'CNY') { const parsed = finite(value); if (parsed === null) return null; try { return new Intl.NumberFormat(undefined, { style: 'currency', currency, maximumFractionDigits: 2 }).format(parsed) } catch { return `${currency} ${parsed.toFixed(2)}` } }
     function percent(value, total) { const numerator = finite(value), denominator = finite(total); return numerator !== null && denominator > 0 ? `${Math.round((numerator / denominator) * 100)}%` : null }
     function shortTime(value) { const date = new Date(value); return Number.isFinite(date.getTime()) ? new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit' }).format(date) : '' }
-    function sourceLabel(status, t) { return status === 'ready' ? t('sourceReady') : status === 'empty' ? t('sourceEmpty') : status === 'warning' ? t('sourceWarning') : status === 'error' ? t('sourceError') : t('sourceUnavailable') }
-    function iconFor(status) { return status === 'ready' ? 'check' : status === 'empty' ? 'database' : status === 'warning' ? 'warning' : 'close' }
+    function sourceLabel(status, t) { return status === 'ready' ? t('sourceReady') : status === 'empty' ? t('sourceEmpty') : status === 'warning' || status === 'partial' || status === 'degraded' ? t('sourceWarning') : status === 'error' ? t('sourceError') : t('sourceUnavailable') }
+    function iconFor(status) { return status === 'ready' ? 'check' : status === 'empty' ? 'database' : status === 'warning' || status === 'partial' || status === 'degraded' ? 'warning' : 'close' }
     function budgetStatusLabel(status, t) {
       return status === 'healthy' ? t('budgetHealthy') : status === 'warning' ? t('budgetWarning')
         : status === 'critical' ? t('budgetCritical') : status === 'exceeded' ? t('budgetExceeded') : t('metricUnavailable')
