@@ -60,7 +60,7 @@ async function openPage(mode, width = 390, framework = false, upgradeStatus = 'i
   await page.clock.install()
   page.setDefaultTimeout(10_000)
   const state = { entries: [...entries], skills: skills.map(skill => ({ ...skill })), requests: [], refreshGate: null, refreshError: false,
-    upgradeStatus, statusReads: 0, frameworkChecks: 0, installJobs: {}, installReads: [], installStatusGate: null }
+    upgradeStatus, statusReads: 0, frameworkChecks: 0, installJobs: {}, installReads: [], installStatusGate: null, holdDetails: false, detailRequests: [] }
   if (installation === 'restored') state.installJobs = {
     'restored-a': { jobId: 'restored-a', repo: 'example/old-plugin', status: 'installing', stage: 'preparing' },
     'restored-b': { jobId: 'restored-b', repo: 'example/old-skill', status: 'installing', stage: 'preparing' },
@@ -78,19 +78,31 @@ async function openPage(mode, width = 390, framework = false, upgradeStatus = 'i
     const originalFetch = window.fetch.bind(window)
     window.managementWrites = {}
     window.managementSignals = {}
+    window.completedDetailResponses = []
     window.fetch = (input, init = {}) => {
       const pathname = new URL(typeof input === 'string' ? input : input.url, location.href).pathname
       if (init.method === 'POST' && /\/(install|uninstall|toggle|skill-toggle|skill-remove|restart|framework-relaunch|framework-upgrade|updates\/check)$/.test(pathname)) {
         window.managementWrites[pathname] = (window.managementWrites[pathname] || 0) + 1
         window.managementSignals[pathname] = init.signal instanceof AbortSignal
       }
-      return originalFetch(input, init)
+      return originalFetch(input, init).then(response => {
+        if (/\/(details|check-update|install-status)$/.test(pathname)) {
+          const json = response.json.bind(response)
+          response.json = async () => {
+            const data = await json()
+            if (data?.testReadId !== undefined) window.completedDetailResponses.push(data.testReadId)
+            return data
+          }
+        }
+        return response
+      })
     }
   }, { mode })
   const handleRoute = async route => {
     const pathname = new URL(route.request().url()).pathname
     const endpoint = pathname === '/api/desktop/updates/check' ? 'desktop-update-check' : pathname.split('/').at(-1)
-    if (['install', 'uninstall', 'toggle', 'skill-toggle', 'skill-remove', 'restart', 'framework-relaunch', 'framework-upgrade', 'desktop-update-check'].includes(endpoint)) {
+    const detailRead = state.holdDetails && ['details', 'check-update'].includes(endpoint)
+    if (detailRead || ['install', 'uninstall', 'toggle', 'skill-toggle', 'skill-remove', 'restart', 'framework-relaunch', 'framework-upgrade', 'desktop-update-check'].includes(endpoint)) {
       let resolveResponse
       let markDone
       const response = new Promise(resolve => { resolveResponse = resolve })
@@ -98,7 +110,7 @@ async function openPage(mode, width = 390, framework = false, upgradeStatus = 'i
         endpoint, body: route.request().postDataJSON(), resolve: resolveResponse,
         done: new Promise(resolve => { markDone = resolve }),
       }
-      state.requests.push(request)
+      ;(detailRead ? state.detailRequests : state.requests).push(request)
       pending.push(request)
       try {
         await route.fulfill({ contentType: 'application/json', body: JSON.stringify(await response) })
@@ -160,6 +172,18 @@ async function shot(page, name) {
 const row = (page, name) => page.locator('.pc_row').filter({ has: page.locator('.pc_name', { hasText: name }) })
 const removePlugin = (page, name) => row(page, name).getByRole('button', { name: '删除插件（移除配置并卸载包）', exact: true })
 const removeSkill = (page, name) => row(page, name).getByRole('button', { name: '删除技能', exact: true })
+
+async function assertNavigationUnobscured(page) {
+  const covered = await page.evaluate(() => [...document.querySelectorAll('.pc_section button,.pc_section input')].flatMap(control => {
+    const rect = control.getBoundingClientRect()
+    if (!rect.width || !rect.height) return []
+    const points = [0.2, 0.5, 0.8].flatMap(x => [0.25, 0.75].map(y => [rect.left + rect.width * x, rect.top + rect.height * y]))
+      .filter(([x, y]) => x >= 0 && x < innerWidth && y >= 0 && y < innerHeight)
+    return points.some(([x, y]) => !control.contains(document.elementFromPoint(x, y)))
+      ? [control.getAttribute('aria-label') || control.textContent || control.tagName] : []
+  }))
+  assert.deepEqual(covered, [], 'navigation and visible actions must remain unobscured')
+}
 
 try {
   // The flow under test is: installed plugin -> confirm removal -> one pending write,
@@ -522,8 +546,35 @@ try {
     state.installJobs['test-plugin-job'] = { jobId: 'test-plugin-job', status: 'unexpected' }
     state.installStatusGate = null
     releaseStatus()
-    await page.clock.fastForward(2100)
+    const unavailable = page.getByText('暂时无法获取安装进度，任务可能仍在后台运行。将自动重试，也可手动查询。', { exact: true })
+    await unavailable.waitFor()
     assert.equal(await detailUpdate.isDisabled(), true, 'unknown progress must not unlock an active installation')
+    await page.getByText(/上次获取的阶段/).waitFor()
+    await shot(page, '390-install-progress-unavailable')
+    state.installStatusGate = new Promise(resolve => { releaseStatus = resolve })
+    const readsBeforeRetry = state.installReads.length
+    await page.getByRole('button', { name: '重试获取进度', exact: true }).evaluate(button => { button.click(); button.click() })
+    await waitRequests({ requests: state.installReads }, readsBeforeRetry + 1)
+    assert.equal(await page.getByRole('button', { name: '正在获取进度…', exact: true }).isDisabled(), true)
+    await page.clock.fastForward(4100)
+    assert.equal(state.installReads.length, readsBeforeRetry + 1, 'manual retries share the automatic poll lock')
+    assert.equal(state.requests.length, 2, 'retrying progress must not submit another installation')
+    await shot(page, '390-install-progress-retrying')
+    state.installJobs['test-plugin-job'] = { ok: false, error: 'internal-path-must-not-be-shown' }
+    state.installStatusGate = null
+    releaseStatus()
+    await page.getByRole('button', { name: '重试获取进度', exact: true }).waitFor()
+    assert.equal(await page.getByText(/internal-path-must-not-be-shown/).count(), 0)
+    state.installJobs['test-plugin-job'] = { jobId: 'wrong-job', status: 'done', testReadId: 'progress-mismatch' }
+    await page.getByRole('button', { name: '重试获取进度', exact: true }).click()
+    await page.waitForFunction(() => window.completedDetailResponses.includes('progress-mismatch'))
+    await page.getByRole('button', { name: '重试获取进度', exact: true }).waitFor()
+    assert.equal(await detailUpdate.isDisabled(), true, 'another job response must not finish this installation')
+    state.installJobs['test-plugin-job'] = { jobId: 'test-plugin-job', status: 'installing', stage: 'configuring' }
+    await page.getByRole('button', { name: '重试获取进度', exact: true }).click()
+    await unavailable.waitFor({ state: 'detached' })
+    assert.equal(await detailUpdate.isDisabled(), true)
+    assert.equal(state.requests.length, 2)
     state.installJobs['test-plugin-job'] = { jobId: 'test-plugin-job', status: 'failed', error: '安装失败，请重试' }
     await page.clock.fastForward(2100)
     await page.getByText('操作失败：安装失败，请重试', { exact: true }).waitFor()
@@ -565,6 +616,118 @@ try {
     await page.getByText('操作失败：第二个任务失败', { exact: true }).waitFor()
     assert.equal(await install.isEnabled(), true)
     await shot(page, '390-install-restored-jobs-retry')
+    await page.close()
+  }
+  {
+    const { page, state } = await openPage('plugins')
+    state.holdDetails = true
+    const a = row(page, 'plugin-a')
+    const b = row(page, 'plugin-b')
+    const details = (description, version = '1.0.0') => ({ meta: { description, version }, readme: null })
+    const finishRead = async (index, body) => {
+      await finish(state.detailRequests[index], { ...body, testReadId: index })
+      await page.waitForFunction(index => window.completedDetailResponses.includes(index), index)
+      // Advance rendering only after the application has consumed the response.
+      await page.clock.runFor(50)
+    }
+    await a.getByRole('button', { name: '详情', exact: true }).click()
+    await b.getByRole('button', { name: '详情', exact: true }).click()
+    await waitRequests({ requests: state.detailRequests }, 2)
+    await finishRead(1, details('插件 B 的当前详情'))
+    await b.getByText('插件 B 的当前详情', { exact: true }).waitFor()
+    await finishRead(0, details('插件 A 的过期详情'))
+    assert.equal(await b.getByText('插件 B 的当前详情', { exact: true }).count(), 1)
+    assert.equal(await page.getByText('插件 A 的过期详情', { exact: true }).count(), 0)
+    await b.getByRole('button', { name: '检测更新', exact: true }).evaluate(button => { button.click(); button.click() })
+    await waitRequests({ requests: state.detailRequests }, 3)
+    await a.getByRole('button', { name: '详情', exact: true }).click()
+    await waitRequests({ requests: state.detailRequests }, 4)
+    await finishRead(3, details('插件 A 的当前详情'))
+    await a.getByRole('button', { name: '检测更新', exact: true }).click()
+    await waitRequests({ requests: state.detailRequests }, 5)
+    await finishRead(4, { latest: '2.0.0', error: null })
+    await a.getByText('发现新版本：1.0.0 → 2.0.0', { exact: true }).waitFor()
+    await finishRead(2, { latest: '9.0.0', error: null })
+    assert.equal(await a.getByText('发现新版本：1.0.0 → 2.0.0', { exact: true }).count(), 1)
+    assert.equal(await page.getByText(/9\.0\.0/).count(), 0)
+    await shot(page, '390-details-current-version')
+    await a.getByRole('button', { name: '检测更新', exact: true }).click()
+    await waitRequests({ requests: state.detailRequests }, 6)
+    await finishRead(5, { ok: false, error: '版本服务暂不可用' })
+    await a.getByText('检测失败：版本服务暂不可用', { exact: true }).waitFor()
+    assert.equal(await a.getByRole('button', { name: '检测更新', exact: true }).isEnabled(), true)
+    await a.getByRole('button', { name: '检测更新', exact: true }).click()
+    await waitRequests({ requests: state.detailRequests }, 7)
+    await a.getByRole('button', { name: '详情', exact: true }).click()
+    await a.getByRole('button', { name: '详情', exact: true }).click()
+    await waitRequests({ requests: state.detailRequests }, 8)
+    await finishRead(7, details('重新打开的插件 A'))
+    await a.getByText('重新打开的插件 A', { exact: true }).waitFor()
+    await finishRead(6, { ok: false, error: '已经关闭的检测失败' })
+    assert.equal(await page.getByText(/已经关闭的检测失败/).count(), 0)
+    assert.equal(await a.getByText('重新打开的插件 A', { exact: true }).count(), 1)
+    await b.getByRole('button', { name: '详情', exact: true }).click()
+    await waitRequests({ requests: state.detailRequests }, 9)
+    await b.getByRole('button', { name: '详情', exact: true }).click()
+    await b.getByRole('button', { name: '详情', exact: true }).click()
+    await waitRequests({ requests: state.detailRequests }, 10)
+    await finishRead(9, details('重新打开的插件 B'))
+    await b.getByText('重新打开的插件 B', { exact: true }).waitFor()
+    await finishRead(8, { ok: false, error: '已关闭的详情请求失败' })
+    assert.equal(await b.getByText('重新打开的插件 B', { exact: true }).count(), 1)
+    assert.equal(await page.getByText(/已关闭的详情请求失败/).count(), 0)
+    await b.getByRole('button', { name: '检测更新', exact: true }).click()
+    await waitRequests({ requests: state.detailRequests }, 11)
+    await finishRead(10, {})
+    await b.getByText('检测失败：暂时无法读取版本信息，请重试。', { exact: true }).waitFor()
+    assert.equal(await b.getByRole('button', { name: '检测更新', exact: true }).isEnabled(), true)
+    await b.getByRole('button', { name: '详情', exact: true }).click()
+    await b.getByRole('button', { name: '详情', exact: true }).click()
+    await waitRequests({ requests: state.detailRequests }, 12)
+    await finishRead(11, {})
+    await b.getByText('操作失败：暂时无法读取插件详情，请重试。', { exact: true }).waitFor()
+    await shot(page, '390-details-invalid-response')
+    await b.getByRole('button', { name: '重试', exact: true }).evaluate(button => { button.click(); button.click() })
+    await waitRequests({ requests: state.detailRequests }, 13)
+    await finishRead(12, details('插件 B 重试成功'))
+    await b.getByText('插件 B 重试成功', { exact: true }).waitFor()
+    await page.setViewportSize({ width: 1280, height: 900 })
+    await shot(page, '1280-details-reopened')
+    await page.close()
+  }
+  for (const width of [320, 390, 768, 1440]) {
+    const { page, state } = await openPage('plugins', width, false, 'idle', false, true)
+    await page.emulateMedia({ reducedMotion: 'reduce' })
+    await page.locator('#pc-market-search').getByRole('button', { name: '搜索', exact: true }).click()
+    const collapse = page.getByRole('button', { name: '收起搜索结果', exact: true })
+    await collapse.waitFor()
+    await assertNavigationUnobscured(page)
+    assert.equal(await collapse.getAttribute('aria-expanded'), 'true')
+    await collapse.click()
+    assert.equal(await page.locator('.pc_item').count(), 0)
+    const expand = page.getByRole('button', { name: '展开搜索结果', exact: true })
+    assert.equal(await expand.getAttribute('aria-expanded'), 'false')
+    await assertNavigationUnobscured(page)
+    await expand.click()
+    assert.equal(await page.locator('.pc_item').count(), 2)
+    state.entries.push(...Array.from({ length: 4 }, (_, i) => ({
+      entryId: `navigation-${i}`, rowId: `navigation-${i}`, moduleName: `@example/navigation-${i}`,
+      enabled: true, toggleable: true, extra: true, fiberPhase: 'active',
+    })))
+    await page.getByRole('button', { name: '刷新插件列表', exact: true }).click()
+    await row(page, 'navigation-3').waitFor()
+    const back = page.getByRole('button', { name: '回到搜索', exact: true })
+    await back.scrollIntoViewIfNeeded()
+    await assertNavigationUnobscured(page)
+    if (width === 320) assert(await page.evaluate(() => scrollY > 0), 'long mobile lists must exercise real scrolling')
+    await back.click()
+    const input = page.locator('#pc-market-search input')
+    assert.equal(await input.evaluate(node => node === document.activeElement), true)
+    const rect = await input.boundingBox()
+    assert(rect && rect.y >= 0 && rect.y + rect.height <= 900, 'return to search must reveal its focused input')
+    await assertNavigationUnobscured(page)
+    await page.evaluate(() => window.scrollTo(0, 0))
+    if (width === 320 || width === 1440) await shot(page, `${width}-navigation-unobscured`)
     await page.close()
   }
   assert.deepEqual(problems, [])
