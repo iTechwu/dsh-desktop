@@ -510,6 +510,39 @@ try {
   assert(contentGeometry.detailTop >= contentGeometry.toolbarBottom, 'article detail must not overlap the mobile review toolbar')
   await assertViewport()
   await page.screenshot({ path: resolve(evidenceRoot, '390-content-workflow.png'), fullPage: true })
+  await page.getByRole('tab', { name: /^全部/u }).click()
+  contentCommand.platforms = [
+    { id: 'website', name: '官网', loginRequired: false },
+    { id: 'xhs', name: '小红书', loginRequired: true },
+  ]
+  contentCommand.articles[0].platformStatus = { website: 'succeeded', xhs: 'failed' }
+  for (const [score, tone, reviewStatus] of [[18, 'low', 'approved'], [50, 'medium', 'pending'], [85, 'high', 'rejected']]) {
+    contentCommand.articles[0].humanize.score = score
+    contentCommand.articles[0].reviewStatus = reviewStatus
+    await page.getByRole('button', { name: '刷新数据' }).click()
+    await page.waitForFunction(({ score, tone, reviewStatus }) =>
+      document.querySelector('.ycc-shell')?.getAttribute('aria-busy') === 'false'
+      && document.querySelector('.ycc-review-badge')?.getAttribute('data-review') === reviewStatus
+      && document.querySelector(`.ycc-audit[data-tone="${tone}"] .ycc-audit-score > strong`)?.textContent === String(score), { score, tone, reviewStatus })
+    for (const width of [390, 1440]) {
+      await page.setViewportSize({ width, height: 900 })
+      const statusPaint = await page.locator('.ycc-risk-mini,.ycc-list-status,.ycc-review-badge,.ycc-audit-score > strong,.ycc-audit-score b,.ycc-channel-action > span[data-status]').evaluateAll(elements => elements.map(element => ({
+        text: element.textContent,
+        background: getComputedStyle(element).backgroundColor,
+      })))
+      assert.equal(statusPaint.length, reviewStatus === 'approved' ? 7 : 5, 'risk, review, and eligible channel status labels must all be rendered')
+      assert(statusPaint.every(item => item.background === 'rgba(0, 0, 0, 0)'), `status text must not receive solid indicator fills: ${JSON.stringify(statusPaint)}`)
+      const progressPaint = await page.locator('.ycc-audit .ycc-progress span').evaluate(element => ({
+        background: getComputedStyle(element).backgroundColor,
+        color: getComputedStyle(element).color,
+      }))
+      assert.equal(progressPaint.background, progressPaint.color, 'risk progress must retain its semantic fill')
+      await page.locator('.ycc-audit').scrollIntoViewIfNeeded()
+      await assertViewport()
+      await page.screenshot({ path: resolve(evidenceRoot, `${width}-content-risk-${tone}.png`), fullPage: true })
+    }
+  }
+  await page.setViewportSize({ width: 390, height: 844 })
   contentUnavailable = true
   await page.getByRole('button', { name: '刷新数据' }).click()
   await page.getByRole('alert').getByText('刷新失败，当前仍显示上次数据', { exact: true }).waitFor()
@@ -763,7 +796,7 @@ try {
   await page.screenshot({ path: resolve(evidenceRoot, '1440-dashboard-overview.png'), fullPage: true })
 
   assert.deepEqual(consoleProblems, [])
-  process.stdout.write(`search-locks-browser: ${visualTheme}, 10 plugins, 26 screenshots, request locks, report coverage, long text, keyboard selection, and responsive theme mappings verified\n`)
+  process.stdout.write(`search-locks-browser: ${visualTheme}, 10 plugins, 32 screenshots, request locks, report coverage, readable risk/status labels, long text, keyboard selection, and responsive theme mappings verified\n`)
 } finally {
   releaseDailyRefresh()
   releaseFinopsRefresh()
