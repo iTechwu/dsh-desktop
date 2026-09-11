@@ -107,11 +107,11 @@ window.__ModuleLoader__.load({
     function Funnel({ value, dashboard, t }) {
       const upstream = Array.isArray(value?.stages) ? value.stages : []
       const stages = upstream.length ? upstream : [
-        { key: 'created', label: t('generated'), count: dashboard.articles || 0, tone: 'blue' }, { key: 'review', label: t('pendingReview'), count: dashboard.pendingReview || 0, tone: 'amber' },
-        { key: 'approved', label: t('reviewed'), count: dashboard.reviewed || 0, tone: 'green' }, { key: 'published', label: t('published'), count: dashboard.published ?? dashboard.publishedArticles ?? dashboard.publishedCount ?? 0, tone: 'slate' },
+        { key: 'created', label: t('generated'), count: optionalNumber(dashboard.articles), tone: 'blue' }, { key: 'review', label: t('pendingReview'), count: optionalNumber(dashboard.pendingReview), tone: 'amber' },
+        { key: 'approved', label: t('reviewed'), count: optionalNumber(dashboard.reviewed), tone: 'green' }, { key: 'published', label: t('published'), count: optionalNumber(dashboard.published ?? dashboard.publishedArticles ?? dashboard.publishedCount), tone: 'slate' },
       ]
       const max = Math.max(1, number(value?.max), ...stages.map(item => number(item.count)))
-      return h('div', { className: 'ycc-funnel' }, stages.map(item => h('div', { className: 'ycc-funnel-row', key: item.key }, h('span', null, item.label), h('div', { className: 'ycc-funnel-track' }, h('i', { 'data-tone': item.tone || 'blue', style: { width: `${number(item.count) ? Math.max(7, number(item.count) / max * 100) : 0}%` } })), h('strong', null, formatNumber(item.count)))))
+      return h('div', { className: 'ycc-funnel' }, stages.map(item => h('div', { className: 'ycc-funnel-row', key: item.key }, h('span', null, item.label), h('div', { className: 'ycc-funnel-track' }, h('i', { 'data-tone': item.tone || 'blue', style: { width: `${number(item.count) ? Math.max(7, number(item.count) / max * 100) : 0}%` } })), h('strong', null, item.count === null ? '—' : formatNumber(item.count)))))
     }
     function Trend({ rows, t }) {
       const values = Array.isArray(rows) ? rows.slice(-7) : []
