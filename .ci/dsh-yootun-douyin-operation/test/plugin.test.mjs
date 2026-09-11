@@ -161,7 +161,7 @@ test('账号探测上报 tools，且不上报任何 Cookie 内容', async () => 
       sessionSeq: 4,
       checkedAt: '2026-09-10T00:00:00.000Z',
       sessionRef: 'vault://douyin/acc-1',
-      idempotencyKey: sessionIdempotencyKey('acc-1', 4),
+      idempotencyKey: sessionIdempotencyKey('acc-1', 4, '2026-09-10T00:00:00.000Z'),
     })
     const serialized = JSON.stringify(calls[0])
     assert.equal(serialized.includes('sessionid'), false)
@@ -292,7 +292,111 @@ test('projectAccounts 合并策略：设备端会话状态优先', () => {
   assert.equal(merged[0].nickname, 'local')
   assert.equal(merged[0].local, true)
   assert.deepEqual(projectLogin({ key: 'k', status: 'waiting', accountId: 'a', error: null }), {
-    loginKey: 'k', status: 'waiting', accountId: 'a', error: null,
+    loginKey: 'k', status: 'waiting', accountId: 'a', error: null, saveError: null,
+  })
+  assert.deepEqual(projectLogin({ key: 'k', status: 'ok', accountId: 'a', error: null, saveError: 'UNAUTHORIZED' }), {
+    loginKey: 'k', status: 'ok', accountId: 'a', error: null, saveError: 'UNAUTHORIZED',
+  })
+})
+
+test('登录成功但 account_save 失败：记录日志并在 loginStatus 透出 saveError', async () => {
+  await withRoot(async root => {
+    const toolError = {
+      isError: true,
+      content: [{ type: 'text', text: JSON.stringify({ error: { code: 'UNAUTHORIZED', message: 'gateway rejected' } }) }],
+      structuredContent: { error: { code: 'UNAUTHORIZED', message: 'gateway rejected' } },
+    }
+    const calls = []
+    const warns = []
+    const { ctx, registered } = createContext({
+      tools: [
+        { name: 'mcp__tools-douyin-operation__douyin_account_save' },
+        { name: 'mcp__tools-douyin-operation__douyin_session_status_report' },
+      ],
+      execute: async request => {
+        calls.push(request)
+        if (request.name.endsWith('douyin_account_save')) return toolError
+        return { structuredContent: { applied: true } }
+      },
+    })
+    ctx.logger.warn = (...args) => warns.push(args.join(' '))
+    apply(ctx, {
+      root,
+      browserStatus: async () => ({ chromeAvailable: true, driverAvailable: true, platform: 'linux' }),
+      login: async () => ({ status: 'ok', accountId: 'acc-9', profile: { nickname: '示例', fanCount: 10 } }),
+    })
+
+    const started = await call(registered[0].handler, { action: 'account.beginLogin', accountId: 'acc-9' })
+    assert.equal(started.payload.login.status, 'waiting')
+
+    // 登录完成是异步写回：有界轮询直至离开 waiting。
+    let finished = null
+    for (let attempt = 0; attempt < 50; attempt += 1) {
+      finished = await call(registered[0].handler, { action: 'account.loginStatus', accountId: 'acc-9' })
+      if (finished.payload.login.status !== 'waiting') break
+      await new Promise(resolve => setTimeout(resolve, 5))
+    }
+    // 本地登录态有效，status 仍是 ok；saveError 必须透出供 UI 提醒，不能静默吞掉。
+    assert.equal(finished.payload.login.status, 'ok')
+    assert.equal(finished.payload.login.saveError, 'UNAUTHORIZED')
+    assert.equal(JSON.stringify(finished.payload).includes('gateway rejected'), false, '不透传原始报文')
+    assert.ok(warns.some(text => text.includes('account save failed') && text.includes('UNAUTHORIZED')), '失败必须写日志')
+    // 会话状态上报不因 save 失败被跳过（它在 status 翻转后异步执行，有界等待）。
+    let reported = false
+    for (let attempt = 0; attempt < 50 && !reported; attempt += 1) {
+      reported = calls.some(item => item.name.endsWith('douyin_session_status_report'))
+      if (!reported) await new Promise(resolve => setTimeout(resolve, 5))
+    }
+    assert.ok(reported)
+  })
+})
+
+test('登录成功：account_save 载荷绝不含 undefined 属性，对象头像直接不发（宿主 snapshot 硬约束）', async () => {
+  await withRoot(async root => {
+    const calls = []
+    const { ctx, registered } = createContext({
+      tools: [
+        { name: 'mcp__tools-douyin-operation__douyin_account_save' },
+        { name: 'mcp__tools-douyin-operation__douyin_session_status_report' },
+      ],
+      execute: async request => {
+        calls.push(request)
+        return { structuredContent: { applied: true } }
+      },
+    })
+    apply(ctx, {
+      root,
+      browserStatus: async () => ({ chromeAvailable: true, driverAvailable: true, platform: 'linux' }),
+      // 抖音 user/info 的 avatar_uri 真实形态是对象（{uri,url_list}）；
+      // fanCount 可能是字符串。宿主 snapshotJsonValue 对 undefined 值属性是
+      // 整调用拒绝（进程内失败、网络零痕迹）——2026-09-11 Windows 实测根因。
+      login: async () => ({
+        status: 'ok',
+        accountId: 'acc-9',
+        profile: { nickname: '示例', avatar: { url_list: ['https://p3.example.invalid/av.jpeg'] }, fanCount: '10' },
+      }),
+    })
+
+    await call(registered[0].handler, { action: 'account.beginLogin', accountId: 'acc-9' })
+    let finished = null
+    for (let attempt = 0; attempt < 50; attempt += 1) {
+      finished = await call(registered[0].handler, { action: 'account.loginStatus', accountId: 'acc-9' })
+      if (finished.payload.login.status !== 'waiting') break
+      await new Promise(resolve => setTimeout(resolve, 5))
+    }
+    assert.equal(finished.payload.login.status, 'ok')
+    assert.equal(finished.payload.login.saveError, null)
+
+    const save = calls.find(item => item.name.endsWith('douyin_account_save'))
+    assert.ok(save, 'account_save 必须发出')
+    for (const [key, value] of Object.entries(save.arguments)) {
+      assert.notEqual(value, undefined, `save 载荷字段 ${key} 不得为 undefined`)
+    }
+    assert.equal('avatar' in save.arguments, false, '对象头像不得进入载荷')
+    assert.equal(save.arguments.nickname, '示例')
+    assert.equal(save.arguments.fanCount, 10)
+    assert.equal(save.arguments.sessionRef, 'vault://douyin/acc-9')
+    assert.match(save.arguments.idempotencyKey, /^douyin:account:acc-9:\d+$/)
   })
 })
 
@@ -367,7 +471,7 @@ test('幂等键模板在边界取值下均不超过 128 字符（仓库全域不
   const maxSeq = String(2 ** 63 - 1)
   const keys = [
     runStartIdempotencyKey(uuid),
-    sessionIdempotencyKey(accountId, maxSeq),
+    sessionIdempotencyKey(accountId, maxSeq, '2026-09-11T05:00:00.000Z'),
     accountSaveIdempotencyKey(accountId, 1757000000000),
     accountRemoveIdempotencyKey(accountId, 1757000000000),
     listMetaIdempotencyKey(runId),
@@ -381,4 +485,113 @@ test('幂等键模板在边界取值下均不超过 128 字符（仓库全域不
   }
   // run_start 键只由本次尝试的 UUID 决定：不含账号，因此真实 76 字符 sec_uid 也不会超限。
   assert.equal(runStartIdempotencyKey(uuid), `douyin:run_start:${uuid}`)
+})
+
+// ===== 占位账号升级（2026-09-11 Windows 实测：user/info 未就绪 → 账号永久挂 pending-） =====
+
+test('probe 时把占位账号升级到真实 sec_uid：远端保存真实身份并清理占位行', async () => {
+  await withRoot(async root => {
+    const calls = []
+    const { ctx, registered } = createContext({
+      tools: [
+        { name: 'mcp__tools-douyin-operation__douyin_account_save' },
+        { name: 'mcp__tools-douyin-operation__douyin_account_remove' },
+        { name: 'mcp__tools-douyin-operation__douyin_session_status_report' },
+      ],
+      execute: async request => { calls.push(request); return { structuredContent: { applied: true } } },
+    })
+    apply(ctx, {
+      root,
+      browserStatus: async () => ({ chromeAvailable: true, driverAvailable: true, platform: 'linux' }),
+      refreshSessionState: async ({ accountId }) => ({
+        sessionStatus: 'ok', sessionSeq: 1, checkedAt: '2026-09-11T06:00:00.000Z', vaultRef: `vault://douyin/${accountId}`, account: { accountId },
+      }),
+      promotePendingAccount: async ({ accountId }) => ({
+        promoted: true, accountId: 'MS4wLjABAAAA-real', fromAccountId: accountId, profile: { nickname: '真名', fanCount: 9 },
+      }),
+    })
+    const result = await call(registered[0].handler, { action: 'account.probe', accountId: 'pending-123' })
+    assert.equal(result.payload.status, 'ready')
+    assert.equal(result.payload.promoted, true)
+    assert.equal(result.payload.accountId, 'MS4wLjABAAAA-real', '响应带真实 ID，页面据此刷新')
+    assert.equal(result.payload.remoteCleanup, 'removed')
+    const save = calls.find(item => item.name.endsWith('douyin_account_save'))
+    assert.equal(save.arguments.accountId, 'MS4wLjABAAAA-real')
+    assert.equal(save.arguments.nickname, '真名')
+    const remove = calls.find(item => item.name.endsWith('douyin_account_remove'))
+    assert.equal(remove.arguments.accountId, 'pending-123')
+    assert.equal(remove.arguments.confirm, true)
+    const report = calls.find(item => item.name.endsWith('douyin_session_status_report'))
+    assert.equal(report.arguments.accountId, 'MS4wLjABAAAA-real', '会话上报落在真实 ID 名下')
+  })
+})
+
+test('占位账号升级失败时 probe 照常工作，不虚构真实 ID', async () => {
+  await withRoot(async root => {
+    const { ctx, registered } = createContext({
+      tools: [{ name: 'mcp__tools-douyin-operation__douyin_session_status_report' }],
+      execute: async () => ({ structuredContent: { applied: true } }),
+    })
+    apply(ctx, {
+      root,
+      browserStatus: async () => ({ chromeAvailable: true, driverAvailable: true, platform: 'linux' }),
+      refreshSessionState: async ({ accountId }) => ({
+        sessionStatus: 'expired', sessionSeq: 1, checkedAt: '2026-09-11T06:00:00.000Z', vaultRef: `vault://douyin/${accountId}`, account: { accountId },
+      }),
+      promotePendingAccount: async () => ({ promoted: false, reason: 'no_session_cookie' }),
+    })
+    const result = await call(registered[0].handler, { action: 'account.probe', accountId: 'pending-123' })
+    assert.equal(result.payload.promoted, false)
+    assert.equal(result.payload.accountId, 'pending-123')
+    assert.equal(result.payload.sessionStatus, 'expired')
+  })
+})
+
+test('占位账号有在途采集时不升级（避免迁移文件与在途 run 错序）', async () => {
+  await withRoot(async root => {
+    let promoteCalled = 0
+    const { ctx, registered } = createContext()
+    apply(ctx, {
+      root,
+      // fake 控制器：该占位 ID 名下有一个在途 run（旧版本代码启动的采集）。
+      collectController: {
+        start: async () => ({ status: 'ready', collect: { accountId: 'pending-123', status: 'running' } }),
+        status: accountId => (
+          accountId === 'pending-123'
+            ? { status: 'ready', collect: { accountId, status: 'running' } }
+            : { status: 'ready', collect: null }
+        ),
+      },
+      browserStatus: async () => ({ chromeAvailable: true, driverAvailable: true, platform: 'linux' }),
+      promotePendingAccount: async () => { promoteCalled += 1; return { promoted: true, accountId: 'MS4wLjABAAAA-real' } },
+    })
+    const result = await call(registered[0].handler, { action: 'account.probe', accountId: 'pending-123' })
+    assert.equal(promoteCalled, 0, '在途采集期间绝不迁移')
+    assert.equal(result.payload.accountId, 'pending-123')
+    assert.equal(result.payload.promoted, false)
+  })
+})
+
+test('升级后的旧占位 ID 在 works/collect.status 中自动翻译为真实 ID', async () => {
+  await withRoot(async root => {
+    await updateAccount('MS4wLjABAAAA-real', { promotedFrom: 'pending-123', nickname: '真名' }, root)
+    const seen = []
+    const { ctx, registered } = createContext({
+      tools: [{ name: 'mcp__tools-douyin-operation__douyin_work_list' }],
+      execute: async request => { seen.push(request); return { structuredContent: { works: [], total: 0 } } },
+    })
+    apply(ctx, { root, browserStatus: async () => ({ chromeAvailable: true, driverAvailable: true, platform: 'linux' }) })
+    const result = await call(registered[0].handler, { action: 'works.list', accountId: 'pending-123' })
+    assert.equal(result.payload.accountId, 'MS4wLjABAAAA-real', '响应带真实 ID')
+    assert.deepEqual(seen.at(-1).arguments, { accountId: 'MS4wLjABAAAA-real', includeNotInList: false })
+  })
+})
+
+test('session 幂等键包含 checkedAt：重装后 seq 归 1 不再撞历史收据', async () => {
+  const keyAt = '2026-09-11T05:56:43.740Z'
+  assert.notEqual(
+    sessionIdempotencyKey('MS4wLjABAAAA-real', 1, keyAt),
+    sessionIdempotencyKey('MS4wLjABAAAA-real', 1, '2026-09-11T08:00:00.000Z'),
+  )
+  assert.ok(sessionIdempotencyKey('MS4wLjABAAAA-real', 1, keyAt).length <= 128)
 })

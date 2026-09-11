@@ -153,6 +153,9 @@ window.__ModuleLoader__.load({
         gapRequestFailed: '接口请求失败，展示的是上一次成功采集的热词', gapNoData: '该作品暂无此数据', gapOther: '本次未取到',
         partialBadge: '部分缺失', privateBadge: '已设为私密', trendCount: '历史采集 {count} 次',
         collectFailed: '采集失败，请重试', collectBlocked: '采集未启动', refreshFailed: '刷新失败', probeFailed: '会话检测失败，请重试',
+        accountSaveFailed: '登录成功，但账号信息同步到云端失败，采集将不可用；请重启客户端后重新登录',
+        accountNotOnCloud: '云端还没有该账号的数据，请先完成一次采集', operationUnavailable: '抖音运营服务暂时不可用，请稍后重试',
+        workNotOnCloud: '云端还没有该作品的数据，请先重新采集',
         seconds: '秒', noHotword: '暂无热词', noSearch: '暂无搜索词',
       },
       en: {
@@ -186,6 +189,9 @@ window.__ModuleLoader__.load({
         gapRequestFailed: 'request failed; hotwords shown are from the last successful collect', gapNoData: 'this work has no such data', gapOther: 'not collected this run',
         partialBadge: 'Partial', privateBadge: 'Private', trendCount: '{count} snapshots',
         collectFailed: 'Collect failed, retry', collectBlocked: 'Collect did not start', refreshFailed: 'Refresh failed', probeFailed: 'Session check failed, retry',
+        accountSaveFailed: 'Signed in, but syncing the account to the cloud failed — collecting will not work; restart the client and sign in again',
+        accountNotOnCloud: 'No cloud data for this account yet — run a collection first', operationUnavailable: 'The Douyin ops service is temporarily unavailable; retry later',
+        workNotOnCloud: 'No cloud data for this work yet — run a collection first',
         seconds: 's', noHotword: 'No hotwords', noSearch: 'No search keywords',
       },
     }
@@ -208,9 +214,19 @@ window.__ModuleLoader__.load({
       probe_failed: 'probeFailed',
       login_timeout: 'loginTimeout',
       login_failed: 'loginFailed',
+      // 登录成功但 account_save 失败（本地登录态有效、云端无账号记录）：
+      // 不透传原始 code，映射为可读文案提醒用户重启客户端重登。
+      account_save_failed: 'accountSaveFailed',
       // 删除前置：该账号仍有进行中的 run（tools 拒绝 RUN_STILL_ACTIVE）。
       // 未登记的 code 会原样渲染成英文大写码，因此这里必须显式映射。
       RUN_STILL_ACTIVE: 'runActive',
+      // 登录后作品列表查询命中「云端无账号」：本地已登录但还没成功采集过，
+      // 指引用户先采集，而不是甩一个裸错误码。
+      ACCOUNT_NOT_FOUND: 'accountNotOnCloud',
+      // 作品详情/趋势查询命中「云端无此作品」：通常是新发布作品还没采集过。
+      WORK_NOT_FOUND: 'workNotOnCloud',
+      // 传输/宿主层兜底码：不透传原文，给可行动的.retry 文案。
+      douyin_operation_request_failed: 'operationUnavailable',
     })
 
     async function post(body) {
@@ -490,8 +506,14 @@ window.__ModuleLoader__.load({
             setLogin(result.login)
             if (result.login.status === 'waiting') return
             stopPolling(loginPollRef)
-            if (result.login.status === 'ok') await refresh()
-            else setError(result.login.status === 'timeout' ? 'login_timeout' : 'login_failed')
+            if (result.login.status === 'ok') {
+              // 登录成功但 account_save 失败：本地登录态有效而云端无账号记录，
+              // 采集会在 run_start 处失败，必须显式提醒而不是静默继续。
+              if (result.login.saveError) setError('account_save_failed')
+              await refresh()
+            } else {
+              setError(result.login.status === 'timeout' ? 'login_timeout' : 'login_failed')
+            }
             setBusy(false)
           }, LOGIN_POLL_INTERVAL_MS)
         } catch {
@@ -506,6 +528,10 @@ window.__ModuleLoader__.load({
         try {
           const result = await post({ action: 'account.probe', accountId })
           if (result.status !== 'ready') setError(result.reason || 'probe_failed')
+          else if (result.promoted && result.accountId) {
+            // 占位账号已升级：跟随服务端迁移到真实 sec_uid，列表刷新后旧 ID 不复存在。
+            setSelected(current => (current === accountId ? result.accountId : current))
+          }
           await refresh()
         } catch {
           setError('probe_failed')

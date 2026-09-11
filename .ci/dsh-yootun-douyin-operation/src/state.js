@@ -112,13 +112,40 @@ export async function ensureProfileDir(accountId, root = stateRoot()) {
   return dir
 }
 
-/** 登录成功后把临时 Profile 迁移到正式账号 ID 名下的目录。 */
+/** 登录成功后把临时 Profile 迁移到正式账号 ID 名下的目录；源目录缺失视为已迁移。 */
 export async function moveProfile(fromAccountId, toAccountId, root = stateRoot()) {
   const from = paths(root).profileDir(fromAccountId)
   const to = paths(root).profileDir(toAccountId)
   if (from === to) return to
   await rm(to, { recursive: true, force: true })
-  await rename(from, to)
+  try {
+    await rename(from, to)
+  } catch (error) {
+    // 源目录不存在（如占位账号的 Profile 已被清理）不阻断升级：登录态以 storage_state 为准。
+    if (error && error.code === 'ENOENT') return to
+    throw error
+  }
+  return to
+}
+
+/** 把 storage_state 从占位账号名下迁移到正式账号名下（升级 pending 账号时使用）。 */
+export async function moveStorageState(fromAccountId, toAccountId, root = stateRoot()) {
+  const from = paths(root).storageStatePath(fromAccountId)
+  const to = paths(root).storageStatePath(toAccountId)
+  if (from === to) return to
+  await rm(to, { recursive: true, force: true })
+  try {
+    await rename(from, to)
+  } catch (error) {
+    // 源文件不存在（该账号从未落过登录态）视为已迁移，不阻断升级。
+    if (error && error.code === 'ENOENT') return to
+    throw error
+  }
+  try {
+    await chmod(to, 0o600)
+  } catch {
+    // Windows 忽略。
+  }
   return to
 }
 
