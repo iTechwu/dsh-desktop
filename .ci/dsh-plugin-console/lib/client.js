@@ -21,6 +21,14 @@ window.__ModuleLoader__.load({
   outline:2px solid var(--dsw-alias-brand-primary,var(--dsw-alias-state-business-primary));outline-offset:2px;
 }
 .pc_modalCard .pc_tag{max-width:100%;box-sizing:border-box;white-space:normal;overflow-wrap:anywhere}
+.pc_actions{display:flex;flex-wrap:wrap;align-items:center;gap:8px;min-width:0}
+.pc_actions>button{position:static;transform:none;min-height:34px;max-width:100%;background:var(--dsw-alias-bg-layer-2)}
+.pc_actions>.pc_restartBtn{margin-inline-start:auto}
+.pc_relaunchFloat{position:static;transform:none;align-self:flex-start;max-width:100%}
+.pc_marketHead,.pc_ghwrap,.pc_messageRow{flex-wrap:wrap;min-width:0}
+.pc_ghwrap{max-width:100%;gap:6px}
+.pc_messageRow>.pc_message{flex:1 1 220px;min-width:0;overflow-wrap:anywhere}
+.pc_srcUrl{min-width:0;max-width:100%;overflow-wrap:anywhere;font-size:12px;line-height:18px}
 `;
 		const tagId = "@noob-stupid/dsh-plugin-console/PluginConsoleTab.css";
 		if (typeof document !== "undefined" && document.querySelector("style[data-plugin-css=" + JSON.stringify(tagId) + "]") === null) {
@@ -41,6 +49,10 @@ window.__ModuleLoader__.load({
 			descWrap: "pc_descWrap",
 			descTopbar: "pc_descTopbar",
 			message: "pc_message",
+			messageRow: "pc_messageRow",
+			actions: "pc_actions",
+			cmdBlock: "pc_cmdBlock",
+			srcUrl: "pc_srcUrl",
 			list: "pc_list",
 			row: "pc_row",
 			rowTop: "pc_rowTop",
@@ -2273,18 +2285,22 @@ onClick: () => window.open(`https://github.com/Noob-stupid/dsh-plugin-hub/releas
 									}, s.name)))
 							: null,
 					)),
+				el("div", { className: styles.actions, role: "group", "aria-label": t("tab") },
 				el("button", {
 					type: "button",
-					className: styles.restartBtn,
-					title: t("restartService"),
-					onClick: () => { setMessage(t("restarting")); call("/plugin-console/restart", {}).then(() => { window.setTimeout(() => window.location.reload(), 12000); }, () => {}); },
-				}, t("restartService")),
+					className: styles.sourcesFloat,
+					title: t("sourcesTitle"),
+					"aria-label": t("sourcesBtn"),
+					"aria-haspopup": "dialog",
+					onClick: openSources,
+				}, t("sourcesBtn")),
 				el("button", {
 					type: "button",
 					className: styles.aiToggle,
 					"data-active": aiFallback ? "true" : "false",
 					title: t("aiFallbackTitle"),
 					"aria-label": t("aiFallbackLabel"),
+					"aria-pressed": aiFallback,
 					onClick: () => setAiFallback((v) => {
 						const next = !v;
 						try { localStorage.setItem("pc-ai-fallback-v2", next ? "on" : "off"); } catch {}
@@ -2293,17 +2309,11 @@ onClick: () => window.open(`https://github.com/Noob-stupid/dsh-plugin-hub/releas
 				}, t("aiFallbackLabel")),
 				el("button", {
 					type: "button",
-					className: styles.sourcesFloat,
-					title: t("sourcesTitle"),
-					"aria-label": t("sourcesBtn"),
-					onClick: openSources,
-				}, t("sourcesBtn")),
-				el("button", {
-					type: "button",
 					className: styles.modeFloat,
 					"data-mode": mode === "skills" ? "true" : "false",
 					title: t("modeBtn"),
 					"aria-label": t("modeBtn"),
+					"aria-pressed": mode === "skills",
 					onClick: () => {
 						const next = mode === "plugins" ? "skills" : "plugins";
 						setMode(next);
@@ -2311,6 +2321,12 @@ onClick: () => window.open(`https://github.com/Noob-stupid/dsh-plugin-hub/releas
 						setMarket(null);
 					},
 				}, mode === "skills" ? t("pluginsMode") : t("skillsMode")),
+				el("button", {
+					type: "button",
+					className: styles.restartBtn,
+					title: t("restartService"),
+					onClick: () => { setMessage(t("restarting")); call("/plugin-console/restart", {}).then(() => { window.setTimeout(() => window.location.reload(), 12000); }, () => {}); },
+				}, t("restartService"))),
 				market !== null && market.status === "ready" && market.data.length > 0
 					? el("div", { className: styles.backTopWrap },
 						showBackTop
@@ -2596,7 +2612,7 @@ onClick: () => window.open(`https://github.com/Noob-stupid/dsh-plugin-hub/releas
 												el("button", { type: "button", className: styles.toggle, onClick: () => setEditReg(null) }, t("cancelEdit")))
 											: el("div", { key: src.id, className: styles.rowTop, style: { justifyContent: "space-between" } },
 												el("div", { className: styles.rowTop, style: { flex: 1, minWidth: 0 } },
-													el("strong", { className: styles.name, style: { flex: "none", maxWidth: "35%" } }, src.name + (src.primary ? "（" + t("sourcePrimary") + "）" : "")),
+													el("strong", { className: styles.name, style: { flex: "1 1 100%", whiteSpace: "normal", overflowWrap: "anywhere" } }, src.name + (src.primary ? "（" + t("sourcePrimary") + "）" : "")),
 													el("code", { className: styles.srcUrl }, src.url)),
 												el("div", { className: styles.rowTop },
 													src.primary ? null : el("button", { type: "button", className: styles.toggle, disabled: sourcesBusy, onClick: () => sourcesAction({ action: "set-primary", id: src.id }) }, t("setPrimary")),
@@ -2610,7 +2626,7 @@ onClick: () => window.open(`https://github.com/Noob-stupid/dsh-plugin-hub/releas
 									(sourcesData.searchSources ?? []).map((s) =>
 										el("div", { key: s.id, className: styles.rowTop, style: { justifyContent: "space-between" } },
 											el("div", { className: styles.rowTop, style: { flex: 1, minWidth: 0 } },
-												el("strong", { className: styles.name, style: { flex: "none", maxWidth: "35%" } }, s.name),
+													el("strong", { className: styles.name, style: { flex: "1 1 100%", whiteSpace: "normal", overflowWrap: "anywhere" } }, s.name),
 												s.type === "custom" ? el("code", { className: styles.srcUrl }, s.url) : el("span", { className: styles.tag }, "内置"),
 												s.type === "custom" && s.headers !== undefined && Object.keys(s.headers).length > 0
 													? el("span", { className: styles.tag, title: t("headersPlaceholder") }, "🔒 " + Object.keys(s.headers).length)
