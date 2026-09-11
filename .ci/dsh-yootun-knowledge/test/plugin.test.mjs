@@ -213,6 +213,19 @@ test('generated client bundle is valid JavaScript and has no unresolved style to
 })
 
 test('normalizes memory confidence for safe percentage display', async () => { const source = await readFile(new URL('src/client.js', root), 'utf8'); assert.match(source, /const confidenceLabel = \(value, t\) =>/u); assert.match(source, /const normalized = parsed > 1 \? parsed \/ 100 : parsed/u); assert.match(source, /Math\.max\(0, Math\.min\(1, normalized\)\)/u); assert.match(source, /confidenceLabel\(item\.confidence \?\? item\.score, t\)/u); const client = await loadClientTestApi(); const label = key => key; assert.equal(client.confidenceLabel(null, label), 'confidence —'); assert.equal(client.confidenceLabel(0.8, label), 'confidence · 80%'); assert.equal(client.confidenceLabel(80, label), 'confidence · 80%'); assert.equal(client.confidenceLabel(-2, label), 'confidence · 0%'); assert.equal(client.confidenceLabel(140, label), 'confidence · 100%') })
+test('keeps missing and invalid knowledge counts visually consistent', async () => {
+  const source = await readFile(new URL('src/client.js', root), 'utf8')
+  assert.match(source, /const finiteCount = \(value\) =>/u)
+  assert.match(source, /parsed >= 0 \? parsed : null/u)
+  assert.match(source, /const width = safeValue === null \? 0 : Math\.min\(100/u)
+  assert.doesNotMatch(source, /overview\.status === "ready" \? count\([^\n]+\) : "-"/u)
+  const client = await loadClientTestApi()
+  assert.equal(client.finiteCount(null), null)
+  assert.equal(client.finiteCount(Infinity), null)
+  assert.equal(client.finiteCount(-1), null)
+  assert.equal(client.count(null), '—')
+  assert.equal(client.count(4), '4')
+})
 test('normalizes real MCP recall envelopes and graph layout states', async () => {
   const client = await loadClientTestApi()
   assert.equal(client.normalizeSourceState('healthy'), 'ready')
