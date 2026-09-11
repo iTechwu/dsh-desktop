@@ -70,7 +70,7 @@ await page.route('**/plugin-console/**', async route => {
     : pathname.endsWith('/state')
     ? { entries, installJobs: consentMode ? [{ jobId: 'consent-job', status: 'installing', stage: 'ai-consent', packageName: '@example/plugin' }] : [], compat: { supported: true }, framework: null, github: { loggedIn: false }, patch: { inserts: [] }, recentFailures: [], selfVersion: null }
     : pathname.endsWith('/sources')
-      ? { sources: { registries: [], searchSources: [], gitee: { clientConfigured: false, hasToken: false } } }
+      ? { sources: { registries: [{ id: 'npm', name: '默认源', url: 'https://registry.npmjs.org/', primary: true }], searchSources: [], gitee: { clientConfigured: false, hasToken: false } } }
       : pathname.endsWith('/market-index')
         ? { items: [], skills: [] }
         : pathname.endsWith('/framework-upgrade-status')
@@ -130,6 +130,18 @@ try {
   await assertTextContrast(page, '.pc_modalCard .pc_message,.pc_modalCard .pc_tag,.pc_modalCard .pc_trashBtn')
   await page.screenshot({ path: resolve(evidenceRoot, '390-source-dialog-focus.png'), fullPage: true })
 
+  await dialog.getByRole('button', { name: '编辑', exact: true }).click()
+  await assertAccessibleSurface(page)
+  await dialog.getByRole('textbox', { name: '名称', exact: true }).first().focus()
+  await page.keyboard.press('Tab')
+  assert.equal(await page.evaluate(() => document.activeElement?.getAttribute('aria-label')), '地址（https://…）')
+  assert.equal(await page.evaluate(() => getComputedStyle(document.activeElement).outlineWidth), '2px')
+  const clippedHints = await dialog.locator('.pc_tag').evaluateAll(tags => tags
+    .filter(tag => tag.scrollWidth > tag.clientWidth + 1).map(tag => tag.textContent))
+  assert.deepEqual(clippedHints, [], 'software source hints must wrap inside the dialog')
+  await page.screenshot({ path: resolve(evidenceRoot, '390-source-edit-focus.png'), fullPage: true })
+  await dialog.getByRole('button', { name: '取消', exact: true }).click()
+
   await dialog.getByRole('textbox', { name: '名称', exact: true }).first().fill('内部源')
   await dialog.getByRole('textbox', { name: '地址（https://…）', exact: true }).fill('https://registry.example.com')
   const sourceWrites = await page.evaluate(() => {
@@ -169,7 +181,7 @@ try {
   releaseConsentWrite()
   await consentDialog.waitFor({ state: 'detached' })
   assert.deepEqual(problems, [])
-  console.log(`plugin-console-modal-browser: ${visualTheme}, 4 screenshots, readable plugin states, enabled controls, dialog focus, and source/consent mutation locks verified`)
+  console.log(`plugin-console-modal-browser: ${visualTheme}, 5 screenshots, readable plugin states, source editing, dialog focus, and source/consent mutation locks verified`)
 } finally {
   releaseSourceWrite?.()
   releaseConsentWrite?.()
