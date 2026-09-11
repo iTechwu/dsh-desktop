@@ -896,6 +896,7 @@ window.__ModuleLoader__.load({
 			const [jobs, setJobs] = react.useState({});
 			const [query, setQuery] = react.useState("");
 			const [market, setMarket] = react.useState(null);
+			const marketRequestRef = react.useRef(0);
 			const [marketPage, setMarketPage] = react.useState(1);
 			const [loadingMore, setLoadingMore] = react.useState(false);
 			const [repoInfo, setRepoInfo] = react.useState(null);
@@ -1317,6 +1318,8 @@ window.__ModuleLoader__.load({
 				);
 			};
 			const search = () => {
+				const requestToken = ++marketRequestRef.current;
+				const current = () => marketRequestRef.current === requestToken;
 				setMarket({ status: "loading" });
 				setRepoInfo(null);
 				setMarketPage(1);
@@ -1331,8 +1334,8 @@ window.__ModuleLoader__.load({
 						return;
 					}
 					call("/plugin-console/search", { q: query, page: 1, skills: true }).then(
-						(data) => { setMarket({ status: "ready", data: data.items, direct: false, source: "github", skills: true }); },
-						(error) => setMarket({ status: "error", error: friendlyGithubError(error) }),
+						(data) => { if (current()) setMarket({ status: "ready", data: data.items, direct: false, source: "github", skills: true }); },
+						(error) => { if (current()) setMarket({ status: "error", error: friendlyGithubError(error) }); },
 					);
 					return;
 				}
@@ -1345,9 +1348,10 @@ window.__ModuleLoader__.load({
 					// 多源汇总：GitHub + 全部自定义源并行（服务端合并，自带标记）
 					call("/plugin-console/search", { q: query, page: 1, multi: true }).then(
 						(data) => {
+							if (!current()) return;
 							setMarket({ status: "ready", data: data.items, direct: false, source: "all", multi: true });
 						},
-						(error) => setMarket({ status: "error", error: friendlyGithubError(error) }),
+						(error) => { if (current()) setMarket({ status: "error", error: friendlyGithubError(error) }); },
 					);
 					return;
 				}
@@ -1355,39 +1359,42 @@ window.__ModuleLoader__.load({
 					// Gitee / 自定义源：走服务端平台检索（浏览器直连通道对这些平台不可靠）
 					call("/plugin-console/search", { q: query, page: 1, source: searchSource }).then(
 						(data) => {
+							if (!current()) return;
 							setMarket({ status: "ready", data: data.items, direct: false, source: searchSource });
 							enrichOfficialBundle(data.items).then((enriched) => {
 								setMarket((m) => (m !== null && m.status === "ready" ? { ...m, data: enriched } : m));
 							});
 						},
-						(error) => setMarket({ status: "error", error: friendlyGithubError(error) }),
+						(error) => { if (current()) setMarket({ status: "error", error: friendlyGithubError(error) }); },
 					);
 					return;
 				}
 				searchFromGithub(query, 1).then(
 					(data) => {
+						if (!current()) return;
 						// 秒出直连数据
 						setMarket({ status: "ready", data, direct: true });
 						// 并行补标记：
 						// ① 客户端浏览器直连读根包 package.json（快，官方/聚合标记立即可筛）
 						enrichOfficialBundle(data).then((enriched) => {
-							setMarket((m) => (m !== null && m.status === "ready" ? { ...m, data: enriched } : m));
+							setMarket((m) => (current() && m !== null && m.status === "ready" ? { ...m, data: enriched } : m));
 						});
 						// ② 服务端 curl 双通道 enrich（聚合子包 dsh.bundle 检查 → aggregateInstallable），后台补更精确标记
 						call("/plugin-console/enrich", { items: data }).then(
-							(r) => { if (r && Array.isArray(r.items)) setMarket((m) => (m !== null && m.status === "ready" ? { ...m, data: r.items } : m)); },
+							(r) => { if (current() && r && Array.isArray(r.items)) setMarket((m) => (m !== null && m.status === "ready" ? { ...m, data: r.items } : m)); },
 							() => {},
 						);
 					},
 					() => call("/plugin-console/search", { q: query, page: 1 }).then(
 						(data) => {
+							if (!current()) return;
 							const items = data.items;
 							setMarket({ status: "ready", data: items, direct: false });
 							enrichOfficialBundle(items).then((enriched) => {
 								setMarket((m) => (m !== null && m.status === "ready" ? { ...m, data: enriched } : m));
 							});
 						},
-						(error) => setMarket({ status: "error", error: friendlyGithubError(error) }),
+						(error) => { if (current()) setMarket({ status: "error", error: friendlyGithubError(error) }); },
 					),
 				);
 			};
