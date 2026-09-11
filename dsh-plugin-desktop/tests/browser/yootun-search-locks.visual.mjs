@@ -265,6 +265,14 @@ await page.route('**/api/desktop/yootun/knowledge', async route => {
 })
 await page.route('**/api/desktop/yootun/lead-discovery', async route => {
   const body = route.request().postDataJSON()
+  if (body.action === 'candidates') {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ status: 'ready', items: [], stats: { total: 0 } }),
+    })
+    return
+  }
   if (body.action === 'page') {
     leadPageRequests += 1
     await leadPageReady
@@ -275,6 +283,7 @@ await page.route('**/api/desktop/yootun/lead-discovery', async route => {
     })
     return
   }
+  assert.equal(body.action, 'discover', 'only discovery requests should wait on the manual search fixture')
   leadSearchRequests += 1
   await leadSearchReady
   await route.fulfill({
@@ -332,14 +341,14 @@ async function assertViewport() {
   await assertAccessibleSurface(page)
 }
 
-async function assertDesktopViewport() {
+async function assertDesktopViewport(header = '.yd-header', content = '.yd-overview') {
   await assertAccessibleSurface(page)
-  const viewport = await page.evaluate(() => ({
+  const viewport = await page.evaluate(({ header, content }) => ({
     clientWidth: document.documentElement.clientWidth,
     scrollWidth: document.documentElement.scrollWidth,
-    headerHeight: document.querySelector('.yd-header')?.getBoundingClientRect().height ?? 0,
-    contentWidth: document.querySelector('.yd-overview')?.getBoundingClientRect().width ?? 0,
-  }))
+    headerHeight: document.querySelector(header)?.getBoundingClientRect().height ?? 0,
+    contentWidth: document.querySelector(content)?.getBoundingClientRect().width ?? 0,
+  }), { header, content })
   assert.equal(viewport.clientWidth, 1440)
   assert.equal(viewport.scrollWidth, viewport.clientWidth, 'desktop page must not scroll horizontally')
   assert(viewport.headerHeight >= 72, `desktop header must preserve the 72px baseline: ${JSON.stringify(viewport)}`)
@@ -441,6 +450,42 @@ try {
   await assertViewport()
   await page.mouse.move(0, 0)
   await page.screenshot({ path: resolve(evidenceRoot, '390-daily-refresh-error.png'), fullPage: true })
+  dailyRefreshFails = false
+  const completeActivity = dailyReport.activity
+  dailyReport.activity = { ...completeActivity, status: 'partial', reason: 'activity_partial', coverage: { total: 2, loaded: 1, failed: 1, unscanned: 0 } }
+  dailyReport.sources.local = { status: 'partial', reason: 'activity_partial' }
+  await page.getByRole('button', { name: '重新加载' }).click()
+  await page.getByText('日报不完整，以下仅统计已成功读取的会话。', { exact: false }).waitFor()
+  assert.equal(await page.getByText('渠道复盘', { exact: true }).count(), 1)
+  assert.equal(await page.getByText('部分可用', { exact: true }).count(), 1)
+  assert.equal(await page.locator('.ydr-metric strong').nth(1).textContent(), '6')
+  assert.equal((await page.locator('body').innerText()).includes('activity_partial'), false)
+  const partialColors = await page.evaluate(() => ({
+    banner: getComputedStyle(document.querySelector('.ydr-inline-warning')).color,
+    source: getComputedStyle(document.querySelector('.ydr-source-partial')).color,
+    body: getComputedStyle(document.querySelector('.ydr-overlay')).color,
+  }))
+  assert.equal(partialColors.banner, partialColors.source, 'partial coverage uses the same warning color in banner and source status')
+  assert.notEqual(partialColors.banner, partialColors.body)
+  await assertViewport()
+  await page.screenshot({ path: resolve(evidenceRoot, '390-daily-partial.png'), fullPage: true })
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await assertDesktopViewport('.ydr-header', '.ydr-metrics')
+  await page.screenshot({ path: resolve(evidenceRoot, '1440-daily-partial.png'), fullPage: true })
+  dailyReport.activity = completeActivity
+  dailyReport.sources.local = { status: 'ready' }
+  await page.getByRole('button', { name: '重新加载' }).click()
+  await page.locator('.ydr-inline-warning').waitFor({ state: 'hidden' })
+  assert.equal(await page.getByText('渠道复盘', { exact: true }).count(), 1)
+  dailyReport.activity = { status: 'unavailable', reason: 'activity_unavailable' }
+  dailyReport.sources.local = { status: 'unavailable', reason: 'activity_unavailable' }
+  await page.getByRole('button', { name: '刷新', exact: true }).click()
+  await page.getByRole('alert').filter({ hasText: '本机事件暂不可用' }).waitFor()
+  assert.deepEqual(await page.locator('.ydr-metric strong').allTextContents(), Array(5).fill('不可用'))
+  assert.equal(await page.getByText('昨日没有可汇总的工作记录', { exact: true }).count(), 0)
+  await assertDesktopViewport('.ydr-header', '.ydr-metrics')
+  await page.screenshot({ path: resolve(evidenceRoot, '1440-daily-unavailable.png'), fullPage: true })
+  await page.setViewportSize({ width: 390, height: 844 })
 
   await page.goto(`${url}?source=finops`)
   await page.getByRole('button', { name: '模型与预算' }).click()
@@ -596,7 +641,7 @@ try {
   await page.screenshot({ path: resolve(evidenceRoot, '1440-dashboard-overview.png'), fullPage: true })
 
   assert.deepEqual(consoleProblems, [])
-  process.stdout.write('search-locks-browser: 10 plugins, 16 screenshots, request locks, localized statuses, and responsive theme mappings verified\n')
+  process.stdout.write('search-locks-browser: 10 plugins, 19 screenshots, request locks, report coverage, localized statuses, and responsive theme mappings verified\n')
 } finally {
   releaseDailyRefresh()
   releaseFinopsRefresh()
