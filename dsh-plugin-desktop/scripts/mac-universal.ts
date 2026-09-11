@@ -50,10 +50,6 @@ export const MACOS_UNIVERSAL_NATIVE_ENTRIES = [
   },
   {
     arch: 'arm64',
-    path: 'node_modules/fs-ext/prebuilds/darwin-arm64/electron.abi148.node',
-  },
-  {
-    arch: 'arm64',
     path: 'node_modules/node-addon-require-builtin-darwin-arm64/prebuilt/darwin-arm64-napi-v9.node',
   },
   {
@@ -82,10 +78,6 @@ export const MACOS_UNIVERSAL_NATIVE_ENTRIES = [
   },
   {
     arch: 'x86_64',
-    path: 'node_modules/fs-ext/prebuilds/darwin-x64/electron.abi148.node',
-  },
-  {
-    arch: 'x86_64',
     path: 'node_modules/node-addon-require-builtin-darwin-x64/prebuilt/darwin-x64-napi-v9.node',
   },
   {
@@ -100,7 +92,8 @@ export const MACOS_UNIVERSAL_NATIVE_ENTRIES = [
 
 const CLOUDFLARED_RELATIVE_PATH = 'node_modules/cloudflared/bin/cloudflared'
 const CPU_FEATURES_RELATIVE_PATH = 'node_modules/cpu-features/build/Release/cpufeatures.node'
-const FS_EXT_RELATIVE_PATH = 'node_modules/fs-ext/build/Release/fs_ext.node'
+/** fs-ext 2.1.1 loads this binding directly; it does not discover prebuilds. */
+export const FS_EXT_RELATIVE_PATH = 'node_modules/fs-ext/build/Release/fs_ext.node'
 const SSH_CRYPTO_RELATIVE_PATH = 'node_modules/ssh2/lib/protocol/crypto/build/Release/sshcrypto.node'
 
 /** Nested executable that must be merged into a universal binary after thin packaging. */
@@ -489,7 +482,6 @@ export function disablePackagedMacSshCryptoRuntime(unpackedRoot: string): void {
 
 /** Generated host-architecture files that must never shadow the prebuilt pair. */
 export const FORBIDDEN_MACOS_UNIVERSAL_ENTRIES = [
-  'node_modules/fs-ext/build/Release/fs_ext.node',
   'node_modules/node-pty/build/Release/pty.node',
   'node_modules/node-pty/build/Release/spawn-helper',
 ] as const

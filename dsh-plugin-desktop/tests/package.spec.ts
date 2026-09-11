@@ -763,7 +763,6 @@ describe('published package surface', () => {
       'package.json',
       '!node_modules/koffi-darwin-*-3-1-1/**',
       '!node_modules/node-pty/build/**',
-      '!node_modules/fs-ext/build/**',
     ])
     expect(manifest.build?.mac?.icon).toBe('build/app-icon-mac.png')
     expect(manifest.build?.mac?.asarUnpack).toEqual([
