@@ -981,6 +981,46 @@ function sendError(res, status, message, details) {
   sendJson(res, status, { ok: false, error: message, ...(details === undefined ? {} : { details }) })
 }
 
+function desktopActions(ctx) {
+  try {
+    const actions = ctx.get('desktopActions')
+    if (actions) return actions
+  } catch {}
+  // A missing/disposed Desktop service must never fall through to CLI process killing.
+  try { if (ctx.get('desktopRuntime')) return {} } catch {}
+  return null
+}
+
+/** Native confirmation owns cancellation; a delivered response precedes teardown. */
+async function restartDesktop(actions, res) {
+  if (typeof actions.confirmRestart !== 'function') {
+    sendError(res, 503, '桌面重启确认暂不可用，请从桌面菜单重启')
+    return
+  }
+  try {
+    const accepted = await actions.confirmRestart(() => new Promise((resolve, reject) => {
+      if (res.destroyed) { reject(new Error('Restart response closed')); return }
+      const cleanup = () => {
+        res.off('finish', finish)
+        res.off('close', close)
+        res.off('error', close)
+      }
+      const finish = () => { cleanup(); resolve() }
+      const close = () => { cleanup(); reject(new Error('Restart response closed')) }
+      res.once('finish', finish)
+      res.once('close', close)
+      res.once('error', close)
+      try { sendJson(res, 202, { ok: true, accepted: true, owner: 'desktop' }) }
+      catch (cause) { cleanup(); reject(cause) }
+    }))
+    if (!accepted && !res.headersSent && !res.destroyed) {
+      sendJson(res, 200, { ok: true, cancelled: true, owner: 'desktop' })
+    }
+  } catch {
+    if (!res.headersSent && !res.destroyed) sendError(res, 503, '桌面重启未执行，请稍后重试或使用桌面菜单')
+  }
+}
+
 async function readBody(req, maxBytes = 64 * 1024) {
   const chunks = []
   let total = 0
@@ -2737,7 +2777,7 @@ async function handle(ctx, req, res) {
       const selfPkg = JSON.parse(readFileSync(selfRequire.resolve('../package.json'), 'utf8'))
       selfVersion = typeof selfPkg.version === 'string' ? selfPkg.version : null
     } catch {}
-    sendJson(res, 200, { ok: true, entries, patchPath, compat, installJobs: jobs, recentFailures, github: { loggedIn: auth.loggedIn, login: auth.login }, patch: { disables: patch.disables, forced: patch.forced, inserts: patch.inserts }, framework, selfVersion })
+    sendJson(res, 200, { ok: true, entries, patchPath, compat, installJobs: jobs, recentFailures, github: { loggedIn: auth.loggedIn, login: auth.login }, patch: { disables: patch.disables, forced: patch.forced, inserts: patch.inserts }, framework, selfVersion, nativeRestartConfirmation: desktopActions(ctx) !== null })
     return
   }
 
@@ -2829,6 +2869,23 @@ async function handle(ctx, req, res) {
     } catch {}
     sendJson(res, 200, { ok: true, ...status })
     return
+  }
+
+  if (method === 'POST' && [ `${ROUTE_PREFIX}/restart`, `${ROUTE_PREFIX}/framework-relaunch` ].includes(pathname)) {
+    const actions = desktopActions(ctx)
+    if (actions !== null) {
+      let body
+      try { body = await readBody(req) } catch {
+        sendError(res, 400, '无效的桌面重启请求')
+        return
+      }
+      if (!body || typeof body !== 'object' || Array.isArray(body) || Object.keys(body).length !== 0) {
+        sendError(res, 400, '桌面重启不接受参数')
+        return
+      }
+      await restartDesktop(actions, res)
+      return
+    }
   }
 
   if (method === 'POST' && pathname === `${ROUTE_PREFIX}/framework-relaunch`) {

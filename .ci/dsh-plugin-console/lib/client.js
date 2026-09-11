@@ -186,6 +186,8 @@ window.__ModuleLoader__.load({
 			restartService: "重启服务",
 			restarting: "正在提交重启请求…",
 			restartAccepted: "重启请求已接受。服务恢复后请刷新页面。",
+			restartNativeConfirm: "请在桌面对话框中确认重启…",
+			restartCancelled: "已取消重启。",
 			serviceRequestPending: "正在提交启动请求…",
 			serviceRequestAccepted: "请求已接受",
 			invalidServiceResponse: "服务未确认接受请求，请刷新状态后重试",
@@ -429,6 +431,8 @@ window.__ModuleLoader__.load({
 			restartService: "Restart service",
 			restarting: "Submitting restart request…",
 			restartAccepted: "Restart request accepted. Reload the page after the service recovers.",
+			restartNativeConfirm: "Confirm the restart in the desktop dialog…",
+			restartCancelled: "Restart cancelled.",
 			serviceRequestPending: "Submitting launch request…",
 			serviceRequestAccepted: "Request accepted",
 			invalidServiceResponse: "The service did not acknowledge the request. Refresh its status before retrying.",
@@ -615,10 +619,12 @@ window.__ModuleLoader__.load({
 		}
 		const LOCAL_CALL_TIMEOUT_MS = 30000;
 		const EXTERNAL_FETCH_POLICY = { credentials: "omit", redirect: "error", referrerPolicy: "no-referrer", cache: "no-store" };
-		async function call(path, body) {
+		async function call(path, body, nativeConfirmation = false) {
+			const interactive = nativeConfirmation && (path === "/plugin-console/restart" || path === "/plugin-console/framework-relaunch");
+			const timeout = interactive ? {} : { signal: AbortSignal.timeout(LOCAL_CALL_TIMEOUT_MS) };
 			const response = await fetch(path, body === undefined
-				? { credentials: "same-origin", redirect: "error", cache: "no-store", signal: AbortSignal.timeout(LOCAL_CALL_TIMEOUT_MS) }
-				: { method: "POST", credentials: "same-origin", redirect: "error", cache: "no-store", signal: AbortSignal.timeout(LOCAL_CALL_TIMEOUT_MS), headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+				? { credentials: "same-origin", redirect: "error", cache: "no-store", ...timeout }
+				: { method: "POST", credentials: "same-origin", redirect: "error", cache: "no-store", ...timeout, headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
 			let data = null;
 			try {
 				data = await response.json();
@@ -910,7 +916,7 @@ window.__ModuleLoader__.load({
 			// 框架升级进度（重连后恢复显示）：{status, message}
 			const [frameworkStatus, setFrameworkStatus] = react.useState(null);
 			const frameworkActive = frameworkStatus !== null && !["idle", "done", "failed"].includes(frameworkStatus.status);
-			const serviceBlocked = serviceOperation !== null || frameworkActive;
+			const serviceBlocked = serviceOperation !== null || frameworkActive || state.status !== "ready";
 			// Hub 自身更新：仅在检测到远程新版时显示下载/更新按钮
 			const [selfUpdate, setSelfUpdate] = react.useState(null);
 			// 进度条步骤（与 host 脚本 SetState 的阶段对应）
@@ -1822,13 +1828,20 @@ window.__ModuleLoader__.load({
 				} catch { fallback(); }
 			};
 			const requestServiceAction = (kind) => {
-				if (serviceOperationRef.current !== null || frameworkActive) return;
+				if (serviceOperationRef.current !== null || frameworkActive || state.status !== "ready") return;
 				const operation = { kind, phase: "pending" };
 				serviceOperationRef.current = operation;
 				setServiceOperation(operation);
-				setMessage(t(kind === "restart" ? "restarting" : "serviceRequestPending"));
-				call(kind === "restart" ? "/plugin-console/restart" : "/plugin-console/framework-relaunch", {}).then((data) => {
+				const nativeConfirmation = state.data.nativeRestartConfirmation === true;
+				setMessage(t(nativeConfirmation ? "restartNativeConfirm" : kind === "restart" ? "restarting" : "serviceRequestPending"));
+				call(kind === "restart" ? "/plugin-console/restart" : "/plugin-console/framework-relaunch", {}, nativeConfirmation).then((data) => {
 					if (!data || data.ok !== true) throw new Error(t("invalidServiceResponse"));
+					if (data.cancelled === true) {
+						serviceOperationRef.current = null;
+						setServiceOperation(null);
+						setMessage(t("restartCancelled"));
+						return;
+					}
 					setServiceOperation({ ...operation, phase: "accepted" });
 					setMessage(t(kind === "restart" ? "restartAccepted" : "relaunchDone"));
 					setRestartHint(false);

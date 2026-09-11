@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
-import { mkdir, readFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createServer } from 'vite'
@@ -19,8 +20,10 @@ const evidenceRoot = process.env.DSH_VISUAL_EVIDENCE_ROOT || `/tmp/plugin-consol
 await mkdir(evidenceRoot, { recursive: true })
 const browserExecutable = process.env.DSH_AUDIT_BROWSER_EXECUTABLE
   || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
+const cacheDir = await mkdtemp(resolve(tmpdir(), 'plugin-console-modal-vite-'))
 const vite = await createServer({
   root: harnessRoot,
+  cacheDir,
   server: { host: '127.0.0.1', port: 0 },
   plugins: [{
     name: 'plugin-console-source',
@@ -103,6 +106,9 @@ try {
     await page.setViewportSize({ width, height: 900 })
     await assertAccessibleSurface(page, { requireModal: false })
     await assertTextContrast(page, '.pc_tag,.pc_phase,.pc_meta,.pc_note,.pc_status,.pc_ghpill,.pc_aiToggle')
+    // Restart becomes available after the state read; let its opacity transition settle.
+    await page.waitForFunction(() => [...document.querySelectorAll('.pc_section button:not(:disabled)')]
+      .every(button => !button.getClientRects().length || Number(getComputedStyle(button).opacity) === 1))
     const fadedButtons = await page.locator('.pc_section button:not(:disabled)').evaluateAll(buttons => buttons
       .filter(button => button.getClientRects().length && Number(getComputedStyle(button).opacity) < 1)
       .map(button => button.textContent))
@@ -283,4 +289,5 @@ try {
   await page.close()
   await browser.close()
   await vite.close()
+  await rm(cacheDir, { recursive: true, force: true })
 }

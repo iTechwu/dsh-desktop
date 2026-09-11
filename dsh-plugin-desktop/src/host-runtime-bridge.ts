@@ -24,7 +24,7 @@ export function createHostRuntime(rpc: HostRpc, snapshot: RuntimeSnapshot): Desk
   const shellSpecs = new Map<string, DesktopShellSpec>()
   const send = <T = void>(method: string, args: unknown[] = [], signal?: AbortSignal): Promise<T> => {
     const interactive = ['update:confirmDownload', 'update:showManualCheckResult', 'update:downloadAndOpen',
-      'native:pickDirectory', 'native:exportDiagnostics'].includes(method)
+      'native:pickDirectory', 'native:exportDiagnostics', 'native:confirmRestart'].includes(method)
     const task = rpc.call<T>(method, args, signal, interactive ? 0 : undefined)
     calls.add(task)
     // Report fire-and-forget failures without creating an unhandled rejection.
@@ -102,6 +102,11 @@ export function createHostRuntime(rpc: HostRpc, snapshot: RuntimeSnapshot): Desk
     setLocalePreference(preference) { locale = preference ?? snapshot.locale; trayPublishers.forEach(publish => publish()); void send('native:setLocalePreference', [preference]) },
     setThemeSource(source) { void send('native:setThemeSource', [source]) },
     requestRestart: () => send('native:requestRestart'),
+    async confirmRestart(acknowledge) {
+      const registration = callbacks({ acknowledge })
+      try { return await send<boolean>('native:confirmRestart', [registration.id]) }
+      finally { registration.release() }
+    },
     requestRecoveryRestart: () => send('native:requestRecoveryRestart'),
     prepareToQuit() { void send('native:prepareToQuit') },
     openProfileCreateWindow(options) {
@@ -136,6 +141,10 @@ export function bindNativeRuntime(rpc: HostRpc, runtime: DesktopRuntime): () => 
   for (const method of ['requestRestart', 'requestRecoveryRestart'] as const) {
     handle(`native:${method}`, () => { setImmediate(() => report(runtime[method]())) })
   }
+  handle('native:confirmRestart', ([id]) => {
+    if (typeof id !== 'string' || !/^callback:\d+$/u.test(id)) throw new Error('Invalid restart acknowledgement')
+    return runtime.confirmRestart(() => callback(`${id}:acknowledge`))
+  })
   handle('native:openProfileCreateWindow', ([id]) => runtime.openProfileCreateWindow({
     onSubmit: name => callback(`${id}:submit`, [name]), onCancel: () => report(callback(`${id}:cancel`)),
   }))

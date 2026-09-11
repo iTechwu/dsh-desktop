@@ -190,3 +190,10 @@ export function desktopRestartConfirmationCopy(
   }
   return restartConfirmationCopy[locale][target]
 }
+
+/** A restart accepted by an HTTP caller can still fail during native teardown. */
+export function desktopRestartFailureCopy(locale: DesktopLocale): { title: string; detail: string } {
+  return locale === 'zh'
+    ? { title: '桌面重启失败', detail: '请保存当前工作，然后手动关闭并重新打开 Yootun-Agent。' }
+    : { title: 'Desktop restart failed', detail: 'Save your work, then close and reopen Yootun-Agent manually.' }
+}

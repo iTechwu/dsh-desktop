@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
-import { mkdir, readFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createServer } from 'vite'
@@ -14,8 +15,10 @@ const evidenceRoot = process.env.DSH_VISUAL_EVIDENCE_ROOT || `/tmp/plugin-consol
 await mkdir(evidenceRoot, { recursive: true })
 const css = theme === 'custom' ? '' : await readFile(resolve(here,
   '../../../deepseek-harness/packages/client/ui-theme/src/styles/design-platform.css'), 'utf8')
+const cacheDir = await mkdtemp(resolve(tmpdir(), 'plugin-console-management-vite-'))
 const vite = await createServer({
   root: resolve(here, 'plugin-console-harness'),
+  cacheDir,
   server: { host: '127.0.0.1', port: 0 },
   plugins: [{
     name: 'plugin-console-management',
@@ -52,7 +55,7 @@ const finish = async (request, body) => {
   request.resolve(body)
   await request.done
 }
-async function openPage(mode, width = 390, framework = false, upgradeStatus = 'idle') {
+async function openPage(mode, width = 390, framework = false, upgradeStatus = 'idle', nativeRestartConfirmation = false) {
   const page = await browser.newPage({ viewport: { width, height: 900 } })
   await page.clock.install()
   page.setDefaultTimeout(10_000)
@@ -66,10 +69,12 @@ async function openPage(mode, width = 390, framework = false, upgradeStatus = 'i
     localStorage.setItem('pc-market-mode', mode)
     const originalFetch = window.fetch.bind(window)
     window.managementWrites = {}
+    window.managementSignals = {}
     window.fetch = (input, init = {}) => {
       const pathname = new URL(typeof input === 'string' ? input : input.url, location.href).pathname
       if (init.method === 'POST' && /\/(uninstall|toggle|skill-toggle|skill-remove|restart|framework-relaunch|framework-upgrade)$/.test(pathname)) {
         window.managementWrites[pathname] = (window.managementWrites[pathname] || 0) + 1
+        window.managementSignals[pathname] = init.signal instanceof AbortSignal
       }
       return originalFetch(input, init)
     }
@@ -98,7 +103,7 @@ async function openPage(mode, width = 390, framework = false, upgradeStatus = 'i
     if (endpoint === 'framework-upgrade-status') state.statusReads += 1
     const frameworkItems = framework ? [{ fullName: 'deepseek-ai/deepseek-harness', description: 'DSH framework', stars: 1 }] : []
     const body = endpoint === 'state'
-      ? { entries: state.entries, installJobs: [], compat: { supported: true, dshVersion: '0.1.5-rc.2' }, framework: null,
+      ? { entries: state.entries, installJobs: [], compat: { supported: true, dshVersion: '0.1.5-rc.2' }, framework: null, nativeRestartConfirmation,
         github: { loggedIn: false }, patch: { inserts: [] }, recentFailures: [], selfVersion: null }
       : endpoint === 'skills-installed' ? { skills: state.skills }
       : endpoint === 'sources' ? { sources: { registries: [], searchSources: [], gitee: {} } }
@@ -122,6 +127,8 @@ async function waitRequests(state, count) {
   })
 }
 async function shot(page, name) {
+  await page.waitForFunction(() => [...document.querySelectorAll('.pc_section button:not(:disabled)')]
+    .every(button => !button.getClientRects().length || Number(getComputedStyle(button).opacity) === 1))
   await assertAccessibleSurface(page, { requireModal: false })
   await assertTextContrast(page, '.pc_message,.pc_tag,.pc_row .pc_name')
   await page.screenshot({ path: resolve(evidenceRoot, name + '.png'), fullPage: true })
@@ -198,6 +205,7 @@ try {
     })
     await waitRequests(state, 5)
     assert.equal(state.requests[4].endpoint, 'restart')
+    assert.equal(await page.evaluate(() => window.managementSignals['/plugin-console/restart']), true, 'ordinary restart requests keep a timeout signal')
     assert.equal(await page.locator('.pc_restartBtn').getAttribute('aria-busy'), 'true')
     await page.setViewportSize({ width: 390, height: 900 })
     await shot(page, '390-restart-pending')
@@ -379,10 +387,34 @@ try {
     assert.equal(state.requests.length, 0)
     await page.close()
   }
+  {
+    const { page, state } = await openPage('plugins', 390, false, 'idle', true)
+    const restart = page.locator('.pc_restartBtn')
+    await restart.click()
+    await waitRequests(state, 1)
+    await page.getByText('请在桌面对话框中确认重启…', { exact: true }).waitFor()
+    assert.equal(await page.evaluate(() => window.managementSignals['/plugin-console/restart']), false, 'native confirmation is the explicit interactive exception')
+    await page.clock.fastForward(31_000)
+    assert.equal(await restart.isDisabled(), true, 'native confirmation must not expire with the ordinary API timeout')
+    assert.equal(await page.getByText(/操作失败/).count(), 0)
+    await shot(page, '390-native-restart-confirmation')
+    await finish(state.requests[0], { ok: true, cancelled: true, owner: 'desktop' })
+    await page.getByText('已取消重启。', { exact: true }).waitFor()
+    assert.equal(await restart.isEnabled(), true)
+    assert.equal(await page.getByRole('button', { name: '刷新页面', exact: true }).count(), 0)
+    await shot(page, '390-native-restart-cancelled')
+    await restart.click()
+    await waitRequests(state, 2)
+    await finish(state.requests[1], { ok: true, accepted: true, owner: 'desktop' })
+    await page.getByText('重启请求已接受。服务恢复后请刷新页面。', { exact: true }).waitFor()
+    assert.equal(await restart.isDisabled(), true)
+    await page.close()
+  }
   assert.deepEqual(problems, [])
   console.log(`plugin-console-management: ${theme}; ${screenshots} screenshots; plugin, skill and service mutation locks, retries, refresh and upgrade states verified`)
 } finally {
   for (const request of pending) request.resolve({ ok: false, error: 'Test cleanup' })
   await browser.close()
   await vite.close()
+  await rm(cacheDir, { recursive: true, force: true })
 }

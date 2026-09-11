@@ -252,6 +252,9 @@ export interface DesktopRuntime {
   /** Request orderly Cordis teardown followed by an Electron relaunch. */
   requestRestart(): Promise<void>
 
+  /** Confirm a restart, then await the caller's response before teardown. False means cancelled. */
+  confirmRestart(acknowledge: () => Promise<void>): Promise<boolean>
+
   /** Request orderly teardown followed by a one-shot recovery-mode relaunch. */
   requestRecoveryRestart(): Promise<void>
 

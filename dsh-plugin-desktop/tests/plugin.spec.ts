@@ -159,6 +159,7 @@ function createHarness(
     setLocalePreference,
     setThemeSource,
     requestRestart: restart,
+    confirmRestart: async acknowledge => { await acknowledge(); await restart(); return true },
     requestRecoveryRestart: restart,
     prepareToQuit: () => {},
   }

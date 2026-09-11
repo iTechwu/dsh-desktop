@@ -115,6 +115,7 @@ export async function bootDesktopHost(options: DesktopHostOptions, runtime: Desk
         await hostCtx.plugin(DesktopActionsService, {
           openTerminal: () => { runtime.openTerminal() },
           requestRestart: () => runtime.requestRestart(),
+          confirmRestart: acknowledge => runtime.confirmRestart(acknowledge),
         })
         if (prepared.market.effective === 'community-market') {
           await hostCtx.plugin(DesktopPluginsService, {
