@@ -11,6 +11,7 @@ test('preserves unknown retrofit totals instead of fabricating zero', async () =
   assert.match(client, /!Number\.isFinite\(Number\(value\)\) \? '—'/u)
 })
 
+test('renders invalid item counts as unknown dashes', async () => { const source = await readFile(new URL('../src/client.js', import.meta.url), 'utf8'); assert.match(source, /finiteOrDash\(item\.commentCount\)/u); assert.match(source, /finiteOrDash\(item\.shareCount\)/u); assert.doesNotMatch(source, /item\.commentCount \?\? '—'/u); assert.doesNotMatch(source, /item\.shareCount \?\? '—'/u) })
 test('retrofit package exposes a complete database-first workspace', async () => {
   const manifest = JSON.parse(await readFile(new URL('../package.json', import.meta.url)))
   const client = await readFile(new URL('../src/client.js', import.meta.url), 'utf8')
