@@ -659,9 +659,9 @@ function UsageView({ source, t, detailed = false }) {
 }
 
 function ActivityView({ source, t, detailed = false }) {
-  if (!['ready', 'empty', 'partial'].includes(source?.status)) return h(EmptyState, { source, t })
+  if (!canRenderSource(source)) return h(EmptyState, { source, t })
   const data = source.data || {}
-  const partial = source.status === 'partial'
+  const partial = ['partial', 'degraded', 'warning'].includes(source.status)
   const notice = partial ? h('div', { className: 'yd-activity-notice', role: 'status' },
     h('span', null, t('activityPartial')),
     source.coverage ? h('span', null, `${t('activityCoverage')}: ${source.coverage.loaded} / ${source.coverage.total}`) : null,

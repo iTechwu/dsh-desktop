@@ -61,6 +61,7 @@ test('renders all requested dashboard domains and explicit source states', async
   assert.match(source, /STATUS_GLYPH = .*degraded: 'warning'/u)
   assert.match(source, /status === 'partial' \|\| status === 'degraded'/u)
   assert.match(source, /sources\.filter\(canRenderSource\)/u)
+  assert.match(source, /const partial = \['partial', 'degraded', 'warning'\]\.includes\(source\.status\)/u)
   assert.match(source, /montageStatusLabel\(job\.status, t\)/u)
   assert.match(source, /montageStageLabel\(job\.stage, t\)/u)
 })
