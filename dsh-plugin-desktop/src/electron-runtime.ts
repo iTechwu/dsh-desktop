@@ -44,6 +44,7 @@ import {
   desktopDiagnosticsPrivacyCopy,
   desktopLocaleFromLanguageTag,
   desktopRestartConfirmationCopy,
+  desktopRestartFailureCopy,
   desktopTrayLabel,
   rendererRecoveryCopy,
 } from './tray-locale.ts'
@@ -560,6 +561,28 @@ export class ElectronDesktopRuntime implements DesktopRuntime {
     await request
   }
 
+  /** Preserve native confirmation while allowing a Host HTTP response before exit. */
+  async confirmRestart(acknowledge: () => Promise<void>): Promise<boolean> {
+    if (this.quitting) throw new Error('Desktop is already quitting')
+    if (this.restartRequest !== undefined) throw new Error('A Desktop restart request is already pending')
+    let confirmed = false
+    const request = this.confirmAndRestart('normal', async () => {
+      await acknowledge()
+      confirmed = true
+    }).catch(async (cause: unknown) => {
+      if (confirmed) {
+        const copy = desktopRestartFailureCopy(this.currentLocale)
+        await this.showDesktopMessageBox({ type: 'error', title: copy.title, message: copy.title, detail: copy.detail }).catch(() => {})
+      }
+      throw cause
+    }).finally(() => {
+      if (this.restartRequest === request) this.restartRequest = undefined
+    })
+    this.restartRequest = request
+    await request
+    return confirmed
+  }
+
   /** @inheritdoc */
   async requestRecoveryRestart(): Promise<void> {
     if (this.quitting) return
@@ -581,7 +604,7 @@ export class ElectronDesktopRuntime implements DesktopRuntime {
     await request
   }
 
-  private async confirmAndRestart(target: 'normal' | 'recovery' | 'safe-mode'): Promise<void> {
+  private async confirmAndRestart(target: 'normal' | 'recovery' | 'safe-mode', acknowledge?: () => Promise<void>): Promise<void> {
     const copy = desktopRestartConfirmationCopy(this.currentLocale, target)
     const options: Electron.MessageBoxOptions = {
       type: 'question',
@@ -594,7 +617,11 @@ export class ElectronDesktopRuntime implements DesktopRuntime {
       noLink: true,
     }
     const result = await this.showDesktopMessageBox(options)
-    if (result.response === 0) await this.restart(target === 'normal' ? undefined : target)
+    if (result.response === 0 && !this.quitting) {
+      await acknowledge?.()
+      if (this.quitting) return
+      await this.restart(target === 'normal' ? undefined : target)
+    }
   }
 
   /** @inheritdoc */

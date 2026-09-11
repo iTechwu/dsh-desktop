@@ -981,6 +981,46 @@ function sendError(res, status, message, details) {
   sendJson(res, status, { ok: false, error: message, ...(details === undefined ? {} : { details }) })
 }
 
+function desktopActions(ctx) {
+  try {
+    const actions = ctx.get('desktopActions')
+    if (actions) return actions
+  } catch {}
+  // A missing/disposed Desktop service must never fall through to CLI process killing.
+  try { if (ctx.get('desktopRuntime')) return {} } catch {}
+  return null
+}
+
+/** Native confirmation owns cancellation; a delivered response precedes teardown. */
+async function restartDesktop(actions, res) {
+  if (typeof actions.confirmRestart !== 'function') {
+    sendError(res, 503, '桌面重启确认暂不可用，请从桌面菜单重启')
+    return
+  }
+  try {
+    const accepted = await actions.confirmRestart(() => new Promise((resolve, reject) => {
+      if (res.destroyed) { reject(new Error('Restart response closed')); return }
+      const cleanup = () => {
+        res.off('finish', finish)
+        res.off('close', close)
+        res.off('error', close)
+      }
+      const finish = () => { cleanup(); resolve() }
+      const close = () => { cleanup(); reject(new Error('Restart response closed')) }
+      res.once('finish', finish)
+      res.once('close', close)
+      res.once('error', close)
+      try { sendJson(res, 202, { ok: true, accepted: true, owner: 'desktop' }) }
+      catch (cause) { cleanup(); reject(cause) }
+    }))
+    if (!accepted && !res.headersSent && !res.destroyed) {
+      sendJson(res, 200, { ok: true, cancelled: true, owner: 'desktop' })
+    }
+  } catch {
+    if (!res.headersSent && !res.destroyed) sendError(res, 503, '桌面重启未执行，请稍后重试或使用桌面菜单')
+  }
+}
+
 async function readBody(req, maxBytes = 64 * 1024) {
   const chunks = []
   let total = 0
@@ -2728,16 +2768,19 @@ async function handle(ctx, req, res) {
     const auth = readGithubAuth()
     const jobs = [...installJobs.values()].filter((job) => job.status === 'installing').map(installJobView)
     const recentFailures = [...installJobs.values()].filter((job) => job.status === 'failed').slice(-3).map(installJobView)
-    // 框架升级检测与适配（备份快照 + 重打框架补丁），try 包裹不阻塞 state 返回
+    const desktopOwned = desktopActions(ctx) !== null
+    // Packaged Desktop owns its framework; a status read must not patch its files.
     let framework = null
-    try { framework = detectFrameworkUpgrade(ctx) } catch {}
+    if (!desktopOwned) {
+      try { framework = detectFrameworkUpgrade(ctx) } catch {}
+    }
     let selfVersion = null
     try {
       const selfRequire = createRequire(import.meta.url)
       const selfPkg = JSON.parse(readFileSync(selfRequire.resolve('../package.json'), 'utf8'))
       selfVersion = typeof selfPkg.version === 'string' ? selfPkg.version : null
     } catch {}
-    sendJson(res, 200, { ok: true, entries, patchPath, compat, installJobs: jobs, recentFailures, github: { loggedIn: auth.loggedIn, login: auth.login }, patch: { disables: patch.disables, forced: patch.forced, inserts: patch.inserts }, framework, selfVersion })
+    sendJson(res, 200, { ok: true, entries, patchPath, compat, installJobs: jobs, recentFailures, github: { loggedIn: auth.loggedIn, login: auth.login }, patch: { disables: patch.disables, forced: patch.forced, inserts: patch.inserts }, framework, selfVersion, nativeRestartConfirmation: desktopOwned, frameworkUpgradeOwner: desktopOwned ? 'desktop' : 'standalone' })
     return
   }
 
@@ -2804,6 +2847,10 @@ async function handle(ctx, req, res) {
   }
 
   if (method === 'GET' && pathname === `${ROUTE_PREFIX}/framework-upgrade-status`) {
+    if (desktopActions(ctx) !== null) {
+      sendJson(res, 200, { ok: true, status: 'idle', message: null, owner: 'desktop' })
+      return
+    }
     // 框架升级进度（页面断连后重连恢复进度条用）：读状态文件 {status|message}
     let status = { status: 'idle', message: null }
     try {
@@ -2829,6 +2876,23 @@ async function handle(ctx, req, res) {
     } catch {}
     sendJson(res, 200, { ok: true, ...status })
     return
+  }
+
+  if (method === 'POST' && [ `${ROUTE_PREFIX}/restart`, `${ROUTE_PREFIX}/framework-relaunch` ].includes(pathname)) {
+    const actions = desktopActions(ctx)
+    if (actions !== null) {
+      let body
+      try { body = await readBody(req) } catch {
+        sendError(res, 400, '无效的桌面重启请求')
+        return
+      }
+      if (!body || typeof body !== 'object' || Array.isArray(body) || Object.keys(body).length !== 0) {
+        sendError(res, 400, '桌面重启不接受参数')
+        return
+      }
+      await restartDesktop(actions, res)
+      return
+    }
   }
 
   if (method === 'POST' && pathname === `${ROUTE_PREFIX}/framework-relaunch`) {
@@ -3406,6 +3470,10 @@ async function handle(ctx, req, res) {
       sendError(res, 400, 'packageName 不能为空')
       return
     }
+    if (packageName.startsWith('@deepseek-ai/') && desktopActions(ctx) !== null) {
+      sendJson(res, 200, { ok: true, packageName, latest: null, next: null, depsOutdated: [], error: null, source: 'desktop', managed: true })
+      return
+    }
     let latest = null
     let next = null
     let depsOutdated = []
@@ -3500,6 +3568,10 @@ async function handle(ctx, req, res) {
   }
 
   if (pathname === `${ROUTE_PREFIX}/framework-upgrade`) {
+    if (desktopActions(ctx) !== null) {
+      sendError(res, 409, '框架随桌面应用统一更新，请使用“检查应用更新”')
+      return
+    }
     // 框架升级入口：一键流程 = 备份配置快照 + 备份框架本体（回滚点）+ 自动升级
     // （npx 缓存 dsh 本体 + profile 官方配套包）+ 失败自动回滚 + 重启提示。
     // 升级完成重启后，框架适配逻辑自动：备份新版本快照 + 重打框架补丁 + 版本提示。
@@ -3922,6 +3994,10 @@ async function handle(ctx, req, res) {
       try { repo = githubRepoInfo(rawRepo) } catch {}
     }
     const givenName = typeof body.packageName === 'string' ? body.packageName.trim() : ''
+    if (givenName.startsWith('@deepseek-ai/') && desktopActions(ctx) !== null) {
+      sendError(res, 409, '框架组件随桌面应用统一更新，请使用“检查应用更新”')
+      return
+    }
     // 框架本体拦截：deepseek-harness 仓库与其根包 @deepseek-ai/dsh-root 是 DSH 框架自身，
     // 作为插件安装会试图构建整个框架源码——直接拒绝并提示
     if (repo === 'deepseek-ai/deepseek-harness'

@@ -2194,6 +2194,52 @@ describe('Electron desktop runtime', () => {
     expect(restart).toHaveBeenCalledWith(undefined)
   })
 
+  it('returns native cancellation and waits for the Host response before restarting', async () => {
+    const { ElectronDesktopRuntime } = await import('../src/electron-runtime.ts')
+    const restart = vi.fn(async () => {})
+    const runtime = new ElectronDesktopRuntime(restart)
+    const acknowledge = vi.fn(async () => {})
+    electron.dialog.showMessageBox.mockResolvedValueOnce({ response: 1, checkboxChecked: false })
+    await expect(runtime.confirmRestart(acknowledge)).resolves.toBe(false)
+    expect(acknowledge).not.toHaveBeenCalled()
+    expect(restart).not.toHaveBeenCalled()
+
+    let finishResponse!: () => void
+    const response = new Promise<void>(resolve => { finishResponse = resolve })
+    acknowledge.mockImplementationOnce(() => response)
+    electron.dialog.showMessageBox.mockResolvedValueOnce({ response: 0, checkboxChecked: false })
+    const pending = runtime.confirmRestart(acknowledge)
+    await vi.waitFor(() => expect(acknowledge).toHaveBeenCalledOnce())
+    expect(restart).not.toHaveBeenCalled()
+    await expect(runtime.confirmRestart(acknowledge)).rejects.toThrow('already pending')
+    finishResponse()
+    await expect(pending).resolves.toBe(true)
+    expect(restart).toHaveBeenCalledOnce()
+  })
+
+  it('does not exit when acknowledging the confirmed restart fails', async () => {
+    const { ElectronDesktopRuntime } = await import('../src/electron-runtime.ts')
+    const restart = vi.fn(async () => {})
+    const runtime = new ElectronDesktopRuntime(restart)
+    electron.dialog.showMessageBox.mockResolvedValueOnce({ response: 0, checkboxChecked: false })
+    await expect(runtime.confirmRestart(async () => { throw new Error('response closed') })).rejects.toThrow('response closed')
+    expect(restart).not.toHaveBeenCalled()
+    electron.dialog.showMessageBox.mockResolvedValueOnce({ response: 0, checkboxChecked: false })
+    await expect(runtime.confirmRestart(async () => {})).resolves.toBe(true)
+    expect(restart).toHaveBeenCalledOnce()
+  })
+
+  it('reports native teardown failure after the Host response without exposing internal errors', async () => {
+    const { ElectronDesktopRuntime } = await import('../src/electron-runtime.ts')
+    const runtime = new ElectronDesktopRuntime(async () => { throw new Error('private restart detail') })
+    runtime.setLocalePreference('zh')
+    electron.dialog.showMessageBox.mockResolvedValueOnce({ response: 0, checkboxChecked: false })
+    await expect(runtime.confirmRestart(async () => {})).rejects.toThrow('private restart detail')
+    expect(electron.dialog.showMessageBox.mock.calls.at(-1)?.at(-1)).toEqual({
+      type: 'error', title: '桌面重启失败', message: '桌面重启失败', detail: '请保存当前工作，然后手动关闭并重新打开 Yootun-Agent。',
+    })
+  })
+
   it('requires a distinct confirmation before restarting into recovery mode', async () => {
     vi.spyOn(process, 'platform', 'get').mockReturnValue('darwin')
     electron.dialog.showMessageBox.mockResolvedValueOnce({ response: 0, checkboxChecked: false })

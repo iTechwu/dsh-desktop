@@ -60,3 +60,40 @@ it('preserves the Web URL and authentication while projecting shell and tray cal
     expect(disposeShell).toHaveBeenCalledOnce()
   } finally { await release(); parent.close(); child.close(); port1.close(); port2.close() }
 })
+
+it('carries cancellation and response acknowledgement across the private restart bridge', async () => {
+  const { port1, port2 } = new MessageChannel()
+  const makeRpc = (port: typeof port1, timeout: number) => new HostRpc({
+    send: value => port.postMessage(value),
+    listen: receive => { port.on('message', receive); return () => { port.off('message', receive) } },
+  }, timeout)
+  const parent = makeRpc(port1, 1000)
+  const child = makeRpc(port2, 5)
+  let decide!: (accepted: boolean) => void
+  const events: string[] = []
+  const confirmRestart = vi.fn(async (acknowledge: () => Promise<void>) => {
+    const accepted = await new Promise<boolean>(resolve => { decide = resolve })
+    if (!accepted) return false
+    await acknowledge()
+    events.push('restart')
+    return true
+  })
+  const native = { platform: 'darwin', locale: 'en', updates: {}, confirmRestart } as unknown as DesktopRuntime
+  const release = bindNativeRuntime(parent, native)
+  try {
+    const runtime = createHostRuntime(child, runtimeSnapshot(native))
+    const acknowledge = vi.fn(async () => { events.push('HTTP response finished') })
+    const cancelled = runtime.confirmRestart(acknowledge)
+    await vi.waitFor(() => expect(confirmRestart).toHaveBeenCalledOnce())
+    // Native confirmation is interactive: the ordinary 5ms RPC deadline does not apply.
+    await new Promise(resolve => setTimeout(resolve, 20))
+    decide(false)
+    await expect(cancelled).resolves.toBe(false)
+    expect(acknowledge).not.toHaveBeenCalled()
+    const accepted = runtime.confirmRestart(acknowledge)
+    await vi.waitFor(() => expect(confirmRestart).toHaveBeenCalledTimes(2))
+    decide(true)
+    await expect(accepted).resolves.toBe(true)
+    expect(events).toEqual(['HTTP response finished', 'restart'])
+  } finally { await release(); parent.close(); child.close(); port1.close(); port2.close() }
+})

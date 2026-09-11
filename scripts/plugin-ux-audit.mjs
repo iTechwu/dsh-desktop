@@ -227,8 +227,10 @@ if (!pluginConsoleClient.includes('credentials: "same-origin"') || !pluginConsol
   failures.push('dsh-plugin-console: local control calls must use same-origin credentials and reject redirects')
 }
 if (!pluginConsoleClient.includes('const LOCAL_CALL_TIMEOUT_MS = 30000')
-  || (pluginConsoleClient.match(/AbortSignal\.timeout\(LOCAL_CALL_TIMEOUT_MS\)/gu) || []).length < 2) {
-  failures.push('dsh-plugin-console: local control calls have no bounded timeout')
+  || !pluginConsoleClient.includes('const timeout = interactive ? {} : { signal: AbortSignal.timeout(LOCAL_CALL_TIMEOUT_MS) }')
+  || !pluginConsoleClient.includes('nativeConfirmation && (path === "/plugin-console/restart" || path === "/plugin-console/framework-relaunch" || path === "/api/desktop/updates/check")')
+  || (pluginConsoleClient.match(/cache: "no-store", \.\.\.timeout/gu) || []).length < 2) {
+  failures.push('dsh-plugin-console: ordinary calls need bounded timeouts; only native restart or app update confirmation may wait for user input')
 }
 if (!pluginConsoleClient.includes('const EXTERNAL_FETCH_POLICY = { credentials: "omit", redirect: "error", referrerPolicy: "no-referrer", cache: "no-store" }')
   || (pluginConsoleClient.match(/\.\.\.EXTERNAL_FETCH_POLICY/gu) || []).length < 3) {

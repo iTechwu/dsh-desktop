@@ -439,6 +439,10 @@ describe('Desktop settings API', () => {
       method: 'POST',
       body: JSON.stringify({}),
     })
+    for (const [path, options] of fetcher.mock.calls) {
+      if (path === desktopSettingsPaths.updateCheck) expect(options?.signal).toBeUndefined()
+      else expect(options?.signal).toBeInstanceOf(AbortSignal)
+    }
   })
 
   it('does not reflect an untrusted error body into its public error', async () => {
