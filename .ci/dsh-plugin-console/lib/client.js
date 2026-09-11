@@ -129,6 +129,7 @@ window.__ModuleLoader__.load({
 			view: "查看",
 			install: "添加并启用",
 			installing: "正在安装…",
+			installAwaitingApply: "等待刷新或重启",
 			marketLoading: "正在搜索 GitHub…",
 			marketLoadingOther: "正在搜索 {source}…",
 			directOther: "通过服务端通道检索 {source} 平台（自定义源不走浏览器直连）",
@@ -379,6 +380,7 @@ window.__ModuleLoader__.load({
 			view: "Inspect",
 			install: "Add & enable",
 			installing: "Installing…",
+			installAwaitingApply: "Awaiting reload or restart",
 			marketLoading: "Searching GitHub…",
 			marketLoadingOther: "Searching {source}…",
 			directOther: "Searching {source} through the server channel (custom sources do not use browser-direct)",
@@ -889,7 +891,13 @@ window.__ModuleLoader__.load({
 			const [loadingMore, setLoadingMore] = react.useState(false);
 			const [repoInfo, setRepoInfo] = react.useState(null);
 			const [subpackages, setSubpackages] = react.useState(null);
-			const [installing, setInstalling] = react.useState(null);
+			const [installation, setInstallation] = react.useState(null);
+			const installing = installation?.target ?? null;
+			const installationAwaitingApply = installation?.jobId && jobs[installation.jobId]?.status === "done" && jobs[installation.jobId]?.kind !== "skill";
+			const installationLabel = t(installationAwaitingApply ? "installAwaitingApply" : "installing");
+			const installationRef = react.useRef(null);
+			const activeInstallJobsRef = react.useRef(new Set());
+			const installationBlocked = installing !== null || Object.values(jobs).some((job) => job.status === "installing");
 			const [details, setDetails] = react.useState(null);
 			// 已安装插件"检测更新"：null=未检测 / {status:'checking'} / {status:'ready', latest, error}
 			const [updateCheck, setUpdateCheck] = react.useState(null);
@@ -1209,6 +1217,7 @@ window.__ModuleLoader__.load({
 						setState({ status: "ready", data });
 						// 恢复进行中的安装任务轮询（离开面板再回来也能看到进度）
 						for (const job of data.installJobs ?? []) {
+							activeInstallJobsRef.current.add(job.jobId);
 							setJobs((prev) => ({ ...prev, [job.jobId]: job }));
 							pollJob(job.jobId);
 						}
@@ -1536,17 +1545,27 @@ window.__ModuleLoader__.load({
 			};
 			/** 后台安装任务：/install 立即返回 jobId，轮询 /install-status 更新进度。 */
 			const jobTimersRef = react.useRef({});
+			const jobPollsRef = react.useRef(new Set());
 			const stopJobPolling = (jobId) => {
 				if (jobTimersRef.current[jobId]) {
 					window.clearInterval(jobTimersRef.current[jobId]);
 					delete jobTimersRef.current[jobId];
 				}
 			};
+			const releaseInstallation = (jobId) => {
+				activeInstallJobsRef.current.delete(jobId);
+				if (installationRef.current?.jobId !== jobId) return;
+				installationRef.current = null;
+				setInstallation(null);
+			};
 			const pollJob = (jobId) => {
 				if (jobTimersRef.current[jobId]) return;
 				jobTimersRef.current[jobId] = window.setInterval(() => {
+					if (jobPollsRef.current.has(jobId)) return;
+					jobPollsRef.current.add(jobId);
 					call("/plugin-console/install-status", { jobId }).then(
 						(data) => {
+							if (!jobTimersRef.current[jobId] || !data || !["installing", "done", "failed", "cancelled"].includes(data.status)) return;
 							setJobs((prev) => ({ ...prev, [jobId]: data }));
 							// 需要用户授权时（面板页后台/失焦也能看到）：系统通知 + 标题闪烁提示
 							if (data.status === "installing" && data.stage === "ai-consent" && aiFallback && !aiRemember && !aiAutoDeclinedRef.current[jobId]) {
@@ -1578,6 +1597,7 @@ window.__ModuleLoader__.load({
 							}
 							if (data.status !== "installing") {
 								stopJobPolling(jobId);
+								activeInstallJobsRef.current.delete(jobId);
 								if (data.status === "done") {
 									if (data.kind === "skill") {
 										// 技能安装：不写补丁、无需重启/刷新页面；提示 + 刷新已装技能清单
@@ -1603,7 +1623,7 @@ window.__ModuleLoader__.load({
 									}
 									if (data.kind === "skill") {
 										// 技能无需页面刷新
-										setInstalling(null);
+										releaseInstallation(jobId);
 										setTimeout(refresh, 500);
 										return;
 									}
@@ -1616,13 +1636,13 @@ window.__ModuleLoader__.load({
 									}
 								} else {
 									setMessage(t("failed") + "：" + (data.error ?? "未知错误"));
+									releaseInstallation(jobId);
 								}
-								setInstalling(null);
 								setTimeout(refresh, 1500);
 							}
 						},
 						() => {},
-					);
+					).finally(() => jobPollsRef.current.delete(jobId));
 				}, 2000);
 			};
 			/** 本地 AI 兜底授权：调用模型 API 产生费用，必须用户明确同意。 */
@@ -1715,40 +1735,40 @@ window.__ModuleLoader__.load({
 				);
 			};
 			const startJob = (repo, packageName, source = "github", kind = "plugin") => {
-				// 防并发（与 addLocal 一致）：已有安装/更新进行中时忽略新点击（更新按钮此前可绕过，
-				// 反复点击会产生几十个并发任务装同一插件）
-				if (installing !== null) {
+				// Acquire before React renders so every installation entry shares one lock.
+				if (installationRef.current !== null || activeInstallJobsRef.current.size > 0) {
 					setMessage(t("installBusy"));
 					return;
 				}
-				setInstalling(repo || packageName);
+				const operation = { target: repo || packageName, jobId: null };
+				installationRef.current = operation;
+				setInstallation({ ...operation });
 				setReloadHint(false);
 				setRestartHint(false);
 				setMessage(null);
-				call("/plugin-console/install", { repo: repo ?? "", packageName, source, kind }).then(
-					(data) => {
-						if (data && data.jobId) {
-							setJobs((prev) => ({
-								...prev,
-								[data.jobId]: { jobId: data.jobId, repo, source, packageName, kind, status: "installing", stage: "preparing", startedAt: Date.now() },
-							}));
-							pollJob(data.jobId);
-						}
-					},
-					(error) => {
-						setMessage(t("failed") + "：" + friendlyGithubError(error).message);
-						setInstalling(null);
-					},
-				);
+				call("/plugin-console/install", { repo: repo ?? "", packageName, source, kind }).then((data) => {
+					if (!data || typeof data.jobId !== "string" || !data.jobId.trim()) throw new Error(t("invalidServiceResponse"));
+					operation.jobId = data.jobId;
+					setInstallation({ ...operation });
+					activeInstallJobsRef.current.add(data.jobId);
+					setJobs((prev) => ({
+						...prev,
+						[data.jobId]: { jobId: data.jobId, repo, source, packageName, kind, status: "installing", stage: "preparing", startedAt: Date.now() },
+					}));
+					pollJob(data.jobId);
+				}).catch((error) => {
+					if (installationRef.current !== operation) return;
+					installationRef.current = null;
+					setMessage(t("failed") + "：" + friendlyGithubError(error).message);
+					setInstallation(null);
+				});
 			};
 			/** 技能安装：git clone 仓库 → 复制 SKILL.md 到 ~/.dsh/skills/<name>/（不写 cordis 补丁、无需重启）。 */
 			const startSkillJob = (item) => {
-				if (installing !== null) return;
 				startJob(item.fullName, null, item.source ?? "github", "skill");
 			};
 			/** 套装安装：submodule 聚合仓库（照 install.ps1 语义装配子模块组件）。 */
 			const startSuiteJob = (item) => {
-				if (installing !== null) return;
 				startJob(item.fullName, null, item.source ?? "github", "suite");
 			};
 			// 卸载时清理轮询定时器；页面回到前台时恢复标题（AI 授权提示后）
@@ -1768,13 +1788,9 @@ window.__ModuleLoader__.load({
 			 * 点击立即出现进度卡片——不再先浏览器取包名（黑洞期直连失败会拖到 40s 无反馈）。
 			 * 技能条目走技能通道，套装条目走套装通道。 */
 			const addLocal = (item) => {
-				if (installing !== null) return;
-				setInstalling(item.fullName);
-				setMessage(null);
 				if (item.fullName === "deepseek-ai/deepseek-harness") {
 					// 框架本体：不提供安装（服务端也会拦截）；升级请用卡片「框架升级」流程
 					setMessage(t("frameworkUseUpgrade"));
-					setInstalling(null);
 					return;
 				}
 				if (item.hasSkill === true || item.skillTopics !== undefined) {
@@ -1970,7 +1986,7 @@ window.__ModuleLoader__.load({
 									el("button", {
 										type: "button",
 										className: styles.toggle,
-										disabled: managedEntry ? serviceBlocked : (updateCheck !== null && updateCheck.status === "checking") || installing === entry.moduleName,
+										disabled: managedEntry ? serviceBlocked : (updateCheck !== null && updateCheck.status === "checking") || installationBlocked,
 										"aria-busy": managedEntry ? serviceOperation?.kind === "desktop-update" : updateCheck?.status === "checking",
 										onClick: managedEntry ? checkDesktopUpdate : () => checkUpdate(entry),
 									}, managedEntry ? t(serviceOperation?.kind === "desktop-update" ? "loadingPhase" : "desktopUpdateBtn") : updateCheck !== null && updateCheck.status === "checking" ? t("checkingUpdate") : t("checkUpdate"))) : null,
@@ -1984,9 +2000,10 @@ window.__ModuleLoader__.load({
 													el("button", {
 														type: "button",
 														className: styles.toggle,
-														disabled: installing === entry.moduleName,
+														disabled: installationBlocked,
+														"aria-busy": installing === entry.moduleName && !installationAwaitingApply,
 														onClick: () => startJob("", entry.moduleName),
-													}, installing === entry.moduleName ? t("installing") : t("updateNow"))),
+													}, installing === entry.moduleName ? installationLabel : t("updateNow"))),
 												Array.isArray(updateCheck.depsOutdated) && updateCheck.depsOutdated.length > 0
 													? el("p", { className: styles.status, "data-error": "true" },
 														t("depsOutdatedHint") + "：" + updateCheck.depsOutdated.map((d) => `${d.name} ${d.current}→${d.required}`).join("、"))
@@ -2159,10 +2176,11 @@ window.__ModuleLoader__.load({
 											return el("button", {
 												type: "button",
 												className: styles.toggle,
-												disabled: installing === item.fullName || already,
+												disabled: installationBlocked || already,
+												"aria-busy": installing === item.fullName && !installationAwaitingApply,
 												title: already ? t("skillUninstallHint") : undefined,
 												onClick: () => startSkillJob(item),
-											}, installing === item.fullName ? t("installingLocal") : (already ? t("skillInstalledTag") : t("installSkill")));
+											}, installing === item.fullName ? installationLabel : (already ? t("skillInstalledTag") : t("installSkill")));
 										})()
 										: item.fullName === "deepseek-ai/deepseek-harness" && desktopManagedFramework
 											? el("button", {
@@ -2199,15 +2217,17 @@ window.__ModuleLoader__.load({
 												? el("button", {
 													type: "button",
 													className: styles.toggle,
-													disabled: installing === item.fullName,
+													disabled: installationBlocked,
+													"aria-busy": installing === item.fullName && !installationAwaitingApply,
 													onClick: () => startJob("", installedMatch.moduleName),
-												}, installing === item.fullName ? t("installingLocal") : t("update") + " → v" + updateMap[item.fullName])
+												}, installing === item.fullName ? installationLabel : t("update") + " → v" + updateMap[item.fullName])
 												: el("button", {
 													type: "button",
 													className: styles.toggle,
-													disabled: installing === item.fullName,
+												disabled: installationBlocked,
+												"aria-busy": installing === item.fullName && !installationAwaitingApply,
 													onClick: () => addLocal(item),
-												}, installing === item.fullName ? t("installingLocal") : (installedMatch !== null && installedMatch !== undefined ? t("update") : t("addLocal"))),
+												}, installing === item.fullName ? installationLabel : (installedMatch !== null && installedMatch !== undefined ? t("update") : t("addLocal"))),
 								),
 							);
 						});
@@ -2278,23 +2298,26 @@ window.__ModuleLoader__.load({
 						info.packageName ? el("button", {
 							type: "button",
 							className: styles.toggle,
-							disabled: installing === repoInfo.repo,
+							disabled: installationBlocked,
+							"aria-busy": installing === repoInfo.repo && !installationAwaitingApply,
 							onClick: () => startJob(repoInfo.repo, info.packageName),
-						}, installing === repoInfo.repo ? t("installing") : (state.status === "ready" && state.data.entries.some((candidate) => candidate.moduleName === info.packageName) ? t("update") : t("install"))) : null,
+						}, installing === repoInfo.repo ? installationLabel : (state.status === "ready" && state.data.entries.some((candidate) => candidate.moduleName === info.packageName) ? t("update") : t("install"))) : null,
 						info.hasSkill === true ? el("button", {
 							type: "button",
 							className: styles.toggle,
-							disabled: installing === repoInfo.repo || detailSkillInstalled,
+							disabled: installationBlocked || detailSkillInstalled,
+							"aria-busy": installing === repoInfo.repo && !installationAwaitingApply,
 							title: detailSkillInstalled ? t("skillUninstallHint") : undefined,
 							onClick: () => startSkillJob({ fullName: repoInfo.repo, source: repoInfo.source ?? "github" }),
-						}, installing === repoInfo.repo ? t("installing") : (detailSkillInstalled ? t("skillInstalledTag") : t("installSkill"))) : null,
+						}, installing === repoInfo.repo ? installationLabel : (detailSkillInstalled ? t("skillInstalledTag") : t("installSkill"))) : null,
 						info.hasSuite === true && info.hasPackageJson === false ? el("button", {
 							type: "button",
 							className: styles.toggle,
-							disabled: installing === repoInfo.repo,
+							disabled: installationBlocked,
+							"aria-busy": installing === repoInfo.repo && !installationAwaitingApply,
 							title: t("suiteTitle"),
 							onClick: () => startSuiteJob({ fullName: repoInfo.repo, source: repoInfo.source ?? "github" }),
-						}, installing === repoInfo.repo ? t("installing") : t("suiteInstall")) : null,
+						}, installing === repoInfo.repo ? installationLabel : t("suiteInstall")) : null,
 						info.hasSkill === true && detailSkillInstalled && !detailSkill.system
 							? el("button", {
 								type: "button",
@@ -2322,9 +2345,10 @@ window.__ModuleLoader__.load({
 														el("button", {
 															type: "button",
 															className: styles.toggle,
-															disabled: installing === sub.name,
+															disabled: installationBlocked,
+															"aria-busy": installing === sub.name && !installationAwaitingApply,
 															onClick: () => startJob(repoInfo.repo, sub.name),
-														}, installing === sub.name ? t("installing") : t("install")))))))
+														}, installing === sub.name ? installationLabel : t("install")))))))
 						: null,
 					);
 				}
@@ -2602,7 +2626,7 @@ onClick: () => window.open(`https://github.com/Noob-stupid/dsh-plugin-hub/releas
 							}, "✕")),
 						el("p", { className: styles.message, "data-error": "true" }, job.error ?? ""),
 						el("div", { className: styles.rowTop },
-							el("button", { type: "button", className: styles.toggle, onClick: () => startJob(job.repo, job.packageName, job.source ?? "github") }, t("retry")))),
+							el("button", { type: "button", className: styles.toggle, disabled: installationBlocked, onClick: () => startJob(job.repo, job.packageName, job.source ?? "github", job.kind ?? "plugin") }, t("retry")))),
 				),
 				repoInfo !== null
 					? el("aside", { className: styles.floatPanel },
