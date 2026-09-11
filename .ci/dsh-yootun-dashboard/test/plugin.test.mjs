@@ -59,6 +59,8 @@ test('renders all requested dashboard domains and explicit source states', async
   assert.match(source, /const DATA_STATUSES = new Set\(\['ready', 'empty', 'partial', 'degraded'\]\)/u)
   assert.match(source, /function canRenderSource\(source\)/u)
   assert.match(source, /STATUS_GLYPH = .*degraded: 'warning'/u)
+  assert.match(source, /status === 'partial' \|\| status === 'degraded'/u)
+  assert.match(source, /sources\.filter\(canRenderSource\)/u)
   assert.match(source, /montageStatusLabel\(job\.status, t\)/u)
   assert.match(source, /montageStageLabel\(job\.stage, t\)/u)
 })

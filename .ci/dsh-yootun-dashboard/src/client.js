@@ -357,14 +357,14 @@ function attentionItems(data, t) {
     ['montage-source', 'montage', t('montage'), data?.montage],
   ]) {
     const status = source?.status
-    if (status === 'error' || status === 'unavailable' || status === 'partial') items.push({ key, tab, glyph: status === 'unavailable' ? 'close' : 'warning', label: `${name} · ${statusLabel(status, t)}`, value: '' })
+    if (status === 'error' || status === 'unavailable' || status === 'partial' || status === 'degraded') items.push({ key, tab, glyph: status === 'unavailable' ? 'close' : 'warning', label: `${name} · ${statusLabel(status, t)}`, value: '' })
   }
   return items
 }
 
 function HealthStrip({ data, t }) {
   const sources = [data?.geo, data?.usage, data?.activity, data?.montage]
-  const available = sources.filter(source => source?.status === 'ready' || source?.status === 'empty').length
+  const available = sources.filter(canRenderSource).length
   const attention = attentionItems(data, t).length
   const limited = available < sources.length
   const overallTone = limited || attention > 0 ? 'warning' : 'good'
