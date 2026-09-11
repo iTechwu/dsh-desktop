@@ -274,8 +274,8 @@ window.__ModuleLoader__.load({
       const value = String(state || "").toLowerCase();
       return value === "healthy" || value === "projected"
         ? "ready"
-        : ["ready", "queued", "degraded", "error"].includes(value)
-          ? value
+        : ["ready", "queued", "degraded", "partial", "warning", "error"].includes(value)
+          ? value === "partial" || value === "warning" ? "degraded" : value
           : "unavailable";
     };
     const typeLabel = (value, t) =>
@@ -298,7 +298,7 @@ window.__ModuleLoader__.load({
       if (["CANDIDATE", "CONFIRMED", "FORGOTTEN"].includes(memoryState))
         return memoryStatus(memoryState, t);
       const sourceState = raw.toLowerCase();
-      if (["ready", "healthy", "projected", "queued", "degraded", "error"].includes(sourceState))
+      if (["ready", "healthy", "projected", "queued", "degraded", "partial", "warning", "error"].includes(sourceState))
         return stateLabel(normalizeSourceState(sourceState), t);
       return raw;
     };
