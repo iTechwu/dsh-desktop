@@ -447,10 +447,10 @@ body[data-dsh-desktop-mode="extended"]:not([data-dsh-desktop-material="off"]) {
 .dshDesktopTitlebarIconButton svg,
 .dshDesktopActionMenuItem svg { width: 14px; height: 14px; stroke-width: 1.8; }
 .dshDesktopNativeActionMenuAnchor { position: relative; }
+.dshDesktopActionMenuPositioner { z-index: 1; -webkit-app-region: no-drag; }
 .dshDesktopActionMenu {
-  position: absolute;
+  position: relative;
   z-index: 1;
-  top: calc(100% + 5px);
   display: grid;
   min-width: 190px;
   padding: 5px;
@@ -460,8 +460,6 @@ body[data-dsh-desktop-mode="extended"]:not([data-dsh-desktop-material="off"]) {
   box-shadow: 0 12px 32px color-mix(in srgb, #000 28%, transparent);
   -webkit-app-region: no-drag;
 }
-.dshDesktopFrameTitlebar[data-platform="darwin"] .dshDesktopActionMenu { right: 0; }
-.dshDesktopFrameTitlebar[data-platform="win32"] .dshDesktopActionMenu { left: 0; }
 .dshDesktopActionMenuItem {
   display: flex;
   align-items: center;
@@ -478,6 +476,8 @@ body[data-dsh-desktop-mode="extended"]:not([data-dsh-desktop-material="off"]) {
   text-align: start;
 }
 .dshDesktopActionMenuItem:hover:not(:disabled) { background: var(--dsw-alias-interactive-bg-hover); }
+.dshDesktopActionMenuItem[data-highlighted] { background: var(--dsw-alias-interactive-bg-hover); }
+.dshDesktopActionMenuItem:focus-visible { outline: 2px solid var(--dsw-alias-brand-primary); outline-offset: -2px; }
 .dshDesktopActionMenuItem:disabled { cursor: default; opacity: .45; }
 .dshDesktopActionMenuItem span { flex: 1; }
 .dshDesktopNativeActions[data-placement="titlebar"] .dshDesktopNativeActionError {

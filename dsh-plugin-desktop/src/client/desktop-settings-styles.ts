@@ -202,11 +202,10 @@ const CSS = `
   gap: 8px;
 }
 .dshDesktopNativeActions[data-placement="settings"] .dshDesktopNativeActionMenuAnchor { position: relative; }
+.dshDesktopNativeActions[data-placement="settings"] .dshDesktopActionMenuPositioner { z-index: 2147483001; -webkit-app-region: no-drag; }
 .dshDesktopNativeActions[data-placement="settings"] .dshDesktopActionMenu {
-  position: absolute;
+  position: relative;
   z-index: 2147483001;
-  top: calc(100% + 5px);
-  right: 0;
   display: grid;
   grid-auto-flow: row;
   grid-template-columns: minmax(0, 1fr);
@@ -236,6 +235,8 @@ const CSS = `
   white-space: nowrap;
 }
 .dshDesktopNativeActions[data-placement="settings"] .dshDesktopActionMenuItem:hover:not(:disabled) { background: var(--dsw-alias-interactive-bg-hover); }
+.dshDesktopNativeActions[data-placement="settings"] .dshDesktopActionMenuItem[data-highlighted] { background: var(--dsw-alias-interactive-bg-hover); }
+.dshDesktopNativeActions[data-placement="settings"] .dshDesktopActionMenuItem:focus-visible { outline: 2px solid var(--dsw-alias-brand-primary); outline-offset: -2px; }
 .dshDesktopNativeActions[data-placement="settings"] .dshDesktopActionMenuItem:disabled { cursor: default; opacity: .45; }
 .dshDesktopNativeActions[data-placement="settings"] .dshDesktopActionMenuItem svg { width: 14px; height: 14px; stroke-width: 1.8; }
 .dshDesktopNativeActions[data-placement="settings"] .dshDesktopActionMenuItem span { flex: 1; }

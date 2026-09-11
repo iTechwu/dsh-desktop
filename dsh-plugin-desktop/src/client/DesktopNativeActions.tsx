@@ -1,7 +1,8 @@
 /** Shared launcher-backed actions rendered in settings and extended title bars. */
 
 import { Bug, ChevronDown, LifeBuoy, RefreshCw, RotateCw, SquareTerminal, Wrench } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
+import { Menu } from '@base-ui/react/menu'
+import { type ReactElement, type ReactNode, useRef, useState } from 'react'
 import type { DesktopSettingsApi } from './desktop-settings-api.ts'
 import type { DesktopSettingsLocaleKey } from './desktop-settings-locales.ts'
 
@@ -23,21 +24,44 @@ interface DesktopRestartMenuItemsProps {
   readonly onRestartToRecovery: () => void
 }
 
+/** Shared keyboard, dismissal, and focus ownership for both menu entry points. */
+function DesktopActionMenu({ open, onOpenChange, busy, trigger, children }: {
+  readonly open: boolean
+  readonly onOpenChange: (open: boolean) => void
+  readonly busy: boolean
+  readonly trigger: ReactElement
+  readonly children: ReactNode
+}) {
+  const anchor = useRef<HTMLDivElement>(null)
+  return (
+    <Menu.Root modal={false} open={open} onOpenChange={onOpenChange}>
+      <div className="dshDesktopNativeActionMenuAnchor" ref={anchor}>
+        <Menu.Trigger disabled={busy} render={trigger} />
+        <Menu.Portal container={anchor}>
+          <Menu.Positioner className="dshDesktopActionMenuPositioner" sideOffset={5} align="end">
+            <Menu.Popup className="dshDesktopActionMenu">{children}</Menu.Popup>
+          </Menu.Positioner>
+        </Menu.Portal>
+      </div>
+    </Menu.Root>
+  )
+}
+
 /** Shared restart-menu order for Settings and the independent Desktop title bar. */
 export function DesktopRestartMenuItems({
   busy, t, onReload, onRestart, onRestartToRecovery,
 }: DesktopRestartMenuItemsProps) {
   return (
     <>
-      <button type="button" className="dshDesktopActionMenuItem" role="menuitem" disabled={busy} onClick={onReload}>
+      <Menu.Item nativeButton render={<button type="button" />} className="dshDesktopActionMenuItem" disabled={busy} onClick={onReload}>
         <RefreshCw aria-hidden="true" /><span>{t('reloadRenderer')}</span>
-      </button>
-      <button type="button" className="dshDesktopActionMenuItem" role="menuitem" disabled={busy} onClick={onRestart}>
+      </Menu.Item>
+      <Menu.Item nativeButton render={<button type="button" />} className="dshDesktopActionMenuItem" disabled={busy} onClick={onRestart}>
         <RotateCw aria-hidden="true" /><span>{t('restartDesktop')}</span>
-      </button>
-      <button type="button" className="dshDesktopActionMenuItem" role="menuitem" disabled={busy} onClick={onRestartToRecovery}>
+      </Menu.Item>
+      <Menu.Item nativeButton render={<button type="button" />} className="dshDesktopActionMenuItem" disabled={busy} onClick={onRestartToRecovery}>
         <LifeBuoy aria-hidden="true" /><span>{t('restartToRecovery')}</span>
-      </button>
+      </Menu.Item>
     </>
   )
 }
@@ -51,16 +75,16 @@ export function DesktopDeveloperMenuItems({
   readonly onToggleDeveloperTools: () => void
 }) {
   return (
-    <button
-      type="button"
+    <Menu.Item
+      nativeButton
+      render={<button type="button" />}
       className="dshDesktopActionMenuItem"
-      role="menuitem"
       disabled={busy}
       onClick={onToggleDeveloperTools}
     >
       <Bug aria-hidden="true" />
       <span>{t('toggleDeveloperTools')}</span>
-    </button>
+    </Menu.Item>
   )
 }
 
@@ -72,28 +96,6 @@ export function DesktopNativeActions({ api, t, placement }: DesktopNativeActions
   const [restartMenuOpen, setRestartMenuOpen] = useState(false)
   const [developerMenuOpen, setDeveloperMenuOpen] = useState(false)
   const [failed, setFailed] = useState<'diagnostics' | 'terminal' | 'restart' | 'reload' | 'devtools'>()
-  const developerMenuRef = useRef<HTMLDivElement>(null)
-  const restartMenuRef = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    if (!developerMenuOpen && !restartMenuOpen) return
-    const dismiss = (event: MouseEvent): void => {
-      if (!developerMenuRef.current?.contains(event.target as Node)) setDeveloperMenuOpen(false)
-      if (!restartMenuRef.current?.contains(event.target as Node)) setRestartMenuOpen(false)
-    }
-    const escape = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape') {
-        setDeveloperMenuOpen(false)
-        setRestartMenuOpen(false)
-      }
-    }
-    document.addEventListener('mousedown', dismiss)
-    document.addEventListener('keydown', escape)
-    return () => {
-      document.removeEventListener('mousedown', dismiss)
-      document.removeEventListener('keydown', escape)
-    }
-  }, [developerMenuOpen, restartMenuOpen])
 
   const busy = exportingDiagnostics || opening || restarting || rendererAction !== undefined
 
@@ -174,30 +176,23 @@ export function DesktopNativeActions({ api, t, placement }: DesktopNativeActions
         >
           {t(opening ? 'openingTerminal' : 'openTerminal')}
         </button>
-        <div className="dshDesktopNativeActionMenuAnchor" ref={restartMenuRef}>
+        <DesktopActionMenu open={restartMenuOpen} onOpenChange={setRestartMenuOpen} busy={busy} trigger={
           <button
             type="button"
             className="dshDesktopSettingsHeaderButton"
-            aria-expanded={restartMenuOpen}
-            aria-haspopup="menu"
-            disabled={busy}
-            onClick={() => { setRestartMenuOpen(value => !value) }}
           >
             {t(restarting ? 'restartingDesktop' : 'restartDesktop')}
             <ChevronDown aria-hidden="true" />
           </button>
-          {restartMenuOpen && (
-            <div className="dshDesktopActionMenu" role="menu">
-              <DesktopRestartMenuItems
-                busy={busy}
-                t={t}
-                onReload={() => { runRendererAction('reload') }}
-                onRestart={() => { restart() }}
-                onRestartToRecovery={() => { restart(true) }}
-              />
-            </div>
-          )}
-        </div>
+        }>
+          <DesktopRestartMenuItems
+            busy={busy}
+            t={t}
+            onReload={() => { runRendererAction('reload') }}
+            onRestart={() => { restart() }}
+            onRestartToRecovery={() => { restart(true) }}
+          />
+        </DesktopActionMenu>
       </div>
     )
   }
@@ -217,60 +212,46 @@ export function DesktopNativeActions({ api, t, placement }: DesktopNativeActions
       >
         <SquareTerminal aria-hidden="true" />
       </button>
-      <div className="dshDesktopNativeActionMenuAnchor" ref={restartMenuRef}>
+      <DesktopActionMenu open={restartMenuOpen} onOpenChange={open => {
+        setRestartMenuOpen(open)
+        if (open) setDeveloperMenuOpen(false)
+      }} busy={busy} trigger={
         <button
           type="button"
           className="dshDesktopTitlebarIconButton"
           aria-label={t('restartOptions')}
-          aria-expanded={restartMenuOpen}
-          aria-haspopup="menu"
           title={t('restartOptions')}
-          disabled={busy}
-          onClick={() => {
-            setDeveloperMenuOpen(false)
-            setRestartMenuOpen(value => !value)
-          }}
         >
           <RotateCw aria-hidden="true" />
         </button>
-        {restartMenuOpen && (
-          <div className="dshDesktopActionMenu" role="menu">
-            <DesktopRestartMenuItems
-              busy={busy}
-              t={t}
-              onReload={() => { runRendererAction('reload') }}
-              onRestart={() => { restart() }}
-              onRestartToRecovery={() => { restart(true) }}
-            />
-          </div>
-        )}
-      </div>
-      <div className="dshDesktopNativeActionMenuAnchor" ref={developerMenuRef}>
+      }>
+        <DesktopRestartMenuItems
+          busy={busy}
+          t={t}
+          onReload={() => { runRendererAction('reload') }}
+          onRestart={() => { restart() }}
+          onRestartToRecovery={() => { restart(true) }}
+        />
+      </DesktopActionMenu>
+      <DesktopActionMenu open={developerMenuOpen} onOpenChange={open => {
+        setDeveloperMenuOpen(open)
+        if (open) setRestartMenuOpen(false)
+      }} busy={busy} trigger={
         <button
           type="button"
           className="dshDesktopTitlebarIconButton"
           aria-label={t('developerOptions')}
-          aria-expanded={developerMenuOpen}
-          aria-haspopup="menu"
           title={t('developerOptions')}
-          disabled={busy}
-          onClick={() => {
-            setRestartMenuOpen(false)
-            setDeveloperMenuOpen(value => !value)
-          }}
         >
           <Wrench aria-hidden="true" />
         </button>
-        {developerMenuOpen && (
-          <div className="dshDesktopActionMenu" role="menu">
-            <DesktopDeveloperMenuItems
-              busy={busy}
-              t={t}
-              onToggleDeveloperTools={() => { runRendererAction('devtools') }}
-            />
-          </div>
-        )}
-      </div>
+      }>
+        <DesktopDeveloperMenuItems
+          busy={busy}
+          t={t}
+          onToggleDeveloperTools={() => { runRendererAction('devtools') }}
+        />
+      </DesktopActionMenu>
     </div>
   )
 }
