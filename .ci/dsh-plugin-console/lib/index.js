@@ -1844,6 +1844,12 @@ let installJobSeq = 0
 /** 静态插件索引内存缓存（/market-index 用）。 */
 let marketIndexCache = null
 
+/** 安装任务是服务级共享状态；所有会改写 profile/skills 的入口都必须尊重这把锁。 */
+function activeInstallationConflict() {
+  const active = [...installJobs.values()].find((job) => job.status === 'installing')
+  return active === undefined ? null : `当前已有安装任务进行中（${active.id}），请等待完成后再试`
+}
+
 function installJobView(job) {
   return {
     jobId: job.id,
@@ -3007,6 +3013,11 @@ async function handle(ctx, req, res) {
       sendError(res, 400, '不能停用插件控制台自身')
       return
     }
+    const conflict = activeInstallationConflict()
+    if (conflict !== null) {
+      sendError(res, 409, conflict)
+      return
+    }
     const patchPath = findPatchPath(ctx)
     const result = enabled
       ? await enableEntry(patchPath, rowId)
@@ -3034,6 +3045,11 @@ async function handle(ctx, req, res) {
     }
     if (isProtectedModule(moduleName)) {
       sendError(res, 403, `${moduleName} 属于宿主基础设施，禁止删除`)
+      return
+    }
+    const conflict = activeInstallationConflict()
+    if (conflict !== null) {
+      sendError(res, 409, conflict)
       return
     }
     const patchPath = findPatchPath(ctx)
@@ -4062,6 +4078,11 @@ async function handle(ctx, req, res) {
       sendError(res, 400, '技能名称无效（仅允许 kebab-case）')
       return
     }
+    const conflict = activeInstallationConflict()
+    if (conflict !== null) {
+      sendError(res, 409, conflict)
+      return
+    }
     const dest = join(dshHome(), 'skills', name)
     if (!existsSync(dest)) {
       sendError(res, 404, `技能 ${name} 不存在`)
@@ -4087,6 +4108,11 @@ async function handle(ctx, req, res) {
     }
     if (!/^[a-z0-9][a-z0-9-]{0,63}$/u.test(name)) {
       sendError(res, 400, '技能名称无效（仅允许 kebab-case）')
+      return
+    }
+    const conflict = activeInstallationConflict()
+    if (conflict !== null) {
+      sendError(res, 409, conflict)
       return
     }
     const dest = join(dshHome(), 'skills', name)
