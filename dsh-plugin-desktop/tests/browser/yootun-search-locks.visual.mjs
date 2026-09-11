@@ -372,6 +372,7 @@ async function settleStrictMode() {
 async function assertViewport() {
   await assertAccessibleSurface(page)
   await assertTextContrast(page, '.yd-activity-notice,.ydr-source-row b,.ydr-inline-status,.yf-refresh-error,.yf-status-pill,.yk-source,.yl-level,.yl-ready-dot,.yr-source,.ys-inline-error,.ysw-root-state,.yro-external-note,.ycc-error,.ycc-risk-mini,.ycc-list-status,.ycc-review-badge,.ycc-audit-score > strong,.ycc-audit-score b,.ycc-channel-action > span[data-status]')
+  await assertTextContrast(page, '.yd-empty p,.yd-source-empty.yd-source-compact,.yd-metric-missing strong,.yf-metric-muted strong,.yf-compare-na,.yf-status-unavailable,.yf-privacy,.yf-chart-label,.yl-field-label,.yl-platform span,.yl-panel-meta,.yl-bar-row small,.yl-empty-list,.yl-action-empty,.yl-summary-empty,.yr-subheading,.yr-empty span,.yro-platform-select span,.yro-privacy,.yro-source-time,.yro-counts span,.ycc-inline-empty,.ycc-kpi > small,.ycc-bar-day > span,.ycc-list-empty')
 }
 
 async function assertDesktopViewport(header = '.yd-header', content = '.yd-overview') {
@@ -648,6 +649,23 @@ try {
   await assertViewport()
   await page.mouse.move(0, 0)
   await page.screenshot({ path: resolve(evidenceRoot, '390-finops-refresh-error.png'), fullPage: true })
+  finopsRefreshFails = false
+  finops.series = [{ date: '2026-09-07', cost: 12.5, requests: 24, totalTokens: 188000 }]
+  await page.getByRole('button', { name: '重新加载' }).click()
+  await page.waitForFunction(() => document.querySelector('.yf-chart-label')?.textContent === '09-07')
+  assert.equal(await page.getByRole('alert').count(), 0, 'successful retry must clear the stale-data error')
+  for (const width of [390, 1440]) {
+    await page.setViewportSize({ width, height: 900 })
+    await page.locator('.yf-chart').scrollIntoViewIfNeeded()
+    const labels = await assertTextContrast(page, '.yf-chart-label')
+    assert.equal(labels.length, 1, 'the chart date must be measured using its SVG fill')
+    const chartDateSize = await page.locator('.yf-chart-label').evaluate(label =>
+      parseFloat(getComputedStyle(label).fontSize) * Math.abs(label.getScreenCTM().a))
+    assert(chartDateSize >= 10.5 && chartDateSize <= 11.5, `chart dates must retain an 11px visual size at ${width}px: ${chartDateSize}`)
+    await assertViewport()
+    await page.screenshot({ path: resolve(evidenceRoot, `${width}-finops-retry-chart.png`), fullPage: true })
+  }
+  await page.setViewportSize({ width: 390, height: 844 })
 
   await page.goto(`${url}?source=knowledge`)
   await page.getByRole('button', { name: '企业知识' }).click()
@@ -802,7 +820,7 @@ try {
   await page.screenshot({ path: resolve(evidenceRoot, '1440-dashboard-overview.png'), fullPage: true })
 
   assert.deepEqual(consoleProblems, [])
-  process.stdout.write(`search-locks-browser: ${visualTheme}, 10 plugins, 32 screenshots, request locks, report coverage, readable risk/status labels, long text, keyboard selection, and responsive theme mappings verified\n`)
+  process.stdout.write(`search-locks-browser: ${visualTheme}, 10 plugins, 34 screenshots, request locks, report coverage, readable status/secondary text, retry recovery, long text, keyboard selection, and responsive theme mappings verified\n`)
 } finally {
   releaseDailyRefresh()
   releaseFinopsRefresh()

@@ -240,6 +240,7 @@ const assertThemeBackground = (locator, alias) => assertThemePaint(locator, alia
 async function assertViewport() {
   await assertAccessibleSurface(page)
   await assertTextContrast(page, '.ycc-kpi > strong,.ycc-distribution-row > span,.yro-external-note,.yxh-error')
+  await assertTextContrast(page, '.ycc-inline-empty,.ycc-kpi > small,.ycc-bar-day > span,.yro-platform-select span,.yro-privacy,.yro-source-time,.yxh-extra-label,.yxh-page-index,.yxh-step')
 }
 
 try {

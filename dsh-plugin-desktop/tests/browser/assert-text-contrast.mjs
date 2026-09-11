@@ -27,7 +27,7 @@ export async function assertTextContrast(page, selector) {
         chain.unshift(parse(current.backgroundColor))
       }
       const background = chain.reduce((back, front) => blend(front, back), [255, 255, 255, 1])
-      const foreground = blend(parse(style.color), background)
+      const foreground = blend(parse(element instanceof SVGElement ? style.fill : style.color), background)
       const a = luminance(foreground), b = luminance(background)
       return [{
         text: element.textContent.trim().slice(0, 120),
@@ -37,6 +37,6 @@ export async function assertTextContrast(page, selector) {
     })
   })
   const failures = readings.filter(reading => reading.unsupportedBackground || reading.ratio < 4.5)
-  assert.deepEqual(failures, [], `status text must meet 4.5:1 contrast: ${JSON.stringify(failures)}`)
+  assert.deepEqual(failures, [], `rendered text must meet 4.5:1 contrast: ${JSON.stringify(failures)}`)
   return readings
 }
