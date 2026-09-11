@@ -294,17 +294,19 @@ if (!dofeManagedSource.includes("transport: 'streamable-http'")
   || !dofeManagedSource.includes('initialDelayMs: 500, maxDelayMs: 30_000, maxAttempts: 10')) {
   failures.push('dofe-managed: resilient streamable HTTP transport contract is incomplete')
 }
-if (!deliverablesStyles.includes('--deliverable-fill: var(--dsw-alias-bg-layer-2)')
-  || !deliverablesStyles.includes('--deliverable-hover: var(--dsw-alias-interactive-bg-hover)')) {
-  failures.push('ui-deliverables: delivery surfaces do not use adaptive theme fills')
+if (!deliverablesStyles.includes('--deliverable-fill:')
+  || !deliverablesStyles.includes('--deliverable-hover:')) {
+  failures.push('ui-deliverables: delivery surfaces do not declare themed fill variables')
 }
-if (deliverablesStyles.includes('dsw-static-neutral-')) {
-  failures.push('ui-deliverables: delivery surfaces still use static neutral theme tokens')
+if (!deliverablesStyles.includes('[data-ds-dark-theme]')) {
+  failures.push('ui-deliverables: delivery surfaces have no dark-theme adaptation')
 }
-for (const selector of ['.file', '.fileIcon', '.split']) {
+// Sibling 0.1.5-rc.2 aligned delivery cards with the upstream 18px/10px radius
+// and static-neutral fills (deepseek-harness 215bf40ad3); the audit follows.
+for (const [selector, radius] of [['.file', '18px'], ['.fileIcon', '10px'], ['.split', '10px']]) {
   const selectorRule = deliverablesStyles.match(new RegExp(`\\${selector} \\{[^}]*\\}`, 'u'))?.[0] || ''
-  if (!selectorRule.includes('border-radius: 8px')) {
-    failures.push(`ui-deliverables: ${selector} does not follow the 8px surface radius contract`)
+  if (!selectorRule.includes(`border-radius: ${radius}`)) {
+    failures.push(`ui-deliverables: ${selector} does not follow the ${radius} surface radius contract`)
   }
 }
 if (!dofeAccessSource.includes('const loadingRef = useRef(false)') || !dofeAccessSource.includes('const busyRef = useRef(false)')) {
