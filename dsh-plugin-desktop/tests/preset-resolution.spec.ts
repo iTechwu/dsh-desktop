@@ -3,12 +3,13 @@ import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import { expect, it } from 'vitest'
 
-it('checks preset dependencies through the real Desktop resolver without importing plugins', () => {
+it('checks preset package presence while leaving entry validation to the Desktop resolver', () => {
   const require = createRequire(import.meta.url)
   const script = `
     import assert from 'node:assert/strict';
     import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
     import { tmpdir } from 'node:os';
+    import { createRequire } from 'node:module';
     import { dirname, join } from 'node:path';
     import { pathToFileURL } from 'node:url';
     const { scanRoot } = await import(pathToFileURL(process.argv[1]).href);
@@ -36,7 +37,13 @@ it('checks preset dependencies through the real Desktop resolver without importi
       assert.equal(rows.find(p => p.id === 'installed').broken, undefined);
       assert.equal(rows.find(p => p.id === 'subpath').broken, undefined);
       assert.ok(rows.find(p => p.id === 'missing').broken);
-      assert.ok(rows.find(p => p.id === 'bad-export').broken);
+      // Discovery reports package presence, including source workspaces not built yet.
+      // Actual entry resolution must still refuse an export the package does not expose.
+      assert.equal(rows.find(p => p.id === 'bad-export').broken, undefined);
+      const requireFromProfile = createRequire(pathToFileURL(join(profile, 'package.json')));
+      assert.throws(() => requireFromProfile.resolve('@deepseek-ai/dsh-persona/nonexistent-export'), {
+        code: 'ERR_PACKAGE_PATH_NOT_EXPORTED'
+      });
       const shipped = await scanRoot({ path: join(dirname(process.argv[1]), '../presets'), trust: 'system' }, base);
       const standard = shipped.find(p => p.id === 'standard');
       assert.ok(standard);
