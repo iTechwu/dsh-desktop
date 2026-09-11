@@ -32,6 +32,16 @@
 | TOS 媒体上传 | `/_dsh/uploader/pick-file`、`/_dsh/uploader/upload`、`/_dsh/uploader/uploadStart`、`/_dsh/uploader/uploadStatus`、`/_dsh/uploader/media`；`media_upload` | XHS operation、Agent 媒体工具 | uploading、queued、succeeded、failed、cancelled、requires_user_login | 通过原生选取、允许清单和 TOCTOU 复查；授权仅交给 Tools MCP，不回传本地路径、预签名 URL 或对象 key |
 | 文件交付声明 | `present`；`deliverables/presented` Session 事件 | Web Deliverables 文件卡片与默认应用打开 | declared、blocked、opened | 仅接受 Session 工作区可访问的常规文件，单次受 `maxFiles` 限制；记录路径和描述，不复制文件内容，子 Agent 的交付由父 Session 显式声明 |
 
+## 插件管理浏览器验证边界（2026-09-11）
+
+上表描述需要满足的能力与体验契约，不代表每个入口都已完成同等范围的浏览器验证。当前 Plugin Console 的直接证据来自 `dsh-plugin-desktop/tests/browser/plugin-console-modal.browser.mjs`：
+
+- 已覆盖自定义主题、官方浅色/深色主题，以及 320、390、768、1024、1440px 布局；管理按钮不得遮挡正文，软件源名称、主源标记和长地址必须可读。
+- 已覆盖软件源添加与 AI 授权的同步重复提交保护，以及插件启停的同轮重复点击、跨插件互斥、失败重试和成功等待刷新。
+- 软件源弹窗已覆盖初始焦点、正反向 Tab 循环、进入表单、Escape 关闭和入口焦点恢复；验证使用具体控件身份，不能仅比较两个“关闭”按钮的相同文案。
+- 安装授权的焦点隔离尚未收口。真实插件独立渲染的浏览器探针显示，弹窗出现后 `document.activeElement` 仍为 `body`。代码核对显示 `ui-layout` 的 `installModalOverlayIsolation` 只观察 `shell.overlay`，而 `SettingsRoot` 通过 `sidebar.settings` 挂载设置面板，现有共享隔离不会自动覆盖设置内的授权弹窗。下一步需要验证并修复共享层对设置与嵌套弹窗的覆盖。
+- 卸载、技能删除/启停、安装、框架升级/重启及服务重启尚需补齐同等强度的浏览器失败恢复与重复提交验证；已有文案、状态变量或静态门禁不能单独证明这些交互完成。
+
 ## 托管 MCP 传输契约
 
 | Server name | 托管路径 | 工具调用超时 | 设置门控 |
