@@ -52,10 +52,12 @@ const finish = async (request, body) => {
   request.resolve(body)
   await request.done
 }
-async function openPage(mode, width = 390) {
+async function openPage(mode, width = 390, framework = false, upgradeStatus = 'idle') {
   const page = await browser.newPage({ viewport: { width, height: 900 } })
+  await page.clock.install()
   page.setDefaultTimeout(10_000)
-  const state = { entries: [...entries], skills: skills.map(skill => ({ ...skill })), requests: [], refreshGate: null, refreshError: false }
+  const state = { entries: [...entries], skills: skills.map(skill => ({ ...skill })), requests: [], refreshGate: null, refreshError: false,
+    upgradeStatus, statusReads: 0 }
   page.on('pageerror', error => problems.push(error.message))
   page.on('console', message => {
     if (['error', 'warning'].includes(message.type())) problems.push(message.text())
@@ -66,7 +68,7 @@ async function openPage(mode, width = 390) {
     window.managementWrites = {}
     window.fetch = (input, init = {}) => {
       const pathname = new URL(typeof input === 'string' ? input : input.url, location.href).pathname
-      if (init.method === 'POST' && /\/(uninstall|toggle|skill-toggle|skill-remove)$/.test(pathname)) {
+      if (init.method === 'POST' && /\/(uninstall|toggle|skill-toggle|skill-remove|restart|framework-relaunch|framework-upgrade)$/.test(pathname)) {
         window.managementWrites[pathname] = (window.managementWrites[pathname] || 0) + 1
       }
       return originalFetch(input, init)
@@ -74,7 +76,7 @@ async function openPage(mode, width = 390) {
   }, { mode })
   await page.route('**/plugin-console/**', async route => {
     const endpoint = new URL(route.request().url()).pathname.split('/').at(-1)
-    if (['uninstall', 'toggle', 'skill-toggle', 'skill-remove'].includes(endpoint)) {
+    if (['uninstall', 'toggle', 'skill-toggle', 'skill-remove', 'restart', 'framework-relaunch', 'framework-upgrade'].includes(endpoint)) {
       let resolveResponse
       let markDone
       const response = new Promise(resolve => { resolveResponse = resolve })
@@ -93,13 +95,16 @@ async function openPage(mode, width = 390) {
     if (endpoint === 'state' && state.refreshError) {
       return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ ok: false, error: '刷新失败' }) })
     }
+    if (endpoint === 'framework-upgrade-status') state.statusReads += 1
+    const frameworkItems = framework ? [{ fullName: 'deepseek-ai/deepseek-harness', description: 'DSH framework', stars: 1 }] : []
     const body = endpoint === 'state'
-      ? { entries: state.entries, installJobs: [], compat: { supported: true }, framework: null,
+      ? { entries: state.entries, installJobs: [], compat: { supported: true, dshVersion: '0.1.5-rc.2' }, framework: null,
         github: { loggedIn: false }, patch: { inserts: [] }, recentFailures: [], selfVersion: null }
       : endpoint === 'skills-installed' ? { skills: state.skills }
       : endpoint === 'sources' ? { sources: { registries: [], searchSources: [], gitee: {} } }
-      : endpoint === 'market-index' ? { items: [], skills: [] }
-      : endpoint === 'framework-upgrade-status' ? { status: 'idle' } : {}
+      : endpoint === 'market-index' || endpoint === 'search' ? { items: frameworkItems, skills: [] }
+      : endpoint === 'check-update' ? { latest: '0.1.6', error: null }
+      : endpoint === 'framework-upgrade-status' ? { status: state.upgradeStatus, message: state.upgradeStatus === 'failed' ? '升级失败，请重试' : null } : {}
     await route.fulfill({ contentType: 'application/json', body: JSON.stringify(body) })
   })
   await page.goto(url)
@@ -186,6 +191,33 @@ try {
     assert.equal(await removePlugin(page, 'plugin-b').getAttribute('aria-busy'), 'false')
     assert.equal(await removePlugin(page, 'plugin-b').innerText(), '等待重启')
     await shot(page, '1280-bundle-awaiting-restart')
+    // Both restart entry points are clicked in the same JavaScript turn.
+    await page.getByRole('button', { name: '重启服务', exact: true }).evaluateAll(buttons => {
+      if (buttons.length !== 2) throw new Error('Expected two restart entry points')
+      buttons[0].click(); buttons[0].click(); buttons[1].click()
+    })
+    await waitRequests(state, 5)
+    assert.equal(state.requests[4].endpoint, 'restart')
+    assert.equal(await page.locator('.pc_restartBtn').getAttribute('aria-busy'), 'true')
+    await page.setViewportSize({ width: 390, height: 900 })
+    await shot(page, '390-restart-pending')
+    await finish(state.requests[4], { ok: false, error: '重启请求被拒绝' })
+    await page.getByText('操作失败：重启请求被拒绝', { exact: true }).waitFor()
+    assert.equal(await page.locator('.pc_restartBtn').isEnabled(), true)
+    await shot(page, '390-restart-error')
+    await page.locator('.pc_restartBtn').click()
+    await waitRequests(state, 6)
+    await finish(state.requests[5], { ok: true })
+    await page.getByText('重启请求已接受。服务恢复后请刷新页面。', { exact: true }).waitFor()
+    assert.equal(await page.locator('.pc_restartBtn').isDisabled(), true)
+    assert.equal(await page.locator('.pc_restartBtn').getAttribute('aria-busy'), 'false')
+    await page.getByRole('button', { name: '刷新页面', exact: true }).waitFor()
+    await page.setViewportSize({ width: 1280, height: 900 })
+    await shot(page, '1280-restart-accepted')
+    // Acceptance must not schedule an unconditional reload or a second restart.
+    await page.clock.fastForward(13_000)
+    assert.equal(state.requests.length, 6)
+    await page.getByText('重启请求已接受。服务恢复后请刷新页面。', { exact: true }).waitFor()
     await page.close()
   }
   {
@@ -262,8 +294,93 @@ try {
     assert.equal(await row(page, 'beta-skill').getByText('已停用', { exact: true }).count(), 1)
     await page.close()
   }
+  // Upgrade confirmation -> one write -> no-op/error stays retryable; only an
+  // accepted upgrade restores progress and blocks conflicting restart requests.
+  {
+    const { page, state } = await openPage('plugins', 390, true)
+    await page.locator('#pc-market-search').getByRole('button', { name: '搜索', exact: true }).click()
+    const upgrade = page.getByRole('button', { name: '框架升级 → v0.1.6', exact: true })
+    const confirm = page.getByRole('button', { name: '确认升级？（服务将自动重启）', exact: true })
+    await upgrade.click()
+    assert.equal(state.requests.length, 0)
+    await confirm.evaluate(button => {
+      button.click(); button.click()
+      document.querySelector('.pc_restartBtn').click()
+    })
+    await waitRequests(state, 1)
+    assert.equal(state.requests[0].endpoint, 'framework-upgrade')
+    assert.equal(await page.locator('.pc_restartBtn').isDisabled(), true)
+    await finish(state.requests[0], { ok: true, upgraded: false, hasUpdate: false })
+    await page.getByText('框架升级未启动（已是最新版本）', { exact: true }).waitFor()
+    assert.equal(await page.getByText('备份现有配置', { exact: true }).count(), 0)
+    assert.equal(await page.locator('.pc_restartBtn').isEnabled(), true)
+    const readsAfterNoop = state.statusReads
+    await page.clock.fastForward(7000)
+    assert.equal(state.statusReads, readsAfterNoop, 'a no-op must not start progress polling')
+    await shot(page, '390-framework-no-update')
+    for (const [body, message] of [
+      [{ ok: true, upgraded: false, hasUpdate: false, registryError: 'offline' }, /框架升级未启动（版本检测失败/],
+      [{ ok: true, upgraded: false, hasUpdate: true, steps: ['找不到启动入口，已取消升级'] }, '框架升级未启动：找不到启动入口，已取消升级'],
+      [{ ok: false, error: '升级请求被拒绝' }, '操作失败：升级请求被拒绝'],
+      [{}, '操作失败：服务未确认接受请求，请刷新状态后重试'],
+    ]) {
+      const expectedRequests = state.requests.length + 1
+      await upgrade.click(); await confirm.click()
+      await waitRequests(state, expectedRequests)
+      const request = state.requests.at(-1)
+      await finish(request, body)
+      await page.getByText(message, { exact: typeof message === 'string' }).waitFor()
+      assert.equal(await upgrade.isEnabled(), true)
+      assert.equal(await page.locator('.pc_restartBtn').isEnabled(), true)
+    }
+    await shot(page, '390-framework-request-error')
+    const nextRequestCount = state.requests.length + 1
+    await upgrade.click(); await confirm.click()
+    await waitRequests(state, nextRequestCount)
+    state.upgradeStatus = 'installing'
+    await finish(state.requests.at(-1), { ok: true, upgraded: true, current: '0.1.5-rc.2', target: '0.1.6' })
+    await page.getByText('框架升级请求已接受：0.1.5-rc.2 → 0.1.6', { exact: true }).waitFor()
+    assert.equal(await upgrade.isDisabled(), true)
+    assert.equal(await page.locator('.pc_restartBtn').isDisabled(), true)
+    assert.equal(await page.getByRole('button', { name: '拉起服务', exact: true }).count(), 0)
+    await page.setViewportSize({ width: 1280, height: 900 })
+    await shot(page, '1280-framework-accepted')
+    state.upgradeStatus = 'failed'
+    await page.clock.fastForward(3100)
+    await page.getByRole('button', { name: '拉起服务', exact: true }).waitFor()
+    assert.equal(await upgrade.isEnabled(), true)
+    const relaunch = page.getByRole('button', { name: '拉起服务', exact: true })
+    const beforeRelaunch = state.requests.length
+    await relaunch.evaluate(button => {
+      button.click(); button.click()
+      document.querySelector('.pc_restartBtn').click()
+    })
+    await waitRequests(state, beforeRelaunch + 1)
+    assert.equal(state.requests.at(-1).endpoint, 'framework-relaunch')
+    assert.equal(await relaunch.getAttribute('aria-busy'), 'true')
+    await finish(state.requests.at(-1), { ok: false, error: '启动请求被拒绝' })
+    await page.getByText('操作失败：启动请求被拒绝', { exact: true }).waitFor()
+    await page.setViewportSize({ width: 390, height: 900 })
+    await shot(page, '390-relaunch-error')
+    await relaunch.click()
+    await waitRequests(state, beforeRelaunch + 2)
+    await finish(state.requests.at(-1), { ok: true })
+    await page.getByText('启动请求已接受。服务恢复后请刷新页面。', { exact: true }).waitFor()
+    assert.equal(await relaunch.isDisabled(), true)
+    assert.equal(await relaunch.getAttribute('aria-busy'), 'false')
+    await shot(page, '390-relaunch-accepted')
+    await page.close()
+  }
+  {
+    const { page, state } = await openPage('plugins', 390, true, 'installing')
+    await page.getByText(/⟳ 升级框架本体/).waitFor()
+    assert.equal(await page.locator('.pc_restartBtn').isDisabled(), true, 'restored active upgrades block restart')
+    assert.equal(await page.getByRole('button', { name: '拉起服务', exact: true }).count(), 0)
+    assert.equal(state.requests.length, 0)
+    await page.close()
+  }
   assert.deepEqual(problems, [])
-  console.log(`plugin-console-management: ${theme}; ${screenshots} screenshots; plugin and skill mutation locks, retries, refresh and restart states verified`)
+  console.log(`plugin-console-management: ${theme}; ${screenshots} screenshots; plugin, skill and service mutation locks, retries, refresh and upgrade states verified`)
 } finally {
   for (const request of pending) request.resolve({ ok: false, error: 'Test cleanup' })
   await browser.close()
