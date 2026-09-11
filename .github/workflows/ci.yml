@@ -63,7 +63,7 @@ jobs:
           fi
           echo "product=$product" >> "$GITHUB_OUTPUT"
 
-  # Full product gate: build, typecheck, unit tests, and every headless smoke.
+  # Product gate: AA profile smoke is temporarily paused below.
   # A documentation-only change already passed diff validation in `changes`.
   check:
     needs: changes

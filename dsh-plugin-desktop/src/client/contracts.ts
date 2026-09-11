@@ -1,3 +1,5 @@
+import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
+
 /** Sidebar geometry passed by the desktop root slot. */
 export interface DesktopSidebarOwnerProps {
   /** Whether the sidebar is showing its compact rail. */
@@ -69,8 +71,6 @@ export interface DesktopWindowService {
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
-    /** Desktop-owned layout service in extended and enhanced modes. */
-    layout: DesktopLayoutService
     /** Native window geometry for the current Desktop renderer generation. */
     desktopWindow: DesktopWindowService
   }

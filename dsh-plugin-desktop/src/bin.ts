@@ -6,6 +6,10 @@ import { homedir } from 'node:os'
 import { posix, resolve, win32 } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { exportDesktopDiagnostics } from './diagnostic-export.ts'
+import {
+  DESKTOP_PACKAGE_NAME,
+  DESKTOP_PRODUCT_NAME,
+} from './product-identity.ts'
 
 /** Parsed launcher action. */
 export type DesktopCliAction = 'export-diagnostics' | 'help' | 'version' | 'launch'
@@ -77,9 +81,9 @@ async function launchElectron(): Promise<number> {
     electronPath = candidate
   } catch {
     process.stderr.write(
-      'dsh-plugin-desktop: electron is not available in this installation.\n'
+      `${DESKTOP_PACKAGE_NAME}: electron is not available in this installation.\n`
       + 'Install the desktop launcher globally (npm installs the electron peer automatically):\n'
-      + '  npm install -g dsh-plugin-desktop\n'
+      + `  npm install -g ${DESKTOP_PACKAGE_NAME}\n`
       + 'Or add electron to the profile before launching:\n'
       + '  dsh plugin --profile <name> add electron\n'
       + 'Or use the packaged Yootun-Agent application.\n',
@@ -115,7 +119,7 @@ export async function runDesktopCli(
   try {
     action = parseDesktopCli(argv)
   } catch (cause) {
-    process.stderr.write(`dsh-plugin-desktop: ${cause instanceof Error ? cause.message : String(cause)}\n`)
+    process.stderr.write(`${DESKTOP_PACKAGE_NAME}: ${cause instanceof Error ? cause.message : String(cause)}\n`)
     process.stderr.write(DESKTOP_CLI_HELP)
     return 1
   }
@@ -143,7 +147,7 @@ if (invokedPath === fileURLToPath(import.meta.url)) {
   void runDesktopCli(process.argv.slice(2)).then(
     code => { process.exitCode = code },
     cause => {
-      process.stderr.write(`dsh-plugin-desktop: ${cause instanceof Error ? cause.stack ?? cause.message : String(cause)}\n`)
+      process.stderr.write(`${DESKTOP_PACKAGE_NAME}: ${cause instanceof Error ? cause.stack ?? cause.message : String(cause)}\n`)
       process.exitCode = 1
     },
   )

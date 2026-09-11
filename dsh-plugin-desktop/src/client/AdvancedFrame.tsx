@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
-import type {} from '@deepseek-ai/dsh-client-ui-session/client'
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import type { PropsRenderSlots, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import type {} from './contracts.ts'
 import type { DesktopClientPlatform } from './environment.ts'
 import {
@@ -71,15 +71,6 @@ export function DesktopOwnedFrame({ layout, mode, platform, renderSlot, SessionP
   const narrow = viewport < SIDEBAR_AUTO_COLLAPSE
   useEffect(() => { layout.setNarrow(narrow) }, [layout, narrow])
 
-  const previousSession = useRef(detailsSession)
-  useLayoutEffect(() => {
-    if (detailsSession === undefined) return
-    if (previousSession.current !== undefined && previousSession.current !== detailsSession) {
-      layout.closeDetails()
-    }
-    previousSession.current = detailsSession
-  }, [detailsSession, layout])
-
   const collapsed = narrow ? !panels.narrowExpanded : panels.sidebar === 0
   const sidebarPreference = collapsed ? 0 : panels.sidebar === 0 ? SIDEBAR_DEFAULT : panels.sidebar
   const rightbarPreference = panels.rightbar === 0
@@ -111,8 +102,8 @@ export function DesktopOwnedFrame({ layout, mode, platform, renderSlot, SessionP
     sidebarBase.current = columnsRef.current.sidebar
     setDragging(true)
   }, [])
-  const onDetailsStart = useCallback(() => {
-    detailsBase.current = columnsRef.current.details
+  const onRightbarStart = useCallback(() => {
+    rightbarBase.current = normalRef.current.rightbar
     setDragging(true)
   }, [])
   const onRightbarStart = useCallback(() => {
@@ -180,12 +171,12 @@ export function DesktopOwnedFrame({ layout, mode, platform, renderSlot, SessionP
           onEnd={onDragEnd}
         />
       )}
-      {columns.details > 0 && (
+      {panels.rightbarShown && normal.rightbar > 0 && !panels.rightbarFullscreen && (
         <ResizeHandle
-          side="details"
-          left={viewport - columns.details}
-          onStart={onDetailsStart}
-          onDrag={onDetailsDrag}
+          side="rightbar"
+          left={viewport - normal.rightbar}
+          onStart={onRightbarStart}
+          onDrag={onRightbarDrag}
           onEnd={onDragEnd}
         />
       )}
@@ -200,6 +191,11 @@ export function DesktopOwnedFrame({ layout, mode, platform, renderSlot, SessionP
       )}
     </div>
   )
+}
+
+function MainPanel({ usePanelInfo, renderSlot }: Pick<PropsRuntime<'root'>, 'usePanelInfo'> & PropsRenderSlots<'main'>) {
+  const panelId = usePanelInfo(info => info.activePanelId)
+  return renderSlot('main', {}, { entryKey: panelId ?? 'conversation' })
 }
 
 function ResizeHandle(props: {

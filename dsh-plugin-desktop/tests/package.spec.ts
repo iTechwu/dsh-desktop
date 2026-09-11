@@ -14,6 +14,7 @@ import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import { runInNewContext } from 'node:vm'
 import sharp from 'sharp'
 import { describe, expect, it } from 'vitest'
 import { parse as parseYaml } from 'yaml'
@@ -208,8 +209,8 @@ describe('published package surface', () => {
     expect(main).toContain('if (safeModePaths !== undefined) {\n      homeDir = safeModePaths.homeDir')
     expect(main).toContain('process.env.DSH_HOME = homeDir')
     expect(main).toContain('const desktopLaunchEnvironment = withDesktopDshHome(environment, homeDir)')
-    expect(main).toContain('hostCtx.provide(DSH_LAUNCH_ENVIRONMENT_KEY, desktopLaunchEnvironment)')
-    expect(main).toContain('prepareDesktopSafeModeEnvironment(desktopUserDataDir)')
+    expect(main).toContain('createDesktopWebProfile(paths.homeDir, DESKTOP_SAFE_MODE_PROFILE_NAME)')
+    expect(main).toContain("join(paths.userDataDir, 'profile-selection', 'state.json')")
     expect(main).toContain('selectDesktopProfile(')
     expect(main).toContain('cleanupDesktopSafeModeEnvironment(desktopUserDataDir)')
     expect(main).toContain('if (safeModeRequested) {')
@@ -431,8 +432,8 @@ describe('published package surface', () => {
     expect(config).toContain("diagnostics: 'src/diagnostics.ts'")
     expect(config).toContain("notifications: 'src/notifications.ts'")
     expect(config).toContain("'diagnostic-export-worker': 'src/diagnostic-export-worker.ts'")
-    expect(config).toContain("entry: { preload: 'src/preload.ts' }")
-    expect(config).toContain("entryFileNames: 'preload.cjs'")
+    expect(config).toContain("preload: 'src/preload.ts', 'compatibility-preload': 'src/compatibility-preload.ts'")
+    expect(config).toContain("entryFileNames: '[name].cjs'")
     expect(config).toContain("terminal: 'src/terminal.ts'")
     expect(config).toContain("'update-download': 'src/update-download.ts'")
     expect(config).toContain("updates: 'src/updates.ts'")
@@ -763,6 +764,7 @@ describe('published package surface', () => {
       'package.json',
       '!node_modules/koffi-darwin-*-3-1-1/**',
       '!node_modules/node-pty/build/**',
+      '!node_modules/fs-ext/build/**',
     ])
     expect(manifest.build?.mac?.icon).toBe('build/app-icon-mac.png')
     expect(manifest.build?.mac?.asarUnpack).toEqual([

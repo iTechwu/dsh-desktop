@@ -1,11 +1,11 @@
 diff --git a/lib/client.js b/lib/client.js
-index 938230e..c5895bb 100644
+index cc6a233..d948def 100644
 --- a/lib/client.js
 +++ b/lib/client.js
-@@ -72,6 +72,32 @@ window.__ModuleLoader__.load({
+@@ -69,6 +69,32 @@ window.__ModuleLoader__.load({
+ 		* sessions-derived empty-Hero fact is active. Visible dialog chrome belongs
  		* to the step, so a mounted-but-deciding step paints nothing here.
  		*/
- 		const RECOVERY_CONFIRMATION_MS = 2e3;
 +		/** Desktop-owned display glyph kept local until the upstream slot accepts icons. */
 +		function IconDesktopSettings({ size = 16, className }) {
 +			return (0, react_jsx_runtime.jsxs)("svg", {
@@ -35,7 +35,7 @@ index 938230e..c5895bb 100644
  		/** Nav glyph by section id; unknown ids fall back to the settings gear. */
  		function navIcon(id) {
  			if (id === "models") return (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconDataOutline16, {
-@@ -86,6 +112,10 @@ window.__ModuleLoader__.load({
+@@ -83,6 +109,10 @@ window.__ModuleLoader__.load({
  				className: SettingsRoot_module_css_default.navIcon,
  				size: 16
  			});

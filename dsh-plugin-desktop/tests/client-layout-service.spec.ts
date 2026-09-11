@@ -2,6 +2,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { claimDesktopLayout } from '../src/client/layout-service.ts'
 import { applyAdvancedShell } from '../src/client/advanced-shell.ts'
 import { applyExtendedShell } from '../src/client/extended-shell.ts'
+import { DesktopLayoutState } from '../src/client/layout-state.ts'
+import type { MainPanelId } from '@deepseek-ai/dsh-client-ui-layout/client'
 
 interface FakeStyleElement {
   id: string
@@ -77,6 +79,19 @@ describe('claimDesktopLayout', () => {
 
     expect(claimDesktopLayout(ctx as never, layout as never)).toBe(true)
     expect(ctx.reflect.provide).toHaveBeenCalledWith('layout', layout)
+    const { hooks: { panelInfo } } = ctx.slots.provideRoot.mock.calls[0]![0] as {
+      hooks: { panelInfo: { getSnapshot(): unknown; subscribe(fn: () => void): () => void } }
+    }
+    const changed = vi.fn()
+    const stop = panelInfo.subscribe(changed)
+    layout.selectPanel('files' as MainPanelId)
+    expect(panelInfo.getSnapshot()).toEqual({ activePanelId: 'files' })
+    panels.clear()
+    expect(ctx.slots.subscribe.mock.calls[0]![0]).toBe('main')
+    ctx.slots.subscribe.mock.calls[0]![1]()
+    expect(panelInfo.getSnapshot()).toEqual({ activePanelId: null })
+    expect(changed).toHaveBeenCalledTimes(2)
+    stop()
 
     // The disposal effect must be owned by the fiber so a later unload frees
     // the registration for whoever applies next; the factory result is what
@@ -87,6 +102,8 @@ describe('claimDesktopLayout', () => {
     ;(disposer as () => void)()
     expect(layout.dispose).toHaveBeenCalledOnce()
     expect(dispose).toHaveBeenCalled()
+    expect(ctx.slots.provideRoot.mock.results[0]!.value).toHaveBeenCalledOnce()
+    expect(ctx.slots.subscribe.mock.results[0]!.value).toHaveBeenCalledOnce()
   })
 
   it('defers safely when another entry already owns the service', () => {

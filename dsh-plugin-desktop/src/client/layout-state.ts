@@ -1,3 +1,5 @@
+import type { ILayout, MainPanelId, PanelInfo } from '@deepseek-ai/dsh-client-ui-layout/client'
+
 /** Advanced-shell panel state shared by the root slot and layout-service adapter. */
 export interface DesktopLayoutSnapshot {
   /** Selected global panel; null displays the current conversation. */
@@ -26,8 +28,8 @@ export interface DesktopColumns {
   sidebar: number
   /** Rendered center width. */
   center: number
-  /** Rendered details width. */
-  details: number
+  /** Rendered rightbar width. */
+  rightbar: number
 }
 
 /** Four-column geometry used by the Desktop shell (sidebar | center | rightbar | details). */
@@ -65,28 +67,24 @@ export function collapsedSidebarWidth(
 }
 
 /**
- * Resolve three desktop columns without allowing details to squeeze the conversation below its floor.
+ * Resolve three desktop columns without allowing rightbar to squeeze the conversation below its floor.
  * @param viewport - available frame width.
  * @param sidebar - sidebar preference, where zero selects the compact rail.
- * @param details - details preference, where zero closes the panel.
+ * @param rightbar - rightbar preference, where zero closes the panel.
  * @returns rendered column widths.
  */
 export function computeDesktopColumns(
   viewport: number,
   sidebar: number,
-  details: number,
+  rightbar: number,
   collapsedWidth: number = SIDEBAR_COLLAPSED,
 ): DesktopColumns {
   const sidebarWidth = sidebar === 0 ? collapsedWidth : clamp(sidebar, SIDEBAR_MIN, SIDEBAR_MAX)
-  const preferredDetails = details === 0 ? 0 : clamp(details, DETAILS_MIN, DETAILS_MAX)
-  if (sidebarWidth + preferredDetails + CENTER_MIN <= viewport) {
-    return { sidebar: sidebarWidth, center: viewport - sidebarWidth - preferredDetails, details: preferredDetails }
-  }
-  const reducedDetails = preferredDetails === 0 ? 0 : Math.max(DETAILS_MIN, viewport - sidebarWidth - CENTER_MIN)
-  if (sidebarWidth + reducedDetails + CENTER_MIN <= viewport) {
-    return { sidebar: sidebarWidth, center: CENTER_MIN, details: reducedDetails }
-  }
-  return { sidebar: sidebarWidth, center: Math.max(0, viewport - sidebarWidth), details: 0 }
+  const available = viewport - sidebarWidth - CENTER_MIN
+  const resolvedRightbar = rightbar === 0 || available < RIGHTBAR_MIN
+    ? 0
+    : Math.min(available, clamp(rightbar, RIGHTBAR_MIN, viewport * RIGHTBAR_MAX_RATIO))
+  return { sidebar: sidebarWidth, center: Math.max(0, viewport - sidebarWidth - resolvedRightbar), rightbar: resolvedRightbar }
 }
 
 /**
@@ -131,7 +129,42 @@ function clamp(value: number, min: number, max: number): number {
 }
 
 /** Small observable panel controller used by the advanced root registration. */
-export class DesktopLayoutState {
+export class DesktopLayoutState implements ILayout {
+  private panelInfo: PanelInfo = Object.freeze({ activePanelId: null })
+  private navigation = new AbortController()
+
+  constructor(private readonly hasMainPanel: (id: MainPanelId) => boolean = () => false) {}
+
+  /** Root selection remains independent of the active Session and column geometry. */
+  getPanelInfo(): PanelInfo { return this.panelInfo }
+
+  /** Select a registered global panel, or return to the Conversation. */
+  selectPanel(panelId: MainPanelId | null): void {
+    if (panelId !== null && !this.hasMainPanel(panelId)) {
+      throw new Error(`layout.selectPanel: main panel "${panelId}" is not registered`)
+    }
+    this.navigation.abort()
+    if (this.panelInfo.activePanelId === panelId) return
+    this.panelInfo = Object.freeze({ activePanelId: panelId })
+    for (const listener of this.listeners) listener()
+  }
+
+  /** Return to the Conversation when the selected plugin panel is unloaded. */
+  retainMainPanels(): void {
+    const id = this.panelInfo.activePanelId
+    if (id !== null && !this.hasMainPanel(id)) this.selectPanel(null)
+  }
+
+  /** Supersede pending asynchronous navigation. */
+  beginNavigation(): AbortSignal {
+    this.navigation.abort()
+    this.navigation = new AbortController()
+    return this.navigation.signal
+  }
+
+  /** Invalidate pending work when the owning layout unloads. */
+  dispose(): void { this.navigation.abort() }
+
   private snapshot: DesktopLayoutSnapshot = Object.freeze({
     activePanelId: null,
     sidebar: SIDEBAR_DEFAULT,
@@ -196,14 +229,19 @@ export class DesktopLayoutState {
     this.publish({ ...this.snapshot, narrow, narrowExpanded: false })
   }
 
-  /** Open details at its default width. */
-  openDetails(): void {
-    if (this.snapshot.details === 0) this.publish({ ...this.snapshot, details: DETAILS_DEFAULT })
+  /** Report the upstream panel presentation, preserving its saved width. */
+  openRightbar(track: boolean, fullscreen: boolean): void {
+    if (this.snapshot.rightbarShown && this.snapshot.rightbarTrack === track
+      && this.snapshot.rightbarFullscreen === fullscreen) return
+    this.publish({ ...this.snapshot, rightbarShown: true, rightbarTrack: track,
+      rightbarFullscreen: fullscreen,
+      narrowExpanded: this.snapshot.narrow ? false : this.snapshot.narrowExpanded })
   }
 
-  /** Close details while keeping its slot mounted. */
-  closeDetails(): void {
-    if (this.snapshot.details !== 0) this.publish({ ...this.snapshot, details: 0 })
+  /** Clear presentation when the upstream panel closes or unmounts. */
+  closeRightbar(): void {
+    if (!this.snapshot.rightbarShown) return
+    this.publish({ ...this.snapshot, rightbarShown: false, rightbarTrack: false, rightbarFullscreen: false })
   }
 
   /** Open the current session's rightbar using the upstream layout contract. */
@@ -233,9 +271,9 @@ export class DesktopLayoutState {
     this.publish({ ...this.snapshot, sidebar: clamp(width, SIDEBAR_MIN, SIDEBAR_MAX) })
   }
 
-  /** @param width - requested details width from a resize gesture. */
-  setDetails(width: number): void {
-    this.publish({ ...this.snapshot, details: clamp(width, DETAILS_MIN, DETAILS_MAX) })
+  /** @param width - requested rightbar width from a resize gesture. */
+  setRightbar(width: number, viewport: number): void {
+    this.publish({ ...this.snapshot, rightbar: clamp(width, RIGHTBAR_MIN, Math.max(RIGHTBAR_MIN, viewport * RIGHTBAR_MAX_RATIO)) })
   }
 
   private publish(next: DesktopLayoutSnapshot): void {

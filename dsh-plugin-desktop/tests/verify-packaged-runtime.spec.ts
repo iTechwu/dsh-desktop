@@ -22,11 +22,13 @@ import {
   MAX_PNPM_SMART_UNPACK_FILES,
   MAX_UNPACKED_RUNTIME_BYTES,
   MAX_UNPACKED_RUNTIME_FILES,
+  REQUIRED_AGENT_PRESET_RUNTIME_ENTRIES,
   REQUIRED_DSH_CLI_RUNTIME_ENTRIES,
   REQUIRED_PACKAGED_RUNTIME_ENTRIES,
   REQUIRED_MACOS_UNPACKED_RUNTIME_ENTRIES,
   REQUIRED_MACOS_UNIVERSAL_ENTRIES,
   REQUIRED_NON_MACOS_UNPACKED_RUNTIME_ENTRIES,
+  REQUIRED_POSIX_FS_EXT_ENTRIES,
   REQUIRED_UNPACKED_RUNTIME_ENTRIES,
   REQUIRED_WINDOWS_X64_NODE_PTY_ENTRIES,
   resolvePackagedAsarPath,
@@ -133,6 +135,8 @@ function completeArchiveEntries(): string[] {
     ...DESKTOP_RUNTIME_ENTRIES,
     ...REQUIRED_UNPACKED_RUNTIME_ENTRIES,
     ...REQUIRED_WINDOWS_X64_NODE_PTY_ENTRIES,
+    ...Object.values(REQUIRED_POSIX_FS_EXT_ENTRIES.darwin),
+    ...Object.values(REQUIRED_POSIX_FS_EXT_ENTRIES.linux),
     ...REQUIRED_MACOS_UNIVERSAL_ENTRIES,
   ])]
 }
@@ -142,10 +146,22 @@ function requiredPhysicalEntries(runtimeContext: PackagedRuntimeContext): string
     ? REQUIRED_MACOS_UNPACKED_RUNTIME_ENTRIES
     : REQUIRED_NON_MACOS_UNPACKED_RUNTIME_ENTRIES
   if (runtimeContext.electronPlatformName === 'win32') {
-    return [...desktopAssets, ...REQUIRED_WINDOWS_X64_NODE_PTY_ENTRIES]
+    return [
+      ...desktopAssets,
+      ...REQUIRED_WINDOWS_X64_NODE_PTY_ENTRIES,
+    ]
   }
   if (runtimeContext.electronPlatformName === 'darwin' && runtimeContext.arch === 4) {
     return [...desktopAssets, ...REQUIRED_MACOS_UNIVERSAL_ENTRIES]
+  }
+  if ((runtimeContext.electronPlatformName === 'darwin'
+      || runtimeContext.electronPlatformName === 'linux')
+    && (runtimeContext.arch === 1 || runtimeContext.arch === 3)) {
+    const architecture = runtimeContext.arch === 1 ? 'x64' : 'arm64'
+    return [
+      ...desktopAssets,
+      REQUIRED_POSIX_FS_EXT_ENTRIES[runtimeContext.electronPlatformName][architecture],
+    ]
   }
   return [...desktopAssets]
 }
@@ -195,6 +211,17 @@ describe('packaged desktop runtime verification', () => {
     expect(REQUIRED_PACKAGED_RUNTIME_ENTRIES.some(entry => entry.startsWith('lib/'))).toBe(false)
     expect(DESKTOP_RUNTIME_ENTRIES).toContain('lib/main.js')
     expect(DESKTOP_RUNTIME_ENTRIES).toContain('lib/native-ui/setup-wizard.html')
+  })
+
+  it('keeps the shipped PTC preset present and integrity-protected in app.asar', () => {
+    expect(REQUIRED_AGENT_PRESET_RUNTIME_ENTRIES).toEqual([
+      'node_modules/@deepseek-ai/dsh-agent-presets/presets/ptc/agent.cordis.yml',
+      'node_modules/@deepseek-ai/dsh-agent-presets/presets/ptc/preset.yml',
+    ])
+    for (const entry of REQUIRED_AGENT_PRESET_RUNTIME_ENTRIES) {
+      expect(REQUIRED_PACKAGED_RUNTIME_ENTRIES).toContain(entry)
+      expect(FORBIDDEN_UNPACKED_RUNTIME_ENTRIES).toContain(entry)
+    }
   })
 
   it('recursively derives every non-map desktop runtime file from the completed build', () => {
@@ -512,7 +539,10 @@ describe('packaged desktop runtime verification', () => {
   it('requires only the platform-specific nativeImage asset set', () => {
     const mac = context('/build', 'darwin', 3)
     const windows = context('/build', 'win32', 1)
-    expect(requiredPhysicalEntries(mac)).toEqual(REQUIRED_MACOS_UNPACKED_RUNTIME_ENTRIES)
+    expect(requiredPhysicalEntries(mac)).toEqual([
+      ...REQUIRED_MACOS_UNPACKED_RUNTIME_ENTRIES,
+      REQUIRED_POSIX_FS_EXT_ENTRIES.darwin.arm64,
+    ])
     expect(requiredPhysicalEntries(windows)).toEqual([
       ...REQUIRED_NON_MACOS_UNPACKED_RUNTIME_ENTRIES,
       ...REQUIRED_WINDOWS_X64_NODE_PTY_ENTRIES,
@@ -556,6 +586,7 @@ describe('packaged desktop runtime verification', () => {
   })
 
   it('keeps the reviewed smart-unpack surface explicit', () => {
+    expect(ALLOWED_SMART_UNPACK_PACKAGE_ROOTS).toContain('node_modules/fs-ext')
     expect(ALLOWED_SMART_UNPACK_PACKAGE_ROOTS).toContain('node_modules/node-pty')
     expect(ALLOWED_SMART_UNPACK_PACKAGE_ROOTS).toContain('node_modules/pnpm')
     expect(ALLOWED_SMART_UNPACK_PACKAGE_ROOTS).toContain('node_modules/koffi-win32-x64-3-1-1')
@@ -643,6 +674,7 @@ describe('packaged desktop runtime verification', () => {
     'lib/packaged-runtime-smoke.js',
     'lib/pnpm.js',
     'lib/update-download.js',
+    ...REQUIRED_AGENT_PRESET_RUNTIME_ENTRIES,
     'node_modules/open/index.js',
   ])('fails loud when required ASAR entry %s is absent', (missing) => {
     const runtimeContext = context('/build', 'win32')
@@ -678,6 +710,24 @@ describe('packaged desktop runtime verification', () => {
   it('requires the macOS Retina template asset', () => {
     const runtimeContext = context('/build', 'darwin', 3)
     const missing = 'build/tray-iconTemplate@2x.png'
+    const fixture = physicalFixture(runtimeContext, { missing })
+    expect(() => verifyPackagedRuntime(
+      runtimeContext,
+      headerReader(completeArchiveEntries(), requiredPhysicalEntries(runtimeContext)),
+      fixture.exists,
+      () => fixture.files,
+    )).toThrow(`missing required physical entries: ${missing}`)
+  })
+
+  it.each([
+    ['darwin', 1, REQUIRED_POSIX_FS_EXT_ENTRIES.darwin.x64],
+    ['darwin', 3, REQUIRED_POSIX_FS_EXT_ENTRIES.darwin.arm64],
+    ['linux', 1, REQUIRED_POSIX_FS_EXT_ENTRIES.linux.x64],
+    ['linux', 3, REQUIRED_POSIX_FS_EXT_ENTRIES.linux.arm64],
+  ] as const)('requires the %s architecture %s fs-ext binding', (platform, arch, missing) => {
+    const runtimeContext = context('/build', platform, arch, platform === 'linux'
+      ? 'dsh-plugin-desktop'
+      : undefined)
     const fixture = physicalFixture(runtimeContext, { missing })
     expect(() => verifyPackagedRuntime(
       runtimeContext,

@@ -1,30 +1,9 @@
-/** Independent Desktop frame portalled above the upstream content viewport. */
-
 import { createPortal } from 'react-dom'
-import { LayoutTemplate, PanelTop, RefreshCw, Sparkles } from 'lucide-react'
-import { useState } from 'react'
-import type {
-  InjectFace, PropsLocale, PropsRuntime,
-} from '@deepseek-ai/dsh-client-ui-slots'
-import type { DesktopSettingsApi } from './desktop-settings-api.ts'
-import type { DesktopClientEnvironment, DesktopClientMode } from './environment.ts'
-import { DesktopNativeActions } from './DesktopNativeActions.tsx'
-import { Button } from '../native-ui/components/ui/button.tsx'
-import type { DesktopSettingsLocaleKey } from './desktop-settings-locales.ts'
-import {
-  HoverCard,
-  HoverCardContent,
-  HoverCardTrigger,
-} from '../native-ui/components/ui/hover-card.tsx'
+import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+import { DesktopFrameTitlebarView, type DesktopFrameTitlebarInjected } from './DesktopFrameTitlebarView.tsx'
 
-export interface DesktopFrameTitlebarInjected {
-  readonly environment: DesktopClientEnvironment
-  readonly api: Pick<
-    DesktopSettingsApi,
-    'openTerminal' | 'restart' | 'restartToRecovery' | 'reloadRenderer' | 'toggleDeveloperTools' | 'checkForUpdates'
-  >
-  readonly setMode: (mode: DesktopClientMode) => Promise<void>
-}
+export { DesktopVersionControl, DesktopModeControl, selectDesktopFrameMode } from './DesktopFrameTitlebarView.tsx'
+export type { DesktopFrameTitlebarInjected } from './DesktopFrameTitlebarView.tsx'
 
 export type DesktopFrameTitlebarProps = PropsRuntime<'shell.overlay'>
   & PropsLocale<'desktop.settings'>

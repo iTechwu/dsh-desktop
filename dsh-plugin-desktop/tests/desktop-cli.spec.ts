@@ -26,7 +26,7 @@ describe('packaged dsh bootstrap', () => {
     expect(environment).toEqual({ Path: 'C:\\Windows' })
   })
 
-  it('clears Node mode before loading the fixed packaged CLI entry', async () => {
+  it('clears Node mode and dispatches the imported CLI exactly once', async () => {
     const environment = {
       ELECTRON_RUN_AS_NODE: '1',
       DSH_DESKTOP_DEFAULT_PROFILE: 'desktop',
@@ -48,6 +48,14 @@ describe('packaged dsh bootstrap', () => {
     await runDesktopDshCli(environment, load, argv)
 
     expect(load).toHaveBeenCalledOnce()
+    expect(runCli).toHaveBeenCalledOnce()
+    expect(runCli).toHaveBeenCalledWith({ allowDesktopProfile: true })
+  })
+
+  it('propagates a rejected upstream CLI invocation', async () => {
+    const failure = new Error('CLI startup failed')
+    const load = async () => ({ runCli: async () => { throw failure } })
+    await expect(runDesktopDshCli({}, load, ['node', 'desktop-cli', '--version'])).rejects.toBe(failure)
   })
 
   it('prints the packaged DSH version without booting a Profile', async () => {
@@ -79,7 +87,7 @@ describe('packaged dsh bootstrap', () => {
   })
 
   it('leaves the release-age policy to the final pnpm shim exactly once', async () => {
-    const load = vi.fn(async () => {})
+    const load = vi.fn(async () => ({ runCli: async () => {} }))
     const defaulted = [
       '/Applications/Yootun-Agent',
       '/app.asar/lib/desktop-cli.js',

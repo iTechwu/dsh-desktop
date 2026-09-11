@@ -3,6 +3,7 @@ import { createElement, type ReactNode } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it, vi } from 'vitest'
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
+import type { MainPanelId, PanelInfo } from '@deepseek-ai/dsh-client-ui-layout/client'
 import { apply } from '../src/client/index.ts'
 import { AdvancedFrame, type AdvancedFrameProps } from '../src/client/AdvancedFrame.tsx'
 import { applyAdvancedShell } from '../src/client/advanced-shell.ts'
@@ -44,6 +45,28 @@ function expectUnifiedSidebarFooterStyles(css: string): void {
 }
 
 describe('desktop client environment', () => {
+  it.each(['darwin', 'win32', 'linux'])('keeps compatibility chrome out of the %s client slot tree', platform => {
+    const marker = platform === 'win32' ? '&dsh-desktop-mica=0' : ''
+    vi.stubGlobal('window', { location: {
+      search: `?dsh-desktop-platform=${platform}&dsh-desktop-mode=compatibility&dsh-desktop-version=2.0.3&dsh-desktop-material=off${marker}`,
+    } })
+    const effect = vi.fn()
+    const inject = vi.fn()
+    const ctx = {
+      effect,
+      slots: { inject },
+      locale: { bind: () => (key: string) => key },
+      settingsScope: { bind: () => ({}) },
+    } as unknown as ClientContext
+    try {
+      apply(ctx)
+      expect(inject.mock.calls.map(([name]) => name)).toEqual(['settings.section', 'settings.action'])
+      expect(effect.mock.calls.map(([, label]) => label)).not.toContain('desktop: independent compatibility frame styles')
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
   it('does not activate desktop effects for an ordinary browser URL', () => {
     vi.stubGlobal('window', { location: { search: '' } })
     const effect = vi.fn()
@@ -132,10 +155,39 @@ describe('desktop brand', () => {
 })
 
 describe('advanced desktop layout', () => {
+  it.each([['advanced', AdvancedFrame], ['extended', ExtendedFrame]] as const)(
+    'passes right Sidebar geometry and preserves its track beneath fullscreen in %s mode', (_mode, Frame) => {
+      vi.stubGlobal('window', { innerWidth: 1440 })
+      const layout = new DesktopLayoutState()
+      const renderSlot = vi.fn((name: string) => createElement('span', { 'data-slot': name }))
+      const props = {
+        layout, platform: 'darwin', renderSlot,
+        usePanelInfo: (select: (info: PanelInfo) => unknown) => select(layout.getPanelInfo()),
+        SessionProvider: ({ children }: { children: ReactNode }) => children,
+      } as unknown as AdvancedFrameProps
+      try {
+        layout.setRightbar(510, 1440)
+        layout.openRightbar(true, false)
+        const normal = renderToStaticMarkup(createElement(Frame, props))
+        expect(renderSlot).toHaveBeenCalledWith('rightbar', { width: 510, viewportWidth: 1440, canShow: true })
+        expect(normal).toContain('grid-template-columns:280px minmax(0, 1fr) 510px')
+        expect(normal).toContain('data-side="rightbar"')
+        layout.openRightbar(true, true)
+        const fullscreen = renderToStaticMarkup(createElement(Frame, props))
+        expect(fullscreen).toContain('data-rightbar-fullscreen="true"')
+        expect(fullscreen).toContain('grid-template-columns:280px minmax(0, 1fr) 510px')
+        expect(fullscreen).not.toContain('data-side="rightbar"')
+        layout.closeRightbar()
+        expect(renderToStaticMarkup(createElement(Frame, props)))
+          .toContain('grid-template-columns:280px minmax(0, 1fr) 0px')
+      } finally { vi.unstubAllGlobals() }
+    },
+  )
+
   it.each([
     ['advanced', AdvancedFrame],
     ['extended', ExtendedFrame],
-  ] as const)('binds the strict details slot through SessionProvider in %s mode', (_mode, Frame) => {
+  ] as const)('renders global main and rightbar panels without a Session in %s mode', (_mode, Frame) => {
     vi.stubGlobal('window', { innerWidth: 1440 })
     const layout = new DesktopLayoutState()
     const props = {
@@ -147,7 +199,6 @@ describe('advanced desktop layout', () => {
         select({ byId: {} }),
       SessionProvider: ({ children }: { children?: ReactNode }) =>
         createElement('section', { 'data-session-provider': '' }, children),
-      renderSlot: (name: string) => createElement('span', { 'data-slot': name }),
     } as unknown as AdvancedFrameProps
 
     try {
@@ -207,13 +258,13 @@ describe('advanced desktop layout', () => {
   it('orders the Windows drag region after scrollable content and before overlays', () => {
     const frame = readFileSync(new URL('../src/client/AdvancedFrame.tsx', import.meta.url), 'utf8')
     const conversation = frame.indexOf('className="dshDesktopConversationSurface"')
-    const details = frame.indexOf('className="dshDesktopDetailsSurface"')
+    const rightbar = frame.indexOf('className="dshDesktopRightbarSurface"')
     const caption = frame.indexOf('className="dshDesktopWindowsCaptionRow"')
     const overlay = frame.indexOf('className="dshDesktopOverlay"')
 
-    expect([conversation, details, caption, overlay]).not.toContain(-1)
+    expect([conversation, rightbar, caption, overlay]).not.toContain(-1)
     expect(caption).toBeGreaterThan(conversation)
-    expect(caption).toBeGreaterThan(details)
+    expect(caption).toBeGreaterThan(rightbar)
     expect(caption).toBeLessThan(overlay)
   })
 
@@ -258,7 +309,7 @@ describe('advanced desktop layout', () => {
       expect(css).not.toMatch(/data-desktop-mode="extended"[^{}]*data-sidebar-collapsed[^{}]*\.dshDesktopUpstreamSidebar/)
       expect(css).toMatch(new RegExp(`data-desktop-mode="advanced"\\]\\[data-desktop-platform="darwin"\\] \\.dshDesktopUpstreamSidebar \\{[^}]*padding-top: ${ADVANCED_MACOS_CONTENT_INSET}px;`))
       expect(css).not.toMatch(/\.dshDesktopUpstreamSidebar \{[^}]*-webkit-app-region: no-drag;/)
-      expect(css).toContain(`grid-template-rows: ${ADVANCED_MACOS_CONTENT_INSET}px minmax(0, 1fr)`)
+      expect(css).toContain(`grid-template-rows: ${ADVANCED_MACOS_DRAG_REGION_HEIGHT}px minmax(0, 1fr)`)
       expect(css).toMatch(/\.dshDesktopFrame\[data-desktop-mode="advanced"\]\[data-desktop-platform="darwin"\] \.dshDesktopSidebarSurface \{[^}]*grid-row: 1 \/ -1;/)
       expect(css).not.toMatch(/data-desktop-platform="darwin"\] \.dshDesktopSidebarSurface \{[^}]*-webkit-app-region: no-drag;/)
       expect(css).toMatch(/\.dshDesktopFrame\[data-desktop-mode="advanced"\]\[data-desktop-platform="darwin"\] \.dshDesktopConversationSurface,\s*\.dshDesktopFrame\[data-desktop-mode="advanced"\]\[data-desktop-platform="darwin"\] \.dshDesktopRightbarSurface,\s*\.dshDesktopFrame\[data-desktop-mode="advanced"\]\[data-desktop-platform="darwin"\] \.dshDesktopDetailsSurface \{ grid-row: 2; \}/)
@@ -295,6 +346,7 @@ describe('advanced desktop layout', () => {
     const layout = new DesktopLayoutState()
     const navigation = layout.beginNavigation()
     const ctx = {
+      slots: { provideRoot: () => () => {}, subscribe: () => () => {} },
       reflect: {
         provide: (name: string, value: unknown) => {
           expect(name).toBe('layout')
@@ -408,10 +460,10 @@ describe('advanced desktop layout', () => {
       material: 'off',
       micaSupported: false,
       availableMaterials: ['off', 'transparent'],
-      safeAreaInsets: { top: DESKTOP_FRAME_HEIGHT, right: 0, bottom: 0, left: 0 },
+      safeAreaInsets: { top: 0, right: 0, bottom: 0, left: 0 },
       dragRegion: {
-        height: DESKTOP_FRAME_HEIGHT,
-        leftInset: MACOS_TRAFFIC_LIGHT_SAFE_WIDTH,
+        height: 0,
+        leftInset: 0,
         rightInset: 0,
       },
     })
@@ -425,7 +477,7 @@ describe('advanced desktop layout', () => {
       material: 'transparent',
       micaSupported: false,
       availableMaterials: ['off', 'transparent'],
-      safeAreaInsets: { top: ADVANCED_MACOS_CONTENT_INSET, right: 0, bottom: 0, left: 0 },
+      safeAreaInsets: { top: ADVANCED_MACOS_DRAG_REGION_HEIGHT, right: 0, bottom: 0, left: 0 },
       dragRegion: {
         height: ADVANCED_MACOS_DRAG_REGION_HEIGHT,
         leftInset: MACOS_TRAFFIC_LIGHT_SAFE_WIDTH,
@@ -460,11 +512,11 @@ describe('advanced desktop layout', () => {
       material: 'mica',
       micaSupported: true,
       availableMaterials: ['off', 'mica'],
-      safeAreaInsets: { top: DESKTOP_FRAME_HEIGHT, right: 0, bottom: 0, left: 0 },
+      safeAreaInsets: { top: 0, right: 0, bottom: 0, left: 0 },
       dragRegion: {
-        height: DESKTOP_FRAME_HEIGHT,
+        height: 0,
         leftInset: 0,
-        rightInset: WINDOWS_CAPTION_CONTROLS_WIDTH,
+        rightInset: 0,
       },
     })
 
@@ -485,9 +537,9 @@ describe('advanced desktop layout', () => {
   })
 
   it('keeps the wider macOS rail in enhanced mode and the upstream width in extended mode', () => {
-    expect(computeDesktopColumns(1440, 0, 0)).toEqual({ sidebar: SIDEBAR_COLLAPSED, center: 1384, details: 0 })
+    expect(computeDesktopColumns(1440, 0, 0)).toEqual({ sidebar: SIDEBAR_COLLAPSED, center: 1384, rightbar: 0 })
     expect(computeDesktopColumns(1440, 0, 0, MACOS_SIDEBAR_COLLAPSED))
-      .toEqual({ sidebar: MACOS_SIDEBAR_COLLAPSED, center: 1350, details: 0 })
+      .toEqual({ sidebar: MACOS_SIDEBAR_COLLAPSED, center: 1350, rightbar: 0 })
     expect(SIDEBAR_COLLAPSED).toBe(56)
     expect(collapsedSidebarWidth('advanced', 'darwin')).toBe(MACOS_SIDEBAR_COLLAPSED)
     expect(collapsedSidebarWidth('extended', 'darwin')).toBe(SIDEBAR_COLLAPSED)
@@ -495,7 +547,7 @@ describe('advanced desktop layout', () => {
     expect(MACOS_SIDEBAR_COLLAPSED).toBe(90)
   })
 
-  it('publishes mirrored panel transitions', () => {
+  it('reports right Sidebar presentation and preserves width across close and fullscreen', () => {
     const layout = new DesktopLayoutState()
     const snapshots: Array<ReturnType<DesktopLayoutState['getSnapshot']>> = []
     layout.subscribe(() => { snapshots.push(layout.getSnapshot()) })
@@ -548,7 +600,7 @@ describe('advanced desktop layout', () => {
 })
 
 describe('independent Desktop frame', () => {
-  it('reserves a command bar for both framed modes and limits the inverted-L surface to extended mode', () => {
+  it('fills the native content viewport for both framed modes and limits the inverted-L surface to extended mode', () => {
     let css = ''
     const remove = vi.fn()
     const style = {
@@ -565,7 +617,7 @@ describe('independent Desktop frame', () => {
 
     try {
       const dispose = installExtendedStyles()
-      expect(css).toContain(`top: ${DESKTOP_FRAME_HEIGHT}px`)
+      expect(css).toContain(`--dsh-desktop-frame-height: 0px`)
       expect(DESKTOP_FRAME_HEIGHT).toBe(36)
       expect(css).toMatch(/#root \{[^}]*position: fixed;[^}]*right: 0;[^}]*bottom: 0;[^}]*left: 0;[^}]*padding-top: 0;[^}]*transform: translateZ\(0\);/)
       expect(css).toMatch(/\[data-shell-overlay\] \{[^}]*overflow: hidden;[^}]*transform: translateZ\(0\);/)
@@ -648,6 +700,8 @@ describe('independent Desktop frame', () => {
       },
       on: vi.fn(() => () => {}),
       slots: {
+        provideRoot: vi.fn(() => () => {}),
+        subscribe: vi.fn(() => () => {}),
         inject: vi.fn((_name: string, mount: () => unknown) => mount()),
         provideRoot: vi.fn(() => () => {}),
         register: vi.fn((options: Record<string, unknown>, occupant: unknown) => {
@@ -687,18 +741,8 @@ describe('independent Desktop frame', () => {
       })
       expect(rootInject).not.toHaveProperty('mode')
       expect(occupants[0]).toBe(ExtendedFrame)
-      expect(registrations[1]).toMatchObject({
-        name: 'shell.overlay',
-        id: 'desktop-frame-titlebar',
-      })
-      expect(registrations[1]).not.toHaveProperty('children')
-      expect(registrations[1]?.inject).toBeTypeOf('function')
-      expect((registrations[1]?.inject as () => Record<string, unknown>)()).toMatchObject({
-        environment: { mode: 'extended', platform: 'win32', material: 'off' },
-        api: expect.any(Object),
-        setMode: expect.any(Function),
-      })
-      expect(registrations).toHaveLength(2)
+      expect(registrations).toHaveLength(1)
+      expect(ctx.slots.inject).not.toHaveBeenCalled()
       expect(dataset).toMatchObject({
         dshDesktopMode: 'extended',
         dshDesktopPlatform: 'win32',
@@ -750,16 +794,8 @@ describe('independent Desktop frame', () => {
         material: 'transparent',
         micaSupported: false,
       })
-      expect(injectedSlots).toEqual(['shell.overlay'])
-      expect(registrations).toHaveLength(1)
-      expect(registrations[0]).toMatchObject({
-        name: 'shell.overlay',
-        id: 'desktop-frame-titlebar',
-      })
-      expect(registrations[0]).not.toHaveProperty('children')
-      expect((registrations[0]?.inject as () => Record<string, unknown>)()).toMatchObject({
-        setMode: expect.any(Function),
-      })
+      expect(injectedSlots).toEqual([])
+      expect(registrations).toHaveLength(0)
       expect(JSON.stringify(registrations)).not.toContain('desktop.titlebar.action')
       expect(dataset).toMatchObject({
         dshDesktopMode: 'compatibility',
