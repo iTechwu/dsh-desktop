@@ -899,6 +899,8 @@ window.__ModuleLoader__.load({
 			const [marketPage, setMarketPage] = react.useState(1);
 			const [loadingMore, setLoadingMore] = react.useState(false);
 			const [repoInfo, setRepoInfo] = react.useState(null);
+			const repoRequestRef = react.useRef(null);
+			const subpackageRequestRef = react.useRef(null);
 			const [subpackages, setSubpackages] = react.useState(null);
 			const [installation, setInstallation] = react.useState(null);
 			const installing = installation?.target ?? null;
@@ -1495,24 +1497,29 @@ window.__ModuleLoader__.load({
 				);
 			};
 			const loadSubpackages = (repo, branch) => {
+				const request = { repo };
+				subpackageRequestRef.current = request;
 				setSubpackages({ status: "loading" });
 				fetchSubpackages(repo, branch).then(
-					(list) => setSubpackages({ status: "ready", list }),
+					(list) => { if (subpackageRequestRef.current === request) setSubpackages({ status: "ready", list }); },
 					() => call("/plugin-console/subpackages", { repo, branch }).then(
-						(data) => setSubpackages({ status: "ready", list: data.subpackages ?? [] }),
-						() => setSubpackages({ status: "error" }),
+						(data) => { if (subpackageRequestRef.current === request) setSubpackages({ status: "ready", list: data.subpackages ?? [] }); },
+						() => { if (subpackageRequestRef.current === request) setSubpackages({ status: "error" }); },
 					),
 				);
 			};
 			const inspect = (item) => {
 				const repo = item.fullName;
+				const request = { repo };
+				repoRequestRef.current = request;
+				subpackageRequestRef.current = null;
 				setRepoInfo({ status: "loading", repo });
 				setSubpackages(null);
 				if (item.source !== undefined && item.source !== "github") {
 					// 非 GitHub 平台：用平台 raw 直接读详情（无 trees/子包能力）
 					repoInfoFromPlatform(item).then(
-						(data) => setRepoInfo({ status: "ready", repo, data, direct: true, source: item.source }),
-						() => setRepoInfo({ status: "error", repo, error: new Error(t("repoError")) }),
+						(data) => { if (repoRequestRef.current === request) setRepoInfo({ status: "ready", repo, data, direct: true, source: item.source }); },
+						() => { if (repoRequestRef.current === request) setRepoInfo({ status: "error", repo, error: new Error(t("repoError")) }); },
 					);
 					return;
 				}
@@ -1528,6 +1535,7 @@ window.__ModuleLoader__.load({
 								data.installCommand = "git -c http.sslVerify=false clone --recurse-submodules https://github.com/" + repo + ".git\ncd " + short + "\npowershell -ExecutionPolicy Bypass -File install.ps1";
 							}
 						}
+						if (repoRequestRef.current !== request) return;
 						setRepoInfo({ status: "ready", repo, data, direct: true });
 						if (data.privateRoot || !data.hasPackageJson) loadSubpackages(repo, data.defaultBranch);
 						// 浏览器直连只读 package.json/README/SKILL.md：后台补拉服务端增强字段
@@ -1535,7 +1543,7 @@ window.__ModuleLoader__.load({
 						call("/plugin-console/repo", { repo }).then(
 							(d) => {
 								if (d && d.ok === true) {
-									setRepoInfo((prev) => (prev !== null && prev.repo === repo && prev.status === "ready"
+									setRepoInfo((prev) => (repoRequestRef.current === request && prev !== null && prev.repo === repo && prev.status === "ready"
 										? { ...prev, data: {
 											...prev.data,
 											hasSuite: d.hasSuite === true,
@@ -1552,10 +1560,10 @@ window.__ModuleLoader__.load({
 							if (item.hasSkill === true) data.hasSkill = true;
 							if (Array.isArray(item.skillTopics)) data.skillTopics = item.skillTopics;
 							if (item.hasSuite === true) data.hasSuite = true;
-							setRepoInfo({ status: "ready", repo, data, direct: false });
+						if (repoRequestRef.current === request) setRepoInfo({ status: "ready", repo, data, direct: false });
 							if (data.privateRoot || !data.hasPackageJson) loadSubpackages(repo, data.defaultBranch);
 						},
-						(error) => setRepoInfo({ status: "error", repo, error: friendlyGithubError(error) }),
+						(error) => { if (repoRequestRef.current === request) setRepoInfo({ status: "error", repo, error: friendlyGithubError(error) }); },
 					),
 				);
 			};
