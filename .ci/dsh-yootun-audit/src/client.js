@@ -171,11 +171,12 @@ const css = `.ya-sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:
 const layoutCss = `.ya-overlay :is(button,input,select):disabled{cursor:not-allowed;opacity:.45}.ya-shell{display:flex;flex-direction:column;grid-template-rows:none}.ya-summary{grid-template-columns:repeat(4,minmax(0,1fr))}.ya-workspace,.ya-empty,.ya-skeletons{flex:1;min-height:0}.ya-workspace:not(.has-detail) .ya-detail{display:none}.ya-row>span:last-child{display:flex;align-items:center;gap:5px}.ya-pending{color:var(--dsw-alias-state-warn-primary);font-size:11px;white-space:nowrap}@media(max-width:767px){.ya-summary{grid-template-columns:repeat(2,minmax(0,1fr))}.ya-metric:nth-child(2){border-right:0}.ya-metric:nth-child(-n+2){border-bottom:1px solid var(--dsw-alias-border-l1)}}`
 // State accents also appear as small text on raised surfaces. Blend toward the
 // theme's readable foreground instead of using indicator colors unchanged.
+const partialStatusCss = '.ya-outcome.is-partial{color:var(--dsw-alias-state-warn-primary);border:1px solid color-mix(in srgb,var(--dsw-alias-state-warn-primary) 38%,var(--dsw-alias-border-l1))}'
 const statusColorCss = `.ya-overlay{--ya-error-text:color-mix(in srgb,var(--dsw-alias-state-error-primary) 50%,var(--dsw-alias-label-primary));--ya-warning-text:color-mix(in srgb,var(--dsw-alias-state-warn-primary) 50%,var(--dsw-alias-label-primary))}.ya-outcome.is-failed,.ya-metric.is-failed strong{color:var(--ya-error-text)}.ya-pending,.ya-metric.is-pending strong{color:var(--ya-warning-text)}`
 function apply(ctx) {
   ctx.effect(() => ctx.locale.register(NS, copy), 'dofe-yootun-audit: dictionaries')
   ctx.effect(() => { window.addEventListener(OVERLAY_EVENT, closeOtherOverlay); return () => window.removeEventListener(OVERLAY_EVENT, closeOtherOverlay) }, 'dofe-yootun-audit: exclusive-overlay')
-  ctx.effect(() => { const style = document.createElement('style'); style.dataset.plugin = OVERLAY_ID; style.textContent = `${css}${layoutCss}${statusColorCss}`; document.head.appendChild(style); return () => style.remove() }, 'dofe-yootun-audit: styles')
+  ctx.effect(() => { const style = document.createElement('style'); style.dataset.plugin = OVERLAY_ID; style.textContent = `${css}${layoutCss}${partialStatusCss}${statusColorCss}`; document.head.appendChild(style); return () => style.remove() }, 'dofe-yootun-audit: styles')
   ctx.effect(() => { window.addEventListener('dofe:yootun-audit:open', openOverlay); return () => window.removeEventListener('dofe:yootun-audit:open', openOverlay) }, 'dofe-yootun-audit: open-event')
   const t = ctx.locale.bind(NS)
   ctx.slots.inject('sidebar.footer.action', () => ctx.slots.register({ name: 'sidebar.footer.action', id: 'dofe-yootun-audit', order: 50, inject: () => ({ t }) }, Button))
