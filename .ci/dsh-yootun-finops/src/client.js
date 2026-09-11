@@ -90,7 +90,13 @@ async function loadSeries(days, signal) {
 function finite(value) { const parsed = Number(value); return value !== null && value !== undefined && Number.isFinite(parsed) ? parsed : null }
 function formatNumber(value) { const parsed = finite(value); return parsed === null ? null : new Intl.NumberFormat(undefined, { notation: parsed >= 100000 ? 'compact' : 'standard', maximumFractionDigits: 1 }).format(parsed) }
 function formatMoney(value, currency = 'CNY') { const parsed = finite(value); if (parsed === null) return null; try { return new Intl.NumberFormat(undefined, { style: 'currency', currency, maximumFractionDigits: 2 }).format(parsed) } catch { return `${currency} ${parsed.toFixed(2)}` } }
-function percent(value, total) { const numerator = finite(value), denominator = finite(total); return numerator !== null && denominator > 0 ? `${Math.round((numerator / denominator) * 100)}%` : null }
+function percent(value, total) {
+  const numerator = finite(value), denominator = finite(total)
+  if (numerator === null || denominator <= 0) return null
+  const ratio = numerator / denominator
+  if (!Number.isFinite(ratio)) return null
+  return `${Math.round(Math.max(0, Math.min(1, ratio)) * 100)}%`
+}
 function shortTime(value) { const date = new Date(value); return Number.isFinite(date.getTime()) ? new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit' }).format(date) : '' }
 function sourceLabel(status, t) { return status === 'ready' ? t('sourceReady') : status === 'empty' ? t('sourceEmpty') : status === 'warning' || status === 'partial' || status === 'degraded' ? t('sourceWarning') : status === 'error' ? t('sourceError') : t('sourceUnavailable') }
 function iconFor(status) { return status === 'ready' ? 'check' : status === 'empty' ? 'database' : status === 'warning' || status === 'partial' || status === 'degraded' ? 'warning' : 'close' }
@@ -236,7 +242,8 @@ function RouteMix({ byRoute, currency, t }) {
 }
 
 function BudgetItem({ item, t }) {
-  const ratio = item.usageRatio
+  const parsedRatio = finite(item.usageRatio)
+  const ratio = parsedRatio === null ? null : Math.max(0, Math.min(1, parsedRatio))
   return h('div', { className: 'yf-budget-item', key: item.name },
     h('div', { className: 'yf-model-head' }, h('strong', null, item.name), h(StatusBadge, { status: item.status, t })),
     h('div', { className: 'yf-bar-track' }, ratio === null ? null : h('div', { className: `yf-bar-fill yf-budget-${item.status}`, style: { width: `${Math.min(ratio, 1) * 100}%` } })),
@@ -261,8 +268,8 @@ function BudgetPanel({ budget, t }) {
 // Worst-first budget usage for the overview KPI card; server-computed ratios only.
 function budgetKpi(budget, t) {
   if (budget && budget.status === 'ready' && budget.items.length) {
-    const worst = budget.items.filter(item => item.usageRatio !== null).sort((left, right) => right.usageRatio - left.usageRatio)[0]
-    if (worst) return { value: `${Math.round(worst.usageRatio * 100)}%`, hint: `${worst.name} · ${budgetStatusLabel(worst.status, t)}`, muted: false }
+    const worst = budget.items.map(item => ({ ...item, usageRatio: finite(item.usageRatio) })).filter(item => item.usageRatio !== null).sort((left, right) => right.usageRatio - left.usageRatio)[0]
+    if (worst) return { value: `${Math.round(Math.max(0, Math.min(1, worst.usageRatio)) * 100)}%`, hint: `${worst.name} · ${budgetStatusLabel(worst.status, t)}`, muted: false }
     return { value: t('metricUnavailable'), hint: t('noBaseline'), muted: true }
   }
   if (budget && budget.status === 'unavailable') return { value: t('metricUnavailable'), hint: t('budgetSourceDown'), muted: true }
