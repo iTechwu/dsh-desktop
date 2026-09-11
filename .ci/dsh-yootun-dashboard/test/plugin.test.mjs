@@ -56,7 +56,7 @@ test('renders all requested dashboard domains and explicit source states', async
   assert.match(source, /waiting_approval: 'montageWaitingApproval'/u)
   assert.match(source, /cancel_requested: 'montageCancelRequested'/u)
   assert.match(source, /MONTAGE_STAGE_LABELS = \{ research: 'stageResearch', vision: 'stageVision', asr: 'stageAsr' \}/u)
-  assert.match(source, /const DATA_STATUSES = new Set\(\['ready', 'empty', 'partial', 'degraded'\]\)/u)
+  assert.match(source, /const DATA_STATUSES = new Set\(\['ready', 'empty', 'partial', 'degraded', 'warning'\]\)/u)
   assert.match(source, /function canRenderSource\(source\)/u)
   assert.match(source, /STATUS_GLYPH = .*degraded: 'warning'/u)
   assert.match(source, /status === 'partial' \|\| status === 'degraded'/u)
