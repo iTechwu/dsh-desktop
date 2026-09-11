@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { claimDesktopLayout } from '../src/client/layout-service.ts'
+import { DesktopLayoutState } from '../src/client/layout-state.ts'
 import { applyAdvancedShell } from '../src/client/advanced-shell.ts'
 import { applyExtendedShell } from '../src/client/extended-shell.ts'
 
@@ -71,7 +72,7 @@ describe('claimDesktopLayout', () => {
     const ctx = makeCtx()
     const dispose = vi.fn()
     ctx.reflect.provide.mockReturnValue(dispose)
-    const layout = { mark: 'state' }
+    const layout = new DesktopLayoutState()
 
     expect(claimDesktopLayout(ctx as never, layout as never)).toBe(true)
     expect(ctx.reflect.provide).toHaveBeenCalledWith('layout', layout)
@@ -82,7 +83,9 @@ describe('claimDesktopLayout', () => {
     expect(ctx.effect).toHaveBeenCalledWith(expect.any(Function), 'desktop: layout service')
     const disposer = ctx.effect.mock.results[0]?.value
     expect(typeof disposer).toBe('function')
+    const navigation = layout.beginNavigation()
     ;(disposer as () => void)()
+    expect(navigation.aborted).toBe(true)
     expect(dispose).toHaveBeenCalled()
   })
 
