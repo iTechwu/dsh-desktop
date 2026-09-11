@@ -217,6 +217,17 @@ await page.route('**/api/desktop/yootun/daily-report', async route => {
 await page.route('**/api/desktop/yootun/dashboard/yesterday', async route => {
   await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(dashboard) })
 })
+await page.route('**/api/desktop/yootun/dashboard/series', async route => {
+  const days = route.request().postDataJSON().days
+  await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({
+    ...dashboard,
+    period: { ...dashboard.period, label: `近${days}天`, days },
+    activity: { ...dashboard.activity, comparison: { status: 'unavailable', reason: 'activity_incomplete' }, data: {
+      totals: dashboard.activity.data.totals,
+      days: Array.from({ length: days }, (_, index) => ({ date: `2026-08-${String(index + 1).padStart(2, '0')}`, turns: index === 0 ? 6 : 0 })),
+    } },
+  }) })
+})
 await page.route('**/api/desktop/yootun/supply-watch', async route => {
   const confirmed = route.request().method() === 'POST'
   await route.fulfill({
@@ -265,6 +276,14 @@ await page.route('**/api/desktop/yootun/knowledge', async route => {
 })
 await page.route('**/api/desktop/yootun/lead-discovery', async route => {
   const body = route.request().postDataJSON()
+  if (body.action === 'candidates') {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ status: 'ready', items: [], stats: { total: 0 } }),
+    })
+    return
+  }
   if (body.action === 'page') {
     leadPageRequests += 1
     await leadPageReady
@@ -275,6 +294,7 @@ await page.route('**/api/desktop/yootun/lead-discovery', async route => {
     })
     return
   }
+  assert.equal(body.action, 'discover', 'only discovery requests should wait on the manual search fixture')
   leadSearchRequests += 1
   await leadSearchReady
   await route.fulfill({
@@ -332,14 +352,14 @@ async function assertViewport() {
   await assertAccessibleSurface(page)
 }
 
-async function assertDesktopViewport() {
+async function assertDesktopViewport(header = '.yd-header', content = '.yd-overview') {
   await assertAccessibleSurface(page)
-  const viewport = await page.evaluate(() => ({
+  const viewport = await page.evaluate(({ header, content }) => ({
     clientWidth: document.documentElement.clientWidth,
     scrollWidth: document.documentElement.scrollWidth,
-    headerHeight: document.querySelector('.yd-header')?.getBoundingClientRect().height ?? 0,
-    contentWidth: document.querySelector('.yd-overview')?.getBoundingClientRect().width ?? 0,
-  }))
+    headerHeight: document.querySelector(header)?.getBoundingClientRect().height ?? 0,
+    contentWidth: document.querySelector(content)?.getBoundingClientRect().width ?? 0,
+  }), { header, content })
   assert.equal(viewport.clientWidth, 1440)
   assert.equal(viewport.scrollWidth, viewport.clientWidth, 'desktop page must not scroll horizontally')
   assert(viewport.headerHeight >= 72, `desktop header must preserve the 72px baseline: ${JSON.stringify(viewport)}`)
@@ -361,6 +381,50 @@ try {
   assert.equal(await page.getByText('asr', { exact: true }).count(), 0)
   await assertViewport()
   await page.screenshot({ path: resolve(evidenceRoot, '390-dashboard-statuses.png'), fullPage: true })
+
+  const completeDashboardActivity = dashboard.activity
+  dashboard.activity = {
+    status: 'partial', reason: 'activity_partial', source: 'local_agent', sourceCompleteness: 'partial',
+    coverage: { total: 2, loaded: 1, failed: 1, unscanned: 0 },
+    data: { totals: { sessions: 1, turns: 6, completedTurns: 5, failedTurns: 1, toolCalls: 9 }, sessions: [{ title: '渠道复盘', workspace: '华东项目', turns: 6, completedTurns: 5, failedTurns: 1 }], tools: [] },
+  }
+  await page.getByRole('button', { name: '刷新数据' }).click()
+  await page.waitForFunction(() => document.querySelector('.yd-content')?.getAttribute('aria-busy') === 'false')
+  await page.getByRole('button', { name: 'Agent 工作', exact: true }).click()
+  await page.getByText('工作统计不完整，以下仅统计已成功读取的会话。', { exact: true }).waitFor()
+  assert.equal(await page.getByText('渠道复盘', { exact: true }).isVisible(), true)
+  assert.equal(await page.locator('.yd-metric strong').nth(1).textContent(), '6')
+  assert.equal(await page.getByText('已读取会话: 1 / 2', { exact: true }).isVisible(), true)
+  await assertViewport()
+  await page.screenshot({ path: resolve(evidenceRoot, '390-dashboard-activity-partial.png'), fullPage: true })
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await page.getByRole('button', { name: '总览', exact: true }).click()
+  await page.locator('.yd-attention-main').filter({ hasText: 'Agent 工作 · 部分可用' }).waitFor()
+  assert.equal(await page.getByText('3/4', { exact: true }).isVisible(), true)
+  await assertDesktopViewport()
+  await page.screenshot({ path: resolve(evidenceRoot, '1440-dashboard-activity-partial.png'), fullPage: true })
+  await page.getByRole('button', { name: 'Agent 工作', exact: true }).click()
+  await page.getByRole('button', { name: '近7天', exact: true }).click()
+  await page.locator('.yd-trend').waitFor()
+  assert.equal(await page.locator('.yd-metric-hint').filter({ hasText: '数据不完整，暂不比较' }).count(), 4)
+  assert.equal(await page.locator('.yd-activity-notice').isVisible(), true)
+  assert.equal(await page.locator('.yd-metric strong').nth(1).textContent(), '6')
+  const activitySpacing = await page.evaluate(() => {
+    const metrics = document.querySelector('.yd-activity-detail>.yd-metrics').getBoundingClientRect()
+    const trend = document.querySelector('.yd-activity-detail>.yd-table-section').getBoundingClientRect()
+    return trend.top - metrics.bottom
+  })
+  assert.equal(activitySpacing, 24, 'activity trends use the same 24px section spacing as other dashboard details')
+  await assertDesktopViewport('.yd-header', '.yd-content')
+  await page.screenshot({ path: resolve(evidenceRoot, '1440-dashboard-activity-series-partial.png'), fullPage: true })
+  dashboard.activity = { status: 'unavailable', reason: 'activity_unavailable', source: 'local_agent', sourceCompleteness: 'unknown' }
+  await page.getByRole('button', { name: '昨日', exact: true }).click()
+  await page.getByRole('button', { name: '刷新数据' }).click()
+  await page.locator('.yd-empty-unavailable').waitFor()
+  assert.equal(await page.locator('.yd-metric').count(), 0)
+  assert.equal(await page.locator('.yd-activity-notice').count(), 0)
+  dashboard.activity = completeDashboardActivity
+  await page.setViewportSize({ width: 390, height: 844 })
 
   await page.goto(`${url}?source=supply`)
   await page.getByRole('button', { name: '供应链预警' }).click()
@@ -441,6 +505,42 @@ try {
   await assertViewport()
   await page.mouse.move(0, 0)
   await page.screenshot({ path: resolve(evidenceRoot, '390-daily-refresh-error.png'), fullPage: true })
+  dailyRefreshFails = false
+  const completeActivity = dailyReport.activity
+  dailyReport.activity = { ...completeActivity, status: 'partial', reason: 'activity_partial', coverage: { total: 2, loaded: 1, failed: 1, unscanned: 0 } }
+  dailyReport.sources.local = { status: 'partial', reason: 'activity_partial' }
+  await page.getByRole('button', { name: '重新加载' }).click()
+  await page.getByText('日报不完整，以下仅统计已成功读取的会话。', { exact: false }).waitFor()
+  assert.equal(await page.getByText('渠道复盘', { exact: true }).count(), 1)
+  assert.equal(await page.getByText('部分可用', { exact: true }).count(), 1)
+  assert.equal(await page.locator('.ydr-metric strong').nth(1).textContent(), '6')
+  assert.equal((await page.locator('body').innerText()).includes('activity_partial'), false)
+  const partialColors = await page.evaluate(() => ({
+    banner: getComputedStyle(document.querySelector('.ydr-inline-warning')).color,
+    source: getComputedStyle(document.querySelector('.ydr-source-partial')).color,
+    body: getComputedStyle(document.querySelector('.ydr-overlay')).color,
+  }))
+  assert.equal(partialColors.banner, partialColors.source, 'partial coverage uses the same warning color in banner and source status')
+  assert.notEqual(partialColors.banner, partialColors.body)
+  await assertViewport()
+  await page.screenshot({ path: resolve(evidenceRoot, '390-daily-partial.png'), fullPage: true })
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await assertDesktopViewport('.ydr-header', '.ydr-metrics')
+  await page.screenshot({ path: resolve(evidenceRoot, '1440-daily-partial.png'), fullPage: true })
+  dailyReport.activity = completeActivity
+  dailyReport.sources.local = { status: 'ready' }
+  await page.getByRole('button', { name: '重新加载' }).click()
+  await page.locator('.ydr-inline-warning').waitFor({ state: 'hidden' })
+  assert.equal(await page.getByText('渠道复盘', { exact: true }).count(), 1)
+  dailyReport.activity = { status: 'unavailable', reason: 'activity_unavailable' }
+  dailyReport.sources.local = { status: 'unavailable', reason: 'activity_unavailable' }
+  await page.getByRole('button', { name: '刷新', exact: true }).click()
+  await page.getByRole('alert').filter({ hasText: '本机事件暂不可用' }).waitFor()
+  assert.deepEqual(await page.locator('.ydr-metric strong').allTextContents(), Array(5).fill('不可用'))
+  assert.equal(await page.getByText('昨日没有可汇总的工作记录', { exact: true }).count(), 0)
+  await assertDesktopViewport('.ydr-header', '.ydr-metrics')
+  await page.screenshot({ path: resolve(evidenceRoot, '1440-daily-unavailable.png'), fullPage: true })
+  await page.setViewportSize({ width: 390, height: 844 })
 
   await page.goto(`${url}?source=finops`)
   await page.getByRole('button', { name: '模型与预算' }).click()
@@ -596,7 +696,7 @@ try {
   await page.screenshot({ path: resolve(evidenceRoot, '1440-dashboard-overview.png'), fullPage: true })
 
   assert.deepEqual(consoleProblems, [])
-  process.stdout.write('search-locks-browser: 10 plugins, 16 screenshots, request locks, localized statuses, and responsive theme mappings verified\n')
+  process.stdout.write('search-locks-browser: 10 plugins, 22 screenshots, request locks, report coverage, localized statuses, and responsive theme mappings verified\n')
 } finally {
   releaseDailyRefresh()
   releaseFinopsRefresh()

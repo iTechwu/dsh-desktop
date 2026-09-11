@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { createElement } from 'react'
+import { Menu } from '@base-ui/react/menu'
 import { renderToStaticMarkup } from 'react-dom/server'
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type { SettingsScope } from '@deepseek-ai/dsh-client-ui-settings/client'
@@ -522,18 +523,18 @@ describe('Desktop native action presentation', () => {
   })
 
   it('groups reload with both restart actions and leaves only Developer Tools in its menu', () => {
-    const restartMarkup = renderToStaticMarkup(createElement(DesktopRestartMenuItems, {
+    const restartMarkup = renderToStaticMarkup(createElement(Menu.Root, null, createElement(DesktopRestartMenuItems, {
       busy: false,
       t,
       onReload: vi.fn(),
       onRestart: vi.fn(),
       onRestartToRecovery: vi.fn(),
-    }))
-    const developerMarkup = renderToStaticMarkup(createElement(DesktopDeveloperMenuItems, {
+    })))
+    const developerMarkup = renderToStaticMarkup(createElement(Menu.Root, null, createElement(DesktopDeveloperMenuItems, {
       busy: false,
       t,
       onToggleDeveloperTools: vi.fn(),
-    }))
+    })))
 
     expect(restartMarkup.match(/role="menuitem"/g)).toHaveLength(3)
     expect(restartMarkup.indexOf('Reload')).toBeLessThan(restartMarkup.indexOf('Restart'))
@@ -562,7 +563,8 @@ describe('Desktop native action presentation', () => {
 
     try {
       const dispose = installDesktopSettingsStyles()
-      expect(css).toMatch(/data-placement="settings"\] \.dshDesktopActionMenu \{[^}]*position: absolute;[^}]*display: grid;[^}]*grid-auto-flow: row;[^}]*grid-template-columns: minmax\(0, 1fr\);[^}]*min-width: 220px;/)
+      expect(css).toMatch(/data-placement="settings"\] \.dshDesktopActionMenuPositioner \{[^}]*z-index: 2147483001;/)
+      expect(css).toMatch(/data-placement="settings"\] \.dshDesktopActionMenu \{[^}]*position: relative;[^}]*display: grid;[^}]*grid-auto-flow: row;[^}]*grid-template-columns: minmax\(0, 1fr\);[^}]*min-width: 220px;/)
       expect(css).toMatch(/data-placement="settings"\] \.dshDesktopActionMenuItem \{[^}]*display: flex;[^}]*width: 100%;[^}]*white-space: nowrap;/)
       expect(appendChild).toHaveBeenCalledWith(style)
       dispose()

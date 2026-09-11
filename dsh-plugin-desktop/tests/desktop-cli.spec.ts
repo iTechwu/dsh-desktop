@@ -1,5 +1,6 @@
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
+import { createRequire } from 'node:module'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { describe, expect, it, vi } from 'vitest'
@@ -42,7 +43,7 @@ describe('packaged dsh bootstrap', () => {
         'desktop',
         '--dump-config',
       ])
-      expect(url).toMatch(/\/node_modules\/@deepseek-ai\/dsh\/lib\/bin\.js$/u)
+      expect(url).toBe(pathToFileURL(createRequire(import.meta.url).resolve('@deepseek-ai/dsh/lib/bin.js')).href)
       return { runCli }
     })
 
@@ -50,13 +51,13 @@ describe('packaged dsh bootstrap', () => {
 
     expect(load).toHaveBeenCalledOnce()
     expect(runCli).toHaveBeenCalledOnce()
-    expect(runCli).toHaveBeenCalledWith({ allowDesktopProfile: true })
+    expect(runCli).toHaveBeenCalledWith()
   })
 
   it('propagates a rejected upstream CLI invocation', async () => {
     const failure = new Error('CLI startup failed')
     const load = async () => ({ runCli: async () => { throw failure } })
-    await expect(runDesktopDshCli({}, load, ['node', 'desktop-cli', '--version'])).rejects.toBe(failure)
+    await expect(runDesktopDshCli({}, load, ['node', 'desktop-cli', '--dump-config'])).rejects.toBe(failure)
   })
 
   it('leaves the release-age policy to the final pnpm shim exactly once', async () => {

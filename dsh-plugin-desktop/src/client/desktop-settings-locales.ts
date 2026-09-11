@@ -1,4 +1,5 @@
 /** Desktop-owned settings copy. */
+import { desktopSetupWizardCopy } from '../setup-wizard-copy.ts'
 
 export const zh = {
   remoteControl: '远程控制',
@@ -123,8 +124,8 @@ export const zh = {
   lanCaTitle: '设置信任证书',
   lanCaFingerprint: '本地 CA SHA-256 指纹',
   lanCaDownloads: '从要访问 Yootun-Agent 的客户机下载并安装此 CA：',
-  lanWarningTitle: '确认向局域网开放？',
-  lanWarningBody: '开启后，任何获得带 token 的局域网 URL 的人都能操作这台电脑，请谨慎保管链接。HTTPS 会加密连接，但客户机仍需信任 Yootun-Agent 的本地 CA，才能稳定使用 WebCrypto 等安全能力。',
+  lanWarningTitle: desktopSetupWizardCopy('zh').lanWarningTitle,
+  lanWarningBody: desktopSetupWizardCopy('zh').lanWarningBody,
   lanCancel: '取消',
   lanConfirm: '开启局域网访问',
   notificationsTitle: '桌面通知',
@@ -261,8 +262,8 @@ export const en: Record<DesktopSettingsLocaleKey, string> = {
   lanCaTitle: 'Trust the certificate',
   lanCaFingerprint: 'Local CA SHA-256 fingerprint',
   lanCaDownloads: 'Download and install this CA from each client device that will access Yootun-Agent:',
-  lanWarningTitle: 'Expose Yootun-Agent to your local network?',
-  lanWarningBody: 'Anyone who obtains an authenticated local-network URL can operate this computer, so keep the token-bearing link private. HTTPS encrypts the connection, but each client device must still trust the Yootun-Agent local CA for reliable WebCrypto and other secure capabilities.',
+  lanWarningTitle: desktopSetupWizardCopy('en').lanWarningTitle,
+  lanWarningBody: desktopSetupWizardCopy('en').lanWarningBody,
   lanCancel: 'Cancel',
   lanConfirm: 'Enable local-network access',
   notificationsTitle: 'Desktop notifications',

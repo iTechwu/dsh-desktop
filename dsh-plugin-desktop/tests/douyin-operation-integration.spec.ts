@@ -57,7 +57,7 @@ describe('Douyin operation Desktop integration', () => {
   it('runs the snapshot client compatibility suite', () => {
     const result = spawnSync(
       process.execPath,
-      ['--test', join(snapshotRoot, 'test/desktop-compat.test.mjs'), join(snapshotRoot, 'test/plugin.test.mjs'), join(snapshotRoot, 'test/ui.test.mjs')],
+      ['--test', '--test-reporter=tap', join(snapshotRoot, 'test/desktop-compat.test.mjs'), join(snapshotRoot, 'test/plugin.test.mjs'), join(snapshotRoot, 'test/ui.test.mjs')],
       { cwd: packageRoot, encoding: 'utf8' },
     )
     expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(0)

@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { claimDesktopLayout } from '../src/client/layout-service.ts'
+import { DesktopLayoutState } from '../src/client/layout-state.ts'
 import { applyAdvancedShell } from '../src/client/advanced-shell.ts'
 import { applyExtendedShell } from '../src/client/extended-shell.ts'
 
@@ -46,7 +47,7 @@ function stubDocument() {
   }
   vi.stubGlobal('document', fakeDocument)
   vi.stubGlobal('getComputedStyle', () => ({ backgroundColor: 'rgb(0, 0, 0)' }))
-  return { byId, dataset }
+  return { byId, dataset, rootViewport }
 }
 
 function makeCtx() {
@@ -71,7 +72,7 @@ describe('claimDesktopLayout', () => {
     const ctx = makeCtx()
     const dispose = vi.fn()
     ctx.reflect.provide.mockReturnValue(dispose)
-    const layout = { mark: 'state' }
+    const layout = new DesktopLayoutState()
 
     expect(claimDesktopLayout(ctx as never, layout as never)).toBe(true)
     expect(ctx.reflect.provide).toHaveBeenCalledWith('layout', layout)
@@ -82,7 +83,9 @@ describe('claimDesktopLayout', () => {
     expect(ctx.effect).toHaveBeenCalledWith(expect.any(Function), 'desktop: layout service')
     const disposer = ctx.effect.mock.results[0]?.value
     expect(typeof disposer).toBe('function')
+    const navigation = layout.beginNavigation()
     ;(disposer as () => void)()
+    expect(navigation.aborted).toBe(true)
     expect(dispose).toHaveBeenCalled()
   })
 
@@ -188,7 +191,7 @@ describe('applyExtendedShell presentation ownership', () => {
   it('keeps the framed chrome but drops the owned presentation when the race is lost', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     try {
-      stubDocument()
+      const { byId, dataset, rootViewport } = stubDocument()
       const ctx = makeCtx()
       ctx.reflect.provide.mockImplementation(() => {
         throw new Error('service "layout" has been registered at <z5>')
@@ -201,7 +204,15 @@ describe('applyExtendedShell presentation ownership', () => {
       expect(ctx.effect).toHaveBeenCalledTimes(2)
       expect(ctx.effect.mock.results[0]?.type).toBe('throw')
       expect(ctx.slots.register).not.toHaveBeenCalled()
-      expect(ctx.slots.inject).toHaveBeenCalledTimes(1)
+      expect(ctx.slots.inject).not.toHaveBeenCalled()
+      expect(byId.has('dsh-desktop-framed-styles')).toBe(true)
+      expect(dataset.dshDesktopMode).toBe('extended')
+      expect(rootViewport.dataset.dshDesktopContentViewport).toBe('')
+      const cleanup = ctx.effect.mock.results[1]?.value as () => void
+      cleanup()
+      expect(byId.has('dsh-desktop-framed-styles')).toBe(false)
+      expect(dataset.dshDesktopMode).toBeUndefined()
+      expect(rootViewport.dataset.dshDesktopContentViewport).toBeUndefined()
       expect(warn).toHaveBeenCalled()
     } finally {
       warn.mockRestore()

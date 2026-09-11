@@ -95,7 +95,7 @@ export function desktopCliProfileManifestUrl(
  */
 export async function runDesktopDshCli(
   environment: NodeJS.ProcessEnv = process.env,
-  load: (url: string) => Promise<{ runCli(options: { allowDesktopProfile: boolean }): Promise<void> }> = url => import(url),
+  load: (url: string) => Promise<{ runCli(): Promise<void> }> = url => import(url),
   argv: string[] = process.argv,
   packagedEntry: boolean = /([\\/])app\.asar\1/u.test(fileURLToPath(DSH_ENTRY_URL)),
 ): Promise<void> {
@@ -114,21 +114,28 @@ export async function runDesktopDshCli(
     && packagedEntry
     ? installProfilePackageResolver(desktopCliProfileManifestUrl(selectedProfile, environment))
     : undefined
-  const loadDsh = (): Promise<unknown> => packagedEntry
-    ? withAsarModuleResolver(() => load(DSH_ENTRY_URL))
-    : load(DSH_ENTRY_URL)
-  // The DSH module finishes evaluating once a long-lived Profile is ready;
+  // The upstream bin only auto-runs when it is the process entry. Desktop
+  // imports it from this separate bootstrap after clearing RunAsNode, so it
+  // must explicitly dispatch the exported CLI under the same ASAR scope.
+  const runDsh = async (): Promise<void> => {
+    const cli = await load(DSH_ENTRY_URL)
+    await cli.runCli()
+  }
+  const invokeDsh = (): Promise<void> => packagedEntry
+    ? withAsarModuleResolver(runDsh)
+    : runDsh()
+  // The CLI settles once a long-lived Profile is ready;
   // later HMR and Loader imports still need the same process-wide resolver.
   // Keep it until process exit rather than treating CLI settlement as app
   // shutdown. A packaged CLI process owns exactly one Profile invocation.
   if (releaseResolver === undefined) {
-    await loadDsh()
+    await invokeDsh()
     return
   }
   const releaseAtExit = (): void => { releaseResolver() }
   process.once('exit', releaseAtExit)
   try {
-    await loadDsh()
+    await invokeDsh()
   } catch (cause) {
     process.off('exit', releaseAtExit)
     releaseResolver()

@@ -106,7 +106,7 @@ html, body, #root { background: transparent; font-size: 13px; }
   width: 210px;
   padding: 10px;
   border: 1px solid var(--dsw-alias-border-l1);
-  border-radius: 10px;
+  border-radius: 8px;
   background: var(--dsw-alias-bg-layer-1);
   box-shadow: 0 12px 32px color-mix(in srgb, #000 28%, transparent);
   -webkit-app-region: no-drag;
@@ -284,21 +284,19 @@ html, body, #root { background: transparent; font-size: 13px; }
 .dshDesktopTitlebarIconButton svg,
 .dshDesktopActionMenuItem svg { width: 14px; height: 14px; stroke-width: 1.8; }
 .dshDesktopNativeActionMenuAnchor { position: relative; }
+.dshDesktopActionMenuPositioner { z-index: 1; -webkit-app-region: no-drag; }
 .dshDesktopActionMenu {
-  position: absolute;
+  position: relative;
   z-index: 1;
-  top: calc(100% + 5px);
   display: grid;
   min-width: 190px;
   padding: 5px;
   border: 1px solid var(--dsw-alias-border-l1);
-  border-radius: 10px;
+  border-radius: 8px;
   background: var(--dsw-alias-bg-layer-1);
   box-shadow: 0 12px 32px color-mix(in srgb, #000 28%, transparent);
   -webkit-app-region: no-drag;
 }
-.dshDesktopFrameTitlebar[data-platform="darwin"] .dshDesktopActionMenu { right: 0; }
-.dshDesktopFrameTitlebar[data-platform="win32"] .dshDesktopActionMenu { left: 0; }
 .dshDesktopActionMenuItem {
   display: flex;
   align-items: center;
@@ -315,6 +313,8 @@ html, body, #root { background: transparent; font-size: 13px; }
   text-align: start;
 }
 .dshDesktopActionMenuItem:hover:not(:disabled) { background: var(--dsw-alias-interactive-bg-hover); }
+.dshDesktopActionMenuItem[data-highlighted] { background: var(--dsw-alias-interactive-bg-hover); }
+.dshDesktopActionMenuItem:focus-visible { outline: 2px solid var(--dsw-alias-brand-primary); outline-offset: -2px; }
 .dshDesktopActionMenuItem:disabled { cursor: default; opacity: .45; }
 .dshDesktopActionMenuItem span { flex: 1; }
 .dshDesktopNativeActions[data-placement="titlebar"] .dshDesktopNativeActionError {

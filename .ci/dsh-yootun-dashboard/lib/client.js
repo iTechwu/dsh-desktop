@@ -68,7 +68,7 @@ window.__ModuleLoader__.load({
       close: IconCloseOutline16,
       chevron: IconChevronRightOutline14,
     }
-    const STATUS_GLYPH = { ready: 'check', empty: 'database', warning: 'warning', unavailable: 'close', error: 'warning' }
+    const STATUS_GLYPH = { ready: 'check', empty: 'database', partial: 'warning', warning: 'warning', unavailable: 'close', error: 'warning' }
 
     const copy = {
       zh: {
@@ -97,6 +97,8 @@ window.__ModuleLoader__.load({
         viewDetail: '查看详情', noBaseline: '暂无基线', publishRate: '发布率', completeRate: '完成率', avgCost: '单次请求',
         workerDown: 'Worker 离线', asOfLabel: '更新于', lastUpdated: '最后更新', refreshing: '正在更新…',
         sourcePartial: '部分字段', detail: '详情', periodHint: '统计范围以页面顶部选择为准（Asia/Shanghai）',
+        activityPartial: '工作统计不完整，以下仅统计已成功读取的会话。', activityCoverage: '已读取会话', activityPartialEmpty: '已读取会话中暂无记录', activityScanLimited: '达到扫描上限，尚有会话未纳入统计。', sourcePartiallyAvailable: '部分可用',
+        incompleteComparison: '数据不完整，暂不比较',
         rangeYesterday: '昨日', range7d: '近7天', range30d: '近30天', dailyTrend: '每日趋势', vsBaseline: '距上周期',
         rangeControl: '统计范围', scopeControl: '模型用量视角',
         byRoute: '路由归因', route: '路由', flat: '持平',
@@ -134,6 +136,8 @@ window.__ModuleLoader__.load({
         viewDetail: 'Details', noBaseline: 'No baseline', publishRate: 'Publish rate', completeRate: 'Completion', avgCost: 'Per request',
         workerDown: 'Workers down', asOfLabel: 'As of', lastUpdated: 'Updated', refreshing: 'Refreshing…',
         sourcePartial: 'Partial', detail: 'Details', periodHint: 'Range follows the selection above (Asia/Shanghai)',
+        activityPartial: 'Work statistics are incomplete. Counts include successfully read sessions only.', activityCoverage: 'Sessions read', activityPartialEmpty: 'No records in the sessions read', activityScanLimited: 'Scan limit reached; some sessions are not included.', sourcePartiallyAvailable: 'Partially available',
+        incompleteComparison: 'Incomplete data; comparison paused',
         rangeYesterday: 'Yesterday', range7d: '7 days', range30d: '30 days', dailyTrend: 'Daily trend', vsBaseline: 'vs previous',
         rangeControl: 'Date range', scopeControl: 'Model usage scope',
         byRoute: 'Route attribution', route: 'Route', flat: 'flat',
@@ -214,6 +218,7 @@ window.__ModuleLoader__.load({
 
     function statusLabel(status, t) {
       if (status === 'ready') return t('sourceReady')
+      if (status === 'partial') return t('sourcePartiallyAvailable')
       if (status === 'empty') return t('sourceEmpty')
       if (status === 'warning') return t('sourceWarning')
       if (status === 'error') return t('sourceError')
@@ -300,6 +305,7 @@ window.__ModuleLoader__.load({
 
     // 环比文案：▲/▼ 加百分比或绝对值，文字承载语义，不依赖颜色。
     function comparisonText(t, comparison, key, format = formatNumber) {
+      if (comparison?.reason === 'activity_incomplete') return t('incompleteComparison')
       if (!comparison || comparison.status !== 'ready') return t('noBaseline')
       const delta = number(comparison.delta?.[key])
       const percent = comparison.deltaPercent?.[key]
@@ -354,7 +360,7 @@ window.__ModuleLoader__.load({
         ['montage-source', 'montage', t('montage'), data?.montage],
       ]) {
         const status = source?.status
-        if (status === 'error' || status === 'unavailable') items.push({ key, tab, glyph: status === 'error' ? 'warning' : 'close', label: `${name} · ${statusLabel(status, t)}`, value: '' })
+        if (status === 'error' || status === 'unavailable' || status === 'partial') items.push({ key, tab, glyph: status === 'unavailable' ? 'close' : 'warning', label: `${name} · ${statusLabel(status, t)}`, value: '' })
       }
       return items
     }
@@ -407,7 +413,7 @@ window.__ModuleLoader__.load({
           h('div', { className: 'yd-source-row', key: name },
             h('div', null, h('strong', null, name), h('span', null, description)),
             h('div', { className: 'yd-source-meta' },
-              source?.sourceCompleteness === 'partial' ? h('span', { className: 'yd-badge yd-badge-warning' }, t('sourcePartial')) : null,
+              source?.sourceCompleteness === 'partial' && source?.status !== 'partial' ? h('span', { className: 'yd-badge yd-badge-warning' }, t('sourcePartial')) : null,
               source?.asOf ? h('time', null, `${t('asOfLabel')} ${formatClock(source.asOf)}`) : null,
               h(SourceState, { source, t }))))),
         capabilities.length ? h('div', { className: 'yd-capability-group' },
@@ -656,8 +662,13 @@ window.__ModuleLoader__.load({
     }
 
     function ActivityView({ source, t, detailed = false }) {
-      if (source?.status !== 'ready' && source?.status !== 'empty') return h(EmptyState, { source, t })
+      if (!['ready', 'empty', 'partial'].includes(source?.status)) return h(EmptyState, { source, t })
       const data = source.data || {}
+      const partial = source.status === 'partial'
+      const notice = partial ? h('div', { className: 'yd-activity-notice', role: 'status' },
+        h('span', null, t('activityPartial')),
+        source.coverage ? h('span', null, `${t('activityCoverage')}: ${source.coverage.loaded} / ${source.coverage.total}`) : null,
+        source.coverage?.unscanned > 0 ? h('span', null, t('activityScanLimited')) : null) : null
       // 趋势形态（近 N 天）：窗口汇总 + 每日轮次条 + 环比
       if (Array.isArray(data.days)) {
         const totals = data.totals || {}
@@ -669,7 +680,8 @@ window.__ModuleLoader__.load({
           ['check', t('completed'), metricDisplay(totals.completedTurns), comparisonText(t, comparison, 'completedTurns')],
           ['warning', t('failed'), metricDisplay(failed), comparisonText(t, comparison, 'failedTurns'), failed > 0 ? 'danger' : undefined],
         ]
-        return h(React.Fragment, null,
+        return h(detailed ? 'div' : React.Fragment, detailed ? { className: 'yd-detail-stack yd-activity-detail' } : null,
+          notice,
           h('div', { className: 'yd-metrics' }, ...metrics.map(([icon, label, value, hint, tone]) =>
             h(Metric, { key: label, icon, label, value: value ?? '—', hint, muted: value === null, tone }))),
           detailed ? h(TrendSection, { title: t('turns'), days: data.days, valueOf: day => day.turns }) : null)
@@ -687,7 +699,8 @@ window.__ModuleLoader__.load({
       const callsTotal = number(totals.toolCalls)
       const toolBars = tools.slice(0, 12).map(tool =>
         h(ShareBar, { key: tool.name, label: tool.name, value: tool.calls, total: callsTotal }))
-      return h(React.Fragment, null,
+      return h(detailed ? 'div' : React.Fragment, detailed ? { className: 'yd-detail-stack yd-activity-detail' } : null,
+        notice,
         h('div', { className: 'yd-metrics' }, ...metrics.map(([icon, label, value, , tone]) =>
           h(Metric, { key: label, icon, label, value: value ?? '—', muted: value === null, tone }))),
         detailed ? h('div', { className: 'yd-activity-grid' },
@@ -697,11 +710,11 @@ window.__ModuleLoader__.load({
               h('div', { className: 'yd-list-row yd-session-row', key: `${session.title}-${index}` },
                 h('div', null, h('strong', null, session.title), h('span', null, session.workspace)),
                 h('span', { className: session.failedTurns > 0 ? 'yd-text-danger' : '' }, `${session.completedTurns || 0}/${session.turns || 0}`))))
-              : h('p', { className: 'yd-inline-empty' }, t('empty'))),
+              : h('p', { className: 'yd-inline-empty' }, t(partial ? 'activityPartialEmpty' : 'empty'))),
           h('section', { className: 'yd-table-section' },
             h('div', { className: 'yd-section-heading' }, h('h2', null, t('tool'))),
             toolBars.length ? h('div', { className: 'yd-list' }, ...toolBars)
-              : h('p', { className: 'yd-inline-empty' }, t('empty')))) : null)
+              : h('p', { className: 'yd-inline-empty' }, t(partial ? 'activityPartialEmpty' : 'empty')))) : null)
     }
 
     function GeorankView({ source, t, detailed = false }) {
@@ -855,6 +868,15 @@ window.__ModuleLoader__.load({
 
     // 导出当前范围数据为 CSV（BOM 兼容 Excel）：趋势形态逐日一行，昨日形态逐指标一行。
     function buildCsvRows(data, t) {
+      const rows = metricCsvRows(data, t)
+      if (data?.activity?.status !== 'partial') return rows
+      const coverage = data.activity.coverage
+      return rows.map((row, index) => [...row, ...(index === 0
+        ? [`${t('activity')} · ${t('sources')}`, `${t('activity')} · ${t('activityCoverage')}`]
+        : [t('sourcePartiallyAvailable'), coverage ? `${coverage.loaded} / ${coverage.total}` : '—'])])
+    }
+
+    function metricCsvRows(data, t) {
       const sources = ['geo', 'georank', 'usage', 'activity', 'montage']
       const dateMaps = Object.fromEntries(sources.map(name => [name, new Map(
         (Array.isArray(data?.[name]?.data?.days) ? data[name].data.days : [])
@@ -1097,6 +1119,9 @@ window.__ModuleLoader__.load({
 
     const inject = ['slots', 'locale']
     const spacingCss = `
+    .yd-activity-notice{display:grid;gap:4px;margin-bottom:16px;padding:10px 12px;border:1px solid color-mix(in srgb,var(--dsw-alias-state-warn-primary) 45%,var(--dsw-alias-border-l1));border-radius:6px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-state-warn-primary);font-size:12px;overflow-wrap:anywhere}
+    .yd-source-partial .yd-source-icon{color:var(--dsw-alias-state-warn-primary)}
+    .yd-activity-detail>.yd-activity-notice{margin-bottom:0}.yd-activity-detail>.yd-activity-grid{margin-top:0}
     .yd-overlay,.yd-overlay *{box-sizing:border-box}
     .yd-overlay{--yd-space-1:4px;--yd-space-2:8px;--yd-space-3:12px;--yd-space-4:16px;--yd-space-5:20px;--yd-space-6:24px;--yd-space-7:28px;--yd-content-gutter:24px;--yd-control-height:36px;--yd-row-height:48px;--yd-card-radius:6px}
     .yd-header{gap:var(--yd-space-5);padding:var(--yd-space-4) var(--yd-content-gutter)}

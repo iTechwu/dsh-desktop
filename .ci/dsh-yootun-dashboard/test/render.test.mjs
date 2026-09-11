@@ -335,4 +335,11 @@ test('dashboard CSV keeps source isolation and exports correct yesterday fields'
   assert.equal(seriesRows[2][1], '')
   assert.deepEqual(seriesRows[1].slice(2), ['', '', '', 3, 2, '', ''])
   assert.deepEqual(seriesRows[2].slice(2), [8, 0.4, 120, '', '', 2, 1])
+  for (const data of [yesterday, series]) {
+    const incomplete = { ...data, activity: { ...data.activity, status: 'partial', coverage: { total: 2, loaded: 1, failed: 1, unscanned: 0 } } }
+    const partialRows = buildCsvRows(incomplete, t)
+    assert.deepEqual(partialRows[0].slice(-2), ['activity · sources', 'activity · activityCoverage'])
+    assert.ok(partialRows.slice(1).every(row => row.at(-2) === 'sourcePartiallyAvailable' && row.at(-1) === '1 / 2'))
+    assert.deepEqual(partialRows.map(row => row.slice(0, -2)), buildCsvRows(data, t), 'partial export retains the observed metrics')
+  }
 })

@@ -17,6 +17,7 @@ import { getRawHeader } from '@electron/asar'
 import {
   disablePackagedMacSshCryptoRuntime,
   FORBIDDEN_MACOS_UNIVERSAL_ENTRIES,
+  FS_EXT_RELATIVE_PATH,
   hydrateInstalledMacCloudflaredRuntime,
   hydrateInstalledMacCpuFeaturesRuntime,
   hydrateInstalledMacFsExtRuntime,
@@ -232,11 +233,11 @@ export const REQUIRED_WINDOWS_X64_NODE_PTY_ENTRIES = [
   'node_modules/node-pty/prebuilds/win32-x64/conpty/conpty.dll',
 ] as const
 
-/** ABI-pinned fs-ext bindings selected by non-universal macOS and Linux packages. */
+/** fs-ext bindings required by non-universal macOS and Linux packages. */
 export const REQUIRED_POSIX_FS_EXT_ENTRIES = {
   darwin: {
-    x64: 'node_modules/fs-ext/prebuilds/darwin-x64/electron.abi148.node',
-    arm64: 'node_modules/fs-ext/prebuilds/darwin-arm64/electron.abi148.node',
+    x64: FS_EXT_RELATIVE_PATH,
+    arm64: FS_EXT_RELATIVE_PATH,
   },
   linux: {
     x64: 'node_modules/fs-ext/prebuilds/linux-x64/electron.abi148.node',
@@ -247,6 +248,8 @@ export const REQUIRED_POSIX_FS_EXT_ENTRIES = {
 /** CPU-specific runtime assets that must coexist in a universal macOS application. */
 export const REQUIRED_MACOS_UNIVERSAL_ENTRIES = [
   ...MACOS_UNIVERSAL_NATIVE_ENTRIES.map(entry => entry.path),
+  // afterPack replaces each thin binding with Electron's ABI; universal assembly merges both slices.
+  FS_EXT_RELATIVE_PATH,
 ] as const
 
 /** Minimal raw ASAR header surface returned by @electron/asar. */

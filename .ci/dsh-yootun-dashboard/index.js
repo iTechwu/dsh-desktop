@@ -516,32 +516,58 @@ function normalizeUsagePayload(payload) {
   return { ...value, summary, byModel }
 }
 
+async function scanActivity(persistence, visit) {
+  const snapshots = await persistence.list()
+  const selected = [...snapshots]
+    .sort((left, right) => right.header.createdAt - left.header.createdAt)
+    .slice(0, MAX_ACTIVITY_SESSIONS)
+  const coverage = { total: snapshots.length, loaded: 0, failed: 0, unscanned: snapshots.length - selected.length }
+  for (const { header } of selected) {
+    let events
+    let title
+    try {
+      const handle = await persistence.open(header.id, 'read')
+      try {
+        const log = await handle.read()
+        title = log.events.findLast(event => event.type === 'session/title')?.data?.title
+        events = log.events.slice(handle.inheritedEventCount)
+      } finally {
+        await handle.close()
+      }
+      coverage.loaded++
+    } catch {
+      coverage.failed++
+      continue
+    }
+    visit(header, events, title)
+  }
+  return coverage
+}
+
+function activityScanState(coverage, sessions) {
+  if (coverage.failed && !coverage.loaded) return { ...unavailable('activity_unavailable'), coverage }
+  if (coverage.failed || coverage.unscanned) return {
+    status: 'partial',
+    reason: coverage.failed ? 'activity_partial' : 'activity_scan_limited',
+    sourceCompleteness: 'partial',
+    coverage,
+  }
+  return { status: sessions > 0 ? 'ready' : 'empty', coverage }
+}
+
 async function loadActivity(persistence, period, logger) {
   try {
-    const headers = await persistence.list()
-    const selected = [...headers]
-      .sort((left, right) => timestamp(right.createdAt) - timestamp(left.createdAt))
-      .slice(0, MAX_ACTIVITY_SESSIONS)
     const start = Date.parse(period.start)
     const end = Date.parse(period.end)
     const sessions = []
     const tools = new Map()
     const totals = { sessions: 0, turns: 0, completedTurns: 0, failedTurns: 0, toolCalls: 0 }
 
-    for (const header of selected) {
-      let inspection
-      try {
-        inspection = await persistence.load(header.id)
-      } catch {
-        continue
-      }
-      const events = inspection.events.filter(event => {
-        const value = timestamp(event.time)
-        return value >= start && value < end
-      })
-      if (events.length === 0) continue
+    const coverage = await scanActivity(persistence, (header, log, title) => {
+      const events = log.filter(event => Number.isFinite(event.time) && event.time >= start && event.time < end)
+      if (events.length === 0) return
       const row = {
-        title: String(header.title || `Session ${String(header.id).slice(0, 8)}`),
+        title: String(title || `Session ${String(header.id).slice(0, 8)}`),
         workspace: workspaceName(header.cwd),
         turns: 0,
         completedTurns: 0,
@@ -564,9 +590,11 @@ async function loadActivity(persistence, period, logger) {
       totals.completedTurns += row.completedTurns
       totals.failedTurns += row.failedTurns
       sessions.push(row)
-    }
+    })
+    const state = activityScanState(coverage, totals.sessions)
+    if (state.status === 'unavailable') return state
     return {
-      status: totals.sessions > 0 ? 'ready' : 'empty',
+      ...state,
       data: {
         totals,
         sessions,
@@ -575,7 +603,7 @@ async function loadActivity(persistence, period, logger) {
     }
   } catch (error) {
     logger?.warn?.('yootun dashboard: activity query failed: %s', safeError(error))
-    return failed('activity_unavailable')
+    return unavailable('activity_unavailable')
   }
 }
 
@@ -1001,10 +1029,6 @@ function usageMetricGaps(rows, prefix) {
 
 async function loadActivitySeries(persistence, window, logger) {
   try {
-    const headers = await persistence.list()
-    const selected = [...headers]
-      .sort((left, right) => timestamp(right.createdAt) - timestamp(left.createdAt))
-      .slice(0, MAX_ACTIVITY_SESSIONS)
     const baselineStart = Date.parse(window.baselineStart)
     const end = Date.parse(window.end)
     const currentDates = [...windowDates(window.startDate, window.endDate)]
@@ -1015,17 +1039,11 @@ async function loadActivitySeries(persistence, window, logger) {
     const baselineSessions = new Set()
     const baselineTotals = { turns: 0, completedTurns: 0, failedTurns: 0, toolCalls: 0 }
 
-    for (const header of selected) {
-      let inspection
-      try {
-        inspection = await persistence.load(header.id)
-      } catch {
-        continue
-      }
+    const coverage = await scanActivity(persistence, (header, events) => {
       let touchedBaseline = false
-      for (const event of inspection.events) {
-        const at = timestamp(event.time)
-        if (at < baselineStart || at >= end) continue
+      for (const event of events) {
+        const at = event.time
+        if (!Number.isFinite(at) || at < baselineStart || at >= end) continue
         const date = dayKey(at)
         const bucket = currentDays.get(date)
         if (bucket) {
@@ -1047,19 +1065,23 @@ async function loadActivitySeries(persistence, window, logger) {
         }
       }
       if (touchedBaseline) baselineSessions.add(header.id)
-    }
+    })
     for (const date of currentDates) {
       currentDays.get(date).sessions = sessionDays.get(date).size
     }
     const days = currentDates.map(date => ({ date, ...currentDays.get(date) }))
     const totals = sumBucketList(days)
+    // Daily buckets count active sessions per day; the range counts each session once.
+    totals.sessions = new Set([...sessionDays.values()].flatMap(ids => [...ids])).size
+    const state = activityScanState(coverage, totals.sessions)
+    if (state.status === 'unavailable') return state
     return {
-      status: totals.sessions > 0 ? 'ready' : 'empty',
+      ...state,
       data: {
         days,
         totals,
       },
-      comparison: buildComparison(
+      comparison: state.status === 'partial' ? unavailable('activity_incomplete') : buildComparison(
         totals,
         {
           sessions: baselineSessions.size,
@@ -1070,7 +1092,7 @@ async function loadActivitySeries(persistence, window, logger) {
     }
   } catch (error) {
     logger?.warn?.('yootun dashboard: activity series failed: %s', safeError(error))
-    return failed('activity_unavailable')
+    return unavailable('activity_unavailable')
   }
 }
 

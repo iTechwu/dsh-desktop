@@ -271,8 +271,36 @@ try {
   await assertThemeColor(page.locator('.ycc-certified'), '--dsw-alias-state-success-primary')
   await assertThemeColor(page.locator('.ycc-kpi[data-tone="warning"] > strong').first(), '--dsw-alias-state-warn-primary')
   await assertThemeColor(page.locator('.ycc-kpi[data-tone="danger"] > strong').first(), '--dsw-alias-state-error-primary')
-  await assertViewport()
-  await page.screenshot({ path: resolve(evidenceRoot, '390-content-status.png'), fullPage: true })
+  for (const viewport of [
+    { width: 390, height: 844 },
+    { width: 390, height: 600 },
+    { width: 820, height: 900 },
+    { width: 1440, height: 600 },
+  ]) {
+    await page.setViewportSize(viewport)
+    await assertViewport()
+    const clipped = await page.locator('.ycc-panel').evaluateAll(panels => panels
+      .filter(panel => panel.scrollHeight > panel.clientHeight + 1)
+      .map(panel => ({ className: panel.className, height: panel.clientHeight, content: panel.scrollHeight })))
+    assert.deepEqual(clipped, [], `overview cards must expose all metrics at ${JSON.stringify(viewport)}`)
+    const overlaps = await page.locator('.ycc-panel').evaluateAll(panels => {
+      const bounds = panels.map(panel => panel.getBoundingClientRect())
+      return bounds.flatMap((a, index) => bounds.slice(index + 1).flatMap(b =>
+        a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom
+          ? [{ first: index, top: a.top, bottom: a.bottom, nextTop: b.top }]
+          : []))
+    })
+    assert.deepEqual(overlaps, [], 'overview cards must not overlap when scrolling')
+    await page.locator('.ycc-overview').hover()
+    await page.mouse.wheel(0, 2400)
+    await page.waitForFunction(() => {
+      const overview = document.querySelector('.ycc-overview').getBoundingClientRect()
+      const lastMetric = document.querySelector('.ycc-distribution-row').getBoundingClientRect()
+      return lastMetric.top >= overview.top && lastMetric.bottom <= window.innerHeight
+    })
+    await page.screenshot({ path: resolve(evidenceRoot, `${viewport.width}x${viewport.height}-content-status.png`), fullPage: true })
+  }
+  await page.setViewportSize({ width: 390, height: 844 })
 
   await page.goto(`${url}?source=sales`)
   await page.getByRole('button', { name: '销售协同' }).click()
@@ -319,7 +347,7 @@ try {
   await page.screenshot({ path: resolve(evidenceRoot, '390-retrofit-external.png'), fullPage: true })
 
   assert.deepEqual(consoleProblems, [])
-  process.stdout.write('theme-actions-browser: 5 plugins, 5 screenshots, adaptive action/status contrast and mobile layout passed\n')
+  process.stdout.write('theme-actions-browser: 5 plugins, 8 screenshots, adaptive action/status contrast and scrollable overview passed\n')
 } finally {
   await page.close()
   await browser.close()

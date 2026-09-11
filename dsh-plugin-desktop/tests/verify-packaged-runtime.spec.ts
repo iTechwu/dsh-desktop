@@ -307,6 +307,28 @@ describe('packaged desktop runtime verification', () => {
       .toThrow('unsupported macOS package architecture 0')
   })
 
+  it.each([1, 3, 4])('accepts the hydrated fs-ext load path for macOS architecture %s', (arch) => {
+    const runtimeContext = context('/build', 'darwin', arch)
+    const binding = 'node_modules/fs-ext/build/Release/fs_ext.node'
+    // Model fs-ext 2.1.1's actual loader, independently of the verifier inventory.
+    const paths = [...new Set([
+      ...requiredPhysicalEntries(runtimeContext).filter(path => !path.startsWith('node_modules/fs-ext/')),
+      binding,
+    ])]
+    const entries = [...completeArchiveEntries().filter(path => !path.startsWith('node_modules/fs-ext/')), binding]
+    const unpackedRoot = resolvePackagedUnpackedRoot(runtimeContext)
+    const verify = (present: readonly string[]) => verifyPackagedRuntime(
+      runtimeContext,
+      headerReader(entries, paths),
+      filename => present.includes(relative(unpackedRoot, filename).replaceAll('\\', '/')),
+      () => present.map(path => ({ path, bytes: 1 })),
+    )
+
+    expect(() => verify(paths)).not.toThrow()
+    expect(() => verify(paths.filter(path => path !== binding)))
+      .toThrow(`missing required physical entries: ${binding}`)
+  })
+
   it('rejects an fs-ext addon built for a different Electron ABI', () => {
     const run: PackagedElectronRunner = () => ({
       status: 1,
