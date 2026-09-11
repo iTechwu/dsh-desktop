@@ -76,6 +76,14 @@ export function trimNumber(value) {
   return String(Math.round(num * 100) / 100)
 }
 
+export function formatPercent(value) {
+  if (value === null || value === undefined || value === '') return EMPTY
+  const num = Number(value)
+  if (!Number.isFinite(num)) return EMPTY
+  const bounded = Math.max(0, Math.min(100, num))
+  return `${Math.round(bounded * 100) / 100}%`
+}
+
 export function formatCount(value) {
   const num = Number(value)
   if (!Number.isFinite(num)) return EMPTY
@@ -87,10 +95,7 @@ export function formatCount(value) {
 export function formatCell(value, kind, t = key => key) {
   if (value === null || value === undefined || value === '') return EMPTY
   if (kind === 'count') return formatCount(value)
-  if (kind === 'pct') {
-    const text = trimNumber(value)
-    return text === '' ? EMPTY : `${text}%`
-  }
+  if (kind === 'pct') return formatPercent(value)
   if (kind === 'seconds') {
     const text = trimNumber(value)
     return text === '' ? EMPTY : `${text}${t('seconds')}`
