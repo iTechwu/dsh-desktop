@@ -9,6 +9,7 @@ it('prepares request inventory for Desktop-owned entries and private-manifest pl
     import assert from 'node:assert/strict';
     import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
     import { tmpdir } from 'node:os';
+    import { createRequire } from 'node:module';
     import { join } from 'node:path';
     import { pathToFileURL } from 'node:url';
     const { apply } = await import(pathToFileURL(process.argv[1]).href);
@@ -29,9 +30,17 @@ it('prepares request inventory for Desktop-owned entries and private-manifest pl
         } }, {});
         return (await provider.prepare({})).value.packages;
       };
-      // A standalone Profile has no physical copy of the Desktop package.
-      await assert.rejects(() => collect([desktop.name]), /cannot resolve active package/);
+      // The inventory package can find installation-owned packages from its own base.
+      const installedIdentity = [{ name: desktop.name, version: desktop.version }];
+      assert.deepEqual(await collect([desktop.name]), installedIdentity);
+      const staleDesktop = join(root, 'node_modules', desktop.name);
+      mkdirSync(staleDesktop, { recursive: true });
+      writeFileSync(join(staleDesktop, 'package.json'), JSON.stringify({
+        name: desktop.name, version: '0.0.1', exports: './index.js'
+      }));
+      writeFileSync(join(staleDesktop, 'index.js'), 'throw new Error("inventory evaluated stale plugin")');
       release = installProfilePackageResolver(baseUrl);
+      assert.equal(JSON.parse(readFileSync(createRequire(baseUrl).resolve(desktop.name + '/package.json'), 'utf8')).version, desktop.version);
       assert.deepEqual(await collect([
         desktop.name, desktop.name + '/terminal', desktop.name + '/pnpm',
         desktop.name + '/diagnostics', desktop.name + '/notifications',
@@ -48,7 +57,7 @@ it('prepares request inventory for Desktop-owned entries and private-manifest pl
       writeFileSync(join(plugin, 'package.json'), JSON.stringify({ name: 'private-manifest-plugin', exports: './index.js' }));
       await assert.rejects(() => collect(['private-manifest-plugin']), /non-empty name and version/);
       release(); release = undefined;
-      await assert.rejects(() => collect([desktop.name]), /cannot resolve active package/);
+      assert.deepEqual(await collect([desktop.name]), [{ name: desktop.name, version: '0.0.1' }]);
       console.log('request inventory passed');
     } finally { release?.(); rmSync(root, { recursive: true, force: true }); }
   `

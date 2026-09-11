@@ -503,6 +503,7 @@
     "asar": {
       "smartUnpack": true
     },
+    "beforePack": "./scripts/mac-system-runtime.ts",
     "afterPack": "./scripts/verify-packaged-runtime.ts",
     "electronDownload": {
       "checksums": {

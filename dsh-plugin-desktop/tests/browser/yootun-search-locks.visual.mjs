@@ -6,14 +6,22 @@ import { fileURLToPath } from 'node:url'
 import { createServer } from 'vite'
 import { chromium } from '../../../deepseek-harness/apps/web/node_modules/playwright/index.mjs'
 import { assertAccessibleSurface } from './assert-accessible-surface.mjs'
+import { assertTextContrast } from './assert-text-contrast.mjs'
 
 const here = fileURLToPath(new URL('.', import.meta.url))
 const packageRoot = resolve(here, '../..')
 const workspaceRoot = resolve(packageRoot, '..')
 const harnessRoot = resolve(here, 'yootun-audit')
+// Keep the custom blue palette as a token-mapping regression, and exercise the
+// actual application palettes with DSH_VISUAL_THEME=official-light/official-dark.
+const visualTheme = process.env.DSH_VISUAL_THEME || 'custom'
+assert(['custom', 'official-light', 'official-dark'].includes(visualTheme), `Unknown visual theme: ${visualTheme}`)
+const officialThemeCss = visualTheme === 'custom' ? null : await readFile(
+  resolve(workspaceRoot, 'deepseek-harness/packages/client/ui-theme/src/styles/design-platform.css'), 'utf8',
+)
 const evidenceRoot = process.env.DSH_VISUAL_EVIDENCE_ROOT
   ? resolve(process.env.DSH_VISUAL_EVIDENCE_ROOT)
-  : resolve(workspaceRoot, 'docs/superpowers/evidence/2026-09-08-search-locks')
+  : resolve(workspaceRoot, 'docs/superpowers/evidence/2026-09-08-search-locks', visualTheme)
 const sources = {
   content: resolve(workspaceRoot, '.ci/dsh-yootun-content-command/src/client.js'),
   dashboard: resolve(workspaceRoot, '.ci/dsh-yootun-dashboard/src/client.js'),
@@ -35,6 +43,18 @@ const vite = await createServer({
   server: { host: '127.0.0.1', port: 0 },
   plugins: [{
     name: 'search-lock-source',
+    transformIndexHtml(html) {
+      if (!officialThemeCss) return html
+      const dark = visualTheme === 'official-dark'
+      return {
+        html: html.replace('<body>', dark ? '<body data-ds-dark-theme>' : '<body>'),
+        tags: [{
+          tag: 'style',
+          children: `${officialThemeCss}\n:root { color-scheme: ${dark ? 'dark' : 'light'}; }`,
+          injectTo: 'head',
+        }],
+      }
+    },
     configureServer(server) {
       server.middlewares.use('/__audit_source__', async (request, response) => {
         const sourceId = new URL(request.url || '/', 'http://127.0.0.1').searchParams.get('source')
@@ -92,6 +112,7 @@ const finops = {
   alerts: [],
   refreshedAt: '2026-09-08T03:00:00.000Z',
 }
+let knowledgeNodeLabel = '重点客户偏好'
 const knowledge = {
   status: 'ready',
   mcp: { auth: 'credential-store' },
@@ -264,7 +285,7 @@ await page.route('**/api/desktop/yootun/knowledge', async route => {
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify({ result: {
-        nodes: [{ id: 'memory-1', entityId: 'memory-1', type: 'MEMORY', label: '重点客户偏好', status: 'CONFIRMED' }],
+        nodes: [{ id: 'memory-1', entityId: 'memory-1', type: 'MEMORY', label: knowledgeNodeLabel, status: 'CONFIRMED' }],
         edges: [],
         generatedAt: '2026-09-08T03:00:00.000Z',
         projection: { status: 'projected' },
@@ -350,10 +371,12 @@ async function settleStrictMode() {
 
 async function assertViewport() {
   await assertAccessibleSurface(page)
+  await assertTextContrast(page, '.yd-activity-notice,.ydr-source-row b,.ydr-inline-status,.yf-refresh-error,.yf-status-pill,.yk-source,.yl-level,.yl-ready-dot,.yr-source,.ys-inline-error,.ysw-root-state,.yro-external-note,.ycc-error,.ycc-risk-mini,.ycc-list-status,.ycc-review-badge,.ycc-audit-score > strong,.ycc-audit-score b,.ycc-channel-action > span[data-status]')
+  await assertTextContrast(page, '.yd-empty p,.yd-source-empty.yd-source-compact,.yd-metric-missing strong,.yf-metric-muted strong,.yf-compare-na,.yf-status-unavailable,.yf-privacy,.yf-chart-label,.yl-field-label,.yl-platform span,.yl-panel-meta,.yl-bar-row small,.yl-empty-list,.yl-action-empty,.yl-summary-empty,.yr-subheading,.yr-empty span,.yro-platform-select span,.yro-privacy,.yro-source-time,.yro-counts span,.ycc-inline-empty,.ycc-kpi > small,.ycc-bar-day > span,.ycc-list-empty')
 }
 
 async function assertDesktopViewport(header = '.yd-header', content = '.yd-overview') {
-  await assertAccessibleSurface(page)
+  await assertViewport()
   const viewport = await page.evaluate(({ header, content }) => ({
     clientWidth: document.documentElement.clientWidth,
     scrollWidth: document.documentElement.scrollWidth,
@@ -368,6 +391,17 @@ async function assertDesktopViewport(header = '.yd-header', content = '.yd-overv
 
 try {
   await page.goto(`${url}?source=dashboard`)
+  if (officialThemeCss) {
+    const themeState = await page.evaluate(() => ({
+      dark: document.body.hasAttribute('data-ds-dark-theme'),
+      scheme: getComputedStyle(document.documentElement).colorScheme,
+      brand: getComputedStyle(document.body).getPropertyValue('--dsw-alias-brand-primary').trim(),
+    }))
+    const dark = visualTheme === 'official-dark'
+    assert.equal(themeState.dark, dark)
+    assert.equal(themeState.scheme, dark ? 'dark' : 'light')
+    assert.equal(themeState.brand, dark ? 'rgb(249, 250, 251)' : 'rgb(15, 17, 21)')
+  }
   await page.getByRole('button', { name: '企业看板' }).click()
   await page.getByRole('heading', { name: '企业驾驶舱' }).waitFor()
   await page.locator('.yd-overview').waitFor()
@@ -479,6 +513,43 @@ try {
   assert(contentGeometry.detailTop >= contentGeometry.toolbarBottom, 'article detail must not overlap the mobile review toolbar')
   await assertViewport()
   await page.screenshot({ path: resolve(evidenceRoot, '390-content-workflow.png'), fullPage: true })
+  await page.getByRole('tab', { name: /^全部/u }).click()
+  contentCommand.platforms = [
+    { id: 'website', name: '官网', loginRequired: false },
+    { id: 'xhs', name: '小红书', loginRequired: true },
+  ]
+  contentCommand.articles[0].platformStatus = { website: 'succeeded', xhs: 'failed' }
+  for (const [score, tone, reviewStatus] of [[18, 'low', 'approved'], [50, 'medium', 'pending'], [85, 'high', 'rejected']]) {
+    contentCommand.articles[0].humanize.score = score
+    contentCommand.articles[0].reviewStatus = reviewStatus
+    await page.getByRole('button', { name: '刷新数据' }).click()
+    await page.waitForFunction(({ score, tone, reviewStatus }) =>
+      document.querySelector('.ycc-shell')?.getAttribute('aria-busy') === 'false'
+      && document.querySelector('.ycc-review-badge')?.getAttribute('data-review') === reviewStatus
+      && document.querySelector(`.ycc-audit[data-tone="${tone}"] .ycc-audit-score > strong`)?.textContent === String(score), { score, tone, reviewStatus })
+    for (const width of [390, 1440]) {
+      await page.setViewportSize({ width, height: 900 })
+      const statusPaint = await page.locator('.ycc-risk-mini,.ycc-list-status,.ycc-review-badge,.ycc-audit-score > strong,.ycc-audit-score b,.ycc-channel-action > span[data-status]').evaluateAll(elements => elements.map(element => ({
+        text: element.textContent,
+        background: getComputedStyle(element).backgroundColor,
+      })))
+      assert.equal(statusPaint.length, reviewStatus === 'approved' ? 7 : 5, 'risk, review, and eligible channel status labels must all be rendered')
+      assert(statusPaint.every(item => item.background === 'rgba(0, 0, 0, 0)'), `status text must not receive solid indicator fills: ${JSON.stringify(statusPaint)}`)
+      const progressPaint = await page.locator('.ycc-audit .ycc-progress span').evaluate((element, tone) => {
+        const probe = document.createElement('i')
+        probe.style.backgroundColor = `var(--ycc-state-${tone === 'high' ? 'error' : tone === 'medium' ? 'warning' : 'success'})`
+        element.appendChild(probe)
+        const expected = getComputedStyle(probe).backgroundColor
+        probe.remove()
+        return { background: getComputedStyle(element).backgroundColor, expected }
+      }, tone)
+      assert.equal(progressPaint.background, progressPaint.expected, 'risk progress must retain its semantic fill')
+      await page.locator('.ycc-audit').scrollIntoViewIfNeeded()
+      await assertViewport()
+      await page.screenshot({ path: resolve(evidenceRoot, `${width}-content-risk-${tone}.png`), fullPage: true })
+    }
+  }
+  await page.setViewportSize({ width: 390, height: 844 })
   contentUnavailable = true
   await page.getByRole('button', { name: '刷新数据' }).click()
   await page.getByRole('alert').getByText('刷新失败，当前仍显示上次数据', { exact: true }).waitFor()
@@ -540,6 +611,23 @@ try {
   assert.equal(await page.getByText('昨日没有可汇总的工作记录', { exact: true }).count(), 0)
   await assertDesktopViewport('.ydr-header', '.ydr-metrics')
   await page.screenshot({ path: resolve(evidenceRoot, '1440-daily-unavailable.png'), fullPage: true })
+  const longSessionTitle = '华东汽车渠道季度复盘与长周期客户跟进记录'
+  dailyReport.activity = { ...completeActivity, sessions: [{
+    ...completeActivity.sessions[0], title: longSessionTitle,
+    workspace: 'LongWorkspaceNameWithoutSpacesForRegionalCustomerOperations',
+  }] }
+  dailyReport.sources.local = { status: 'ready' }
+  await page.getByRole('button', { name: '刷新', exact: true }).click()
+  await page.getByText(longSessionTitle, { exact: true }).waitFor()
+  for (const width of [320, 1440]) {
+    await page.setViewportSize({ width, height: width === 320 ? 568 : 900 })
+    await page.locator('.ydr-row').scrollIntoViewIfNeeded()
+    await assertViewport()
+    const rowFits = await page.locator('.ydr-row').evaluate(row => [...row.children]
+      .every(element => element.scrollWidth <= element.clientWidth + 1))
+    assert(rowFits, 'long session and workspace names must remain readable inside the report row')
+    await page.screenshot({ path: resolve(evidenceRoot, `${width}-daily-long-title.png`), fullPage: true })
+  }
   await page.setViewportSize({ width: 390, height: 844 })
 
   await page.goto(`${url}?source=finops`)
@@ -561,6 +649,23 @@ try {
   await assertViewport()
   await page.mouse.move(0, 0)
   await page.screenshot({ path: resolve(evidenceRoot, '390-finops-refresh-error.png'), fullPage: true })
+  finopsRefreshFails = false
+  finops.series = [{ date: '2026-09-07', cost: 12.5, requests: 24, totalTokens: 188000 }]
+  await page.getByRole('button', { name: '重新加载' }).click()
+  await page.waitForFunction(() => document.querySelector('.yf-chart-label')?.textContent === '09-07')
+  assert.equal(await page.getByRole('alert').count(), 0, 'successful retry must clear the stale-data error')
+  for (const width of [390, 1440]) {
+    await page.setViewportSize({ width, height: 900 })
+    await page.locator('.yf-chart').scrollIntoViewIfNeeded()
+    const labels = await assertTextContrast(page, '.yf-chart-label')
+    assert.equal(labels.length, 1, 'the chart date must be measured using its SVG fill')
+    const chartDateSize = await page.locator('.yf-chart-label').evaluate(label =>
+      parseFloat(getComputedStyle(label).fontSize) * Math.abs(label.getScreenCTM().a))
+    assert(chartDateSize >= 10.5 && chartDateSize <= 11.5, `chart dates must retain an 11px visual size at ${width}px: ${chartDateSize}`)
+    await assertViewport()
+    await page.screenshot({ path: resolve(evidenceRoot, `${width}-finops-retry-chart.png`), fullPage: true })
+  }
+  await page.setViewportSize({ width: 390, height: 844 })
 
   await page.goto(`${url}?source=knowledge`)
   await page.getByRole('button', { name: '企业知识' }).click()
@@ -609,6 +714,25 @@ try {
   await page.locator('.yk-node-detail').scrollIntoViewIfNeeded()
   await assertViewport()
   await page.screenshot({ path: resolve(evidenceRoot, '390-knowledge-node-status.png'), fullPage: true })
+  knowledgeNodeLabel = 'CustomerPreferencesAndLongTermChannelFollowUpWithoutSpaces'
+  await page.reload()
+  await page.getByRole('button', { name: '企业知识' }).click()
+  await page.getByText('渠道政策').waitFor()
+  await page.getByRole('button', { name: '知识图谱' }).click()
+  const longNode = page.getByRole('button', { name: knowledgeNodeLabel, exact: true })
+  await longNode.waitFor()
+  await longNode.focus()
+  await longNode.press('Enter')
+  await page.locator('.yk-node-detail').getByText(knowledgeNodeLabel, { exact: true }).waitFor()
+  for (const width of [320, 1440]) {
+    await page.setViewportSize({ width, height: width === 320 ? 568 : 900 })
+    await page.locator('.yk-node-detail').scrollIntoViewIfNeeded()
+    await assertViewport()
+    const detailFits = await page.locator('.yk-node-detail strong').evaluate(element => element.scrollWidth <= element.clientWidth + 1)
+    assert(detailFits, 'a selected node name must wrap inside its detail card')
+    await page.screenshot({ path: resolve(evidenceRoot, `${width}-knowledge-long-node.png`), fullPage: true })
+  }
+  await page.setViewportSize({ width: 390, height: 844 })
 
   await page.goto(`${url}?source=lead`)
   await page.getByRole('button', { name: '购车线索发现' }).click()
@@ -696,7 +820,7 @@ try {
   await page.screenshot({ path: resolve(evidenceRoot, '1440-dashboard-overview.png'), fullPage: true })
 
   assert.deepEqual(consoleProblems, [])
-  process.stdout.write('search-locks-browser: 10 plugins, 22 screenshots, request locks, report coverage, localized statuses, and responsive theme mappings verified\n')
+  process.stdout.write(`search-locks-browser: ${visualTheme}, 10 plugins, 34 screenshots, request locks, report coverage, readable status/secondary text, retry recovery, long text, keyboard selection, and responsive theme mappings verified\n`)
 } finally {
   releaseDailyRefresh()
   releaseFinopsRefresh()

@@ -19,6 +19,7 @@ import { spawnSync } from 'node:child_process'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { dirname, join, relative, resolve, sep } from 'node:path'
+import { buildMacSystemRuntime, installedMacSystemPackage } from './mac-system-runtime.ts'
 
 export type MacUniversalArch = 'arm64' | 'x86_64'
 
@@ -653,6 +654,10 @@ export function hydratePackagedMacRuntime(
 
   for (const arch of options.arches) {
     const suffix = packageArch(arch)
+    copyPackage(
+      installedMacSystemPackage(desktopRoot, suffix),
+      join(packagedModules, `@deepseek-ai/node-addon-system-darwin-${suffix}`),
+    )
     for (const packagePattern of ROOT_MACOS_NATIVE_PACKAGES) {
       const packageName = packagePattern.replace('{arch}', suffix)
       copyPackage(join(installedModules, packageName), join(packagedModules, packageName))
@@ -700,5 +705,17 @@ export function prepareMacUniversalRuntime(
 
 /** Prepare the installed workspace dependency tree for universal packaging. */
 export function prepareInstalledMacUniversalRuntime(desktopRoot: string): void {
-  prepareMacUniversalRuntime({ desktopRoot, exists: existsSync, chmod: chmodSync })
+  buildMacSystemRuntime({ desktopRoot, arches: ['arm64', 'x64'] })
+  prepareMacUniversalRuntime({
+    desktopRoot,
+    exists: path => {
+      for (const arch of ['arm64', 'x64'] as const) {
+        if (path === join(resolve(desktopRoot), `node_modules/@deepseek-ai/node-addon-system-darwin-${arch}/bin/system.node`)) {
+          return existsSync(join(installedMacSystemPackage(desktopRoot, arch), 'bin/system.node'))
+        }
+      }
+      return existsSync(path)
+    },
+    chmod: chmodSync,
+  })
 }

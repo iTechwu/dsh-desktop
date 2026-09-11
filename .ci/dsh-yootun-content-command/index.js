@@ -138,10 +138,13 @@ async function loadGeoRankInsights(ctx, signal) {
   const historyValue = historyResult.status === 'fulfilled' ? parseResult(historyResult.value) : null
   const companyValue = companyResult.status === 'fulfilled' ? asRecord(parseResult(companyResult.value)) : {}
   if (historyResult.status === 'rejected' && companyResult.status === 'rejected') return sourceState('error', 'georank_unavailable')
-  const reports = (Array.isArray(historyValue) ? historyValue : recordList(asRecord(historyValue).items))
-    .map(projectReport).filter(Boolean).filter(item => isYootunUrl(item.url)).slice(0, 8)
+  const history = Array.isArray(historyValue) ? historyValue
+    : historyValue?.report_id ? [historyValue]
+      : recordList(historyValue?.items ?? historyValue?.result)
+  const reports = history.map(projectReport).filter(Boolean).filter(item => isYootunUrl(item.url))
+    .sort((left, right) => String(right.createdAt || '').localeCompare(String(left.createdAt || ''))).slice(0, 8)
   const companies = recordList(companyValue.items)
-  const company = companies.find(item => isYootunUrl(firstString(item.url))) || companies[0] || null
+  const company = companies.find(item => isYootunUrl(firstString(item.url))) || null
   const latestReport = reports[0] || null
   const companyScore = finiteNumber(company?.geo_score)
   const reportScore = finiteNumber(latestReport?.score)
@@ -152,7 +155,8 @@ async function loadGeoRankInsights(ctx, signal) {
     latestReport,
     reports,
   }
-  return sourceState(company || reports.length ? 'ready' : 'empty', null, data)
+  const readFailed = historyResult.status === 'rejected' || companyResult.status === 'rejected'
+  return sourceState(company || reports.length ? 'ready' : readFailed ? 'error' : 'empty', readFailed ? 'georank_partial_read_failure' : null, data)
 }
 
 function projectArticle(row) {
@@ -203,13 +207,19 @@ function platformCatalog() {
 
 function emptyState(status, reason) { return { status, ...(reason ? { reason } : {}), dashboard: { articles: 0, pendingReview: 0, reviewed: 0, publishReady: 0 }, sources: { geoflow: sourceState('unavailable'), georank: sourceState('unavailable') }, platforms: platformCatalog(), articles: [] } }
 function findTool(ctx, name) { return (ctx.tools.schemas?.() || []).find(item => String(item.name || '').includes(name)) }
-async function execute(ctx, name, arguments_, signal) { return ctx.tools.execute({ callId: `yootun-content-${Date.now()}-${Math.random().toString(16).slice(2)}`, name, arguments: arguments_, signal }) }
+async function execute(ctx, name, arguments_, signal) { return parseResult(await ctx.tools.execute({ callId: `yootun-content-${Date.now()}-${Math.random().toString(16).slice(2)}`, name, arguments: arguments_, signal })) }
 function parseResult(result) {
   if (!result) return {}
-  if (result && typeof result === 'object' && !Array.isArray(result) && Array.isArray(result.content)) {
-    const text = result.content.filter(item => item?.type === 'text').map(item => String(item.text || '')).join('')
-    if (!text) return {}
-    try { return JSON.parse(text) } catch { return null }
+  if (result.isError === true || result.ok === false) throw new Error('mcp_tool_failed')
+  if (result.structuredContent && typeof result.structuredContent === 'object') return result.structuredContent
+  if (Array.isArray(result.content)) {
+    const texts = result.content.filter(item => item?.type === 'text' && typeof item.text === 'string')
+    if (!texts.length) return []
+    // FastMCP encodes a list as one JSON text block per item, not as JSON
+    // fragments. Concatenating those blocks discards every multi-report history.
+    let values
+    try { values = texts.map(item => JSON.parse(item.text)) } catch { throw new Error('mcp_invalid_json') }
+    return values.length === 1 ? values[0] : values.flatMap(value => Array.isArray(value) ? value : [value])
   }
   return result
 }

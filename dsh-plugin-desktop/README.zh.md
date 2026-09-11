@@ -100,6 +100,8 @@ pnpm check
 
 该检查会验证生产依赖图中的每个必需第一方 peer 都由 desktop deploy root 声明。Headless Loader smoke 会激活 launcher 拥有的 desktop row 与 profile 本地第三方 row，然后启动已发布 Web profile 并检查其 loopback 根页面与 client manifest。单元和类型测试覆盖两种 profile 组合、重启栅栏、client environment 校验、desktop layout 状态与各平台原生窗口选项。
 
+在 macOS 上，原生运行时检查使用 Apple 的 `cc`、`lipo` 和当前 Node 安装的开发头文件，为 arm64 与 x64 编译 fork 的 Node-API v8 文件锁模块。`beforePack` 钩子也会在收集依赖前编译打包目标。平台文件通过会话持久化包解析，无需 Desktop 的直接依赖链接。编译完成后原子替换产物；缺少头文件、产物声明不受支持、编译或架构校验失败都会中止打包。Electron ASAR 回归在不打开窗口的情况下验证锁竞争和释放。
+
 有图形会话时，显式启动桌面应用：
 
 ```sh

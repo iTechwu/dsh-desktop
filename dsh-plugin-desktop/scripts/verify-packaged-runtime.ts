@@ -912,7 +912,11 @@ export function verifyPackagedRuntime(
       ? [...desktopPhysicalEntries, ...REQUIRED_MACOS_UNIVERSAL_ENTRIES]
       : posixFsExtEntry === undefined
         ? desktopPhysicalEntries
-        : [...desktopPhysicalEntries, posixFsExtEntry]
+        : [...desktopPhysicalEntries, posixFsExtEntry,
+          ...(context.electronPlatformName === 'darwin'
+            ? [`node_modules/@deepseek-ai/node-addon-system-darwin-${context.arch === 1 ? 'x64' : 'arm64'}/bin/system.node`]
+            : []),
+        ]
   const missing = requiredPhysicalEntries.filter(entry => !exists(join(unpackedRoot, entry)))
   if (missing.length > 0) {
     throw new Error(

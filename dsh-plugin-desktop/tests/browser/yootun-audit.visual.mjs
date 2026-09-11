@@ -12,9 +12,14 @@ const packageRoot = resolve(here, '../..')
 const workspaceRoot = resolve(packageRoot, '..')
 const harnessRoot = resolve(here, 'yootun-audit')
 const auditSourcePath = resolve(workspaceRoot, '.ci/dsh-yootun-audit/src/client.js')
+const visualTheme = process.env.DSH_VISUAL_THEME || 'custom'
+assert(['custom', 'official-light', 'official-dark'].includes(visualTheme), `Unknown visual theme: ${visualTheme}`)
+const officialThemeCss = visualTheme === 'custom' ? null : await readFile(
+  resolve(workspaceRoot, 'deepseek-harness/packages/client/ui-theme/src/styles/design-platform.css'), 'utf8',
+)
 const evidenceRoot = process.env.DSH_VISUAL_EVIDENCE_ROOT
   ? resolve(process.env.DSH_VISUAL_EVIDENCE_ROOT)
-  : resolve(workspaceRoot, 'docs/superpowers/evidence/2026-09-05-yootun-audit')
+  : resolve(workspaceRoot, 'docs/superpowers/evidence/2026-09-05-yootun-audit', visualTheme)
 const browserExecutable = process.env.DSH_AUDIT_BROWSER_EXECUTABLE
   || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
 assert(existsSync(browserExecutable), `Chrome executable not found: ${browserExecutable}`)
@@ -63,7 +68,7 @@ const responses = {
   live: () => workspace({}),
   empty: () => workspace({ summary: { today: 0, succeeded: 0, abnormal: 0, pendingSync: 0 }, events: [] }),
   cached: () => workspace({ status: 'offline', freshness: { source: 'cache', syncedAt: '2026-09-05T01:50:00.000Z' } }),
-  pending: () => workspace({ summary: { today: 12, succeeded: 10, abnormal: 2, pendingSync: 3 }, sync: { pending: 3, quarantine: 0, errorCode: 'network_unavailable' } }),
+  pending: () => workspace({ summary: { today: 12, succeeded: 10, abnormal: 2, pendingSync: 3 }, events: [{ ...event, syncStatus: 'pending' }, failedEvent], sync: { pending: 3, quarantine: 0, errorCode: 'network_unavailable' } }),
   member: () => workspace({ scopes: { available: ['self'], isSuperAdmin: false } }),
   admin: () => workspace({ scopes: { available: ['self', 'team'], currentTeam: { id: 'team-1', name: '增长团队' }, isSuperAdmin: false } }),
   superadmin: () => workspace({ scopes: { available: ['self', 'team'], isSuperAdmin: true } }),
@@ -74,6 +79,14 @@ const vite = await createServer({
   server: { host: '127.0.0.1', port: 0 },
   plugins: [{
     name: 'audit-source',
+    transformIndexHtml(html) {
+      if (!officialThemeCss) return html
+      const dark = visualTheme === 'official-dark'
+      return {
+        html: html.replace('<body>', dark ? '<body data-ds-dark-theme>' : '<body>'),
+        tags: [{ tag: 'style', children: `${officialThemeCss}\n:root { color-scheme: ${dark ? 'dark' : 'light'}; }`, injectTo: 'head' }],
+      }
+    },
     configureServer(server) {
       server.middlewares.use('/__audit_source__', async (_request, response) => {
         response.setHeader('Content-Type', 'text/plain; charset=utf-8')
@@ -120,30 +133,48 @@ async function open(width, height, nextScenario) {
   scenario = nextScenario
   await page.setViewportSize({ width, height })
   await page.goto(url)
+  if (officialThemeCss) {
+    const theme = await page.evaluate(() => ({
+      dark: document.body.hasAttribute('data-ds-dark-theme'),
+      brand: getComputedStyle(document.body).getPropertyValue('--dsw-alias-brand-primary').trim(),
+    }))
+    assert.equal(theme.dark, visualTheme === 'official-dark')
+    assert.equal(theme.brand, theme.dark ? 'rgb(249, 250, 251)' : 'rgb(15, 17, 21)')
+  }
   await page.getByRole('button', { name: '操作审计' }).click()
 }
 
 async function assertViewport() {
   await assertAccessibleSurface(page)
-  const metrics = await page.evaluate(() => ({
-    clientWidth: document.documentElement.clientWidth,
-    scrollWidth: document.documentElement.scrollWidth,
-    dialog: Boolean(document.querySelector('[role="dialog"][aria-modal="true"]')),
-    contrastFailures: ['.ya-header h1', '.ya-header p', '.ya-table-head', '.ya-row', '.ya-outcome.is-failed', '.ya-status']
-      .flatMap(selector => [...document.querySelectorAll(selector)])
-      .filter(element => {
-        const style = getComputedStyle(element)
-        if (style.display === 'none' || style.visibility === 'hidden' || !element.textContent?.trim()) return false
-        const channels = value => value.match(/[\d.]+/gu)?.slice(0, 3).map(Number) ?? [0, 0, 0]
-        const luminance = value => channels(value).map(channel => channel / 255).map(channel => channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4).reduce((sum, channel, index) => sum + channel * [0.2126, 0.7152, 0.0722][index], 0)
-        let background = element
-        while (background.parentElement && getComputedStyle(background).backgroundColor === 'rgba(0, 0, 0, 0)') background = background.parentElement
-        const foregroundLuminance = luminance(style.color)
-        const backgroundLuminance = luminance(getComputedStyle(background).backgroundColor)
-        const ratio = (Math.max(foregroundLuminance, backgroundLuminance) + 0.05) / (Math.min(foregroundLuminance, backgroundLuminance) + 0.05)
-        return ratio < 4.5
-      }).map(element => element.className || element.tagName),
-  }))
+  const metrics = await page.evaluate(() => {
+    // The browser resolves color-mix() to color(srgb ...). Canvas normalizes
+    // both that form and rgb() to the same sRGB channel scale for measurement.
+    const context = document.createElement('canvas').getContext('2d', { willReadFrequently: true })
+    const channels = value => {
+      context.clearRect(0, 0, 1, 1)
+      context.fillStyle = value
+      context.fillRect(0, 0, 1, 1)
+      return [...context.getImageData(0, 0, 1, 1).data].slice(0, 3)
+    }
+    return {
+      clientWidth: document.documentElement.clientWidth,
+      scrollWidth: document.documentElement.scrollWidth,
+      dialog: Boolean(document.querySelector('[role="dialog"][aria-modal="true"]')),
+      contrastFailures: ['.ya-header h1', '.ya-header p', '.ya-table-head', '.ya-row', '.ya-outcome.is-failed', '.ya-status', '.ya-metric strong', '.ya-pending']
+        .flatMap(selector => [...document.querySelectorAll(selector)])
+        .filter(element => {
+          const style = getComputedStyle(element)
+          if (style.display === 'none' || style.visibility === 'hidden' || !element.getClientRects().length || !element.textContent?.trim()) return false
+          const luminance = value => channels(value).map(channel => channel / 255).map(channel => channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4).reduce((sum, channel, index) => sum + channel * [0.2126, 0.7152, 0.0722][index], 0)
+          let background = element
+          while (background.parentElement && getComputedStyle(background).backgroundColor === 'rgba(0, 0, 0, 0)') background = background.parentElement
+          const foregroundLuminance = luminance(style.color)
+          const backgroundLuminance = luminance(getComputedStyle(background).backgroundColor)
+          const ratio = (Math.max(foregroundLuminance, backgroundLuminance) + 0.05) / (Math.min(foregroundLuminance, backgroundLuminance) + 0.05)
+          return ratio < 4.5
+        }).map(element => element.className || element.tagName),
+    }
+  })
   assert.equal(metrics.scrollWidth, metrics.clientWidth, 'page must not scroll horizontally')
   assert.equal(metrics.dialog, true, 'overlay must expose modal dialog semantics')
   assert.deepEqual(metrics.contrastFailures, [], 'representative text must meet WCAG AA contrast')
@@ -184,6 +215,7 @@ try {
 
   await open(1024, 800, 'pending')
   await page.getByText(/3 条记录尚未同步/u).waitFor()
+  assert.equal(await page.locator('.ya-pending').count(), 1, 'pending event text must be covered by contrast checks')
   await page.getByRole('button', { name: '立即重试' }).click()
   await assertViewport()
   await page.screenshot({ path: resolve(evidenceRoot, '1024-pending-sync.png'), fullPage: true })
@@ -231,7 +263,7 @@ try {
   assert.equal(consoleProblems.length, 0, consoleProblems.join('\n'))
   assert(auditRequests.length > 0)
   assert(auditRequests.every(entry => entry.endsWith('/api/desktop/yootun/audit')))
-  process.stdout.write(`audit-browser: ${auditRequests.length} scoped requests, 8 screenshots, no console or layout failures\n`)
+  process.stdout.write(`audit-browser: ${visualTheme}, ${auditRequests.length} scoped requests, 8 screenshots, no console, contrast, or layout failures\n`)
 } finally {
   await page.close()
   await browser.close()

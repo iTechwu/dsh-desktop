@@ -105,3 +105,49 @@ test('rejects unknown publishing platforms', async () => {
   assert.equal(response.status, 200)
   assert.equal(response.body.status, 'error')
 })
+
+function rankContext(history, companies = { items: [] }) {
+  return context(async input => {
+    if (input.name.endsWith('diagnostic_history')) return history
+    if (input.name.endsWith('list_companies')) return companies
+    if (input.name.endsWith('articles_list')) return { items: [{ id: 201, title: 'Article', status: 'draft', review_status: 'pending' }] }
+    if (input.name.endsWith('articles_get')) return { id: 201, content: 'Body' }
+    if (input.name.endsWith('analytics_overview')) return { kpis: { articles: 1 } }
+    return { goals: [] }
+  })()
+}
+const rankReport = (id, score, created_at) => ({ report_id: id, url: 'https://yootun.ixicai.cn', status: 'completed', overall_score: score, created_at })
+test('reads GEORank history encoded as separate MCP text blocks', async () => {
+  const history = { content: [rankReport('older', 65, '2026-09-10T01:00:00'), rankReport('latest', 94, '2026-09-11T03:02:04')].map(report => ({ type: 'text', text: JSON.stringify(report) })) }
+  const state = await invoke(rankContext(history), 'GET')
+  assert.equal(state.body.sources.georank.status, 'ready')
+  assert.equal(state.body.sources.georank.data.score, 94)
+  assert.equal(state.body.sources.georank.data.latestReport.reportId, 'latest')
+  assert.equal(state.body.articles.length, 1)
+})
+test('supports a single diagnostic and structured MCP history', async () => {
+  const report = rankReport('single', 0, '2026-09-11T03:02:04')
+  for (const history of [
+    { content: [{ type: 'text', text: JSON.stringify(report) }] },
+    { structuredContent: { items: [report] }, content: [{ type: 'text', text: 'Display summary' }] },
+    { result: [report] },
+  ]) {
+    const state = await invoke(rankContext(history), 'GET')
+    assert.equal(state.body.sources.georank.status, 'ready')
+    assert.equal(state.body.sources.georank.data.score, 0)
+  }
+})
+test('does not turn malformed history or MCP errors into an empty source', async () => {
+  for (const history of [{ content: [{ type: 'text', text: 'invalid JSON' }] }, { isError: true, content: [{ type: 'text', text: 'private upstream failure' }] }]) {
+    const state = await invoke(rankContext(history), 'GET')
+    assert.equal(state.body.sources.georank.status, 'error')
+    assert.equal(state.body.sources.geoflow.status, 'ready')
+    assert.equal(state.body.articles.length, 1)
+    assert.ok(!JSON.stringify(state.body).includes('private upstream failure'))
+  }
+})
+test('only reports empty for a successful empty read and excludes unrelated companies', async () => {
+  const state = await invoke(rankContext({ content: [] }, { items: [{ url: 'https://example.com', geo_score: 99 }] }), 'GET')
+  assert.equal(state.body.sources.georank.status, 'empty')
+  assert.equal(state.body.sources.georank.data.score, null)
+})

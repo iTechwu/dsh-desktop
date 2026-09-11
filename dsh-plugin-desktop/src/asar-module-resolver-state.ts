@@ -1,4 +1,4 @@
-/** Process-local ownership marker shared with the patched upstream fallback. */
+/** Process-local ASAR resolver ownership and packaged ESM fallback activation. */
 
 const RESOLVER_MARKER = Symbol.for('dsh-plugin-desktop.asar-module-resolver')
 
