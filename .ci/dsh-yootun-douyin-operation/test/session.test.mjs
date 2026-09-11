@@ -6,15 +6,19 @@ import { test } from 'node:test'
 
 import { ChromeMissingError } from '../src/chrome.js'
 import {
+  PENDING_ACCOUNT_PREFIX,
   SESSION_COOKIE_NAMES,
+  isPendingAccountId,
   loginWithQrCode,
   probeSession,
+  promotePendingAccount,
   readAccountProfile,
+  readAccountProfileWithRetry,
   refreshSessionState,
   removeLocalAccount,
   waitForSessionCookie,
 } from '../src/session.js'
-import { getAccount, hasStorageState, paths } from '../src/state.js'
+import { getAccount, hasStorageState, paths, updateAccount } from '../src/state.js'
 
 async function withRoot(fn) {
   const root = await mkdtemp(join(tmpdir(), 'douyin-session-'))
@@ -194,5 +198,134 @@ test('removeLocalAccount 清除本地凭证', async () => {
     const result = await removeLocalAccount({ accountId: 'acc-1', root })
     assert.equal(result.cleared.storageState, true)
     assert.equal(await hasStorageState('acc-1', root), false)
+  })
+})
+
+test('登录期资料读取重试：user/info 未就绪时多试几次再放弃', async () => {
+  let calls = 0
+  const page = {
+    evaluate: async () => {
+      calls += 1
+      // 前两次模拟 SPA 未就绪：接口 200 但 user 为空 / 直接失败。
+      if (calls <= 2) return calls === 1 ? { status: 200, json: { user: {} } } : null
+      return { status: 200, json: { user: { sec_uid: 'real-id', nickname: '迟到但到了' } } }
+    },
+  }
+  const profile = await readAccountProfileWithRetry(page, { attempts: 4, delayMs: 0, sleepFn: async () => {} })
+  assert.equal(calls, 3)
+  assert.equal(profile.accountId, 'real-id')
+})
+
+test('扫码登录在资料迟到时仍解析出真实 sec_uid（不再落 pending-）', async () => {
+  await withRoot(async root => {
+    let calls = 0
+    const chromeFactory = async () => {
+      const context = fakeCookieContext([{ name: 'sessionid', value: 'secret-value' }])
+      const page = {
+        goto: async () => {},
+        evaluate: async () => {
+          calls += 1
+          if (calls === 1) return { status: 200, json: { user: {} } }
+          return { status: 200, json: { user: { sec_uid: 'late-real-id', nickname: '迟到账号' } } }
+        },
+      }
+      return { context: { ...context, pages: () => [page], newPage: async () => page, close: async () => {} } }
+    }
+    const result = await loginWithQrCode({ root, chromeFactory, timeoutMs: 1000 })
+    assert.equal(result.status, 'ok')
+    assert.equal(result.accountId, 'late-real-id')
+    assert.equal(await hasStorageState('late-real-id', root), true)
+  })
+})
+
+test('isPendingAccountId 只认 pending- 前缀', () => {
+  assert.equal(PENDING_ACCOUNT_PREFIX, 'pending-')
+  assert.equal(isPendingAccountId('pending-1789106616321'), true)
+  assert.equal(isPendingAccountId('MS4wLjABAAAA-demo'), false)
+  assert.equal(isPendingAccountId(''), false)
+  assert.equal(isPendingAccountId(null), false)
+  assert.equal(isPendingAccountId(undefined), false)
+})
+
+test('占位账号升级：文件与记录整体迁移到真实 sec_uid 名下', async () => {
+  await withRoot(async root => {
+    const { mkdir, writeFile } = await import('node:fs/promises')
+    await mkdir(paths(root).storageStateDir, { recursive: true })
+    await mkdir(paths(root).profileDir('pending-1'), { recursive: true })
+    await writeFile(paths(root).storageStatePath('pending-1'), '{"cookies":[{"name":"sessionid"}]}')
+    await updateAccount('pending-1', { nickname: '旧名', sessionSeq: 7, lastLoginAt: 't0' }, root)
+
+    const outcome = await promotePendingAccount({
+      accountId: 'pending-1',
+      root,
+      probe: async () => ({ status: 'ok', profile: { accountId: 'MS4wLjABAAAA-real', nickname: '新名', fanCount: 9 } }),
+    })
+    assert.equal(outcome.promoted, true)
+    assert.equal(outcome.accountId, 'MS4wLjABAAAA-real')
+    assert.equal(outcome.fromAccountId, 'pending-1')
+
+    // 本地记录：真实 ID 名下带升级来源与迁移后的资料；占位记录被清除。
+    const record = await getAccount('MS4wLjABAAAA-real', root)
+    assert.equal(record.promotedFrom, 'pending-1')
+    assert.equal(record.nickname, '新名')
+    assert.equal(record.fanCount, 9)
+    assert.equal(record.sessionSeq, 7, '序号沿用占位记录，保持单调')
+    assert.equal(record.lastLoginAt, 't0')
+    assert.equal(await getAccount('pending-1', root), null)
+
+    // 文件：storage_state 与 Profile 目录都已在真实 ID 名下，占位残留清空。
+    assert.equal(await hasStorageState('MS4wLjABAAAA-real', root), true)
+    assert.equal(await hasStorageState('pending-1', root), false)
+  })
+})
+
+test('占位账号升级：真实记录已存在时保留其更大序号，不用空值覆盖资料', async () => {
+  await withRoot(async root => {
+    await updateAccount('pending-1', { nickname: '占位名', sessionSeq: 3 }, root)
+    await updateAccount('MS4wLjABAAAA-real', { nickname: '已有名', fanCount: 50, sessionSeq: 12 }, root)
+
+    const outcome = await promotePendingAccount({
+      accountId: 'pending-1',
+      root,
+      // 探测资料缺昵称/粉丝数：不能把已有真实记录的资料冲掉。
+      probe: async () => ({ status: 'ok', profile: { accountId: 'MS4wLjABAAAA-real' } }),
+    })
+    assert.equal(outcome.promoted, true)
+    const record = await getAccount('MS4wLjABAAAA-real', root)
+    assert.equal(record.nickname, '已有名')
+    assert.equal(record.fanCount, 50)
+    assert.equal(record.sessionSeq, 12, '两份记录取较大序号')
+    assert.equal(record.promotedFrom, 'pending-1')
+  })
+})
+
+test('占位账号升级：探测失败时不做任何变更', async () => {
+  await withRoot(async root => {
+    const { mkdir, writeFile } = await import('node:fs/promises')
+    await mkdir(paths(root).storageStateDir, { recursive: true })
+    await writeFile(paths(root).storageStatePath('pending-1'), '{"cookies":[]}')
+    await updateAccount('pending-1', { nickname: '旧名' }, root)
+
+    const expired = await promotePendingAccount({
+      accountId: 'pending-1',
+      root,
+      probe: async () => ({ status: 'expired', reason: 'no_session_cookie' }),
+    })
+    assert.equal(expired.promoted, false)
+    assert.equal(expired.reason, 'no_session_cookie')
+    assert.equal((await getAccount('pending-1', root))?.nickname, '旧名')
+    assert.equal(await hasStorageState('pending-1', root), true)
+
+    const noId = await promotePendingAccount({
+      accountId: 'pending-1',
+      root,
+      probe: async () => ({ status: 'ok', profile: { nickname: '没有标识' } }),
+    })
+    assert.equal(noId.promoted, false)
+    assert.equal(noId.reason, 'profile_unavailable')
+
+    const notPending = await promotePendingAccount({ accountId: 'MS4wLjABAAAA-real', root, probe: async () => { throw new Error('不应被调用') } })
+    assert.equal(notPending.promoted, false)
+    assert.equal(notPending.reason, 'not_pending')
   })
 })

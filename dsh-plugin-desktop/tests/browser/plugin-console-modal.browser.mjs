@@ -153,6 +153,8 @@ try {
   const dialog = page.getByRole('dialog', { name: '软件源' })
   await dialog.waitFor()
   assert.equal(await dialog.getAttribute('aria-modal'), 'true')
+  // Source rows arrive asynchronously; start navigation only after the first row is ready.
+  await dialog.getByRole('button', { name: '编辑', exact: true }).waitFor()
   await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === '关闭')
   assert.equal(await page.evaluate(() => document.activeElement?.getAttribute('aria-label')), '关闭')
 
@@ -228,7 +230,7 @@ try {
   })
   assert.equal(await doubleToggle(), 1, 'synchronous repeated clicks must send one toggle request')
   await page.waitForFunction(() => {
-    const toggles = [...document.querySelectorAll('.pc_row button[aria-busy]')]
+    const toggles = [...document.querySelectorAll('.pc_row button.pc_toggle[aria-busy]')]
     return toggles.length === 2 && toggles.every(button => button.disabled)
   })
   releaseToggleFailure()
@@ -247,6 +249,14 @@ try {
   await installWriteCounter()
   const consentDialog = page.getByRole('dialog', { name: /安装中/ })
   await consentDialog.waitFor()
+  await page.waitForFunction(() => document.querySelector('[role="dialog"]')?.contains(document.activeElement))
+  const consentCancel = consentDialog.getByRole('button', { name: '取消', exact: true })
+  await consentCancel.focus()
+  await page.keyboard.press('Tab')
+  assert.equal(await consentDialog.getByRole('checkbox').evaluate(control => control === document.activeElement), true)
+  await page.keyboard.press('Shift+Tab')
+  assert.equal(await consentCancel.evaluate(control => control === document.activeElement), true)
+  assert.equal(await page.locator('.pc_actions').evaluate(actions => actions.closest('[inert]') !== null), true)
   await assertAccessibleSurface(page)
   await assertTextContrast(page, '.pc_modalCard .pc_message,.pc_modalCard .pc_consentRemember')
   await page.screenshot({ path: resolve(evidenceRoot, '390-install-consent.png'), fullPage: true })
@@ -262,6 +272,7 @@ try {
   assert.equal(await consentDialog.getByRole('button', { name: '取消' }).isDisabled(), true)
   releaseConsentWrite()
   await consentDialog.waitFor({ state: 'detached' })
+  await page.waitForFunction(() => document.querySelector('.pc_actions')?.closest('[inert]') === null)
   assert.deepEqual(problems, [])
   console.log(`plugin-console-modal-browser: ${visualTheme}, 9 screenshots, unobscured plugin states, source editing, dialog focus, and source/consent/toggle mutation locks verified`)
 } finally {

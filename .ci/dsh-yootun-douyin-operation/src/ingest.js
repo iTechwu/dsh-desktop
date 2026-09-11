@@ -223,13 +223,15 @@ export function createIngestClient({
   /** 结束运行；服务端按账本结算终态（客户端状态仅供参考）。 */
   async function finish({ clientStatus = 'completed', clientCounts = null } = {}) {
     if (!runId) throw new Error('run_not_started')
+    // 没有客户端统计就不带该字段：undefined 属性会让宿主 snapshot 校验整调用拒绝。
+    const payload = {
+      runId,
+      clientStatus,
+      idempotencyKey: runFinishIdempotencyKey(runId),
+    }
+    if (clientCounts !== null && clientCounts !== undefined) payload.clientCounts = clientCounts
     const result = await withRetry(
-      () => callTool('douyin_collect_run_finish', {
-        runId,
-        clientStatus,
-        clientCounts: clientCounts || undefined,
-        idempotencyKey: runFinishIdempotencyKey(runId),
-      }),
+      () => callTool('douyin_collect_run_finish', payload),
       { label: 'run_finish' },
     )
     emit({ phase: 'finished', status: result && result.run ? result.run.status : null, replayed: Boolean(result && result.replayed) })

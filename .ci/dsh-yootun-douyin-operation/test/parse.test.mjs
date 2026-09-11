@@ -24,6 +24,9 @@ import {
   parseWorkListPage,
   parseWordCloud,
   pct,
+  round2,
+  toInt,
+  toNumber,
 } from '../src/parse.js'
 
 const FIXTURE_DIR = new URL('./fixtures/', import.meta.url)
@@ -60,6 +63,25 @@ test('比例换算：0..1 → 百分比 2 位小数', () => {
   assert.equal(pct(1), 100)
   assert.equal(pct(null), null)
   assert.equal(pct('x'), null)
+})
+
+// 2026-09-11 全面排查加固：tools 侧所有 `*_pct` 字段都有 ge=0 le=100 硬约束，
+// 越界值会让整批（≤50 条作品）入库被 VALIDATION_ERROR 一次性拒绝。抖音异常
+// 响应给出的比率超出 0..1 定义域时必须落 null（缺口），不能生成越界百分比。
+test('pct 定义域守卫：超界/负数比率 → null（记缺口而不是整批被服务端拒绝）', () => {
+  assert.equal(pct(1.5), null)
+  assert.equal(pct(-0.02), null)
+  assert.equal(pct(0), 0)
+  assert.equal(pct(-0), 0)
+})
+
+test('数值换算不得产生 -0（宿主 snapshotJsonValue 拒绝 -0，整调用进程内失败）', () => {
+  // Number('-0')、Math.trunc(-0.2) 在 JS 里都是 -0。
+  assert.equal(1 / toNumber('-0'), Infinity, 'toNumber: -0 → 0')
+  assert.equal(1 / toInt(-0.2), Infinity, 'toInt: trunc(-0.2) → 0 而不是 -0')
+  assert.equal(toInt(-5), -5, '负整数正常保留')
+  assert.equal(round2(-0.3), null, '负时长是数据异常 → null（ge=0 约束）')
+  assert.equal(round2(1234.567), 1234.57)
 })
 
 test('长数字 ID 解析不丢精度（19 位 aweme_id）', () => {

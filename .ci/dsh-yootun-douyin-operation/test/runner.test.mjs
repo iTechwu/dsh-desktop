@@ -5,8 +5,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 
-import { checkCollectionReadiness, createCollectController, runAccountCollection } from '../src/runner.js'
-import { paths } from '../src/state.js'
+import { checkCollectionReadiness, createCollectController, ensureRemoteAccount, runAccountCollection } from '../src/runner.js'
+import { paths, readAccounts, updateAccount } from '../src/state.js'
 
 async function withRoot(fn) {
   const root = await mkdtemp(join(tmpdir(), 'douyin-runner-'))
@@ -191,5 +191,86 @@ test('采集前就绪检查：无 storage_state 时要求重新登录', async ()
     await mkdir(paths(root).storageStateDir, { recursive: true })
     await writeFile(paths(root).storageStatePath('acc-1'), '{"cookies":[]}')
     assert.deepEqual(await checkCollectionReadiness({ accountId: 'acc-1', root }), { ready: true, reason: null })
+  })
+})
+
+test('远端账号自愈：采集前补发 account_save（幂等 upsert，只带 vault:// 引用）', async () => {
+  await withRoot(async root => {
+    await updateAccount('acc-1', { nickname: '示例账号', fanCount: 291 }, root)
+    const calls = []
+    const events = []
+    const result = await ensureRemoteAccount(async (name, args) => {
+      calls.push({ name, args })
+      return { account: { accountId: args.accountId }, created: true }
+    }, 'acc-1', { root, onProgress: event => events.push(event.phase) })
+    assert.deepEqual(result, { ok: true, error: null })
+    assert.equal(calls.length, 1)
+    const { name, args } = calls[0]
+    assert.equal(name, 'douyin_account_save')
+    assert.equal(args.accountId, 'acc-1')
+    assert.equal(args.nickname, '示例账号')
+    assert.equal(args.fanCount, 291)
+    assert.equal(args.sessionRef, 'vault://douyin/acc-1', 'Cookie/storage_state 永不离开设备，只报不透明引用')
+    assert.match(args.idempotencyKey, /^douyin:account:acc-1:\d+$/)
+    assert.deepEqual(events, ['account_sync'])
+  })
+})
+
+test('远端账号自愈：本地资料缺项时载荷缺字段而不是 undefined（宿主 snapshot 硬约束）', async () => {
+  await withRoot(async root => {
+    await updateAccount('acc-1', {}, root)
+    const calls = []
+    const result = await ensureRemoteAccount(async (name, args) => {
+      calls.push({ name, args })
+      return { account: { accountId: args.accountId }, created: true }
+    }, 'acc-1', { root })
+    assert.deepEqual(result, { ok: true, error: null })
+    const { args } = calls[0]
+    // 宿主 snapshotJsonValue 对 undefined 值属性是整调用拒绝；缺项字段必须缺席。
+    for (const [key, value] of Object.entries(args)) {
+      assert.notEqual(value, undefined, `自愈 save 载荷字段 ${key} 不得为 undefined`)
+    }
+    assert.deepEqual(Object.keys(args).sort(), ['accountId', 'idempotencyKey', 'sessionRef'])
+  })
+})
+
+test('远端账号自愈失败不抛出：透出稳定原因码，交由 run_start 给最终裁决', async () => {
+  await withRoot(async root => {
+    const events = []
+    const result = await ensureRemoteAccount(async () => {
+      throw Object.assign(new Error('UNAUTHORIZED'), { code: 'UNAUTHORIZED' })
+    }, 'acc-1', { root, onProgress: event => events.push(event) })
+    assert.deepEqual(result, { ok: false, error: 'UNAUTHORIZED' })
+    assert.deepEqual(events, [
+      { phase: 'account_sync' },
+      { phase: 'account_sync_failed', error: 'UNAUTHORIZED' },
+    ])
+  })
+})
+
+test('自愈兜底链路：save 失败可容忍，账号真缺失时由 run_start 返回 ACCOUNT_NOT_FOUND', async () => {
+  await withRoot(async root => {
+    const events = []
+    const result = await runAccountCollection({
+      accountId: 'acc-1',
+      root,
+      callTool: async name => {
+        if (name === 'douyin_account_save') throw Object.assign(new Error('UNAUTHORIZED'), { code: 'UNAUTHORIZED' })
+        throw Object.assign(new Error('ACCOUNT_NOT_FOUND'), { code: 'ACCOUNT_NOT_FOUND' })
+      },
+      storageStatePath: await withSessionFile(root),
+      sessionFactory: async () => fakeSession({ workCount: 1 }),
+      onProgress: event => events.push(event.phase),
+    })
+    assert.equal(result.status, 'ingest_failed')
+    assert.equal(result.reason, 'ACCOUNT_NOT_FOUND')
+    // 自愈先于采集执行；其失败只作为事件透出，不阻断链路。
+    const syncIndex = events.indexOf('account_sync')
+    const openIndex = events.indexOf('session_open')
+    assert.ok(syncIndex !== -1 && openIndex > syncIndex, 'account_sync 必须发生在 session_open 之前')
+    assert.ok(events.includes('account_sync_failed'))
+    // 失败的 run_start 不得落盘任何账号运行状态（历史上这曾是 runId: null 的脏状态来源）。
+    const state = await readAccounts(root)
+    assert.equal(state.accounts['acc-1'], undefined)
   })
 })

@@ -90,33 +90,51 @@ export function parseJsonPreservingIds(text) {
  *
  * 这一点是 dataGap 语义的基础：接口没给的字段必须落成 null（缺口），
  * 而不是 0（会被 UI 当成真实数据展示）。
+ *
+ * `-0` 归一化为 `0`：宿主 snapshotJsonValue 的「无损 JSON」校验明确拒绝 -0
+ * （`Object.is(current, -0)` → 整调用进程内拒绝），而 `Number('-0')`、
+ * `Math.trunc(-0.2)` 都会产生 -0，必须在这里收敛。
  */
 export function toNumber(value) {
   if (value === null || value === undefined || value === '') return null
   if (typeof value === 'boolean') return null
   const num = Number(value)
-  return Number.isFinite(num) ? num : null
+  if (!Number.isFinite(num)) return null
+  return num === 0 ? 0 : num
 }
 
-/** 0..1 比例 → 百分比（2 位小数）。缺失/非数值返回 null。 */
+/**
+ * 0..1 比例 → 百分比（2 位小数）。缺失/非数值/超出 0..1 定义域返回 null。
+ *
+ * 定义域守卫：所有 `*_pct` 字段在 tools 侧都有 `ge=0, le=100` 硬约束，而
+ * 抖音异常响应可能给出负数或 >1 的「比率」——落库前不拦，整批 50 条作品会
+ * 被服务端 VALIDATION_ERROR 一次性拒绝。超界视为本次未暴露（缺口），与
+ * 缺字段同等处理，其余字段的入库不受影响。
+ */
 export function pct(value) {
   const num = toNumber(value)
-  if (num === null) return null
+  if (num === null || num < 0 || num > 1) return null
   return Math.round(num * 100 * 100) / 100
 }
 
-/** 数值取 2 位小数；缺失/非数值返回 null。 */
+/**
+ * 数值取 2 位小数；缺失/非数值/负数返回 null。
+ *
+ * 仅用于时长类字段（duration_s / avg_watch_duration_s），语义上非负；
+ * 负值必然是抖音侧数据异常，落 null 记缺口，避免服务端 `ge=0` 拒批。
+ */
 export function round2(value) {
   const num = toNumber(value)
-  if (num === null) return null
+  if (num === null || num < 0) return null
   return Math.round(num * 100) / 100
 }
 
-/** 截断整数；缺失/非数值返回 null。 */
+/** 截断整数；缺失/非数值返回 null；`-0` 归一化为 `0`（Math.trunc(-0.2) === -0）。 */
 export function toInt(value) {
   const num = toNumber(value)
   if (num === null) return null
-  return Math.trunc(num)
+  const truncated = Math.trunc(num)
+  return truncated === 0 ? 0 : truncated
 }
 
 /**

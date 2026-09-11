@@ -190,6 +190,8 @@ window.__ModuleLoader__.load({
 			deletePlugin: "删除插件（移除配置并卸载包）",
 			confirmDelete: "确认删除？",
 			deleting: "删除中…",
+			waitingRestart: "等待重启",
+			skillSaving: "保存中…",
 			deleteNote: "已删除插件并卸载包，正在刷新",
 			deleteBundleNote: "已移除插件所属 bundle，重启服务后生效",
 			aiConsentText: "常规安装通道均已尝试失败。下一步将让本地 AI 接管安装——这会调用 DeepSeek API 模型，可能产生 API 费用。是否继续？",
@@ -426,6 +428,8 @@ window.__ModuleLoader__.load({
 			deletePlugin: "Delete plugin (remove config and uninstall package)",
 			confirmDelete: "Confirm delete?",
 			deleting: "Deleting…",
+			waitingRestart: "Awaiting restart",
+			skillSaving: "Saving…",
 			deleteNote: "Plugin deleted and package uninstalled; refreshing",
 			deleteBundleNote: "Owning bundle removed; takes effect after service restart",
 			aiConsentText: "All regular install channels failed. Next, the local AI takes over the install, which calls a DeepSeek API model and may incur API costs. Continue?",
@@ -847,8 +851,8 @@ window.__ModuleLoader__.load({
 		}
 		function PluginConsoleTab({ t }) {
 			const [state, setState] = react.useState({ status: "loading" });
-			const [busy, setBusy] = react.useState(null);
-			const toggleBusyRef = react.useRef(null);
+			const [pluginMutation, setPluginMutation] = react.useState(null);
+			const pluginMutationRef = react.useRef(null);
 			const [message, setMessage] = react.useState(null);
 			const [reloadHint, setReloadHint] = react.useState(false);
 			const [restartHint, setRestartHint] = react.useState(false);
@@ -878,8 +882,9 @@ window.__ModuleLoader__.load({
 			const modalCardRef = react.useRef(null);
 			// 技能删除两步确认：存待确认技能名
 			const [confirmSkillDelete, setConfirmSkillDelete] = react.useState(null);
-			// 技能停用/启用进行中
-			const [togglingSkill, setTogglingSkill] = react.useState(null);
+			// A skill mutation owns both list and detail controls until it settles.
+			const [skillMutation, setSkillMutation] = react.useState(null);
+			const skillMutationRef = react.useRef(null);
 			// 套装安装报告：{ jobId: [{component, type, ok, note}] }
 			const [suiteReports, setSuiteReports] = react.useState({});
 			// 框架升级提示已关闭（本次会话内）
@@ -954,7 +959,6 @@ window.__ModuleLoader__.load({
 				try { return localStorage.getItem("pc-multi-source") === "1"; } catch { return false; }
 			});
 			const [confirmDeleteRowId, setConfirmDeleteRowId] = react.useState(null);
-			const [deleteBusy, setDeleteBusy] = react.useState(null);
 			// AI 兜底开关（默认开启，零费用保障）：关掉后常规通道失败即取消，不调用模型 API
 			const [aiFallback, setAiFallback] = react.useState(() => {
 				try { return localStorage.getItem("pc-ai-fallback-v2") !== "off"; } catch { return true; }
@@ -975,7 +979,11 @@ window.__ModuleLoader__.load({
 			react.useEffect(() => {
 				if (!sourcesOpen) return undefined;
 				modalReturnFocusRef.current = document.activeElement;
-				const focusFrame = window.requestAnimationFrame(() => (modalCardRef.current?.querySelector('button[aria-label]:not([disabled])') || modalCardRef.current?.querySelector('button:not([disabled]),input:not([disabled]),textarea:not([disabled]),select:not([disabled]),a[href]'))?.focus?.());
+				const focusFrame = window.requestAnimationFrame(() => {
+					const card = modalCardRef.current;
+					if (card?.contains(document.activeElement)) return;
+					(card?.querySelector('button[aria-label]:not([disabled])') || card?.querySelector('button:not([disabled]),input:not([disabled]),textarea:not([disabled]),select:not([disabled]),a[href]'))?.focus?.();
+				});
 				const onModalKeyDown = (event) => {
 					if (event.key === "Escape") { event.preventDefault(); setSourcesOpen(false); return; }
 					if (event.key !== "Tab") return;
@@ -1160,7 +1168,7 @@ window.__ModuleLoader__.load({
 			}, [installedSearchOpen, installedQuery]);
 			const refresh = react.useCallback(() => {
 				setState((prev) => ({ ...prev, status: "loading" }));
-				call("/plugin-console/state").then(
+				return call("/plugin-console/state").then(
 					(data) => {
 						setState({ status: "ready", data });
 						// 恢复进行中的安装任务轮询（离开面板再回来也能看到进度）
@@ -1195,19 +1203,52 @@ window.__ModuleLoader__.load({
 				);
 			};
 			const toggle = (entry, enabled) => {
-				if (!entry.toggleable || toggleBusyRef.current !== null) return;
-				toggleBusyRef.current = entry.entryId;
-				setBusy(entry.entryId);
+				if (!entry.toggleable || pluginMutationRef.current !== null) return;
+				const operation = { kind: "toggle", entryId: entry.entryId, phase: "pending" };
+				pluginMutationRef.current = operation;
+				setPluginMutation(operation);
 				setMessage(null);
 				call("/plugin-console/toggle", { entryId: entry.entryId, enabled }).then(
 					() => {
+						setPluginMutation({ ...operation, phase: "refresh" });
 						setMessage(t(enabled ? "toggledOn" : "toggledOff") + "：" + entry.entryId + "。" + t("autoReload"));
 						// HMR 应用补丁后自动强刷页面，让客户端插件的挂载/卸载即时可见
 						window.setTimeout(() => window.location.reload(), 1500);
 					},
 					(error) => {
-						toggleBusyRef.current = null;
-						setBusy(null);
+						pluginMutationRef.current = null;
+						setPluginMutation(null);
+						setMessage(t("failed") + "：" + friendlyGithubError(error).message);
+					},
+				);
+			};
+			const removePlugin = (entry) => {
+				if (pluginMutationRef.current !== null || entry.extra !== true || entry.rowId === "plugin-console") return;
+				const operation = { kind: "remove", entryId: entry.entryId, phase: "pending" };
+				pluginMutationRef.current = operation;
+				setPluginMutation(operation);
+				setMessage(null);
+				call("/plugin-console/uninstall", { entryId: entry.entryId }).then(
+					(data) => {
+						setConfirmDeleteRowId(null);
+						setPluginMutation({ ...operation, phase: data.restart === true ? "restart" : "refresh" });
+						setMessage(t(data.restart === true ? "deleteBundleNote" : "deleteNote") + "：" + (data.packageName ?? "")
+							+ (data.uninstallError ? "（包卸载警告：" + data.uninstallError + "）" : ""));
+						if (data.restart === true) {
+							setRestartHint(true);
+						} else {
+							// Keep writes locked while the old Loader projection is still visible.
+							window.setTimeout(() => {
+								refresh().finally(() => {
+									pluginMutationRef.current = null;
+									setPluginMutation(null);
+								});
+							}, 1500);
+						}
+					},
+					(error) => {
+						pluginMutationRef.current = null;
+						setPluginMutation(null);
 						setMessage(t("failed") + "：" + friendlyGithubError(error).message);
 					},
 				);
@@ -1719,19 +1760,25 @@ window.__ModuleLoader__.load({
 			};
 			/** 停用/启用已安装技能（写入官方调用策略 frontmatter，可逆）。 */
 			const doToggleSkill = (name, enabled) => {
-				setTogglingSkill(name);
+				const skill = installedSkills.find((item) => item.name === name);
+				if (skillMutationRef.current !== null || !skill || skill.system === true || (skill.disabled === true) === !enabled) return;
+				const operation = { kind: "toggle", name };
+				skillMutationRef.current = operation;
+				setSkillMutation(operation);
+				setMessage(null);
 				call("/plugin-console/skill-toggle", { name, enabled }).then(
 					() => {
 						setMessage((enabled ? t("skillEnabledMsg") : t("skillToggledMsg")) + "：" + name);
 						setConfirmSkillDelete(null);
-						setTogglingSkill(null);
 						setInstalledSkills((prev) => prev.map((s) => (s.name === name ? { ...s, disabled: !enabled } : s)));
 					},
 					(error) => {
-						setTogglingSkill(null);
 						setMessage(t("failed") + "：" + friendlyGithubError(error).message);
 					},
-				);
+				).finally(() => {
+					skillMutationRef.current = null;
+					setSkillMutation(null);
+				});
 			};
 			/** 复制安装命令到剪贴板（navigator.clipboard + 兼容兜底）。 */
 			const copyInstallCommand = (cmd) => {
@@ -1785,6 +1832,12 @@ window.__ModuleLoader__.load({
 			};
 			/** 删除已安装技能（~/.dsh/skills/<name> 目录），两步确认防误删。 */
 			const doRemoveSkill = (name) => {
+				const skill = installedSkills.find((item) => item.name === name);
+				if (skillMutationRef.current !== null || !skill || skill.system === true) return;
+				const operation = { kind: "remove", name };
+				skillMutationRef.current = operation;
+				setSkillMutation(operation);
+				setMessage(null);
 				call("/plugin-console/skill-remove", { name }).then(
 					() => {
 						setMessage(t("skillDeletedMsg") + "：" + name);
@@ -1792,7 +1845,10 @@ window.__ModuleLoader__.load({
 						setInstalledSkills((prev) => prev.filter((s) => s.name !== name));
 					},
 					(error) => setMessage(t("failed") + "：" + friendlyGithubError(error).message),
-				);
+				).finally(() => {
+					skillMutationRef.current = null;
+					setSkillMutation(null);
+				});
 			};
 			const installedQueryNorm = installedQuery.trim().toLowerCase();
 			// 当前搜索源的展示名（内置 + 自定义）
@@ -1887,10 +1943,11 @@ window.__ModuleLoader__.load({
 								el("button", {
 									type: "button",
 									className: styles.toggle,
-									disabled: !entry.toggleable || busy !== null,
-									"aria-busy": busy === entry.entryId,
+									disabled: !entry.toggleable || pluginMutation !== null,
+									"aria-busy": pluginMutation?.kind === "toggle" && pluginMutation.entryId === entry.entryId && pluginMutation.phase === "pending",
 									onClick: () => toggle(entry, !entry.enabled),
-								}, busy === entry.entryId ? t("loadingPhase") : t(entry.enabled ? "off" : "on")),
+								}, pluginMutation?.kind === "toggle" && pluginMutation.entryId === entry.entryId
+									? t(pluginMutation.phase === "pending" ? "loadingPhase" : "autoReload") : t(entry.enabled ? "off" : "on")),
 								el("button", {
 									type: "button",
 									className: styles.toggle,
@@ -1904,30 +1961,19 @@ window.__ModuleLoader__.load({
 										className: styles.trashBtn,
 										title: t("deletePlugin"),
 										"aria-label": t("deletePlugin"),
-										disabled: deleteBusy === entry.entryId,
+										disabled: pluginMutation !== null,
+										"aria-busy": pluginMutation?.kind === "remove" && pluginMutation.entryId === entry.entryId && pluginMutation.phase === "pending",
 										onClick: () => {
+											if (pluginMutationRef.current !== null) return;
 											if (confirmDeleteRowId === entry.entryId) {
-												setDeleteBusy(entry.entryId);
-												call("/plugin-console/uninstall", { entryId: entry.entryId }).then(
-													(data) => {
-														setConfirmDeleteRowId(null);
-														if (data && data.restart === true) {
-															setMessage(t("deleteBundleNote") + "：" + (data.packageName ?? "") + (data.uninstallError ? "（包卸载警告：" + data.uninstallError + "）" : ""));
-															setRestartHint(true);
-														} else {
-															setMessage(t("deleteNote") + "：" + (data.packageName ?? "") + (data.uninstallError ? "（包卸载警告：" + data.uninstallError + "）" : ""));
-															setTimeout(refresh, 1500);
-														}
-													},
-													(error) => setMessage(t("failed") + "：" + friendlyGithubError(error).message),
-												).finally(() => setDeleteBusy(null));
+												removePlugin(entry);
 											} else {
 												setConfirmDeleteRowId(entry.entryId);
 												window.setTimeout(() => setConfirmDeleteRowId((v) => (v === entry.entryId ? null : v)), 3000);
 											}
 										},
-									}, deleteBusy === entry.entryId
-										? t("deleting")
+									}, pluginMutation?.kind === "remove" && pluginMutation.entryId === entry.entryId
+										? t(pluginMutation.phase === "pending" ? "deleting" : pluginMutation.phase === "restart" ? "waitingRestart" : "autoReload")
 										: confirmDeleteRowId === entry.entryId
 											? t("confirmDelete")
 											: el("svg", { width: 14, height: 14, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 2, strokeLinecap: "round", strokeLinejoin: "round" },
@@ -2156,9 +2202,10 @@ window.__ModuleLoader__.load({
 							? el("button", {
 								type: "button",
 								className: styles.toggle,
-								disabled: togglingSkill === detailSkillName,
+								disabled: skillMutation !== null,
+								"aria-busy": skillMutation?.kind === "toggle" && skillMutation.name === detailSkillName,
 								onClick: () => doToggleSkill(detailSkillName, detailSkillDisabled),
-							}, togglingSkill === detailSkillName ? t("installingLocal") : (detailSkillDisabled ? t("skillEnable") : t("skillDisable")))
+							}, skillMutation?.kind === "toggle" && skillMutation.name === detailSkillName ? t("skillSaving") : (detailSkillDisabled ? t("skillEnable") : t("skillDisable")))
 							: null,
 						(info.privateRoot || !info.hasPackageJson) ? el("div", null,
 							info.privateRoot ? el("p", { className: styles.status, "data-error": "true" }, t("privateRootHint")) : null,
@@ -2501,7 +2548,7 @@ onClick: () => window.open(`https://github.com/Noob-stupid/dsh-plugin-hub/releas
 					? (installedSkills.length === 0
 						? el("p", { className: styles.status }, t("skillsEmpty"))
 						: el("ul", { className: styles.list }, installedSkills.map((sk) =>
-							el("li", { key: sk.name, className: styles.row },
+							el("li", { key: sk.name, className: styles.row, "aria-busy": skillMutation?.name === sk.name },
 								el("div", { className: styles.rowTop },
 									el("code", { className: styles.name }, sk.name),
 									sk.system === true
@@ -2516,9 +2563,10 @@ onClick: () => window.open(`https://github.com/Noob-stupid/dsh-plugin-hub/releas
 										: el("button", {
 											type: "button",
 											className: styles.toggle,
-											disabled: togglingSkill === sk.name,
+											disabled: skillMutation !== null,
+											"aria-busy": skillMutation?.kind === "toggle" && skillMutation.name === sk.name,
 											onClick: () => doToggleSkill(sk.name, sk.disabled === true),
-										}, togglingSkill === sk.name ? t("installingLocal") : (sk.disabled === true ? t("skillEnable") : t("skillDisable"))),
+										}, skillMutation?.kind === "toggle" && skillMutation.name === sk.name ? t("skillSaving") : (sk.disabled === true ? t("skillEnable") : t("skillDisable"))),
 									sk.system === true
 										? null
 										: confirmSkillDelete === sk.name
@@ -2526,13 +2574,16 @@ onClick: () => window.open(`https://github.com/Noob-stupid/dsh-plugin-hub/releas
 												type: "button",
 												className: styles.toggle,
 												onClick: () => doRemoveSkill(sk.name),
-											}, t("skillDeleteConfirm").replace("{name}", sk.name))
+												disabled: skillMutation !== null,
+												"aria-busy": skillMutation?.kind === "remove" && skillMutation.name === sk.name,
+											}, skillMutation?.kind === "remove" && skillMutation.name === sk.name ? t("deleting") : t("skillDeleteConfirm").replace("{name}", sk.name))
 											: el("button", {
 												type: "button",
 												className: styles.trashBtn,
 												title: t("skillDelete"),
 												"aria-label": t("skillDelete"),
-												onClick: () => setConfirmSkillDelete(sk.name),
+												disabled: skillMutation !== null,
+												onClick: () => { if (skillMutationRef.current === null) setConfirmSkillDelete(sk.name); },
 											}, "✕"))))))
 					: (state.status === "loading"
 						? el("p", { className: styles.status }, t("loading"))

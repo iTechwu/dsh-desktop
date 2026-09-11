@@ -11,7 +11,8 @@ import { access } from 'node:fs/promises'
 import { LAUNCH_ARGS, loadPlaywrightDriver, resolveSystemChrome } from './chrome.js'
 import { collectAccountWorks } from './collector.js'
 import { createIngestClient, ingestCollectedWorks } from './ingest.js'
-import { hasStorageState, stateRoot } from './state.js'
+import { getAccount, hasStorageState, paths, stateRoot } from './state.js'
+import { accountSaveIdempotencyKey } from './tools-client.js'
 
 export const DEFAULT_MAX_PAGES = 1000
 
@@ -27,6 +28,40 @@ export async function openHeadlessSession({ storageStatePath, chromium = null, p
   })
   const context = await browser.newContext({ storageState: storageStatePath, viewport, locale: 'zh-CN', timezoneId: 'Asia/Shanghai' })
   return { browser, context, chromePath: chromePath.path }
+}
+
+/**
+ * 远端账号自愈：登录时的 account_save 可能失败（MCP 尚未就绪、路由未生效、
+ * 瞬时故障），此时本地登录态照常有效而 tools 缺账号记录，后续 run_start 会被
+ * ACCOUNT_NOT_FOUND 确定性拒绝。account_save 是幂等 upsert 且只带 vault://
+ * 不透明引用，采集前补一次是安全的；失败**不阻断**采集——账号已在远端时照常
+ * 采集，真缺失时由 run_start 给出确定错误（结果经 account_sync 事件可诊断）。
+ *
+ * @returns {Promise<{ ok: boolean, error: string | null }>}
+ */
+export async function ensureRemoteAccount(callTool, accountId, { root = stateRoot(), onProgress = null } = {}) {
+  const emit = event => { if (onProgress) onProgress(event) }
+  emit({ phase: 'account_sync' })
+  try {
+    const record = await getAccount(accountId, root)
+    const fanCount = Number(record && record.fanCount)
+    // 与登录侧 reportAccountSave 同一约束：字段缺值就不带，绝不发 undefined
+    // 属性（宿主 snapshot 校验会整调用拒绝，而不是忽略该字段）。
+    const payload = {
+      accountId,
+      sessionRef: paths(root).vaultRef(accountId),
+      idempotencyKey: accountSaveIdempotencyKey(accountId),
+    }
+    const nickname = record && record.nickname
+    if (typeof nickname === 'string' && nickname) payload.nickname = nickname
+    if (Number.isFinite(fanCount)) payload.fanCount = fanCount
+    await callTool('douyin_account_save', payload)
+    return { ok: true, error: null }
+  } catch (error) {
+    const reason = safeReason(error)
+    emit({ phase: 'account_sync_failed', error: reason })
+    return { ok: false, error: reason }
+  }
 }
 
 /**
@@ -64,6 +99,10 @@ export async function runAccountCollection({
   if (!storageStatePath || !(await fileExists(storageStatePath))) {
     return { status: 'session_required', reason: 'storage_state_missing' }
   }
+
+  // 远端账号自愈（幂等 upsert，失败不阻断）：登录期的 account_save 可能已失败，
+  // 这里补一次；账号真缺失时由 run_start 返回确定性 ACCOUNT_NOT_FOUND 收尾。
+  await ensureRemoteAccount(callTool, accountId, { root, onProgress: emit })
 
   const client = createIngestClient({ callTool, accountId, root, onProgress })
   let session = null

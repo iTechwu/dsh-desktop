@@ -10,6 +10,7 @@ import {
   getAccount,
   hasStorageState,
   moveProfile,
+  moveStorageState,
   nextSessionSeq,
   paths,
   readAccounts,
@@ -112,5 +113,29 @@ test('删除账号时清除本地 Profile 与 storage_state，并移除本地记
     assert.equal(await getAccount('acc-1', root), null)
     const state = await readAccounts(root)
     assert.deepEqual(Object.keys(state.accounts), [])
+  })
+})
+
+test('moveStorageState 把登录态迁到新账号名下，源文件消失', async () => {
+  await withRoot(async root => {
+    const { mkdir, writeFile } = await import('node:fs/promises')
+    await mkdir(paths(root).storageStateDir, { recursive: true })
+    await writeFile(paths(root).storageStatePath('pending-1'), '{"cookies":[{"name":"sessionid"}]}')
+
+    await moveStorageState('pending-1', 'MS4wLjABAAAA-real', root)
+    assert.equal(await hasStorageState('MS4wLjABAAAA-real', root), true)
+    assert.equal(await hasStorageState('pending-1', root), false)
+    // 权限保持 0600（Windows 上 chmod 是空操作，忽略断言差异）。
+    if (process.platform !== 'win32') {
+      const info = await stat(paths(root).storageStatePath('MS4wLjABAAAA-real'))
+      assert.equal(info.mode & 0o777, 0o600)
+    }
+  })
+})
+
+test('moveStorageState 源文件缺失时不抛错（账号从未落过登录态）', async () => {
+  await withRoot(async root => {
+    await moveStorageState('pending-1', 'MS4wLjABAAAA-real', root)
+    assert.equal(await hasStorageState('MS4wLjABAAAA-real', root), false)
   })
 })

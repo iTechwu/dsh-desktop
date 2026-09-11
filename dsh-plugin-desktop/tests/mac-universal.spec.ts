@@ -199,11 +199,13 @@ describe('universal macOS native runtime preparation', () => {
   })
 
   // The actual macOS build needs Apple's compiler; injected inventory tests run on every host.
+  // The real-filesystem preparation compiles both system bindings, so give it
+  // room beyond vitest's 5s default on loaded shared runners.
   it.skipIf(process.platform !== 'darwin')('prepares every native file from the installed desktop deploy root', () => {
     const desktopRoot = fileURLToPath(new URL('../', import.meta.url))
 
     expect(() => prepareInstalledMacUniversalRuntime(desktopRoot)).not.toThrow()
-  })
+  }, 30_000)
 
   it('requires every CPU-specific file and repairs both node-pty helpers', () => {
     const chmod = vi.fn()

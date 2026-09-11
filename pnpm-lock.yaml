@@ -1756,6 +1756,9 @@ importers:
       lucide-react:
         specifier: ^1.33.0
         version: 1.33.0(react@18.3.1)
+      nan:
+        specifier: 2.28.0
+        version: 2.28.0
       node-gyp:
         specifier: 13.0.1
         version: 13.0.1
