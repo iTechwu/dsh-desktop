@@ -5,6 +5,11 @@ import { apply, recruiterDataContract } from '../index.js'
 
 const root = new URL('../', import.meta.url)
 
+test('renders missing recruiter metrics as an unknown dash', async () => {
+  const source = await readFile(new URL('src/client.js', root), 'utf8')
+  assert.match(source, /String\(value \?\? '—'\)/u)
+})
+
 test('publishes a browser recruiter plugin with a bundle patch', async () => {
   const manifest = JSON.parse(await readFile(new URL('package.json', root), 'utf8'))
   assert.equal(manifest.name, '@dofe/dsh-yootun-recruiter')
