@@ -6,8 +6,9 @@ import { apply } from '../index.js'
 
 test('preserves unknown retrofit totals instead of fabricating zero', async () => {
   const client = await readFile(new URL('../src/client.js', import.meta.url), 'utf8')
-  assert.match(client, /data\?\.result\?\.total == null \? '—'/u)
+  assert.match(client, /finiteOrDash\(data\?\.result\?\.total\)/u)
   assert.doesNotMatch(client, /Number\(data\?\.result\?\.total\) \|\| 0/u)
+  assert.match(client, /!Number\.isFinite\(Number\(value\)\) \? '—'/u)
 })
 
 test('retrofit package exposes a complete database-first workspace', async () => {

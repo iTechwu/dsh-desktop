@@ -57,7 +57,8 @@ window.__ModuleLoader__.load({
       const items = getStoredItems(data)
       const platforms = new Set(items.map(item => item?.platform).filter(Boolean))
       const engagement = items.filter(item => (item?.commentCount !== null && item?.commentCount !== undefined) || (item?.shareCount !== null && item?.shareCount !== undefined)).length
-      return { total: data?.result?.total == null ? '—' : Number(data.result.total), returned: data?.result?.returned == null ? items.length : Number(data.result.returned), platforms: platforms.size, engagement }
+      const finiteOrDash = value => value == null || !Number.isFinite(Number(value)) ? '—' : Number(value)
+      return { total: finiteOrDash(data?.result?.total), returned: data?.result?.returned == null ? items.length : finiteOrDash(data.result.returned), platforms: platforms.size, engagement }
     }
     function parseExternalItems(result) {
       const stdout = String(result?.stdout || '').trim()
