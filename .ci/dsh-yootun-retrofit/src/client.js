@@ -47,12 +47,12 @@ async function post(body) {
 }
 function platformName(value, t) { return PLATFORM_LABELS[value] ? t(PLATFORM_LABELS[value]) : (value || '—') }
 function displayTime(value) { if (!value) return null; return String(value).replace('T', ' ').replace(/\.\d{3,6}(?=Z|[+-]\d\d:\d\d$)/, '').replace(/Z$/, '') }
+const finiteOrDash = value => value == null || !Number.isFinite(Number(value)) ? '—' : Number(value)
 function getStoredItems(data) { return Array.isArray(data?.result?.items) ? data.result.items : [] }
 function getStats(data) {
   const items = getStoredItems(data)
   const platforms = new Set(items.map(item => item?.platform).filter(Boolean))
   const engagement = items.filter(item => (item?.commentCount !== null && item?.commentCount !== undefined) || (item?.shareCount !== null && item?.shareCount !== undefined)).length
-  const finiteOrDash = value => value == null || !Number.isFinite(Number(value)) ? '—' : Number(value)
   return { total: finiteOrDash(data?.result?.total), returned: data?.result?.returned == null ? items.length : finiteOrDash(data.result.returned), platforms: platforms.size, engagement }
 }
 function parseExternalItems(result) {
