@@ -12,7 +12,9 @@ import { HostRpc } from '../src/host-rpc.ts'
 import { bindNativeRuntime, runtimeSnapshot } from '../src/host-runtime-bridge.ts'
 import type { DesktopRuntime, DesktopShellSpec } from '../src/runtime.ts'
 
-it.each([false, true])('boots a separate Web Host with client plugins (AA enabled: %s)', async aaEnabled => {
+it.each(['disabled', 'missing', 'installed'] as const)('boots a separate Web Host with client plugins (AA provider: %s)', async aaProvider => {
+  const aaRequested = aaProvider !== 'disabled'
+  const aaEnabled = aaProvider === 'installed'
   const home = mkdtempSync(join(tmpdir(), 'dsh-isolated-host-'))
   const token = Buffer.alloc(32, 7).toString('base64url')
   let child: ReturnType<typeof fork> | undefined
@@ -22,8 +24,24 @@ it.each([false, true])('boots a separate Web Host with client plugins (AA enable
   let stderr = ''
   try {
     writeFileSync(join(home, 'settings.yaml'), 'dsh-desktop:\n  mode: advanced\nagent-presets:\n  default: minimal\n')
-    const prepared = prepareDesktopProfile('1', home, 'win32', undefined, undefined, undefined, { aaEnabled })
-    if (aaEnabled) prepared.patches.push({ id: 'agents-anywhere-bridge-next', config: { dshHome: home, stateRoot: join(home, 'aa-state') } })
+    const initial = prepareDesktopProfile('1', home, 'win32')
+    if (aaEnabled) {
+      // AA is an optional Profile package. Exercise its real bundle/Loader
+      // lifecycle without requiring a separately installed Connector or login.
+      const provider = join(initial.profile.dir, 'node_modules', '@agents-anywhere', 'dsh-bridge-next')
+      mkdirSync(join(provider, 'lib', 'bundled-connector'), { recursive: true })
+      writeFileSync(join(provider, 'package.json'), JSON.stringify({
+        name: '@agents-anywhere/dsh-bridge-next', version: '99.0.0', type: 'module', exports: './index.js',
+        dsh: { bundle: { patch: './cordis.patch.yml' } },
+      }))
+      writeFileSync(join(provider, 'cordis.patch.yml'), '- insert:\n    - id: agents-anywhere-bridge-next\n      name: "@agents-anywhere/dsh-bridge-next"\n')
+      writeFileSync(join(provider, 'lib', 'bundled-connector', 'pyproject.toml'), '[project]\nname = "isolated-aa-fixture"\n')
+      writeFileSync(join(provider, 'index.js'), 'export function apply(ctx) { ctx.provide("agentsAnywhereRuntime", {}); ctx.provide("agentsAnywhereOnboarding", {}) }\n')
+    }
+    const prepared = prepareDesktopProfile('1', home, 'win32', undefined, undefined, undefined, { aaEnabled: aaRequested })
+    expect(prepared.aaEnabled).toBe(aaEnabled)
+    if (aaProvider === 'missing') expect(prepared.aaFailure).toBeTruthy()
+    else expect(prepared.aaFailure).toBeUndefined()
     prepared.port = 0
     const plugin = join(prepared.profile.dir, 'node_modules', 'isolated-client-fixture')
     mkdirSync(plugin, { recursive: true })
@@ -61,7 +79,7 @@ it.each([false, true])('boots a separate Web Host with client plugins (AA enable
     rpc.handle('quit', () => {})
     const result = await rpc.call<{ pid: number; services: { aaRuntime: boolean; aaOnboarding: boolean } }>('boot', [{
       prepared, profilePreferences: { mode: 'advanced', openBrowser: false, networkExposure: 'loopback',
-        macosMaterial: 'auto', windowsMaterial: 'auto', market: 'disabled', notifications: { enabled: false }, aaEnabled },
+        macosMaterial: 'auto', windowsMaterial: 'auto', market: 'disabled', notifications: { enabled: false }, aaEnabled: aaRequested },
       homeDir: home, activeProfileName: prepared.profile.name, pluginManagementStatePath: join(home, 'plugins.json'),
       selectionStatePath: join(home, 'selection.json'), marketUserDataDir: join(home, 'userdata'),
       releaseUserDataLocations: desktopReleaseUserDataLocations(home, join(home, 'userdata')),
