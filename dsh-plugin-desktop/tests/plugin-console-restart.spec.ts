@@ -157,9 +157,9 @@ describe('Plugin Console desktop-owned restart route', () => {
   })
 
   it('rejects profile mutations from other windows while an install job is active', async () => {
-    processes.execFile.mockImplementation((_command, _args, _options, _callback) => {
+    processes.execFile.mockImplementation((() => {
       return { on() {} }
-    })
+    }) as never)
     const harness = await mount(async () => false)
     const install = await harness.request('install', { body: JSON.stringify({ packageName: '@example/active-plugin' }) })
     expect(install.status).toBe(200)
