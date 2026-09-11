@@ -240,10 +240,14 @@ const actionErrorLabel = (error, t) => {
   if (code.includes("request_failed") || code.includes("knowledge_mcp_http_5") || code.includes("knowledge service")) return t("serviceUnavailable");
   return t("actionFailed");
 };
-const count = (value) =>
-  value !== null && value !== "" && Number.isFinite(Number(value))
-    ? new Intl.NumberFormat().format(Number(value))
-    : "-";
+const finiteCount = (value) => {
+  const parsed = Number(value)
+  return value !== null && value !== "" && Number.isFinite(parsed) && parsed >= 0 ? parsed : null
+}
+const count = (value) => {
+  const parsed = finiteCount(value)
+  return parsed === null ? "—" : new Intl.NumberFormat().format(parsed)
+}
 const confidenceLabel = (value, t) => {
   const parsed = Number(value);
   if (value === null || value === undefined || value === "" || !Number.isFinite(parsed)) return `${t("confidence")} —`;
@@ -334,7 +338,7 @@ function Ingestion({ data, t }) {
     ["processing", t("processing"), data?.processing],
     ["failed", t("failed"), data?.failed],
   ];
-  const max = Math.max(1, ...rows.map((row) => Number(row[2]) || 0));
+  const max = Math.max(1, ...rows.map((row) => finiteCount(row[2]) ?? 0));
   return h(
     "section",
     { className: "yk-panel" },
@@ -343,7 +347,10 @@ function Ingestion({ data, t }) {
       "div",
       { className: "yk-bars" },
       rows.map(([key, label, value]) =>
-        h(
+          (() => {
+            const safeValue = finiteCount(value)
+            const width = safeValue === null ? 0 : Math.min(100, Math.max(safeValue > 0 ? 7 : 0, (safeValue / max) * 100))
+            return h(
           "div",
           { className: "yk-bar-row", key },
           h("span", null, label),
@@ -353,12 +360,13 @@ function Ingestion({ data, t }) {
             h("span", {
               className: `yk-bar yk-bar-${key}`,
               style: {
-                width: `${Math.max(value > 0 ? 7 : 0, ((Number(value) || 0) / max) * 100)}%`,
+                width: `${width}%`,
               },
             }),
           ),
           h("strong", null, count(value)),
-        ),
+            )
+          })(),
       ),
     ),
   );
@@ -501,22 +509,22 @@ function Overview({
       { className: "yk-metrics" },
       h(Metric, {
         label: t("spaces"),
-        value: overview.status === "ready" ? count(stats.spaces) : "-",
+        value: overview.status === "ready" ? count(stats.spaces) : "—",
         tone: "blue",
       }),
       h(Metric, {
         label: t("documents"),
-        value: overview.status === "ready" ? count(stats.documents) : "-",
+        value: overview.status === "ready" ? count(stats.documents) : "—",
         tone: "teal",
       }),
       h(Metric, {
         label: t("memories"),
-        value: overview.status === "ready" ? count(stats.memories) : "-",
+        value: overview.status === "ready" ? count(stats.memories) : "—",
         tone: "violet",
       }),
       h(Metric, {
         label: t("pendingImports"),
-        value: overview.status === "ready" ? count(stats.pendingImports) : "-",
+        value: overview.status === "ready" ? count(stats.pendingImports) : "—",
         tone: "amber",
       }),
     ),
@@ -1409,7 +1417,9 @@ module.exports = {
   inject: ["slots", "locale"],
   __test: {
     actionErrorLabel,
+    count,
     confidenceLabel,
+    finiteCount,
     graphLayout,
     graphStatusLabel,
     graphTypeCounts,
