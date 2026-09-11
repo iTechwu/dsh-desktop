@@ -1267,7 +1267,7 @@ window.__ModuleLoader__.load({
 				}).catch((error) => showResult({ latest: null, source: "npm", error: friendlyGithubError(error).message }));
 			};
 			const toggle = (entry, enabled) => {
-				if (!entry.toggleable || pluginMutationRef.current !== null) return;
+				if (!entry.toggleable || pluginMutationRef.current !== null || installationBlocked) return;
 				const operation = { kind: "toggle", entryId: entry.entryId, phase: "pending" };
 				pluginMutationRef.current = operation;
 				setPluginMutation(operation);
@@ -1287,7 +1287,7 @@ window.__ModuleLoader__.load({
 				);
 			};
 			const removePlugin = (entry) => {
-				if (pluginMutationRef.current !== null || entry.extra !== true || entry.rowId === "plugin-console") return;
+				if (pluginMutationRef.current !== null || installationBlocked || entry.extra !== true || entry.rowId === "plugin-console") return;
 				const operation = { kind: "remove", entryId: entry.entryId, phase: "pending" };
 				pluginMutationRef.current = operation;
 				setPluginMutation(operation);
@@ -1895,7 +1895,7 @@ window.__ModuleLoader__.load({
 				} catch { fallback(); }
 			};
 			const requestServiceAction = (kind) => {
-				if (serviceOperationRef.current !== null || frameworkActive || state.status !== "ready") return;
+				if (serviceOperationRef.current !== null || installationBlocked || frameworkActive || state.status !== "ready") return;
 				const operation = { kind, phase: "pending" };
 				serviceOperationRef.current = operation;
 				setServiceOperation(operation);
