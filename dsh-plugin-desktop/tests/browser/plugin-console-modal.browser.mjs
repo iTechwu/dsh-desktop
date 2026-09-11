@@ -83,7 +83,7 @@ await page.route('**/plugin-console/**', async route => {
     : pathname.endsWith('/state')
     ? { entries, installJobs: consentMode ? [{ jobId: 'consent-job', status: 'installing', stage: 'ai-consent', packageName: '@example/plugin' }] : [], compat: { supported: true }, framework: null, github: { loggedIn: false }, patch: { inserts: [] }, recentFailures: [], selfVersion: null }
     : pathname.endsWith('/sources')
-      ? { sources: { registries: [{ id: 'npm', name: '默认源', url: 'https://registry.npmjs.org/', primary: true }], searchSources: [], gitee: { clientConfigured: false, hasToken: false } } }
+      ? { sources: { registries: [{ id: 'npm', name: '默认源', url: 'https://registry.example.com/organization/desktop/plugin-packages/', primary: true }], searchSources: [], gitee: { clientConfigured: false, hasToken: false } } }
       : pathname.endsWith('/market-index')
         ? { items: [], skills: [] }
         : pathname.endsWith('/framework-upgrade-status')
@@ -99,7 +99,7 @@ try {
     assert.equal(brand, visualTheme === 'official-dark' ? 'rgb(249, 250, 251)' : 'rgb(15, 17, 21)')
   }
   await page.locator('.pc_row').nth(1).waitFor()
-  for (const width of [390, 1440]) {
+  for (const width of [320, 390, 768, 1024, 1440]) {
     await page.setViewportSize({ width, height: 900 })
     await assertAccessibleSurface(page, { requireModal: false })
     await assertTextContrast(page, '.pc_tag,.pc_phase,.pc_meta,.pc_note,.pc_status,.pc_ghpill,.pc_aiToggle')
@@ -107,6 +107,19 @@ try {
       .filter(button => button.getClientRects().length && Number(getComputedStyle(button).opacity) < 1)
       .map(button => button.textContent))
     assert.deepEqual(fadedButtons, [], 'available controls must not look disabled')
+    const coveredContent = await page.evaluate(() => {
+      const buttons = [...document.querySelectorAll('.pc_section button')]
+        .filter(button => button.getClientRects().length)
+        .map(button => ({ label: button.textContent, rect: button.getBoundingClientRect() }))
+      return [...document.querySelectorAll('.pc_section h3,.pc_section p,.pc_row .pc_name,.pc_row .pc_meta')]
+        .flatMap(element => {
+          const rect = element.getBoundingClientRect()
+          return buttons.filter(button => Math.min(rect.right, button.rect.right) - Math.max(rect.left, button.rect.left) > 1
+            && Math.min(rect.bottom, button.rect.bottom) - Math.max(rect.top, button.rect.top) > 1)
+            .map(button => ({ text: element.textContent, button: button.label }))
+        })
+    })
+    assert.deepEqual(coveredContent, [], `plugin controls must not obscure content at ${width}px`)
     await page.screenshot({ path: resolve(evidenceRoot, `${width}-plugin-states.png`), fullPage: true })
   }
   await page.setViewportSize({ width: 390, height: 844 })
@@ -123,6 +136,19 @@ try {
   await installWriteCounter()
   const trigger = page.getByRole('button', { name: '软件源' })
   await trigger.waitFor()
+  await trigger.focus()
+  await page.keyboard.press('Tab')
+  const aiToggle = page.getByRole('button', { name: 'AI 兜底', exact: true })
+  assert.equal(await aiToggle.evaluate(button => button === document.activeElement), true)
+  assert.equal(await aiToggle.getAttribute('aria-pressed'), 'true')
+  await page.keyboard.press('Space')
+  assert.equal(await aiToggle.getAttribute('aria-pressed'), 'false')
+  await page.keyboard.press('Space')
+  assert.equal(await aiToggle.getAttribute('aria-pressed'), 'true')
+  await page.keyboard.press('Tab')
+  assert.equal(await page.evaluate(() => document.activeElement?.classList.contains('pc_modeFloat')), true)
+  await page.keyboard.press('Tab')
+  assert.equal(await page.evaluate(() => document.activeElement?.textContent), '重启服务')
   await trigger.click()
   const dialog = page.getByRole('dialog', { name: '软件源' })
   await dialog.waitFor()
@@ -141,6 +167,8 @@ try {
   assert.deepEqual(focus, { width: '2px', style: 'solid' }, 'keyboard focus must use the shared visible outline')
   await assertAccessibleSurface(page)
   await assertTextContrast(page, '.pc_modalCard .pc_message,.pc_modalCard .pc_tag,.pc_modalCard .pc_trashBtn')
+  assert.deepEqual(await dialog.locator('.pc_name').evaluateAll(names => names
+    .filter(name => name.scrollWidth > name.clientWidth + 1).map(name => name.textContent)), [], 'source names and primary state must remain readable')
   await page.screenshot({ path: resolve(evidenceRoot, '390-source-dialog-focus.png'), fullPage: true })
 
   await dialog.getByRole('button', { name: '编辑', exact: true }).click()
@@ -229,7 +257,7 @@ try {
   releaseConsentWrite()
   await consentDialog.waitFor({ state: 'detached' })
   assert.deepEqual(problems, [])
-  console.log(`plugin-console-modal-browser: ${visualTheme}, 6 screenshots, readable plugin states, source editing, dialog focus, and source/consent/toggle mutation locks verified`)
+  console.log(`plugin-console-modal-browser: ${visualTheme}, 9 screenshots, unobscured plugin states, source editing, dialog focus, and source/consent/toggle mutation locks verified`)
 } finally {
   releaseSourceWrite?.()
   releaseConsentWrite?.()
