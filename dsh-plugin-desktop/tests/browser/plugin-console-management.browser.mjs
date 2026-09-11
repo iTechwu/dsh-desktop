@@ -173,6 +173,18 @@ const row = (page, name) => page.locator('.pc_row').filter({ has: page.locator('
 const removePlugin = (page, name) => row(page, name).getByRole('button', { name: '删除插件（移除配置并卸载包）', exact: true })
 const removeSkill = (page, name) => row(page, name).getByRole('button', { name: '删除技能', exact: true })
 
+async function assertNavigationUnobscured(page) {
+  const covered = await page.evaluate(() => [...document.querySelectorAll('.pc_section button,.pc_section input')].flatMap(control => {
+    const rect = control.getBoundingClientRect()
+    if (!rect.width || !rect.height) return []
+    const points = [0.2, 0.5, 0.8].flatMap(x => [0.25, 0.75].map(y => [rect.left + rect.width * x, rect.top + rect.height * y]))
+      .filter(([x, y]) => x >= 0 && x < innerWidth && y >= 0 && y < innerHeight)
+    return points.some(([x, y]) => !control.contains(document.elementFromPoint(x, y)))
+      ? [control.getAttribute('aria-label') || control.textContent || control.tagName] : []
+  }))
+  assert.deepEqual(covered, [], 'navigation and visible actions must remain unobscured')
+}
+
 try {
   // The flow under test is: installed plugin -> confirm removal -> one pending write,
   // failure keeps the row retryable, success holds edits until fresh state or restart.
@@ -681,6 +693,41 @@ try {
     await b.getByText('插件 B 重试成功', { exact: true }).waitFor()
     await page.setViewportSize({ width: 1280, height: 900 })
     await shot(page, '1280-details-reopened')
+    await page.close()
+  }
+  for (const width of [320, 390, 768, 1440]) {
+    const { page, state } = await openPage('plugins', width, false, 'idle', false, true)
+    await page.emulateMedia({ reducedMotion: 'reduce' })
+    await page.locator('#pc-market-search').getByRole('button', { name: '搜索', exact: true }).click()
+    const collapse = page.getByRole('button', { name: '收起搜索结果', exact: true })
+    await collapse.waitFor()
+    await assertNavigationUnobscured(page)
+    assert.equal(await collapse.getAttribute('aria-expanded'), 'true')
+    await collapse.click()
+    assert.equal(await page.locator('.pc_item').count(), 0)
+    const expand = page.getByRole('button', { name: '展开搜索结果', exact: true })
+    assert.equal(await expand.getAttribute('aria-expanded'), 'false')
+    await assertNavigationUnobscured(page)
+    await expand.click()
+    assert.equal(await page.locator('.pc_item').count(), 2)
+    state.entries.push(...Array.from({ length: 4 }, (_, i) => ({
+      entryId: `navigation-${i}`, rowId: `navigation-${i}`, moduleName: `@example/navigation-${i}`,
+      enabled: true, toggleable: true, extra: true, fiberPhase: 'active',
+    })))
+    await page.getByRole('button', { name: '刷新插件列表', exact: true }).click()
+    await row(page, 'navigation-3').waitFor()
+    const back = page.getByRole('button', { name: '回到搜索', exact: true })
+    await back.scrollIntoViewIfNeeded()
+    await assertNavigationUnobscured(page)
+    if (width === 320) assert(await page.evaluate(() => scrollY > 0), 'long mobile lists must exercise real scrolling')
+    await back.click()
+    const input = page.locator('#pc-market-search input')
+    assert.equal(await input.evaluate(node => node === document.activeElement), true)
+    const rect = await input.boundingBox()
+    assert(rect && rect.y >= 0 && rect.y + rect.height <= 900, 'return to search must reveal its focused input')
+    await assertNavigationUnobscured(page)
+    await page.evaluate(() => window.scrollTo(0, 0))
+    if (width === 320 || width === 1440) await shot(page, `${width}-navigation-unobscured`)
     await page.close()
   }
   assert.deepEqual(problems, [])
