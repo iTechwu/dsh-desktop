@@ -4,6 +4,12 @@ import test from 'node:test'
 
 import { apply } from '../index.js'
 
+test('preserves unknown retrofit totals instead of fabricating zero', async () => {
+  const client = await readFile(new URL('../src/client.js', import.meta.url), 'utf8')
+  assert.match(client, /data\?\.result\?\.total == null \? '—'/u)
+  assert.doesNotMatch(client, /Number\(data\?\.result\?\.total\) \|\| 0/u)
+})
+
 test('retrofit package exposes a complete database-first workspace', async () => {
   const manifest = JSON.parse(await readFile(new URL('../package.json', import.meta.url)))
   const client = await readFile(new URL('../src/client.js', import.meta.url), 'utf8')
