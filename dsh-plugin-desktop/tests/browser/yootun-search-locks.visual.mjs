@@ -434,7 +434,7 @@ try {
   await page.setViewportSize({ width: 1440, height: 900 })
   await page.getByRole('button', { name: '总览', exact: true }).click()
   await page.locator('.yd-attention-main').filter({ hasText: 'Agent 工作 · 部分可用' }).waitFor()
-  assert.equal(await page.getByText('3/4', { exact: true }).isVisible(), true)
+  assert.equal(await page.locator('.yd-domain-card').filter({ hasText: 'Agent 工作' }).getByText('6', { exact: true }).isVisible(), true)
   await assertDesktopViewport()
   await page.screenshot({ path: resolve(evidenceRoot, '1440-dashboard-activity-partial.png'), fullPage: true })
   await page.getByRole('button', { name: 'Agent 工作', exact: true }).click()

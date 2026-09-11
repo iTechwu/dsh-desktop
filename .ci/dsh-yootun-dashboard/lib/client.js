@@ -664,9 +664,9 @@ window.__ModuleLoader__.load({
     }
 
     function ActivityView({ source, t, detailed = false }) {
-      if (!['ready', 'empty', 'partial'].includes(source?.status)) return h(EmptyState, { source, t })
+      if (!canRenderSource(source)) return h(EmptyState, { source, t })
       const data = source.data || {}
-      const partial = source.status === 'partial'
+      const partial = ['partial', 'degraded', 'warning'].includes(source.status)
       const notice = partial ? h('div', { className: 'yd-activity-notice', role: 'status' },
         h('span', null, t('activityPartial')),
         source.coverage ? h('span', null, `${t('activityCoverage')}: ${source.coverage.loaded} / ${source.coverage.total}`) : null,
@@ -711,7 +711,7 @@ window.__ModuleLoader__.load({
             sessions.length ? h('div', { className: 'yd-list' }, ...sessions.map((session, index) =>
               h('div', { className: 'yd-list-row yd-session-row', key: `${session.title}-${index}` },
                 h('div', null, h('strong', null, session.title), h('span', null, session.workspace)),
-                h('span', { className: session.failedTurns > 0 ? 'yd-text-danger' : '' }, `${session.completedTurns || 0}/${session.turns || 0}`))))
+                h('span', { className: session.failedTurns > 0 ? 'yd-text-danger' : '' }, `${session.completedTurns == null ? '—' : session.completedTurns}/${session.turns == null ? '—' : session.turns}`))))
               : h('p', { className: 'yd-inline-empty' }, t(partial ? 'activityPartialEmpty' : 'empty'))),
           h('section', { className: 'yd-table-section' },
             h('div', { className: 'yd-section-heading' }, h('h2', null, t('tool'))),
