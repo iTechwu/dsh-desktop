@@ -83,6 +83,8 @@ export function apply(ctx, overrides = {}) {
               return send(res, 200, await handleWorkTrend(deps, toolCtx, body))
             case 'run.get':
               return send(res, 200, await handleRunGet(deps, toolCtx, body))
+            case 'export':
+              return send(res, 200, await handleExport(deps, toolCtx, body))
             default:
               return send(res, 400, { status: 'error', reason: 'unknown_action' })
           }
@@ -129,14 +131,23 @@ async function handleAccountsList(deps, ctx) {
   }
 }
 
+// 头像 URL 白名单化：只放行 http(s) 绝对地址并截断长度，其余一律置 null（§8.2）。
+// 值来自创作者中心公开资料并最终进入 <img src>，必须拦掉 javascript:/data: 等内嵌协议。
+const AVATAR_URL_PATTERN = /^https?:\/\//i
+function projectAvatar(value) {
+  const text = typeof value === 'string' ? value.trim() : ''
+  return text && AVATAR_URL_PATTERN.test(text) ? text.slice(0, 2048) : null
+}
+
 // 本地账号（设备端 Profile/会话）与远端账号（tools 记录）按 accountId 合并；
-// 会话状态以**本地**为准（tools 只保存设备上报值）。
+// 会话状态以**本地**为准（tools 只保存设备上报值），头像等资料字段同样本地优先。
 function projectAccounts(localAccounts, remoteAccounts) {
   const merged = new Map()
   for (const item of Object.values(localAccounts || {})) {
     merged.set(item.accountId, {
       accountId: item.accountId,
       nickname: item.nickname || null,
+      avatar: projectAvatar(item.avatar),
       fanCount: Number.isFinite(Number(item.fanCount)) ? Number(item.fanCount) : null,
       sessionStatus: item.sessionStatus || 'unknown',
       sessionCheckedAt: item.sessionCheckedAt || null,
@@ -152,6 +163,7 @@ function projectAccounts(localAccounts, remoteAccounts) {
     merged.set(accountId, {
       accountId,
       nickname: existing?.nickname || cleanString(item.nickname, 256) || null,
+      avatar: existing?.avatar ?? projectAvatar(item.avatar),
       fanCount: existing?.fanCount ?? (Number.isFinite(Number(item.fanCount)) ? Number(item.fanCount) : null),
       sessionStatus: existing?.sessionStatus || cleanString(item.sessionStatus, 16) || 'unknown',
       sessionCheckedAt: existing?.sessionCheckedAt || item.sessionCheckedAt || null,
@@ -339,6 +351,62 @@ async function handleRunGet(deps, ctx, body) {
   if (!runId) return { status: 'error', reason: 'run_id_required' }
   const payload = await callTool(ctx, 'douyin_collect_run_get', { runId })
   return { status: 'ready', ...payload }
+}
+
+// 导出边界（§10.2/§11.3）：Tools 侧已保证原始 XLSX ≤ 1MB；宿主复核这些上限，
+// 并拒绝超出 MCP 序列化安全线的完整响应（为 2MB 网关硬上限留协议开销）。
+const EXPORT_MAX_CONTENT_BYTES = 1_000_000
+const EXPORT_MAX_RESPONSE_BYTES = 1_800_000
+
+// 文件名二次净化（§11.3.5）：Tools 已净化，宿主不信任透传值——路径分隔符、
+// Windows 保留字符与控制字符一律替换，防止用户昵称内容注入下载文件名。
+const FILENAME_INVALID = /[/\\:*?"<>|\u0000-\u001f\u007f]/g
+function projectFileName(value) {
+  const text = typeof value === 'string' ? value : ''
+  const cleaned = text.replace(FILENAME_INVALID, '_').replace(/^[\s.]+/, '').slice(0, 128).trim()
+  if (!cleaned || !cleaned.toLowerCase().endsWith('.xlsx')) return 'douyin-export.xlsx'
+  return cleaned
+}
+
+async function handleExport(deps, ctx, body) {
+  // 入参只接受页面当前选中的账号 ID 与固定格式（§11.3.1）；格式由宿主固定为
+  // xlsx，不接受 UI 传入的其他值，避免未来 tools 扩展格式时被误用。
+  const accountId = await resolveAccountAlias(deps, cleanString(body.accountId, MAX_ID))
+  if (!accountId) return { status: 'error', reason: 'account_id_required' }
+  let payload
+  try {
+    payload = await callTool(ctx, 'douyin_export', { accountId, format: 'xlsx' })
+  } catch (error) {
+    const code = safeErrorCode(error)
+    if (code === 'DOUYIN_EXPORT_TOO_LARGE') return { status: 'error', reason: 'export_too_large' }
+    if (code === 'ACCOUNT_NOT_FOUND') return { status: 'error', reason: 'ACCOUNT_NOT_FOUND' }
+    return { status: 'error', reason: 'export_failed' }
+  }
+  const contentBase64 = typeof payload.content_base64 === 'string' ? payload.content_base64 : ''
+  const contentBytes = Number(payload.content_bytes)
+  if (!contentBase64 || !Number.isFinite(contentBytes) || contentBytes <= 0) {
+    return { status: 'error', reason: 'export_failed' }
+  }
+  if (contentBytes > EXPORT_MAX_CONTENT_BYTES) return { status: 'error', reason: 'export_too_large' }
+  // base64 长度必须与声明字节数自洽：4*(n/3) 上取整。不一致说明载荷被截断或篡改，
+  // 宁可失败也不能把损坏文件交给浏览器下载。
+  if (contentBase64.length !== Math.ceil(contentBytes / 3) * 4) {
+    return { status: 'error', reason: 'export_failed' }
+  }
+  // 序列化完整响应复核（§11.3.3）：超线响应说明 Tools 上限被绕过，整单拒绝。
+  const projected = {
+    status: 'ready',
+    file_name: projectFileName(payload.file_name),
+    mime_type: payload.mime_type || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    content_base64: contentBase64,
+    content_bytes: contentBytes,
+    row_counts: payload.row_counts || null,
+  }
+  if (Buffer.byteLength(JSON.stringify(projected), 'utf8') > EXPORT_MAX_RESPONSE_BYTES) {
+    return { status: 'error', reason: 'export_too_large' }
+  }
+  // 只透出文件名/MIME/base64/行数：不含账号凭证、内部地址或原始错误文本。
+  return projected
 }
 
 function clampInt(value, min, max, fallback) {

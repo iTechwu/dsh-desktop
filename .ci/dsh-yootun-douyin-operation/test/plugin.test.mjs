@@ -299,6 +299,32 @@ test('projectAccounts 合并策略：设备端会话状态优先', () => {
   })
 })
 
+test('projectAccounts 头像投影：仅 http(s) 绝对地址放行，本地优先，缺失置 null', () => {
+  const merged = projectAccounts(
+    {
+      a: { accountId: 'a', nickname: '本地', avatar: 'https://p3.douyinpic.com/local.jpeg' },
+      b: { accountId: 'b', nickname: '仅远端有头像' },
+      c: { accountId: 'c', nickname: '危险头像', avatar: 'javascript:alert(1)' },
+      d: { accountId: 'd', nickname: '本地坏头像', avatar: 'file:///etc/passwd' },
+    },
+    [
+      { accountId: 'a', avatar: 'https://p3.douyinpic.com/remote.jpeg' },
+      { accountId: 'b', avatar: 'http://p3.douyinpic.com/remote.jpeg' },
+      { accountId: 'c', avatar: 'https://p3.douyinpic.com/remote-safe.jpeg' },
+    ],
+  )
+  const byId = Object.fromEntries(merged.map(item => [item.accountId, item]))
+  assert.equal(byId.a.avatar, 'https://p3.douyinpic.com/local.jpeg', '本地头像优先于远端')
+  assert.equal(byId.b.avatar, 'http://p3.douyinpic.com/remote.jpeg', '远端 http 头像可回填')
+  assert.equal(byId.c.avatar, 'https://p3.douyinpic.com/remote-safe.jpeg', '本地危险协议被丢弃后回退远端')
+  assert.equal(byId.d.avatar, null, '本地 file:// 头像置 null 且远端无值')
+  assert.deepEqual(
+    projectAccounts({ e: { accountId: 'e' } }, []).map(item => item.avatar),
+    [null],
+    '无头像字段时补 null，UI 可回退占位',
+  )
+})
+
 test('登录成功但 account_save 失败：记录日志并在 loginStatus 透出 saveError', async () => {
   await withRoot(async root => {
     const toolError = {
@@ -594,4 +620,141 @@ test('session 幂等键包含 checkedAt：重装后 seq 归 1 不再撞历史收
     sessionIdempotencyKey('MS4wLjABAAAA-real', 1, '2026-09-11T08:00:00.000Z'),
   )
   assert.ok(sessionIdempotencyKey('MS4wLjABAAAA-real', 1, keyAt).length <= 128)
+})
+
+test('export 动作：固定 format=xlsx 调 douyin_export，只透出文件名/MIME/内容/行数', async () => {
+  const seen = []
+  const base64 = Buffer.from('hello').toString('base64') // 5 字节 → 8 字符
+  const { ctx, registered } = createContext({
+    tools: [{ name: 'mcp__tools-douyin-operation__douyin_export' }],
+    execute: async request => {
+      seen.push(request)
+      return {
+        structuredContent: {
+          account_id: 'acc-1',
+          format: 'xlsx',
+          file_name: 'douyin-示例账号-20260911-103000.xlsx',
+          mime_type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          content_base64: base64,
+          content_bytes: 5,
+          row_counts: { 作品总览: 2 },
+        },
+      }
+    },
+  })
+  apply(ctx)
+  const result = await call(registered[0].handler, { action: 'export', accountId: 'acc-1' })
+  assert.equal(result.status, 200)
+  assert.equal(result.payload.status, 'ready')
+  assert.deepEqual(seen.at(-1).arguments, { accountId: 'acc-1', format: 'xlsx' }, '格式由宿主固定')
+  assert.deepEqual(Object.keys(result.payload), [
+    'status', 'file_name', 'mime_type', 'content_base64', 'content_bytes', 'row_counts',
+  ], '只透出下载所需字段，不带内部地址/凭证/account_id')
+  assert.equal(result.payload.file_name, 'douyin-示例账号-20260911-103000.xlsx')
+  assert.equal(result.payload.content_bytes, 5)
+})
+
+test('export 动作：缺少 accountId 直接拒绝且不调用 tools', async () => {
+  const seen = []
+  const { ctx, registered } = createContext({
+    tools: [{ name: 'mcp__tools-douyin-operation__douyin_export' }],
+    execute: async request => { seen.push(request); return { structuredContent: {} } },
+  })
+  apply(ctx)
+  const result = await call(registered[0].handler, { action: 'export', accountId: '' })
+  assert.equal(result.payload.status, 'error')
+  assert.equal(result.payload.reason, 'account_id_required')
+  assert.equal(seen.length, 0)
+})
+
+test('export 动作：DOUYIN_EXPORT_TOO_LARGE 映射为 export_too_large，不透传内部码', async () => {
+  const { ctx, registered } = createContext({
+    tools: [{ name: 'mcp__tools-douyin-operation__douyin_export' }],
+    execute: async () => ({
+      isError: true,
+      content: [{ type: 'text', text: 'Error: ' + JSON.stringify({ error: { code: 'DOUYIN_EXPORT_TOO_LARGE' } }) }],
+    }),
+  })
+  apply(ctx)
+  const result = await call(registered[0].handler, { action: 'export', accountId: 'acc-1' })
+  assert.equal(result.payload.status, 'error')
+  assert.equal(result.payload.reason, 'export_too_large')
+})
+
+test('export 动作：ACCOUNT_NOT_FOUND 原样透出（页面已有可读文案）', async () => {
+  const { ctx, registered } = createContext({
+    tools: [{ name: 'mcp__tools-douyin-operation__douyin_export' }],
+    execute: async () => ({
+      isError: true,
+      content: [{ type: 'text', text: 'Error: ' + JSON.stringify({ error: { code: 'ACCOUNT_NOT_FOUND' } }) }],
+    }),
+  })
+  apply(ctx)
+  const result = await call(registered[0].handler, { action: 'export', accountId: 'ghost' })
+  assert.equal(result.payload.reason, 'ACCOUNT_NOT_FOUND')
+})
+
+test('export 动作：content_bytes 超过 1MB 宿主复核拒绝', async () => {
+  const bytes = 1_000_001
+  const base64 = 'A'.repeat(Math.ceil(bytes / 3) * 4)
+  const { ctx, registered } = createContext({
+    tools: [{ name: 'mcp__tools-douyin-operation__douyin_export' }],
+    execute: async () => ({ structuredContent: { content_base64: base64, content_bytes: bytes } }),
+  })
+  apply(ctx)
+  const result = await call(registered[0].handler, { action: 'export', accountId: 'acc-1' })
+  assert.equal(result.payload.reason, 'export_too_large')
+})
+
+test('export 动作：base64 长度与声明字节数不一致按失败处理（截断文件不落盘）', async () => {
+  // 8 字符 base64 对应 5–6 字节；声明 7 字节即跨桶，长度校验必须拒绝。
+  const base64 = Buffer.from('hello').toString('base64')
+  const { ctx, registered } = createContext({
+    tools: [{ name: 'mcp__tools-douyin-operation__douyin_export' }],
+    execute: async () => ({ structuredContent: { content_base64: base64, content_bytes: 7 } }),
+  })
+  apply(ctx)
+  const result = await call(registered[0].handler, { action: 'export', accountId: 'acc-1' })
+  assert.equal(result.payload.reason, 'export_failed')
+})
+
+test('export 动作：序列化完整响应超过 1.8MB 拒绝（超限 row_counts 也算）', async () => {
+  const base64 = Buffer.from('hello').toString('base64')
+  const { ctx, registered } = createContext({
+    tools: [{ name: 'mcp__tools-douyin-operation__douyin_export' }],
+    execute: async () => ({
+      structuredContent: {
+        content_base64: base64,
+        content_bytes: 5,
+        row_counts: { bloated: 'x'.repeat(2_000_000) },
+      },
+    }),
+  })
+  apply(ctx)
+  const result = await call(registered[0].handler, { action: 'export', accountId: 'acc-1' })
+  assert.equal(result.payload.reason, 'export_too_large')
+})
+
+test('export 动作：文件名二次净化——路径分隔符/控制字符替换、非 .xlsx 回退默认名', async () => {
+  const base64 = Buffer.from('hello').toString('base64')
+  const respondWith = fileName => {
+    const { ctx, registered } = createContext({
+      tools: [{ name: 'mcp__tools-douyin-operation__douyin_export' }],
+      execute: async () => ({ structuredContent: { content_base64: base64, content_bytes: 5, file_name: fileName } }),
+    })
+    apply(ctx)
+    return call(registered[0].handler, { action: 'export', accountId: 'acc-1' })
+  }
+  const traversal = await respondWith('../../etc/hoost.xlsx')
+  assert.ok(!traversal.payload.file_name.includes('/'), '不包含路径分隔符')
+  assert.ok(traversal.payload.file_name.endsWith('.xlsx'))
+  const wrongSuffix = await respondWith('report.pdf')
+  assert.equal(wrongSuffix.payload.file_name, 'douyin-export.xlsx', '非 .xlsx 回退默认名')
+  const empty = await respondWith('')
+  assert.equal(empty.payload.file_name, 'douyin-export.xlsx')
+  const control = await respondWith('bad' + String.fromCharCode(0) + 'na' + String.fromCharCode(31) + 'me.xlsx')
+  assert.ok(!control.payload.file_name.includes(String.fromCharCode(0)) && !control.payload.file_name.includes(String.fromCharCode(31)), '控制字符被替换')
+  assert.ok(control.payload.file_name.endsWith('.xlsx'))
+  const del = await respondWith('del' + String.fromCharCode(127) + 'ete.xlsx')
+  assert.equal(del.payload.file_name, 'del_ete.xlsx', 'DEL 字符同样替换为下划线')
 })
