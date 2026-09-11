@@ -17,7 +17,7 @@
 | OpenMontage 视频工作流 | `montage` / `mcp__openmontage__*` | openmontage window、XHS operation | awaiting_confirmation、confirmed_pending_adapter、succeeded、failed | 长任务使用 600s 超时；准备、读取、提交按 Agent 工具限制分阶段暴露 |
 | 单镜头媒体 | `media` / `mcp__media__*` | XHS operation、媒体上传 | uploading、queued、succeeded、failed、requires_user_login | UI 只展示资源引用和 MIME/大小摘要，不显示凭据、签名 URL 或本地路径 |
 | 商业/平台工具 | `tools` / `mcp__tools-*` | sales、content-command、dashboard | ready、empty、degraded、error | 通过统一 MCP gateway 调用；本地 API 过滤不安全字段并保留稳定 error code |
-| 业务总览聚合 | `/api/desktop/yootun/dashboard/yesterday`、`/api/desktop/yootun/dashboard/series` | dashboard | ready、partial、empty、unavailable、error | 昨日摘要与趋势序列独立加载和降级；来源健康、worker 与路由归因必须保留各自状态，不以空数组或零值覆盖上游失败 |
+| 业务总览聚合 | `/api/desktop/yootun/dashboard/yesterday`、`/api/desktop/yootun/dashboard/series` | dashboard | ready、partial、empty、unavailable、error | 本地活动通过只读句柄按毫秒时间戳读取，排除继承事件；披露失败/未扫描覆盖，不完整时停用环比且 CSV 保留覆盖状态；来源健康、worker 与路由归因保留各自状态 |
 | 昨日活动日报 | `/api/desktop/yootun/daily-report`；`yootun_daily_report` | daily-report | ready、partial、empty、unavailable | 使用本地 session persistence 的只读 handle，读取后始终关闭；按毫秒时间戳统计本会话事件，排除分叉继承前缀。读取失败或超过 500 个会话的扫描上限时披露覆盖范围，全部失败不显示为空日报；页面与 Agent 工具使用同一投影 |
 | 模型用量与 FinOps | `/api/desktop/yootun/finops`、`/api/desktop/yootun/finops/series`；`yootun_finops_usage`、`yootun_finops_series` | finops | ready、unavailable、error；预算可独立降级 | 仅由托管 `MODELS_API_KEY` 访问用量与日聚合接口；范围和粒度先校验，预算源失败不清空已成功的用量摘要 |
 | 供应链监控 | `/api/desktop/yootun/supply-watch`；`supply-chain` / `supply_*`；实际调用 `supply_chain_alerts_list` | supply-watch | ready、warning、empty、unavailable、error | 风险来源独立降级；确认动作进入统一 pending/succeeded/failed 生命周期 |

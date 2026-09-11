@@ -217,6 +217,17 @@ await page.route('**/api/desktop/yootun/daily-report', async route => {
 await page.route('**/api/desktop/yootun/dashboard/yesterday', async route => {
   await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(dashboard) })
 })
+await page.route('**/api/desktop/yootun/dashboard/series', async route => {
+  const days = route.request().postDataJSON().days
+  await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({
+    ...dashboard,
+    period: { ...dashboard.period, label: `近${days}天`, days },
+    activity: { ...dashboard.activity, comparison: { status: 'unavailable', reason: 'activity_incomplete' }, data: {
+      totals: dashboard.activity.data.totals,
+      days: Array.from({ length: days }, (_, index) => ({ date: `2026-08-${String(index + 1).padStart(2, '0')}`, turns: index === 0 ? 6 : 0 })),
+    } },
+  }) })
+})
 await page.route('**/api/desktop/yootun/supply-watch', async route => {
   const confirmed = route.request().method() === 'POST'
   await route.fulfill({
@@ -370,6 +381,50 @@ try {
   assert.equal(await page.getByText('asr', { exact: true }).count(), 0)
   await assertViewport()
   await page.screenshot({ path: resolve(evidenceRoot, '390-dashboard-statuses.png'), fullPage: true })
+
+  const completeDashboardActivity = dashboard.activity
+  dashboard.activity = {
+    status: 'partial', reason: 'activity_partial', source: 'local_agent', sourceCompleteness: 'partial',
+    coverage: { total: 2, loaded: 1, failed: 1, unscanned: 0 },
+    data: { totals: { sessions: 1, turns: 6, completedTurns: 5, failedTurns: 1, toolCalls: 9 }, sessions: [{ title: '渠道复盘', workspace: '华东项目', turns: 6, completedTurns: 5, failedTurns: 1 }], tools: [] },
+  }
+  await page.getByRole('button', { name: '刷新数据' }).click()
+  await page.waitForFunction(() => document.querySelector('.yd-content')?.getAttribute('aria-busy') === 'false')
+  await page.getByRole('button', { name: 'Agent 工作', exact: true }).click()
+  await page.getByText('工作统计不完整，以下仅统计已成功读取的会话。', { exact: true }).waitFor()
+  assert.equal(await page.getByText('渠道复盘', { exact: true }).isVisible(), true)
+  assert.equal(await page.locator('.yd-metric strong').nth(1).textContent(), '6')
+  assert.equal(await page.getByText('已读取会话: 1 / 2', { exact: true }).isVisible(), true)
+  await assertViewport()
+  await page.screenshot({ path: resolve(evidenceRoot, '390-dashboard-activity-partial.png'), fullPage: true })
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await page.getByRole('button', { name: '总览', exact: true }).click()
+  await page.locator('.yd-attention-main').filter({ hasText: 'Agent 工作 · 部分可用' }).waitFor()
+  assert.equal(await page.getByText('3/4', { exact: true }).isVisible(), true)
+  await assertDesktopViewport()
+  await page.screenshot({ path: resolve(evidenceRoot, '1440-dashboard-activity-partial.png'), fullPage: true })
+  await page.getByRole('button', { name: 'Agent 工作', exact: true }).click()
+  await page.getByRole('button', { name: '近7天', exact: true }).click()
+  await page.locator('.yd-trend').waitFor()
+  assert.equal(await page.locator('.yd-metric-hint').filter({ hasText: '数据不完整，暂不比较' }).count(), 4)
+  assert.equal(await page.locator('.yd-activity-notice').isVisible(), true)
+  assert.equal(await page.locator('.yd-metric strong').nth(1).textContent(), '6')
+  const activitySpacing = await page.evaluate(() => {
+    const metrics = document.querySelector('.yd-activity-detail>.yd-metrics').getBoundingClientRect()
+    const trend = document.querySelector('.yd-activity-detail>.yd-table-section').getBoundingClientRect()
+    return trend.top - metrics.bottom
+  })
+  assert.equal(activitySpacing, 24, 'activity trends use the same 24px section spacing as other dashboard details')
+  await assertDesktopViewport('.yd-header', '.yd-content')
+  await page.screenshot({ path: resolve(evidenceRoot, '1440-dashboard-activity-series-partial.png'), fullPage: true })
+  dashboard.activity = { status: 'unavailable', reason: 'activity_unavailable', source: 'local_agent', sourceCompleteness: 'unknown' }
+  await page.getByRole('button', { name: '昨日', exact: true }).click()
+  await page.getByRole('button', { name: '刷新数据' }).click()
+  await page.locator('.yd-empty-unavailable').waitFor()
+  assert.equal(await page.locator('.yd-metric').count(), 0)
+  assert.equal(await page.locator('.yd-activity-notice').count(), 0)
+  dashboard.activity = completeDashboardActivity
+  await page.setViewportSize({ width: 390, height: 844 })
 
   await page.goto(`${url}?source=supply`)
   await page.getByRole('button', { name: '供应链预警' }).click()
@@ -641,7 +696,7 @@ try {
   await page.screenshot({ path: resolve(evidenceRoot, '1440-dashboard-overview.png'), fullPage: true })
 
   assert.deepEqual(consoleProblems, [])
-  process.stdout.write('search-locks-browser: 10 plugins, 19 screenshots, request locks, report coverage, localized statuses, and responsive theme mappings verified\n')
+  process.stdout.write('search-locks-browser: 10 plugins, 22 screenshots, request locks, report coverage, localized statuses, and responsive theme mappings verified\n')
 } finally {
   releaseDailyRefresh()
   releaseFinopsRefresh()
