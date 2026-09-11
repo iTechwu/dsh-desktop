@@ -67,6 +67,8 @@ test('upload experience: per-asset state machine, progress overlay and submit in
   assert.match(source, /yxh-video-badge/)
   // 覆盖式进度条 + 百分比 + 重试中提示。
   assert.match(source, /yxh-progress-fill/)
+  assert.match(source, /function progressPercent\(value\)/u)
+  assert.match(source, /Math\.max\(0, Math\.min\(100, parsed\)\)/u)
   assert.match(source, /retrying/)
   assert.match(source, /uploadedBytes/)
   // not_found 只在「从未收到 done」时置 failed（P2 客户端兜底）。

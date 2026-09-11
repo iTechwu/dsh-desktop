@@ -72,6 +72,10 @@ const closeOverlay = () => { setOpened(false); requestAnimationFrame(() => lastT
 const closeOtherOverlay = event => { if (event.detail?.id !== OVERLAY_ID) setOpened(false) }
 
 const isTerminal = status => status === 'succeeded' || status === 'failed' || status === 'cancelled'
+function progressPercent(value) {
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? Math.max(0, Math.min(100, parsed)) : 0
+}
 
 async function post(body) {
   const response = await fetch(PATH, { method: 'POST', credentials: 'same-origin', redirect: 'error', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS), body: JSON.stringify(body) })
@@ -261,7 +265,7 @@ function createUploadManager({ startUpload, pollStatus, intervalMs = UPLOAD_POLL
         current.attempt = Number.isFinite(status.attempt) ? status.attempt : 0
         current.bytesWritten = status.bytesWritten ?? 0
         current.bytesTotal = status.bytesTotal ?? current.size ?? 0
-        current.progress = Number.isFinite(status.progress) ? status.progress : 0
+        current.progress = progressPercent(status.progress)
         emit()
         schedulePoll(id, uploadId)
         return
