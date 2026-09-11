@@ -2,6 +2,11 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import test from 'node:test'
 const root = new URL('../', import.meta.url)
+test('uses returned published counts in the fallback funnel', async () => {
+  const source = await readFile(new URL('src/client.js', root), 'utf8')
+  assert.match(source, /dashboard\.published \?\? dashboard\.publishedArticles \?\? dashboard\.publishedCount/u)
+  assert.doesNotMatch(source, /key: 'published'[^\n]+count: 0/u)
+})
 test('publishes a web plugin with a bundle patch', async () => { const manifest = JSON.parse(await readFile(new URL('package.json', root), 'utf8')); assert.equal(manifest.name, '@dofe/dsh-yootun-content-command'); assert.equal(manifest.dsh.client.platform, 'web'); assert.equal(manifest.dsh.bundle.patch, './cordis.patch.yml') })
 test('keeps multi-channel publishing behind explicit review', async () => { const [source, host] = await Promise.all([readFile(new URL('src/client.js', root), 'utf8'), readFile(new URL('index.js', root), 'utf8')]); for (const token of ['/api/desktop/yootun/content-command', 'review_article', 'select_platforms', 'publish_selected', '审核通过', '同步发送', 'AgentRuntime']) assert.match(source, new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'u')); for (const platform of ['今日头条', '百度百家号', '小红书', '搜狐号']) assert.match(host, new RegExp(platform, 'u')); assert.doesNotMatch(source + host, /password|cookie|银行卡/iu) })
 test('labels task metrics by scope and preserves missing values', async () => { const source = await readFile(new URL('src/client.js', root), 'utf8'); for (const token of ['任务运行状况', '当前状态', '近 7 天执行表现', 'formatOptionalNumber', 'formatOptionalPercent', 'formatOptionalDuration']) assert.match(source, new RegExp(token, 'u')); assert.match(source, /parsed === null \? '—'/u); assert.doesNotMatch(source, /number\(performance\.success_rate\)\.toFixed/u) })
