@@ -1,5 +1,6 @@
 import {
   existsSync,
+  lstatSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -18,7 +19,7 @@ import {
   initProfile,
   PROFILE_TEMPLATES,
 } from '@deepseek-ai/dsh-app-boot'
-import { retainAsarModuleResolver } from '../src/asar-module-resolver-state.ts'
+import { withAsarModuleResolver } from '../src/asar-module-resolver-state.ts'
 import {
   DESKTOP_PACKAGE_NAME,
   desktopShellModeFromSettings,
@@ -82,7 +83,7 @@ afterEach(() => {
 describe('desktop profile composition', {
   timeout: process.platform === 'win32' ? 10_000 : 5_000,
 }, () => {
-  it('does not recreate the shared Profile fallback while the packaged ASAR resolver is active', async () => {
+  it('creates physical ESM Profile proxies while the packaged ASAR resolver is active', async () => {
     const home = temporaryHome()
     const installAnchor = join(
       home,
@@ -93,13 +94,31 @@ describe('desktop profile composition', {
       'dsh',
       'package.json',
     )
-    const releaseResolver = retainAsarModuleResolver()
-    try {
-      await expect(healProfilesModuleFallback({ home, installAnchor })).resolves.toBeUndefined()
-      expect(existsSync(join(home, 'profiles', 'node_modules'))).toBe(false)
-    } finally {
-      releaseResolver()
-    }
+    const installRoot = dirname(installAnchor)
+    mkdirSync(installRoot, { recursive: true })
+    writeFileSync(installAnchor, JSON.stringify({
+      name: '@deepseek-ai/dsh', version: '1.0.0', type: 'module',
+      exports: { '.': './index.js', './feature': { import: './feature.js' } },
+    }))
+    writeFileSync(join(installRoot, 'index.js'), 'export const identity = "packaged-runtime"\n')
+    writeFileSync(join(installRoot, 'feature.js'), 'export const feature = "available"\n')
+
+    await withAsarModuleResolver(() => healProfilesModuleFallback({ home, installAnchor }))
+
+    const proxyRoot = join(home, 'profiles', 'node_modules', '@deepseek-ai', 'dsh')
+    expect(lstatSync(proxyRoot).isSymbolicLink()).toBe(false)
+    expect(JSON.parse(readFileSync(join(proxyRoot, 'package.json'), 'utf8'))).toMatchObject({
+      name: '@deepseek-ai/dsh', version: '1.0.0', type: 'module',
+      exports: { '.': './entry-0.js', './feature': './entry-1.js' },
+      dsh: { moduleFallback: { targets: {
+        '.': pathToFileURL(join(installRoot, 'index.js')).href,
+        './feature': pathToFileURL(join(installRoot, 'feature.js')).href,
+      } } },
+    })
+    await expect(import(pathToFileURL(join(proxyRoot, 'entry-0.js')).href))
+      .resolves.toMatchObject({ identity: 'packaged-runtime' })
+    await expect(import(pathToFileURL(join(proxyRoot, 'entry-1.js')).href))
+      .resolves.toMatchObject({ feature: 'available' })
   })
 
   it('removes only provably managed legacy shared fallbacks', () => {
