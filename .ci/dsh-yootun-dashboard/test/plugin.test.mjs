@@ -62,6 +62,8 @@ test('renders all requested dashboard domains and explicit source states', async
   assert.match(source, /status === 'partial' \|\| status === 'degraded'/u)
   assert.match(source, /sources\.filter\(canRenderSource\)/u)
   assert.match(source, /const partial = \['partial', 'degraded', 'warning'\]\.includes\(source\.status\)/u)
+  assert.match(source, /session\.completedTurns == null \? '—' : session\.completedTurns/u)
+  assert.match(source, /session\.turns == null \? '—' : session\.turns/u)
   assert.match(source, /montageStatusLabel\(job\.status, t\)/u)
   assert.match(source, /montageStageLabel\(job\.stage, t\)/u)
 })

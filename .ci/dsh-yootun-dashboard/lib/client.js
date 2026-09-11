@@ -711,7 +711,7 @@ window.__ModuleLoader__.load({
             sessions.length ? h('div', { className: 'yd-list' }, ...sessions.map((session, index) =>
               h('div', { className: 'yd-list-row yd-session-row', key: `${session.title}-${index}` },
                 h('div', null, h('strong', null, session.title), h('span', null, session.workspace)),
-                h('span', { className: session.failedTurns > 0 ? 'yd-text-danger' : '' }, `${session.completedTurns || 0}/${session.turns || 0}`))))
+                h('span', { className: session.failedTurns > 0 ? 'yd-text-danger' : '' }, `${session.completedTurns == null ? '—' : session.completedTurns}/${session.turns == null ? '—' : session.turns}`))))
               : h('p', { className: 'yd-inline-empty' }, t(partial ? 'activityPartialEmpty' : 'empty'))),
           h('section', { className: 'yd-table-section' },
             h('div', { className: 'yd-section-heading' }, h('h2', null, t('tool'))),
