@@ -38,6 +38,8 @@ const ALLOWED_ERROR_CODES = new Set([
   'IDEMPOTENCY_OUTCOME_UNKNOWN',
   'UNAUTHORIZED',
   'PAYLOAD_TOO_LARGE',
+  // 导出超过 Tools 侧三重上限（原始 1MB / 序列化 1.8MB / 进度表 12,000 行）的稳定业务码。
+  'DOUYIN_EXPORT_TOO_LARGE',
 ])
 
 export class ToolsUnavailableError extends Error {
