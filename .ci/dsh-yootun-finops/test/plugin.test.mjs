@@ -69,6 +69,8 @@ test('keeps cost data source-bound and free of credentials or direct providers',
   assert.match(source, /costLineSegments/)
   assert.doesNotMatch(source, /filter\(Boolean\)\.join\(' '\)/)
   assert.match(source, /observedCostMax > 0/)
+  assert.match(source, /Math\.max\(0, Math\.min\(1, ratio\)\)/u)
+  assert.match(source, /const parsedRatio = finite\(item\.usageRatio\)/u)
   assert.match(source, /yf-chart-bar/)
   assert.match(source, /'aria-busy': interactionBusy/u)
   assert.match(source, /const loadingRef = useRef\(false\), seriesLoadingRef = useRef\(false\)/u)

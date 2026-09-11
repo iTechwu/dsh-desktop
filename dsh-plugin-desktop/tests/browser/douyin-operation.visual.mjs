@@ -89,7 +89,7 @@ function respond(body) {
       return {
         status: 'ready',
         work: { ...works[0], traffic_source: [{ source_key: 'homepage_hot', source_label: '推荐', share_pct: 62.5 }], progress_analysis: { drag_back_curve: [{ key: 2, value: 12 }], drag_forward_curve: [] }, search_keywords: [], data_gap: { completion_rate_pct: { reason: 'not_exposed' } } },
-        audience: { gender: [{ key: '男', pct: 58.2 }, { key: '女', pct: 41.8 }], age: [{ key: '18-23', pct: 30 }], province: [], city_level: [] },
+        audience: { gender: [{ key: 'male', pct: 58.2 }, { key: 'female', pct: 41.8 }], age: [{ key: '18-23', pct: 30 }], province: [], city_level: [] },
         hotwords: [],
       }
     case 'work.trend':
@@ -186,14 +186,15 @@ try {
   assert.equal(await page.getByRole('dialog', { name: '抖音运营' }).count(), 1, 'overlay 必须以命名 dialog 暴露')
   const headers = await page.locator('.ydo-table-head .ydo-cell').allTextContents()
   assert.deepEqual(headers, [
-    '作品名称', '作品链接', '粉丝数量', '播放量', '收藏量', '点赞量', '评论量',
-    '2s跳出率', '5s完播率', '完播率', '平均播放时长', '平均播放占比',
+    '作品名称', '作品链接', '播放量↕', '收藏量↕', '点赞量↕', '评论量↕',
+    '2s跳出率↕', '5s完播率↕', '完播率↕', '平均播放时长↕', '平均播放占比↕',
   ], '列序与指标文案固定')
   const secondRow = await page.locator('.ydo-table-row').nth(1).locator('.ydo-cell').allTextContents()
-  assert.equal(secondRow[4], '—', '未取到的收藏量必须显示缺口')
-  assert.equal(secondRow[6], '—', '未取到的评论量必须显示缺口')
-  assert.equal(secondRow[7], '—', '未取到的 2s 跳出率必须显示缺口')
-  assert.equal(await page.locator('.ydo-table-row').first().locator('.ydo-cell').nth(4).textContent(), '320')
+  assert.equal(secondRow[3], '—', '未取到的收藏量必须显示缺口')
+  assert.equal(secondRow[5], '—', '未取到的评论量必须显示缺口')
+  assert.equal(secondRow[6], '—', '未取到的 2s 跳出率必须显示缺口')
+  assert.equal(await page.locator('.ydo-table-row').first().locator('.ydo-cell').nth(3).textContent(), '320')
+  assert.equal(await page.getByText('粉丝 1.2万').count(), 1, '粉丝数在账号卡展示，不重复进入作品表格')
   await assertSurface()
   await screenshot('1440-account-works.png')
 

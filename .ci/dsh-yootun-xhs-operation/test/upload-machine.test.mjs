@@ -107,6 +107,23 @@ test('polling progression updates progress and done lands uploaded with url', as
   assert.equal(timers.pending, false, '终态后停止轮询')
 })
 
+test('polling progress clamps invalid MCP values before rendering', async () => {
+  let pollCount = 0
+  const { manager, timers } = makeManager({
+    pollStatus: async () => {
+      pollCount += 1
+      return pollCount === 1
+        ? { status: 'uploading', progress: 140, bytesWritten: 1, bytesTotal: 10, attempt: 0 }
+        : { status: 'uploading', progress: -5, bytesWritten: 2, bytesTotal: 10, attempt: 0 }
+    },
+  })
+  const asset = await manager.start({ ...START_INPUT, size: 10 })
+  await timers.fire()
+  assert.equal(manager.get(asset.id).progress, 100, '越界上限归一到 100')
+  await timers.fire()
+  assert.equal(manager.get(asset.id).progress, 0, '负数归一到 0')
+})
+
 test('failed status lands failed with error and stops polling', async () => {
   const { manager, timers } = makeManager({
     pollStatus: async () => ({ status: 'failed', error: 'storage_unavailable' }),
