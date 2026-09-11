@@ -56,7 +56,7 @@ window.__ModuleLoader__.load({
     function number(value, fallback = 0) { return Number.isFinite(Number(value)) ? Number(value) : fallback }
     function platformName(value, t) { return value === 'douyin' ? t('platformDouyin') : value === 'xiaohongshu-v2' ? t('platformXhs') : (value || '—') }
     function formatBudget(min, max) {
-      const format = value => value === undefined || value === null || value === '' ? '?' : Number.isFinite(Number(value)) ? `¥${Math.round(Number(value) / 10000 * 10) / 10}万` : String(value)
+      const format = value => value === undefined || value === null || value === '' ? '—' : Number.isFinite(Number(value)) ? `¥${Math.round(Number(value) / 10000 * 10) / 10}万` : String(value)
       return `${format(min)}–${format(max)}`
     }
     function levelName(level) { return ['A', 'B', 'C', 'D'].includes(level) ? level : '—' }
