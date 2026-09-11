@@ -262,7 +262,7 @@ try {
   assert.equal(await consentDialog.getByRole('checkbox').evaluate(control => control === document.activeElement), true)
   await page.keyboard.press('Shift+Tab')
   assert.equal(await consentCancel.evaluate(control => control === document.activeElement), true)
-  assert.equal(await page.locator('.pc_actions').evaluate(actions => actions.closest('[inert]') !== null), true)
+  assert.equal(await page.getByRole('group', { name: '插件管理' }).evaluate(actions => actions.closest('[inert]') !== null), true)
   await assertAccessibleSurface(page)
   await assertTextContrast(page, '.pc_modalCard .pc_message,.pc_modalCard .pc_consentRemember')
   await page.screenshot({ path: resolve(evidenceRoot, '390-install-consent.png'), fullPage: true })
