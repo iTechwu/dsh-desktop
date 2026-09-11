@@ -1400,6 +1400,8 @@ window.__ModuleLoader__.load({
 			};
 			const loadMore = () => {
 				if (loadingMore || market === null || market.status !== "ready") return;
+				const requestToken = marketRequestRef.current;
+				const current = () => marketRequestRef.current === requestToken;
 				const next = marketPage + 1;
 				setLoadingMore(true);
 				setMarketPage(next);
@@ -1407,6 +1409,7 @@ window.__ModuleLoader__.load({
 					// 技能搜索分页：服务端三 topic 合并（skills: true）
 					call("/plugin-console/search", { q: query, page: next, skills: true }).then(
 						(data) => {
+							if (!current()) return;
 							const merged = [...market.data, ...data.items];
 							const seen = new Set();
 							const deduped = [];
@@ -1419,6 +1422,7 @@ window.__ModuleLoader__.load({
 							setLoadingMore(false);
 						},
 						(error) => {
+							if (!current()) return;
 							setLoadingMore(false);
 							setMessage(t("failed") + "：" + friendlyGithubError(error).message);
 						},
@@ -1437,10 +1441,12 @@ window.__ModuleLoader__.load({
 				if (multiSource) {
 					call("/plugin-console/search", { q: query, page: next, multi: true }).then(
 						(data) => {
+							if (!current()) return;
 							setMarket({ status: "ready", data: [...market.data, ...data.items], direct: false, source: "all", multi: true });
 							setLoadingMore(false);
 						},
 						(error) => {
+							if (!current()) return;
 							setLoadingMore(false);
 							setMessage(t("failed") + "：" + friendlyGithubError(error).message);
 						},
@@ -1450,6 +1456,7 @@ window.__ModuleLoader__.load({
 				if (searchSource !== "github") {
 					call("/plugin-console/search", { q: query, page: next, source: searchSource }).then(
 						(data) => {
+							if (!current()) return;
 							setMarket({ status: "ready", data: [...market.data, ...data.items], direct: false, source: searchSource });
 							setLoadingMore(false);
 							enrichOfficialBundle(data.items).then((enriched) => {
@@ -1459,6 +1466,7 @@ window.__ModuleLoader__.load({
 							});
 						},
 						(error) => {
+							if (!current()) return;
 							setLoadingMore(false);
 							setMessage(t("failed") + "：" + friendlyGithubError(error).message);
 						},
@@ -1467,6 +1475,7 @@ window.__ModuleLoader__.load({
 				}
 				searchFromGithub(query, next).then(
 					(data) => {
+						if (!current()) return;
 						setMarket({ status: "ready", data: [...market.data, ...data], direct: true });
 						setLoadingMore(false);
 						// 并行补标记：客户端快速（根包）+ 服务端完整（子包检查）
@@ -1488,6 +1497,7 @@ window.__ModuleLoader__.load({
 					},
 					() => call("/plugin-console/search", { q: query, page: next }).then(
 						(data) => {
+							if (!current()) return;
 							setMarket({ status: "ready", data: [...market.data, ...data.items], direct: false });
 							setLoadingMore(false);
 							enrichOfficialBundle(data.items).then((enriched) => {
