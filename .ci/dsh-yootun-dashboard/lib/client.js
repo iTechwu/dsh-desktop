@@ -69,7 +69,7 @@ window.__ModuleLoader__.load({
       chevron: IconChevronRightOutline14,
     }
     const STATUS_GLYPH = { ready: 'check', empty: 'database', partial: 'warning', degraded: 'warning', warning: 'warning', unavailable: 'close', error: 'warning' }
-    const DATA_STATUSES = new Set(['ready', 'empty', 'partial', 'degraded'])
+    const DATA_STATUSES = new Set(['ready', 'empty', 'partial', 'degraded', 'warning'])
     function canRenderSource(source) { return DATA_STATUSES.has(source?.status) && source?.data && typeof source.data === 'object' }
 
     const copy = {
@@ -220,7 +220,7 @@ window.__ModuleLoader__.load({
 
     function statusLabel(status, t) {
       if (status === 'ready') return t('sourceReady')
-      if (status === 'partial' || status === 'degraded') return t('sourcePartiallyAvailable')
+      if (status === 'partial' || status === 'degraded' || status === 'warning') return t('sourcePartiallyAvailable')
       if (status === 'empty') return t('sourceEmpty')
       if (status === 'warning') return t('sourceWarning')
       if (status === 'error') return t('sourceError')
@@ -265,7 +265,7 @@ window.__ModuleLoader__.load({
 
     function EmptyState({ source, t }) {
       const status = source?.status || 'unavailable'
-      const label = status === 'empty' ? t('empty') : status === 'error' ? t('error') : status === 'partial' || status === 'degraded' ? t('sourcePartiallyAvailable') : t('unavailable')
+        const label = status === 'empty' ? t('empty') : status === 'error' ? t('error') : status === 'partial' || status === 'degraded' || status === 'warning' ? t('sourcePartiallyAvailable') : t('unavailable')
       const meta = [
         source?.reason ? `reason: ${source.reason}` : null,
         Array.isArray(source?.missingFields) && source.missingFields.length ? `missing: ${source.missingFields.join(', ')}` : null,

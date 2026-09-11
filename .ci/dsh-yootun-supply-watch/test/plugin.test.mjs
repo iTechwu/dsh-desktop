@@ -7,6 +7,7 @@ const root = new URL('../', import.meta.url)
 test('renders missing supply metrics as an unknown dash', async () => {
   const source = await readFile(new URL('src/client.js', root), 'utf8')
   assert.match(source, /String\(value \?\? '—'\)/u)
+  assert.match(source, /const dashboard = current\.dashboard \|\| \{\}/u)
 })
 
 test('publishes the browser supply watch plugin with its bundle patch', async () => {
@@ -23,7 +24,7 @@ test('keeps risk reviews human-confirmed and local-only', async () => {
   }
   assert.doesNotMatch(source, /Unable to load supply watch/u)
   assert.match(source, /openRisks/u)
-  assert.match(source, /current\.dashboard\.openRisks \?\? current\.dashboard\.open/u)
+  assert.match(source, /dashboard\.openRisks \?\? dashboard\.open/u)
   assert.match(source, /status === 'confirmed_pending_adapter' \|\| status === 'adapter_pending'/u)
   assert.match(source, /item\.targetLabel \|\| t\('supplier'\)/u)
   assert.doesNotMatch(source, /item\.(title|supplierLabel|category|signal|source)/u)

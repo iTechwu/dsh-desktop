@@ -52,12 +52,13 @@ window.__ModuleLoader__.load({
     }
     function platformName(value, t) { return PLATFORM_LABELS[value] ? t(PLATFORM_LABELS[value]) : (value || '—') }
     function displayTime(value) { if (!value) return null; return String(value).replace('T', ' ').replace(/\.\d{3,6}(?=Z|[+-]\d\d:\d\d$)/, '').replace(/Z$/, '') }
+    const finiteOrDash = value => value == null || !Number.isFinite(Number(value)) ? '—' : Number(value)
     function getStoredItems(data) { return Array.isArray(data?.result?.items) ? data.result.items : [] }
     function getStats(data) {
       const items = getStoredItems(data)
       const platforms = new Set(items.map(item => item?.platform).filter(Boolean))
       const engagement = items.filter(item => (item?.commentCount !== null && item?.commentCount !== undefined) || (item?.shareCount !== null && item?.shareCount !== undefined)).length
-      return { total: data?.result?.total == null ? '—' : Number(data.result.total), returned: data?.result?.returned == null ? items.length : Number(data.result.returned), platforms: platforms.size, engagement }
+      return { total: finiteOrDash(data?.result?.total), returned: data?.result?.returned == null ? items.length : finiteOrDash(data.result.returned), platforms: platforms.size, engagement }
     }
     function parseExternalItems(result) {
       const stdout = String(result?.stdout || '').trim()
@@ -85,7 +86,7 @@ window.__ModuleLoader__.load({
     }
     function ResultItem({ item, t }) {
       const sourceUrl = safeExternalUrl(item.sourceUrl)
-      return h('article', { className: 'yro-item' }, h('div', { className: 'yro-item-main' }, h('div', { className: 'yro-item-head' }, h('span', { className: 'yro-platform' }, platformName(item.platform, t)), item.publishedAt ? h('time', null, displayTime(item.publishedAt)) : null), h('h3', null, item.title || item.text || t('untitled')), h('p', null, item.text && item.text !== item.title ? item.text : t('noText'))), h('div', { className: 'yro-item-side' }, h('div', { className: 'yro-counts' }, h('span', null, h('b', null, item.commentCount ?? '—'), t('comments')), h('span', null, h('b', null, item.shareCount ?? '—'), t('shares'))), sourceUrl ? h('a', { href: sourceUrl, target: '_blank', rel: 'noreferrer' }, h(IconLinkOutline16, { size: 14 }), t('openSource')) : null))
+      return h('article', { className: 'yro-item' }, h('div', { className: 'yro-item-main' }, h('div', { className: 'yro-item-head' }, h('span', { className: 'yro-platform' }, platformName(item.platform, t)), item.publishedAt ? h('time', null, displayTime(item.publishedAt)) : null), h('h3', null, item.title || item.text || t('untitled')), h('p', null, item.text && item.text !== item.title ? item.text : t('noText'))), h('div', { className: 'yro-item-side' }, h('div', { className: 'yro-counts' }, h('span', null, h('b', null, finiteOrDash(item.commentCount)), t('comments')), h('span', null, h('b', null, finiteOrDash(item.shareCount)), t('shares'))), sourceUrl ? h('a', { href: sourceUrl, target: '_blank', rel: 'noreferrer' }, h(IconLinkOutline16, { size: 14 }), t('openSource')) : null))
     }
     function EmptyState({ matched, t, onExample }) {
       return h('div', { className: 'yro-empty', role: 'status' }, h('span', { className: 'yro-empty-icon' }, h(IconDatabaseOutline16, { size: 22 })), h('h3', null, t(matched ? 'noMatchesTitle' : 'emptyTitle')), h('p', null, t(matched ? 'noMatchesBody' : 'emptyBody')), h('div', { className: 'yro-examples' }, h('span', null, t('queryExamples')), ['example1', 'example2', 'example3'].map(key => h('button', { type: 'button', key, onClick: () => onExample(t(key)) }, t(key)))))
