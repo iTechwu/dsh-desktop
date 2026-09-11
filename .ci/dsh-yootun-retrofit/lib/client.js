@@ -57,7 +57,7 @@ window.__ModuleLoader__.load({
       const items = getStoredItems(data)
       const platforms = new Set(items.map(item => item?.platform).filter(Boolean))
       const engagement = items.filter(item => (item?.commentCount !== null && item?.commentCount !== undefined) || (item?.shareCount !== null && item?.shareCount !== undefined)).length
-      return { total: Number(data?.result?.total) || 0, returned: Number(data?.result?.returned) || items.length, platforms: platforms.size, engagement }
+      return { total: data?.result?.total == null ? '—' : Number(data.result.total), returned: data?.result?.returned == null ? items.length : Number(data.result.returned), platforms: platforms.size, engagement }
     }
     function parseExternalItems(result) {
       const stdout = String(result?.stdout || '').trim()

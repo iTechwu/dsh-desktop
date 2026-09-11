@@ -5,6 +5,12 @@ import vm from 'node:vm'
 
 const root = new URL('../', import.meta.url)
 
+test('renders missing sales metrics as an unknown dash', async () => {
+  const source = await readFile(new URL('src/client.js', root), 'utf8')
+  assert.match(source, /String\(value \?\? '—'\)/u)
+  assert.match(source, /const dashboard = current\.dashboard \|\| \{\}/u)
+})
+
 test('publishes the browser sales plugin with its bundle patch', async () => {
   const manifest = JSON.parse(await readFile(new URL('package.json', root), 'utf8'))
   assert.equal(manifest.name, '@dofe/dsh-yootun-sales')
@@ -19,7 +25,7 @@ test('keeps follow-ups human-confirmed and points only at the Desktop route', as
   }
   assert.doesNotMatch(source, /Unable to load sales workspace/u)
   assert.match(source, /status === 'confirmed_pending_adapter' \|\| status === 'adapter_pending'/u)
-  assert.match(source, /current\.dashboard\.pendingConfirmation \?\? current\.dashboard\.pending/u)
+  assert.match(source, /dashboard\.pendingConfirmation \?\? dashboard\.pending/u)
   assert.match(source, /data\?\.status && data\.status !== 'ready'/u)
   assert.match(source, /data\.status === 'error' \? 'alert' : 'status'/u)
   assert.doesNotMatch(source, /contactPhone|password|cookie|聊天正文/iu)

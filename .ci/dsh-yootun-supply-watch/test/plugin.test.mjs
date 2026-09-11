@@ -4,6 +4,11 @@ import test from 'node:test'
 
 const root = new URL('../', import.meta.url)
 
+test('renders missing supply metrics as an unknown dash', async () => {
+  const source = await readFile(new URL('src/client.js', root), 'utf8')
+  assert.match(source, /String\(value \?\? '—'\)/u)
+})
+
 test('publishes the browser supply watch plugin with its bundle patch', async () => {
   const manifest = JSON.parse(await readFile(new URL('package.json', root), 'utf8'))
   assert.equal(manifest.name, '@dofe/dsh-yootun-supply-watch')

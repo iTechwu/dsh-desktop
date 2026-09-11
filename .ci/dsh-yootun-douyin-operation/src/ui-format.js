@@ -213,7 +213,8 @@ export function progressText(collect, t = key => key) {
 
 /** 账号卡片状态：ok / expired / unknown 与采集可用性。 */
 export function accountState(account) {
-  const status = (account && account.sessionStatus) || 'unknown'
+  const rawStatus = (account && account.sessionStatus) || 'unknown'
+  const status = rawStatus === 'ok' || rawStatus === 'expired' || rawStatus === 'unknown' ? rawStatus : 'unknown'
   return {
     status,
     collectable: status === 'ok',

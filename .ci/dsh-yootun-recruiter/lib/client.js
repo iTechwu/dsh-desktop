@@ -75,7 +75,7 @@ window.__ModuleLoader__.load({
       if (onClick) { props.type = 'button'; props.disabled = disabled; props.onClick = onClick }
       return h(onClick ? 'button' : 'span', props, h('i', { 'aria-hidden': true }), `${label} · ${labelText}`)
     }
-    function Metric({ label, value }) { return h('div', { className: 'yr-metric' }, h('span', null, label), h('strong', null, String(value ?? 0))) }
+    function Metric({ label, value }) { return h('div', { className: 'yr-metric' }, h('span', null, label), h('strong', null, String(value ?? '—'))) }
     function Status({ status, t }) { return h('span', { className: `yr-status yr-status-${status}` }, h('i', { 'aria-hidden': true }), statusText(status, t)) }
     function Funnel({ data, t }) {
       const rows = Array.isArray(data.dashboard?.funnel)

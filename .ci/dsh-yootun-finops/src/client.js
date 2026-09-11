@@ -393,12 +393,13 @@ const css = `
 
 // Invert stable foreground/background tokens so active controls keep contrast
 // even when a host theme maps its brand token to white or black.
+const sourceStatusCss = `.yf-source-partial svg,.yf-source-degraded svg{color:color-mix(in srgb,var(--dsw-alias-state-warn-primary) 50%,var(--dsw-alias-label-primary))}.yf-empty-partial,.yf-empty-degraded{border:1px solid color-mix(in srgb,var(--dsw-alias-state-warn-primary) 45%,var(--dsw-alias-border-l1));border-radius:8px}`
 const activeStateCss = `.yf-range-control button.is-active,.yf-range-small button.is-active{background:var(--dsw-alias-label-primary);color:var(--dsw-alias-bg-base);font-weight:650}.yf-range-control button:disabled{opacity:.45;cursor:default}.yf-refresh-error{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;background:color-mix(in srgb,var(--dsw-alias-state-error-primary) 9%,transparent);color:color-mix(in srgb,var(--dsw-alias-state-error-primary) 50%,var(--dsw-alias-label-primary))}.yf-refresh-error button{min-height:32px;padding:0 11px;border:1px solid var(--dsw-alias-border-l2);border-radius:6px;background:var(--dsw-alias-bg-layer-1);color:inherit;font:inherit;cursor:pointer}.yf-table-scroll{max-width:100%;overflow-x:auto}.yf-table{min-width:940px}@media(max-width:480px){.yf-table th:nth-child(n+5),.yf-table td:nth-child(n+5){display:table-cell}}`
 
 function apply(ctx) {
   ctx.effect(() => ctx.locale.register(NS, copy), 'dofe-yootun-finops: dictionaries')
   ctx.effect(() => { window.addEventListener(OVERLAY_EVENT, closeOtherOverlay); return () => window.removeEventListener(OVERLAY_EVENT, closeOtherOverlay) }, 'dofe-yootun-finops: exclusive-overlay')
-  ctx.effect(() => { const style = document.createElement('style'); style.dataset.plugin = '@dofe/dsh-yootun-finops'; style.textContent = css + activeStateCss; document.head.appendChild(style); return () => style.remove() }, 'dofe-yootun-finops: styles')
+  ctx.effect(() => { const style = document.createElement('style'); style.dataset.plugin = '@dofe/dsh-yootun-finops'; style.textContent = css + sourceStatusCss + activeStateCss; document.head.appendChild(style); return () => style.remove() }, 'dofe-yootun-finops: styles')
   const t = ctx.locale.bind(NS)
   ctx.slots.inject('sidebar.footer.action', () => ctx.slots.register({ name: 'sidebar.footer.action', id: 'dofe-yootun-finops', order: 55, inject: () => ({ t }) }, Button))
   ctx.slots.inject('shell.overlay', () => ctx.slots.register({ name: 'shell.overlay', id: 'dofe-yootun-finops', order: 55, inject: () => ({ t }) }, Overlay))

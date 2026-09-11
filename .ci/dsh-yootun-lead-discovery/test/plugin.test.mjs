@@ -3,6 +3,12 @@ import { readFile } from 'node:fs/promises'
 import test from 'node:test'
 import { apply } from '../index.js'
 
+test('uses the shared dash placeholder for missing budget ranges', async () => {
+  const client = await readFile(new URL('../src/client.js', import.meta.url), 'utf8')
+  assert.match(client, /value === undefined \|\| value === null \|\| value === '' \? '—'/u)
+  assert.doesNotMatch(client, /\?` : Number\.isFinite/u)
+})
+
 test('lead discovery package exposes a DSH client and guarded host route', async () => {
   const manifest = JSON.parse(await readFile(new URL('../package.json', import.meta.url)))
   const client = await readFile(new URL('../src/client.js', import.meta.url), 'utf8')

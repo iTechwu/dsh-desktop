@@ -8,6 +8,12 @@ import { ACTIONS, COMPANY_TEMPLATES, MCP_URL, apply } from '../index.js'
 
 const root = new URL('../', import.meta.url)
 
+test('normalizes partial knowledge sources to the degraded warning state', async () => {
+  const source = await readFile(new URL('src/client.js', root), 'utf8')
+  assert.match(source, /"partial", "warning", "error"/u)
+  assert.match(source, /value === "partial" \|\| value === "warning" \? "degraded"/u)
+})
+
 async function loadClientTestApi() {
   const source = await readFile(new URL('src/client.js', root), 'utf8')
   const module = { exports: {} }

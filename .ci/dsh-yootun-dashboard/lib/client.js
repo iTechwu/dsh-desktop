@@ -68,7 +68,9 @@ window.__ModuleLoader__.load({
       close: IconCloseOutline16,
       chevron: IconChevronRightOutline14,
     }
-    const STATUS_GLYPH = { ready: 'check', empty: 'database', partial: 'warning', warning: 'warning', unavailable: 'close', error: 'warning' }
+    const STATUS_GLYPH = { ready: 'check', empty: 'database', partial: 'warning', degraded: 'warning', warning: 'warning', unavailable: 'close', error: 'warning' }
+    const DATA_STATUSES = new Set(['ready', 'empty', 'partial', 'degraded'])
+    function canRenderSource(source) { return DATA_STATUSES.has(source?.status) && source?.data && typeof source.data === 'object' }
 
     const copy = {
       zh: {
@@ -360,14 +362,14 @@ window.__ModuleLoader__.load({
         ['montage-source', 'montage', t('montage'), data?.montage],
       ]) {
         const status = source?.status
-        if (status === 'error' || status === 'unavailable' || status === 'partial') items.push({ key, tab, glyph: status === 'unavailable' ? 'close' : 'warning', label: `${name} · ${statusLabel(status, t)}`, value: '' })
+        if (status === 'error' || status === 'unavailable' || status === 'partial' || status === 'degraded') items.push({ key, tab, glyph: status === 'unavailable' ? 'close' : 'warning', label: `${name} · ${statusLabel(status, t)}`, value: '' })
       }
       return items
     }
 
     function HealthStrip({ data, t }) {
       const sources = [data?.geo, data?.usage, data?.activity, data?.montage]
-      const available = sources.filter(source => source?.status === 'ready' || source?.status === 'empty').length
+      const available = sources.filter(canRenderSource).length
       const attention = attentionItems(data, t).length
       const limited = available < sources.length
       const overallTone = limited || attention > 0 ? 'warning' : 'good'
@@ -516,7 +518,7 @@ window.__ModuleLoader__.load({
     }
 
     function GeoMetrics({ source, t, detailed = false }) {
-      if (source?.status !== 'ready') return h(EmptyState, { source, t })
+      if (!canRenderSource(source)) return h(EmptyState, { source, t })
       const data = source.data || {}
       // 趋势形态（近 N 天）：窗口汇总 + 每日浏览条 + 环比
       if (Array.isArray(data.days)) {
@@ -566,7 +568,7 @@ window.__ModuleLoader__.load({
     }
 
     function UsageView({ source, t, detailed = false }) {
-      if (source?.status !== 'ready' && source?.status !== 'empty') return h(EmptyState, { source, t })
+      if (!canRenderSource(source)) return h(EmptyState, { source, t })
       const data = source.data || {}
       // 趋势形态（近 N 天）：窗口汇总 + 每日消费条 + 路由归因
       if (Array.isArray(data.days)) {
@@ -718,7 +720,7 @@ window.__ModuleLoader__.load({
     }
 
     function GeorankView({ source, t, detailed = false }) {
-      if (source?.status !== 'ready' && source?.status !== 'empty') return h(EmptyState, { source, t })
+      if (!canRenderSource(source)) return h(EmptyState, { source, t })
       const data = source.data || {}
       const totals = data.totals || {}
       const score = metricDisplay(data.benchmarkScore ?? data.averageGeoScore)
@@ -746,7 +748,7 @@ window.__ModuleLoader__.load({
     }
 
     function MontageView({ source, t, detailed = false }) {
-      if (source?.status !== 'ready' && source?.status !== 'empty') return h(EmptyState, { source, t })
+      if (!canRenderSource(source)) return h(EmptyState, { source, t })
       const data = source.data || {}
       // 趋势形态（近 N 天）：窗口汇总 + 每日作业条 + 状态分布
       if (Array.isArray(data.days)) {
@@ -993,7 +995,7 @@ window.__ModuleLoader__.load({
           h(DomainCard, {
             glyph: 'geo', title: t('geo'), source: data.geo, t,
             hint: domainHint(data.geo, t, 'views', geoRateHint(data.geo, t)), onOpen: open('geo'),
-          }, h(React.Fragment, null, h(GeoMetrics, { source: data.geo, t }), data.georank?.status === 'ready' || data.georank?.status === 'empty' ? h(GeorankView, { source: data.georank, t }) : null)),
+          }, h(React.Fragment, null, h(GeoMetrics, { source: data.geo, t }), canRenderSource(data.georank) ? h(GeorankView, { source: data.georank, t }) : null)),
           h(DomainCard, {
             glyph: 'spark', title: t('usage'), source: data.usage, t,
             hint: domainHint(data.usage, t, 'cost', usageRateHint(data.usage, t)), onOpen: open('usage'),
@@ -1077,7 +1079,7 @@ window.__ModuleLoader__.load({
       else if (failed && !data) body = h('div', { className: 'yd-fatal', role: 'alert' }, h('strong', null, t('error')), h('button', { type: 'button', disabled: loading, onClick: refresh }, t('retry')))
       else if (data) {
         body = tab === 'overview' ? h(Overview, { data, t, onOpenTab: setTab })
-          : tab === 'geo' ? h(React.Fragment, null, h(GeoMetrics, { source: data.geo, t, detailed: true }), data.georank?.status === 'ready' || data.georank?.status === 'empty' ? h(GeorankView, { source: data.georank, t, detailed: true }) : null)
+          : tab === 'geo' ? h(React.Fragment, null, h(GeoMetrics, { source: data.geo, t, detailed: true }), canRenderSource(data.georank) ? h(GeorankView, { source: data.georank, t, detailed: true }) : null)
             : tab === 'usage' ? h(UsageView, { source: data.usage, t, detailed: true })
               : tab === 'activity' ? h(ActivityView, { source: data.activity, t, detailed: true })
                 : h(MontageView, { source: data.montage, t, detailed: true })

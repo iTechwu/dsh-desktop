@@ -23,7 +23,7 @@ const subscribe = listener => { listeners.add(listener); return () => listeners.
 const snapshot = () => opened
 async function load(signal) { const response = await fetch(PATH, { credentials: 'same-origin', redirect: 'error', signal: AbortSignal.any([signal, AbortSignal.timeout(REQUEST_TIMEOUT_MS)].filter(Boolean)), headers: { Accept: 'application/json' } }); if (!response.ok) throw new Error('sales request failed'); return response.json() }
 async function mutate(body) { const response = await fetch(PATH, { method: 'POST', credentials: 'same-origin', redirect: 'error', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS), body: JSON.stringify(body) }); if (!response.ok) throw new Error('sales mutation failed'); return response.json() }
-function Metric({ label, value }) { return h('div', { className: 'ys-metric' }, h('span', null, label), h('strong', null, String(value ?? 0))) }
+function Metric({ label, value }) { return h('div', { className: 'ys-metric' }, h('span', null, label), h('strong', null, String(value ?? '—'))) }
 function IntentSearch({ t, current, update, disabled }) {
   const [query, setQuery] = useState('')
   const [busy, setBusy] = useState(false)
@@ -64,6 +64,7 @@ function Overlay({ t }) {
   useEffect(() => { if (visible) requestAnimationFrame(() => shellRef.current?.focus?.()) }, [visible])
   if (!visible) return null
   const current = data || { dashboard: {}, leads: [], actions: [] }
+  const dashboard = current.dashboard || {}
   const update = async body => {
     if (loadingRef.current || busyRef.current) return null
     busyRef.current = true
@@ -80,10 +81,10 @@ function Overlay({ t }) {
   }
   const intent = h(IntentSearch, { t, current, update, disabled: interactionBusy })
   const metrics = h('div', { className: 'ys-metrics' },
-    h(Metric, { label: t('leads'), value: current.dashboard.leads }),
-    h(Metric, { label: t('qualified'), value: current.dashboard.qualified }),
-    h(Metric, { label: t('dueToday'), value: current.dashboard.dueToday }),
-    h(Metric, { label: t('pending'), value: current.dashboard.pendingConfirmation ?? current.dashboard.pending }),
+    h(Metric, { label: t('leads'), value: dashboard.leads }),
+    h(Metric, { label: t('qualified'), value: dashboard.qualified }),
+    h(Metric, { label: t('dueToday'), value: dashboard.dueToday }),
+    h(Metric, { label: t('pending'), value: dashboard.pendingConfirmation ?? dashboard.pending }),
   )
   const actions = h('section', { className: 'ys-section' },
     h('h2', null, t('actions')),
