@@ -230,7 +230,7 @@ try {
   })
   assert.equal(await doubleToggle(), 1, 'synchronous repeated clicks must send one toggle request')
   await page.waitForFunction(() => {
-    const toggles = [...document.querySelectorAll('.pc_row button[aria-busy]')]
+    const toggles = [...document.querySelectorAll('.pc_row button.pc_toggle[aria-busy]')]
     return toggles.length === 2 && toggles.every(button => button.disabled)
   })
   releaseToggleFailure()
