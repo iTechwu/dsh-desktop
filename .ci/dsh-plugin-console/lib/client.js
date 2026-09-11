@@ -184,7 +184,11 @@ window.__ModuleLoader__.load({
 			stageConfiguring: "写入启用配置",
 			stageRepairing: "本地 AI 接管安装中…",
 			restartService: "重启服务",
-			restarting: "服务重启中，页面稍后自动恢复…",
+			restarting: "正在提交重启请求…",
+			restartAccepted: "重启请求已接受。服务恢复后请刷新页面。",
+			serviceRequestPending: "正在提交启动请求…",
+			serviceRequestAccepted: "请求已接受",
+			invalidServiceResponse: "服务未确认接受请求，请刷新状态后重试",
 			autoReload: "页面即将自动刷新…",
 			aiRepaired: "本地 AI 已接管并完成修复，请刷新页面查看",
 			deletePlugin: "删除插件（移除配置并卸载包）",
@@ -313,15 +317,16 @@ window.__ModuleLoader__.load({
 			frameworkUpgradeBtn: "框架升级",
 			frameworkUpgradeTitle: "框架升级：自动打包备份现有配置 → 停止并重启 DSH 服务 → npm 升级框架与配套包（失败自动回滚）→ 拉起服务并适配",
 			frameworkUpgradeConfirm: "确认升级？（服务将自动重启）",
-			frameworkUpgradeDone: "框架升级流程已执行",
+			frameworkUpgradeDone: "框架升级请求已接受",
+			frameworkUpgradeNotStarted: "框架升级未启动",
 			frameworkUpgradeUpToDate: "（已是最新版本）",
 			frameworkUpgradeCheckFailed: "（版本检测失败，无法确认是否有更新——请检查网络后重试）",
 			frameworkUpToDate: "已是最新框架",
 			frameworkUpToDateTitle: "当前 DSH 框架已是最新版本（升级请走官方流程或等新版本发布）",
 			frameworkUseUpgrade: "deepseek-harness 是 DSH 框架本体，无需安装；升级请使用卡片上的「框架升级」流程（有新版本时出现）",
 			relaunchBtn: "拉起服务",
-			relaunchTitle: "框架升级期间服务可能断开——点此手动拉起 DSH 服务（升级脚本也会自动拉起）",
-			relaunchDone: "已发起手动拉起（端口无监听时自动启动服务）",
+			relaunchTitle: "升级失败后请求重新启动服务；升级进行中不可手动拉起",
+			relaunchDone: "启动请求已接受。服务恢复后请刷新页面。",
 			fwStepBackup: "备份现有配置",
 			fwStepStop: "停止服务（页面将断开）",
 			fwStepInstall: "升级框架本体",
@@ -422,7 +427,11 @@ window.__ModuleLoader__.load({
 			stageConfiguring: "Writing enable config",
 			stageRepairing: "Local AI is taking over the install…",
 			restartService: "Restart service",
-			restarting: "Service restarting, the page will recover shortly…",
+			restarting: "Submitting restart request…",
+			restartAccepted: "Restart request accepted. Reload the page after the service recovers.",
+			serviceRequestPending: "Submitting launch request…",
+			serviceRequestAccepted: "Request accepted",
+			invalidServiceResponse: "The service did not acknowledge the request. Refresh its status before retrying.",
 			autoReload: "Page will auto-reload…",
 			aiRepaired: "Local AI took over and finished the repair; refresh the page",
 			deletePlugin: "Delete plugin (remove config and uninstall package)",
@@ -551,15 +560,16 @@ window.__ModuleLoader__.load({
 			frameworkUpgradeBtn: "Framework upgrade",
 			frameworkUpgradeTitle: "Framework upgrade: backup config → stop & restart DSH service → npm upgrade framework + official packages (auto rollback on failure) → relaunch and adapt",
 			frameworkUpgradeConfirm: "Confirm upgrade? (service will restart)",
-			frameworkUpgradeDone: "Framework upgrade flow executed",
+			frameworkUpgradeDone: "Framework upgrade request accepted",
+			frameworkUpgradeNotStarted: "Framework upgrade did not start",
 			frameworkUpgradeUpToDate: " (already latest)",
 			frameworkUpgradeCheckFailed: " (version check failed - cannot confirm update, check network and retry)",
 			frameworkUpToDate: "Framework up to date",
 			frameworkUpToDateTitle: "Current DSH framework is already the latest (upgrade via the official flow or wait for a new release)",
 			frameworkUseUpgrade: "deepseek-harness is the DSH framework itself, not a plugin; upgrade via the card's Framework Upgrade flow (shown when a new version exists)",
 			relaunchBtn: "Relaunch service",
-			relaunchTitle: "During a framework upgrade the service may disconnect — click to manually relaunch the DSH service (the upgrade script also relaunches automatically)",
-			relaunchDone: "Manual relaunch requested (starts the service if the port is not listening)",
+			relaunchTitle: "Request a service launch after an upgrade failure; unavailable while an upgrade is running",
+			relaunchDone: "Launch request accepted. Reload the page after the service recovers.",
 			fwStepBackup: "Backup current config",
 			fwStepStop: "Stop service (page will disconnect)",
 			fwStepInstall: "Upgrade framework",
@@ -894,8 +904,13 @@ window.__ModuleLoader__.load({
 			// 框架升级：两步确认 + 执行中
 			const [confirmFrameworkUpgrade, setConfirmFrameworkUpgrade] = react.useState(false);
 			const [frameworkUpgrading, setFrameworkUpgrading] = react.useState(false);
+			// All controls that may stop/start the same service share a synchronous lock.
+			const [serviceOperation, setServiceOperation] = react.useState(null);
+			const serviceOperationRef = react.useRef(null);
 			// 框架升级进度（重连后恢复显示）：{status, message}
 			const [frameworkStatus, setFrameworkStatus] = react.useState(null);
+			const frameworkActive = frameworkStatus !== null && !["idle", "done", "failed"].includes(frameworkStatus.status);
+			const serviceBlocked = serviceOperation !== null || frameworkActive;
 			// Hub 自身更新：仅在检测到远程新版时显示下载/更新按钮
 			const [selfUpdate, setSelfUpdate] = react.useState(null);
 			// 进度条步骤（与 host 脚本 SetState 的阶段对应）
@@ -920,6 +935,10 @@ window.__ModuleLoader__.load({
 								if (data.status === "done" || data.status === "failed") {
 									window.clearInterval(fwStatusTimerRef.current);
 									fwStatusTimerRef.current = null;
+									if (serviceOperationRef.current?.kind === "upgrade") {
+										serviceOperationRef.current = null;
+										setServiceOperation(null);
+									}
 								}
 							}
 						},
@@ -1802,33 +1821,57 @@ window.__ModuleLoader__.load({
 					} else fallback();
 				} catch { fallback(); }
 			};
-			/** 框架升级：Hub 打包备份现有配置 + 版本检测 + 升级脚本（脚本会自行停止/拉起服务，无需手动重启）。 */
+			const requestServiceAction = (kind) => {
+				if (serviceOperationRef.current !== null || frameworkActive) return;
+				const operation = { kind, phase: "pending" };
+				serviceOperationRef.current = operation;
+				setServiceOperation(operation);
+				setMessage(t(kind === "restart" ? "restarting" : "serviceRequestPending"));
+				call(kind === "restart" ? "/plugin-console/restart" : "/plugin-console/framework-relaunch", {}).then((data) => {
+					if (!data || data.ok !== true) throw new Error(t("invalidServiceResponse"));
+					setServiceOperation({ ...operation, phase: "accepted" });
+					setMessage(t(kind === "restart" ? "restartAccepted" : "relaunchDone"));
+					setRestartHint(false);
+					setReloadHint(true);
+				}).catch((error) => {
+					serviceOperationRef.current = null;
+					setServiceOperation(null);
+					setMessage(t("failed") + "：" + friendlyGithubError(error).message);
+				});
+			};
+			/** Only an accepted upgrade starts progress; a version check or backup is not an upgrade. */
 			const doFrameworkUpgrade = () => {
+				if (serviceOperationRef.current !== null || frameworkActive) return;
+				const operation = { kind: "upgrade", phase: "pending" };
+				serviceOperationRef.current = operation;
+				setServiceOperation(operation);
 				setFrameworkUpgrading(true);
-				call("/plugin-console/framework-upgrade", {}).then(
-					(data) => {
-						setFrameworkUpgrading(false);
-						setConfirmFrameworkUpgrade(false);
-						if (data && data.ok === true) {
-							// 新一轮升级开始：清除上次终态关闭标记（卡片恢复显示）
-							try { localStorage.removeItem("pc-fw-dismiss-terminal"); } catch {}
-							setMessage(t("frameworkUpgradeDone")
-								+ (data.hasUpdate === true ? "：" + (data.current ?? "?") + " → " + (data.target ?? data.latest ?? "?") : (data.registryError ? t("frameworkUpgradeCheckFailed") : t("frameworkUpgradeUpToDate")))
-								+ "。备份：" + (data.backupDir ?? "") + "。" + (Array.isArray(data.hints) ? data.hints.join(" ") : ""));
-							// 升级脚本会自行停止→升级→拉起服务：不显示手动重启按钮（避免升级中途被干扰）
-							setRestartHint(false);
-							setReloadHint(false);
-							// 启动进度条轮询（服务断开前能看到前几步；重连后自动恢复）
-							setFrameworkStatus({ status: "starting", message: t("fwStepBackup") });
-							pollFrameworkStatus();
-						}
-					},
-					(error) => {
-						setFrameworkUpgrading(false);
-						setConfirmFrameworkUpgrade(false);
-						setMessage(t("failed") + "：" + friendlyGithubError(error).message);
-					},
-				);
+				call("/plugin-console/framework-upgrade", {}).then((data) => {
+					if (!data || data.ok !== true) throw new Error(t("invalidServiceResponse"));
+					if (data.upgraded !== true) {
+						setMessage(t("frameworkUpgradeNotStarted")
+							+ (data.registryError ? t("frameworkUpgradeCheckFailed") : data.hasUpdate === false ? t("frameworkUpgradeUpToDate") : "")
+							+ (Array.isArray(data.steps) && data.steps.length ? "：" + data.steps.join(" ") : ""));
+						serviceOperationRef.current = null;
+						setServiceOperation(null);
+						return;
+					}
+					try { localStorage.removeItem("pc-fw-dismiss-terminal"); } catch {}
+					setFwStatusDismissed(false);
+					setServiceOperation({ ...operation, phase: "accepted" });
+					setMessage(t("frameworkUpgradeDone") + "：" + (data.current ?? "?") + " → " + (data.target ?? data.latest ?? "?"));
+					setRestartHint(false);
+					setReloadHint(false);
+					setFrameworkStatus({ status: "starting", message: t("fwStepBackup") });
+					pollFrameworkStatus();
+				}).catch((error) => {
+					serviceOperationRef.current = null;
+					setServiceOperation(null);
+					setMessage(t("failed") + "：" + friendlyGithubError(error).message);
+				}).finally(() => {
+					setFrameworkUpgrading(false);
+					setConfirmFrameworkUpgrade(false);
+				});
 			};
 			/** 删除已安装技能（~/.dsh/skills/<name> 目录），两步确认防误删。 */
 			const doRemoveSkill = (name) => {
@@ -2082,13 +2125,14 @@ window.__ModuleLoader__.load({
 													? el("button", {
 														type: "button",
 														className: styles.toggle,
-														disabled: frameworkUpgrading,
+														disabled: serviceBlocked,
+														"aria-busy": frameworkUpgrading,
 														onClick: doFrameworkUpgrade,
 													}, frameworkUpgrading ? t("installingLocal") : t("frameworkUpgradeConfirm"))
 													: el("button", {
 														type: "button",
 														className: styles.toggle,
-														disabled: frameworkUpgrading,
+														disabled: serviceBlocked,
 														title: t("frameworkUpgradeTitle"),
 														onClick: () => setConfirmFrameworkUpgrade(true),
 													}, t("frameworkUpgradeBtn") + " → v" + updateMap[item.fullName]))
@@ -2248,19 +2292,16 @@ window.__ModuleLoader__.load({
 						el("p", { className: styles.message }, t("frameworkUpgradeNotice").replace("{from}", state.data.framework.from ?? "?").replace("{to}", state.data.framework.version ?? "?").replace("{dir}", state.data.framework.backupDir ?? "").replace("{patch}", state.data.framework.patchApplied === true ? t("frameworkPatchApplied") : t("frameworkPatchSkipped") + (state.data.framework.patchNote ? "：" + state.data.framework.patchNote : ""))),
 						el("button", { type: "button", className: styles.toggle, onClick: () => setFrameworkNoticeDismissed(true) }, t("closeModal")))
 					: null,
-				fwShowCard && frameworkStatus.status !== "done"
+				fwShowCard && frameworkStatus.status === "failed"
 					? el("button", {
 						type: "button",
 						className: styles.relaunchFloat,
 						title: t("relaunchTitle"),
 						"aria-label": t("relaunchBtn"),
-						onClick: () => {
-							call("/plugin-console/framework-relaunch", {}).then(
-								(data) => { if (data && data.ok === true) setMessage(t("relaunchDone")); },
-								(error) => setMessage(t("failed") + "：" + friendlyGithubError(error).message),
-							);
-						},
-					}, t("relaunchBtn"))
+						disabled: serviceBlocked,
+						"aria-busy": serviceOperation?.kind === "relaunch" && serviceOperation.phase === "pending",
+						onClick: () => requestServiceAction("relaunch"),
+					}, t(serviceOperation?.kind === "relaunch" ? (serviceOperation.phase === "pending" ? "serviceRequestPending" : "serviceRequestAccepted") : "relaunchBtn"))
 					: null,
 				fwShowCard
 					? el("div", { className: styles.detail },
@@ -2283,7 +2324,7 @@ window.__ModuleLoader__.load({
 						})),
 						frameworkStatus.message ? el("p", { className: styles.status, "data-error": frameworkStatus.status === "failed" ? "true" : undefined }, frameworkStatus.message) : null)
 					: null,
-				message !== null ? el("div", { className: styles.messageRow }, el("p", { className: styles.message }, message), reloadHint ? el("button", { type: "button", className: styles.toggle, onClick: () => window.location.reload() }, t("reloadPage")) : null, restartHint ? el("button", { type: "button", className: styles.toggle, onClick: () => { setMessage(t("restarting")); call("/plugin-console/restart", {}).then(() => { window.setTimeout(() => window.location.reload(), 12000); }, () => {}); } }, t("restartService")) : null) : null,
+				message !== null ? el("div", { className: styles.messageRow }, el("p", { className: styles.message, role: "status" }, message), reloadHint ? el("button", { type: "button", className: styles.toggle, onClick: () => window.location.reload() }, t("reloadPage")) : null, restartHint ? el("button", { type: "button", className: styles.toggle, disabled: serviceBlocked, "aria-busy": serviceOperation?.kind === "restart" && serviceOperation.phase === "pending", onClick: () => requestServiceAction("restart") }, t("restartService")) : null) : null,
 				el("div", { className: styles.marketHead },
 					el("h3", null, mode === "skills"
 						? (searchSource === "github"
@@ -2373,8 +2414,10 @@ onClick: () => window.open(`https://github.com/Noob-stupid/dsh-plugin-hub/releas
 					type: "button",
 					className: styles.restartBtn,
 					title: t("restartService"),
-					onClick: () => { setMessage(t("restarting")); call("/plugin-console/restart", {}).then(() => { window.setTimeout(() => window.location.reload(), 12000); }, () => {}); },
-				}, t("restartService"))),
+					disabled: serviceBlocked,
+					"aria-busy": serviceOperation?.kind === "restart" && serviceOperation.phase === "pending",
+					onClick: () => requestServiceAction("restart"),
+				}, t(serviceOperation?.kind === "restart" ? (serviceOperation.phase === "pending" ? "restarting" : "serviceRequestAccepted") : "restartService"))),
 				market !== null && market.status === "ready" && market.data.length > 0
 					? el("div", { className: styles.backTopWrap },
 						showBackTop
