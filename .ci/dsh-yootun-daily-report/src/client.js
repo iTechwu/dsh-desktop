@@ -13,6 +13,10 @@ const closeOtherOverlay = event => { if (event.detail?.id !== OVERLAY_ID) setOpe
 const closeOnEscape = event => { if (opened && event.key === 'Escape') closeOverlay() }
 function statusLabel(status, t) { return status === 'ready' ? t('sourceReady') : status === 'partial' || status === 'degraded' || status === 'warning' ? t('sourcePartial') : status === 'empty' ? t('sourceEmpty') : status === 'error' ? t('sourceError') : t('sourceUnavailable') }
 function reasonLabel(reason, t) { return t(reason === 'activity_partial' ? 'partialReason' : reason === 'activity_scan_limited' ? 'limitedReason' : 'sourceUnavailable') }
+function finiteCount(value) {
+  const parsed = Number(value)
+  return value === null || value === undefined || value === '' || !Number.isFinite(parsed) || parsed < 0 ? null : parsed
+}
 function Overlay({ t }) {
   const visible = useSyncExternalStore(subscribe, snapshot, snapshot)
   const shellRef = useRef(null)
@@ -51,7 +55,7 @@ function Overlay({ t }) {
   const totals = activity?.totals || {}
   const metricValue = value => activity?.status === 'unavailable' || activity?.status === 'error'
     ? t('sourceUnavailable')
-    : String(value ?? '—')
+    : finiteCount(value) === null ? '—' : String(finiteCount(value))
   const refresh = () => { if (loadingRef.current) return; loadingRef.current = true; setLoading(true); setError(false); setRevision(value => value + 1) }
   const metrics = [
     ['sessions', totals.sessions],
@@ -80,7 +84,7 @@ function Overlay({ t }) {
           'article',
           { className: 'ydr-row', key: `${item.workspace}-${item.title}` },
           h('strong', null, item.title),
-          h('span', null, `${item.workspace} · ${item.turns} ${t('turns')}`),
+          h('span', null, `${item.workspace} · ${finiteCount(item.turns) === null ? '—' : finiteCount(item.turns)} ${t('turns')}`),
         )),
       )
 
