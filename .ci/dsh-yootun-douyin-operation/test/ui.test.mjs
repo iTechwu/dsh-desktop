@@ -28,6 +28,13 @@ import {
   tableTemplate,
 } from '../src/ui-format.js'
 
+test('trend count only renders finite positive values through the shared count formatter', async () => {
+  const source = await readFile(new URL('../src/client.js', import.meta.url), 'utf8')
+  assert.match(source, /Number\.isFinite\(Number\(trend\.total\)\) && Number\(trend\.total\) > 0/u)
+  assert.match(source, /replace\('\{count\}', formatCount\(trend\.total\)\)/u)
+  assert.doesNotMatch(source, /replace\('\{count\}', String\(trend\.total\)\)/u)
+})
+
 const labels = {
   colTitle: '作品名称', colUrl: '作品链接', colPlay: '播放量', colCollect: '收藏量',
   colLike: '点赞量', colComment: '评论量', colBounce2s: '2s跳出率', colCompletion5s: '5s完播率',
