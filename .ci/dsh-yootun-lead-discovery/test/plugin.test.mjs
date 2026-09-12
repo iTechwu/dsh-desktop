@@ -3,6 +3,12 @@ import { readFile } from 'node:fs/promises'
 import test from 'node:test'
 import { apply } from '../index.js'
 
+test('normalizes malformed candidate counts before exposing the API result', async () => {
+  const source = await readFile(new URL('../index.js', import.meta.url), 'utf8')
+  assert.match(source, /const safeCount = value => Number\.isInteger\(value\) && value >= 0 \? value : null/u)
+  assert.match(source, /count: safeCount\(payload\.count\)/u)
+})
+
 test('uses the shared dash placeholder for missing budget ranges', async () => {
   const client = await readFile(new URL('../src/client.js', import.meta.url), 'utf8')
   assert.match(client, /value === undefined \|\| value === null \|\| value === '' \? '—'/u)
