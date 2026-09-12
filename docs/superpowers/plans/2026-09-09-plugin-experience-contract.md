@@ -213,29 +213,29 @@ git push origin HEAD
 - Consumes: MCP 工具注册、桌面本地 API、各插件渲染状态和审计事件。
 - Produces: 可追溯的截图证据、无障碍与网络安全回归结果、完整构建门禁结果。
 
-- [ ] **Step 1: 增加 MCP/API 状态映射断言**
+- [x] **Step 1: 增加 MCP/API 状态映射断言**
 
 在浏览器夹具中验证来源不可用、部分来源、等待确认、登录失效、重试和成功受理的文案与 role；在桌面测试中验证实际工具名和 API 路径仍与界面状态一致。
 
-- [ ] **Step 2: 运行全部定点测试**
+- [x] **Step 2: 运行全部定点测试**
 
 Run: `corepack pnpm check:ux && node --test dsh-plugin-desktop/tests/browser/yootun-audit.visual.mjs dsh-plugin-desktop/tests/browser/yootun-search-locks.visual.mjs dsh-plugin-desktop/tests/browser/yootun-theme-actions.visual.mjs`
 
 Expected: UX 门禁、三套浏览器回归全部通过。
 
-- [ ] **Step 3: 运行桌面包完整检查**
+- [x] **Step 3: 运行桌面包完整检查**
 
 Run: `corepack pnpm --filter dsh-plugin-desktop check`
 
 Expected: build、typecheck、unit tests、closure、loader、profile、operations 检查通过；若环境依赖导致失败，记录具体命令与退出原因。
 
-- [ ] **Step 4: 运行根目录完整检查**
+- [x] **Step 4: 运行根目录完整检查**
 
 Run: `corepack pnpm check`
 
 Expected: layout、architecture、UX、Fabric、Market 与 Desktop 全部通过，或仅保留可复现且与本次无关的环境失败。
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add dsh-plugin-desktop/tests/browser
