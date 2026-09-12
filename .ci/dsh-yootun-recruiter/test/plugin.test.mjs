@@ -7,7 +7,8 @@ const root = new URL('../', import.meta.url)
 
 test('renders missing recruiter metrics as an unknown dash', async () => {
   const source = await readFile(new URL('src/client.js', root), 'utf8')
-  assert.match(source, /String\(value \?\? '—'\)/u)
+  assert.match(source, /function finiteCount\(value\)/u)
+  assert.match(source, /safe === null \? '—'/u)
 })
 
 test('bounds recruiter percentage text and preserves missing values', async () => {
@@ -17,6 +18,7 @@ test('bounds recruiter percentage text and preserves missing values', async () =
   assert.match(source, /formatPercent\(d\.responseRate\)/u)
   assert.match(source, /formatPercent\(a\.offerConversion\)/u)
 })
+test('formats recruiter match scores as bounded percentages', async () => { const source = await readFile(new URL('src/client.js', root), 'utf8'); assert.match(source, /function formatMatchScore\(value\)/u); assert.match(source, /parsed <= 1 \? parsed \* 100 : parsed/u); assert.match(source, /formatMatchScore\(candidate\.matchScore\)/u) })
 
 test('publishes a browser recruiter plugin with a bundle patch', async () => {
   const manifest = JSON.parse(await readFile(new URL('package.json', root), 'utf8'))

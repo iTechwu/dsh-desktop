@@ -7,6 +7,7 @@ const MAX_RESULT_REF = 256
 const TOOL_CALL_TIMEOUT_MS = 60_000
 const PLATFORMS = ['xiaohongshu-v2', 'douyin']
 const SAFE_LEAD_FIELDS = ['leadLevel', 'platform', 'intentScore', 'aiSummary', 'city', 'budgetMin', 'budgetMax', 'purchaseTiming', 'recommendedAction', 'sourceUrl']
+const safeCount = value => Number.isInteger(value) && value >= 0 ? value : null
 
 export const inject = ['webServer', 'tools', 'yootunAudit']
 
@@ -137,7 +138,7 @@ async function candidates(ctx, body, signal = AbortSignal.timeout(TOOL_CALL_TIME
   const result = await ctx.tools.execute({ callId: `yootun-lead-candidates-${Date.now()}`, name: schema.name, arguments: args, signal })
   const payload = parseResult(result)
   const items = projectItems(payload.candidates)
-  return { status: 'ready', count: typeof payload.count === 'number' ? payload.count : null, items, stats: summarizeItems(items, payload?.count) }
+  return { status: 'ready', count: safeCount(payload.count), items, stats: summarizeItems(items, safeCount(payload.count)) }
 }
 
 function findTool(ctx, name) { return (ctx.tools.schemas?.() || []).find(item => String(item.name || '').includes(name)) }

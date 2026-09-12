@@ -8,10 +8,11 @@ test('preserves unknown retrofit totals instead of fabricating zero', async () =
   const client = await readFile(new URL('../src/client.js', import.meta.url), 'utf8')
   assert.match(client, /finiteOrDash\(data\?\.result\?\.total\)/u)
   assert.doesNotMatch(client, /Number\(data\?\.result\?\.total\) \|\| 0/u)
-  assert.match(client, /!Number\.isFinite\(Number\(value\)\) \? '—'/u)
+  assert.match(client, /!Number\.isFinite\(Number\(value\)\) \|\| Number\(value\) < 0 \? '—'/u)
 })
 
 test('renders invalid item counts as unknown dashes', async () => { const source = await readFile(new URL('../src/client.js', import.meta.url), 'utf8'); assert.match(source, /finiteOrDash\(item\.commentCount\)/u); assert.match(source, /finiteOrDash\(item\.shareCount\)/u); assert.doesNotMatch(source, /item\.commentCount \?\? '—'/u); assert.doesNotMatch(source, /item\.shareCount \?\? '—'/u) })
+test('rejects negative retrofit counts as unknown values', async () => { const source = await readFile(new URL('../src/client.js', import.meta.url), 'utf8'); assert.match(source, /Number\(value\) < 0/u) })
 test('retrofit package exposes a complete database-first workspace', async () => {
   const manifest = JSON.parse(await readFile(new URL('../package.json', import.meta.url)))
   const client = await readFile(new URL('../src/client.js', import.meta.url), 'utf8')

@@ -52,7 +52,7 @@ window.__ModuleLoader__.load({
     }
     function platformName(value, t) { return PLATFORM_LABELS[value] ? t(PLATFORM_LABELS[value]) : (value || '—') }
     function displayTime(value) { if (!value) return null; return String(value).replace('T', ' ').replace(/\.\d{3,6}(?=Z|[+-]\d\d:\d\d$)/, '').replace(/Z$/, '') }
-    const finiteOrDash = value => value == null || !Number.isFinite(Number(value)) ? '—' : Number(value)
+    const finiteOrDash = value => value == null || !Number.isFinite(Number(value)) || Number(value) < 0 ? '—' : Number(value)
     function getStoredItems(data) { return Array.isArray(data?.result?.items) ? data.result.items : [] }
     function getStats(data) {
       const items = getStoredItems(data)

@@ -28,7 +28,8 @@ window.__ModuleLoader__.load({
     const snapshot = () => opened
     async function load(signal) { const response = await fetch(PATH, { credentials: 'same-origin', redirect: 'error', signal: AbortSignal.any([signal, AbortSignal.timeout(REQUEST_TIMEOUT_MS)].filter(Boolean)), headers: { Accept: 'application/json' } }); if (!response.ok) throw new Error('sales request failed'); return response.json() }
     async function mutate(body) { const response = await fetch(PATH, { method: 'POST', credentials: 'same-origin', redirect: 'error', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS), body: JSON.stringify(body) }); if (!response.ok) throw new Error('sales mutation failed'); return response.json() }
-    function Metric({ label, value }) { return h('div', { className: 'ys-metric' }, h('span', null, label), h('strong', null, String(value ?? '—'))) }
+    function finiteCount(value) { const parsed = Number(value); return value === null || value === undefined || value === '' || !Number.isFinite(parsed) || parsed < 0 ? null : parsed }
+    function Metric({ label, value }) { const safe = finiteCount(value); return h('div', { className: 'ys-metric' }, h('span', null, label), h('strong', null, safe === null ? '—' : String(safe))) }
     function confidenceLabel(value, t) { const parsed = Number(value); return value === null || value === undefined || value === '' || !Number.isFinite(parsed) ? `${t('confidence')} —` : `${t('confidence')} ${Math.round(Math.max(0, Math.min(1, parsed)) * 100)}%` }
     function IntentSearch({ t, current, update, disabled }) {
       const [query, setQuery] = useState('')

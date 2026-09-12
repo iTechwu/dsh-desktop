@@ -569,8 +569,8 @@ window.__ModuleLoader__.load({
                         `${gapFieldLabel(field, t)} · ${gapReasonText(info && info.reason, t)}`)
                     })))
                 : null,
-              trend && trend.total
-                ? h('p', { className: 'ydo-hint' }, t('trendCount').replace('{count}', String(trend.total)))
+              trend && Number.isFinite(Number(trend.total)) && Number(trend.total) > 0
+                ? h('p', { className: 'ydo-hint' }, t('trendCount').replace('{count}', formatCount(trend.total)))
                 : null)),
       )
     }

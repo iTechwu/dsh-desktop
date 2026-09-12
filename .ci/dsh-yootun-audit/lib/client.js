@@ -109,7 +109,8 @@ window.__ModuleLoader__.load({
     const surfaceLabel = value => ({ human_ui: '人工界面', agent_tool: 'Agent 工具', system: '系统任务' }[value] || value || '—')
     const effectOutcomeLabel = value => ({ succeeded: '成功', failed: '失败', accepted: '已受理', requires_user_login: '需要用户登录' }[value] || value || '—')
     function outcomeLabel(value, t) { return value === 'succeeded' ? t('succeeded') : value === 'partial' ? t('partial') : value === 'accepted' ? t('accepted') : t('failed') }
-    function Metric({ label, value, tone }) { return h('div', { className: `ya-metric${tone ? ` is-${tone}` : ''}` }, h('span', null, label), h('strong', null, String(value))) }
+    function finiteCount(value) { const parsed = Number(value); return value === null || value === undefined || value === '' || !Number.isFinite(parsed) || parsed < 0 ? null : parsed }
+    function Metric({ label, value, tone }) { const safe = finiteCount(value); return h('div', { className: `ya-metric${tone ? ` is-${tone}` : ''}` }, h('span', null, label), h('strong', null, safe === null ? '—' : String(safe))) }
     function IconButton({ label, onClick, icon: Icon, disabled = false }) { return h(Tooltip, { label }, h('button', { type: 'button', className: 'ya-icon-button', 'aria-label': label, disabled, onClick }, h(Icon, { size: 16 }))) }
     function StatusBanner({ workspace, error, t, refresh, busy }) {
       const status = error ? 'offline' : workspace.status
