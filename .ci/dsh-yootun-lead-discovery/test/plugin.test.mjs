@@ -13,6 +13,7 @@ test('uses the shared dash placeholder for missing budget ranges', async () => {
   const client = await readFile(new URL('../src/client.js', import.meta.url), 'utf8')
   assert.match(client, /value === undefined \|\| value === null \|\| value === '' \? '—'/u)
   assert.doesNotMatch(client, /\?` : Number\.isFinite/u)
+  assert.match(client, /Number\.isFinite\(Number\(value\)\) && Number\(value\) >= 0/u)
 })
 
 test('lead discovery package exposes a DSH client and guarded host route', async () => {
