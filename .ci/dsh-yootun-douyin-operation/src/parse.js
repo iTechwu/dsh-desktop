@@ -302,6 +302,11 @@ export function parseItemCompare(json) {
 /**
  * 流量来源 `play/source`：[{source_key, source_label, share_pct}]，按占比降序。
  *
+ * 展示标签（二次优化 §5.4）：来源自带非空且不等于原始 key 的 label 时优先保留
+ * （兼容抖音后续新增、已提供中文的来源）；已知 key 用 SOURCE_LABELS 映射；
+ * 未知 key 的 label 置 null——原始英文只留在 `source_key` 供日志/调试，
+ * 界面由 ui-format.trafficSourceLabel 统一兜底「其他来源」，不透传英文。
+ *
  * 响应里没有 `play_source` 数组（例如空桩响应）→ 返回 null（本次未暴露），
  * 而不是空数组——空数组会被当作"已采集但无数据"，把缺口伪造成真实值。
  */
@@ -315,9 +320,13 @@ export function parsePlaySource(json) {
     const key = firstPresent(item.key, item.source_key)
     const share = pct(item.value)
     if (!key || share === null) continue
+    const provided = typeof item.source_label === 'string' ? item.source_label.trim() : ''
+    const label = provided && provided !== String(key)
+      ? clampText(provided, 128)
+      : SOURCE_LABELS[String(key)] || null
     rows.push({
       source_key: clampText(key, 64),
-      source_label: clampText(SOURCE_LABELS[String(key)] || String(key), 128),
+      source_label: label,
       share_pct: share,
     })
   }

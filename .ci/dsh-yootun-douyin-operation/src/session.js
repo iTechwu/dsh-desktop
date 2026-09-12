@@ -4,6 +4,7 @@
 // → 轮询 `sessionid`/`sessionid_ss` cookie → 命中即保存 storage_state 到设备端。
 // 无 Cookie 粘贴入口，无 Cookie 外发，无 stealth/反检测参数（docs/0909/douyin §6/§13）。
 
+import { normalizeAvatarUrl } from './avatar.js'
 import { LAUNCH_ARGS, launchChrome, resolveSystemChrome } from './chrome.js'
 import {
   clearLocalCredentials,
@@ -82,7 +83,9 @@ export async function readAccountProfile(pageOrContext) {
   return {
     accountId: String(accountId),
     nickname: firstNonEmpty(user.nickname, user.name, user.nick_name) || null,
-    avatar: firstNonEmpty(user.avatar_uri, user.avatar_url, user.avatarUrl, user.avatar) || null,
+    // avatar_uri 可能是 {uri,url_list} 图集对象：与采集侧共用同一标准化函数，
+    // 保证登录和采集得到同一类型的头像值（二次优化 §5.1.2）。
+    avatar: normalizeAvatarUrl(firstPresent(user.avatar_uri, user.avatar_url, user.avatarUrl, user.avatar)),
     fanCount: numberOrNull(firstPresent(user.follower_count, user.fans_count, user.fan_count, user.mplatform_followers_count)),
   }
 }

@@ -323,6 +323,17 @@ test('projectAccounts 头像投影：仅 http(s) 绝对地址放行，本地优�
     [null],
     '无头像字段时补 null，UI 可回退占位',
   )
+  // tools 侧可能透出图集对象形态（{uri,url_list}）：宿主投影最后防线必须收敛为字符串。
+  const gallery = projectAccounts(
+    { f: { accountId: 'f' } },
+    [{ accountId: 'f', avatar: { uri: 'xyz', url_list: ['javascript:alert(1)', 'https://p3.douyinpic.com/gallery.jpeg'] } }],
+  )
+  assert.equal(gallery[0].avatar, 'https://p3.douyinpic.com/gallery.jpeg', '图集对象按 url_list 顺序取第一个合法 URL')
+  assert.equal(
+    projectAccounts({ g: { accountId: 'g' } }, [{ accountId: 'g', avatar: { url_list: ['data:image/png;base64,AAAA'] } }])[0].avatar,
+    null,
+    '图集对象全非法候选时置 null，不透出对象',
+  )
 })
 
 test('登录成功但 account_save 失败：记录日志并在 loginStatus 透出 saveError', async () => {
