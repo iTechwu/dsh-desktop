@@ -54,6 +54,7 @@ const snapshot = () => opened
 async function load(signal) { const response = await fetch(PATH, { credentials: 'same-origin', redirect: 'error', signal: AbortSignal.any([signal, AbortSignal.timeout(REQUEST_TIMEOUT_MS)].filter(Boolean)), headers: { Accept: 'application/json' } }); if (!response.ok) throw new Error('recruiter request failed'); return response.json() }
 async function mutate(body) { const response = await fetch(PATH, { method: 'POST', credentials: 'same-origin', redirect: 'error', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS), body: JSON.stringify(body) }); if (!response.ok) throw new Error('recruiter mutation failed'); return response.json() }
 function number(value, fallback = 0) { return Number.isFinite(Number(value)) ? Number(value) : fallback }
+function finiteCount(value) { const parsed = Number(value); return value === null || value === undefined || value === '' || !Number.isFinite(parsed) || parsed < 0 ? null : parsed }
 function formatPercent(value) {
   if (value === null || value === undefined || value === '') return '—'
   const parsed = Number(value)
@@ -76,7 +77,7 @@ function SourceBadge({ label, state, t, onClick, disabled }) {
   if (onClick) { props.type = 'button'; props.disabled = disabled; props.onClick = onClick }
   return h(onClick ? 'button' : 'span', props, h('i', { 'aria-hidden': true }), `${label} · ${labelText}`)
 }
-function Metric({ label, value }) { return h('div', { className: 'yr-metric' }, h('span', null, label), h('strong', null, String(value ?? '—'))) }
+function Metric({ label, value }) { const safe = finiteCount(value); return h('div', { className: 'yr-metric' }, h('span', null, label), h('strong', null, safe === null ? '—' : String(safe))) }
 function Status({ status, t }) { return h('span', { className: `yr-status yr-status-${status}` }, h('i', { 'aria-hidden': true }), statusText(status, t)) }
 function Funnel({ data, t }) {
   const rows = Array.isArray(data.dashboard?.funnel)

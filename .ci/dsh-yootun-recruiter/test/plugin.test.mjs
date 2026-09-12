@@ -7,7 +7,8 @@ const root = new URL('../', import.meta.url)
 
 test('renders missing recruiter metrics as an unknown dash', async () => {
   const source = await readFile(new URL('src/client.js', root), 'utf8')
-  assert.match(source, /String\(value \?\? '—'\)/u)
+  assert.match(source, /function finiteCount\(value\)/u)
+  assert.match(source, /safe === null \? '—'/u)
 })
 
 test('bounds recruiter percentage text and preserves missing values', async () => {
