@@ -6,6 +6,7 @@
 // - tools 只收到 `sessionRef`（vault:// 不透明引用）与设备探测得到的会话状态；
 // - 页面不读取 MODELS_API_KEY，不直连公网 MCP，也不接收内部地址或原始传输错误。
 
+import { normalizeAvatarUrl } from './src/avatar.js'
 import { browserStatus } from './src/chrome.js'
 import {
   DEFAULT_MAX_PAGES,
@@ -131,12 +132,11 @@ async function handleAccountsList(deps, ctx) {
   }
 }
 
-// 头像 URL 白名单化：只放行 http(s) 绝对地址并截断长度，其余一律置 null（§8.2）。
-// 值来自创作者中心公开资料并最终进入 <img src>，必须拦掉 javascript:/data: 等内嵌协议。
-const AVATAR_URL_PATTERN = /^https?:\/\//i
+// 头像 URL 白名单化（§8.2/二次优化 §5.1.2）：复用统一标准化函数——只放行 http(s)
+// 绝对地址（含抖音 avatar_uri 图集对象的 url_list 解析），超长与 javascript:/data:
+// 等危险协议一律置 null，不做无法验证的改写。这是宿主侧最终防御，永不删除。
 function projectAvatar(value) {
-  const text = typeof value === 'string' ? value.trim() : ''
-  return text && AVATAR_URL_PATTERN.test(text) ? text.slice(0, 2048) : null
+  return normalizeAvatarUrl(value)
 }
 
 // 本地账号（设备端 Profile/会话）与远端账号（tools 记录）按 accountId 合并；

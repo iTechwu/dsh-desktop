@@ -8,6 +8,7 @@
 //   绝不按空列表结算；
 // - 低播放 item_compare（status_code=10001）不产生整条作品错误，只记完播类缺口。
 
+import { normalizeAvatarUrl } from './avatar.js'
 import {
   LOW_PLAY_STATUS_CODE,
   buildWorkPayload,
@@ -281,7 +282,7 @@ export async function collectHotword(page, workId) {
   return parseWordCloud(result.json)
 }
 
-/** 账号资料（昵称/粉丝数），页面同源 fetch。 */
+/** 账号资料（昵称/粉丝数/头像），页面同源 fetch。 */
 export async function collectAccountProfile(page) {
   const result = await fetchJson(page, USER_INFO_PATH)
   if (!result.ok || !result.json || typeof result.json !== 'object') return null
@@ -292,9 +293,16 @@ export async function collectAccountProfile(page) {
   return {
     accountId,
     nickname: user.nickname || user.name || null,
-    avatar: user.avatar_uri || user.avatar_url || null,
+    // avatar_uri 可能是 {uri,url_list} 图集对象：经统一标准化后只透出合法 http(s) 字符串。
+    // 候选清单与 session.readAccountProfile 保持一致（同输入同输出，见 test/avatar.test.mjs）。
+    avatar: normalizeAvatarUrl(firstPresent(user.avatar_uri, user.avatar_url, user.avatarUrl, user.avatar)),
     fanCount: Number(user.follower_count ?? user.fans_count ?? NaN) || null,
   }
+}
+
+function firstPresent(...values) {
+  for (const value of values) if (value !== undefined && value !== null) return value
+  return null
 }
 
 /**

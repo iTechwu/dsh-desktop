@@ -132,9 +132,9 @@ export function genderLabel(value, t = key => key) {
   return t('genderOther')
 }
 
-/** 性别颜色按语义 key 固定（§7.1）：男=品牌主色、女=柔和红、其他=次要色；绝不用数组下标。 */
+/** 性别颜色按语义 key 固定（二次优化 §5.2.1）：男=淡蓝、女=柔和红、其他=次要色；绝不用数组下标。 */
 export function genderColor(value) {
-  if (value === 'male') return 'var(--dsw-alias-brand-primary)'
+  if (value === 'male') return 'var(--ydo-gender-male, #91C5EB)'
   if (value === 'female') return 'var(--ydo-gender-female, #E88989)'
   return 'var(--dsw-alias-label-secondary)'
 }
@@ -225,4 +225,67 @@ export function accountState(account) {
     collectable: status === 'ok',
     needsRescan: status === 'expired' || status === 'unknown',
   }
+}
+
+// 年龄分桶 key → 文案键（二次优化 §5.5）：已知区间精确映射，不做正则机械替换。
+const AGE_BUCKET_KEYS = {
+  '-18': 'ageUnder18',
+  '18-23': 'age18to23',
+  '24-30': 'age24to30',
+  '31-40': 'age31to40',
+  '41-50': 'age41to50',
+  '50-': 'ageOver50',
+}
+
+/**
+ * 年龄分桶 key → 中文文案（仅详情页展示层转换；原始 key、数据库字段与接口契约不变）。
+ * 未识别的 key 不删除数据，兜底「其他年龄段」，原始 key 由调用方保留供调试。
+ */
+export function formatAgeBucket(value, t = key => key) {
+  const labelKey = typeof value === 'string' ? AGE_BUCKET_KEYS[value.trim()] : null
+  return labelKey ? t(labelKey) : t('ageOther')
+}
+
+// 已知流量来源 key → 文案键（二次优化 §5.4.1）；与 parse.js 的 SOURCE_LABELS 同一清单。
+const SOURCE_KEY_LABELS = {
+  homepage_hot: 'srcHomepageHot',
+  homepage: 'srcHomepage',
+  familiar: 'srcFamiliar',
+  follow: 'srcFollow',
+  search: 'srcSearch',
+  message: 'srcMessage',
+  nearby: 'srcNearby',
+  other: 'srcKnownOther',
+}
+
+/** 历史数据曾把未映射 key 原样写入 source_label；纯枚举形态的「标签」不可信。 */
+const RAW_KEY_SHAPE = /^[A-Za-z0-9_.-]+$/
+
+/**
+ * 流量来源展示名（二次优化 §5.4.2/§5.4.3）：label 优先（非空、不等于原始 key、
+ * 非裸枚举形态），已知 key 用映射，未知/缺失一律「其他来源」。原始 key 只保留在
+ * 数据内部（sourceKey），绝不进入页面文本。
+ */
+export function trafficSourceLabel(row, t = key => key) {
+  const sourceKey = typeof (row && row.source_key) === 'string' ? row.source_key.trim() : ''
+  const label = typeof (row && row.source_label) === 'string' ? row.source_label.trim() : ''
+  if (label && label !== sourceKey && !RAW_KEY_SHAPE.test(label)) return label.slice(0, 128)
+  const mapped = SOURCE_KEY_LABELS[sourceKey]
+  return mapped ? t(mapped) : t('sourceOther')
+}
+
+/**
+ * ISO 时间 → 'YYYY-MM-DD HH:mm'（二次优化 §5.6.4，按 Asia/Shanghai 展示）。
+ *
+ * Asia/Shanghai 是固定 UTC+8（无夏令时），因此用 UTC 毫秒 +8h 后按 UTC 字段取值，
+ * 不依赖宿主时区，也不使用会掩盖非法值的 String(value).slice(0, 16)。
+ * 非法时间、空字符串和非字符串一律显示 `—`。
+ */
+export function formatDateTime(value) {
+  if (typeof value !== 'string' || !value.trim()) return EMPTY
+  const ms = Date.parse(value.trim())
+  if (!Number.isFinite(ms)) return EMPTY
+  const shifted = new Date(ms + 8 * 60 * 60 * 1000)
+  const pad = number => String(number).padStart(2, '0')
+  return `${shifted.getUTCFullYear()}-${pad(shifted.getUTCMonth() + 1)}-${pad(shifted.getUTCDate())} ${pad(shifted.getUTCHours())}:${pad(shifted.getUTCMinutes())}`
 }

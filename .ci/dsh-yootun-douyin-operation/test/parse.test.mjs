@@ -214,6 +214,23 @@ test('流量来源解析：key → 中文标签、按占比降序', async () => 
   assert.ok(rows.every((row, index) => index === 0 || rows[index - 1].share_pct >= row.share_pct))
 })
 
+test('流量来源未知 key：source_label 置 null（原始英文只留在 source_key），自带中文 label 优先保留', () => {
+  const rows = parsePlaySource({
+    play_source: [
+      { source_key: 'fresh', value: 0.6 },
+      { source_key: 'fresh', source_label: 'fresh', value: 0.3 },
+      { source_key: 'follow', source_label: '自定义中文来源', value: 0.1 },
+    ],
+  })
+  assert.equal(rows.length, 3)
+  assert.equal(rows[0].source_key, 'fresh')
+  assert.equal(rows[0].source_label, null, '未知 key 无 label → null，不透出英文')
+  assert.equal(rows[1].source_key, 'fresh')
+  assert.equal(rows[1].source_label, null, '未知 key 自带裸枚举 label（等于 key）→ 不可信，置 null')
+  assert.equal(rows[2].source_label, '自定义中文来源', '自带非 key 中文 label 优先保留')
+  assert.ok(rows[0].share_pct === 60 && rows[1].share_pct === 30 && rows[2].share_pct === 10)
+})
+
 test('观众画像解析：性别/年龄/城市级全量、地域取前 8', async () => {
   const json = await fixture('portrait.sample.json')
   const portrait = parsePortrait(json)

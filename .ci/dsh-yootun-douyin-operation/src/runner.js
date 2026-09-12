@@ -8,10 +8,11 @@
 
 import { access } from 'node:fs/promises'
 
+import { normalizeAvatarUrl } from './avatar.js'
 import { LAUNCH_ARGS, loadPlaywrightDriver, resolveSystemChrome } from './chrome.js'
 import { collectAccountWorks } from './collector.js'
 import { createIngestClient, ingestCollectedWorks } from './ingest.js'
-import { getAccount, hasStorageState, paths, stateRoot } from './state.js'
+import { getAccount, hasStorageState, paths, stateRoot, updateAccount } from './state.js'
 import { accountSaveIdempotencyKey } from './tools-client.js'
 
 export const DEFAULT_MAX_PAGES = 1000
@@ -65,6 +66,31 @@ export async function ensureRemoteAccount(callTool, accountId, { root = stateRoo
 }
 
 /**
+ * 采集完成后的本地头像补写（二次优化 §5.1.3）。
+ *
+ * 只在满足全部条件时写入：profile 存在、profile.accountId 与当前账号一致
+ * （不一致绝不把一个账号的头像写到另一个账号名下）、头像已收敛为合法 http(s)
+ * 字符串、且当前本地记录的头像为空或无效（已有有效头像不得被一次异常响应覆盖）。
+ * 任何失败都收敛为稳定 reason，绝不把原始文件错误抛给 UI，更不阻断作品入库。
+ *
+ * @returns {Promise<{ updated: boolean, reason: string|null }>}
+ */
+export async function saveDiscoveredAvatar({ accountId, profile, root = stateRoot() } = {}) {
+  try {
+    if (!profile || typeof profile !== 'object') return { updated: false, reason: 'profile_missing' }
+    if (!accountId || profile.accountId !== accountId) return { updated: false, reason: 'account_mismatch' }
+    const avatar = normalizeAvatarUrl(profile.avatar)
+    if (!avatar) return { updated: false, reason: 'avatar_invalid' }
+    const current = await getAccount(accountId, root)
+    if (current && normalizeAvatarUrl(current.avatar)) return { updated: false, reason: 'avatar_exists' }
+    await updateAccount(accountId, { avatar }, root)
+    return { updated: true, reason: null }
+  } catch {
+    return { updated: false, reason: 'avatar_save_failed' }
+  }
+}
+
+/**
  * 执行一次账号采集并入库。
  *
  * @param {{
@@ -79,6 +105,7 @@ export async function ensureRemoteAccount(callTool, accountId, { root = stateRoo
  *   newAttempt?: boolean,
  *   onProgress?: (event: object) => void,
  *   sessionFactory?: Function,
+ *   saveAvatar?: Function,
  * }} options
  */
 export async function runAccountCollection({
@@ -93,6 +120,7 @@ export async function runAccountCollection({
   newAttempt = true,
   onProgress = null,
   sessionFactory = openHeadlessSession,
+  saveAvatar = saveDiscoveredAvatar,
 }) {
   const emit = event => { if (onProgress) onProgress(event) }
   // 会话文件必须真实存在：失效（过期）的会话文件仍存在，其有效性由设备端探测判定。
@@ -130,6 +158,33 @@ export async function runAccountCollection({
       await session.context.close().catch(() => {})
       await session.browser.close().catch(() => {})
     }
+  }
+
+  // 采集完成后头像补写（二次优化 §5.1.3/§5.1.4）：本地只在头像缺失时回写；
+  // 本地写入成功且头像从空变为合法新值时，按既有 douyin_account_save 幂等机制
+  // 补传标准化后的头像字符串（只发非空字符串，不发对象/Cookie）。本地写入失败、
+  // 远端同步失败都只记诊断事件，绝不改变作品采集与入库结果。
+  // 兜底 catch：默认实现内部全捕获，注入实现若抛异常同样不得跳过作品入库。
+  const avatarOutcome = await saveAvatar({ accountId, profile: collected.profile, root })
+    .catch(() => ({ updated: false, reason: 'avatar_save_failed' }))
+  if (avatarOutcome.updated) {
+    emit({ phase: 'avatar_saved' })
+    try {
+      const record = await getAccount(accountId, root)
+      const avatar = normalizeAvatarUrl(record && record.avatar)
+      if (avatar) {
+        await callTool('douyin_account_save', {
+          accountId,
+          sessionRef: paths(root).vaultRef(accountId),
+          idempotencyKey: accountSaveIdempotencyKey(accountId),
+          avatar,
+        })
+      }
+    } catch (error) {
+      emit({ phase: 'avatar_sync_failed', error: safeReason(error) })
+    }
+  } else if (avatarOutcome.reason === 'account_mismatch' || avatarOutcome.reason === 'avatar_save_failed') {
+    emit({ phase: 'avatar_save_failed', reason: avatarOutcome.reason })
   }
 
   try {
