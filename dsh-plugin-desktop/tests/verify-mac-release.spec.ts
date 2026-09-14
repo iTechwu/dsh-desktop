@@ -12,7 +12,7 @@ function options(overrides: Partial<MacReleaseVerificationOptions> = {}) {
   const value: MacReleaseVerificationOptions = {
     distDir: '/release/dist',
     productName: 'Yootun-Agent Beta',
-    listDmgs: () => ['/release/dist/Yootun-Agent-Beta-2.0.7-beta.5-universal.dmg'],
+    listDmgs: () => ['/release/dist/Yootun-Agent-Beta-2.0.10-beta.1-universal.dmg'],
     makeMountPoint: () => '/private/tmp/dsh-desktop-dmg-test',
     run: (command, args) => { calls.push({ command, args: [...args] }) },
     removeMountPoint,
@@ -28,14 +28,14 @@ describe('macOS release artifact verification', () => {
 
     expect(verifyMacRelease(harness.value)).toEqual({
       appPath,
-      dmgPath: '/release/dist/Yootun-Agent-Beta-2.0.7-beta.5-universal.dmg',
+      dmgPath: '/release/dist/Yootun-Agent-Beta-2.0.10-beta.1-universal.dmg',
     })
 
     expect(harness.calls).toEqual([
       {
         command: 'hdiutil',
         args: [
-          'attach', '/release/dist/Yootun-Agent-Beta-2.0.7-beta.5-universal.dmg',
+          'attach', '/release/dist/Yootun-Agent-Beta-2.0.10-beta.1-universal.dmg',
           '-mountpoint', '/private/tmp/dsh-desktop-dmg-test', '-nobrowse', '-readonly',
         ],
       },
@@ -50,7 +50,7 @@ describe('macOS release artifact verification', () => {
       ...MACOS_UNIVERSAL_PACKAGED_ENTRIES.map(entry => ({
         command: 'lipo',
         args: [
-          join(appPath, 'Contents', 'Resources', 'app', entry.path),
+          join(appPath, 'Contents', 'Resources', 'app.asar.unpacked', entry.path),
           '-verify_arch', entry.arch,
         ],
       })),
