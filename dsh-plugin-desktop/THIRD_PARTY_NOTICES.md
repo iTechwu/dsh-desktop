@@ -313,10 +313,8 @@ the package names, versions, and licenses for transparency.
 | @iconify/types | 2.0.0 | MIT |
 | @iconify/utils | 3.1.4 | MIT |
 | @img/colour | 1.1.0 | MIT |
-| @img/sharp-darwin-arm64 | 0.35.3 | Apache-2.0 |
-| @img/sharp-darwin-x64 | 0.35.3 | Apache-2.0 |
-| @img/sharp-libvips-darwin-arm64 | 1.3.2 | LGPL-3.0-or-later |
-| @img/sharp-libvips-darwin-x64 | 1.3.2 | LGPL-3.0-or-later |
+| @img/sharp-win32-arm64 | 0.35.3 | Apache-2.0 AND LGPL-3.0-or-later |
+| @img/sharp-win32-x64 | 0.35.3 | Apache-2.0 AND LGPL-3.0-or-later |
 | @joplin/turndown-plugin-gfm | 1.0.67 | MIT |
 | @koromix/koffi-darwin-arm64 | 3.1.1 | MIT |
 | @koromix/koffi-darwin-arm64 | 3.1.5 | MIT |

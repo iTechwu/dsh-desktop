@@ -738,8 +738,8 @@ describe('published package surface', () => {
     expect(manifest.build?.asar).toEqual({ smartUnpack: true })
     expect(manifest.build?.asarUnpack).toBeUndefined()
     expect(manifest.build?.electronFuses).toEqual({
-      enableEmbeddedAsarIntegrityValidation: true,
-      onlyLoadAppFromAsar: true,
+      enableEmbeddedAsarIntegrityValidation: false,
+      onlyLoadAppFromAsar: false,
       resetAdHocDarwinSignature: true,
       runAsNode: true,
     })

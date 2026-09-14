@@ -514,8 +514,8 @@
       }
     },
     "electronFuses": {
-      "enableEmbeddedAsarIntegrityValidation": true,
-      "onlyLoadAppFromAsar": true,
+      "enableEmbeddedAsarIntegrityValidation": false,
+      "onlyLoadAppFromAsar": false,
       "resetAdHocDarwinSignature": true,
       "runAsNode": true
     },
@@ -648,14 +648,6 @@
       "artifactName": "Yootun-Agent-Beta-${version}-${arch}-Setup.${ext}"
     },
     "linux": {
-      "asarUnpack": [
-        "build/app-icon.png",
-        "build/tray-icon-blue.png",
-        "build/tray-icon-blue@1.25x.png",
-        "build/tray-icon-blue@1.5x.png",
-        "build/tray-icon-blue@2x.png",
-        "node_modules/@agents-anywhere/dsh-bridge-next/lib/bundled-connector/**"
-      ],
       "target": [
         "dir"
       ],

@@ -173,6 +173,7 @@ export function packageWindowsArtifact(
       'never',
       '--config.win.signExecutable=false',
       '--config.npmRebuild=false',
+      '--config.electronFuses.onlyLoadAppFromAsar=false',
     ],
     options.desktopRoot,
     electronBuilderEnvironment({
