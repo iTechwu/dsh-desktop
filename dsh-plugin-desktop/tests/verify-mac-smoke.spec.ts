@@ -121,7 +121,7 @@ describe('macOS DMG smoke artifact verification', () => {
       { command: 'lipo', args: [value.executable, '-verify_arch', 'arm64'] },
       ...MACOS_UNIVERSAL_PACKAGED_ENTRIES.map(entry => ({
         command: 'lipo',
-        args: [join(join(value.appAsar, '..'), entry.path), '-verify_arch', entry.arch],
+        args: [join(`${value.appAsar}.unpacked`, entry.path), '-verify_arch', entry.arch],
       })),
       { command: 'hdiutil', args: ['detach', value.root] },
     ])
@@ -171,12 +171,12 @@ describe('macOS DMG smoke artifact verification', () => {
     expect(harness.removeMountPoint).toHaveBeenCalledWith(value.root)
   })
 
-  it('rejects a missing or empty application manifest', () => {
+  it('rejects a missing or empty application archive', () => {
     const value = fixture()
     rmSync(value.appAsar)
     const harness = options({ makeMountPoint: () => value.root }, value.modeOverrides)
 
-    expectSmokeFailure(harness, 'package.json')
+    expectSmokeFailure(harness, 'app.asar')
     expect(harness.removeMountPoint).toHaveBeenCalledWith(value.root)
   })
 })
