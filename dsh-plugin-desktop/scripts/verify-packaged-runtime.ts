@@ -488,13 +488,13 @@ export function smokePackagedElectronRuntime(
     },
     {
       label: 'fs-ext native ABI',
-      entry: join(asarRoot, 'node_modules', 'fs-ext', 'fs-ext.js'),
+      entry: join(runtimeRoot, 'node_modules', 'fs-ext', 'fs-ext.js'),
       args: [],
       accepts: (stdout: string) => stdout.trim() === '',
     },
     {
       label: 'ASAR/Profile/CJS/ripgrep',
-      entry: join(asarRoot, 'lib', 'packaged-runtime-smoke.js'),
+      entry: join(runtimeRoot, 'lib', 'packaged-runtime-smoke.js'),
       args: [],
       accepts: (stdout: string) => stdout.trim() === 'DSH_PACKAGED_RUNTIME_OK',
     },
@@ -529,7 +529,7 @@ export function smokePackagedElectronRuntime(
         )
       }
     }
-    verifyPackagedProfileModuleFallback(join(smokeHome, 'profiles', 'node_modules'), asarRoot)
+    verifyPackagedProfileModuleFallback(join(smokeHome, 'profiles', 'node_modules'), resolvePackagedAsarPath(context))
   } finally {
     rmSync(smokeHome, { recursive: true, force: true })
   }
@@ -950,7 +950,15 @@ export function verifyPackagedRuntime(
             ? [`node_modules/@deepseek-ai/node-addon-system-darwin-${context.arch === 1 ? 'x64' : 'arm64'}/bin/system.node`]
             : []),
         ]
-  const missing = requiredPhysicalEntries.filter(entry => !exists(join(unpackedRoot, entry)))
+  const runtimeRoot = hasAsar ? resolvePackagedUnpackedRoot(context) : resolvePackagedApplicationRoot(context)
+  const requiredEntries = hasAsar
+    ? requiredPhysicalEntries
+    : [...new Set([
+        ...REQUIRED_PACKAGED_RUNTIME_ENTRIES,
+        ...desktopRuntimeEntries,
+        ...requiredPhysicalEntries,
+      ])]
+  const missing = requiredEntries.filter(entry => !exists(join(runtimeRoot, entry)))
   if (missing.length > 0) {
     throw new Error(
       `dsh-plugin-desktop: packaged runtime at ${runtimeRoot} is missing required physical entries: ${missing.join(', ')}`,
