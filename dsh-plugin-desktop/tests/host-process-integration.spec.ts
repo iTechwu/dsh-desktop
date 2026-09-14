@@ -62,9 +62,12 @@ it.each(['disabled', 'missing', 'installed'] as const)('boots a separate Web Hos
     const [ready] = await once(child, 'message')
     expect(ready).toEqual({ ready: true })
     const worker = child
+    // The child boots a real pnpm-managed profile; on a loaded machine that
+    // install alone can exceed 30s wall time and abort an otherwise healthy
+    // boot. The RPC budget stays far below the enclosing vitest timeout.
     rpc = new HostRpc({ send: data => worker.send(data as Serializable),
       listen: receive => { worker.on('message', receive); return () => { worker.off('message', receive) } },
-    }, 30_000)
+    }, 120_000)
     child.on('exit', () => rpc?.close(stderr || 'worker exited'))
     let shell: DesktopShellSpec | undefined
     const runtime = {
@@ -127,4 +130,4 @@ it.each(['disabled', 'missing', 'installed'] as const)('boots a separate Web Hos
     pnpm?.dispose()
     rmSync(home, { recursive: true, force: true })
   }
-}, 60_000)
+}, 180_000)
