@@ -12,6 +12,7 @@ import {
   HoverCardContent,
   HoverCardTrigger,
 } from '../native-ui/components/ui/hover-card.tsx'
+import { BRAND_DISPLAY_NAME } from '../generated-product-identity.ts'
 
 export interface DesktopFrameTitlebarInjected {
   readonly environment: DesktopClientEnvironment
@@ -175,7 +176,7 @@ export function DesktopFrameTitlebarView({ api, environment, setMode, t, remoteC
       data-material={environment.material}
     >
       <div className="dshDesktopFrameIdentity">
-        <span className="dshDesktopFrameProduct">Yootun-Agent</span>
+        <span className="dshDesktopFrameProduct">{BRAND_DISPLAY_NAME.titlebar}</span>
         <DesktopVersionControl version={environment.version} checkForUpdates={api.checkForUpdates} t={t} />
         <DesktopModeControl
           mode={environment.mode}

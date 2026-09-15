@@ -47,21 +47,25 @@ export async function generateLockups(environment = process.env): Promise<void> 
     .toFile(output('sidebar-brand.png'))
 
   const wordmarkWidth = lockupWidth - lockupHeight
-  await sharp(wordmarkPath)
-    .resize(wordmarkWidth, lockupHeight, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } })
-    .png()
-    .toFile(output('.brand-wordmark-staged.png'))
+  const stagedPath = output('.brand-wordmark-staged.png')
+  try {
+    await sharp(wordmarkPath)
+      .resize(wordmarkWidth, lockupHeight, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } })
+      .png()
+      .toFile(stagedPath)
 
-  await sharp({
-    create: { width: lockupWidth, height: lockupHeight, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } },
-  })
-    .composite([
-      { input: output('sidebar-brand.png'), left: 0, top: 0 },
-      { input: output('.brand-wordmark-staged.png'), left: lockupHeight, top: 0 },
-    ])
-    .png()
-    .toFile(output('sidebar-brand.png'))
-  rmSync(output('.brand-wordmark-staged.png'), { force: true })
+    await sharp({
+      create: { width: lockupWidth, height: lockupHeight, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } },
+    })
+      .composite([
+        { input: output('sidebar-brand.png'), left: 0, top: 0 },
+        { input: stagedPath, left: lockupHeight, top: 0 },
+      ])
+      .png()
+      .toFile(output('sidebar-brand.png'))
+  } finally {
+    rmSync(stagedPath, { force: true })
+  }
 
   const heroPath = source(config.artwork.heroMark)
   if (!existsSync(heroPath)) throw new Error(`brand hero mark is missing: ${heroPath}`)

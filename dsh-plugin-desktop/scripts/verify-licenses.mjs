@@ -13,7 +13,7 @@
 import { createRequire } from 'node:module'
 import { loadBrandConfig } from '../../scripts/brand-config.mjs'
 import { existsSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { hasLicenseFile } from './license-file.mjs'
 
@@ -152,7 +152,7 @@ if (noticesArg !== -1) {
   const lines = [
     '# Third-Party Notices',
     '',
-    `${loadBrandConfig().docs.noticesHeader}`,
+    `${loadBrandConfig(process.env, resolve(packageRoot, '..')).docs.noticesHeader}`,
     'Each package ships with its own license text in the application files; this list records',
     'the package names, versions, and licenses for transparency.',
     '',
