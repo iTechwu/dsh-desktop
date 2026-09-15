@@ -185,7 +185,7 @@ export const BRAND_RELEASE_IDENTITIES = Object.freeze({
 /** Identity selected by brand.config.json activeChannel. */
 export const BRAND_ACTIVE_CHANNEL = ${JSON.stringify(config.activeChannel)} as const
 
-/** Artifact filename prefix for the active channel, e.g. "Yootun-Agent-Beta". */
+/** Artifact filename prefix for the active channel (Setup/Portable/DMG stems). */
 export const BRAND_ARTIFACT_PREFIX = ${JSON.stringify(resolveActiveChannel(config).artifactPrefix)}
 
 /** Electron Builder shortcutName for the active channel. */

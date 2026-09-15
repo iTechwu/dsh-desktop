@@ -80,8 +80,11 @@ describe('brand artwork generators', () => {
 
     for (const [name, pixels] of committed) {
       const first = firstRun.get(name)
-      expect(first?.equals(pixels) ?? false).toBe(true)
-      expect(secondRun.get(name)?.equals(first) ?? false).toBe(true)
+      const second = secondRun.get(name)
+      expect(first).toBeDefined()
+      expect(second).toBeDefined()
+      expect(first!.equals(pixels)).toBe(true)
+      expect(second!.equals(first!)).toBe(true)
     }
   })
 })

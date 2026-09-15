@@ -33,6 +33,7 @@
     "dofe-ui:build": "node scripts/build-dofe-ui.mjs",
     "brand:docs": "node scripts/generate-brand-docs.mjs",
     "brand:version": "node scripts/bump-version.mjs",
-    "brand:check": "node scripts/verify-brand-docs.mjs && node scripts/verify-bilingual-docs.mjs"
+    "brand:check": "node scripts/verify-brand-docs.mjs && node scripts/verify-bilingual-docs.mjs && node scripts/verify-brand-isolation.mjs",
+    "brand:isolation": "node scripts/verify-brand-isolation.mjs"
   }
 }
