@@ -9,9 +9,12 @@
 
 import { readFileSync, writeFileSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
-import { resolve } from 'node:path'
+import { dirname, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
-const repositoryRoot = process.cwd()
+// Fixed to the repository root so the recorded allowlist paths are stable
+// regardless of the invocation directory.
+const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const allowlistPath = 'brand/legacy-tokens-allowlist.json'
 const SEED_ON_DRIFT = process.argv.includes('--seed')
 
@@ -56,7 +59,7 @@ const trackedFiles = listTrackedFiles()
 let allowance
 try {
   const parsed = JSON.parse(readFileSync(resolve(repositoryRoot, allowlistPath), 'utf8'))
-  allowance = parsed.allowlist ?? {}
+  allowance = parsed.allowance ?? {}
 } catch {
   allowance = seedAllowlist(trackedFiles)
   console.error(`allowlist was missing; seeded with ${Object.keys(allowance).length} entries at ${allowlistPath}`)
