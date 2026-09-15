@@ -123,6 +123,8 @@ export function assertIsolatedAppBuilderLibResolution(
 
 function builderArguments(output: string, prepackaged?: string): string[] {
   return [
+    '--config',
+    'electron-builder.json',
     '--win',
     ...(prepackaged === undefined ? ['--dir'] : ['nsis', `--prepackaged=${prepackaged}`]),
     '--x64',

@@ -7,6 +7,13 @@ import {
   type MacSmokeVerificationOptions,
 } from '../scripts/verify-mac-smoke.ts'
 import { MACOS_UNIVERSAL_PACKAGED_ENTRIES } from '../scripts/mac-universal.ts'
+import { DESKTOP_ARTIFACT_PREFIX, DESKTOP_PRODUCT_NAME } from '../src/product-identity.ts'
+import { readFileSync } from 'node:fs'
+const packageVersion = (JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as {
+  version?: unknown
+}).version as string
+const productName = DESKTOP_PRODUCT_NAME
+const dmgName = `${DESKTOP_ARTIFACT_PREFIX}-${packageVersion}`
 
 const temporaryRoots: string[] = []
 
@@ -21,13 +28,13 @@ interface AppFixture {
 function fixture(): AppFixture {
   const root = mkdtempSync(join(tmpdir(), 'dsh-mac-smoke-'))
   temporaryRoots.push(root)
-  const contents = join(root, 'Yootun-Agent Beta.app', 'Contents')
+  const contents = join(root, `${productName}.app`, 'Contents')
   const macos = join(contents, 'MacOS')
   const resources = join(contents, 'Resources')
   mkdirSync(macos, { recursive: true })
   mkdirSync(resources, { recursive: true })
   const infoPlist = join(contents, 'Info.plist')
-  const executable = join(macos, 'Yootun-Agent Beta')
+  const executable = join(macos, productName)
   const appAsar = join(resources, 'app.asar')
   const modeOverrides = new Map<string, number>()
   writeFileSync(infoPlist, '<?xml version="1.0" encoding="UTF-8"?>')
@@ -55,8 +62,8 @@ function options(
   const removeMountPoint = vi.fn()
   const value: MacSmokeVerificationOptions = {
     distDir: '/release/dist',
-    productName: 'Yootun-Agent Beta',
-    listDmgs: () => ['/release/dist/Yootun-Agent-Beta-2.0.10-beta.2.dmg'],
+    productName,
+    listDmgs: () => [`/release/dist/${dmgName}.dmg`],
     makeMountPoint: () => '/private/tmp/dsh-desktop-dmg-smoke-test',
     run: (command, args) => { calls.push({ command, args: [...args] }) },
     removeMountPoint,
@@ -98,18 +105,18 @@ describe('macOS DMG smoke artifact verification', () => {
   it('mounts one DMG and accepts a well-formed unsigned application bundle', () => {
     const value = fixture()
     const harness = options({ makeMountPoint: () => value.root }, value.modeOverrides)
-    const appPath = join(value.root, 'Yootun-Agent Beta.app')
+    const appPath = join(value.root, `${productName}.app`)
 
     expect(verifyMacSmoke(harness.value)).toEqual({
       appPath,
-      dmgPath: '/release/dist/Yootun-Agent-Beta-2.0.10-beta.2.dmg',
+      dmgPath: `/release/dist/${dmgName}.dmg`,
     })
 
     expect(harness.calls).toEqual([
       {
         command: 'hdiutil',
         args: [
-          'attach', '/release/dist/Yootun-Agent-Beta-2.0.10-beta.2.dmg',
+          'attach', `/release/dist/${dmgName}.dmg`,
           '-mountpoint', value.root, '-nobrowse', '-readonly',
         ],
       },
@@ -145,7 +152,7 @@ describe('macOS DMG smoke artifact verification', () => {
     expect(harness.calls).toEqual([
       {
         command: 'hdiutil',
-        args: ['attach', '/release/dist/Yootun-Agent-Beta-2.0.10-beta.2.dmg', '-mountpoint', value.root, '-nobrowse', '-readonly'],
+        args: ['attach', `/release/dist/${dmgName}.dmg`, '-mountpoint', value.root, '-nobrowse', '-readonly'],
       },
       { command: 'hdiutil', args: ['detach', value.root] },
     ])

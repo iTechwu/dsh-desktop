@@ -49,6 +49,8 @@ describe('unsigned directory packaging', () => {
       '/runtime/node',
       [
         '/workspace/electron-builder.js',
+        '--config',
+        'electron-builder.json',
         ...UNSIGNED_DIRECTORY_BUILD_ARGS,
         '--config.electronDist=/workspace/electron/dist',
       ],

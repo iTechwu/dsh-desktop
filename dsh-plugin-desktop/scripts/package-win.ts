@@ -166,6 +166,8 @@ export function packageWindowsArtifact(
     options.nodeExecutable,
     [
       options.builderCli,
+      '--config',
+      'electron-builder.json',
       '--win',
       target,
       '--x64',

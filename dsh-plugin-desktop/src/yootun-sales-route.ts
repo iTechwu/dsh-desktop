@@ -8,6 +8,7 @@ import { writeFileAtomic } from '@deepseek-ai/dsh-atomic-write'
 import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import type { ToolRuntime } from '@deepseek-ai/dsh-tools'
 import { safeYootunAuditTargetId, type YootunAuditRecordInput, type YootunAuditRecorder } from './yootun-audit-contract.ts'
+import { desktopPackageVersion } from './desktop-package-version.ts'
 
 export const YOOTUN_SALES_PATH = '/api/desktop/yootun/sales'
 
@@ -395,7 +396,7 @@ export interface SalesRouteDependencies {
 
 const SALES_AUDIT_SOURCE = Object.freeze({
   pluginId: 'dsh-plugin-desktop/yootun-sales',
-  pluginVersion: '2.0.10-beta.2',
+  pluginVersion: desktopPackageVersion(),
   surface: 'human_ui' as const,
 })
 

@@ -56,6 +56,8 @@ export function packageDirectory(options = {}) {
     nodeExecutable,
     [
       electronBuilderCli,
+      '--config',
+      'electron-builder.json',
       ...UNSIGNED_DIRECTORY_BUILD_ARGS,
       `--config.electronDist=${configuredElectronDist}`,
     ],

@@ -28,37 +28,44 @@ const manifest = JSON.parse(readFileSync(new URL('package.json', packageRoot), '
   files?: unknown
   scripts?: Record<string, unknown>
   dsh?: { bundle?: { patch?: unknown }; client?: unknown }
-  build?: {
-    productName?: unknown
-    appId?: unknown
-    asar?: unknown
-    asarUnpack?: unknown
-    afterPack?: unknown
-    electronDownload?: { checksums?: Record<string, unknown> }
-    electronFuses?: unknown
-    toolsets?: Record<string, unknown>
-    files?: unknown
-    mac?: {
-      asarUnpack?: unknown
-      extendInfo?: unknown
-      hardenedRuntime?: unknown
-      icon?: unknown
-      mergeASARs?: unknown
-      notarize?: unknown
-      signIgnore?: unknown
-      target?: unknown
-      x64ArchFiles?: unknown
-    }
-    win?: { icon?: unknown; files?: unknown; target?: unknown; artifactName?: unknown }
-    nsis?: Record<string, unknown>
-    portable?: Record<string, unknown>
-    linux?: { icon?: unknown }
-  }
   dependencies?: Record<string, unknown>
   optionalDependencies?: Record<string, unknown>
   devDependencies?: Record<string, unknown>
   peerDependencies?: Record<string, unknown>
 }
+const builderConfig = JSON.parse(readFileSync(new URL('electron-builder.json', packageRoot), 'utf8')) as {
+  productName?: unknown
+  appId?: unknown
+  asar?: unknown
+  asarUnpack?: unknown
+  afterPack?: unknown
+  electronDownload?: { checksums?: Record<string, unknown> }
+  electronFuses?: unknown
+  toolsets?: Record<string, unknown>
+  files?: unknown
+  mac?: {
+    asarUnpack?: unknown
+    extendInfo?: unknown
+    hardenedRuntime?: unknown
+    icon?: unknown
+    mergeASARs?: unknown
+    notarize?: unknown
+    signIgnore?: unknown
+    target?: unknown
+    x64ArchFiles?: unknown
+  }
+  win?: { icon?: unknown; files?: unknown; target?: unknown; artifactName?: unknown }
+  nsis?: Record<string, unknown>
+  portable?: Record<string, unknown>
+  linux?: { icon?: unknown }
+}
+const brandConfig = JSON.parse(readFileSync(new URL('../brand/brand.config.json', packageRoot), 'utf8')) as {
+  activeChannel?: string
+  channels?: Record<string, { productName?: unknown; appId?: unknown; artifactPrefix?: unknown }>
+  nsis?: { shortcutName?: unknown }
+}
+const activeBrandChannel = brandConfig.channels?.[brandConfig.activeChannel ?? ''] ?? {}
+
 const workspaceManifest = JSON.parse(readFileSync(new URL('package.json', workspaceRoot), 'utf8')) as {
   version?: unknown
   scripts?: Record<string, unknown>
@@ -733,17 +740,17 @@ describe('published package surface', () => {
 
   it('fixes the installed application identity', () => {
     expect(manifest.version).toBe(workspaceManifest.version)
-    expect(manifest.build?.productName).toBe('Yootun-Agent Beta')
-    expect(manifest.build?.appId).toBe('ai.yootun.agent.beta')
-    expect(manifest.build?.asar).toEqual({ smartUnpack: true })
-    expect(manifest.build?.asarUnpack).toBeUndefined()
-    expect(manifest.build?.electronFuses).toEqual({
+    expect(builderConfig?.productName).toBe(activeBrandChannel.productName)
+    expect(builderConfig?.appId).toBe(activeBrandChannel.appId)
+    expect(builderConfig?.asar).toEqual({ smartUnpack: true })
+    expect(builderConfig?.asarUnpack).toBeUndefined()
+    expect(builderConfig?.electronFuses).toEqual({
       enableEmbeddedAsarIntegrityValidation: false,
       onlyLoadAppFromAsar: false,
       resetAdHocDarwinSignature: true,
       runAsNode: true,
     })
-    expect(manifest.build?.toolsets).toEqual({ nsis: '1.2.1' })
+    expect(builderConfig?.toolsets).toEqual({ nsis: '1.2.1' })
     expect(manifest.files).toEqual(expect.arrayContaining([
       'build/app-icon.ico',
       'build/app-icon.png',
@@ -752,7 +759,7 @@ describe('published package surface', () => {
       'build/tray-icon*.png',
       'docs/**',
     ]))
-    expect(manifest.build?.files).toEqual([
+    expect(builderConfig?.files).toEqual([
       'build/app-icon.ico',
       'build/app-icon.png',
       'build/app-icon-mac.png',
@@ -764,17 +771,17 @@ describe('published package surface', () => {
       '!node_modules/koffi-darwin-*-3-1-1/**',
       '!node_modules/node-pty/build/**',
     ])
-    expect(manifest.build?.mac?.icon).toBe('build/app-icon-mac.png')
-    expect(manifest.build?.mac?.asarUnpack).toEqual([
+    expect(builderConfig?.mac?.icon).toBe('build/app-icon-mac.png')
+    expect(builderConfig?.mac?.asarUnpack).toEqual([
       'build/app-icon-mac.png',
       'build/tray-iconTemplate.png',
       'build/tray-iconTemplate@2x.png',
       'node_modules/fs-ext/**',
     ])
-    expect(manifest.build?.mac?.mergeASARs).toBe(false)
-    expect(manifest.build?.mac?.signIgnore).toEqual(['\\.(?:pak|dat|wasm)$'])
-    expect(manifest.build?.win?.icon).toBe('build/app-icon.ico')
-    expect(manifest.build?.win?.files).toEqual([
+    expect(builderConfig?.mac?.mergeASARs).toBe(false)
+    expect(builderConfig?.mac?.signIgnore).toEqual(['\\.(?:pak|dat|wasm)$'])
+    expect(builderConfig?.win?.icon).toBe('build/app-icon.ico')
+    expect(builderConfig?.win?.files).toEqual([
       '!node_modules/@img/sharp-darwin*/**',
       '!node_modules/@img/sharp-libvips-darwin*/**',
       '!node_modules/@img/sharp-win32-arm64*/**',
@@ -792,12 +799,12 @@ describe('published package surface', () => {
       '!node_modules/node-addon-require-builtin-win32-ia32*/**',
       '!node_modules/koffi-darwin-*-3-1-1/**',
     ])
-    expect(manifest.build?.win?.target).toEqual([{
+    expect(builderConfig?.win?.target).toEqual([{
       target: 'nsis',
       arch: ['x64'],
     }])
-    expect(manifest.build?.win?.artifactName).toBe('Yootun-Agent-Beta-${version}-${arch}-Portable.${ext}')
-    expect(manifest.build?.nsis).toEqual({
+    expect(builderConfig?.win?.artifactName).toBe(`${String(activeBrandChannel.artifactPrefix)}-\${version}-\${arch}-Portable.\${ext}`)
+    expect(builderConfig?.nsis).toEqual({
       include: 'installer.nsh',
       installerIcon: 'build/app-icon.ico',
       license: 'THIRD_PARTY_NOTICES.md',
@@ -808,19 +815,20 @@ describe('published package surface', () => {
       createDesktopShortcut: true,
       createStartMenuShortcut: true,
       differentialPackage: false,
-      shortcutName: 'Yootun-Agent Beta',
+      shortcutName: brandConfig.nsis?.shortcutName,
       useZip: false,
-      artifactName: 'Yootun-Agent-Beta-${version}-${arch}-Setup.${ext}',
+      artifactName: `${String(activeBrandChannel.artifactPrefix)}-\${version}-\${arch}-Setup.\${ext}`,
     })
-    expect(manifest.build?.linux?.icon).toBe('build/app-icon.png')
+    expect(builderConfig?.linux?.icon).toBe('build/app-icon.png')
   })
 
   it('separates unsigned smoke packaging from the signed macOS release', () => {
     const packageDir = readFileSync(new URL('scripts/package-dir.mjs', packageRoot), 'utf8')
 
-    expect(manifest.scripts?.build).toContain('node scripts/generate-windows-app-icon.mjs')
-    expect(manifest.scripts?.build).toContain('node scripts/generate-mac-app-icon.mjs')
-    expect(manifest.scripts?.build).toContain('node scripts/generate-brand-assets.mjs')
+    expect(manifest.scripts?.build).toContain('corepack pnpm run generate:brand')
+    expect(manifest.scripts?.['generate:brand']).toContain('node scripts/generate-windows-app-icon.mjs')
+    expect(manifest.scripts?.['generate:brand']).toContain('node scripts/generate-mac-app-icon.mjs')
+    expect(manifest.scripts?.['generate:brand']).toContain('node scripts/generate-brand-assets.mjs')
     expect(manifest.scripts?.['package:dir']).toBe('corepack pnpm run build && node scripts/package-dir.mjs')
     expect(packageDir).toContain("CSC_IDENTITY_AUTO_DISCOVERY: 'false'")
     expect(manifest.scripts?.['dist:mac']).toBe('node scripts/release-mac.ts')
@@ -855,8 +863,8 @@ describe('published package surface', () => {
       .toBe('pnpm --filter dsh-community-market build && pnpm --filter dsh-plugin-desktop dist:win')
     expect(workspaceManifest.scripts?.['dist:win-portable'])
       .toBe('pnpm --filter dsh-community-market build && pnpm --filter dsh-plugin-desktop dist:win-portable')
-    expect(manifest.build?.afterPack).toBe('./scripts/verify-packaged-runtime.ts')
-    expect(manifest.build?.electronDownload?.checksums).toEqual({
+    expect(builderConfig?.afterPack).toBe('./scripts/verify-packaged-runtime.ts')
+    expect(builderConfig?.electronDownload?.checksums).toEqual({
       'electron-v43.4.0-darwin-arm64.zip':
         '827f9f182566f46846377575b51c547b9926b111637313a373b6f717462aebac',
       'electron-v43.4.0-darwin-x64.zip':
@@ -864,7 +872,7 @@ describe('published package surface', () => {
       'electron-v43.4.0-win32-x64.zip':
         'ef0709cfa719739acce73de6f9b684304baf38c6454376638a70d34a7cecffe0',
     })
-    expect(manifest.build?.mac).toEqual(expect.objectContaining({
+    expect(builderConfig?.mac).toEqual(expect.objectContaining({
       extendInfo: {
         CFBundleAllowMixedLocalizations: true,
         CFBundleDevelopmentRegion: 'en',
@@ -877,9 +885,9 @@ describe('published package surface', () => {
       target: ['dir'],
       x64ArchFiles: expect.stringContaining('node-pty/prebuilds/darwin-*'),
     }))
-    expect(manifest.build?.mac?.x64ArchFiles).toContain('lightningcss-darwin-*')
-    expect(manifest.build?.mac?.x64ArchFiles).toContain('@deepseek-ai/node-addon-system-darwin-*')
-    expect(manifest.build?.files).toContain('!node_modules/node-pty/build/**')
+    expect(builderConfig?.mac?.x64ArchFiles).toContain('lightningcss-darwin-*')
+    expect(builderConfig?.mac?.x64ArchFiles).toContain('@deepseek-ai/node-addon-system-darwin-*')
+    expect(builderConfig?.files).toContain('!node_modules/node-pty/build/**')
     expect(manifest.devDependencies?.['@electron/asar']).toBe('3.4.1')
   })
 
@@ -961,7 +969,7 @@ describe('published package surface', () => {
     expect(digestOf('build/brand-logo.png'))
       .toBe('09d698cfc2d89aa77812e40ee0476a2e315bcc7f9f132be01ce53c2c9919771e')
     expect(digestOf('build/sidebar-brand.png'))
-      .toBe('97fdafd7e3ff3ce84c7cba7f8e602782d513c3a117bca34d9b0de168f34cc939')
+      .toBe('d3cc26414d6c484faf746f9ae08b49aa276acd94a45ecac617a4d6f08dab0aa4')
   })
 
   it('keeps the complete horizontal sidebar brand artwork', async () => {
@@ -1131,7 +1139,7 @@ describe('published package surface', () => {
     expect(patch).toContain("[System.IO.Path]::GetFileName($$_.Path) -ieq '${_FILE}'")
     expect(patch).toContain('diff --git a/templates/nsis/include/extractAppPackage.nsh')
     expect(patch).toContain('diff --git a/templates/nsis/include/installUtil.nsh')
-    expect(manifest.build?.toolsets?.nsis).toBe('1.2.1')
+    expect(builderConfig?.toolsets?.nsis).toBe('1.2.1')
     expect(installedCodeSign).toContain('importCerts(keychainFile, certPaths, cscPasswords, keychainPassword)')
     expect(installedCodeSign).toContain('"-k", keychainPassword, keychainFile')
     expect(installedNsisInstaller).toContain('ManifestLongPathAware true')

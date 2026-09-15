@@ -66,6 +66,8 @@ describe('macOS DMG smoke packaging', () => {
       command: '/usr/local/bin/node',
       args: [
         '/repo/node_modules/electron-builder/cli.js',
+        '--config',
+        'electron-builder.json',
         '--mac',
         'dmg',
         '--universal',
@@ -113,6 +115,8 @@ describe('macOS DMG smoke packaging', () => {
     expect(calls).toHaveLength(2)
     expect(calls[0]?.args).toEqual([
       '/repo/node_modules/electron-builder/cli.js',
+      '--config',
+      'electron-builder.json',
       '--mac',
       'dmg',
       '--universal',

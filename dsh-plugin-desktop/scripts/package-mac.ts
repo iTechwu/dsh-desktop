@@ -130,6 +130,8 @@ export function packageMacSmoke(options: MacSmokePackageOptions = defaultOptions
     options.nodeExecutable,
     [
       options.builderCli,
+      '--config',
+      'electron-builder.json',
       '--mac',
       'dmg',
       '--universal',
