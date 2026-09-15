@@ -100,6 +100,7 @@ export function validateBrandConfig(document, sourcePath = 'brand.config.json') 
     requireRelativePath(artwork, 'heroMark', 'artwork.', push)
     requireIntegerRange(artwork, 'whiteThreshold', 0, 255, 'artwork.', push)
     requireIntegerRange(artwork, 'iconSize', 256, 4096, 'artwork.', push)
+    requireIntegerRange(artwork, 'heroSize', 32, 1024, 'artwork.', push)
     const macIcon = requireObject(artwork, 'macIcon', push)
     if (macIcon !== undefined) {
       requireIntegerRange(macIcon, 'canvas', 256, 4096, 'artwork.macIcon.', push)

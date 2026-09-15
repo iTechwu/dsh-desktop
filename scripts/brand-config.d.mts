@@ -17,6 +17,7 @@ export interface BrandConfig {
     readonly heroMark: string
     readonly whiteThreshold: number
     readonly iconSize: number
+    readonly heroSize: number
     readonly macIcon: { readonly canvas: number; readonly artwork: number }
   }
   readonly wordmark: {

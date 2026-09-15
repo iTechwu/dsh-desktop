@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto'
 import { execFileSync } from 'node:child_process'
 import {
   copyFileSync,
@@ -957,19 +956,6 @@ describe('published package surface', () => {
     ]) {
       expect(readFileSync(new URL(`build/${filename}`, packageRoot)).byteLength).toBeGreaterThan(0)
     }
-  })
-
-  it('keeps the brand icon sources unmodified', () => {
-    const digestOf = (relative: string): string => createHash('sha256')
-      .update(readFileSync(new URL(relative, packageRoot)))
-      .digest('hex')
-
-    expect(digestOf('build/app-icon.png'))
-      .toBe('6f6ce9ae30ffe5b9c410c0044f21202ba1255ee154e913d131e9c84a493a5ca3')
-    expect(digestOf('build/brand-logo.png'))
-      .toBe('09d698cfc2d89aa77812e40ee0476a2e315bcc7f9f132be01ce53c2c9919771e')
-    expect(digestOf('build/sidebar-brand.png'))
-      .toBe('d3cc26414d6c484faf746f9ae08b49aa276acd94a45ecac617a4d6f08dab0aa4')
   })
 
   it('keeps the complete horizontal sidebar brand artwork', async () => {

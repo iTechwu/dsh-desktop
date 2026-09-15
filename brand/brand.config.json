@@ -26,7 +26,8 @@
     "macIcon": {
       "canvas": 1024,
       "artwork": 824
-    }
+    },
+    "heroSize": 204
   },
   "wordmark": {
     "image": "brand/assets/wordmark.png",

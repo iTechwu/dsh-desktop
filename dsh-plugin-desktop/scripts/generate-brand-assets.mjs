@@ -1,15 +1,19 @@
-/** Generate application and tray masters from the repository-owned Yootun artwork. */
+/** Generate application and tray masters from the configured brand artwork. */
 
-import { dirname, join } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import sharp from 'sharp'
+import { loadBrandConfig } from '../../scripts/brand-config.mjs'
 
 const packageRoot = dirname(dirname(fileURLToPath(import.meta.url)))
+const repositoryRoot = resolve(packageRoot, '..')
 const buildRoot = join(packageRoot, 'build')
-const sourcePath = join(buildRoot, 'app-icon-source.jpg')
+const brandConfig = loadBrandConfig(undefined, repositoryRoot)
+const sourcePath = resolve(repositoryRoot, brandConfig.artwork.appIconSource)
 const appIconPath = join(buildRoot, 'app-icon.png')
 const brandLogoPath = join(buildRoot, 'brand-logo.png')
-const size = 1024
+const size = brandConfig.artwork.iconSize
+const whiteThreshold = brandConfig.artwork.whiteThreshold
 
 const metadata = await sharp(sourcePath).metadata()
 if (metadata.format !== 'jpeg' || metadata.width === undefined || metadata.height === undefined) {
@@ -38,7 +42,7 @@ const enqueue = (pixel) => {
   if (visited[pixel] === 1) return
   const offset = pixel * info.channels
   const exterior = data[offset + 3] === 0
-    || (data[offset] >= 235 && data[offset + 1] >= 235 && data[offset + 2] >= 235)
+    || (data[offset] >= whiteThreshold && data[offset + 1] >= whiteThreshold && data[offset + 2] >= whiteThreshold)
   if (!exterior) return
   visited[pixel] = 1
   queue[tail++] = pixel

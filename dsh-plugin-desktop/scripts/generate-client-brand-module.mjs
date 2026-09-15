@@ -1,15 +1,17 @@
-/** Embed the repository-owned Yootun artwork in the browser client bundle. */
+/** Embed the configured brand artwork in the browser client bundle. */
 
 import { readFile, writeFile } from 'node:fs/promises'
-import { dirname, join } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import sharp from 'sharp'
+import { loadBrandConfig } from '../../scripts/brand-config.mjs'
 
 const packageRoot = dirname(dirname(fileURLToPath(import.meta.url)))
+const brandConfig = loadBrandConfig(undefined, resolve(packageRoot, '..'))
 const outputPath = join(packageRoot, 'src', 'client', 'generated-brand-assets.ts')
 const assets = [
-  ['sidebarBrandDataUrl', join(packageRoot, 'build', 'sidebar-brand.png'), 2537, 457],
-  ['heroBrandDataUrl', join(packageRoot, 'build', 'hero-brand.png'), 204, 204],
+  ['sidebarBrandDataUrl', join(packageRoot, 'build', 'sidebar-brand.png'), brandConfig.wordmark.lockup.width, brandConfig.wordmark.lockup.height],
+  ['heroBrandDataUrl', join(packageRoot, 'build', 'hero-brand.png'), brandConfig.artwork.heroSize, brandConfig.artwork.heroSize],
 ]
 
 const declarations = []

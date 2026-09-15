@@ -4,15 +4,17 @@ import { writeFile } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import sharp from 'sharp'
-
-/** Pixel width and height of the generated macOS icon canvas. */
-export const MAC_APP_ICON_CANVAS_SIZE = 1024
-/** Pixel width and height of the centered source artwork. */
-export const MAC_APP_ICON_ARTWORK_SIZE = 824
-/** Transparent inset on each edge of the generated macOS icon. */
-export const MAC_APP_ICON_INSET = (MAC_APP_ICON_CANVAS_SIZE - MAC_APP_ICON_ARTWORK_SIZE) / 2
+import { loadBrandConfig } from '../../scripts/brand-config.mjs'
 
 const packageRoot = dirname(dirname(fileURLToPath(import.meta.url)))
+const brandMacIcon = loadBrandConfig(undefined, resolve(packageRoot, '..')).artwork.macIcon
+
+/** Pixel width and height of the generated macOS icon canvas. */
+export const MAC_APP_ICON_CANVAS_SIZE = brandMacIcon.canvas
+/** Pixel width and height of the centered source artwork. */
+export const MAC_APP_ICON_ARTWORK_SIZE = brandMacIcon.artwork
+/** Transparent inset on each edge of the generated macOS icon. */
+export const MAC_APP_ICON_INSET = (MAC_APP_ICON_CANVAS_SIZE - MAC_APP_ICON_ARTWORK_SIZE) / 2
 const sourcePath = join(packageRoot, 'build', 'app-icon.png')
 const outputPath = join(packageRoot, 'build', 'app-icon-mac.png')
 
