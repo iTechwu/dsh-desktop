@@ -561,12 +561,18 @@ export class ElectronShellGeneration {
         origin,
         spec.rendererAccessHeader,
       )
-      await window.loadURL(spec.url)
-      if (spec.rendererUrl !== undefined && window.webContents.getURL() !== spec.rendererUrl) {
+      // In isolated chrome modes the renderer surface is the compatibility
+      // shell's content view: only its session carries the renderer access
+      // header and the BrowserAuth cookie, and the DesktopWebServer fence
+      // denies marker-bearing URLs without them. The window itself stays a
+      // blank base layer behind the chrome and content views.
+      const loadTarget = this.compatibilityShell ? renderer : window.webContents
+      await loadTarget.loadURL(spec.url)
+      if (spec.rendererUrl !== undefined && loadTarget.getURL() !== spec.rendererUrl) {
         // BrowserAuth redirects the token URL to a clean `/`, dropping the
         // desktop markers. Reload the marker-bearing URL after the cookie
         // handshake so the client plugin can activate native presentation.
-        await window.loadURL(spec.rendererUrl)
+        await loadTarget.loadURL(spec.rendererUrl)
       }
       // Keep the hidden native background from becoming a long blank window.
       // The Setup progress surface remains visible during first-time startup.

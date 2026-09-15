@@ -66,4 +66,16 @@ export function applyAdvancedShell(ctx: ClientContext, environment: DesktopClien
     },
     inject: () => ({ layout: desktopLayout, platform: environment.platform }),
   }, AdvancedFrame), 'desktop: advanced root slot')
+
+  // 桌面端赢得 layout 所有权时,harness 的 dsh-client-ui-layout 不在组合里,
+  // 无人调用 provideRoot 注册 panelInfo —— 标准 prop usePanelInfo 会是
+  // undefined,根插槽一渲染就崩溃(白屏)。这里补上桌面自己的 panelInfo 源。
+  ctx.effect(() => ctx.slots.provideRoot({
+    hooks: {
+      panelInfo: {
+        getSnapshot: () => desktopLayout.getPanelInfo(),
+        subscribe: listener => desktopLayout.subscribe(listener),
+      },
+    },
+  }), 'desktop: panel info provider')
 }

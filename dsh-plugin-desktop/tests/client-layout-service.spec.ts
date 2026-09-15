@@ -59,6 +59,7 @@ function makeCtx() {
     slots: {
       register: vi.fn(() => ({})),
       inject: vi.fn(),
+      provideRoot: vi.fn((_contribution?: unknown) => () => {}),
     },
     theme: { getTheme: vi.fn(() => ({ active: { colorScheme: 'light', tokens: {} } })) },
     on: vi.fn(() => () => {}),
@@ -131,8 +132,17 @@ describe('applyAdvancedShell presentation ownership', () => {
       applyAdvancedShell(ctx as never, environmentFor('advanced') as never)
 
       // layout service + owned styles/markers + theme presenter + root slot
-      expect(ctx.effect).toHaveBeenCalledTimes(4)
+      // + panel info provider
+      expect(ctx.effect).toHaveBeenCalledTimes(5)
+      expect(ctx.effect).toHaveBeenCalledWith(expect.any(Function), 'desktop: panel info provider')
       expect(ctx.slots.register).toHaveBeenCalledTimes(1)
+      // dsh-client-ui-layout is disabled in this mode, so the desktop shell
+      // must contribute the panelInfo root hook itself — otherwise the
+      // standard usePanelInfo prop stays undefined and the root slot crashes
+      // on first render.
+      expect(ctx.slots.provideRoot).toHaveBeenCalledTimes(1)
+      const advancedContribution = ctx.slots.provideRoot.mock.calls[0]?.[0] as { hooks: Record<string, unknown> }
+      expect(Object.keys(advancedContribution.hooks)).toEqual(['panelInfo'])
       expect(warn).not.toHaveBeenCalled()
     } finally {
       warn.mockRestore()
@@ -154,6 +164,7 @@ describe('applyAdvancedShell presentation ownership', () => {
       // none of the desktop-owned chrome styles — just the mode markers,
       // whose cleanup still runs through their own fiber effect.
       expect(ctx.slots.register).not.toHaveBeenCalled()
+      expect(ctx.slots.provideRoot).not.toHaveBeenCalled()
       // Failed ownership attempt plus the surviving marker effect.
       expect(ctx.effect).toHaveBeenCalledTimes(2)
       expect(ctx.effect.mock.results[0]?.type).toBe('throw')
@@ -179,9 +190,16 @@ describe('applyExtendedShell presentation ownership', () => {
 
       applyExtendedShell(ctx as never, environmentFor('extended') as never)
 
-      // layout + owned styles + presenter + root slot + framed chrome styles
-      expect(ctx.effect).toHaveBeenCalledTimes(5)
+      // layout + owned styles + presenter + root slot + panel info provider
+      // + framed chrome styles
+      expect(ctx.effect).toHaveBeenCalledTimes(6)
+      expect(ctx.effect).toHaveBeenCalledWith(expect.any(Function), 'desktop: extended panel info provider')
       expect(ctx.slots.register).toHaveBeenCalledTimes(1)
+      // Same root-hook contract as the advanced shell: with ui-layout
+      // disabled, the desktop shell is the only panelInfo provider left.
+      expect(ctx.slots.provideRoot).toHaveBeenCalledTimes(1)
+      const extendedContribution = ctx.slots.provideRoot.mock.calls[0]?.[0] as { hooks: Record<string, unknown> }
+      expect(Object.keys(extendedContribution.hooks)).toEqual(['panelInfo'])
       expect(warn).not.toHaveBeenCalled()
     } finally {
       warn.mockRestore()
@@ -205,6 +223,7 @@ describe('applyExtendedShell presentation ownership', () => {
       expect(ctx.effect.mock.results[0]?.type).toBe('throw')
       expect(ctx.slots.register).not.toHaveBeenCalled()
       expect(ctx.slots.inject).not.toHaveBeenCalled()
+      expect(ctx.slots.provideRoot).not.toHaveBeenCalled()
       expect(byId.has('dsh-desktop-framed-styles')).toBe(true)
       expect(dataset.dshDesktopMode).toBe('extended')
       expect(rootViewport.dataset.dshDesktopContentViewport).toBe('')

@@ -268,8 +268,11 @@ export class LanHttpsIngress {
     let connected = false
     upstream.once('connect', () => {
       connected = true
-      upstream.write(rawUpgradeRequest(request, sanitizedHeaders(request.headers)))
-      if (head.length > 0) upstream.write(head)
+      // Headers and the upgrade head must share one TCP segment: the backend's
+      // HTTP parser emits `upgrade` after the headers-only segment, and a
+      // split write makes the head bytes arrive as ordinary post-upgrade data.
+      const forwarded = Buffer.from(rawUpgradeRequest(request, sanitizedHeaders(request.headers)), 'utf8')
+      upstream.write(head.length > 0 ? Buffer.concat([forwarded, head]) : forwarded)
       downstream.pipe(upstream).pipe(downstream)
       downstream.resume()
     })

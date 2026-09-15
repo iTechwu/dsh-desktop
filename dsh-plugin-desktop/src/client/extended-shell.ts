@@ -45,6 +45,16 @@ function applyExtendedOwnedShell(ctx: ClientContext, environment: DesktopClientE
     inject: () => ({ layout: desktopLayout, platform: environment.platform }),
   }, ExtendedFrame), 'desktop: extended root slot')
 
+  // 同 advanced-shell:桌面自有布局赢得所有权时,补上 panelInfo root hook,
+  // 否则标准 prop usePanelInfo 为 undefined,根插槽渲染即崩溃(白屏)。
+  ctx.effect(() => ctx.slots.provideRoot({
+    hooks: {
+      panelInfo: {
+        getSnapshot: () => desktopLayout.getPanelInfo(),
+        subscribe: listener => desktopLayout.subscribe(listener),
+      },
+    },
+  }), 'desktop: extended panel info provider')
 }
 
 export function applyFramedShell(
