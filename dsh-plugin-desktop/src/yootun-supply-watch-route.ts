@@ -7,6 +7,7 @@ import { dirname } from 'node:path'
 import { writeFileAtomic } from '@deepseek-ai/dsh-atomic-write'
 import { safeYootunAuditTargetId, type YootunAuditRecordInput, type YootunAuditRecorder } from './yootun-audit-contract.ts'
 import { sameYootunOrigin } from './yootun-route-security.ts'
+import { desktopPackageVersion } from './desktop-package-version.ts'
 
 export const YOOTUN_SUPPLY_WATCH_PATH = '/api/desktop/yootun/supply-watch'
 const STATE_VERSION = 1
@@ -67,7 +68,7 @@ export interface SupplyRouteDependencies {
   audit?: YootunAuditRecorder | undefined
 }
 
-const SUPPLY_AUDIT_SOURCE = Object.freeze({ pluginId: 'dsh-plugin-desktop/yootun-supply-watch', pluginVersion: '2.0.10-beta.2', surface: 'human_ui' as const })
+const SUPPLY_AUDIT_SOURCE = Object.freeze({ pluginId: 'dsh-plugin-desktop/yootun-supply-watch', pluginVersion: desktopPackageVersion(), surface: 'human_ui' as const })
 
 async function recordSupplyAudit(audit: YootunAuditRecorder | undefined, input: YootunAuditRecordInput | undefined): Promise<void> {
   if (audit === undefined || input === undefined) return

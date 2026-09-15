@@ -132,7 +132,9 @@
     }
   },
   "scripts": {
-    "build": "node scripts/generate-brand-assets.mjs && node scripts/generate-client-brand-module.mjs && node scripts/generate-mac-app-icon.mjs && node scripts/generate-tray-icons.mjs && node scripts/generate-windows-app-icon.mjs && node scripts/clean.mjs && tsdown && vite build --config vite.native-ui.config.ts && tsc -p tsconfig.json --emitDeclarationOnly && tsc -p tsconfig.client.json --emitDeclarationOnly",
+    "build": "corepack pnpm run generate:brand && node scripts/clean.mjs && tsdown && vite build --config vite.native-ui.config.ts && tsc -p tsconfig.json --emitDeclarationOnly && tsc -p tsconfig.client.json --emitDeclarationOnly",
+    "generate:brand": "node scripts/generate-brand-assets.mjs && node scripts/generate-lockup.ts && node scripts/generate-client-brand-module.mjs && node scripts/generate-product-identity.mjs && node scripts/generate-mac-app-icon.mjs && node scripts/generate-tray-icons.mjs && node scripts/generate-windows-app-icon.mjs",
+    "verify:brand": "node scripts/verify-brand-sync.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.client.json --noEmit && tsc -p tsconfig.native-ui.json --noEmit && tsc -p tsconfig.tests.json --noEmit && tsc -p tsconfig.tests.client.json --noEmit",
     "test": "vitest run",
     "test:audit-ui": "node tests/browser/yootun-audit.visual.mjs",
@@ -150,7 +152,7 @@
     "verify:licenses": "node --test scripts/license-file.spec.mjs && node scripts/verify-licenses.mjs",
     "verify:operations": "node --test scripts/operation-reliability.spec.mjs && node scripts/verify-operation-reliability.mjs",
     "verify:notices": "node scripts/verify-licenses.mjs --notices THIRD_PARTY_NOTICES.md",
-    "check": "corepack pnpm run build && corepack pnpm run typecheck && corepack pnpm run test && corepack pnpm run verify:closure && corepack pnpm run verify:cli && corepack pnpm run verify:loader && corepack pnpm run verify:yootun-clients && corepack pnpm run verify:profile && corepack pnpm run verify:licenses && corepack pnpm run verify:operations",
+    "check": "corepack pnpm run verify:brand && corepack pnpm run build && corepack pnpm run typecheck && corepack pnpm run test && corepack pnpm run verify:closure && corepack pnpm run verify:cli && corepack pnpm run verify:loader && corepack pnpm run verify:yootun-clients && corepack pnpm run verify:profile && corepack pnpm run verify:licenses && corepack pnpm run verify:operations",
     "check:win-package": "pnpm --filter dsh-community-market build && pnpm run build && pnpm run typecheck && vitest run tests/package.spec.ts tests/package-win.spec.ts tests/desktop-installer-quit.spec.ts tests/installer-nsh.spec.ts tests/update-checker.spec.ts tests/update-download.spec.ts tests/verify-win-installer.spec.ts tests/verify-win-portable.spec.ts tests/verify-packaged-runtime.spec.ts tests/windows-pwsh-sandbox.spec.ts tests/windows-volume-diagnostics.spec.ts tests/window-options.spec.ts && pnpm run verify:closure",
     "check:mac-package": "corepack pnpm --filter dsh-community-market build && corepack pnpm run build && corepack pnpm run typecheck && vitest run tests/package.spec.ts tests/package-mac.spec.ts tests/verify-mac-smoke.spec.ts tests/verify-packaged-runtime.spec.ts tests/mac-universal.spec.ts && corepack pnpm run verify:closure",
     "start": "node lib/bin.js",
@@ -497,162 +499,6 @@
     "typescript": "6.0.3",
     "vite": "8.2.1",
     "vitest": "4.1.8"
-  },
-  "build": {
-    "appId": "ai.yootun.agent.beta",
-    "productName": "Yootun-Agent Beta",
-    "asar": {
-      "smartUnpack": true
-    },
-    "beforePack": "./scripts/mac-system-runtime.ts",
-    "afterPack": "./scripts/verify-packaged-runtime.ts",
-    "electronDownload": {
-      "checksums": {
-        "electron-v43.4.0-darwin-arm64.zip": "827f9f182566f46846377575b51c547b9926b111637313a373b6f717462aebac",
-        "electron-v43.4.0-darwin-x64.zip": "7ab39ec1b0bcf5463f2dc0040142fbc1c30cd7bc3f99086066f588c717b11e24",
-        "electron-v43.4.0-win32-x64.zip": "ef0709cfa719739acce73de6f9b684304baf38c6454376638a70d34a7cecffe0"
-      }
-    },
-    "electronFuses": {
-      "enableEmbeddedAsarIntegrityValidation": false,
-      "onlyLoadAppFromAsar": false,
-      "resetAdHocDarwinSignature": true,
-      "runAsNode": true
-    },
-    "directories": {
-      "output": "dist",
-      "buildResources": "build"
-    },
-    "toolsets": {
-      "nsis": "1.2.1"
-    },
-    "files": [
-      "build/app-icon.ico",
-      "build/app-icon.png",
-      "build/app-icon-mac.png",
-      "build/brand-logo.png",
-      "build/tray-icon*.png",
-      "cordis.patch.yml",
-      "lib/**",
-      "package.json",
-      "!node_modules/koffi-darwin-*-3-1-1/**",
-      "!node_modules/node-pty/build/**"
-    ],
-    "mac": {
-      "asarUnpack": [
-        "build/app-icon-mac.png",
-        "build/tray-iconTemplate.png",
-        "build/tray-iconTemplate@2x.png",
-        "node_modules/fs-ext/**"
-      ],
-      "files": [
-        "build/app-icon.png",
-        "build/app-icon-mac.png",
-        "build/brand-logo.png",
-        "build/tray-icon*.png",
-        "cordis.patch.yml",
-        "lib/**",
-        "package.json",
-        "!node_modules/@img/sharp-linux*/**",
-        "!node_modules/@img/sharp-libvips-linux*/**",
-        "!node_modules/@koromix/koffi-linux*/**",
-        "!node_modules/@koromix/koffi-freebsd*/**",
-        "!node_modules/@koromix/koffi-openbsd*/**",
-        "!node_modules/@koromix/koffi-win32*/**",
-        "!node_modules/@img/sharp-win32*/**",
-        "!node_modules/node-addon-require-builtin-linux*/**",
-        "!node_modules/node-addon-require-builtin-win32*/**",
-        "!node_modules/lightningcss-linux*/**",
-        "!node_modules/**/lightningcss-linux*/**",
-        "!node_modules/lightningcss-android*/**",
-        "!node_modules/**/lightningcss-android*/**",
-        "!node_modules/**/lightningcss-freebsd*/**",
-        "!node_modules/lightningcss-win32*/**",
-        "!node_modules/**/lightningcss-win32*/**",
-        "!node_modules/**/@vscode/ripgrep-linux*/**",
-        "!node_modules/**/@vscode/ripgrep-win32*/**",
-        "!node_modules/koffi-win32-x64-3-1-1/**"
-      ],
-      "target": [
-        "dir"
-      ],
-      "category": "public.app-category.developer-tools",
-      "extendInfo": {
-        "CFBundleAllowMixedLocalizations": true,
-        "CFBundleDevelopmentRegion": "en",
-        "CFBundleLocalizations": [
-          "en",
-          "zh_CN"
-        ]
-      },
-      "hardenedRuntime": true,
-      "icon": "build/app-icon-mac.png",
-      "mergeASARs": false,
-      "notarize": true,
-      "signIgnore": [
-        "\\.(?:pak|dat|wasm)$"
-      ],
-      "x64ArchFiles": "**/node_modules/{@deepseek-ai/node-addon-system-darwin-*/**,node-pty/prebuilds/darwin-*/**,fs-ext/prebuilds/darwin-*/**,node-addon-require-builtin-darwin-*/**,@vscode/ripgrep-darwin-*/**,@img/sharp-darwin-*/**,@img/sharp-libvips-darwin-*/**,@koromix/koffi-darwin-*/**,lightningcss-darwin-*/**}"
-    },
-    "win": {
-      "asarUnpack": [
-        "build/app-icon.png",
-        "build/tray-icon-blue.png",
-        "build/tray-icon-blue@1.25x.png",
-        "build/tray-icon-blue@1.5x.png",
-        "build/tray-icon-blue@2x.png",
-        "node_modules/@agents-anywhere/dsh-bridge-next/lib/bundled-connector/**"
-      ],
-      "files": [
-        "!node_modules/@img/sharp-darwin*/**",
-        "!node_modules/@img/sharp-libvips-darwin*/**",
-        "!node_modules/@img/sharp-win32-arm64*/**",
-        "!node_modules/@img/sharp-win32-ia32*/**",
-        "!node_modules/@koromix/koffi-darwin*/**",
-        "!node_modules/@koromix/koffi-win32-arm64*/**",
-        "!node_modules/@koromix/koffi-win32-ia32*/**",
-        "!node_modules/**/@vscode/ripgrep-darwin*/**",
-        "!node_modules/lightningcss-darwin*/**",
-        "!node_modules/**/lightningcss-darwin*/**",
-        "!node_modules/lightningcss-win32-arm64*/**",
-        "!node_modules/**/lightningcss-win32-arm64*/**",
-        "!node_modules/node-addon-require-builtin-darwin*/**",
-        "!node_modules/node-addon-require-builtin-win32-arm64*/**",
-        "!node_modules/node-addon-require-builtin-win32-ia32*/**",
-        "!node_modules/koffi-darwin-*-3-1-1/**"
-      ],
-      "target": [
-        {
-          "target": "nsis",
-          "arch": [
-            "x64"
-          ]
-        }
-      ],
-      "artifactName": "Yootun-Agent-Beta-${version}-${arch}-Portable.${ext}",
-      "icon": "build/app-icon.ico"
-    },
-    "nsis": {
-      "include": "installer.nsh",
-      "installerIcon": "build/app-icon.ico",
-      "license": "THIRD_PARTY_NOTICES.md",
-      "oneClick": false,
-      "perMachine": false,
-      "allowElevation": true,
-      "allowToChangeInstallationDirectory": true,
-      "createDesktopShortcut": true,
-      "createStartMenuShortcut": true,
-      "differentialPackage": false,
-      "shortcutName": "Yootun-Agent Beta",
-      "useZip": false,
-      "artifactName": "Yootun-Agent-Beta-${version}-${arch}-Setup.${ext}"
-    },
-    "linux": {
-      "target": [
-        "dir"
-      ],
-      "icon": "build/app-icon.png"
-    }
   },
   "optionalDependencies": {
     "@img/sharp-darwin-arm64": "0.35.3",

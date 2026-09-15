@@ -74,6 +74,8 @@ describe('Windows x64 installer packaging', () => {
       command: 'C:\\Program Files\\nodejs\\node.exe',
       args: [
         'C:\\repo\\node_modules\\electron-builder\\cli.js',
+        '--config',
+        'electron-builder.json',
         '--win',
         'nsis',
         '--x64',
@@ -122,6 +124,8 @@ describe('Windows x64 installer packaging', () => {
     ])
     expect(calls[2]?.args).toEqual([
       'C:\\repo\\node_modules\\electron-builder\\cli.js',
+      '--config',
+      'electron-builder.json',
       '--win',
       'zip',
       '--x64',
@@ -161,6 +165,8 @@ describe('Windows x64 installer packaging', () => {
     ])
     expect(calls[1]?.args).toEqual([
       'C:\\repo\\node_modules\\electron-builder\\cli.js',
+      '--config',
+      'electron-builder.json',
       '--win',
       'nsis',
       '--x64',

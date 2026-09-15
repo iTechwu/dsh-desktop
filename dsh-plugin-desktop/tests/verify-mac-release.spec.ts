@@ -5,14 +5,21 @@ import {
   type MacReleaseVerificationOptions,
 } from '../scripts/verify-mac-release.ts'
 import { MACOS_UNIVERSAL_PACKAGED_ENTRIES } from '../scripts/mac-universal.ts'
+import { DESKTOP_ARTIFACT_PREFIX, DESKTOP_PRODUCT_NAME } from '../src/product-identity.ts'
+import { readFileSync } from 'node:fs'
+const packageVersion = (JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as {
+  version?: unknown
+}).version as string
+const productName = DESKTOP_PRODUCT_NAME
+const dmgName = `${DESKTOP_ARTIFACT_PREFIX}-${packageVersion}`
 
 function options(overrides: Partial<MacReleaseVerificationOptions> = {}) {
   const calls: Array<{ command: string; args: readonly string[] }> = []
   const removeMountPoint = vi.fn()
   const value: MacReleaseVerificationOptions = {
     distDir: '/release/dist',
-    productName: 'Yootun-Agent Beta',
-    listDmgs: () => ['/release/dist/Yootun-Agent-Beta-2.0.10-beta.2-universal.dmg'],
+    productName,
+    listDmgs: () => [`/release/dist/${dmgName}-universal.dmg`],
     makeMountPoint: () => '/private/tmp/dsh-desktop-dmg-test',
     run: (command, args) => { calls.push({ command, args: [...args] }) },
     removeMountPoint,
@@ -24,28 +31,28 @@ function options(overrides: Partial<MacReleaseVerificationOptions> = {}) {
 describe('macOS release artifact verification', () => {
   it('mounts one DMG and verifies signature, Gatekeeper, and the stapled ticket', () => {
     const harness = options()
-    const appPath = join('/private/tmp/dsh-desktop-dmg-test', 'Yootun-Agent Beta.app')
+    const appPath = join('/private/tmp/dsh-desktop-dmg-test', `${productName}.app`)
 
     expect(verifyMacRelease(harness.value)).toEqual({
       appPath,
-      dmgPath: '/release/dist/Yootun-Agent-Beta-2.0.10-beta.2-universal.dmg',
+      dmgPath: `/release/dist/${dmgName}-universal.dmg`,
     })
 
     expect(harness.calls).toEqual([
       {
         command: 'hdiutil',
         args: [
-          'attach', '/release/dist/Yootun-Agent-Beta-2.0.10-beta.2-universal.dmg',
+          'attach', `/release/dist/${dmgName}-universal.dmg`,
           '-mountpoint', '/private/tmp/dsh-desktop-dmg-test', '-nobrowse', '-readonly',
         ],
       },
       {
         command: 'lipo',
-          args: [join(appPath, 'Contents', 'MacOS', 'Yootun-Agent Beta'), '-verify_arch', 'x86_64'],
+          args: [join(appPath, 'Contents', 'MacOS', productName), '-verify_arch', 'x86_64'],
       },
       {
         command: 'lipo',
-          args: [join(appPath, 'Contents', 'MacOS', 'Yootun-Agent Beta'), '-verify_arch', 'arm64'],
+          args: [join(appPath, 'Contents', 'MacOS', productName), '-verify_arch', 'arm64'],
       },
       ...MACOS_UNIVERSAL_PACKAGED_ENTRIES.map(entry => ({
         command: 'lipo',

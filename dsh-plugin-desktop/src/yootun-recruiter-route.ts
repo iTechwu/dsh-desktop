@@ -7,6 +7,7 @@ import { dirname } from 'node:path'
 import { writeFileAtomic } from '@deepseek-ai/dsh-atomic-write'
 import { credentialRef, type CredentialProvider } from '@deepseek-ai/dsh-credentials'
 import { safeYootunAuditTargetId, type YootunAuditRecordInput, type YootunAuditRecorder } from './yootun-audit-contract.ts'
+import { desktopPackageVersion } from './desktop-package-version.ts'
 
 export const YOOTUN_RECRUITER_PATH = '/api/desktop/yootun/recruiter'
 
@@ -1029,7 +1030,7 @@ export interface RecruiterRouteDependencies {
 }
 
 const RECRUITER_AUDIT_SOURCE = Object.freeze({
-  pluginId: 'dsh-plugin-desktop/yootun-recruiter', pluginVersion: '2.0.10-beta.2', surface: 'human_ui' as const,
+  pluginId: 'dsh-plugin-desktop/yootun-recruiter', pluginVersion: desktopPackageVersion(), surface: 'human_ui' as const,
 })
 
 async function recordRecruiterAudit(audit: YootunAuditRecorder | undefined, input: YootunAuditRecordInput | undefined): Promise<void> {

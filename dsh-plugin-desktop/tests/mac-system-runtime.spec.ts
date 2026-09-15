@@ -10,8 +10,8 @@ import { beforePack, buildMacSystemRuntime, installedMacSystemPackage } from '..
 
 describe('macOS system binding package preparation', () => {
   it('runs before native dependency collection for every package entry point', () => {
-    const manifest = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
-    expect(manifest.build.beforePack).toBe('./scripts/mac-system-runtime.ts')
+    const builderConfig = JSON.parse(readFileSync(new URL('../electron-builder.json', import.meta.url), 'utf8'))
+    expect(builderConfig.beforePack).toBe('./scripts/mac-system-runtime.ts')
   })
 
   it.each([

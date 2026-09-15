@@ -1,0 +1,70 @@
+{
+  "activeChannel": "beta",
+  "channels": {
+    "stable": {
+      "productName": "Yootun-Agent",
+      "appId": "ai.yootun.agent",
+      "artifactPrefix": "Yootun-Agent"
+    },
+    "beta": {
+      "productName": "Yootun-Agent Beta",
+      "appId": "ai.yootun.agent.beta",
+      "artifactPrefix": "Yootun-Agent-Beta"
+    }
+  },
+  "packageName": "dsh-plugin-desktop",
+  "displayName": {
+    "titlebar": "Yootun-Agent",
+    "locale": "Yootun-Agent"
+  },
+  "artwork": {
+    "appIconSource": "brand/assets/app-icon-source.jpg",
+    "sidebarMark": "brand/assets/sidebar-mark.png",
+    "heroMark": "brand/assets/hero-mark.png",
+    "whiteThreshold": 235,
+    "iconSize": 1024,
+    "macIcon": {
+      "canvas": 1024,
+      "artwork": 824
+    }
+  },
+  "wordmark": {
+    "image": "brand/assets/wordmark.png",
+    "text": {
+      "zh": "优惠豚AI",
+      "en": "Yootun AI"
+    },
+    "color": "#0F172A",
+    "fontFile": "brand/assets/wordmark-font/STHeiti Medium.ttf",
+    "lockup": {
+      "width": 2537,
+      "height": 457
+    },
+    "display": {
+      "width": 200,
+      "height": 36
+    }
+  },
+  "updates": {
+    "endpoint": "https://ixicai.cn/api/desktop/version",
+    "versionHeader": "X-Yootun-Agent-Version",
+    "channelHeader": "X-Yootun-Agent-Channel"
+  },
+  "docs": {
+    "siteUrl": "https://dshdesktop.cn",
+    "downloadBase": "https://www.dshdesktop.cn/api/downloads",
+    "repoUrl": "https://github.com/anywhere-labs/deepseek-harness-desktop",
+    "communityName": {
+      "zh": "DSH Desktop",
+      "en": "DSH Desktop"
+    },
+    "maintainer": {
+      "zh": "独立社区维护团队",
+      "en": "Anywhere Labs project maintainer team"
+    },
+    "noticesHeader": "Yootun-Agent distributes the following third-party packages inside its installers."
+  },
+  "nsis": {
+    "shortcutName": "Yootun-Agent Beta"
+  }
+}

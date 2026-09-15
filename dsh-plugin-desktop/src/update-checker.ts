@@ -1,19 +1,20 @@
-/** Headless version checks against the public Yootun-Agent release service. */
+/** Headless version checks against the branded release service. */
 
 import {
   assertDesktopInstallationId,
   DESKTOP_INSTALLATION_ID_HEADER,
   type DesktopInstallationId,
 } from './desktop-installation-id.ts'
+import { BRAND_UPDATE_SERVICE } from './generated-product-identity.ts'
 
-/** Public endpoint returning the latest Yootun-Agent version for a requested channel. */
-export const DESKTOP_VERSION_ENDPOINT = 'https://ixicai.cn/api/desktop/version'
+/** Public endpoint returning the latest Desktop version for a requested channel. */
+export const DESKTOP_VERSION_ENDPOINT = BRAND_UPDATE_SERVICE.endpoint
 
 /** Header carrying the installed Desktop version to the fixed version endpoint. */
-export const DESKTOP_CURRENT_VERSION_HEADER = 'X-Yootun-Agent-Version'
+export const DESKTOP_CURRENT_VERSION_HEADER = BRAND_UPDATE_SERVICE.versionHeader
 
 /** Header selecting an isolated Desktop release stream. */
-export const DESKTOP_RELEASE_CHANNEL_HEADER = 'X-Yootun-Agent-Channel'
+export const DESKTOP_RELEASE_CHANNEL_HEADER = BRAND_UPDATE_SERVICE.channelHeader
 
 /** Release streams supported by the Desktop service. */
 export type DesktopReleaseChannel = 'stable' | 'beta'
