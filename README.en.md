@@ -2,13 +2,15 @@
   <a href="https://dshdesktop.cn"><img src="assets/desktop-hero-en.png" alt="DSH Desktop, an open-source desktop client built on DeepSeek Harness" width="100%"></a>
 </p>
 
-<h1 align="center">DSH Desktop</h1>
+<!-- brand:brand-title:start -->
+DSH Desktop<!-- brand:brand-title:end -->
 
 <p align="center">
   <strong>An open-source desktop client for Windows and macOS, built on DeepSeek Harness.</strong>
 </p>
 
-<h3 align="center"><a href="https://dshdesktop.cn">One-click download, ready to use out of the box.</a></h3>
+<!-- brand:download-cta:start -->
+<h3 align="center"><a href="https://dshdesktop.cn">One-click download, ready to use out of the box.</a></h3><!-- brand:download-cta:end -->
 
 <p align="center">
   Everything is a plugin — the desktop itself is a plugin.
@@ -37,10 +39,11 @@ DSH Desktop integrates the local Web UI, Host service, and plugin system from [D
 
 Current release installers support Windows x64 and macOS Universal. No extra environment is needed — download, install, and start using it with one click.
 
+<!-- brand:download-table:start -->
 | Platform | Download | Installation |
 | --- | --- | --- |
 | Windows x64 | [Download installer](https://www.dshdesktop.cn/api/downloads/windows) | Run the NSIS installer and follow its prompts |
-| macOS Universal | [Download DMG](https://www.dshdesktop.cn/api/downloads/mac) | Open the DMG and drag DSH Desktop into Applications |
+| macOS Universal | [Download DMG](https://www.dshdesktop.cn/api/downloads/mac) | Open the DMG and drag DSH Desktop into Applications |<!-- brand:download-table:end -->
 
 See the [user guide](docs/user-guide.en.md) and [FAQ](docs/faq.en.md) for plugin commands, platform details, and troubleshooting.
 

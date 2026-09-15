@@ -7,7 +7,8 @@
 
 DSH Desktop 是一个本地优先的开源桌面应用。本政策说明 DSH Desktop 官方版本及官方在线服务会处理哪些信息、为什么处理、信息会发送给谁，以及您可以如何作出选择。
 
-本政策中的“我们”指在 GitHub 组织 [`anywhere-labs`](https://github.com/anywhere-labs) 下维护和发布 DSH Desktop 官方版本、并运营 `dshdesktop.cn` 官方服务的 **Anywhere Labs 项目维护团队**。项目是独立的社区开源项目，与 DeepSeek 不存在隶属、合作、授权或背书关系。
+本政策中的“我们”指在 GitHub 组织 [`anywhere-labs`](https://github.com/anywhere-labs) 下维护和发布 DSH Desktop 官方版本、并运营 `dshdesktop.cn` 官方服务的 <!-- brand:privacy-maintainer:start -->
+**Anywhere Labs 项目维护团队**<!-- brand:privacy-maintainer:end -->。项目是独立的社区开源项目，与 DeepSeek 不存在隶属、合作、授权或背书关系。
 
 隐私问题或权利请求请发送至 [t4wefan@qq.com](mailto:t4wefan@qq.com)。请不要在公开 GitHub Issue 中提交安装标识、日志、凭据或其他私密信息。
 

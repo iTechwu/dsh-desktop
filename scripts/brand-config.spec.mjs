@@ -24,6 +24,7 @@ const validConfig = {
     heroMark: 'brand/assets/hero-mark.png',
     whiteThreshold: 235,
     iconSize: 1024,
+    heroSize: 204,
     macIcon: { canvas: 1024, artwork: 824 },
   },
   wordmark: {

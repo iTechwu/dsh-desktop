@@ -2,13 +2,15 @@
   <a href="https://dshdesktop.cn"><img src="assets/desktop-hero-zh.png" alt="DSH Desktop：基于 DeepSeek Harness 构建的开源桌面客户端" width="100%"></a>
 </p>
 
-<h1 align="center">DSH Desktop</h1>
+<!-- brand:brand-title:start -->
+DSH Desktop<!-- brand:brand-title:end -->
 
 <p align="center">
   <strong>基于 DeepSeek Harness 构建的 Windows 和 macOS 开源桌面客户端。</strong>
 </p>
 
-<h3 align="center"><a href="https://dshdesktop.cn">一键下载，开箱即用。</a></h3>
+<!-- brand:download-cta:start -->
+<h3 align="center"><a href="https://dshdesktop.cn">一键下载，开箱即用。</a></h3><!-- brand:download-cta:end -->
 
 <p align="center">
   万物皆「插件」，桌面本身也是「插件」。
@@ -37,10 +39,11 @@ DSH Desktop 将 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harne
 
 当前正式安装包支持 Windows x64 和 macOS Universal。无需额外环境，下载安装，一键使用。
 
+<!-- brand:download-table:start -->
 | 平台 | 下载 | 安装方式 |
 | --- | --- | --- |
 | Windows x64 | [下载安装程序](https://www.dshdesktop.cn/api/downloads/windows) | 运行 NSIS 安装程序并按提示完成安装 |
-| macOS Universal | [下载 DMG](https://www.dshdesktop.cn/api/downloads/mac) | 打开 DMG，将 DSH Desktop 拖入 Applications |
+| macOS Universal | [下载 DMG](https://www.dshdesktop.cn/api/downloads/mac) | 打开 DMG，将 DSH Desktop 拖入 Applications |<!-- brand:download-table:end -->
 
 详细步骤、插件命令和故障排查见[用户指南](docs/user-guide.md)与[常见问题](docs/faq.md)。
 
