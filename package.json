@@ -18,7 +18,7 @@
     "test:architecture-gates": "node --test scripts/market-dependency-direction.test.mjs",
     "check:architecture": "pnpm test:architecture-gates && node scripts/verify-market-dependency-direction.mjs",
     "check:ux": "node scripts/plugin-ux-audit.mjs",
-    "check:layout": "pnpm check:bilingual-docs && pnpm check:architecture && node scripts/verify-layout.mjs",
+    "check:layout": "pnpm check:bilingual-docs && pnpm brand:check && pnpm check:architecture && node scripts/verify-layout.mjs",
     "check": "pnpm check:layout && pnpm check:ux && pnpm --filter dsh-community-fabric check && pnpm --filter dsh-community-market check && pnpm --filter dsh-plugin-desktop check",
     "dev": "pnpm --filter dsh-community-market build && pnpm --filter dsh-plugin-desktop dev",
     "start": "pnpm --filter dsh-plugin-desktop start",
@@ -30,6 +30,9 @@
     "upstream:version": "corepack pnpm --dir ../deepseek-harness --version",
     "upstream:install": "corepack pnpm --dir ../deepseek-harness install --frozen-lockfile",
     "upstream:build": "corepack pnpm --dir ../deepseek-harness run clean && corepack pnpm --dir ../deepseek-harness run build",
-    "dofe-ui:build": "node scripts/build-dofe-ui.mjs"
+    "dofe-ui:build": "node scripts/build-dofe-ui.mjs",
+    "brand:docs": "node scripts/generate-brand-docs.mjs",
+    "brand:version": "node scripts/bump-version.mjs",
+    "brand:check": "node scripts/verify-brand-docs.mjs && node scripts/verify-bilingual-docs.mjs"
   }
 }

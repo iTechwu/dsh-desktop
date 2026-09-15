@@ -11,6 +11,7 @@
  */
 
 import { createRequire } from 'node:module'
+import { loadBrandConfig } from '../../scripts/brand-config.mjs'
 import { existsSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -151,7 +152,7 @@ if (noticesArg !== -1) {
   const lines = [
     '# Third-Party Notices',
     '',
-    'Yootun-Agent distributes the following third-party packages inside its installers.',
+    `${loadBrandConfig().docs.noticesHeader}`,
     'Each package ships with its own license text in the application files; this list records',
     'the package names, versions, and licenses for transparency.',
     '',
