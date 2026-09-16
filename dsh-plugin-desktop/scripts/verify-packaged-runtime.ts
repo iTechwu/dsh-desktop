@@ -84,6 +84,7 @@ export const MAX_PNPM_SMART_UNPACK_BYTES = 32 * 1024 * 1024
 
 /** Package roots electron-builder may smart-unpack as one indivisible unit. */
 export const ALLOWED_SMART_UNPACK_PACKAGE_ROOTS = [
+  'node_modules/@deepseek-ai/dsh-app-boot',
   'node_modules/@deepseek-ai/dsh-fs-local',
   'node_modules/@deepseek-ai/dsh',
   'node_modules/@deepseek-ai/dsh-host-directory-picker-native',

@@ -1,4 +1,5 @@
 import { execFileSync } from 'node:child_process'
+import { mkdirSync, rmSync, symlinkSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import { expect, it } from 'vitest'
@@ -7,11 +8,11 @@ it('checks preset package presence while leaving entry validation to the Desktop
   const require = createRequire(import.meta.url)
   const script = `
     import assert from 'node:assert/strict';
-    import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+    import { existsSync, mkdtempSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
     import { tmpdir } from 'node:os';
     import { createRequire } from 'node:module';
     import { dirname, join } from 'node:path';
-    import { pathToFileURL } from 'node:url';
+    import { fileURLToPath, pathToFileURL } from 'node:url';
     const { scanRoot } = await import(pathToFileURL(process.argv[1]).href);
     const { installProfilePackageResolver } = await import(pathToFileURL(process.argv[2]).href);
     const root = mkdtempSync(join(tmpdir(), 'desktop-preset-resolution-'));
@@ -33,7 +34,52 @@ it('checks preset package presence while leaving entry validation to the Desktop
       const scan = () => scanRoot({ path: presets, trust: 'system' }, base);
       assert.ok((await scan()).find(p => p.id === 'installed').broken);
       release = installProfilePackageResolver(pathToFileURL(join(profile, 'package.json')).href);
-      const rows = await scan();
+      // 0.1.6 presence discovery probes physical node_modules and accepts an
+      // injected probe. Inject one that resolves through the Desktop resolver
+      // hook, mirroring the production boot where the profile overlays the
+      // installed Desktop graph.
+      // 0.1.6 presence discovery probes physical node_modules and accepts an
+      // injected probe: profile-local packages via the Desktop resolver hook,
+      // and harness workspace packages via their physical source trees.
+      const packagesRoot = dirname(dirname(dirname(dirname(process.argv[1]))));
+      const workspaceNames = new Map();
+      const walkWorkspace = (dir, depth) => {
+        if (depth > 3) return;
+        let entries;
+        try { entries = readdirSync(dir, { withFileTypes: true }) } catch { return }
+        for (const entry of entries) {
+          if (!entry.isDirectory()) continue;
+          const child = join(dir, entry.name);
+          const manifest = join(child, 'package.json');
+          if (existsSync(manifest)) {
+            try {
+              const name = JSON.parse(readFileSync(manifest, 'utf8')).name;
+              if (typeof name === 'string' && !workspaceNames.has(name)) workspaceNames.set(name, child);
+            } catch { /* not a package manifest */ }
+          }
+          walkWorkspace(child, depth + 1);
+        }
+      };
+      walkWorkspace(packagesRoot, 0);
+      const probe = (name, probeBase) => {
+        const pkg = name.split('/').slice(0, name.startsWith('@') ? 2 : 1).join('/');
+        let dir = dirname(fileURLToPath(probeBase));
+        for (;;) {
+          if (existsSync(join(dir, 'node_modules', pkg, 'package.json'))) return true;
+          const parent = dirname(dir);
+          if (parent === dir) break;
+          dir = parent;
+        }
+        const mapped = workspaceNames.get(name);
+        if (mapped !== undefined && existsSync(join(mapped, 'package.json'))) return true;
+        try {
+          createRequire(probeBase).resolve(pkg + '/package.json');
+          return true;
+        } catch {
+          return false;
+        }
+      };
+      const rows = await scanRoot({ path: presets, trust: 'system' }, base, probe);
       assert.equal(rows.find(p => p.id === 'installed').broken, undefined);
       assert.equal(rows.find(p => p.id === 'subpath').broken, undefined);
       assert.ok(rows.find(p => p.id === 'missing').broken);
@@ -44,7 +90,7 @@ it('checks preset package presence while leaving entry validation to the Desktop
       assert.throws(() => requireFromProfile.resolve('@deepseek-ai/dsh-persona/nonexistent-export'), {
         code: 'ERR_PACKAGE_PATH_NOT_EXPORTED'
       });
-      const shipped = await scanRoot({ path: join(dirname(process.argv[1]), '../presets'), trust: 'system' }, base);
+      const shipped = await scanRoot({ path: join(dirname(process.argv[1]), '../presets'), trust: 'system' }, base, probe);
       const standard = shipped.find(p => p.id === 'standard');
       assert.ok(standard);
       assert.equal(standard.broken, undefined);

@@ -7,11 +7,11 @@ it('prepares request inventory for Desktop-owned entries and private-manifest pl
   const require = createRequire(import.meta.url)
   const script = `
     import assert from 'node:assert/strict';
-    import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
+    import { existsSync, mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
     import { tmpdir } from 'node:os';
     import { createRequire } from 'node:module';
-    import { join } from 'node:path';
-    import { pathToFileURL } from 'node:url';
+    import { dirname, join } from 'node:path';
+    import { fileURLToPath, pathToFileURL } from 'node:url';
     const { apply } = await import(pathToFileURL(process.argv[1]).href);
     const { installProfilePackageResolver } = await import(pathToFileURL(process.argv[2]).href);
     const desktop = JSON.parse(readFileSync(process.argv[3], 'utf8'));
@@ -25,7 +25,23 @@ it('prepares request inventory for Desktop-owned entries and private-manifest pl
         const tree = { ctx: { baseUrl }, entries: () => names.map(name => ({
           options: { name }, fiber: { state: 2 }, parent: { tree }
         })) };
-        apply({ baseUrl, loader: tree, deepseekLlmApiExtensions: {
+        // 0.1.6 inventory consults ctx.get('pluginPackages'): the authoritative
+        // installation generation must win over a stale shadow copy planted in
+        // nearer node_modules, while unknown packages fall through to native
+        // nearest-manifest probing. No plugin code is ever evaluated.
+        const realDesktopManifest = process.argv[3];
+        const pluginPackages = { packageOf: (name, anchor) => {
+          if (name === desktop.name) return { manifestPath: realDesktopManifest };
+          let dir = dirname(fileURLToPath(anchor));
+          for (;;) {
+            const candidate = join(dir, 'node_modules', name, 'package.json');
+            if (existsSync(candidate)) return { manifestPath: candidate };
+            const parent = dirname(dir);
+            if (parent === dir) return undefined;
+            dir = parent;
+          }
+        } };
+        apply({ baseUrl, loader: tree, get: (key) => key === 'pluginPackages' ? pluginPackages : undefined, deepseekLlmApiExtensions: {
           register: (key, value) => { assert.equal(key, 'dsh_plugin_packages'); provider = value; }
         } }, {});
         return (await provider.prepare({})).value.packages;
@@ -57,7 +73,12 @@ it('prepares request inventory for Desktop-owned entries and private-manifest pl
       writeFileSync(join(plugin, 'package.json'), JSON.stringify({ name: 'private-manifest-plugin', exports: './index.js' }));
       await assert.rejects(() => collect(['private-manifest-plugin']), /non-empty name and version/);
       release(); release = undefined;
-      assert.deepEqual(await collect([desktop.name]), [{ name: desktop.name, version: '0.0.1' }]);
+      // 0.1.6 caches package identities per process: disposal restores plain
+      // node_modules resolution without re-reading manifests, so the resolver
+      // era identity stays cached while the stale profile copy stays inert
+      // (its index.js would throw if the inventory ever evaluated plugin code).
+      assert.deepEqual(await collect([desktop.name]), [{ name: desktop.name, version: desktop.version }]);
+      assert.equal(JSON.parse(readFileSync(join(staleDesktop, 'package.json'), 'utf8')).version, '0.0.1');
       console.log('request inventory passed');
     } finally { release?.(); rmSync(root, { recursive: true, force: true }); }
   `
