@@ -86,6 +86,18 @@ export function apply(ctx, overrides = {}) {
               return send(res, 200, await handleRunGet(deps, toolCtx, body))
             case 'export':
               return send(res, 200, await handleExport(deps, toolCtx, body))
+            case 'overview.get':
+              return send(res, 200, await handleOverviewGet(deps, toolCtx, body))
+            case 'hotWorks.list':
+              return send(res, 200, await handleHotWorksList(deps, toolCtx, body))
+            case 'overview.export':
+              return send(res, 200, await handleOverviewExport(deps, toolCtx, body))
+            case 'account.analysis':
+              return send(res, 200, await handleAccountAnalysis(deps, toolCtx, body))
+            case 'account.trend':
+              return send(res, 200, await handleAccountTrend(deps, toolCtx, body))
+            case 'accountAnalysis.export':
+              return send(res, 200, await handleAccountAnalysisExport(deps, toolCtx, body))
             default:
               return send(res, 400, { status: 'error', reason: 'unknown_action' })
           }
@@ -409,6 +421,195 @@ async function handleExport(deps, ctx, body) {
   return projected
 }
 
+// ---------------------------------------------------------------------------
+// 账号总览（0914 方案阶段 1）：只读 action，参数白名单透传 → tools 域内工具。
+// 稳定错误码映射 UI 文案；不回传原始传输错误/内部地址。
+// ---------------------------------------------------------------------------
+
+const MAX_ACCOUNT_IDS = 200
+
+function projectOverviewArgs(body) {
+  const args = {}
+  if (Array.isArray(body.accountIds)) {
+    const ids = body.accountIds.map(item => cleanString(item, MAX_ID)).filter(Boolean)
+    if (ids.length > MAX_ACCOUNT_IDS) return { error: 'TOO_MANY_ACCOUNTS' }
+    if (ids.length) args.accountIds = ids
+  }
+  const publishFrom = cleanString(body.publishFrom, 10)
+  const publishTo = cleanString(body.publishTo, 10)
+  if (publishFrom) args.publishFrom = publishFrom
+  if (publishTo) args.publishTo = publishTo
+  if (body.sort !== undefined) args.sort = cleanString(body.sort, 32)
+  if (body.topN !== undefined) {
+    const topN = clampInt(body.topN, 1, 10000, 0)
+    if (topN > 0) args.topN = topN
+  }
+  if (body.hotType !== undefined) args.hotType = cleanString(body.hotType, 32)
+  if (body.cursor !== undefined && body.cursor !== null) args.cursor = cleanString(body.cursor, 512)
+  if (body.limit !== undefined) {
+    const limit = clampInt(body.limit, 1, 10000, 0)
+    if (limit > 0) args.limit = limit
+  }
+  const ruleVersion = cleanString(body.ruleVersion, 32)
+  if (ruleVersion) args.ruleVersion = ruleVersion
+  return { args }
+}
+
+async function handleOverviewGet(deps, ctx, body) {
+  const { args, error } = projectOverviewArgs(body)
+  if (error) return { status: 'error', reason: 'overview_too_many_accounts' }
+  const payload = await callTool(ctx, 'douyin_account_overview', args)
+  return { status: 'ready', overview: payload }
+}
+
+async function handleHotWorksList(deps, ctx, body) {
+  const { args, error } = projectOverviewArgs(body)
+  if (error) return { status: 'error', reason: 'overview_too_many_accounts' }
+  const payload = await callTool(ctx, 'douyin_hot_work_list', args)
+  return { status: 'ready', hotWorks: payload }
+}
+
+// 总览导出与既有视频导出共用文件保存链路：base64 → 本地下载，文件名二次净化并
+// 强制 douyin-overview-*.xlsx 后缀（§11.3 文件名二次净化的总览版）。
+function projectOverviewFileName(value) {
+  const cleaned = typeof value === 'string'
+    ? value.replace(FILENAME_INVALID, '_').replace(/^[\s.]+/, '').slice(0, 128).trim()
+    : ''
+  if (!cleaned || !cleaned.toLowerCase().endsWith('.xlsx') || !cleaned.startsWith('douyin-overview-')) {
+    return 'douyin-overview-export.xlsx'
+  }
+  return cleaned
+}
+
+async function handleOverviewExport(deps, ctx, body) {
+  const { args, error } = projectOverviewArgs(body)
+  if (error) return { status: 'error', reason: 'overview_too_many_accounts' }
+  let payload
+  try {
+    payload = await callTool(ctx, 'douyin_overview_export', args)
+  } catch (caught) {
+    const code = safeErrorCode(caught)
+    if (code === 'DOUYIN_EXPORT_TOO_LARGE') return { status: 'error', reason: 'export_too_large' }
+    if (code === 'ACCOUNT_NOT_ACCESSIBLE') return { status: 'error', reason: 'ACCOUNT_NOT_ACCESSIBLE' }
+    if (code === 'TOO_MANY_ACCOUNTS') return { status: 'error', reason: 'overview_too_many_accounts' }
+    if (code === 'RULE_VERSION_MISMATCH') return { status: 'error', reason: 'RULE_VERSION_MISMATCH' }
+    return { status: 'error', reason: 'export_failed' }
+  }
+  const contentBase64 = typeof payload.content_base64 === 'string' ? payload.content_base64 : ''
+  const contentBytes = Number(payload.content_bytes)
+  if (!contentBase64 || !Number.isFinite(contentBytes) || contentBytes <= 0) {
+    return { status: 'error', reason: 'export_failed' }
+  }
+  if (contentBytes > EXPORT_MAX_CONTENT_BYTES) return { status: 'error', reason: 'export_too_large' }
+  if (contentBase64.length !== Math.ceil(contentBytes / 3) * 4) {
+    return { status: 'error', reason: 'export_failed' }
+  }
+  const projected = {
+    status: 'ready',
+    file_name: projectOverviewFileName(payload.file_name),
+    mime_type: payload.mime_type || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    content_base64: contentBase64,
+    content_bytes: contentBytes,
+    row_counts: payload.row_counts || null,
+  }
+  if (Buffer.byteLength(JSON.stringify(projected), 'utf8') > EXPORT_MAX_RESPONSE_BYTES) {
+    return { status: 'error', reason: 'export_too_large' }
+  }
+  return projected
+}
+
+// ---------------------------------------------------------------------------
+// 单账号分析与趋势（0914 方案阶段 2）：只读 action，同一白名单透传策略。
+// ---------------------------------------------------------------------------
+
+async function handleAccountAnalysis(deps, ctx, body) {
+  const accountId = cleanString(body.accountId, MAX_ID)
+  if (!accountId) return { status: 'error', reason: 'account_id_required' }
+  // analysis schema（extra=forbid）不接受 accountIds 多选：只透传声明的字段
+  //（修复 review #7——总览筛选的 accountIds 泄漏会让服务端 VALIDATION_ERROR）。
+  const args = { accountId }
+  const publishFrom = cleanString(body.publishFrom, 10)
+  const publishTo = cleanString(body.publishTo, 10)
+  if (publishFrom) args.publishFrom = publishFrom
+  if (publishTo) args.publishTo = publishTo
+  const sort = cleanString(body.sort, 32)
+  if (sort) args.sort = sort
+  const ruleVersion = cleanString(body.ruleVersion, 32)
+  if (ruleVersion) args.ruleVersion = ruleVersion
+  const payload = await callTool(ctx, 'douyin_account_analysis', args)
+  return { status: 'ready', analysis: payload }
+}
+
+async function handleAccountTrend(deps, ctx, body) {
+  const accountId = cleanString(body.accountId, MAX_ID)
+  if (!accountId) return { status: 'error', reason: 'account_id_required' }
+  const args = { accountId }
+  const metric = cleanString(body.metric, 16) || 'play'
+  args.metric = metric
+  const fromDay = cleanString(body.fromDay, 10)
+  const toDay = cleanString(body.toDay, 10)
+  if (fromDay) args.fromDay = fromDay
+  if (toDay) args.toDay = toDay
+  if (body.cohortDelta === true) args.cohortDelta = true
+  const contractVersion = cleanString(body.contractVersion, 32)
+  if (contractVersion) args.contractVersion = contractVersion
+  const payload = await callTool(ctx, 'douyin_account_trend', args)
+  return { status: 'ready', trend: payload }
+}
+
+function projectAnalysisFileName(value) {
+  const cleaned = typeof value === 'string'
+    ? value.replace(FILENAME_INVALID, '_').replace(/^[\s.]+/, '').slice(0, 128).trim()
+    : ''
+  if (!cleaned || !cleaned.toLowerCase().endsWith('.xlsx') || !cleaned.startsWith('douyin-account-analysis-')) {
+    return 'douyin-account-analysis-report.xlsx'
+  }
+  return cleaned
+}
+
+async function handleAccountAnalysisExport(deps, ctx, body) {
+  const accountId = cleanString(body.accountId, MAX_ID)
+  if (!accountId) return { status: 'error', reason: 'account_id_required' }
+  const args = { accountId }
+  const publishFrom = cleanString(body.publishFrom, 10)
+  const publishTo = cleanString(body.publishTo, 10)
+  if (publishFrom) args.publishFrom = publishFrom
+  if (publishTo) args.publishTo = publishTo
+  const ruleVersion = cleanString(body.ruleVersion, 32)
+  if (ruleVersion) args.ruleVersion = ruleVersion
+  let payload
+  try {
+    payload = await callTool(ctx, 'douyin_account_analysis_export', args)
+  } catch (caught) {
+    const code = safeErrorCode(caught)
+    if (code === 'DOUYIN_EXPORT_TOO_LARGE') return { status: 'error', reason: 'export_too_large' }
+    if (code === 'ACCOUNT_NOT_ACCESSIBLE') return { status: 'error', reason: 'ACCOUNT_NOT_ACCESSIBLE' }
+    if (code === 'RULE_VERSION_MISMATCH') return { status: 'error', reason: 'RULE_VERSION_MISMATCH' }
+    return { status: 'error', reason: 'export_failed' }
+  }
+  const contentBase64 = typeof payload.content_base64 === 'string' ? payload.content_base64 : ''
+  const contentBytes = Number(payload.content_bytes)
+  if (!contentBase64 || !Number.isFinite(contentBytes) || contentBytes <= 0) {
+    return { status: 'error', reason: 'export_failed' }
+  }
+  if (contentBytes > EXPORT_MAX_CONTENT_BYTES) return { status: 'error', reason: 'export_too_large' }
+  if (contentBase64.length !== Math.ceil(contentBytes / 3) * 4) {
+    return { status: 'error', reason: 'export_failed' }
+  }
+  const projected = {
+    status: 'ready',
+    file_name: projectAnalysisFileName(payload.file_name),
+    mime_type: payload.mime_type || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    content_base64: contentBase64,
+    content_bytes: contentBytes,
+    row_counts: payload.row_counts || null,
+  }
+  if (Buffer.byteLength(JSON.stringify(projected), 'utf8') > EXPORT_MAX_RESPONSE_BYTES) {
+    return { status: 'error', reason: 'export_too_large' }
+  }
+  return projected
+}
+
 function clampInt(value, min, max, fallback) {
   const num = Number(value)
   if (!Number.isFinite(num)) return fallback
@@ -508,9 +709,9 @@ async function reportSessionStatus(ctx, deps, accountId, state) {
       sessionSeq: local.sessionSeq,
       checkedAt: local.checkedAt,
       sessionRef: `vault://douyin/${accountId}`,
-      // checkedAt 参与幂等键：服务端收据永久保留，同 seq 的后续探测若同键不同载荷
-      // 会被判 IDEMPOTENCY_CONFLICT（客户端重装后 seq 归 1 是常态）。
-      idempotencyKey: sessionIdempotencyKey(accountId, local.sessionSeq, local.checkedAt),
+      // 幂等键与服务端模板严格一致（douyin:session:{accountId}:{seq}，不带 checkedAt）：
+      // 同 seq 重复上报的新旧判定由服务端 (sessionSeq, checkedAt) 仲裁，seq 前进换新键。
+      idempotencyKey: sessionIdempotencyKey(accountId, local.sessionSeq),
     })
     return { ok: true }
   } catch (error) {

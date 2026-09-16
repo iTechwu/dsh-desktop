@@ -6,6 +6,7 @@ import { test } from 'node:test'
 
 import { ChromeMissingError } from '../src/chrome.js'
 import {
+  markSessionExpired,
   PENDING_ACCOUNT_PREFIX,
   SESSION_COOKIE_NAMES,
   isPendingAccountId,
@@ -187,6 +188,27 @@ test('refreshSessionState 追加单调序号并写回本地状态', async () => 
     const record = await getAccount('acc-1', root)
     assert.equal(record.sessionSeq, 2)
     assert.equal(record.sessionStatus, 'expired')
+  })
+})
+
+test('markSessionExpired：采集链路直接置 expired 并保持 sessionSeq 单调（0914 方案 §3.6）', async () => {
+  await withRoot(async root => {
+    // 前置：探测路径已把 seq 消耗到 2（登录/探测先判定过的账号）。
+    await updateAccount('acc-1', { sessionStatus: 'ok', sessionSeq: 2 }, root)
+    const first = await markSessionExpired({ accountId: 'acc-1', root })
+    assert.equal(first.sessionStatus, 'expired')
+    assert.equal(first.sessionSeq, 3, '在既有最大序号上继续单调递增')
+    assert.equal(first.reason, 'session_invalid')
+    assert.equal(first.checkedAt, first.account.sessionCheckedAt)
+    const record = await getAccount('acc-1', root)
+    assert.equal(record.sessionStatus, 'expired')
+    assert.equal(record.sessionSeq, 3)
+    assert.equal(record.vaultRef, 'vault://douyin/acc-1')
+
+    // 连续过期（重复收尾/重试）seq 仍单调，幂等键不会撞历史收据。
+    const second = await markSessionExpired({ accountId: 'acc-1', root })
+    assert.equal(second.sessionSeq, 4)
+    assert.ok(second.checkedAt >= first.checkedAt)
   })
 })
 

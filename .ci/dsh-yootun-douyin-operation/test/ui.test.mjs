@@ -9,6 +9,7 @@ import {
   DEFAULT_SORT_STATE,
   EMPTY,
   accountState,
+  basisLines,
   compareNullableNumbers,
   formatAgeBucket,
   formatCell,
@@ -37,6 +38,38 @@ test('trend count only renders finite positive values through the shared count f
   assert.match(source, /replace\('\{count\}', formatCount\(trend\.total\)\)/u)
   assert.doesNotMatch(source, /replace\('\{count\}', String\(trend\.total\)\)/u)
 })
+
+// ---------------------------------------------------------------------------
+// 源码级模块加载辅助：vm 沙箱按构建脚本同法剥离 ESM import/export 后求值，
+// ui-format 纯函数（basisLines/formatDateTime 等）注入真实实现（内联后同作用域）。
+// ---------------------------------------------------------------------------
+const UI_FORMAT_IMPORT = /^import \{[\s\S]*?\} from '\.\/ui-format\.js'\n/m
+
+async function evalUiModule(url, sandbox, reactStub) {
+  let source = await readFile(url, 'utf8')
+  if (!UI_FORMAT_IMPORT.test(source)) throw new Error('test: ui-format import not found')
+  source = source.replace(UI_FORMAT_IMPORT, '').replace(/^export /gm, '')
+  // ui-format 全部导出注入真实实现（构建内联后同作用域，标识符直接可见）。
+  const uiFormatModule = await import(new URL('../src/ui-format.js', import.meta.url).href)
+  const context = {
+    console,
+    ...uiFormatModule,
+    require: name => {
+      if (name === 'react') return reactStub || { createElement: () => null }
+      throw new Error(`unexpected require: ${name}`)
+    },
+    Date,
+    Math,
+    Number,
+    String,
+    Object,
+    Array,
+    ...sandbox,
+  }
+  vm.createContext(context)
+  vm.runInContext(source, context)
+  return context
+}
 
 const labels = {
   colTitle: '作品名称', colUrl: '作品链接', colPlay: '播放量', colCollect: '收藏量',
@@ -841,4 +874,605 @@ test('构建产物注册侧边栏入口与整页 overlay', async () => {
   assert.ok(registered.includes('sidebar.footer.action'))
   assert.ok(registered.includes('shell.overlay'))
   assert.equal(effects.length, 3, '字典/样式/互斥 overlay 三个 effect')
+})
+
+// ---------------------------------------------------------------------------
+// 会话失效文案（HTTP 200 + status_code=8，0914 方案 §3.6）：绝不显示"采集完成"
+// ---------------------------------------------------------------------------
+
+test('采集会话过期：专属文案"会话已过期，请重新扫码"，失败横幅与轮询分支均不回落"采集完成"', async () => {
+  const source = await readFile(new URL('../src/client.js', import.meta.url), 'utf8')
+  // zh/en 文案已登记。
+  assert.match(source, /collectSessionExpired: '会话已过期，请重新扫码'/u)
+  assert.match(source, /collectSessionExpired: 'Session expired — scan again'/u)
+  // runner 的稳定 reason → 文案键映射。
+  assert.match(source, /session_invalid: 'collectSessionExpired'/u)
+  // 轮询失败分支：error === 'session_invalid' 时用专属文案。
+  assert.match(source, /result\.collect\.error === 'session_invalid' \? 'collectSessionExpired' : 'collectFailed'/u)
+  // runBanner 失败横幅同样按 error 区分，不复用"采集完成"文案。
+  assert.match(source, /collect && collect\.error === 'session_invalid' \? 'collectSessionExpired' : 'collectFailed'/u)
+})
+
+// ---------------------------------------------------------------------------
+// 账号总览 Tab（0914 方案阶段 1，实施说明 §5.1）
+// ---------------------------------------------------------------------------
+
+test('overview-ui 纯函数：万单位格式化、会话新鲜度 24h 阈值、运营提醒派生', async () => {
+  const exports = await evalUiModule(new URL('../src/overview-ui.js', import.meta.url), {})
+  assert.equal(exports.formatWan(28463000), '2846万')  // ≥100万 整数位
+  assert.equal(exports.formatWan(18000), '1.8万')
+  assert.equal(exports.formatWan(287), '287')
+  assert.equal(exports.formatWan(null), null)
+
+  const now = Date.parse('2026-09-15T12:00:00Z')
+  const fresh = exports.sessionFreshness('2026-09-15T10:00:00Z', key => key, { now })
+  assert.equal(fresh.key, 'ok')
+  const stale = exports.sessionFreshness('2026-09-13T10:00:00Z', key => key, { now })
+  assert.equal(stale.key, 'stale', '决策 11：超过 24h 显示"状态待检测"')
+  assert.equal(exports.sessionFreshness(null, key => key, { now }).key, 'unknown')
+
+  const alerts = exports.deriveOverviewAlerts({
+    accounts: [
+      { accountId: 'a1', nickname: '过期号', sessionStatus: 'expired', lastCollectedAt: '2026-09-15T10:00:00Z' },
+      { accountId: 'a2', nickname: '可疑号', suspiciousEmptyCollect: true, sessionStatus: 'ok', lastCollectedAt: '2026-09-15T10:00:00Z' },
+      { accountId: 'a3', nickname: '过旧号', sessionStatus: 'ok', lastCollectedAt: '2026-09-01T10:00:00Z' },
+      { accountId: 'a4', nickname: '健康号', sessionStatus: 'ok', lastCollectedAt: '2026-09-15T10:00:00Z' },
+    ],
+  }, key => key, { now })
+  assert.equal(alerts.length, 3)
+  assert.deepEqual([...alerts.map(alert => alert.accountId)], ['a1', 'a2', 'a3'])
+})
+
+test('Tab 结构：账号总览在视频数据左，"导出总览"只在总览局部工具栏', async () => {
+  const source = await readFile(new URL('../src/client.js', import.meta.url), 'utf8')
+  // Tab 顺序：tabOverview 的按钮先于 tabVideos。
+  assert.ok(source.indexOf("t('tabOverview')") < source.indexOf("t('tabVideos')"), '账号总览 Tab 置于视频数据左')
+  // 默认 Tab 是总览（方案 §4 页面级 Tab 顺序）。
+  assert.match(source, /useState\('overview'\)/)
+  // "导出总览"按钮渲染在 overview-ui 的总览工具栏内；client.js 只接数据流（onExport）。
+  const overviewBranch = source.slice(source.indexOf("tab === 'overview'"), source.indexOf("'aria-label': t('data') },\n          h('div', { className: 'ydo-toolbar' },"))
+  assert.match(overviewBranch, /onExport: exportOverview/)
+  const overviewUiSource = await readFile(new URL('../src/overview-ui.js', import.meta.url), 'utf8')
+  assert.match(overviewUiSource, /t\('exportOverview'\)/)
+  // 视频数据工具栏保留既有"导出 Excel"（douyin_export 语义不变，§10.1）。
+  const videosBranch = source.slice(source.indexOf("'aria-label': t('data') },\n          h('div', { className: 'ydo-toolbar' },"))
+  assert.match(videosBranch, /t\('exportExcel'\)/)
+  // 会话过期/可疑空采集文案按设计内口径，不写"采集失败"。
+  assert.match(source, /可疑空采集\/请检测会话/u)
+  assert.doesNotMatch(source, /可疑空采集[^\n]*采集失败/u)
+})
+
+test('总览错误映射：未登记 reason 不透传原文，映射为已登记文案键', async () => {
+  const source = await readFile(new URL('../src/overview-ui.js', import.meta.url), 'utf8')
+  assert.match(source, /ACCOUNT_NOT_ACCESSIBLE: 'accountNotAccessible'/u)
+  assert.match(source, /RULE_VERSION_MISMATCH: 'ruleVersionMismatch'/u)
+  assert.match(source, /overview_too_many_accounts: 'overviewTooManyAccounts'/u)
+  const clientSource = await readFile(new URL('../src/client.js', import.meta.url), 'utf8')
+  // 零口径计算：总览组件从接口取数渲染，客户端不本地算爆款/比率。
+  assert.doesNotMatch(clientSource, /hotWorkCount\s*=\s*Math|hotRatePct\s*=/u)
+})
+
+test('overview-ui 行为：账号行点击触发下钻、无账号空态渲染添加引导（F4/F6 回归）', async () => {
+  const hLog = []
+  const reactStub = {
+    createElement: (type, props, ...children) => {
+      hLog.push({ type, props, children })
+      return { type, props, children }
+    },
+  }
+  const sandbox = await evalUiModule(new URL('../src/overview-ui.js', import.meta.url), {}, reactStub)
+  const AccountRow = vm.runInContext('AccountRow', sandbox)
+
+  // F4 回归：账号行点击必须触发 onOpenAccount（此前 onOpenAccount 死接线，点击无效果）。
+  const clicked = []
+  const row = AccountRow({
+    account: { accountId: 'acc-1', nickname: '燃豚豚', sessionStatus: 'ok', fanCount: 287 },
+    onOpenAccount: id => clicked.push(id),
+    t: key => key,
+  })
+  assert.equal(typeof row.props.onClick, 'function', '账号行必须绑定点击')
+  row.props.onClick()
+  assert.deepEqual([...clicked], ['acc-1'])
+
+  // F6 回归：无账号（accountCount=0）必须渲染添加引导与添加入口，而不是 0 值 KPI 页。
+  const OverviewPage = vm.runInContext('OverviewPage', sandbox)
+  hLog.length = 0
+  const emptyPage = OverviewPage({
+    overview: { summary: { accountCount: 0, workCount: 0 }, accounts: [], hotWorks: [] },
+    loading: false,
+    errorReason: null,
+    filters: {},
+    accounts: [],
+    collecting: false,
+    exporting: false,
+    onAddAccount: () => {},
+    t: key => key,
+  })
+  const pageText = JSON.stringify(emptyPage)
+  assert.match(pageText, /addAccountHint/u, '无账号必须显示添加引导')
+  assert.match(pageText, /addAccount"/u, '必须提供添加入口')
+  // F6-R 回归：宿主必须把 onAddAccount 接进 OverviewPage（组件测试自行传桩会掩盖死接线）。
+  const clientSource2 = await readFile(new URL('../src/client.js', import.meta.url), 'utf8')
+  assert.match(clientSource2, /onAddAccount: \(\) => beginLogin\(null\)/u)
+  assert.doesNotMatch(pageText, /kpiAccounts/u, '无账号不渲染 0 值 KPI')
+
+  // F3 回归：近 N 天窗口必须带 publishFrom 与 publishTo（排他终点=明天，含今天）。
+  const buildOverviewFilters = vm.runInContext('buildOverviewFilters', sandbox)
+  const fixed = Date.parse('2026-09-15T04:00:00Z')
+  const filters = buildOverviewFilters({ window: '30d', now: fixed })
+  assert.equal(filters.publishFrom, '2026-08-17', '近 30 天起点 = 今天-29')
+  assert.equal(filters.publishTo, '2026-09-16', '半开排他终点 = 明天，服务端 [from, to) 含今天')
+  const allFilters = buildOverviewFilters({ window: 'all', now: fixed })
+  assert.equal(allFilters.publishFrom, undefined)
+  assert.equal(allFilters.publishTo, undefined)
+})
+
+// ---------------------------------------------------------------------------
+// 单账号分析页（0914 方案 §6，阶段 2，实施说明 §7.4）
+// ---------------------------------------------------------------------------
+
+test('analysis-ui：趋势布局按真实跨度定位、gap 断点、counter_revised、少于 2 点不可渲染', async () => {
+  const sandbox = await evalUiModule(new URL('../src/analysis-ui.js', import.meta.url), {})
+  const trendLayout = vm.runInContext('trendLayout', sandbox)
+
+  // 少于 2 点：暂无趋势（renderable=false）。
+  assert.equal(trendLayout([{ day: '2026-09-02', value: 100 }]).renderable, false)
+  assert.equal(trendLayout([]).renderable, false)
+
+  // gap 天显式断点 + counter_revised 角标数据。
+  const layout = trendLayout([
+    { day: '2026-09-02', value: 100, elapsedSeconds: null, counterRevised: false },
+    { day: '2026-09-05', value: 260, elapsedSeconds: 259200, counterRevised: false },
+    { day: '2026-09-06', value: 250, elapsedSeconds: 86400, counterRevised: true },
+  ])
+  assert.equal(layout.renderable, true)
+  assert.deepEqual(layout.nodes.map(node => node.gapDaysBefore), [0, 2, 0], '09-03/04 无采集 → gap 2 天')
+  assert.equal(layout.nodes[2].counterRevised, true, '负 delta 显示平台修正角标')
+  // 横轴按真实 elapsedSeconds 比例定位（3 天跨度占 2/3 宽度，而非等距 1/2）。
+  assert.equal(layout.nodes[1].x, 450)  // 3 天跨度 / 4 天总跨度 = 0.75 × 600
+})
+
+test('分析页源契约：返回总览保留筛选、观众与流量开放（阶段 3）、导出按钮只在分析页局部', async () => {
+  const source = await readFile(new URL('../src/client.js', import.meta.url), 'utf8')
+  // 返回总览保留筛选条件（方案 §15.2）：退出分析页后重新拉取总览（沿用同一 filters）。
+  assert.match(source, /setAnalysisAccountId\(null\)\s*\n\s*loadOverview\(\)/u)
+  const analysisSource = await readFile(new URL('../src/analysis-ui.js', import.meta.url), 'utf8')
+  // 阶段 3 开放：加权画像/流量/热词/规则提醒全部渲染接口字段。
+  assert.match(analysisSource, /weightedSample/u, '按播放量加权（样本 N 条）脚注')
+  assert.match(analysisSource, /dataInsufficient/u, '无画像数据时显示"数据不足"而非 0%')
+  assert.match(analysisSource, /hotwordStaleBadge/u, '热词 stale 角标')
+  assert.match(analysisSource, /labelPotential/u, 'potential 标签渲染')
+  // F 修复回归：potential 标签渲染必须在真实路径（overview-ui 的 HotWorkRow/抽屉），
+  // 不能是 analysis-ui 里的死代码。
+  const overviewUiSource = await readFile(new URL('../src/overview-ui.js', import.meta.url), 'utf8')
+  assert.match(overviewUiSource, /labelPotential/u, 'overview-ui 爆款行/抽屉使用中文映射渲染 potential')
+  assert.match(overviewUiSource, /hotLabelText\(work\.labels, t\)/u, 'HotWorkRow 走 hotLabelText 映射')
+  assert.match(analysisSource, /t\('exportAnalysis'\)/u, '"导出账号分析报告"只在分析页局部工具栏')
+  assert.match(analysisSource, /暂无趋势/u)
+  assert.match(analysisSource, /counterRevised/u)
+  // UI 优化方案（2026-09-16）§5：页面不显示规则版本、参与样本与底部数据质量说明。
+  assert.doesNotMatch(analysisSource, /t\('ruleVersion'\)/u)
+  assert.doesNotMatch(analysisSource, /ruleSampleSize/u, '规则提醒不再携带样本量')
+  assert.doesNotMatch(analysisSource, /dataQualityLine/u)
+  assert.match(analysisSource, /accountTitle/u, '标题统一「账号：{名称}」')
+})
+
+// ---------------------------------------------------------------------------
+// UI 优化改造（2026-09-16 方案）：Tab 激活态 / 左栏显示条件 / 单选筛选 / 列轨道 /
+// 文案回归（colShare、规则版本、参与样本数、数据源不进页面）
+// ---------------------------------------------------------------------------
+
+test('basisLines：按「 · 」把判定依据拆成纵向行，缺失返回空数组', () => {
+  assert.deepEqual(
+    basisLines('账号内 Top 6% · 播放量为账号中位数 2238.7 倍 · 播放量达到绝对爆款阈值 100000'),
+    ['账号内 Top 6%', '播放量为账号中位数 2238.7 倍', '播放量达到绝对爆款阈值 100000'],
+  )
+  assert.deepEqual(basisLines('播放量达到绝对爆款阈值 100000'), ['播放量达到绝对爆款阈值 100000'])
+  assert.deepEqual(basisLines('  账号内 Top 6%  ·  播放量为账号中位数 8.4 倍 '), ['账号内 Top 6%', '播放量为账号中位数 8.4 倍'], '首尾空白被清理')
+  assert.deepEqual(basisLines(''), [])
+  assert.deepEqual(basisLines(null), [])
+  assert.deepEqual(basisLines(undefined), [])
+})
+
+test('formatWan：万单位与千分位展示（构建内联后 analysis-ui 依赖的同名函数）', async () => {
+  const sandbox = await evalUiModule(new URL('../src/overview-ui.js', import.meta.url), {})
+  const formatWan = vm.runInContext('formatWan', sandbox)
+  assert.equal(formatWan(5930000), '593万', '≥100万 不带小数')
+  assert.equal(formatWan(12345), '1.2万', '≥1万 保留 1 位小数')
+  assert.equal(formatWan(123456), '12.3万')
+  assert.equal(formatWan(9999), '9,999', '万以下千分位')
+  assert.equal(formatWan(287), '287')
+  assert.equal(formatWan(0), '0', '真实的 0 格式化为 0 而非缺失')
+  assert.equal(formatWan(null), null, '缺失返回 null（上层显示 —）')
+  assert.equal(formatWan('abc'), null, '非数值返回 null')
+})
+
+test('筛选流契约：UI 形态状态、请求时归一、筛选变更不重复请求（验收建议 2/3）', async () => {
+  const source = await readFile(new URL('../src/client.js', import.meta.url), 'utf8')
+  // 初始状态为 UI 形态（含 window 键），不带日期字段。
+  assert.match(source, /useState\(\(\) => \(\{ window: '30d', sort: 'hot_count', accountIds: \[\] \}\)\)/u)
+  // overview.get / overview.export 请求前统一经 buildOverviewFilters 归一（「全部」不带日期）。
+  assert.match(source, /action: 'overview\.get', \.\.\.buildOverviewFilters\(filters\)/u)
+  assert.match(source, /action: 'overview\.export', \.\.\.buildOverviewFilters\(overviewFilters\)/u)
+  // 分析页与其导出沿用总览窗口：从 UI 形态派生日期，而不是读状态里的旧字段。
+  assert.match(source, /const \{ publishFrom, publishTo \} = buildOverviewFilters\(overviewFilters\)/u)
+  // 筛选变更只 setOverviewFilters：查询由 loadOverview 身份变化触发一次，不显式重复调用。
+  const changeBody = source.match(/const changeOverviewFilters = useCallback\(filters => \{([\s\S]*?)\}, \[\]\)/u)
+  assert.ok(changeBody, 'changeOverviewFilters 存在')
+  assert.ok(!changeBody[1].includes('loadOverview('), '筛选变更不显式重复发起查询')
+  // 请求序列号守卫（验收 P1）：过期响应的数据/错误/复位一律丢弃，loading 只由最新请求结束。
+  const loadOverviewBody = source.match(/const loadOverview = useCallback\(async \(filters = overviewFilters\) => \{([\s\S]*?)\}, \[overviewFilters\]\)/u)
+  assert.ok(loadOverviewBody, 'loadOverview 存在')
+  assert.match(loadOverviewBody[1], /const requestId = \+\+overviewRequestRef\.current/u)
+  assert.match(loadOverviewBody[1], /if \(requestId !== overviewRequestRef\.current\) return/u)
+  assert.match(loadOverviewBody[1], /if \(requestId === overviewRequestRef\.current\) setOverviewLoading\(false\)/u)
+  const loadAnalysisBody = source.match(/const loadAnalysis = useCallback\(async \(accountId, metric = trendMetric\) => \{([\s\S]*?)\}, \[overviewFilters, trendMetric\]\)/u)
+  assert.ok(loadAnalysisBody, 'loadAnalysis 存在')
+  assert.match(loadAnalysisBody[1], /const requestId = \+\+analysisRequestRef\.current/u)
+  assert.match(loadAnalysisBody[1], /if \(requestId !== analysisRequestRef\.current\) return/u)
+  assert.match(loadAnalysisBody[1], /if \(requestId === analysisRequestRef\.current\) setAnalysisLoading\(false\)/u)
+})
+
+test('Tab 激活态：只有当前 Tab 有底部指示线；左侧账号栏只在视频数据 Tab 渲染', async () => {
+  const source = await readFile(new URL('../src/client.js', import.meta.url), 'utf8')
+  // 基础 Tab 样式不含品牌色下划线（透明占位保持高度稳定），激活态由 aria-current 驱动。
+  const baseTab = source.match(/\.ydo-tabs button\{[^}]*\}/u)
+  assert.ok(baseTab, '存在 Tab 基础样式')
+  assert.ok(!baseTab[0].includes('var(--dsw-alias-brand-primary)'), '非激活 Tab 不显示品牌色下划线')
+  const activeTab = source.match(/\.ydo-tabs button\[aria-current\]\{[^}]*\}/u)
+  assert.ok(activeTab, '存在激活态样式')
+  assert.match(activeTab[0], /border-bottom-color:var\(--dsw-alias-brand-primary\)/u)
+  // 两个 Tab 的下划线互斥：aria-current 由 tab 状态单点决定（React 属性不存在同元素双值）。
+  assert.ok(source.indexOf("'aria-current': tab === 'overview' || undefined") < source.indexOf("'aria-current': tab === 'videos' || undefined"))
+  // 左侧账号管理栏只在视频数据 Tab 渲染；总览上下文占满整行。
+  assert.match(source, /tab === 'videos' \? left : null/u)
+  assert.match(source, /className: `ydo-body\$\{tab === 'overview' \? ' ydo-body-full' : ''\}`/u)
+  const css = source.match(/const css = `[\s\S]*`/u)[0]
+  assert.match(css, /\.ydo-body-full\{grid-template-columns:1fr\}/u)
+})
+
+test('总览工具栏：单选账号下拉（默认全部账号）、日期/排序带可见说明、刷新不随 loading 禁用', async () => {
+  const hLog = []
+  const reactStub = {
+    createElement: (type, props, ...children) => {
+      hLog.push({ type, props, children })
+      return { type, props, children }
+    },
+  }
+  const sandbox = await evalUiModule(new URL('../src/overview-ui.js', import.meta.url), {}, reactStub)
+  const OverviewPage = vm.runInContext('OverviewPage', sandbox)
+
+  const fixture = {
+    summary: { accountCount: 2, workCount: 30, totalPlayCount: 50000, hotWorkCount: 3, hotRatePct: 10 },
+    accounts: [
+      { accountId: 'a1', nickname: '燃豚豚', sessionStatus: 'ok', fanCount: 287, workCount: 10, medianPlayCount: 1000, hotWorkCount: 2, hotRatePct: 20, engagementRatePct: 6.2, sessionCheckedAt: '2026-09-15T10:00:00Z' },
+      { accountId: 'a2', nickname: '车研社', sessionStatus: 'ok', fanCount: 18000, workCount: 20, medianPlayCount: 2000, hotWorkCount: 1, hotRatePct: 5, engagementRatePct: 5.1, sessionCheckedAt: '2026-09-15T10:00:00Z' },
+    ],
+    hotWorks: [],
+  }
+  const changes = []
+  const page = OverviewPage({
+    overview: fixture,
+    loading: true,
+    errorReason: null,
+    filters: { window: '30d', sort: 'hot_count', accountIds: [] },
+    accounts: fixture.accounts,
+    collecting: false,
+    exporting: false,
+    onFilterChange: filters => changes.push(filters),
+    onRefresh: () => {},
+    onExport: () => {},
+    onAddAccount: () => {},
+    t: key => key,
+  })
+
+  const selects = hLog.filter(node => node.type === 'select')
+  assert.equal(selects.length, 3, '工具栏共 3 个下拉：账号/发布时间/排序')
+  // 账号下拉：单选（无 multiple），值 '' 表示全部账号，选项含 allAccounts + 每个账号。
+  const accountSelect = selects[0]
+  assert.equal(accountSelect.props.multiple, undefined, '账号筛选必须是单选下拉')
+  assert.equal(accountSelect.props.value, '', '默认选中全部账号（空 accountIds）')
+  const accountOptions = accountSelect.children.flat()
+  assert.equal(accountOptions[0].props.value, '')
+  assert.equal(accountOptions[0].children[0], 'allAccounts')
+  assert.equal(accountOptions.length, 3, '全部账号 + 2 个具体账号')
+  // 选择具体账号 → accountIds 只含一个 ID；切回全部账号 → 空数组。
+  // （vm 沙箱里创建的数组原型与宿主不同，必须先展开成宿主数组再比较。）
+  accountSelect.props.onChange({ target: { value: 'a2' } })
+  assert.deepEqual([...changes[0].accountIds], ['a2'])
+  accountSelect.props.onChange({ target: { value: '' } })
+  assert.deepEqual([...changes[1].accountIds], [])
+  // 窗口下拉改 UI 形态（window 键）：请求日期由 client.js 发请求时经
+  // buildOverviewFilters 归一——切「全部」不会残留旧 publishFrom/publishTo（验收建议 2）。
+  const windowSelect = selects[1]
+  assert.equal(windowSelect.props.value, '30d')
+  windowSelect.props.onChange({ target: { value: 'all' } })
+  assert.equal(changes[2].window, 'all')
+  assert.equal(changes[2].publishFrom, undefined, 'UI 形态筛选不携带日期字段')
+  assert.equal(changes[2].publishTo, undefined)
+  // 日期与排序下拉前有可见文字说明（label 包裹，而非仅 aria-label）。
+  const labels = hLog.filter(node => node.type === 'label')
+  const labelTexts = labels.map(label => JSON.stringify(label))
+  assert.ok(labels.some(label => JSON.stringify(label).includes('overviewWindow')), '发布时间下拉带可见文字')
+  assert.ok(labels.some(label => JSON.stringify(label).includes('overviewSort')), '排序下拉带可见文字')
+  assert.ok(labels.some(label => JSON.stringify(label).includes('overviewAccountFilter')), '账号筛选带说明文字')
+  assert.ok(labelTexts.length >= 3)
+  // 刷新按钮不因 loading 禁用：筛选自动查询的加载态只出现在列表区域。
+  const refresh = hLog.find(node => node.type === 'button' && JSON.stringify(node.children).includes('"refresh"'))
+  assert.ok(refresh, '存在刷新按钮')
+  assert.notEqual(refresh.props.disabled, true, '筛选自动查询不借刷新按钮的禁用态表达')
+  // 列表区域加载态（role=status）在 loading 时渲染。
+  const loadingRow = hLog.find(node => String(node.props && node.props.className || '').includes('ydo-ov-loading'))
+  assert.ok(loadingRow, '筛选自动查询在列表区域显示加载状态')
+  assert.equal(loadingRow.props.role, 'status')
+  // 操作按钮组靠右（ydo-ov-actions 承载刷新/导出）。
+  const actions = hLog.find(node => String(node.props && node.props.className || '').includes('ydo-ov-actions'))
+  assert.ok(actions, '刷新/导出固定靠右的容器存在')
+})
+
+test('总览表格：排行/爆款两表各自固定列轨道，数字列右对齐，爆款依据多行', async () => {
+  const hLog = []
+  const reactStub = {
+    createElement: (type, props, ...children) => {
+      hLog.push({ type, props, children })
+      return { type, props, children }
+    },
+  }
+  const sandbox = await evalUiModule(new URL('../src/overview-ui.js', import.meta.url), {}, reactStub)
+  const OverviewPage = vm.runInContext('OverviewPage', sandbox)
+
+  const fixture = {
+    summary: { accountCount: 1, workCount: 10, totalPlayCount: 50000, hotWorkCount: 1, hotRatePct: 10 },
+    accounts: [
+      { accountId: 'a1', nickname: '燃豚豚', sessionStatus: 'ok', fanCount: 287, workCount: 10, medianPlayCount: 1000, hotWorkCount: 1, hotRatePct: 10, engagementRatePct: 6.2, sessionCheckedAt: '2026-09-15T10:00:00Z' },
+    ],
+    hotWorks: [
+      {
+        workId: 'w1', accountId: 'a1', accountNickname: '燃豚豚', title: '路边划线区域停车要不要罚？',
+        publishTime: '2026-09-08T09:00:00.000Z', playCount: 5930000, engagementRatePct: 8.7,
+        basis: '账号内 Top 2% · 播放量为账号中位数 322 倍 · 播放量达到绝对爆款阈值 100000',
+        labels: ['absolute', 'account_relative'],
+      },
+    ],
+  }
+  OverviewPage({
+    overview: fixture, loading: false, errorReason: null,
+    filters: { window: '30d', sort: 'hot_count', accountIds: [] },
+    accounts: fixture.accounts, collecting: false, exporting: false,
+    onFilterChange: () => {}, onRefresh: () => {}, onExport: () => {}, onOpenWork: () => {}, onOpenAccount: () => {},
+    t: key => key,
+  })
+  // AccountRow/HotWorkRow 等经 h(Component, props) 惰性创建，stub 只记录元素不执行
+  // 组件；这里手动执行函数组件，其内部的 h 调用才会进入 hLog。
+  for (let index = 0; index < hLog.length; index += 1) {
+    const node = hLog[index]
+    if (typeof node.type === 'function') node.type(node.props)
+  }
+  // 表头与数据行共用同一列轨道类：排行表 ydo-ov-tr-rank、爆款表 ydo-ov-tr-hot。
+  const rankRows = hLog.filter(node => String(node.props && node.props.className || '').includes('ydo-ov-tr-rank'))
+  const hotRows = hLog.filter(node => String(node.props && node.props.className || '').includes('ydo-ov-tr-hot'))
+  assert.equal(rankRows.filter(node => String(node.props.className).includes('ydo-ov-head')).length, 1, '排行表头存在')
+  assert.equal(rankRows.length, 2, '排行表头 + 1 数据行共用轨道')
+  assert.equal(hotRows.length, 2, '爆款表头 + 1 数据行共用轨道')
+  // 数字/百分比列统一右对齐 + tabular-nums；排名列居中。
+  const numCells = hLog.filter(node => String(node.props && node.props.className || '').includes('ydo-ov-num'))
+  assert.ok(numCells.length >= 14, '排行 6 列数字 + 爆款率/互动率 + 爆款表播放/互动率均右对齐')
+  const rankCells = hLog.filter(node => String(node.props && node.props.className || '').includes('ydo-ov-rankcell'))
+  assert.ok(rankCells.length >= 2, '排名列存在且与表头同结构')
+  // 爆款依据按「 · 」拆成纵向行：3 条依据渲染 3 个子行。
+  const basisCells = hLog.filter(node => String(node.props && node.props.className || '').includes('ydo-ov-basis'))
+  assert.equal(basisCells.length, 1)
+  assert.equal(basisCells[0].children.filter(child => child && child.type === 'div').length, 3, '爆款依据按判定类别分行')
+  // 发布时间是文本列：单元格不右对齐（与表头及分析页一致，验收建议 6）。
+  const hotRow = hotRows.find(node => String(node.props.className).includes('ydo-ov-hot-row'))
+  const timeCell = hotRow.children.find(cell => Array.isArray(cell.children) && typeof cell.children[0] === 'string' && String(cell.children[0]).startsWith('2026-09-08'))
+  assert.ok(timeCell, '发布时间单元格存在')
+  assert.equal(timeCell.props.className, undefined, '发布时间列保持文本左对齐')
+  // 发布时间走 ui-format 的上海时区格式化（UTC 09:00 → 17:00），不再用 String.slice。
+  const publishedAt = JSON.stringify(hLog).includes('2026-09-08 17:00')
+  assert.ok(publishedAt, '发布时间按 Asia/Shanghai 展示')
+})
+
+test('总览页面文案回归：不出现规则版本/数据来源/参与样本数/colShare/内部样本字样', async () => {
+  const hLog = []
+  const reactStub = {
+    createElement: (type, props, ...children) => {
+      hLog.push({ type, props, children })
+      return { type, props, children }
+    },
+  }
+  const sandbox = await evalUiModule(new URL('../src/overview-ui.js', import.meta.url), {}, reactStub)
+  const OverviewPage = vm.runInContext('OverviewPage', sandbox)
+  const HotWorkDrawer = vm.runInContext('HotWorkDrawer', sandbox)
+
+  const zhCopy = {
+    ruleVersion: '规则版本', dataSource: '数据来源', hotSampleSize: '参与样本数',
+    colShare: '分享量', colPlay: '播放量', engagement: '互动率', colLike: '点赞量',
+    colComment: '评论量', colCollect: '收藏量', hotLabels: '命中标签',
+    hotDrawerTitle: '爆款视频详情', hotBasis: '爆款依据', close: '关闭',
+    openFullWorkAnalysis: '查看完整作品分析', loading: '加载中…',
+    labelAbsolute: '绝对爆款', labelAccountRelative: '账号内爆款', labelOther: '其他标签',
+    insufficientSample: '样本不足', rankCol: '排名', colAccount: '账号', fanCount: '粉丝',
+    workCount: '作品数', colMedianPlay: '中位播放', kpiHotWorks: '爆款视频', hotRateCol: '爆款率',
+    sessionFreshnessCol: '会话状态', accountRanking: '账号表现排行', hotWorksTitle: '爆款视频',
+    hotOwnerAccount: '所属账号', publishTime: '发布时间', noHotWorks: '当前筛选内暂无爆款视频',
+    hotDistribution: '爆款账号分布', overviewAlerts: '运营提醒', noAlerts: '暂无提醒',
+    kpiAccounts: '管理账号', kpiWorks: '作品总数', kpiTotalPlay: '累计播放量', kpiCurrentCumulative: '当前累计值',
+    sessionCheckValid: '最近检测有效', none: '暂无数据',
+  }
+  const t = key => zhCopy[key] || key
+  const fixture = {
+    summary: { accountCount: 1, workCount: 10, totalPlayCount: 50000, hotWorkCount: 1, hotRatePct: 10 },
+    accounts: [
+      { accountId: 'a1', nickname: '燃豚豚', sessionStatus: 'ok', fanCount: 287, workCount: 10, medianPlayCount: 1000, hotWorkCount: 1, hotRatePct: 10, engagementRatePct: 6.2, sessionCheckedAt: '2026-09-15T10:00:00Z' },
+    ],
+    hotWorks: [],
+    ruleVersion: 'hot-v1-potential',
+    dataSource: 'douyin_operation_db',
+  }
+  const pageText = JSON.stringify(OverviewPage({
+    overview: fixture, loading: false, errorReason: null,
+    filters: { window: '30d', sort: 'hot_count', accountIds: [] },
+    accounts: fixture.accounts, collecting: false, exporting: false,
+    onFilterChange: () => {}, onRefresh: () => {}, onExport: () => {},
+    onOpenWork: () => {}, onOpenAccount: () => {}, onAddAccount: () => {}, t,
+  }))
+  // 接口返回 ruleVersion/dataSource，但页面不再渲染这两个字段。
+  assert.ok(!pageText.includes('规则版本'), '总览页不显示规则版本')
+  assert.ok(!pageText.includes('数据来源'), '总览页不显示数据来源')
+  assert.ok(!pageText.includes('douyin_operation_db'), '内部数据源标识不进页面')
+
+  const drawerText = JSON.stringify(HotWorkDrawer({
+    work: {
+      workId: 'w1', title: '示例爆款', basis: '账号内 Top 2% · 播放量为账号中位数 322 倍',
+      // 未登记标签收敛「其他标签」，原始 key 不进页面（验收 P2）。
+      labels: ['absolute', 'brand_new_label'], playCount: 5930000, engagementRatePct: 8.7,
+      likeCount: 49000, commentCount: 1200, collectCount: 7600, shareCount: 890,
+      ruleVersion: 'hot-v1-potential', sampleSize: 17,
+    },
+    detail: null, detailLoading: false, onClose: () => {}, onOpenFull: () => {}, t,
+  }))
+  assert.ok(drawerText.includes('分享量 890'), '分享量中文化渲染（colShare 文案键）')
+  assert.ok(!drawerText.includes('colShare'), '内部字段名 colShare 不进页面')
+  assert.ok(!drawerText.includes('规则版本'), '抽屉不显示规则版本')
+  assert.ok(!drawerText.includes('参与样本数'), '抽屉不显示参与样本数')
+  assert.ok(!drawerText.includes('hot-v1-potential'), '规则版本值不进页面')
+  assert.ok(drawerText.includes('绝对爆款 + 其他标签') && !drawerText.includes('brand_new_label'), '未知标签收敛「其他标签」')
+  assert.ok(drawerText.includes('账号内 Top 2%') && drawerText.includes('播放量为账号中位数 322 倍'), '爆款依据按类别分行渲染')
+})
+
+test('分析页行为：账号标题、内容指标三段结构、观众与流量口径标签、爆款视频表格', async () => {
+  const hLog = []
+  const reactStub = {
+    createElement: (type, props, ...children) => {
+      hLog.push({ type, props, children })
+      return { type, props, children }
+    },
+  }
+  const sandbox = await evalUiModule(new URL('../src/analysis-ui.js', import.meta.url), {}, reactStub)
+  const AnalysisPage = vm.runInContext('AnalysisPage', sandbox)
+
+  const zhCopy = {
+    accountTitle: '账号：{name}', backToOverview: '← 返回账号总览', exportAnalysis: '导出账号分析报告',
+    exporting: '导出中…', fanCount: '粉丝', workCount: '作品数', latestCollected: '最近采集',
+    noRecord: '暂无记录', sessionFreshnessCol: '会话状态', sessionCheckValid: '最近检测有效',
+    kpiTotalPlay: '总播放量', colMedianPlay: '中位播放量', colHighestPlay: '最高播放量',
+    kpiHotWorks: '爆款数量', hotRateCol: '爆款率', trendTitle: '采集快照累计值变化', trendMetric: '指标',
+    metric_play: '累计播放量', metric_like: '累计点赞量', metric_comment: '累计评论量',
+    metric_collect: '累计收藏量', metric_share: '累计分享量', metric_fans: '粉丝数',
+    trendCaption: '按采集日收盘值展示', noTrend: '暂无趋势', contentMetrics: '内容指标',
+    cmEngagement: '综合互动率', cmLikeRate: '点赞率', cmCommentRate: '评论率', cmCollectRate: '收藏率',
+    cmShareRate: '分享率', cmCompletion5s: '5秒完播率', cmAvgViewShare: '平均播放占比', cmAvgWatchDuration: '平均播放时长',
+    coverage: '覆盖率', dataInsufficient: '数据不足', dataPartial: '部分数据',
+    audienceTraffic: '观众与流量', mainGender: '主要性别', mainAge: '主要年龄', mainRegion: '主要地域',
+    cityLevel: '城市级别', mainTrafficSource: '主要流量来源', weightedSample: '按播放量加权（样本 {count} 条）',
+    genderMale: '男', genderFemale: '女', genderOther: '其他',
+    age24to30: '24-30岁', age31to40: '31-40岁', ageOther: '其他年龄段',
+    srcHomepageHot: '推荐(首页推荐)', sourceOther: '其他来源',
+    labelOther: '其他标签', alertRuleOther: '其他规则提醒', seconds: '秒',
+    accountHotWorks: '本账号爆款视频', rankCol: '排名', colVideo: '视频', publishTime: '发布时间',
+    colPlay: '播放量', engagement: '互动率', hotBasis: '爆款依据', noHotWorks: '当前筛选内暂无爆款视频',
+    labelAbsolute: '绝对爆款', labelAccountRelative: '账号内爆款',
+  }
+  const t = key => zhCopy[key] || key
+  const analysis = {
+    account: { accountId: 'a1', nickname: '燃豚豚', fanCount: 287, lastCollectedAt: '2026-09-08T02:00:00.000Z', sessionCheck: { state: 'verified' } },
+    summary: { workCount: 17 },
+    kpi: { totalPlayCount: 12486000, medianPlayCount: 18400, maxPlayCount: 5930000, hotWorkCount: 8, hotRatePct: 12.5, engagementRatePct: 6.2 },
+    interaction: {
+      likeCount: { ratePct: 3.9, coveragePct: 100 },
+      commentCount: { ratePct: 0.5, coveragePct: 76.5 },
+      collectCount: { ratePct: 1.2, coveragePct: 100 },
+      shareCount: { ratePct: 0.6, coveragePct: 0 },
+    },
+    // 完播/播放行为段（tools `_playback_metrics`）：value 是服务端单点产出的均值。
+    completion: { completion5s: { value: 43.2, coveragePct: 100 } },
+    playback: {
+      avgViewProportion: { value: 38.5, coveragePct: 88.2 },
+      avgWatchDuration: { value: 12.6, coveragePct: 88.2 },
+    },
+    audience: {
+      dimensions: {
+        // 接口真实形态是内部枚举（male/24-30），页面必须中文化后展示。
+        gender: { distributions: [{ key: 'male', pct: 92.7 }], sampleWorkCount: 12 },
+        age: { distributions: [{ key: '24-30', pct: 41.2 }, { key: '31-40', pct: 22.8 }], sampleWorkCount: 12 },
+        province: { distributions: [{ key: '广东', pct: 31.5 }], sampleWorkCount: 12 },
+        city_level: { distributions: [{ key: '一线', pct: 38.9 }], sampleWorkCount: 12 },
+      },
+    },
+    traffic: { distributions: [{ key: 'homepage_hot', pct: 86.2 }] },
+    // 未登记的 ruleId 必须收敛「其他规则提醒」，原始值不进页面（验收 P2）。
+    alerts: [{ ruleId: 'mystery_rule', workCount: 3 }],
+    hotWorks: [
+      {
+        workId: 'w1', accountId: 'a1', title: '路边划线区域停车要不要罚？', rank: 1,
+        publishTime: '2026-09-08T09:00:00.000Z', playCount: 5930000, engagementRatePct: 8.7,
+        basis: '账号内 Top 2% · 播放量为账号中位数 322 倍', labels: ['absolute'],
+      },
+    ],
+  }
+  AnalysisPage({
+    analysis, trend: null, trendMetric: 'play', trendErrorReason: null,
+    loading: false, errorReason: null, exporting: false,
+    onBack: () => {}, onMetricChange: () => {}, onExport: () => {}, onOpenWork: () => {}, t,
+  })
+  const pageText = JSON.stringify(hLog)
+  // 标题「账号：{名称}」；头部无规则版本。
+  assert.ok(pageText.includes('账号：燃豚豚'), '标题统一「账号：{名称}」')
+  assert.ok(!pageText.includes('规则版本'), '头部不显示规则版本')
+  assert.ok(pageText.includes('2026-09-08 10:00'), '最近采集按 Asia/Shanghai 格式化')
+  // 内容指标固定清单：8 项全渲染；服务端未返回的段显式「数据不足」。
+  for (const label of ['综合互动率', '点赞率', '评论率', '收藏率', '分享率', '5秒完播率', '平均播放占比', '平均播放时长']) {
+    assert.ok(pageText.includes(label), `内容指标包含「${label}」`)
+  }
+  assert.ok(pageText.includes('数据不足'), '未返回段显示数据不足')
+  assert.ok(pageText.includes('部分数据 · 覆盖率 76.5%'), '覆盖不足标记部分数据与覆盖率')
+  // 服务端返回完播/播放段时渲染真实均值；平均播放时长单位是秒（验收 P1-4 闭合）。
+  assert.ok(pageText.includes('43.2%'), '5秒完播率渲染服务端均值')
+  assert.ok(pageText.includes('38.5%') && pageText.includes('部分数据 · 覆盖率 88.2%'), '平均播放占比带覆盖率')
+  assert.ok(pageText.includes('12.6秒'), '平均播放时长以秒为单位渲染')
+  assert.ok(!pageText.includes('participation'), '无内部字段')
+  // 观众与流量口径标签。
+  for (const label of ['主要性别', '主要年龄', '主要地域', '城市级别', '主要流量来源']) {
+    assert.ok(pageText.includes(label), `观众与流量包含「${label}」`)
+  }
+  // 内部枚举中文化：male/24-30 不进页面（验收 P1-2）。
+  assert.ok(pageText.includes('男 92.7%'), '性别枚举经 genderLabel 中文化')
+  assert.ok(pageText.includes('24-30岁 41.2%'), '年龄分桶经 formatAgeBucket 中文化')
+  assert.ok(!pageText.includes('male') && !/['"]24-30 /.test(pageText), '原始枚举 key 不进页面')
+  // 流量来源走 trafficSourceLabel 兜底映射（验收 P1-3）。
+  assert.ok(pageText.includes('推荐(首页推荐) 86.2%'), '流量来源用统一映射展示')
+  // 未登记 ruleId 收敛「其他规则提醒」（验收 P2）。ruleId 会作为 React key 存在于
+  // props（真实 DOM 不可见），因此只对可见文本断言。
+  const textOf = value => {
+    if (typeof value === 'string') return value
+    if (Array.isArray(value)) return value.map(textOf).join('')
+    if (value && typeof value === 'object' && value.children !== undefined) return textOf(value.children)
+    return ''
+  }
+  const visibleText = hLog.map(node => textOf(node)).join('\n')
+  assert.ok(visibleText.includes('其他规则提醒（3 条作品）'), '未知规则 ID 收敛兜底文案')
+  assert.ok(!visibleText.includes('mystery_rule'), '原始 ruleId 不进可见文本')
+  assert.ok(pageText.includes('按播放量加权（样本 12 条）'), '画像显示参与作品数')
+  // 爆款视频固定六列表格 + 爆款依据分行：列序与总览不同（排名居首），用专属轨道
+  // ydo-ov-tr-hot-rank，排名落窄列、视频标题占宽轨（验收建议 1）。
+  const hotRows = hLog.filter(node => String(node.props && node.props.className || '').includes('ydo-ov-tr-hot-rank'))
+  assert.equal(hotRows.length, 2, '爆款表头 + 数据行共用 ydo-ov-tr-hot-rank 专属轨道')
+  const hotDataRow = hotRows.find(node => !String(node.props.className).includes('ydo-ov-head'))
+  assert.equal(hotDataRow.children[0].props.className, 'ydo-ov-rankcell', '首列是排名（窄列居中）')
+  assert.ok(hotDataRow.children[1].props.className.includes('ydo-ov-hot-title'), '第二列是视频标题（宽轨）')
+  assert.ok(pageText.includes('账号内 Top 2%') && pageText.includes('播放量为账号中位数 322 倍'), '爆款依据分行渲染')
+  // 内容指标固定 8 项；真实的 0 保持 0，缺失显式「数据不足」（验收建议 5）。
+  const contentMetricRows = vm.runInContext('contentMetricRows', sandbox)
+  const zeroRows = contentMetricRows({ interaction: { likeCount: { ratePct: 0, coveragePct: 100 } }, kpi: {} }, t)
+  assert.equal(zeroRows.length, 8, '内容指标固定 8 项')
+  const likeRow = zeroRows.find(row => row.key === 'likeCount')
+  assert.equal(likeRow.value, '0.0%', '真实的 0 保持 0，不当作缺失')
+  assert.equal(likeRow.note, '覆盖率 100.0%')
+  const engagementRow = zeroRows.find(row => row.key === 'engagement')
+  assert.equal(engagementRow.value, '—', '综合互动率缺失显示 —')
+  assert.equal(engagementRow.note, '数据不足', '综合互动率缺失显式数据不足（三段完整）')
+  // 页面不再出现样本类辅助信息与数据质量行。
+  assert.ok(!pageText.includes('数据质量'), '底部数据质量说明已删除')
+  assert.ok(!JSON.stringify(hLog).includes('sampleSize'), '样本量字段不进页面')
 })

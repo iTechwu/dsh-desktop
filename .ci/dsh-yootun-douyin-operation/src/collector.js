@@ -11,9 +11,11 @@
 import { normalizeAvatarUrl } from './avatar.js'
 import {
   LOW_PLAY_STATUS_CODE,
+  SessionInvalidError,
   buildWorkPayload,
   decidePagination,
   dedupeWorks,
+  isSessionExpiredPayload,
   parseItemCompare,
   parseItemMget,
   parseJsonPreservingIds,
@@ -137,7 +139,17 @@ export async function collectWorkList(page, {
       error = result && result.status ? `page_http_${result.status}` : 'page_request_failed'
       break
     }
-    const parsed = parseWorkListPage(result.json)
+    // HTTP 200 + status_code:8（会话失效）在 parseWorkListPage 内抛 SessionInvalidError：
+    // 翻页中途过期时，前几页已采集作品挂在错误上带出（审查 O5），由 runner 的过期
+    // 收尾入库保留；直接向上传播（不退避重试、不继续下一页）。
+    try {
+      var parsed = parseWorkListPage(result.json)
+    } catch (error) {
+      if (error instanceof SessionInvalidError && collected.length) {
+        error.partialListWorks = collected
+      }
+      throw error
+    }
     collected.push(...parsed.works)
     pages.push({ pageNumber, cursor, count: parsed.rawCount, hasMore: parsed.hasMore })
     if (onPage) onPage({ pageNumber, count: parsed.rawCount, hasMore: parsed.hasMore, collected: collected.length })
@@ -282,9 +294,18 @@ export async function collectHotword(page, workId) {
   return parseWordCloud(result.json)
 }
 
-/** 账号资料（昵称/粉丝数/头像），页面同源 fetch。 */
+/** 账号资料（昵称/粉丝数/头像），页面同源 fetch。
+ *
+ * HTTP 200 + `status_code: 8`（业务层会话失效）必须抛 `SessionInvalidError`：
+ * user/info 是采集链路的第二处会话判定点（第一处是作品列表）；静默返回 null
+ * 会把过期会话伪装成"资料缺失"继续跑详情批次。探测路径（session.probeSession）
+ * 不走本函数，保持自己的 null → expired 判定，互不影响。
+ */
 export async function collectAccountProfile(page) {
   const result = await fetchJson(page, USER_INFO_PATH)
+  if (result.ok && isSessionExpiredPayload(result.json)) {
+    throw new SessionInvalidError()
+  }
   if (!result.ok || !result.json || typeof result.json !== 'object') return null
   const user = result.json.user || result.json.data || result.json
   if (!user || typeof user !== 'object') return null
@@ -320,13 +341,47 @@ export async function collectAccountWorks(page, {
   workListOptions = {},
 } = {}) {
   await page.goto(WORK_MANAGE_URL, { waitUntil: 'domcontentloaded', timeout: 60_000 })
-  const list = await collectWorkList(page, { maxPages, ...workListOptions })
+  let list
+  try {
+    list = await collectWorkList(page, { maxPages, ...workListOptions })
+  } catch (error) {
+    // 翻页中途会话失效：前几页已采集作品不能丢——正规化为入库载荷挂错误上（审查 O5）。
+    if (error instanceof SessionInvalidError && Array.isArray(error.partialListWorks)
+        && error.partialListWorks.length) {
+      error.partialCollected = {
+        works: error.partialListWorks.map(work => buildWorkPayload({
+          work, performance: null, compare: null, source: null, portrait: null,
+          search: null, progress: null, mget: null, hotword: null, observedAt,
+        })),
+        listComplete: false,
+        expectedWorkCount: error.partialListWorks.length,
+      }
+    }
+    throw error
+  }
   if (list.works.length > MAX_EXPECTED_WORK_COUNT) {
     // 超出 tools 侧 expectedWorkCount 上限：此时无论怎么采集都不可能诚实结算完成，
     // 因此在展开逐稿详情（耗时最长的一段）之前就中止。
     throw new Error('expected_work_count_out_of_range')
   }
-  const profile = await collectAccountProfile(page)
+  let profile = null
+  try {
+    profile = await collectAccountProfile(page)
+  } catch (error) {
+    // 会话失效：已完成的列表成果不能随栈帧丢弃——正规化为入库载荷挂在错误上，
+    // runner 的过期收尾据此入库保留（0914 方案 §3.6 / 实施说明 §4"保留已采集批次"）。
+    if (error instanceof SessionInvalidError) {
+      error.partialCollected = {
+        works: list.works.map(work => buildWorkPayload({
+          work, performance: null, compare: null, source: null, portrait: null,
+          search: null, progress: null, mget: null, hotword: null, observedAt,
+        })),
+        listComplete: list.listComplete,
+        expectedWorkCount: list.works.length,
+      }
+    }
+    throw error
+  }
 
   let performance = new Map()
   try {
@@ -359,6 +414,16 @@ export async function collectAccountWorks(page, {
         observedAt,
       }))
     } catch (error) {
+      // 会话失效：立即中止本轮（不继续后续作品批次、不当作单作品失败），
+      // 已完成的详情载荷挂在错误上，由 runner 在过期收尾中入库保留（§3.6）。
+      if (error instanceof SessionInvalidError) {
+        error.partialCollected = {
+          works: payloads,
+          listComplete: list.listComplete,
+          expectedWorkCount: list.works.length,
+        }
+        throw error
+      }
       // 单作品失败只记录该作品，不阻塞其余作品。
       failures.push({ workId: work.work_id, reason: safeReason(error) })
     }

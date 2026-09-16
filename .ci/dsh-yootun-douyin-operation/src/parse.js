@@ -8,6 +8,37 @@
 
 export const LOW_PLAY_STATUS_CODE = 10001
 
+/**
+ * 业务层会话失效码（HTTP 200 下的 `status_code: 8`"用户未登录"）。
+ *
+ * 0914 方案 §3.6 前置门禁：会话过期时抖音可能返回 HTTP 200 + `status_code: 8`，
+ * 旧实现把它解析成空作品列表并以 `completed + expectedWorkCount=0` 结束——
+ * "假空成功"会污染 `last_collected_at` 与账号总览。必须在解析层把它变成
+ * 确定性失败（`SessionInvalidError`），由 runner 上报 expired 并以失败收尾。
+ *
+ * 注意区分既有约定，二者**不受影响**：
+ * - `item_compare` 的 `10001`（低播放，完播类指标不可得，不是错误）；
+ * - 热词 `wordCloud` 的 `status_code==0`（成功）与非零 → unavailable（保留旧集合）。
+ */
+export const SESSION_EXPIRED_STATUS_CODE = 8
+
+/** 会话失效（status_code=8）：类型化错误，采集链路据此立即中止并上报 expired。 */
+export class SessionInvalidError extends Error {
+  constructor(statusCode = SESSION_EXPIRED_STATUS_CODE) {
+    super(`douyin session invalid (status_code=${statusCode})`)
+    this.name = 'SessionInvalidError'
+    this.code = 'session_invalid'
+    this.statusCode = statusCode
+  }
+}
+
+/** HTTP 200 响应体是否为业务层会话失效（`status_code: 8`）。 */
+export function isSessionExpiredPayload(json) {
+  return Boolean(
+    json && typeof json === 'object' && toInt(json.status_code) === SESSION_EXPIRED_STATUS_CODE,
+  )
+}
+
 // 流量来源 key → 中文标签（未知 key 原样透出，不编造）。
 export const SOURCE_LABELS = {
   homepage_hot: '推荐(首页推荐)',
@@ -204,10 +235,14 @@ export function normalizeWork(raw) {
 /**
  * 作品列表单页解析。
  *
+ * HTTP 200 + `status_code: 8` 是业务层会话失效（不是空列表）：必须抛出
+ * `SessionInvalidError` 让采集立即中止，绝不解析成"0 作品的健康完成"。
+ *
  * @returns {{works: object[], hasMore: boolean, nextCursor: string|number|null, rawCount: number}}
  */
 export function parseWorkListPage(json) {
   const payload = json && typeof json === 'object' ? json : {}
+  if (isSessionExpiredPayload(payload)) throw new SessionInvalidError(toInt(payload.status_code))
   const list = Array.isArray(payload.aweme_list) ? payload.aweme_list : []
   const works = list.map(normalizeWork).filter(Boolean)
   const nextCursor = firstPresent(payload.max_cursor, payload.cursor)
