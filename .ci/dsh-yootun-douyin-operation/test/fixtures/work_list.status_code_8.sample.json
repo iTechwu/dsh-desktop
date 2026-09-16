@@ -1,5 +1,0 @@
-{
-  "_note": "脱敏样例：结构与类型真实，文案为占位。HTTP 200 + status_code=8（业务层会话失效，无 aweme_list/has_more）——0914 方案 §3.6：解析层必须抛 SessionInvalidError 立即中止采集，绝不解析成空列表的健康完成。",
-  "status_code": 8,
-  "status_msg": "示例：用户未登录"
-}

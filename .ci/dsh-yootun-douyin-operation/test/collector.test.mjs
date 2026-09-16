@@ -7,9 +7,7 @@ import {
   DEFAULT_PAGE_SIZE,
   DETAIL_TARGETS,
   ITEM_GENRES,
-  USER_INFO_PATH,
   WORK_LIST_PATH,
-  collectAccountProfile,
   collectAccountWorks,
   collectHotword,
   collectItemAnalysis,
@@ -18,7 +16,6 @@ import {
   fetchJson,
   MAX_EXPECTED_WORK_COUNT,
 } from '../src/collector.js'
-import { SessionInvalidError } from '../src/parse.js'
 
 const FIXTURE_DIR = new URL('./fixtures/', import.meta.url)
 async function fixture(name) {
@@ -410,101 +407,4 @@ test('fetchJson：HTTP 200 但非 JSON / 非 200 均判为失败', async () => {
   const result = await fetchJson(missing, '/unknown')
   assert.equal(result.ok, false)
   assert.equal(result.status, 404)
-})
-
-// ---------------------------------------------------------------------------
-// 会话失效（HTTP 200 + status_code=8，0914 方案 §3.6 前置门禁）
-// ---------------------------------------------------------------------------
-
-test('作品列表首页命中 status_code=8：抛 SessionInvalidError，立即中止（不重试、不翻页）', async () => {
-  const page = fakePage({
-    jsonRoutes: { [WORK_LIST_PATH]: { status_code: 8, status_msg: '示例：用户未登录' } },
-  })
-  await assert.rejects(() => collectWorkList(page, { retries: 2, intervalMs: 0 }), SessionInvalidError)
-  // status_code=8 是业务层失败：不做 HTTP 退避重试，work_list 只应被打过一次。
-  assert.equal(page.calls.filter(call => call.url.includes('work_list')).length, 1)
-})
-
-test('user/info 命中 status_code=8：collectAccountProfile 抛 SessionInvalidError', async () => {
-  const page = fakePage({ jsonRoutes: { [USER_INFO_PATH]: { status_code: 8, status_msg: '示例：用户未登录' } } })
-  await assert.rejects(() => collectAccountProfile(page), SessionInvalidError)
-  // 正常响应不受影响。
-  const ok = fakePage({ jsonRoutes: { [USER_INFO_PATH]: { user: { sec_uid: 'sec-1', nickname: '示例账号', follower_count: 290 } } } })
-  const profile = await collectAccountProfile(ok)
-  assert.equal(profile.accountId, 'sec-1')
-  assert.equal(profile.fanCount, 290)
-})
-
-test('user/info 命中 status_code=8：列表成果以正规入库载荷挂在错误上（partialCollected）', async () => {
-  const { routes } = await pagedRoutes({ total: 2 })
-  const page = fakePage({
-    jsonRoutes: { ...routes, [USER_INFO_PATH]: { status_code: 8, status_msg: '示例：用户未登录' } },
-  })
-  let thrown = null
-  try {
-    await collectAccountWorks(page, { intervalMs: 0, observedAt: '2026-09-15T00:00:00.000Z' })
-  } catch (error) {
-    thrown = error
-  }
-  assert.ok(thrown instanceof SessionInvalidError)
-  assert.ok(Array.isArray(thrown.partialCollected?.works), '中断前已完成的列表成果必须带出')
-  assert.equal(thrown.partialCollected.works.length, 2)
-  // 载荷是 buildWorkPayload 正规形态：带全缺口 dataGap，可直接进 ingest_batch。
-  const payload = thrown.partialCollected.works[0]
-  assert.ok(payload.work_id)
-  assert.ok(payload.dataGap, '未采集详情的列表作品必须带 dataGap 缺口标记')
-  assert.equal(payload.dataGap.traffic_source.reason, 'not_exposed')
-  assert.equal(thrown.partialCollected.expectedWorkCount, 2)
-})
-
-test('账号采集编排命中 status_code=8：错误向上传播，绝不结算成"空列表健康完成"', async () => {
-  const page = fakePage({
-    jsonRoutes: { [WORK_LIST_PATH]: { status_code: 8, status_msg: '示例：用户未登录' } },
-  })
-  await assert.rejects(() => collectAccountWorks(page, { intervalMs: 0 }), SessionInvalidError)
-})
-
-test('作品列表翻页中途 status_code=8：前几页成果挂在 partialListWorks 带出（审查 O5）', async () => {
-  let call = 0
-  const page = fakePage({
-    jsonRoutes: {
-      [WORK_LIST_PATH]: () => {
-        call += 1
-        if (call === 1) return { status_code: 0, aweme_list: [makeWork('7000000000000000001')], has_more: true, max_cursor: 1001, cursor: 1001 }
-        return { status_code: 8, status_msg: '示例：用户未登录' }
-      },
-    },
-  })
-  let thrown = null
-  try {
-    await collectWorkList(page, { intervalMs: 0 })
-  } catch (error) {
-    thrown = error
-  }
-  assert.ok(thrown instanceof SessionInvalidError)
-  assert.equal(thrown.partialListWorks?.length, 1, '第 1 页成果必须带出')
-  assert.equal(thrown.partialListWorks[0].work_id, '7000000000000000001')
-})
-
-test('账号采集编排：翻页中途过期 → partialCollected 携带前几页正规化载荷', async () => {
-  let call = 0
-  const page = fakePage({
-    jsonRoutes: {
-      [WORK_LIST_PATH]: () => {
-        call += 1
-        if (call === 1) return { status_code: 0, aweme_list: [makeWork('7000000000000000001')], has_more: true, max_cursor: 1001, cursor: 1001 }
-        return { status_code: 8, status_msg: '示例：用户未登录' }
-      },
-    },
-  })
-  let thrown = null
-  try {
-    await collectAccountWorks(page, { intervalMs: 0, observedAt: '2026-09-15T00:00:00.000Z' })
-  } catch (error) {
-    thrown = error
-  }
-  assert.ok(thrown instanceof SessionInvalidError)
-  assert.equal(thrown.partialCollected?.works?.length, 1)
-  assert.ok(thrown.partialCollected.works[0].dataGap, '列表成果正规化为带缺口的入库载荷')
-  assert.equal(thrown.partialCollected.expectedWorkCount, 1)
 })

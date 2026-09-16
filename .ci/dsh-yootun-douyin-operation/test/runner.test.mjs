@@ -5,8 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 
-import { SessionInvalidError } from '../src/parse.js'
-import { checkCollectionReadiness, createCollectController, ensureRemoteAccount, finishExpiredSession, runAccountCollection, saveDiscoveredAvatar } from '../src/runner.js'
+import { checkCollectionReadiness, createCollectController, ensureRemoteAccount, runAccountCollection, saveDiscoveredAvatar } from '../src/runner.js'
 import { getAccount, paths, readAccounts, updateAccount } from '../src/state.js'
 
 async function withRoot(fn) {
@@ -19,8 +18,7 @@ async function withRoot(fn) {
 }
 
 // 伪造页面：works 条作品 + 空热词 + 画像，供采集编排跑通全链路。
-// listStatusCode / profileStatusCode ≠ 0 时对应接口返回 HTTP 200 + 该业务码（8 = 会话失效）。
-function fakeSession({ workCount = 3, avatar = null, listStatusCode = 0, profileStatusCode = 0 } = {}) {
+function fakeSession({ workCount = 3, avatar = null } = {}) {
   const list = Array.from({ length: workCount }, (_, index) => ({
     aweme_id: `70000000000000000${index}`,
     desc: `作品 ${index}`,
@@ -36,13 +34,9 @@ function fakeSession({ workCount = 3, avatar = null, listStatusCode = 0, profile
     async evaluate(_fn, arg) {
       const url = typeof arg === 'string' ? arg : arg && arg.url
       const reply = value => ({ status: 200, text: JSON.stringify(value) })
-      if (url.includes('work_list')) {
-        if (listStatusCode !== 0) return reply({ status_code: listStatusCode, status_msg: '示例：用户未登录' })
-        return reply({ status_code: 0, aweme_list: list, has_more: false, max_cursor: 1 })
-      }
+      if (url.includes('work_list')) return reply({ status_code: 0, aweme_list: list, has_more: false, max_cursor: 1 })
       if (url.includes('wordCloud')) return reply({ status_code: 0, word_cloud_list: [] })
       if (url.includes('user/info')) {
-        if (profileStatusCode !== 0) return reply({ status_code: profileStatusCode, status_msg: '示例：用户未登录' })
         const user = { sec_uid: 'acc-1', nickname: '示例账号', follower_count: 290 }
         if (avatar !== null) user.avatar_uri = avatar
         return reply({ user })
@@ -536,197 +530,4 @@ test('采集链路：profile 账号 ID 不一致时只记诊断事件，不写�
     assert.equal(await getAccount('acc-1', root), null, 'profile 账号也不得被写入')
     assert.ok(saves.every(args => args.avatar === undefined), '不一致时远端不得补传头像')
   })
-})
-
-// ---------------------------------------------------------------------------
-// 会话失效收尾（HTTP 200 + status_code=8，0914 方案 §3.6 前置门禁）
-// ---------------------------------------------------------------------------
-
-test('列表阶段会话失效：上报 expired、不创建 run、返回 session_expired（绝非 completed）', async () => {
-  await withRoot(async root => {
-    const calls = []
-    const events = []
-    const result = await runAccountCollection({
-      accountId: 'acc-1',
-      root,
-      callTool: async (name, args) => {
-        calls.push({ name, args })
-        if (name === 'douyin_session_status_report') return { received: true }
-        return {}
-      },
-      storageStatePath: await withSessionFile(root),
-      sessionFactory: () => fakeSession({ listStatusCode: 8 }),
-      onProgress: event => events.push(event.phase),
-    })
-    // 确定性失败形态：UI 据此显示"会话已过期，请重新扫码"，绝不显示"采集完成"。
-    assert.equal(result.status, 'session_expired')
-    assert.equal(result.reason, 'session_invalid')
-    assert.equal(result.runId, null, '列表阶段即过期：无作品、无 run，不伪造终态')
-    assert.equal(result.sessionReported, true)
-
-    // (a) 会话状态上报：expired + 幂等键（sessionSeq 单调递增语义不变）。
-    const report = calls.find(call => call.name === 'douyin_session_status_report')
-    assert.ok(report, '必须上报 douyin_session_status_report')
-    assert.equal(report.args.sessionStatus, 'expired')
-    assert.equal(report.args.sessionSeq, 1)
-    assert.equal(report.args.sessionRef, 'vault://douyin/acc-1')
-    assert.equal(report.args.idempotencyKey, 'douyin:session:acc-1:1', '与服务端模板严格一致')
-
-    // 无 run_start / run_finish：服务端不会出现本次采集的 run 行。
-    assert.ok(!calls.some(call => call.name === 'douyin_collect_run_start'))
-    assert.ok(!calls.some(call => call.name === 'douyin_collect_run_finish'))
-
-    // 本地账号记录同步置为 expired。
-    const record = await getAccount('acc-1', root)
-    assert.equal(record.sessionStatus, 'expired')
-    assert.equal(record.sessionSeq, 1)
-    assert.ok(events.includes('session_expired'))
-  })
-})
-
-test('user/info 阶段会话失效：列表成果入库保留，run 以 partial 收尾（真实编排可达）', async () => {
-  await withRoot(async root => {
-    const calls = []
-    const result = await runAccountCollection({
-      accountId: 'acc-1',
-      root,
-      callTool: async (name, args) => {
-        calls.push({ name, args })
-        if (name === 'douyin_collect_run_start') return { run: { run_id: 'run-1', last_heartbeat_seq: 0 }, reused: false }
-        if (name === 'douyin_collect_run_set_list_meta') return { run: { run_id: 'run-1' } }
-        if (name === 'douyin_collect_ingest_batch') {
-          return { run: { run_id: 'run-1' }, batch: { batch_no: args.batchNo, status: 'completed', succeeded_work_ids: args.works.map(w => w.work_id), failed_work_ids: [] }, replayed: false }
-        }
-        if (name === 'douyin_collect_run_finish') return { run: { run_id: 'run-1', status: 'partial' }, settlement: {}, replayed: false }
-        if (name === 'douyin_session_status_report') return { received: true }
-        return {}
-      },
-      storageStatePath: await withSessionFile(root),
-      // 列表正常返回 3 条，user/info 返回 status_code=8：过期发生在列表成果已拿到之后。
-      sessionFactory: () => fakeSession({ workCount: 3, profileStatusCode: 8 }),
-    })
-    assert.equal(result.status, 'session_expired')
-    assert.equal(result.reason, 'session_invalid')
-    assert.equal(result.sessionReported, true)
-    // run 收尾真实发生：入库保留列表成果，服务端结算 partial（非健康完成）。
-    assert.equal(result.runId, 'run-1')
-    assert.equal(result.runStatus, 'partial')
-    assert.equal(result.succeededWorkCount, 3)
-    const start = calls.find(call => call.name === 'douyin_collect_run_start')
-    const meta = calls.find(call => call.name === 'douyin_collect_run_set_list_meta')
-    const batches = calls.filter(call => call.name === 'douyin_collect_ingest_batch')
-    const finish = calls.find(call => call.name === 'douyin_collect_run_finish')
-    assert.ok(start && meta && finish, 'start/list_meta/finish 全部发生')
-    assert.equal(meta.args.expectedWorkCount, 3)
-    assert.equal(meta.args.listComplete, false, '中断采集绝不声明列表完整')
-    assert.equal(batches.reduce((sum, call) => sum + call.args.works.length, 0), 3, '列表成果全部入库')
-    assert.equal(finish.args.clientStatus, 'failed')
-    // 入库载荷是正规形态（buildWorkPayload：带 dataGap 的全缺口列表作品）。
-    assert.ok(batches[0].args.works[0].work_id)
-    assert.ok(batches[0].args.works[0].dataGap)
-  })
-})
-
-test('会话上报失败：记诊断事件但不阻断 session_expired 结果', async () => {
-  await withRoot(async root => {
-    const result = await runAccountCollection({
-      accountId: 'acc-1',
-      root,
-      callTool: async name => {
-        if (name === 'douyin_session_status_report') {
-          const error = new Error('UNAUTHORIZED')
-          error.code = 'UNAUTHORIZED'
-          throw error
-        }
-        return {}
-      },
-      storageStatePath: await withSessionFile(root),
-      sessionFactory: () => fakeSession({ listStatusCode: 8 }),
-    })
-    assert.equal(result.status, 'session_expired')
-    assert.equal(result.sessionReported, false)
-    assert.equal(result.sessionReportError, 'UNAUTHORIZED')
-    // 本地记录仍置为 expired（确定性证据在本地，不依赖远端上报成功）。
-    const record = await getAccount('acc-1', root)
-    assert.equal(record.sessionStatus, 'expired')
-  })
-})
-
-test('finishExpiredSession：已有 run 且有已采集作品时入库保留成果，并以 failed 收尾', async () => {
-  await withRoot(async root => {
-    const calls = []
-    const client = {
-      runId: 'run-1',
-      heartbeatSeq: 0,
-      startRun: async () => { throw new Error('should_not_reuse_new_run') },
-      publishListMeta: async args => { calls.push({ name: 'list_meta', args }) },
-      ingestAll: async works => {
-        calls.push({ name: 'ingest_all', count: works.length })
-        return { succeededWorkIds: ['w1', 'w2'], failedWorkIds: [] }
-      },
-      finish: async args => {
-        calls.push({ name: 'finish', args })
-        return { run: { run_id: 'run-1', status: 'partial' } }
-      },
-    }
-    const report = []
-    const result = await finishExpiredSession({
-      accountId: 'acc-1',
-      callTool: async (name, args) => { report.push({ name, args }); return {} },
-      client,
-      collected: { works: [{ work_id: 'w1' }, { work_id: 'w2' }], listComplete: true, expectedWorkCount: 5 },
-      root,
-      emit: () => {},
-    })
-    assert.equal(result.status, 'session_expired')
-    assert.equal(result.runId, 'run-1')
-    assert.equal(result.runStatus, 'partial', '服务端按账本结算：已入库部分批次 → partial，不是健康完成')
-    assert.equal(result.succeededWorkCount, 2)
-    // clientStatus='failed'：表达"不是健康完成"；服务端仍以账本为准。
-    const finish = calls.find(call => call.name === 'finish')
-    assert.equal(finish.args.clientStatus, 'failed')
-    assert.deepEqual(finish.args.clientCounts, { expectedWorkCount: 5, succeededWorkCount: 2, failedWorkCount: 0 })
-    // 收尾一律按 listComplete=false 发布：作品即便全部入库也必须结算为非健康终态。
-    const listMeta = calls.find(call => call.name === 'list_meta')
-    assert.equal(listMeta.args.listComplete, false)
-    assert.equal(listMeta.args.expectedWorkCount, 5)
-    // 已有 runId 时不重复 startRun（startRun 被调用会抛 should_not_reuse_new_run）。
-    assert.ok(calls.some(call => call.name === 'list_meta'))
-  })
-})
-
-test('finishExpiredSession：无已采集作品时不创建 run，只上报过期', async () => {
-  await withRoot(async root => {
-    const calls = []
-    const client = {
-      runId: null,
-      heartbeatSeq: 0,
-      startRun: async () => { throw new Error('must_not_start_run_without_works') },
-      publishListMeta: async () => { throw new Error('must_not_publish_list_meta') },
-      ingestAll: async () => { throw new Error('must_not_ingest') },
-      finish: async () => { throw new Error('must_not_finish') },
-    }
-    const result = await finishExpiredSession({
-      accountId: 'acc-1',
-      callTool: async (name, args) => { calls.push({ name, args }); return {} },
-      client,
-      collected: null,
-      root,
-      emit: () => {},
-    })
-    assert.equal(result.status, 'session_expired')
-    assert.equal(result.runId, null)
-    assert.equal(result.sessionReported, true)
-    assert.deepEqual(calls.map(call => call.name), ['douyin_session_status_report'])
-  })
-})
-
-test('SessionInvalidError 不被当作普通采集失败吞噬', async () => {
-  const controller = createCollectController({
-    runCollection: async () => { throw new SessionInvalidError() },
-  })
-  await controller.start({ accountId: 'acc-1', options: {} })
-  const done = await controller.wait('acc-1')
-  assert.equal(done.status, 'failed')
-  assert.equal(done.error, 'session_invalid')
 })

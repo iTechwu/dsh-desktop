@@ -301,34 +301,6 @@ export async function refreshSessionState({ accountId, root = stateRoot(), probe
   }
 }
 
-/**
- * 采集链路的会话过期记录（0914 方案 §3.6）：采集响应携带业务层 `status_code: 8`
- * 时由 runner 调用，把本地会话状态直接置为 `expired` 并取下一个单调 sessionSeq。
- *
- * 此前 `expired` 只能由登录/探测路径判定（refreshSessionState → probeSession）；
- * 采集链路已有确定性证据（抖音明说未登录），无需再跑一次无头探测——探测失败
- * （无 Chrome/超时）反而会把确证的过期降级成 unknown。返回形态与
- * refreshSessionState 一致，供调用方按同一幂等键上报 `douyin_session_status_report`。
- */
-export async function markSessionExpired({ accountId, root = stateRoot(), reason = 'session_invalid' } = {}) {
-  const checkedAt = new Date().toISOString()
-  const seq = await nextSessionSeq(accountId, root)
-  const record = await updateAccount(accountId, {
-    sessionStatus: 'expired',
-    sessionCheckedAt: checkedAt,
-    sessionSeq: seq,
-    vaultRef: paths(root).vaultRef(accountId),
-  }, root)
-  return {
-    sessionStatus: 'expired',
-    sessionSeq: seq,
-    checkedAt,
-    vaultRef: paths(root).vaultRef(accountId),
-    reason,
-    account: record,
-  }
-}
-
 /** 删除流程第 1 步：清除设备端 Profile 与 storage_state（成功后才允许请求远端删除）。 */
 export async function removeLocalAccount({ accountId, root = stateRoot() } = {}) {
   const record = await getAccount(accountId, root)

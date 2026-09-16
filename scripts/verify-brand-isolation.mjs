@@ -7,7 +7,7 @@
  * never blocks the initial commit of existing copy.
  */
 
-import { readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -68,6 +68,9 @@ try {
 
 const violations = []
 for (const file of trackedFiles) {
+  // Snapshot refreshes may delete files a stale allowance still lists; a
+  // vanished file carries no tokens.
+  if (!existsSync(resolve(repositoryRoot, file))) continue
   const count = countTokens(readFileSync(resolve(repositoryRoot, file), 'utf8'))
   const allowed = allowance[file] ?? 0
   if (count > allowed) {

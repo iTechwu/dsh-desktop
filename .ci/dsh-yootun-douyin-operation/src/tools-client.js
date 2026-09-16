@@ -20,14 +20,6 @@ export const TOOL_NAMES = [
   'douyin_work_trend',
   'douyin_collect_run_get',
   'douyin_export',
-  // 账号总览（0914 方案阶段 1，只读）
-  'douyin_account_overview',
-  'douyin_hot_work_list',
-  'douyin_overview_export',
-  // 单账号分析与趋势（0914 方案阶段 2，只读；审查建议 11 登记）
-  'douyin_account_analysis',
-  'douyin_account_trend',
-  'douyin_account_analysis_export',
 ]
 
 const ALLOWED_ERROR_CODES = new Set([
@@ -48,19 +40,6 @@ const ALLOWED_ERROR_CODES = new Set([
   'PAYLOAD_TOO_LARGE',
   // 导出超过 Tools 侧三重上限（原始 1MB / 序列化 1.8MB / 进度表 12,000 行）的稳定业务码。
   'DOUYIN_EXPORT_TOO_LARGE',
-  // 账号总览（0914 方案阶段 1）新增的只读聚合稳定业务码：不可达整体拒绝 /
-  // 账号筛选上限 / 规则版本不匹配 / 候选样本超限 / 游标与参数非法。
-  'ACCOUNT_NOT_ACCESSIBLE',
-  'TOO_MANY_ACCOUNTS',
-  'RULE_VERSION_MISMATCH',
-  'OVERVIEW_SAMPLE_TOO_LARGE',
-  'INVALID_CURSOR',
-  'INVALID_SORT',
-  'INVALID_TIME_WINDOW',
-  // 单账号趋势（0914 方案阶段 2）稳定码：契约版本不匹配 / 范围超限 / 指标非法。
-  'CONTRACT_VERSION_MISMATCH',
-  'TREND_RANGE_TOO_LARGE',
-  'INVALID_METRIC',
 ])
 
 export class ToolsUnavailableError extends Error {
@@ -251,14 +230,17 @@ export function safeErrorCode(error) {
 // 载荷 accountId 与运行记录一致性校验保证。其余模板在 accountId/runId ≤80 时
 // 最长 121 字符（见 tools 侧 services/douyin_operation/schemas.py 的算术注释）。
 //
-// session 键模板与服务端严格相等校验一致（tools common.py
-// `require_session_idempotency_key`：`douyin:session:{accountId}:{sessionSeq}`，
-// 键内不得带 checkedAt 等额外后缀——2026-09-15 真机联调发现带后缀的键被服务端
-// INVALID_IDEMPOTENCY_KEY 整体拒绝，登录/探测/采集过期三条上报路径全部受影响）。
-// 「客户端重装后 seq 归 1 撞历史收据（同键不同载荷 → IDEMPOTENCY_CONFLICT）」的
-// 场景不靠键区分载荷：服务端业务层按 (sessionSeq, checkedAt) 新旧仲裁
-// （stale_report 幂等返回），且 seq 前进后自然换新键自愈。
-export const sessionIdempotencyKey = (accountId, seq) => `douyin:session:${accountId}:${seq}`
+// session 键必须带上 checkedAt：服务端幂等收据（mcp_mutations）持久保留，而客户端
+// 重装/换机后 sessionSeq 会从 1 重新计数——同键不同载荷（checkedAt 必然不同）会被
+// 判 IDEMPOTENCY_CONFLICT，且服务端残留的 indeterminate 收据永不放行（2026-09-11
+// 实测：旧尝试留下的 seq=1 收据让后续所有登录的状态上报全部被拒）。键内纳入
+// checkedAt 后「同键 ⇒ 同载荷」，重试仍走幂等回放，新探测永远拿新键。
+export const sessionIdempotencyKey = (accountId, seq, checkedAt) => {
+  const stamp = Date.parse(checkedAt)
+  // base36 压缩：schema 上限（80 字符账号 + 20 位序号）下 13 位十进制时间戳会破 128。
+  const suffix = Number.isFinite(stamp) ? stamp.toString(36) : 'na'
+  return `douyin:session:${accountId}:${seq}:${suffix}`
+}
 export const runStartIdempotencyKey = runAttemptId => `douyin:run_start:${runAttemptId}`
 export const listMetaIdempotencyKey = runId => `douyin:list_meta:${runId}`
 export const heartbeatIdempotencyKey = (runId, seq) => `douyin:heartbeat:${runId}:${seq}`

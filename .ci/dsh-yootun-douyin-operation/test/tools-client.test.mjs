@@ -136,18 +136,25 @@ test('toWireArgs 保留 null、false、0、空串等合法 JSON 值；-0 归一�
   assert.equal(1 / toWireArgs([-0])[0], Infinity, '数组元素同样归一化')
 })
 
-// ===== session 幂等键：与服务端模板严格一致（2026-09-15 真机联调修正） =====
+// ===== session 幂等键：checkedAt 必须参与（2026-09-11 实测冲突） =====
 //
-// tools 服务端 common.py `require_session_idempotency_key` 对键做**严格相等**校验：
-// `douyin:session:{accountId}:{sessionSeq}`，键内不得带 checkedAt 等额外后缀——
-// 带后缀的历史实现被服务端 INVALID_IDEMPOTENCY_KEY 整体拒绝（登录/探测/采集过期
-// 三条上报路径全部静默失败）。「重装后 seq 归 1 撞历史收据」的场景由服务端业务层
-// (sessionSeq, checkedAt) 新旧仲裁（stale_report）兜底，seq 前进后自然换新键自愈。
+// 服务端 mcp_mutations 收据永久保留；客户端重装/换机后 sessionSeq 从 1 重新计数，
+// 同键不同载荷（checkedAt 必然不同）会被判 IDEMPOTENCY_CONFLICT，且残留的
+// indeterminate 收据永不放行。键内纳入 checkedAt 后「同键 ⇒ 同载荷」。
 
-test('sessionIdempotencyKey：与服务端模板严格一致，同 seq 稳定、seq 前进换键', () => {
-  assert.equal(sessionIdempotencyKey('acc-1', 1), 'douyin:session:acc-1:1')
-  assert.equal(sessionIdempotencyKey('acc-1', 1), sessionIdempotencyKey('acc-1', 1), '重试必须同键（幂等回放）')
-  assert.notEqual(sessionIdempotencyKey('acc-1', 1), sessionIdempotencyKey('acc-1', 2), 'seq 前进必须换新键')
-  // 76 字符真实 sec_uid + 模板固定部分 ≤ 128（服务端 schema 上限内）。
-  assert.ok(sessionIdempotencyKey('MS4wLjABAAAA-real-76-chars-account-id', 999999).length <= 128)
+test('sessionIdempotencyKey：同输入稳定（重试回放），新探测必得新键', () => {
+  const checkedAt = '2026-09-11T05:56:43.740Z'
+  assert.equal(sessionIdempotencyKey('acc-1', 1, checkedAt), sessionIdempotencyKey('acc-1', 1, checkedAt))
+  assert.notEqual(
+    sessionIdempotencyKey('acc-1', 1, checkedAt),
+    sessionIdempotencyKey('acc-1', 1, '2026-09-11T06:00:00.000Z'),
+    '本地重装后 seq 归 1：checkedAt 必须把键区分开',
+  )
+  assert.notEqual(sessionIdempotencyKey('acc-1', 1, checkedAt), sessionIdempotencyKey('acc-1', 2, checkedAt))
+})
+
+test('sessionIdempotencyKey：checkedAt 缺失时退化为确定性后缀而非随机值', () => {
+  // 随机后缀会破坏重试幂等；确定性 'na' 保证同一次逻辑上报的重试仍同键。
+  assert.equal(sessionIdempotencyKey('acc-1', 1, undefined), sessionIdempotencyKey('acc-1', 1, undefined))
+  assert.ok(sessionIdempotencyKey('acc-1', 1, undefined).endsWith(':na'))
 })

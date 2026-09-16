@@ -1212,14 +1212,19 @@ export function prepareDesktopProfile(
 }
 
 /** Maintain the upstream module fallback for one fully resolved Desktop profile. */
-export function healDesktopProfileModuleFallback(home: string, profile?: Profile): Promise<void> {
+export async function healDesktopProfileModuleFallback(home: string, profile?: Profile): Promise<void> {
   const heal = () => healProfilesModuleFallback({
     installAnchor: INSTALL_ANCHOR,
     home,
     ...(profile === undefined ? {} : { profile }),
   })
-  if (!/([\\/])app\.asar\1/u.test(INSTALL_ANCHOR)) return heal()
-  return withAsarModuleResolver(heal)
+  // The harness heal reports the computed fallback generation; callers only
+  // need the materialization side effect, so the value stays internal.
+  if (!/([\\/])app\.asar\1/u.test(INSTALL_ANCHOR)) {
+    await heal()
+    return
+  }
+  await withAsarModuleResolver(heal)
 }
 
 function isDshManagedModuleProxy(directory: string): boolean {

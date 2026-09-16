@@ -45,9 +45,6 @@ test('宿主注册本地同源路由，且只经 ctx.tools 调用公共 MCP 网�
     'browser.status', 'accounts.list', 'account.beginLogin', 'account.loginStatus', 'account.probe',
     'account.removeLocal', 'account.removeRemote', 'collect.start', 'collect.status',
     'works.list', 'work.get', 'work.trend', 'run.get',
-    // 账号总览（阶段 1）与单账号分析（阶段 2）
-    'export', 'overview.get', 'hotWorks.list', 'overview.export',
-    'account.analysis', 'account.trend', 'accountAnalysis.export',
   ]) {
     assert.ok(hostSource.includes(`case '${action}':`), `宿主缺少 action ${action}`)
   }

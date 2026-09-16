@@ -12,10 +12,8 @@ import { normalizeAvatarUrl } from './avatar.js'
 import { LAUNCH_ARGS, loadPlaywrightDriver, resolveSystemChrome } from './chrome.js'
 import { collectAccountWorks } from './collector.js'
 import { createIngestClient, ingestCollectedWorks } from './ingest.js'
-import { SessionInvalidError } from './parse.js'
 import { getAccount, hasStorageState, paths, stateRoot, updateAccount } from './state.js'
-import { markSessionExpired } from './session.js'
-import { accountSaveIdempotencyKey, sessionIdempotencyKey } from './tools-client.js'
+import { accountSaveIdempotencyKey } from './tools-client.js'
 
 export const DEFAULT_MAX_PAGES = 1000
 
@@ -154,32 +152,6 @@ export async function runAccountCollection({
       failures: collected.failures.length,
     })
   } catch (error) {
-    // 会话失效（HTTP 200 + status_code:8，0914 方案 §3.6 前置门禁）：确定性失败——
-    // 上报 expired、把已采集作品入库保留成果并以失败收尾 run，UI 明确提示重新扫码。
-    if (error instanceof SessionInvalidError) {
-      // collector 把中断前已完成的采集成果挂在错误上（partialCollected）：
-      // 列表阶段即过期时无成果，collected 为 null（不建 run，见 finishExpiredSession）。
-      const partial = error.partialCollected && Array.isArray(error.partialCollected.works)
-        && error.partialCollected.works.length > 0
-        ? error.partialCollected
-        : null
-      const partialCollected = partial
-        ? {
-          works: partial.works,
-          listComplete: partial.listComplete,
-          expectedWorkCount: partial.expectedWorkCount,
-        }
-        : null
-      const outcome = await finishExpiredSession({
-        accountId,
-        callTool,
-        client,
-        collected: partialCollected,
-        root,
-        emit,
-      })
-      return { ...outcome, heartbeatSeq: client.heartbeatSeq }
-    }
     return { status: 'collect_failed', reason: safeReason(error), heartbeatSeq: client.heartbeatSeq }
   } finally {
     if (session) {
@@ -240,92 +212,6 @@ export async function runAccountCollection({
     }
   } catch (error) {
     return { status: 'ingest_failed', reason: safeReason(error), runId: client.runId }
-  }
-}
-
-/**
- * 会话失效收尾（0914 方案 §3.6）：
- *
- * (a) 上报 `douyin_session_status_report({ status: 'expired' })`：经幂等键，
- *     `sessionSeq` 单调递增语义不变（markSessionExpired 取下一序号）。尽力而为，
- *     上报失败只记诊断事件，不阻断 run 收尾。
- * (b) run 收尾：本轮已采集的作品照常入库（保留成果），再以 `clientStatus: 'failed'`
- *     结束——服务端结算只看批次账本：有成功批次 → partial，无 → failed，两种都不是
- *     健康完成，绝不复现旧的 `completed + expectedWorkCount=0` 假空成功。
- *     收尾时 `listComplete` 一律按 false 发布：即便过期前作品恰好全部入库成功，
- *     服务端也必须结算为 partial，而不是把一次被会话中断的采集记成健康完成
- *     （实施说明 §4"两种都不是健康完成"）。
- *     列表阶段即过期（无任何作品）时不创建 run：expected=0 无法诚实结算为非健康
- *     终态（expected=0 + listComplete=false 只会得 partial 假象），此时只上报
- *     expired，由 UI 提示重新扫码；不产生任何 run 行，也就没有假 completed。
- *
- * @returns {Promise<object>} `status: 'session_expired'` 的采集结果（UI 据此显示
- *   "会话已过期，请重新扫码"，绝不显示"采集完成"）。
- */
-export async function finishExpiredSession({ accountId, callTool, client, collected, root, emit }) {
-  emit({ phase: 'session_expired' })
-
-  let sessionReported = false
-  let sessionReportError = null
-  try {
-    const state = await markSessionExpired({ accountId, root })
-    await callTool('douyin_session_status_report', {
-      accountId,
-      sessionStatus: state.sessionStatus,
-      sessionSeq: state.sessionSeq,
-      checkedAt: state.checkedAt,
-      // 只上报不透明引用，不上报任何 Cookie 内容。
-      sessionRef: paths(root).vaultRef(accountId),
-      idempotencyKey: sessionIdempotencyKey(accountId, state.sessionSeq),
-    })
-    sessionReported = true
-  } catch (error) {
-    sessionReportError = safeReason(error)
-    emit({ phase: 'session_report_failed', error: sessionReportError })
-  }
-
-  const works = collected ? collected.works : []
-  let runId = null
-  let runStatus = null
-  let succeededWorkCount = 0
-  let failedWorkCount = 0
-  if (works.length > 0) {
-    try {
-      if (!client.runId) await client.startRun({ newAttempt: true })
-      runId = client.runId
-      await client.publishListMeta({
-        expectedWorkCount: collected.expectedWorkCount,
-        // 被会话中断的采集绝不声明列表完整：保证服务端结算为非健康终态（partial）。
-        listComplete: false,
-      })
-      const ingested = await client.ingestAll(works)
-      const finish = await client.finish({
-        clientStatus: 'failed',
-        clientCounts: {
-          expectedWorkCount: collected.expectedWorkCount,
-          succeededWorkCount: ingested.succeededWorkIds.length,
-          failedWorkCount: ingested.failedWorkIds.length,
-        },
-      })
-      runStatus = finish && finish.run ? finish.run.status : null
-      succeededWorkCount = ingested.succeededWorkIds.length
-      failedWorkCount = ingested.failedWorkIds.length
-    } catch (error) {
-      emit({ phase: 'session_expired_finish_failed', error: safeReason(error) })
-    }
-  }
-
-  return {
-    status: 'session_expired',
-    reason: 'session_invalid',
-    runId,
-    runStatus,
-    listComplete: collected ? collected.listComplete : null,
-    expectedWorkCount: collected ? collected.expectedWorkCount : null,
-    succeededWorkCount,
-    failedWorkCount,
-    sessionReported,
-    sessionReportError,
   }
 }
 
