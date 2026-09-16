@@ -189,6 +189,19 @@ export function tableTemplate(columns = COLUMNS) {
   return columns.map(column => `${column.width || 100}px`).join(' ')
 }
 
+/**
+ * 爆款依据纵向分组（UI 优化方案 §6.1）：接口的依据是「 · 」分隔的单个字符串，
+ * 展示层按分隔符拆成每个判定类别一行；行数由接口返回内容决定，缺失返回空数组
+ * （调用方据此不渲染空行），绝不在客户端拼装或推断依据。
+ */
+export function basisLines(basis) {
+  if (basis === null || basis === undefined || basis === '') return []
+  return String(basis)
+    .split(' · ')
+    .map(line => line.trim())
+    .filter(Boolean)
+}
+
 /** 头像地址只接受 http(s) 绝对地址；空值、相对路径、本地路径或内嵌协议一律返回 null。 */
 export function safeAvatarSrc(value) {
   if (typeof value !== 'string') return null

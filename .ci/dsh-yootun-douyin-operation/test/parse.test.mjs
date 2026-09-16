@@ -9,9 +9,12 @@ import { test } from 'node:test'
 
 import {
   LOW_PLAY_STATUS_CODE,
+  SESSION_EXPIRED_STATUS_CODE,
+  SessionInvalidError,
   buildWorkPayload,
   decidePagination,
   dedupeWorks,
+  isSessionExpiredPayload,
   normalizeWork,
   parseItemCompare,
   parseItemMget,
@@ -142,6 +145,45 @@ test('作品列表末页：has_more=false → stop 且完整结束', async () =>
   assert.equal(decision.stop, true)
   assert.equal(decision.listComplete, true)
   assert.equal(decision.reason, 'has_more_false')
+})
+
+test('会话失效（HTTP 200 + status_code=8）：列表解析抛 SessionInvalidError，绝不解析成空列表', async () => {
+  // 脱敏 fixture：HTTP 200 + status_code=8，无 aweme_list/has_more（真实过期响应形态）。
+  const json = await fixture('work_list.status_code_8.sample.json')
+  assert.throws(() => parseWorkListPage(json), error => {
+    assert.ok(error instanceof SessionInvalidError)
+    assert.equal(error.name, 'SessionInvalidError')
+    assert.equal(error.code, 'session_invalid')
+    assert.equal(error.statusCode, SESSION_EXPIRED_STATUS_CODE)
+    return true
+  })
+
+  // 兜底形态：带空 aweme_list 的 8 同样必须抛（不能走"0 作品"分支）。
+  assert.throws(() => parseWorkListPage({ status_code: 8, aweme_list: [], has_more: false }), SessionInvalidError)
+
+  // 非过期码不抛：0（正常）与字符串形态的 8（防御性归一化）。
+  assert.equal(parseWorkListPage({ status_code: 0, aweme_list: [], has_more: false }).rawCount, 0)
+  assert.throws(() => parseWorkListPage({ status_code: '8' }), SessionInvalidError)
+})
+
+test('isSessionExpiredPayload：仅 status_code=8 命中，缺失/0/null 不误报', () => {
+  assert.equal(isSessionExpiredPayload({ status_code: 8 }), true)
+  assert.equal(isSessionExpiredPayload({ status_code: 0, aweme_list: [] }), false)
+  assert.equal(isSessionExpiredPayload({}), false)
+  assert.equal(isSessionExpiredPayload(null), false)
+  assert.equal(isSessionExpiredPayload('user not login'), false)
+})
+
+test('既有约定回归：item_compare 10001（低播放）与热词非零码不受会话失效改动影响', () => {
+  // 10001 仍是低播放语义：不抛错，完播类指标记缺口。
+  const compare = parseItemCompare({ status_code: 10001, status_msg: 'view count less than min view count', item: {} })
+  assert.equal(compare.statusCode, LOW_PLAY_STATUS_CODE)
+  assert.equal(compare.lowPlay, true)
+  // 热词 status_code=0 成功、非 0（含 8）→ unavailable 保留旧集合，均不抛 SessionInvalidError。
+  assert.equal(parseWordCloud({ status_code: 0, word_cloud_list: [{ word: '路政', rank: 1, score: '2' }] }).status, 'ok')
+  const stale = parseWordCloud({ status_code: 8, status_msg: 'user not login' })
+  assert.equal(stale.status, 'unavailable')
+  assert.equal(stale.statusCode, 8)
 })
 
 test('分页不完整判定：has_more + 空列表 / 游标不前进 / 达上限', () => {

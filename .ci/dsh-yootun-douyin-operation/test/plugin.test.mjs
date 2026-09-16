@@ -161,7 +161,7 @@ test('账号探测上报 tools，且不上报任何 Cookie 内容', async () => 
       sessionSeq: 4,
       checkedAt: '2026-09-10T00:00:00.000Z',
       sessionRef: 'vault://douyin/acc-1',
-      idempotencyKey: sessionIdempotencyKey('acc-1', 4, '2026-09-10T00:00:00.000Z'),
+      idempotencyKey: sessionIdempotencyKey('acc-1', 4),
     })
     const serialized = JSON.stringify(calls[0])
     assert.equal(serialized.includes('sessionid'), false)
@@ -508,7 +508,7 @@ test('幂等键模板在边界取值下均不超过 128 字符（仓库全域不
   const maxSeq = String(2 ** 63 - 1)
   const keys = [
     runStartIdempotencyKey(uuid),
-    sessionIdempotencyKey(accountId, maxSeq, '2026-09-11T05:00:00.000Z'),
+    sessionIdempotencyKey(accountId, maxSeq),
     accountSaveIdempotencyKey(accountId, 1757000000000),
     accountRemoveIdempotencyKey(accountId, 1757000000000),
     listMetaIdempotencyKey(runId),
@@ -624,13 +624,10 @@ test('升级后的旧占位 ID 在 works/collect.status 中自动翻译为真实
   })
 })
 
-test('session 幂等键包含 checkedAt：重装后 seq 归 1 不再撞历史收据', async () => {
-  const keyAt = '2026-09-11T05:56:43.740Z'
-  assert.notEqual(
-    sessionIdempotencyKey('MS4wLjABAAAA-real', 1, keyAt),
-    sessionIdempotencyKey('MS4wLjABAAAA-real', 1, '2026-09-11T08:00:00.000Z'),
-  )
-  assert.ok(sessionIdempotencyKey('MS4wLjABAAAA-real', 1, keyAt).length <= 128)
+test('session 幂等键与服务端模板严格一致（不带 checkedAt 后缀）', async () => {
+  // 服务端 require_session_idempotency_key 严格相等校验：douyin:session:{accountId}:{seq}。
+  assert.equal(sessionIdempotencyKey('MS4wLjABAAAA-real', 1), 'douyin:session:MS4wLjABAAAA-real:1')
+  assert.ok(sessionIdempotencyKey('MS4wLjABAAAA-real', 1).length <= 128)
 })
 
 test('export 动作：固定 format=xlsx 调 douyin_export，只透出文件名/MIME/内容/行数', async () => {
@@ -768,4 +765,168 @@ test('export 动作：文件名二次净化——路径分隔符/控制字符替
   assert.ok(control.payload.file_name.endsWith('.xlsx'))
   const del = await respondWith('del' + String.fromCharCode(127) + 'ete.xlsx')
   assert.equal(del.payload.file_name, 'del_ete.xlsx', 'DEL 字符同样替换为下划线')
+})
+
+test('collect.status：会话失效结果透传稳定 reason=session_invalid，页面据此显示重新扫码', async () => {
+  await withRoot(async root => {
+    const { mkdir, writeFile } = await import('node:fs/promises')
+    const { paths } = await import('../src/state.js')
+    await mkdir(paths(root).storageStateDir, { recursive: true })
+    await writeFile(paths(root).storageStatePath('acc-1'), '{"cookies":[],"origins":[]}')
+
+    const controller = createCollectController({
+      runCollection: async () => ({
+        status: 'session_expired',
+        reason: 'session_invalid',
+        runId: null,
+        runStatus: null,
+        listComplete: null,
+        expectedWorkCount: null,
+        succeededWorkCount: 0,
+        failedWorkCount: 0,
+        sessionReported: true,
+        sessionReportError: null,
+      }),
+    })
+    const { ctx, registered } = createContext()
+    apply(ctx, { root, collectController: controller, browserStatus: async () => ({ chromeAvailable: true, driverAvailable: true, platform: 'linux' }) })
+
+    await call(registered[0].handler, { action: 'collect.start', accountId: 'acc-1' })
+    await controller.wait('acc-1')
+    const done = await call(registered[0].handler, { action: 'collect.status', accountId: 'acc-1' })
+    assert.equal(done.payload.collect.status, 'failed', '控制器把 session_expired 归一为 failed 终态')
+    assert.equal(done.payload.collect.error, 'session_invalid')
+    assert.equal(done.payload.collect.result.runId, null, '列表阶段过期不产生 run')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// 账号总览 action（0914 方案阶段 1，实施说明 §5.1）：参数白名单透传 + 错误映射
+// ---------------------------------------------------------------------------
+
+test('overview.get：只透传白名单参数，tools 不可达时收敛稳定 reason', async () => {
+  const seen = []
+  const { ctx, registered } = createContext({
+    tools: [
+      { name: 'mcp__tools-douyin-operation__douyin_account_overview' },
+      { name: 'mcp__tools-douyin-operation__douyin_hot_work_list' },
+      { name: 'mcp__tools-douyin-operation__douyin_overview_export' },
+    ],
+    execute: async invocation => {
+      seen.push({ tool: invocation.name, args: invocation.arguments })
+      return { structuredContent: { summary: { accountCount: 1 } } }
+    },
+  })
+  apply(ctx, { root: '/tmp/unused', browserStatus: async () => ({ chromeAvailable: true, driverAvailable: true, platform: 'linux' }) })
+  const handler = registered[0].handler
+  await call(handler, { action: 'overview.get', accountIds: ['a1', ''], publishFrom: '2026-08-01', sort: 'hot_count', topN: 999, cookie: 'must_not_pass' })
+  assert.ok(seen[0].tool.endsWith('__douyin_account_overview'))
+  // cookie 等白名单外字段被剔除；空串 accountIds 被清洗。
+  assert.deepEqual(seen[0].args, { accountIds: ['a1'], publishFrom: '2026-08-01', sort: 'hot_count', topN: 999 })
+
+  const { ctx: ctx2, registered: registered2 } = createContext({
+    tools: [{ name: 'mcp__tools-douyin-operation__douyin_account_overview' }],
+    execute: async () => { const e = new Error('ACCOUNT_NOT_ACCESSIBLE'); e.code = 'ACCOUNT_NOT_ACCESSIBLE'; throw e },
+  })
+  apply(ctx2, { root: '/tmp/unused', browserStatus: async () => ({ chromeAvailable: true, driverAvailable: true, platform: 'linux' }) })
+  const response = await call(registered2[0].handler, { action: 'overview.get' })
+  assert.equal(response.payload.status, 'error')
+  assert.equal(response.payload.reason, 'ACCOUNT_NOT_ACCESSIBLE')
+})
+
+test('hotWorks.list：透传 hotType/cursor/limit（potential/growth 在 tools schema 层被拒）', async () => {
+  const seen = []
+  const { ctx, registered } = createContext({
+    tools: [{ name: 'mcp__tools-douyin-operation__douyin_hot_work_list' }],
+    execute: async invocation => {
+      seen.push({ tool: invocation.name, args: invocation.arguments })
+      return { structuredContent: { works: [], nextCursor: null } }
+    },
+  })
+  apply(ctx, { root: '/tmp/unused', browserStatus: async () => ({ chromeAvailable: true, driverAvailable: true, platform: 'linux' }) })
+  await call(registered[0].handler, { action: 'hotWorks.list', hotType: 'absolute', sort: 'play', cursor: 'abc', limit: 50 })
+  assert.ok(seen[0].tool.endsWith('__douyin_hot_work_list'))
+  assert.deepEqual(seen[0].args, { hotType: 'absolute', sort: 'play', cursor: 'abc', limit: 50 })
+})
+
+test('overview.export：复用导出保存链路，文件名强制 douyin-overview-*.xlsx', async () => {
+  const contentBase64 = Buffer.from('workbook-bytes').toString('base64')
+  const { ctx, registered } = createContext({
+    tools: [{ name: 'mcp__tools-douyin-operation__douyin_overview_export' }],
+    execute: async () => ({ structuredContent: { file_name: 'douyin-overview-all-all-20260915.xlsx', content_base64: contentBase64, content_bytes: 14, row_counts: {} } }),
+  })
+  apply(ctx, { root: '/tmp/unused', browserStatus: async () => ({ chromeAvailable: true, driverAvailable: true, platform: 'linux' }) })
+  const response = await call(registered[0].handler, { action: 'overview.export' })
+  assert.equal(response.payload.status, 'ready')
+  assert.equal(response.payload.file_name, 'douyin-overview-all-all-20260915.xlsx')
+  assert.equal(response.payload.content_base64, contentBase64)
+
+  // 名字异常时兜底为固定名（不透传路径分隔符等）。
+  const { ctx: ctx3, registered: registered3 } = createContext({
+    tools: [{ name: 'mcp__tools-douyin-operation__douyin_overview_export' }],
+    execute: async () => ({ structuredContent: { file_name: '../evil.xlsx', content_base64: contentBase64, content_bytes: 14 } }),
+  })
+  apply(ctx3, { root: '/tmp/unused', browserStatus: async () => ({ chromeAvailable: true, driverAvailable: true, platform: 'linux' }) })
+  const sanitizedResponse = await call(registered3[0].handler, { action: 'overview.export' })
+  assert.equal(sanitizedResponse.payload.file_name, 'douyin-overview-export.xlsx')
+})
+
+// ---------------------------------------------------------------------------
+// 单账号分析 action（0914 方案阶段 2，实施说明 §7.4）
+// ---------------------------------------------------------------------------
+
+test('account.analysis / account.trend：白名单透传，契约版本不匹配收敛稳定码', async () => {
+  const seen = []
+  const { ctx, registered } = createContext({
+    tools: [
+      { name: 'mcp__tools-douyin-operation__douyin_account_analysis' },
+      { name: 'mcp__tools-douyin-operation__douyin_account_trend' },
+    ],
+    execute: async invocation => {
+      seen.push({ tool: invocation.name, args: invocation.arguments })
+      if (invocation.name.endsWith('douyin_account_trend')) {
+        return { structuredContent: { metric: 'play', points: [], gapDays: 0 } }
+      }
+      return { structuredContent: { account: { accountId: 'a1' } } }
+    },
+  })
+  apply(ctx, { root: '/tmp/unused', browserStatus: async () => ({ chromeAvailable: true, driverAvailable: true, platform: 'linux' }) })
+  const handler = registered[0].handler
+  await call(handler, { action: 'account.analysis', accountId: 'a1', publishFrom: '2026-08-01', extra: 'drop' })
+  await call(handler, { action: 'account.trend', accountId: 'a1', metric: 'fans', fromDay: '2026-09-01', toDay: '2026-09-15', cohortDelta: true })
+  assert.ok(seen[0].tool.endsWith('__douyin_account_analysis'))
+  assert.ok(seen[0].args.accountId === 'a1' && seen[0].args.publishFrom === '2026-08-01')
+  assert.equal(seen[0].args.extra, undefined, '白名单外字段剔除')
+  assert.ok(seen[1].tool.endsWith('__douyin_account_trend'))
+  assert.equal(seen[1].args.metric, 'fans')
+  assert.equal(seen[1].args.cohortDelta, true)
+
+  const { ctx: ctx2, registered: registered2 } = createContext({
+    tools: [{ name: 'mcp__tools-douyin-operation__douyin_account_trend' }],
+    execute: async () => { const e = new Error('CONTRACT_VERSION_MISMATCH'); e.code = 'CONTRACT_VERSION_MISMATCH'; throw e },
+  })
+  apply(ctx2, { root: '/tmp/unused', browserStatus: async () => ({ chromeAvailable: true, driverAvailable: true, platform: 'linux' }) })
+  const response = await call(registered2[0].handler, { action: 'account.trend', accountId: 'a1' })
+  assert.equal(response.payload.status, 'error')
+  assert.equal(response.payload.reason, 'CONTRACT_VERSION_MISMATCH')
+})
+
+test('accountAnalysis.export：文件名强制 douyin-account-analysis-*.xlsx', async () => {
+  const contentBase64 = Buffer.from('report').toString('base64')
+  const { ctx, registered } = createContext({
+    tools: [{ name: 'mcp__tools-douyin-operation__douyin_account_analysis_export' }],
+    execute: async () => ({ structuredContent: { file_name: 'douyin-account-analysis-acc-1-20260915.xlsx', content_base64: contentBase64, content_bytes: 6 } }),
+  })
+  apply(ctx, { root: '/tmp/unused', browserStatus: async () => ({ chromeAvailable: true, driverAvailable: true, platform: 'linux' }) })
+  const response = await call(registered[0].handler, { action: 'accountAnalysis.export', accountId: 'acc-1' })
+  assert.equal(response.payload.status, 'ready')
+  assert.equal(response.payload.file_name, 'douyin-account-analysis-acc-1-20260915.xlsx')
+
+  const { ctx: ctx2, registered: registered2 } = createContext({
+    tools: [{ name: 'mcp__tools-douyin-operation__douyin_account_analysis_export' }],
+    execute: async () => ({ structuredContent: { file_name: 'other.xlsx', content_base64: contentBase64, content_bytes: 6 } }),
+  })
+  apply(ctx2, { root: '/tmp/unused', browserStatus: async () => ({ chromeAvailable: true, driverAvailable: true, platform: 'linux' }) })
+  const fallback = await call(registered2[0].handler, { action: 'accountAnalysis.export', accountId: 'acc-1' })
+  assert.equal(fallback.payload.file_name, 'douyin-account-analysis-report.xlsx')
 })
