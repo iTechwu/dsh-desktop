@@ -14,7 +14,11 @@ function retainedResolverCount(): number {
   return typeof count === 'number' ? count : 0
 }
 
-/** Mark one active resolver that can bridge physical Profile modules to ASAR. */
+/**
+ * Mark one active resolver. Patched upstream packages read this count to learn
+ * that Desktop owns module resolution and that walking node_modules would fail:
+ * the Desktop package ships outside any node_modules tree.
+ */
 export function retainAsarModuleResolver(): () => void {
   state()[RESOLVER_MARKER] = retainedResolverCount() + 1
   let active = true

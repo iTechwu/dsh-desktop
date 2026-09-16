@@ -3,19 +3,11 @@
 import { createRequire } from 'node:module'
 import {
   existsSync,
-  lstatSync,
   readFileSync,
-  readdirSync,
-  readlinkSync,
-  rmSync,
-  rmdirSync,
-  statSync,
-  type Dirent,
-  unlinkSync,
   writeFileSync,
 } from 'node:fs'
 import { isIP } from 'node:net'
-import { dirname, isAbsolute, join, resolve } from 'node:path'
+import { dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { evaluate, isJsExpr, type EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
 import type { PatchOptions } from '@deepseek-ai/cordis-plugin-include'
@@ -42,7 +34,6 @@ import FileSettingsProvider, {
 } from '@deepseek-ai/dsh-settings-file'
 import { parseAllDocuments, parseDocument } from 'yaml'
 import { findOverlayPackage, resolveOverlayPackage } from './package-overlay.ts'
-import { withAsarModuleResolver } from './asar-module-resolver-state.ts'
 import { DESKTOP_DEFAULT_WEB_PORT } from './desktop-port.ts'
 import {
   desktopBrowserAccessEnabled,
@@ -119,7 +110,6 @@ const DOFE_MODEL_PROVIDER = 'deepseek-official'
 const DOFE_MODEL_API_KEY_ENV = 'MODELS_API_KEY'
 const DOFE_MODEL_BASE_URL = 'https://ixicai.cn/api/v1'
 const DESKTOP_SETTINGS_NAMESPACE = 'dsh-desktop'
-const MAX_FALLBACK_MANIFEST_BYTES = 1024 * 1024
 const UI_LAYOUT_PACKAGE = '@deepseek-ai/dsh-client-ui-layout'
 const UI_SIDEBAR_PACKAGE = '@deepseek-ai/dsh-client-ui-sidebar'
 const UI_CONVERSATION_PACKAGE = '@deepseek-ai/dsh-client-ui-conversation'
