@@ -138,6 +138,7 @@ import {
 import {
   migrateDesktopBrowserAccessSettings,
   migrateDesktopWindowMaterialSettings,
+  migrateLegacyAgentPresetSettings,
   readDesktopSetupWizardSettings,
   updateDesktopSetupWizardSettings,
   type DesktopSetupWizardSettings,
@@ -1208,6 +1209,18 @@ async function start(): Promise<void> {
       marketSelection,
       preparationHooks,
     )
+    if (safeModePaths === undefined
+      && await migrateLegacyAgentPresetSettings(prepared.settingsDocument)) {
+      prepared = prepareDesktopProfile(
+        process.env.DSH_TELEMETRY_DISABLED,
+        homeDir,
+        process.platform,
+        activeProfileName,
+        pluginManagementStatePath,
+        marketSelection,
+        preparationHooks,
+      )
+    }
     if (safeModePaths !== undefined) {
       const safeModeDefaults = DESKTOP_SAFE_MODE_DEFAULTS
       await updateDesktopSetupWizardSettings(prepared.settingsDocument, safeModeDefaults.settings)
