@@ -1155,6 +1155,10 @@ export function prepareDesktopProfile(
       config: {
         apiKeyEnv: DOFE_MODEL_API_KEY_ENV,
         baseURL: DOFE_MODEL_BASE_URL,
+        // The DoFe gateway only exposes the OpenAI-compatible surface
+        // ({baseURL}/chat/completions); the 0.1.6 llm-deepseek default
+        // Messages protocol would hit {baseURL}/v1/messages and 404.
+        protocol: 'chat-completions',
         connectionPolicy: 'composition',
         models: [{
           id: 'deepseek-v4-flash',
