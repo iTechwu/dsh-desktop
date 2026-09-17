@@ -16,6 +16,7 @@ const NON_CHAT_MODEL_PATTERN = /(?:voice|speech|tts|stt|audio|seedance|seedream|
 const DOFE_VISION_MODEL_IDS = new Set([
   'deepseek-v4-flash-vision',
   'deepseek-v4-flash-vision-exp',
+  'glm-5.3-flash',
 ])
 
 /** GLM-5.3 models expose a 128K maximum generation length on the public API. */

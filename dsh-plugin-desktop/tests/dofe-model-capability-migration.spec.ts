@@ -34,6 +34,8 @@ describe('DoFe model capability migration', () => {
       '      inputModalities: [text]',
       '    - id: deepseek-v4-flash-vision-exp',
       '      inputModalities: [text]',
+      '    - id: glm-5.3-flash',
+      '      inputModalities: [text]',
       '    - id: deepseek-v4-pro',
       '      inputModalities: [text]',
       'dsh-desktop:',
@@ -49,6 +51,7 @@ describe('DoFe model capability migration', () => {
     expect(value['llm-deepseek'].models).toEqual([
       { id: 'deepseek-v4-flash-vision', name: 'Vision', inputModalities: ['text', 'image'] },
       { id: 'deepseek-v4-flash-vision-exp', inputModalities: ['text', 'image'] },
+      { id: 'glm-5.3-flash', inputModalities: ['text', 'image'] },
       { id: 'deepseek-v4-pro', inputModalities: ['text'] },
     ])
     expect(value['dsh-desktop']).toEqual({ mode: 'advanced' })

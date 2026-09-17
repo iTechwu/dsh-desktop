@@ -20,7 +20,7 @@ describe('DoFe model catalog parsing', () => {
       { id: 'glm-5.3-flash', context_window: 1048576 },
       { id: 'glm-5.2', max_completion_tokens: 65536 },
     ] })).toEqual([
-      { id: 'glm-5.3-flash', name: 'glm-5.3-flash', contextWindow: 1048576, maxTokens: 131072 },
+      { id: 'glm-5.3-flash', name: 'glm-5.3-flash', contextWindow: 1048576, maxTokens: 131072, inputModalities: ['text', 'image'] },
       { id: 'glm-5.2', name: 'glm-5.2', maxTokens: 65536 },
     ])
   })
