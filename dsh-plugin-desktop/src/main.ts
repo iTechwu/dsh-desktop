@@ -3,6 +3,7 @@
 import { startIsolatedDesktopHost } from './host-process.ts'
 import { app, crashReporter, safeStorage, shell } from 'electron'
 import { randomUUID } from 'node:crypto'
+import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import { existsSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'

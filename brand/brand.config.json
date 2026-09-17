@@ -4,12 +4,14 @@
     "stable": {
       "productName": "Yootun-Agent",
       "appId": "ai.yootun.agent",
-      "artifactPrefix": "Yootun-Agent"
+      "artifactPrefix": "Yootun-Agent",
+      "homeDirectoryName": ".dsh"
     },
     "beta": {
       "productName": "Yootun-Agent Beta",
       "appId": "ai.yootun.agent.beta",
-      "artifactPrefix": "Yootun-Agent-Beta"
+      "artifactPrefix": "Yootun-Agent-Beta",
+      "homeDirectoryName": ".dsh-beta"
     }
   },
   "packageName": "dsh-plugin-desktop",

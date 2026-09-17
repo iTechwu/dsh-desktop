@@ -1,6 +1,6 @@
 /** Composite the brand lockup images from brand/brand.config.json sources. */
 
-import { existsSync, rmSync } from 'node:fs'
+import { existsSync, renameSync, rmSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import sharp from 'sharp'
@@ -48,6 +48,7 @@ export async function generateLockups(environment = process.env): Promise<void> 
 
   const wordmarkWidth = lockupWidth - lockupHeight
   const stagedPath = output('.brand-wordmark-staged.png')
+  const composedPath = output('.brand-lockup-composed.png')
   try {
     await sharp(wordmarkPath)
       .resize(wordmarkWidth, lockupHeight, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } })
@@ -62,7 +63,10 @@ export async function generateLockups(environment = process.env): Promise<void> 
         { input: stagedPath, left: lockupHeight, top: 0 },
       ])
       .png()
-      .toFile(output('sidebar-brand.png'))
+      .toFile(composedPath)
+    // Concurrent readers (packaging verifiers) must never observe a partial
+    // master: publish the recomposited lockup with one atomic rename.
+    renameSync(composedPath, output('sidebar-brand.png'))
   } finally {
     rmSync(stagedPath, { force: true })
   }

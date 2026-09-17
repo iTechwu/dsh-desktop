@@ -30,8 +30,8 @@ describe('white-label round trip', () => {
       writeFileSync(configPath, JSON.stringify({
         activeChannel: 'beta',
         channels: {
-          stable: { productName: 'Acme Agent', appId: 'com.acme.agent', artifactPrefix: 'Acme-Agent' },
-          beta: { productName: 'Acme Agent Beta', appId: 'com.acme.agent.beta', artifactPrefix: 'Acme-Agent-Beta' },
+          stable: { productName: 'Acme Agent', appId: 'com.acme.agent', artifactPrefix: 'Acme-Agent', homeDirectoryName: '.acme-agent' },
+          beta: { productName: 'Acme Agent Beta', appId: 'com.acme.agent.beta', artifactPrefix: 'Acme-Agent-Beta', homeDirectoryName: '.acme-agent-beta' },
         },
         packageName: 'dsh-plugin-desktop',
         displayName: { titlebar: 'Acme Agent', locale: 'Acme Agent' },

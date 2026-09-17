@@ -82,6 +82,8 @@ export function validateBrandConfig(document, sourcePath = 'brand.config.json') 
         'expected reverse-DNS like "ai.yootun.agent.beta"')
       requirePattern(entry, 'artifactPrefix', /^[A-Za-z0-9.-]+$/, `${channel}.`, push,
         'expected a filename-safe prefix like "Yootun-Agent-Beta"')
+      requirePattern(entry, 'homeDirectoryName', /^\.[A-Za-z0-9._-]+$/, `${channel}.`, push,
+        'expected a dot-prefixed directory name like ".yootun-agent-beta"')
     }
   }
   if (!channels?.[config.activeChannel]) {
@@ -173,12 +175,14 @@ export const BRAND_RELEASE_IDENTITIES = Object.freeze({
     packageName: ${JSON.stringify(config.packageName)},
     productName: ${JSON.stringify(stable.productName)},
     appId: ${JSON.stringify(stable.appId)},
+    homeDirectoryName: ${JSON.stringify(stable.homeDirectoryName)},
   }),
   beta: Object.freeze({
     releaseChannel: 'beta' as const,
     packageName: ${JSON.stringify(config.packageName)},
     productName: ${JSON.stringify(beta.productName)},
     appId: ${JSON.stringify(beta.appId)},
+    homeDirectoryName: ${JSON.stringify(beta.homeDirectoryName)},
   }),
 })
 

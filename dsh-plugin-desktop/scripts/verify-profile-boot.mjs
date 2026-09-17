@@ -13,7 +13,7 @@ import {
 import { DESKTOP_SETTINGS_NAMESPACE } from '../lib/index.js'
 import { installDesktopPnpmRuntime } from '../lib/desktop-runtime-environment.js'
 import { installProfilePackageResolver } from '../lib/module-resolution.js'
-import { prepareDesktopProfile } from '../lib/profile.js'
+import { healDesktopProfileModuleFallback, prepareDesktopProfile } from '../lib/profile.js'
 import { DesktopProfileService } from '../lib/profile-service.js'
 
 const BIN_NAME = 'dsh-plugin-desktop-profile-smoke'
@@ -111,6 +111,9 @@ try {
     environment: process.env,
   })
   releasePackageResolver = installProfilePackageResolver(prepared.bareModuleBaseUrl)
+  // 0.1.6 presence discovery probes physical node_modules; materialize the
+  // profile fallback generation exactly like the production boot does.
+  await healDesktopProfileModuleFallback(home, prepared.profile)
   const runtime = {
     platform: 'win32',
     windowsBuild: 22_631,

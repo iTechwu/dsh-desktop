@@ -4,6 +4,7 @@ export interface BrandChannelIdentity {
   readonly productName: string
   readonly appId: string
   readonly artifactPrefix: string
+  readonly homeDirectoryName: string
 }
 
 export interface BrandConfig {

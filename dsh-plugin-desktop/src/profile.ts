@@ -2,14 +2,23 @@
 
 import { createRequire } from 'node:module'
 import {
+  Dirent,
   existsSync,
+  lstatSync,
+  readdirSync,
+  readlinkSync,
+  rmdirSync,
+  rmSync,
+  statSync,
+  unlinkSync,
   readFileSync,
   writeFileSync,
 } from 'node:fs'
 import { isIP } from 'node:net'
-import { dirname, join } from 'node:path'
+import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { evaluate, isJsExpr, type EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
+import { withAsarModuleResolver } from './asar-module-resolver-state.ts'
 import type { PatchOptions } from '@deepseek-ai/cordis-plugin-include'
 import {
   composeEntries,
@@ -1200,6 +1209,8 @@ export function prepareDesktopProfile(
     ...(marketFailure === undefined ? {} : { marketFailure }),
   }
 }
+
+const MAX_FALLBACK_MANIFEST_BYTES = 1024 * 1024
 
 /** Maintain the upstream module fallback for one fully resolved Desktop profile. */
 export async function healDesktopProfileModuleFallback(home: string, profile?: Profile): Promise<void> {

@@ -13,8 +13,8 @@ import {
 const validConfig = {
   activeChannel: 'beta',
   channels: {
-    stable: { productName: 'Alpha', appId: 'ai.example.agent', artifactPrefix: 'Alpha' },
-    beta: { productName: 'Alpha Beta', appId: 'ai.example.agent.beta', artifactPrefix: 'Alpha-Beta' },
+    stable: { productName: 'Alpha', appId: 'ai.example.agent', artifactPrefix: 'Alpha', homeDirectoryName: '.alpha' },
+    beta: { productName: 'Alpha Beta', appId: 'ai.example.agent.beta', artifactPrefix: 'Alpha-Beta', homeDirectoryName: '.alpha-beta' },
   },
   packageName: 'dsh-plugin-desktop',
   displayName: { titlebar: 'Alpha', locale: 'Alpha' },

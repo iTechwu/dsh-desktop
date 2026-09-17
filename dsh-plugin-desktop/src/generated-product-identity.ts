@@ -7,12 +7,14 @@ export const BRAND_RELEASE_IDENTITIES = Object.freeze({
     packageName: "dsh-plugin-desktop",
     productName: "Yootun-Agent",
     appId: "ai.yootun.agent",
+    homeDirectoryName: ".dsh",
   }),
   beta: Object.freeze({
     releaseChannel: 'beta' as const,
     packageName: "dsh-plugin-desktop",
     productName: "Yootun-Agent Beta",
     appId: "ai.yootun.agent.beta",
+    homeDirectoryName: ".dsh-beta",
   }),
 })
 
