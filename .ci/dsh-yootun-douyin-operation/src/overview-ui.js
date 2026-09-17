@@ -403,7 +403,7 @@ export function OverviewPage({
             h('span', { role: 'columnheader' }, t('publishTime')),
             h('span', { className: 'ydo-ov-num', role: 'columnheader' }, t('colPlay')),
             h('span', { className: 'ydo-ov-num', role: 'columnheader' }, t('engagement')),
-            h('span', { role: 'columnheader' }, t('hotBasis'))),
+            h('span', { className: 'ydo-ov-hot-basis-head', role: 'columnheader' }, t('hotBasis'))),
           ...(overview?.hotWorks || []).map(work => h(HotWorkRow, { key: work.workId, work, onOpenWork, t })))
         : h('p', { className: 'ydo-hint' }, t('noHotWorks')))
       : null)

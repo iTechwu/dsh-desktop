@@ -105,8 +105,8 @@ export function deriveAnalysisAlerts(analysis, t) {
   return alerts
 }
 
-// 观众画像（UI 优化方案 v2 §5.3）：只保留年龄/地域/城市级别/主要来源四块 2×2 网格；
-// 性别如有数据作为卡片头部一行摘要，不单独占块；评论热词不再出现在本页
+// 观众画像（UI 优化方案 v2 §5.3）：性别/年龄/地域/城市级别/主要来源统一为卡片；
+// 评论热词不再出现在本页
 //（接口 hotwords 字段保留在导出报告中）。gender/age 的接口枚举（male/41-50 等）
 // 经 ui-format 中文化，内部枚举不进页面（验收 P1）。
 function dimensionRows(dimension, formatKey) {
@@ -126,16 +126,15 @@ function AudienceBarList({ rows }) {
 }
 
 function AudienceBlock({ label, rows, t }) {
-  // 每块：标题 + 前三项横向条形 + 「按播放量加权」说明；无数据的维度显示数据不足，
-  // 不渲染空进度条。
+  // 每块：标题 + 前三项横向条形；无数据的维度显示数据不足，不渲染空进度条。
   return h2('div', { className: 'ydo-an-audience-block' },
     h2('h4', null, label),
-    rows.length ? h2(AudienceBarList, { rows }) : h2('p', { className: 'ydo-hint' }, t('dataInsufficient')),
-    h2('p', { className: 'ydo-hint' }, t('weightedNote')))
+    rows.length ? h2(AudienceBarList, { rows }) : h2('p', { className: 'ydo-hint' }, t('dataInsufficient')))
 }
 
 function audienceGrid(analysis, t) {
   const audience = analysis?.audience
+  const genderRows = dimensionRows(audience?.dimensions?.gender, key => genderLabel(key, t), t)
   const ageRows = dimensionRows(audience?.dimensions?.age, key => formatAgeBucket(key, t), t)
   const provinceRows = dimensionRows(audience?.dimensions?.province, key => key, t)
   const cityRows = dimensionRows(audience?.dimensions?.city_level, key => key, t)
@@ -147,17 +146,11 @@ function audienceGrid(analysis, t) {
       pct: item.pct,
     }))
   return h2('div', { className: 'ydo-an-audience' },
+    h2(AudienceBlock, { key: 'gender', label: t('mainGender'), rows: genderRows, t }),
     h2(AudienceBlock, { key: 'age', label: t('mainAge'), rows: ageRows, t }),
     h2(AudienceBlock, { key: 'province', label: t('mainRegion'), rows: provinceRows, t }),
     h2(AudienceBlock, { key: 'city_level', label: t('cityLevel'), rows: cityRows, t }),
     h2(AudienceBlock, { key: 'traffic', label: t('mainTrafficSource'), rows: trafficRows, t }))
-}
-
-// 性别头部摘要（v2 §5.3）：有数据时在观众卡顶部占一行，不单独占块。
-function genderSummaryLine(analysis, t) {
-  const top = ((analysis?.audience?.dimensions?.gender?.distributions) || [])[0]
-  if (!top) return null
-  return h2('p', { className: 'ydo-hint' }, `${t('mainGender')}：${genderLabel(top.key, t)} ${pct(top.pct)}`)
 }
 
 function alertRuleText(alert, t) {
@@ -210,12 +203,12 @@ const CONTENT_METRICS = [
 ]
 
 function contentMetricNote(item, t) {
-  // 第三段「状态/覆盖率」（UI 优化方案 v2 §5.2）：覆盖率缺失或为 0 → 数据不足；
-  // 0<x<100 → 部分数据 + 覆盖率；覆盖完整 → 不显示状态（「覆盖率 100.0%」是噪音）。
+  // 第三段只保留数据状态：覆盖率缺失或为 0 → 数据不足；0<x<100 → 部分数据；
+  // 覆盖完整 → 不显示状态。覆盖率数值属于内部质量信息，不在内容指标中展示。
   // 真实数值 0 永远照常渲染，不因隐藏覆盖率变成空值。
   const coverage = Number(item && item.coveragePct)
   if (!Number.isFinite(coverage) || coverage <= 0) return t('dataInsufficient')
-  if (coverage < 100) return `${t('dataPartial')} · ${t('coverage')} ${pct(item.coveragePct)}`
+  if (coverage < 100) return t('dataPartial')
   return null
 }
 
@@ -269,7 +262,7 @@ function hotWorksTable(analysis, onOpenWork, t) {
       h2('span', { role: 'columnheader' }, t('publishTime')),
       h2('span', { className: 'ydo-ov-num', role: 'columnheader' }, t('colPlay')),
       h2('span', { className: 'ydo-ov-num', role: 'columnheader' }, t('engagement')),
-      h2('span', { role: 'columnheader' }, t('hotBasis'))),
+      h2('span', { className: 'ydo-ov-hot-basis-head', role: 'columnheader' }, t('hotBasis'))),
     ...works.map((work, index) => {
       const lines = basisLines(work.basis)
       return h2('div', { key: work.workId, className: 'ydo-ov-tr ydo-ov-tr-hot-rank', role: 'row' },
@@ -375,7 +368,7 @@ export function AnalysisPage({
     account ? h2('div', { className: 'ydo-ov-panels' },
       h2('section', { className: 'ydo-ov-panel' },
         h2('h3', null, t('contentMetrics')),
-        // 固定指标清单：「指标名 / 主值 / 状态或覆盖率」三段（UI 优化方案 §5.3）；
+        // 固定指标清单：「指标名 / 主值 / 数据状态」三段（UI 优化方案 §5.3）；
         // 缺失值显示 —，真实的 0 保持为 0，服务端未返回的段显式「数据不足」。
         h2('ul', { className: 'ydo-an-metrics' },
           ...contentMetricRows(analysis, t).map(row => h2('li', { key: row.key },
@@ -384,14 +377,9 @@ export function AnalysisPage({
             row.note ? h2('span', { className: 'ydo-an-metric-note' }, row.note) : null)))),
       h2('section', { className: 'ydo-ov-panel' },
         h2('h3', null, t('audienceTraffic')),
-        // 观众与流量（UI 优化方案 v2 §5.3）：性别头部摘要 + 年龄/地域/城市级别/主要来源
-        // 四块 2×2 网格；评论热词不再展示；参与作品数集中在卡片底部一行。
-        genderSummaryLine(analysis, t),
-        audienceGrid(analysis, t),
-        analysis?.audience?.sampleWorkCount
-          ? h2('p', { className: 'ydo-hint' },
-            t('weightedSample').replace('{count}', String(analysis.audience.sampleWorkCount)))
-          : null)) : null,
+        // 观众与流量（UI 优化方案 v2 §5.3）：性别/年龄/地域/城市级别/主要来源
+        // 统一为同样的卡片；评论热词和加权说明不再展示。
+        audienceGrid(analysis, t))) : null,
 
     account ? h2('section', { className: 'ydo-ov-panel' },
       h2('h3', null, t('accountHotWorks')),

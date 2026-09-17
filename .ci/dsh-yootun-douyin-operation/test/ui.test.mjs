@@ -1032,10 +1032,10 @@ test('分析页源契约：返回总览保留筛选、观众与流量开放（�
   // 返回总览保留筛选条件（方案 §15.2）：退出分析页后重新拉取总览（沿用同一 filters）。
   assert.match(source, /setAnalysisAccountId\(null\)\s*\n\s*loadOverview\(\)/u)
   const analysisSource = await readFile(new URL('../src/analysis-ui.js', import.meta.url), 'utf8')
-  // 阶段 3 开放：加权画像/流量/热词/规则提醒全部渲染接口字段。
-  assert.match(analysisSource, /weightedSample/u, '按播放量加权（样本 N 条）脚注')
+  // 阶段 3 开放：画像/流量/热词/规则提醒渲染接口字段，但页面不展示加权口径脚注。
+  assert.doesNotMatch(analysisSource, /weightedSample|weightedNote/u, '分析页不再显示按播放量加权说明')
   assert.match(analysisSource, /dataInsufficient/u, '无画像数据时显示"数据不足"而非 0%')
-  assert.match(analysisSource, /ydo-an-audience/u, '观众与流量四块 2×2 网格（v2 §5.3）')
+  assert.match(analysisSource, /ydo-an-audience/u, '观众与流量使用统一卡片网格（v2 §5.3）')
   // v2 §5.3：分析页不再渲染评论热词（hotwordStaleBadge 只属于作品详情弹窗）。
   assert.doesNotMatch(analysisSource, /hotwordsBlock|hotwordStaleBadge/u, '分析页不再渲染评论热词')
   assert.match(analysisSource, /labelPotential/u, 'potential 标签渲染')
@@ -1257,6 +1257,8 @@ test('总览表格：排行/爆款两表各自固定列轨道，数字列右对�
   assert.equal(rankRows.filter(node => String(node.props.className).includes('ydo-ov-head')).length, 1, '排行表头存在')
   assert.equal(rankRows.length, 2, '排行表头 + 1 数据行共用轨道')
   assert.equal(hotRows.length, 2, '爆款表头 + 1 数据行共用轨道')
+  const overviewHotHead = hotRows.find(node => String(node.props.className).includes('ydo-ov-head'))
+  assert.equal(overviewHotHead.children.at(-1).props.className, 'ydo-ov-hot-basis-head', '总览爆款依据表头单独居中')
   // 数字/百分比列统一右对齐 + tabular-nums；排名列居中。
   const numCells = hLog.filter(node => String(node.props && node.props.className || '').includes('ydo-ov-num'))
   assert.ok(numCells.length >= 14, '排行 6 列数字 + 爆款率/互动率 + 爆款表播放/互动率均右对齐')
@@ -1412,10 +1414,9 @@ test('分析页行为：账号标题、内容指标三段结构、观众与流�
     trendCaption: '按采集日收盘值展示', noTrend: '暂无趋势', contentMetrics: '内容指标',
     cmEngagement: '综合互动率', cmLikeRate: '点赞率', cmCommentRate: '评论率', cmCollectRate: '收藏率',
     cmShareRate: '分享率', cmCompletion5s: '5秒完播率', cmAvgViewShare: '平均播放占比', cmAvgWatchDuration: '平均播放时长',
-    coverage: '覆盖率', dataInsufficient: '数据不足', dataPartial: '部分数据',
+    dataInsufficient: '数据不足', dataPartial: '部分数据',
     audienceTraffic: '观众与流量', mainGender: '主要性别', mainAge: '主要年龄', mainRegion: '主要地域',
-    cityLevel: '城市级别', mainTrafficSource: '主要流量来源', weightedSample: '按播放量加权（样本 {count} 条）',
-    weightedNote: '按播放量加权',
+    cityLevel: '城市级别', mainTrafficSource: '主要流量来源',
     genderMale: '男', genderFemale: '女', genderOther: '其他',
     age24to30: '24-30岁', age31to40: '31-40岁', ageOther: '其他年龄段',
     srcHomepageHot: '推荐(首页推荐)', sourceOther: '其他来源',
@@ -1484,10 +1485,11 @@ test('分析页行为：账号标题、内容指标三段结构、观众与流�
     assert.ok(pageText.includes(label), `内容指标包含「${label}」`)
   }
   assert.ok(pageText.includes('数据不足'), '未返回段显示数据不足')
-  assert.ok(pageText.includes('部分数据 · 覆盖率 76.5%'), '覆盖不足标记部分数据与覆盖率')
+  assert.ok(pageText.includes('部分数据'), '覆盖不足只标记部分数据状态')
+  assert.ok(!pageText.includes('覆盖率'), '内容指标不显示覆盖率')
   // 服务端返回完播/播放段时渲染真实均值；平均播放时长单位是秒（验收 P1-4 闭合）。
   assert.ok(pageText.includes('43.2%'), '5秒完播率渲染服务端均值')
-  assert.ok(pageText.includes('38.5%') && pageText.includes('部分数据 · 覆盖率 88.2%'), '平均播放占比带覆盖率')
+  assert.ok(pageText.includes('38.5%') && pageText.includes('部分数据'), '平均播放占比标记部分数据')
   assert.ok(pageText.includes('12.6秒'), '平均播放时长以秒为单位渲染')
   assert.ok(!pageText.includes('participation'), '无内部字段')
   // 观众与流量口径标签。
@@ -1495,7 +1497,7 @@ test('分析页行为：账号标题、内容指标三段结构、观众与流�
     assert.ok(pageText.includes(label), `观众与流量包含「${label}」`)
   }
   // 内部枚举中文化：male/24-30 不进页面（验收 P1-2）。
-  assert.ok(pageText.includes('男 92.7%'), '性别枚举经 genderLabel 中文化（头部摘要行）')
+  assert.ok(pageText.includes('男') && pageText.includes('92.7%'), '性别枚举经 genderLabel 中文化')
   // v2 §5.3：四块条形列表把「标签/数值」拆成独立节点，不再拼成一句话。
   assert.ok(pageText.includes('24-30岁') && pageText.includes('41.2%'), '年龄分桶经 formatAgeBucket 中文化')
   assert.ok(!pageText.includes('male') && !/['"]24-30 /.test(pageText), '原始枚举 key 不进页面')
@@ -1512,24 +1514,26 @@ test('分析页行为：账号标题、内容指标三段结构、观众与流�
   const visibleText = hLog.map(node => textOf(node)).join('\n')
   assert.ok(visibleText.includes('其他规则提醒（3 条作品）'), '未知规则 ID 收敛兜底文案')
   assert.ok(!visibleText.includes('mystery_rule'), '原始 ruleId 不进可见文本')
-  assert.ok(pageText.includes('按播放量加权（样本 12 条）'), '画像显示参与作品数')
-  // v2 §5.3：观众与流量只保留四块 2×2 网格 + 性别头部摘要；评论热词/会话状态未知不出现。
-  assert.ok(pageText.includes('主要性别：男 92.7%'), '性别作为头部摘要行')
+  assert.ok(!pageText.includes('按播放量加权'), '观众与流量不显示按播放量加权说明')
+  // v2 §5.3：观众与流量的五个维度统一使用相同卡片；评论热词/会话状态未知不出现。
+  assert.ok(pageText.includes('主要性别') && pageText.includes('男') && pageText.includes('92.7%'), '性别使用统一卡片展示')
   assert.ok(!pageText.includes('评论热词'), '分析页不显示评论热词（接口字段保留在导出报告）')
   assert.ok(!pageText.includes('会话状态未知'), '头部不再显示会话状态未知')
   assert.ok(!pageText.includes('覆盖率 100'), '覆盖率 100% 不再显示状态文字（v2 §5.2）')
   const audienceBlocks = hLog.filter(node => String(node.props && node.props.className || '').includes('ydo-an-audience-block'))
-  assert.equal(audienceBlocks.length, 4, '年龄/地域/城市级别/主要来源四块')
+  assert.equal(audienceBlocks.length, 5, '性别/年龄/地域/城市级别/主要来源五块')
   const blockTitles = audienceBlocks.map(block => block.children[0].children[0])
-  assert.deepEqual([...blockTitles], ['主要年龄', '主要地域', '城市级别', '主要流量来源'], '四块顺序与标题')
+  assert.deepEqual([...blockTitles], ['主要性别', '主要年龄', '主要地域', '城市级别', '主要流量来源'], '五块顺序与标题')
   for (const block of audienceBlocks) {
-    assert.ok(JSON.stringify(block).includes('按播放量加权'), '每块带按播放量加权说明')
+    assert.ok(!JSON.stringify(block).includes('按播放量加权'), '每块不带按播放量加权说明')
   }
   // 爆款视频固定六列表格 + 爆款依据分行：列序与总览不同（排名居首），用专属轨道
   // ydo-ov-tr-hot-rank，排名落窄列、视频标题占宽轨（验收建议 1）。
   const hotRows = hLog.filter(node => String(node.props && node.props.className || '').includes('ydo-ov-tr-hot-rank'))
   assert.equal(hotRows.length, 2, '爆款表头 + 数据行共用 ydo-ov-tr-hot-rank 专属轨道')
   const hotDataRow = hotRows.find(node => !String(node.props.className).includes('ydo-ov-head'))
+  const analysisHotHead = hotRows.find(node => String(node.props.className).includes('ydo-ov-head'))
+  assert.equal(analysisHotHead.children.at(-1).props.className, 'ydo-ov-hot-basis-head', '单账号爆款依据表头单独居中')
   assert.equal(hotDataRow.children[0].props.className, 'ydo-ov-rankcell', '首列是排名（窄列居中）')
   assert.ok(hotDataRow.children[1].props.className.includes('ydo-ov-hot-title'), '第二列是视频标题（宽轨）')
   assert.ok(pageText.includes('账号内 Top 2%') && pageText.includes('播放量为账号中位数 322 倍'), '爆款依据分行渲染')
@@ -1540,12 +1544,12 @@ test('分析页行为：账号标题、内容指标三段结构、观众与流�
   const likeRow = zeroRows.find(row => row.key === 'likeCount')
   assert.equal(likeRow.value, '0.0%', '真实的 0 保持 0，不当作缺失')
   assert.equal(likeRow.note, null, '覆盖率 100% 不渲染第三段状态（v2 §5.2）')
-  // 覆盖率三态（v2 §5.2）：0<x<100 → 部分数据+覆盖率；0/缺失 → 数据不足。
+  // 数据状态三态（v2 §5.2）：0<x<100 → 部分数据；0/缺失 → 数据不足。
   const triRows = contentMetricRows({ interaction: {
     likeCount: { ratePct: 3, coveragePct: 55.5 },
     commentCount: { ratePct: 1, coveragePct: 0 },
   }, kpi: {} }, t)
-  assert.equal(triRows.find(row => row.key === 'likeCount').note, '部分数据 · 覆盖率 55.5%')
+  assert.equal(triRows.find(row => row.key === 'likeCount').note, '部分数据')
   assert.equal(triRows.find(row => row.key === 'commentCount').note, '数据不足', '覆盖 0 → 数据不足')
   const engagementRow = zeroRows.find(row => row.key === 'engagement')
   assert.equal(engagementRow.value, '—', '综合互动率缺失显示 —')
@@ -1839,29 +1843,31 @@ test('v2 爆款账号分布：服务端 hotAccountDistribution 驱动、保持�
     '缺 hotAccountDistribution 时不渲染分布列表（数据边界）')
 })
 
-test('v2 源码样式契约：窄列轨道、分布配色、抽屉尺寸与关闭按钮、分析页两列/四块、搜索词仅关键词', async () => {
+test('v2 源码样式契约：窄列轨道、分布配色、抽屉尺寸与关闭按钮、分析页布局、搜索词仅关键词', async () => {
   const source = await readFile(new URL('../src/client.js', import.meta.url), 'utf8')
   // §3.3/§4.2/§4.4：总览容器禁横向滚动；排行 8 列固定轨道（48px 排名起，无会话列）；
   // 爆款两表窄列 124px 发布时间 / 84px 播放量 / 76px 互动率。
   assert.match(source, /\.ydo-ov-table\{[^}]*overflow-x:hidden/u)
-  assert.match(source, /\.ydo-ov-tr-rank\{[^}]*grid-template-columns:48px minmax\(180px,1\.6fr\)/u)
+  assert.match(source, /\.ydo-ov-tr\{[^}]*box-sizing:border-box/u)
+  assert.match(source, /\.ydo-ov-tr-rank\{grid-template-columns:48px minmax\(90px,\.8fr\) repeat\(6,minmax\(72px,\.35fr\)\)\}/u)
   assert.match(source, /\.ydo-ov-tr-hot\{[^}]*124px 84px 76px/u)
   assert.match(source, /\.ydo-ov-tr-hot-rank\{[^}]*124px 84px 76px/u)
   // §4.3：前三名固定语义色（1 橙 / 2 蓝 / 3 紫）。
   assert.match(source, /\.ydo-ov-dist-top1 \.ydo-bar-fill\{background:#E8833A\}/u)
   assert.match(source, /\.ydo-ov-dist-top2 \.ydo-bar-fill\{background:#3B82F6\}/u)
   assert.match(source, /\.ydo-ov-dist-top3 \.ydo-bar-fill\{background:#8B5CF6\}/u)
-  // §4.1：下拉 36px、仅 :focus-visible 显外环；导出按钮不换行。
+  // §4.1：下拉 36px、鼠标焦点无黑框、键盘焦点显品牌色外环；导出按钮不换行。
   assert.match(source, /\.ydo-ov-toolbar select\{height:36px/u)
-  assert.match(source, /\.ydo-ov-toolbar select:focus\{outline:none\}/u)
-  assert.match(source, /\.ydo-ov-toolbar select:focus-visible\{outline:2px solid var\(--dsw-alias-brand-primary\)/u)
+  assert.match(source, /\.ydo-ov-toolbar select:focus\{outline:0;border-color:var\(--dsw-alias-border-l1\);box-shadow:none\}/u)
+  assert.match(source, /\.ydo-ov-toolbar select:focus-visible\{outline:0;border-color:#3B82F6;box-shadow:0 0 0 2px/u)
+  assert.match(source, /\.ydo-ov-hot-basis-head\{text-align:center;padding-inline:12px\}/u)
   assert.match(source, /\.ydo-export\{[^}]*white-space:nowrap/u)
   // §6.2：抽屉 min(720px,72vw)×min(860px,84vh) 且 ≥75vh；关闭按钮 40×40、::after 扩 ≥44px 命中区。
   assert.match(source, /\.ydo-ov-drawer\{width:min\(720px,72vw\);height:min\(860px,84vh\);min-height:75vh/u)
   assert.match(source, /\.ydo-ov-drawer-close\{[^}]*width:40px;height:40px/u)
   assert.match(source, /\.ydo-ov-drawer-close::after\{content:"";position:absolute;inset:-2px\}/u)
   assert.match(source, /\.ydo-ov-drawer-action\{margin-top:auto\}/u)
-  // §5.2/§5.3：内容指标两列、观众四块 2×2；窄屏均退单列。
+  // §5.2/§5.3：内容指标两列、观众卡片两列；窄屏均退单列。
   assert.match(source, /\.ydo-an-metrics\{[^}]*grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/u)
   assert.match(source, /\.ydo-an-audience\{display:grid;grid-template-columns:repeat\(2,minmax\(0,1fr\)\);gap:12px\}/u)
   const mediaStart = source.indexOf('@media(max-width:720px)')

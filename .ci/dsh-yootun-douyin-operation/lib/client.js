@@ -710,7 +710,7 @@ window.__ModuleLoader__.load({
                 h('span', { role: 'columnheader' }, t('publishTime')),
                 h('span', { className: 'ydo-ov-num', role: 'columnheader' }, t('colPlay')),
                 h('span', { className: 'ydo-ov-num', role: 'columnheader' }, t('engagement')),
-                h('span', { role: 'columnheader' }, t('hotBasis'))),
+                h('span', { className: 'ydo-ov-hot-basis-head', role: 'columnheader' }, t('hotBasis'))),
               ...(overview?.hotWorks || []).map(work => h(HotWorkRow, { key: work.workId, work, onOpenWork, t })))
             : h('p', { className: 'ydo-hint' }, t('noHotWorks')))
           : null)
@@ -852,8 +852,8 @@ window.__ModuleLoader__.load({
       return alerts
     }
 
-    // 观众画像（UI 优化方案 v2 §5.3）：只保留年龄/地域/城市级别/主要来源四块 2×2 网格；
-    // 性别如有数据作为卡片头部一行摘要，不单独占块；评论热词不再出现在本页
+    // 观众画像（UI 优化方案 v2 §5.3）：性别/年龄/地域/城市级别/主要来源统一为卡片；
+    // 评论热词不再出现在本页
     //（接口 hotwords 字段保留在导出报告中）。gender/age 的接口枚举（male/41-50 等）
     // 经 ui-format 中文化，内部枚举不进页面（验收 P1）。
     function dimensionRows(dimension, formatKey) {
@@ -873,16 +873,15 @@ window.__ModuleLoader__.load({
     }
 
     function AudienceBlock({ label, rows, t }) {
-      // 每块：标题 + 前三项横向条形 + 「按播放量加权」说明；无数据的维度显示数据不足，
-      // 不渲染空进度条。
+      // 每块：标题 + 前三项横向条形；无数据的维度显示数据不足，不渲染空进度条。
       return h2('div', { className: 'ydo-an-audience-block' },
         h2('h4', null, label),
-        rows.length ? h2(AudienceBarList, { rows }) : h2('p', { className: 'ydo-hint' }, t('dataInsufficient')),
-        h2('p', { className: 'ydo-hint' }, t('weightedNote')))
+        rows.length ? h2(AudienceBarList, { rows }) : h2('p', { className: 'ydo-hint' }, t('dataInsufficient')))
     }
 
     function audienceGrid(analysis, t) {
       const audience = analysis?.audience
+      const genderRows = dimensionRows(audience?.dimensions?.gender, key => genderLabel(key, t), t)
       const ageRows = dimensionRows(audience?.dimensions?.age, key => formatAgeBucket(key, t), t)
       const provinceRows = dimensionRows(audience?.dimensions?.province, key => key, t)
       const cityRows = dimensionRows(audience?.dimensions?.city_level, key => key, t)
@@ -894,17 +893,11 @@ window.__ModuleLoader__.load({
           pct: item.pct,
         }))
       return h2('div', { className: 'ydo-an-audience' },
+        h2(AudienceBlock, { key: 'gender', label: t('mainGender'), rows: genderRows, t }),
         h2(AudienceBlock, { key: 'age', label: t('mainAge'), rows: ageRows, t }),
         h2(AudienceBlock, { key: 'province', label: t('mainRegion'), rows: provinceRows, t }),
         h2(AudienceBlock, { key: 'city_level', label: t('cityLevel'), rows: cityRows, t }),
         h2(AudienceBlock, { key: 'traffic', label: t('mainTrafficSource'), rows: trafficRows, t }))
-    }
-
-    // 性别头部摘要（v2 §5.3）：有数据时在观众卡顶部占一行，不单独占块。
-    function genderSummaryLine(analysis, t) {
-      const top = ((analysis?.audience?.dimensions?.gender?.distributions) || [])[0]
-      if (!top) return null
-      return h2('p', { className: 'ydo-hint' }, `${t('mainGender')}：${genderLabel(top.key, t)} ${pct(top.pct)}`)
     }
 
     function alertRuleText(alert, t) {
@@ -957,12 +950,12 @@ window.__ModuleLoader__.load({
     ]
 
     function contentMetricNote(item, t) {
-      // 第三段「状态/覆盖率」（UI 优化方案 v2 §5.2）：覆盖率缺失或为 0 → 数据不足；
-      // 0<x<100 → 部分数据 + 覆盖率；覆盖完整 → 不显示状态（「覆盖率 100.0%」是噪音）。
+      // 第三段只保留数据状态：覆盖率缺失或为 0 → 数据不足；0<x<100 → 部分数据；
+      // 覆盖完整 → 不显示状态。覆盖率数值属于内部质量信息，不在内容指标中展示。
       // 真实数值 0 永远照常渲染，不因隐藏覆盖率变成空值。
       const coverage = Number(item && item.coveragePct)
       if (!Number.isFinite(coverage) || coverage <= 0) return t('dataInsufficient')
-      if (coverage < 100) return `${t('dataPartial')} · ${t('coverage')} ${pct(item.coveragePct)}`
+      if (coverage < 100) return t('dataPartial')
       return null
     }
 
@@ -1016,7 +1009,7 @@ window.__ModuleLoader__.load({
           h2('span', { role: 'columnheader' }, t('publishTime')),
           h2('span', { className: 'ydo-ov-num', role: 'columnheader' }, t('colPlay')),
           h2('span', { className: 'ydo-ov-num', role: 'columnheader' }, t('engagement')),
-          h2('span', { role: 'columnheader' }, t('hotBasis'))),
+          h2('span', { className: 'ydo-ov-hot-basis-head', role: 'columnheader' }, t('hotBasis'))),
         ...works.map((work, index) => {
           const lines = basisLines(work.basis)
           return h2('div', { key: work.workId, className: 'ydo-ov-tr ydo-ov-tr-hot-rank', role: 'row' },
@@ -1122,7 +1115,7 @@ window.__ModuleLoader__.load({
         account ? h2('div', { className: 'ydo-ov-panels' },
           h2('section', { className: 'ydo-ov-panel' },
             h2('h3', null, t('contentMetrics')),
-            // 固定指标清单：「指标名 / 主值 / 状态或覆盖率」三段（UI 优化方案 §5.3）；
+            // 固定指标清单：「指标名 / 主值 / 数据状态」三段（UI 优化方案 §5.3）；
             // 缺失值显示 —，真实的 0 保持为 0，服务端未返回的段显式「数据不足」。
             h2('ul', { className: 'ydo-an-metrics' },
               ...contentMetricRows(analysis, t).map(row => h2('li', { key: row.key },
@@ -1131,14 +1124,9 @@ window.__ModuleLoader__.load({
                 row.note ? h2('span', { className: 'ydo-an-metric-note' }, row.note) : null)))),
           h2('section', { className: 'ydo-ov-panel' },
             h2('h3', null, t('audienceTraffic')),
-            // 观众与流量（UI 优化方案 v2 §5.3）：性别头部摘要 + 年龄/地域/城市级别/主要来源
-            // 四块 2×2 网格；评论热词不再展示；参与作品数集中在卡片底部一行。
-            genderSummaryLine(analysis, t),
-            audienceGrid(analysis, t),
-            analysis?.audience?.sampleWorkCount
-              ? h2('p', { className: 'ydo-hint' },
-                t('weightedSample').replace('{count}', String(analysis.audience.sampleWorkCount)))
-              : null)) : null,
+            // 观众与流量（UI 优化方案 v2 §5.3）：性别/年龄/地域/城市级别/主要来源
+            // 统一为同样的卡片；评论热词和加权说明不再展示。
+            audienceGrid(analysis, t))) : null,
 
         account ? h2('section', { className: 'ydo-ov-panel' },
           h2('h3', null, t('accountHotWorks')),
@@ -1270,7 +1258,7 @@ window.__ModuleLoader__.load({
         metric_collect: '累计收藏量', metric_share: '累计分享量', metric_fans: '粉丝数',
         trendCaption: '按采集日收盘值展示，非平台自然日新增；间隔按真实时间跨度标注',
         noCollectGap: '无采集', counterRevised: '平台修正', noTrend: '暂无趋势',
-        contentMetrics: '内容指标', coverage: '覆盖率',
+        contentMetrics: '内容指标',
         cmEngagement: '综合互动率', cmLikeRate: '点赞率', cmCommentRate: '评论率',
         cmCollectRate: '收藏率', cmShareRate: '分享率', cmCompletion5s: '5秒完播率',
         cmAvgViewShare: '平均播放占比', cmAvgWatchDuration: '平均播放时长',
@@ -1280,7 +1268,7 @@ window.__ModuleLoader__.load({
         contractVersionMismatch: '趋势契约版本已更新，请刷新后重试',
         trendRangeTooLarge: '查询跨度超过服务端上限，请缩小范围',
         // 观众与流量开放 + 内容类提醒 + 潜力标签（阶段 3）
-        weightedSample: '按播放量加权（样本 {count} 条）', dataInsufficient: '数据不足', dataPartial: '部分数据',
+        dataInsufficient: '数据不足', dataPartial: '部分数据',
         hotwordStale: '热词已过期，非本轮实时', hotwordStaleBadge: '过期',
         collectedAt: '采集时间',
         labelAbsolute: '绝对爆款', labelAccountRelative: '账号内爆款', labelPotential: '潜力作品',
@@ -1289,7 +1277,6 @@ window.__ModuleLoader__.load({
         // UI 优化方案 v2（2026-09-16）：账号目录一致性、作品数范围口径、加权说明。
         accountCatalogSyncing: '账号列表与统计正在同步', accountCatalogUnavailable: '账号列表暂不可用',
         noWorks: '暂无可统计作品', rangeAllTime: '全部时间', workCountAllTime: '全部时间作品数',
-        weightedNote: '按播放量加权',
         // 二审（2026-09-16）：排行受 top_n 截断属正常展示语义，明确区分完整账号数与展示数。
         rankingScopeHint: '共 {total} 个账号 · 排行展示 {shown} 个',
       },
@@ -1369,7 +1356,7 @@ window.__ModuleLoader__.load({
         metric_collect: 'Favorites', metric_share: 'Shares', metric_fans: 'Followers',
         trendCaption: 'Daily-close snapshots (not platform daily deltas); spans are real',
         noCollectGap: 'No collect', counterRevised: 'Revised', noTrend: 'No trend yet',
-        contentMetrics: 'Content metrics', coverage: 'coverage',
+        contentMetrics: 'Content metrics',
         cmEngagement: 'Engagement', cmLikeRate: 'Like rate', cmCommentRate: 'Comment rate',
         cmCollectRate: 'Favorite rate', cmShareRate: 'Share rate', cmCompletion5s: '5s completion',
         cmAvgViewShare: 'Avg view share', cmAvgWatchDuration: 'Avg watch time',
@@ -1378,14 +1365,13 @@ window.__ModuleLoader__.load({
         accountHotWorks: 'Hot works of this account',
         contractVersionMismatch: 'The trend contract version changed — refresh and retry',
         trendRangeTooLarge: 'Range exceeds the server limit — narrow it',
-        weightedSample: 'play-weighted ({count} works)', dataInsufficient: 'Insufficient data', dataPartial: 'Partial data',
+        dataInsufficient: 'Insufficient data', dataPartial: 'Partial data',
         hotwordStale: 'Stale hotwords, not from this round', hotwordStaleBadge: 'stale',
         collectedAt: 'Collected at',
         labelAbsolute: 'Absolute', labelAccountRelative: 'In-account', labelPotential: 'Potential',
         labelOther: 'Other label', alertRuleOther: 'Other rule alert',
         accountCatalogSyncing: 'Account list and stats are syncing', accountCatalogUnavailable: 'Account list unavailable',
         noWorks: 'No statistically usable works', rangeAllTime: 'All time', workCountAllTime: 'All-time works',
-        weightedNote: 'Play-weighted',
         rankingScopeHint: '{total} accounts in total · ranking shows {shown}',
       },
     }
@@ -2328,9 +2314,9 @@ window.__ModuleLoader__.load({
     .ydo-table{width:max-content;min-width:100%}.ydo-table-head,.ydo-table-row{display:grid;align-items:center}.ydo-table-head{position:sticky;top:0;z-index:3;background:var(--dsw-alias-bg-layer-2);border-bottom:1px solid var(--dsw-alias-border-l1)}.ydo-sort{display:flex;width:100%;align-items:center;gap:4px;min-width:0;padding:0;border:0;background:transparent;color:inherit;font:inherit;text-align:left;cursor:pointer}.ydo-sort-text{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.ydo-sort-arrow{flex:none;min-width:12px;color:var(--dsw-alias-label-secondary)}.ydo-sort-active{color:var(--dsw-alias-label-primary)}.ydo-sort-active .ydo-sort-arrow{color:var(--dsw-alias-brand-primary)}.ydo-cell{padding:8px 10px;font-size:var(--dsh-content-font-size-secondary,13px);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.ydo-cell-count,.ydo-cell-pct,.ydo-cell-seconds{text-align:right;font-variant-numeric:tabular-nums}.ydo-cell-sticky{position:sticky;z-index:2;border-right:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-1)}.ydo-table-head .ydo-cell-sticky{z-index:4;background:var(--dsw-alias-bg-layer-2)}.ydo-table-row{cursor:default;border-bottom:1px solid var(--dsw-alias-border-l1)}.ydo-table-row:hover .ydo-cell{background:var(--dsw-alias-bg-layer-2)}.ydo-table-row:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:-2px}.ydo-cell a{color:var(--dsw-alias-brand-primary);text-decoration:none}.ydo-cell a:hover{text-decoration:underline}.ydo-state{display:grid;min-height:200px;place-items:center;align-content:center;gap:10px;color:var(--dsw-alias-label-secondary);font-size:var(--dsh-content-font-size,14px);text-align:center}.ydo-state p{margin:0;max-width:640px;line-height:1.6}.ydo-state-title{color:var(--dsw-alias-label-primary);font-size:var(--dsw-font-base-16-font-size,16px);font-weight:600}.ydo-state-error .ydo-state-title{color:color-mix(in srgb,var(--dsw-alias-state-error-primary) 50%,var(--dsw-alias-label-primary))}.ydo-hint{margin:0;color:var(--dsw-alias-label-secondary);font-size:var(--dsh-content-font-size-secondary,13px);line-height:1.5}.ydo-error{margin:0;color:color-mix(in srgb,var(--dsw-alias-state-error-primary) 50%,var(--dsw-alias-label-primary));font-size:var(--dsh-content-font-size-secondary,13px)}.ydo-warn{margin:0;color:color-mix(in srgb,var(--dsw-alias-state-warn-primary,#d29922) 50%,var(--dsw-alias-label-primary));font-size:var(--dsh-content-font-size-secondary,13px)}.ydo-ok{margin:0;color:color-mix(in srgb,var(--dsw-alias-state-success-primary,#1a7f37) 50%,var(--dsw-alias-label-primary));font-size:var(--dsh-content-font-size-secondary,13px)}.ydo-spinner{width:16px;height:16px;border:2px solid var(--dsw-alias-border-l2);border-top-color:var(--dsw-alias-brand-primary);border-radius:50%;animation:ydo-spin .8s linear infinite}@keyframes ydo-spin{to{transform:rotate(360deg)}}.ydo-modal-overlay{position:fixed;inset:0;z-index:540;display:grid;place-items:center;background:color-mix(in srgb,var(--dsw-alias-bg-base) 60%,transparent)}.ydo-modal{width:min(1080px,calc(100vw - 48px));max-height:calc(100vh - 64px);display:grid;grid-template-rows:auto 1fr;border:1px solid var(--dsw-alias-border-l1);border-radius:8px;background:var(--dsw-alias-bg-layer-1);box-shadow:0 16px 48px rgba(0,0,0,.24);overflow:hidden}.ydo-modal-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;padding:16px 20px;border-bottom:1px solid var(--dsw-alias-border-l1)}.ydo-modal-head h3{margin:0;font-size:var(--dsw-font-base-16-font-size,16px)}.ydo-modal-meta{margin:4px 0 0;color:var(--dsw-alias-label-secondary);font-size:var(--dsh-content-font-size-secondary,13px)}.ydo-modal-body{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px;padding:20px;overflow:auto}.ydo-panel{padding:14px;border:1px solid var(--dsw-alias-border-l1);border-radius:8px;background:var(--dsw-alias-bg-base)}.ydo-panel h4{margin:0 0 10px;font-size:var(--dsh-content-font-size,14px)}.ydo-panel-gap{border-color:var(--dsw-alias-state-warn-primary,#d29922)}.ydo-gap-list{margin:0;padding-left:18px;display:grid;gap:4px;color:var(--dsw-alias-label-secondary);font-size:var(--dsh-content-font-size-secondary,13px)}.ydo-gap-list code{font-size:var(--dsh-content-font-size-secondary,13px);color:var(--dsw-alias-label-primary)}.ydo-gap-list .ydo-gap-failed{color:color-mix(in srgb,var(--dsw-alias-state-error-primary) 60%,var(--dsw-alias-label-primary))}.ydo-bars{margin:0;padding:0;list-style:none;display:grid;gap:6px}.ydo-bars li{display:grid;grid-template-columns:72px 1fr 56px;align-items:center;gap:8px;font-size:var(--dsh-content-font-size-secondary,13px)}.ydo-bar-label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.ydo-bar-track{display:block;height:6px;border-radius:3px;background:var(--dsw-alias-bg-layer-2);overflow:hidden}.ydo-bar-fill{display:block;height:100%;border-radius:3px;background:var(--dsw-alias-brand-primary)}.ydo-bar-value{text-align:right;font-variant-numeric:tabular-nums;color:var(--dsw-alias-label-secondary)}.ydo-donut-wrap{display:flex;align-items:center;gap:16px}.ydo-donut{position:relative;width:96px;height:96px;border-radius:50%;flex:none}.ydo-donut-hole{position:absolute;inset:22px;border-radius:50%;background:var(--dsw-alias-bg-base)}.ydo-legend{margin:0;padding:0;list-style:none;display:grid;gap:6px;font-size:var(--dsh-content-font-size-secondary,13px)}.ydo-legend li{display:flex;align-items:center;gap:6px}.ydo-legend-dot{width:10px;height:10px;border-radius:50%;flex:none;background:var(--dsw-alias-brand-primary)}.ydo-tags{display:flex;flex-wrap:wrap;gap:6px}.ydo-tag{padding:3px 8px;border-radius:4px;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-secondary);font-size:var(--dsh-content-font-size-secondary,13px)}.ydo-confirm-overlay{position:fixed;inset:0;z-index:560;display:grid;place-items:center;background:color-mix(in srgb,var(--dsw-alias-bg-base) 45%,transparent)}.ydo-confirm{width:min(420px,calc(100vw - 32px));padding:24px;border:1px solid var(--dsw-alias-border-l1);border-radius:8px;background:var(--dsw-alias-bg-layer-1);box-shadow:0 12px 40px rgba(0,0,0,.18)}.ydo-confirm-title{margin:0 0 20px;font-size:var(--dsw-font-base-16-font-size,15px);line-height:1.6}.ydo-confirm-actions{display:flex;justify-content:flex-end;gap:12px}.ydo-confirm-primary{min-height:36px;padding:0 18px;border:0;border-radius:6px;background:var(--dsw-alias-brand-primary);color:var(--dsw-alias-label-primary-foreground);font:inherit;font-weight:600;cursor:pointer}.ydo-confirm-secondary{min-height:36px;padding:0 18px;border:1px solid var(--dsw-alias-border-l1);border-radius:6px;background:var(--dsw-alias-bg-layer-1);color:inherit;font:inherit;cursor:pointer}.ydo-delete-retry{display:grid;gap:8px;justify-items:start;padding:10px 12px;border:1px solid var(--dsw-alias-state-error-primary);border-radius:8px;background:var(--dsw-alias-bg-layer-1)}.ydo-delete-retry .ydo-secondary{min-height:32px}/* 二次优化（§5.2）色彩变量定义在 overlay 作用域，不引入全局污染：性别男=淡蓝/女=柔和红；四类分布（年龄/流量来源/地域/城市级别）条形图淡绿填充，进度分析不受影响。 */
     .ydo-overlay{--ydo-gender-male:#91C5EB;--ydo-gender-female:#E88989;--ydo-distribution-fill:#A6D9B0;--ydo-distribution-fill-hover:#8FC99B}.ydo-bars-distribution .ydo-bar-fill{background:var(--ydo-distribution-fill,#A6D9B0)}.ydo-bars-distribution .ydo-bar-fill:hover{background:var(--ydo-distribution-fill-hover,#8FC99B)}.ydo-ov-page{display:grid;gap:12px;align-content:start;overflow:auto;min-height:0}/* 工具栏（UI 优化方案 v2 §4.1）：grid 两列 minmax(0,1fr) auto——筛选项在左列内部换行，操作区固定行尾。 */
     .ydo-ov-toolbar{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:12px}.ydo-ov-filters{display:flex;align-items:center;gap:12px;flex-wrap:wrap;min-width:0}/* 筛选控件带可见说明文字、高度统一 36px；取消浏览器黑 outline，仅 :focus-visible 显品牌色外环（v2 §4.1/§7）。 */
-    .ydo-ov-filter{display:inline-flex;align-items:center;gap:6px;color:var(--dsw-alias-label-secondary);font-size:var(--dsh-content-font-size-secondary,13px);white-space:nowrap}.ydo-ov-toolbar select{height:36px;max-width:220px;padding:0 10px;border:1px solid var(--dsw-alias-border-l1);border-radius:6px;background:var(--dsw-alias-bg-layer-1);color:inherit;font:inherit;font-size:var(--dsh-content-font-size-secondary,13px);cursor:pointer}.ydo-ov-toolbar select:focus{outline:none}.ydo-ov-toolbar select:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:1px}.ydo-ov-actions{display:flex;align-items:center;gap:8px;margin-left:auto}.ydo-ov-loading{display:flex;align-items:center;gap:8px;color:var(--dsw-alias-label-secondary);font-size:var(--dsh-content-font-size-secondary,13px)}.ydo-ov-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px}.ydo-ov-kpi{display:grid;gap:4px;padding:14px;border:1px solid var(--dsw-alias-border-l1);border-radius:8px;background:var(--dsw-alias-bg-layer-1)}.ydo-ov-kpi-label{color:var(--dsw-alias-label-secondary);font-size:var(--dsh-content-font-size-secondary,13px)}.ydo-ov-kpi-value{font-size:20px;font-weight:650}.ydo-ov-kpi-hint{color:var(--dsw-alias-label-secondary);font-size:12px}.ydo-ov-panel{padding:14px;border:1px solid var(--dsw-alias-border-l1);border-radius:8px;background:var(--dsw-alias-bg-layer-1);container-type:inline-size;container-name:ydo-panel}/* 面板即容器：窄屏表格重排按面板实际宽度触发（容器查询），不受宿主侧栏/窗口差异影响（二审 P2）。 */.ydo-ov-panel h3{margin:0 0 10px;font-size:var(--dsh-content-font-size,14px)}.ydo-ov-panels{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px}.ydo-ov-table{display:grid;border:1px solid var(--dsw-alias-border-l1);border-radius:8px;overflow-x:hidden;overflow-y:auto;max-height:420px}/* 总览表格列轨道按表分组固定（v2 §3.3/§4.2/§4.4）：数值列窄定宽，长文本只由标题/依据列伸缩；表头与数据行共用同一模板；容器禁横向滚动，纵向超限只纵向滚。 */
-    .ydo-ov-tr{display:grid;padding:8px 10px;align-items:center;gap:8px;font-size:var(--dsh-content-font-size-secondary,13px);border-bottom:1px solid var(--dsw-alias-border-l1);min-width:100%}.ydo-ov-tr-rank{grid-template-columns:48px minmax(180px,1.6fr) 80px 76px 100px 76px 82px 82px}.ydo-ov-tr-hot{grid-template-columns:minmax(220px,2fr) minmax(110px,1fr) 124px 84px 76px minmax(220px,1.7fr)}/* 分析页爆款表列序不同（排名居首，方案 §5.5），用专属轨道避免排名落进宽轨（验收建议 1）；发布时间/播放量/互动率固定窄列（v2 §5.4）。 */
-    .ydo-ov-tr-hot-rank{grid-template-columns:minmax(56px,.5fr) minmax(200px,2fr) 124px 84px 76px minmax(220px,1.7fr)}.ydo-ov-tr:last-child{border-bottom:0}.ydo-ov-head{background:var(--dsw-alias-bg-layer-2);font-weight:600}.ydo-ov-num{text-align:right;font-variant-numeric:tabular-nums}.ydo-ov-rankcell{text-align:center;font-variant-numeric:tabular-nums}.ydo-ov-flag{margin-left:8px;padding:2px 6px;border-radius:4px;font-size:12px}.ydo-ov-flag-suspicious{background:var(--dsw-alias-bg-layer-2);color:color-mix(in srgb,var(--dsw-alias-state-warn-primary,#d29922) 70%,var(--dsw-alias-label-primary))}.ydo-ov-flag-expired{background:var(--dsw-alias-bg-layer-2);color:color-mix(in srgb,var(--dsw-alias-state-error-primary) 60%,var(--dsw-alias-label-primary))}/* 状态过旧用语义色（橙），正常数据颜色不变（UI 优化方案 §4.3/§7）。 */
+    .ydo-ov-filter{display:inline-flex;align-items:center;gap:6px;color:var(--dsw-alias-label-secondary);font-size:var(--dsh-content-font-size-secondary,13px);white-space:nowrap}.ydo-ov-toolbar select{height:36px;max-width:220px;padding:0 10px;border:1px solid var(--dsw-alias-border-l1);border-radius:6px;background:var(--dsw-alias-bg-layer-1);color:inherit;font:inherit;font-size:var(--dsh-content-font-size-secondary,13px);cursor:pointer}.ydo-ov-toolbar select:focus{outline:0;border-color:var(--dsw-alias-border-l1);box-shadow:none}.ydo-ov-toolbar select:focus-visible{outline:0;border-color:#3B82F6;box-shadow:0 0 0 2px color-mix(in srgb,#3B82F6 28%,transparent)}.ydo-ov-actions{display:flex;align-items:center;gap:8px;margin-left:auto}.ydo-ov-loading{display:flex;align-items:center;gap:8px;color:var(--dsw-alias-label-secondary);font-size:var(--dsh-content-font-size-secondary,13px)}.ydo-ov-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px}.ydo-ov-kpi{display:grid;gap:4px;padding:14px;border:1px solid var(--dsw-alias-border-l1);border-radius:8px;background:var(--dsw-alias-bg-layer-1)}.ydo-ov-kpi-label{color:var(--dsw-alias-label-secondary);font-size:var(--dsh-content-font-size-secondary,13px)}.ydo-ov-kpi-value{font-size:20px;font-weight:650}.ydo-ov-kpi-hint{color:var(--dsw-alias-label-secondary);font-size:12px}.ydo-ov-panel{padding:14px;border:1px solid var(--dsw-alias-border-l1);border-radius:8px;background:var(--dsw-alias-bg-layer-1);container-type:inline-size;container-name:ydo-panel}/* 面板即容器：窄屏表格重排按面板实际宽度触发（容器查询），不受宿主侧栏/窗口差异影响（二审 P2）。 */.ydo-ov-panel h3{margin:0 0 10px;font-size:var(--dsh-content-font-size,14px)}.ydo-ov-panels{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px}.ydo-ov-table{display:grid;border:1px solid var(--dsw-alias-border-l1);border-radius:8px;overflow-x:hidden;overflow-y:auto;max-height:420px}/* 总览表格列轨道按表分组固定（v2 §3.3/§4.2/§4.4）：数值列窄定宽，长文本只由标题/依据列伸缩；表头与数据行共用同一模板；容器禁横向滚动，纵向超限只纵向滚。 */
+    .ydo-ov-tr{display:grid;box-sizing:border-box;padding:8px 10px;align-items:center;gap:8px;font-size:var(--dsh-content-font-size-secondary,13px);border-bottom:1px solid var(--dsw-alias-border-l1);min-width:100%}.ydo-ov-tr-rank{grid-template-columns:48px minmax(90px,.8fr) repeat(6,minmax(72px,.35fr))}.ydo-ov-tr-hot{grid-template-columns:minmax(220px,2fr) minmax(110px,1fr) 124px 84px 76px minmax(220px,1.7fr)}/* 分析页爆款表列序不同（排名居首，方案 §5.5），用专属轨道避免排名落进宽轨（验收建议 1）；发布时间/播放量/互动率固定窄列（v2 §5.4）。 */
+    .ydo-ov-tr-hot-rank{grid-template-columns:minmax(56px,.5fr) minmax(200px,2fr) 124px 84px 76px minmax(220px,1.7fr)}.ydo-ov-tr:last-child{border-bottom:0}.ydo-ov-head{background:var(--dsw-alias-bg-layer-2);font-weight:600}.ydo-ov-num{text-align:right;font-variant-numeric:tabular-nums}.ydo-ov-hot-basis-head{text-align:center;padding-inline:12px}.ydo-ov-rankcell{text-align:center;font-variant-numeric:tabular-nums}.ydo-ov-flag{margin-left:8px;padding:2px 6px;border-radius:4px;font-size:12px}.ydo-ov-flag-suspicious{background:var(--dsw-alias-bg-layer-2);color:color-mix(in srgb,var(--dsw-alias-state-warn-primary,#d29922) 70%,var(--dsw-alias-label-primary))}.ydo-ov-flag-expired{background:var(--dsw-alias-bg-layer-2);color:color-mix(in srgb,var(--dsw-alias-state-error-primary) 60%,var(--dsw-alias-label-primary))}/* 状态过旧用语义色（橙），正常数据颜色不变（UI 优化方案 §4.3/§7）。 */
     .ydo-ov-session-stale{color:color-mix(in srgb,var(--dsw-alias-state-warn-primary,#d29922) 70%,var(--dsw-alias-label-primary))}.ydo-ov-dist{margin:0;padding:0;list-style:none;display:grid;gap:6px}.ydo-ov-dist li{display:grid;grid-template-columns:20px minmax(96px,140px) 1fr 44px;align-items:center;gap:8px;font-size:var(--dsh-content-font-size-secondary,13px)}/* 爆款分布前三名固定语义色（v2 §4.3）：1 橙 / 2 蓝 / 3 紫，第 4 名起中性品牌色；名次同时用排名数字表达。 */
     .ydo-ov-dist-rank{text-align:center;font-variant-numeric:tabular-nums;color:var(--dsw-alias-label-secondary)}.ydo-ov-dist-top1 .ydo-bar-fill{background:#E8833A}.ydo-ov-dist-top1 .ydo-ov-dist-rank{color:#E8833A;font-weight:650}.ydo-ov-dist-top2 .ydo-bar-fill{background:#3B82F6}.ydo-ov-dist-top2 .ydo-ov-dist-rank{color:#3B82F6;font-weight:650}.ydo-ov-dist-top3 .ydo-bar-fill{background:#8B5CF6}.ydo-ov-dist-top3 .ydo-ov-dist-rank{color:#8B5CF6;font-weight:650}.ydo-ov-alerts{margin:0;padding-left:18px;display:grid;gap:6px;font-size:var(--dsh-content-font-size-secondary,13px);color:var(--dsw-alias-label-secondary)}.ydo-ov-drawer-overlay{position:fixed;inset:0;z-index:560;display:flex;justify-content:flex-end;background:color-mix(in srgb,var(--dsw-alias-bg-base) 45%,transparent)}/* 抽屉（UI 优化方案 v2 §6.2）：宽度 min(720px,72vw)、高度 min(860px,84vh) 且不低于视口 75%；纵向 flex——内容不足时操作按钮沉底，超出时随滚动区排布。 */
     .ydo-ov-drawer{width:min(720px,72vw);height:min(860px,84vh);min-height:75vh;display:flex;flex-direction:column;gap:12px;padding:20px;border-left:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-1);overflow:auto}.ydo-ov-drawer header{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}.ydo-ov-drawer h3{margin:0;font-size:var(--dsw-font-base-16-font-size,16px)}/* 关闭按钮 40×40、::after 外扩 2px 保证 ≥44px 点击区域（v2 §6.2）；焦点态同全局 :focus-visible 约定。 */
