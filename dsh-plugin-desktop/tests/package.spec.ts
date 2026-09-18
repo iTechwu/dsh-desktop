@@ -16,6 +16,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import sharp from 'sharp'
 import { describe, expect, it } from 'vitest'
 import { parse as parseYaml } from 'yaml'
+import { resolveBrandConfigPath } from '../scripts/brand-config.mjs'
 
 const packageRoot = new URL('../', import.meta.url)
 const workspaceRoot = new URL('../', packageRoot)
@@ -58,7 +59,12 @@ const builderConfig = JSON.parse(readFileSync(new URL('electron-builder.json', p
   portable?: Record<string, unknown>
   linux?: { icon?: unknown }
 }
-const brandConfig = JSON.parse(readFileSync(new URL('../brand/brand.config.json', packageRoot), 'utf8')) as {
+// Resolve the brand document the same way the build does, so packaging jobs
+// dispatched with a non-default BRAND compare against the matching channel.
+const brandConfig = JSON.parse(readFileSync(
+  resolveBrandConfigPath(process.env, fileURLToPath(workspaceRoot)),
+  'utf8',
+)) as {
   activeChannel?: string
   channels?: Record<string, { productName?: unknown; appId?: unknown; artifactPrefix?: unknown }>
   nsis?: { shortcutName?: unknown }

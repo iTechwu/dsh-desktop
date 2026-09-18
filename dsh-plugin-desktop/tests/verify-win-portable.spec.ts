@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import AdmZip from 'adm-zip'
 import { afterEach, describe, expect, it } from 'vitest'
+import { DESKTOP_ARTIFACT_PREFIX, DESKTOP_PRODUCT_NAME } from '../src/product-identity.ts'
 import { verifyWindowsPortable } from '../scripts/verify-win-portable.ts'
 
 const temporaryRoots: string[] = []
@@ -20,9 +21,9 @@ function fixture(version = '2.0.0'): { readonly root: string; readonly portable:
   temporaryRoots.push(root)
   const dist = join(root, 'dist')
   mkdirSync(dist, { recursive: true })
-  const portable = join(dist, `Yootun-Agent-Beta-${version}-x64-Portable.zip`)
+  const portable = join(dist, `${DESKTOP_ARTIFACT_PREFIX}-${version}-x64-Portable.zip`)
   const archive = new AdmZip()
-  archive.addFile('Yootun-Agent Beta.exe', portableExecutable())
+  archive.addFile(`${DESKTOP_PRODUCT_NAME}.exe`, portableExecutable())
   archive.addFile('resources/app.asar', Buffer.from('asar'))
   archive.writeZip(portable)
   return { root, portable }
@@ -43,7 +44,7 @@ describe('Windows portable artifact verification', () => {
     const value = fixture('1.9.0')
 
     expect(() => verifyWindowsPortable({ desktopRoot: value.root, version: '2.0.0' }))
-      .toThrow('Yootun-Agent-Beta-2.0.0-x64-Portable.zip')
+      .toThrow(`${DESKTOP_ARTIFACT_PREFIX}-2.0.0-x64-Portable.zip`)
   })
 
   it('rejects an application entry without a Windows PE header', () => {
@@ -51,7 +52,7 @@ describe('Windows portable artifact verification', () => {
     const invalid = portableExecutable()
     invalid.write('NO', 0, 'ascii')
     const archive = new AdmZip()
-    archive.addFile('Yootun-Agent Beta.exe', invalid)
+    archive.addFile(`${DESKTOP_PRODUCT_NAME}.exe`, invalid)
     archive.addFile('resources/app.asar', Buffer.from('asar'))
     archive.writeZip(value.portable)
 

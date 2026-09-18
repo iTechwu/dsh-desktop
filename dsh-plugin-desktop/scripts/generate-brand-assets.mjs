@@ -73,9 +73,53 @@ for (let pixel = 0; pixel < visited.length; pixel += 1) {
   data[offset + 3] = 0
 }
 
-const transparentArtwork = await sharp(data, {
+const transparentArtwork = await sharp(centeredCanvas(data, visited, info), {
   raw: { width: info.width, height: info.height, channels: info.channels },
 }).png({ compressionLevel: 9 }).toBuffer()
+
+/**
+ * Re-center the surviving artwork on the square canvas.
+ *
+ * Brand sources may carry asymmetric margins; the packaging gates require a
+ * symmetric visual inset, so derive the content bounding box from the surviving
+ * alpha and shift it to the exact center. Integer flooring keeps the output
+ * deterministic; an already-centered source copies through byte-identical.
+ * @param {Buffer} source - raw RGBA canvas after the exterior white removal.
+ * @param {Uint8Array} visited - exterior pixels already cleared by the flood fill.
+ * @param {{ width: number, height: number, channels: number }} info - raw buffer geometry.
+ * @returns {Buffer} raw RGBA canvas with the content bounding box centered.
+ */
+function centeredCanvas(source, visited, info) {
+  let minX = info.width
+  let minY = info.height
+  let maxX = -1
+  let maxY = -1
+  for (let y = 0; y < info.height; y += 1) {
+    for (let x = 0; x < info.width; x += 1) {
+      if (visited[y * info.width + x] === 1) continue
+      if (source[(y * info.width + x) * info.channels + 3] === 0) continue
+      if (x < minX) minX = x
+      if (x > maxX) maxX = x
+      if (y < minY) minY = y
+      if (y > maxY) maxY = y
+    }
+  }
+  if (maxX < 0) {
+    throw new Error('generate-brand-assets: app-icon-source.jpg has no visible artwork after the white-margin removal')
+  }
+  const contentWidth = maxX - minX + 1
+  const contentHeight = maxY - minY + 1
+  const shiftX = Math.floor((info.width - contentWidth) / 2) - minX
+  const shiftY = Math.floor((info.height - contentHeight) / 2) - minY
+  if (shiftX === 0 && shiftY === 0) return source
+  const centered = Buffer.alloc(source.length)
+  for (let y = minY; y <= maxY; y += 1) {
+    const sourceStart = (y * info.width + minX) * info.channels
+    const targetStart = ((y + shiftY) * info.width + (minX + shiftX)) * info.channels
+    source.copy(centered, targetStart, sourceStart, sourceStart + contentWidth * info.channels)
+  }
+  return centered
+}
 
 await Promise.all([
   sharp(transparentArtwork)
