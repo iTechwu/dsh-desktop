@@ -21,8 +21,11 @@ export const BRAND_RELEASE_IDENTITIES = Object.freeze({
 /** Identity selected by brand.config.json activeChannel. */
 export const BRAND_ACTIVE_CHANNEL = "beta" as const
 
+/** Build-time white-label variant, widened so either brand's sources typecheck. */
+export type BrandVariant = 'yootun' | 'sensteed'
+
 /** Build-time white-label variant. */
-export const BRAND_VARIANT = "yootun" as const
+export const BRAND_VARIANT: BrandVariant = "yootun"
 
 /** Tenant identity bound to the build-time brand. */
 export const BRAND_TENANT = "yootun" as const
