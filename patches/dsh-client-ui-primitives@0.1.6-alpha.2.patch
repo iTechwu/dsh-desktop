@@ -1,8 +1,8 @@
 diff --git a/lib/markdown/MarkdownText.module.css b/lib/markdown/MarkdownText.module.css
-index 652affc..70e08b0 100644
+index 508c592..4cc9e67 100644
 --- a/lib/markdown/MarkdownText.module.css
 +++ b/lib/markdown/MarkdownText.module.css
-@@ -193,25 +193,27 @@
+@@ -195,25 +195,27 @@
    overscroll-behavior-x: contain;
  }
  

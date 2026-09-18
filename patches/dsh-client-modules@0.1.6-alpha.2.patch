@@ -1,8 +1,8 @@
 diff --git a/lib/index.js b/lib/index.js
-index 5127c6c..2791de3 100644
+index a2888e9..84c4032 100644
 --- a/lib/index.js
 +++ b/lib/index.js
-@@ -253,7 +253,7 @@ function sourceMapSnapshot(clientPath) {
+@@ -256,7 +256,7 @@ function readSourceMap(clientPath) {
  /** Count generated lines while assembling indexed-map section offsets. */
  function newlineCount(value) {
  	let count = 0;
