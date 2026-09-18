@@ -24,6 +24,9 @@ export const BRAND_ACTIVE_CHANNEL = "beta" as const
 /** Build-time white-label variant. */
 export const BRAND_VARIANT = "yootun" as const
 
+/** Tenant identity bound to the build-time brand. */
+export const BRAND_TENANT = "yootun" as const
+
 /** Artifact filename prefix for the active channel (Setup/Portable/DMG stems). */
 export const BRAND_ARTIFACT_PREFIX = "Yootun-Agent-Beta"
 

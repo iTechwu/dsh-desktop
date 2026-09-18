@@ -55,7 +55,7 @@ import {
   DESKTOP_PACKAGE_NAME,
   DESKTOP_PACKAGE_NAMES,
 } from './product-identity.ts'
-import { BRAND_VARIANT } from './generated-product-identity.ts'
+import { BRAND_TENANT, BRAND_VARIANT } from './generated-product-identity.ts'
 import {
   DEFAULT_MACOS_WINDOW_MATERIAL,
   DEFAULT_WINDOWS_WINDOW_MATERIAL,
@@ -1158,6 +1158,7 @@ export function prepareDesktopProfile(
       config: {
         apiKeyEnv: DOFE_MODEL_API_KEY_ENV,
         baseURL: DOFE_MODEL_BASE_URL,
+        headers: { 'X-Company-Code': BRAND_TENANT },
         // The DoFe gateway only exposes the OpenAI-compatible surface
         // ({baseURL}/chat/completions); the 0.1.6 llm-deepseek default
         // Messages protocol would hit {baseURL}/v1/messages and 404.

@@ -83,6 +83,7 @@ export function validateBrandConfig(document, sourcePath = 'brand.config.json') 
   if (config.variant !== undefined) {
     requirePattern(config, 'variant', /^(?:yootun|sensteed)$/u, '', push, 'expected yootun or sensteed')
   }
+  requireNonEmptyString(config, 'tenant', '', push)
 
   const channels = requireObject(config, 'channels', push)
   if (channels !== undefined) {
@@ -207,6 +208,9 @@ export const BRAND_ACTIVE_CHANNEL = ${JSON.stringify(config.activeChannel)} as c
 
 /** Build-time white-label variant. */
 export const BRAND_VARIANT = ${JSON.stringify(config.variant ?? 'yootun')} as const
+
+/** Tenant identity bound to the build-time brand. */
+export const BRAND_TENANT = ${JSON.stringify(config.tenant)} as const
 
 /** Artifact filename prefix for the active channel (Setup/Portable/DMG stems). */
 export const BRAND_ARTIFACT_PREFIX = ${JSON.stringify(resolveActiveChannel(config).artifactPrefix)}

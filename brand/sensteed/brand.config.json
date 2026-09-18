@@ -1,5 +1,6 @@
 {
   "variant": "sensteed",
+  "tenant": "sensteed",
   "activeChannel": "beta",
   "channels": {
     "stable": {
