@@ -40,8 +40,11 @@ describe('Desktop dialog native UI', () => {
 
   it('tones the advisory for both color schemes', () => {
     const source = readFileSync(new URL('../src/native-ui/desktop-dialog/App.tsx', import.meta.url), 'utf8')
-    // A bare `text-amber-100` is near white and disappears on the light-mode amber panel.
-    expect(source).toContain('text-amber-900 dark:text-amber-100')
+    // A bare `text-amber-100` is near white and disappears on the light-mode amber panel;
+    // the desktop shell deepens the light side to `amber-950` for extra contrast. The
+    // dark border utility sits between the two tone utilities, so assert them separately.
+    expect(source).toContain('text-amber-950')
+    expect(source).toContain('dark:text-amber-100')
   })
 
 })
