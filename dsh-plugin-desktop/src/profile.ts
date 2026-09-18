@@ -1161,7 +1161,7 @@ export function prepareDesktopProfile(
         headers: { 'X-Company-Code': BRAND_TENANT },
         // The DoFe gateway only exposes the OpenAI-compatible surface
         // ({baseURL}/chat/completions); the 0.1.6 llm-deepseek default
-        // Messages protocol would hit {baseURL}/v1/messages and 404.
+        // Anthropic Messages would hit {baseURL}/v1/messages and 404.
         protocol: 'chat-completions',
         connectionPolicy: 'composition',
         models: [{
