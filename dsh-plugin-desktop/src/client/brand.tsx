@@ -5,7 +5,7 @@ import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type { HeroBrandMarkOwnerProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { SidebarBrandMarkOwnerProps } from '@deepseek-ai/dsh-client-ui-sidebar/client'
 import { heroBrandDataUrl, sidebarBrandDataUrl } from './generated-brand-assets.ts'
-import { BRAND_WORDMARK_DISPLAY } from '../generated-product-identity.ts'
+import { BRAND_MISSION, BRAND_WORDMARK_DISPLAY } from '../generated-product-identity.ts'
 
 const DESKTOP_BRAND_PRIORITY = -100
 
@@ -28,6 +28,7 @@ export function YootunSidebarBrandMark(_props: SidebarBrandMarkOwnerProps) {
       height={36}
       src={sidebarBrandDataUrl}
       style={sidebarStyle}
+      title={BRAND_MISSION.zh}
       width={200}
     />
   )
@@ -49,6 +50,7 @@ export function YootunHeroBrandMark({ size, className }: HeroBrandMarkOwnerProps
       height={size}
       src={heroBrandDataUrl}
       style={{ display: 'block', objectFit: 'contain' }}
+      title={BRAND_MISSION.zh}
       width={size}
     />
   )

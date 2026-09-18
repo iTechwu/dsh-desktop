@@ -33,6 +33,12 @@ export const BRAND_DISPLAY_NAME = Object.freeze({
   locale: "Yootun-Agent",
 })
 
+/** Brand mission shown by the client brand surfaces. */
+export const BRAND_MISSION = Object.freeze({
+  zh: "服务与成就中国智造的全球竞争力",
+  en: "Serve and advance the global competitiveness of Chinese intelligent manufacturing",
+})
+
 /** Update service contract served by the release infrastructure. */
 export const BRAND_UPDATE_SERVICE = Object.freeze({
   endpoint: "https://ixicai.cn/api/desktop/version",

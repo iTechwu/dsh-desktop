@@ -95,6 +95,10 @@ export function validateBrandConfig(document, sourcePath = 'brand.config.json') 
   displayName !== undefined && requireNonEmptyString(displayName, 'titlebar', 'displayName.', push)
   displayName !== undefined && requireNonEmptyString(displayName, 'locale', 'displayName.', push)
 
+  const mission = config.mission === undefined ? undefined : requireObject(config, 'mission', push)
+  mission !== undefined && requireNonEmptyString(mission, 'zh', 'mission.', push)
+  mission !== undefined && requireNonEmptyString(mission, 'en', 'mission.', push)
+
   const artwork = requireObject(config, 'artwork', push)
   if (artwork !== undefined) {
     requireRelativePath(artwork, 'appIconSource', 'artwork.', push)
@@ -199,6 +203,12 @@ export const BRAND_SHORTCUT_NAME = ${JSON.stringify(config.nsis.shortcutName)}
 export const BRAND_DISPLAY_NAME = Object.freeze({
   titlebar: ${JSON.stringify(config.displayName.titlebar)},
   locale: ${JSON.stringify(config.displayName.locale)},
+})
+
+/** Brand mission shown by the client brand surfaces. */
+export const BRAND_MISSION = Object.freeze({
+  zh: ${JSON.stringify(config.mission?.zh ?? '')},
+  en: ${JSON.stringify(config.mission?.en ?? '')},
 })
 
 /** Update service contract served by the release infrastructure. */

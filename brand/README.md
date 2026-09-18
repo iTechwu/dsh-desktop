@@ -18,6 +18,8 @@ corepack pnpm brand:docs                                   # 文档围栏区域 
 corepack pnpm check                                        # 全量门禁(含 verify:brand / brand:check)
 ```
 
+当前品牌配置采用山子高科官网公开的品牌信息：使命为“服务与成就中国智造的全球竞争力”。Logo 素材来自山子高科官网的 Logo 资源（`https://www.sensteed.com/templates/default/static/images/logo.png`），仅用于本项目的品牌展示构建。
+
 ## 字段说明
 
 | 字段 | 用途 | 注意 |

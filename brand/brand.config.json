@@ -19,6 +19,10 @@
     "titlebar": "Yootun-Agent",
     "locale": "Yootun-Agent"
   },
+  "mission": {
+    "zh": "服务与成就中国智造的全球竞争力",
+    "en": "Serve and advance the global competitiveness of Chinese intelligent manufacturing"
+  },
   "artwork": {
     "appIconSource": "brand/assets/app-icon-source.jpg",
     "sidebarMark": "brand/assets/sidebar-mark.png",
