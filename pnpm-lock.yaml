@@ -1077,6 +1077,9 @@ importers:
       '@deepseek-ai/dsh-deque':
         specifier: workspace:*
         version: link:../deepseek-harness/packages/util/deque
+      '@deepseek-ai/dsh-experimental-agent-team':
+        specifier: workspace:*
+        version: link:../deepseek-harness/packages/experimental/agent-team
       '@deepseek-ai/dsh-file-reference':
         specifier: workspace:*
         version: link:../deepseek-harness/packages/context/file-reference
