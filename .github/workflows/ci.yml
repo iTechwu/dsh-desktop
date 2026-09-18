@@ -6,6 +6,15 @@ on:
   push:
     branches: [master, dev]
   workflow_dispatch:
+    inputs:
+      brand:
+        description: 'White-label brand variant for the packaged applications'
+        type: choice
+        options:
+          - yootun
+          - sensteed
+        default: yootun
+        required: false
 
 permissions:
   contents: read
@@ -136,6 +145,8 @@ jobs:
       # Keep native fs-ext builds on the supported VS 2022 toolchain.
       GYP_MSVS_VERSION: '2022'
       npm_config_msvs_version: '2022'
+      # Dispatch selects the white-label variant; pushes and PRs stay yootun.
+      BRAND: ${{ inputs.brand || 'yootun' }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -193,10 +204,10 @@ jobs:
       - name: Upload Windows applications
         uses: actions/upload-artifact@v7
         with:
-          name: yootun-agent-windows-x64
+          name: ${{ inputs.brand || 'yootun' }}-agent-windows-x64
           path: |
-            dsh-plugin-desktop/dist/Yootun-Agent-Beta-*-Setup.exe
-            dsh-plugin-desktop/dist/Yootun-Agent-Beta-*-Portable.zip
+            dsh-plugin-desktop/dist/*-Agent-Beta-*-Setup.exe
+            dsh-plugin-desktop/dist/*-Agent-Beta-*-Portable.zip
           if-no-files-found: error
           retention-days: 7
 
@@ -209,6 +220,9 @@ jobs:
     if: needs.changes.outputs.product == 'true'
     runs-on: macos-latest
     timeout-minutes: 60
+    env:
+      # Dispatch selects the white-label variant; pushes and PRs stay yootun.
+      BRAND: ${{ inputs.brand || 'yootun' }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -266,7 +280,7 @@ jobs:
       - name: Upload macOS application
         uses: actions/upload-artifact@v7
         with:
-          name: yootun-agent-macos-universal
+          name: ${{ inputs.brand || 'yootun' }}-agent-macos-universal
           path: dsh-plugin-desktop/dist/mac-smoke/*.dmg
           if-no-files-found: error
           retention-days: 7
