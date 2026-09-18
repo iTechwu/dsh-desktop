@@ -213,9 +213,19 @@ function AccessForm({ credentials, settingsApi, settingsScope, t, onboarding, on
         body: JSON.stringify({ key }),
       })
       const payload = await response.json() as unknown
-      const found = typeof payload === 'object' && payload !== null && Array.isArray((payload as { models?: unknown }).models)
-        ? (payload as { models: DofeModel[] }).models
-        : []
+      // Treat the renderer response as untrusted even though it comes from our
+      // same-origin route. A malformed row must become an empty catalog rather
+      // than reaching JSX and taking down the whole core page.
+      let found: DofeModel[] = []
+      if (typeof payload === 'object' && payload !== null && Array.isArray((payload as { models?: unknown }).models)) {
+        try {
+          found = parseDofeModelCatalog((payload as { models: unknown[] }).models)
+        } catch {
+          // A gateway response is external input. Keep the settings page alive
+          // if a future catalog shape violates the parser's expectations.
+          found = []
+        }
+      }
       if (!response.ok || found.length === 0) {
         setModels([])
         setSelectedModel('')
