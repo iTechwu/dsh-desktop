@@ -62,7 +62,6 @@
     ".ci/dsh-yootun-ui/test/overlay-contract.test.mjs": 1,
     ".ci/dsh-yootun-ui/test/plugin.test.mjs": 2,
     ".ci/dsh-yootun-xhs-operation/package.json": 1,
-    ".github/workflows/ci.yml": 2,
     "PRIVACY.md": 11,
     "PRIVACY.zh.md": 10,
     "README.en.md": 7,

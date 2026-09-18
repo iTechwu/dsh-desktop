@@ -4,7 +4,8 @@
  * A white-label operator shrinks `brand/legacy-tokens-allowlist.json` as they
  * sweep the long tail; this gate only ever fires on GROWTH (a token count
  * above the recorded allowance, or tokens in a file that had none), so it
- * never blocks the initial commit of existing copy.
+ * never blocks the initial commit of existing copy. `--seed` re-baselines the
+ * recorded allowance from the current tree after a deliberate copy change.
  */
 
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
@@ -57,13 +58,19 @@ function seedAllowlist(files) {
 
 const trackedFiles = listTrackedFiles()
 let allowance
+let allowlistMissing = false
 try {
   const parsed = JSON.parse(readFileSync(resolve(repositoryRoot, allowlistPath), 'utf8'))
   allowance = parsed.allowance ?? {}
 } catch {
   allowance = seedAllowlist(trackedFiles)
+  allowlistMissing = true
   console.error(`allowlist was missing; seeded with ${Object.keys(allowance).length} entries at ${allowlistPath}`)
   process.exitCode = 1
+}
+if (SEED_ON_DRIFT && !allowlistMissing) {
+  allowance = seedAllowlist(trackedFiles)
+  console.error(`allowlist re-baselined with ${Object.keys(allowance).length} entries at ${allowlistPath}`)
 }
 
 const violations = []
