@@ -35,7 +35,7 @@ function fixture(options: Partial<ProfileCheckpointOptions> = {}): {
   const userData = join(root, 'user-data')
   mkdirSync(profile, { recursive: true })
   mkdirSync(userData)
-  writeFileSync(join(home, 'settings.yaml'), 'dsh-desktop:\n  mode: advanced\n')
+  writeFileSync(join(home, 'settings.yaml'), 'sensteed-agent:\n  mode: advanced\n')
   writeFileSync(join(home, 'cordis.patch.yml'), '[]\n')
   writeFileSync(join(profile, 'package.json'), '{"name":"healthy-0"}\n')
   writeFileSync(join(profile, 'pnpm-lock.yaml'), 'lockfileVersion: 9\n')
@@ -105,7 +105,7 @@ describe('Desktop profile health checkpoints', () => {
       'home/cordis.patch.yml',
     ])
     expect(readFileSync(join(slots[0]!.snapshotDirectory, 'home', 'settings.yaml'), 'utf8'))
-      .toBe('dsh-desktop:\n  mode: advanced\n')
+      .toBe('sensteed-agent:\n  mode: advanced\n')
     expect(existsSync(join(slots[0]!.snapshotDirectory, 'manifest.json'))).toBe(true)
     if (process.platform !== 'win32') {
       expect(lstatSync(join(slots[0]!.snapshotDirectory, 'manifest.json')).mode & 0o777).toBe(0o600)
@@ -168,7 +168,7 @@ describe('Desktop profile health checkpoints', () => {
       changedFiles: expect.arrayContaining(['home/settings.yaml', 'home/cordis.patch.yml']),
     })
     expect(readFileSync(join(target.home, 'settings.yaml'), 'utf8'))
-      .toBe('dsh-desktop:\n  mode: advanced\n')
+      .toBe('sensteed-agent:\n  mode: advanced\n')
     expect(readFileSync(join(target.home, 'cordis.patch.yml'), 'utf8')).toBe('[]\n')
   })
 

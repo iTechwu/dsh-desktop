@@ -64,7 +64,7 @@ function options(
     distDir: '/release/dist',
     productName,
     listDmgs: () => [`/release/dist/${dmgName}.dmg`],
-    makeMountPoint: () => '/private/tmp/dsh-desktop-dmg-smoke-test',
+    makeMountPoint: () => '/private/tmp/sensteed-agent-dmg-smoke-test',
     run: (command, args) => { calls.push({ command, args: [...args] }) },
     removeMountPoint,
     exists: existsSync,

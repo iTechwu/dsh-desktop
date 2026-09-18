@@ -25,7 +25,7 @@ const MAX_PROFILE_NAME_LENGTH = 255
 const MAX_LAN_URLS = 32
 const MAX_LAN_ERROR_LENGTH = 128
 const BROWSER_AUTH_TOKEN_QUERY = /^\?token=[A-Za-z0-9_-]{43}$/u
-const LAN_CA_PATH = '/.well-known/dsh-desktop-ca.crt'
+const LAN_CA_PATH = '/.well-known/sensteed-agent-ca.crt'
 const LAN_ERROR_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/u
 const SHA256_FINGERPRINT_PATTERN = /^[a-f0-9]{64}$/u
 

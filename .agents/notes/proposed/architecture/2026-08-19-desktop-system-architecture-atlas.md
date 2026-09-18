@@ -22,7 +22,7 @@ The architecture has four layers: the Electron native shell, the Cordis Host, th
 
 ```mermaid
 flowchart LR
-  User[User] -->|window, tray, system dialogs| Desktop[DSH Desktop]
+  User[User] -->|window, tray, system dialogs| Desktop[Sensteed Agent]
   Desktop -->|HTTP / WebSocket, loopback only| LocalWeb[Local DSH Web carrier]
   Desktop -->|profile and settings reads/writes| Home[DSH home]
   Desktop -->|explicit selection and admission| Workspace[Local workspace]
@@ -229,7 +229,7 @@ flowchart TB
   Patch --> Pnpm[desktop-pnpm]
   Patch --> Profiles[desktop-profiles]
   Patch --> Updates[desktop-updates]
-  Shell --> Mode{dsh-desktop.mode}
+  Shell --> Mode{sensteed-agent.mode}
   Mode -->|compatibility| Official[Official layout/sidebar/conversation]
   Mode -->|advanced, Windows/macOS| DesktopLayout[Desktop root + layout + native material]
   DesktopLayout --> OfficialFeatures[Official sidebar/conversation retain feature state]

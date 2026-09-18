@@ -8,7 +8,7 @@ import {
 } from './lan-https-ingress.ts'
 
 /** Public CA download path served through the Desktop Web carrier and HTTPS edge. */
-export const DESKTOP_LAN_HTTPS_CA_PATH = '/.well-known/dsh-desktop-ca.crt'
+export const DESKTOP_LAN_HTTPS_CA_PATH = '/.well-known/sensteed-agent-ca.crt'
 
 /** Renderer-safe state for an available, inactive, or failed LAN HTTPS edge. */
 export interface DesktopLanHttpsRuntimeSnapshot {

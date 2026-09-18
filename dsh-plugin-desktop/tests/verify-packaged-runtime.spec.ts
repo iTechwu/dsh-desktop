@@ -64,7 +64,7 @@ function context(
     ...(arch === undefined ? {} : { arch }),
     packager: {
       ...(executableName === undefined ? {} : { executableName }),
-      appInfo: { productFilename: 'DSH Desktop' },
+      appInfo: { productFilename: 'Sensteed Agent' },
     },
   }
 }
@@ -229,7 +229,7 @@ describe('packaged desktop runtime verification', () => {
   })
 
   it('recursively derives every non-map desktop runtime file from the completed build', () => {
-    const root = mkdtempSync(join(tmpdir(), 'dsh-desktop-runtime-list-'))
+    const root = mkdtempSync(join(tmpdir(), 'sensteed-agent-runtime-list-'))
     mkdirSync(join(root, 'native-ui'))
     writeFileSync(join(root, 'main.js'), '')
     writeFileSync(join(root, 'main.js.map'), '')
@@ -361,13 +361,13 @@ describe('packaged desktop runtime verification', () => {
   it.each([
     [
       'darwin',
-      join('/build', 'DSH Desktop.app', 'Contents', 'Resources', 'app.asar'),
-      join('/build', 'DSH Desktop.app', 'Contents', 'MacOS', 'DSH Desktop'),
+      join('/build', 'Sensteed Agent.app', 'Contents', 'Resources', 'app.asar'),
+      join('/build', 'Sensteed Agent.app', 'Contents', 'MacOS', 'Sensteed Agent'),
     ],
     [
       'win32',
       join('/build', 'resources', 'app.asar'),
-      join('/build', 'DSH Desktop.exe'),
+      join('/build', 'Sensteed Agent.exe'),
     ],
   ])('inspects the %s selective ASAR layout', (platform, expectedPath, expectedExecutable) => {
     const runtimeContext = context('/build', platform)

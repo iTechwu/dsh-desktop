@@ -6,7 +6,7 @@ Status: implemented
 
 ## Problem
 
-上游 Windows sandbox 会把 ACL runner argv 组合为 `[process.execPath, runner.js, ...]`。在 DSH CLI 下这是正确的，因为 `process.execPath` 是 Node。DSH Desktop 会在 Electron 内启动同一批 Host plugin，此时该值在开发环境中是 Electron executable，在打包后则是已安装的 `DSH Desktop.exe`。使用 runner 路径作为参数启动该 executable，并不会建立上游 runner 所预期的普通 Node 进程，反而可能启动另一个 desktop 应用实例。
+上游 Windows sandbox 会把 ACL runner argv 组合为 `[process.execPath, runner.js, ...]`。在 DSH CLI 下这是正确的，因为 `process.execPath` 是 Node。Sensteed Agent 会在 Electron 内启动同一批 Host plugin，此时该值在开发环境中是 Electron executable，在打包后则是已安装的 `Sensteed Agent.exe`。使用 runner 路径作为参数启动该 executable，并不会建立上游 runner 所预期的普通 Node 进程，反而可能启动另一个 desktop 应用实例。
 
 Windows sandbox 没有更弱的自动 provider fallback。因此，损坏的 runner 会让普通 workspace-write PowerShell 不可用；静默绕过 confinement 又会错误表示当前选择的权限模式。上游原生 spawn 还会有意省略 `CREATE_NO_WINDOW` 与 `CREATE_NEW_CONSOLE`，因为受限 child 使用任一 flag 都会在 DLL 初始化时失败。这对 console Host 是正确行为，但 Electron Node-mode runner 启动时没有 console。在受影响的 Windows 环境中，受限 console child 被迫自行创建 console 时会在 DLL 初始化阶段以 `0xC0000142` 失败；即使某些环境能由 Windows 成功创建该 console，其行为仍与拥有 console 的 CLI 路径不同。
 

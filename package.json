@@ -1,8 +1,8 @@
 {
-  "name": "deepseek-harness-desktop",
+  "name": "sensteed-agent",
   "version": "2.0.11-beta.1",
   "private": true,
-  "description": "DSH Desktop product workspace",
+  "description": "Sensteed Agent product workspace",
   "license": "MIT",
   "packageManager": "pnpm@11.7.0",
   "engines": {

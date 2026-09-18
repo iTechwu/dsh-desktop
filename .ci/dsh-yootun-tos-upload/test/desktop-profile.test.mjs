@@ -1,7 +1,7 @@
 /**
  * Desktop profile 组合测试 + 打包闭包 / 凭证静态扫描。
  *
- * 静态验证本插件在 dsh-desktop 中的最终组合结果（阶段 7.3 / 7.4 / 7.5 / 8）：
+ * 静态验证本插件在 sensteed-agent 中的最终组合结果（阶段 7.3 / 7.4 / 7.5 / 8）：
  * - Desktop cordis.patch.yml 存在 TOS Loader 行，entry id 唯一，配置非敏感；
  * - 插件包从安装锚点（package.json 依赖 + .ci 快照 + 源码目录）可解析且一致；
  * - TOS 插件不会被误判为普通 Client UI 插件（无 dsh.client、不在 build-dofe-ui 清单）；
@@ -19,17 +19,17 @@ import { fileURLToPath } from 'node:url'
 import test from 'node:test'
 
 const root = fileURLToPath(new URL('../', import.meta.url))
-const desktopRoot = resolve(root, '../../../dsh-desktop')
+const desktopRoot = resolve(root, '../../../sensteed-agent')
 const desktopPluginRoot = join(desktopRoot, 'dsh-plugin-desktop')
 
 const PLUGIN_NAME = '@dofe/dsh-yootun-tos-upload'
 const ENTRY_ID = 'dofe-yootun-tos-upload'
 
-// 无 sibling dsh-desktop checkout（CI 快照场景）时整组跳过。
+// 无 sibling sensteed-agent checkout（CI 快照场景）时整组跳过。
 const desktopAvailable = existsSync(join(desktopPluginRoot, 'cordis.patch.yml'))
 const t = desktopAvailable
   ? test
-  : (name, fn) => test(name, { skip: 'sibling dsh-desktop checkout not present' }, fn)
+  : (name, fn) => test(name, { skip: 'sibling sensteed-agent checkout not present' }, fn)
 
 async function readIf(path) {
   try {

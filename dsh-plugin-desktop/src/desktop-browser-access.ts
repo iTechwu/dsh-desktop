@@ -4,11 +4,11 @@ import { randomBytes, timingSafeEqual } from 'node:crypto'
 import type { IncomingHttpHeaders } from 'node:http'
 
 /** Header attached only by the Electron renderer's native network session. */
-export const DESKTOP_RENDERER_ACCESS_HEADER = 'x-dsh-desktop-renderer'
+export const DESKTOP_RENDERER_ACCESS_HEADER = 'x-sensteed-agent-renderer'
 
 const ACCESS_TOKEN_BYTES = 32
 const ACCESS_TOKEN_PATTERN = /^[A-Za-z0-9_-]{43}$/u
-const DESKTOP_MARKER_PREFIX = 'dsh-desktop-'
+const DESKTOP_MARKER_PREFIX = 'sensteed-agent-'
 
 /** Header value retained only in main-process and Host-generation memory. */
 export interface DesktopRendererAccessHeader {

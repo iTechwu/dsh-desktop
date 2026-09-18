@@ -1,14 +1,14 @@
-# DSH Desktop Privacy Policy
+# Sensteed Agent Privacy Policy
 
 [中文](PRIVACY.zh.md)
 
 - **Version:** 1.0
 - **Effective and last updated:** August 26, 2026
 
-DSH Desktop is a local-first, open-source desktop application. This policy explains what information the official DSH Desktop distribution and official online services process, why they process it, who receives it, and what choices you have.
+Sensteed Agent is a local-first, open-source desktop application. This policy explains what information the official Sensteed Agent distribution and official online services process, why they process it, who receives it, and what choices you have.
 
 In this policy, “we” 并运营 `dshdesktop.cn` 官方服务的 <!-- brand:privacy-maintainer:start -->
-**Anywhere Labs project maintainer team**<!-- brand:privacy-maintainer:end -->。 and publishes the official DSH Desktop distribution under the [`anywhere-labs`](https://github.com/anywhere-labs) GitHub organization and operates the official `dshdesktop.cn` services. DSH Desktop is an independent community project and has no affiliation, partnership, authorization, or endorsement relationship with DeepSeek.
+**Anywhere Labs project maintainer team**<!-- brand:privacy-maintainer:end -->。 and publishes the official Sensteed Agent distribution under the [`anywhere-labs`](https://github.com/anywhere-labs) GitHub organization and operates the official `dshdesktop.cn` services. Sensteed Agent is an independent community project and has no affiliation, partnership, authorization, or endorsement relationship with DeepSeek.
 
 For privacy questions or rights requests, email [t4wefan@qq.com](mailto:t4wefan@qq.com). Do not put installation identifiers, logs, credentials, or other private information in a public GitHub Issue.
 
@@ -16,7 +16,7 @@ For privacy questions or rights requests, email [t4wefan@qq.com](mailto:t4wefan@
 
 This policy applies to:
 
-- DSH Desktop provided through the [official GitHub repository](https://github.com/anywhere-labs/dsh-desktop) and official release channels;
+- Sensteed Agent provided through the [official GitHub repository](https://github.com/anywhere-labs/sensteed-agent) and official release channels;
 - the official website, version-check service, and download redirects under `https://www.dshdesktop.cn/`; and
 - privacy requests, support email, or issue reports that you voluntarily send to the project maintainers.
 
@@ -24,12 +24,12 @@ This policy does not control processing performed by third-party forks, modified
 
 ## 2. Summary
 
-- DSH Desktop profiles, settings, workspaces, sessions, logs, and crash files remain on your device by default.
-- The official update service does not require a DSH Desktop account. Its version-check code does not intentionally send prompts, responses, file contents, workspace paths, profile names, session contents, API keys, MAC addresses, or hardware serial numbers.
+- Sensteed Agent profiles, settings, workspaces, sessions, logs, and crash files remain on your device by default.
+- The official update service does not require a Sensteed Agent account. Its version-check code does not intentionally send prompts, responses, file contents, workspace paths, profile names, session contents, API keys, MAC addresses, or hardware serial numbers.
 - Packaged macOS and Windows builds check for updates by default and send a locally generated, persistently stored random installation UUID. This is a pseudonymous identifier that may qualify as personal data under applicable law. It is not a hardware ID and does not guarantee one value per physical machine.
 - Installer downloads do not receive that installation UUID from Desktop, although the website, download host, and network infrastructure still receive ordinary network metadata.
-- Diagnostic archives are created locally only when you export them and are never uploaded automatically by DSH Desktop.
-- Model services, plugins, marketplace sources, and package services that you choose process data under their own terms. They do not become subject to this policy merely because DSH Desktop can connect to them.
+- Diagnostic archives are created locally only when you export them and are never uploaded automatically by Sensteed Agent.
+- Model services, plugins, marketplace sources, and package services that you choose process data under their own terms. They do not become subject to this policy merely because Sensteed Agent can connect to them.
 
 ## 3. Official version checks
 
@@ -48,8 +48,8 @@ Another check occurs about six hours after each completed check. You can also se
 The client explicitly adds:
 
 - `Accept: application/json`; and
-- `X-DSH-Desktop-Installation-Id: <random UUID v4>`.
-- `X-DSH-Desktop-Version: <canonical installed stable version>`.
+- `X-Sensteed-Agent-Installation-Id: <random UUID v4>`.
+- `X-Sensteed-Agent-Version: <canonical installed stable version>`.
 
 The application adds no query parameters or request body to this GET request. Like every internet request, the official service and its infrastructure also receive the IP address, request time, TLS and connection details, and standard request metadata generated by the networking stack. That metadata may include a User-Agent, cookies, accepted compression, and operating-system or runtime-version information. The current code does not explicitly require the Electron network session to omit existing credentials, so we do not promise that a version request can never include session data. We also do not describe “two headers explicitly set by the client” as “only two fields leave the device.”
 
@@ -68,8 +68,8 @@ The installation UUID:
 
 Default locations are:
 
-- macOS: `~/Library/Application Support/DSH Desktop/identity/installation-id`;
-- Windows: `%APPDATA%\DSH Desktop\identity\installation-id`.
+- macOS: `~/Library/Application Support/Sensteed Agent/identity/installation-id`;
+- Windows: `%APPDATA%\Sensteed Agent\identity\installation-id`.
 
 Deleting this file only causes a new UUID to be generated at the next launch. It **does not stop later version checks or prevent the new UUID from being sent**.
 
@@ -82,7 +82,7 @@ Version-check data may be used only to:
 - maintain service reliability, investigate abnormal requests, and prevent abuse; and
 - meet applicable legal obligations.
 
-We do not use the installation UUID for advertising profiles or cross-service tracking, and we do not sell it. A version check requires no login, and the client sends no name, email address, or DSH Desktop account ID in that request.
+We do not use the installation UUID for advertising profiles or cross-service tracking, and we do not sell it. A version check requires no login, and the client sends no name, email address, or Sensteed Agent account ID in that request.
 
 ## 4. Installer downloads, the website, and project communications
 
@@ -108,7 +108,7 @@ The following information remains on your device by default rather than being up
 | Desktop logs | Stored below the Electron user-data directory. A file rotates at 10 MiB; files older than seven days are removed at startup; and the log directory is held below 200 MiB. Logs can still contain paths, workspace IDs, session IDs, commands, or plugin messages. |
 | Local crash files | Electron Crashpad collects them locally and is configured not to upload to a crash server. They may contain fragments of process memory. |
 | Diagnostic ZIP archives | Created only when you export one. They may contain logs, system and version information, paths, workspace or session IDs, bounded lifecycle and plugin IDs, and crash files within a shared 50 MiB evidence budget. The application retains the three newest archives that it manages; copies you make elsewhere are outside that limit. |
-| System notifications | Turn and job notices use generic completion or failure copy without session names, user text, job contents, or error details; update notices include the available version. The operating system handles them locally without a DSH Desktop remote-push service. Notification history or cross-device synchronization depends on your system account settings. |
+| System notifications | Turn and job notices use generic completion or failure copy without session names, user text, job contents, or error details; update notices include the available version. The operating system handles them locally without a Sensteed Agent remote-push service. Notification history or cross-device synchronization depends on your system account settings. |
 | Installation UUID | Stored as described in Section 3 and sent to the official update endpoint during a version check. |
 
 Credential masking reduces risk but cannot guarantee that a log or diagnostic archive contains no sensitive information. Review an archive and remove information you do not want a recipient to see before sharing it.
@@ -117,13 +117,13 @@ Uninstalling the application may leave Electron user data, the DSH home, profile
 
 ## 6. Third-party services you choose
 
-DSH Desktop is a composable plugin platform. The following transfers are triggered by services, sources, plugins, or actions you choose. Each recipient processes information under its own privacy terms.
+Sensteed Agent is a composable plugin platform. The following transfers are triggered by services, sources, plugins, or actions you choose. Each recipient processes information under its own privacy terms.
 
 ### 6.1 Model and tool services
 
 When you configure and invoke a model provider, MCP service, external tool, or other API, the recipient may receive an API key, prompts, conversation context, attachments or file contents, tool inputs and outputs, session identifiers, network metadata, and other information required by that service's protocol. The exact scope depends on your configuration and request. Do not send sensitive data to a provider you do not trust.
 
-Upstream DSH also maintains an `.anonymous-user-id` that is separate from the Desktop installation UUID. When you invoke the current default DeepSeek model adapter, it sends that identifier in the `x-deepseek-harness-user-id` header, together with an optional session ID, the API key, and the complete model request, to the DeepSeek or compatible `baseURL` you configure. Do not confuse it with `X-DSH-Desktop-Installation-Id`.
+Upstream DSH also maintains an `.anonymous-user-id` that is separate from the Desktop installation UUID. When you invoke the current default DeepSeek model adapter, it sends that identifier in the `x-deepseek-harness-user-id` header, together with an optional session ID, the API key, and the complete model request, to the DeepSeek or compatible `baseURL` you configure. Do not confuse it with `X-Sensteed-Agent-Installation-Id`.
 
 The default composition also provides DeepSeek `web_search`. When you invoke it, it sends the API key, original search term inside a fixed prompt, model and token/use limits, and standard request metadata to the configured DeepSeek Messages endpoint. The webpage `fetch` tool is disabled by default.
 
@@ -141,7 +141,7 @@ When you preview or confirm a plugin installation, Desktop may also contact `reg
 
 ### 6.3 dsh-market
 
-If you select `dsh-market` in Setup or settings, opening the market, checking for updates, or viewing plugin content can contact `awesome-dsh-plugin.com`, the npm Registry, the GitHub API, `raw.githubusercontent.com`, GitHub avatar services, and `images.weserv.nl`. These recipients receive the IP address, time, requested resource, and relevant plugin, package, or repository identifiers; an image proxy also receives the original image URL. Installation or update still requires your confirmation and can then contact addresses declared by plugin dependencies. These requests do not include Desktop's `X-DSH-Desktop-Installation-Id`.
+If you select `dsh-market` in Setup or settings, opening the market, checking for updates, or viewing plugin content can contact `awesome-dsh-plugin.com`, the npm Registry, the GitHub API, `raw.githubusercontent.com`, GitHub avatar services, and `images.weserv.nl`. These recipients receive the IP address, time, requested resource, and relevant plugin, package, or repository identifiers; an image proxy also receives the original image URL. Installation or update still requires your confirmation and can then contact addresses declared by plugin dependencies. These requests do not include Desktop's `X-Sensteed-Agent-Installation-Id`.
 
 `dsh-market` also provides profile backups that you trigger manually or after you explicitly enable optional automatic backup:
 
@@ -212,7 +212,7 @@ We do not make decisions with legal or similarly significant effects about you s
 
 ## 12. Children
 
-DSH Desktop is a tool for developers and people able to manage a local computing environment and is not directed specifically to children. Minors should use it with a guardian's guidance. If you believe we processed a child's personal data without satisfying applicable requirements, contact us so that we can investigate and take appropriate action.
+Sensteed Agent is a tool for developers and people able to manage a local computing environment and is not directed specifically to children. Minors should use it with a guardian's guidance. If you believe we processed a child's personal data without satisfying applicable requirements, contact us so that we can investigate and take appropriate action.
 
 ## 13. Changes to this policy
 

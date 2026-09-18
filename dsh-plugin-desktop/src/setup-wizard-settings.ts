@@ -32,8 +32,8 @@ import type {
 } from './setup-wizard-contract.ts'
 
 const BIN_NAME = 'dsh-plugin-desktop'
-const DESKTOP_NAMESPACE = 'dsh-desktop'
-const NOTIFICATIONS_NAMESPACE = 'dsh-desktop-notifications'
+const DESKTOP_NAMESPACE = 'sensteed-agent'
+const NOTIFICATIONS_NAMESPACE = 'sensteed-agent-notifications'
 const AGENT_PRESETS_NAMESPACE = 'agent-presets'
 const LEGACY_AGENT_PRESET = 'code'
 const CURRENT_AGENT_PRESET = 'ptc'
@@ -173,13 +173,13 @@ function optionalBoolean(values: Record<string, unknown>, key: string, fallback:
 function parseMode(value: unknown): DesktopSetupWizardMode {
   if (value === undefined) return 'compatibility'
   if (value === 'compatibility' || value === 'extended' || value === 'advanced') return value
-  throw invalid('dsh-desktop.mode must be compatibility, extended, or advanced')
+  throw invalid('sensteed-agent.mode must be compatibility, extended, or advanced')
 }
 
 function parseExposure(value: unknown): DesktopSetupWizardNetworkExposure {
   if (value === undefined) return 'loopback'
   if (value === 'loopback' || value === 'lan') return value
-  throw invalid('dsh-desktop.networkExposure must be loopback or lan')
+  throw invalid('sensteed-agent.networkExposure must be loopback or lan')
 }
 
 function notificationSettings(values: Record<string, unknown>): DesktopSetupWizardNotificationSettings {

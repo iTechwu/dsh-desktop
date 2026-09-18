@@ -21,7 +21,7 @@ interface HttpsResult {
 }
 
 beforeAll(async () => {
-  const ca = await generate([{ name: 'commonName', value: 'DSH Desktop test root' }], {
+  const ca = await generate([{ name: 'commonName', value: 'Sensteed Agent test root' }], {
     algorithm: 'sha256',
     keyType: 'ec',
     extensions: [
@@ -239,7 +239,7 @@ describe('LAN HTTPS ingress', () => {
         origin: `https://${LAN_ADDRESS}:${String(ingressPort(ingress))}`,
         cookie: 'session=ordinary-browser',
         'content-length': String(body.length),
-        'x-dsh-desktop-renderer': 'forged-capability',
+        'x-sensteed-agent-renderer': 'forged-capability',
         forwarded: 'for=203.0.113.9;proto=https',
         'x-forwarded-for': '203.0.113.9',
         'x-forwarded-host': 'attacker.invalid',
@@ -254,7 +254,7 @@ describe('LAN HTTPS ingress', () => {
       origin: `https://${LAN_ADDRESS}:${String(ingressPort(ingress))}`,
       cookie: 'session=ordinary-browser',
     })
-    expect(receivedHeaders?.['x-dsh-desktop-renderer']).toBeUndefined()
+    expect(receivedHeaders?.['x-sensteed-agent-renderer']).toBeUndefined()
     expect(receivedHeaders?.forwarded).toBeUndefined()
     expect(receivedHeaders?.['x-forwarded-for']).toBeUndefined()
     expect(receivedHeaders?.['x-forwarded-host']).toBeUndefined()
@@ -347,7 +347,7 @@ describe('LAN HTTPS ingress', () => {
       `Host: ${LAN_ADDRESS}:${String(ingressPort(ingress))}`,
       'Connection: Upgrade',
       'Upgrade: dsh-test',
-      'X-DSH-Desktop-Renderer: forged-capability',
+      'X-Sensteed-Agent-Renderer: forged-capability',
       'X-Forwarded-For: 203.0.113.9',
       '',
       'first',
@@ -355,7 +355,7 @@ describe('LAN HTTPS ingress', () => {
 
     await waitForText(socket, 'head:first', () => output)
     expect(output).toContain('101 Switching Protocols')
-    expect(upgradeHeaders?.['x-dsh-desktop-renderer']).toBeUndefined()
+    expect(upgradeHeaders?.['x-sensteed-agent-renderer']).toBeUndefined()
     expect(upgradeHeaders?.['x-forwarded-for']).toBeUndefined()
     socket.write('second')
     await waitForText(socket, 'echo:second', () => output)

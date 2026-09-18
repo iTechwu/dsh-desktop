@@ -37,7 +37,7 @@ import { DESKTOP_MARKET_IDENTITIES } from '../src/desktop-market.ts'
 const homes: string[] = []
 
 function temporaryHome(): string {
-  const home = mkdtempSync(join(tmpdir(), 'dsh-desktop-profile-'))
+  const home = mkdtempSync(join(tmpdir(), 'sensteed-agent-profile-'))
   homes.push(home)
   return home
 }
@@ -293,7 +293,7 @@ describe('desktop profile composition', {
           bundles: [
             '@deepseek-ai/dsh-base',
             '@deepseek-ai/dsh-web-app',
-            '@deepseek-ai/dsh-desktop-app',
+            '@deepseek-ai/sensteed-agent-app',
             '@linxin666/dsh-web-ui-all',
           ],
         },
@@ -860,7 +860,7 @@ virtualStoreDirMaxLength: 60
   it('keeps a custom layout and withdraws incompatible browser and LAN access', () => {
     const home = temporaryHome()
     writeFileSync(join(home, 'settings.yaml'), [
-      'dsh-desktop:',
+      'sensteed-agent:',
       '  mode: advanced',
       '  port: 43189',
       '  openBrowser: true',
@@ -901,7 +901,7 @@ virtualStoreDirMaxLength: 60
   it('keeps legacy browser intent but clamps LAN exposure when compatibility mode is selected', () => {
     const home = temporaryHome()
     writeFileSync(join(home, 'settings.yaml'), [
-      'dsh-desktop:',
+      'sensteed-agent:',
       '  mode: compatibility',
       '  port: 43189',
       '  openBrowser: true',
@@ -928,7 +928,7 @@ virtualStoreDirMaxLength: 60
   it('replaces the official root layout for extended window mode while retaining its occupants', () => {
     const home = temporaryHome()
     writeFileSync(join(home, 'settings.yaml'), [
-      'dsh-desktop:',
+      'sensteed-agent:',
       '  mode: extended',
       '  macosMaterial: off',
       '  windowsMaterial: mica',
@@ -958,10 +958,10 @@ virtualStoreDirMaxLength: 60
   it('reads JSON settings and defaults an absent desktop namespace to compatibility', () => {
     const home = temporaryHome()
     const path = join(home, 'desktop-settings.json')
-    writeFileSync(path, JSON.stringify({ 'dsh-desktop': { mode: 'advanced' } }))
+    writeFileSync(path, JSON.stringify({ 'sensteed-agent': { mode: 'advanced' } }))
 
     expect(readDesktopShellMode({ path })).toBe('advanced')
-    expect(desktopStartupSettingsFromSettings({ 'dsh-desktop': { mode: 'advanced', port: 43_189 } })).toEqual({
+    expect(desktopStartupSettingsFromSettings({ 'sensteed-agent': { mode: 'advanced', port: 43_189 } })).toEqual({
       mode: 'advanced',
       port: 43_189,
       macosMaterial: 'transparent',
@@ -969,7 +969,7 @@ virtualStoreDirMaxLength: 60
       openBrowser: false,
       networkExposure: 'loopback',
     })
-    expect(desktopStartupSettingsFromSettings({ 'dsh-desktop': { mode: 'advanced' } })).toEqual({
+    expect(desktopStartupSettingsFromSettings({ 'sensteed-agent': { mode: 'advanced' } })).toEqual({
       mode: 'advanced',
       port: 43_120,
       macosMaterial: 'transparent',
@@ -982,7 +982,7 @@ virtualStoreDirMaxLength: 60
 
   it('treats legacy LAN exposure as browser access only in compatibility mode', () => {
     expect(desktopStartupSettingsFromSettings({
-      'dsh-desktop': {
+      'sensteed-agent': {
         mode: 'advanced',
         openBrowser: false,
         networkExposure: 'lan',
@@ -993,7 +993,7 @@ virtualStoreDirMaxLength: 60
       networkExposure: 'loopback',
     })
     expect(desktopStartupSettingsFromSettings({
-      'dsh-desktop': {
+      'sensteed-agent': {
         mode: 'compatibility',
         openBrowser: false,
         networkExposure: 'lan',
@@ -1007,23 +1007,23 @@ virtualStoreDirMaxLength: 60
 
   it('rejects invalid settings roots, sections, modes, and YAML', () => {
     expect(() => desktopShellModeFromSettings([])).toThrow('must be a map')
-    expect(() => desktopShellModeFromSettings({ 'dsh-desktop': true })).toThrow('settings must be a map')
-    expect(() => desktopShellModeFromSettings({ 'dsh-desktop': { mode: 'glass' } })).toThrow(
+    expect(() => desktopShellModeFromSettings({ 'sensteed-agent': true })).toThrow('settings must be a map')
+    expect(() => desktopShellModeFromSettings({ 'sensteed-agent': { mode: 'glass' } })).toThrow(
       'must be "compatibility", "extended", or "advanced"',
     )
     for (const port of [-1, 1.5, 65_536, '43189']) {
-      expect(() => desktopStartupSettingsFromSettings({ 'dsh-desktop': { port } })).toThrow(
+      expect(() => desktopStartupSettingsFromSettings({ 'sensteed-agent': { port } })).toThrow(
         'port must be an integer from 0 through 65535',
       )
     }
-    expect(() => desktopStartupSettingsFromSettings({ 'dsh-desktop': { openBrowser: 'yes' } }))
+    expect(() => desktopStartupSettingsFromSettings({ 'sensteed-agent': { openBrowser: 'yes' } }))
       .toThrow('openBrowser must be a boolean')
-    expect(() => desktopStartupSettingsFromSettings({ 'dsh-desktop': { networkExposure: 'internet' } }))
+    expect(() => desktopStartupSettingsFromSettings({ 'sensteed-agent': { networkExposure: 'internet' } }))
       .toThrow('networkExposure must be "loopback" or "lan"')
 
     const home = temporaryHome()
     const path = join(home, 'invalid.yaml')
-    writeFileSync(path, 'dsh-desktop: [\n')
+    writeFileSync(path, 'sensteed-agent: [\n')
     expect(() => readDesktopShellMode({ path })).toThrow('invalid settings document')
   })
 

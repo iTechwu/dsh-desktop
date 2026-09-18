@@ -38,7 +38,7 @@ export function Chrome() {
     document.documentElement.lang = state?.locale === 'zh' ? 'zh-CN' : 'en'
   }, [state?.locale])
   const copy = state?.locale === 'zh' ? zh : en
-  if (!state) return <header className="dshDesktopFrameTitlebar">DSH Desktop {failed && <span role="alert">{copy.operationFailed}</span>}</header>
+  if (!state) return <header className="sensteedAgentFrameTitlebar">Sensteed Agent {failed && <span role="alert">{copy.operationFailed}</span>}</header>
   return <DesktopFrameTitlebarView
     key={generation}
     api={api}
@@ -53,5 +53,5 @@ export function Chrome() {
 }
 
 const root = document.getElementById('root')
-if (root === null) throw new Error('dsh-desktop: missing chrome root')
+if (root === null) throw new Error('sensteed-agent: missing chrome root')
 createRoot(root).render(<CSPProvider disableStyleElements><Chrome /></CSPProvider>)

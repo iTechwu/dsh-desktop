@@ -20,7 +20,7 @@ describe('Yootun route origin contract', () => {
     expect(sameYootunOrigin(request('GET', {
       host: '127.0.0.1:43120',
       'sec-fetch-site': 'same-origin',
-      referer: `${origin}/?dsh-desktop-mode=advanced`,
+      referer: `${origin}/?sensteed-agent-mode=advanced`,
     }), origin)).toBe(true)
   })
 

@@ -10,7 +10,7 @@
 
 审计能力采用以下边界：
 
-- `dsh-desktop` 负责采集、脱敏、本地 outbox、自动补传和本机查询代理。
+- `sensteed-agent` 负责采集、脱敏、本地 outbox、自动补传和本机查询代理。
 - `models.dofe.ai` 负责 API Key 身份解析、集中存储、权限过滤、团队聚合和查询统计。
 - `docker-helm.dofe.ai` 负责 `@dofe/dsh-yootun-audit` 客户端插件及仍由该仓库拥有的 Host 插件采集接入。
 - `sso.dofe.ai` 继续作为用户、团队、团队角色和 `super_admin` 的权威来源，不承载 Yootun 业务审计正文。
@@ -382,9 +382,9 @@ GET 响应包含服务端事件、本机 pending 事件、同步健康、数据�
 ### 13.2 发布顺序
 
 1. `models.dofe.ai` 发布审计表、身份授权、批量写入、查询、统计和保留任务。
-2. `dsh-desktop` 发布 `yootunAudit` 服务、outbox、查询代理和 Desktop-owned 采集点。
+2. `sensteed-agent` 发布 `yootunAudit` 服务、outbox、查询代理和 Desktop-owned 采集点。
 3. `docker-helm.dofe.ai` 发布更名后的客户端包和该仓库 Host 插件采集点。
-4. `dsh-desktop` 更新 file 依赖、bundle patch、包闭包和发布测试。
+4. `sensteed-agent` 更新 file 依赖、bundle patch、包闭包和发布测试。
 5. 所有端到端门禁通过后移除旧审批 Host 与客户端资产。
 
 各仓库使用小型中文 Conventional Commits，并分别推送到 `origin`。不直接修改 CI checkout；部署只能消费已推送提交。

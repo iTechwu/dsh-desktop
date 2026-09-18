@@ -55,7 +55,7 @@ function defaultOptions(): MacSmokeVerificationOptions {
       : resolve(process.argv[2]),
     productName: DESKTOP_PRODUCT_NAME,
     listDmgs,
-    makeMountPoint: () => mkdtempSync(join(tmpdir(), 'dsh-desktop-dmg-smoke-')),
+    makeMountPoint: () => mkdtempSync(join(tmpdir(), 'sensteed-agent-dmg-smoke-')),
     run,
     removeMountPoint: mountPoint => rmdirSync(mountPoint),
     exists: existsSync,

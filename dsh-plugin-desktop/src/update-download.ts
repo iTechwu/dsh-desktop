@@ -21,7 +21,7 @@ export const DESKTOP_DOWNLOAD_URLS: Readonly<Record<DesktopDownloadPlatform, str
 }
 
 /** Header pinning a download request and response to the checked release. */
-export const DESKTOP_TARGET_VERSION_HEADER = 'X-DSH-Desktop-Target-Version'
+export const DESKTOP_TARGET_VERSION_HEADER = 'X-Sensteed-Agent-Target-Version'
 
 /** Maximum accepted installer size, in bytes. */
 export const MAX_UPDATE_DOWNLOAD_BYTES = 1024 * 1024 * 1024

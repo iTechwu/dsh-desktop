@@ -47,7 +47,7 @@ function defaultOptions(): MacReleaseVerificationOptions {
       : resolve(process.argv[2]),
     productName: DESKTOP_PRODUCT_NAME,
     listDmgs,
-    makeMountPoint: () => mkdtempSync(join(tmpdir(), 'dsh-desktop-dmg-')),
+    makeMountPoint: () => mkdtempSync(join(tmpdir(), 'sensteed-agent-dmg-')),
     run,
     removeMountPoint: mountPoint => rmdirSync(mountPoint),
   }

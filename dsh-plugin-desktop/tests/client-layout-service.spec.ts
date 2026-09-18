@@ -171,8 +171,8 @@ describe('applyAdvancedShell presentation ownership', () => {
       const cleanup = ctx.effect.mock.results[1]?.value
       expect(typeof cleanup).toBe('function')
       ;(cleanup as () => void)()
-      expect(dataset.dshDesktopMode).toBeUndefined()
-      expect(dataset.dshDesktopPlatform).toBeUndefined()
+      expect(dataset.sensteedAgentMode).toBeUndefined()
+      expect(dataset.sensteedAgentPlatform).toBeUndefined()
       expect(warn).toHaveBeenCalled()
     } finally {
       warn.mockRestore()
@@ -224,14 +224,14 @@ describe('applyExtendedShell presentation ownership', () => {
       expect(ctx.slots.register).not.toHaveBeenCalled()
       expect(ctx.slots.inject).not.toHaveBeenCalled()
       expect(ctx.slots.provideRoot).not.toHaveBeenCalled()
-      expect(byId.has('dsh-desktop-framed-styles')).toBe(true)
-      expect(dataset.dshDesktopMode).toBe('extended')
-      expect(rootViewport.dataset.dshDesktopContentViewport).toBe('')
+      expect(byId.has('sensteed-agent-framed-styles')).toBe(true)
+      expect(dataset.sensteedAgentMode).toBe('extended')
+      expect(rootViewport.dataset.sensteedAgentContentViewport).toBe('')
       const cleanup = ctx.effect.mock.results[1]?.value as () => void
       cleanup()
-      expect(byId.has('dsh-desktop-framed-styles')).toBe(false)
-      expect(dataset.dshDesktopMode).toBeUndefined()
-      expect(rootViewport.dataset.dshDesktopContentViewport).toBeUndefined()
+      expect(byId.has('sensteed-agent-framed-styles')).toBe(false)
+      expect(dataset.sensteedAgentMode).toBeUndefined()
+      expect(rootViewport.dataset.sensteedAgentContentViewport).toBeUndefined()
       expect(warn).toHaveBeenCalled()
     } finally {
       warn.mockRestore()

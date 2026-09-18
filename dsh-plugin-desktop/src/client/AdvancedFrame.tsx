@@ -106,7 +106,7 @@ export function DesktopOwnedFrame({
   return (
     <div
       ref={frameRef}
-      className="dshDesktopFrame"
+      className="sensteedAgentFrame"
       data-desktop-mode={mode}
       data-desktop-platform={platform}
       data-sidebar-collapsed={collapsed || undefined}
@@ -115,28 +115,28 @@ export function DesktopOwnedFrame({
       data-dragging={dragging || undefined}
       style={{ gridTemplateColumns: `${columns.sidebar}px minmax(0, 1fr) ${columns.rightbar}px` }}
     >
-      {mode === 'advanced' && platform === 'darwin' && <div className="dshDesktopMacCaptionRow" aria-hidden="true" />}
-      <aside className="dshDesktopSidebarSurface">
+      {mode === 'advanced' && platform === 'darwin' && <div className="sensteedAgentMacCaptionRow" aria-hidden="true" />}
+      <aside className="sensteedAgentSidebarSurface">
         {/*
           Desktop owns the layout, so the upstream Web frame — and the CSS module
           class `<hash>_sidebarCol` plugins anchor on — never reaches the DOM.
           Carry both anchors here so a plugin written against the Web sidebar
-          column keeps resolving one; `dshDesktop_sidebarCol` holds no styles.
+          column keeps resolving one; `sensteedAgent_sidebarCol` holds no styles.
         */}
         <div
-          className="dshDesktopUpstreamSidebar dshDesktop_sidebarCol"
+          className="sensteedAgentUpstreamSidebar sensteedAgent_sidebarCol"
           data-pane="sidebar"
         >
           {renderSlot('sidebar', { collapsed, width: sidebarOwnerWidth })}
         </div>
       </aside>
-      <main className="dshDesktopConversationSurface"><MainPanel usePanelInfo={usePanelInfo} renderSlot={renderSlot} /></main>
-      <aside className="dshDesktopRightbarSurface" data-rightbar-col>
+      <main className="sensteedAgentConversationSurface"><MainPanel usePanelInfo={usePanelInfo} renderSlot={renderSlot} /></main>
+      <aside className="sensteedAgentRightbarSurface" data-rightbar-col>
         {renderSlot('rightbar', { width: normal.rightbar, viewportWidth: viewport, canShow: normal.rightbar > 0 })}
       </aside>
       {/* Electron resolves app regions in DOM order; Desktop overlays must remain later. */}
-      {mode === 'advanced' && platform === 'win32' && <div className="dshDesktopWindowsCaptionRow" aria-hidden="true" />}
-      <div className="dshDesktopOverlay" data-shell-overlay>
+      {mode === 'advanced' && platform === 'win32' && <div className="sensteedAgentWindowsCaptionRow" aria-hidden="true" />}
+      <div className="sensteedAgentOverlay" data-shell-overlay>
         {renderSlot('shell.overlay', {})}
       </div>
       {!collapsed && (
@@ -209,7 +209,7 @@ function ResizeHandle(props: {
   }, [])
   return (
     <div
-      className="dshDesktopResizeHandle"
+      className="sensteedAgentResizeHandle"
       data-side={props.side}
       data-dragging={dragging || undefined}
       style={{ left: props.left }}

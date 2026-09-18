@@ -26,7 +26,7 @@ import {
 const roots: string[] = []
 
 function temporaryUserData(): string {
-  const root = mkdtempSync(join(tmpdir(), 'dsh-desktop-market-'))
+  const root = mkdtempSync(join(tmpdir(), 'sensteed-agent-market-'))
   roots.push(root)
   return root
 }

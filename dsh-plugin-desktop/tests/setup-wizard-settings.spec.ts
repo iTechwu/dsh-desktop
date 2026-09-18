@@ -91,7 +91,7 @@ describe('Desktop Setup Wizard settings document', () => {
       '# settings owner comment',
       'other-plugin:',
       '  token: keep-me',
-      'dsh-desktop:',
+      'sensteed-agent:',
       '  # presentation comment',
       '  mode: compatibility',
       '  macosMaterial: transparent',
@@ -99,7 +99,7 @@ describe('Desktop Setup Wizard settings document', () => {
       '  port: 61201',
       '  logLevel: warn',
       '  futureField: preserved',
-      'dsh-desktop-notifications:',
+      'sensteed-agent-notifications:',
       '  enabled: false',
       '  notifyOnTurnCompletion: true',
       '  futureNotification: keep',
@@ -114,7 +114,7 @@ describe('Desktop Setup Wizard settings document', () => {
     expect(text).toContain('# presentation comment')
     const document = parseDocument(text).toJS() as Record<string, Record<string, unknown>>
     expect(document['other-plugin']).toEqual({ token: 'keep-me' })
-    expect(document['dsh-desktop']).toMatchObject({
+    expect(document['sensteed-agent']).toMatchObject({
       mode: 'compatibility',
       macosMaterial: 'transparent',
       windowsMaterial: 'mica',
@@ -124,7 +124,7 @@ describe('Desktop Setup Wizard settings document', () => {
       openBrowser: true,
       networkExposure: 'lan',
     })
-    expect(document['dsh-desktop-notifications']).toEqual({
+    expect(document['sensteed-agent-notifications']).toEqual({
       enabled: true,
       notifyOnTurnCompletion: false,
       notifyOnTurnFailure: true,
@@ -142,13 +142,13 @@ describe('Desktop Setup Wizard settings document', () => {
     const path = join(root, 'custom-settings.json')
     writeFileSync(path, `${JSON.stringify({
       custom: { retained: ['a', 'b'] },
-      'dsh-desktop': {
+      'sensteed-agent': {
         mode: 'extended',
         macosMaterial: 'off',
         windowsMaterial: 'acrylic',
         future: 42,
       },
-      'dsh-desktop-notifications': { future: 'yes' },
+      'sensteed-agent-notifications': { future: 'yes' },
     }, undefined, 2)}\n`, { mode: 0o600 })
     const next = values({
       mode: 'compatibility',
@@ -160,7 +160,7 @@ describe('Desktop Setup Wizard settings document', () => {
 
     const output = JSON.parse(readFileSync(path, 'utf8')) as Record<string, Record<string, unknown>>
     expect(output.custom).toEqual({ retained: ['a', 'b'] })
-    expect(output['dsh-desktop']).toMatchObject({
+    expect(output['sensteed-agent']).toMatchObject({
       mode: 'compatibility',
       macosMaterial: 'transparent',
       windowsMaterial: 'off',
@@ -168,7 +168,7 @@ describe('Desktop Setup Wizard settings document', () => {
       openBrowser: true,
       networkExposure: 'lan',
     })
-    expect(output['dsh-desktop-notifications']).toMatchObject({ future: 'yes' })
+    expect(output['sensteed-agent-notifications']).toMatchObject({ future: 'yes' })
     expect(readDesktopSetupWizardSettings(path)).toEqual(next)
   })
 
@@ -192,10 +192,10 @@ describe('Desktop Setup Wizard settings document', () => {
     const root = temporaryDirectory()
     const path = join(root, 'settings.yaml')
     for (const text of [
-      'dsh-desktop: [unterminated\n',
+      'sensteed-agent: [unterminated\n',
       '- not\n- a namespace map\n',
-      'dsh-desktop:\n  mode: impossible\n',
-      'dsh-desktop-notifications:\n  enabled: sometimes\n',
+      'sensteed-agent:\n  mode: impossible\n',
+      'sensteed-agent-notifications:\n  enabled: sometimes\n',
     ]) {
       writeFileSync(path, text, { mode: 0o600 })
       await expect(updateDesktopSetupWizardSettings(path, values())).rejects.toThrow()
@@ -255,7 +255,7 @@ describe('Desktop Setup Wizard settings document', () => {
   it('projects legacy LAN exposure as explicit compatibility browser access', () => {
     const path = join(temporaryDirectory(), 'settings.yaml')
     writeFileSync(path, [
-      'dsh-desktop:',
+      'sensteed-agent:',
       '  openBrowser: false',
       '  networkExposure: lan',
       '',
@@ -273,7 +273,7 @@ describe('Desktop Setup Wizard settings document', () => {
     const yamlPath = join(root, 'legacy.yaml')
     writeFileSync(yamlPath, [
       '# preserve browser migration comments',
-      'dsh-desktop:',
+      'sensteed-agent:',
       '  mode: advanced',
       '  openBrowser: false',
       '  networkExposure: lan',
@@ -286,7 +286,7 @@ describe('Desktop Setup Wizard settings document', () => {
     const migrated = readFileSync(yamlPath, 'utf8')
     expect(migrated).toContain('# preserve browser migration comments')
     expect(parseDocument(migrated).toJS()).toMatchObject({
-      'dsh-desktop': {
+      'sensteed-agent': {
         mode: 'advanced',
         openBrowser: false,
         networkExposure: 'loopback',
@@ -296,7 +296,7 @@ describe('Desktop Setup Wizard settings document', () => {
 
     const jsonPath = join(root, 'legacy.json')
     writeFileSync(jsonPath, `${JSON.stringify({
-      'dsh-desktop': {
+      'sensteed-agent': {
         mode: 'extended',
         openBrowser: true,
         networkExposure: 'loopback',
@@ -305,7 +305,7 @@ describe('Desktop Setup Wizard settings document', () => {
     })}\n`)
     await expect(migrateDesktopBrowserAccessSettings(jsonPath)).resolves.toBe(true)
     expect(JSON.parse(readFileSync(jsonPath, 'utf8'))).toMatchObject({
-      'dsh-desktop': {
+      'sensteed-agent': {
         mode: 'extended',
         openBrowser: false,
         networkExposure: 'loopback',
@@ -317,7 +317,7 @@ describe('Desktop Setup Wizard settings document', () => {
   it('preserves legacy LAN intent by materializing compatibility browser access', async () => {
     const path = join(temporaryDirectory(), 'legacy.yaml')
     writeFileSync(path, [
-      'dsh-desktop:',
+      'sensteed-agent:',
       '  mode: compatibility',
       '  openBrowser: false',
       '  networkExposure: lan',
@@ -327,7 +327,7 @@ describe('Desktop Setup Wizard settings document', () => {
     await expect(migrateDesktopBrowserAccessSettings(path)).resolves.toBe(true)
     await expect(migrateDesktopBrowserAccessSettings(path)).resolves.toBe(false)
     expect(parseDocument(readFileSync(path, 'utf8')).toJS()).toMatchObject({
-      'dsh-desktop': {
+      'sensteed-agent': {
         mode: 'compatibility',
         openBrowser: true,
         networkExposure: 'lan',
@@ -339,7 +339,7 @@ describe('Desktop Setup Wizard settings document', () => {
     const root = temporaryDirectory()
     const path = join(root, 'settings.yaml')
     const lockPath = `${path}.lock`
-    const contents = 'dsh-desktop:\n  mode: compatibility\n  macosMaterial: transparent\n'
+    const contents = 'sensteed-agent:\n  mode: compatibility\n  macosMaterial: transparent\n'
     writeFileSync(path, contents)
     writeFileSync(lockPath, 'owner\n')
 
@@ -352,7 +352,7 @@ describe('Desktop Setup Wizard settings document', () => {
     const root = temporaryDirectory()
     const path = join(root, 'settings.yaml')
     const lockPath = `${path}.lock`
-    const contents = 'dsh-desktop:\n  mode: compatibility\n  macosMaterial: transparent\n'
+    const contents = 'sensteed-agent:\n  mode: compatibility\n  macosMaterial: transparent\n'
     writeFileSync(path, contents)
     writeFileSync(lockPath, 'owner\n')
 
@@ -366,7 +366,7 @@ describe('Desktop Setup Wizard settings document', () => {
     const root = temporaryDirectory()
     const path = join(root, 'settings.yaml')
     const lockPath = `${path}.lock`
-    writeFileSync(path, 'dsh-desktop:\n  mode: compatibility\n')
+    writeFileSync(path, 'sensteed-agent:\n  mode: compatibility\n')
     writeFileSync(lockPath, 'owner\n')
     const next = values({
       mode: 'advanced',
@@ -383,7 +383,7 @@ describe('Desktop Setup Wizard settings document', () => {
     const root = temporaryDirectory()
     const path = join(root, 'settings.yaml')
     const lockPath = `${path}.lock`
-    const contents = 'dsh-desktop:\n  mode: advanced\n  openBrowser: true\n'
+    const contents = 'sensteed-agent:\n  mode: advanced\n  openBrowser: true\n'
     writeFileSync(path, contents)
     writeFileSync(lockPath, 'owner\n')
 
@@ -416,7 +416,7 @@ describe('Desktop Setup Wizard settings document', () => {
       '# preserve material migration comments',
       'unrelated:',
       '  keep: true',
-      'dsh-desktop:',
+      'sensteed-agent:',
       '  mode: extended',
       '  windowsMaterial: acrylic',
       '  future: retained',
@@ -431,7 +431,7 @@ describe('Desktop Setup Wizard settings document', () => {
     expect(migrated).toContain('# preserve material migration comments')
     expect(parseDocument(migrated).toJS()).toMatchObject({
       unrelated: { keep: true },
-      'dsh-desktop': {
+      'sensteed-agent': {
         mode: 'extended',
         windowsMaterial: 'off',
         future: 'retained',

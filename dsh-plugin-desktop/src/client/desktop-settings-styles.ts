@@ -1,9 +1,9 @@
 /** Desktop settings section styles, installed independently of presentation mode. */
 
-const STYLE_ID = 'dsh-desktop-settings-styles'
+const STYLE_ID = 'sensteed-agent-settings-styles'
 
 const CSS = `
-.dshDesktopSettings {
+.sensteedAgentSettings {
   display: flex;
   flex-direction: column;
   gap: 24px;
@@ -11,31 +11,31 @@ const CSS = `
   padding: 2px 0 36px;
   color: var(--dsw-alias-label-primary);
 }
-.dshDesktopSettingsHeader h2,
-.dshDesktopSettingsGroup h3 {
+.sensteedAgentSettingsHeader h2,
+.sensteedAgentSettingsGroup h3 {
   margin: 0;
   font-weight: 600;
 }
-.dshDesktopSettingsHeader h2 { font-size: 22px; line-height: 1.35; }
-.dshDesktopSettingsGroup h3 { font-size: 16px; line-height: 1.4; }
-.dshDesktopSettingsHeader p,
-.dshDesktopSettingsGroupIntro,
-.dshDesktopSettingsHint {
+.sensteedAgentSettingsHeader h2 { font-size: 22px; line-height: 1.35; }
+.sensteedAgentSettingsGroup h3 { font-size: 16px; line-height: 1.4; }
+.sensteedAgentSettingsHeader p,
+.sensteedAgentSettingsGroupIntro,
+.sensteedAgentSettingsHint {
   margin: 6px 0 0;
   color: var(--dsw-alias-label-secondary);
   font-size: 13px;
   line-height: 1.6;
 }
-.dshDesktopSettingsGroup {
+.sensteedAgentSettingsGroup {
   display: flex;
   flex-direction: column;
   gap: 12px;
   padding-top: 20px;
   border-top: 1px solid var(--dsw-alias-border-l1);
 }
-.dshDesktopSettingsList { display: grid; gap: 8px; }
-.dshDesktopSettingsChoice,
-.dshDesktopSettingsToggleRow {
+.sensteedAgentSettingsList { display: grid; gap: 8px; }
+.sensteedAgentSettingsChoice,
+.sensteedAgentSettingsToggleRow {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -46,7 +46,7 @@ const CSS = `
   border-radius: 8px;
   background: var(--dsw-alias-bg-layer-1);
 }
-.dshDesktopSettingsChoice {
+.sensteedAgentSettingsChoice {
   box-sizing: border-box;
   width: 100%;
   color: inherit;
@@ -54,24 +54,24 @@ const CSS = `
   text-align: left;
   font: inherit;
 }
-.dshDesktopSettingsChoice[data-actionable="true"] { cursor: pointer; }
-.dshDesktopSettingsChoice[data-actionable="true"]:hover { background: var(--dsw-alias-interactive-bg-hover); }
-.dshDesktopSettingsChoice:focus-visible {
+.sensteedAgentSettingsChoice[data-actionable="true"] { cursor: pointer; }
+.sensteedAgentSettingsChoice[data-actionable="true"]:hover { background: var(--dsw-alias-interactive-bg-hover); }
+.sensteedAgentSettingsChoice:focus-visible {
   outline: 2px solid var(--dsw-alias-brand-primary);
   outline-offset: 2px;
 }
-.dshDesktopSettingsChoice[data-selected="true"] {
+.sensteedAgentSettingsChoice[data-selected="true"] {
   border-color: var(--dsw-alias-brand-primary);
   box-shadow: 0 0 0 1px var(--dsw-alias-brand-primary);
 }
-.dshDesktopSettingsChoice[aria-disabled="true"]:not([data-selected="true"]) { opacity: .58; }
-.dshDesktopSettingsChoiceCopy { display: block; flex: 1; min-width: 0; }
-.dshDesktopSettingsToggleLabel { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
-.dshDesktopSettingsChoiceAside { flex: 0 0 auto; margin-left: 12px; }
-.dshDesktopSettingsDeleteConfirm { display: flex; align-items: flex-end; flex-direction: column; gap: 8px; max-width: 320px; }
-.dshDesktopSettingsDeleteWarning { color: var(--dsw-alias-state-warn-primary); font-size: 12px; line-height: 1.4; text-align: right; }
-.dshDesktopSettingsDeleteActions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
-.dshDesktopSettingsChoiceTitle {
+.sensteedAgentSettingsChoice[aria-disabled="true"]:not([data-selected="true"]) { opacity: .58; }
+.sensteedAgentSettingsChoiceCopy { display: block; flex: 1; min-width: 0; }
+.sensteedAgentSettingsToggleLabel { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.sensteedAgentSettingsChoiceAside { flex: 0 0 auto; margin-left: 12px; }
+.sensteedAgentSettingsDeleteConfirm { display: flex; align-items: flex-end; flex-direction: column; gap: 8px; max-width: 320px; }
+.sensteedAgentSettingsDeleteWarning { color: var(--dsw-alias-state-warn-primary); font-size: 12px; line-height: 1.4; text-align: right; }
+.sensteedAgentSettingsDeleteActions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+.sensteedAgentSettingsChoiceTitle {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
@@ -79,27 +79,27 @@ const CSS = `
   font-size: 14px;
   font-weight: 500;
 }
-.dshDesktopSettingsChoiceBody {
+.sensteedAgentSettingsChoiceBody {
   display: block;
   margin-top: 3px;
   color: var(--dsw-alias-label-secondary);
   font-size: 12px;
   line-height: 1.5;
 }
-.dshDesktopSettingsChoiceLink {
+.sensteedAgentSettingsChoiceLink {
   color: var(--dsw-alias-brand-primary);
   text-decoration: underline;
   text-decoration-thickness: 1px;
   text-underline-offset: 2px;
 }
-.dshDesktopSettingsChoiceLink:hover { text-decoration-thickness: 2px; }
-.dshDesktopSettingsChoiceTitle .dshDesktopSettingsChoiceLink {
+.sensteedAgentSettingsChoiceLink:hover { text-decoration-thickness: 2px; }
+.sensteedAgentSettingsChoiceTitle .sensteedAgentSettingsChoiceLink {
   text-decoration: none;
 }
-.dshDesktopSettingsChoiceTitle .dshDesktopSettingsChoiceLink:hover {
+.sensteedAgentSettingsChoiceTitle .sensteedAgentSettingsChoiceLink:hover {
   opacity: .82;
 }
-.dshDesktopSettingsBadge {
+.sensteedAgentSettingsBadge {
   display: inline-flex;
   align-items: center;
   min-height: 20px;
@@ -110,12 +110,12 @@ const CSS = `
   font-size: 11px;
   font-weight: 400;
 }
-.dshDesktopSettingsForm {
+.sensteedAgentSettingsForm {
   display: flex;
   align-items: flex-end;
   gap: 10px;
 }
-.dshDesktopSettingsField {
+.sensteedAgentSettingsField {
   display: flex;
   flex: 1;
   flex-direction: column;
@@ -124,22 +124,22 @@ const CSS = `
   color: var(--dsw-alias-label-secondary);
   font-size: 12px;
 }
-.dshDesktopSettingsField > span { width: 100%; }
-.dshDesktopSettingsFieldHeader {
+.sensteedAgentSettingsField > span { width: 100%; }
+.sensteedAgentSettingsFieldHeader {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
 }
-.dshDesktopSettingsCredentialStatus { color: var(--dsw-alias-label-secondary); }
-.dshDesktopSettingsCredentialForm {
+.sensteedAgentSettingsCredentialStatus { color: var(--dsw-alias-label-secondary); }
+.sensteedAgentSettingsCredentialForm {
   display: flex;
   align-items: flex-end;
   gap: 10px;
 }
-.dshDesktopSettingsSecretInput { position: relative; display: block; }
-.dshDesktopSettingsSecretInput .dshDesktopSettingsInput { padding-right: 40px; }
-.dshDesktopSettingsSecretReveal {
+.sensteedAgentSettingsSecretInput { position: relative; display: block; }
+.sensteedAgentSettingsSecretInput .sensteedAgentSettingsInput { padding-right: 40px; }
+.sensteedAgentSettingsSecretReveal {
   position: absolute;
   top: 50%;
   right: 4px;
@@ -155,15 +155,15 @@ const CSS = `
   color: var(--dsw-alias-label-secondary);
   cursor: pointer;
 }
-.dshDesktopSettingsSecretReveal:hover:not(:disabled) { background: var(--dsw-alias-interactive-bg-hover); }
-.dshDesktopSettingsSecretReveal:focus-visible {
+.sensteedAgentSettingsSecretReveal:hover:not(:disabled) { background: var(--dsw-alias-interactive-bg-hover); }
+.sensteedAgentSettingsSecretReveal:focus-visible {
   outline: 2px solid var(--dsw-alias-brand-primary);
   outline-offset: 1px;
 }
-.dshDesktopSettingsSecretReveal:disabled { cursor: default; opacity: .55; }
-.dshDesktopSettingsSecretReveal svg { width: 16px; height: 16px; stroke-width: 1.8; }
-.dshDesktopSettingsCredentialActions { display: flex; gap: 8px; padding-bottom: 18px; }
-.dshDesktopSettingsInput {
+.sensteedAgentSettingsSecretReveal:disabled { cursor: default; opacity: .55; }
+.sensteedAgentSettingsSecretReveal svg { width: 16px; height: 16px; stroke-width: 1.8; }
+.sensteedAgentSettingsCredentialActions { display: flex; gap: 8px; padding-bottom: 18px; }
+.sensteedAgentSettingsInput {
   width: 100%;
   min-height: 36px;
   box-sizing: border-box;
@@ -176,11 +176,11 @@ const CSS = `
   font: inherit;
   font-size: 13px;
 }
-.dshDesktopSettingsInput:focus-visible {
+.sensteedAgentSettingsInput:focus-visible {
   border-color: var(--dsw-alias-brand-primary);
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--dsw-alias-brand-primary) 20%, transparent);
 }
-.dshDesktopSettingsButton {
+.sensteedAgentSettingsButton {
   flex: 0 0 auto;
   min-height: 32px;
   padding: 5px 13px;
@@ -192,18 +192,18 @@ const CSS = `
   font: inherit;
   font-size: 12px;
 }
-.dshDesktopSettingsButton:hover:not(:disabled) { background: var(--dsw-alias-interactive-bg-hover); }
-.dshDesktopSettingsButtonSecondary { color: var(--dsw-alias-label-secondary); }
-.dshDesktopSettingsButtonDanger { color: var(--dsw-alias-state-error-primary); }
-.dshDesktopSettingsButton:disabled { cursor: default; opacity: .55; }
-.dshDesktopNativeActions[data-placement="settings"] {
+.sensteedAgentSettingsButton:hover:not(:disabled) { background: var(--dsw-alias-interactive-bg-hover); }
+.sensteedAgentSettingsButtonSecondary { color: var(--dsw-alias-label-secondary); }
+.sensteedAgentSettingsButtonDanger { color: var(--dsw-alias-state-error-primary); }
+.sensteedAgentSettingsButton:disabled { cursor: default; opacity: .55; }
+.sensteedAgentNativeActions[data-placement="settings"] {
   display: flex;
   align-items: center;
   gap: 8px;
 }
-.dshDesktopNativeActions[data-placement="settings"] .dshDesktopNativeActionMenuAnchor { position: relative; }
-.dshDesktopNativeActions[data-placement="settings"] .dshDesktopActionMenuPositioner { z-index: 2147483001; -webkit-app-region: no-drag; }
-.dshDesktopNativeActions[data-placement="settings"] .dshDesktopActionMenu {
+.sensteedAgentNativeActions[data-placement="settings"] .sensteedAgentNativeActionMenuAnchor { position: relative; }
+.sensteedAgentNativeActions[data-placement="settings"] .sensteedAgentActionMenuPositioner { z-index: 2147483001; -webkit-app-region: no-drag; }
+.sensteedAgentNativeActions[data-placement="settings"] .sensteedAgentActionMenu {
   position: relative;
   z-index: 2147483001;
   display: grid;
@@ -217,7 +217,7 @@ const CSS = `
   box-shadow: 0 12px 32px color-mix(in srgb, #000 28%, transparent);
   -webkit-app-region: no-drag;
 }
-.dshDesktopNativeActions[data-placement="settings"] .dshDesktopActionMenuItem {
+.sensteedAgentNativeActions[data-placement="settings"] .sensteedAgentActionMenuItem {
   display: flex;
   align-items: center;
   gap: 9px;
@@ -234,13 +234,13 @@ const CSS = `
   text-align: start;
   white-space: nowrap;
 }
-.dshDesktopNativeActions[data-placement="settings"] .dshDesktopActionMenuItem:hover:not(:disabled) { background: var(--dsw-alias-interactive-bg-hover); }
-.dshDesktopNativeActions[data-placement="settings"] .dshDesktopActionMenuItem[data-highlighted] { background: var(--dsw-alias-interactive-bg-hover); }
-.dshDesktopNativeActions[data-placement="settings"] .dshDesktopActionMenuItem:focus-visible { outline: 2px solid var(--dsw-alias-brand-primary); outline-offset: -2px; }
-.dshDesktopNativeActions[data-placement="settings"] .dshDesktopActionMenuItem:disabled { cursor: default; opacity: .45; }
-.dshDesktopNativeActions[data-placement="settings"] .dshDesktopActionMenuItem svg { width: 14px; height: 14px; stroke-width: 1.8; }
-.dshDesktopNativeActions[data-placement="settings"] .dshDesktopActionMenuItem span { flex: 1; }
-.dshDesktopSettingsHeaderButton {
+.sensteedAgentNativeActions[data-placement="settings"] .sensteedAgentActionMenuItem:hover:not(:disabled) { background: var(--dsw-alias-interactive-bg-hover); }
+.sensteedAgentNativeActions[data-placement="settings"] .sensteedAgentActionMenuItem[data-highlighted] { background: var(--dsw-alias-interactive-bg-hover); }
+.sensteedAgentNativeActions[data-placement="settings"] .sensteedAgentActionMenuItem:focus-visible { outline: 2px solid var(--dsw-alias-brand-primary); outline-offset: -2px; }
+.sensteedAgentNativeActions[data-placement="settings"] .sensteedAgentActionMenuItem:disabled { cursor: default; opacity: .45; }
+.sensteedAgentNativeActions[data-placement="settings"] .sensteedAgentActionMenuItem svg { width: 14px; height: 14px; stroke-width: 1.8; }
+.sensteedAgentNativeActions[data-placement="settings"] .sensteedAgentActionMenuItem span { flex: 1; }
+.sensteedAgentSettingsHeaderButton {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -255,16 +255,16 @@ const CSS = `
   font-size: 12px;
   line-height: 18px;
 }
-.dshDesktopSettingsHeaderButton svg { width: 14px; height: 14px; margin-left: 5px; }
-.dshDesktopSettingsHeaderButton:hover:not(:disabled) { background: var(--dsw-alias-interactive-bg-hover); }
-.dshDesktopSettingsHeaderButton:disabled { cursor: not-allowed; opacity: .4; }
-.dshDesktopNativeActionError {
+.sensteedAgentSettingsHeaderButton svg { width: 14px; height: 14px; margin-left: 5px; }
+.sensteedAgentSettingsHeaderButton:hover:not(:disabled) { background: var(--dsw-alias-interactive-bg-hover); }
+.sensteedAgentSettingsHeaderButton:disabled { cursor: not-allowed; opacity: .4; }
+.sensteedAgentNativeActionError {
   max-width: 260px;
   color: var(--dsw-alias-state-error-primary);
   font-size: 11px;
   line-height: 1.4;
 }
-.dshDesktopSettingsMaterialField {
+.sensteedAgentSettingsMaterialField {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -274,8 +274,8 @@ const CSS = `
   border-radius: 8px;
   background: var(--dsw-alias-bg-layer-1);
 }
-.dshDesktopSettingsMaterialCopy { min-width: 0; }
-.dshDesktopSettingsSelect {
+.sensteedAgentSettingsMaterialCopy { min-width: 0; }
+.sensteedAgentSettingsSelect {
   flex: 0 0 auto;
   min-width: 150px;
   min-height: 32px;
@@ -287,20 +287,20 @@ const CSS = `
   font: inherit;
   font-size: 12px;
 }
-.dshDesktopSettingsSelect:disabled { opacity: .55; }
-.dshDesktopSettingsNotice,
-.dshDesktopSettingsError,
-.dshDesktopSettingsSuccess {
+.sensteedAgentSettingsSelect:disabled { opacity: .55; }
+.sensteedAgentSettingsNotice,
+.sensteedAgentSettingsError,
+.sensteedAgentSettingsSuccess {
   margin: 0;
   padding: 10px 12px;
   border-radius: 8px;
   font-size: 12px;
   line-height: 1.55;
 }
-.dshDesktopSettingsNotice { background: var(--dsw-alias-bg-layer-2); color: var(--dsw-alias-label-secondary); }
-.dshDesktopSettingsError { color: var(--dsw-alias-state-error-primary); background: color-mix(in srgb, var(--dsw-alias-state-error-primary) 10%, transparent); }
-.dshDesktopSettingsSuccess { color: var(--dsw-alias-state-success-primary); background: color-mix(in srgb, var(--dsw-alias-state-success-primary) 10%, transparent); }
-.dshDesktopSettingsToggle {
+.sensteedAgentSettingsNotice { background: var(--dsw-alias-bg-layer-2); color: var(--dsw-alias-label-secondary); }
+.sensteedAgentSettingsError { color: var(--dsw-alias-state-error-primary); background: color-mix(in srgb, var(--dsw-alias-state-error-primary) 10%, transparent); }
+.sensteedAgentSettingsSuccess { color: var(--dsw-alias-state-success-primary); background: color-mix(in srgb, var(--dsw-alias-state-success-primary) 10%, transparent); }
+.sensteedAgentSettingsToggle {
   flex: 0 0 auto;
   position: relative;
   width: 40px;
@@ -312,15 +312,15 @@ const CSS = `
   cursor: pointer;
   transition: background-color var(--ds-transition-duration-fast) var(--ds-ease-in-out);
 }
-.dshDesktopSettingsToggle[aria-checked="true"] {
+.sensteedAgentSettingsToggle[aria-checked="true"] {
   background: var(--dsw-alias-brand-primary);
 }
-.dshDesktopSettingsToggle:disabled { cursor: default; opacity: .5; }
-.dshDesktopSettingsToggle:focus-visible {
+.sensteedAgentSettingsToggle:disabled { cursor: default; opacity: .5; }
+.sensteedAgentSettingsToggle:focus-visible {
   outline: 2px solid var(--dsw-alias-brand-primary);
   outline-offset: 2px;
 }
-.dshDesktopSettingsToggleKnob {
+.sensteedAgentSettingsToggleKnob {
   display: block;
   width: 18px;
   height: 18px;
@@ -330,40 +330,40 @@ const CSS = `
   transform: translateX(0);
   transition: transform var(--ds-transition-duration-fast) var(--ds-ease-in-out);
 }
-.dshDesktopSettingsToggle[aria-checked="true"] .dshDesktopSettingsToggleKnob {
+.sensteedAgentSettingsToggle[aria-checked="true"] .sensteedAgentSettingsToggleKnob {
   transform: translateX(18px);
 }
-.dshDesktopSettingsDetails {
+.sensteedAgentSettingsDetails {
   display: grid;
   gap: 8px;
   padding-left: 14px;
   border-left: 2px solid var(--dsw-alias-border-l1);
 }
-.dshDesktopSettingsLanStatus {
+.sensteedAgentSettingsLanStatus {
   display: grid;
   gap: 3px;
   padding: 10px 12px;
   border-radius: 8px;
   background: var(--dsw-alias-bg-layer-2);
 }
-.dshDesktopSettingsLanStatus[data-state="ready"] .dshDesktopSettingsBadge {
+.sensteedAgentSettingsLanStatus[data-state="ready"] .sensteedAgentSettingsBadge {
   color: var(--dsw-alias-state-success-primary);
 }
-.dshDesktopSettingsLanStatus[data-state="failed"] .dshDesktopSettingsBadge {
+.sensteedAgentSettingsLanStatus[data-state="failed"] .sensteedAgentSettingsBadge {
   color: var(--dsw-alias-state-error-primary);
 }
-.dshDesktopSettingsLanStatus code,
-.dshDesktopSettingsLanFingerprint code {
+.sensteedAgentSettingsLanStatus code,
+.sensteedAgentSettingsLanFingerprint code {
   overflow-wrap: anywhere;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 11px;
 }
-.dshDesktopSettingsLanFingerprint {
+.sensteedAgentSettingsLanFingerprint {
   color: var(--dsw-alias-label-secondary);
   font-size: 12px;
   line-height: 1.5;
 }
-.dshDesktopSettingsUrls {
+.sensteedAgentSettingsUrls {
   display: grid;
   gap: 5px;
   padding: 12px 14px;
@@ -371,7 +371,7 @@ const CSS = `
   border-radius: 8px;
   background: var(--dsw-alias-bg-layer-1);
 }
-.dshDesktopSettingsUrls a {
+.sensteedAgentSettingsUrls a {
   width: fit-content;
   max-width: 100%;
   overflow-wrap: anywhere;
@@ -379,7 +379,7 @@ const CSS = `
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 12px;
 }
-.dshDesktopSettingsDialogBackdrop {
+.sensteedAgentSettingsDialogBackdrop {
   position: fixed;
   z-index: 2147483002;
   inset: 0;
@@ -388,7 +388,7 @@ const CSS = `
   padding: 24px;
   background: color-mix(in srgb, #000 55%, transparent);
 }
-.dshDesktopSettingsDialog {
+.sensteedAgentSettingsDialog {
   width: min(440px, 100%);
   box-sizing: border-box;
   padding: 20px;
@@ -397,15 +397,15 @@ const CSS = `
   background: var(--dsw-alias-bg-layer-1);
   box-shadow: 0 24px 64px color-mix(in srgb, #000 38%, transparent);
 }
-.dshDesktopSettingsDialog h3 { margin: 0; color: var(--dsw-alias-state-error-primary); font-size: 16px; }
-.dshDesktopSettingsDialog p { margin: 12px 0 0; color: var(--dsw-alias-label-secondary); font-size: 13px; line-height: 1.65; }
-.dshDesktopSettingsDialogActions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
+.sensteedAgentSettingsDialog h3 { margin: 0; color: var(--dsw-alias-state-error-primary); font-size: 16px; }
+.sensteedAgentSettingsDialog p { margin: 12px 0 0; color: var(--dsw-alias-label-secondary); font-size: 13px; line-height: 1.65; }
+.sensteedAgentSettingsDialogActions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
 @media (max-width: 720px) {
-  .dshDesktopSettingsChoice,
-  .dshDesktopSettingsToggleRow { align-items: flex-start; }
-  .dshDesktopSettingsForm { align-items: stretch; flex-direction: column; }
-  .dshDesktopSettingsCredentialForm { align-items: stretch; flex-direction: column; }
-  .dshDesktopSettingsCredentialActions { padding-bottom: 0; }
+  .sensteedAgentSettingsChoice,
+  .sensteedAgentSettingsToggleRow { align-items: flex-start; }
+  .sensteedAgentSettingsForm { align-items: stretch; flex-direction: column; }
+  .sensteedAgentSettingsCredentialForm { align-items: stretch; flex-direction: column; }
+  .sensteedAgentSettingsCredentialActions { padding-bottom: 0; }
 }
 `
 

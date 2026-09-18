@@ -1,7 +1,7 @@
 import type { DesktopLocale, DesktopPlatform } from './runtime.ts'
 
-export const COMPATIBILITY_CHROME_CHANNEL = 'dsh-desktop:compatibility-chrome'
-export const COMPATIBILITY_CHROME_STATE = 'dsh-desktop:compatibility-chrome-state'
+export const COMPATIBILITY_CHROME_CHANNEL = 'sensteed-agent:compatibility-chrome'
+export const COMPATIBILITY_CHROME_STATE = 'sensteed-agent:compatibility-chrome-state'
 
 export type CompatibilityChromeCommand = 'mode-compatibility' | 'state' | 'check-for-updates' | 'mode-extended' | 'mode-advanced' | 'terminal' | 'restart' | 'restart-recovery' | 'reload' | 'developer' | 'expand' | 'collapse' | 'remote-control'
 

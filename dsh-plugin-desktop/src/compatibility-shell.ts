@@ -32,7 +32,7 @@ export class CompatibilityShell {
   ) {
     this.chromeView = new WebContentsView({ webPreferences: {
       preload: fileURLToPath(new URL('./compatibility-preload.cjs', import.meta.url)),
-      partition: 'dsh-desktop-compatibility-chrome',
+      partition: 'sensteed-agent-compatibility-chrome',
       contextIsolation: true, nodeIntegration: false, sandbox: true, webSecurity: true,
     } })
     this.chromeView.setBackgroundColor('#00000000')
@@ -158,7 +158,7 @@ export class CompatibilityShell {
   }
 
   private readonly dismiss = (): void => {
-    if (!this.disposed && !this.chrome.isDestroyed()) this.chrome.send('dsh-desktop:chrome-dismiss')
+    if (!this.disposed && !this.chrome.isDestroyed()) this.chrome.send('sensteed-agent:chrome-dismiss')
     this.collapse()
   }
 

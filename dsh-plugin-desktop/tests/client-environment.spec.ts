@@ -30,9 +30,9 @@ import {
 
 describe('desktop client environment', () => {
   it.each(['darwin', 'win32', 'linux'])('keeps compatibility chrome out of the %s client slot tree', platform => {
-    const marker = platform === 'win32' ? '&dsh-desktop-mica=0' : ''
+    const marker = platform === 'win32' ? '&sensteed-agent-mica=0' : ''
     vi.stubGlobal('window', { location: {
-      search: `?dsh-desktop-platform=${platform}&dsh-desktop-mode=compatibility&dsh-desktop-version=2.0.3&dsh-desktop-material=off${marker}`,
+      search: `?sensteed-agent-platform=${platform}&sensteed-agent-mode=compatibility&sensteed-agent-version=2.0.3&sensteed-agent-material=off${marker}`,
     } })
     const effect = vi.fn()
     const inject = vi.fn()
@@ -66,24 +66,24 @@ describe('desktop client environment', () => {
   })
 
   it('accepts the Electron-owned kebab query markers', () => {
-    expect(parseDesktopClientEnvironment('?dsh-desktop-mode=advanced&dsh-desktop-platform=darwin&dsh-desktop-version=2.0.3&dsh-desktop-material=transparent'))
+    expect(parseDesktopClientEnvironment('?sensteed-agent-mode=advanced&sensteed-agent-platform=darwin&sensteed-agent-version=2.0.3&sensteed-agent-material=transparent'))
       .toEqual({ version: '2.0.3', mode: 'advanced', platform: 'darwin', material: 'transparent', micaSupported: false })
-    expect(parseDesktopClientEnvironment('?dsh-desktop-platform=win32&dsh-desktop-mode=compatibility&dsh-desktop-version=2.0.3&dsh-desktop-material=off&dsh-desktop-mica=0'))
+    expect(parseDesktopClientEnvironment('?sensteed-agent-platform=win32&sensteed-agent-mode=compatibility&sensteed-agent-version=2.0.3&sensteed-agent-material=off&sensteed-agent-mica=0'))
       .toEqual({ version: '2.0.3', mode: 'compatibility', platform: 'win32', material: 'off', micaSupported: false })
-    expect(parseDesktopClientEnvironment('?dsh-desktop-mode=extended&dsh-desktop-platform=win32&dsh-desktop-version=2.0.3&dsh-desktop-material=mica&dsh-desktop-mica=1'))
+    expect(parseDesktopClientEnvironment('?sensteed-agent-mode=extended&sensteed-agent-platform=win32&sensteed-agent-version=2.0.3&sensteed-agent-material=mica&sensteed-agent-mica=1'))
       .toEqual({ version: '2.0.3', mode: 'extended', platform: 'win32', material: 'mica', micaSupported: true })
-    expect(parseDesktopClientEnvironment('?dsh-desktop-mode=extended&dsh-desktop-platform=win32&dsh-desktop-version=2.0.3&dsh-desktop-material=acrylic&dsh-desktop-mica=0'))
+    expect(parseDesktopClientEnvironment('?sensteed-agent-mode=extended&sensteed-agent-platform=win32&sensteed-agent-version=2.0.3&sensteed-agent-material=acrylic&sensteed-agent-mica=0'))
       .toEqual({ version: '2.0.3', mode: 'extended', platform: 'win32', material: 'off', micaSupported: false })
   })
 
   it.each([
-    ['?dsh-desktop-mode=glass&dsh-desktop-platform=darwin', 'dsh-desktop-mode'],
-    ['?dsh-desktop-mode=advanced', 'dsh-desktop-platform'],
-    ['?dsh-desktop-platform=darwin', 'dsh-desktop-mode'],
-    ['?dsh-desktop-mode=advanced&dsh-desktop-platform=android', 'dsh-desktop-platform'],
-    ['?dsh-desktop-mode=advanced&dsh-desktop-platform=darwin', 'dsh-desktop-material'],
-    ['?dsh-desktop-mode=advanced&dsh-desktop-platform=darwin&dsh-desktop-material=off', 'dsh-desktop-version'],
-    ['?dsh-desktop-mode=advanced&dsh-desktop-platform=win32&dsh-desktop-version=2.0.3&dsh-desktop-material=mica&dsh-desktop-mica=0', 'incompatible'],
+    ['?sensteed-agent-mode=glass&sensteed-agent-platform=darwin', 'sensteed-agent-mode'],
+    ['?sensteed-agent-mode=advanced', 'sensteed-agent-platform'],
+    ['?sensteed-agent-platform=darwin', 'sensteed-agent-mode'],
+    ['?sensteed-agent-mode=advanced&sensteed-agent-platform=android', 'sensteed-agent-platform'],
+    ['?sensteed-agent-mode=advanced&sensteed-agent-platform=darwin', 'sensteed-agent-material'],
+    ['?sensteed-agent-mode=advanced&sensteed-agent-platform=darwin&sensteed-agent-material=off', 'sensteed-agent-version'],
+    ['?sensteed-agent-mode=advanced&sensteed-agent-platform=win32&sensteed-agent-version=2.0.3&sensteed-agent-material=mica&sensteed-agent-mica=0', 'incompatible'],
   ])('fails loud for malformed marker %s', (search, field) => {
     expect(() => parseDesktopClientEnvironment(search)).toThrow(field)
   })
@@ -153,10 +153,10 @@ describe('advanced desktop layout', () => {
 
   it('orders the Windows drag region after scrollable content and before overlays', () => {
     const frame = readFileSync(new URL('../src/client/AdvancedFrame.tsx', import.meta.url), 'utf8')
-    const conversation = frame.indexOf('className="dshDesktopConversationSurface"')
-    const rightbar = frame.indexOf('className="dshDesktopRightbarSurface"')
-    const caption = frame.indexOf('className="dshDesktopWindowsCaptionRow"')
-    const overlay = frame.indexOf('className="dshDesktopOverlay"')
+    const conversation = frame.indexOf('className="sensteedAgentConversationSurface"')
+    const rightbar = frame.indexOf('className="sensteedAgentRightbarSurface"')
+    const caption = frame.indexOf('className="sensteedAgentWindowsCaptionRow"')
+    const overlay = frame.indexOf('className="sensteedAgentOverlay"')
 
     expect([conversation, rightbar, caption, overlay]).not.toContain(-1)
     expect(caption).toBeGreaterThan(conversation)
@@ -187,43 +187,43 @@ describe('advanced desktop layout', () => {
 
     try {
       const dispose = installDesktopOwnedStyles()
-      expect(css).toMatch(/\.dshDesktopFrame \{[^}]*transition: grid-template-columns var\(--ds-transition-duration-slow\) var\(--ds-ease-in-out\);/)
-      expect(css).toMatch(/\.dshDesktopFrame\[data-dragging\] \{ transition: none; \}/)
+      expect(css).toMatch(/\.sensteedAgentFrame \{[^}]*transition: grid-template-columns var\(--ds-transition-duration-slow\) var\(--ds-ease-in-out\);/)
+      expect(css).toMatch(/\.sensteedAgentFrame\[data-dragging\] \{ transition: none; \}/)
       expect(css).toContain('min-height: 0; overflow: visible;')
-      expect(css).toMatch(/\.dshDesktopResizeHandle \{[^}]*transition: left var\(--ds-transition-duration-slow\) var\(--ds-ease-in-out\);/)
-      expect(css).toMatch(/\.dshDesktopFrame\[data-dragging\] \.dshDesktopResizeHandle \{ transition: none; \}/)
+      expect(css).toMatch(/\.sensteedAgentResizeHandle \{[^}]*transition: left var\(--ds-transition-duration-slow\) var\(--ds-ease-in-out\);/)
+      expect(css).toMatch(/\.sensteedAgentFrame\[data-dragging\] \.sensteedAgentResizeHandle \{ transition: none; \}/)
       const reducedMotion = css.match(/@media \(prefers-reduced-motion: reduce\) \{\s*([^{}]+)\{([^{}]+)\}/)
       expect(reducedMotion?.[1]?.split(',').map(selector => selector.trim())).toEqual(expect.arrayContaining([
-        '.dshDesktopFrame', '.dshDesktopResizeHandle', '[aria-modal="true"] *',
+        '.sensteedAgentFrame', '.sensteedAgentResizeHandle', '[aria-modal="true"] *',
       ]))
       expect(reducedMotion?.[2]).toMatch(/transition:\s*none !important;/)
       expect(reducedMotion?.[2]).toMatch(/animation-duration:\s*0\.01ms !important;/)
-      expect(css).toMatch(/\.dshDesktopSidebarSurface\s*\{[^}]*--dsw-specific-sidebar-fill:\s*transparent;/)
-      expect(css).toMatch(/data-desktop-mode="advanced"\]\[data-desktop-platform="darwin"\]\[data-sidebar-collapsed\][^{]*\.dshDesktopUpstreamSidebar \{[^}]*width:\s*56px;[^}]*margin:\s*0 auto;/)
-      expect(css).not.toMatch(/data-desktop-mode="extended"[^{}]*data-sidebar-collapsed[^{}]*\.dshDesktopUpstreamSidebar/)
-      expect(css).toMatch(new RegExp(`data-desktop-mode="advanced"\\]\\[data-desktop-platform="darwin"\\] \\.dshDesktopUpstreamSidebar \\{[^}]*padding-top: ${ADVANCED_MACOS_CONTENT_INSET}px;`))
-      expect(css).not.toMatch(/\.dshDesktopUpstreamSidebar \{[^}]*-webkit-app-region: no-drag;/)
+      expect(css).toMatch(/\.sensteedAgentSidebarSurface\s*\{[^}]*--dsw-specific-sidebar-fill:\s*transparent;/)
+      expect(css).toMatch(/data-desktop-mode="advanced"\]\[data-desktop-platform="darwin"\]\[data-sidebar-collapsed\][^{]*\.sensteedAgentUpstreamSidebar \{[^}]*width:\s*56px;[^}]*margin:\s*0 auto;/)
+      expect(css).not.toMatch(/data-desktop-mode="extended"[^{}]*data-sidebar-collapsed[^{}]*\.sensteedAgentUpstreamSidebar/)
+      expect(css).toMatch(new RegExp(`data-desktop-mode="advanced"\\]\\[data-desktop-platform="darwin"\\] \\.sensteedAgentUpstreamSidebar \\{[^}]*padding-top: ${ADVANCED_MACOS_CONTENT_INSET}px;`))
+      expect(css).not.toMatch(/\.sensteedAgentUpstreamSidebar \{[^}]*-webkit-app-region: no-drag;/)
       expect(css).toContain(`grid-template-rows: ${ADVANCED_MACOS_DRAG_REGION_HEIGHT}px minmax(0, 1fr)`)
-      expect(css).toMatch(/\.dshDesktopFrame\[data-desktop-mode="advanced"\]\[data-desktop-platform="darwin"\] \.dshDesktopSidebarSurface \{[^}]*grid-row: 1 \/ -1;/)
-      expect(css).not.toMatch(/data-desktop-platform="darwin"\] \.dshDesktopSidebarSurface \{[^}]*-webkit-app-region: no-drag;/)
-      expect(css).toMatch(/\.dshDesktopFrame\[data-desktop-mode="advanced"\]\[data-desktop-platform="darwin"\] \.dshDesktopConversationSurface,\s*\.dshDesktopFrame\[data-desktop-mode="advanced"\]\[data-desktop-platform="darwin"\] \.dshDesktopRightbarSurface,\s*\.dshDesktopFrame\[data-desktop-mode="advanced"\]\[data-desktop-platform="darwin"\] \.dshDesktopDetailsSurface \{ grid-row: 2; \}/)
-      expect(css).toMatch(new RegExp(`data-desktop-platform="darwin"\\] \\.dshDesktopSidebarSurface::before \\{[^}]*z-index: ${ADVANCED_MACOS_DRAG_LAYER_Z_INDEX};[^}]*left: ${MACOS_TRAFFIC_LIGHT_SAFE_WIDTH}px;[^}]*height: ${ADVANCED_MACOS_DRAG_REGION_HEIGHT}px;[^}]*-webkit-app-region: drag;`))
-      expect(css).toMatch(new RegExp(`\\.dshDesktopMacCaptionRow \\{[^}]*position: absolute;[^}]*z-index: ${ADVANCED_MACOS_DRAG_LAYER_Z_INDEX};[^}]*grid-column: 2 / -1;[^}]*grid-row: 1;[^}]*left: 0;[^}]*height: ${ADVANCED_MACOS_DRAG_REGION_HEIGHT}px;[^}]*background: var\\(--dsw-alias-bg-base\\);[^}]*-webkit-app-region: drag;`))
-      expect(css).not.toContain('.dshDesktopMacCaptionRow::before')
-      expect(css).not.toMatch(/data-desktop-platform="darwin"\] \.dshDesktopSidebarSurface \{[^}]*-webkit-app-region:\s*drag;/)
+      expect(css).toMatch(/\.sensteedAgentFrame\[data-desktop-mode="advanced"\]\[data-desktop-platform="darwin"\] \.sensteedAgentSidebarSurface \{[^}]*grid-row: 1 \/ -1;/)
+      expect(css).not.toMatch(/data-desktop-platform="darwin"\] \.sensteedAgentSidebarSurface \{[^}]*-webkit-app-region: no-drag;/)
+      expect(css).toMatch(/\.sensteedAgentFrame\[data-desktop-mode="advanced"\]\[data-desktop-platform="darwin"\] \.sensteedAgentConversationSurface,\s*\.sensteedAgentFrame\[data-desktop-mode="advanced"\]\[data-desktop-platform="darwin"\] \.sensteedAgentRightbarSurface,\s*\.sensteedAgentFrame\[data-desktop-mode="advanced"\]\[data-desktop-platform="darwin"\] \.sensteedAgentDetailsSurface \{ grid-row: 2; \}/)
+      expect(css).toMatch(new RegExp(`data-desktop-platform="darwin"\\] \\.sensteedAgentSidebarSurface::before \\{[^}]*z-index: ${ADVANCED_MACOS_DRAG_LAYER_Z_INDEX};[^}]*left: ${MACOS_TRAFFIC_LIGHT_SAFE_WIDTH}px;[^}]*height: ${ADVANCED_MACOS_DRAG_REGION_HEIGHT}px;[^}]*-webkit-app-region: drag;`))
+      expect(css).toMatch(new RegExp(`\\.sensteedAgentMacCaptionRow \\{[^}]*position: absolute;[^}]*z-index: ${ADVANCED_MACOS_DRAG_LAYER_Z_INDEX};[^}]*grid-column: 2 / -1;[^}]*grid-row: 1;[^}]*left: 0;[^}]*height: ${ADVANCED_MACOS_DRAG_REGION_HEIGHT}px;[^}]*background: var\\(--dsw-alias-bg-base\\);[^}]*-webkit-app-region: drag;`))
+      expect(css).not.toContain('.sensteedAgentMacCaptionRow::before')
+      expect(css).not.toMatch(/data-desktop-platform="darwin"\] \.sensteedAgentSidebarSurface \{[^}]*-webkit-app-region:\s*drag;/)
       expect(css).not.toContain('[data-slot="conversation.session.header"]')
       expect(css).not.toContain('[data-phase')
-      expect(css).toMatch(/\.dshDesktopNoDrag, button, input, textarea, select, label, summary, a,[^{}]*\{ -webkit-app-region: no-drag !important; \}/)
+      expect(css).toMatch(/\.sensteedAgentNoDrag, button, input, textarea, select, label, summary, a,[^{}]*\{ -webkit-app-region: no-drag !important; \}/)
       expect(css).toContain('[contenteditable="true"]')
       expect(css).toContain('[role="switch"]')
-      expect(css).not.toMatch(/html:has\(\[aria-modal="true"\]\) \.dshDesktopMacCaptionRow/)
-      expect(css).not.toMatch(/html:has\(\[aria-modal="true"\]\) \.dshDesktopSidebarSurface/)
+      expect(css).not.toMatch(/html:has\(\[aria-modal="true"\]\) \.sensteedAgentMacCaptionRow/)
+      expect(css).not.toMatch(/html:has\(\[aria-modal="true"\]\) \.sensteedAgentSidebarSurface/)
       expect(css).toContain(`grid-template-rows: ${ADVANCED_WINDOWS_TITLEBAR_HEIGHT}px minmax(0, 1fr)`)
-      expect(css).toMatch(/\.dshDesktopFrame\[data-desktop-mode="advanced"\]\[data-desktop-platform="win32"\] \.dshDesktopSidebarSurface \{ grid-row: 1 \/ -1; \}/)
-      expect(css).toMatch(/\.dshDesktopFrame\[data-desktop-mode="advanced"\]\[data-desktop-platform="win32"\] \.dshDesktopConversationSurface,\s*\.dshDesktopFrame\[data-desktop-mode="advanced"\]\[data-desktop-platform="win32"\] \.dshDesktopRightbarSurface,\s*\.dshDesktopFrame\[data-desktop-mode="advanced"\]\[data-desktop-platform="win32"\] \.dshDesktopDetailsSurface \{ grid-row: 2; \}/)
-      expect(css).toMatch(/\.dshDesktopWindowsCaptionRow \{[^}]*grid-column: 2 \/ -1;[^}]*grid-row: 1;/)
-      expect(css).toMatch(new RegExp(`\\.dshDesktopWindowsCaptionRow::before \\{[^}]*inset: 0 ${WINDOWS_CAPTION_CONTROLS_WIDTH}px 0 0;[^}]*-webkit-app-region: drag;`))
-      expect(css).toContain('html:has([aria-modal="true"]) .dshDesktopWindowsCaptionRow::before { -webkit-app-region: no-drag !important; }')
+      expect(css).toMatch(/\.sensteedAgentFrame\[data-desktop-mode="advanced"\]\[data-desktop-platform="win32"\] \.sensteedAgentSidebarSurface \{ grid-row: 1 \/ -1; \}/)
+      expect(css).toMatch(/\.sensteedAgentFrame\[data-desktop-mode="advanced"\]\[data-desktop-platform="win32"\] \.sensteedAgentConversationSurface,\s*\.sensteedAgentFrame\[data-desktop-mode="advanced"\]\[data-desktop-platform="win32"\] \.sensteedAgentRightbarSurface,\s*\.sensteedAgentFrame\[data-desktop-mode="advanced"\]\[data-desktop-platform="win32"\] \.sensteedAgentDetailsSurface \{ grid-row: 2; \}/)
+      expect(css).toMatch(/\.sensteedAgentWindowsCaptionRow \{[^}]*grid-column: 2 \/ -1;[^}]*grid-row: 1;/)
+      expect(css).toMatch(new RegExp(`\\.sensteedAgentWindowsCaptionRow::before \\{[^}]*inset: 0 ${WINDOWS_CAPTION_CONTROLS_WIDTH}px 0 0;[^}]*-webkit-app-region: drag;`))
+      expect(css).toContain('html:has([aria-modal="true"]) .sensteedAgentWindowsCaptionRow::before { -webkit-app-region: no-drag !important; }')
       expect(css).not.toMatch(/data-desktop-platform="win32"[^{}]*header[^{}]*\{[^}]*padding-right/)
       expect(appendChild).toHaveBeenCalledWith(style)
       dispose()
@@ -349,9 +349,9 @@ describe('advanced desktop layout', () => {
       expect(rootInject).toMatchObject({ platform: 'darwin' })
       expect(rootInject).not.toHaveProperty('mode')
       expect(dataset).toMatchObject({
-        dshDesktopMode: 'advanced',
-        dshDesktopPlatform: 'darwin',
-        dshDesktopMaterial: 'transparent',
+        sensteedAgentMode: 'advanced',
+        sensteedAgentPlatform: 'darwin',
+        sensteedAgentMaterial: 'transparent',
       })
       disposers.forEach(dispose => { dispose() })
       expect(dataset).toEqual({})
@@ -507,26 +507,26 @@ describe('independent Desktop frame', () => {
 
     try {
       const dispose = installExtendedStyles()
-      expect(css).toContain(`--dsh-desktop-frame-height: 0px`)
+      expect(css).toContain(`--sensteed-agent-frame-height: 0px`)
       expect(DESKTOP_FRAME_HEIGHT).toBe(36)
       expect(css).toMatch(/#root \{[^}]*position: fixed;[^}]*right: 0;[^}]*bottom: 0;[^}]*left: 0;[^}]*padding-top: 0;[^}]*transform: translateZ\(0\);/)
       expect(css).toMatch(/\[data-shell-overlay\] \{[^}]*overflow: hidden;[^}]*transform: translateZ\(0\);/)
-      expect(css).toMatch(/\[role="presentation"\]:has\(> \[aria-modal="true"\]\),[\s\S]*> \[aria-modal="true"\] \{[\s\S]*top: var\(--dsh-desktop-frame-height\) !important;/)
+      expect(css).toMatch(/\[role="presentation"\]:has\(> \[aria-modal="true"\]\),[\s\S]*> \[aria-modal="true"\] \{[\s\S]*top: var\(--sensteed-agent-frame-height\) !important;/)
       expect(css).not.toContain('#root > :has(> [data-shell-overlay])')
-      expect(css).toMatch(/body\[data-dsh-desktop-mode="extended"\] \.dshDesktopSidebarSurface \{[^}]*--dsw-specific-sidebar-fill: transparent;[^}]*border-right-color: transparent;[^}]*background: transparent !important;/)
-      expect(css).toMatch(/body\[data-dsh-desktop-mode="extended"\] \.dshDesktopFrame \{[^}]*background: var\(--dsh-desktop-frame-fill\);/)
-      expect(css).toMatch(/body\[data-dsh-desktop-mode="extended"\] \.dshDesktopConversationSurface \{[^}]*border-top: 1px solid var\(--dsw-alias-border-l1\);[^}]*border-left: 1px solid var\(--dsw-alias-border-l1\);[^}]*border-top-left-radius: 10px;/)
-      expect(css).toContain('body:is([data-dsh-desktop-mode="compatibility"], [data-dsh-desktop-mode="extended"]) #root')
-      expect(css).toMatch(/\.dshDesktopFrameTitlebar \{[^}]*-webkit-app-region: drag;/)
-      expect(css).toMatch(/\.dshDesktopFrameTitlebar \{[^}]*z-index: 2147483647;/)
-      expect(css).toMatch(/\.dshDesktopFrameIdentity \{[^}]*left: 50%;[^}]*transform: translateX\(-50%\);/)
-      expect(css).toMatch(/\.dshDesktopFrameActions \{[^}]*-webkit-app-region: no-drag;/)
-      expect(css).toContain('[data-platform="darwin"] .dshDesktopFrameActions { margin-left: auto; }')
-      expect(css).toContain('[data-platform="win32"] .dshDesktopFrameActions { margin-right: auto; }')
-      expect(css).toMatch(/\.dshDesktopTitlebarIconButton \{[^}]*-webkit-app-region: no-drag;/)
-      expect(css).toMatch(/\.dshDesktopTitlebarIconButton \{[^}]*width: 26px;[^}]*height: 26px;[^}]*border-radius: 7px;/)
-      expect(css).toMatch(/\.dshDesktopTitlebarIconButton svg,[^}]*width: 14px;[^}]*height: 14px;/)
-      expect(css).toContain('.dshDesktopActionMenu')
+      expect(css).toMatch(/body\[data-sensteed-agent-mode="extended"\] \.sensteedAgentSidebarSurface \{[^}]*--dsw-specific-sidebar-fill: transparent;[^}]*border-right-color: transparent;[^}]*background: transparent !important;/)
+      expect(css).toMatch(/body\[data-sensteed-agent-mode="extended"\] \.sensteedAgentFrame \{[^}]*background: var\(--sensteed-agent-frame-fill\);/)
+      expect(css).toMatch(/body\[data-sensteed-agent-mode="extended"\] \.sensteedAgentConversationSurface \{[^}]*border-top: 1px solid var\(--dsw-alias-border-l1\);[^}]*border-left: 1px solid var\(--dsw-alias-border-l1\);[^}]*border-top-left-radius: 10px;/)
+      expect(css).toContain('body:is([data-sensteed-agent-mode="compatibility"], [data-sensteed-agent-mode="extended"]) #root')
+      expect(css).toMatch(/\.sensteedAgentFrameTitlebar \{[^}]*-webkit-app-region: drag;/)
+      expect(css).toMatch(/\.sensteedAgentFrameTitlebar \{[^}]*z-index: 2147483647;/)
+      expect(css).toMatch(/\.sensteedAgentFrameIdentity \{[^}]*left: 50%;[^}]*transform: translateX\(-50%\);/)
+      expect(css).toMatch(/\.sensteedAgentFrameActions \{[^}]*-webkit-app-region: no-drag;/)
+      expect(css).toContain('[data-platform="darwin"] .sensteedAgentFrameActions { margin-left: auto; }')
+      expect(css).toContain('[data-platform="win32"] .sensteedAgentFrameActions { margin-right: auto; }')
+      expect(css).toMatch(/\.sensteedAgentTitlebarIconButton \{[^}]*-webkit-app-region: no-drag;/)
+      expect(css).toMatch(/\.sensteedAgentTitlebarIconButton \{[^}]*width: 26px;[^}]*height: 26px;[^}]*border-radius: 7px;/)
+      expect(css).toMatch(/\.sensteedAgentTitlebarIconButton svg,[^}]*width: 14px;[^}]*height: 14px;/)
+      expect(css).toContain('.sensteedAgentActionMenu')
       expect(css).toContain(`padding: 0 ${WINDOWS_CAPTION_CONTROLS_WIDTH + 8}px 0 8px`)
       expect(css).toContain(`padding: 0 8px 0 ${MACOS_TRAFFIC_LIGHT_SAFE_WIDTH + 8}px`)
       expect(appendChild).toHaveBeenCalledWith(style)
@@ -617,11 +617,11 @@ describe('independent Desktop frame', () => {
       expect(registrations).toHaveLength(1)
       expect(ctx.slots.inject).not.toHaveBeenCalled()
       expect(dataset).toMatchObject({
-        dshDesktopMode: 'extended',
-        dshDesktopPlatform: 'win32',
-        dshDesktopMaterial: 'off',
+        sensteedAgentMode: 'extended',
+        sensteedAgentPlatform: 'win32',
+        sensteedAgentMaterial: 'off',
       })
-      expect(rootDataset).toEqual({ dshDesktopContentViewport: '' })
+      expect(rootDataset).toEqual({ sensteedAgentContentViewport: '' })
       disposers.forEach(dispose => { dispose() })
       expect(dataset).toEqual({})
       expect(rootDataset).toEqual({})
@@ -671,9 +671,9 @@ describe('independent Desktop frame', () => {
       expect(registrations).toHaveLength(0)
       expect(JSON.stringify(registrations)).not.toContain('desktop.titlebar.action')
       expect(dataset).toMatchObject({
-        dshDesktopMode: 'compatibility',
-        dshDesktopPlatform: 'darwin',
-        dshDesktopMaterial: 'transparent',
+        sensteedAgentMode: 'compatibility',
+        sensteedAgentPlatform: 'darwin',
+        sensteedAgentMaterial: 'transparent',
       })
       disposers.forEach(dispose => { dispose() })
       expect(dataset).toEqual({})
@@ -686,7 +686,7 @@ describe('independent Desktop frame', () => {
 describe('sidebar footer stacking', () => {
   it.each(['compatibility', 'extended', 'advanced'])('owns the footer seat in %s mode', mode => {
     vi.stubGlobal('window', { location: {
-      search: `?dsh-desktop-platform=darwin&dsh-desktop-mode=${mode}&dsh-desktop-version=2.0.3&dsh-desktop-material=off`,
+      search: `?sensteed-agent-platform=darwin&sensteed-agent-mode=${mode}&sensteed-agent-version=2.0.3&sensteed-agent-material=off`,
     } })
     const effect = vi.fn()
     const ctx = {
@@ -751,7 +751,7 @@ describe('sidebar footer stacking', () => {
       expect(css).not.toContain('scrollbar-gutter')
       expect(css).not.toContain('overflow-x: hidden')
       // The seat must not depend on a mode marker: compatibility mode sets none.
-      expect(css).not.toContain('data-dsh-desktop-mode')
+      expect(css).not.toContain('data-sensteed-agent-mode')
       expect(appendChild).toHaveBeenCalledWith(style)
       dispose()
       expect(remove).toHaveBeenCalledOnce()

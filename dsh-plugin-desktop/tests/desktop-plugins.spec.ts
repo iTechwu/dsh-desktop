@@ -43,7 +43,7 @@ afterEach(() => {
 })
 
 function temporaryRoot(): string {
-  const root = mkdtempSync(join(tmpdir(), 'dsh-desktop-plugins-'))
+  const root = mkdtempSync(join(tmpdir(), 'sensteed-agent-plugins-'))
   roots.push(root)
   return root
 }

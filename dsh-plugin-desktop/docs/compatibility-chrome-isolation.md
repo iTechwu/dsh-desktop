@@ -5,7 +5,7 @@ Both editions use the isolated frame originally introduced in PR #868. Renderer 
 On macOS and Windows, compatibility and extended modes use two documents in one native window:
 
 - A transparent, Desktop-owned WebContentsView loads the packaged `native-ui/compatibility-chrome.html` in an ephemeral, Desktop-only session. Its preload exposes only fixed chrome commands and locale/version state.
-- A WebContentsView loads the upstream DSH page in `persist:dsh-desktop-renderer`. It retains the existing file-path preload, authentication exchange, request capability, navigation policy, boot monitoring, reload, zoom, and developer-tools behavior.
+- A WebContentsView loads the upstream DSH page in `persist:sensteed-agent-renderer`. It retains the existing file-path preload, authentication exchange, request capability, navigation policy, boot monitoring, reload, zoom, and developer-tools behavior.
 - The BrowserWindow remains an unprivileged, unloaded native carrier; its main document does not load DSH or the toolbar. Both active views are siblings, with chrome added last so HTML popups paint above DSH.
 - Electron reserves the first 36 logical pixels for chrome and sizes the content view below it on resize and fullscreen transitions. The content renderer therefore reports zero Desktop safe-area and drag-region insets.
 - The client plugin no longer mounts the compatibility titlebar or adjusts the upstream root. Global plugin CSS, inherited variables, body portals, and stacking order remain inside the content document.

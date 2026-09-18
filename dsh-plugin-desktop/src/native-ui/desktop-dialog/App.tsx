@@ -4,7 +4,7 @@ import { Button } from '../components/ui/button.tsx'
 import { ScrollArea } from '../components/ui/scroll-area.tsx'
 import { DesktopFrame } from '../shared/DesktopFrame.tsx'
 
-const SCHEME = 'dsh-desktop-dialog:'
+const SCHEME = 'sensteed-agent-dialog:'
 
 interface DesktopDialogState {
   readonly type: 'none' | 'info' | 'error' | 'question' | 'warning'

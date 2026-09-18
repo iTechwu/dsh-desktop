@@ -1,8 +1,8 @@
-# DSH Desktop 插件 service
+# Sensteed Agent 插件 service
 
 [English](plugin-services.md) | 中文
 
-本文档是面向插件作者、受支持的集成 contract，覆盖 DSH Desktop 2.x 在兼容、扩展窗口与增强三种呈现模式下导出的 Host 公开 service `desktopProfiles`、`desktopPnpm`，以及 Client 公开 service `desktopWindow`。它不会授予第三方访问原始 Electron API 或 launcher bootstrap 状态的能力。
+本文档是面向插件作者、受支持的集成 contract，覆盖 Sensteed Agent 2.x 在兼容、扩展窗口与增强三种呈现模式下导出的 Host 公开 service `desktopProfiles`、`desktopPnpm`，以及 Client 公开 service `desktopWindow`。它不会授予第三方访问原始 Electron API 或 launcher bootstrap 状态的能力。
 
 ## 分层与数据流
 
@@ -42,7 +42,7 @@ flowchart LR
 
 Launcher 会在 Loader tree 挂载前解析一个 profile。`desktopProfiles.current` 在整个 Cordis generation dispose 前保持不变。`desktop-pnpm` Host row 会根据 launcher 私有 fact 与上游 subprocess service 构造 `desktopPnpm`。切换 profile 或模式会 dispose 当前 generation 并启动新 generation；service reference 不能跨越该边界。
 
-Renderer 通过现有 loopback carrier 接收普通 Web Client module，无法直接读取这些 Host service；DSH Desktop 也不会为它们增加 preload 或 Electron IPC bridge。Desktop Client 会改为在自己的 Cordis fiber 生命周期内，通过 `desktopWindow` 提供不可变的原生布局信息。包含浏览器 UI 的插件继续使用普通 DSH Host route、RPC、client metadata、service 与 slot。
+Renderer 通过现有 loopback carrier 接收普通 Web Client module，无法直接读取这些 Host service；Sensteed Agent 也不会为它们增加 preload 或 Electron IPC bridge。Desktop Client 会改为在自己的 Cordis fiber 生命周期内，通过 `desktopWindow` 提供不可变的原生布局信息。包含浏览器 UI 的插件继续使用普通 DSH Host route、RPC、client metadata、service 与 slot。
 
 ## 公开 Client Cordis service
 
@@ -94,7 +94,7 @@ interface DesktopWindowService {
 
 兼容模式与扩展窗口都会让操作栏保持 Desktop 私有。它们不会声明标题栏 action slot；第一方图标组由 Desktop frame 直接渲染，在 macOS 位于右侧、在 Windows 位于左侧。Web Client 插件必须使用各自已有文档的内容 slot，不能把控件放到这些原生操作旁边。Renderer 重载与开发者工具切换仍是第一方私有 launcher 操作，不会加入公开的 `desktopWindow` service。
 
-Desktop 会用 `data-dsh-desktop-frame="titlebar"` 标记操作栏，并用 `data-dsh-desktop-content-viewport` 标记上游 root。Root 会成为操作栏下方独立的 fixed viewport，因此 fixed descendant 不能逃逸到 Desktop chrome；直接 portal 到 `document.body` 的全视口对话框会获得相同的内容偏移。Body 级插件 portal 可以读取 `dsh-desktop-titlebar-inset` URL contract，带 frame 的模式会发布精确的 36px 预留。插件不能重复补偿已经消费的边界。
+Desktop 会用 `data-sensteed-agent-frame="titlebar"` 标记操作栏，并用 `data-sensteed-agent-content-viewport` 标记上游 root。Root 会成为操作栏下方独立的 fixed viewport，因此 fixed descendant 不能逃逸到 Desktop chrome；直接 portal 到 `document.body` 的全视口对话框会获得相同的内容偏移。Body 级插件 portal 可以读取 `sensteed-agent-titlebar-inset` URL contract，带 frame 的模式会发布精确的 36px 预留。插件不能重复补偿已经消费的边界。
 
 ### 外壳 DOM 锚点
 
@@ -103,13 +103,13 @@ extended 与 advanced 模式用 Desktop 自有 root 替换上游 Web frame，因
 | 区域 | 锚点 | 上游 Web frame 是否也发出 |
 | --- | --- | --- |
 | 侧边栏列 | `[data-pane="sidebar"]` | 否 |
-| 侧边栏列，兼容别名 | `.dshDesktop_sidebarCol` | `<hash>_sidebarCol` |
+| 侧边栏列，兼容别名 | `.sensteedAgent_sidebarCol` | `<hash>_sidebarCol` |
 | 右栏列 | `[data-rightbar-col]` | 是 |
 | 外壳 overlay 层 | `[data-shell-overlay]` | 是 |
 
-侧边栏锚点位于直接包裹 `sidebar` slot 的那个元素上，与上游列所处的位置一致，因此从锚点出发的 `element.querySelector` 在两套外壳里会到达同一批后代。`dshDesktop_sidebarCol` 不挂任何样式，它存在的唯一目的是让按上游 Web 列编写的选择器——通常是 `[data-pane="sidebar"], [class*="sidebarCol"]`——在 Desktop 下原样生效。对主题而言这有一个连带后果：针对 `[class*="sidebarCol"]` 的样式表现在会同时作用于 Desktop 和 Web。
+侧边栏锚点位于直接包裹 `sidebar` slot 的那个元素上，与上游列所处的位置一致，因此从锚点出发的 `element.querySelector` 在两套外壳里会到达同一批后代。`sensteedAgent_sidebarCol` 不挂任何样式，它存在的唯一目的是让按上游 Web 列编写的选择器——通常是 `[data-pane="sidebar"], [class*="sidebarCol"]`——在 Desktop 下原样生效。对主题而言这有一个连带后果：针对 `[class*="sidebarCol"]` 的样式表现在会同时作用于 Desktop 和 Web。
 
-锚点名称是稳定的，其周围的结构不是。请先查询锚点，再在其内部检索。不要依赖 Desktop 的表现类（`dshDesktopSidebarSurface`、`dshDesktopUpstreamSidebar` 及其同级）、元素标签名或嵌套深度——它们都会随模式、平台和版本变化。compatibility 模式原样运行上游客户端并保留上游 frame，包括上游自己的锚点。
+锚点名称是稳定的，其周围的结构不是。请先查询锚点，再在其内部检索。不要依赖 Desktop 的表现类（`sensteedAgentSidebarSurface`、`sensteedAgentUpstreamSidebar` 及其同级）、元素标签名或嵌套深度——它们都会随模式、平台和版本变化。compatibility 模式原样运行上游客户端并保留上游 frame，包括上游自己的锚点。
 
 ## 公开 Host Cordis service
 
@@ -211,7 +211,7 @@ Service 在每个 generation 同时最多启动一个 package operation；已有
 
 ### 仅支持 Desktop 的插件：required injection
 
-只在 DSH Desktop 中有意义的插件可以把两个 service 都声明为 required dependency。Cordis 会让插件保持 pending，直到两个 provider 都可用；任一 required service 消失时，插件 effect 会被 unload。
+只在 Sensteed Agent 中有意义的插件可以把两个 service 都声明为 required dependency。Cordis 会让插件保持 pending，直到两个 provider 都可用；任一 required service 消失时，插件 effect 会被 unload。
 
 ```ts
 import type { Context } from '@deepseek-ai/cordis'

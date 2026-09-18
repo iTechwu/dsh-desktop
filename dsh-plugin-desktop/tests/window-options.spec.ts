@@ -27,7 +27,7 @@ const spec: DesktopShellSpec = {
   url: 'http://127.0.0.1:43120/',
   authenticationUrl: 'http://127.0.0.1:43120/?token=test-token',
   rendererAccessHeader: {
-    name: 'x-dsh-desktop-renderer',
+    name: 'x-sensteed-agent-renderer',
     value: Buffer.alloc(32, 8).toString('base64url'),
   },
   productName: 'Yootun-Agent',

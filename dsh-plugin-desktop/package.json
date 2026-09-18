@@ -15,7 +15,7 @@
   "main": "lib/main.js",
   "types": "lib/types/index.d.ts",
   "bin": {
-    "dsh-desktop": "lib/bin.js",
+    "sensteed-agent": "lib/bin.js",
     "dsh-plugin-desktop": "lib/bin.js"
   },
   "exports": {

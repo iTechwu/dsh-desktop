@@ -8,7 +8,7 @@ import { repairDofeVisionModelSettings } from '../src/dofe-model-capability-migr
 const homes: string[] = []
 
 function temporaryHome(): string {
-  const home = mkdtempSync(join(tmpdir(), 'dsh-desktop-model-capabilities-'))
+  const home = mkdtempSync(join(tmpdir(), 'sensteed-agent-model-capabilities-'))
   homes.push(home)
   return home
 }
@@ -38,7 +38,7 @@ describe('DoFe model capability migration', () => {
       '      inputModalities: [text]',
       '    - id: deepseek-v4-pro',
       '      inputModalities: [text]',
-      'dsh-desktop:',
+      'sensteed-agent:',
       '  mode: advanced',
       '',
     ].join('\n'))
@@ -46,7 +46,7 @@ describe('DoFe model capability migration', () => {
     expect(await repairDofeVisionModelSettings(home)).toBe(true)
     const value = parse(readFileSync(path, 'utf8')) as {
       'llm-deepseek': { models: Array<{ id: string, inputModalities: string[] }> }
-      'dsh-desktop': { mode: string }
+      'sensteed-agent': { mode: string }
     }
     expect(value['llm-deepseek'].models).toEqual([
       { id: 'deepseek-v4-flash-vision', name: 'Vision', inputModalities: ['text', 'image'] },
@@ -54,7 +54,7 @@ describe('DoFe model capability migration', () => {
       { id: 'glm-5.3-flash', inputModalities: ['text', 'image'] },
       { id: 'deepseek-v4-pro', inputModalities: ['text'] },
     ])
-    expect(value['dsh-desktop']).toEqual({ mode: 'advanced' })
+    expect(value['sensteed-agent']).toEqual({ mode: 'advanced' })
     expect(readFileSync(path, 'utf8')).toContain('# user settings')
     expect(await repairDofeVisionModelSettings(home)).toBe(false)
   })
@@ -62,7 +62,7 @@ describe('DoFe model capability migration', () => {
   it('does nothing when settings or model entries are absent', async () => {
     const home = temporaryHome()
     expect(await repairDofeVisionModelSettings(home)).toBe(false)
-    writeFileSync(join(home, 'settings.yaml'), 'dsh-desktop:\n  mode: compatibility\n')
+    writeFileSync(join(home, 'settings.yaml'), 'sensteed-agent:\n  mode: compatibility\n')
     expect(await repairDofeVisionModelSettings(home)).toBe(false)
   })
 

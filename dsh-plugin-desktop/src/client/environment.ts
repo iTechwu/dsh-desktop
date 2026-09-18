@@ -33,19 +33,19 @@ const VERSION_PATTERN = /^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-[0-9
  */
 export function parseDesktopClientEnvironment(search: string): DesktopClientEnvironment | undefined {
   const params = new URLSearchParams(search)
-  const mode = params.get('dsh-desktop-mode')
-  const platform = params.get('dsh-desktop-platform')
-  const materialMarker = params.get('dsh-desktop-material')
-  const version = params.get('dsh-desktop-version')
+  const mode = params.get('sensteed-agent-mode')
+  const platform = params.get('sensteed-agent-platform')
+  const materialMarker = params.get('sensteed-agent-material')
+  const version = params.get('sensteed-agent-version')
   if (mode === null && platform === null) return undefined
   if (!MODES.has(mode as DesktopClientMode)) {
-    throw new Error(`dsh-plugin-desktop: invalid or missing dsh-desktop-mode ${JSON.stringify(mode)}`)
+    throw new Error(`dsh-plugin-desktop: invalid or missing sensteed-agent-mode ${JSON.stringify(mode)}`)
   }
   if (!PLATFORMS.has(platform as DesktopClientPlatform)) {
-    throw new Error(`dsh-plugin-desktop: invalid or missing dsh-desktop-platform ${JSON.stringify(platform)}`)
+    throw new Error(`dsh-plugin-desktop: invalid or missing sensteed-agent-platform ${JSON.stringify(platform)}`)
   }
   if (!MATERIAL_MARKERS.has(materialMarker ?? '')) {
-    throw new Error(`dsh-plugin-desktop: invalid or missing dsh-desktop-material ${JSON.stringify(materialMarker)}`)
+    throw new Error(`dsh-plugin-desktop: invalid or missing sensteed-agent-material ${JSON.stringify(materialMarker)}`)
   }
   // Accept an old Host marker without reintroducing Acrylic as an effective
   // client capability. It is rendered as the safe opaque material.
@@ -53,14 +53,14 @@ export function parseDesktopClientEnvironment(search: string): DesktopClientEnvi
     ? 'off'
     : materialMarker as DesktopClientMaterial
   if (version === null || version.length > 64 || !VERSION_PATTERN.test(version)) {
-    throw new Error(`dsh-plugin-desktop: invalid or missing dsh-desktop-version ${JSON.stringify(version)}`)
+    throw new Error(`dsh-plugin-desktop: invalid or missing sensteed-agent-version ${JSON.stringify(version)}`)
   }
-  const micaMarker = params.get('dsh-desktop-mica')
+  const micaMarker = params.get('sensteed-agent-mica')
   const micaSupported = platform === 'win32'
     ? micaMarker === '1' ? true : micaMarker === '0' ? false : undefined
     : micaMarker === null ? false : undefined
   if (micaSupported === undefined) {
-    throw new Error(`dsh-plugin-desktop: invalid dsh-desktop-mica ${JSON.stringify(micaMarker)}`)
+    throw new Error(`dsh-plugin-desktop: invalid sensteed-agent-mica ${JSON.stringify(micaMarker)}`)
   }
   if ((platform === 'darwin' && materialMarker !== 'off' && materialMarker !== 'transparent')
     || (platform === 'win32' && materialMarker === 'transparent')

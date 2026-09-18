@@ -28,7 +28,7 @@ describe('Desktop Safe Mode environment', () => {
   })
 
   async function userData(): Promise<string> {
-    const root = await mkdtemp(join(tmpdir(), 'dsh-desktop-safe-mode-'))
+    const root = await mkdtemp(join(tmpdir(), 'sensteed-agent-safe-mode-'))
     roots.push(root)
     return root
   }

@@ -49,18 +49,18 @@ export function DesktopVersionControl({
       <HoverCardTrigger
         closeDelay={200}
         delay={150}
-        render={<button type="button" className="dshDesktopFrameVersion" />}
+        render={<button type="button" className="sensteedAgentFrameVersion" />}
         aria-label={`${t('currentVersion')} ${visibleVersion}`}
       >
         {visibleVersion}
       </HoverCardTrigger>
-      <HoverCardContent className="dshDesktopVersionPopover">
-        <div className="dshDesktopVersionPopoverHeader">
+      <HoverCardContent className="sensteedAgentVersionPopover">
+        <div className="sensteedAgentVersionPopoverHeader">
           <span>{t('currentVersion')}</span>
           <strong>{visibleVersion}</strong>
         </div>
         <Button
-          className="dshDesktopVersionCheckButton"
+          className="sensteedAgentVersionCheckButton"
           disabled={checking}
           size="sm"
           variant="outline"
@@ -69,7 +69,7 @@ export function DesktopVersionControl({
           <RefreshCw aria-hidden="true" />
           <span>{t(checking ? 'checkingForUpdates' : 'checkForUpdates')}</span>
         </Button>
-        {failed && <span className="dshDesktopVersionCheckError" role="alert">{t('checkForUpdatesError')}</span>}
+        {failed && <span className="sensteedAgentVersionCheckError" role="alert">{t('checkForUpdatesError')}</span>}
       </HoverCardContent>
     </HoverCard>
   )
@@ -132,17 +132,17 @@ export function DesktopModeControl({
       <HoverCardTrigger
         closeDelay={200}
         delay={150}
-        render={<button type="button" className="dshDesktopFrameMode" />}
+        render={<button type="button" className="sensteedAgentFrameMode" />}
         aria-label={`${t('presentationTitle')}: ${t(current.title)}`}
       >
         {t(current.title)}
       </HoverCardTrigger>
-      <HoverCardContent className="dshDesktopVersionPopover dshDesktopModePopover">
-        <div className="dshDesktopModePopoverHeader">{t('switchPresentationMode')}</div>
-        <div className="dshDesktopModeOptions" role="group" aria-label={t('switchPresentationMode')}>
+      <HoverCardContent className="sensteedAgentVersionPopover sensteedAgentModePopover">
+        <div className="sensteedAgentModePopoverHeader">{t('switchPresentationMode')}</div>
+        <div className="sensteedAgentModeOptions" role="group" aria-label={t('switchPresentationMode')}>
           {MODE_OPTIONS.filter(option => option.mode !== mode).map(option => (
             <Button
-              className="dshDesktopModeOption"
+              className="sensteedAgentModeOption"
               disabled={switching !== undefined}
               key={option.mode}
               size="sm"
@@ -150,14 +150,14 @@ export function DesktopModeControl({
               onClick={() => { switchTo(option.mode) }}
             >
               <DesktopModeIcon mode={option.mode} />
-              <span className="dshDesktopModeOptionCopy">
+              <span className="sensteedAgentModeOptionCopy">
                 <strong>{t(option.title)}</strong>
                 <small>{switching === option.mode ? t('switchingPresentationMode') : t(option.body)}</small>
               </span>
             </Button>
           ))}
         </div>
-        {failed && <span className="dshDesktopVersionCheckError" role="alert">{t('switchPresentationModeError')}</span>}
+        {failed && <span className="sensteedAgentVersionCheckError" role="alert">{t('switchPresentationModeError')}</span>}
       </HoverCardContent>
     </HoverCard>
   )
@@ -169,14 +169,14 @@ export function DesktopFrameTitlebarView({ api, environment, setMode, t, remoteC
 }) {
   return (
     <header
-      className="dshDesktopFrameTitlebar"
-      data-dsh-desktop-frame="titlebar"
+      className="sensteedAgentFrameTitlebar"
+      data-sensteed-agent-frame="titlebar"
       data-mode={environment.mode}
       data-platform={environment.platform}
       data-material={environment.material}
     >
-      <div className="dshDesktopFrameIdentity">
-        <span className="dshDesktopFrameProduct">{BRAND_DISPLAY_NAME.titlebar}</span>
+      <div className="sensteedAgentFrameIdentity">
+        <span className="sensteedAgentFrameProduct">{BRAND_DISPLAY_NAME.titlebar}</span>
         <DesktopVersionControl version={environment.version} checkForUpdates={api.checkForUpdates} t={t} />
         <DesktopModeControl
           mode={environment.mode}
@@ -185,9 +185,9 @@ export function DesktopFrameTitlebarView({ api, environment, setMode, t, remoteC
           t={t}
         />
       </div>
-      <div className="dshDesktopFrameActions">
-        {remoteControl && <button type="button" className="dshDesktopFrameMode dshDesktopRemoteControl" onClick={() => { void remoteControl.open().catch(() => {}) }}>
-          {t('remoteControl')}{!remoteControl.seen && <span className="dshDesktopRemoteControlDot" aria-label={t('remoteControlNew')} />}
+      <div className="sensteedAgentFrameActions">
+        {remoteControl && <button type="button" className="sensteedAgentFrameMode sensteedAgentRemoteControl" onClick={() => { void remoteControl.open().catch(() => {}) }}>
+          {t('remoteControl')}{!remoteControl.seen && <span className="sensteedAgentRemoteControlDot" aria-label={t('remoteControlNew')} />}
         </button>}
         <DesktopNativeActions api={api} t={t} placement="titlebar" />
       </div>

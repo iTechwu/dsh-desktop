@@ -17,13 +17,13 @@ import { healDesktopProfileModuleFallback, prepareDesktopProfile } from '../lib/
 import { DesktopProfileService } from '../lib/profile-service.js'
 
 const BIN_NAME = 'dsh-plugin-desktop-profile-smoke'
-const HOST_SERVICE_PLUGIN_NAME = 'dsh-desktop-host-services-smoke-plugin'
+const HOST_SERVICE_PLUGIN_NAME = 'sensteed-agent-host-services-smoke-plugin'
 const HOST_SERVICE_PROBE_KEY = 'desktopHostServiceProbe'
 let ordinaryBrowserEnabled = false
 const BROWSER_ACCESS = Object.freeze({
   get ordinaryBrowserEnabled() { return ordinaryBrowserEnabled },
   rendererHeader: Object.freeze({
-    name: 'x-dsh-desktop-renderer',
+    name: 'x-sensteed-agent-renderer',
     value: Buffer.alloc(32, 4).toString('base64url'),
   }),
   setOrdinaryBrowserEnabled(enabled) { ordinaryBrowserEnabled = enabled },
@@ -42,7 +42,7 @@ const LAN_HTTPS = Object.freeze({
   async setEnabled() { return LAN_HTTPS_SNAPSHOT },
   async stop() { return LAN_HTTPS_SNAPSHOT },
 })
-const home = mkdtempSync(join(tmpdir(), 'dsh-desktop-profile-'))
+const home = mkdtempSync(join(tmpdir(), 'sensteed-agent-profile-'))
 let ctx
 let releasePackageResolver
 let pnpmRuntime
@@ -52,7 +52,7 @@ const trayItems = []
 
 try {
   writeFileSync(join(home, 'settings.yaml'), [
-    'dsh-desktop:',
+    'sensteed-agent:',
     '  mode: advanced',
     'agent-presets:',
     '  default: minimal',
@@ -252,7 +252,7 @@ try {
     throw new Error(`assembled Windows browse picker listed ${listing.path} instead of ${home}`)
   }
 
-  const expectedUrl = `http://127.0.0.1:${String(ctx.webServer.port)}/?dsh-desktop-mode=advanced&dsh-desktop-platform=win32&dsh-desktop-version=2.0.0&dsh-desktop-material=off&dsh-desktop-mica=1`
+  const expectedUrl = `http://127.0.0.1:${String(ctx.webServer.port)}/?sensteed-agent-mode=advanced&sensteed-agent-platform=win32&sensteed-agent-version=2.0.0&sensteed-agent-material=off&sensteed-agent-mica=1`
   if (mountedSpec?.url !== expectedUrl) {
     throw new Error(`desktop plugin produced an unexpected renderer URL: ${String(mountedSpec?.url)}`)
   }
@@ -267,7 +267,7 @@ try {
   }
   const desktopSettings = ctx.settings.get(DESKTOP_SETTINGS_NAMESPACE)
   if (desktopSettings?.mode !== 'advanced') {
-    throw new Error('assembled Host settings are missing the advanced dsh-desktop mode')
+    throw new Error('assembled Host settings are missing the advanced sensteed-agent mode')
   }
   if (!trayItems.some(item => item.label() === 'Check for Updates…')) {
     throw new Error('assembled desktop profile is missing the update tray command')

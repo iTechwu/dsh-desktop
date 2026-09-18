@@ -58,7 +58,7 @@ describe('Desktop local-window policy', () => {
   it.each(['', 'persist:dsh-local-action', 'shared-session'])(
     'rejects the non-dedicated partition %j before window construction',
     (partition) => {
-      expect(() => createDesktopLocalWindow({ partition })).toThrow('dedicated in-memory dsh-* partition')
+      expect(() => createDesktopLocalWindow({ partition })).toThrow('dedicated in-memory dsh-* or sensteed-agent-* partition')
       expect(electron.windows).toHaveLength(0)
     },
   )

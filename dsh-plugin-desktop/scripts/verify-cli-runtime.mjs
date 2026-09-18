@@ -101,7 +101,7 @@ function verifyLifecycleEnvironment(stateRoot, installation, env) {
   const resultPath = join(project, 'result.json')
   mkdirSync(project)
   writeFileSync(join(project, 'package.json'), JSON.stringify({
-    name: 'dsh-desktop-pnpm-lifecycle-smoke',
+    name: 'sensteed-agent-pnpm-lifecycle-smoke',
     version: '0.0.0',
     private: true,
     scripts: { install: 'node lifecycle.mjs' },
@@ -136,7 +136,7 @@ function verifyLifecycleEnvironment(stateRoot, installation, env) {
 }
 
 function runPackagedPnpmShim() {
-  const stateRoot = mkdtempSync(join(tmpdir(), 'dsh-desktop-pnpm-smoke-'))
+  const stateRoot = mkdtempSync(join(tmpdir(), 'sensteed-agent-pnpm-smoke-'))
   const env = cleanEnvironment()
   let installation
   try {
@@ -164,7 +164,7 @@ function runPackagedPnpmShim() {
 }
 
 function runFlatProfileDshEntry() {
-  const root = mkdtempSync(join(tmpdir(), 'dsh-desktop-flat-cli-smoke-'))
+  const root = mkdtempSync(join(tmpdir(), 'sensteed-agent-flat-cli-smoke-'))
   const desktopPackage = join(root, 'node_modules', 'dsh-plugin-desktop')
   const linkedAppBootPackage = join(root, 'node_modules', '@deepseek-ai', 'dsh-app-boot')
   const linkedAtomicWritePackage = join(root, 'node_modules', '@deepseek-ai', 'dsh-atomic-write')

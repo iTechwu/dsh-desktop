@@ -14,7 +14,7 @@ import {
 const temporaryDirectories: string[] = []
 
 function temporaryDirectory(): string {
-  const dir = mkdtempSync(join(tmpdir(), 'dsh-desktop-terminal-'))
+  const dir = mkdtempSync(join(tmpdir(), 'sensteed-agent-terminal-'))
   temporaryDirectories.push(dir)
   return dir
 }
@@ -102,15 +102,15 @@ afterEach(() => {
 
 describe('desktop terminal environment', () => {
   it('keeps generated shims isolated by active profile', () => {
-    const desktop = desktopTerminalStateDirectory('/tmp/dsh-desktop', 'desktop')
-    const work = desktopTerminalStateDirectory('/tmp/dsh-desktop', '工作 profile')
+    const desktop = desktopTerminalStateDirectory('/tmp/sensteed-agent', 'desktop')
+    const work = desktopTerminalStateDirectory('/tmp/sensteed-agent', '工作 profile')
 
-    expect(dirname(desktop)).toBe(join('/tmp/dsh-desktop', 'cli'))
-    expect(dirname(work)).toBe(join('/tmp/dsh-desktop', 'cli'))
+    expect(dirname(desktop)).toBe(join('/tmp/sensteed-agent', 'cli'))
+    expect(dirname(work)).toBe(join('/tmp/sensteed-agent', 'cli'))
     expect(basename(desktop)).toMatch(/^[a-f0-9]{64}$/u)
     expect(basename(work)).toMatch(/^[a-f0-9]{64}$/u)
     expect(work).not.toBe(desktop)
-    expect(desktopTerminalStateDirectory('/tmp/dsh-desktop', 'desktop')).toBe(desktop)
+    expect(desktopTerminalStateDirectory('/tmp/sensteed-agent', 'desktop')).toBe(desktop)
   })
 
   it('generates private macOS shims and opens one quoted welcome command', () => {

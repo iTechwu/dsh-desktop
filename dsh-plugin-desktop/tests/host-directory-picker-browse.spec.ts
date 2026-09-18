@@ -57,7 +57,7 @@ describe('alpha host directory-picker browse patch', () => {
   })
 
   it('stats directory and symlink candidates and skips ordinary stat failures', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'dsh-desktop-browse-'))
+    const root = await mkdtemp(join(tmpdir(), 'sensteed-agent-browse-'))
     const accessible = join(root, 'accessible')
     const blockedDirectory = join(root, 'blocked-directory')
     const linkedTarget = join(root, 'linked-target')
@@ -88,7 +88,7 @@ describe('alpha host directory-picker browse patch', () => {
   })
 
   it('lets an abort interrupt a stalled stat of a directory candidate', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'dsh-desktop-browse-abort-'))
+    const root = await mkdtemp(join(tmpdir(), 'sensteed-agent-browse-abort-'))
     const stalled = join(root, 'stalled')
     await mkdir(stalled)
     let markStarted!: () => void

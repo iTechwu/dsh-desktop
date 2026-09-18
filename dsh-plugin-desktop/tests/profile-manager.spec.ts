@@ -27,7 +27,7 @@ import {
 const roots: string[] = []
 
 function temporaryRoot(): string {
-  const root = mkdtempSync(join(tmpdir(), 'dsh-desktop-profile-manager-'))
+  const root = mkdtempSync(join(tmpdir(), 'sensteed-agent-profile-manager-'))
   roots.push(root)
   return root
 }

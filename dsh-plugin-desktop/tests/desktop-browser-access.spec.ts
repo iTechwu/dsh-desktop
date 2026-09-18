@@ -42,7 +42,7 @@ describe('Desktop browser access policy', () => {
 
     expect(decideDesktopBrowserAccess(access, {
       headers: { [DESKTOP_RENDERER_ACCESS_HEADER]: RENDERER_TOKEN },
-      url: '/?dsh-desktop-mode=compatibility',
+      url: '/?sensteed-agent-mode=compatibility',
     })).toBe('renderer')
     expect(decideDesktopBrowserAccess(access, {
       headers: { [DESKTOP_RENDERER_ACCESS_HEADER]: `${RENDERER_TOKEN}x` },
@@ -69,9 +69,9 @@ describe('Desktop browser access policy', () => {
       expect(decideDesktopBrowserAccess(access, { headers: {}, url })).toBe('browser')
     }
     for (const url of [
-      '/?dsh-desktop-mode=compatibility',
-      '/?dsh-desktop-platform=win32',
-      '/?other=1&dsh-desktop-future=value',
+      '/?sensteed-agent-mode=compatibility',
+      '/?sensteed-agent-platform=win32',
+      '/?other=1&sensteed-agent-future=value',
     ]) {
       expect(decideDesktopBrowserAccess(access, { headers: {}, url })).toBe('denied')
     }
@@ -80,6 +80,6 @@ describe('Desktop browser access policy', () => {
   it('fails closed for malformed URLs and Desktop marker attempts', () => {
     expect(desktopBrowserUrlHasRendererMarkers('http://[')).toBe(true)
     expect(desktopBrowserUrlHasRendererMarkers('/?desktop-mode=compatibility')).toBe(false)
-    expect(desktopBrowserUrlHasRendererMarkers('/?dsh-desktop-mode=compatibility')).toBe(true)
+    expect(desktopBrowserUrlHasRendererMarkers('/?sensteed-agent-mode=compatibility')).toBe(true)
   })
 })

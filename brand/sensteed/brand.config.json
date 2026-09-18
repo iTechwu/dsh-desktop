@@ -64,8 +64,8 @@
     "downloadBase": "https://www.dshdesktop.cn/api/downloads",
     "repoUrl": "https://github.com/anywhere-labs/deepseek-harness-desktop",
     "communityName": {
-      "zh": "DSH Desktop",
-      "en": "DSH Desktop"
+      "zh": "Sensteed Agent",
+      "en": "Sensteed Agent"
     },
     "maintainer": {
       "zh": "Anywhere Labs 项目维护团队",

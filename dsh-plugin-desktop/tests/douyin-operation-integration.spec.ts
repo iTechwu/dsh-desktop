@@ -42,7 +42,7 @@ describe('Douyin operation Desktop integration', () => {
       expect(existsSync(join(snapshotRoot, file)), `snapshot 缺少 ${file}`).toBe(true)
     }
     expect(existsSync(join(snapshotRoot, 'node_modules'))).toBe(false)
-    // 生产依赖必须由 dsh-desktop 自己的 lockfile 解析，而不是依赖快照里的本地安装。
+    // 生产依赖必须由 sensteed-agent 自己的 lockfile 解析，而不是依赖快照里的本地安装。
     expect(manifest.dependencies?.['playwright-core']).toMatch(/^\^1\.6\d/u)
 
     const verification = spawnSync(

@@ -379,9 +379,9 @@ function windowsWelcome(): string {
   const pluginUpdate = 'dsh plugin update'
   return [
     `Remove-Item Env:${RUN_AS_NODE} -ErrorAction SilentlyContinue`,
-    `$dshDesktopShimDir = $env:${WINDOWS_SHIM_DIRECTORY}`,
-    `$dshDesktopPath = @($env:${PATH} -split ';' | Where-Object { -not [string]::Equals($_, $dshDesktopShimDir, [StringComparison]::OrdinalIgnoreCase) })`,
-    `$env:${PATH} = (@($dshDesktopShimDir) + $dshDesktopPath) -join ';'`,
+    `$sensteedAgentShimDir = $env:${WINDOWS_SHIM_DIRECTORY}`,
+    `$sensteedAgentPath = @($env:${PATH} -split ';' | Where-Object { -not [string]::Equals($_, $sensteedAgentShimDir, [StringComparison]::OrdinalIgnoreCase) })`,
+    `$env:${PATH} = (@($sensteedAgentShimDir) + $sensteedAgentPath) -join ';'`,
     `Set-Location -LiteralPath $env:${WINDOWS_PROFILE_DIRECTORY}`,
     `Write-Host ("Yootun-Agent {0} terminal" -f $env:${WINDOWS_PRODUCT_VERSION})`,
     `Write-Host ("Profile: {0}" -f $env:${DEFAULT_PROFILE})`,

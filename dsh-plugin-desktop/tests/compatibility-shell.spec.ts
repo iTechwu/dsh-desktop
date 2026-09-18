@@ -23,7 +23,7 @@ vi.mock('electron', () => ({
     readonly setBounds = vi.fn()
     readonly setBackgroundColor = vi.fn()
     constructor(readonly options: { webPreferences: { partition: string } }) {
-      this.webContents = options.webPreferences.partition === 'dsh-desktop-compatibility-chrome' ? electron.chrome : electron.content
+      this.webContents = options.webPreferences.partition === 'sensteed-agent-compatibility-chrome' ? electron.chrome : electron.content
     }
   },
 }))
@@ -87,7 +87,7 @@ describe('isolated compatibility shell', () => {
     expect(webContents.loadFile).toHaveBeenCalledWith(expect.stringMatching(/native-ui\/compatibility-chrome\.html$/))
     expect(window.contentView.addChildView).toHaveBeenCalledWith(shell.content)
     expect(shell.content).toMatchObject({ options: { webPreferences: {
-      partition: 'persist:dsh-desktop-renderer', preload: '/desktop/preload.cjs',
+      partition: 'persist:sensteed-agent-renderer', preload: '/desktop/preload.cjs',
       contextIsolation: true, nodeIntegration: false, sandbox: true, webSecurity: true,
     } } })
     expect(shell.content.setBounds).toHaveBeenLastCalledWith({ x: 0, y: 36, width: 1280, height: 804 })
@@ -219,7 +219,7 @@ describe('isolated compatibility shell', () => {
     window.emit('resize')
     expect(shell.chromeView.setBounds).toHaveBeenLastCalledWith({ x: 0, y: 0, width: 900, height: 640 })
     window.emit('blur')
-    expect(webContents.send).toHaveBeenCalledWith('dsh-desktop:chrome-dismiss')
+    expect(webContents.send).toHaveBeenCalledWith('sensteed-agent:chrome-dismiss')
     expect(shell.chromeView.setBounds).toHaveBeenLastCalledWith({ x: 0, y: 0, width: 900, height: 36 })
     handler(event(), 'expand')
     webContents.emit('render-process-gone')

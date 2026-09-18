@@ -6,11 +6,11 @@ Status: implemented
 
 ## Problem
 
-DSH Desktop 需要原生应用生命周期，同时兼容模式必须保持未经修改的官方 Web 呈现。由于高级模式使用 desktop 自有呈现，该 package 仍需发布 Client face；但在兼容模式下加载同一 artifact 时，安全路径不能依赖产品自有 root、layout、sidebar 或样式。
+Sensteed Agent 需要原生应用生命周期，同时兼容模式必须保持未经修改的官方 Web 呈现。由于高级模式使用 desktop 自有呈现，该 package 仍需发布 Client face；但在兼容模式下加载同一 artifact 时，安全路径不能依赖产品自有 root、layout、sidebar 或样式。
 
 ## Decision
 
-`desktop-shell` Cordis row 提供 `mode: compatibility | advanced`，标准 `dsh-desktop` settings namespace 会把 `mode` 默认为 `compatibility`。desktop package 同时声明 `dsh.bundle` 与 `dsh.client`；其 Client face 会在两种模式中被发现。
+`desktop-shell` Cordis row 提供 `mode: compatibility | advanced`，标准 `sensteed-agent` settings namespace 会把 `mode` 默认为 `compatibility`。desktop package 同时声明 `dsh.bundle` 与 `dsh.client`；其 Client face 会在两种模式中被发现。
 
 在兼容模式下，Client 会校验 Host 提供的模式与平台 URL marker，随后直接返回而不安装任何 effect。它不提供或替换 `layout` service，不注册 `root` 或 `sidebar` occupant，不安装样式，也不改动 conversation surface。只有 advanced generation 会调用 advanced-shell installer。
 
@@ -24,7 +24,7 @@ Launcher 会在用户 patch 之后添加一层平台安全 overlay。在 Windows
 
 ## Mode persistence and restart boundary
 
-DSH home `settings.yaml` 文档是 `dsh-desktop.mode` 的唯一持久化事实源。Launcher 会在组合之前读取当前 `dsh-settings-file` row 解析到的文件。Host plugin 向标准 settings service 注册同一 namespace 与 schema，并声明 `applies: restart`。profile manifest 中不存在第二个值。
+DSH home `settings.yaml` 文档是 `sensteed-agent.mode` 的唯一持久化事实源。Launcher 会在组合之前读取当前 `dsh-settings-file` row 解析到的文件。Host plugin 向标准 settings service 注册同一 namespace 与 schema，并声明 `applies: restart`。profile manifest 中不存在第二个值。
 
 用户可以从应用托盘选择另一种模式，也可以手工编辑同一份 `settings.yaml` 文档。托盘会调用已注册 scope 范围受限的 `settings.update({ mode })` 路径，file provider 则会观察手工修改。Watcher 会比较已提交模式与当前 generation，并在两者不同时请求一次有序重启。
 

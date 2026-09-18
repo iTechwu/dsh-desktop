@@ -11,7 +11,7 @@ import {
 import { windowsSupportsSystemBackdrop } from './window-material.ts'
 
 /** Stable persistent storage isolated from every auxiliary/default session. */
-export const DESKTOP_RENDERER_SESSION_PARTITION = 'persist:dsh-desktop-renderer'
+export const DESKTOP_RENDERER_SESSION_PARTITION = 'persist:sensteed-agent-renderer'
 
 function baseWindowOptions(
   spec: DesktopShellSpec,

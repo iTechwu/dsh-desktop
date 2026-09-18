@@ -9,7 +9,7 @@ import {
 import { revealApplication } from './electron-reveal.ts'
 import { createDesktopLocalWindow } from './local-window-policy.ts'
 
-const DIALOG_SCHEME = 'dsh-desktop-dialog:'
+const DIALOG_SCHEME = 'sensteed-agent-dialog:'
 const DIALOG_DOCUMENT = fileURLToPath(new URL('./native-ui/desktop-dialog.html', import.meta.url))
 const MAX_BUTTONS = 4
 const DIALOG_WIDTH = 480
@@ -103,7 +103,7 @@ export class DesktopDialogWindow {
     const diagnostic = this.options.presentation === 'diagnostic'
     const dialogWidth = diagnostic ? DIAGNOSTIC_DIALOG_WIDTH : DIALOG_WIDTH
     const window = createDesktopLocalWindow({
-      partition: 'dsh-desktop-dialog',
+      partition: 'sensteed-agent-dialog',
       preferredSizeMode: true,
       title: this.options.title,
       ...auxiliaryWindowChromeOptions(process.platform, windowControls),

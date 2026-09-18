@@ -2,7 +2,7 @@
 
 [English](market-shell.md)
 
-状态：已交付并内置于 DSH Desktop。
+状态：已交付并内置于 Sensteed Agent。
 
 ## 归属边界
 

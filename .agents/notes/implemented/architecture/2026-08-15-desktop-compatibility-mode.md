@@ -6,11 +6,11 @@ English | [中文](2026-08-15-desktop-compatibility-mode.zh.md)
 
 ## Problem
 
-DSH Desktop needs native application lifecycle while compatibility mode remains the unmodified official Web presentation. The package must still publish a Client face because advanced mode uses desktop-owned presentation, but loading that same artifact in compatibility must not make the safe path depend on product-owned root, layout, sidebar, or styles.
+Sensteed Agent needs native application lifecycle while compatibility mode remains the unmodified official Web presentation. The package must still publish a Client face because advanced mode uses desktop-owned presentation, but loading that same artifact in compatibility must not make the safe path depend on product-owned root, layout, sidebar, or styles.
 
 ## Decision
 
-The `desktop-shell` Cordis row exposes `mode: compatibility | advanced`, and the standard `dsh-desktop` settings namespace defaults `mode` to `compatibility`. The desktop package declares both `dsh.bundle` and `dsh.client`; its Client face is discovered in both modes.
+The `desktop-shell` Cordis row exposes `mode: compatibility | advanced`, and the standard `sensteed-agent` settings namespace defaults `mode` to `compatibility`. The desktop package declares both `dsh.bundle` and `dsh.client`; its Client face is discovered in both modes.
 
 In compatibility mode, the Client validates the Host-supplied mode and platform URL markers, then returns without installing any effects. It does not provide or replace the `layout` service, register a `root` or `sidebar` occupant, install styles, or alter the conversation surface. Only an advanced generation calls the advanced-shell installer.
 
@@ -24,7 +24,7 @@ The `desktop-shell` row registers a native shell specification while the profile
 
 ## Mode persistence and restart boundary
 
-The DSH home `settings.yaml` document is the single durable source for `dsh-desktop.mode`. The launcher reads the file resolved by the active `dsh-settings-file` row before composition. The Host plugin registers the same namespace and schema with the standard settings service and declares `applies: restart`. There is no second value in the profile manifest.
+The DSH home `settings.yaml` document is the single durable source for `sensteed-agent.mode`. The launcher reads the file resolved by the active `dsh-settings-file` row before composition. The Host plugin registers the same namespace and schema with the standard settings service and declares `applies: restart`. There is no second value in the profile manifest.
 
 Users select the other mode from the application tray or edit the same `settings.yaml` document by hand. The tray calls the registered scope's narrow `settings.update({ mode })` path, while the file provider observes manual changes. A watcher compares the committed mode with the active generation and requests one orderly restart when they differ.
 

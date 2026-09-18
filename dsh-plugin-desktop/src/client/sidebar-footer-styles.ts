@@ -5,13 +5,13 @@
  * inside a row flex container, so several registered launchers become flex
  * siblings on one line and crush each other. Desktop stacks them instead.
  *
- * The rule deliberately carries no `data-dsh-desktop-mode` prefix: compatibility
+ * The rule deliberately carries no `data-sensteed-agent-mode` prefix: compatibility
  * mode serves its titlebar from a separate chrome view and never marks the body,
  * and the stylesheet only ever installs from the Desktop client bundle, which
  * exits before this point for an ordinary browser URL.
  */
 
-const STYLE_ID = 'dsh-desktop-sidebar-footer-styles'
+const STYLE_ID = 'sensteed-agent-sidebar-footer-styles'
 
 /**
  * The `body` prefix is load-order insurance, not decoration. Plugin stylesheets

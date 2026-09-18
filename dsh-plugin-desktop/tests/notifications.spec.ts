@@ -170,7 +170,7 @@ describe('desktop notifications Host plugin', () => {
 
     expect(name).toBe('desktop-notifications')
     expect(inject).toEqual(['desktopRuntime'])
-    expect(String(DESKTOP_NOTIFICATIONS_SETTINGS_NAMESPACE)).toBe('dsh-desktop-notifications')
+    expect(String(DESKTOP_NOTIFICATIONS_SETTINGS_NAMESPACE)).toBe('sensteed-agent-notifications')
     expect(DesktopNotificationSettingsSchema({} as DesktopNotificationSettings)).toEqual({
       enabled: true,
       notifyOnTurnCompletion: true,

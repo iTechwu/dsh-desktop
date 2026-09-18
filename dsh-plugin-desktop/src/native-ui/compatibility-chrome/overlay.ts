@@ -1,7 +1,7 @@
 import type { CompatibilityChromeCommand } from '../../compatibility-chrome-contract.ts'
 
-const POPUPS = '.dshShadcnHoverCardPositioner, .dshDesktopActionMenu, .dshDesktopNativeActionError'
-const SURFACES = '.dshDesktopFrameTitlebar, ' + POPUPS
+const POPUPS = '.dshShadcnHoverCardPositioner, .sensteedAgentActionMenu, .sensteedAgentNativeActionError'
+const SURFACES = '.sensteedAgentFrameTitlebar, ' + POPUPS
 
 export function installChromeOverlay(
   invoke: (command: CompatibilityChromeCommand) => Promise<void>,

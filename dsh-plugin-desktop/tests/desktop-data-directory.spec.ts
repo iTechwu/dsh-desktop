@@ -26,7 +26,7 @@ import { acquireDesktopDataOperationLock } from '../src/desktop-data-operation-l
 const temporaryDirectories: string[] = []
 
 function temporaryDirectory(): string {
-  const path = mkdtempSync(join(tmpdir(), 'dsh-desktop-data-directory-'))
+  const path = mkdtempSync(join(tmpdir(), 'sensteed-agent-data-directory-'))
   temporaryDirectories.push(path)
   return path
 }

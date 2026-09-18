@@ -18,7 +18,7 @@ Status: implemented
 - `log-files.ts` —— 同步追加式 sink（`appendFileSync`），写 `dsh-YYYY-MM-DD.log`（全部级别）与 `dsh-YYYY-MM-DD.error.log`（warn 与 error）；单文件超过 10MB 滚到 `.1`、`.2` …；本地日期变化时切换文件；重启后从磁盘恢复当前分段；目录超过 200MB 时删除最旧的自有文件。
 - `file-exporter.ts` —— `FileExporter implements Exporter`，把每条 `Message` 渲染成 `<本地时间戳> [LEVEL] [name] <body>`（经 `Logger.format`），按阈值过滤后路由到 sink。
 
-`dsh-desktop.logLevel` 设置字段（`debug | info | warn | error`，默认 `info`）扩展已有的 `dsh-desktop` 命名空间。bootstrap 在 `boot()` 后读一次，并订阅 `settings/updated` 就地更新 exporter 阈值。
+`sensteed-agent.logLevel` 设置字段（`debug | info | warn | error`，默认 `info`）扩展已有的 `sensteed-agent` 命名空间。bootstrap 在 `boot()` 后读一次，并订阅 `settings/updated` 就地更新 exporter 阈值。
 
 ## Alternatives considered
 

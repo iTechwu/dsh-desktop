@@ -32,12 +32,12 @@ describe('packaged dsh bootstrap', () => {
       DSH_DESKTOP_DEFAULT_PROFILE: 'desktop',
       KEEP: 'value',
     }
-    const argv = ['/Applications/DSH Desktop', '/app.asar/lib/desktop-cli.js', '--dump-config']
+    const argv = ['/Applications/Sensteed Agent', '/app.asar/lib/desktop-cli.js', '--dump-config']
     const runCli = vi.fn(async () => {})
     const load = vi.fn(async (url: string) => {
       expect(environment).toEqual({ KEEP: 'value' })
       expect(argv).toEqual([
-        '/Applications/DSH Desktop',
+        '/Applications/Sensteed Agent',
         '/app.asar/lib/desktop-cli.js',
         '--profile',
         'desktop',
@@ -63,7 +63,7 @@ describe('packaged dsh bootstrap', () => {
   it('leaves the release-age policy to the final pnpm shim exactly once', async () => {
     const load = vi.fn(async () => ({ runCli: async () => {} }))
     const defaulted = [
-      '/Applications/DSH Desktop',
+      '/Applications/Sensteed Agent',
       '/app.asar/lib/desktop-cli.js',
       'plugin',
       '--config.minimumReleaseAge=0',
@@ -80,7 +80,7 @@ describe('packaged dsh bootstrap', () => {
     ])
 
     const explicit = [
-      '/Applications/DSH Desktop',
+      '/Applications/Sensteed Agent',
       '/app.asar/lib/desktop-cli.js',
       'plugin',
       '--profile=work',
@@ -140,19 +140,19 @@ describe('packaged dsh bootstrap', () => {
   })
 
   it('uses the physical unpacked dependency tree only inside an Electron package', () => {
-    expect(unpackedAsarPath('/Applications/DSH Desktop.app/Contents/Resources/app.asar/node_modules/pkg'))
-      .toBe('/Applications/DSH Desktop.app/Contents/Resources/app.asar.unpacked/node_modules/pkg')
-    expect(unpackedAsarPath('C:\\Program Files\\DSH Desktop\\resources\\app.asar\\node_modules\\pkg'))
-      .toBe('C:\\Program Files\\DSH Desktop\\resources\\app.asar.unpacked\\node_modules\\pkg')
-    expect(unpackedAsarPath('/Applications/DSH Desktop.app/Contents/Resources/app.asar/package.json'))
-      .toBe('/Applications/DSH Desktop.app/Contents/Resources/app.asar.unpacked/package.json')
+    expect(unpackedAsarPath('/Applications/Sensteed Agent.app/Contents/Resources/app.asar/node_modules/pkg'))
+      .toBe('/Applications/Sensteed Agent.app/Contents/Resources/app.asar.unpacked/node_modules/pkg')
+    expect(unpackedAsarPath('C:\\Program Files\\Sensteed Agent\\resources\\app.asar\\node_modules\\pkg'))
+      .toBe('C:\\Program Files\\Sensteed Agent\\resources\\app.asar.unpacked\\node_modules\\pkg')
+    expect(unpackedAsarPath('/Applications/Sensteed Agent.app/Contents/Resources/app.asar/package.json'))
+      .toBe('/Applications/Sensteed Agent.app/Contents/Resources/app.asar.unpacked/package.json')
     expect(unpackedAsarPath('/workspace/node_modules/pkg')).toBe('/workspace/node_modules/pkg')
     expect(() => packagedDependencyPath(import.meta.url, '../outside.js'))
       .toThrow('relative POSIX path')
   })
 
   it('keeps a resolved JavaScript dependency in the logical ASAR tree', () => {
-    const root = mkdtempSync(join(tmpdir(), 'dsh-desktop-asar-profile-'))
+    const root = mkdtempSync(join(tmpdir(), 'sensteed-agent-asar-profile-'))
     const desktopLib = join(root, 'app.asar', 'lib')
     const dshPackage = join(root, 'app.asar', 'node_modules', '@deepseek-ai', 'dsh')
     try {
@@ -180,7 +180,7 @@ describe('packaged dsh bootstrap', () => {
   })
 
   it('resolves the DSH entry from a pnpm profile with flat package dependencies', () => {
-    const root = mkdtempSync(join(tmpdir(), 'dsh-desktop-flat-profile-'))
+    const root = mkdtempSync(join(tmpdir(), 'sensteed-agent-flat-profile-'))
     const desktopLib = join(root, 'node_modules', 'dsh-plugin-desktop', 'lib')
     const dshPackage = join(root, 'node_modules', '@deepseek-ai', 'dsh')
     const dshEntry = join(dshPackage, 'lib', 'bin.js')

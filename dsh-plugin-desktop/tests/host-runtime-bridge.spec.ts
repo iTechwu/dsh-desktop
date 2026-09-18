@@ -28,9 +28,9 @@ it('preserves the Web URL and authentication while projecting shell and tray cal
     let language: 'zh' | undefined
     const mode = vi.fn(async () => {})
     const invoke = vi.fn(async () => {})
-    const spec = { url: 'http://127.0.0.1:1234/?dsh-desktop-mode=advanced',
+    const spec = { url: 'http://127.0.0.1:1234/?sensteed-agent-mode=advanced',
       authenticationUrl: 'http://127.0.0.1:1234/?token=fixture',
-      rendererAccessHeader: { name: 'x-dsh-desktop-renderer', value: 'fixture' },
+      rendererAccessHeader: { name: 'x-sensteed-agent-renderer', value: 'fixture' },
       readLocalePreference: () => language, readThemeSource: () => 'dark',
       requestQuit() {}, requestModeChange: mode,
     } as unknown as DesktopShellSpec

@@ -52,12 +52,12 @@ describe('application shutdown requests', () => {
     }
     const coordinator = createDesktopExitCoordinator(native, () => {})
 
-    coordinator.requestRelaunch(['desktop-main.cjs', '--dsh-desktop-recovery'])
+    coordinator.requestRelaunch(['desktop-main.cjs', '--sensteed-agent-recovery'])
     coordinator.finish(0)
 
     expect(native.relaunch).toHaveBeenCalledWith([
       'desktop-main.cjs',
-      '--dsh-desktop-recovery',
+      '--sensteed-agent-recovery',
     ])
   })
 

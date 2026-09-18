@@ -32,7 +32,7 @@ export function windowsSupportsMica(build: number | undefined): boolean {
 export function parseMacosWindowMaterial(value: unknown): MacosWindowMaterial {
   if (value === undefined) return DEFAULT_MACOS_WINDOW_MATERIAL
   if (value === 'off' || value === 'transparent') return value
-  throw new Error('dsh-desktop.macosMaterial must be "off" or "transparent"')
+  throw new Error('sensteed-agent.macosMaterial must be "off" or "transparent"')
 }
 
 export function parseWindowsWindowMaterial(value: unknown): WindowsWindowMaterial {
@@ -42,7 +42,7 @@ export function parseWindowsWindowMaterial(value: unknown): WindowsWindowMateria
   // window behavior. Keep the legacy value readable and fail closed to an
   // ordinary opaque window until the durable settings migration can run.
   if (value === 'acrylic') return 'off'
-  throw new Error('dsh-desktop.windowsMaterial must be "off" or "mica"')
+  throw new Error('sensteed-agent.windowsMaterial must be "off" or "mica"')
 }
 
 /** Resolve the actual generation material without making settings non-portable. */

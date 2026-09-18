@@ -47,7 +47,7 @@ function takeDefaultProfile(environment: NodeJS.ProcessEnv): string | undefined 
     if (key.toUpperCase() !== DEFAULT_PROFILE) continue
     const value = environment[key]
     if (value !== undefined && profileName !== undefined && value !== profileName) {
-      throw new Error('dsh-desktop: conflicting default profile environment values')
+      throw new Error('sensteed-agent: conflicting default profile environment values')
     }
     profileName ??= value
     delete environment[key]
@@ -84,7 +84,7 @@ export function desktopCliProfileManifestUrl(
   // check at the Desktop process boundary so an upstream contract regression
   // cannot turn a CLI flag into an arbitrary module-resolution anchor.
   if (dirname(profileDirectory) !== profileRoot) {
-    throw new Error(`dsh-desktop: unsafe CLI profile path for ${JSON.stringify(profileName)}`)
+    throw new Error(`sensteed-agent: unsafe CLI profile path for ${JSON.stringify(profileName)}`)
   }
   return pathToFileURL(join(profileDirectory, 'package.json')).href
 }
@@ -150,7 +150,7 @@ function isDirectExecution(): boolean {
 
 if (isDirectExecution()) {
   void runDesktopDshCli().catch((cause: unknown) => {
-    process.stderr.write(`dsh-desktop: failed to start packaged dsh: ${cause instanceof Error ? cause.stack ?? cause.message : String(cause)}\n`)
+    process.stderr.write(`sensteed-agent: failed to start packaged dsh: ${cause instanceof Error ? cause.stack ?? cause.message : String(cause)}\n`)
     process.exitCode = 1
   })
 }

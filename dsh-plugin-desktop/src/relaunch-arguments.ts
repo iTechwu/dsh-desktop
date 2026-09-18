@@ -1,7 +1,7 @@
 /** One-process launch marker used to enter recovery before Profile Host boot. */
-export const DESKTOP_RECOVERY_MODE_ARGUMENT = '--dsh-desktop-recovery'
+export const DESKTOP_RECOVERY_MODE_ARGUMENT = '--sensteed-agent-recovery'
 /** Process marker selecting the disposable Safe Mode DSH environment. */
-export const DESKTOP_SAFE_MODE_ARGUMENT = '--dsh-desktop-safe-mode'
+export const DESKTOP_SAFE_MODE_ARGUMENT = '--sensteed-agent-safe-mode'
 
 /** Rebuild the current Electron command line without retaining one-shot modes. */
 export function desktopDefaultRelaunchArguments(argv: readonly string[] = process.argv): string[] {

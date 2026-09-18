@@ -17,15 +17,15 @@ it('shows the remote-control pill before native actions and removes its dot afte
     setMode: noop, t: (key: keyof typeof zh) => zh[key],
     environment: { mode: 'extended', platform: 'darwin', version: '2.0.8-beta.1', material: 'transparent' } as DesktopClientEnvironment }
   await act(async () => { root!.render(createElement(DesktopFrameTitlebarView, { ...props, remoteControl: { seen: false, open } })) })
-  const button = container.querySelector<HTMLButtonElement>('.dshDesktopRemoteControl')!
+  const button = container.querySelector<HTMLButtonElement>('.sensteedAgentRemoteControl')!
   expect(button.textContent).toContain('远程控制')
   expect(button.querySelector('[aria-label="新功能"]')).not.toBeNull()
-  expect(button.nextElementSibling?.className).toContain('dshDesktopNativeActions')
+  expect(button.nextElementSibling?.className).toContain('sensteedAgentNativeActions')
   await act(async () => { button.click() })
   expect(open).toHaveBeenCalledTimes(1)
   await act(async () => { root!.render(createElement(DesktopFrameTitlebarView, { ...props, remoteControl: { seen: true, open } })) })
-  expect(container.querySelector('.dshDesktopRemoteControlDot')).toBeNull()
-  expect(container.querySelector('.dshDesktopRemoteControl')).not.toBeNull()
+  expect(container.querySelector('.sensteedAgentRemoteControlDot')).toBeNull()
+  expect(container.querySelector('.sensteedAgentRemoteControl')).not.toBeNull()
   await act(async () => { root!.render(createElement(DesktopFrameTitlebarView, props)) })
-  expect(container.querySelector('.dshDesktopRemoteControl')).toBeNull()
+  expect(container.querySelector('.sensteedAgentRemoteControl')).toBeNull()
 })

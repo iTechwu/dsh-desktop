@@ -22,12 +22,12 @@ describe('Desktop installer quit request', () => {
   })
 
   it('distinguishes background Node re-entry from an explicit application launch', () => {
-    expect(isDesktopBackgroundNodeRequest(['DSH Desktop.exe'])).toBe(false)
-    expect(isDesktopBackgroundNodeRequest(['DSH Desktop.exe', '--profile', 'desktop'])).toBe(false)
-    expect(isDesktopBackgroundNodeRequest(['DSH Desktop.exe', 'C:\\app\\pnpm\\bin\\pnpm.mjs', 'install'])).toBe(true)
-    expect(isDesktopBackgroundNodeRequest(['DSH Desktop.exe', '--require', 'C:\\runtime\\clear-env.cjs'])).toBe(true)
-    expect(isDesktopBackgroundNodeRequest(['DSH Desktop.exe', '--import=file:///runtime/clear-env.mjs'])).toBe(true)
-    expect(isDesktopBackgroundNodeRequest(['DSH Desktop.exe', '--expose-internals', 'desktop-cli.js'])).toBe(true)
+    expect(isDesktopBackgroundNodeRequest(['Sensteed Agent.exe'])).toBe(false)
+    expect(isDesktopBackgroundNodeRequest(['Sensteed Agent.exe', '--profile', 'desktop'])).toBe(false)
+    expect(isDesktopBackgroundNodeRequest(['Sensteed Agent.exe', 'C:\\app\\pnpm\\bin\\pnpm.mjs', 'install'])).toBe(true)
+    expect(isDesktopBackgroundNodeRequest(['Sensteed Agent.exe', '--require', 'C:\\runtime\\clear-env.cjs'])).toBe(true)
+    expect(isDesktopBackgroundNodeRequest(['Sensteed Agent.exe', '--import=file:///runtime/clear-env.mjs'])).toBe(true)
+    expect(isDesktopBackgroundNodeRequest(['Sensteed Agent.exe', '--expose-internals', 'desktop-cli.js'])).toBe(true)
   })
 
   it('handles first- and second-instance requests without showing a window', () => {

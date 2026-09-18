@@ -16,7 +16,7 @@ const FIRST = '01234567-89ab-4cde-8f01-23456789abcd'
 const SECOND = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee'
 
 async function userData(): Promise<string> {
-  const root = await mkdtemp(join(tmpdir(), 'dsh-desktop-installation-id-'))
+  const root = await mkdtemp(join(tmpdir(), 'sensteed-agent-installation-id-'))
   roots.push(root)
   return root
 }

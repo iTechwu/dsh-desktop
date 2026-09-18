@@ -70,17 +70,17 @@ export function applyFramedShell(
     if (contentViewport === null) {
       throw new Error('dsh-plugin-desktop: framed shell requires the upstream root')
     }
-    document.body.dataset.dshDesktopMode = environment.mode
-    document.body.dataset.dshDesktopPlatform = environment.platform
-    document.body.dataset.dshDesktopMaterial = environment.material
-    contentViewport.dataset.dshDesktopContentViewport = ''
+    document.body.dataset.sensteedAgentMode = environment.mode
+    document.body.dataset.sensteedAgentPlatform = environment.platform
+    document.body.dataset.sensteedAgentMaterial = environment.material
+    contentViewport.dataset.sensteedAgentContentViewport = ''
     const removeStyles = installExtendedStyles()
     return () => {
       removeStyles()
-      delete contentViewport.dataset.dshDesktopContentViewport
-      delete document.body.dataset.dshDesktopMode
-      delete document.body.dataset.dshDesktopPlatform
-      delete document.body.dataset.dshDesktopMaterial
+      delete contentViewport.dataset.sensteedAgentContentViewport
+      delete document.body.dataset.sensteedAgentMode
+      delete document.body.dataset.sensteedAgentPlatform
+      delete document.body.dataset.sensteedAgentMaterial
     }
   }, `desktop: independent ${environment.mode} frame styles`)
 }

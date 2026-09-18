@@ -16,7 +16,7 @@ export const DESKTOP_TERMINAL_OPEN_REQUEST = DESKTOP_RECOVERY_RESTART_REQUEST
 
 /** Minimal presentation for the early-boot recovery guidance and action. */
 export const DESKTOP_BOOT_RECOVERY_STYLE = `
-[data-dsh-desktop-recovery] {
+[data-sensteed-agent-recovery] {
   --dsh-recovery-muted: var(--dsw-alias-label-secondary, var(--dsh-boot-label-secondary, #61666b));
   --dsh-recovery-primary-bg: var(--dsw-alias-button-primary-fill, var(--dsh-boot-brand, #0f1115));
   --dsh-recovery-primary-hover: var(--dsw-alias-button-primary-hover, #303238);
@@ -30,12 +30,12 @@ export const DESKTOP_BOOT_RECOVERY_STYLE = `
   color: var(--dsh-recovery-muted);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
-[data-dsh-desktop-recovery] p {
+[data-sensteed-agent-recovery] p {
   margin: 0;
   font-size: 12px;
   line-height: 18px;
 }
-[data-dsh-desktop-recovery] button {
+[data-sensteed-agent-recovery] button {
   min-height: 40px;
   padding: 0 18px;
   border: 0;
@@ -45,26 +45,26 @@ export const DESKTOP_BOOT_RECOVERY_STYLE = `
   cursor: pointer;
   font: 500 14px/22px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
-[data-dsh-desktop-recovery] button:hover:not(:disabled),
-[data-dsh-desktop-recovery] button:active:not(:disabled) {
+[data-sensteed-agent-recovery] button:hover:not(:disabled),
+[data-sensteed-agent-recovery] button:active:not(:disabled) {
   background: var(--dsh-recovery-primary-hover);
 }
-[data-dsh-desktop-recovery] button:focus-visible {
+[data-sensteed-agent-recovery] button:focus-visible {
   outline: 2px solid #5b8def;
   outline-offset: 2px;
 }
-[data-dsh-desktop-recovery] button:disabled {
+[data-sensteed-agent-recovery] button:disabled {
   cursor: progress;
   opacity: 0.52;
 }
-body[data-ds-dark-theme] [data-dsh-desktop-recovery] {
+body[data-ds-dark-theme] [data-sensteed-agent-recovery] {
   --dsh-recovery-muted: #cfd3d6;
   --dsh-recovery-primary-bg: #f9fafb;
   --dsh-recovery-primary-hover: #dfe3e6;
   --dsh-recovery-primary-fg: #151517;
 }
 @media (prefers-color-scheme: dark) {
-  [data-dsh-desktop-recovery] {
+  [data-sensteed-agent-recovery] {
     --dsh-recovery-muted: #cfd3d6;
     --dsh-recovery-primary-bg: #f9fafb;
     --dsh-recovery-primary-hover: #dfe3e6;
@@ -72,8 +72,8 @@ body[data-ds-dark-theme] [data-dsh-desktop-recovery] {
   }
 }
 @media (max-width: 520px) {
-  [data-dsh-desktop-recovery] { width: calc(100vw - 32px); }
-  [data-dsh-desktop-recovery] button { width: 100%; }
+  [data-sensteed-agent-recovery] { width: calc(100vw - 32px); }
+  [data-sensteed-agent-recovery] button { width: 100%; }
 }
 `
 
@@ -94,7 +94,7 @@ export const DESKTOP_BOOT_RECOVERY_SCRIPT = `(() => {
   };
   const attach = () => {
     const root = document.querySelector('[data-dsh-boot]');
-    if (!root || root.querySelector('[data-dsh-desktop-recovery]')) return;
+    if (!root || root.querySelector('[data-sensteed-agent-recovery]')) return;
     const title = [...root.querySelectorAll('div')].find((node) =>
       node.childElementCount === 0 && node.textContent?.trim() === 'Failed to load plugins'
     );
@@ -102,7 +102,7 @@ export const DESKTOP_BOOT_RECOVERY_SCRIPT = `(() => {
     if (!report) return;
     const panel = element('section', {
       'aria-label': label,
-      dataset: { dshDesktopRecovery: '' },
+      dataset: { sensteedAgentRecovery: '' },
     });
     const button = element('button', { type: 'button', 'aria-label': label }, label);
     button.addEventListener('click', async () => {

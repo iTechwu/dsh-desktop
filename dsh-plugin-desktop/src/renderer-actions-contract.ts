@@ -1,10 +1,10 @@
 /** Contract for the Electron-owned Desktop actions the renderer may invoke. */
 
 /** Main-world key of the context-isolated Desktop actions bridge. */
-export const DESKTOP_RENDERER_ACTIONS_BRIDGE = 'dshDesktopActions'
+export const DESKTOP_RENDERER_ACTIONS_BRIDGE = 'sensteedAgentActions'
 
 /** Single IPC channel carrying one fixed, argument-free Desktop action. */
-export const DESKTOP_RENDERER_ACTION_CHANNEL = 'dsh-desktop:renderer-action'
+export const DESKTOP_RENDERER_ACTION_CHANNEL = 'sensteed-agent:renderer-action'
 
 /**
  * Native operations owned by the Electron main process.

@@ -123,7 +123,7 @@ export const name = 'desktop-shell'
 export const inject = ['webServer', 'webRuntime', 'appExit', 'settings', 'connection', 'tools', 'credentials']
 
 /** Standard settings namespace shared by tray and configuration surfaces. */
-export const DESKTOP_SETTINGS_NAMESPACE = 'dsh-desktop' as const
+export const DESKTOP_SETTINGS_NAMESPACE = 'sensteed-agent' as const
 
 const UI_THEME_SETTINGS_NAMESPACE = THEME_SETTINGS_NAMESPACE
 const UI_LOCALE_SETTINGS_NAMESPACE = LOCALE_SETTINGS_NAMESPACE
@@ -230,17 +230,17 @@ export function desktopRendererUrl(
   windowsBuild?: number,
 ): string {
   const url = new URL(`http://127.0.0.1:${String(port)}/`)
-  url.searchParams.set('dsh-desktop-mode', mode)
-  url.searchParams.set('dsh-desktop-platform', platform)
-  url.searchParams.set('dsh-desktop-version', appVersion)
-  url.searchParams.set('dsh-desktop-material', material)
+  url.searchParams.set('sensteed-agent-mode', mode)
+  url.searchParams.set('sensteed-agent-platform', platform)
+  url.searchParams.set('sensteed-agent-version', appVersion)
+  url.searchParams.set('sensteed-agent-material', material)
   if (mode === 'extended' || (mode === 'compatibility' && platform !== 'linux')) {
     // Body-level plugin portals do not inherit the framed root's geometry.
     // Publish the exact content boundary so they can yield Desktop chrome.
-    url.searchParams.set('dsh-desktop-titlebar-inset', String(DESKTOP_FRAME_HEIGHT))
+    url.searchParams.set('sensteed-agent-titlebar-inset', String(DESKTOP_FRAME_HEIGHT))
   }
   if (platform === 'win32') {
-    url.searchParams.set('dsh-desktop-mica', windowsSupportsMica(windowsBuild) ? '1' : '0')
+    url.searchParams.set('sensteed-agent-mica', windowsSupportsMica(windowsBuild) ? '1' : '0')
   }
   return url.href
 }
@@ -255,7 +255,7 @@ export function apply(ctx: Context, config: Config): void {
   if (runtime === undefined) {
     process.stderr.write(
       'dsh-plugin-desktop: this profile is composed with the Yootun-Agent shell, which requires the desktop launcher (desktopRuntime).\n'
-      + 'Start it with `dsh-desktop`, or select this profile inside the packaged Yootun-Agent application.\n'
+      + 'Start it with `sensteed-agent`, or select this profile inside the packaged Yootun-Agent application.\n'
       + 'The desktop terminal, profile, and update rows stay inactive in an ordinary DSH boot.\n',
     )
     return
@@ -353,7 +353,7 @@ export function apply(ctx: Context, config: Config): void {
         res.statusCode = 200
         res.setHeader('cache-control', 'no-store')
         res.setHeader('content-type', 'application/x-x509-ca-cert')
-        res.setHeader('content-disposition', 'attachment; filename="dsh-desktop-local-ca.crt"')
+        res.setHeader('content-disposition', 'attachment; filename="sensteed-agent-local-ca.crt"')
         res.setHeader('content-length', String(Buffer.byteLength(caCertificate)))
         res.setHeader('x-content-type-options', 'nosniff')
         res.end(req.method === 'HEAD' ? undefined : caCertificate)

@@ -51,7 +51,7 @@ describe('Desktop early-boot recovery injection', () => {
     expect(DESKTOP_BOOT_RECOVERY_STYLE).not.toContain('select')
     expect(DESKTOP_BOOT_RECOVERY_STYLE).not.toContain('data-dsh-recovery-status')
     expect(DESKTOP_BOOT_RECOVERY_STYLE).not.toContain('data-dsh-recovery-confirm')
-    expect(DESKTOP_BOOT_RECOVERY_STYLE).toContain('[data-dsh-desktop-recovery]')
+    expect(DESKTOP_BOOT_RECOVERY_STYLE).toContain('[data-sensteed-agent-recovery]')
     expect(DESKTOP_BOOT_RECOVERY_STYLE).toContain('--dsw-alias-button-primary-fill')
     expect(DESKTOP_BOOT_RECOVERY_STYLE).toContain(':focus-visible')
     expect(DESKTOP_BOOT_RECOVERY_STYLE).toContain('prefers-color-scheme: dark')

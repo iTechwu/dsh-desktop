@@ -7,21 +7,21 @@ import {
   WINDOWS_CAPTION_CONTROLS_WIDTH,
 } from '../window-chrome.ts'
 
-const STYLE_ID = 'dsh-desktop-framed-styles'
+const STYLE_ID = 'sensteed-agent-framed-styles'
 
 const CSS = `
-html:has(body:is([data-dsh-desktop-mode="compatibility"], [data-dsh-desktop-mode="extended"])),
-body:is([data-dsh-desktop-mode="compatibility"], [data-dsh-desktop-mode="extended"]) {
+html:has(body:is([data-sensteed-agent-mode="compatibility"], [data-sensteed-agent-mode="extended"])),
+body:is([data-sensteed-agent-mode="compatibility"], [data-sensteed-agent-mode="extended"]) {
   width: 100%;
   height: 100%;
 }
-body:is([data-dsh-desktop-mode="compatibility"], [data-dsh-desktop-mode="extended"]) {
-  --dsh-desktop-frame-height: 0px;
+body:is([data-sensteed-agent-mode="compatibility"], [data-sensteed-agent-mode="extended"]) {
+  --sensteed-agent-frame-height: 0px;
   margin: 0;
   overflow: hidden;
   background: transparent !important;
 }
-body:is([data-dsh-desktop-mode="compatibility"], [data-dsh-desktop-mode="extended"]) #root {
+body:is([data-sensteed-agent-mode="compatibility"], [data-sensteed-agent-mode="extended"]) #root {
   box-sizing: border-box;
   position: fixed;
   top: 0;
@@ -36,29 +36,29 @@ body:is([data-dsh-desktop-mode="compatibility"], [data-dsh-desktop-mode="extende
 }
 /* The custom frame owns the top band. A shell overlay is the containing block
    for fixed plugin surfaces, so they cannot escape into Desktop chrome. */
-body:is([data-dsh-desktop-mode="compatibility"], [data-dsh-desktop-mode="extended"])
+body:is([data-sensteed-agent-mode="compatibility"], [data-sensteed-agent-mode="extended"])
   [data-shell-overlay] {
   overflow: hidden;
   transform: translateZ(0);
 }
 /* Full-viewport dialogs portalled directly to body still belong to content. */
-body:is([data-dsh-desktop-mode="compatibility"], [data-dsh-desktop-mode="extended"])
+body:is([data-sensteed-agent-mode="compatibility"], [data-sensteed-agent-mode="extended"])
   > [role="presentation"]:has(> [aria-modal="true"]),
-body:is([data-dsh-desktop-mode="compatibility"], [data-dsh-desktop-mode="extended"])
+body:is([data-sensteed-agent-mode="compatibility"], [data-sensteed-agent-mode="extended"])
   > [aria-modal="true"] {
-  top: var(--dsh-desktop-frame-height) !important;
+  top: var(--sensteed-agent-frame-height) !important;
   transform: translateZ(0);
 }
-body:is([data-dsh-desktop-mode="compatibility"], [data-dsh-desktop-mode="extended"])
+body:is([data-sensteed-agent-mode="compatibility"], [data-sensteed-agent-mode="extended"])
   [data-slot="sidebar.footer.action"],
-body:is([data-dsh-desktop-mode="compatibility"], [data-dsh-desktop-mode="extended"])
+body:is([data-sensteed-agent-mode="compatibility"], [data-sensteed-agent-mode="extended"])
   [data-slot="sidebar.settings"] {
   --dsh-sidebar-footer-control-height: 36px;
   --dsh-sidebar-footer-control-gap: 4px;
   --dsh-sidebar-footer-icon-size: 16px;
   --dsh-sidebar-footer-font-size: 14px;
 }
-body:is([data-dsh-desktop-mode="compatibility"], [data-dsh-desktop-mode="extended"])
+body:is([data-sensteed-agent-mode="compatibility"], [data-sensteed-agent-mode="extended"])
   [data-slot="sidebar.footer.action"] {
   display: flex !important;
   flex-direction: column;
@@ -71,12 +71,12 @@ body:is([data-dsh-desktop-mode="compatibility"], [data-dsh-desktop-mode="extende
   overscroll-behavior: contain;
   scrollbar-gutter: stable;
 }
-body:is([data-dsh-desktop-mode="compatibility"], [data-dsh-desktop-mode="extended"])
+body:is([data-sensteed-agent-mode="compatibility"], [data-sensteed-agent-mode="extended"])
   [data-slot="sidebar.footer.action"] > * {
   flex: none;
   min-width: 0;
 }
-body:is([data-dsh-desktop-mode="compatibility"], [data-dsh-desktop-mode="extended"])
+body:is([data-sensteed-agent-mode="compatibility"], [data-sensteed-agent-mode="extended"])
   [data-slot="sidebar.footer.action"] > button {
   display: flex;
   align-items: center;
@@ -93,7 +93,7 @@ body:is([data-dsh-desktop-mode="compatibility"], [data-dsh-desktop-mode="extende
   font-size: var(--dsh-sidebar-footer-font-size);
   line-height: 22px;
 }
-body:is([data-dsh-desktop-mode="compatibility"], [data-dsh-desktop-mode="extended"])
+body:is([data-sensteed-agent-mode="compatibility"], [data-sensteed-agent-mode="extended"])
   [data-slot="sidebar.footer.action"] > button:has(> svg):not(:has(> span))::after {
   content: attr(aria-label);
   min-width: 0;
@@ -101,13 +101,13 @@ body:is([data-dsh-desktop-mode="compatibility"], [data-dsh-desktop-mode="extende
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-body:is([data-dsh-desktop-mode="compatibility"], [data-dsh-desktop-mode="extended"])
+body:is([data-sensteed-agent-mode="compatibility"], [data-sensteed-agent-mode="extended"])
   [data-slot="sidebar.settings"] > div:first-child {
   box-sizing: border-box;
   width: 100%;
   margin: var(--dsh-sidebar-footer-control-gap) 0 0;
 }
-body:is([data-dsh-desktop-mode="compatibility"], [data-dsh-desktop-mode="extended"])
+body:is([data-sensteed-agent-mode="compatibility"], [data-sensteed-agent-mode="extended"])
   [data-slot="sidebar.settings"] > div:first-child > button {
   box-sizing: border-box;
   height: var(--dsh-sidebar-footer-control-height);
@@ -120,51 +120,51 @@ body:is([data-dsh-desktop-mode="compatibility"], [data-dsh-desktop-mode="extende
   font-size: var(--dsh-sidebar-footer-font-size);
   line-height: 22px;
 }
-body:is([data-dsh-desktop-mode="compatibility"], [data-dsh-desktop-mode="extended"])
+body:is([data-sensteed-agent-mode="compatibility"], [data-sensteed-agent-mode="extended"])
   [data-slot="sidebar.footer.action"] > button > span,
-body:is([data-dsh-desktop-mode="compatibility"], [data-dsh-desktop-mode="extended"])
+body:is([data-sensteed-agent-mode="compatibility"], [data-sensteed-agent-mode="extended"])
   [data-slot="sidebar.settings"] > div:first-child > button > span {
   font-size: inherit;
   line-height: inherit;
 }
-body:is([data-dsh-desktop-mode="compatibility"], [data-dsh-desktop-mode="extended"])
+body:is([data-sensteed-agent-mode="compatibility"], [data-sensteed-agent-mode="extended"])
   [data-slot="sidebar.footer.action"] > button svg,
-body:is([data-dsh-desktop-mode="compatibility"], [data-dsh-desktop-mode="extended"])
+body:is([data-sensteed-agent-mode="compatibility"], [data-sensteed-agent-mode="extended"])
   [data-slot="sidebar.settings"] > div:first-child > button svg {
   flex: none;
   width: var(--dsh-sidebar-footer-icon-size);
   height: var(--dsh-sidebar-footer-icon-size);
 }
-body:is([data-dsh-desktop-mode="compatibility"], [data-dsh-desktop-mode="extended"])
+body:is([data-sensteed-agent-mode="compatibility"], [data-sensteed-agent-mode="extended"])
   [data-sidebar-collapsed] [data-slot="sidebar.footer.action"] > button,
-body:is([data-dsh-desktop-mode="compatibility"], [data-dsh-desktop-mode="extended"])
+body:is([data-sensteed-agent-mode="compatibility"], [data-sensteed-agent-mode="extended"])
   [data-sidebar-collapsed] [data-slot="sidebar.settings"] > div:first-child > button {
   width: var(--dsh-sidebar-footer-control-height);
   padding: 0;
   justify-content: center;
 }
-body:is([data-dsh-desktop-mode="compatibility"], [data-dsh-desktop-mode="extended"])
+body:is([data-sensteed-agent-mode="compatibility"], [data-sensteed-agent-mode="extended"])
   [data-sidebar-collapsed] [data-slot="sidebar.footer.action"] > button:has(> svg):not(:has(> span))::after { content: none; }
-body:is([data-dsh-desktop-mode="compatibility"], [data-dsh-desktop-mode="extended"])
+body:is([data-sensteed-agent-mode="compatibility"], [data-sensteed-agent-mode="extended"])
   [data-sidebar-collapsed] [data-slot="sidebar.settings"] > div:first-child {
   width: var(--dsh-sidebar-footer-control-height);
 }
 /* Desktop has no persistent right details column when it is closed. Let the
    transcript and composer use that reclaimed width; a user drag still wins
    through the inline --dsh-chat-user-width value published by DSH. */
-body:is([data-dsh-desktop-mode="compatibility"], [data-dsh-desktop-mode="extended"])
+body:is([data-sensteed-agent-mode="compatibility"], [data-sensteed-agent-mode="extended"])
   #root:has([data-details-collapsed]) [data-dsh-conversation-drop-target] {
   --dsh-chat-content-width: var(--dsh-chat-user-width, min(calc(100% - 32px), 1280px));
 }
-body[data-dsh-desktop-mode="extended"] .dshDesktopSidebarSurface {
+body[data-sensteed-agent-mode="extended"] .sensteedAgentSidebarSurface {
   --dsw-specific-sidebar-fill: transparent;
   border-right-color: transparent;
   background: transparent !important;
 }
-body[data-dsh-desktop-mode="extended"] .dshDesktopFrame {
-  background: var(--dsh-desktop-frame-fill);
+body[data-sensteed-agent-mode="extended"] .sensteedAgentFrame {
+  background: var(--sensteed-agent-frame-fill);
 }
-body[data-dsh-desktop-mode="extended"] .dshDesktopConversationSurface {
+body[data-sensteed-agent-mode="extended"] .sensteedAgentConversationSurface {
   box-sizing: border-box;
   overflow: hidden;
   border-top: 1px solid var(--dsw-alias-border-l1);
@@ -173,26 +173,26 @@ body[data-dsh-desktop-mode="extended"] .dshDesktopConversationSurface {
   background: var(--dsw-alias-bg-base);
   background-clip: padding-box;
 }
-body[data-dsh-desktop-mode="extended"] .dshDesktopDetailsSurface {
+body[data-sensteed-agent-mode="extended"] .sensteedAgentDetailsSurface {
   box-sizing: border-box;
   border-top: 1px solid var(--dsw-alias-border-l1);
 }
-body:is([data-dsh-desktop-mode="compatibility"], [data-dsh-desktop-mode="extended"])
-  [data-dsh-desktop-content-viewport],
-body:is([data-dsh-desktop-mode="compatibility"], [data-dsh-desktop-mode="extended"])
-  [data-dsh-desktop-frame="titlebar"] {
+body:is([data-sensteed-agent-mode="compatibility"], [data-sensteed-agent-mode="extended"])
+  [data-sensteed-agent-content-viewport],
+body:is([data-sensteed-agent-mode="compatibility"], [data-sensteed-agent-mode="extended"])
+  [data-sensteed-agent-frame="titlebar"] {
   isolation: isolate;
 }
-body:is([data-dsh-desktop-mode="compatibility"], [data-dsh-desktop-mode="extended"])[data-dsh-desktop-material="off"] {
-  --dsh-desktop-frame-fill: var(--dsw-alias-bg-layer-1);
+body:is([data-sensteed-agent-mode="compatibility"], [data-sensteed-agent-mode="extended"])[data-sensteed-agent-material="off"] {
+  --sensteed-agent-frame-fill: var(--dsw-alias-bg-layer-1);
 }
-body[data-dsh-desktop-mode="compatibility"]:not([data-dsh-desktop-material="off"]) {
-  --dsh-desktop-frame-fill: color-mix(in srgb, var(--dsw-alias-bg-base) 54%, transparent);
+body[data-sensteed-agent-mode="compatibility"]:not([data-sensteed-agent-material="off"]) {
+  --sensteed-agent-frame-fill: color-mix(in srgb, var(--dsw-alias-bg-base) 54%, transparent);
 }
-body[data-dsh-desktop-mode="extended"]:not([data-dsh-desktop-material="off"]) {
-  --dsh-desktop-frame-fill: color-mix(in srgb, var(--dsw-alias-bg-base) 18%, transparent);
+body[data-sensteed-agent-mode="extended"]:not([data-sensteed-agent-material="off"]) {
+  --sensteed-agent-frame-fill: color-mix(in srgb, var(--dsw-alias-bg-base) 18%, transparent);
 }
-.dshDesktopFrameTitlebar {
+.sensteedAgentFrameTitlebar {
   position: fixed;
   z-index: 2147483647;
   top: 0;
@@ -202,18 +202,18 @@ body[data-dsh-desktop-mode="extended"]:not([data-dsh-desktop-material="off"]) {
   align-items: center;
   box-sizing: border-box;
   height: ${DESKTOP_FRAME_HEIGHT}px;
-  background: var(--dsh-desktop-frame-fill);
+  background: var(--sensteed-agent-frame-fill);
   color: var(--dsw-alias-label-primary);
   user-select: none;
   -webkit-app-region: drag;
 }
-.dshDesktopFrameTitlebar[data-platform="darwin"] {
+.sensteedAgentFrameTitlebar[data-platform="darwin"] {
   padding: 0 8px 0 ${MACOS_TRAFFIC_LIGHT_SAFE_WIDTH + 8}px;
 }
-.dshDesktopFrameTitlebar[data-platform="win32"] {
+.sensteedAgentFrameTitlebar[data-platform="win32"] {
   padding: 0 ${WINDOWS_CAPTION_CONTROLS_WIDTH + 8}px 0 8px;
 }
-.dshDesktopFrameIdentity {
+.sensteedAgentFrameIdentity {
   position: absolute;
   left: 50%;
   display: flex;
@@ -223,8 +223,8 @@ body[data-dsh-desktop-mode="extended"]:not([data-dsh-desktop-material="off"]) {
   transform: translateX(-50%);
   pointer-events: none;
 }
-.dshDesktopFrameProduct { font-size: 13px; font-weight: 600; white-space: nowrap; }
-.dshDesktopFrameVersion {
+.sensteedAgentFrameProduct { font-size: 13px; font-weight: 600; white-space: nowrap; }
+.sensteedAgentFrameVersion {
   min-height: 22px;
   padding: 2px 5px;
   border: 0;
@@ -238,13 +238,13 @@ body[data-dsh-desktop-mode="extended"]:not([data-dsh-desktop-material="off"]) {
   white-space: nowrap;
   -webkit-app-region: no-drag;
 }
-.dshDesktopFrameVersion:hover,
-.dshDesktopFrameVersion[data-popup-open],
-.dshDesktopFrameVersion:focus-visible {
+.sensteedAgentFrameVersion:hover,
+.sensteedAgentFrameVersion[data-popup-open],
+.sensteedAgentFrameVersion:focus-visible {
   background: var(--dsw-alias-interactive-bg-hover);
   color: var(--dsw-alias-label-primary);
 }
-.dshDesktopFrameVersion:focus-visible {
+.sensteedAgentFrameVersion:focus-visible {
   outline: 2px solid var(--dsw-alias-brand-primary);
   outline-offset: 1px;
 }
@@ -262,7 +262,7 @@ body[data-dsh-desktop-mode="extended"]:not([data-dsh-desktop-material="off"]) {
   opacity: 0;
   transform: scale(.98);
 }
-.dshDesktopVersionPopover {
+.sensteedAgentVersionPopover {
   display: grid;
   gap: 9px;
   box-sizing: border-box;
@@ -274,7 +274,7 @@ body[data-dsh-desktop-mode="extended"]:not([data-dsh-desktop-material="off"]) {
   box-shadow: 0 12px 32px color-mix(in srgb, #000 28%, transparent);
   -webkit-app-region: no-drag;
 }
-.dshDesktopVersionPopoverHeader {
+.sensteedAgentVersionPopoverHeader {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
@@ -282,12 +282,12 @@ body[data-dsh-desktop-mode="extended"]:not([data-dsh-desktop-material="off"]) {
   color: var(--dsw-alias-label-secondary);
   font-size: 11px;
 }
-.dshDesktopVersionPopoverHeader strong {
+.sensteedAgentVersionPopoverHeader strong {
   color: var(--dsw-alias-label-primary);
   font-size: 12px;
   font-weight: 600;
 }
-.dshDesktopVersionCheckButton {
+.sensteedAgentVersionCheckButton {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -303,19 +303,19 @@ body[data-dsh-desktop-mode="extended"]:not([data-dsh-desktop-material="off"]) {
   font-size: 12px;
   -webkit-app-region: no-drag;
 }
-.dshDesktopVersionCheckButton:hover:not(:disabled) { background: var(--dsw-alias-interactive-bg-hover); }
-.dshDesktopVersionCheckButton:focus-visible {
+.sensteedAgentVersionCheckButton:hover:not(:disabled) { background: var(--dsw-alias-interactive-bg-hover); }
+.sensteedAgentVersionCheckButton:focus-visible {
   outline: 2px solid var(--dsw-alias-brand-primary);
   outline-offset: 1px;
 }
-.dshDesktopVersionCheckButton:disabled { cursor: default; opacity: .55; }
-.dshDesktopVersionCheckButton svg { width: 14px; height: 14px; stroke-width: 1.8; }
-.dshDesktopVersionCheckError {
+.sensteedAgentVersionCheckButton:disabled { cursor: default; opacity: .55; }
+.sensteedAgentVersionCheckButton svg { width: 14px; height: 14px; stroke-width: 1.8; }
+.sensteedAgentVersionCheckError {
   color: var(--dsw-alias-state-error-primary);
   font-size: 11px;
   line-height: 1.4;
 }
-.dshDesktopFrameMode {
+.sensteedAgentFrameMode {
   display: inline-flex;
   align-items: center;
   min-height: 22px;
@@ -331,30 +331,30 @@ body[data-dsh-desktop-mode="extended"]:not([data-dsh-desktop-material="off"]) {
   white-space: nowrap;
   -webkit-app-region: no-drag;
 }
-.dshDesktopFrameMode:hover,
-.dshDesktopFrameMode[data-popup-open],
-.dshDesktopFrameMode:focus-visible {
+.sensteedAgentFrameMode:hover,
+.sensteedAgentFrameMode[data-popup-open],
+.sensteedAgentFrameMode:focus-visible {
   background: var(--dsw-alias-interactive-bg-hover);
   color: var(--dsw-alias-label-primary);
 }
-.dshDesktopFrameMode:focus-visible {
+.sensteedAgentFrameMode:focus-visible {
   outline: 2px solid var(--dsw-alias-brand-primary);
   outline-offset: 1px;
 }
-.dshDesktopModePopover {
+.sensteedAgentModePopover {
   width: 292px;
   gap: 7px;
 }
-.dshDesktopModePopoverHeader {
+.sensteedAgentModePopoverHeader {
   color: var(--dsw-alias-label-secondary);
   font-size: 11px;
   font-weight: 600;
 }
-.dshDesktopModeOptions {
+.sensteedAgentModeOptions {
   display: grid;
   gap: 3px;
 }
-.dshDesktopVersionPopover .dshDesktopModeOption {
+.sensteedAgentVersionPopover .sensteedAgentModeOption {
   display: grid;
   grid-template-columns: 18px minmax(0, 1fr);
   align-items: start;
@@ -372,54 +372,54 @@ body[data-dsh-desktop-mode="extended"]:not([data-dsh-desktop-material="off"]) {
   white-space: normal;
   -webkit-app-region: no-drag;
 }
-.dshDesktopVersionPopover .dshDesktopModeOption:hover:not(:disabled) {
+.sensteedAgentVersionPopover .sensteedAgentModeOption:hover:not(:disabled) {
   background: var(--dsw-alias-interactive-bg-hover);
 }
-.dshDesktopVersionPopover .dshDesktopModeOption:focus-visible {
+.sensteedAgentVersionPopover .sensteedAgentModeOption:focus-visible {
   outline: 2px solid var(--dsw-alias-brand-primary);
   outline-offset: -1px;
 }
-.dshDesktopVersionPopover .dshDesktopModeOption:disabled {
+.sensteedAgentVersionPopover .sensteedAgentModeOption:disabled {
   cursor: default;
   opacity: .55;
 }
-.dshDesktopModeOption > svg {
+.sensteedAgentModeOption > svg {
   width: 16px;
   height: 16px;
   margin-top: 1px;
   stroke-width: 1.8;
 }
-.dshDesktopModeOptionCopy {
+.sensteedAgentModeOptionCopy {
   display: grid;
   min-width: 0;
   gap: 2px;
 }
-.dshDesktopModeOptionCopy strong {
+.sensteedAgentModeOptionCopy strong {
   font-size: 12px;
   font-weight: 600;
   line-height: 1.3;
 }
-.dshDesktopModeOptionCopy small {
+.sensteedAgentModeOptionCopy small {
   color: var(--dsw-alias-label-secondary);
   font-size: 10px;
   font-weight: 400;
   line-height: 1.35;
 }
-.dshDesktopFrameActions {
+.sensteedAgentFrameActions {
   position: relative;
   display: flex;
   align-items: center;
   min-width: 0;
   -webkit-app-region: no-drag;
 }
-.dshDesktopFrameTitlebar[data-platform="darwin"] .dshDesktopFrameActions { margin-left: auto; }
-.dshDesktopFrameTitlebar[data-platform="win32"] .dshDesktopFrameActions { margin-right: auto; }
-.dshDesktopNativeActions { display: flex; align-items: center; gap: 6px; -webkit-app-region: no-drag; }
-.dshDesktopNativeActions[data-placement="titlebar"] {
+.sensteedAgentFrameTitlebar[data-platform="darwin"] .sensteedAgentFrameActions { margin-left: auto; }
+.sensteedAgentFrameTitlebar[data-platform="win32"] .sensteedAgentFrameActions { margin-right: auto; }
+.sensteedAgentNativeActions { display: flex; align-items: center; gap: 6px; -webkit-app-region: no-drag; }
+.sensteedAgentNativeActions[data-placement="titlebar"] {
   position: relative;
   gap: 3px;
 }
-.dshDesktopTitlebarIconButton {
+.sensteedAgentTitlebarIconButton {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -433,22 +433,22 @@ body[data-dsh-desktop-mode="extended"]:not([data-dsh-desktop-material="off"]) {
   cursor: pointer;
   -webkit-app-region: no-drag;
 }
-.dshDesktopTitlebarIconButton:hover:not(:disabled),
-.dshDesktopTitlebarIconButton[aria-expanded="true"] {
+.sensteedAgentTitlebarIconButton:hover:not(:disabled),
+.sensteedAgentTitlebarIconButton[aria-expanded="true"] {
   border-color: var(--dsw-alias-border-l2);
   background: var(--dsw-alias-interactive-bg-hover);
   color: var(--dsw-alias-label-primary);
 }
-.dshDesktopTitlebarIconButton:focus-visible {
+.sensteedAgentTitlebarIconButton:focus-visible {
   outline: 2px solid var(--dsw-alias-brand-primary);
   outline-offset: 1px;
 }
-.dshDesktopTitlebarIconButton:disabled { cursor: default; opacity: .45; }
-.dshDesktopTitlebarIconButton svg,
-.dshDesktopActionMenuItem svg { width: 14px; height: 14px; stroke-width: 1.8; }
-.dshDesktopNativeActionMenuAnchor { position: relative; }
-.dshDesktopActionMenuPositioner { z-index: 1; -webkit-app-region: no-drag; }
-.dshDesktopActionMenu {
+.sensteedAgentTitlebarIconButton:disabled { cursor: default; opacity: .45; }
+.sensteedAgentTitlebarIconButton svg,
+.sensteedAgentActionMenuItem svg { width: 14px; height: 14px; stroke-width: 1.8; }
+.sensteedAgentNativeActionMenuAnchor { position: relative; }
+.sensteedAgentActionMenuPositioner { z-index: 1; -webkit-app-region: no-drag; }
+.sensteedAgentActionMenu {
   position: relative;
   z-index: 1;
   display: grid;
@@ -460,7 +460,7 @@ body[data-dsh-desktop-mode="extended"]:not([data-dsh-desktop-material="off"]) {
   box-shadow: 0 12px 32px color-mix(in srgb, #000 28%, transparent);
   -webkit-app-region: no-drag;
 }
-.dshDesktopActionMenuItem {
+.sensteedAgentActionMenuItem {
   display: flex;
   align-items: center;
   gap: 9px;
@@ -475,12 +475,12 @@ body[data-dsh-desktop-mode="extended"]:not([data-dsh-desktop-material="off"]) {
   font-size: 12px;
   text-align: start;
 }
-.dshDesktopActionMenuItem:hover:not(:disabled) { background: var(--dsw-alias-interactive-bg-hover); }
-.dshDesktopActionMenuItem[data-highlighted] { background: var(--dsw-alias-interactive-bg-hover); }
-.dshDesktopActionMenuItem:focus-visible { outline: 2px solid var(--dsw-alias-brand-primary); outline-offset: -2px; }
-.dshDesktopActionMenuItem:disabled { cursor: default; opacity: .45; }
-.dshDesktopActionMenuItem span { flex: 1; }
-.dshDesktopNativeActions[data-placement="titlebar"] .dshDesktopNativeActionError {
+.sensteedAgentActionMenuItem:hover:not(:disabled) { background: var(--dsw-alias-interactive-bg-hover); }
+.sensteedAgentActionMenuItem[data-highlighted] { background: var(--dsw-alias-interactive-bg-hover); }
+.sensteedAgentActionMenuItem:focus-visible { outline: 2px solid var(--dsw-alias-brand-primary); outline-offset: -2px; }
+.sensteedAgentActionMenuItem:disabled { cursor: default; opacity: .45; }
+.sensteedAgentActionMenuItem span { flex: 1; }
+.sensteedAgentNativeActions[data-placement="titlebar"] .sensteedAgentNativeActionError {
   position: absolute;
   top: calc(100% + 5px);
   width: max-content;
@@ -489,9 +489,9 @@ body[data-dsh-desktop-mode="extended"]:not([data-dsh-desktop-material="off"]) {
   border-radius: 8px;
   background: var(--dsw-alias-bg-layer-1);
 }
-.dshDesktopFrameTitlebar[data-platform="darwin"] .dshDesktopNativeActionError { right: 0; }
-.dshDesktopFrameTitlebar[data-platform="win32"] .dshDesktopNativeActionError { left: 0; }
-.dshDesktopNativeActionError {
+.sensteedAgentFrameTitlebar[data-platform="darwin"] .sensteedAgentNativeActionError { right: 0; }
+.sensteedAgentFrameTitlebar[data-platform="win32"] .sensteedAgentNativeActionError { left: 0; }
+.sensteedAgentNativeActionError {
   max-width: 260px;
   color: var(--dsw-alias-state-error-primary);
   font-size: 11px;

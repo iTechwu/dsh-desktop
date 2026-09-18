@@ -2,7 +2,7 @@
  * 真实 Cordis Loader 测试：用真正的 Cordis Context + Fiber + cordis-plugin-loader
  * 加载本插件，而不是普通对象 mock。
  *
- * Cordis / loader 从 sibling 的 dsh-desktop / deepseek-harness node_modules 解析；
+ * Cordis / loader 从 sibling 的 sensteed-agent / deepseek-harness node_modules 解析；
  * 插件自身用 file:// URL 直接加载（不依赖本仓库之外未提交的 node_modules）。
  * 若 Cordis 不可解析，整组测试跳过（本仓库是零运行时依赖的纯插件仓库）。
  *
@@ -28,8 +28,8 @@ const pluginUrl = fileURLToPath(new URL('../index.js', import.meta.url))
 function resolveCordis(specifier) {
   const workspaceRoot = fileURLToPath(new URL('../../../../', import.meta.url))
   const bases = [
-    join(workspaceRoot, 'dsh-desktop/dsh-plugin-desktop'),
-    join(workspaceRoot, 'dsh-desktop'),
+    join(workspaceRoot, 'sensteed-agent/dsh-plugin-desktop'),
+    join(workspaceRoot, 'sensteed-agent'),
     join(workspaceRoot, 'deepseek-harness/vendor/cordis'),
     join(workspaceRoot, 'deepseek-harness'),
   ]

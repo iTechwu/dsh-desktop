@@ -12,8 +12,8 @@ export interface DesktopLocalWindowOptions extends Omit<BrowserWindowConstructor
 /** Construct a local-file window with no Node, preload, popup, or WebView path. */
 export function createDesktopLocalWindow(options: DesktopLocalWindowOptions): BrowserWindow {
   const { partition, preferredSizeMode, ...windowOptions } = options
-  if (!/^dsh-[a-z0-9-]+$/u.test(partition)) {
-    throw new TypeError('dsh-plugin-desktop: local window partition must be a dedicated in-memory dsh-* partition')
+  if (!/^(?:dsh|sensteed-agent)-[a-z0-9-]+$/u.test(partition)) {
+    throw new TypeError('dsh-plugin-desktop: local window partition must be a dedicated in-memory dsh-* or sensteed-agent-* partition')
   }
   const window = new BrowserWindow({
     ...windowOptions,

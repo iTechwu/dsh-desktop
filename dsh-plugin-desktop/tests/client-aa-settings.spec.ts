@@ -32,7 +32,7 @@ async function mount(selectAa: (enabled: boolean) => Promise<{ accepted: true; r
     notificationSettings: scope({ enabled: false }),
   } as unknown as DesktopSettingsSectionProps
   await act(async () => { root!.render(createElement(DesktopSettingsSection, props)) })
-  return container.querySelector('[aria-labelledby="dsh-desktop-aa-title"]')!
+  return container.querySelector('[aria-labelledby="sensteed-agent-aa-title"]')!
 }
 
 function enabledChoice(section: Element): HTMLElement {

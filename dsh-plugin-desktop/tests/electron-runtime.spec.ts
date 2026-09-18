@@ -44,7 +44,7 @@ const childProcess = vi.hoisted(() => {
   }
 })
 
-const MAIN_WINDOW_STATE_PATH = '/tmp/dsh-desktop-user-data/main-window-state.json'
+const MAIN_WINDOW_STATE_PATH = '/tmp/sensteed-agent-user-data/main-window-state.json'
 function clearMainWindowState(): void {
   try {
     unlinkSync(MAIN_WINDOW_STATE_PATH)
@@ -147,7 +147,7 @@ const electron = vi.hoisted(() => {
     readonly setBounds = vi.fn()
     readonly setBackgroundColor = vi.fn()
     constructor(readonly options: unknown) {
-      this.webContents = (options as { webPreferences: { partition: string } }).webPreferences.partition === 'dsh-desktop-compatibility-chrome'
+      this.webContents = (options as { webPreferences: { partition: string } }).webPreferences.partition === 'sensteed-agent-compatibility-chrome'
         ? chromeWebContents : webContents
       contentViews.push(this)
     }
@@ -165,7 +165,7 @@ const electron = vi.hoisted(() => {
     accessibleTitle = ''
 
     constructor(options: unknown) {
-      this.webContents = (options as { webPreferences?: { partition?: string } }).webPreferences?.partition === 'dsh-desktop-compatibility-host'
+      this.webContents = (options as { webPreferences?: { partition?: string } }).webPreferences?.partition === 'sensteed-agent-compatibility-host'
         ? chromeWebContents : webContents
       browserWindowOptions.push(options)
       browserWindowThemeSources.push(nativeTheme.themeSource)
@@ -231,9 +231,9 @@ const electron = vi.hoisted(() => {
       getLocale: vi.fn(() => 'en-US'),
       getPreferredSystemLanguages: vi.fn(() => ['en-US']),
       getPath: vi.fn((name: string) => {
-        if (name === 'crashDumps') return '/tmp/dsh-desktop-user-data/Crashpad'
+        if (name === 'crashDumps') return '/tmp/sensteed-agent-user-data/Crashpad'
         if (name === 'downloads') return '/tmp/Downloads'
-        return '/tmp/dsh-desktop-user-data'
+        return '/tmp/sensteed-agent-user-data'
       }),
       getVersion: vi.fn(() => '43.4.0'),
       isPackaged: false,
@@ -336,7 +336,7 @@ const spec: DesktopShellSpec = {
   url: 'http://127.0.0.1:43120/',
   authenticationUrl: 'http://127.0.0.1:43120/?token=test-token',
   rendererAccessHeader: {
-    name: 'x-dsh-desktop-renderer',
+    name: 'x-sensteed-agent-renderer',
     value: Buffer.alloc(32, 9).toString('base64url'),
   },
   productName: 'Yootun-Agent',
@@ -422,7 +422,7 @@ describe('Electron desktop runtime', () => {
         nodeIntegration: false,
         sandbox: true,
         webSecurity: true,
-        partition: 'dsh-desktop-compatibility-host',
+        partition: 'sensteed-agent-compatibility-host',
       },
     }))
     expect(options).not.toHaveProperty('autoHideMenuBar')
@@ -434,7 +434,7 @@ describe('Electron desktop runtime', () => {
       nodeIntegration: false,
       sandbox: true,
       webSecurity: true,
-      partition: 'persist:dsh-desktop-renderer',
+      partition: 'persist:sensteed-agent-renderer',
     } })
     expect(electron.contentViews[1]?.setBounds).toHaveBeenCalledWith({ x: 0, y: 36, width: 1280, height: 804 })
     expect(electron.chromeWebContents.loadFile).toHaveBeenCalledWith(expect.stringMatching(/compatibility-chrome\.html$/))
@@ -533,7 +533,7 @@ describe('Electron desktop runtime', () => {
       timestamp: 1,
       requestHeaders: {
         Accept: '*/*',
-        'X-DSH-DESKTOP-RENDERER': 'spoofed',
+        'X-SENSTEED-AGENT-RENDERER': 'spoofed',
       },
     }, assetCallback)
     expect(assetCallback).toHaveBeenCalledWith({
@@ -654,7 +654,7 @@ describe('Electron desktop runtime', () => {
     vi.useFakeTimers()
     vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
     const { FileMainWindowStateStore } = await import('../src/main-window-state.ts')
-    const store = new FileMainWindowStateStore('/tmp/dsh-desktop-user-data')
+    const store = new FileMainWindowStateStore('/tmp/sensteed-agent-user-data')
     store.write({ x: 260, y: 140, width: 1440, height: 900 })
     const { ElectronDesktopRuntime } = await import('../src/electron-runtime.ts')
     const runtime = new ElectronDesktopRuntime(async () => {})
@@ -692,7 +692,7 @@ describe('Electron desktop runtime', () => {
   it('fits stale saved bounds into the current display work area', async () => {
     vi.spyOn(process, 'platform', 'get').mockReturnValue('darwin')
     const { FileMainWindowStateStore } = await import('../src/main-window-state.ts')
-    const store = new FileMainWindowStateStore('/tmp/dsh-desktop-user-data')
+    const store = new FileMainWindowStateStore('/tmp/sensteed-agent-user-data')
     const stale = { x: 5_000, y: -2_000, width: 2_000, height: 1_400 }
     store.write(stale)
     electron.screen.getDisplayMatching.mockReturnValueOnce({
@@ -1971,7 +1971,7 @@ describe('Electron desktop runtime', () => {
         profileName: 'desktop',
         productVersion: packageVersion,
         profileDir: expect.stringMatching(/profiles[\\/]+desktop$/u),
-        homeDir: expect.stringContaining('dsh-desktop-user-data'),
+        homeDir: expect.stringContaining('sensteed-agent-user-data'),
         spawn: expect.any(Function),
         onLaunchError: expect.any(Function),
       }))
@@ -2003,7 +2003,7 @@ describe('Electron desktop runtime', () => {
 
     expect(diagnostics.export).toHaveBeenCalledOnce()
     expect(diagnostics.export).toHaveBeenCalledWith(
-      expect.stringContaining('dsh-desktop-user-data'),
+      expect.stringContaining('sensteed-agent-user-data'),
       expect.objectContaining({
         appVersion: packageVersion,
         crashDumpsDir: expect.stringMatching(/[\\/]Crashpad$/u),
@@ -2441,7 +2441,7 @@ describe('Electron desktop runtime', () => {
       isPackaged: false,
       canDownload: false,
       currentVersion: packageVersion,
-      statePath: join('/tmp/dsh-desktop-user-data', 'updates', 'state.json'),
+      statePath: join('/tmp/sensteed-agent-user-data', 'updates', 'state.json'),
     })
     electron.app.isPackaged = true
     expect(runtime.updates).toMatchObject({ isPackaged: true, canDownload: true })
@@ -2496,7 +2496,7 @@ describe('Electron desktop runtime', () => {
       signal: controller.signal,
     })
     expect(electron.shell.openPath).toHaveBeenCalledWith('/tmp/Yootun-Agent-2.1.0-mac.dmg')
-    expect(updater.record).toHaveBeenCalledWith('/tmp/dsh-desktop-user-data', {
+    expect(updater.record).toHaveBeenCalledWith('/tmp/sensteed-agent-user-data', {
       platform: 'darwin',
       version: '2.1.0',
       path: '/tmp/Yootun-Agent-2.1.0-mac.dmg',
@@ -2557,7 +2557,7 @@ describe('Electron desktop runtime', () => {
     await pending
 
     expect(childProcess.child.unref).toHaveBeenCalledOnce()
-    expect(updater.record).toHaveBeenCalledWith('/tmp/dsh-desktop-user-data', {
+    expect(updater.record).toHaveBeenCalledWith('/tmp/sensteed-agent-user-data', {
       platform: 'win32',
       version: '2.1.0',
       path: 'C:\\Updates\\Yootun-Agent-2.1.0-windows.exe',
@@ -2582,7 +2582,7 @@ describe('Electron desktop runtime', () => {
     childProcess.emit('error', new Error('blocked'))
 
     await expect(pending).rejects.toThrow('blocked')
-    expect(updater.record).toHaveBeenCalledWith('/tmp/dsh-desktop-user-data', {
+    expect(updater.record).toHaveBeenCalledWith('/tmp/sensteed-agent-user-data', {
       platform: 'win32',
       version: '2.1.0',
       path: 'C:\\Updates\\Yootun-Agent-2.1.0-windows.exe',
@@ -2669,7 +2669,7 @@ describe('Electron desktop runtime', () => {
         buttons: ['Delete Installer', 'Keep Installer'],
       }),
     )
-    expect(updater.resolve).toHaveBeenCalledWith('/tmp/dsh-desktop-user-data', artifact, remove)
+    expect(updater.resolve).toHaveBeenCalledWith('/tmp/sensteed-agent-user-data', artifact, remove)
   })
 
   it('rejects a macOS handoff when the operating system cannot open the DMG', async () => {

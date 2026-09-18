@@ -18,22 +18,22 @@ const COPY = {
     ready: 'Drop to add workspace',
     busy: 'Adding workspace…',
     invalid: 'Drop exactly one folder',
-    unavailable: 'DSH Desktop could not read this folder path',
+    unavailable: 'Sensteed Agent could not read this folder path',
   },
   zh: {
     ready: '松开以添加工作区',
     busy: '正在添加工作区…',
     invalid: '请只拖入一个文件夹',
-    unavailable: 'DSH Desktop 无法读取这个文件夹路径',
+    unavailable: 'Sensteed Agent 无法读取这个文件夹路径',
   },
 } as const
 
 const DROP_STYLES = `
 ${WORKSPACE_DROP_TARGET} { position: relative; }
-${WORKSPACE_DROP_TARGET}[data-dsh-desktop-drop-state] { box-shadow: inset 0 0 0 2px var(--dsw-alias-state-business-primary); }
-.dshDesktopWorkspaceDropFeedback { position: absolute; z-index: 40; inset: 4px; box-sizing: border-box; pointer-events: none; display: flex; align-items: center; justify-content: center; padding: 12px; color: var(--dsw-alias-label-primary); background: color-mix(in srgb, var(--dsw-alias-bg-layer-2) 92%, transparent); border: 1px dashed var(--dsw-alias-state-business-primary); border-radius: 10px; text-align: center; font-size: 13px; line-height: 20px; }
-${WORKSPACE_DROP_TARGET}[data-dsh-desktop-drop-state="error"] { box-shadow: inset 0 0 0 2px var(--dsw-alias-state-error-primary); }
-${WORKSPACE_DROP_TARGET}[data-dsh-desktop-drop-state="error"] > .dshDesktopWorkspaceDropFeedback { border-color: var(--dsw-alias-state-error-primary); color: var(--dsw-alias-state-error-primary); }
+${WORKSPACE_DROP_TARGET}[data-sensteed-agent-drop-state] { box-shadow: inset 0 0 0 2px var(--dsw-alias-state-business-primary); }
+.sensteedAgentWorkspaceDropFeedback { position: absolute; z-index: 40; inset: 4px; box-sizing: border-box; pointer-events: none; display: flex; align-items: center; justify-content: center; padding: 12px; color: var(--dsw-alias-label-primary); background: color-mix(in srgb, var(--dsw-alias-bg-layer-2) 92%, transparent); border: 1px dashed var(--dsw-alias-state-business-primary); border-radius: 10px; text-align: center; font-size: 13px; line-height: 20px; }
+${WORKSPACE_DROP_TARGET}[data-sensteed-agent-drop-state="error"] { box-shadow: inset 0 0 0 2px var(--dsw-alias-state-error-primary); }
+${WORKSPACE_DROP_TARGET}[data-sensteed-agent-drop-state="error"] > .sensteedAgentWorkspaceDropFeedback { border-color: var(--dsw-alias-state-error-primary); color: var(--dsw-alias-state-error-primary); }
 `
 
 function copy(): typeof COPY.en | typeof COPY.zh {
@@ -75,9 +75,9 @@ export async function adoptWorkspaceFolder(
   actions: WorkspaceFolderDropActions,
 ): Promise<void> {
   const path = bridge.getPathForFile(file).trim()
-  if (path.length === 0) throw new Error('DSH Desktop could not read this folder path')
+  if (path.length === 0) throw new Error('Sensteed Agent could not read this folder path')
   if (actions.validateDirectory !== undefined && !await actions.validateDirectory(path)) {
-    throw new Error('DSH Desktop rejected this workspace location')
+    throw new Error('Sensteed Agent rejected this workspace location')
   }
   const workspace = await actions.create({ path })
   actions.startSession(workspace.workspaceId)
@@ -126,18 +126,18 @@ export function installWorkspaceFolderDrop(
   }
   const hide = (target: HTMLElement | undefined = active): void => {
     if (target === undefined) return
-    delete target.dataset.dshDesktopDropState
-    target.querySelector(':scope > .dshDesktopWorkspaceDropFeedback')?.remove()
+    delete target.dataset.sensteedAgentDropState
+    target.querySelector(':scope > .sensteedAgentWorkspaceDropFeedback')?.remove()
     if (active === target) active = undefined
   }
   const show = (target: HTMLElement, state: DropState, message: string): void => {
     if (active !== undefined && active !== target) hide(active)
     active = target
-    target.dataset.dshDesktopDropState = state
-    let feedback = target.querySelector<HTMLElement>(':scope > .dshDesktopWorkspaceDropFeedback')
+    target.dataset.sensteedAgentDropState = state
+    let feedback = target.querySelector<HTMLElement>(':scope > .sensteedAgentWorkspaceDropFeedback')
     if (feedback === null) {
       feedback = document.createElement('div')
-      feedback.className = 'dshDesktopWorkspaceDropFeedback'
+      feedback.className = 'sensteedAgentWorkspaceDropFeedback'
       target.appendChild(feedback)
     }
     feedback.role = state === 'error' ? 'alert' : 'status'

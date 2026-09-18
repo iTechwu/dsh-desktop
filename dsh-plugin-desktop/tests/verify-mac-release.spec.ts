@@ -20,7 +20,7 @@ function options(overrides: Partial<MacReleaseVerificationOptions> = {}) {
     distDir: '/release/dist',
     productName,
     listDmgs: () => [`/release/dist/${dmgName}-universal.dmg`],
-    makeMountPoint: () => '/private/tmp/dsh-desktop-dmg-test',
+    makeMountPoint: () => '/private/tmp/sensteed-agent-dmg-test',
     run: (command, args) => { calls.push({ command, args: [...args] }) },
     removeMountPoint,
     ...overrides,
@@ -31,7 +31,7 @@ function options(overrides: Partial<MacReleaseVerificationOptions> = {}) {
 describe('macOS release artifact verification', () => {
   it('mounts one DMG and verifies signature, Gatekeeper, and the stapled ticket', () => {
     const harness = options()
-    const appPath = join('/private/tmp/dsh-desktop-dmg-test', `${productName}.app`)
+    const appPath = join('/private/tmp/sensteed-agent-dmg-test', `${productName}.app`)
 
     expect(verifyMacRelease(harness.value)).toEqual({
       appPath,
@@ -43,7 +43,7 @@ describe('macOS release artifact verification', () => {
         command: 'hdiutil',
         args: [
           'attach', `/release/dist/${dmgName}-universal.dmg`,
-          '-mountpoint', '/private/tmp/dsh-desktop-dmg-test', '-nobrowse', '-readonly',
+          '-mountpoint', '/private/tmp/sensteed-agent-dmg-test', '-nobrowse', '-readonly',
         ],
       },
       {
@@ -75,10 +75,10 @@ describe('macOS release artifact verification', () => {
       },
       {
         command: 'hdiutil',
-        args: ['detach', '/private/tmp/dsh-desktop-dmg-test'],
+        args: ['detach', '/private/tmp/sensteed-agent-dmg-test'],
       },
     ])
-    expect(harness.removeMountPoint).toHaveBeenCalledWith('/private/tmp/dsh-desktop-dmg-test')
+    expect(harness.removeMountPoint).toHaveBeenCalledWith('/private/tmp/sensteed-agent-dmg-test')
   })
 
   it('rejects absent or ambiguous release images before mounting', () => {

@@ -6,7 +6,7 @@
 
 期望：覆盖层由桌面壳统一仲裁；打开新业务面板时替换当前面板，背景和隐藏层使用 `inert`/正确的 `aria-hidden` 隔离；关闭后焦点回到触发按钮。
 
-进展：已完成。`docker-helm.dofe.ai@8c9f508` 让 11 个面板通过统一事件互斥；`dsh-desktop@705ab05047` 与 `deepseek-harness@de9675462b` 分别为桌面自有帧和兼容帧实现背景 `inert`、弹窗内 Tab 循环和焦点归还。真实 Electron 包中打开 Dashboard 后辅助功能树只保留弹窗，Escape 后焦点返回“企业看板”。
+进展：已完成。`docker-helm.dofe.ai@8c9f508` 让 11 个面板通过统一事件互斥；`sensteed-agent@705ab05047` 与 `deepseek-harness@de9675462b` 分别为桌面自有帧和兼容帧实现背景 `inert`、弹窗内 Tab 循环和焦点归还。真实 Electron 包中打开 Dashboard 后辅助功能树只保留弹窗，Escape 后焦点返回“企业看板”。
 
 ## UX-002 Skill 管理无法完整键盘/读屏操作
 
@@ -28,7 +28,7 @@ Skill 管理视觉上显示分组、搜索和 112 个技能卡片，但 macOS �
 
 期望：空态默认折叠，首次选择工具记录时展开；用户手动关闭后保持偏好。
 
-进展：已完成。`dsh-desktop@bbcd4eb29c` 在详情列宽度为 0 时同步应用 `inert` 与 `aria-hidden`，展开时自动移除。真实 Electron 包验证工具记录可展开完整事件详情，关闭后相关节点全部退出辅助功能树。
+进展：已完成。`sensteed-agent@bbcd4eb29c` 在详情列宽度为 0 时同步应用 `inert` 与 `aria-hidden`，展开时自动移除。真实 Electron 包验证工具记录可展开完整事件详情，关闭后相关节点全部退出辅助功能树。
 
 ## UX-005 侧栏品牌区需要响应式验收
 

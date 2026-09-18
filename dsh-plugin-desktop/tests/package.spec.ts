@@ -16,7 +16,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import sharp from 'sharp'
 import { describe, expect, it } from 'vitest'
 import { parse as parseYaml } from 'yaml'
-import { resolveBrandConfigPath } from '../scripts/brand-config.mjs'
+import { resolveBrandConfigPath } from '../../scripts/brand-config.mjs'
 
 const packageRoot = new URL('../', import.meta.url)
 const workspaceRoot = new URL('../', packageRoot)
@@ -211,7 +211,7 @@ describe('published package surface', () => {
     expect(manifest.name).toBe('dsh-plugin-desktop')
     expect(manifest.bin).toEqual({
       'dsh-plugin-desktop': 'lib/bin.js',
-      'dsh-desktop': 'lib/bin.js',
+      'sensteed-agent': 'lib/bin.js',
     })
   })
 

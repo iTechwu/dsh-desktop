@@ -22,7 +22,7 @@
 
 ```mermaid
 flowchart LR
-  User[用户] -->|窗口、托盘、系统对话框| Desktop[DSH Desktop]
+  User[用户] -->|窗口、托盘、系统对话框| Desktop[Sensteed Agent]
   Desktop -->|HTTP / WebSocket，仅 loopback| LocalWeb[本地 DSH Web carrier]
   Desktop -->|读写 profile 与 settings| Home[DSH home]
   Desktop -->|显式选择并校验| Workspace[本地 workspace]
@@ -229,7 +229,7 @@ flowchart TB
   Patch --> Pnpm[desktop-pnpm]
   Patch --> Profiles[desktop-profiles]
   Patch --> Updates[desktop-updates]
-  Shell --> Mode{dsh-desktop.mode}
+  Shell --> Mode{sensteed-agent.mode}
   Mode -->|compatibility| Official[官方 layout/sidebar/conversation]
   Mode -->|advanced, Windows/macOS| DesktopLayout[Desktop root + layout + native material]
   DesktopLayout --> OfficialFeatures[官方 sidebar/conversation 继续拥有 feature state]

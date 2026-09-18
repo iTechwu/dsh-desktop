@@ -41,7 +41,7 @@ const ENABLE_PREVIEW_ID_PATTERN = /^enable_[A-Za-z0-9_-]{43}$/u
 const PACKAGE_NAME_PATTERN = /^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/u
 const IMMUTABLE_BUNDLES = new Set([
   ...(PROFILE_TEMPLATES.web?.bundles ?? []),
-  '@deepseek-ai/dsh-desktop-app',
+  '@deepseek-ai/sensteed-agent-app',
   ...DESKTOP_PACKAGE_NAMES,
   'dsh-community-market',
 ])

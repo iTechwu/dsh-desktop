@@ -6,7 +6,7 @@
 
 ### 仓库基线
 
-- `dsh-desktop`: `master` 与 `origin/master` 对齐，开始时有 3 个已修改文件和 1 个未跟踪品牌脚本，均按用户修改保留。
+- `sensteed-agent`: `master` 与 `origin/master` 对齐，开始时有 3 个已修改文件和 1 个未跟踪品牌脚本，均按用户修改保留。
 - `deepseek-harness`: `dev` 与 `origin/dev` 对齐，工作区干净，版本与 `upstream.json.sourceVersion` 一致。
 
 ### 自动门禁
@@ -43,7 +43,7 @@
 
 ### 修复与提交
 
-- `dsh-desktop@b3e1773b69`：移除旧聚合 Web UI 的运行依赖并更新 7 个过期测试。
+- `sensteed-agent@b3e1773b69`：移除旧聚合 Web UI 的运行依赖并更新 7 个过期测试。
 - `docker-helm.dofe.ai@8c9f508`：11 个业务覆盖层统一打开事件、互斥关闭、对话框语义和 Escape 行为；新增跨插件契约测试。
 - 两个提交均已推送各自 `origin/master`。
 
@@ -73,7 +73,7 @@
 ### 修复与提交
 
 - `deepseek-harness@de9675462b`：兼容模式 `AppFrame` 在模态打开时隔离后台、聚焦弹窗、约束正反向 Tab 循环并在关闭后恢复焦点；新增客户端回归测试。
-- `dsh-desktop@705ab05047`：高级与扩展模式的 `DesktopOwnedFrame` 接入同等的模态隔离器；新增独立 DOM 契约测试。
+- `sensteed-agent@705ab05047`：高级与扩展模式的 `DesktopOwnedFrame` 接入同等的模态隔离器；新增独立 DOM 契约测试。
 - 两个提交均已推送各自 `origin`；桌面仓库中用户未跟踪的品牌渲染脚本未改动。
 
 ### 自动门禁
@@ -140,7 +140,7 @@
 - 复核确认详情列的视觉宽度已为 0，实际问题是 `DesktopOwnedFrame` 始终挂载详情 `aside`，折叠时没有 `inert` 或 `aria-hidden`，因此隐藏标题、关闭按钮和占位提示仍留在 macOS AX。
 - 先在高级/扩展帧静态渲染测试中加入折叠态断言并观察 RED；实现 React 18 兼容的 `inert=""` 与 `aria-hidden` 后转为 GREEN。
 - 测试同时覆盖有效会话打开详情时两个隔离属性自动移除，避免修复阻断正常查看。
-- `dsh-desktop@bbcd4eb29c` 已推送 `origin/master`；用户未跟踪的品牌渲染脚本保持未改动。
+- `sensteed-agent@bbcd4eb29c` 已推送 `origin/master`；用户未跟踪的品牌渲染脚本保持未改动。
 
 ### 自动门禁
 

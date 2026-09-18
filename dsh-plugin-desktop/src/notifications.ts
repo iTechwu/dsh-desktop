@@ -9,7 +9,7 @@ import type { DesktopLocale, DesktopNotification } from './runtime.ts'
 export const name = 'desktop-notifications'
 export const inject = ['desktopRuntime']
 
-export const DESKTOP_NOTIFICATIONS_SETTINGS_NAMESPACE = 'dsh-desktop-notifications' as const
+export const DESKTOP_NOTIFICATIONS_SETTINGS_NAMESPACE = 'sensteed-agent-notifications' as const
 
 export interface DesktopNotificationSettings {
   enabled: boolean

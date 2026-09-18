@@ -18,7 +18,7 @@ export const DESKTOP_LAN_HTTPS_AVAILABLE = true
 export function parseDesktopOpenBrowser(value: unknown): boolean {
   if (value === undefined) return false
   if (typeof value === 'boolean') return value
-  throw new Error('dsh-plugin-desktop: dsh-desktop.openBrowser must be a boolean')
+  throw new Error('dsh-plugin-desktop: sensteed-agent.openBrowser must be a boolean')
 }
 
 /** Browser access can only be granted by an explicitly selected compatibility shell. */
@@ -50,7 +50,7 @@ export function desktopNetworkExposureForBrowserAccess(
 export function parseDesktopNetworkExposure(value: unknown): DesktopNetworkExposure {
   if (value === undefined) return 'loopback'
   if (value === 'loopback' || value === 'lan') return value
-  throw new Error('dsh-plugin-desktop: dsh-desktop.networkExposure must be "loopback" or "lan"')
+  throw new Error('dsh-plugin-desktop: sensteed-agent.networkExposure must be "loopback" or "lan"')
 }
 
 /** Project stored intent; runtime edge status is reported separately by the Host. */

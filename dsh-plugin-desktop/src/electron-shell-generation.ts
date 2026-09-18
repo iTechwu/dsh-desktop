@@ -291,7 +291,7 @@ export class ElectronShellGeneration {
         nodeIntegration: false,
         sandbox: true,
         webSecurity: true,
-        partition: 'dsh-desktop-compatibility-host',
+        partition: 'sensteed-agent-compatibility-host',
       } } : {}),
       ...(restoredBounds ?? {}),
     })

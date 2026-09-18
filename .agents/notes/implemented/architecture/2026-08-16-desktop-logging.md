@@ -18,7 +18,7 @@ Three modules implement it:
 - `log-files.ts` — a synchronous append-only sink (`appendFileSync`) that writes `dsh-YYYY-MM-DD.log` (all levels) and `dsh-YYYY-MM-DD.error.log` (warn and error), rotates a file past 10MB into `.1`, `.2`, …, switches files when the local date changes, restores the active segment from disk after a restart, and deletes oldest owned files while the directory exceeds 200MB.
 - `file-exporter.ts` — `FileExporter implements Exporter`, rendering each `Message` as `<local timestamp> [LEVEL] [name] <body>` via `Logger.format`, filtering by the configured threshold, and routing to the sink.
 
-The `dsh-desktop.logLevel` settings field (`debug | info | warn | error`, default `info`) extends the existing `dsh-desktop` namespace. The bootstrap reads it once after `boot()` and subscribes to `settings/updated` to update the exporter threshold in place.
+The `sensteed-agent.logLevel` settings field (`debug | info | warn | error`, default `info`) extends the existing `sensteed-agent` namespace. The bootstrap reads it once after `boot()` and subscribes to `settings/updated` to update the exporter threshold in place.
 
 ## Alternatives considered
 

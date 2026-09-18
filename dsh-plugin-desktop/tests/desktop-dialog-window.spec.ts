@@ -62,10 +62,10 @@ describe('DesktopDialogWindow', () => {
   })
 
   it('accepts only bounded local response navigation', () => {
-    expect(parseDesktopDialogResponse('dsh-desktop-dialog://response?id=1', 2)).toBe(1)
-    expect(parseDesktopDialogResponse('dsh-desktop-dialog://response?id=2', 2)).toBeUndefined()
-    expect(parseDesktopDialogResponse('dsh-desktop-dialog://response?id=-1', 2)).toBeUndefined()
-    expect(parseDesktopDialogResponse('dsh-desktop-dialog://response?id=1&command=bad', 2)).toBeUndefined()
+    expect(parseDesktopDialogResponse('sensteed-agent-dialog://response?id=1', 2)).toBe(1)
+    expect(parseDesktopDialogResponse('sensteed-agent-dialog://response?id=2', 2)).toBeUndefined()
+    expect(parseDesktopDialogResponse('sensteed-agent-dialog://response?id=-1', 2)).toBeUndefined()
+    expect(parseDesktopDialogResponse('sensteed-agent-dialog://response?id=1&command=bad', 2)).toBeUndefined()
     expect(parseDesktopDialogResponse('https://response/?id=1', 2)).toBeUndefined()
   })
 
@@ -123,7 +123,7 @@ describe('DesktopDialogWindow', () => {
     expect(window?.setBounds).not.toHaveBeenCalled()
     expect(window?.show).toHaveBeenCalledOnce()
     const event = { preventDefault: vi.fn() }
-    navigate?.(event, 'dsh-desktop-dialog://response?id=0')
+    navigate?.(event, 'sensteed-agent-dialog://response?id=0')
 
     await expect(result).resolves.toEqual({ response: 0 })
     expect(event.preventDefault).toHaveBeenCalledOnce()
@@ -169,7 +169,7 @@ describe('DesktopDialogWindow', () => {
     expect(window?.setContentSize).toHaveBeenCalledWith(680, 390, false)
     window?.webListeners.get('will-navigate')?.(
       { preventDefault: vi.fn() },
-      'dsh-desktop-dialog://response?id=0',
+      'sensteed-agent-dialog://response?id=0',
     )
     await expect(result).resolves.toEqual({ response: 0 })
   })
@@ -179,7 +179,7 @@ describe('DesktopDialogWindow', () => {
     const result = new DesktopDialogWindow({
       type: 'warning',
       title: 'Profile compatibility warning',
-      message: 'Current Profile “work” was used by DSH Desktop Beta.',
+      message: 'Current Profile “work” was used by Sensteed Agent Beta.',
       detail: 'Previous DSH: 0.1.2-alpha.5\nCurrent DSH: 0.1.1-rc.2',
       advisory: 'Warning: DSH version differences may make plugins unavailable.',
       presentation: 'profile-compatibility',
@@ -203,7 +203,7 @@ describe('DesktopDialogWindow', () => {
     expect(window?.setContentSize).toHaveBeenCalledWith(480, 320, false)
     window?.webListeners.get('will-navigate')?.(
       { preventDefault: vi.fn() },
-      'dsh-desktop-dialog://response?id=2',
+      'sensteed-agent-dialog://response?id=2',
     )
     await expect(result).resolves.toEqual({ response: 2 })
   })

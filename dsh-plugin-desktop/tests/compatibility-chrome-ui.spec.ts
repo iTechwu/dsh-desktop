@@ -9,9 +9,9 @@ describe('compatibility HTML chrome', () => {
     const read = (file: string): string => readFileSync(new URL(`../src/${file}`, import.meta.url), 'utf8')
     expect(read('client/ExtendedTitlebar.tsx')).toContain('<DesktopFrameTitlebarView {...props} />')
     expect(read('native-ui/compatibility-chrome/main.tsx')).toContain('<DesktopFrameTitlebarView')
-    const shared = read('client/extended-styles.ts').split('.dshDesktopFrameTitlebar {')[1]?.split('\n`')[0]
+    const shared = read('client/extended-styles.ts').split('.sensteedAgentFrameTitlebar {')[1]?.split('\n`')[0]
     expect(shared).toBeDefined()
-    const frame = '.dshDesktopFrameTitlebar {' + shared
+    const frame = '.sensteedAgentFrameTitlebar {' + shared
     expect(read('native-ui/compatibility-chrome/style.css')).toContain(frame
       .replaceAll('${DESKTOP_FRAME_HEIGHT}', '36')
       .replaceAll('${MACOS_TRAFFIC_LIGHT_SAFE_WIDTH + 8}', '88')

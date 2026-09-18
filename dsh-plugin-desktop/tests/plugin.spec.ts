@@ -132,7 +132,7 @@ function createHarness(
       isPackaged: false,
       canDownload: platform === 'darwin' || platform === 'win32',
       currentVersion: '2.0.0',
-      statePath: '/tmp/dsh-desktop-update-state.json',
+      statePath: '/tmp/sensteed-agent-update-state.json',
       request: async () => new Response(null, { status: 304 }),
       confirmDownload: async () => false,
       showManualCheckResult: async () => {},
@@ -206,7 +206,7 @@ function createHarness(
       if (String(key) === 'desktopRuntime') return runtime
       if (String(key) === 'desktopBrowserAccess') return browserAccess
       if (String(key) === 'desktopLanHttps') return lanHttps
-      if (String(key) === 'dshHomePath') return (...segments: string[]) => join('/tmp', 'dsh-desktop-audit-tests', ...segments)
+      if (String(key) === 'dshHomePath') return (...segments: string[]) => join('/tmp', 'sensteed-agent-audit-tests', ...segments)
       return () => {}
     }),
     provide: vi.fn((key: string, value: unknown) => {
@@ -264,7 +264,7 @@ describe('desktop Host plugin', () => {
     expect(() => DesktopSettingsSchema({ port: 1.5 } as DesktopSettings)).toThrow()
     expect(() => DesktopSettingsSchema({ port: 65_536 } as DesktopSettings)).toThrow()
     expect(() => Config({ mode: 'custom' } as never)).toThrow()
-    expect(String(DESKTOP_SETTINGS_NAMESPACE)).toBe('dsh-desktop')
+    expect(String(DESKTOP_SETTINGS_NAMESPACE)).toBe('sensteed-agent')
   })
 
   it('serves the CA created after startup without restarting the Host or exposing a missing certificate', async () => {
@@ -322,10 +322,10 @@ describe('desktop Host plugin', () => {
     expect(url.origin).toBe('http://127.0.0.1:43120')
     expect(url.pathname).toBe('/')
     expect(Object.fromEntries(url.searchParams)).toEqual({
-      'dsh-desktop-mode': 'advanced',
-      'dsh-desktop-platform': 'darwin',
-      'dsh-desktop-version': '2.0.3',
-      'dsh-desktop-material': 'off',
+      'sensteed-agent-mode': 'advanced',
+      'sensteed-agent-platform': 'darwin',
+      'sensteed-agent-version': '2.0.3',
+      'sensteed-agent-material': 'off',
     })
     expect(Object.fromEntries(new URL(desktopRendererUrl(
       43120,
@@ -335,19 +335,19 @@ describe('desktop Host plugin', () => {
       'mica',
       22_631,
     )).searchParams)).toEqual({
-      'dsh-desktop-mode': 'extended',
-      'dsh-desktop-platform': 'win32',
-      'dsh-desktop-version': '2.0.3',
-      'dsh-desktop-material': 'mica',
-      'dsh-desktop-titlebar-inset': '36',
-      'dsh-desktop-mica': '1',
+      'sensteed-agent-mode': 'extended',
+      'sensteed-agent-platform': 'win32',
+      'sensteed-agent-version': '2.0.3',
+      'sensteed-agent-material': 'mica',
+      'sensteed-agent-titlebar-inset': '36',
+      'sensteed-agent-mica': '1',
     })
     expect(Object.fromEntries(new URL(desktopRendererUrl(
       43120,
       'compatibility',
       'linux',
       '2.0.3',
-    )).searchParams)).not.toHaveProperty('dsh-desktop-titlebar-inset')
+    )).searchParams)).not.toHaveProperty('sensteed-agent-titlebar-inset')
   })
 
   it('registers settings and the active Web port without re-entering Loader settlement', async () => {
@@ -373,12 +373,12 @@ describe('desktop Host plugin', () => {
     expect(loaderAwait).not.toHaveBeenCalled()
     expect(harness.shell()).toEqual(expect.objectContaining({
       mode: 'compatibility',
-      url: 'http://127.0.0.1:43120/?dsh-desktop-mode=compatibility&dsh-desktop-platform=darwin&dsh-desktop-version=2.0.0&dsh-desktop-material=transparent&dsh-desktop-titlebar-inset=36',
+      url: 'http://127.0.0.1:43120/?sensteed-agent-mode=compatibility&sensteed-agent-platform=darwin&sensteed-agent-version=2.0.0&sensteed-agent-material=transparent&sensteed-agent-titlebar-inset=36',
       authenticationUrl: 'http://127.0.0.1:43120/?token=test-token',
       productName: 'Yootun-Agent Beta',
       windowTitle: 'Yootun-Agent Beta',
       rendererAccessHeader: {
-        name: 'x-dsh-desktop-renderer',
+        name: 'x-sensteed-agent-renderer',
         value: Buffer.alloc(32, 6).toString('base64url'),
       },
       readThemeSource: expect.any(Function),

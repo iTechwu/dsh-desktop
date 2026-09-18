@@ -42,7 +42,7 @@
 - `apps/api/src/modules/yootun-audit-api/*`: API Key 身份解析、SSO 权限、批量写入、列表、统计、团队选择和到期清理。
 - `apps/api/src/bootstrap/app-module-imports.bootstrap.ts`: 注册新模块。
 
-### `dsh-desktop`
+### `sensteed-agent`
 
 - `dsh-plugin-desktop/src/yootun-audit-contract.ts`: Host 与插件共享的审计类型、动作目录和脱敏验证器。
 - `dsh-plugin-desktop/src/yootun-audit-store.ts`: pending、quarantine、cache、sync-state 的原子文件存储。
@@ -482,7 +482,7 @@ Models 的该提交部署并通过 `/api/v1/yootun/audit-events/scopes` 认证�
 
 ### Task 5: Desktop 审计契约、动作目录与脱敏门禁
 
-**Repository:** `/Users/techwu/Documents/codes/dofe.ai/dsh-desktop`
+**Repository:** `/Users/techwu/Documents/codes/dofe.ai/sensteed-agent`
 
 **Files:**
 - Create: `dsh-plugin-desktop/src/yootun-audit-contract.ts`
@@ -640,7 +640,7 @@ git push origin dev
 
 ### Task 6: Desktop 本地 outbox 与 Models 客户端
 
-**Repository:** `/Users/techwu/Documents/codes/dofe.ai/dsh-desktop`
+**Repository:** `/Users/techwu/Documents/codes/dofe.ai/sensteed-agent`
 
 **Files:**
 - Create: `dsh-plugin-desktop/src/yootun-audit-store.ts`
@@ -736,7 +736,7 @@ git push origin dev
 
 ### Task 7: Desktop Cordis 服务与同源查询代理
 
-**Repository:** `/Users/techwu/Documents/codes/dofe.ai/dsh-desktop`
+**Repository:** `/Users/techwu/Documents/codes/dofe.ai/sensteed-agent`
 
 **Files:**
 - Create: `dsh-plugin-desktop/src/yootun-audit-service.ts`
@@ -843,7 +843,7 @@ git push origin dev
 
 ### Task 8: Desktop-owned 业务工作台采集
 
-**Repository:** `/Users/techwu/Documents/codes/dofe.ai/dsh-desktop`
+**Repository:** `/Users/techwu/Documents/codes/dofe.ai/sensteed-agent`
 
 **Files:**
 - Modify: `dsh-plugin-desktop/src/yootun-recruiter-route.ts`
@@ -1113,7 +1113,7 @@ git push origin master
 
 ### Task 11: Desktop 包迁移、跨仓库门禁与真实界面验收
 
-**Repository:** `/Users/techwu/Documents/codes/dofe.ai/dsh-desktop`
+**Repository:** `/Users/techwu/Documents/codes/dofe.ai/sensteed-agent`
 
 **Files:**
 - Delete: `dsh-plugin-desktop/src/yootun-approvals-route.ts`

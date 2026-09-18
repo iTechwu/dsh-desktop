@@ -1,13 +1,13 @@
-# DSH Desktop 隐私政策
+# Sensteed Agent 隐私政策
 
 [English](PRIVACY.md)
 
 - **版本：** 1.0
 - **生效及最近更新日期：** 2026 年 8 月 26 日
 
-DSH Desktop 是一个本地优先的开源桌面应用。本政策说明 DSH Desktop 官方版本及官方在线服务会处理哪些信息、为什么处理、信息会发送给谁，以及您可以如何作出选择。
+Sensteed Agent 是一个本地优先的开源桌面应用。本政策说明 Sensteed Agent 官方版本及官方在线服务会处理哪些信息、为什么处理、信息会发送给谁，以及您可以如何作出选择。
 
-本政策中的“我们”指在 GitHub 组织 [`anywhere-labs`](https://github.com/anywhere-labs) 下维护和发布 DSH Desktop 官方版本、并运营 `dshdesktop.cn` 官方服务的 <!-- brand:privacy-maintainer:start -->
+本政策中的“我们”指在 GitHub 组织 [`anywhere-labs`](https://github.com/anywhere-labs) 下维护和发布 Sensteed Agent 官方版本、并运营 `dshdesktop.cn` 官方服务的 <!-- brand:privacy-maintainer:start -->
 **Anywhere Labs 项目维护团队**<!-- brand:privacy-maintainer:end -->。项目是独立的社区开源项目，与 DeepSeek 不存在隶属、合作、授权或背书关系。
 
 隐私问题或权利请求请发送至 [t4wefan@qq.com](mailto:t4wefan@qq.com)。请不要在公开 GitHub Issue 中提交安装标识、日志、凭据或其他私密信息。
@@ -16,7 +16,7 @@ DSH Desktop 是一个本地优先的开源桌面应用。本政策说明 DSH Des
 
 本政策适用于：
 
-- 我们通过 [官方 GitHub 仓库](https://github.com/anywhere-labs/dsh-desktop)及官方发布渠道提供的 DSH Desktop；
+- 我们通过 [官方 GitHub 仓库](https://github.com/anywhere-labs/sensteed-agent)及官方发布渠道提供的 Sensteed Agent；
 - `https://www.dshdesktop.cn/` 下的官方网页、版本检查和下载跳转服务；
 - 您主动发送给项目维护团队的隐私请求、支持邮件或问题报告。
 
@@ -24,12 +24,12 @@ DSH Desktop 是一个本地优先的开源桌面应用。本政策说明 DSH Des
 
 ## 2. 摘要
 
-- DSH Desktop 的 Profile、设置、工作区、会话、日志和崩溃文件默认保存在本机。
-- 官方更新服务不需要 DSH Desktop 账户；版本检查代码也不会主动发送或附加提示词、回复、文件内容、工作区路径、Profile 名称、会话内容、API Key、MAC 地址或硬件序列号。
+- Sensteed Agent 的 Profile、设置、工作区、会话、日志和崩溃文件默认保存在本机。
+- 官方更新服务不需要 Sensteed Agent 账户；版本检查代码也不会主动发送或附加提示词、回复、文件内容、工作区路径、Profile 名称、会话内容、API Key、MAC 地址或硬件序列号。
 - 打包后的 macOS 和 Windows 版本默认会检查更新，并发送一个本地随机生成、持续保存的安装 UUID。该 UUID 是伪匿名标识，可能依法构成个人信息；它不是硬件 ID，也不保证一台机器只有一个值。
 - 安装包下载不附带上述安装 UUID，但官网、下载承载方和网络基础设施仍会看到通常的网络元数据。
-- 诊断包只在您主动导出时在本地创建，不会由 DSH Desktop 自动上传。
-- 您选择的模型服务、插件、插件市场来源和软件包服务会按照各自规则处理信息；它们不因出现在 DSH Desktop 中而受本政策约束。
+- 诊断包只在您主动导出时在本地创建，不会由 Sensteed Agent 自动上传。
+- 您选择的模型服务、插件、插件市场来源和软件包服务会按照各自规则处理信息；它们不因出现在 Sensteed Agent 中而受本政策约束。
 
 ## 3. 官方版本检查
 
@@ -48,8 +48,8 @@ GET https://www.dshdesktop.cn/api/desktop/version
 客户端明确添加：
 
 - `Accept: application/json`；
-- `X-DSH-Desktop-Installation-Id: <随机 UUID v4>`。
-- `X-DSH-Desktop-Version: <规范的当前稳定版本>`。
+- `X-Sensteed-Agent-Installation-Id: <随机 UUID v4>`。
+- `X-Sensteed-Agent-Version: <规范的当前稳定版本>`。
 
 该 GET 请求没有由应用添加的 query 参数或请求 body。与所有互联网请求一样，官方服务及其基础设施还会接收 IP 地址、请求时间、TLS/连接信息以及网络栈自动产生的标准请求元数据；这些元数据可能包括 User-Agent、Cookie、压缩支持、操作系统或运行时版本信息。当前代码没有显式要求 Electron 网络 session 忽略已有凭据，因此我们不会承诺版本请求一定不带 session 数据，也不会把“客户端只显式设置两个 header”描述成“网络上只会传出两个字段”。
 
@@ -68,8 +68,8 @@ GET https://www.dshdesktop.cn/api/desktop/version
 
 默认位置为：
 
-- macOS：`~/Library/Application Support/DSH Desktop/identity/installation-id`；
-- Windows：`%APPDATA%\DSH Desktop\identity\installation-id`。
+- macOS：`~/Library/Application Support/Sensteed Agent/identity/installation-id`；
+- Windows：`%APPDATA%\Sensteed Agent\identity\installation-id`。
 
 删除该文件只会在下次启动时生成新 UUID，**不会停止后续版本检查或阻止新 UUID 被发送**。
 
@@ -82,7 +82,7 @@ GET https://www.dshdesktop.cn/api/desktop/version
 - 维护服务可靠性、排查异常请求并防止滥用；
 - 满足适用法律义务。
 
-我们不会把该安装 UUID 用于广告画像、跨服务追踪，也不会出售该 UUID。版本检查不要求登录，客户端也不会在该请求中发送姓名、邮箱或 DSH Desktop 账户 ID。
+我们不会把该安装 UUID 用于广告画像、跨服务追踪，也不会出售该 UUID。版本检查不要求登录，客户端也不会在该请求中发送姓名、邮箱或 Sensteed Agent 账户 ID。
 
 ## 4. 安装包下载、网站与项目沟通
 
@@ -97,7 +97,7 @@ GET https://www.dshdesktop.cn/api/desktop/version
 
 ## 5. 默认保存在本机的信息
 
-以下信息默认由 DSH Desktop 或其组合的本地 DSH 运行时保存在您的设备上，而不是自动上传到 Anywhere Labs：
+以下信息默认由 Sensteed Agent 或其组合的本地 DSH 运行时保存在您的设备上，而不是自动上传到 Anywhere Labs：
 
 | 本地信息 | 用途和保留方式 |
 | --- | --- |
@@ -108,7 +108,7 @@ GET https://www.dshdesktop.cn/api/desktop/version
 | Desktop 日志 | 位于 Electron 用户数据目录。单文件达到 10 MiB 后轮转；应用启动时清理超过 7 天的日志，并将日志目录限制在 200 MiB 以内。日志仍可能包含路径、工作区 ID、会话 ID、命令或插件消息。 |
 | 本地崩溃文件 | Electron Crashpad 只在本地收集，配置为不向崩溃服务器上传。文件可能包含进程内存片段。 |
 | 诊断 ZIP | 只有您主动导出时创建；可能包含日志、系统和版本信息、路径、工作区/会话 ID、有限的生命周期/插件 ID，以及最多 50 MiB 证据预算内的崩溃文件。应用只保留最新 3 份由其管理的 ZIP；您复制到其他位置的文件不受该限制。 |
-| 系统通知 | 回合和任务通知使用不含会话名、用户文本、任务内容或错误详情的泛化完成/失败文案；更新通知包含可用版本号。通知由本机操作系统处理，不经过 DSH Desktop 远程推送服务；操作系统的通知历史或跨设备同步取决于您的系统账户设置。 |
+| 系统通知 | 回合和任务通知使用不含会话名、用户文本、任务内容或错误详情的泛化完成/失败文案；更新通知包含可用版本号。通知由本机操作系统处理，不经过 Sensteed Agent 远程推送服务；操作系统的通知历史或跨设备同步取决于您的系统账户设置。 |
 | 安装 UUID | 按第 3 节保存；在版本检查时会发送给官方更新端点。 |
 
 凭据脱敏只能降低风险，不能保证日志或诊断包不含敏感信息。分享诊断包前，请先检查内容并删除不希望接收方看到的信息。
@@ -117,13 +117,13 @@ GET https://www.dshdesktop.cn/api/desktop/version
 
 ## 6. 您选择的第三方服务
 
-DSH Desktop 是可组合的插件平台。下列传输由您选择的服务、来源、插件或操作触发，接收方按自己的隐私政策处理信息。
+Sensteed Agent 是可组合的插件平台。下列传输由您选择的服务、来源、插件或操作触发，接收方按自己的隐私政策处理信息。
 
 ### 6.1 模型和工具服务
 
 当您配置并调用模型供应商、MCP 服务、外部工具或其他 API 时，接收方可能收到 API Key、提示词、对话上下文、附件或文件内容、工具输入输出、会话标识、网络元数据，以及该服务协议所需的其他信息。具体范围取决于您的配置和请求。不要向不受信任的供应商发送敏感数据。
 
-上游 DSH 还维护一个与 Desktop 安装 UUID 不同的 `.anonymous-user-id`。当您调用当前默认的 DeepSeek 模型适配器时，它会把该标识放在 `x-deepseek-harness-user-id` header 中，并把可选的会话 ID、API Key 以及完整模型请求发送到您配置的 DeepSeek 或兼容 `baseURL`。请勿将它与 `X-DSH-Desktop-Installation-Id` 混为一谈。
+上游 DSH 还维护一个与 Desktop 安装 UUID 不同的 `.anonymous-user-id`。当您调用当前默认的 DeepSeek 模型适配器时，它会把该标识放在 `x-deepseek-harness-user-id` header 中，并把可选的会话 ID、API Key 以及完整模型请求发送到您配置的 DeepSeek 或兼容 `baseURL`。请勿将它与 `X-Sensteed-Agent-Installation-Id` 混为一谈。
 
 默认组合还提供 DeepSeek `web_search`。当您主动使用该工具时，它会向配置的 DeepSeek Messages 端点发送 API Key、原始搜索词（嵌入固定提示中）、模型、token/使用次数限制和标准请求元数据；网页 `fetch` 工具默认关闭。
 
@@ -141,7 +141,7 @@ Community Market 默认不需要选中远程来源。选择并使用来源后，
 
 ### 6.3 dsh-market
 
-如果您在 Setup 或设置中选择 `dsh-market`，打开市场、检查更新或查看插件内容时，它可能访问 `awesome-dsh-plugin.com`、npm Registry、GitHub API、`raw.githubusercontent.com`、GitHub 头像服务和 `images.weserv.nl`。这些接收方会看到 IP 地址、时间、请求资源和相关的插件、软件包或仓库标识；图片代理还会收到原始图片 URL。安装或更新仍由您确认，并可能继续访问插件依赖声明的地址。这些请求不会附带 Desktop 的 `X-DSH-Desktop-Installation-Id`。
+如果您在 Setup 或设置中选择 `dsh-market`，打开市场、检查更新或查看插件内容时，它可能访问 `awesome-dsh-plugin.com`、npm Registry、GitHub API、`raw.githubusercontent.com`、GitHub 头像服务和 `images.weserv.nl`。这些接收方会看到 IP 地址、时间、请求资源和相关的插件、软件包或仓库标识；图片代理还会收到原始图片 URL。安装或更新仍由您确认，并可能继续访问插件依赖声明的地址。这些请求不会附带 Desktop 的 `X-Sensteed-Agent-Installation-Id`。
 
 `dsh-market` 还提供由您手动触发，或在您明确启用可选自动备份后触发的 Profile 备份：
 
@@ -212,7 +212,7 @@ Vercel、Upstash、GitHub、npm、ModelScope、模型供应商及社区来源可
 
 ## 12. 未成年人
 
-DSH Desktop 是面向开发者和能够管理本地计算环境的用户的工具，并非专门面向儿童。未成年人应在监护人指导下使用。若您认为我们在不符合法律要求的情况下处理了未成年人的个人信息，请联系我们；我们会核实并采取适当措施。
+Sensteed Agent 是面向开发者和能够管理本地计算环境的用户的工具，并非专门面向儿童。未成年人应在监护人指导下使用。若您认为我们在不符合法律要求的情况下处理了未成年人的个人信息，请联系我们；我们会核实并采取适当措施。
 
 ## 13. 政策更新
 

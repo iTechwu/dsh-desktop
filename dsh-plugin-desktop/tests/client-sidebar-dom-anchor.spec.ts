@@ -37,7 +37,7 @@ describe('desktop sidebar DOM anchor', () => {
     // The anchor belongs on the element that directly wraps the sidebar slot —
     // the structural peer of the upstream column, not the outer desktop chrome.
     expect(column?.querySelector('[data-slot="sidebar"]')).not.toBeNull()
-    expect(column?.className).toContain('dshDesktopUpstreamSidebar')
+    expect(column?.className).toContain('sensteedAgentUpstreamSidebar')
   })
 
   it.each([

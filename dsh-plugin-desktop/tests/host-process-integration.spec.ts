@@ -23,7 +23,7 @@ it.each(['disabled', 'missing', 'installed'] as const)('boots a separate Web Hos
   let pnpm: ReturnType<typeof installDesktopPnpmRuntime> | undefined
   let stderr = ''
   try {
-    writeFileSync(join(home, 'settings.yaml'), 'dsh-desktop:\n  mode: advanced\nagent-presets:\n  default: minimal\n')
+    writeFileSync(join(home, 'settings.yaml'), 'sensteed-agent:\n  mode: advanced\nagent-presets:\n  default: minimal\n')
     const initial = prepareDesktopProfile('1', home, 'win32')
     if (aaEnabled) {
       // AA is an optional Profile package. Exercise its real bundle/Loader

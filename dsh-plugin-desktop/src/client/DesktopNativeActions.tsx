@@ -35,11 +35,11 @@ function DesktopActionMenu({ open, onOpenChange, busy, trigger, children }: {
   const anchor = useRef<HTMLDivElement>(null)
   return (
     <Menu.Root modal={false} open={open} onOpenChange={onOpenChange}>
-      <div className="dshDesktopNativeActionMenuAnchor" ref={anchor}>
+      <div className="sensteedAgentNativeActionMenuAnchor" ref={anchor}>
         <Menu.Trigger disabled={busy} render={trigger} />
         <Menu.Portal container={anchor}>
-          <Menu.Positioner className="dshDesktopActionMenuPositioner" sideOffset={5} align="end">
-            <Menu.Popup className="dshDesktopActionMenu">{children}</Menu.Popup>
+          <Menu.Positioner className="sensteedAgentActionMenuPositioner" sideOffset={5} align="end">
+            <Menu.Popup className="sensteedAgentActionMenu">{children}</Menu.Popup>
           </Menu.Positioner>
         </Menu.Portal>
       </div>
@@ -53,13 +53,13 @@ export function DesktopRestartMenuItems({
 }: DesktopRestartMenuItemsProps) {
   return (
     <>
-      <Menu.Item nativeButton render={<button type="button" />} className="dshDesktopActionMenuItem" disabled={busy} onClick={onReload}>
+      <Menu.Item nativeButton render={<button type="button" />} className="sensteedAgentActionMenuItem" disabled={busy} onClick={onReload}>
         <RefreshCw aria-hidden="true" /><span>{t('reloadRenderer')}</span>
       </Menu.Item>
-      <Menu.Item nativeButton render={<button type="button" />} className="dshDesktopActionMenuItem" disabled={busy} onClick={onRestart}>
+      <Menu.Item nativeButton render={<button type="button" />} className="sensteedAgentActionMenuItem" disabled={busy} onClick={onRestart}>
         <RotateCw aria-hidden="true" /><span>{t('restartDesktop')}</span>
       </Menu.Item>
-      <Menu.Item nativeButton render={<button type="button" />} className="dshDesktopActionMenuItem" disabled={busy} onClick={onRestartToRecovery}>
+      <Menu.Item nativeButton render={<button type="button" />} className="sensteedAgentActionMenuItem" disabled={busy} onClick={onRestartToRecovery}>
         <LifeBuoy aria-hidden="true" /><span>{t('restartToRecovery')}</span>
       </Menu.Item>
     </>
@@ -78,7 +78,7 @@ export function DesktopDeveloperMenuItems({
     <Menu.Item
       nativeButton
       render={<button type="button" />}
-      className="dshDesktopActionMenuItem"
+      className="sensteedAgentActionMenuItem"
       disabled={busy}
       onClick={onToggleDeveloperTools}
     >
@@ -154,14 +154,14 @@ export function DesktopNativeActions({ api, t, placement }: DesktopNativeActions
 
   if (placement === 'settings') {
     return (
-      <div className="dshDesktopNativeActions" data-placement={placement}>
+      <div className="sensteedAgentNativeActions" data-placement={placement}>
         {failed !== undefined && (
-          <span className="dshDesktopNativeActionError" role="alert">{t(failureKey)}</span>
+          <span className="sensteedAgentNativeActionError" role="alert">{t(failureKey)}</span>
         )}
         {api.exportDiagnostics !== undefined && (
           <button
             type="button"
-            className="dshDesktopSettingsHeaderButton"
+            className="sensteedAgentSettingsHeaderButton"
             disabled={busy}
             onClick={exportDiagnostics}
           >
@@ -170,7 +170,7 @@ export function DesktopNativeActions({ api, t, placement }: DesktopNativeActions
         )}
         <button
           type="button"
-          className="dshDesktopSettingsHeaderButton"
+          className="sensteedAgentSettingsHeaderButton"
           disabled={busy}
           onClick={open}
         >
@@ -179,7 +179,7 @@ export function DesktopNativeActions({ api, t, placement }: DesktopNativeActions
         <DesktopActionMenu open={restartMenuOpen} onOpenChange={setRestartMenuOpen} busy={busy} trigger={
           <button
             type="button"
-            className="dshDesktopSettingsHeaderButton"
+            className="sensteedAgentSettingsHeaderButton"
           >
             {t(restarting ? 'restartingDesktop' : 'restartDesktop')}
             <ChevronDown aria-hidden="true" />
@@ -198,13 +198,13 @@ export function DesktopNativeActions({ api, t, placement }: DesktopNativeActions
   }
 
   return (
-    <div className="dshDesktopNativeActions" data-placement={placement}>
+    <div className="sensteedAgentNativeActions" data-placement={placement}>
       {failed !== undefined && (
-        <span className="dshDesktopNativeActionError" role="alert">{t(failureKey)}</span>
+        <span className="sensteedAgentNativeActionError" role="alert">{t(failureKey)}</span>
       )}
       <button
         type="button"
-        className="dshDesktopTitlebarIconButton"
+        className="sensteedAgentTitlebarIconButton"
         aria-label={t('openTerminal')}
         title={t('openTerminal')}
         disabled={busy}
@@ -218,7 +218,7 @@ export function DesktopNativeActions({ api, t, placement }: DesktopNativeActions
       }} busy={busy} trigger={
         <button
           type="button"
-          className="dshDesktopTitlebarIconButton"
+          className="sensteedAgentTitlebarIconButton"
           aria-label={t('restartOptions')}
           title={t('restartOptions')}
         >
@@ -239,7 +239,7 @@ export function DesktopNativeActions({ api, t, placement }: DesktopNativeActions
       }} busy={busy} trigger={
         <button
           type="button"
-          className="dshDesktopTitlebarIconButton"
+          className="sensteedAgentTitlebarIconButton"
           aria-label={t('developerOptions')}
           title={t('developerOptions')}
         >

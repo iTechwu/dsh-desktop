@@ -15,8 +15,8 @@ import { installProfilePackageResolver } from '../lib/module-resolution.js'
 import { prepareDesktopProfile } from '../lib/profile.js'
 
 const BIN_NAME = 'dsh-plugin-desktop-loader-smoke'
-const THIRD_PARTY_NAME = 'dsh-desktop-loader-smoke-plugin'
-const THIRD_PARTY_DEPENDENCY_NAME = 'dsh-desktop-loader-smoke-dependency'
+const THIRD_PARTY_NAME = 'sensteed-agent-loader-smoke-plugin'
+const THIRD_PARTY_DEPENDENCY_NAME = 'sensteed-agent-loader-smoke-dependency'
 const PRODUCT_VERSION = JSON.parse(
   readFileSync(new URL('../package.json', import.meta.url), 'utf8'),
 ).version
@@ -25,7 +25,7 @@ let ordinaryBrowserEnabled = false
 const BROWSER_ACCESS = Object.freeze({
   get ordinaryBrowserEnabled() { return ordinaryBrowserEnabled },
   rendererHeader: Object.freeze({
-    name: 'x-dsh-desktop-renderer',
+    name: 'x-sensteed-agent-renderer',
     value: AUTHENTICATION_TOKEN,
   }),
   authenticatedUrl(baseUrl) {
@@ -57,7 +57,7 @@ const RUNNER_ENVIRONMENT_NAMES = new Set([
   'NPM_CONFIG_TARGET',
   'NPM_CONFIG_DISTURL',
 ])
-const home = mkdtempSync(join(tmpdir(), 'dsh-desktop-loader-'))
+const home = mkdtempSync(join(tmpdir(), 'sensteed-agent-loader-'))
 let ctx
 let mounted
 let mountedSpec
@@ -232,7 +232,7 @@ try {
   if (mountedSpec?.mode !== 'compatibility') {
     throw new Error(`desktop plugin produced an unexpected shell mode: ${String(mountedSpec?.mode)}`)
   }
-  const expectedUrl = `http://127.0.0.1:43120/?dsh-desktop-mode=compatibility&dsh-desktop-platform=darwin&dsh-desktop-version=${PRODUCT_VERSION}&dsh-desktop-material=transparent&dsh-desktop-titlebar-inset=36`
+  const expectedUrl = `http://127.0.0.1:43120/?sensteed-agent-mode=compatibility&sensteed-agent-platform=darwin&sensteed-agent-version=${PRODUCT_VERSION}&sensteed-agent-material=transparent&sensteed-agent-titlebar-inset=36`
   if (mountedSpec?.url !== expectedUrl) {
     throw new Error(`desktop plugin produced an unexpected renderer URL: ${String(mountedSpec?.url)}`)
   }

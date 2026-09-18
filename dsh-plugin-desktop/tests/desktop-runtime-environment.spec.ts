@@ -26,7 +26,7 @@ import {
 const temporaryDirectories: string[] = []
 
 function temporaryDirectory(): string {
-  const directory = mkdtempSync(join(tmpdir(), 'dsh-desktop-pnpm-runtime-'))
+  const directory = mkdtempSync(join(tmpdir(), 'sensteed-agent-pnpm-runtime-'))
   temporaryDirectories.push(directory)
   return directory
 }
@@ -620,8 +620,8 @@ describe('desktop Host dsh runtime', () => {
     const environment: NodeJS.ProcessEnv = { Path: 'C:\\Windows' }
     const runtimeOptions = {
       platform: 'win32' as const,
-      appExecutable: 'C:\\Program Files\\DSH Desktop\\DSH Desktop.exe',
-      dshBootstrapPath: 'C:\\Program Files\\DSH Desktop\\resources\\app.asar\\desktop-cli.js',
+      appExecutable: 'C:\\Program Files\\Sensteed Agent\\Sensteed Agent.exe',
+      dshBootstrapPath: 'C:\\Program Files\\Sensteed Agent\\resources\\app.asar\\desktop-cli.js',
       profileName: 'web',
       homeDir: 'C:\\Users\\tester\\.dsh',
       stateDir,

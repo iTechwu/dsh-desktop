@@ -6,19 +6,19 @@ English | [中文](2026-08-15-desktop-advanced-shell.zh.md)
 
 ## Problem
 
-DSH Desktop needs a native-material presentation on macOS and Windows without editing the pinned upstream checkout or copying the official Web application. The presentation changes several axes together: native window construction, root/sidebar slot ownership, the `layout` service, and document-level theme projection. Applying only part of that set, or changing it inside a running renderer, would leave Host composition and Client presentation inconsistent.
+Sensteed Agent needs a native-material presentation on macOS and Windows without editing the pinned upstream checkout or copying the official Web application. The presentation changes several axes together: native window construction, root/sidebar slot ownership, the `layout` service, and document-level theme projection. Applying only part of that set, or changing it inside a running renderer, would leave Host composition and Client presentation inconsistent.
 
 Mode selection must use one durable source whether a user chooses the application tray command or edits the settings file by hand, and every change must cross the same restart boundary.
 
 ## Decision
 
-Advanced mode is a complete desktop-owned generation selected by `dsh-desktop.mode: advanced`. It remains on the upstream loopback Web carrier and ordinary Client module loader; only explicitly owned presentation and native-window seams change.
+Advanced mode is a complete desktop-owned generation selected by `sensteed-agent.mode: advanced`. It remains on the upstream loopback Web carrier and ordinary Client module loader; only explicitly owned presentation and native-window seams change.
 
 ### One settings source
 
-The DSH home `settings.yaml` document is the single source of truth. The launcher resolves it through the active `@deepseek-ai/dsh-settings-file` row and reads `dsh-desktop.mode` before it produces the final Loader patches. It does not persist a parallel mode in the profile manifest, Electron preferences, command-line flags, or another desktop file.
+The DSH home `settings.yaml` document is the single source of truth. The launcher resolves it through the active `@deepseek-ai/dsh-settings-file` row and reads `sensteed-agent.mode` before it produces the final Loader patches. It does not persist a parallel mode in the profile manifest, Electron preferences, command-line flags, or another desktop file.
 
-The `desktop-shell` Host plugin registers `settingsNamespace('dsh-desktop')` with a schema containing `mode: compatibility | advanced` and `applies: restart`. The tray calls that registered scope's narrow `settings.update({ mode })` path. A user may instead edit the same `settings.yaml` document directly; the file provider and registered namespace observe that one durable value.
+The `desktop-shell` Host plugin registers `settingsNamespace('sensteed-agent')` with a schema containing `mode: compatibility | advanced` and `applies: restart`. The tray calls that registered scope's narrow `settings.update({ mode })` path. A user may instead edit the same `settings.yaml` document directly; the file provider and registered namespace observe that one durable value.
 
 Linux supports compatibility only. The tray disables its mode command there, and an advanced value is rejected rather than being mapped to a different presentation.
 
@@ -60,7 +60,7 @@ Advanced mode does not add a preload script, Electron IPC transport, or Node cap
 
 ## Verification
 
-Profile tests write `dsh-desktop.mode: advanced` to a temporary `settings.yaml` and verify projection into `desktop-shell`, disabled official layout, and enabled official sidebar and conversation rows. Host tests cover the shared settings namespace, changed-value restart, tray update path, and pre-persistence Linux rejection. Client tests cover environment validation, scoped layout-service disposal, platform-specific rail geometry, Windows outer-slot caption geometry, and theme projection. Type checking validates the desktop declarations against the published rc.6 slot and service contracts.
+Profile tests write `sensteed-agent.mode: advanced` to a temporary `settings.yaml` and verify projection into `desktop-shell`, disabled official layout, and enabled official sidebar and conversation rows. Host tests cover the shared settings namespace, changed-value restart, tray update path, and pre-persistence Linux rejection. Client tests cover environment validation, scoped layout-service disposal, platform-specific rail geometry, Windows outer-slot caption geometry, and theme projection. Type checking validates the desktop declarations against the published rc.6 slot and service contracts.
 
 Window-option and Electron-runtime tests verify macOS hidden-inset vibrancy, Windows Mica/native controls, built-in native-theme initialization and live updates, generation-scoped appearance restoration, Linux rejection, and the tray's opposite-mode update. Shutdown tests verify relaunch only after successful zero-code disposal and no relaunch for a failed generation. Client and Host bundles build headlessly; graphical native-material appearance remains a target-machine verification boundary.
 
@@ -72,7 +72,7 @@ Window-option and Electron-runtime tests verify macOS hidden-inset vibrancy, Win
 
 **Copy conversation, workspace, or other feature surfaces into the desktop package.** Those are feature surfaces, not desktop chrome. Keeping their official plugins active avoids duplicated state and lets upstream and third-party improvements flow into the desktop composition.
 
-**Write a separate Electron preference from the tray.** Two stores could disagree. The tray therefore updates the Host's registered `dsh-desktop` namespace, and manual edits target the same `settings.yaml` document.
+**Write a separate Electron preference from the tray.** Two stores could disagree. The tray therefore updates the Host's registered `sensteed-agent` namespace, and manual edits target the same `settings.yaml` document.
 
 **Hot-reload the Client shell after changing mode.** This cannot atomically reconstruct native window materials, Loader rows, service ownership, and root declarations. A bounded relaunch is the smallest coherent transition.
 
@@ -80,6 +80,6 @@ Window-option and Electron-runtime tests verify macOS hidden-inset vibrancy, Win
 
 ## Consequences
 
-DSH Desktop gains a native-material macOS and Windows presentation without modifying the upstream submodule, copying the Web application, or introducing a second plugin or transport system. Tray changes and manual `settings.yaml` edits converge on one durable value, and a restart creates a coherent Host, Client, and native-window generation.
+Sensteed Agent gains a native-material macOS and Windows presentation without modifying the upstream submodule, copying the Web application, or introducing a second plugin or transport system. Tray changes and manual `settings.yaml` edits converge on one durable value, and a restart creates a coherent Host, Client, and native-window generation.
 
 The desktop package now owns real Client presentation code and must track the published slot, theme, and service contracts it uses. Advanced mode deliberately has a different presentation-row composition from browser Web and compatibility mode. Native appearance also depends on operating-system support and must be verified on real target machines; Linux remains compatibility-only.

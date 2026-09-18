@@ -62,7 +62,7 @@ const VIEW: DesktopSettingsView = {
     lanState: 'inactive',
     lanError: null,
     lanCaFingerprint: CA_FINGERPRINT,
-    lanCaUrls: ['https://192.168.1.20:43121/.well-known/dsh-desktop-ca.crt'],
+    lanCaUrls: ['https://192.168.1.20:43121/.well-known/sensteed-agent-ca.crt'],
   },
 }
 
@@ -147,11 +147,11 @@ describe('Desktop settings API', () => {
     expect(parseDesktopSettingsView(ready).web).toEqual(ready.web)
 
     const invalidCaUrls = [
-      'http://192.168.1.20:43121/.well-known/dsh-desktop-ca.crt',
-      `https://192.168.1.20:43121/.well-known/dsh-desktop-ca.crt?token=${BROWSER_AUTH_TOKEN}`,
+      'http://192.168.1.20:43121/.well-known/sensteed-agent-ca.crt',
+      `https://192.168.1.20:43121/.well-known/sensteed-agent-ca.crt?token=${BROWSER_AUTH_TOKEN}`,
       'https://192.168.1.20:43121/ca.crt',
-      'https://desktop.local:43121/.well-known/dsh-desktop-ca.crt',
-      'https://127.0.0.1:43121/.well-known/dsh-desktop-ca.crt',
+      'https://desktop.local:43121/.well-known/sensteed-agent-ca.crt',
+      'https://127.0.0.1:43121/.well-known/sensteed-agent-ca.crt',
     ]
     for (const lanCaUrl of invalidCaUrls) {
       expect(() => parseDesktopSettingsView({
@@ -522,7 +522,7 @@ describe('Desktop native action presentation', () => {
       placement: 'titlebar',
     }))
 
-    expect(markup.match(/dshDesktopTitlebarIconButton/g)).toHaveLength(3)
+    expect(markup.match(/sensteedAgentTitlebarIconButton/g)).toHaveLength(3)
     expect(markup).toContain('aria-label="Open DSH Terminal"')
     expect(markup).toContain('aria-label="Restart options"')
     expect(markup).toContain('aria-label="Developer options"')
@@ -618,9 +618,9 @@ describe('Desktop native action presentation', () => {
 
     try {
       const dispose = installDesktopSettingsStyles()
-      expect(css).toMatch(/data-placement="settings"\] \.dshDesktopActionMenuPositioner \{[^}]*z-index: 2147483001;/)
-      expect(css).toMatch(/data-placement="settings"\] \.dshDesktopActionMenu \{[^}]*position: relative;[^}]*display: grid;[^}]*grid-auto-flow: row;[^}]*grid-template-columns: minmax\(0, 1fr\);[^}]*min-width: 220px;/)
-      expect(css).toMatch(/data-placement="settings"\] \.dshDesktopActionMenuItem \{[^}]*display: flex;[^}]*width: 100%;[^}]*white-space: nowrap;/)
+      expect(css).toMatch(/data-placement="settings"\] \.sensteedAgentActionMenuPositioner \{[^}]*z-index: 2147483001;/)
+      expect(css).toMatch(/data-placement="settings"\] \.sensteedAgentActionMenu \{[^}]*position: relative;[^}]*display: grid;[^}]*grid-auto-flow: row;[^}]*grid-template-columns: minmax\(0, 1fr\);[^}]*min-width: 220px;/)
+      expect(css).toMatch(/data-placement="settings"\] \.sensteedAgentActionMenuItem \{[^}]*display: flex;[^}]*width: 100%;[^}]*white-space: nowrap;/)
       expect(appendChild).toHaveBeenCalledWith(style)
       dispose()
       expect(remove).toHaveBeenCalledOnce()

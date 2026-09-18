@@ -91,7 +91,7 @@ const BIN_NAME = DESKTOP_PACKAGE_NAME
 const REQUIRED_BUNDLES = [...requiredWebBundles()]
 const REQUIRED_BUNDLE_SET = new Set(REQUIRED_BUNDLES)
 const OBSOLETE_DESKTOP_BUNDLE_SET = new Set([
-  '@deepseek-ai/dsh-desktop-app',
+  '@deepseek-ai/sensteed-agent-app',
   '@linxin666/dsh-web-ui-all',
 ])
 // Keep package discovery anchored in app.asar so ordinary dependency manifests
@@ -117,7 +117,7 @@ const SETTINGS_FILE_PACKAGE = '@deepseek-ai/dsh-settings-file'
 const DOFE_MODEL_PROVIDER = 'deepseek-official'
 const DOFE_MODEL_API_KEY_ENV = 'MODELS_API_KEY'
 const DOFE_MODEL_BASE_URL = 'https://ixicai.cn/api/v1'
-const DESKTOP_SETTINGS_NAMESPACE = 'dsh-desktop'
+const DESKTOP_SETTINGS_NAMESPACE = 'sensteed-agent'
 const UI_LAYOUT_PACKAGE = '@deepseek-ai/dsh-client-ui-layout'
 const UI_SIDEBAR_PACKAGE = '@deepseek-ai/dsh-client-ui-sidebar'
 const UI_CONVERSATION_PACKAGE = '@deepseek-ai/dsh-client-ui-conversation'

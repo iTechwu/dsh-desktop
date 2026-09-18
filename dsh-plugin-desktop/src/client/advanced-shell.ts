@@ -21,28 +21,28 @@ export function applyAdvancedShell(ctx: ClientContext, environment: DesktopClien
     // Harness 自带的 dsh-client-ui-layout 赢得所有权时,降级为仅保留模式
     // 标记,避免在同一呈现之上堆叠第二套 frame(#517)。
     ctx.effect(() => {
-      document.body.dataset.dshDesktopMode = 'advanced'
-      document.body.dataset.dshDesktopPlatform = environment.platform
-      document.body.dataset.dshDesktopMaterial = environment.material
+      document.body.dataset.sensteedAgentMode = 'advanced'
+      document.body.dataset.sensteedAgentPlatform = environment.platform
+      document.body.dataset.sensteedAgentMaterial = environment.material
       return () => {
-        delete document.body.dataset.dshDesktopMode
-        delete document.body.dataset.dshDesktopPlatform
-        delete document.body.dataset.dshDesktopMaterial
+        delete document.body.dataset.sensteedAgentMode
+        delete document.body.dataset.sensteedAgentPlatform
+        delete document.body.dataset.sensteedAgentMaterial
       }
     }, 'desktop: advanced shell markers')
     return
   }
 
   ctx.effect(() => {
-    document.body.dataset.dshDesktopMode = 'advanced'
-    document.body.dataset.dshDesktopPlatform = environment.platform
-    document.body.dataset.dshDesktopMaterial = environment.material
+    document.body.dataset.sensteedAgentMode = 'advanced'
+    document.body.dataset.sensteedAgentPlatform = environment.platform
+    document.body.dataset.sensteedAgentMaterial = environment.material
     const removeStyles = installDesktopOwnedStyles()
     return () => {
       removeStyles()
-      delete document.body.dataset.dshDesktopMode
-      delete document.body.dataset.dshDesktopPlatform
-      delete document.body.dataset.dshDesktopMaterial
+      delete document.body.dataset.sensteedAgentMode
+      delete document.body.dataset.sensteedAgentPlatform
+      delete document.body.dataset.sensteedAgentMaterial
     }
   }, 'desktop: advanced shell styles')
 

@@ -13,7 +13,7 @@ import {
 const homes: string[] = []
 
 function temporaryHome(): string {
-  const home = mkdtempSync(join(tmpdir(), 'dsh-desktop-credentials-'))
+  const home = mkdtempSync(join(tmpdir(), 'sensteed-agent-credentials-'))
   homes.push(home)
   return home
 }

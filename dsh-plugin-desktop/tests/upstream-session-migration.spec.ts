@@ -8,7 +8,7 @@ import { join } from 'node:path'
 import { expect, it } from 'vitest'
 
 it('migrates a released code session through the installed V3 worker and preserves its V2 log', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'dsh-desktop-v3-migration-'))
+  const root = await mkdtemp(join(tmpdir(), 'sensteed-agent-v3-migration-'))
   const id = SessionId('desktop-code-session')
   const directory = join(root, '_no-cwd', id)
   const ctx = new Context()

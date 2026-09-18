@@ -147,7 +147,7 @@ describe('Desktop WebServer browser gate', () => {
     const browser = await fetch(`${root}/?workspace=one`)
     expect(browser.status).toBe(200)
     await expect(browser.text()).resolves.toBe('browser')
-    const forged = await fetch(`${root}/?dsh-desktop-mode=compatibility`)
+    const forged = await fetch(`${root}/?sensteed-agent-mode=compatibility`)
     expect(forged.status).toBe(403)
     expect(forged.headers.get('cache-control')).toBe('no-store')
   })
