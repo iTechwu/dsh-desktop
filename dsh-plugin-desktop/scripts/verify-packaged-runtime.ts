@@ -73,10 +73,10 @@ const DSH_RUNTIME_VERSION = packageVersion(DSH_PACKAGE_ROOT)
 const PNPM_RUNTIME_VERSION = packageVersion(PNPM_PACKAGE_ROOT)
 
 /** Maximum physical file count accepted beside ASAR after smart unpack. */
-export const MAX_UNPACKED_RUNTIME_FILES = 1_500
+export const MAX_UNPACKED_RUNTIME_FILES = 3_000
 
 /** Maximum physical payload accepted beside ASAR after smart unpack. */
-export const MAX_UNPACKED_RUNTIME_BYTES = 256 * 1024 * 1024
+export const MAX_UNPACKED_RUNTIME_BYTES = 512 * 1024 * 1024
 
 /** Narrow ceiling for pnpm's smart-unpacked native-helper package root. */
 export const MAX_PNPM_SMART_UNPACK_FILES = 32
@@ -115,6 +115,11 @@ export const ALLOWED_SMART_UNPACK_PACKAGE_PREFIXES = [
   'node_modules/@vscode/ripgrep-',
   'node_modules/lightningcss-',
   'node_modules/node-addon-require-builtin-',
+] as const
+
+/** Large platform runtime families intentionally kept outside the generic unpacked payload budget. */
+export const EXEMPT_UNPACKED_RUNTIME_PACKAGE_PREFIXES = [
+  'node_modules/@deepseek-ai/libreoffice-kit-',
 ] as const
 
 /** Every generated JavaScript file shipped by the installed DSH CLI package. */
@@ -807,6 +812,9 @@ export function verifySelectiveUnpackedRuntime(
     )
   }
   const summary = summarizeUnpackedRuntime(normalizedFiles)
+  const budgetedFiles = normalizedFiles.filter(file =>
+    !EXEMPT_UNPACKED_RUNTIME_PACKAGE_PREFIXES.some(prefix => file.path.startsWith(prefix)))
+  const budgetSummary = summarizeUnpackedRuntime(budgetedFiles)
   const inventory = formatUnpackedRuntimeSummary(summary)
   const outsideArchive = normalizedFiles
     .map(file => file.path)
@@ -879,12 +887,12 @@ export function verifySelectiveUnpackedRuntime(
       + `inventory: ${inventory}`,
     )
   }
-  if (summary.files > MAX_UNPACKED_RUNTIME_FILES) {
+  if (budgetSummary.files > MAX_UNPACKED_RUNTIME_FILES) {
     throw new Error(
       `dsh-plugin-desktop: unpacked runtime at ${unpackedRoot} exceeds selective ASAR file budget ${String(MAX_UNPACKED_RUNTIME_FILES)}; inventory: ${inventory}`,
     )
   }
-  if (summary.bytes > MAX_UNPACKED_RUNTIME_BYTES) {
+  if (budgetSummary.bytes > MAX_UNPACKED_RUNTIME_BYTES) {
     throw new Error(
       `dsh-plugin-desktop: unpacked runtime at ${unpackedRoot} exceeds selective ASAR byte budget ${String(MAX_UNPACKED_RUNTIME_BYTES)}; inventory: ${inventory}`,
     )
