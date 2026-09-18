@@ -17,6 +17,10 @@ import { existsSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
 export const DEFAULT_BRAND_CONFIG_PATH = 'brand/brand.config.json'
+export const BRAND_CONFIG_PATHS = Object.freeze({
+  yootun: DEFAULT_BRAND_CONFIG_PATH,
+  sensteed: 'brand/sensteed/brand.config.json',
+})
 
 const APP_ID_PATTERN = /^[a-z][a-z0-9-]*(\.[a-z][a-z0-9-]*)+$/
 const HEADER_NAME_PATTERN = /^X-[A-Za-z0-9-]+$/
@@ -31,7 +35,11 @@ const URL_PATTERN = /^https:\/\/[A-Za-z0-9.-]+(:\d+)?(\/[^\s"']*)?$/
  */
 export function resolveBrandConfigPath(environment = process.env, root = process.cwd()) {
   const override = environment.BRAND_CONFIG
-  return resolve(root, override !== undefined && override.length > 0 ? override : DEFAULT_BRAND_CONFIG_PATH)
+  if (override !== undefined && override.length > 0) return resolve(root, override)
+  const brand = environment.BRAND ?? 'yootun'
+  const selected = BRAND_CONFIG_PATHS[brand]
+  if (selected === undefined) throw new Error(`unknown BRAND ${JSON.stringify(brand)}; expected yootun or sensteed`)
+  return resolve(root, selected)
 }
 
 /**
@@ -71,6 +79,10 @@ export function validateBrandConfig(document, sourcePath = 'brand.config.json') 
     return [`${sourcePath}: the top level must be an object`]
   }
   const config = /** @type {Record<string, unknown>} */ (document)
+
+  if (config.variant !== undefined) {
+    requirePattern(config, 'variant', /^(?:yootun|sensteed)$/u, '', push, 'expected yootun or sensteed')
+  }
 
   const channels = requireObject(config, 'channels', push)
   if (channels !== undefined) {
@@ -192,6 +204,9 @@ export const BRAND_RELEASE_IDENTITIES = Object.freeze({
 
 /** Identity selected by brand.config.json activeChannel. */
 export const BRAND_ACTIVE_CHANNEL = ${JSON.stringify(config.activeChannel)} as const
+
+/** Build-time white-label variant. */
+export const BRAND_VARIANT = ${JSON.stringify(config.variant ?? 'yootun')} as const
 
 /** Artifact filename prefix for the active channel (Setup/Portable/DMG stems). */
 export const BRAND_ARTIFACT_PREFIX = ${JSON.stringify(resolveActiveChannel(config).artifactPrefix)}

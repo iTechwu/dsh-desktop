@@ -11,6 +11,8 @@
   "scripts": {
     "preinstall": "node scripts/prepare-node-gyp.mjs",
     "build": "pnpm --filter dsh-community-market build && pnpm --filter dsh-plugin-desktop build",
+    "build:yootun": "BRAND=yootun pnpm run build",
+    "build:sensteed": "BRAND=sensteed pnpm run build",
     "typecheck": "pnpm --filter dsh-plugin-desktop typecheck && pnpm --filter dsh-community-market typecheck",
     "test": "pnpm --filter dsh-plugin-desktop test && pnpm --filter dsh-community-market test",
     "test:bilingual-docs": "node --test scripts/bilingual-docs.test.mjs",

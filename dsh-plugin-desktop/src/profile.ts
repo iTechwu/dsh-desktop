@@ -57,6 +57,7 @@ import {
   DESKTOP_PACKAGE_NAME,
   DESKTOP_PACKAGE_NAMES,
 } from './product-identity.ts'
+import { BRAND_VARIANT } from './generated-product-identity.ts'
 import {
   DEFAULT_MACOS_WINDOW_MATERIAL,
   DEFAULT_WINDOWS_WINDOW_MATERIAL,
@@ -135,6 +136,25 @@ const MARKET_PACKAGE_NAMES: ReadonlySet<string> = new Set([
   DESKTOP_MARKET_IDENTITIES.community.packageName,
   DESKTOP_MARKET_IDENTITIES.dshMarket.packageName,
 ])
+
+const YOOTUN_PRIVATE_PLUGIN_ROW_IDS = new Set([
+  'dofe-yootun-recruiter', 'dofe-yootun-sales',
+  'dofe-yootun-supply-watch', 'dofe-yootun-content-command', 'dofe-yootun-audit',
+  'dofe-yootun-retrofit', 'dofe-yootun-daily-report', 'dofe-yootun-lead-discovery',
+  'dofe-yootun-xhs-operation', 'dofe-yootun-douyin-operation', 'desktop-yootun-recruiter-tools',
+])
+
+/** Sensteed ships only shared surfaces while its company-specific pages are planned. */
+export function filterDesktopBrandPatches(patches: PatchOptions[]): PatchOptions[] {
+  if (BRAND_VARIANT === 'yootun') return patches
+  return patches.map(patch => {
+    if (!Array.isArray(patch.insert)) return patch
+    return { ...patch, insert: patch.insert.filter(row => {
+      if (row === null || typeof row !== 'object' || Array.isArray(row)) return true
+      return !YOOTUN_PRIVATE_PLUGIN_ROW_IDS.has(String((row as { id?: unknown }).id ?? ''))
+    }) }
+  })
+}
 
 /**
  * Parse desktop presentation state and reject corrupted values.
@@ -884,7 +904,7 @@ export function prepareDesktopProfile(
   const bareModuleBaseUrl = pathToFileURL(join(profile.dir, 'package.json')).href
   writeFileSync(rootConfig, '[]\n')
 
-  const desktopPatches = loadOverlayPatches(BIN_NAME, DESKTOP_PATCH_PATH)
+  const desktopPatches = filterDesktopBrandPatches(loadOverlayPatches(BIN_NAME, DESKTOP_PATCH_PATH))
   const bundlePatches: PatchOptions[] = []
   let aaLayer: Profile['layers'][number] | undefined
   let dshMarketPatches: PatchOptions[] | undefined

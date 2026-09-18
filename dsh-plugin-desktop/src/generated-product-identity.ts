@@ -21,6 +21,9 @@ export const BRAND_RELEASE_IDENTITIES = Object.freeze({
 /** Identity selected by brand.config.json activeChannel. */
 export const BRAND_ACTIVE_CHANNEL = "beta" as const
 
+/** Build-time white-label variant. */
+export const BRAND_VARIANT = "yootun" as const
+
 /** Artifact filename prefix for the active channel (Setup/Portable/DMG stems). */
 export const BRAND_ARTIFACT_PREFIX = "Yootun-Agent-Beta"
 
@@ -35,8 +38,8 @@ export const BRAND_DISPLAY_NAME = Object.freeze({
 
 /** Brand mission shown by the client brand surfaces. */
 export const BRAND_MISSION = Object.freeze({
-  zh: "服务与成就中国智造的全球竞争力",
-  en: "Serve and advance the global competitiveness of Chinese intelligent manufacturing",
+  zh: "青年人买车就到优惠豚",
+  en: "The destination for young car buyers",
 })
 
 /** Update service contract served by the release infrastructure. */
