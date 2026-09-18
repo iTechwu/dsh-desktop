@@ -926,13 +926,15 @@ describe('packaged desktop runtime verification', () => {
       .toThrow('status null; signal=SIGTERM')
   })
 
-  // `prepare-fs-ext.ts` names its output after the ABI of whichever Electron is
-  // actually installed (`electron.abi${abi}.node`), but the manifests above spell that
-  // number out. Bumping the Electron pin across an ABI boundary therefore makes the two
-  // disagree, and nothing fails until a packaging job goes looking for a file that was
-  // never built — on macOS that surfaced only as "universal macOS runtime is missing 2
-  // native file(s)" at the very end of a 14-minute job. Reading electron's own
-  // `abi_version` here turns that into an immediate, every-platform unit failure.
+  // fs-ext manifests carry two path kinds. The runtime binding
+  // (`FS_EXT_RELATIVE_PATH`) is ABI-agnostic: packaging replaces its CONTENT with
+  // the Electron-ABI build that `prepare-fs-ext.ts` derives from the installed
+  // Electron at build time, so its filename can never drift. The prebuild pins
+  // (Linux) spell the ABI out, so bumping the Electron pin across an ABI boundary
+  // would leave them pointing at a file that is never built — on macOS that once
+  // surfaced only as "universal macOS runtime is missing 2 native file(s)" at the
+  // very end of a 14-minute job. Reading electron's own `abi_version` here turns
+  // stale prebuild pins into an immediate, every-platform unit failure.
   it('pins fs-ext ABI manifests to the ABI of the installed Electron', () => {
     const abi = readFileSync(
       fileURLToPath(new URL('../node_modules/electron/abi_version', import.meta.url)),
@@ -946,6 +948,7 @@ describe('packaged desktop runtime verification', () => {
     ].filter(path => path.includes('/fs-ext/'))
 
     expect(manifestPaths.length).toBeGreaterThan(0)
-    expect(manifestPaths.filter(path => !path.endsWith(`/electron.abi${abi}.node`))).toEqual([])
+    expect(manifestPaths.filter(path => path.includes('/fs-ext/prebuilds/')
+      && !path.endsWith(`/electron.abi${abi}.node`))).toEqual([])
   })
 })
