@@ -50,7 +50,7 @@ function installWebClient(
   const webDir = join(home, 'profiles', 'web')
   const template = PROFILE_TEMPLATES.web
   if (template === undefined) throw new Error('test requires the shipped Web template')
-  initProfile(webDir, template.bundles, template.patchReload)
+  initProfile(webDir, template.bundles)
   const packageDir = join(webDir, 'node_modules', ...packageName.split('/'))
   mkdirSync(packageDir, { recursive: true })
   writeFileSync(join(packageDir, 'package.json'), JSON.stringify({
@@ -828,7 +828,7 @@ virtualStoreDirMaxLength: 60
     const webDir = join(home, 'profiles', 'web')
     const template = PROFILE_TEMPLATES.web
     if (template === undefined) throw new Error('test requires the shipped Web template')
-    initProfile(webDir, template.bundles, template.patchReload)
+    initProfile(webDir, template.bundles)
     writeFileSync(join(webDir, 'cordis.patch.yml'), [
       '- id: ui-layout',
       "  name: '@deepseek-ai/dsh-client-ui-layout'",
