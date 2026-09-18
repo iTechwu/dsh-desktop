@@ -691,6 +691,21 @@ describe('packaged desktop runtime verification', () => {
     )).toThrow(`exceeds selective ASAR file budget ${String(MAX_UNPACKED_RUNTIME_FILES)}`)
   })
 
+  it('excludes the declared LibreOffice platform runtime from the generic payload budget', () => {
+    const files = Array.from(
+      { length: MAX_UNPACKED_RUNTIME_FILES + 1 },
+      (_, index) => ({
+        path: `node_modules/@deepseek-ai/libreoffice-kit-win32-x64/native-${String(index)}.bin`,
+        bytes: 1_024 * 1_024,
+      }),
+    )
+    expect(() => verifySelectiveUnpackedRuntime(
+      asarIndex(files.map(file => file.path)),
+      '/build/resources/app.asar.unpacked',
+      files,
+    )).not.toThrow()
+  })
+
   it('caps Electron Builder smartUnpack bytes as well as inode count', () => {
     const path = 'node_modules/node-pty/prebuilds/win32-x64/conpty.node'
     expect(() => verifySelectiveUnpackedRuntime(
