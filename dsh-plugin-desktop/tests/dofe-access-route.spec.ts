@@ -110,6 +110,25 @@ describe('DoFe model_api_key validation route', () => {
     expect(fetcher).toHaveBeenCalledTimes(1)
   })
 
+  it('accepts the current tenant id and rejects another tenant id when the live service omits its slug', async () => {
+    const accepted = response()
+    await handleDofeAccessValidationRequest(
+      request({ key: 'sensteed-secret' }),
+      accepted,
+      ORIGIN,
+      vi.fn()
+        .mockResolvedValueOnce(new Response(JSON.stringify({ tenantId: '869856a5-760a-4570-9177-8823ed84da78' }), { status: 200 }))
+        .mockResolvedValueOnce(new Response('{}', { status: 200 })),
+    )
+    expect(JSON.parse(accepted.body)).toEqual({ valid: true })
+
+    const rejected = response()
+    const rejectedFetcher = vi.fn(async () => new Response(JSON.stringify({ tenantId: '7a8866f9-3994-4341-ade6-b9fa942efe99' }), { status: 200 }))
+    await handleDofeAccessValidationRequest(request({ key: 'other-secret' }), rejected, ORIGIN, rejectedFetcher)
+    expect(JSON.parse(rejected.body)).toEqual({ valid: false, reason: 'tenant_mismatch' })
+    expect(rejectedFetcher).toHaveBeenCalledTimes(1)
+  })
+
   it('returns the normalized remote model catalog without returning the key', async () => {
     const fetcher = vi.fn()
       .mockResolvedValueOnce(new Response(JSON.stringify({ tenantSlug: 'yootun' }), { status: 200 }))

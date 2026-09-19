@@ -8,6 +8,13 @@ export const DOFE_ACCESS_MODELS_PATH = '/api/desktop/dofe/models'
 export const DOFE_AUTH_CONTEXT_URL = 'https://ixicai.cn/api/internal/auth/context'
 const MAX_BODY_BYTES = 16 * 1024
 const MODEL_GATEWAY_HEADERS = Object.freeze({ 'X-Company-Code': BRAND_TENANT })
+/** Stable tenant ids returned by the DoFe auth context service. The service
+ * currently exposes ids (not slugs) on this endpoint, so tenant ownership is
+ * checked against the brand's allowlist before any model route is queried. */
+const BRAND_TENANT_IDS: Readonly<Record<string, string>> = Object.freeze({
+  yootun: '869856a5-760a-4570-9177-8823ed84da78',
+  sensteed: '7a8866f9-3994-4341-ade6-b9fa942efe99',
+})
 
 export type DofeAccessFailureReason = 'invalid_key' | 'tenant_mismatch' | 'tenant_unavailable'
 
@@ -67,9 +74,15 @@ async function verifyDofeTenant(
     const tenantSlug = typeof value === 'object' && value !== null
       ? (value as { tenantSlug?: unknown }).tenantSlug
       : undefined
-    if (typeof tenantSlug !== 'string' || tenantSlug.trim().length === 0) {
-      return { ok: false, reason: 'tenant_unavailable' }
+    const tenantId = typeof value === 'object' && value !== null
+      ? (value as { tenantId?: unknown }).tenantId
+      : undefined
+    if (typeof tenantId === 'string' && tenantId.trim().length > 0) {
+      return tenantId.trim().toLowerCase() === BRAND_TENANT_IDS[BRAND_TENANT]?.toLowerCase()
+        ? { ok: true }
+        : { ok: false, reason: 'tenant_mismatch' }
     }
+    if (typeof tenantSlug !== 'string' || tenantSlug.trim().length === 0) return { ok: false, reason: 'tenant_unavailable' }
     return tenantSlug.trim().toLowerCase() === BRAND_TENANT.toLowerCase()
       ? { ok: true }
       : { ok: false, reason: 'tenant_mismatch' }
