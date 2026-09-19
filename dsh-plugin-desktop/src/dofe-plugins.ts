@@ -1,47 +1,65 @@
-/** Built-in DoFe capabilities shipped inside Yootun-Agent. */
+/** Built-in DoFe capabilities shipped by each white-label product. */
 
 export const DOFE_ACCESS_SETTINGS_NAMESPACE = 'dofe-access' as const
 export const DOFE_ACCESS_VALIDATION_VERSION = 3 as const
+export type DofeBrandVariant = 'yootun' | 'sensteed'
 
 export const DOFE_PLUGIN_CATALOG = [
   {
     id: 'geoflow',
     name: 'GeoFlow',
     description: 'GEO 工作流与草稿自动化',
+    variants: ['yootun'],
   },
   {
     id: 'georank',
     name: 'GEORank',
     description: 'GEO 诊断、拓词与内容生成',
+    variants: ['yootun'],
   },
   {
     id: 'tools',
     name: 'DoFe Tools',
-    description: '优惠豚调研与热点工具集',
+    description: '商业调研与热点工具集',
+    variants: ['yootun', 'sensteed'],
   },
   {
     id: 'openmontage',
     name: 'OpenMontage',
     description: '视频生成与素材编排',
+    variants: ['yootun', 'sensteed'],
   },
   {
     id: 'media',
     name: 'Media 生成',
     description: '单张图片与 5–10 秒单镜头视频直连生成（复杂视频走 OpenMontage）',
+    variants: ['yootun', 'sensteed'],
   },
   {
     id: 'opencli',
     name: 'OpenCLI Research',
     description: '受控的互联网只读调研',
+    variants: ['yootun', 'sensteed'],
   },
   {
     id: 'knowledge',
     name: '企业知识与 Memory',
     description: '知识库、Memory 与知识图谱治理',
+    variants: ['yootun', 'sensteed'],
   },
 ] as const
 
 export type DofePluginId = typeof DOFE_PLUGIN_CATALOG[number]['id']
+
+export function dofePluginsForBrand(variant: DofeBrandVariant): typeof DOFE_PLUGIN_CATALOG[number][] {
+  return DOFE_PLUGIN_CATALOG.filter(plugin => (plugin.variants as readonly DofeBrandVariant[]).includes(variant))
+}
+
+/** Remove stale or cross-brand capability ids before they reach settings or MCP. */
+export function normalizeDofePluginIds(ids: readonly string[] | undefined, variant: DofeBrandVariant): DofePluginId[] {
+  const available = new Set<string>(dofePluginsForBrand(variant).map(plugin => plugin.id))
+  return [...new Set((ids ?? []).filter((id): id is DofePluginId => available.has(id)))]
+}
 
 export interface DofeAccessSettings {
   /** The user has completed the mandatory DoFe access gate. */

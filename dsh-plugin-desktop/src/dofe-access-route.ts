@@ -1,10 +1,12 @@
 /** Same-origin Host route for validating model_api_key without browser CORS. */
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { DOFE_MODEL_CATALOG_URL, parseDofeModelCatalog } from './dofe-models.ts'
+import { BRAND_TENANT } from './generated-product-identity.ts'
 
 export const DOFE_ACCESS_VALIDATE_PATH = '/api/desktop/dofe/validate'
 export const DOFE_ACCESS_MODELS_PATH = '/api/desktop/dofe/models'
 const MAX_BODY_BYTES = 16 * 1024
+const MODEL_GATEWAY_HEADERS = Object.freeze({ 'X-Company-Code': BRAND_TENANT })
 
 function finish(res: ServerResponse, status: number, value: object): void {
   res.statusCode = status
@@ -56,7 +58,7 @@ export async function handleDofeAccessValidationRequest(
   if (key === undefined) return finish(res, 400, { valid: false })
   try {
     const response = await fetcher(DOFE_MODEL_CATALOG_URL, {
-      headers: { Authorization: `Bearer ${key}` },
+      headers: { ...MODEL_GATEWAY_HEADERS, Authorization: `Bearer ${key}` },
       redirect: 'error',
       signal: AbortSignal.timeout(10_000),
     })
@@ -79,7 +81,7 @@ export async function handleDofeModelCatalogRequest(
   if (key === undefined) return finish(res, 400, { models: [] })
   try {
     const response = await fetcher(DOFE_MODEL_CATALOG_URL, {
-      headers: { Authorization: `Bearer ${key}`, Accept: 'application/json' },
+      headers: { ...MODEL_GATEWAY_HEADERS, Authorization: `Bearer ${key}`, Accept: 'application/json' },
       redirect: 'error',
       signal: AbortSignal.timeout(10_000),
     })

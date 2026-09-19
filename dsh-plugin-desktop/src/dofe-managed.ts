@@ -11,7 +11,9 @@ import {
   DOFE_ACCESS_VALIDATION_VERSION,
   type DofeAccessSettings,
   type DofePluginId,
+  normalizeDofePluginIds,
 } from './dofe-plugins.ts'
+import { BRAND_TENANT, BRAND_VARIANT } from './generated-product-identity.ts'
 import { KNOWLEDGE_ROUTING_PROMPT } from './knowledge-routing.ts'
 
 export const name = 'dofe-managed'
@@ -94,14 +96,14 @@ export async function apply(ctx: Context): Promise<void> {
 
     const created: { dispose(): void | Promise<void> }[] = []
     try {
-      const enabled = new Set(accessSettings.enabledPlugins)
+      const enabled = new Set(normalizeDofePluginIds(accessSettings.enabledPlugins, BRAND_VARIANT))
       for (const route of ROUTES) {
         if (route.plugin !== undefined && !enabled.has(route.plugin)) continue
         const config: McpConfig = {
           transport: 'streamable-http',
           serverName: route.serverName,
           url: `${DOFE_MCP_BASE_URL}/${route.path}`,
-          headers: { Authorization: `Bearer ${next}` },
+          headers: { Authorization: `Bearer ${next}`, 'X-Company-Code': BRAND_TENANT },
           toolCallTimeoutMs: route.timeoutMs,
           failOnStartupError: false,
           reconnect: { enabled: true, initialDelayMs: 500, maxDelayMs: 30_000, maxAttempts: 10 },

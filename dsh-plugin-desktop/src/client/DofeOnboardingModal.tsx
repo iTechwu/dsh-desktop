@@ -57,11 +57,15 @@ export function DofeOnboardingModal({
   eyebrow,
   title,
   description,
+  brandLogo,
+  brandLogoAlt,
   children,
 }: {
   eyebrow: string
   title: string
   description: string
+  brandLogo?: string
+  brandLogoAlt?: string
   children: ReactNode
 }): ReactNode {
   const titleRef = useRef<HTMLHeadingElement>(null)
@@ -74,7 +78,7 @@ export function DofeOnboardingModal({
   return <div className="dshDofeGate">
     <section ref={modalRef} className="dshDofeModal" role="dialog" aria-modal="true" aria-labelledby="dsh-dofe-modal-title" aria-describedby="dsh-dofe-modal-description">
       <header className="dshDofeModalHeader">
-        <span className="dshDofeModalMark" aria-hidden="true"><KeyRound size={20} strokeWidth={2} /></span>
+        <span className="dshDofeModalMark">{brandLogo === undefined ? <KeyRound size={20} strokeWidth={2} aria-hidden="true" /> : <img src={brandLogo} alt={brandLogoAlt ?? ''} draggable={false} />}</span>
         <div>
           <p className="dshDofeModalEyebrow">{eyebrow}</p>
           <h2 id="dsh-dofe-modal-title" ref={titleRef} tabIndex={-1}>{title}</h2>
