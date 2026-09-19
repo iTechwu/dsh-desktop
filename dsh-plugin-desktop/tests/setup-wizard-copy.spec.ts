@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import {
   desktopSetupWizardRequiresLanAcknowledgement,
@@ -42,6 +43,10 @@ describe('Desktop Setup Wizard copy and contract', () => {
     const english = desktopSetupWizardCopy('en')
     const chinese = desktopSetupWizardCopy('zh')
     const currentName: string = BRAND_DISPLAY_NAME.locale
+    const otherBrandNames = ['../../brand/brand.config.json', '../../brand/sensteed/brand.config.json']
+      .map(path => JSON.parse(readFileSync(new URL(path, import.meta.url), 'utf8')).displayName.locale as string)
+      .filter(name => name !== currentName)
+    expect(otherBrandNames.length).toBeGreaterThan(0)
     expect(english.title).toContain(BRAND_DISPLAY_NAME.locale)
     expect(english.welcomeTitle).toContain(BRAND_DISPLAY_NAME.locale)
     expect(english.successBody).toContain(BRAND_DISPLAY_NAME.locale)
@@ -49,9 +54,9 @@ describe('Desktop Setup Wizard copy and contract', () => {
     expect(chinese.welcomeTitle).toContain(BRAND_DISPLAY_NAME.locale)
     expect(chinese.successBody).toContain(BRAND_DISPLAY_NAME.locale)
     for (const copy of [english, chinese]) {
-      expect(Object.values(copy).join('\n')).not.toContain(
-        currentName === 'Yootun-Agent' ? '山子Agent' : 'Yootun-Agent',
-      )
+      for (const name of otherBrandNames) {
+        expect(Object.values(copy).join('\n')).not.toContain(name)
+      }
     }
   })
 
