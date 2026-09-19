@@ -7,6 +7,7 @@ import {
   type DesktopSetupWizardInput,
 } from '../src/setup-wizard-contract.ts'
 import { desktopSetupWizardCopy } from '../src/setup-wizard-copy.ts'
+import { BRAND_DISPLAY_NAME } from '../src/generated-product-identity.ts'
 
 const input: DesktopSetupWizardInput = {
   appVersion: '2.0.6-beta.1',
@@ -35,6 +36,23 @@ describe('Desktop Setup Wizard copy and contract', () => {
     expect(Object.keys(english)).toEqual(Object.keys(chinese))
     expect(Object.values(english).every(value => value.length > 0)).toBe(true)
     expect(Object.values(chinese).every(value => value.length > 0)).toBe(true)
+  })
+
+  it('uses the generated brand name throughout the first-run experience', () => {
+    const english = desktopSetupWizardCopy('en')
+    const chinese = desktopSetupWizardCopy('zh')
+    const currentName: string = BRAND_DISPLAY_NAME.locale
+    expect(english.title).toContain(BRAND_DISPLAY_NAME.locale)
+    expect(english.welcomeTitle).toContain(BRAND_DISPLAY_NAME.locale)
+    expect(english.successBody).toContain(BRAND_DISPLAY_NAME.locale)
+    expect(chinese.title).toContain(BRAND_DISPLAY_NAME.locale)
+    expect(chinese.welcomeTitle).toContain(BRAND_DISPLAY_NAME.locale)
+    expect(chinese.successBody).toContain(BRAND_DISPLAY_NAME.locale)
+    for (const copy of [english, chinese]) {
+      expect(Object.values(copy).join('\n')).not.toContain(
+        currentName === 'Yootun-Agent' ? '山子Agent' : 'Yootun-Agent',
+      )
+    }
   })
 
   it('explains LAN access-link permissions, HTTPS, and certificate trust in both locales', () => {

@@ -8,6 +8,7 @@ import {
 } from './auxiliary-window-options.ts'
 import { revealApplication } from './electron-reveal.ts'
 import { createDesktopLocalWindow } from './local-window-policy.ts'
+import { BRAND_DISPLAY_NAME } from './generated-product-identity.ts'
 
 const DIALOG_SCHEME = 'sensteed-agent-dialog:'
 const DIALOG_DOCUMENT = fileURLToPath(new URL('./native-ui/desktop-dialog.html', import.meta.url))
@@ -223,7 +224,7 @@ export async function showDesktopMessageBox(
 ): Promise<MessageBoxReturnValue> {
   const result = await showDesktopDialog({
     type: options.type ?? 'none',
-    title: options.title ?? 'Yootun-Agent',
+    title: options.title ?? BRAND_DISPLAY_NAME.locale,
     message: options.message,
     ...(options.detail === undefined ? {} : { detail: options.detail }),
     buttons: options.buttons ?? ['OK'],

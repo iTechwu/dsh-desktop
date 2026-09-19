@@ -1,6 +1,9 @@
 /** Bilingual copy for the pre-Host native Setup Wizard. */
 
 import type { DesktopLocale } from './runtime.ts'
+import { BRAND_DISPLAY_NAME } from './generated-product-identity.ts'
+
+const PRODUCT_NAME = BRAND_DISPLAY_NAME.locale
 
 export interface DesktopSetupWizardCopy {
   readonly aaTitle: string
@@ -97,14 +100,14 @@ const COPY: Record<DesktopLocale, DesktopSetupWizardCopy> = {
     aaNextDesktop: 'If the Agents-Anywhere desktop app is installed on this computer, manage the connection directly in that app.',
 
     beta: 'Beta',
-    title: 'Set up Yootun-Agent',
+    title: `Set up ${PRODUCT_NAME}`,
     profile: 'Profile',
-    welcomeTitle: 'Welcome to Yootun-Agent',
+    welcomeTitle: `Welcome to ${PRODUCT_NAME}`,
     welcomeBody: 'This wizard configures the Desktop experience for the Profile shown below.',
     firstProfileSetup: 'This is the first-time Desktop setup for this Profile.',
     startSetup: 'Start setup',
     presentationTitle: 'Choose a window mode',
-    presentationBody: 'Choose how Yootun-Agent presents the official client.',
+    presentationBody: `Choose how ${PRODUCT_NAME} presents the official client.`,
     compatibilityMode: 'Compatibility mode',
     compatibilityModeBody: 'Use the official client layout with an independent Desktop control bar above it. This mode offers the best compatibility.',
     extendedMode: 'Extended mode',
@@ -143,7 +146,7 @@ const COPY: Record<DesktopLocale, DesktopSetupWizardCopy> = {
     marketDisabled: 'Turn off plugin market',
     marketDisabledBody: 'Do not load a plugin market interface.',
     communityMarket: 'dsh-community-market',
-    communityMarketBody: 'The open market built into Yootun-Agent, including custom data sources.',
+    communityMarketBody: `The open market built into ${PRODUCT_NAME}, including custom data sources.`,
     dshMarket: 'dsh-market',
     dshMarketBody: 'The popular community market powered by awesome-dsh-plugin data.',
     notificationsTitle: 'Set up Desktop notifications',
@@ -161,10 +164,10 @@ const COPY: Record<DesktopLocale, DesktopSetupWizardCopy> = {
     cancelSkip: 'Continue setup',
     confirmSkip: 'Skip setup',
     successTitle: 'Setup complete',
-    successBody: 'Yootun-Agent is ready for this Profile.',
-    startUsing: 'Start using Yootun-Agent',
+    successBody: `${PRODUCT_NAME} is ready for this Profile.`,
+    startUsing: `Start using ${PRODUCT_NAME}`,
     startingTitle: 'Preparing your workspace',
-    startingBody: 'Applying your settings and starting the selected plugins. This window will close when Yootun-Agent is ready.',
+    startingBody: `Applying your settings and starting the selected plugins. This window will close when ${PRODUCT_NAME} is ready.`,
     invalidState: 'Setup information could not be loaded. Close this window and try again.',
   },
   zh: {
@@ -179,14 +182,14 @@ const COPY: Record<DesktopLocale, DesktopSetupWizardCopy> = {
     aaNextDesktop: '如果本机已安装 Agents-Anywhere 桌面端，直接在桌面端管理连接即可。',
 
     beta: 'Beta',
-    title: '设置 Yootun-Agent',
+    title: `设置 ${PRODUCT_NAME}`,
     profile: 'Profile',
-    welcomeTitle: '欢迎设置 Yootun-Agent',
+    welcomeTitle: `欢迎设置 ${PRODUCT_NAME}`,
     welcomeBody: '此向导将为下方 Profile 配置桌面体验。',
     firstProfileSetup: '这是此 Profile 的首次桌面设置。',
     startSetup: '开始设置',
     presentationTitle: '选择窗口模式',
-    presentationBody: '选择 Yootun-Agent 如何呈现官方客户端。',
+    presentationBody: `选择 ${PRODUCT_NAME} 如何呈现官方客户端。`,
     compatibilityMode: '兼容模式',
     compatibilityModeBody: '使用官方客户端布局，顶部提供独立的桌面控制栏。兼容性最好。',
     extendedMode: '扩展模式',
@@ -225,7 +228,7 @@ const COPY: Record<DesktopLocale, DesktopSetupWizardCopy> = {
     marketDisabled: '关闭插件市场',
     marketDisabledBody: '不加载插件市场界面。',
     communityMarket: 'dsh-community-market',
-    communityMarketBody: 'Yootun-Agent 内置的开放市场，并支持自定义数据源。',
+    communityMarketBody: `${PRODUCT_NAME} 内置的开放市场，并支持自定义数据源。`,
     dshMarket: 'dsh-market',
     dshMarketBody: '使用 awesome-dsh-plugin 数据的热门社区市场。',
     notificationsTitle: '设置桌面通知',
@@ -243,10 +246,10 @@ const COPY: Record<DesktopLocale, DesktopSetupWizardCopy> = {
     cancelSkip: '继续设置',
     confirmSkip: '确认跳过',
     successTitle: '设置完成',
-    successBody: '这个 Profile 的 Yootun-Agent 已准备就绪。',
+    successBody: `这个 Profile 的 ${PRODUCT_NAME} 已准备就绪。`,
     startUsing: '开始使用',
     startingTitle: '正在准备工作区',
-    startingBody: '正在应用设置并启动所选插件。Yootun-Agent 准备就绪后，此窗口会自动关闭。',
+    startingBody: `正在应用设置并启动所选插件。${PRODUCT_NAME} 准备就绪后，此窗口会自动关闭。`,
     invalidState: '无法加载设置信息。请关闭此窗口后重试。',
   },
 }
