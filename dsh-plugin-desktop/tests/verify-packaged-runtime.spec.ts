@@ -40,6 +40,7 @@ import {
   smokePackagedElectronRuntime,
   smokePackagedFsExtRuntime,
   summarizeUnpackedRuntime,
+  verifyPackagedAgentsAnywhere,
   verifyPackagedRuntime,
   verifyPackagedProfileModuleFallback,
   verifySelectiveUnpackedRuntime,
@@ -267,7 +268,7 @@ describe('packaged desktop runtime verification', () => {
     expect(listDesktop).toHaveBeenCalledWith(join('/project', 'lib'))
   })
 
-  it('runs static verification, inventory reporting, and native ABI smoke during afterPack', async () => {
+  it('runs static verification, AA verification, inventory reporting, and native ABI smoke during afterPack', async () => {
     const runtimeContext = context('/build', 'win32')
     const calls: string[] = []
     const summary: UnpackedRuntimeSummary = { files: 4, bytes: 1024, groups: [] }
@@ -282,10 +283,11 @@ describe('packaged desktop runtime verification', () => {
         expect(received).toBe(summary)
         calls.push('report')
       },
+      () => calls.push('aa'),
       () => calls.push('native'),
     )
 
-    expect(calls).toEqual(['static', 'report', 'native'])
+    expect(calls).toEqual(['static', 'aa', 'report', 'native'])
   })
 
   it('hydrates omitted macOS native packages before verifying the package', async () => {
@@ -300,11 +302,49 @@ describe('packaged desktop runtime verification', () => {
         return summary
       },
       () => calls.push('report'),
+      () => calls.push('aa'),
       () => calls.push('native'),
       () => calls.push('hydrate'),
     )
 
-    expect(calls).toEqual(['hydrate', 'static', 'report', 'native'])
+    expect(calls).toEqual(['hydrate', 'static', 'aa', 'report', 'native'])
+  })
+
+  it.skipIf(process.platform === 'win32')('rejects a 0644 packaged uv before signing', () => {
+    const root = mkdtempSync(join(tmpdir(), 'dsh-packaged-uv-'))
+    try {
+      const base = context(root, 'darwin', 4)
+      const target: PackagedRuntimeContext = {
+        ...base, packager: { ...base.packager, platformSpecificBuildOptions: { asar: false } },
+      }
+      const files = ['arm64', 'x64'].map(arch => join(
+        resolvePackagedApplicationRoot(target), 'node_modules', '@dataiku', `uv-darwin-${arch}`, 'bin', 'uv',
+      ))
+      for (const path of files) {
+        mkdirSync(join(path, '..'), { recursive: true })
+        writeFileSync(path, 'uv fixture')
+        chmodSync(path, 0o644)
+      }
+      const read = (path: string): Buffer => Buffer.from(path.endsWith('package.json') ? '{"version":"1.0.0"}' : 'same AA')
+      expect(() => verifyPackagedAgentsAnywhere(target, read, read)).toThrow()
+      for (const path of files) chmodSync(path, 0o755)
+      expect(() => verifyPackagedAgentsAnywhere(target, read, read)).not.toThrow()
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('rejects a stale AA version or entry copied into the installation payload', () => {
+    const installed = (path: string): Buffer => path.endsWith('package.json')
+      ? Buffer.from(JSON.stringify({ version: '0.1.0-dev.desktop.c123' }))
+      : Buffer.from('prepared AA entry')
+    expect(() => verifyPackagedAgentsAnywhere(context('/build', 'win32'), installed, installed)).not.toThrow()
+    expect(() => verifyPackagedAgentsAnywhere(context('/build', 'win32'), installed, path =>
+      path.endsWith('package.json') ? Buffer.from('{"version":"0.1.0-old"}') : installed(path),
+    )).toThrow('Packaged AA version mismatch')
+    expect(() => verifyPackagedAgentsAnywhere(context('/build', 'win32'), installed, path =>
+      path.endsWith('lib/index.js') ? Buffer.from('stale AA entry') : installed(path),
+    )).toThrow('Packaged AA entry differs')
   })
 
   it('rejects unsupported macOS package architectures before verification', () => {

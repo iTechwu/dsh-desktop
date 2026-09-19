@@ -16,7 +16,7 @@ import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { dirname, join, parse } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { getRawHeader } from '@electron/asar'
+import { extractFile, getRawHeader } from '@electron/asar'
 import {
   disablePackagedMacSshCryptoRuntime,
   FORBIDDEN_MACOS_UNIVERSAL_ENTRIES,
@@ -111,6 +111,7 @@ export const ALLOWED_SMART_UNPACK_PACKAGE_ROOTS = [
 
 /** Platform package families selected by native dependencies at package time. */
 export const ALLOWED_SMART_UNPACK_PACKAGE_PREFIXES = [
+  'node_modules/@dataiku/uv-',
   'node_modules/@deepseek-ai/libreoffice-kit-',
   'node_modules/@deepseek-ai/node-addon-system-',
   'node_modules/@img/sharp-',
@@ -1038,6 +1039,7 @@ export async function afterPack(
   context: PackagedRuntimeContext,
   verify: typeof verifyPackagedRuntime = verifyPackagedRuntime,
   report: (summary: UnpackedRuntimeSummary) => void = reportUnpackedRuntime,
+  verifyAa: typeof verifyPackagedAgentsAnywhere = verifyPackagedAgentsAnywhere,
   smokeNative: PackagedElectronSmoke = smokePackagedFsExtRuntime,
   hydrateMac: (context: PackagedRuntimeContext) => void = hydratePackagedMacRuntimeForContext,
 ): Promise<void> {

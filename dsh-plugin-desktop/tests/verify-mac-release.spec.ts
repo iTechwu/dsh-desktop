@@ -54,16 +54,16 @@ describe('macOS release artifact verification', () => {
         command: 'lipo',
           args: [join(appPath, 'Contents', 'MacOS', productName), '-verify_arch', 'arm64'],
       },
-      ...MACOS_UNIVERSAL_PACKAGED_ENTRIES.map(entry => ({
+      ...MACOS_UNIVERSAL_PACKAGED_ENTRIES.flatMap(entry => [{
         command: 'lipo',
         args: [
           join(appPath, 'Contents', 'Resources', 'app.asar.unpacked', entry.path),
           '-verify_arch', entry.arch,
         ],
       }, ...(entry.path.endsWith('/bin/uv') ? [
-        { command: '/bin/test', args: ['-x', join(appPath, 'Contents', 'Resources', 'app', entry.path)] },
+        { command: '/bin/test', args: ['-x', join(appPath, 'Contents', 'Resources', 'app.asar.unpacked', entry.path)] },
         ...(entry.arch === (process.arch === 'x64' ? 'x86_64' : process.arch)
-          ? [{ command: join(appPath, 'Contents', 'Resources', 'app', entry.path), args: ['--version'] }]
+          ? [{ command: join(appPath, 'Contents', 'Resources', 'app.asar.unpacked', entry.path), args: ['--version'] }]
           : []),
       ] : [])]),
       {
