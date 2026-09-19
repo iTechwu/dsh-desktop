@@ -282,38 +282,27 @@ function AccessForm({ credentials, settingsApi, settingsScope, t, onboarding, on
           ...(model.contextWindow === undefined ? {} : { contextWindow: model.contextWindow }),
           ...(model.maxTokens === undefined ? {} : { maxTokens: model.maxTokens }),
           inputModalities: model.inputModalities === undefined ? ['text'] : [...model.inputModalities],
-        }))
+      }))
       const piAi = descriptor.find(item => item.ns === 'llm-pi-ai')
       if (piAi === undefined) throw new Error('llm-pi-ai unavailable')
-      if (protocol === 'messages' || protocol === 'responses') {
-        const route = protocol === 'messages' ? 'dofe-messages' : 'dofe-responses'
-        const staleRoute = protocol === 'messages' ? 'dofe-responses' : 'dofe-messages'
-        const result = await settingsApi.mutate('llm-pi-ai', [
-          { op: 'set', path: ['providers', route], value: {
-            displayName: protocol === 'messages' ? 'DoFe Anthropic Messages' : 'DoFe OpenAI Responses',
-            apiKeyEnv: DOFE_ACCESS_KEY,
-            api: protocol === 'messages' ? 'anthropic-messages' : 'openai-responses',
-            baseURL: protocol === 'messages' ? 'https://ixicai.cn/anthropic' : 'https://ixicai.cn/api/v1',
-            headers: { 'X-Company-Code': BRAND_TENANT },
-            models: modelConfig,
-          } },
-          { op: 'unset', path: ['providers', staleRoute] },
-        ], piAi.revision)
-        if (!result.ok) throw new Error(result.error.message)
-      } else {
-        const piResult = await settingsApi.mutate('llm-pi-ai', [
-          { op: 'unset', path: ['providers', 'dofe-messages'] },
-          { op: 'unset', path: ['providers', 'dofe-responses'] },
-        ], piAi.revision)
-        if (!piResult.ok) throw new Error(piResult.error.message)
-        const deepseek = descriptor.find(item => item.ns === 'llm-deepseek')
-        if (deepseek === undefined) throw new Error('llm-deepseek unavailable')
-        const result = await settingsApi.mutate('llm-deepseek', [
-          { op: 'set', path: ['models'], value: modelConfig },
-          { op: 'set', path: ['protocol'], value: protocol },
-        ], deepseek.revision)
-        if (!result.ok) throw new Error(result.error.message)
-      }
+      const route = protocol === 'messages' ? 'dofe-messages' : protocol === 'responses' ? 'dofe-responses' : 'dofe-chat'
+      const api = protocol === 'messages' ? 'anthropic-messages' : protocol === 'responses' ? 'openai-responses' : 'openai-completions'
+      const displayName = protocol === 'messages' ? 'DoFe Anthropic Messages' : protocol === 'responses' ? 'DoFe OpenAI Responses' : 'DoFe OpenAI Chat'
+      const baseURL = protocol === 'messages' ? 'https://ixicai.cn/anthropic' : 'https://ixicai.cn/api/v1'
+      const result = await settingsApi.mutate('llm-pi-ai', [
+        { op: 'unset', path: ['providers', 'dofe-chat'] },
+        { op: 'unset', path: ['providers', 'dofe-messages'] },
+        { op: 'unset', path: ['providers', 'dofe-responses'] },
+        { op: 'set', path: ['providers', route], value: {
+          displayName,
+          apiKeyEnv: DOFE_ACCESS_KEY,
+          api,
+          baseURL,
+          headers: { 'X-Company-Code': BRAND_TENANT },
+          models: modelConfig,
+        } },
+      ], piAi.revision)
+      if (!result.ok) throw new Error(result.error.message)
       if (key.length > 0) {
         const result = await credentials.set(DOFE_ACCESS_KEY, key)
         if (!result.ok) throw new Error(result.error.message)
@@ -321,7 +310,7 @@ function AccessForm({ credentials, settingsApi, settingsScope, t, onboarding, on
       const defaultModel = descriptor.find(item => item.ns === 'agent-default-model')
       if (defaultModel !== undefined) {
         const result = await settingsApi.mutate('agent-default-model', [
-          { op: 'set', path: ['provider'], value: protocol === 'responses' ? 'dofe-responses' : protocol === 'messages' ? 'dofe-messages' : 'deepseek-official' },
+          { op: 'set', path: ['provider'], value: protocol === 'responses' ? 'dofe-responses' : protocol === 'messages' ? 'dofe-messages' : 'dofe-chat' },
           { op: 'set', path: ['model'], value: selectedModel },
         ], defaultModel.revision)
         if (!result.ok) throw new Error(result.error.message)

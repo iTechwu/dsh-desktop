@@ -3,7 +3,10 @@
 export const DOFE_ACCESS_SETTINGS_NAMESPACE = 'dofe-access' as const
 // Tenant ownership is now part of authorization; previously accepted keys
 // must re-enter the gate so they can be checked against the current brand.
-export const DOFE_ACCESS_VALIDATION_VERSION = 4 as const
+// Existing installations must re-enter their key whenever the authorization
+// contract changes; this prevents a credential accepted by an older build from
+// silently keeping the application unlocked after a tenant/protocol upgrade.
+export const DOFE_ACCESS_VALIDATION_VERSION = 5 as const
 export type DofeBrandVariant = 'yootun' | 'sensteed'
 
 export const DOFE_PLUGIN_CATALOG = [

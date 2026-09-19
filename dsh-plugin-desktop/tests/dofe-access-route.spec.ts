@@ -52,7 +52,7 @@ describe('DoFe model_api_key validation route', () => {
     expect(fetcher).toHaveBeenCalledWith(
       DOFE_AUTH_CONTEXT_URL,
       expect.objectContaining({
-        headers: expect.objectContaining({ Authorization: 'Bearer entered-secret' }),
+        headers: expect.objectContaining({ Authorization: 'Bearer entered-secret', 'X-Company-Code': 'yootun' }),
         redirect: 'error',
       }),
     )

@@ -58,18 +58,22 @@ async function verifyDofeTenant(
 ): Promise<{ ok: true } | { ok: false; reason: DofeAccessFailureReason }> {
   try {
     const response = await fetcher(DOFE_AUTH_CONTEXT_URL, {
-      headers: { Authorization: `Bearer ${key}`, Accept: 'application/json' },
+      headers: { ...MODEL_GATEWAY_HEADERS, Authorization: `Bearer ${key}`, Accept: 'application/json' },
       redirect: 'error',
       signal: AbortSignal.timeout(10_000),
     })
     if (!response.ok) return { ok: false, reason: 'invalid_key' }
     const value = await response.json() as unknown
-    const tenantSlug = typeof value === 'object' && value !== null
-      ? (value as { tenantSlug?: unknown }).tenantSlug
+    const record = typeof value === 'object' && value !== null && !Array.isArray(value)
+      ? value as Record<string, unknown>
       : undefined
-    const tenantId = typeof value === 'object' && value !== null
-      ? (value as { tenantId?: unknown }).tenantId
+    const nestedTenant = record?.tenant && typeof record.tenant === 'object' && !Array.isArray(record.tenant)
+      ? record.tenant as Record<string, unknown>
       : undefined
+    const tenantSlug = [record?.tenantSlug, record?.tenant_slug, record?.slug, nestedTenant?.tenantSlug, nestedTenant?.slug]
+      .find(candidate => typeof candidate === 'string' && candidate.trim().length > 0)
+    const tenantId = [record?.tenantId, record?.tenant_id, record?.id, nestedTenant?.tenantId, nestedTenant?.tenant_id, nestedTenant?.id]
+      .find(candidate => typeof candidate === 'string' && candidate.trim().length > 0)
     if (typeof tenantId === 'string' && tenantId.trim().length > 0) {
       return tenantId.trim().toLowerCase() === BRAND_TENANT_ID.toLowerCase()
         ? { ok: true }
