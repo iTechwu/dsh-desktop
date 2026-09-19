@@ -89,7 +89,10 @@ export function apply(ctx: ClientContext): void {
   const environment = parseDesktopClientEnvironment(window.location.search)
   if (!environment) return
   applyDesktopBrand(ctx)
-  applyDofeAccess(ctx)
+  // Loader-focused tests and compatibility probes may provide only the client
+  // presentation services. The real client always supplies `remote` via the
+  // injection contract, so defer the access surface until that service exists.
+  if (ctx.remote !== undefined) applyDofeAccess(ctx)
   ctx.effect(
     () => provideDesktopWindow(ctx, desktopWindowService(environment)),
     'dsh-plugin-desktop: native window geometry service',

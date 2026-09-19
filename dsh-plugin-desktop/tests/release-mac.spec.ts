@@ -64,12 +64,18 @@ describe('macOS release command boundary', () => {
     expect(identityEnvironments).toEqual([{ PATH: '/usr/bin', SAFE_BUILD_VALUE: 'kept' }])
     expect(calls).toHaveLength(4)
     expect(calls[0]).toEqual({
+      command: process.execPath,
+      args: ['scripts/prepare-agents-anywhere-release.mjs', '--verify-release'],
+      cwd: resolve('/repo/dsh-plugin-desktop', '..'),
+      env: { PATH: '/usr/bin', SAFE_BUILD_VALUE: 'kept' },
+    })
+    expect(calls[1]).toEqual({
       command: 'pnpm',
       args: ['run', 'check'],
       cwd: resolve('/repo/dsh-plugin-desktop', '..'),
       env: { PATH: '/usr/bin', SAFE_BUILD_VALUE: 'kept' },
     })
-    expect(calls[1]).toEqual({
+    expect(calls[2]).toEqual({
       command: 'pnpm',
       args: [
         'exec', 'electron-builder', '--mac', 'dmg', '--universal',
