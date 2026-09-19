@@ -1,6 +1,7 @@
 import { readdir, readFile, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import { auditPluginRequestCancellation } from './plugin-request-policy.mjs'
+import { readCiPackageManifests } from './plugin-ux-audit-packages.mjs'
 
 const ciRoot = new URL('../.ci/', import.meta.url)
 const ciEntries = (await readdir(ciRoot, { withFileTypes: true }))
@@ -179,8 +180,7 @@ const localToolNames = new Set(localToolSources.flatMap(source => [
   ...declaredToolNames(source),
 ]))
 const auditedClientPlugins = new Set(['dsh-plugin-console', ...clientPlugins])
-for (const name of ciEntries) {
-  const manifest = JSON.parse(await readFile(new URL(`../.ci/${name}/package.json`, import.meta.url), 'utf8'))
+for (const { name, manifest } of await readCiPackageManifests(ciRoot, ciEntries)) {
   if (manifest.dsh?.client !== undefined && !auditedClientPlugins.has(name)) {
     failures.push(`${name}: declared client package is missing from the unified UX audit`)
   }
