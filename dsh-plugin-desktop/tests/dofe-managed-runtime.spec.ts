@@ -39,6 +39,7 @@ describe('dofe-managed MCP runtime', () => {
       validationVersion: DOFE_ACCESS_VALIDATION_VERSION,
       enabledPlugins: ['georank'],
       modelId: 'deepseek-chat',
+      protocol: 'chat-completions',
     })
 
     await apply(harness.ctx as never)
@@ -61,6 +62,7 @@ describe('dofe-managed MCP runtime', () => {
       validationVersion: DOFE_ACCESS_VALIDATION_VERSION,
       enabledPlugins: DEFAULT_DOFE_PLUGIN_IDS,
       modelId: 'deepseek-chat',
+      protocol: 'chat-completions',
     }, 4)
 
     await apply(harness.ctx as never)

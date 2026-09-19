@@ -1168,9 +1168,9 @@ export function prepareDesktopProfile(
         apiKeyEnv: DOFE_MODEL_API_KEY_ENV,
         baseURL: DOFE_MODEL_BASE_URL,
         headers: { 'X-Company-Code': BRAND_TENANT },
-        // The DoFe gateway only exposes the OpenAI-compatible surface
-        // ({baseURL}/chat/completions); the 0.1.6 llm-deepseek default
-        // Anthropic Messages would hit {baseURL}/v1/messages and 404.
+        // Chat Completions and Anthropic Messages are served by the direct
+        // DeepSeek adapter. OpenAI Responses is configured as a dedicated
+        // llm-pi-ai route because the direct adapter does not implement it.
         protocol: 'chat-completions',
         connectionPolicy: 'composition',
         models: [{
@@ -1182,7 +1182,7 @@ export function prepareDesktopProfile(
         }],
       },
     },
-    { id: 'llm-pi-ai', disabled: true },
+    { id: 'llm-pi-ai', disabled: false, config: { providers: {} } },
     {
       id: 'agent-default-model',
       config: { provider: DOFE_MODEL_PROVIDER, model: 'deepseek-v4-flash' },

@@ -127,6 +127,30 @@ describe('DoFe model_api_key validation route', () => {
     expect(DOFE_ACCESS_MODELS_PATH).toBe('/api/desktop/dofe/models')
   })
 
+  it('uses the selected protocol for validation and model discovery', async () => {
+    const fetcher = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ tenantSlug: 'yootun' }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ data: [{ id: 'claude', protocol: 'anthropic-messages' }] }), { status: 200 }))
+    const res = response()
+
+    await handleDofeAccessValidationRequest(request({ key: 'entered-secret', protocol: 'messages' }), res, ORIGIN, fetcher)
+    expect(fetcher).toHaveBeenLastCalledWith(
+      'https://ixicai.cn/api/v1/models?protocol=anthropic',
+      expect.anything(),
+    )
+
+    const catalogRes = response()
+    const catalogFetcher = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ tenantSlug: 'yootun' }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ data: [{ id: 'o3', protocol: 'openai_responses' }] }), { status: 200 }))
+    await handleDofeModelCatalogRequest(request({ key: 'entered-secret', protocol: 'responses' }), catalogRes, ORIGIN, catalogFetcher)
+    expect(catalogFetcher).toHaveBeenLastCalledWith(
+      'https://ixicai.cn/api/v1/models?protocol=openai_response',
+      expect.anything(),
+    )
+    expect(JSON.parse(catalogRes.body)).toEqual({ models: [{ id: 'o3', name: 'o3' }] })
+  })
+
   it('rejects the model catalog for another tenant', async () => {
     const fetcher = vi.fn(async () => new Response(JSON.stringify({ tenantSlug: 'other-tenant' }), { status: 200 }))
     const res = response()

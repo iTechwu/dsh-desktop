@@ -11,7 +11,7 @@ import { BRAND_TENANT, BRAND_VARIANT } from '../generated-product-identity.ts'
 import { DOFE_ACCESS_KEY, type DofeAccessLocaleKey } from './dofe-access.ts'
 import { dofePluginsForBrand, normalizeDofePluginIds, DOFE_ACCESS_SETTINGS_NAMESPACE, DOFE_ACCESS_VALIDATION_VERSION, type DofeAccessSettings, type DofePluginId, DEFAULT_DOFE_PLUGIN_IDS } from '../dofe-plugins.ts'
 import { DOFE_ACCESS_MODELS_PATH, DOFE_ACCESS_VALIDATE_PATH } from '../dofe-access-route.ts'
-import { parseDofeModelCatalog, type DofeModel } from '../dofe-models.ts'
+import { DEFAULT_DOFE_PROTOCOL, parseDofeModelCatalog, type DofeModel, type DofeProtocol } from '../dofe-models.ts'
 
 const STYLE_ID = 'dsh-dofe-access-styles'
 const ACCESS_REQUEST_TIMEOUT_MS = 15000
@@ -88,7 +88,7 @@ function accessFailureReason(value: unknown): AccessFailureReason | undefined {
     : undefined
 }
 
-async function validateModelApiKey(key: string): Promise<ValidationResult> {
+async function validateModelApiKey(key: string, protocol: DofeProtocol): Promise<ValidationResult> {
   try {
     const response = await fetch(DOFE_ACCESS_VALIDATE_PATH, {
       method: 'POST',
@@ -96,7 +96,7 @@ async function validateModelApiKey(key: string): Promise<ValidationResult> {
       redirect: 'error',
       signal: AbortSignal.timeout(ACCESS_REQUEST_TIMEOUT_MS),
       headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-      body: JSON.stringify({ key }),
+      body: JSON.stringify({ key, protocol }),
     })
     if (!response.ok) return { valid: false }
     const value = await response.json() as unknown
@@ -141,6 +141,7 @@ export async function removeDofeAccess(settingsApi: SettingsApi, credentials: Cr
     { op: 'set', path: ['setupComplete'], value: false },
     { op: 'set', path: ['validationVersion'], value: 0 },
     { op: 'set', path: ['modelId'], value: '' },
+    { op: 'set', path: ['protocol'], value: DEFAULT_DOFE_PROTOCOL },
   ])
   const result = await credentials.unset(DOFE_ACCESS_KEY)
   if (!result.ok) throw new Error(result.error.message)
@@ -178,6 +179,7 @@ function AccessForm({ credentials, settingsApi, settingsScope, t, onboarding, on
   const [enabledPlugins, setEnabledPlugins] = useState<DofePluginId[]>(() => normalizeDofePluginIds(settings.value?.enabledPlugins ?? defaultPluginIds, BRAND_VARIANT))
   const [models, setModels] = useState<readonly DofeModel[]>([])
   const [selectedModel, setSelectedModel] = useState('')
+  const [protocol, setProtocol] = useState<DofeProtocol>(() => settings.value?.protocol ?? DEFAULT_DOFE_PROTOCOL)
   const [loadingModels, setLoadingModels] = useState(false)
   const loadingRef = useRef(false)
   const [busy, setBusy] = useState(false)
@@ -189,6 +191,9 @@ function AccessForm({ credentials, settingsApi, settingsScope, t, onboarding, on
   useEffect(() => {
     if (settings.value?.modelId !== undefined) setSelectedModel(settings.value.modelId)
   }, [settings.value?.modelId])
+  useEffect(() => {
+    if (settings.value?.protocol !== undefined) setProtocol(settings.value.protocol)
+  }, [settings.value?.protocol])
   useEffect(() => {
     let cancelled = false
     void credentials.describe([DOFE_ACCESS_KEY]).then(result => {
@@ -213,7 +218,7 @@ function AccessForm({ credentials, settingsApi, settingsScope, t, onboarding, on
         redirect: 'error',
         signal: AbortSignal.timeout(ACCESS_REQUEST_TIMEOUT_MS),
         headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-        body: JSON.stringify({ key }),
+        body: JSON.stringify({ key, protocol }),
       })
       const payload = await response.json() as unknown
       const failureReason = accessFailureReason(payload)
@@ -223,7 +228,7 @@ function AccessForm({ credentials, settingsApi, settingsScope, t, onboarding, on
       let found: DofeModel[] = []
       if (typeof payload === 'object' && payload !== null && Array.isArray((payload as { models?: unknown }).models)) {
         try {
-          found = parseDofeModelCatalog((payload as { models: unknown[] }).models)
+          found = parseDofeModelCatalog((payload as { models: unknown[] }).models, protocol)
         } catch {
           // A gateway response is external input. Keep the settings page alive
           // if a future catalog shape violates the parser's expectations.
@@ -258,7 +263,7 @@ function AccessForm({ credentials, settingsApi, settingsScope, t, onboarding, on
     setBusy(true)
     setError(undefined)
     if (key.length > 0) {
-      const validation = await validateModelApiKey(key)
+      const validation = await validateModelApiKey(key, protocol)
       if (!validation.valid) {
         busyRef.current = false
         setBusy(false)
@@ -270,9 +275,7 @@ function AccessForm({ credentials, settingsApi, settingsScope, t, onboarding, on
       const describe = await settingsApi.describe()
       if (!describe.ok) throw new Error(describe.error.message)
       const descriptor = describe.value.namespaces
-      const deepseek = descriptor.find(item => item.ns === 'llm-deepseek')
-      if (deepseek !== undefined) {
-        const modelConfig = models.map(model => ({
+      const modelConfig = models.map(model => ({
           id: model.id,
           name: model.name,
           ...(model.description === undefined ? {} : { description: model.description }),
@@ -280,7 +283,26 @@ function AccessForm({ credentials, settingsApi, settingsScope, t, onboarding, on
           ...(model.maxTokens === undefined ? {} : { maxTokens: model.maxTokens }),
           inputModalities: model.inputModalities === undefined ? ['text'] : [...model.inputModalities],
         }))
-        const result = await settingsApi.mutate('llm-deepseek', [{ op: 'set', path: ['models'], value: modelConfig }], deepseek.revision)
+      if (protocol === 'messages' || protocol === 'responses') {
+        const piAi = descriptor.find(item => item.ns === 'llm-pi-ai')
+        if (piAi === undefined) throw new Error('llm-pi-ai unavailable')
+        const route = protocol === 'messages' ? 'dofe-messages' : 'dofe-responses'
+        const result = await settingsApi.mutate('llm-pi-ai', [{ op: 'set', path: ['providers', route], value: {
+          displayName: protocol === 'messages' ? 'DoFe Anthropic Messages' : 'DoFe OpenAI Responses',
+          apiKeyEnv: DOFE_ACCESS_KEY,
+          api: protocol === 'messages' ? 'anthropic-messages' : 'openai-responses',
+          baseURL: protocol === 'messages' ? 'https://ixicai.cn/anthropic' : 'https://ixicai.cn/api/v1',
+          headers: { 'X-Company-Code': BRAND_TENANT },
+          models: modelConfig,
+        } }], piAi.revision)
+        if (!result.ok) throw new Error(result.error.message)
+      } else {
+        const deepseek = descriptor.find(item => item.ns === 'llm-deepseek')
+        if (deepseek === undefined) throw new Error('llm-deepseek unavailable')
+        const result = await settingsApi.mutate('llm-deepseek', [
+          { op: 'set', path: ['models'], value: modelConfig },
+          { op: 'set', path: ['protocol'], value: protocol },
+        ], deepseek.revision)
         if (!result.ok) throw new Error(result.error.message)
       }
       if (key.length > 0) {
@@ -290,7 +312,7 @@ function AccessForm({ credentials, settingsApi, settingsScope, t, onboarding, on
       const defaultModel = descriptor.find(item => item.ns === 'agent-default-model')
       if (defaultModel !== undefined) {
         const result = await settingsApi.mutate('agent-default-model', [
-          { op: 'set', path: ['provider'], value: 'deepseek-official' },
+          { op: 'set', path: ['provider'], value: protocol === 'responses' ? 'dofe-responses' : protocol === 'messages' ? 'dofe-messages' : 'deepseek-official' },
           { op: 'set', path: ['model'], value: selectedModel },
         ], defaultModel.revision)
         if (!result.ok) throw new Error(result.error.message)
@@ -301,6 +323,7 @@ function AccessForm({ credentials, settingsApi, settingsScope, t, onboarding, on
         { op: 'set', path: ['validationVersion'], value: DOFE_ACCESS_VALIDATION_VERSION },
         { op: 'set', path: ['enabledPlugins'], value: normalizeDofePluginIds(enabledPlugins, BRAND_VARIANT) },
         { op: 'set', path: ['modelId'], value: selectedModel },
+        { op: 'set', path: ['protocol'], value: protocol },
       ])
     } catch (cause) {
       busyRef.current = false
@@ -341,6 +364,7 @@ function AccessForm({ credentials, settingsApi, settingsScope, t, onboarding, on
       <div className="dshDofeAccessInputWrap"><Input className="dshDofeAccessInput" id="dofe-model-api-key" type={revealKey ? 'text' : 'password'} autoComplete="off" value={draft} disabled={interactionBusy} placeholder={onboarding ? t('placeholder') : configured ? t('configured') : t('placeholder')} onChange={event => { setDraft(event.currentTarget.value); setModels([]); setSelectedModel('') }} onKeyDown={event => { if (event.key === 'Enter') void loadModels() }} /><button type="button" className="dshDofeAccessReveal" title={revealKey ? t('hideKey') : t('showKey')} aria-label={revealKey ? t('hideKey') : t('showKey')} disabled={interactionBusy} onClick={() => setRevealKey(current => !current)}>{revealKey ? <EyeOff size={17} /> : <Eye size={17} />}</button></div>
     </div>
     <div className="dshDofeAccessActions"><Button disabled={interactionBusy || !draft.trim()} onClick={() => void loadModels()}>{loadingModels ? t('loadingModels') : t('loadModels')}</Button></div>
+    <div className="dshDofeAccessField"><div className="dshDofeAccessFieldHeader"><label className="dshDofeAccessLabel" htmlFor="dofe-protocol-select">{t('protocolTitle')}</label></div><select id="dofe-protocol-select" className="dshDofeAccessModelSelect" value={protocol} disabled={interactionBusy} onChange={event => { const next = event.currentTarget.value as DofeProtocol; setProtocol(next); setModels([]); setSelectedModel(''); setError(undefined) }}><option value="chat-completions">{t('protocolChat')}</option><option value="messages">{t('protocolMessages')}</option><option value="responses">{t('protocolResponses')}</option></select></div>
     <div className="dshDofeAccessField"><div className="dshDofeAccessFieldHeader"><label className="dshDofeAccessLabel" htmlFor="dofe-model-select">{t('modelsTitle')}</label></div>{configured === true && !draft.trim() && models.length === 0 && <p className="dshDofeAccessHint">{t('reenterKey')}</p>}<select id="dofe-model-select" className="dshDofeAccessModelSelect" value={selectedModel} disabled={interactionBusy || models.length === 0} onChange={event => setSelectedModel(event.currentTarget.value)}><option value="">{models.length === 0 ? t('modelsPlaceholder') : t('modelsEmpty')}</option>{models.map(model => <option key={model.id} value={model.id}>{model.name} ({model.id})</option>)}</select></div>
     {onboarding && <p className="dshDofeAccessHelp"><Phone size={15} aria-hidden="true" /><span>{t('onboardingHelp')}</span></p>}
     {onboarding && <div className="dshDofeAccessField"><div className="dshDofeAccessFieldHeader"><span className="dshDofeAccessLabel">{t('pluginsTitle')}</span><span className="dshDofeAccessCount">{t('selectedCount').replace('{count}', String(enabledPlugins.length))}</span></div><div className="dshDofeAccessPlugins">{availablePlugins.map(plugin => { const selected = enabledPlugins.includes(plugin.id); return <label className={`dshDofeAccessPlugin${selected ? ' dshDofeAccessPluginSelected' : ''}`} key={plugin.id}><input type="checkbox" checked={selected} disabled={interactionBusy} onChange={event => { const checked = event.currentTarget.checked; setEnabledPlugins(current => checked ? [...new Set([...current, plugin.id])] : current.filter(id => id !== plugin.id)) }} /><span className="dshDofeAccessPluginCheck" aria-hidden="true"><Check size={14} strokeWidth={2.5} /></span><span><span className="dshDofeAccessPluginName">{plugin.name}</span><span className="dshDofeAccessPluginDescription">{plugin.description}</span></span></label> })}</div></div>}

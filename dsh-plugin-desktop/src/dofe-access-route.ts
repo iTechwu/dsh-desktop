@@ -1,6 +1,6 @@
 /** Same-origin Host route for validating model_api_key without browser CORS. */
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { DOFE_MODEL_CATALOG_URL, parseDofeModelCatalog } from './dofe-models.ts'
+import { DEFAULT_DOFE_PROTOCOL, dofeModelCatalogUrl, parseDofeModelCatalog, type DofeProtocol } from './dofe-models.ts'
 import { BRAND_TENANT } from './generated-product-identity.ts'
 
 export const DOFE_ACCESS_VALIDATE_PATH = '/api/desktop/dofe/validate'
@@ -28,7 +28,7 @@ function permitted(req: IncomingMessage, expectedOrigin: string): boolean {
     && req.headers['content-type']?.split(';', 1)[0]?.trim().toLowerCase() === 'application/json'
 }
 
-async function readKey(req: IncomingMessage): Promise<string | undefined> {
+async function readRequest(req: IncomingMessage): Promise<{ key: string; protocol: DofeProtocol } | undefined> {
   let size = 0
   const chunks: Buffer[] = []
   for await (const chunk of req) {
@@ -39,11 +39,14 @@ async function readKey(req: IncomingMessage): Promise<string | undefined> {
   }
   try {
     const value = JSON.parse(Buffer.concat(chunks).toString('utf8')) as unknown
-    if (typeof value !== 'object' || value === null || Array.isArray(value)
-      || Object.keys(value).length !== 1
-      || typeof (value as { key?: unknown }).key !== 'string') return undefined
-    const key = (value as { key: string }).key.trim()
-    return key.length > 0 && key.length <= 4096 ? key : undefined
+    if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined
+    const record = value as { key?: unknown; protocol?: unknown }
+    if (Object.keys(record).some(key => key !== 'key' && key !== 'protocol')) return undefined
+    if (typeof record.key !== 'string') return undefined
+    const protocol = record.protocol === undefined ? DEFAULT_DOFE_PROTOCOL : record.protocol
+    if (protocol !== 'chat-completions' && protocol !== 'messages' && protocol !== 'responses') return undefined
+    const key = record.key.trim()
+    return key.length > 0 && key.length <= 4096 ? { key, protocol } : undefined
   } catch {
     return undefined
   }
@@ -83,12 +86,13 @@ export async function handleDofeAccessValidationRequest(
 ): Promise<void> {
   if (req.method !== 'POST') return finish(res, 405, { valid: false })
   if (!permitted(req, expectedOrigin)) return finish(res, 403, { valid: false })
-  const key = await readKey(req)
-  if (key === undefined) return finish(res, 400, { valid: false })
+  const request = await readRequest(req)
+  if (request === undefined) return finish(res, 400, { valid: false })
+  const { key, protocol } = request
   try {
     const tenant = await verifyDofeTenant(key, fetcher)
     if (!tenant.ok) return finish(res, 200, { valid: false, reason: tenant.reason })
-    const response = await fetcher(DOFE_MODEL_CATALOG_URL, {
+    const response = await fetcher(dofeModelCatalogUrl(protocol), {
       headers: { ...MODEL_GATEWAY_HEADERS, Authorization: `Bearer ${key}` },
       redirect: 'error',
       signal: AbortSignal.timeout(10_000),
@@ -108,18 +112,19 @@ export async function handleDofeModelCatalogRequest(
 ): Promise<void> {
   if (req.method !== 'POST') return finish(res, 405, { models: [] })
   if (!permitted(req, expectedOrigin)) return finish(res, 403, { models: [] })
-  const key = await readKey(req)
-  if (key === undefined) return finish(res, 400, { models: [] })
+  const request = await readRequest(req)
+  if (request === undefined) return finish(res, 400, { models: [] })
+  const { key, protocol } = request
   try {
     const tenant = await verifyDofeTenant(key, fetcher)
     if (!tenant.ok) return finish(res, 200, { models: [], reason: tenant.reason })
-    const response = await fetcher(DOFE_MODEL_CATALOG_URL, {
+    const response = await fetcher(dofeModelCatalogUrl(protocol), {
       headers: { ...MODEL_GATEWAY_HEADERS, Authorization: `Bearer ${key}`, Accept: 'application/json' },
       redirect: 'error',
       signal: AbortSignal.timeout(10_000),
     })
     if (!response.ok) return finish(res, 200, { models: [], reason: 'invalid_key' })
-    finish(res, 200, { models: parseDofeModelCatalog(await response.json()) })
+    finish(res, 200, { models: parseDofeModelCatalog(await response.json(), protocol) })
   } catch {
     finish(res, 200, { models: [], reason: 'invalid_key' })
   }

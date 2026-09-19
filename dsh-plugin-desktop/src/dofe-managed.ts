@@ -59,6 +59,7 @@ export async function apply(ctx: Context): Promise<void> {
       validationVersion: z.number().step(1).min(0).default(0),
       enabledPlugins: z.array(z.string()).default(DEFAULT_DOFE_PLUGIN_IDS),
       modelId: z.string().default(''),
+      protocol: z.union(['chat-completions', 'messages', 'responses']).default('chat-completions'),
     }),
     {
       validate: value => {

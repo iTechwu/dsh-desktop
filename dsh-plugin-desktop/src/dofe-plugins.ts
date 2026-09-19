@@ -72,6 +72,8 @@ export interface DofeAccessSettings {
   enabledPlugins: string[]
   /** Model id selected from the validated DoFe catalog. */
   modelId: string
+  /** Wire protocol used by the selected DoFe model route. */
+  protocol: 'chat-completions' | 'messages' | 'responses'
 }
 
 export const DEFAULT_DOFE_PLUGIN_IDS: DofePluginId[] = DOFE_PLUGIN_CATALOG.map(plugin => plugin.id)

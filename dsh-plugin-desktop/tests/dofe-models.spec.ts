@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseDofeModelCatalog } from '../src/dofe-models.ts'
+import { dofeModelCatalogUrl, parseDofeModelCatalog } from '../src/dofe-models.ts'
 
 describe('DoFe model catalog parsing', () => {
   it('accepts OpenAI-compatible data responses and removes invalid duplicates', () => {
@@ -62,5 +62,22 @@ describe('DoFe model catalog parsing', () => {
       },
       { id: 'deepseek-v4-pro', name: 'deepseek-v4-pro' },
     ])
+  })
+
+  it('filters the catalog by Anthropic Messages and OpenAI Responses protocol', () => {
+    const payload = { data: [
+      { id: 'anthropic-model', protocol: 'anthropic-messages' },
+      { id: 'responses-model', protocol: 'openai_responses' },
+      { id: 'chat-model', protocol: 'openai-compatible' },
+    ] }
+    expect(parseDofeModelCatalog(payload, 'messages').map(model => model.id)).toEqual(['anthropic-model'])
+    expect(parseDofeModelCatalog(payload, 'responses').map(model => model.id)).toEqual(['responses-model'])
+    expect(parseDofeModelCatalog(payload, 'chat-completions').map(model => model.id)).toEqual(['chat-model'])
+  })
+
+  it('maps UI protocols to the gateway catalog query', () => {
+    expect(dofeModelCatalogUrl('chat-completions')).toBe('https://ixicai.cn/api/v1/models?protocol=openai')
+    expect(dofeModelCatalogUrl('messages')).toBe('https://ixicai.cn/api/v1/models?protocol=anthropic')
+    expect(dofeModelCatalogUrl('responses')).toBe('https://ixicai.cn/api/v1/models?protocol=openai_response')
   })
 })

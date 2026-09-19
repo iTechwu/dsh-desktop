@@ -1,7 +1,17 @@
 /** Model catalog fetched from the DoFe model router. */
 
-/** OpenAI-compatible chat model catalog used by the desktop model picker. */
-export const DOFE_MODEL_CATALOG_URL = 'https://ixicai.cn/api/v1/models?protocol=openai'
+export type DofeProtocol = 'chat-completions' | 'messages' | 'responses'
+export const DEFAULT_DOFE_PROTOCOL: DofeProtocol = 'chat-completions'
+export const DOFE_MODEL_CATALOG_BASE_URL = 'https://ixicai.cn/api/v1/models'
+const DOFE_PROTOCOL_QUERY: Record<DofeProtocol, string> = {
+  'chat-completions': 'openai',
+  messages: 'anthropic',
+  responses: 'openai_response',
+}
+
+export function dofeModelCatalogUrl(protocol: DofeProtocol = DEFAULT_DOFE_PROTOCOL): string {
+  return `${DOFE_MODEL_CATALOG_BASE_URL}?protocol=${DOFE_PROTOCOL_QUERY[protocol]}`
+}
 
 export interface DofeModel {
   readonly id: string
@@ -37,14 +47,19 @@ export function dofeModelInputModalities(
 }
 
 /** Return whether a catalog row advertises an OpenAI-compatible chat surface. */
-function isOpenAiCompatibleChatRow(entry: Record<string, unknown>): boolean {
+function rowMatchesProtocol(entry: Record<string, unknown>, protocol: DofeProtocol): boolean {
+  const accepted = protocol === 'messages'
+    ? ['anthropic', 'anthropic-messages', 'messages', 'native']
+    : protocol === 'responses'
+      ? ['openai-response', 'openai-responses', 'openai_response', 'responses']
+    : ['openai', 'openai-compatible', 'openai-completions', 'chat-completions', 'compatible']
   for (const field of ['protocol', 'api_protocol', 'apiProtocol', 'api_type', 'apiType', 'type']) {
     const value = entry[field]
     if (typeof value !== 'string') continue
     const normalized = value.trim().toLowerCase()
     if (field === 'type' && ['chat', 'text', 'multimodal'].includes(normalized)) continue
     if (field === 'type' && ['embedding', 'rerank', 'moderation', 'audio', 'image', 'video', 'speech'].includes(normalized)) return false
-    if (normalized.includes('openai') || normalized.includes('compatible')) continue
+    if (accepted.some(item => normalized === item || (item !== 'openai' && normalized.includes(item)))) continue
     if (field !== 'type') return false
   }
   const id = typeof entry.id === 'string' ? entry.id : ''
@@ -52,7 +67,7 @@ function isOpenAiCompatibleChatRow(entry: Record<string, unknown>): boolean {
 }
 
 /** Convert an OpenAI-compatible model listing into the desktop catalog shape. */
-export function parseDofeModelCatalog(value: unknown): DofeModel[] {
+export function parseDofeModelCatalog(value: unknown, protocol: DofeProtocol = DEFAULT_DOFE_PROTOCOL): DofeModel[] {
   const rows = Array.isArray(value)
     ? value
     : typeof value === 'object' && value !== null && Array.isArray((value as { data?: unknown }).data)
@@ -64,7 +79,7 @@ export function parseDofeModelCatalog(value: unknown): DofeModel[] {
     if (typeof row !== 'object' || row === null || Array.isArray(row)) continue
     const entry = row as Record<string, unknown>
     if (typeof entry.id !== 'string' || entry.id.trim().length === 0) continue
-    if (!isOpenAiCompatibleChatRow(entry)) continue
+    if (!rowMatchesProtocol(entry, protocol)) continue
     const id = entry.id.trim()
     if (seen.has(id)) continue
     seen.add(id)

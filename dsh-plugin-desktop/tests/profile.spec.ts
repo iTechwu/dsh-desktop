@@ -514,7 +514,7 @@ virtualStoreDirMaxLength: 60
         connectionPolicy: 'composition',
       }),
     }))
-    expect(rows.find(row => row.id === 'llm-pi-ai')).toEqual(expect.objectContaining({ disabled: true }))
+    expect(rows.find(row => row.id === 'llm-pi-ai')).toEqual(expect.objectContaining({ disabled: false }))
     expect(rows.find(row => row.id === 'agent-default-model')).toEqual(expect.objectContaining({
       config: { provider: 'deepseek-official', model: 'deepseek-v4-flash' },
     }))
@@ -549,7 +549,7 @@ virtualStoreDirMaxLength: 60
         connectionPolicy: 'composition',
       }),
     }))
-    expect(rows.find(row => row.id === 'llm-pi-ai')).toEqual(expect.objectContaining({ disabled: true }))
+    expect(rows.find(row => row.id === 'llm-pi-ai')).toEqual(expect.objectContaining({ disabled: false }))
     expect(rows.find(row => row.id === 'agent-default-model')).toEqual(expect.objectContaining({
       config: { provider: 'deepseek-official', model: 'deepseek-v4-flash' },
     }))
