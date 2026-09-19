@@ -30,6 +30,8 @@ export interface ProfileMaterializerOptions {
   readonly updateLockfile?: boolean
   /** Confirm durable migration output before treating a non-exiting pnpm process as complete. */
   readonly completionCheck?: () => boolean
+  /** Test seam for the official parent-environment scrub. */
+  readonly scrubParent?: () => NodeJS.ProcessEnv
   /** Injectable only for headless tests; production uses node:child_process.spawn. */
   readonly spawn?: ProfileMaterializerSpawn
 }

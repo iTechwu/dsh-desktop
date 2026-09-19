@@ -12,6 +12,7 @@ import {
 /** Minimal valid configuration used as the mutation base in each case. */
 const validConfig = {
   tenant: 'example',
+  tenantId: '11111111-1111-4111-8111-111111111111',
   activeChannel: 'beta',
   channels: {
     stable: { productName: 'Alpha', appId: 'ai.example.agent', artifactPrefix: 'Alpha', homeDirectoryName: '.alpha' },
@@ -103,6 +104,7 @@ test('identity module renders the active channel and frozen tables', () => {
   assert.match(module, /BRAND_ACTIVE_CHANNEL = "beta"/)
   assert.match(module, /productName: "Alpha Beta"/)
   assert.match(module, /BRAND_ARTIFACT_PREFIX = "Alpha-Beta"/)
+  assert.match(module, /BRAND_TENANT_ID = "11111111-1111-4111-8111-111111111111"/)
   assert.match(module, /endpoint: "https:\/\/updates\.example\.com\/api\/desktop\/version"/)
   assert.match(module, /versionHeader: "X-Example-Version"/)
 })

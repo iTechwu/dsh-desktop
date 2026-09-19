@@ -1,6 +1,7 @@
 {
   "variant": "yootun",
   "tenant": "yootun",
+  "tenantId": "869856a5-760a-4570-9177-8823ed84da78",
   "activeChannel": "beta",
   "channels": {
     "stable": {

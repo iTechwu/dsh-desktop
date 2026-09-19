@@ -26,6 +26,7 @@ const APP_ID_PATTERN = /^[a-z][a-z0-9-]*(\.[a-z][a-z0-9-]*)+$/
 const HEADER_NAME_PATTERN = /^X-[A-Za-z0-9-]+$/
 const HEX_COLOR_PATTERN = /^#[0-9a-fA-F]{6}$/
 const URL_PATTERN = /^https:\/\/[A-Za-z0-9.-]+(:\d+)?(\/[^\s"']*)?$/
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
 /**
  * Resolve the brand configuration path for the current invocation.
@@ -87,6 +88,7 @@ export function validateBrandConfig(document, sourcePath = 'brand.config.json') 
     }
   }
   requireNonEmptyString(config, 'tenant', '', push)
+  requirePattern(config, 'tenantId', UUID_PATTERN, '', push, 'expected a UUID')
 
   const channels = requireObject(config, 'channels', push)
   if (channels !== undefined) {
@@ -217,6 +219,9 @@ export const BRAND_VARIANT: BrandVariant = ${JSON.stringify(config.variant ?? 'y
 
 /** Tenant identity bound to the build-time brand. */
 export const BRAND_TENANT = ${JSON.stringify(config.tenant)} as const
+
+/** Stable tenant id accepted by the activation gate for this brand only. */
+export const BRAND_TENANT_ID = ${JSON.stringify(config.tenantId)} as const
 
 /** Artifact filename prefix for the active channel (Setup/Portable/DMG stems). */
 export const BRAND_ARTIFACT_PREFIX = ${JSON.stringify(resolveActiveChannel(config).artifactPrefix)}

@@ -30,6 +30,9 @@ export const BRAND_VARIANT: BrandVariant = "yootun"
 /** Tenant identity bound to the build-time brand. */
 export const BRAND_TENANT = "yootun" as const
 
+/** Stable tenant id accepted by the activation gate for this brand only. */
+export const BRAND_TENANT_ID = "869856a5-760a-4570-9177-8823ed84da78" as const
+
 /** Artifact filename prefix for the active channel (Setup/Portable/DMG stems). */
 export const BRAND_ARTIFACT_PREFIX = "Yootun-Agent-Beta"
 

@@ -56,7 +56,6 @@ import {
   recordDesktopUpdateArtifact,
   resolveDesktopUpdateArtifact,
   type DesktopUpdateArtifact,
-  type UpdateArtifactResponse,
 } from './update-download.ts'
 import type { UpdateCheckResult } from './update-checker.ts'
 import type { DesktopInstallationId } from './desktop-installation-id.ts'
@@ -96,6 +95,49 @@ export function desktopPreloadPath(moduleUrl: string = import.meta.url): string 
 }
 
 const PRODUCT_VERSION = desktopProductVersion()
+
+/** Adapt Electron's redirect-aware net.request to the update downloader seam. */
+export function requestDesktopArtifact(url: string, init: RequestInit = {}): Promise<{ response: Response; finalUrl: string }> {
+  return new Promise((resolve, reject) => {
+    let finalUrl = url
+    let settled = false
+    const request = net.request({
+      url,
+      method: init.method ?? 'GET',
+      redirect: 'manual',
+    })
+    const finish = (error?: unknown, value?: { response: Response; finalUrl: string }): void => {
+      if (settled) return
+      settled = true
+      if (error !== undefined) reject(error)
+      else if (value !== undefined) resolve(value)
+    }
+    request.on('redirect', (_status: number, _method: string, redirectUrl: string) => {
+      finalUrl = redirectUrl
+      request.followRedirect()
+    })
+    request.on('response', incoming => {
+      const headers = new Headers()
+      for (const [key, value] of Object.entries(incoming.headers ?? {})) headers.set(key, Array.isArray(value) ? value.join(', ') : value)
+      const status = incoming.statusCode ?? 200
+      const body = status === 204 || status === 205 || status === 304
+        ? undefined
+        : Readable.toWeb(incoming as unknown as import('node:stream').Readable) as ReadableStream<Uint8Array>
+      finish(undefined, { response: new Response(body, { status, headers }), finalUrl })
+    })
+    request.on('error', (error: unknown) => finish(error))
+    request.on('abort', () => finish(new Error('operation was aborted')))
+    const signal = init.signal
+    const onAbort = (): void => request.abort()
+    if (signal !== undefined && signal !== null) {
+      if (signal.aborted) return onAbort()
+      signal.addEventListener('abort', onAbort, { once: true })
+    }
+    for (const [key, value] of new Headers(init.headers).entries()) request.setHeader(key, value)
+    request.setHeader('cache-control', 'no-cache')
+    request.end()
+  })
+}
 
 /** Main-process deadline for one Renderer generation to settle its client Loader. */
 export const RENDERER_BOOT_TIMEOUT_MS = 30_000

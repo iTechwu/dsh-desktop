@@ -1,20 +1,13 @@
 /** Same-origin Host route for validating model_api_key without browser CORS. */
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { DEFAULT_DOFE_PROTOCOL, dofeModelCatalogUrl, parseDofeModelCatalog, type DofeProtocol } from './dofe-models.ts'
-import { BRAND_TENANT } from './generated-product-identity.ts'
+import { BRAND_TENANT, BRAND_TENANT_ID } from './generated-product-identity.ts'
 
 export const DOFE_ACCESS_VALIDATE_PATH = '/api/desktop/dofe/validate'
 export const DOFE_ACCESS_MODELS_PATH = '/api/desktop/dofe/models'
 export const DOFE_AUTH_CONTEXT_URL = 'https://ixicai.cn/api/internal/auth/context'
 const MAX_BODY_BYTES = 16 * 1024
 const MODEL_GATEWAY_HEADERS = Object.freeze({ 'X-Company-Code': BRAND_TENANT })
-/** Stable tenant ids returned by the DoFe auth context service. The service
- * currently exposes ids (not slugs) on this endpoint, so tenant ownership is
- * checked against the brand's allowlist before any model route is queried. */
-const BRAND_TENANT_IDS: Readonly<Record<string, string>> = Object.freeze({
-  yootun: '869856a5-760a-4570-9177-8823ed84da78',
-  sensteed: '7a8866f9-3994-4341-ade6-b9fa942efe99',
-})
 
 export type DofeAccessFailureReason = 'invalid_key' | 'tenant_mismatch' | 'tenant_unavailable'
 
@@ -78,7 +71,7 @@ async function verifyDofeTenant(
       ? (value as { tenantId?: unknown }).tenantId
       : undefined
     if (typeof tenantId === 'string' && tenantId.trim().length > 0) {
-      return tenantId.trim().toLowerCase() === BRAND_TENANT_IDS[BRAND_TENANT]?.toLowerCase()
+      return tenantId.trim().toLowerCase() === BRAND_TENANT_ID.toLowerCase()
         ? { ok: true }
         : { ok: false, reason: 'tenant_mismatch' }
     }

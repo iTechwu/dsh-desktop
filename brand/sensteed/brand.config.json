@@ -1,6 +1,7 @@
 {
   "variant": "sensteed",
   "tenant": "sensteed",
+  "tenantId": "7a8866f9-3994-4341-ade6-b9fa942efe99",
   "activeChannel": "beta",
   "channels": {
     "stable": {

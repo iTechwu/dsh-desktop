@@ -30,6 +30,7 @@ describe('white-label round trip', () => {
       writeFileSync(configPath, JSON.stringify({
         activeChannel: 'beta',
         tenant: 'acme',
+        tenantId: '22222222-2222-4222-8222-222222222222',
         channels: {
           stable: { productName: 'Acme Agent', appId: 'com.acme.agent', artifactPrefix: 'Acme-Agent', homeDirectoryName: '.acme-agent' },
           beta: { productName: 'Acme Agent Beta', appId: 'com.acme.agent.beta', artifactPrefix: 'Acme-Agent-Beta', homeDirectoryName: '.acme-agent-beta' },
@@ -79,6 +80,7 @@ describe('white-label round trip', () => {
       expect(identity).toContain('productName: "Acme Agent Beta"')
       expect(identity).toContain('appId: "com.acme.agent.beta"')
       expect(identity).toContain('BRAND_TENANT = "acme"')
+      expect(identity).toContain('BRAND_TENANT_ID = "22222222-2222-4222-8222-222222222222"')
       expect(identity).toContain('BRAND_ARTIFACT_PREFIX = "Acme-Agent-Beta"')
       expect(identity).toContain('BRAND_SHORTCUT_NAME = "Acme Agent Beta"')
       expect(identity).toContain('titlebar: "Acme Agent"')
