@@ -124,6 +124,7 @@ describe('desktop pnpm execution service', () => {
         PATH: `${bootstrap().nodeBinDir}${delimiter}${globalThis.process.env.PATH ?? ''}`,
         NODE: bootstrap().nodeShimPath,
         ELECTRON_RUN_AS_NODE: '1',
+        DSH_DESKTOP_PLUGIN_OPERATION: '1',
         DSH_HOME: bootstrap().homeDir,
         CI: 'true',
         npm_config_runtime: 'electron',

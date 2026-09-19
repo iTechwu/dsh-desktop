@@ -215,6 +215,7 @@ class DesktopPnpmService extends Service implements DesktopPnpm {
           : `${this.bootstrap.nodeBinDir}${delimiter}${inherited}`,
         NODE: this.bootstrap.nodeShimPath,
         ELECTRON_RUN_AS_NODE: '1',
+        DSH_DESKTOP_PLUGIN_OPERATION: '1',
         DSH_HOME: this.bootstrap.homeDir,
         CI: 'true',
         npm_config_runtime: 'electron',
