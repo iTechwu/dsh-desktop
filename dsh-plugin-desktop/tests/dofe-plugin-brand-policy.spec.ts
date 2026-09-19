@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { dofePluginsForBrand, normalizeDofePluginIds } from '../src/dofe-plugins.ts'
 
 describe('DoFe brand capability policy', () => {
-  it('keeps GEO capabilities exclusive to Yootun', () => {
+  it('keeps GEO capabilities exclusive to their owning brand', () => {
     expect(dofePluginsForBrand('yootun').map(plugin => plugin.id)).toContain('geoflow')
     expect(dofePluginsForBrand('yootun').map(plugin => plugin.id)).toContain('georank')
     expect(dofePluginsForBrand('sensteed').map(plugin => plugin.id)).not.toContain('geoflow')
