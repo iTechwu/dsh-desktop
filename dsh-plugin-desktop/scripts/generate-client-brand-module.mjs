@@ -10,6 +10,7 @@ const packageRoot = dirname(dirname(fileURLToPath(import.meta.url)))
 const brandConfig = loadBrandConfig(undefined, resolve(packageRoot, '..'))
 const outputPath = join(packageRoot, 'src', 'client', 'generated-brand-assets.ts')
 const assets = [
+  ['sidebarBrandMarkDataUrl', resolve(packageRoot, '..', brandConfig.artwork.sidebarMark), undefined, undefined],
   ['sidebarBrandDataUrl', join(packageRoot, 'build', 'sidebar-brand.png'), brandConfig.wordmark.lockup.width, brandConfig.wordmark.lockup.height],
   ['heroBrandDataUrl', join(packageRoot, 'build', 'hero-brand.png'), brandConfig.artwork.heroSize, brandConfig.artwork.heroSize],
 ]
@@ -17,8 +18,8 @@ const assets = [
 const declarations = []
 for (const [name, path, width, height] of assets) {
   const metadata = await sharp(path).metadata()
-  if (metadata.format !== 'png' || metadata.width !== width || metadata.height !== height || !metadata.hasAlpha) {
-    throw new Error(`generate-client-brand-module: ${path} must be a ${width}x${height} RGBA PNG`)
+  if (metadata.format !== 'png' || !metadata.hasAlpha || (width !== undefined && (metadata.width !== width || metadata.height !== height))) {
+    throw new Error(`generate-client-brand-module: ${path} must be an RGBA PNG${width === undefined ? '' : ` of ${width}x${height}`}`)
   }
   const data = await readFile(path)
   declarations.push(`export const ${name} = ${JSON.stringify(`data:image/png;base64,${data.toString('base64')}`)}`)

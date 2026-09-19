@@ -11,6 +11,7 @@ import {
 
 /** Minimal valid configuration used as the mutation base in each case. */
 const validConfig = {
+  tenant: 'example',
   activeChannel: 'beta',
   channels: {
     stable: { productName: 'Alpha', appId: 'ai.example.agent', artifactPrefix: 'Alpha', homeDirectoryName: '.alpha' },
@@ -53,6 +54,11 @@ const validConfig = {
 
 test('accepts the committed brand configuration', () => {
   assert.deepEqual(validateBrandConfig(validConfig), [])
+})
+
+test('requires the tenant to match the selected white-label variant', () => {
+  const violations = validateBrandConfig({ ...validConfig, variant: 'sensteed', tenant: 'yootun' })
+  assert.ok(violations.includes('tenant must match variant (yootun or sensteed)'))
 })
 
 test('collects every violation with the field path', () => {

@@ -18,8 +18,8 @@
   },
   "packageName": "dsh-plugin-desktop",
   "displayName": {
-    "titlebar": "山子高科",
-    "locale": "山子高科"
+    "titlebar": "山子Agent",
+    "locale": "山子Agent"
   },
   "mission": {
     "zh": "服务与成就中国智造的全球竞争力",
@@ -56,8 +56,8 @@
   },
   "updates": {
     "endpoint": "https://ixicai.cn/api/desktop/version",
-    "versionHeader": "X-Yootun-Agent-Version",
-    "channelHeader": "X-Yootun-Agent-Channel"
+    "versionHeader": "X-Sensteed-Agent-Version",
+    "channelHeader": "X-Sensteed-Agent-Channel"
   },
   "docs": {
     "siteUrl": "https://dshdesktop.cn",

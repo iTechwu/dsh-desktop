@@ -82,6 +82,9 @@ export function validateBrandConfig(document, sourcePath = 'brand.config.json') 
 
   if (config.variant !== undefined) {
     requirePattern(config, 'variant', /^(?:yootun|sensteed)$/u, '', push, 'expected yootun or sensteed')
+    if ((config.variant === 'yootun' || config.variant === 'sensteed') && config.tenant !== config.variant) {
+      push('tenant must match variant (yootun or sensteed)')
+    }
   }
   requireNonEmptyString(config, 'tenant', '', push)
 

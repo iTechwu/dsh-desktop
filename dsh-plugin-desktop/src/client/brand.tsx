@@ -4,8 +4,8 @@ import type { CSSProperties } from 'react'
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type { HeroBrandMarkOwnerProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { SidebarBrandMarkOwnerProps } from '@deepseek-ai/dsh-client-ui-sidebar/client'
-import { heroBrandDataUrl, sidebarBrandDataUrl } from './generated-brand-assets.ts'
-import { BRAND_MISSION, BRAND_WORDMARK_DISPLAY } from '../generated-product-identity.ts'
+import { heroBrandDataUrl, sidebarBrandDataUrl, sidebarBrandMarkDataUrl } from './generated-brand-assets.ts'
+import { BRAND_DISPLAY_NAME, BRAND_MISSION, BRAND_VARIANT, BRAND_WORDMARK_DISPLAY } from '../generated-product-identity.ts'
 
 const DESKTOP_BRAND_PRIORITY = -100
 
@@ -20,6 +20,14 @@ const sidebarStyle: CSSProperties = {
 
 /** Render the complete horizontal Yootun lockup in the expanded sidebar row. */
 export function YootunSidebarBrandMark(_props: SidebarBrandMarkOwnerProps) {
+  if (BRAND_VARIANT === 'sensteed') {
+    return (
+      <div className="dshBrandSidebarLockup" data-dsh-sensteed-brand="sidebar" title={BRAND_MISSION.zh}>
+        <img alt="" draggable={false} height={36} src={sidebarBrandMarkDataUrl} width={36} />
+        <span>{BRAND_DISPLAY_NAME.titlebar}</span>
+      </div>
+    )
+  }
   return (
     <img
       alt=""
@@ -62,7 +70,12 @@ export function applyDesktopBrand(ctx: ClientContext): void {
     const style = document.createElement('style')
     style.dataset.plugin = 'dsh-plugin-desktop'
     style.dataset.pluginCss = 'dsh-plugin-desktop/brand-layout'
-    style.textContent = 'button:has([data-dsh-yootun-brand="sidebar"]) > [aria-hidden="true"] { height: 36px; }'
+    style.textContent = [
+      'button:has([data-dsh-yootun-brand="sidebar"]) > [aria-hidden="true"] { height: 36px; }',
+      '.dshBrandSidebarLockup { display: flex; align-items: center; gap: 8px; height: 36px; min-width: 0; }',
+      '.dshBrandSidebarLockup img { display: block; flex: 0 0 36px; object-fit: contain; }',
+      '.dshBrandSidebarLockup span { overflow: hidden; color: #0f172a; font-size: 17px; font-weight: 600; line-height: 1; white-space: nowrap; text-overflow: ellipsis; }',
+    ].join('\n')
     document.head.appendChild(style)
     return () => { style.remove() }
   }, 'dsh-plugin-desktop: brand layout styles')
