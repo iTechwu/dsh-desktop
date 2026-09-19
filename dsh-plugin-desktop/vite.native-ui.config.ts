@@ -1,5 +1,6 @@
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { BRAND_DISPLAY_NAME } from './src/generated-product-identity.ts'
 import tailwindcss from '@tailwindcss/vite'
 import react from '@vitejs/plugin-react'
 import { defineConfig } from 'vite'
@@ -9,7 +10,12 @@ const uiRoot = resolve(root, 'src/native-ui')
 
 /** Build the Desktop-owned static native surfaces without network dependencies. */
 export default defineConfig({
-  plugins: [react(), tailwindcss()],
+  plugins: [react(), tailwindcss(), {
+    name: 'native-brand-title',
+    transformIndexHtml(html) {
+      return html.replace(/<title>[^<]*<\/title>/, `<title>${BRAND_DISPLAY_NAME.titlebar}</title>`)
+    },
+  }],
   root: uiRoot,
   base: './',
   resolve: { alias: { '@': resolve(root, 'src/native-ui') } },

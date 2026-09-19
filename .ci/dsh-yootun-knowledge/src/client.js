@@ -1,4 +1,5 @@
 const React = require("react");
+const PLUGIN_BRAND = globalThis.__DSH_PLUGIN_BRAND__ || { tenant: 'yootun', company: '优惠豚', knowledgeEyebrow: 'YOOTUN KNOWLEDGE' }
 const REQUEST_TIMEOUT_MS = 30000
 const {
   createElement: h,
@@ -73,7 +74,7 @@ const copy = {
     citation: "引用",
     confidence: "置信度",
     graphSearch: "查询实体关系",
-    graphPlaceholder: "输入实体名称，例如：优惠豚企业空间",
+    graphPlaceholder: `输入实体名称，例如：${PLUGIN_BRAND.company}企业空间`,
     graphRun: "查询图谱",
     graphLoading: "图谱加载中…",
     graphEmpty: "选择一个业务实体查看授权关系",
@@ -1277,7 +1278,7 @@ function Overlay({ t }) {
         h(
           "div",
           null,
-          h("span", { className: "yk-eyebrow" }, "YOOTUN KNOWLEDGE"),
+          h("span", { className: "yk-eyebrow" }, PLUGIN_BRAND.knowledgeEyebrow),
           h("h1", { id: "yk-title" }, t("title")),
           h("p", null, t("subtitle")),
         ),

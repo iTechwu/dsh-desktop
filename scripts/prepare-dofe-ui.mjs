@@ -58,6 +58,12 @@ const snapshots = [
   },
 ]
 
+// Shared non-secret brand inputs used by the plugin build scripts.
+const brandTarget = resolve(root, '../docker-helm.dofe.ai/plugins/brand')
+if (!existsSync(resolve(brandTarget, 'build.mjs'))) {
+  await cp(resolve(root, '.ci/brand'), brandTarget, { recursive: true })
+}
+
 for (const { name, sibling: siblingPath, snapshot: snapshotPath } of snapshots) {
   const sibling = resolve(root, siblingPath)
   const snapshot = resolve(root, snapshotPath)

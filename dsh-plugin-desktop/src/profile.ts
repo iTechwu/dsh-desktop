@@ -136,20 +136,29 @@ const MARKET_PACKAGE_NAMES: ReadonlySet<string> = new Set([
 ])
 
 const YOOTUN_PRIVATE_PLUGIN_ROW_IDS = new Set([
+  'dofe-yootun-dashboard',
   'dofe-yootun-recruiter', 'dofe-yootun-sales',
   'dofe-yootun-supply-watch', 'dofe-yootun-content-command', 'dofe-yootun-audit',
   'dofe-yootun-retrofit', 'dofe-yootun-daily-report', 'dofe-yootun-lead-discovery',
   'dofe-yootun-xhs-operation', 'dofe-yootun-douyin-operation', 'desktop-yootun-recruiter-tools',
+  'dofe-yootun-finops', 'dofe-yootun-tos-upload', 'yootun-agent-knowledge-capture',
 ])
 
 /** Sensteed ships only shared surfaces while its company-specific pages are planned. */
 export function filterDesktopBrandPatches(patches: PatchOptions[]): PatchOptions[] {
-  if (BRAND_VARIANT === 'yootun') return patches
   return patches.map(patch => {
     if (!Array.isArray(patch.insert)) return patch
-    return { ...patch, insert: patch.insert.filter(row => {
+    return { ...patch, insert: patch.insert.map(row => {
+      if (row && typeof row === 'object' && !Array.isArray(row) && row.id === 'dofe-yootun-knowledge') {
+        return { ...row, config: { ...row.config, brand: { tenant: BRAND_TENANT } } }
+      }
+      return row
+    }).filter(row => {
       if (row === null || typeof row !== 'object' || Array.isArray(row)) return true
-      return !YOOTUN_PRIVATE_PLUGIN_ROW_IDS.has(String((row as { id?: unknown }).id ?? ''))
+      const id = String((row as { id?: unknown }).id ?? '')
+      // The desktop client owns activation and branding in both distributions.
+      if (id === 'dofe-yootun-ui') return false
+      return BRAND_VARIANT === 'yootun' || !YOOTUN_PRIVATE_PLUGIN_ROW_IDS.has(id)
     }) }
   })
 }

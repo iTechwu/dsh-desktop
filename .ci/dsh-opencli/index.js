@@ -132,7 +132,7 @@ export function apply(ctx) {
           minItems: 1,
           maxItems: 16,
           items: { type: 'string', minLength: 1, maxLength: 2048 },
-          description: 'Route arguments, for example ["exa","search","优惠豚 好车会员店","--limit","5"] or ["xiaohongshu","search","买车优惠","-f","json"].',
+          description: 'Route arguments, for example ["exa","search","企业公开资料","--limit","5"] or ["xiaohongshu","search","买车优惠","-f","json"].',
         },
         timeoutMs: { type: 'number', minimum: 1000, maximum: 120000 },
       },

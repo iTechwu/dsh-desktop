@@ -1,4 +1,5 @@
 const React = require('react')
+const PLUGIN_BRAND = globalThis.__DSH_PLUGIN_BRAND__ || { tenant: 'yootun', company: '企业', knowledgeEyebrow: '企业知识' }
 const REQUEST_TIMEOUT_MS = 30000
 const { createElement: h, useEffect, useState, useRef, useSyncExternalStore } = React
 const {

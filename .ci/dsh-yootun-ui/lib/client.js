@@ -3,6 +3,7 @@ window.__ModuleLoader__.load({
   factory: (require) => {
     var module = { exports: {} };
     var exports = module.exports;
+    globalThis.__DSH_PLUGIN_BRAND__ = {"tenant":"yootun","name":"Yootun-Agent","company":"优惠豚","eyebrow":"YOOTUN AGENT","knowledgeEyebrow":"YOOTUN KNOWLEDGE","help":"获取 model_api_key，请联系优惠豚 AI 部小伙伴：19996936963","helpEn":"For model_api_key, contact the Yootun AI team at 19996936963.","logoDataUrl":"data:image/png;base64,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"};
     const React = require('react')
     const { createElement: h, useEffect, useMemo, useRef, useState, useSyncExternalStore } = React
     const { createRoot } = require('react-dom/client')
@@ -13,38 +14,40 @@ window.__ModuleLoader__.load({
     const VALIDATION_VERSION = 3
     const MODELS_PATH = '/api/desktop/dofe/models'
     const VALIDATE_PATH = '/api/desktop/dofe/validate'
-    const LOGO = 'data:image/png;base64,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'
+    const PLUGIN_BRAND = globalThis.__DSH_PLUGIN_BRAND__ || { tenant: 'yootun', name: 'Yootun-Agent', company: '优惠豚', eyebrow: 'YOOTUN AGENT', knowledgeEyebrow: 'YOOTUN KNOWLEDGE', help: '获取 model_api_key，请联系优惠豚 AI 部小伙伴：19996936963', helpEn: 'For model_api_key, contact the Yootun AI team at 19996936963.', logoDataUrl: '' }
+    const LOGO = PLUGIN_BRAND.logoDataUrl
 
     const PLUGINS = [
       { id: 'geoflow', name: 'GeoFlow', description: 'GEO 工作流与草稿自动化' },
       { id: 'georank', name: 'GEORank', description: 'GEO 诊断、拓词与内容生成' },
-      { id: 'tools', name: 'DoFe Tools', description: '优惠豚调研与热点工具集' },
+      { id: 'tools', name: 'DoFe Tools', description: `${PLUGIN_BRAND.company}调研与热点工具集` },
       { id: 'openmontage', name: 'OpenMontage', description: '视频生成与素材编排' },
       { id: 'opencli', name: 'OpenCLI Research', description: '受控的互联网只读调研' },
       { id: 'knowledge', name: '企业知识与 Memory', description: '知识库、Memory 与知识图谱治理' },
-    ]
+    ].filter(plugin => PLUGIN_BRAND.tenant === 'yootun' || !['geoflow', 'georank'].includes(plugin.id))
+    const normalizePlugins = ids => [...new Set(ids.filter(id => PLUGINS.some(plugin => plugin.id === id)))]
     const DEFAULT_PLUGIN_IDS = PLUGINS.map(plugin => plugin.id)
     // 统一 UX audit 要求：每个 fetch 都必须带共享的有界超时策略。
     const REQUEST_TIMEOUT_MS = 30000
 
     const copy = {
       zh: {
-        nav: 'DoFe 访问', eyebrow: 'YOOTUN AGENT', title: '激活 Yootun-Agent',
+        nav: 'DoFe 访问', eyebrow: PLUGIN_BRAND.eyebrow, title: `激活 ${PLUGIN_BRAND.name}`,
         intro: '输入 model_api_key，选择默认模型并启用随应用预装的 DoFe 能力。',
         key: 'Model API Key', keyPlaceholder: '输入 model_api_key', showKey: '显示 Key', hideKey: '隐藏 Key', load: '获取可用模型', loading: '正在获取…', modelsLoaded: '已获取 {count} 个可用模型',
         model: '默认模型', modelPlaceholder: '输入 Key 后获取模型列表', plugins: '预装 DoFe 能力',
         selected: '已选择 {count} 项', submit: '验证并进入', saving: '正在验证…', remove: '移除 Key', confirmRemove: '确认移除', cancel: '取消', removeWarning: '移除后将退出当前授权状态，需要重新输入 Key 才能继续使用。',
-        configured: '已配置', missing: '未配置', help: '获取 model_api_key，请联系优惠豚 AI 部小伙伴：19996936963',
+        configured: '已配置', missing: '未配置', help: PLUGIN_BRAND.help,
         modelError: '无法获取模型列表，请检查 Key 与模型服务。', invalid: 'Key 验证失败，请检查后重试。',
         saveError: '保存失败，请检查配置后重试。', removeError: '移除失败，请稍后重试。',
       },
       en: {
-        nav: 'DoFe Access', eyebrow: 'YOOTUN AGENT', title: 'Activate Yootun-Agent',
+        nav: 'DoFe Access', eyebrow: PLUGIN_BRAND.eyebrow, title: `Activate ${PLUGIN_BRAND.name}`,
         intro: 'Enter model_api_key, choose a default model, and enable the DoFe capabilities bundled with the app.',
         key: 'Model API Key', keyPlaceholder: 'Enter model_api_key', showKey: 'Show key', hideKey: 'Hide key', load: 'Load available models', loading: 'Loading…', modelsLoaded: '{count} models available',
         model: 'Default model', modelPlaceholder: 'Enter the key to load models', plugins: 'Bundled DoFe capabilities',
         selected: '{count} selected', submit: 'Verify and enter', saving: 'Verifying…', remove: 'Remove key', confirmRemove: 'Confirm removal', cancel: 'Cancel', removeWarning: 'Removing the key signs you out. You will need to enter it again to continue.',
-        configured: 'Configured', missing: 'Not configured', help: 'For model_api_key, contact the Yootun AI team at 19996936963.',
+        configured: 'Configured', missing: 'Not configured', help: PLUGIN_BRAND.helpEn,
         modelError: 'Could not load models. Check the key and model service.', invalid: 'The key could not be verified.',
         saveError: 'Could not save the configuration.', removeError: 'Could not remove the key.',
       },
@@ -108,7 +111,7 @@ window.__ModuleLoader__.load({
       const [showKey, setShowKey] = useState(false)
       const [models, setModels] = useState([])
       const [modelId, setModelId] = useState(access.value?.modelId || '')
-      const [enabled, setEnabled] = useState(access.value?.enabledPlugins || DEFAULT_PLUGIN_IDS)
+      const [enabled, setEnabled] = useState(normalizePlugins(access.value?.enabledPlugins || DEFAULT_PLUGIN_IDS))
       const [busy, setBusy] = useState(false)
       const busyRef = useRef(false)
       const [loading, setLoading] = useState(false)
@@ -118,7 +121,7 @@ window.__ModuleLoader__.load({
 
       useEffect(() => {
         if (access.value?.modelId) setModelId(access.value.modelId)
-        if (Array.isArray(access.value?.enabledPlugins)) setEnabled(access.value.enabledPlugins)
+        if (Array.isArray(access.value?.enabledPlugins)) setEnabled(normalizePlugins(access.value.enabledPlugins))
       }, [access.value?.modelId, access.value?.enabledPlugins])
       useEffect(() => {
         setConfigured(initialConfigured)
@@ -176,7 +179,7 @@ window.__ModuleLoader__.load({
           await mutateCurrentSettings(settingsApi, ACCESS_NS, [
             { op: 'set', path: ['setupComplete'], value: true },
             { op: 'set', path: ['validationVersion'], value: VALIDATION_VERSION },
-            { op: 'set', path: ['enabledPlugins'], value: enabled },
+            { op: 'set', path: ['enabledPlugins'], value: normalizePlugins(enabled) },
             { op: 'set', path: ['modelId'], value: modelId },
           ])
           setConfigured(true)

@@ -1,7 +1,8 @@
+import { brandClientSource } from '../../brand/build.mjs'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 
 const root = new URL('../', import.meta.url)
-const source = await readFile(new URL('src/client.js', root), 'utf8')
+const source = brandClientSource(await readFile(new URL('src/client.js', root), 'utf8'))
 const output = [
   'window.__ModuleLoader__.load({',
   '  id: "@dofe/dsh-yootun-ui",',

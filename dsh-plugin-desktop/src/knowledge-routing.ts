@@ -3,7 +3,7 @@
 export type KnowledgeRoute = 'knowledge' | 'web' | 'mixed'
 
 const ENTERPRISE_TERMS = [
-  '优惠豚', '企业', '公司', '园区', '会员', '客户', '供应商', '招聘', '候选人', '员工',
+  '山子', 'sensteed', '优惠豚', '企业', '公司', '园区', '会员', '客户', '供应商', '招聘', '候选人', '员工',
   '岗位', '面试', '制度', '流程', '服务标准', '5s', '销售', '线索', '库存', '交付',
   '供应链', '财务', '知识库', 'memory', '记忆', '内部', '团队', '项目', '合同', '复盘',
   'youhuitun', 'yootun', 'internal', 'company', 'customer', 'supplier', 'candidate',
@@ -33,7 +33,7 @@ export function classifyKnowledgeRoute(query: string): KnowledgeRoute {
 export const KNOWLEDGE_ROUTING_PROMPT = [
   '数据源路由规则（必须遵守）：',
   '1. 企业内部事实优先使用 knowledge_search；已确认经验、会话记忆或用户偏好使用 knowledge_recall。',
-  '2. 企业内部事实包括优惠豚及其园区、公司、客户、会员、员工、招聘、销售、供应链、库存、财务、项目、制度、流程、服务标准、合同和历史复盘。',
+  '2. 企业内部事实包括当前租户及其园区、公司、客户、会员、员工、招聘、销售、供应链、库存、财务、项目、制度、流程、服务标准、合同和历史复盘。',
   '3. 公开实时信息（新闻、今天/最新/当前、价格行情、天气、赛事、股票、汇率、官方网页）才使用 web_search/web_fetch。',
   '4. 混合问题必须先调用 Knowledge 获取企业事实，再按需调用 Web 获取外部实时信息；网页结果不能替代企业事实。',
   '5. 只要问题可能涉及企业事实，就先调用 knowledge_search 或 knowledge_recall，不要直接凭模型记忆作答。Knowledge 不可用时明确说明企业知识不可用；只有问题本身是公开信息时才降级到 Web。',

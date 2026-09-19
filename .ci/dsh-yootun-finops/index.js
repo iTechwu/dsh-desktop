@@ -28,7 +28,7 @@ export function apply(ctx, overrides = {}) {
     if (ctx.tools?.register) {
       disposers.push(ctx.tools.register({
         name: 'yootun_finops_usage',
-        description: 'Return model usage, cost, model mix, budget health, and source status shown by the Yootun FinOps plugin.',
+        description: 'Return model usage, cost, model mix, budget health, and source status shown by the enterprise FinOps plugin.',
         parameters: { type: 'object', additionalProperties: false, properties: { range: { type: 'string', enum: ['realtime', 'yesterday', 'week'] } } },
         output: outputSchema,
         isConcurrencySafe: () => true,
@@ -42,7 +42,7 @@ export function apply(ctx, overrides = {}) {
       }))
       disposers.push(ctx.tools.register({
         name: 'yootun_finops_series',
-        description: 'Return day-bucketed model usage and comparison data shown by the Yootun FinOps trend view.',
+        description: 'Return day-bucketed model usage and comparison data shown by the enterprise FinOps trend view.',
         parameters: { type: 'object', additionalProperties: false, properties: { days: { type: 'integer', enum: [7, 30] }, start: { type: 'string' }, end: { type: 'string' } } },
         output: outputSchema,
         isConcurrencySafe: () => true,

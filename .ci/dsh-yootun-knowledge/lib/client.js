@@ -3,7 +3,9 @@ window.__ModuleLoader__.load({
   factory: (require) => {
     var module = { exports: {} };
     var exports = module.exports;
+    globalThis.__DSH_PLUGIN_BRAND__ = {"tenant":"yootun","name":"Yootun-Agent","company":"优惠豚","eyebrow":"YOOTUN AGENT","knowledgeEyebrow":"YOOTUN KNOWLEDGE","help":"获取 model_api_key，请联系优惠豚 AI 部小伙伴：19996936963","helpEn":"For model_api_key, contact the Yootun AI team at 19996936963.","logoDataUrl":"data:image/png;base64,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"};
     const React = require("react");
+    const PLUGIN_BRAND = globalThis.__DSH_PLUGIN_BRAND__ || { tenant: 'yootun', company: '优惠豚', knowledgeEyebrow: 'YOOTUN KNOWLEDGE' }
     const REQUEST_TIMEOUT_MS = 30000
     const {
       createElement: h,
@@ -78,7 +80,7 @@ window.__ModuleLoader__.load({
         citation: "引用",
         confidence: "置信度",
         graphSearch: "查询实体关系",
-        graphPlaceholder: "输入实体名称，例如：优惠豚企业空间",
+        graphPlaceholder: `输入实体名称，例如：${PLUGIN_BRAND.company}企业空间`,
         graphRun: "查询图谱",
         graphLoading: "图谱加载中…",
         graphEmpty: "选择一个业务实体查看授权关系",
@@ -1282,7 +1284,7 @@ window.__ModuleLoader__.load({
             h(
               "div",
               null,
-              h("span", { className: "yk-eyebrow" }, "YOOTUN KNOWLEDGE"),
+              h("span", { className: "yk-eyebrow" }, PLUGIN_BRAND.knowledgeEyebrow),
               h("h1", { id: "yk-title" }, t("title")),
               h("p", null, t("subtitle")),
             ),
