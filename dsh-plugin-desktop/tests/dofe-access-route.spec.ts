@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { Readable } from 'node:stream'
 import { describe, expect, it, vi } from 'vitest'
-import { DOFE_ACCESS_MODELS_PATH, handleDofeAccessValidationRequest, handleDofeModelCatalogRequest } from '../src/dofe-access-route.ts'
+import { DOFE_ACCESS_MODELS_PATH, DOFE_AUTH_CONTEXT_URL, handleDofeAccessValidationRequest, handleDofeModelCatalogRequest } from '../src/dofe-access-route.ts'
 
 const ORIGIN = 'http://127.0.0.1:43120'
 
@@ -42,11 +42,20 @@ describe('DoFe model_api_key validation route', () => {
   })
 
   it('validates the key through the managed gateway without returning the secret', async () => {
-    const fetcher = vi.fn(async () => new Response('{}', { status: 200 }))
+    const fetcher = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ tenantSlug: 'yootun' }), { status: 200 }))
+      .mockResolvedValueOnce(new Response('{}', { status: 200 }))
     const res = response()
 
     await handleDofeAccessValidationRequest(request({ key: 'entered-secret' }), res, ORIGIN, fetcher)
 
+    expect(fetcher).toHaveBeenCalledWith(
+      DOFE_AUTH_CONTEXT_URL,
+      expect.objectContaining({
+        headers: expect.objectContaining({ Authorization: 'Bearer entered-secret' }),
+        redirect: 'error',
+      }),
+    )
     expect(fetcher).toHaveBeenCalledWith(
       'https://ixicai.cn/api/v1/models?protocol=openai',
       expect.objectContaining({
@@ -82,15 +91,29 @@ describe('DoFe model_api_key validation route', () => {
       request({ key: 'invalid-secret' }),
       res,
       ORIGIN,
-      async () => new Response('{}', { status: 401 }),
+      vi.fn()
+        .mockResolvedValueOnce(new Response(JSON.stringify({ tenantSlug: 'yootun' }), { status: 200 }))
+        .mockResolvedValueOnce(new Response('{}', { status: 401 })),
     )
 
     expect(res.statusCode).toBe(200)
-    expect(JSON.parse(res.body)).toEqual({ valid: false })
+    expect(JSON.parse(res.body)).toEqual({ valid: false, reason: 'invalid_key' })
+  })
+
+  it('rejects a valid key that belongs to another tenant before loading models', async () => {
+    const fetcher = vi.fn(async () => new Response(JSON.stringify({ tenantSlug: 'other-tenant' }), { status: 200 }))
+    const res = response()
+
+    await handleDofeAccessValidationRequest(request({ key: 'entered-secret' }), res, ORIGIN, fetcher)
+
+    expect(JSON.parse(res.body)).toEqual({ valid: false, reason: 'tenant_mismatch' })
+    expect(fetcher).toHaveBeenCalledTimes(1)
   })
 
   it('returns the normalized remote model catalog without returning the key', async () => {
-    const fetcher = vi.fn(async () => new Response(JSON.stringify({ data: [{ id: 'remote-a', name: 'Remote A' }] }), { status: 200 }))
+    const fetcher = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ tenantSlug: 'yootun' }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ data: [{ id: 'remote-a', name: 'Remote A' }] }), { status: 200 }))
     const res = response()
 
     await handleDofeModelCatalogRequest(request({ key: 'entered-secret' }), res, ORIGIN, fetcher)
@@ -102,5 +125,15 @@ describe('DoFe model_api_key validation route', () => {
     expect(JSON.parse(res.body)).toEqual({ models: [{ id: 'remote-a', name: 'Remote A' }] })
     expect(res.body).not.toContain('entered-secret')
     expect(DOFE_ACCESS_MODELS_PATH).toBe('/api/desktop/dofe/models')
+  })
+
+  it('rejects the model catalog for another tenant', async () => {
+    const fetcher = vi.fn(async () => new Response(JSON.stringify({ tenantSlug: 'other-tenant' }), { status: 200 }))
+    const res = response()
+
+    await handleDofeModelCatalogRequest(request({ key: 'entered-secret' }), res, ORIGIN, fetcher)
+
+    expect(JSON.parse(res.body)).toEqual({ models: [], reason: 'tenant_mismatch' })
+    expect(fetcher).toHaveBeenCalledTimes(1)
   })
 })

@@ -1,7 +1,9 @@
 /** Built-in DoFe capabilities shipped by each white-label product. */
 
 export const DOFE_ACCESS_SETTINGS_NAMESPACE = 'dofe-access' as const
-export const DOFE_ACCESS_VALIDATION_VERSION = 3 as const
+// Tenant ownership is now part of authorization; previously accepted keys
+// must re-enter the gate so they can be checked against the current brand.
+export const DOFE_ACCESS_VALIDATION_VERSION = 4 as const
 export type DofeBrandVariant = 'yootun' | 'sensteed'
 
 export const DOFE_PLUGIN_CATALOG = [

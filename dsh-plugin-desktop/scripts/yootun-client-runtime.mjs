@@ -93,7 +93,7 @@ function createBrowserHarness(pluginId) {
   }
 
   const access = {
-    getSnapshot: () => ({ value: { setupComplete: true, validationVersion: 3 } }),
+    getSnapshot: () => ({ value: { setupComplete: true, validationVersion: 4 } }),
     subscribe: () => () => {},
     mutate: async () => ({ ok: true }),
   }

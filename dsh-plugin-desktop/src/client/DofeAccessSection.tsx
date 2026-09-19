@@ -77,7 +77,18 @@ const CSS = `
 }
 `
 
-async function validateModelApiKey(key: string): Promise<boolean> {
+type AccessFailureReason = 'invalid_key' | 'tenant_mismatch' | 'tenant_unavailable'
+type ValidationResult = { valid: true } | { valid: false; reason?: AccessFailureReason }
+
+function accessFailureReason(value: unknown): AccessFailureReason | undefined {
+  if (typeof value !== 'object' || value === null) return undefined
+  const reason = (value as { reason?: unknown }).reason
+  return reason === 'invalid_key' || reason === 'tenant_mismatch' || reason === 'tenant_unavailable'
+    ? reason
+    : undefined
+}
+
+async function validateModelApiKey(key: string): Promise<ValidationResult> {
   try {
     const response = await fetch(DOFE_ACCESS_VALIDATE_PATH, {
       method: 'POST',
@@ -87,11 +98,13 @@ async function validateModelApiKey(key: string): Promise<boolean> {
       headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
       body: JSON.stringify({ key }),
     })
-    if (!response.ok) return false
+    if (!response.ok) return { valid: false }
     const value = await response.json() as unknown
-    return typeof value === 'object' && value !== null && (value as { valid?: unknown }).valid === true
+    if (typeof value === 'object' && value !== null && (value as { valid?: unknown }).valid === true) return { valid: true }
+    const reason = accessFailureReason(value)
+    return reason === undefined ? { valid: false } : { valid: false, reason }
   } catch {
-    return false
+    return { valid: false }
   }
 }
 
@@ -203,6 +216,7 @@ function AccessForm({ credentials, settingsApi, settingsScope, t, onboarding, on
         body: JSON.stringify({ key }),
       })
       const payload = await response.json() as unknown
+      const failureReason = accessFailureReason(payload)
       // Treat the renderer response as untrusted even though it comes from our
       // same-origin route. A malformed row must become an empty catalog rather
       // than reaching JSX and taking down the whole core page.
@@ -219,7 +233,7 @@ function AccessForm({ credentials, settingsApi, settingsScope, t, onboarding, on
       if (!response.ok || found.length === 0) {
         setModels([])
         setSelectedModel('')
-        setError(t('modelsError'))
+        setError(failureReason === 'tenant_mismatch' ? t('tenantMismatch') : t('modelsError'))
         return
       }
       setModels(found)
@@ -243,11 +257,14 @@ function AccessForm({ credentials, settingsApi, settingsScope, t, onboarding, on
     busyRef.current = true
     setBusy(true)
     setError(undefined)
-    if (key.length > 0 && !(await validateModelApiKey(key))) {
-      busyRef.current = false
-      setBusy(false)
-      setError(t('invalidKey'))
-      return
+    if (key.length > 0) {
+      const validation = await validateModelApiKey(key)
+      if (!validation.valid) {
+        busyRef.current = false
+        setBusy(false)
+        setError(validation.reason === 'tenant_mismatch' ? t('tenantMismatch') : t('invalidKey'))
+        return
+      }
     }
     try {
       const describe = await settingsApi.describe()
