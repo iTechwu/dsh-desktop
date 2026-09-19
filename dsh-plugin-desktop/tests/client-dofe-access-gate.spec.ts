@@ -42,11 +42,13 @@ describe('mandatory DoFe access gate', () => {
     expect(host?.parentElement).toBe(document.body)
     expect(createRoot).toHaveBeenCalledWith(host)
     expect(render).toHaveBeenCalledOnce()
+    expect((document.getElementById('root') as HTMLElement).inert).toBe(true)
 
     dispose()
 
     expect(unmount).toHaveBeenCalledOnce()
     expect(document.getElementById('dsh-dofe-access-gate')).toBeNull()
+    expect((document.getElementById('root') as HTMLElement).inert).toBe(false)
   })
 
   it('lets pointer input pass through the empty gate host after activation', () => {
@@ -185,6 +187,8 @@ describe('mandatory DoFe access gate', () => {
     expect(source).toContain('if (busyRef.current || loadingRef.current) return')
     expect(source).toContain('aria-busy={interactionBusy}')
     expect(source).toContain('disabled={interactionBusy}')
+    expect(source).toContain('const checked = event.currentTarget.checked; setEnabledPlugins(current => checked')
+    expect(source).not.toContain('setEnabledPlugins(current => event.currentTarget.checked')
   })
 
   it('surfaces credential read failures instead of leaving the gate silent', async () => {

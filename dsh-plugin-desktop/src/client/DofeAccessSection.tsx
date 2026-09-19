@@ -326,7 +326,7 @@ function AccessForm({ credentials, settingsApi, settingsScope, t, onboarding, on
     <div className="dshDofeAccessActions"><Button disabled={interactionBusy || !draft.trim()} onClick={() => void loadModels()}>{loadingModels ? t('loadingModels') : t('loadModels')}</Button></div>
     <div className="dshDofeAccessField"><div className="dshDofeAccessFieldHeader"><label className="dshDofeAccessLabel" htmlFor="dofe-model-select">{t('modelsTitle')}</label></div>{configured === true && !draft.trim() && models.length === 0 && <p className="dshDofeAccessHint">{t('reenterKey')}</p>}<select id="dofe-model-select" className="dshDofeAccessModelSelect" value={selectedModel} disabled={interactionBusy || models.length === 0} onChange={event => setSelectedModel(event.currentTarget.value)}><option value="">{models.length === 0 ? t('modelsPlaceholder') : t('modelsEmpty')}</option>{models.map(model => <option key={model.id} value={model.id}>{model.name} ({model.id})</option>)}</select></div>
     {onboarding && <p className="dshDofeAccessHelp"><Phone size={15} aria-hidden="true" /><span>{t('onboardingHelp')}</span></p>}
-    {onboarding && <div className="dshDofeAccessField"><div className="dshDofeAccessFieldHeader"><span className="dshDofeAccessLabel">{t('pluginsTitle')}</span><span className="dshDofeAccessCount">{t('selectedCount').replace('{count}', String(enabledPlugins.length))}</span></div><div className="dshDofeAccessPlugins">{availablePlugins.map(plugin => { const selected = enabledPlugins.includes(plugin.id); return <label className={`dshDofeAccessPlugin${selected ? ' dshDofeAccessPluginSelected' : ''}`} key={plugin.id}><input type="checkbox" checked={selected} disabled={interactionBusy} onChange={event => setEnabledPlugins(current => event.currentTarget.checked ? [...new Set([...current, plugin.id])] : current.filter(id => id !== plugin.id))} /><span className="dshDofeAccessPluginCheck" aria-hidden="true"><Check size={14} strokeWidth={2.5} /></span><span><span className="dshDofeAccessPluginName">{plugin.name}</span><span className="dshDofeAccessPluginDescription">{plugin.description}</span></span></label> })}</div></div>}
+    {onboarding && <div className="dshDofeAccessField"><div className="dshDofeAccessFieldHeader"><span className="dshDofeAccessLabel">{t('pluginsTitle')}</span><span className="dshDofeAccessCount">{t('selectedCount').replace('{count}', String(enabledPlugins.length))}</span></div><div className="dshDofeAccessPlugins">{availablePlugins.map(plugin => { const selected = enabledPlugins.includes(plugin.id); return <label className={`dshDofeAccessPlugin${selected ? ' dshDofeAccessPluginSelected' : ''}`} key={plugin.id}><input type="checkbox" checked={selected} disabled={interactionBusy} onChange={event => { const checked = event.currentTarget.checked; setEnabledPlugins(current => checked ? [...new Set([...current, plugin.id])] : current.filter(id => id !== plugin.id)) }} /><span className="dshDofeAccessPluginCheck" aria-hidden="true"><Check size={14} strokeWidth={2.5} /></span><span><span className="dshDofeAccessPluginName">{plugin.name}</span><span className="dshDofeAccessPluginDescription">{plugin.description}</span></span></label> })}</div></div>}
     {error !== undefined && <p className="dshDofeAccessError" role="alert">{error}</p>}
     <div className={`dshDofeAccessActions${onboarding ? ' dshDofeAccessActionsOnboarding' : ''}`}><Button className="dshDofeAccessPrimary" variant="primary" disabled={interactionBusy || (!draft.trim() && configured !== true) || models.length === 0 || !selectedModel || (onboarding && enabledPlugins.length === 0)} onClick={() => void save()}>{busy ? t('saving') : t('save')}{!busy && <ArrowRight size={16} aria-hidden="true" />}</Button>{!onboarding && <Button className="dshDofeAccessDanger" disabled={interactionBusy || configured !== true} onClick={() => void remove()}>{busy ? t('removing') : t('remove')}</Button>}{!onboarding && <span className="dshDofeAccessStatus" role="status">{configured === true ? t('configured') : configured === false ? t('missing') : ''}</span>}</div>
   </div>
@@ -342,7 +342,7 @@ export function installDofeAccessStyles(): () => void {
 }
 
 export function DofeAccessSection(props: DofeAccessSectionProps): ReactNode { if (props.credentials === undefined || props.settingsApi === undefined || props.settingsScope === undefined || props.t === undefined) return null; return <AccessForm credentials={props.credentials} settingsApi={props.settingsApi} settingsScope={props.settingsScope} t={props.t} /> }
-export function DofeAccessGate({ credentials, settingsApi, settingsScope, t }: DofeAccessInjected): ReactNode {
+export function DofeAccessGate({ credentials, settingsApi, settingsScope, t, onAuthorizationChange }: DofeAccessInjected & { onAuthorizationChange?: (authorized: boolean) => void }): ReactNode {
   const settingsStore = useMemo(() => dofeAccessSettingsStore(settingsScope), [settingsScope])
   const settings = useSyncExternalStore(settingsStore.subscribe, settingsStore.getSnapshot, settingsStore.getSnapshot)
   const [credentialConfigured, setCredentialConfigured] = useState(false)
@@ -354,15 +354,7 @@ export function DofeAccessGate({ credentials, settingsApi, settingsScope, t }: D
   const authorized = credentialConfigured
     && settings.value?.setupComplete === true
     && settings.value.validationVersion === DOFE_ACCESS_VALIDATION_VERSION
-  useEffect(() => {
-    if (authorized) {
-      const root = document.getElementById('root')
-      if (root !== null) root.inert = false
-      document.body.style.overflow = ''
-      return
-    }
-    return blockDofeApplicationRoot()
-  }, [authorized])
+  useEffect(() => { onAuthorizationChange?.(authorized) }, [authorized, onAuthorizationChange])
   if (authorized) return null
   return <DofeOnboardingModal eyebrow={t('onboardingEyebrow')} title={t('onboardingTitle')} description={t('onboardingIntro')} brandLogo={heroBrandDataUrl} brandLogoAlt={BRAND_TENANT}><AccessForm credentials={credentials} settingsApi={settingsApi} settingsScope={settingsScope} t={t} onboarding onDone={() => setCredentialConfigured(true)} /></DofeOnboardingModal>
 }
@@ -376,10 +368,20 @@ export function installDofeAccessGate(
   const host = document.createElement('div')
   host.id = 'dsh-dofe-access-gate'
   document.body.appendChild(host)
+  let releaseApplication: (() => void) | undefined = blockDofeApplicationRoot()
+  const onAuthorizationChange = (authorized: boolean): void => {
+    if (authorized) {
+      releaseApplication?.()
+      releaseApplication = undefined
+    } else if (releaseApplication === undefined) {
+      releaseApplication = blockDofeApplicationRoot()
+    }
+  }
   const root = rootFactory(host)
-  root.render(<DofeAccessGate {...props} />)
+  root.render(<DofeAccessGate {...props} onAuthorizationChange={onAuthorizationChange} />)
   return () => {
     root.unmount()
+    releaseApplication?.()
     host.remove()
   }
 }

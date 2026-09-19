@@ -12,6 +12,9 @@ new Function('require', 'module', 'exports', source)(requirePlugin, pluginModule
 
 let dictionaries = {}
 const listeners = new Set()
+let backgroundActivations = 0
+document.getElementById('background-action').addEventListener('click', () => { backgroundActivations += 1 })
+window.__accessHarness = { get backgroundActivations() { return backgroundActivations } }
 let accessSnapshot = { value: { setupComplete: false, validationVersion: 0, modelId: '' } }
 const publishAccess = operations => {
   const value = { ...accessSnapshot.value }

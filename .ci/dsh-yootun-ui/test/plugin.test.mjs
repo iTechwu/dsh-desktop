@@ -5,11 +5,12 @@ import vm from 'node:vm'
 
 const root = new URL('../', import.meta.url)
 
-async function loadClientTestApi() {
+async function loadClientTestApi(document = undefined) {
   const source = await readFile(new URL('src/client.js', root), 'utf8')
   const exports = {}
   vm.runInNewContext(source, {
     exports,
+    document,
     fetch() {},
     require(specifier) {
       if (specifier === 'react-dom/client') return { createRoot() {} }
@@ -77,6 +78,20 @@ test('guides credential setup and protects credential removal', async () => {
   assert.match(source, /if \(!entered \|\| loadingRef\.current \|\| busyRef\.current\) return/u)
   assert.match(source, /if \(busyRef\.current \|\| loadingRef\.current/u)
   assert.match(source, /disabled: interactionBusy/u)
+  assert.match(source, /const checked = event\.currentTarget\.checked; setEnabled\(current => checked/u)
+  assert.doesNotMatch(source, /setEnabled\(current => event\.currentTarget\.checked/u)
+})
+
+test('keeps the application root blocked until authorization succeeds', async () => {
+  const applicationRoot = { inert: false }
+  const body = { style: { overflow: 'auto' } }
+  const { blockApplicationRoot } = await loadClientTestApi({ body, getElementById: id => id === 'root' ? applicationRoot : null })
+  const release = blockApplicationRoot()
+  assert.equal(applicationRoot.inert, true)
+  assert.equal(body.style.overflow, 'hidden')
+  release()
+  assert.equal(applicationRoot.inert, false)
+  assert.equal(body.style.overflow, 'auto')
 })
 
 test('re-reads and retries a settings mutation once after a revision conflict', async () => {
@@ -165,7 +180,7 @@ test('loads the generated module and registers every owned surface', async () =>
   const document = {
     createElement: () => ({ dataset: {}, remove() {}, textContent: '' }),
     getElementById: () => null,
-    body: { appendChild() {} },
+    body: { style: {}, appendChild() {} },
     head: { appendChild() {} },
   }
   const window = {

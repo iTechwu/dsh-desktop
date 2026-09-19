@@ -70,6 +70,15 @@ try {
   await dialog.waitFor()
   await page.waitForFunction(() => document.activeElement?.id === 'yu-model-key')
   await assertAccessibleSurface(page)
+  const pluginChoices = dialog.locator('.yu-plugin input')
+  const pluginCount = await pluginChoices.count()
+  assert(pluginCount > 0, 'mandatory gate must expose at least one capability choice')
+  for (let index = 0; index < pluginCount; index += 1) await pluginChoices.nth(index).click()
+  await pluginChoices.first().click()
+  assert.equal(await dialog.isVisible(), true, 'capability choices must never dismiss the credential gate')
+  assert.equal(await page.locator('#root').evaluate(root => root.inert), true, 'application root must remain inert before authorization')
+  await assert.rejects(() => page.locator('#background-action').click({ timeout: 500 }), /Timeout/u)
+  assert.equal(await page.evaluate(() => window.__accessHarness.backgroundActivations), 0, 'background actions must remain blocked before authorization')
   await page.evaluate(() => {
     const card = document.querySelector('[role="dialog"]')
     const items = [...card.querySelectorAll('button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),a[href],[tabindex]:not([tabindex="-1"])')]
@@ -114,6 +123,7 @@ try {
   await page.screenshot({ path: resolve(evidenceRoot, '320-access-validating.png'), fullPage: true })
   releaseValidation()
   await dialog.waitFor({ state: 'detached' })
+  assert.equal(await page.locator('#root').evaluate(root => root.inert), false, 'application root must unlock after authorization')
   assert.deepEqual(problems, [])
   console.log('yootun-access-browser: responsive gate, accessible controls, focus trap, and request locks verified')
 } finally {

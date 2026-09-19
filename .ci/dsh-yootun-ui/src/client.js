@@ -98,6 +98,18 @@ async function removeAccess(settingsApi, credentials) {
   if (!result.ok) throw new Error('credential removal rejected')
 }
 
+function blockApplicationRoot() {
+  const root = document.getElementById('root')
+  const previousInert = root?.inert
+  const previousOverflow = document.body.style.overflow
+  if (root) root.inert = true
+  document.body.style.overflow = 'hidden'
+  return () => {
+    if (root) root.inert = previousInert ?? false
+    document.body.style.overflow = previousOverflow
+  }
+}
+
 function AccessForm({ credentials, settingsApi, useAccess, initialConfigured, onboarding, onConfigured, t }) {
   const access = useAccess(snapshot => snapshot)
   const [configured, setConfigured] = useState(initialConfigured)
@@ -221,7 +233,7 @@ function AccessForm({ credentials, settingsApi, useAccess, initialConfigured, on
     h('div', { className: 'yu-field' },
       h('div', { className: 'yu-label-row' }, h('span', null, t('plugins')), h('span', null, t('selected').replace('{count}', String(enabled.length)))),
       h('div', { className: 'yu-plugins' }, ...PLUGINS.map(plugin => h('label', { className: 'yu-plugin', key: plugin.id },
-        h('input', { type: 'checkbox', checked: enabled.includes(plugin.id), disabled: interactionBusy, onChange: event => { setEnabled(current => event.currentTarget.checked ? [...new Set([...current, plugin.id])] : current.filter(id => id !== plugin.id)) } }),
+        h('input', { type: 'checkbox', checked: enabled.includes(plugin.id), disabled: interactionBusy, onChange: event => { const checked = event.currentTarget.checked; setEnabled(current => checked ? [...new Set([...current, plugin.id])] : current.filter(id => id !== plugin.id)) } }),
         h('span', null, h('strong', null, plugin.name), h('span', null, plugin.description))))),
     onboarding ? h('p', { className: 'yu-help' }, t('help')) : null,
     error ? h('p', { className: 'yu-error', role: 'alert' }, error) : null,
@@ -233,7 +245,7 @@ function AccessForm({ credentials, settingsApi, useAccess, initialConfigured, on
       !onboarding && confirmingRemove ? h('button', { type: 'button', className: 'yu-button', disabled: interactionBusy, onClick: () => setConfirmingRemove(false) }, t('cancel')) : null)))
 }
 
-function AccessOnboarding({ complete, credentials, settingsApi, useAccess, t }) {
+function AccessOnboarding({ setApplicationAuthorized, credentials, settingsApi, useAccess, t }) {
   const access = useAccess(snapshot => snapshot)
   const cardRef = useRef(null)
   // Fail closed while the credential service is starting or unavailable.
@@ -246,7 +258,7 @@ function AccessOnboarding({ complete, credentials, settingsApi, useAccess, t }) 
     return () => { active = false }
   }, [credentials])
   const authorized = configured === true && access.value?.setupComplete === true && access.value?.validationVersion === VALIDATION_VERSION
-  useEffect(() => { if (authorized) complete() }, [authorized, complete])
+  useEffect(() => { setApplicationAuthorized(authorized) }, [authorized, setApplicationAuthorized])
   useEffect(() => {
     if (authorized) return undefined
     // 首屏引导是模态卡片：进入时聚焦首个可操作项，Tab 循环不逃出卡片。
@@ -291,10 +303,20 @@ function installMandatoryGate(props) {
   const host = document.createElement('div')
   host.id = 'yu-mandatory-gate'
   document.body.appendChild(host)
+  let releaseApplication = blockApplicationRoot()
+  const setApplicationAuthorized = authorized => {
+    if (authorized) {
+      releaseApplication?.()
+      releaseApplication = undefined
+    } else if (!releaseApplication) {
+      releaseApplication = blockApplicationRoot()
+    }
+  }
   const root = createRoot(host)
-  root.render(h(AccessOnboarding, { ...props, complete() {} }))
+  root.render(h(AccessOnboarding, { ...props, setApplicationAuthorized }))
   return () => {
     root.unmount()
+    releaseApplication?.()
     host.remove()
   }
 }
@@ -337,4 +359,4 @@ function apply(ctx) {
 
 exports.apply = apply
 exports.inject = inject
-exports.__test = { mutateCurrentSettings, removeAccess }
+exports.__test = { blockApplicationRoot, mutateCurrentSettings, removeAccess }
