@@ -705,7 +705,7 @@ export function prepareMacUniversalRuntime(
   }
 
   for (const entry of MACOS_UNIVERSAL_NATIVE_ENTRIES) {
-    if (entry.path.endsWith('/spawn-helper')) {
+    if (entry.path.endsWith('/spawn-helper') || entry.path.endsWith('/bin/uv')) {
       options.chmod(join(root, entry.path), 0o755)
     }
   }

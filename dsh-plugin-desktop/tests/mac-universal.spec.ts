@@ -214,6 +214,8 @@ describe('universal macOS native runtime preparation', () => {
     prepareMacUniversalRuntime({ desktopRoot, exists: () => true, chmod })
 
     expect(chmod.mock.calls).toEqual([
+      [join(desktopRoot, 'node_modules/@dataiku/uv-darwin-arm64/bin/uv'), 0o755],
+      [join(desktopRoot, 'node_modules/@dataiku/uv-darwin-x64/bin/uv'), 0o755],
       [join(desktopRoot, 'node_modules/node-pty/prebuilds/darwin-arm64/spawn-helper'), 0o755],
       [join(desktopRoot, 'node_modules/node-pty/prebuilds/darwin-x64/spawn-helper'), 0o755],
     ])
