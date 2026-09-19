@@ -267,6 +267,10 @@ export const REQUIRED_MACOS_UNIVERSAL_ENTRIES = [
   FS_EXT_RELATIVE_PATH,
 ] as const
 
+const MACOS_UNIVERSAL_UV_ENTRIES: readonly string[] = MACOS_UNIVERSAL_NATIVE_ENTRIES
+  .filter(entry => entry.path.endsWith('/bin/uv'))
+  .map(entry => entry.path)
+
 /** Minimal raw ASAR header surface returned by @electron/asar. */
 export interface RawAsarHeader {
   readonly header: unknown
@@ -950,13 +954,21 @@ export function verifyPackagedRuntime(
         ? REQUIRED_POSIX_FS_EXT_ENTRIES[context.electronPlatformName].arm64
         : undefined
     : undefined
+  const universalMacEntries = context.electronPlatformName === 'darwin'
+    && context.arch === 4
+    && existsSync(join(
+      context.packager.projectDir ?? DESKTOP_PACKAGE_ROOT,
+      'node_modules/@agents-anywhere/dsh-bridge-next/package.json',
+    ))
+    ? REQUIRED_MACOS_UNIVERSAL_ENTRIES
+    : REQUIRED_MACOS_UNIVERSAL_ENTRIES.filter(entry => !MACOS_UNIVERSAL_UV_ENTRIES.includes(entry))
   const requiredPhysicalEntries = context.electronPlatformName === 'win32'
     ? [
         ...desktopPhysicalEntries,
         ...REQUIRED_WINDOWS_X64_NODE_PTY_ENTRIES,
       ]
     : context.electronPlatformName === 'darwin' && context.arch === 4
-      ? [...desktopPhysicalEntries, ...REQUIRED_MACOS_UNIVERSAL_ENTRIES]
+      ? [...desktopPhysicalEntries, ...universalMacEntries]
       : posixFsExtEntry === undefined
         ? desktopPhysicalEntries
         : [...desktopPhysicalEntries, posixFsExtEntry,
@@ -1010,15 +1022,21 @@ export function verifyPackagedAgentsAnywhere(
     ? extractFile(resolvePackagedAsarPath(context), path)
     : readFileSync(join(resolvePackagedApplicationRoot(context), path)),
 ): void {
+  const packagePath = 'node_modules/@agents-anywhere/dsh-bridge-next'
+  const desktopRoot = context.packager.projectDir ?? DESKTOP_PACKAGE_ROOT
+  let expected: { version: string }
+  try {
+    expected = JSON.parse(readInstalled(join(desktopRoot, packagePath, 'package.json')).toString()) as { version: string }
+  } catch (cause) {
+    if ((cause as NodeJS.ErrnoException).code === 'ENOENT') return
+    throw cause
+  }
   if (context.electronPlatformName === 'darwin') {
     const root = usesAsarLayout(context) ? resolvePackagedUnpackedRoot(context) : resolvePackagedApplicationRoot(context)
     for (const entry of MACOS_UNIVERSAL_NATIVE_ENTRIES.filter(entry => entry.path.endsWith('/bin/uv'))) {
       accessSync(join(root, entry.path), constants.X_OK)
     }
   }
-  const packagePath = 'node_modules/@agents-anywhere/dsh-bridge-next'
-  const desktopRoot = context.packager.projectDir ?? DESKTOP_PACKAGE_ROOT
-  const expected = JSON.parse(readInstalled(join(desktopRoot, packagePath, 'package.json')).toString()) as { version: string }
   const actual = JSON.parse(readPackaged(`${packagePath}/package.json`).toString()) as { version: string }
   if (expected.version !== actual.version) {
     throw new Error(`Packaged AA version mismatch: expected ${expected.version}, received ${actual.version}`)

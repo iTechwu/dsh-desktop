@@ -500,6 +500,7 @@ export interface MacUniversalPreparationOptions {
   readonly desktopRoot: string
   readonly exists: (path: string) => boolean
   readonly chmod: (path: string, mode: number) => void
+  readonly entries?: readonly typeof MACOS_UNIVERSAL_NATIVE_ENTRIES[number][]
 }
 
 export interface PackagedMacRuntimeHydrationOptions {
@@ -695,7 +696,8 @@ export function prepareMacUniversalRuntime(
   options: MacUniversalPreparationOptions,
 ): void {
   const root = resolve(options.desktopRoot)
-  const missing = MACOS_UNIVERSAL_NATIVE_ENTRIES
+  const entries = options.entries ?? MACOS_UNIVERSAL_NATIVE_ENTRIES
+  const missing = entries
     .map(entry => join(root, entry.path))
     .filter(path => !options.exists(path))
   if (missing.length > 0) {
@@ -704,7 +706,7 @@ export function prepareMacUniversalRuntime(
     )
   }
 
-  for (const entry of MACOS_UNIVERSAL_NATIVE_ENTRIES) {
+  for (const entry of entries) {
     if (entry.path.endsWith('/spawn-helper') || entry.path.endsWith('/bin/uv')) {
       options.chmod(join(root, entry.path), 0o755)
     }
@@ -714,8 +716,13 @@ export function prepareMacUniversalRuntime(
 /** Prepare the installed workspace dependency tree for universal packaging. */
 export function prepareInstalledMacUniversalRuntime(desktopRoot: string): void {
   buildMacSystemRuntime({ desktopRoot, arches: ['arm64', 'x64'] })
+  const aaManifest = join(resolve(desktopRoot), 'node_modules/@agents-anywhere/dsh-bridge-next/package.json')
+  const entries = existsSync(aaManifest)
+    ? MACOS_UNIVERSAL_NATIVE_ENTRIES
+    : MACOS_UNIVERSAL_NATIVE_ENTRIES.filter(entry => !entry.path.endsWith('/bin/uv'))
   prepareMacUniversalRuntime({
     desktopRoot,
+    entries,
     exists: path => {
       for (const arch of ['arm64', 'x64'] as const) {
         if (path === join(resolve(desktopRoot), `node_modules/@deepseek-ai/node-addon-system-darwin-${arch}/bin/system.node`)) {

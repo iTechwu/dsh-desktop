@@ -347,6 +347,15 @@ describe('packaged desktop runtime verification', () => {
     )).toThrow('Packaged AA entry differs')
   })
 
+  it('skips optional AA verification when the bridge is not installed', () => {
+    const missing = Object.assign(new Error('missing optional package'), { code: 'ENOENT' })
+    expect(() => verifyPackagedAgentsAnywhere(
+      context('/build', 'win32'),
+      () => { throw missing },
+      () => { throw new Error('packaged AA should not be read') },
+    )).not.toThrow()
+  })
+
   it('rejects unsupported macOS package architectures before verification', () => {
     expect(() => hydratePackagedMacRuntimeForContext(context('/build', 'darwin', 0)))
       .toThrow('unsupported macOS package architecture 0')
