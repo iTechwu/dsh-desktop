@@ -7,6 +7,7 @@
     "Anywhere Labs"
   ],
   "allowance": {
+    ".ci/brand/defaults.json": 4,
     ".agents/notes/implemented/architecture/2026-08-15-desktop-release-discovery-and-terminal.md": 1,
     ".agents/notes/implemented/architecture/2026-08-15-desktop-release-discovery-and-terminal.zh.md": 1,
     ".ci/dsh-geoflow-mcp/cordis.patch.yml": 1,
