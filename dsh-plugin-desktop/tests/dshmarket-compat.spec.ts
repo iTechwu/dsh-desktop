@@ -201,6 +201,10 @@ describe('dsh-market Desktop install compatibility', () => {
 
     const client = readFileSync(join(dirname(manifest), 'client', 'client.js'), 'utf8')
     expect(client).toContain('installed["dshmarket"] !== void 0 || updates["dshmarket"] !== void 0')
+    expect(client).toContain('function localizedFailure(raw, lang)')
+    expect(client).toContain('installError === null &&')
+    expect(client).toContain('t("operationFailed")')
+    expect(client).toContain('Market_module_css_default.errActions')
   })
 
   it.each([

@@ -9,7 +9,7 @@ overrides:
 
 patchedDependencies:
   app-builder-lib@26.15.7: 85e8d51fba419b223d4312c090fd64bfc70e551a48d10cc30328474d7e2d8b2f
-  dshmarket@1.39.0: 0fb62de64dc9fd552e552c0b221cea2da86eabe705f50fbab11057bfe6d168db
+  dshmarket@1.39.0: 3bc46b1b0e5a4ed0906580c0905ee109b98178769c517fda651b68cd79900cc2
   open@11.0.1: 383484d0b84b1bb856145936155333d024f1dfc5d6eaf86104b2a00bac8e8612
 
 importers:
@@ -1640,7 +1640,7 @@ importers:
         version: link:../dsh-community-market
       dshmarket:
         specifier: 1.39.0
-        version: 1.39.0(patch_hash=0fb62de64dc9fd552e552c0b221cea2da86eabe705f50fbab11057bfe6d168db)(@deepseek-ai/cordis@deepseek-harness+vendor+cordis)(@deepseek-ai/dsh-settings@deepseek-harness+packages+settings+settings)(@deepseek-ai/schemastery@deepseek-harness+vendor+schemastery)
+        version: 1.39.0(patch_hash=3bc46b1b0e5a4ed0906580c0905ee109b98178769c517fda651b68cd79900cc2)(@deepseek-ai/cordis@deepseek-harness+vendor+cordis)(@deepseek-ai/dsh-settings@deepseek-harness+packages+settings+settings)(@deepseek-ai/schemastery@deepseek-harness+vendor+schemastery)
       fs-ext:
         specifier: 2.1.1
         version: 2.1.1
@@ -10253,7 +10253,7 @@ snapshots:
       - bufferutil
       - utf-8-validate
 
-  dshmarket@1.39.0(patch_hash=0fb62de64dc9fd552e552c0b221cea2da86eabe705f50fbab11057bfe6d168db)(@deepseek-ai/cordis@deepseek-harness+vendor+cordis)(@deepseek-ai/dsh-settings@deepseek-harness+packages+settings+settings)(@deepseek-ai/schemastery@deepseek-harness+vendor+schemastery):
+  dshmarket@1.39.0(patch_hash=3bc46b1b0e5a4ed0906580c0905ee109b98178769c517fda651b68cd79900cc2)(@deepseek-ai/cordis@deepseek-harness+vendor+cordis)(@deepseek-ai/dsh-settings@deepseek-harness+packages+settings+settings)(@deepseek-ai/schemastery@deepseek-harness+vendor+schemastery):
     dependencies:
       '@deepseek-ai/cordis': link:deepseek-harness/vendor/cordis
       js-yaml: 4.3.1
