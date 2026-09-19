@@ -80,12 +80,12 @@ const dofeUiBuild = readFileSync(new URL('scripts/build-dofe-ui.mjs', workspaceR
 const main = readFileSync(new URL('src/main.ts', packageRoot), 'utf8')
 
 describe('published package surface', () => {
-  it('runs desktop and community market typechecks from the root command', () => {
+  it('runs all desktop editions and community market typechecks from the root command', () => {
     expect(workspaceManifest.scripts?.typecheck)
       .toBe('pnpm --filter dsh-plugin-desktop typecheck && pnpm --filter dsh-community-market typecheck')
   })
 
-  it('runs desktop and community market tests from the root command', () => {
+  it('runs all desktop editions and community market tests from the root command', () => {
     expect(workspaceManifest.scripts?.test)
       .toBe('pnpm --filter dsh-plugin-desktop test && pnpm --filter dsh-community-market test')
   })
