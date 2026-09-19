@@ -135,6 +135,20 @@ describe('macOS DMG smoke artifact verification', () => {
     expect(harness.removeMountPoint).toHaveBeenCalledWith(value.root)
   })
 
+  it('accepts a package without the optional Agents Anywhere uv runtime', () => {
+    const value = fixture()
+    for (const entry of MACOS_UNIVERSAL_PACKAGED_ENTRIES.filter(entry => entry.path.endsWith('/bin/uv'))) {
+      rmSync(join(`${value.appAsar}.unpacked`, entry.path))
+    }
+    const harness = options({ makeMountPoint: () => value.root }, value.modeOverrides)
+
+    expect(verifyMacSmoke(harness.value)).toEqual({
+      appPath: join(value.root, `${productName}.app`),
+      dmgPath: `/release/dist/${dmgName}.dmg`,
+    })
+    expect(harness.calls.some(call => call.args.some(arg => arg.includes('@dataiku/uv-')))).toBe(false)
+  })
+
   it('rejects the mount when no DMG is present', () => {
     const harness = options({ listDmgs: () => [] })
 

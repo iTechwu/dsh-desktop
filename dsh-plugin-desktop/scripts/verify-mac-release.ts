@@ -1,11 +1,14 @@
 /** Verify the signed application sealed inside one macOS release DMG. */
 
 import { spawnSync } from 'node:child_process'
-import { mkdtempSync, readdirSync, rmdirSync, statSync } from 'node:fs'
+import { existsSync, mkdtempSync, readdirSync, rmdirSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { MACOS_UNIVERSAL_PACKAGED_ENTRIES } from './mac-universal.ts'
+import {
+  MACOS_UNIVERSAL_PACKAGED_ENTRIES,
+  selectMacUniversalPackagedEntries,
+} from './mac-universal.ts'
 import { DESKTOP_PRODUCT_NAME } from '../src/product-identity.ts'
 
 /** Injectable filesystem and command boundaries for release verification. */
@@ -22,6 +25,8 @@ export interface MacReleaseVerificationOptions {
   readonly run: (command: string, args: readonly string[]) => void
   /** Remove the detached empty mount point. */
   readonly removeMountPoint: (mountPoint: string) => void
+  /** Probe a physical path inside the mounted application. */
+  readonly exists?: (path: string) => boolean
 }
 
 function listDmgs(distDir: string): readonly string[] {
@@ -50,6 +55,7 @@ function defaultOptions(): MacReleaseVerificationOptions {
     makeMountPoint: () => mkdtempSync(join(tmpdir(), 'sensteed-agent-dmg-')),
     run,
     removeMountPoint: mountPoint => rmdirSync(mountPoint),
+    exists: existsSync,
   }
 }
 
@@ -81,7 +87,10 @@ export function verifyMacRelease(
     options.run('lipo', [executablePath, '-verify_arch', 'x86_64'])
     options.run('lipo', [executablePath, '-verify_arch', 'arm64'])
     const unpackedRoot = join(appPath, 'Contents', 'Resources', 'app.asar.unpacked')
-    for (const entry of MACOS_UNIVERSAL_PACKAGED_ENTRIES) {
+    const includesUv = MACOS_UNIVERSAL_PACKAGED_ENTRIES
+      .filter(entry => entry.path.endsWith('/bin/uv'))
+      .some(entry => (options.exists ?? existsSync)(join(unpackedRoot, entry.path)))
+    for (const entry of selectMacUniversalPackagedEntries(includesUv)) {
       options.run('lipo', [join(unpackedRoot, entry.path), '-verify_arch', entry.arch])
       if (entry.path.endsWith('/bin/uv')) {
         options.run('/bin/test', ['-x', join(unpackedRoot, entry.path)])

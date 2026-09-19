@@ -5,7 +5,10 @@ import { existsSync, mkdtempSync, readdirSync, rmdirSync, statSync } from 'node:
 import { tmpdir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { MACOS_UNIVERSAL_PACKAGED_ENTRIES } from './mac-universal.ts'
+import {
+  MACOS_UNIVERSAL_PACKAGED_ENTRIES,
+  selectMacUniversalPackagedEntries,
+} from './mac-universal.ts'
 import { DESKTOP_PRODUCT_NAME } from '../src/product-identity.ts'
 
 /** Injectable filesystem and command boundaries for smoke verification. */
@@ -128,7 +131,10 @@ export function verifyMacSmoke(
     }
 
     const unpackedRoot = `${appAsarPath}.unpacked`
-    for (const entry of MACOS_UNIVERSAL_PACKAGED_ENTRIES) {
+    const includesUv = MACOS_UNIVERSAL_PACKAGED_ENTRIES
+      .filter(entry => entry.path.endsWith('/bin/uv'))
+      .some(entry => options.exists(join(unpackedRoot, entry.path)))
+    for (const entry of selectMacUniversalPackagedEntries(includesUv)) {
       const nativePath = join(unpackedRoot, entry.path)
       if (!options.exists(nativePath)) {
         throw new Error(`universal application is missing ${nativePath}`)

@@ -23,6 +23,7 @@ function options(overrides: Partial<MacReleaseVerificationOptions> = {}) {
     makeMountPoint: () => '/private/tmp/sensteed-agent-dmg-test',
     run: (command, args) => { calls.push({ command, args: [...args] }) },
     removeMountPoint,
+    exists: () => true,
     ...overrides,
   }
   return { calls, removeMountPoint, value }

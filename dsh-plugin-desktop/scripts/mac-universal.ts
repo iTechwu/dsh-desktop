@@ -131,6 +131,26 @@ export const MACOS_UNIVERSAL_PACKAGED_ENTRIES = [
   ...MACOS_UNIVERSAL_FS_EXT_ENTRIES,
 ] as const
 
+type MacUniversalPackagedEntry = (typeof MACOS_UNIVERSAL_PACKAGED_ENTRIES)[number]
+
+/** Select the native inventory for a package with or without the optional AA uv runtime. */
+export function selectMacUniversalNativeEntries(
+  includeUv: boolean,
+): readonly typeof MACOS_UNIVERSAL_NATIVE_ENTRIES[number][] {
+  return includeUv
+    ? MACOS_UNIVERSAL_NATIVE_ENTRIES
+    : MACOS_UNIVERSAL_NATIVE_ENTRIES.filter(entry => !entry.path.endsWith('/bin/uv'))
+}
+
+/** Select the packaged inventory for a package with or without the optional AA uv runtime. */
+export function selectMacUniversalPackagedEntries(
+  includeUv: boolean,
+): readonly MacUniversalPackagedEntry[] {
+  return includeUv
+    ? MACOS_UNIVERSAL_PACKAGED_ENTRIES
+    : MACOS_UNIVERSAL_PACKAGED_ENTRIES.filter(entry => !entry.path.endsWith('/bin/uv'))
+}
+
 export interface MacCloudflaredHydrationOptions {
   readonly unpackedRoot: string
   readonly electronBuilderArch: number | undefined
@@ -717,9 +737,7 @@ export function prepareMacUniversalRuntime(
 export function prepareInstalledMacUniversalRuntime(desktopRoot: string): void {
   buildMacSystemRuntime({ desktopRoot, arches: ['arm64', 'x64'] })
   const aaManifest = join(resolve(desktopRoot), 'node_modules/@agents-anywhere/dsh-bridge-next/package.json')
-  const entries = existsSync(aaManifest)
-    ? MACOS_UNIVERSAL_NATIVE_ENTRIES
-    : MACOS_UNIVERSAL_NATIVE_ENTRIES.filter(entry => !entry.path.endsWith('/bin/uv'))
+  const entries = selectMacUniversalNativeEntries(existsSync(aaManifest))
   prepareMacUniversalRuntime({
     desktopRoot,
     entries,
