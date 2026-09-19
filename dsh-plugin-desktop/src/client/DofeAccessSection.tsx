@@ -283,20 +283,29 @@ function AccessForm({ credentials, settingsApi, settingsScope, t, onboarding, on
           ...(model.maxTokens === undefined ? {} : { maxTokens: model.maxTokens }),
           inputModalities: model.inputModalities === undefined ? ['text'] : [...model.inputModalities],
         }))
+      const piAi = descriptor.find(item => item.ns === 'llm-pi-ai')
+      if (piAi === undefined) throw new Error('llm-pi-ai unavailable')
       if (protocol === 'messages' || protocol === 'responses') {
-        const piAi = descriptor.find(item => item.ns === 'llm-pi-ai')
-        if (piAi === undefined) throw new Error('llm-pi-ai unavailable')
         const route = protocol === 'messages' ? 'dofe-messages' : 'dofe-responses'
-        const result = await settingsApi.mutate('llm-pi-ai', [{ op: 'set', path: ['providers', route], value: {
-          displayName: protocol === 'messages' ? 'DoFe Anthropic Messages' : 'DoFe OpenAI Responses',
-          apiKeyEnv: DOFE_ACCESS_KEY,
-          api: protocol === 'messages' ? 'anthropic-messages' : 'openai-responses',
-          baseURL: protocol === 'messages' ? 'https://ixicai.cn/anthropic' : 'https://ixicai.cn/api/v1',
-          headers: { 'X-Company-Code': BRAND_TENANT },
-          models: modelConfig,
-        } }], piAi.revision)
+        const staleRoute = protocol === 'messages' ? 'dofe-responses' : 'dofe-messages'
+        const result = await settingsApi.mutate('llm-pi-ai', [
+          { op: 'set', path: ['providers', route], value: {
+            displayName: protocol === 'messages' ? 'DoFe Anthropic Messages' : 'DoFe OpenAI Responses',
+            apiKeyEnv: DOFE_ACCESS_KEY,
+            api: protocol === 'messages' ? 'anthropic-messages' : 'openai-responses',
+            baseURL: protocol === 'messages' ? 'https://ixicai.cn/anthropic' : 'https://ixicai.cn/api/v1',
+            headers: { 'X-Company-Code': BRAND_TENANT },
+            models: modelConfig,
+          } },
+          { op: 'unset', path: ['providers', staleRoute] },
+        ], piAi.revision)
         if (!result.ok) throw new Error(result.error.message)
       } else {
+        const piResult = await settingsApi.mutate('llm-pi-ai', [
+          { op: 'unset', path: ['providers', 'dofe-messages'] },
+          { op: 'unset', path: ['providers', 'dofe-responses'] },
+        ], piAi.revision)
+        if (!piResult.ok) throw new Error(piResult.error.message)
         const deepseek = descriptor.find(item => item.ns === 'llm-deepseek')
         if (deepseek === undefined) throw new Error('llm-deepseek unavailable')
         const result = await settingsApi.mutate('llm-deepseek', [
@@ -363,8 +372,8 @@ function AccessForm({ credentials, settingsApi, settingsScope, t, onboarding, on
       <div className="dshDofeAccessFieldHeader"><label className="dshDofeAccessLabel" htmlFor="dofe-model-api-key">{t('key')}</label>{onboarding && <span className="dshDofeAccessHint"><ShieldCheck size={13} aria-hidden="true" /> {t('credentialHint')}</span>}</div>
       <div className="dshDofeAccessInputWrap"><Input className="dshDofeAccessInput" id="dofe-model-api-key" type={revealKey ? 'text' : 'password'} autoComplete="off" value={draft} disabled={interactionBusy} placeholder={onboarding ? t('placeholder') : configured ? t('configured') : t('placeholder')} onChange={event => { setDraft(event.currentTarget.value); setModels([]); setSelectedModel('') }} onKeyDown={event => { if (event.key === 'Enter') void loadModels() }} /><button type="button" className="dshDofeAccessReveal" title={revealKey ? t('hideKey') : t('showKey')} aria-label={revealKey ? t('hideKey') : t('showKey')} disabled={interactionBusy} onClick={() => setRevealKey(current => !current)}>{revealKey ? <EyeOff size={17} /> : <Eye size={17} />}</button></div>
     </div>
-    <div className="dshDofeAccessActions"><Button disabled={interactionBusy || !draft.trim()} onClick={() => void loadModels()}>{loadingModels ? t('loadingModels') : t('loadModels')}</Button></div>
     <div className="dshDofeAccessField"><div className="dshDofeAccessFieldHeader"><label className="dshDofeAccessLabel" htmlFor="dofe-protocol-select">{t('protocolTitle')}</label></div><select id="dofe-protocol-select" className="dshDofeAccessModelSelect" value={protocol} disabled={interactionBusy} onChange={event => { const next = event.currentTarget.value as DofeProtocol; setProtocol(next); setModels([]); setSelectedModel(''); setError(undefined) }}><option value="chat-completions">{t('protocolChat')}</option><option value="messages">{t('protocolMessages')}</option><option value="responses">{t('protocolResponses')}</option></select></div>
+    <div className="dshDofeAccessActions"><Button disabled={interactionBusy || !draft.trim()} onClick={() => void loadModels()}>{loadingModels ? t('loadingModels') : t('loadModels')}</Button></div>
     <div className="dshDofeAccessField"><div className="dshDofeAccessFieldHeader"><label className="dshDofeAccessLabel" htmlFor="dofe-model-select">{t('modelsTitle')}</label></div>{configured === true && !draft.trim() && models.length === 0 && <p className="dshDofeAccessHint">{t('reenterKey')}</p>}<select id="dofe-model-select" className="dshDofeAccessModelSelect" value={selectedModel} disabled={interactionBusy || models.length === 0} onChange={event => setSelectedModel(event.currentTarget.value)}><option value="">{models.length === 0 ? t('modelsPlaceholder') : t('modelsEmpty')}</option>{models.map(model => <option key={model.id} value={model.id}>{model.name} ({model.id})</option>)}</select></div>
     {onboarding && <p className="dshDofeAccessHelp"><Phone size={15} aria-hidden="true" /><span>{t('onboardingHelp')}</span></p>}
     {onboarding && <div className="dshDofeAccessField"><div className="dshDofeAccessFieldHeader"><span className="dshDofeAccessLabel">{t('pluginsTitle')}</span><span className="dshDofeAccessCount">{t('selectedCount').replace('{count}', String(enabledPlugins.length))}</span></div><div className="dshDofeAccessPlugins">{availablePlugins.map(plugin => { const selected = enabledPlugins.includes(plugin.id); return <label className={`dshDofeAccessPlugin${selected ? ' dshDofeAccessPluginSelected' : ''}`} key={plugin.id}><input type="checkbox" checked={selected} disabled={interactionBusy} onChange={event => { const checked = event.currentTarget.checked; setEnabledPlugins(current => checked ? [...new Set([...current, plugin.id])] : current.filter(id => id !== plugin.id)) }} /><span className="dshDofeAccessPluginCheck" aria-hidden="true"><Check size={14} strokeWidth={2.5} /></span><span><span className="dshDofeAccessPluginName">{plugin.name}</span><span className="dshDofeAccessPluginDescription">{plugin.description}</span></span></label> })}</div></div>}

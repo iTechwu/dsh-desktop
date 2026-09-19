@@ -197,4 +197,14 @@ describe('mandatory DoFe access gate', () => {
     expect(source).toContain("if (!cancelled) setError(t('loadError'))")
     expect(source).toContain("}).catch(() => { setCredentialConfigured(false) })")
   })
+
+  it('removes stale protocol routes whenever the selected protocol is saved', async () => {
+    const source = await readFile(resolve(process.cwd(), 'src/client/DofeAccessSection.tsx'), 'utf8')
+
+    expect(source).toContain("const staleRoute = protocol === 'messages' ? 'dofe-responses' : 'dofe-messages'")
+    expect(source).toContain("{ op: 'unset', path: ['providers', staleRoute] }")
+    expect(source).toContain("{ op: 'unset', path: ['providers', 'dofe-messages'] }")
+    expect(source).toContain("{ op: 'unset', path: ['providers', 'dofe-responses'] }")
+    expect(source.indexOf('id="dofe-protocol-select"')).toBeLessThan(source.indexOf("onClick={() => void loadModels()}"))
+  })
 })
