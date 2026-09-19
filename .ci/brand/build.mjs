@@ -8,5 +8,5 @@ export function pluginBrand(environment = process.env) {
   return brand
 }
 export function brandClientSource(source, environment = process.env) {
-  return `const PLUGIN_BRAND = ${JSON.stringify(pluginBrand(environment))};\n${source}`
+  return `globalThis.__DSH_PLUGIN_BRAND__ = ${JSON.stringify(pluginBrand(environment))};\n${source}`
 }
