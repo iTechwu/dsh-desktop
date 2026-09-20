@@ -209,6 +209,7 @@ function AccessForm({ credentials, settingsApi, settingsScope, t, onboarding, on
   const [busy, setBusy] = useState(false)
   const busyRef = useRef(false)
   const [error, setError] = useState<string>()
+  const [autoComplete, setAutoComplete] = useState(false)
   const ssoBound = settings.value?.authMode === 'feishu' && Boolean(settings.value.identity?.ssoSub)
   const bindFeishuLogin = async (status: DofeAuthSnapshot): Promise<void> => {
     if (!status.user?.ssoSub || !status.entitlements) throw new Error('登录身份不完整')
@@ -226,7 +227,8 @@ function AccessForm({ credentials, settingsApi, settingsScope, t, onboarding, on
     setConfigured(true)
     setEnabledPlugins(plugins)
     setProtocol(nextProtocol)
-    await loadModels({ key: '', protocol: nextProtocol, configured: true })
+    await loadModels({ key: '', protocol: nextProtocol, configured: true, preferredModel: status.entitlements.defaultModel })
+    setAutoComplete(true)
   }
   useEffect(() => {
     if (settings.value?.enabledPlugins !== undefined) setEnabledPlugins(normalizeDofePluginIds(settings.value.enabledPlugins, BRAND_VARIANT))
@@ -248,7 +250,7 @@ function AccessForm({ credentials, settingsApi, settingsScope, t, onboarding, on
     })
     return () => { cancelled = true }
   }, [credentials, t])
-  const loadModels = async (overrides: { key?: string; protocol?: DofeProtocol; configured?: boolean } = {}): Promise<void> => {
+  const loadModels = async (overrides: { key?: string; protocol?: DofeProtocol; configured?: boolean; preferredModel?: string } = {}): Promise<void> => {
     const request = dofeModelsRequestBody(overrides.key ?? draft, overrides.configured ?? configured, overrides.protocol ?? protocol)
     if ((!request.key && !request.useStored) || loadingRef.current || busyRef.current) return
     loadingRef.current = true
@@ -285,7 +287,10 @@ function AccessForm({ credentials, settingsApi, settingsScope, t, onboarding, on
         return
       }
       setModels(found)
-      setSelectedModel(current => found.some(model => model.id === current) ? current : found[0]!.id)
+      setSelectedModel(current => {
+        const candidate = overrides.preferredModel || current
+        return found.some(model => model.id === candidate) ? candidate : found[0]!.id
+      })
     } catch {
       setModels([])
       setSelectedModel('')
@@ -381,6 +386,11 @@ function AccessForm({ credentials, settingsApi, settingsScope, t, onboarding, on
     setConfigured(true)
     onDone?.()
   }
+  useEffect(() => {
+    if (!autoComplete || !ssoBound || loadingModels || busy || models.length === 0 || !selectedModel) return
+    setAutoComplete(false)
+    void save()
+  }, [autoComplete, ssoBound, loadingModels, busy, models, selectedModel])
   const remove = async (): Promise<void> => {
     if (busyRef.current || loadingRef.current) return
     busyRef.current = true
