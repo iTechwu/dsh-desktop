@@ -1,6 +1,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import {
   DOFE_AUTH_CANCEL_PATH,
+  DOFE_AUTH_LOGOUT_PATH,
   DOFE_AUTH_COMPLETE_PATH,
   DOFE_AUTH_SESSION_PATH,
   DOFE_AUTH_STATUS_PATH,
@@ -8,7 +9,7 @@ import {
   writeDofeAuthJson,
 } from './dofe-auth-service.ts'
 
-export const DOFE_AUTH_PATHS = [DOFE_AUTH_SESSION_PATH, DOFE_AUTH_STATUS_PATH, DOFE_AUTH_COMPLETE_PATH, DOFE_AUTH_CANCEL_PATH] as const
+export const DOFE_AUTH_PATHS = [DOFE_AUTH_SESSION_PATH, DOFE_AUTH_STATUS_PATH, DOFE_AUTH_COMPLETE_PATH, DOFE_AUTH_CANCEL_PATH, DOFE_AUTH_LOGOUT_PATH] as const
 
 function permitted(req: IncomingMessage, expectedOrigin: string): boolean {
   const address = req.socket.remoteAddress ?? ''
@@ -30,6 +31,7 @@ export async function handleDofeAuthRequest(
   if (!permitted(req, expectedOrigin)) return writeDofeAuthJson(res, 403, { status: 'error' })
   if (path === DOFE_AUTH_SESSION_PATH) return writeDofeAuthJson(res, 200, await service.start())
   if (path === DOFE_AUTH_CANCEL_PATH) return writeDofeAuthJson(res, 200, await service.cancel())
+  if (path === DOFE_AUTH_LOGOUT_PATH) return writeDofeAuthJson(res, 200, await service.logout())
   if (path === DOFE_AUTH_STATUS_PATH || path === DOFE_AUTH_COMPLETE_PATH) return writeDofeAuthJson(res, 200, service.getStatus())
   writeDofeAuthJson(res, 404, { status: 'error' })
 }

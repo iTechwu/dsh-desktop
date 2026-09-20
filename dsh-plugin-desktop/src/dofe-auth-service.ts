@@ -102,6 +102,15 @@ export class DofeAuthService {
 
   async dispose(): Promise<void> { await this.cancel(); await this.operation }
 
+  async logout(): Promise<DofeAuthSnapshot> {
+    await this.cancel()
+    await this.operation
+    await this.credentials.deleteRecord(DOFE_AUTH_GRANT_KEY)
+    await this.credentials.unset(MODELS_API_KEY_REF)
+    this.snapshot = { status: 'idle' }
+    return this.getStatus()
+  }
+
   private async openAuthorization(interactive: boolean): Promise<void> {
     if (!interactive) {
       const record = await this.credentials.readRecord(DOFE_AUTH_GRANT_KEY)

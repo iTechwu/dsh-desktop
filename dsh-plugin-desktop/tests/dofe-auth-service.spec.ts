@@ -19,6 +19,8 @@ function credentialStore(refreshToken?: string) {
   let record: CredentialRecord | undefined = refreshToken ? { kind: 'grant', payload: { refreshToken } } : undefined
   return {
     set: vi.fn(async () => {}),
+    unset: vi.fn(async () => {}),
+    deleteRecord: vi.fn(async () => { record = undefined }),
     readRecord: vi.fn(async () => record),
     modifyRecord: vi.fn(async (_key: string, mutate: (current: CredentialRecord | undefined) => Promise<CredentialRecord | undefined>) => {
       record = await mutate(record) ?? record
@@ -28,6 +30,17 @@ function credentialStore(refreshToken?: string) {
 }
 
 describe('DofeAuthService', () => {
+  it('removes the saved grant and model key on logout so restart cannot sign in again', async () => {
+    const credentials = credentialStore('refresh-old')
+    const fetcher = vi.fn()
+    const service = new DofeAuthService({ openExternal: vi.fn() } as never, credentials as never, fetcher)
+    expect((await service.logout()).status).toBe('idle')
+    expect(credentials.deleteRecord).toHaveBeenCalledWith(DOFE_AUTH_GRANT_KEY)
+    expect(credentials.unset).toHaveBeenCalledWith('MODELS_API_KEY')
+    expect((await service.restore()).status).toBe('idle')
+    expect(fetcher).not.toHaveBeenCalled()
+    await service.dispose()
+  })
   it('restores a saved session without launching a browser and publishes binding before completion', async () => {
     const credentials = credentialStore('refresh-old')
     const openExternal = vi.fn()

@@ -7,7 +7,7 @@ import { ArrowRight, Check, Eye, EyeOff, Loader2, Phone, RefreshCw, ShieldCheck 
 import type { SettingsScope } from '@deepseek-ai/dsh-client-ui-settings/client'
 import { DofeOnboardingModal } from './DofeOnboardingModal.tsx'
 import { DofeLoginSection } from './DofeLoginSection.tsx'
-import type { DofeAuthSnapshot } from '../dofe-auth-contract.ts'
+import { DOFE_AUTH_LOGOUT_PATH, type DofeAuthSnapshot } from '../dofe-auth-contract.ts'
 import { heroBrandDataUrl } from './generated-brand-assets.ts'
 import { BRAND_TENANT, BRAND_VARIANT } from '../generated-product-identity.ts'
 import { DOFE_ACCESS_KEY, type DofeAccessLocaleKey } from './dofe-access.ts'
@@ -167,6 +167,19 @@ export async function removeDofeAccess(settingsApi: SettingsApi, credentials: Cr
     { op: 'set', path: ['modelId'], value: '' },
     { op: 'set', path: ['protocol'], value: DEFAULT_DOFE_PROTOCOL },
   ])
+  if (BRAND_VARIANT === 'sensteed') {
+    const response = await fetch(DOFE_AUTH_LOGOUT_PATH, {
+      method: 'POST', credentials: 'same-origin', redirect: 'error',
+      signal: AbortSignal.timeout(ACCESS_REQUEST_TIMEOUT_MS),
+      headers: { 'Content-Type': 'application/json' }, body: '{}',
+    })
+    if (!response.ok) throw new Error('退出登录未完成，请重试')
+    await mutateDofeAccessSettings(settingsApi, [
+      { op: 'unset', path: ['identity'] },
+      { op: 'unset', path: ['entitlements'] },
+      { op: 'set', path: ['authMode'], value: 'manual' },
+    ])
+  }
   const result = await credentials.unset(DOFE_ACCESS_KEY)
   if (!result.ok) throw new Error(result.error.message)
 }

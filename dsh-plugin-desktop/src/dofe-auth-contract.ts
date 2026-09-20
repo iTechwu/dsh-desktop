@@ -2,6 +2,7 @@ export const DOFE_AUTH_SESSION_PATH = '/api/desktop/auth/feishu/session'
 export const DOFE_AUTH_STATUS_PATH = '/api/desktop/auth/feishu/status'
 export const DOFE_AUTH_COMPLETE_PATH = '/api/desktop/auth/feishu/complete'
 export const DOFE_AUTH_CANCEL_PATH = '/api/desktop/auth/feishu/cancel'
+export const DOFE_AUTH_LOGOUT_PATH = '/api/desktop/auth/feishu/logout'
 
 export interface DofeAuthEntitlements {
   plugins: string[]
