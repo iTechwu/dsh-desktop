@@ -19,6 +19,8 @@ const SESSION_TIMEOUT_MS = 5 * 60_000
 
 interface TokenResponse { access_token?: unknown; refresh_token?: unknown; error?: unknown }
 interface ProvisionResponse {
+  groups?: unknown
+  groupNames?: unknown
   key?: unknown
   user?: { ssoSub?: unknown; name?: unknown; avatar?: unknown }
   tenant?: { tenantId?: unknown; ssoTeamId?: unknown; tenantSlug?: unknown }
@@ -261,6 +263,9 @@ export class DofeAuthService {
       user: { ssoSub, name: asString(value.user?.name) ?? ssoSub, avatar: asString(value.user?.avatar) ?? null },
       tenant: { tenantId, ssoTeamId, tenantSlug },
       entitlements: { plugins, defaultModel: asString(value.entitlements?.defaultModel) ?? '', allowedProtocols },
+      groups: Array.isArray(value.groups) ? value.groups.filter((group): group is string => typeof group === 'string') : [],
+      groupNames: typeof value.groupNames === 'object' && value.groupNames !== null && !Array.isArray(value.groupNames)
+        ? Object.fromEntries(Object.entries(value.groupNames).filter((entry): entry is [string, string] => typeof entry[1] === 'string')) : {},
     }
     await this.onBound?.(snapshot)
     this.abort.signal.throwIfAborted()

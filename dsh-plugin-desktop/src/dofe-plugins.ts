@@ -81,7 +81,7 @@ export interface DofeAccessSettings {
   /** Identity provider selected by the branded onboarding flow. */
   authMode?: 'feishu' | 'manual'
   /** Non-secret SSO identity shown in settings and diagnostics. */
-  identity?: { ssoSub: string; name: string; avatar?: string }
+  identity?: { ssoSub: string; name: string; avatar?: string; groups?: string[]; groupNames?: Record<string, string> }
   entitlements?: DofeAuthEntitlements
 }
 

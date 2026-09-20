@@ -15,5 +15,7 @@ export interface DofeAuthSnapshot {
   user?: { ssoSub: string; name: string; avatar: string | null }
   tenant?: { tenantId: string; ssoTeamId: string; tenantSlug: string }
   entitlements?: DofeAuthEntitlements
+  groups?: string[]
+  groupNames?: Record<string, string>
   error?: string
 }

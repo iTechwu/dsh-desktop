@@ -232,7 +232,7 @@ function AccessForm({ credentials, settingsApi, settingsScope, t, onboarding, on
     await mutateDofeAccessSettings(settingsApi, [
       { op: 'set', path: ['setupComplete'], value: false },
       { op: 'set', path: ['authMode'], value: 'feishu' },
-      { op: 'set', path: ['identity'], value: { ssoSub: status.user.ssoSub, name: status.user.name, ...(status.user.avatar ? { avatar: status.user.avatar } : {}) } },
+      { op: 'set', path: ['identity'], value: { ssoSub: status.user.ssoSub, name: status.user.name, groups: status.groups ?? [], groupNames: status.groupNames ?? {}, ...(status.user.avatar ? { avatar: status.user.avatar } : {}) } },
       { op: 'set', path: ['entitlements'], value: { ...status.entitlements } },
       { op: 'set', path: ['enabledPlugins'], value: plugins },
       { op: 'set', path: ['protocol'], value: nextProtocol },
@@ -426,6 +426,7 @@ function AccessForm({ credentials, settingsApi, settingsScope, t, onboarding, on
     {!onboarding && <h2>{t('title')}</h2>}
     {!onboarding && BRAND_VARIANT === 'yootun' && <p className="dshDofeAccessIntro">{t('intro')}</p>}
     {BRAND_VARIANT === 'sensteed' && <DofeLoginSection disabled={interactionBusy} name={settings.value?.identity?.name} onBound={bindFeishuLogin} />}
+    {BRAND_VARIANT === 'sensteed' && ssoBound && <p className="dshDofeAccessHint">企业授权{settings.value?.identity?.groups?.length ? ` · ${settings.value.identity.groups.map(group => settings.value?.identity?.groupNames?.[group] ?? group).join('、')}` : ''}</p>}
     {BRAND_VARIANT === 'yootun' && <div className="dshDofeAccessField">
       <div className="dshDofeAccessFieldHeader"><label className="dshDofeAccessLabel" htmlFor="dofe-model-api-key">{t('key')}</label>{onboarding && <span className="dshDofeAccessHint"><ShieldCheck size={13} aria-hidden="true" /> {t('credentialHint')}</span>}</div>
       <div className="dshDofeAccessInputWrap"><Input className="dshDofeAccessInput" id="dofe-model-api-key" type={revealKey ? 'text' : 'password'} autoComplete="off" value={draft} disabled={interactionBusy} placeholder={onboarding ? t('placeholder') : configured ? t('configured') : t('placeholder')} onChange={event => { setDraft(event.currentTarget.value); setModels([]); setSelectedModel('') }} onKeyDown={event => { if (event.key === 'Enter') void loadModels() }} /><button type="button" className="dshDofeAccessReveal" title={revealKey ? t('hideKey') : t('showKey')} aria-label={revealKey ? t('hideKey') : t('showKey')} disabled={interactionBusy} onClick={() => setRevealKey(current => !current)}>{revealKey ? <EyeOff size={17} /> : <Eye size={17} />}</button></div>

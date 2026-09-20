@@ -87,7 +87,7 @@ export async function apply(ctx: Context): Promise<void> {
       const sameUser = current.identity?.ssoSub === snapshot.user!.ssoSub
       await ctx.settings.update(DOFE_ACCESS_SETTINGS_NAMESPACE, {
         authMode: 'feishu',
-        identity: snapshot.user,
+        identity: { ...snapshot.user, groups: snapshot.groups ?? [], groupNames: snapshot.groupNames ?? {} },
         entitlements,
         enabledPlugins: normalizeDofePluginIds(sameUser ? current.enabledPlugins : entitlements.plugins, BRAND_VARIANT)
           .filter(plugin => entitlements.plugins.includes(plugin)),
