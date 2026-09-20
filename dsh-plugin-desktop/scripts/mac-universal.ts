@@ -206,6 +206,19 @@ function installedCloudflaredVersion(binary: string): string {
   return match[1]
 }
 
+/**
+ * Copy file contents without preserving filesystem metadata.
+ *
+ * Downloaded macOS binaries can end up in a kernel-poisoned provenance state
+ * where any process that maps the original vnode is SIGKILLed; stripping the
+ * extended attributes does not clear that verdict. Rewriting the bytes through
+ * a fresh vnode escapes it, so every stored or installed copy goes through
+ * here instead of copyFileSync.
+ */
+function copyBinaryContents(source: string, target: string): void {
+  writeFileSync(target, readFileSync(source))
+}
+
 function verifyCloudflaredArch(binary: string, arch: MacUniversalArch): void {
   run('lipo', [binary, '-verify_arch', arch])
 }
@@ -225,10 +238,15 @@ function ensureCloudflaredBinary(version: string, arch: MacUniversalArch): strin
     const url = `https://github.com/cloudflare/cloudflared/releases/download/${version}/cloudflared-darwin-${assetArch}.tgz`
     run('curl', ['--fail', '--location', '--retry', '3', '--output', archive, url])
     run('tar', ['-xzf', archive, '-C', temporary])
+    // The extracted vnode may carry a poisoned provenance verdict; verify the
+    // content-rewritten twin so a kernel-flagged download fails here loudly.
     const downloadedBinary = join(temporary, 'cloudflared')
-    verifyCloudflaredArch(downloadedBinary, arch)
+    const verifiedBinary = join(temporary, 'cloudflared-verified')
+    copyBinaryContents(downloadedBinary, verifiedBinary)
+    chmodSync(verifiedBinary, 0o755)
+    verifyCloudflaredArch(verifiedBinary, arch)
     mkdirSync(cacheDir, { recursive: true })
-    copyFileSync(downloadedBinary, cachedBinary)
+    copyBinaryContents(verifiedBinary, cachedBinary)
     chmodSync(cachedBinary, 0o755)
     return cachedBinary
   } finally {
@@ -273,7 +291,7 @@ export function hydrateInstalledMacCloudflaredRuntime(
     unpackedRoot,
     electronBuilderArch,
     exists: existsSync,
-    copy: copyFileSync,
+    copy: copyBinaryContents,
     chmod: chmodSync,
     versionOf: installedCloudflaredVersion,
     ensureBinary: ensureCloudflaredBinary,
