@@ -508,6 +508,13 @@ export class ElectronDesktopRuntime implements DesktopRuntime {
   }
 
   /** @inheritdoc */
+  async openExternal(url: string): Promise<void> {
+    const target = new URL(url)
+    if (target.protocol !== 'https:') throw new Error('external browser URLs must use https')
+    await shell.openExternal(target.href)
+  }
+
+  /** @inheritdoc */
   async openContentPlatformWeb(platform: 'toutiao' | 'baidu' | 'xiaohongshu' | 'sohu', url: string): Promise<void> {
     let window = this.contentPlatformWindows.get(platform)
     if (!window) {

@@ -252,6 +252,9 @@ export interface DesktopRuntime {
   /** Launch the OpenMontage web app with one managed DoFe credential. */
   openOpenMontage(apiKey: string): Promise<void>
 
+  /** Open an external HTTPS URL in the user's default browser. */
+  openExternal(url: string): Promise<void>
+
   /** Open the in-app BOSS Zhipin browser window (web-use login for recruiting). */
   openBossWeb(url?: string): Promise<void>
 

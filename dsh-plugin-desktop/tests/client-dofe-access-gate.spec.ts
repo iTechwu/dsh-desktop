@@ -251,7 +251,7 @@ describe('mandatory DoFe access gate', () => {
     const source = await readFile(resolve(process.cwd(), 'src/client/DofeAccessSection.tsx'), 'utf8')
 
     expect(source).toContain('body: JSON.stringify(request),')
-    expect(source).toContain('const request = dofeModelsRequestBody(overrides.key ?? draft, configured, overrides.protocol ?? protocol)')
+    expect(source).toContain('const request = dofeModelsRequestBody(overrides.key ?? draft, overrides.configured ?? configured, overrides.protocol ?? protocol)')
     expect(source).not.toContain('const key = (keyOverride ?? draft).trim()')
   })
 })

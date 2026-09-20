@@ -60,6 +60,8 @@ export async function apply(ctx: Context): Promise<void> {
       enabledPlugins: z.array(z.string()).default(DEFAULT_DOFE_PLUGIN_IDS),
       modelId: z.string().default(''),
       protocol: z.union(['chat-completions', 'messages', 'responses']).default('chat-completions'),
+      authMode: z.union(['feishu', 'manual']).default('manual'),
+      identity: z.any().default(undefined),
     }),
     {
       validate: value => {

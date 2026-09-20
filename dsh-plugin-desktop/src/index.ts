@@ -30,6 +30,9 @@ import {
   handleDofeAccessValidationRequest,
   handleDofeModelCatalogRequest,
 } from './dofe-access-route.ts'
+import { DOFE_AUTH_PATHS, handleDofeAuthRequest } from './dofe-auth-route.ts'
+import { DofeAuthService } from './dofe-auth-service.ts'
+import { BRAND_VARIANT } from './generated-product-identity.ts'
 import {
   handleYootunRecruiterRequest,
   YOOTUN_RECRUITER_PATH,
@@ -300,6 +303,23 @@ export function apply(ctx: Context, config: Config): void {
     },
   )
   const rendererOrigin = `http://127.0.0.1:${String(ctx.webServer.port)}`
+  if (BRAND_VARIANT === 'sensteed') {
+    const dofeAuth = new DofeAuthService(runtime, ctx.credentials)
+    ctx.effect(() => () => dofeAuth.dispose(), 'dsh-plugin-desktop: Sensteed SSO auth lifetime')
+    for (const path of DOFE_AUTH_PATHS) {
+      ctx.effect(
+        () => ctx.webServer.register({
+          kind: 'exact',
+          path,
+          handler: (req, res) => {
+            if (rejectDesktopRequest(ctx, req, res)) return
+            return handleDofeAuthRequest(path, req, res, rendererOrigin, dofeAuth)
+          },
+        }),
+        `dsh-plugin-desktop: private Sensteed auth route ${path}`,
+      )
+    }
+  }
   const publishYootunWebsite = createYootunWebsitePublisher()
   const dshHomePath = ctx.get('dshHomePath')
   if (dshHomePath === undefined) {

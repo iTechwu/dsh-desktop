@@ -207,6 +207,52 @@ function AccessForm({ credentials, settingsApi, settingsScope, t, onboarding, on
   const [busy, setBusy] = useState(false)
   const busyRef = useRef(false)
   const [error, setError] = useState<string>()
+  const [ssoPending, setSsoPending] = useState(false)
+  const [ssoBound, setSsoBound] = useState(settings.value?.authMode === 'feishu')
+  const startFeishuLogin = async (): Promise<void> => {
+    if (ssoPending) return
+    setSsoPending(true)
+    setError(undefined)
+    try {
+      const response = await fetch('/api/desktop/auth/feishu/session', {
+        method: 'POST', credentials: 'same-origin', redirect: 'error',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: '{}',
+      })
+      if (!response.ok) throw new Error('SSO session start failed')
+      for (let attempt = 0; attempt < 150; attempt += 1) {
+        await new Promise(resolve => setTimeout(resolve, 2_000))
+        const statusResponse = await fetch('/api/desktop/auth/feishu/status', {
+          method: 'POST', credentials: 'same-origin', redirect: 'error',
+          headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: '{}',
+        })
+        const status = await statusResponse.json() as { status?: string; user?: { ssoSub?: string; name?: string; avatar?: string | null }; error?: string }
+        if (status.status === 'bound') {
+          setSsoBound(true)
+          setConfigured(true)
+          if (status.user?.ssoSub !== undefined) {
+            await mutateDofeAccessSettings(settingsApi, [{
+              op: 'set', path: ['authMode'], value: 'feishu',
+            }, {
+              op: 'set', path: ['identity'], value: {
+                ssoSub: status.user.ssoSub,
+                name: status.user.name ?? status.user.ssoSub,
+                ...(status.user.avatar === undefined || status.user.avatar === null ? {} : { avatar: status.user.avatar }),
+              },
+            }])
+          }
+          await loadModels({ key: '', protocol, configured: true })
+          return
+        }
+        if (status.status === 'error' || status.status === 'cancelled') throw new Error(status.error ?? '登录未完成')
+      }
+      throw new Error('登录等待超时，请重新扫码')
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : '飞书登录失败，请重试')
+    } finally {
+      setSsoPending(false)
+    }
+  }
   useEffect(() => {
     if (settings.value?.enabledPlugins !== undefined) setEnabledPlugins(normalizeDofePluginIds(settings.value.enabledPlugins, BRAND_VARIANT))
   }, [settings.value?.enabledPlugins])
@@ -227,8 +273,8 @@ function AccessForm({ credentials, settingsApi, settingsScope, t, onboarding, on
     })
     return () => { cancelled = true }
   }, [credentials, t])
-  const loadModels = async (overrides: { key?: string; protocol?: DofeProtocol } = {}): Promise<void> => {
-    const request = dofeModelsRequestBody(overrides.key ?? draft, configured, overrides.protocol ?? protocol)
+  const loadModels = async (overrides: { key?: string; protocol?: DofeProtocol; configured?: boolean } = {}): Promise<void> => {
+    const request = dofeModelsRequestBody(overrides.key ?? draft, overrides.configured ?? configured, overrides.protocol ?? protocol)
     if ((!request.key && !request.useStored) || loadingRef.current || busyRef.current) return
     loadingRef.current = true
     setLoadingModels(true)
@@ -276,7 +322,7 @@ function AccessForm({ credentials, settingsApi, settingsScope, t, onboarding, on
   }
   const save = async (): Promise<void> => {
     const key = draft.trim()
-    const useStoredCredential = key.length === 0 && configured === true
+    const useStoredCredential = key.length === 0 && (configured === true || ssoBound)
     if (busyRef.current || loadingRef.current || (!key && !useStoredCredential) || enabledPlugins.length === 0 || !selectedModel || models.length === 0) {
       if (onboarding && !selectedModel) setError(t('modelRequired'))
       return
@@ -344,6 +390,7 @@ function AccessForm({ credentials, settingsApi, settingsScope, t, onboarding, on
         { op: 'set', path: ['enabledPlugins'], value: normalizeDofePluginIds(enabledPlugins, BRAND_VARIANT) },
         { op: 'set', path: ['modelId'], value: selectedModel },
         { op: 'set', path: ['protocol'], value: protocol },
+        { op: 'set', path: ['authMode'], value: ssoBound ? 'feishu' : 'manual' },
       ])
     } catch (cause) {
       busyRef.current = false
@@ -379,6 +426,7 @@ function AccessForm({ credentials, settingsApi, settingsScope, t, onboarding, on
   return <div className={`dshDofeAccess${onboarding ? ' dshDofeAccessOnboarding' : ''}`} aria-busy={interactionBusy}>
     {!onboarding && <h2>{t('title')}</h2>}
     {!onboarding && <p className="dshDofeAccessIntro">{t('intro')}</p>}
+    {BRAND_VARIANT === 'sensteed' && <button type="button" className="dshDofeAccessPrimary" disabled={interactionBusy || ssoPending} onClick={() => void startFeishuLogin()}>{ssoPending ? '正在等待飞书登录…' : '飞书扫码登录'}</button>}
     <div className="dshDofeAccessField">
       <div className="dshDofeAccessFieldHeader"><label className="dshDofeAccessLabel" htmlFor="dofe-model-api-key">{t('key')}</label>{onboarding && <span className="dshDofeAccessHint"><ShieldCheck size={13} aria-hidden="true" /> {t('credentialHint')}</span>}</div>
       <div className="dshDofeAccessInputWrap"><Input className="dshDofeAccessInput" id="dofe-model-api-key" type={revealKey ? 'text' : 'password'} autoComplete="off" value={draft} disabled={interactionBusy} placeholder={onboarding ? t('placeholder') : configured ? t('configured') : t('placeholder')} onChange={event => { setDraft(event.currentTarget.value); setModels([]); setSelectedModel('') }} onKeyDown={event => { if (event.key === 'Enter') void loadModels() }} /><button type="button" className="dshDofeAccessReveal" title={revealKey ? t('hideKey') : t('showKey')} aria-label={revealKey ? t('hideKey') : t('showKey')} disabled={interactionBusy} onClick={() => setRevealKey(current => !current)}>{revealKey ? <EyeOff size={17} /> : <Eye size={17} />}</button></div>
@@ -414,6 +462,7 @@ export function DofeAccessGate({ credentials, settingsApi, settingsScope, t, onA
   const authorized = credentialConfigured
     && settings.value?.setupComplete === true
     && settings.value.validationVersion === DOFE_ACCESS_VALIDATION_VERSION
+    && (settings.value.authMode !== 'feishu' || settings.value.identity?.ssoSub !== undefined)
   useEffect(() => { onAuthorizationChange?.(authorized) }, [authorized, onAuthorizationChange])
   if (authorized) return null
   return <DofeOnboardingModal eyebrow={t('onboardingEyebrow')} title={t('onboardingTitle')} description={t('onboardingIntro')} brandLogo={heroBrandDataUrl} brandLogoAlt={BRAND_TENANT}><AccessForm credentials={credentials} settingsApi={settingsApi} settingsScope={settingsScope} t={t} onboarding onDone={() => setCredentialConfigured(true)} /></DofeOnboardingModal>

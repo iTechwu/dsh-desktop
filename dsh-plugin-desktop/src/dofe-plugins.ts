@@ -77,6 +77,10 @@ export interface DofeAccessSettings {
   modelId: string
   /** Wire protocol used by the selected DoFe model route. */
   protocol: 'chat-completions' | 'messages' | 'responses'
+  /** Identity provider selected by the branded onboarding flow. */
+  authMode?: 'feishu' | 'manual'
+  /** Non-secret SSO identity shown in settings and diagnostics. */
+  identity?: { ssoSub: string; name: string; avatar?: string }
 }
 
 export const DEFAULT_DOFE_PLUGIN_IDS: DofePluginId[] = DOFE_PLUGIN_CATALOG.map(plugin => plugin.id)

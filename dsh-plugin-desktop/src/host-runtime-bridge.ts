@@ -133,6 +133,7 @@ export function createHostRuntime(rpc: HostRpc, snapshot: RuntimeSnapshot): Desk
       void send('native:openProfileCreateWindow', [callback.id])
     },
     openOpenMontage: apiKey => send('native:openOpenMontage', [apiKey]),
+    openExternal: url => send('native:openExternal', [url]),
     openBossWeb: url => send('native:openBossWeb', [url]),
     openContentPlatformWeb: (platform, url) => send('native:openContentPlatformWeb', [platform, url]),
   }
@@ -169,6 +170,7 @@ export function bindNativeRuntime(rpc: HostRpc, runtime: DesktopRuntime): () => 
     onSubmit: name => callback(`${id}:submit`, [name]), onCancel: () => report(callback(`${id}:cancel`)),
   }))
   handle('native:openOpenMontage', ([apiKey]) => runtime.openOpenMontage(apiKey as string))
+  handle('native:openExternal', ([url]) => runtime.openExternal(url as string))
   handle('native:openBossWeb', ([url]) => runtime.openBossWeb(url as string | undefined))
   handle('native:openContentPlatformWeb', ([platform, url]) =>
     runtime.openContentPlatformWeb(platform as 'toutiao' | 'baidu' | 'xiaohongshu' | 'sohu', url as string))
