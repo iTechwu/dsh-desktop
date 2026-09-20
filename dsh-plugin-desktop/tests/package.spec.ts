@@ -28,6 +28,32 @@ const manifest = JSON.parse(readFileSync(new URL('package.json', packageRoot), '
   files?: unknown
   scripts?: Record<string, unknown>
   dsh?: { bundle?: { patch?: unknown }; client?: unknown }
+  build?: {
+    productName?: unknown
+    appId?: unknown
+    asar?: unknown
+    afterPack?: unknown
+    afterAllArtifactBuild?: unknown
+    electronFuses?: unknown
+    toolsets?: Record<string, unknown>
+    files?: unknown
+    dmg?: { icon?: unknown }
+    mac?: {
+      extendInfo?: unknown
+      hardenedRuntime?: unknown
+      icon?: unknown
+      asarUnpack?: unknown
+      mergeASARs?: unknown
+      notarize?: unknown
+      signIgnore?: unknown
+      target?: unknown
+      x64ArchFiles?: unknown
+    }
+    win?: { asar?: unknown; compression?: unknown; icon?: unknown; asarUnpack?: unknown; target?: unknown; artifactName?: unknown }
+    nsis?: Record<string, unknown>
+    portable?: Record<string, unknown>
+    linux?: { icon?: unknown; asarUnpack?: unknown }
+  }
   dependencies?: Record<string, unknown>
   optionalDependencies?: Record<string, unknown>
   devDependencies?: Record<string, unknown>
