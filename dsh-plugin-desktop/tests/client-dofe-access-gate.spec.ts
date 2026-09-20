@@ -217,7 +217,18 @@ describe('mandatory DoFe access gate', () => {
     expect(source).not.toContain("settingsApi.mutate('llm-deepseek'")
     expect(source).toContain('DOFE_ANTHROPIC_BASE_URL')
     expect(source).not.toContain("'https://ixicai.cn/anthropic'")
-    expect(source.indexOf('id="dofe-protocol-select"')).toBeLessThan(source.indexOf("onClick={() => void loadModels()}"))
+  })
+
+  it('renders the protocol picker as a radiogroup above the merged model row', async () => {
+    const source = await readFile(resolve(process.cwd(), 'src/client/DofeAccessSection.tsx'), 'utf8')
+
+    expect(source).toContain('role="radiogroup"')
+    expect(source).toContain('aria-labelledby="dofe-protocol-label"')
+    expect(source).toContain('type="radio"')
+    expect(source).toContain('name="dofe-protocol"')
+    expect(source).toContain('loadModels({ protocol: p })')
+    expect(source).not.toContain('id="dofe-protocol-select"')
+    expect(source.indexOf('dshDofeAccessProtocols')).toBeLessThan(source.indexOf('dshDofeAccessModelRow'))
   })
 
   it('offers only the OpenAI-compatible and Anthropic Messages protocols in the UI', async () => {
