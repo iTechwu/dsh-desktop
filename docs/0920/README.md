@@ -12,7 +12,7 @@
 
 ## 核心决策（5 条）
 
-1. **身份**：sensteed 用户 = 飞书组织内部用户。桌面端走 SSO 现成的 OIDC 授权码 + PKCE（S256 强制、`http://127.0.0.1:*` loopback 回调已被治理层放行），飞书扫码页由 accounts.feishu.cn 托管，SSO 侧已有飞书 connector + 首登自动建户。
+1. **身份**：sensteed 用户 = 飞书组织内部用户。**SSO（`https://sso.ixicai.cn`，API/issuer 为 `https://sso.ixicai.cn/api`）是全部自研项目的唯一用户源和组织源**——用户与组织只存在于 SSO，models / knowledge / tools / montage / 桌面端一律凭 SSO 签发的身份运行，不自建用户或组织体系。桌面端走 SSO 现成的 OIDC 授权码 + PKCE（S256 强制、`http://127.0.0.1:*` loopback 回调已被治理层放行），飞书扫码页由 accounts.feishu.cn 托管，SSO 侧已有飞书 connector + 首登自动建户。
 2. **凭据**：model_api_key **保留**，但从"用户手输的资产"变为"系统自动供给的会话凭据"。登录后由 models 新增的幂等端点代表用户签发（复用 `createEmployeeKey` 的 ensure + 解密回显语义），用户全程不见 key。不用 SSO JWT 直连 MCP——统计/配额/绑定全链路都已建在 key 上，改造成本高且归因会漏。
 3. **零破坏**：所有改动都是"新增分支"——SSO 新增一个 desktop OAuth client；models 新增一个端点；桌面端按品牌分支（sensteed 默认扫码，yootun 保持手输 key）。不 bump `DOFE_ACCESS_VALIDATION_VERSION`，不改现有 `/user-api-keys` 契约，不改 nginx 路由（新端点落在 models 域名下）。
 4. **权限**：P1 按"插件域"粒度由服务端下发 entitlements（provision 响应携带，写入现成的 `dofe-access.enabledPlugins` 门）；P2 飞书部门 → SSO groups claim → knowledge `team.<部门ID>` 空间自动生效（knowledge 侧 provision 服务已存在，只差 claim 与对账）。
