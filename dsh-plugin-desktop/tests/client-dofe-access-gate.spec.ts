@@ -4,7 +4,7 @@ import { readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { blockDofeApplicationRoot, dofeAccessSettingsStore, installDofeAccessGate, installDofeAccessStyles, mutateDofeAccessSettings, removeDofeAccess } from '../src/client/DofeAccessSection.tsx'
+import { blockDofeApplicationRoot, dofeAccessSettingsStore, dofeModelsRequestBody, installDofeAccessGate, installDofeAccessStyles, mutateDofeAccessSettings, removeDofeAccess } from '../src/client/DofeAccessSection.tsx'
 import { DofeOnboardingModal, installDofeModalFocusTrap } from '../src/client/DofeOnboardingModal.tsx'
 
 describe('mandatory DoFe access gate', () => {
@@ -182,7 +182,7 @@ describe('mandatory DoFe access gate', () => {
 
     expect(source).toContain('const loadingRef = useRef(false)')
     expect(source).toContain('const busyRef = useRef(false)')
-    expect(source).toContain('if (!key || loadingRef.current || busyRef.current) return')
+    expect(source).toContain('if ((!request.key && !request.useStored) || loadingRef.current || busyRef.current) return')
     expect(source).toContain('if (busyRef.current || loadingRef.current || (!key && !useStoredCredential)')
     expect(source).toContain('if (busyRef.current || loadingRef.current) return')
     expect(source).toContain('aria-busy={interactionBusy}')
@@ -218,5 +218,19 @@ describe('mandatory DoFe access gate', () => {
     expect(source).toContain('DOFE_ANTHROPIC_BASE_URL')
     expect(source).not.toContain("'https://ixicai.cn/anthropic'")
     expect(source.indexOf('id="dofe-protocol-select"')).toBeLessThan(source.indexOf("onClick={() => void loadModels()}"))
+  })
+
+  it('asks the host to resolve stored credentials only when no draft key is entered', () => {
+    expect(dofeModelsRequestBody('  ', true, 'messages')).toEqual({ key: '', protocol: 'messages', useStored: true })
+    expect(dofeModelsRequestBody('  ', undefined, 'messages')).toEqual({ key: '', protocol: 'messages', useStored: false })
+    expect(dofeModelsRequestBody(' entered-secret ', true, 'chat-completions')).toEqual({ key: 'entered-secret', protocol: 'chat-completions', useStored: false })
+  })
+
+  it('keeps the load-models request free of stored-credential leakage when a draft key exists', async () => {
+    const source = await readFile(resolve(process.cwd(), 'src/client/DofeAccessSection.tsx'), 'utf8')
+
+    expect(source).toContain('body: JSON.stringify(request),')
+    expect(source).toContain('const request = dofeModelsRequestBody(overrides.key ?? draft, configured, overrides.protocol ?? protocol)')
+    expect(source).not.toContain('const key = (keyOverride ?? draft).trim()')
   })
 })

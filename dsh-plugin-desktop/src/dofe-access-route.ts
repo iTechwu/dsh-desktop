@@ -28,7 +28,7 @@ function permitted(req: IncomingMessage, expectedOrigin: string): boolean {
     && req.headers['content-type']?.split(';', 1)[0]?.trim().toLowerCase() === 'application/json'
 }
 
-async function readRequest(req: IncomingMessage): Promise<{ key: string; protocol: DofeProtocol } | undefined> {
+async function readRequest(req: IncomingMessage): Promise<{ key: string; protocol: DofeProtocol; useStored: boolean } | undefined> {
   let size = 0
   const chunks: Buffer[] = []
   for await (const chunk of req) {
@@ -40,13 +40,17 @@ async function readRequest(req: IncomingMessage): Promise<{ key: string; protoco
   try {
     const value = JSON.parse(Buffer.concat(chunks).toString('utf8')) as unknown
     if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined
-    const record = value as { key?: unknown; protocol?: unknown }
-    if (Object.keys(record).some(key => key !== 'key' && key !== 'protocol')) return undefined
+    const record = value as { key?: unknown; protocol?: unknown; useStored?: unknown }
+    if (Object.keys(record).some(key => key !== 'key' && key !== 'protocol' && key !== 'useStored')) return undefined
     if (typeof record.key !== 'string') return undefined
+    if (record.useStored !== undefined && typeof record.useStored !== 'boolean') return undefined
     const protocol = record.protocol === undefined ? DEFAULT_DOFE_PROTOCOL : record.protocol
     if (protocol !== 'chat-completions' && protocol !== 'messages' && protocol !== 'responses') return undefined
     const key = record.key.trim()
-    return key.length > 0 && key.length <= 4096 ? { key, protocol } : undefined
+    if (key.length > 4096) return undefined
+    // An empty key is only acceptable when the host resolves the stored credential.
+    const useStored = record.useStored === true
+    return key.length > 0 || useStored ? { key, protocol, useStored } : undefined
   } catch {
     return undefined
   }
@@ -97,11 +101,15 @@ export async function handleDofeAccessValidationRequest(
   res: ServerResponse,
   expectedOrigin: string,
   fetcher: typeof fetch = globalThis.fetch,
+  // Declared for mount-loop symmetry with the catalog handler; stored-credential
+  // validation is intentionally unsupported so authorization always sees the key.
+  _resolveStoredKey?: () => Promise<string | undefined>,
 ): Promise<void> {
   if (req.method !== 'POST') return finish(res, 405, { valid: false })
   if (!permitted(req, expectedOrigin)) return finish(res, 403, { valid: false })
   const request = await readRequest(req)
   if (request === undefined) return finish(res, 400, { valid: false })
+  if (request.useStored) return finish(res, 400, { valid: false })
   const { key, protocol } = request
   try {
     const tenant = await verifyDofeTenant(key, fetcher)
@@ -117,23 +125,30 @@ export async function handleDofeAccessValidationRequest(
   }
 }
 
-/** Same-origin model catalog route used after a key is entered in onboarding. */
+/** Same-origin model catalog route; accepts the stored host credential when the renderer never saw the key. */
 export async function handleDofeModelCatalogRequest(
   req: IncomingMessage,
   res: ServerResponse,
   expectedOrigin: string,
   fetcher: typeof fetch = globalThis.fetch,
+  resolveStoredKey?: () => Promise<string | undefined>,
 ): Promise<void> {
   if (req.method !== 'POST') return finish(res, 405, { models: [] })
   if (!permitted(req, expectedOrigin)) return finish(res, 403, { models: [] })
   const request = await readRequest(req)
   if (request === undefined) return finish(res, 400, { models: [] })
-  const { key, protocol } = request
+  const { key, protocol, useStored } = request
   try {
-    const tenant = await verifyDofeTenant(key, fetcher)
+    let effectiveKey = key
+    if (effectiveKey.length === 0) {
+      if (!useStored || resolveStoredKey === undefined) return finish(res, 200, { models: [], reason: 'invalid_key' })
+      effectiveKey = (await resolveStoredKey()) ?? ''
+      if (effectiveKey.length === 0) return finish(res, 200, { models: [], reason: 'invalid_key' })
+    }
+    const tenant = await verifyDofeTenant(effectiveKey, fetcher)
     if (!tenant.ok) return finish(res, 200, { models: [], reason: tenant.reason })
     const response = await fetcher(dofeModelCatalogUrl(protocol), {
-      headers: { ...MODEL_GATEWAY_HEADERS, Authorization: `Bearer ${key}`, Accept: 'application/json' },
+      headers: { ...MODEL_GATEWAY_HEADERS, Authorization: `Bearer ${effectiveKey}`, Accept: 'application/json' },
       redirect: 'error',
       signal: AbortSignal.timeout(10_000),
     })

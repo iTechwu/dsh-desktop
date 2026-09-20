@@ -425,6 +425,9 @@ export function apply(ctx: Context, config: Config): void {
     [DOFE_ACCESS_MODELS_PATH, handleDofeModelCatalogRequest],
     [DOFE_ACCESS_VALIDATE_PATH, handleDofeAccessValidationRequest],
   ] as const
+  // Lets the catalog route honor { useStored: true } without the renderer ever seeing the key.
+  const resolveStoredModelsKey = async (): Promise<string | undefined> =>
+    (await ctx.credentials.resolve(MODELS_API_KEY_REF))?.value
   for (const [path, handler] of dofeAccessRoutes) {
     ctx.effect(
       () => ctx.webServer.register({
@@ -432,7 +435,7 @@ export function apply(ctx: Context, config: Config): void {
         path,
         handler: (req, res) => {
           if (rejectDesktopRequest(ctx, req, res)) return
-          return handler(req, res, rendererOrigin)
+          return handler(req, res, rendererOrigin, globalThis.fetch, resolveStoredModelsKey)
         },
       }),
       `dsh-plugin-desktop: private DoFe access route ${path}`,

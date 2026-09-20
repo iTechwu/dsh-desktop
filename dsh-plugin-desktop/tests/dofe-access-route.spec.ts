@@ -193,4 +193,96 @@ describe('DoFe model_api_key validation route', () => {
     expect(JSON.parse(res.body)).toEqual({ models: [], reason: 'tenant_mismatch' })
     expect(fetcher).toHaveBeenCalledTimes(1)
   })
+
+  it('resolves the stored credential for useStored catalog requests without echoing it', async () => {
+    const fetcher = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ tenantSlug: 'yootun' }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ data: [{ id: 'remote-a', name: 'Remote A' }] }), { status: 200 }))
+    const res = response()
+
+    await handleDofeModelCatalogRequest(
+      request({ key: '', protocol: 'messages', useStored: true }),
+      res,
+      ORIGIN,
+      fetcher,
+      async () => 'stored-secret',
+    )
+
+    expect(fetcher).toHaveBeenCalledWith(
+      'https://ixicai.cn/api/v1/models?protocol=anthropic',
+      expect.objectContaining({ headers: expect.objectContaining({ Authorization: 'Bearer stored-secret', 'X-Company-Code': 'yootun' }) }),
+    )
+    expect(JSON.parse(res.body)).toEqual({ models: [{ id: 'remote-a', name: 'Remote A' }] })
+    expect(res.body).not.toContain('stored-secret')
+  })
+
+  it('fails closed when the stored credential is missing or unreadable', async () => {
+    const fetcher = vi.fn()
+    const missing = response()
+    await handleDofeModelCatalogRequest(request({ key: '', useStored: true }), missing, ORIGIN, fetcher, async () => undefined)
+    expect(JSON.parse(missing.body)).toEqual({ models: [], reason: 'invalid_key' })
+
+    const throwing = response()
+    await handleDofeModelCatalogRequest(request({ key: '', useStored: true }), throwing, ORIGIN, fetcher, async () => { throw new Error('keychain locked') })
+    expect(JSON.parse(throwing.body)).toEqual({ models: [], reason: 'invalid_key' })
+
+    expect(fetcher).not.toHaveBeenCalled()
+  })
+
+  it('fails closed when useStored arrives without a host resolver', async () => {
+    const fetcher = vi.fn()
+    const res = response()
+
+    await handleDofeModelCatalogRequest(request({ key: '', useStored: true }), res, ORIGIN, fetcher)
+
+    expect(fetcher).not.toHaveBeenCalled()
+    expect(JSON.parse(res.body)).toEqual({ models: [], reason: 'invalid_key' })
+  })
+
+  it('rejects malformed useStored bodies', async () => {
+    const fetcher = vi.fn()
+    const emptyKeyWithoutStored = response()
+    await handleDofeModelCatalogRequest(request({ key: '' }), emptyKeyWithoutStored, ORIGIN, fetcher)
+    expect(emptyKeyWithoutStored.statusCode).toBe(400)
+
+    const nonBoolean = response()
+    await handleDofeModelCatalogRequest(request({ key: 'k', useStored: 'yes' }), nonBoolean, ORIGIN, fetcher)
+    expect(nonBoolean.statusCode).toBe(400)
+
+    const unknownField = response()
+    await handleDofeModelCatalogRequest(request({ key: 'k', admin: true }), unknownField, ORIGIN, fetcher)
+    expect(unknownField.statusCode).toBe(400)
+
+    expect(fetcher).not.toHaveBeenCalled()
+  })
+
+  it('rejects stored-credential validation instead of authorizing without a key', async () => {
+    const fetcher = vi.fn()
+    const res = response()
+
+    await handleDofeAccessValidationRequest(request({ key: '', useStored: true }), res, ORIGIN, fetcher, async () => 'stored-secret')
+
+    expect(fetcher).not.toHaveBeenCalled()
+    expect(res.statusCode).toBe(400)
+    expect(JSON.parse(res.body)).toEqual({ valid: false })
+  })
+
+  it('rejects cross-origin stored-credential catalog requests before resolving anything', async () => {
+    const fetcher = vi.fn()
+    const resolver = vi.fn(async () => 'stored-secret')
+    const res = response()
+
+    await handleDofeModelCatalogRequest(
+      request({ key: '', useStored: true }, 'https://attacker.example'),
+      res,
+      ORIGIN,
+      fetcher,
+      resolver,
+    )
+
+    expect(resolver).not.toHaveBeenCalled()
+    expect(fetcher).not.toHaveBeenCalled()
+    expect(res.statusCode).toBe(403)
+    expect(JSON.parse(res.body)).toEqual({ models: [] })
+  })
 })

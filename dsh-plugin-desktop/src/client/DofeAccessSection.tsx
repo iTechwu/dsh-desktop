@@ -108,6 +108,14 @@ async function validateModelApiKey(key: string, protocol: DofeProtocol): Promise
   }
 }
 
+export interface DofeModelsRequestBody { key: string; protocol: DofeProtocol; useStored: boolean }
+
+/** Stored credentials stay host-side: an empty key with a configured credential asks the host to resolve it. */
+export function dofeModelsRequestBody(draft: string, configured: boolean | undefined, protocol: DofeProtocol): DofeModelsRequestBody {
+  const key = draft.trim()
+  return { key, protocol, useStored: key.length === 0 && configured === true }
+}
+
 type Credentials = Pick<ClientRemote['credentials'], 'describe' | 'set' | 'unset'>
 type SettingsApi = Pick<ClientRemote['settings'], 'describe' | 'mutate'>
 type SettingsOperations = Parameters<SettingsApi['mutate']>[1]
@@ -205,9 +213,9 @@ function AccessForm({ credentials, settingsApi, settingsScope, t, onboarding, on
     })
     return () => { cancelled = true }
   }, [credentials, t])
-  const loadModels = async (keyOverride?: string): Promise<void> => {
-    const key = (keyOverride ?? draft).trim()
-    if (!key || loadingRef.current || busyRef.current) return
+  const loadModels = async (overrides: { key?: string; protocol?: DofeProtocol } = {}): Promise<void> => {
+    const request = dofeModelsRequestBody(overrides.key ?? draft, configured, overrides.protocol ?? protocol)
+    if ((!request.key && !request.useStored) || loadingRef.current || busyRef.current) return
     loadingRef.current = true
     setLoadingModels(true)
     setError(undefined)
@@ -218,7 +226,7 @@ function AccessForm({ credentials, settingsApi, settingsScope, t, onboarding, on
         redirect: 'error',
         signal: AbortSignal.timeout(ACCESS_REQUEST_TIMEOUT_MS),
         headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-        body: JSON.stringify({ key, protocol }),
+        body: JSON.stringify(request),
       })
       const payload = await response.json() as unknown
       const failureReason = accessFailureReason(payload)
@@ -362,8 +370,8 @@ function AccessForm({ credentials, settingsApi, settingsScope, t, onboarding, on
       <div className="dshDofeAccessInputWrap"><Input className="dshDofeAccessInput" id="dofe-model-api-key" type={revealKey ? 'text' : 'password'} autoComplete="off" value={draft} disabled={interactionBusy} placeholder={onboarding ? t('placeholder') : configured ? t('configured') : t('placeholder')} onChange={event => { setDraft(event.currentTarget.value); setModels([]); setSelectedModel('') }} onKeyDown={event => { if (event.key === 'Enter') void loadModels() }} /><button type="button" className="dshDofeAccessReveal" title={revealKey ? t('hideKey') : t('showKey')} aria-label={revealKey ? t('hideKey') : t('showKey')} disabled={interactionBusy} onClick={() => setRevealKey(current => !current)}>{revealKey ? <EyeOff size={17} /> : <Eye size={17} />}</button></div>
     </div>
     <div className="dshDofeAccessField"><div className="dshDofeAccessFieldHeader"><label className="dshDofeAccessLabel" htmlFor="dofe-protocol-select">{t('protocolTitle')}</label></div><select id="dofe-protocol-select" className="dshDofeAccessModelSelect" value={protocol} disabled={interactionBusy} onChange={event => { const next = event.currentTarget.value as DofeProtocol; setProtocol(next); setModels([]); setSelectedModel(''); setError(undefined) }}><option value="chat-completions">{t('protocolChat')}</option><option value="messages">{t('protocolMessages')}</option><option value="responses">{t('protocolResponses')}</option></select></div>
-    <div className="dshDofeAccessActions"><Button disabled={interactionBusy || !draft.trim()} onClick={() => void loadModels()}>{loadingModels ? t('loadingModels') : t('loadModels')}</Button></div>
-    <div className="dshDofeAccessField"><div className="dshDofeAccessFieldHeader"><label className="dshDofeAccessLabel" htmlFor="dofe-model-select">{t('modelsTitle')}</label></div>{configured === true && !draft.trim() && models.length === 0 && <p className="dshDofeAccessHint">{t('reenterKey')}</p>}<select id="dofe-model-select" className="dshDofeAccessModelSelect" value={selectedModel} disabled={interactionBusy || models.length === 0} onChange={event => setSelectedModel(event.currentTarget.value)}><option value="">{models.length === 0 ? t('modelsPlaceholder') : t('modelsEmpty')}</option>{models.map(model => <option key={model.id} value={model.id}>{model.name} ({model.id})</option>)}</select></div>
+    <div className="dshDofeAccessActions"><Button disabled={interactionBusy || (!draft.trim() && configured !== true)} onClick={() => void loadModels()}>{loadingModels ? t('loadingModels') : t('loadModels')}</Button></div>
+    <div className="dshDofeAccessField"><div className="dshDofeAccessFieldHeader"><label className="dshDofeAccessLabel" htmlFor="dofe-model-select">{t('modelsTitle')}</label></div>{configured === true && !draft.trim() && models.length === 0 && !loadingModels && <p className="dshDofeAccessHint" role="status">{t('storedReady')}</p>}<select id="dofe-model-select" className="dshDofeAccessModelSelect" value={selectedModel} disabled={interactionBusy || models.length === 0} onChange={event => setSelectedModel(event.currentTarget.value)}><option value="">{models.length === 0 ? t('modelsPlaceholder') : t('modelsEmpty')}</option>{models.map(model => <option key={model.id} value={model.id}>{model.name} ({model.id})</option>)}</select></div>
     {onboarding && <p className="dshDofeAccessHelp"><Phone size={15} aria-hidden="true" /><span>{t('onboardingHelp')}</span></p>}
     {onboarding && <div className="dshDofeAccessField"><div className="dshDofeAccessFieldHeader"><span className="dshDofeAccessLabel">{t('pluginsTitle')}</span><span className="dshDofeAccessCount">{t('selectedCount').replace('{count}', String(enabledPlugins.length))}</span></div><div className="dshDofeAccessPlugins">{availablePlugins.map(plugin => { const selected = enabledPlugins.includes(plugin.id); return <label className={`dshDofeAccessPlugin${selected ? ' dshDofeAccessPluginSelected' : ''}`} key={plugin.id}><input type="checkbox" checked={selected} disabled={interactionBusy} onChange={event => { const checked = event.currentTarget.checked; setEnabledPlugins(current => checked ? [...new Set([...current, plugin.id])] : current.filter(id => id !== plugin.id)) }} /><span className="dshDofeAccessPluginCheck" aria-hidden="true"><Check size={14} strokeWidth={2.5} /></span><span><span className="dshDofeAccessPluginName">{plugin.name}</span><span className="dshDofeAccessPluginDescription">{plugin.description}</span></span></label> })}</div></div>}
     {error !== undefined && <p className="dshDofeAccessError" role="alert">{error}</p>}
