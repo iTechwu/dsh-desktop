@@ -11,10 +11,12 @@ import {
   readFileSync,
   readdirSync,
   realpathSync,
+  renameSync,
   rmSync,
   statSync,
   writeFileSync,
 } from 'node:fs'
+import { randomUUID } from 'node:crypto'
 import { spawnSync } from 'node:child_process'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
@@ -211,12 +213,15 @@ function installedCloudflaredVersion(binary: string): string {
  *
  * Downloaded macOS binaries can end up in a kernel-poisoned provenance state
  * where any process that maps the original vnode is SIGKILLed; stripping the
- * extended attributes does not clear that verdict. Rewriting the bytes through
- * a fresh vnode escapes it, so every stored or installed copy goes through
- * here instead of copyFileSync.
+ * extended attributes does not clear that verdict, and an in-place write
+ * merely truncates and reuses the poisoned vnode. Stage the bytes and rename
+ * so the target path always receives a fresh inode.
  */
 function copyBinaryContents(source: string, target: string): void {
-  writeFileSync(target, readFileSync(source))
+  const contents = readFileSync(source)
+  const staged = `${target}.${process.pid}.${randomUUID()}.staged`
+  writeFileSync(staged, contents)
+  renameSync(staged, target)
 }
 
 function verifyCloudflaredArch(binary: string, arch: MacUniversalArch): void {
