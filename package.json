@@ -1,6 +1,6 @@
 {
   "name": "sensteed-agent",
-  "version": "2.0.11-beta.5",
+  "version": "2.0.11-beta.6",
   "private": true,
   "description": "Sensteed Agent product workspace",
   "license": "MIT",
