@@ -98,6 +98,10 @@ export function apply(ctx, overrides = {}) {
               return send(res, 200, await handleAccountTrend(deps, toolCtx, body))
             case 'accountAnalysis.export':
               return send(res, 200, await handleAccountAnalysisExport(deps, toolCtx, body))
+            case 'aiAnalysis.start':
+              return send(res, 200, await handleAiAnalysisStart(deps, toolCtx, body))
+            case 'aiAnalysis.get':
+              return send(res, 200, await handleAiAnalysisGet(deps, toolCtx, body))
             default:
               return send(res, 400, { status: 'error', reason: 'unknown_action' })
           }
@@ -608,6 +612,36 @@ async function handleAccountAnalysisExport(deps, ctx, body) {
     return { status: 'error', reason: 'export_too_large' }
   }
   return projected
+}
+
+// ---------------------------------------------------------------------------
+// AI 账号表现分析（0916 方案）：start 是写工具（幂等键必需），get 只读轮询。
+// 窗口固定服务端最近 30 天：客户端不传筛选参数，也不传模型/阈值。
+// ---------------------------------------------------------------------------
+
+const AI_ANALYSIS_KEY_PATTERN = /^douyin:ai_analysis:.+$/
+
+async function handleAiAnalysisStart(deps, ctx, body) {
+  const accountId = cleanString(body.accountId, MAX_ID)
+  if (!accountId) return { status: 'error', reason: 'account_id_required' }
+  const idempotencyKey = cleanString(body.idempotencyKey, 128)
+  if (!idempotencyKey) return { status: 'error', reason: 'idempotency_key_required' }
+  // 幂等键模板与服务端 common.require_ai_analysis_idempotency_key 一致：
+  // `douyin:ai_analysis:{requestUuid}`，键不嵌账号（服务端以 request.accountId 绑定）。
+  if (!AI_ANALYSIS_KEY_PATTERN.test(idempotencyKey)) {
+    return { status: 'error', reason: 'INVALID_IDEMPOTENCY_KEY' }
+  }
+  const payload = await callTool(ctx, 'douyin_account_ai_analysis_start', { accountId, idempotencyKey })
+  return { status: 'ready', analysis: payload }
+}
+
+async function handleAiAnalysisGet(deps, ctx, body) {
+  const accountId = cleanString(body.accountId, MAX_ID)
+  if (!accountId) return { status: 'error', reason: 'account_id_required' }
+  const payload = await callTool(ctx, 'douyin_account_ai_analysis_get', { accountId })
+  // 服务端 get 返回 {status, analysis}（analysis=null 表示从未分析）：展平为
+  // 页面单层投影——aiStatus 是运行态（分析中/失败优先展示），analysis 是当前结果。
+  return { status: 'ready', aiStatus: payload.status, analysis: payload.analysis || null }
 }
 
 function clampInt(value, min, max, fallback) {

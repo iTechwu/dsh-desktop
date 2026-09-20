@@ -930,3 +930,58 @@ test('accountAnalysis.export：文件名强制 douyin-account-analysis-*.xlsx', 
   const fallback = await call(registered2[0].handler, { action: 'accountAnalysis.export', accountId: 'acc-1' })
   assert.equal(fallback.payload.file_name, 'douyin-account-analysis-report.xlsx')
 })
+
+// ---------------------------------------------------------------------------
+// AI 账号表现分析（0916 方案）：start 幂等键模板校验与透传、get 只读透传。
+// ---------------------------------------------------------------------------
+
+test('aiAnalysis.start：模板非法直接拒绝，合法键透传 accountId + idempotencyKey', async () => {
+  const calls = []
+  const { ctx, registered } = createContext({
+    tools: [{ name: 'mcp__tools-douyin-operation__douyin_account_ai_analysis_start' }],
+    execute: async ({ name, arguments: args }) => {
+      calls.push({ name, args })
+      return { structuredContent: { analysisId: 'ai-1', status: 'running', dispatchStatus: 'pending', pollIntervalSeconds: 3 } }
+    },
+  })
+  apply(ctx, { root: '/tmp/unused', browserStatus: async () => ({ chromeAvailable: true, driverAvailable: true, platform: 'linux' }) })
+  const dispatch = registered[0].handler
+
+  // 键模板非法（不含 douyin:ai_analysis: 前缀）：宿主侧拦截，不发起 tools 调用
+  const invalid = await call(dispatch, { action: 'aiAnalysis.start', accountId: 'acc-1', idempotencyKey: 'wrong:1' })
+  assert.equal(invalid.payload.status, 'error')
+  assert.equal(invalid.payload.reason, 'INVALID_IDEMPOTENCY_KEY')
+  assert.equal(calls.length, 0)
+
+  // 缺幂等键：同样拒绝
+  const missing = await call(dispatch, { action: 'aiAnalysis.start', accountId: 'acc-1' })
+  assert.equal(missing.payload.reason, 'idempotency_key_required')
+
+  // 合法键：完整透传（服务端固定最近 30 天窗口，客户端不传筛选/模型/阈值）
+  const ok = await call(dispatch, { action: 'aiAnalysis.start', accountId: 'acc-1', idempotencyKey: 'douyin:ai_analysis:uuid-1' })
+  assert.equal(ok.payload.status, 'ready')
+  assert.equal(ok.payload.analysis.analysisId, 'ai-1')
+  assert.equal(calls.length, 1)
+  assert.equal(calls[0].name, 'mcp__tools-douyin-operation__douyin_account_ai_analysis_start')
+  assert.deepEqual(calls[0].args, { accountId: 'acc-1', idempotencyKey: 'douyin:ai_analysis:uuid-1' })
+})
+
+test('aiAnalysis.get：只透传 accountId，返回分析投影', async () => {
+  const calls = []
+  const { ctx, registered } = createContext({
+    tools: [{ name: 'mcp__tools-douyin-operation__douyin_account_ai_analysis_get' }],
+    execute: async ({ arguments: args }) => {
+      calls.push(args)
+      // 服务端 get 投影：{status, analysis}（analysis=null 表示从未分析）
+      return { structuredContent: { status: 'succeeded', analysis: { analysisId: 'ai-1', status: 'succeeded', result: { summary: 'ok' } } } }
+    },
+  })
+  apply(ctx, { root: '/tmp/unused', browserStatus: async () => ({ chromeAvailable: true, driverAvailable: true, platform: 'linux' }) })
+  const response = await call(registered[0].handler, { action: 'aiAnalysis.get', accountId: 'acc-1', junk: 'x' })
+  assert.equal(response.payload.status, 'ready')
+  // 宿主展平：aiStatus 是运行态字段，analysis 是分析投影（junk 不透传）
+  assert.equal(response.payload.aiStatus, 'succeeded')
+  assert.equal(response.payload.analysis.analysisId, 'ai-1')
+  assert.equal(calls.length, 1)
+  assert.deepEqual(calls[0], { accountId: 'acc-1' })
+})

@@ -44,11 +44,13 @@ test('trend count only renders finite positive values through the shared count f
 // ui-format 纯函数（basisLines/formatDateTime 等）注入真实实现（内联后同作用域）。
 // ---------------------------------------------------------------------------
 const UI_FORMAT_IMPORT = /^import \{[\s\S]*?\} from '\.\/ui-format\.js'\n/m
+const SELECT_UI_IMPORT = /^import \{ FilterSelect \} from '\.\/select-ui\.js'\n/m
+function FilterSelect() { return null }
 
 async function evalUiModule(url, sandbox, reactStub) {
   let source = await readFile(url, 'utf8')
   if (!UI_FORMAT_IMPORT.test(source)) throw new Error('test: ui-format import not found')
-  source = source.replace(UI_FORMAT_IMPORT, '').replace(/^export /gm, '')
+  source = source.replace(UI_FORMAT_IMPORT, '').replace(SELECT_UI_IMPORT, '').replace(/^export /gm, '')
   // ui-format 全部导出注入真实实现（构建内联后同作用域，标识符直接可见）。
   const uiFormatModule = await import(new URL('../src/ui-format.js', import.meta.url).href)
   const context = {
@@ -64,6 +66,7 @@ async function evalUiModule(url, sandbox, reactStub) {
     String,
     Object,
     Array,
+    FilterSelect,
     ...sandbox,
   }
   vm.createContext(context)
@@ -1006,25 +1009,233 @@ test('overview-ui 行为：账号行点击触发下钻、无账号空态渲染�
 // 单账号分析页（0914 方案 §6，阶段 2，实施说明 §7.4）
 // ---------------------------------------------------------------------------
 
-test('analysis-ui：趋势布局按真实跨度定位、gap 断点、counter_revised、少于 2 点不可渲染', async () => {
+test('analysis-ui：趋势布局 30 天固定窗口、自然日定位、缺口虚线、单点与同值（2026-09-17）', async () => {
   const sandbox = await evalUiModule(new URL('../src/analysis-ui.js', import.meta.url), {})
   const trendLayout = vm.runInContext('trendLayout', sandbox)
+  // 注入固定「今天」：2026-09-17 → 窗口 [2026-08-19, 2026-09-17]
+  const opts = { now: '2026-09-17T12:00:00' }
 
-  // 少于 2 点：暂无趋势（renderable=false）。
-  assert.equal(trendLayout([{ day: '2026-09-02', value: 100 }]).renderable, false)
-  assert.equal(trendLayout([]).renderable, false)
+  // 空数据：不可渲染
+  assert.equal(trendLayout([], opts).renderable, false)
 
-  // gap 天显式断点 + counter_revised 角标数据。
+  // 单点：renderable 但 single=true（页面显示点 + 「暂无足够趋势数据」提示）
+  const single = trendLayout([{ day: '2026-09-10', value: 100 }], opts)
+  assert.equal(single.renderable, true)
+  assert.equal(single.single, true)
+  assert.equal(single.nodes.length, 1)
+
+  // 30 天固定窗口 + 自然日定位：9/2 在窗口内（8/19+14 天处），
+  // 9/17（今天）应位于最右端 x=600；间隔不受已有点数量压缩。
   const layout = trendLayout([
     { day: '2026-09-02', value: 100, elapsedSeconds: null, counterRevised: false },
     { day: '2026-09-05', value: 260, elapsedSeconds: 259200, counterRevised: false },
     { day: '2026-09-06', value: 250, elapsedSeconds: 86400, counterRevised: true },
-  ])
+    { day: '2026-09-17', value: 400, elapsedSeconds: null, counterRevised: false },
+  ], opts)
   assert.equal(layout.renderable, true)
-  assert.deepEqual(layout.nodes.map(node => node.gapDaysBefore), [0, 2, 0], '09-03/04 无采集 → gap 2 天')
+  assert.equal(layout.single, false)
+  assert.equal(layout.fromDay, '2026-08-19')
+  assert.equal(layout.toDay, '2026-09-17')
+  // x = (day - fromDay) / 29 * 600：9/2=14 天 → 289.66；9/17=29 天 → 600
+  assert.equal(layout.nodes[0].x, 289.66)
+  assert.equal(layout.nodes[3].x, 600)
+
+  // gap 断点与 counter_revised 保留：09-03/04 无采集 → gap 2 天；9/6 负 delta 标记
+  assert.deepEqual(Array.from(layout.nodes.map(node => node.gapDaysBefore)), [0, 2, 0, 10])
   assert.equal(layout.nodes[2].counterRevised, true, '负 delta 显示平台修正角标')
-  // 横轴按真实 elapsedSeconds 比例定位（3 天跨度占 2/3 宽度，而非等距 1/2）。
-  assert.equal(layout.nodes[1].x, 450)  // 3 天跨度 / 4 天总跨度 = 0.75 × 600
+
+  // 缺口虚线：9/2→9/5（gap 2 天）与 9/6→9/17（gap 10 天）两段为虚线，9/5→9/6 实线
+  assert.deepEqual(Array.from(layout.segments.map(segment => segment.dashed)), [true, false, true])
+
+  // 纵轴 min/max ±10% 边距 + yPct 保留小数：min=100/max=400 → pad=30 → [70,430]
+  // yPct 语义（用户反馈 2026-09-18 修复）：值大 yPct 大（渲染层再翻转为像素 y）
+  assert.equal(layout.yMin, 100)
+  assert.equal(layout.yMax, 400)
+  const y100 = ((100 - 70) / 360) * 100
+  const y400 = ((400 - 70) / 360) * 100
+  assert.equal(layout.nodes[0].yPct, Math.round(y100 * 100) / 100)
+  assert.equal(layout.nodes[3].yPct, Math.round(y400 * 100) / 100)
+  assert.ok(layout.nodes[3].yPct > layout.nodes[0].yPct, '值大的点 yPct 更大（视觉上方）')
+
+  // 同值：纵轴固定居中（yPct=50），不再拉伸
+  const same = trendLayout([
+    { day: '2026-09-10', value: 500 },
+    { day: '2026-09-12', value: 500 },
+  ], opts)
+  assert.deepEqual(Array.from(same.nodes.map(node => node.yPct)), [50, 50])
+  assert.equal(same.sameValue, true)
+
+  // 横轴日期标签：5 个刻度位（0/7/14/21/29 天处），首尾对齐方向不同
+  assert.equal(layout.axisLabels.length, 5)
+  assert.equal(layout.axisLabels[0].day, '2026-08-19')
+  assert.equal(layout.axisLabels[4].day, '2026-09-17')
+  assert.equal(layout.axisLabels[0].pos, 'start')
+  assert.equal(layout.axisLabels[4].pos, 'end')
+
+  // 需求 5b：width 参数驱动 x 缩放（容器实测宽传入后 viewBox 与实际等宽，不再拉伸）
+  const wide = trendLayout([
+    { day: '2026-09-02', value: 100 },
+    { day: '2026-09-17', value: 400 },
+  ], { ...opts, width: 900 })
+  assert.equal(wide.nodes[0].x, Math.round(14 / 29 * 900 * 100) / 100)
+  assert.equal(wide.nodes[1].x, 900)
+  assert.equal(wide.width, 900)
+
+  // 需求 5a：y 轴专用格式化——≥1万固定 1 位小数万单位，<1万千分位，非有限数 null
+  const axisValueText = vm.runInContext('axisValueText', sandbox)
+  assert.equal(axisValueText(1651000), '165.1万')
+  assert.equal(axisValueText(999900), '100.0万', '四舍五入进位到 100.0万（不切回取整口径）')
+  assert.equal(axisValueText(9999), '9,999')
+  assert.equal(axisValueText(0), '0')
+  assert.equal(axisValueText(null), null)
+  // 缺失/非法值守卫：null/undefined/空串/NaN 都是「缺失」返回 null（Number(null)===0 绝不放行）
+  assert.equal(axisValueText(undefined), null)
+  assert.equal(axisValueText(''), null)
+  assert.equal(axisValueText(Number.NaN), null)
+  // 数字字符串正常格式化（服务端数值理论上为 number，防御不炸）
+  assert.equal(axisValueText('800'), '800')
+  assert.equal(axisValueText('1651000'), '165.1万')
+
+  // AnalysisPage 渲染 SVG 趋势图（缺口虚线段 + 数据点 circle + 轴标签）
+  const hLog = []
+  const reactStub = {
+    createElement: (type, props, ...children) => {
+      hLog.push({ type, props, children })
+      return { type, props, children }
+    },
+    useState: value => [typeof value === 'function' ? value() : value, () => {}],
+    // 阶段 4：AnalysisPage 趋势测宽 hook（沙箱无 ResizeObserver，hook 内部自动降级 600 宽）
+    useRef: value => ({ current: value === undefined ? null : value }),
+    useEffect: () => {},
+  }
+  const sandbox2 = await evalUiModule(new URL('../src/analysis-ui.js', import.meta.url), {}, reactStub)
+  const AnalysisPage = vm.runInContext('AnalysisPage', sandbox2)
+  const t = key => key
+  AnalysisPage({
+    analysis: {
+      account: { accountId: 'a1', nickname: '燃豚豚', fanCount: 1, lastCollectedAt: null },
+      summary: { workCount: 1 }, kpi: {}, interaction: {}, hotWorks: [],
+    },
+    trend: { points: [
+      { day: '2026-09-02', value: 1651000 },
+      { day: '2026-09-05', value: 1659000 },
+      { day: '2026-09-06', value: 1650000 },
+    ] },
+    trendMetric: 'play', trendErrorReason: null, loading: false, errorReason: null,
+    exporting: false, onBack: () => {}, onMetricChange: () => {}, onExport: () => {},
+    onOpenWork: () => {}, t,
+    aiAnalysis: null, aiBusy: false, aiError: null, aiConfirming: false,
+    onAiStart: () => {}, onAiRequestRerun: () => {}, onAiConfirmRerun: () => {}, onAiCancelConfirm: () => {},
+  })
+  for (let i = 0; i < hLog.length; i += 1) if (typeof hLog[i].type === 'function') hLog[i].type(hLog[i].props)
+  const text = JSON.stringify(hLog)
+  assert.ok(text.includes('ydo-an-trend-svg'), '趋势图渲染为 SVG')
+  assert.ok(text.includes('ydo-an-seg-dashed'), '缺口段渲染虚线')
+  assert.ok(text.includes('ydo-an-dot-circle'), '数据点渲染 circle')
+  assert.ok(text.includes('ydo-an-axis-label'), '横轴日期标签渲染')
+  // 需求 5a：y 轴 min/max 用专用格式化（1 位小数万单位），不再同显「165万」
+  assert.ok(text.includes('165.9万') && text.includes('165.0万'), 'y 轴两端保留 1 位小数万单位')
+  assert.ok(!text.includes('165万'), 'y 轴不再退化为取整万单位（165万 同文）')
+  // 悬浮提示与 y 轴同口径（axisValueText），不走 formatWan 取整口径
+  assert.ok(text.includes('2026-09-05 165.9万'), '数据点悬浮提示用 1 位小数万单位口径')
+  // 渲染方向（用户反馈 2026-09-18）：SVG y 轴向下，值大的点 cy 必须更小（视觉上方）。
+  // 此前布局/渲染两层各反一次互相抵消成「值大画在下面」，递增数据显示成下降，
+  // 且旧断言只查 yPct 数值不查 cy，未抓住颠倒。
+  const dayValue = { '2026-09-02': 1651000, '2026-09-05': 1659000, '2026-09-06': 1650000 }
+  const dots = hLog
+    .filter(entry => entry.props && entry.props.className === 'ydo-an-dot-circle')
+    .map(entry => ({ day: entry.children[0].children[0].split(' ')[0], cy: entry.props.cy }))
+  assert.equal(dots.length, 3, '三个数据点 circle')
+  for (let i = 0; i < dots.length; i += 1) {
+    for (let j = i + 1; j < dots.length; j += 1) {
+      const va = dayValue[dots[i].day]
+      const vb = dayValue[dots[j].day]
+      assert.equal(
+        (va > vb) === (dots[i].cy < dots[j].cy), true,
+        `值大的点 cy 更小（${dots[i].day}=${va} cy=${dots[i].cy} vs ${dots[j].day}=${vb} cy=${dots[j].cy}）`)
+    }
+  }
+})
+
+// review P2-2（2026-09-18）：y 轴 min/max 格式化同文时退千分位完整数字的分支
+// 此前零覆盖；另加 Rules of Hooks 守卫——useMeasuredWidth 必须在 AnalysisPage
+// 任何早退 return 之前调用（errorReason 早退渲染的 hook 调用数与完整渲染一致）。
+test('analysis-ui：趋势 y 轴同文退避千分位 + hooks 在早退分支前调用（2026-09-18）', async () => {
+  const t = key => key
+  const baseAnalysis = {
+    account: { accountId: 'a1', nickname: '燃豚豚', fanCount: 1, lastCollectedAt: null },
+    summary: { workCount: 1 }, kpi: {}, interaction: {}, hotWorks: [],
+  }
+  const baseTrend = { points: [
+    // 两值仅差 400：axisValueText(1650000)=axisValueText(1650400)='165.0万' 同文
+    // → 触发千分位退避，两端 '1,650,000'/'1,650,400' 可区分。
+    { day: '2026-09-10', value: 1650000 },
+    { day: '2026-09-17', value: 1650400 },
+  ] }
+  const baseProps = {
+    analysis: baseAnalysis, trend: baseTrend,
+    trendMetric: 'play', trendErrorReason: null, loading: false, errorReason: null,
+    exporting: false, onBack: () => {}, onMetricChange: () => {}, onExport: () => {},
+    onOpenWork: () => {}, t,
+    aiAnalysis: null, aiBusy: false, aiError: null, aiConfirming: false,
+    onAiStart: () => {}, onAiRequestRerun: () => {}, onAiConfirmRerun: () => {}, onAiCancelConfirm: () => {},
+  }
+  const renderWithStub = async hookCalls => {
+    const hLog = []
+    const reactStub = {
+      createElement: (type, props, ...children) => {
+        hLog.push({ type, props, children })
+        return { type, props, children }
+      },
+      useState: value => {
+        hookCalls.push('useState')
+        return [typeof value === 'function' ? value() : value, () => {}]
+      },
+      useRef: value => ({ current: value === undefined ? null : value }),
+      useEffect: () => { hookCalls.push('useEffect') },
+    }
+    const sandbox = await evalUiModule(new URL('../src/analysis-ui.js', import.meta.url), {}, reactStub)
+    const AnalysisPage = vm.runInContext('AnalysisPage', sandbox)
+    AnalysisPage(baseProps)
+    for (let i = 0; i < hLog.length; i += 1) if (typeof hLog[i].type === 'function') hLog[i].type(hLog[i].props)
+    return { text: JSON.stringify(hLog), hLog }
+  }
+
+  // 同文退避：y 轴两端渲染千分位完整数字（不走 formatWan——其 ≥100万取整口径
+  // 正是同文根因，退避再走会回到同文）。结构化断言锁定 ydo-an-axis-text 节点
+  // 文本（趋势布局返回原始 min/max，不带 ±10% 边距值）。
+  const { text, hLog } = await renderWithStub([])
+  assert.ok(text.includes('1,650,000') && text.includes('1,650,400'),
+    'y 轴同文时退千分位完整数字，两端可区分')
+  const axisTexts = hLog
+    .filter(entry => entry.props && entry.props.className === 'ydo-an-axis-text')
+    .map(entry => entry.children[0])
+  assert.deepEqual(axisTexts, ['1,650,400', '1,650,000'],
+    'y 轴节点精确渲染千分位退避文本（max/max 顺序）')
+
+  // hooks 守卫：errorReason 早退渲染与完整渲染的 hook 调用序列一致
+  //（useMeasuredWidth 位于所有早退 return 之前，否则违反 Rules of Hooks）
+  const fullCalls = []
+  await renderWithStub(fullCalls)
+  const earlyCalls = []
+  const hLogEarly = []
+  const earlyStub = {
+    createElement: (type, props, ...children) => {
+      hLogEarly.push({ type, props, children })
+      return { type, props, children }
+    },
+    useState: value => {
+      earlyCalls.push('useState')
+      return [typeof value === 'function' ? value() : value, () => {}]
+    },
+    useRef: value => ({ current: value === undefined ? null : value }),
+    useEffect: () => { earlyCalls.push('useEffect') },
+  }
+  const sandboxEarly = await evalUiModule(new URL('../src/analysis-ui.js', import.meta.url), {}, earlyStub)
+  const AnalysisPageEarly = vm.runInContext('AnalysisPage', sandboxEarly)
+  AnalysisPageEarly({ ...baseProps, errorReason: 'operationUnavailable' })
+  assert.ok(earlyCalls.length > 0, '早退渲染也调用 hooks（hook 位于早退 return 之前）')
+  assert.deepEqual(earlyCalls, fullCalls, '早退与完整渲染的 hook 调用序列一致')
 })
 
 test('分析页源契约：返回总览保留筛选、观众与流量开放（阶段 3）、导出按钮只在分析页局部', async () => {
@@ -1169,37 +1380,35 @@ test('总览工具栏：单选账号下拉（默认全部账号）、日期/排�
     t: key => key,
   })
 
-  const selects = hLog.filter(node => node.type === 'select')
+  const selects = hLog.filter(node => node.type === FilterSelect)
   assert.equal(selects.length, 3, '工具栏共 3 个下拉：账号/发布时间/排序')
-  // 账号下拉：单选（无 multiple），值 '' 表示全部账号，选项含 allAccounts + 每个账号。
+  // 账号下拉：值 '' 表示全部账号，选项含 allAccounts + 每个账号。
   const accountSelect = selects[0]
-  assert.equal(accountSelect.props.multiple, undefined, '账号筛选必须是单选下拉')
   assert.equal(accountSelect.props.value, '', '默认选中全部账号（空 accountIds）')
-  const accountOptions = accountSelect.children.flat()
-  assert.equal(accountOptions[0].props.value, '')
-  assert.equal(accountOptions[0].children[0], 'allAccounts')
+  const accountOptions = accountSelect.props.options
+  assert.equal(accountOptions[0].value, '')
+  assert.equal(accountOptions[0].label, 'allAccounts')
   assert.equal(accountOptions.length, 3, '全部账号 + 2 个具体账号')
   // 选择具体账号 → accountIds 只含一个 ID；切回全部账号 → 空数组。
   // （vm 沙箱里创建的数组原型与宿主不同，必须先展开成宿主数组再比较。）
-  accountSelect.props.onChange({ target: { value: 'a2' } })
+  accountSelect.props.onChange('a2')
   assert.deepEqual([...changes[0].accountIds], ['a2'])
-  accountSelect.props.onChange({ target: { value: '' } })
+  accountSelect.props.onChange('')
   assert.deepEqual([...changes[1].accountIds], [])
   // 窗口下拉改 UI 形态（window 键）：请求日期由 client.js 发请求时经
   // buildOverviewFilters 归一——切「全部」不会残留旧 publishFrom/publishTo（验收建议 2）。
   const windowSelect = selects[1]
   assert.equal(windowSelect.props.value, '30d')
-  windowSelect.props.onChange({ target: { value: 'all' } })
+  windowSelect.props.onChange('all')
   assert.equal(changes[2].window, 'all')
   assert.equal(changes[2].publishFrom, undefined, 'UI 形态筛选不携带日期字段')
   assert.equal(changes[2].publishTo, undefined)
-  // 日期与排序下拉前有可见文字说明（label 包裹，而非仅 aria-label）。
-  const labels = hLog.filter(node => node.type === 'label')
-  const labelTexts = labels.map(label => JSON.stringify(label))
+  // 日期与排序下拉前有可见文字说明。
+  const labels = hLog.filter(node => node.props?.className === 'ydo-ov-filter')
   assert.ok(labels.some(label => JSON.stringify(label).includes('overviewWindow')), '发布时间下拉带可见文字')
   assert.ok(labels.some(label => JSON.stringify(label).includes('overviewSort')), '排序下拉带可见文字')
   assert.ok(labels.some(label => JSON.stringify(label).includes('overviewAccountFilter')), '账号筛选带说明文字')
-  assert.ok(labelTexts.length >= 3)
+  assert.ok(labels.length >= 3)
   // 刷新按钮不因 loading 禁用：筛选自动查询的加载态只出现在列表区域。
   const refresh = hLog.find(node => node.type === 'button' && JSON.stringify(node.children).includes('"refresh"'))
   assert.ok(refresh, '存在刷新按钮')
@@ -1366,7 +1575,9 @@ test('总览页面文案回归：不出现规则版本/数据来源/参与样本
     detail: null, detailLoading: false, onClose: () => {}, onOpenFull: () => {}, t,
   })
   const drawerText = JSON.stringify(drawerTree)
-  assert.ok(drawerText.includes('分享量 890'), '分享量中文化渲染（colShare 文案键）')
+  // 指标卡片化（用户反馈 2026-09-18 需求 4）：标签与数值分节点渲染，「分享量」「890」
+  // 不再拼进同一字符串；内部字段名 colShare 仍不进页面。
+  assert.ok(drawerText.includes('分享量') && drawerText.includes('890'), '分享量中文化渲染（colShare 文案键）')
   assert.ok(!drawerText.includes('colShare'), '内部字段名 colShare 不进页面')
   assert.ok(!drawerText.includes('规则版本'), '抽屉不显示规则版本')
   assert.ok(!drawerText.includes('参与样本数'), '抽屉不显示参与样本数')
@@ -1387,9 +1598,18 @@ test('总览页面文案回归：不出现规则版本/数据来源/参与样本
   const closeBtn = drawerFlat.find(node => node.props && node.props.className === 'ydo-ov-drawer-close')
   assert.ok(closeBtn && closeBtn.props['aria-label'] === '关闭', '关闭按钮带 aria-label（ydo-ov-drawer-close）')
   const basisIdx = drawerIndex('ydo-ov-basis-head')
-  const metricsIdx = drawerIndex('ydo-ov-drawer-metrics')
+  const metricsIdx = drawerIndex('ydo-an-metrics')
   const actionIdx = drawerIndex('ydo-ov-drawer-action')
   assert.ok(basisIdx > -1 && metricsIdx > basisIdx && actionIdx > metricsIdx, '抽屉纵向结构：标题 → 爆款依据 → 指标摘要 → 操作按钮')
+  // 指标卡片化（需求 4）：指标摘要复用内容指标卡片（ydo-an-metric-card），不再是
+  // 「标签 值」单行文本列表；标签小字在上、数值大字在下。
+  const metricsNode = drawerFlat.find(node => node.props && node.props.className === 'ydo-an-metrics')
+  assert.ok(metricsNode && Array.isArray(metricsNode.children) && metricsNode.children.length === 6,
+    '抽屉指标摘要为 6 张内容指标卡片')
+  assert.ok(metricsNode.children.every(card => card.props?.className === 'ydo-an-metric-card'
+    && card.children[0]?.props?.className === 'ydo-an-metric-label'
+    && card.children[1]?.props?.className === 'ydo-an-metric-value'),
+  '指标卡片结构：标签小字在上、数值大字在下')
 })
 
 test('分析页行为：账号标题、内容指标三段结构、观众与流量口径标签、爆款视频表格', async () => {
@@ -1399,6 +1619,11 @@ test('分析页行为：账号标题、内容指标三段结构、观众与流�
       hLog.push({ type, props, children })
       return { type, props, children }
     },
+    // AiAnalysisSection（0916 方案 §9）使用 useState 管理手动展开态
+    useState: value => [typeof value === 'function' ? value() : value, () => {}],
+    // 阶段 4：AnalysisPage 趋势测宽 hook（沙箱无 ResizeObserver，hook 内部自动降级 600 宽）
+    useRef: value => ({ current: value === undefined ? null : value }),
+    useEffect: () => {},
   }
   const sandbox = await evalUiModule(new URL('../src/analysis-ui.js', import.meta.url), {}, reactStub)
   const AnalysisPage = vm.runInContext('AnalysisPage', sandbox)
@@ -1469,6 +1694,9 @@ test('分析页行为：账号标题、内容指标三段结构、观众与流�
     loading: false, errorReason: null, exporting: false,
     onBack: () => {}, onMetricChange: () => {}, onExport: () => {}, onOpenWork: () => {}, t,
   })
+  const metricSelect = hLog.find(node => node.type === FilterSelect)
+  assert.equal(metricSelect.props.value, 'play', '分析页沿用自绘筛选器')
+  assert.equal(metricSelect.props.options.length, 6, '趋势指标选项保持完整')
   // 先展开 stub 未执行的函数组件（Kpi/AudienceBlock/AudienceBarList），让观众条形
   // 等嵌套内容进入 hLog，再做全量文本/块级断言（展开产生的节点同样入 hLog）。
   for (let index = 0; index < hLog.length; index += 1) {
@@ -1485,11 +1713,11 @@ test('分析页行为：账号标题、内容指标三段结构、观众与流�
     assert.ok(pageText.includes(label), `内容指标包含「${label}」`)
   }
   assert.ok(pageText.includes('数据不足'), '未返回段显示数据不足')
-  assert.ok(pageText.includes('部分数据'), '覆盖不足只标记部分数据状态')
+  assert.ok(!pageText.includes('部分数据'), '「部分数据」徽标不再显示（用户反馈 2026-09-18）')
   assert.ok(!pageText.includes('覆盖率'), '内容指标不显示覆盖率')
   // 服务端返回完播/播放段时渲染真实均值；平均播放时长单位是秒（验收 P1-4 闭合）。
   assert.ok(pageText.includes('43.2%'), '5秒完播率渲染服务端均值')
-  assert.ok(pageText.includes('38.5%') && pageText.includes('部分数据'), '平均播放占比标记部分数据')
+  assert.ok(pageText.includes('38.5%'), '平均播放占比渲染服务端均值')
   assert.ok(pageText.includes('12.6秒'), '平均播放时长以秒为单位渲染')
   assert.ok(!pageText.includes('participation'), '无内部字段')
   // 观众与流量口径标签。
@@ -1544,12 +1772,13 @@ test('分析页行为：账号标题、内容指标三段结构、观众与流�
   const likeRow = zeroRows.find(row => row.key === 'likeCount')
   assert.equal(likeRow.value, '0.0%', '真实的 0 保持 0，不当作缺失')
   assert.equal(likeRow.note, null, '覆盖率 100% 不渲染第三段状态（v2 §5.2）')
-  // 数据状态三态（v2 §5.2）：0<x<100 → 部分数据；0/缺失 → 数据不足。
+  // 数据状态两态（v2 §5.2 + 用户反馈 2026-09-18）：0/缺失 → 数据不足；
+  // 部分覆盖不再显示「部分数据」徽标。
   const triRows = contentMetricRows({ interaction: {
     likeCount: { ratePct: 3, coveragePct: 55.5 },
     commentCount: { ratePct: 1, coveragePct: 0 },
   }, kpi: {} }, t)
-  assert.equal(triRows.find(row => row.key === 'likeCount').note, '部分数据')
+  assert.equal(triRows.find(row => row.key === 'likeCount').note, null, '部分覆盖不渲染状态徽标')
   assert.equal(triRows.find(row => row.key === 'commentCount').note, '数据不足', '覆盖 0 → 数据不足')
   const engagementRow = zeroRows.find(row => row.key === 'engagement')
   assert.equal(engagementRow.value, '—', '综合互动率缺失显示 —')
@@ -1624,11 +1853,11 @@ test('v2 账号目录：accountOptions 驱动下拉、零作品标注、失同�
     onFilterChange: () => {}, onRefresh: () => {}, onExport: () => {},
     onOpenAccount: () => {}, onAddAccount: () => {}, t,
   })
-  const accountSelect = hLog.find(node => node.type === 'select')
-  const options = accountSelect.children.flat()
+  const accountSelect = hLog.find(node => node.type === FilterSelect)
+  const options = accountSelect.props.options
   assert.equal(options.length, 3, '全部账号 + 目录 2 个账号（含排行里没有的零作品账号）')
-  assert.equal(options[2].children[0], '零作品号（noWorks）', '无可统计作品账号带明确状态标注（§9.1）')
-  assert.equal(options[1].children[0], '燃豚豚', '有作品账号不带无作品标注')
+  assert.equal(options[2].label, '零作品号（noWorks）', '无可统计作品账号带明确状态标注（§9.1）')
+  assert.equal(options[1].label, '燃豚豚', '有作品账号不带无作品标注')
   assert.ok(!JSON.stringify(hLog).includes('accountCatalogSyncing'),
     '目录数与 accountTotal 一致时不显示同步提示（排行展示行数少于目录不属失同步，二审 P1-2）')
   assert.ok(JSON.stringify(hLog).includes('rankingScopeHint'),
@@ -1676,8 +1905,8 @@ test('v2 账号目录：accountOptions 驱动下拉、零作品标注、失同�
   })
   assert.ok(!JSON.stringify(hLog).includes('accountCatalogSyncing'), '筛选态不显示同步中提示（排行缩小是筛选结果）')
   assert.ok(!JSON.stringify(hLog).includes('rankingScopeHint'), '筛选态不显示截断标注（行数缩小是筛选语义，二审 P1-2）')
-  const filteredSelect = hLog.find(node => node.type === 'select')
-  assert.equal(filteredSelect.children.flat().length, 3, '筛选后下拉仍保留完整目录、可切回全部账号（§2.2）')
+  const filteredSelect = hLog.find(node => node.type === FilterSelect)
+  assert.equal(filteredSelect.props.options.length, 3, '筛选后下拉仍保留完整目录、可切回全部账号（§2.2）')
   assert.equal(filteredSelect.props.value, 'a1', '筛选态下拉选中值保持')
 
   // 目录加载失败（accountOptions 缺失或为空）→ 下拉禁用 + 稳定失败文案，
@@ -1694,7 +1923,7 @@ test('v2 账号目录：accountOptions 驱动下拉、零作品标注、失同�
     onFilterChange: () => {}, onRefresh: () => {}, onExport: () => {},
     onOpenAccount: () => {}, onAddAccount: () => {}, t,
   })
-  const disabledSelect = hLog.find(node => node.type === 'select')
+  const disabledSelect = hLog.find(node => node.type === FilterSelect)
   assert.equal(disabledSelect.props.disabled, true, '目录为空时账号筛选禁用')
   assert.ok(hLog.some(node => JSON.stringify(node.children || []).includes('accountCatalogUnavailable')),
     '目录为空显示稳定的失败文案')
@@ -1712,7 +1941,7 @@ test('v2 账号目录：accountOptions 驱动下拉、零作品标注、失同�
     onFilterChange: () => {}, onRefresh: () => {}, onExport: () => {},
     onOpenAccount: () => {}, onAddAccount: () => {}, t,
   })
-  assert.equal(hLog.find(node => node.type === 'select').props.disabled, true, '空目录即使 total=0 也禁用筛选')
+  assert.equal(hLog.find(node => node.type === FilterSelect).props.disabled, true, '空目录即使 total=0 也禁用筛选')
   // P1-4 回归：服务端缺 accountOptions 时即使宿主/排行有账号，目录仍为空（禁用）。
   hLog.length = 0
   OverviewPage({
@@ -1726,7 +1955,7 @@ test('v2 账号目录：accountOptions 驱动下拉、零作品标注、失同�
     onFilterChange: () => {}, onRefresh: () => {}, onExport: () => {},
     onOpenAccount: () => {}, onAddAccount: () => {}, t,
   })
-  const noFieldSelect = hLog.find(node => node.type === 'select')
+  const noFieldSelect = hLog.find(node => node.type === FilterSelect)
   assert.equal(noFieldSelect.props.disabled, true, '服务端缺 accountOptions 时筛选禁用（不回退本地账号列表，二审 P1-4）')
   assert.ok(hLog.some(node => JSON.stringify(node.children || []).includes('accountCatalogUnavailable')),
     '缺 accountOptions 显示稳定失败文案')
@@ -1745,7 +1974,7 @@ test('v2 账号目录：accountOptions 驱动下拉、零作品标注、失同�
     onFilterChange: () => {}, onRefresh: () => {}, onExport: () => {},
     onOpenAccount: () => {}, onAddAccount: () => {}, t,
   })
-  const missingTotalSelect = hLog.find(node => node.type === 'select')
+  const missingTotalSelect = hLog.find(node => node.type === FilterSelect)
   assert.equal(missingTotalSelect.props.disabled, true, '缺 accountTotal 时目录筛选禁用')
   assert.ok(hLog.some(node => JSON.stringify(node.children || []).includes('accountCatalogSyncing')),
     '缺 accountTotal 时提示目录正在同步')
@@ -1856,10 +2085,11 @@ test('v2 源码样式契约：窄列轨道、分布配色、抽屉尺寸与关�
   assert.match(source, /\.ydo-ov-dist-top1 \.ydo-bar-fill\{background:#E8833A\}/u)
   assert.match(source, /\.ydo-ov-dist-top2 \.ydo-bar-fill\{background:#3B82F6\}/u)
   assert.match(source, /\.ydo-ov-dist-top3 \.ydo-bar-fill\{background:#8B5CF6\}/u)
-  // §4.1：下拉 36px、鼠标焦点无黑框、键盘焦点显品牌色外环；导出按钮不换行。
-  assert.match(source, /\.ydo-ov-toolbar select\{height:36px/u)
-  assert.match(source, /\.ydo-ov-toolbar select:focus\{outline:0;border-color:var\(--dsw-alias-border-l1\);box-shadow:none\}/u)
-  assert.match(source, /\.ydo-ov-toolbar select:focus-visible\{outline:0;border-color:#3B82F6;box-shadow:0 0 0 2px/u)
+  // §4.1：收起态与展开层均由插件绘制，键盘焦点保留品牌色外环。
+  assert.match(source, /\.ydo-filter-trigger\{[^}]*height:36px/u)
+  assert.match(source, /\.ydo-filter-trigger:focus-visible\{border-color:#3B82F6;box-shadow:0 0 0 2px/u)
+  assert.match(source, /\.ydo-filter-menu\{position:fixed;z-index:560;[^}]*border:1px solid var\(--dsw-alias-border-l1\)/u)
+  assert.doesNotMatch(source, /\.ydo-ov-toolbar select/u, '总览工具栏不再依赖原生 select 弹出层')
   assert.match(source, /\.ydo-ov-hot-basis-head\{text-align:center;padding-inline:12px\}/u)
   assert.match(source, /\.ydo-export\{[^}]*white-space:nowrap/u)
   // §6.2：抽屉 min(720px,72vw)×min(860px,84vh) 且 ≥75vh；关闭按钮 40×40、::after 扩 ≥44px 命中区。
@@ -1867,8 +2097,47 @@ test('v2 源码样式契约：窄列轨道、分布配色、抽屉尺寸与关�
   assert.match(source, /\.ydo-ov-drawer-close\{[^}]*width:40px;height:40px/u)
   assert.match(source, /\.ydo-ov-drawer-close::after\{content:"";position:absolute;inset:-2px\}/u)
   assert.match(source, /\.ydo-ov-drawer-action\{margin-top:auto\}/u)
-  // §5.2/§5.3：内容指标两列、观众卡片两列；窄屏均退单列。
-  assert.match(source, /\.ydo-an-metrics\{[^}]*grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/u)
+  // 需求 2：AI 分析弹框宽 min(880px, vw-48px)、z-index 530（主 overlay 520 与作品详情 540 之间，
+  // 详情可叠加其上）；关闭按钮 40×40 命中区 ≥44px，与抽屉同一规格。
+  assert.match(source, /\.ydo-ai-modal\{[^}]*width:min\(880px,calc\(100vw - 48px\)\)/u)
+  assert.match(source, /\.ydo-ai-modal-overlay\{position:fixed;inset:0;z-index:530/u)
+  assert.match(source, /\.ydo-ai-modal-close\{[^}]*width:40px;height:40px/u)
+  // 需求 2：Esc 链插入 AI 弹框层（详情 → 抽屉 → AI 弹框 → overlay），且入依赖数组。
+  assert.match(source, /else if \(aiModalOpen\) setAiModalOpen\(false\)/u)
+  assert.match(source, /\[visible, detailWorkId, hotDrawerWork, aiModalOpen\]/u)
+  // §5.2/§5.3：内容指标 3 列浅灰底圆角卡片（创作中心风格：标签小字在上、数值大字在下）、
+  // 观众卡片两列；窄屏均退单列。
+  assert.match(source, /\.ydo-an-metrics\{[^}]*grid-template-columns:repeat\(3,minmax\(0,1fr\)\)/u)
+  assert.match(source, /\.ydo-an-metric-card\{[^}]*border-radius:10px;background:var\(--dsw-alias-bg-base\)/u)
+  assert.match(source, /\.ydo-an-metric-value\{[^}]*font-size:20px[^}]*font-weight:700/u)
+  // 用户反馈 2026-09-18：AI 风险/建议/规律条目标题 13.5px（对齐卡片标题 h4）、正文 13px，
+  // 此前无 font-size 继承面板默认大字导致视觉过大。
+  assert.match(source, /\.ydo-ai-item-title\{font-weight:600;font-size:13\.5px\}/u)
+  assert.match(source, /\.ydo-ai-item-reason\{[^}]*font-size:13px\}/u)
+  // 用户反馈 2026-09-18：证据作品 chip 字号与正文一致 13px（font:inherit 简写会重置
+  // font-size、继承面板大字，禁止回归）；品牌色弱底高亮；标签左列 + chips 右列网格对齐。
+  assert.match(source, /\.ydo-ai-evidence\{display:grid;grid-template-columns:auto minmax\(0,1fr\)/u)
+  assert.match(source, /\.ydo-ai-evidence-list\{display:flex;flex-wrap:wrap;gap:5px\}/u)
+  assert.match(source, /\.ydo-ai-chip\{[^}]*font-size:11px/u)
+  assert.match(source, /\.ydo-ai-chip\{[^}]*background:var\(--dsw-alias-brand-weak/u)
+  // font 简写若出现在 font-size 之后会重置字号（历史 bug）；正确形态是简写在前、
+  // 显式字号在后（同 .ydo-link 惯例），断言按顺序锁定。
+  assert.match(source, /\.ydo-ai-chip\{[^}]*font:inherit;font-size:11px/u)
+  // 需求 2（2026-09-18）：收起徽章「高N 中N 低N」三色计数与规律置信度徽章共用
+  // .ydo-ai-pri-* 配色；旧「高 N · 中 N」纯文本模板与文案键已删除。
+  assert.match(source, /\.ydo-ai-digest-counts\{flex:none;display:flex;gap:4px\}/u)
+  assert.match(source, /\.ydo-ai-pri-high,\.ydo-ai-conf-high\{/u)
+  assert.match(source, /\.ydo-ai-pri-medium,\.ydo-ai-conf-medium\{/u)
+  assert.match(source, /\.ydo-ai-pri-low,\.ydo-ai-conf-low\{/u)
+  assert.doesNotMatch(source, /aiDigestHigh|aiDigestMedium|aiDigestItems/u)
+  // 需求 4（2026-09-18）：爆款抽屉指标摘要复用内容指标卡片，旧单行文本列表样式已删除。
+  assert.doesNotMatch(source, /ydo-ov-drawer-metrics/u)
+  // 需求 5b：趋势 SVG 高度固定 168px（不再 height:auto 随拉伸变形），viewBox 宽由
+  // ResizeObserver 实测容器宽驱动（轴文字/点线恢复 1:1 尺寸）。
+  assert.match(source, /\.ydo-an-trend-svg\{display:block;width:100%;height:168px/u)
+  const analysisSource = await readFile(new URL('../src/analysis-ui.js', import.meta.url), 'utf8')
+  assert.match(analysisSource, /typeof ResizeObserver === 'undefined'/u)
+  assert.match(analysisSource, /trendLayout\(trend\?\.points \|\| \[\], \{ width: trendWidth \}\)/u)
   assert.match(source, /\.ydo-an-audience\{display:grid;grid-template-columns:repeat\(2,minmax\(0,1fr\)\);gap:12px\}/u)
   const mediaStart = source.indexOf('@media(max-width:720px)')
   assert.ok(mediaStart > -1, '存在窄屏断点')
@@ -1899,4 +2168,345 @@ test('v2 源码样式契约：窄列轨道、分布配色、抽屉尺寸与关�
     '总览两张表 14 个数据单元格都携带 data-label（排行 8 + 爆款 6）')
   assert.equal((analysisUiSource.match(/'data-label': t\(/gu) || []).length, 6,
     '分析页爆款表 6 个数据单元格都携带 data-label')
+})
+
+// ---------------------------------------------------------------------------
+// AI 账号表现分析（0916 方案 §9）：插入位置、状态流转、结果渲染、二次确认。
+// ---------------------------------------------------------------------------
+
+test('AI 表现分析模块：无记录折叠、有结果展开、位置在爆款视频之前', async () => {
+  const hLog = []
+  const reactStub = {
+    createElement: (type, props, ...children) => {
+      hLog.push({ type, props, children })
+      return { type, props, children }
+    },
+    useState: value => [typeof value === 'function' ? value() : value, () => {}],
+    // 阶段 4：AnalysisPage 趋势测宽 hook（沙箱无 ResizeObserver，hook 内部自动降级 600 宽）
+    useRef: value => ({ current: value === undefined ? null : value }),
+    useEffect: () => {},
+  }
+  const sandbox = await evalUiModule(new URL('../src/analysis-ui.js', import.meta.url), {}, reactStub)
+  const AnalysisPage = vm.runInContext('AnalysisPage', sandbox)
+
+  const zhCopy = {
+    accountTitle: '账号：{name}', backToOverview: '← 返回账号总览', exportAnalysis: '导出账号分析报告',
+    exporting: '导出中…', fanCount: '粉丝', workCount: '作品数', latestCollected: '最近采集', noRecord: '暂无记录',
+    kpiTotalPlay: '总播放量', colMedianPlay: '中位播放量', colHighestPlay: '最高播放量', kpiHotWorks: '爆款数量',
+    hotRateCol: '爆款率', trendTitle: '趋势', trendMetric: '指标', metric_play: '播放量', trendCaption: 'x',
+    noTrend: '暂无趋势', contentMetrics: '内容指标', cmEngagement: '综合互动率', dataInsufficient: '数据不足',
+    audienceTraffic: '观众与流量', mainGender: '主要性别', accountHotWorks: '本账号爆款视频', rankCol: '排名',
+    colVideo: '视频', publishTime: '发布时间', colPlay: '播放量', engagement: '互动率', hotBasis: '爆款依据',
+    labelAbsolute: '绝对爆款',
+    aiTitle: 'AI 账号表现分析', aiStatusNotAnalyzed: '状态：未分析', aiStatusRunning: '状态：分析中',
+    aiStatusSucceeded: '状态：已完成', aiStatusInsufficient: '状态：数据不足', aiStatusFailed: '状态：失败',
+    aiEntryButton: 'AI 分析', close: '关闭',
+    aiStartButton: 'AI 分析账号表现', aiStartButtonFirst: '开始分析', aiRerunButton: '重新分析', aiRunningButton: '分析中…',
+    aiExpand: '展开', aiCollapse: '收起',
+    aiSummaryTitle: '结论摘要', aiDimensionsTitle: '表现诊断', aiPatternsTitle: '爆款规律',
+    aiRisksTitle: '风险与机会', aiRecommendationsTitle: '执行建议', aiAssessmentLabel: '整体判定',
+    aiAssessmentStable: '稳定', aiLevelStrong: '强', aiLevelMedium: '中', aiLevelWeak: '弱',
+    aiLevelInsufficient: '数据不足', aiGradeHigh: '高', aiGradeMedium: '中', aiGradeLow: '低',
+    aiMetaRange: '最近 30 天', aiMetaGeneratedAt: '分析时间', aiMetaSample: '样本作品数',
+    aiMetaPrompt: '提示词版本', aiMetaModel: '模型', aiEvidenceWorks: '证据作品',
+    aiDataLimitations: '数据限制', aiDisclaimer: '免责声明', aiExpectedSignal: '观察信号',
+    aiConfirmTitle: '重新分析？', aiConfirmBody: '将忽略缓存重新运行 AI 分析。',
+    aiConfirmYes: '重新分析', aiConfirmNo: '取消',
+    aiErrorRetained: 'AI 分析暂时失败，请稍后重试；已保留上次分析结果',
+    aiErrorRetryable: 'AI 分析暂时失败，请稍后重试',
+    aiErrorBusy: '当前分析任务较多，请稍后重试', aiErrorRunning: '已有进行中的分析任务',
+    aiErrorInsufficient: '有效作品样本不足，暂无法生成 AI 分析', aiErrorTimeout: '分析超时，请稍后重试',
+    aiErrorEnqueue: '分析任务提交失败，请重新发起', aiErrorUnavailable: 'AI 分析服务暂不可用',
+    aiErrorNotFound: '分析记录不存在', aiErrorConflict: '请求与历史记录不一致，请刷新后重试',
+    aiDimShortContent: '内容', aiDimShortInteraction: '互动', aiDimShortRetention: '留存',
+    aiDimShortAudience: '受众', aiDimShortStability: '稳定',
+    aiDimDetail: '证据与明细', aiLimitsTitle: '数据限制与免责',
+    aiDigestLimits: '{n} 项',
+    aiGradeHigh: '高', aiGradeMedium: '中', aiGradeLow: '低',
+  }
+  const t = key => zhCopy[key] || key
+  const analysis = {
+    account: { accountId: 'a1', nickname: '燃豚豚', fanCount: 287, lastCollectedAt: null },
+    summary: { workCount: 17 },
+    kpi: { totalPlayCount: 100, hotWorkCount: 1, hotRatePct: 5 },
+    interaction: {}, hotWorks: [{ workId: 'w1', title: 'T', rank: 1, playCount: 1, engagementRatePct: 1, labels: ['absolute'] }],
+  }
+  const aiResult = {
+    summary: '账号整体稳定', overallAssessment: 'stable',
+    dimensions: [
+      { key: 'content', title: '内容吸引力', level: 'strong', facts: ['30 天 12 条'], insight: '头部集中', evidenceWorkIds: ['w1'], limitations: [] },
+      { key: 'interaction', title: '互动质量', level: 'medium', facts: ['互动率 6%'], insight: null, evidenceWorkIds: [], limitations: [] },
+      { key: 'retention', title: '留存', level: 'insufficient', facts: ['覆盖不足'], insight: null, evidenceWorkIds: [], limitations: [] },
+      { key: 'audience', title: '受众', level: 'weak', facts: ['来源单一'], insight: null, evidenceWorkIds: [], limitations: [] },
+      { key: 'stability', title: '稳定', level: 'medium', facts: ['节奏稳定'], insight: null, evidenceWorkIds: [], limitations: [] },
+    ],
+    viralPatterns: [{ pattern: '高播放强互动', evidenceWorkIds: ['w1'], confidence: 'high' }],
+    risks: [{ title: '头部集中', reason: 'Top1 占比高', priority: 'high' }],
+    recommendations: [{ action: '保持节奏', reason: 'stability 中', priority: 'low', expectedSignal: '发布间隔' }],
+    dataLimitations: ['留存字段覆盖不足'],
+    disclaimer: '辅助分析，不构成官方判定',
+  }
+
+  // 0) 弹框默认关闭：页面树无 AI 分析内容，工具栏有「AI 分析」入口按钮（需求 2）
+  hLog.length = 0
+  let modalOpened = false
+  AnalysisPage({
+    analysis, trend: null, trendMetric: 'play', trendErrorReason: null, loading: false,
+    errorReason: null, exporting: false, onBack: () => {}, onMetricChange: () => {},
+    onExport: () => {}, onOpenWork: () => {}, t,
+    aiAnalysis: null, aiBusy: false, aiError: null, aiConfirming: false,
+    onAiStart: () => {}, onAiRequestRerun: () => {}, onAiConfirmRerun: () => {}, onAiCancelConfirm: () => {},
+    onAiModalOpen: () => { modalOpened = true },
+  })
+  for (let i = 0; i < hLog.length; i += 1) if (typeof hLog[i].type === 'function') hLog[i].type(hLog[i].props)
+  const closedText = JSON.stringify(hLog)
+  assert.ok(!closedText.includes('AI 账号表现分析'), '弹框默认关闭时页面无 AI 分析内容')
+  assert.ok(!closedText.includes('整体判定'), '弹框关闭时六卡不渲染')
+  assert.ok(closedText.includes('AI 分析'), '工具栏有 AI 分析入口按钮')
+  assert.ok(hLog.some(node => node.props && node.props.className === 'ydo-an-toolbar'), '分析页工具栏渲染')
+  // 入口按钮点击 → onAiModalOpen 被调用（review P2-3：开关回调 spy 断言）
+  const entryButton = hLog.find(node => node.type === 'button'
+    && Array.isArray(node.children) && node.children[0] === 'AI 分析')
+  assert.ok(entryButton, '入口按钮节点存在')
+  entryButton.props.onClick()
+  assert.equal(modalOpened, true, '点「AI 分析」打开弹框')
+
+  // 1) 无记录：折叠（不出现子块），状态未分析，按钮是首次分析入口（弹框打开态）
+  hLog.length = 0
+  let modalClosed = false
+  AnalysisPage({
+    analysis, trend: null, trendMetric: 'play', trendErrorReason: null, loading: false,
+    errorReason: null, exporting: false, onBack: () => {}, onMetricChange: () => {},
+    onExport: () => {}, onOpenWork: () => {}, t,
+    aiAnalysis: null, aiBusy: false, aiError: null, aiConfirming: false,
+    onAiStart: () => {}, onAiRequestRerun: () => {}, onAiConfirmRerun: () => {}, onAiCancelConfirm: () => {},
+    aiModalOpen: true,
+    onAiModalClose: () => { modalClosed = true },
+  })
+  for (let i = 0; i < hLog.length; i += 1) if (typeof hLog[i].type === 'function') hLog[i].type(hLog[i].props)
+  let text = JSON.stringify(hLog)
+  assert.ok(hLog.some(node => node.props && node.props.role === 'dialog'
+    && node.props.className === 'ydo-ai-modal'), 'AI 分析以弹框（role=dialog）渲染')
+  // 弹框关闭按钮点击 → onAiModalClose 被调用（review P2-3）
+  const closeButton = hLog.find(node => node.props && node.props.className === 'ydo-ai-modal-close')
+  assert.ok(closeButton, '弹框关闭按钮存在')
+  closeButton.props.onClick()
+  assert.equal(modalClosed, true, '点关闭按钮关闭弹框')
+  assert.ok(text.includes('状态：未分析'), '无记录状态行')
+  assert.ok(text.includes('开始分析'), '未分析时按钮用「开始分析」（需求 4）')
+  assert.ok(!text.includes('AI 分析账号表现'), '未分析时不出现 aiStartButton 长文案')
+  // 内容指标卡片化（需求 1）：固定 8 项渲染为 ydo-an-metric-card 网格卡片
+  const metricCards = hLog.filter(node => node.props && node.props.className === 'ydo-an-metric-card')
+  assert.ok(metricCards.length === 8, '内容指标固定 8 张卡片')
+  assert.ok(text.includes('综合互动率') && text.includes('数据不足'), '指标缺失时显式「数据不足」')
+
+  // 1b) 首次失败（无保留结果）：按钮保持 aiStartButton 长文案（阶段 2 review P2 补覆盖）
+  hLog.length = 0
+  AnalysisPage({
+    analysis, trend: null, trendMetric: 'play', trendErrorReason: null, loading: false,
+    errorReason: null, exporting: false, onBack: () => {}, onMetricChange: () => {},
+    onExport: () => {}, onOpenWork: () => {}, t,
+    aiAnalysis: null, aiStatus: 'failed', aiBusy: false, aiError: null, aiConfirming: false,
+    onAiStart: () => {}, onAiRequestRerun: () => {}, onAiConfirmRerun: () => {}, onAiCancelConfirm: () => {},
+    aiModalOpen: true,
+  })
+  for (let i = 0; i < hLog.length; i += 1) if (typeof hLog[i].type === 'function') hLog[i].type(hLog[i].props)
+  assert.ok(JSON.stringify(hLog).includes('AI 分析账号表现'), '首次失败无结果时按钮保持 aiStartButton 长文案')
+  // 折叠卡为 hidden 渲染（收起 ≠ 不渲染）：无记录时结论卡 digest 为空判定
+  assert.ok(text.includes('整体判定：—'), '无记录结论卡空态 digest')
+  assert.ok(!text.includes('账号整体稳定'), '无结果不渲染分析正文')
+
+  // 2) 有结果：默认展开 + 五个子块 + 元数据 + 五维中文等级 + 位置在爆款视频之前
+  hLog.length = 0
+  AnalysisPage({
+    analysis, trend: null, trendMetric: 'play', trendErrorReason: null, loading: false,
+    errorReason: null, exporting: false, onBack: () => {}, onMetricChange: () => {},
+    onExport: () => {}, onOpenWork: () => {}, t,
+    aiAnalysis: {
+      analysisId: 'ai-1', status: 'succeeded', result: aiResult, summary: aiResult.summary,
+      sampleCount: 12, promptVersion: 'douyin-account-analysis-v2', model: 'minimax-m3',
+      generatedAt: '2026-09-16T08:00:00+00:00', error: null,
+      evidenceWorks: [{ workId: 'w1', title: '路边划线区域停车要不要罚' }],
+    },
+    aiStatus: 'succeeded',
+    aiBusy: false, aiError: null, aiConfirming: false,
+    onAiStart: () => {}, onAiRequestRerun: () => {}, onAiConfirmRerun: () => {}, onAiCancelConfirm: () => {},
+    onOpenWork: () => {}, t,
+    aiModalOpen: true,
+  })
+  for (let i = 0; i < hLog.length; i += 1) if (typeof hLog[i].type === 'function') hLog[i].type(hLog[i].props)
+  text = JSON.stringify(hLog)
+  assert.ok(text.includes('AI 账号表现分析'), 'AI 模块渲染')
+  // 弹框化（需求 2）：AI 区不再内嵌页面，AiAnalysisModal 以 role=dialog 渲染，
+  // 页面树仅保留工具栏入口按钮（场景 0 已断言默认关闭）。
+  assert.ok(hLog.some(node => node.props && node.props.className === 'ydo-ai-modal'),
+    'AI 分析以弹框容器（ydo-ai-modal）渲染')
+  assert.ok(hLog.some(node => node.type === 'h3' && node.children && node.children[0] === '本账号爆款视频'),
+    '爆款视频区块仍在页面树')
+  for (const label of ['结论摘要', '表现诊断', '爆款规律', '风险与机会', '执行建议']) {
+    assert.ok(text.includes(label), `子块「${label}」`)
+  }
+  assert.ok(text.includes('最近 30 天'), '元数据：分析窗口')
+  assert.ok(text.includes('整体判定：稳定'), 'overallAssessment 中文')
+  assert.ok(text.includes('强') && text.includes('数据不足'), '五维等级中文化（strong/insufficient）')
+  assert.ok(text.includes('状态：已完成'), '状态行显示外层运行态 aiStatus')
+  assert.ok(text.includes('重新分析') && !text.includes('开始分析'), '已分析时按钮为「重新分析」而非「开始分析」')
+  assert.ok(text.includes('账号整体稳定'), '结论摘要渲染')
+  // 收起态 digest：诊断卡五维等级徽章行（v2 验收稿交互）
+  // 测试数据等级：content=strong / interaction=medium / retention=insufficient / audience=weak / stability=medium
+  assert.ok(text.includes('内容 · 强'), '诊断卡收起态五维徽章（内容·强）')
+  assert.ok(text.includes('受众 · 弱'), '诊断卡收起态五维徽章（受众·弱）')
+  // 风险卡收起态计数徽章（1 条 medium）
+  // 收起徽章三色计数（用户反馈 2026-09-18 需求 2）：风险 1 条 high →「高1」；
+  // 建议 1 条 low →「低1」；规律 1 条 confidence high →「高1」。
+  assert.ok(text.includes('高1'), '风险卡收起态计数「高1」')
+  assert.ok(text.includes('低1'), '建议卡收起态计数「低1」')
+  assert.ok(!text.includes('高 1 · 中 0') && !text.includes(' 条 · '), '旧格式「高 N · 中 N」「N 条 · 高 N」不再出现')
+  assert.ok(text.includes('ydo-ai-digest-counts') && text.includes('ydo-ai-pri-high'),
+    '收起徽章为三色计数容器（.ydo-ai-digest-counts + .ydo-ai-pri-*）')
+  assert.ok(text.includes('ydo-ai-conf-high'), '规律置信度徽章按高/中/低分级配色')
+  // 元数据不再展示提示词/模型（验收反馈 2026-09-17，保留在导出报告）：
+  // 断言针对可见文本（props 原始对象含 promptVersion/model，不参与可见文本）。
+  const aiVisible = []
+  const walkAi = node => {
+    if (typeof node === 'string') { aiVisible.push(node); return }
+    if (Array.isArray(node)) { node.forEach(walkAi); return }
+    if (node && typeof node === 'object' && Array.isArray(node.children)) walkAi(node.children)
+  }
+  hLog.forEach(walkAi)
+  const aiVisibleText = aiVisible.join('\n')
+  assert.ok(!aiVisibleText.includes('douyin-account-analysis-v2'), '提示词版本不进可见文本')
+  assert.ok(!aiVisibleText.includes('minimax-m3'), '模型标识不进可见文本')
+  // 证据作品显示标题而非 ID
+  assert.ok(text.includes('路边划线区域停车要不要罚'), '证据作品显示标题')
+  assert.ok(text.includes('头部集中') && text.includes('高'), '风险与优先级中文')
+  assert.ok(text.includes('观察信号'), '建议含观察信号')
+  assert.ok(text.includes('证据作品') && text.includes('w1'), '证据作品可点击')
+  // 用户反馈 2026-09-18：证据作品标签与 chips 拆两列网格——evidence 容器恰好两个
+  // 子节点（label + list），chips 全部收在 list 内，不再与标签混排同一行流。
+  const evidenceNode = hLog.find(node => node.props && node.props.className === 'ydo-ai-evidence')
+  assert.ok(evidenceNode, 'ydo-ai-evidence 容器存在')
+  assert.ok(evidenceNode.children.length === 2
+    && evidenceNode.children[0].props?.className === 'ydo-ai-evidence-label'
+    && evidenceNode.children[1].props?.className === 'ydo-ai-evidence-list',
+  '证据作品 = 标签 + 列表两个子容器（对齐布局）')
+  const chipList = evidenceNode.children[1]
+  assert.ok(chipList.children.length >= 1
+    && chipList.children.every(chip => chip.props?.className === 'ydo-ai-chip' && chip.type === 'button'),
+  'chips 全部为 list 容器内的 button')
+  assert.ok(text.includes('辅助分析，不构成官方判定'), '免责声明')
+  // 原始枚举不进「可见文本」（className 里的样式钩子不算可见文本）：
+  // 递归拼接 children 中的字符串字面量再断言。
+  const visibleText = []
+  const walk = node => {
+    if (typeof node === 'string') { visibleText.push(node); return }
+    if (Array.isArray(node)) { node.forEach(walk); return }
+    if (node && typeof node === 'object' && Array.isArray(node.children)) walk(node.children)
+  }
+  hLog.forEach(walk)
+  const visible = visibleText.join('\n')
+  assert.ok(!visible.includes('stable') && !visible.includes('strong'), '原始枚举 level/assessment 不进可见文本')
+
+  // 3) running：按钮禁用
+  hLog.length = 0
+  AnalysisPage({
+    analysis, trend: null, trendMetric: 'play', trendErrorReason: null, loading: false,
+    errorReason: null, exporting: false, onBack: () => {}, onMetricChange: () => {},
+    onExport: () => {}, onOpenWork: () => {}, t,
+    aiAnalysis: null, aiStatus: 'running', aiBusy: false, aiError: null, aiConfirming: false,
+    onAiStart: () => {}, onAiRequestRerun: () => {}, onAiConfirmRerun: () => {}, onAiCancelConfirm: () => {},
+    t, aiModalOpen: true,
+  })
+  for (let i = 0; i < hLog.length; i += 1) if (typeof hLog[i].type === 'function') hLog[i].type(hLog[i].props)
+  text = JSON.stringify(hLog)
+  assert.ok(text.includes('"disabled":true'), '分析中按钮禁用')
+  assert.ok(text.includes('分析中…'), '运行态按钮文案')
+  assert.ok(text.includes('状态：分析中'), '状态行显示分析中（外层 aiStatus 驱动）')
+
+  // 4) 失败但保留旧结果：服务端 retainedError 驱动警示（2026-09-18 语义）；
+  // 重跑成功后服务端不再输出该字段 → 不再误报（需求 3）
+  hLog.length = 0
+  AnalysisPage({
+    analysis, trend: null, trendMetric: 'play', trendErrorReason: null, loading: false,
+    errorReason: null, exporting: false, onBack: () => {}, onMetricChange: () => {},
+    onExport: () => {}, onOpenWork: () => {}, t,
+    aiAnalysis: {
+      status: 'succeeded', result: aiResult,
+      retainedError: { code: 'AI_ANALYSIS_TIMEOUT', message: 'x', retryable: true },
+    },
+    aiStatus: 'failed',
+    aiBusy: false, aiError: null, aiConfirming: false,
+    onAiStart: () => {}, onAiRequestRerun: () => {}, onAiConfirmRerun: () => {}, onAiCancelConfirm: () => {},
+    t, aiModalOpen: true,
+  })
+  for (let i = 0; i < hLog.length; i += 1) if (typeof hLog[i].type === 'function') hLog[i].type(hLog[i].props)
+  text = JSON.stringify(hLog)
+  assert.ok(text.includes('状态：失败'), '状态行可见失败（aiStatus 外层运行态）')
+  assert.ok(text.includes('已保留上次分析结果'), '失败保留旧结果警示')
+
+  // 4b) 重跑数据不足：警示文案区分（insufficient 用样本不足文案，retainedError 驱动）
+  hLog.length = 0
+  AnalysisPage({
+    analysis, trend: null, trendMetric: 'play', trendErrorReason: null, loading: false,
+    errorReason: null, exporting: false, onBack: () => {}, onMetricChange: () => {},
+    onExport: () => {}, onOpenWork: () => {}, t,
+    aiAnalysis: {
+      status: 'succeeded', result: aiResult,
+      retainedError: { code: 'AI_ANALYSIS_INSUFFICIENT_DATA', message: 'x', retryable: false },
+    },
+    aiStatus: 'insufficient',
+    aiBusy: false, aiError: null, aiConfirming: false,
+    onAiStart: () => {}, onAiRequestRerun: () => {}, onAiConfirmRerun: () => {}, onAiCancelConfirm: () => {},
+    t, aiModalOpen: true,
+  })
+  for (let i = 0; i < hLog.length; i += 1) if (typeof hLog[i].type === 'function') hLog[i].type(hLog[i].props)
+  assert.ok(JSON.stringify(hLog).includes('有效作品样本不足'), '数据不足警示区分于失败文案')
+
+  // 4c) 重跑成功（服务端不再输出 retainedError）：不渲染「已保留上次分析结果」警示
+  //（需求 3 回归：此前 error 残留在正文上导致重跑成功仍误报）
+  hLog.length = 0
+  AnalysisPage({
+    analysis, trend: null, trendMetric: 'play', trendErrorReason: null, loading: false,
+    errorReason: null, exporting: false, onBack: () => {}, onMetricChange: () => {},
+    onExport: () => {}, onOpenWork: () => {}, t,
+    aiAnalysis: { status: 'succeeded', result: aiResult },
+    aiStatus: 'succeeded',
+    aiBusy: false, aiError: null, aiConfirming: false,
+    onAiStart: () => {}, onAiRequestRerun: () => {}, onAiConfirmRerun: () => {}, onAiCancelConfirm: () => {},
+    t, aiModalOpen: true,
+  })
+  for (let i = 0; i < hLog.length; i += 1) if (typeof hLog[i].type === 'function') hLog[i].type(hLog[i].props)
+  text = JSON.stringify(hLog)
+  assert.ok(!text.includes('已保留上次分析结果'), '重跑成功后不再显示失败保留警示（需求 3）')
+  assert.ok(!text.includes('有效作品样本不足'), '重跑成功后不显示数据不足警示')
+
+  // 5) 二次确认
+  hLog.length = 0
+  AnalysisPage({
+    analysis, trend: null, trendMetric: 'play', trendErrorReason: null, loading: false,
+    errorReason: null, exporting: false, onBack: () => {}, onMetricChange: () => {},
+    onExport: () => {}, onOpenWork: () => {}, t,
+    aiAnalysis: { status: 'succeeded', result: aiResult }, aiStatus: 'succeeded', aiBusy: false, aiError: null,
+    aiConfirming: true,
+    onAiStart: () => {}, onAiRequestRerun: () => {}, onAiConfirmRerun: () => {}, onAiCancelConfirm: () => {},
+    t, aiModalOpen: true,
+  })
+  for (let i = 0; i < hLog.length; i += 1) if (typeof hLog[i].type === 'function') hLog[i].type(hLog[i].props)
+  const dialog = hLog.find(node => node.props && node.props.role === 'dialog')
+  assert.ok(dialog, '二次确认渲染 role=dialog')
+  assert.ok(JSON.stringify(hLog).includes('重新分析？'), '确认框标题')
+
+  // 6) 稳定错误码：服务端 AI 错误码收敛为中文提示
+  hLog.length = 0
+  AnalysisPage({
+    analysis, trend: null, trendMetric: 'play', trendErrorReason: null, loading: false,
+    errorReason: null, exporting: false, onBack: () => {}, onMetricChange: () => {},
+    onExport: () => {}, onOpenWork: () => {}, t,
+    aiAnalysis: null, aiBusy: false, aiError: 'AI_ANALYSIS_GLOBAL_CONCURRENCY_LIMIT', aiConfirming: false,
+    onAiStart: () => {}, onAiRequestRerun: () => {}, onAiConfirmRerun: () => {}, onAiCancelConfirm: () => {},
+    t, aiModalOpen: true,
+  })
+  for (let i = 0; i < hLog.length; i += 1) if (typeof hLog[i].type === 'function') hLog[i].type(hLog[i].props)
+  assert.ok(JSON.stringify(hLog).includes('当前分析任务较多'), '并发上限错误码收敛中文提示')
+  assert.ok(hLog.some(node => node.props && node.props.role === 'alert'), '错误以 role=alert 呈现')
 })

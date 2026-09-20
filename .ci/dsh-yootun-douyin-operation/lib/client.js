@@ -308,6 +308,160 @@ window.__ModuleLoader__.load({
       return `${shifted.getUTCFullYear()}-${pad(shifted.getUTCMonth() + 1)}-${pad(shifted.getUTCDate())} ${pad(shifted.getUTCHours())}:${pad(shifted.getUTCMinutes())}`
     }
 
+    // 筛选菜单由页面绘制，避免系统原生 select 弹出层在 Windows 上出现不可控边框。
+    const SelectReact = require('react')
+
+    function FilterSelect({ label, value, options, onChange, disabled = false }) {
+      const [open, setOpen] = SelectReact.useState(false)
+      const [active, setActive] = SelectReact.useState(0)
+      const [menuStyle, setMenuStyle] = SelectReact.useState(null)
+      const openRef = SelectReact.useRef(false)
+      const activeRef = SelectReact.useRef(0)
+      const rootRef = SelectReact.useRef(null)
+      const triggerRef = SelectReact.useRef(null)
+      const menuRef = SelectReact.useRef(null)
+      const listId = SelectReact.useId()
+      const selectedIndex = Math.max(0, options.findIndex(option => option.value === value))
+      const selected = options[selectedIndex]
+
+      function setMenuOpen(next) {
+        openRef.current = next
+        setOpen(next)
+      }
+
+      function setActiveIndex(next) {
+        activeRef.current = next
+        setActive(next)
+      }
+
+      function showMenu() {
+        if (disabled || !triggerRef.current) return
+        const rect = triggerRef.current.getBoundingClientRect()
+        const below = window.innerHeight - rect.bottom - 8
+        const above = rect.top - 8
+        const useAbove = below < 160 && above > below
+        const available = Math.max(80, useAbove ? above : below)
+        const height = Math.min(280, options.length * 36 + 10, available)
+        const width = Math.min(Math.max(rect.width, 180), window.innerWidth - 16)
+        const left = Math.max(8, Math.min(rect.left, window.innerWidth - width - 8))
+        setMenuStyle({ top: useAbove ? rect.top - height - 4 : rect.bottom + 4, left, width, maxHeight: height })
+        setActiveIndex(selectedIndex)
+        setMenuOpen(true)
+      }
+
+      function choose(index) {
+        const option = options[index]
+        if (!option || option.disabled) return
+        setMenuOpen(false)
+        if (option.value !== value) onChange(option.value)
+        triggerRef.current?.focus()
+      }
+
+      SelectReact.useEffect(() => {
+        if (!open) return undefined
+        const dismissOutside = event => {
+          if (!rootRef.current?.contains(event.target)) setMenuOpen(false)
+        }
+        const dismissScroll = event => {
+          if (!menuRef.current?.contains(event.target)) setMenuOpen(false)
+        }
+        const dismiss = () => setMenuOpen(false)
+        document.addEventListener('pointerdown', dismissOutside)
+        window.addEventListener('scroll', dismissScroll, true)
+        window.addEventListener('resize', dismiss)
+        window.addEventListener('blur', dismiss)
+        return () => {
+          document.removeEventListener('pointerdown', dismissOutside)
+          window.removeEventListener('scroll', dismissScroll, true)
+          window.removeEventListener('resize', dismiss)
+          window.removeEventListener('blur', dismiss)
+        }
+      }, [open])
+
+      SelectReact.useEffect(() => {
+        if (disabled) setMenuOpen(false)
+      }, [disabled])
+
+      SelectReact.useEffect(() => {
+        if (!open || !menuRef.current) return
+        const menu = menuRef.current
+        const option = menu.children[active]
+        if (!option) return
+        if (option.offsetTop < menu.scrollTop) menu.scrollTop = option.offsetTop
+        else if (option.offsetTop + option.offsetHeight > menu.scrollTop + menu.clientHeight) {
+          menu.scrollTop = option.offsetTop + option.offsetHeight - menu.clientHeight
+        }
+      }, [open, active])
+
+      function onKeyDown(event) {
+        if (disabled) return
+        if (event.key === 'Escape' && openRef.current) {
+          event.preventDefault()
+          setMenuOpen(false)
+          triggerRef.current?.focus()
+          return
+        }
+        if (event.key === 'Tab' && openRef.current) {
+          setMenuOpen(false)
+          return
+        }
+        if ((event.key === 'Enter' || event.key === ' ') && openRef.current) {
+          event.preventDefault()
+          choose(activeRef.current)
+          return
+        }
+        if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return
+        event.preventDefault()
+        if (!openRef.current) {
+          showMenu()
+          return
+        }
+        const direction = event.key === 'ArrowDown' ? 1 : -1
+        let next = event.key === 'Home' ? 0 : event.key === 'End' ? options.length - 1 : activeRef.current
+        for (let step = 0; step < options.length; step += 1) {
+          if (event.key === 'ArrowDown' || event.key === 'ArrowUp') next = (next + direction + options.length) % options.length
+          if (!options[next]?.disabled) break
+          if (event.key === 'Home' || event.key === 'End') next += event.key === 'Home' ? 1 : -1
+        }
+        if (options[next] && !options[next].disabled) setActiveIndex(next)
+      }
+
+      return SelectReact.createElement('span', { className: 'ydo-filter-select', ref: rootRef },
+        SelectReact.createElement('button', {
+          ref: triggerRef,
+          type: 'button',
+          className: 'ydo-filter-trigger',
+          role: 'combobox',
+          'aria-label': label,
+          'aria-haspopup': 'listbox',
+          'aria-expanded': open,
+          'aria-controls': open ? listId : undefined,
+          'aria-activedescendant': open ? `${listId}-${active}` : undefined,
+          disabled,
+          onClick: () => openRef.current ? setMenuOpen(false) : showMenu(),
+          onKeyDown,
+        },
+        SelectReact.createElement('span', { className: 'ydo-filter-value' }, selected?.label || ''),
+        SelectReact.createElement('span', { className: 'ydo-filter-chevron', 'aria-hidden': true })),
+        open && menuStyle ? SelectReact.createElement('div', {
+          ref: menuRef,
+          id: listId,
+          role: 'listbox',
+          className: 'ydo-filter-menu',
+          style: menuStyle,
+          'aria-label': label,
+        }, ...options.map((option, index) => SelectReact.createElement('div', {
+          key: option.value,
+          id: `${listId}-${index}`,
+          role: 'option',
+          'aria-selected': option.value === value,
+          'aria-disabled': option.disabled || undefined,
+          className: `ydo-filter-option${index === active ? ' ydo-filter-option-active' : ''}`,
+          onPointerDown: event => event.preventDefault(),
+          onClick: () => choose(index),
+        }, option.label))) : null)
+    }
+
     // 账号总览页 UI 模块（0914 方案 §5 线框，阶段 1；UI 优化方案 2026-09-16）。
     //
     // 职责边界（方案 §3.3/§11）：**只做展示与本地格式化**——数字千分位/万单位、
@@ -491,8 +645,12 @@ window.__ModuleLoader__.load({
             ...(lines.length
               ? lines.map(line => h('div', { key: line, role: 'listitem' }, line))
               : [h('div', { key: 'na', role: 'listitem' }, '—')])),
-          h('ul', { className: 'ydo-ov-drawer-metrics' },
-            ...metrics.map(([key, value]) => h('li', { key }, `${key} ${value}`))),
+          // 指标摘要复用单账号分析页的内容指标卡片（用户反馈 2026-09-18 需求 4）：
+          // 标签小字在上、数值大字在下，3 列网格浅灰底圆角卡；窄屏单列规则随 .ydo-an-metrics。
+          h('div', { className: 'ydo-an-metrics', role: 'list' },
+            ...metrics.map(([key, value]) => h('div', { key, className: 'ydo-an-metric-card', role: 'listitem' },
+              h('span', { className: 'ydo-an-metric-label' }, key),
+              h('strong', { className: 'ydo-an-metric-value' }, value)))),
           detailLoading ? h('p', { className: 'ydo-hint' }, t('loading')) : null,
           h('button', {
             type: 'button',
@@ -588,38 +746,45 @@ window.__ModuleLoader__.load({
         // 内部换行，操作区固定行尾；下拉取消浏览器黑 outline，仅 :focus-visible 显外环。
         h('div', { className: 'ydo-ov-toolbar' },
           h('div', { className: 'ydo-ov-filters' },
-            h('label', { className: 'ydo-ov-filter' },
-              t('overviewAccountFilter'),
+            h('div', { className: 'ydo-ov-filter' },
+              h('span', null, t('overviewAccountFilter')),
               // 账号选择为单选下拉：默认「全部账号」= 空 accountIds，选择具体账号只传一个 ID；
               // 「全部账号」始终保留（选中单个账号后再次打开仍可切回）。
-              h('select', {
+              h(FilterSelect, {
+                label: t('overviewAccountFilter'),
                 value: selected[0] || '',
                 // 空目录即使服务端返回 accountTotal=0 也不可选择；只有非空且数量闭合时启用。
                 disabled: !catalog.length || !catalogComplete,
-                onChange: event => onFilterChange({
+                onChange: value => onFilterChange({
                   ...filters,
-                  accountIds: event.target.value ? [event.target.value] : [],
+                  accountIds: value ? [value] : [],
                 }),
-              },
-              h('option', { key: 'all', value: '' }, t('allAccounts')),
-              ...catalog.map(option => h('option', { key: option.id, value: option.id },
-                option.workCount === 0 ? `${option.label}（${t('noWorks')}）` : option.label))),
+                options: [
+                  { value: '', label: t('allAccounts') },
+                  ...catalog.map(option => ({
+                    value: option.id,
+                    label: option.workCount === 0 ? `${option.label}（${t('noWorks')}）` : option.label,
+                  })),
+                ],
+              }),
             !catalog.length ? h('span', { className: 'ydo-hint' }, t('accountCatalogUnavailable')) : null),
-            h('label', { className: 'ydo-ov-filter' },
-              t('overviewWindow'),
-              h('select', {
+            h('div', { className: 'ydo-ov-filter' },
+              h('span', null, t('overviewWindow')),
+              h(FilterSelect, {
+                label: t('overviewWindow'),
                 value: filters.window || '30d',
-                onChange: event => onFilterChange({ ...filters, window: event.target.value }),
-              },
-              ...windowOptions.map(option => h('option', { key: option, value: option }, t(`window_${option}`))))),
-            h('label', { className: 'ydo-ov-filter' },
-              t('overviewSort'),
-              h('select', {
+                onChange: value => onFilterChange({ ...filters, window: value }),
+                options: windowOptions.map(option => ({ value: option, label: t(`window_${option}`) })),
+              })),
+            h('div', { className: 'ydo-ov-filter' },
+              h('span', null, t('overviewSort')),
+              h(FilterSelect, {
+                label: t('overviewSort'),
                 value: filters.sort || 'hot_count',
-                onChange: event => onFilterChange({ ...filters, sort: event.target.value }),
-              },
-              ...['hot_count', 'hot_rate', 'median_play', 'total_play', 'engagement_rate'].map(option =>
-                h('option', { key: option, value: option }, t(`sort_${option}`)))))),
+                onChange: value => onFilterChange({ ...filters, sort: value }),
+                options: ['hot_count', 'hot_rate', 'median_play', 'total_play', 'engagement_rate'].map(option =>
+                  ({ value: option, label: t(`sort_${option}`) })),
+              }))),
           h('div', { className: 'ydo-ov-actions' },
             // 「刷新」执行当前条件的只读查询；筛选变更的自动查询走列表区加载态，
             // 不借用刷新按钮的禁用/按下态表达（UI 优化方案 §4.1）。
@@ -802,41 +967,253 @@ window.__ModuleLoader__.load({
 
     const TREND_METRICS = ['play', 'like', 'comment', 'collect', 'share', 'fans']
 
-    // 趋势图坐标（本地展示几何，非口径）：按真实 elapsedSeconds 比例定位横轴
-    //（审查 O3——横轴与 gap 都从 elapsedSeconds 派生；缺失时退回日历日差兜底）。
-    function trendLayout(points, { width = 600 } = {}) {
-      if (!Array.isArray(points) || points.length < 2) {
-        return { renderable: false, nodes: [] }
+    // ---------------------------------------------------------------------------
+    // 趋势图展示几何（2026-09-17 优化：30 天固定窗口 + 自然日横轴 + min/max 纵轴）。
+    //
+    // - 时间范围固定最近 30 个自然日（fromDay=今天-29 ~ toDay=今天），与请求窗口一致；
+    //   没有采集记录的日期不补 0，只作为缺口处理；
+    // - 数据点横坐标按自然日位置计算 x=(day-fromDay)/(toDay-fromDay)，两次采集之间
+    //   保留真实日期间隔，不按已有点压缩；elapsedSeconds 只用于 tooltip 与间隔说明；
+    // - 纵轴取窗口内有效值 min/max 上下各 10% 边距，小幅变化可见；所有点同值时纵轴
+    //   固定居中；yPct 保留小数不再取整。yPct 语义 = 值在 [yMin,yMax] 归一化位置的
+    //   百分比（值越大 yPct 越大）；SVG 的 y 轴向下，渲染层用 (100-yPct) 折算成像素
+    //   y，值大的点在视觉上方（用户反馈 2026-09-18：此前两层各反一次导致曲线整体
+    //   上下颠倒，递增数据显示成递减）；
+    // - 相邻采集日间隔 >1 天即为缺口：连线用虚线、缺口两端数据点保留，
+    //   前后不补零、不伪造数据；单点只显示数据点并提示样本不足。
+    // ---------------------------------------------------------------------------
+
+    const TREND_WINDOW_DAYS = 30
+    const TREND_AXIS_TICKS = [0, 7, 14, 21, 29]
+
+    function localIsoDay(date) {
+      const pad = n => String(n).padStart(2, '0')
+      return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
+    }
+
+    function addDaysIso(iso, days) {
+      const base = new Date(`${iso}T00:00:00Z`)
+      base.setUTCDate(base.getUTCDate() + days)
+      return localIsoDay(new Date(base.getTime() + base.getTimezoneOffset() * 60000))
+    }
+
+    function trendLayout(points, { width = 600, now = null } = {}) {
+      const empty = { renderable: false, single: false, nodes: [], segments: [], axisLabels: [] }
+      const days = (Array.isArray(points) ? points : [])
+        .filter(point => point && typeof point.day === 'string' && Number.isFinite(Number(point.value)))
+        .map(point => ({ ...point, value: Number(point.value) }))
+        .sort((a, b) => (a.day < b.day ? -1 : a.day > b.day ? 1 : 0))
+      if (!days.length) return empty
+
+      // 30 天固定窗口（本地自然日；服务端对越界日期已 clamp，这里再做防御收敛）。
+      const todayIso = localIsoDay(now ? new Date(now) : new Date())
+      const fromDay = addDaysIso(todayIso, -(TREND_WINDOW_DAYS - 1))
+      const fromMs = Date.parse(`${fromDay}T00:00:00Z`)
+      const spanMs = (TREND_WINDOW_DAYS - 1) * 86400000
+      const clampDayMs = day => {
+        const ms = Date.parse(`${day}T00:00:00Z`)
+        if (Number.isNaN(ms)) return null
+        return Math.min(fromMs + spanMs, Math.max(fromMs, ms))
       }
-      const dayMs = points.map(point => Date.parse(point.day))
-      // 相邻点时间跨度：优先 elapsedSeconds（真实采集跨度），缺失退回日历日差。
-      const spans = points.map((point, index) => {
-        if (index === 0) return 0
-        if (Number.isFinite(Number(point.elapsedSeconds))) return Number(point.elapsedSeconds)
-        return Math.max(0, dayMs[index] - dayMs[index - 1])
-      })
-      let cumulative = 0
-      const offsets = points.map((_, index) => {
-        cumulative += spans[index]
-        return cumulative
-      })
-      const span = offsets[offsets.length - 1]
-      const values = points.map(point => Number(point.value)).filter(value => Number.isFinite(value))
-      const maxValue = Math.max(...values, 1)
-      const nodes = points.map((point, index) => ({
-        index,
-        day: point.day,
-        value: point.value,
-        counterRevised: point.counterRevised === true,
-        // 前一 gap 天数（首点为 0）：日历差口径，用于渲染显式断点"无采集"标注。
-        gapDaysBefore: index === 0
-          ? 0
-          : Math.max(0, Math.round((dayMs[index] - dayMs[index - 1]) / 86400000) - 1),
-        x: Math.round((offsets[index] / (span || 1)) * width),
-        yPct: Math.round((Number(point.value) / maxValue) * 100),
-        elapsedSeconds: point.elapsedSeconds,
+
+      const nodes = []
+      for (const point of days) {
+        const clamped = clampDayMs(point.day)
+        if (clamped === null) continue
+        const prev = nodes[nodes.length - 1]
+        const gapDaysBefore = prev
+          ? Math.max(0, Math.round((clamped - prev._ms) / 86400000) - 1)
+          : 0
+        nodes.push({
+          day: point.day,
+          value: point.value,
+          elapsedSeconds: point.elapsedSeconds,
+          counterRevised: point.counterRevised === true,
+          gapDaysBefore,
+          x: Math.round(((clamped - fromMs) / spanMs) * width * 100) / 100,
+          yPct: 0,
+          _ms: clamped,
+        })
+      }
+      if (!nodes.length) return empty
+
+      // 纵轴：窗口内有效值 min/max 上下各 10% 边距；同值固定居中；yPct 保留小数。
+      // yPct = 值的归一化位置百分比（值越大 yPct 越大）；SVG y 轴向下的翻转只在
+      // 渲染层 (100-yPct) 做一次，布局层不再预反——两层各反一次会把曲线画颠倒。
+      const values = nodes.map(node => node.value)
+      const rawMin = Math.min(...values)
+      const rawMax = Math.max(...values)
+      const sameValue = rawMin === rawMax
+      let yMin = rawMin
+      let yMax = rawMax
+      if (!sameValue) {
+        const pad = (rawMax - rawMin) * 0.1
+        yMin = rawMin - pad
+        yMax = rawMax + pad
+      }
+      for (const node of nodes) {
+        node.yPct = sameValue
+          ? 50
+          : Math.round(((node.value - yMin) / (yMax - yMin)) * 10000) / 100
+      }
+
+      // 分段：相邻采集日间隔 >1 天为缺口（虚线），否则实线；缺口两端数据点保留。
+      const segments = []
+      for (let index = 1; index < nodes.length; index += 1) {
+        const prev = nodes[index - 1]
+        const node = nodes[index]
+        segments.push({
+          x1: prev.x, y1: prev.yPct,
+          x2: node.x, y2: node.yPct,
+          dashed: node.gapDaysBefore > 0,
+          gapDaysBefore: node.gapDaysBefore,
+          prevX: prev.x, prevDay: prev.day,
+        })
+      }
+
+      // 横轴日期标签：固定 5 个刻度位（0/7/14/21/29 天处），窄屏由 CSS 隐藏偶数位。
+      const axisLabels = TREND_AXIS_TICKS.map((offset, index) => ({
+        day: addDaysIso(fromDay, offset),
+        x: Math.round((offset / (TREND_WINDOW_DAYS - 1)) * width * 100) / 100,
+        pos: index === 0 ? 'start' : index === TREND_AXIS_TICKS.length - 1 ? 'end' : 'middle',
+        minor: index % 2 === 1,
       }))
-      return { renderable: true, nodes, maxValue }
+
+      return {
+        renderable: true,
+        single: nodes.length === 1,
+        width,
+        nodes,
+        segments,
+        axisLabels,
+        yMax: rawMax,
+        yMin: rawMin,
+        sameValue,
+        fromDay,
+        toDay: todayIso,
+      }
+    }
+
+    // 注意联动：SVG viewBox 高与 client.js 中 `.ydo-an-trend-svg{height:168px}` 必须一致，
+    // 单改一处会因 viewBox/CSS 比例失配导致图形变形（测试有字面值锁定）。
+    const TREND_VIEW_HEIGHT = 168
+    const TREND_PAD_TOP = 16
+    const TREND_PAD_BOTTOM = 30
+
+    // y 轴标签专用格式化（需求 5a，2026-09-18）：≥1万固定保留 1 位小数万单位
+    //（如 165.3万），<1万千分位。不走 formatWan 的「≥100万取整」口径——那会让
+    // ±10% 边距下的 yMin/yMax（如 165.1万/165.9万）同显「165万」。
+    function axisValueText(value) {
+      // null/undefined/空串是「缺失」（上层显示 —），绝不格式化成 0（与 formatWan 同防御）。
+      if (value === null || value === undefined || value === '') return null
+      const num = Number(value)
+      if (!Number.isFinite(num)) return null
+      if (Math.abs(num) >= 10000) return `${(num / 10000).toFixed(1)}万`
+      return num.toLocaleString('en-US')
+    }
+
+    // 容器实测宽度（需求 5b，2026-09-18）：趋势 SVG 的 viewBox 用真实面板宽度，
+    // 消除「固定 600 宽被 width:100% 拉伸 ~3 倍导致轴文字/点线过大」的根因；
+    // ResizeObserver 跟随面板尺寸变化。沙箱/无 ResizeObserver 环境降级为默认宽。
+    // callback ref 模式：hook 必须在 AnalysisPage 任何早退 return 之前调用（Rules of
+    // Hooks），effect 依赖 [node, width]——node 入依赖才能感知「早退→完整渲染」后
+    // 容器才真正挂载的时机，否则 observer 永远 attach 不上、宽停在校正值。
+    function useMeasuredWidth(fallbackWidth = 600) {
+      const { useState, useEffect } = react()
+      const [node, setNode] = useState(null)
+      const [width, setWidth] = useState(fallbackWidth)
+      useEffect(() => {
+        if (!node || typeof ResizeObserver === 'undefined') return undefined
+        const observer = new ResizeObserver(entries => {
+          const entry = entries && entries[0]
+          const nextWidth = entry && entry.contentRect ? Math.round(entry.contentRect.width) : 0
+          // 忽略塌缩态（隐藏/折叠时的 0 宽）与同值，避免无效重渲。
+          if (nextWidth >= 200 && nextWidth !== width) setWidth(nextWidth)
+        })
+        observer.observe(node)
+        return () => observer.disconnect()
+      }, [node, width])
+      return [setNode, width]
+    }
+
+    // SVG 趋势图（2026-09-17 优化）：黑色折线 2px、缺口虚线、数据点 6px、
+    // 低透明度面积填充、浅灰网格与坐标文字、日期标签固定 5 刻度位（窄屏隐藏偶数位）。
+    function TrendChart({ layout, t }) {
+      const { width, nodes, segments, axisLabels, yMax, yMin } = layout
+      const plotHeight = TREND_VIEW_HEIGHT - TREND_PAD_TOP - TREND_PAD_BOTTOM
+      const yOf = node => TREND_PAD_TOP + ((100 - node.yPct) / 100) * plotHeight
+      const areaPoints = nodes.map(node => `${node.x},${yOf(node)}`).join(' ') +
+        ` ${nodes[nodes.length - 1].x},${TREND_PAD_TOP + plotHeight} ${nodes[0].x},${TREND_PAD_TOP + plotHeight}`
+      const gridYs = [TREND_PAD_TOP, TREND_PAD_TOP + plotHeight / 2, TREND_PAD_TOP + plotHeight]
+      // y 轴标签（需求 5a）：专用格式化保留 1 位小数万单位；min/max 格式化同文时
+      // 退千分位完整数字（不走 formatWan——其 ≥100万取整口径正是同文根因），
+      // 保证两端可区分。非有限数回退 —，超长截断兜底。
+      const axisFallback = value => {
+        const formatted = count(value)
+        return formatted === null ? '—' : (formatted.length > 12 ? `${formatted.slice(0, 12)}…` : formatted)
+      }
+      let yMaxText = axisValueText(yMax) || axisFallback(yMax)
+      let yMinText = axisValueText(yMin) || axisFallback(yMin)
+      if (yMaxText === yMinText) {
+        yMaxText = Math.round(Number(yMax)).toLocaleString('en-US')
+        yMinText = Math.round(Number(yMin)).toLocaleString('en-US')
+      }
+
+      return h2('svg', {
+        className: 'ydo-an-trend-svg',
+        viewBox: `0 0 ${width} ${TREND_VIEW_HEIGHT}`,
+        role: 'img',
+        'aria-label': t('trendTitle'),
+      },
+      ...gridYs.map((gy, index) => h2('line', {
+        key: `grid-${index}`,
+        x1: 0, y1: gy, x2: width, y2: gy,
+        className: 'ydo-an-grid-line',
+      })),
+      h2('text', { x: 2, y: TREND_PAD_TOP + 8, className: 'ydo-an-axis-text' }, yMaxText),
+      h2('text', { x: 2, y: TREND_PAD_TOP + plotHeight - 2, className: 'ydo-an-axis-text' }, yMinText),
+
+      nodes.length > 1 ? h2('polygon', {
+        points: areaPoints,
+        className: 'ydo-an-trend-area',
+      }) : null,
+
+      ...segments.map((segment, index) => h2('line', {
+        key: `seg-${index}`,
+        x1: segment.x1, y1: TREND_PAD_TOP + ((100 - segment.y1) / 100) * plotHeight,
+        x2: segment.x2, y2: TREND_PAD_TOP + ((100 - segment.y2) / 100) * plotHeight,
+        className: segment.dashed ? 'ydo-an-seg ydo-an-seg-dashed' : 'ydo-an-seg',
+      })),
+
+      ...nodes.map((node, index) => h2('circle', {
+        key: `dot-${node.day}-${index}`,
+        cx: node.x, cy: yOf(node), r: 4,
+        className: 'ydo-an-dot-circle',
+      }, h2('title', null,
+        // 悬浮提示与 y 轴同口径（axisValueText，≥1万保留 1 位小数），
+        // 不走 count/formatWan 的「≥100万取整」口径，避免同图两种万单位文本。
+        `${node.day} ${axisValueText(node.value) || '—'}` +
+        (node.gapDaysBefore > 0 ? ` · ${t('noCollectGap')} ${node.gapDaysBefore}d` : '')))),
+
+      ...nodes.filter(node => node.gapDaysBefore > 0).map((node, index) => h2('text', {
+        key: `gap-${index}`,
+        x: Math.max(24, Math.min(width - 24, node.x - node.gapDaysBefore * (width / 29) / 2 + 12)),
+        y: TREND_PAD_TOP + plotHeight + 12,
+        className: 'ydo-an-gap-text',
+      }, `${t('noCollectGap')} ${node.gapDaysBefore}d`)),
+
+      ...nodes.filter(node => node.counterRevised).map((node, index) => h2('text', {
+        key: `revised-${index}`,
+        x: Math.min(width - 30, node.x + 6),
+        y: Math.max(10, yOf(node) - 9),
+        className: 'ydo-an-revised-text',
+      }, t('counterRevised'))),
+
+      ...axisLabels.map(label => h2('text', {
+        key: `axis-${label.day}`,
+        x: label.x, y: TREND_VIEW_HEIGHT - 8,
+        className: `ydo-an-axis-label ydo-an-axis-${label.pos}${label.minor ? ' ydo-an-axis-minor' : ''}`,
+      }, label.day.slice(5).replace('-', '/'))))
     }
 
     function deriveAnalysisAlerts(analysis, t) {
@@ -950,12 +1327,11 @@ window.__ModuleLoader__.load({
     ]
 
     function contentMetricNote(item, t) {
-      // 第三段只保留数据状态：覆盖率缺失或为 0 → 数据不足；0<x<100 → 部分数据；
-      // 覆盖完整 → 不显示状态。覆盖率数值属于内部质量信息，不在内容指标中展示。
-      // 真实数值 0 永远照常渲染，不因隐藏覆盖率变成空值。
+      // 第三段只保留数据状态：覆盖率缺失或为 0 → 数据不足；其余（部分覆盖或完整）
+      // 一律不显示状态（用户反馈 2026-09-18：「部分数据」徽标去除）。覆盖率数值属于
+      // 内部质量信息，不在内容指标中展示。真实数值 0 永远照常渲染，不因隐藏覆盖率变成空值。
       const coverage = Number(item && item.coveragePct)
       if (!Number.isFinite(coverage) || coverage <= 0) return t('dataInsufficient')
-      if (coverage < 100) return t('dataPartial')
       return null
     }
 
@@ -1031,6 +1407,339 @@ window.__ModuleLoader__.load({
         }))
     }
 
+
+    // ---------------------------------------------------------------------------
+    // AI 账号表现分析（0916 方案 §9；v1 §2.1；卡片折叠式布局 2026-09-17 验收稿）。
+    //
+    // 六张折叠卡：结论摘要（蓝，默认展开）/ 表现诊断（灰，收起态=五维等级徽章行）/
+    // 风险与机会（红）/ 执行建议（绿）/ 爆款规律（紫）/ 数据限制与免责（灰，最弱化）。
+    // 左边框 3px 语义色区分类别；条目内按优先级/等级徽章区分重要程度。
+    // 收起时头部仍暴露一行关键信息（digest），点击头部展开/收起明细。
+    // ---------------------------------------------------------------------------
+
+    const AI_LEVEL_LABELS = { strong: 'aiLevelStrong', medium: 'aiLevelMedium', weak: 'aiLevelWeak', insufficient: 'aiLevelInsufficient' }
+    const AI_ASSESSMENT_LABELS = { stable: 'aiAssessmentStable', growing: 'aiAssessmentGrowing', volatile: 'aiAssessmentVolatile' }
+    const AI_GRADE_LABELS = { high: 'aiGradeHigh', medium: 'aiGradeMedium', low: 'aiGradeLow' }
+    const AI_DIM_SHORT_KEYS = { content: 'aiDimShortContent', interaction: 'aiDimShortInteraction', retention: 'aiDimShortRetention', audience: 'aiDimShortAudience', stability: 'aiDimShortStability' }
+    const AI_DIM_FALLBACK = { content: '内容吸引力', interaction: '互动质量', retention: '留存与观看深度', audience: '流量与受众匹配', stability: '稳定性与可复制性' }
+
+    const AI_STATUS_COPY = Object.freeze({
+      not_analyzed: 'aiStatusNotAnalyzed',
+      running: 'aiStatusRunning',
+      succeeded: 'aiStatusSucceeded',
+      insufficient: 'aiStatusInsufficient',
+      failed: 'aiStatusFailed',
+    })
+
+    // AI 稳定错误码 → 文案键（§9.3.5：失败显示中文提示与重试入口，不透传原始报文）。
+    const AI_ERROR_REASON_COPY = Object.freeze({
+      AI_ANALYSIS_RUNNING: 'aiErrorRunning',
+      AI_ANALYSIS_GLOBAL_CONCURRENCY_LIMIT: 'aiErrorBusy',
+      AI_ANALYSIS_INSUFFICIENT_DATA: 'aiErrorInsufficient',
+      AI_ANALYSIS_MODEL_FAILED: 'aiErrorRetryable',
+      AI_ANALYSIS_SCHEMA_INVALID: 'aiErrorRetryable',
+      AI_ANALYSIS_TIMEOUT: 'aiErrorTimeout',
+      AI_ANALYSIS_ENQUEUE_FAILED: 'aiErrorEnqueue',
+      AI_ANALYSIS_MODEL_CONFIG_MISSING: 'aiErrorUnavailable',
+      AI_ANALYSIS_PROMPT_INVALID: 'aiErrorUnavailable',
+      AI_ANALYSIS_NOT_FOUND: 'aiErrorNotFound',
+      IDEMPOTENCY_CONFLICT: 'aiErrorConflict',
+    })
+
+    function aiText(value) {
+      return value === null || value === undefined || value === '' ? null : String(value)
+    }
+
+    function aiLevelBadge(level, t) {
+      const key = level || 'insufficient'
+      return h2('span', { className: `ydo-ai-level ydo-ai-level-${key}` },
+        t(AI_LEVEL_LABELS[key] || 'aiLevelInsufficient'))
+    }
+
+    function aiGradeText(value, t) {
+      if (!value) return null
+      const key = AI_GRADE_LABELS[value]
+      return key ? t(key) : null
+    }
+
+    function aiPriorityBadge(priority, t) {
+      const key = AI_GRADE_LABELS[priority]
+      return h2('span', { className: `ydo-ai-pri ydo-ai-pri-${priority || 'low'}` },
+        key ? t(key) : t('aiGradeLow'))
+    }
+
+    // 用户反馈 2026-09-18（需求 2）：风险/建议/规律卡收起徽章统一改「高N 中N 低N」
+    // 三色计数，与展开后条目徽章同一配色体系（.ydo-ai-pri-*）。pick 取条目级别
+    // （风险/建议 = priority，爆款规律 = confidence）；为 0 的级别不显示，全部为 0
+    // 时不渲染（数据异常退化为无徽章，不伪造计数）。
+    function aiPriorityDigestCounts(items, pick, t) {
+      const counts = { high: 0, medium: 0, low: 0 }
+      for (const item of Array.isArray(items) ? items : []) {
+        const key = pick(item)
+        if (key === 'high' || key === 'medium' || key === 'low') counts[key] += 1
+      }
+      const parts = ['high', 'medium', 'low'].filter(key => counts[key] > 0)
+      if (!parts.length) return null
+      return h2('span', { className: 'ydo-ai-digest-counts' },
+        ...parts.map(key => h2('span', { key, className: `ydo-ai-pri ydo-ai-pri-${key}` },
+          `${t(AI_GRADE_LABELS[key])}${counts[key]}`)))
+    }
+
+    function aiEvidenceChips(ids, evidenceMap, onOpenWork, t) {
+      if (!Array.isArray(ids) || !ids.length) return null
+      const unique = [...new Set(ids)]
+      // 标签 + chip 列表拆两列网格（用户反馈 2026-09-18）：标签固定左列，chips 在右列
+      // 内流式换行且左缘对齐，不再与标签混排在同一行流里导致换行后参差错乱。
+      return h2('div', { className: 'ydo-ai-evidence' },
+        h2('span', { className: 'ydo-ai-evidence-label' }, t('aiEvidenceWorks')),
+        h2('div', { className: 'ydo-ai-evidence-list' },
+          ...unique.map(workId => {
+            // 服务端 get 投影反查的作品名；缺失回退 ID 截断，不伪造
+            const title = (evidenceMap && evidenceMap[workId]) || null
+            return h2('button', {
+              key: workId,
+              type: 'button',
+              className: 'ydo-ai-chip',
+              title: title || workId,
+              onClick: () => onOpenWork && onOpenWork({ workId }),
+            }, title ? (title.length > 18 ? `${title.slice(0, 18)}…` : title) : `${workId.slice(0, 8)}…`)
+          })))
+    }
+
+    function aiDigestCount(text) {
+      return h2('span', { className: 'ydo-ai-count' }, text)
+    }
+
+    function AiCard({ tone, title, open, onToggle, digest, count, children }) {
+      return h2('section', { className: `ydo-ai-card ydo-ai-card-${tone}${open ? ' ydo-ai-card-open' : ''}` },
+        h2('button', { type: 'button', className: 'ydo-ai-card-toggle', 'aria-expanded': !!open, onClick: onToggle },
+          h2('h4', null, title),
+          digest || null,
+          typeof count === 'string' ? aiDigestCount(count) : (count || null),
+          h2('span', { className: 'ydo-ai-arrow', 'aria-hidden': 'true' }, '▶')),
+        h2('div', { className: 'ydo-ai-card-body', hidden: !open }, children))
+    }
+
+    function AiAnalysisSection({
+      ai, aiStatus = 'not_analyzed', busy, error, confirming,
+      onStart, onRequestRerun, onConfirmRerun, onCancelConfirm, onOpenWork, t,
+    }) {
+      const { useState } = react()
+      // 折叠态：仅结论摘要默认展开；点击卡片头部切换（§验收稿 2026-09-17）
+      const [openCards, setOpenCards] = useState({ summary: true })
+      const toggle = key => setOpenCards(prev => ({ ...prev, [key]: !prev[key] }))
+
+      const result = (ai && ai.result) || null
+      const hasResult = Boolean(ai && ai.status === 'succeeded' && result)
+      // 运行态以外层 aiStatus 为准（重跑时正文仍是旧 current，投影 status 不反映重跑）
+      const running = aiStatus === 'running' || Boolean(ai && ai.status === 'running')
+      const isRunning = busy || running
+      const statusKey = AI_STATUS_COPY[aiStatus || (ai && ai.status)] || 'aiStatusNotAnalyzed'
+
+      // 服务端 get 投影反查的证据作品标题（workId → title）
+      const evidenceMap = {}
+      for (const work of ((ai && ai.evidenceWorks) || [])) {
+        if (work && work.workId) evidenceMap[work.workId] = work.title || null
+      }
+
+      const dims = hasResult ? (result.dimensions || []) : []
+      const risks = hasResult ? (result.risks || []) : []
+      const recs = hasResult ? (result.recommendations || []) : []
+      const patterns = hasResult ? (result.viralPatterns || []) : []
+      const limits = hasResult ? (result.dataLimitations || []) : []
+
+      // 从未分析过（外层状态仍为 not_analyzed）时首按钮用短文案「开始分析」（需求 4）；
+      // 首次失败（failed）后仍走原「AI 分析账号表现」入口，语义不与重跑混淆。
+      const startLabel = aiStatus === 'not_analyzed' ? 'aiStartButtonFirst' : 'aiStartButton'
+      const button = isRunning
+        ? h2('button', { type: 'button', className: 'ydo-secondary', disabled: true, 'aria-busy': true }, t('aiRunningButton'))
+        : hasResult || (ai && ai.status === 'insufficient')
+          ? h2('button', { type: 'button', className: 'ydo-secondary', onClick: onRequestRerun }, t('aiRerunButton'))
+          : h2('button', {
+            type: 'button', className: 'ydo-secondary', disabled: busy,
+            onClick: () => { if (onStart) onStart() },
+          }, t(startLabel))
+
+      const errorText = error ? t(AI_ERROR_REASON_COPY[error] || 'aiErrorRetryable') : null
+      // 「已保留上次分析结果」警示改读服务端显式 retainedError 字段（2026-09-18 语义）：
+      // 仅当最新一次运行 failed/insufficient 且存在不同 analysis_id 的保留结果时才非空，
+      // 重跑成功/首次失败/脏数据残留都不会再误报（需求 3）。客户端再以 ai.result 兜底：
+      // 字段存在但正文为空（脏数据）时不说「已保留结果」，避免与六卡空态矛盾展示。
+      const retainedWarn = ai && ai.retainedError && ai.result
+        ? t(ai.retainedError.code === 'AI_ANALYSIS_INSUFFICIENT_DATA' ? 'aiErrorInsufficient' : 'aiErrorRetained')
+        : null
+
+      // —— 卡片 digest（收起态一行关键信息）——
+      const dimsDigest = h2('span', { className: 'ydo-ai-digest-levels' },
+        ...dims.map(d => h2('span', { key: d.key, className: `ydo-ai-dl ydo-ai-dl-${d.level || 'insufficient'}` },
+          `${t(AI_DIM_SHORT_KEYS[d.key] || d.key)} · ${t(AI_LEVEL_LABELS[d.level] || 'aiLevelInsufficient')}`)))
+      const risksDigest = risks.length
+        ? h2('span', { className: 'ydo-ai-digest' },
+          (risks[0].title || '').length > 24 ? `${risks[0].title.slice(0, 24)}…` : risks[0].title)
+        : null
+      const recsDigest = recs.length
+        ? h2('span', { className: 'ydo-ai-digest' },
+          (recs[0].action || '').length > 24 ? `${recs[0].action.slice(0, 24)}…` : recs[0].action)
+        : null
+      const patternsDigest = patterns.length
+        ? h2('span', { className: 'ydo-ai-digest' },
+          (patterns[0].pattern || '').length > 24 ? `${patterns[0].pattern.slice(0, 24)}…` : patterns[0].pattern)
+        : null
+
+      return h2('section', { className: 'ydo-ov-panel ydo-an-ai' },
+        h2('div', { className: 'ydo-ov-toolbar' },
+          h2('h3', null, t('aiTitle')),
+          h2('div', { className: 'ydo-an-ai-controls' },
+            h2('span', { className: `ydo-an-ai-status ydo-an-ai-status-${aiStatus || (ai && ai.status) || 'not_analyzed'}`, role: 'status' }, t(statusKey)),
+            button)),
+        errorText ? h2('p', { className: 'ydo-error', role: 'alert' }, errorText) : null,
+        retainedWarn ? h2('p', { className: 'ydo-warn', role: 'status' }, retainedWarn) : null,
+
+        h2('div', { className: 'ydo-ai-cards' },
+          // 卡 1：结论摘要（蓝，默认展开）
+          h2(AiCard, {
+            key: 'card-summary', tone: 'summary', title: t('aiSummaryTitle'),
+            open: !!openCards.summary, onToggle: () => toggle('summary'),
+            digest: h2('span', { className: 'ydo-ai-digest' },
+              `${t('aiAssessmentLabel')}：${t(AI_ASSESSMENT_LABELS[result?.overallAssessment] || result?.overallAssessment || '—')}`),
+          },
+          hasResult ? [
+            h2('p', { className: 'ydo-ai-summary-text' }, result.summary),
+            h2('div', { className: 'ydo-ai-summary-meta' },
+              h2('span', null, t('aiMetaRange')),
+              payloadTime(ai.generatedAt) ? h2('span', null, `${t('aiMetaGeneratedAt')} ${payloadTime(ai.generatedAt)}`) : null,
+              Number.isFinite(Number(ai.sampleCount)) ? h2('span', null, `${t('aiMetaSample')} ${count(ai.sampleCount)}`) : null),
+          ] : h2('p', { className: 'ydo-hint' },
+            isRunning ? t('aiRunningButton') : t(AI_STATUS_COPY[aiStatus] || 'aiStatusNotAnalyzed'))),
+
+          // 卡 2：表现诊断（灰；收起态=五维等级徽章行）
+          h2(AiCard, {
+            key: 'card-dims', tone: 'dims', title: t('aiDimensionsTitle'),
+            open: !!openCards.dims, onToggle: () => toggle('dims'),
+            digest: dimsDigest,
+          },
+          h2('div', { className: 'ydo-ai-dims' },
+            ...dims.map(dimension => h2('div', { key: dimension.key, className: 'ydo-ai-dim' },
+              h2('div', { className: 'ydo-ai-dim-head' },
+                h2('b', null, dimension.title || AI_DIM_FALLBACK[dimension.key] || dimension.key),
+                aiLevelBadge(dimension.level, t)),
+              (dimension.facts || []).length ? h2('p', { className: 'ydo-ai-dim-fact' }, dimension.facts[0]) : null,
+              aiText(dimension.insight) ? h2('p', { className: 'ydo-ai-dim-insight' }, dimension.insight) : null,
+              h2('details', { className: 'ydo-ai-dim-detail' },
+                h2('summary', null, t('aiDimDetail')),
+                ...(dimension.facts || []).slice(1).map((fact, index) =>
+                  h2('p', { key: `${index}-${String(fact).slice(0, 6)}`, className: 'ydo-ai-dim-fact' }, fact)),
+                (dimension.limitations || []).length
+                  ? h2('p', { className: 'ydo-ai-dim-limit' },
+                    `${t('aiDataLimitations')}：${dimension.limitations.join('；')}`)
+                  : null,
+                aiEvidenceChips(dimension.evidenceWorkIds, evidenceMap, onOpenWork, t)))))),
+
+          // 卡 3+4：风险（红）与 建议（绿）双列
+          h2('div', { className: 'ydo-ai-grid' },
+            h2(AiCard, {
+              key: 'card-risks', tone: 'risks', title: t('aiRisksTitle'),
+              open: !!openCards.risks, onToggle: () => toggle('risks'),
+              digest: risksDigest,
+              count: risks.length ? aiPriorityDigestCounts(risks, item => item.priority, t) : null,
+            },
+            ...risks.map((risk, index) => h2('div', { key: `risk-${index}`, className: 'ydo-ai-item' },
+              h2('div', { className: 'ydo-ai-item-head' },
+                aiPriorityBadge(risk.priority, t),
+                h2('span', { className: 'ydo-ai-item-title' }, risk.title || '—')),
+              aiText(risk.reason) ? h2('p', { className: 'ydo-ai-item-reason' }, risk.reason) : null,
+              aiEvidenceChips(risk.evidenceWorkIds, evidenceMap, onOpenWork, t)))),
+
+            h2(AiCard, {
+              key: 'card-recs', tone: 'recs', title: t('aiRecommendationsTitle'),
+              open: !!openCards.recs, onToggle: () => toggle('recs'),
+              digest: recsDigest,
+              count: recs.length ? aiPriorityDigestCounts(recs, item => item.priority, t) : null,
+            },
+            ...recs.map((recommendation, index) => h2('div', { key: `rec-${index}`, className: 'ydo-ai-item' },
+              h2('div', { className: 'ydo-ai-item-head' },
+                aiPriorityBadge(recommendation.priority, t),
+                h2('span', { className: 'ydo-ai-item-title' }, recommendation.action || '—')),
+              aiText(recommendation.expectedSignal)
+                ? h2('p', { className: 'ydo-ai-signal' },
+                  h2('span', { className: 'ydo-ai-signal-label' }, `${t('aiExpectedSignal')}：`),
+                  recommendation.expectedSignal)
+                : (aiText(recommendation.reason)
+                  ? h2('p', { className: 'ydo-ai-item-reason' }, recommendation.reason)
+                  : null),
+              aiEvidenceChips(recommendation.evidenceWorkIds, evidenceMap, onOpenWork, t))))),
+
+          // 卡 5+6：规律（紫）与 限制（灰）双列
+          h2('div', { className: 'ydo-ai-grid' },
+            h2(AiCard, {
+              key: 'card-patterns', tone: 'patterns', title: t('aiPatternsTitle'),
+              open: !!openCards.patterns, onToggle: () => toggle('patterns'),
+              digest: patternsDigest,
+              count: patterns.length ? aiPriorityDigestCounts(patterns, item => item.confidence, t) : null,
+            },
+            ...patterns.map((pattern, index) => h2('div', { key: `pattern-${index}`, className: 'ydo-ai-item' },
+              h2('div', { className: 'ydo-ai-item-head' },
+                h2('span', { className: 'ydo-ai-item-title' }, pattern.pattern || '—'),
+                aiGradeText(pattern.confidence, t)
+                  // 置信度徽章按高/中/低分级配色（用户反馈 2026-09-18）：与风险/建议的
+                  // 优先级徽章同一三色体系，收起态「高N 中N 低N」计数与展开色对齐。
+                  ? h2('span', { className: `ydo-ai-conf ydo-ai-conf-${pattern.confidence || 'low'}` },
+                    aiGradeText(pattern.confidence, t))
+                  : null),
+              aiEvidenceChips(pattern.evidenceWorkIds, evidenceMap, onOpenWork, t)))),
+
+            h2(AiCard, {
+              key: 'card-limits', tone: 'limits', title: t('aiLimitsTitle'),
+              open: !!openCards.limits, onToggle: () => toggle('limits'),
+              digest: null,
+              count: limits.length ? t('aiDigestLimits').replace('{n}', String(limits.length)) : null,
+            },
+            h2('ul', { className: 'ydo-ai-limits' },
+              ...limits.map((item, index) => h2('li', { key: `${index}-${String(item).slice(0, 6)}` }, item))),
+            hasResult && aiText(result.disclaimer)
+              ? h2('p', { className: 'ydo-ai-disclaimer' }, `${t('aiDisclaimer')}：${result.disclaimer}`)
+              : null))),
+
+        confirming
+          ? h2('div', { className: 'ydo-confirm-overlay', role: 'dialog', 'aria-modal': true, 'aria-label': t('aiConfirmTitle') },
+            h2('div', { className: 'ydo-confirm' },
+              h2('p', { className: 'ydo-confirm-title' }, t('aiConfirmTitle')),
+              h2('p', { className: 'ydo-hint' }, t('aiConfirmBody')),
+              h2('div', { className: 'ydo-confirm-actions' },
+                h2('button', { type: 'button', className: 'ydo-confirm-primary', onClick: onConfirmRerun }, t('aiConfirmYes')),
+                h2('button', { type: 'button', className: 'ydo-confirm-secondary', onClick: onCancelConfirm }, t('aiConfirmNo')))))
+          : null)
+    }
+
+    /**
+     * AI 账号表现分析弹框（需求 2，2026-09-18）：内容与 AiAnalysisSection 完全一致
+     * （状态行、开始/重新分析、二次确认、六张折叠卡），仅把展示容器从页面内嵌
+     * 面板改为独立弹框层（z-index 530，低于作品详情 540——弹框内点证据作品时
+     * 详情叠加在分析页与弹框之上）。开关由 client.js 持有，接入统一 Esc 链。
+     */
+    function AiAnalysisModal({ open, onClose, t, ...sectionProps }) {
+      if (!open) return null
+      return h2('div', { className: 'ydo-ai-modal-overlay' },
+        h2('div', { className: 'ydo-ai-modal', role: 'dialog', 'aria-modal': true, 'aria-label': t('aiTitle') },
+          h2('button', {
+            type: 'button', className: 'ydo-ai-modal-close', onClick: onClose, 'aria-label': t('close'),
+          }, '✕'),
+          h2('div', { className: 'ydo-ai-modal-body' },
+            h2(AiAnalysisSection, { ...sectionProps, t }))))
+    }
+
+    function payloadTime(value) {
+      if (!value || value === '—') return null
+      try {
+        const parsed = new Date(value)
+        if (Number.isNaN(parsed.getTime())) return null
+        const pad = n => String(n).padStart(2, '0')
+        return `${parsed.getFullYear()}-${pad(parsed.getMonth() + 1)}-${pad(parsed.getDate())} ${pad(parsed.getHours())}:${pad(parsed.getMinutes())}`
+      } catch {
+        return String(value)
+      }
+    }
+
     /**
      * 单账号分析页（账号总览 Tab 内的下钻页，方案 §6）。
      *
@@ -1042,7 +1751,14 @@ window.__ModuleLoader__.load({
     function AnalysisPage({
       analysis, trend, trendMetric, trendErrorReason, loading, errorReason, exporting,
       rangeLabel = null, onBack, onMetricChange, onExport, onOpenWork, t,
+      aiAnalysis = null, aiStatus = 'not_analyzed', aiBusy = false, aiError = null, aiConfirming = false,
+      onAiStart = null, onAiRequestRerun = null, onAiConfirmRerun = null, onAiCancelConfirm = null,
+      aiModalOpen = false, onAiModalOpen = null, onAiModalClose = null,
     }) {
+      // 需求 5b：容器实测宽驱动 viewBox（初始 600 兜底，挂载后 ResizeObserver 校正）。
+      // hook 必须在下方任何早退 return 之前调用（Rules of Hooks）；完整渲染分支把
+      // trendWrapRef（callback ref）挂到趋势容器上，早退分支不渲染容器即无观察目标。
+      const [trendWrapRef, trendWidth] = useMeasuredWidth()
       if (errorReason) {
         return h2('div', { className: 'ydo-state ydo-state-error', role: 'alert' },
           h2('p', null, t(ANALYSIS_ERROR_REASON_COPY[errorReason] || 'operationUnavailable')),
@@ -1053,11 +1769,17 @@ window.__ModuleLoader__.load({
         return h2('div', { className: 'ydo-state', role: 'status' }, h2('p', null, t('none')))
       }
       const kpi = analysis?.kpi || {}
-      const layout = trendLayout(trend?.points || [])
+      const layout = trendLayout(trend?.points || [], { width: trendWidth })
 
       return h2('div', { className: 'ydo-an-page' },
         h2('div', { className: 'ydo-an-toolbar' },
           h2('button', { type: 'button', className: 'ydo-secondary', onClick: onBack }, t('backToOverview')),
+          // 「AI 分析」入口在「导出账号分析报告」前（需求 2）：打开 AI 分析弹框，
+          // 内容与原内嵌 AI 卡完全一致。
+          h2('button', {
+            type: 'button', className: 'ydo-secondary',
+            onClick: () => { if (onAiModalOpen) onAiModalOpen() },
+          }, t('aiEntryButton')),
           // "导出账号分析报告"只在单账号分析页局部工具栏（方案 §10.3）。
           h2('button', {
             type: 'button', className: 'ydo-secondary ydo-export',
@@ -1085,43 +1807,43 @@ window.__ModuleLoader__.load({
         account ? h2('section', { className: 'ydo-ov-panel' },
           h2('div', { className: 'ydo-ov-toolbar' },
             h2('h3', null, t('trendTitle')),
-            h2('label', { className: 'ydo-ov-filter' },
-              t('trendMetric'),
-              h2('select', {
+            h2('div', { className: 'ydo-ov-filter' },
+              h2('span', null, t('trendMetric')),
+              h2(FilterSelect, {
+                label: t('trendMetric'),
                 value: trendMetric,
-                onChange: event => onMetricChange && onMetricChange(event.target.value),
-              },
-              ...TREND_METRICS.map(metric => h2('option', { key: metric, value: metric }, t(`metric_${metric}`)))))),
+                onChange: value => onMetricChange && onMetricChange(value),
+                options: TREND_METRICS.map(metric => ({ value: metric, label: t(`metric_${metric}`) })),
+              }))),
           h2('p', { className: 'ydo-hint' }, t('trendCaption')),
           trendErrorReason
             ? h2('p', { className: 'ydo-error', role: 'alert' },
               t(ANALYSIS_ERROR_REASON_COPY[trendErrorReason] || 'operationUnavailable'))
             : null,
-          layout.renderable
-            ? h2('div', { className: 'ydo-an-trend', role: 'img', 'aria-label': t('trendTitle') },
-              ...layout.nodes.map(node => h2('div', {
-                key: node.day,
-                className: 'ydo-an-point',
-                style: { left: `${Math.min(96, Math.max(2, (node.x / 600) * 100))}%` },
-                title: `${node.day} ${count(node.value)}`,
-                'data-day': node.day,
-              },
-              node.gapDaysBefore > 0 ? h2('span', { className: 'ydo-an-gap' }, `${t('noCollectGap')} ${node.gapDaysBefore}d`) : null,
-              node.counterRevised ? h2('span', { className: 'ydo-an-revised' }, t('counterRevised')) : null,
-              h2('span', { className: 'ydo-an-dot' }))))
-            : h2('p', { className: 'ydo-hint' }, t('noTrend')))
+          // 测宽容器（需求 5b）：包裹趋势图（含单点分支），ref 供 ResizeObserver
+          // 读取实际内容宽度驱动 viewBox。
+          h2('div', { ref: trendWrapRef },
+            !layout.renderable || layout.single
+              ? h2('p', { className: 'ydo-hint' },
+                layout.single ? t('trendSingleHint') : t('noTrend'),
+                layout.single && layout.nodes.length
+                  ? h2(TrendChart, { layout, t })
+                  : null)
+              : h2(TrendChart, { layout, t })))
           : null,
 
         account ? h2('div', { className: 'ydo-ov-panels' },
           h2('section', { className: 'ydo-ov-panel' },
             h2('h3', null, t('contentMetrics')),
-            // 固定指标清单：「指标名 / 主值 / 数据状态」三段（UI 优化方案 §5.3）；
-            // 缺失值显示 —，真实的 0 保持为 0，服务端未返回的段显式「数据不足」。
-            h2('ul', { className: 'ydo-an-metrics' },
-              ...contentMetricRows(analysis, t).map(row => h2('li', { key: row.key },
-                h2('span', { className: 'ydo-an-metric-label' }, row.label),
-                h2('span', { className: 'ydo-an-metric-value' }, row.value),
-                row.note ? h2('span', { className: 'ydo-an-metric-note' }, row.note) : null)))),
+            // 固定指标清单改浅灰底圆角卡片网格（创作中心风格，需求 1）：标签小字在上、
+            // 数据状态小徽标同排右侧、数值大字加粗在下；缺失值显示 —，真实的 0 保持
+            // 为 0，服务端未返回的段显式「数据不足」，数值口径不变。
+            h2('div', { className: 'ydo-an-metrics', role: 'list' },
+              ...contentMetricRows(analysis, t).map(row => h2('div', { key: row.key, className: 'ydo-an-metric-card', role: 'listitem' },
+                h2('div', { className: 'ydo-an-metric-head' },
+                  h2('span', { className: 'ydo-an-metric-label' }, row.label),
+                  row.note ? h2('span', { className: 'ydo-an-metric-note' }, row.note) : null),
+                h2('strong', { className: 'ydo-an-metric-value' }, row.value))))),
           h2('section', { className: 'ydo-ov-panel' },
             h2('h3', null, t('audienceTraffic')),
             // 观众与流量（UI 优化方案 v2 §5.3）：性别/年龄/地域/城市级别/主要来源
@@ -1131,7 +1853,26 @@ window.__ModuleLoader__.load({
         account ? h2('section', { className: 'ydo-ov-panel' },
           h2('h3', null, t('accountHotWorks')),
           hotWorksTable(analysis, onOpenWork, t))
-          : null)
+          : null,
+
+        // AI 账号表现分析弹框（需求 2）：默认关闭；内容由 AiAnalysisSection 提供，
+        // 功能与原内嵌卡完全一致；开关状态由 client.js 持有以接入统一 Esc 链。
+        account ? h2(AiAnalysisModal, {
+          key: 'ai-modal',
+          open: aiModalOpen,
+          onClose: () => { if (onAiModalClose) onAiModalClose() },
+          ai: aiAnalysis,
+          aiStatus,
+          busy: aiBusy,
+          error: aiError,
+          confirming: aiConfirming,
+          onStart: onAiStart,
+          onRequestRerun: onAiRequestRerun,
+          onConfirmRerun: onAiConfirmRerun,
+          onCancelConfirm: onAiCancelConfirm,
+          onOpenWork,
+          t,
+        }) : null)
     }
 
     // 稳定 reason → 已登记文案键（与 overview-ui 同一策略）。
@@ -1166,6 +1907,15 @@ window.__ModuleLoader__.load({
     const OVERLAY_ID = '@dofe/dsh-yootun-douyin-operation'
     const LOGIN_POLL_INTERVAL_MS = 2000
     const COLLECT_POLL_INTERVAL_MS = 1500
+    // AI 分析轮询间隔：优先后 get 响应内 pollIntervalSeconds（服务端 TOML 下发），
+    // 缺失退回 3s（0916 方案 §5.2/§3.1 poll_interval_seconds 默认值）。
+    const AI_POLL_FALLBACK_INTERVAL_MS = 3000
+    // 受理幂等键：每次点击新生成（重试复用同一次点击的键），键不嵌账号（0916 方案 §5.1）。
+    const newAiAnalysisRequestUuid = () => {
+      if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') return crypto.randomUUID()
+      return `r${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
+    }
+    const aiAnalysisIdempotencyKey = () => `douyin:ai_analysis:${newAiAnalysisRequestUuid()}`
 
     // 删除账号的客户端生命周期（能力矩阵的写操作状态语义）：
     // idle → awaiting_confirmation（确认框）→ confirmed_pending_adapter（设备清理 + 远端删除进行中）；
@@ -1256,8 +2006,9 @@ window.__ModuleLoader__.load({
         colHighestPlay: '最高播放量', trendTitle: '采集快照累计值变化', trendMetric: '指标',
         metric_play: '累计播放量', metric_like: '累计点赞量', metric_comment: '累计评论量',
         metric_collect: '累计收藏量', metric_share: '累计分享量', metric_fans: '粉丝数',
-        trendCaption: '按采集日收盘值展示，非平台自然日新增；间隔按真实时间跨度标注',
+        trendCaption: '最近 30 天采集日收盘值；缺采集日期以虚线连接，不补零',
         noCollectGap: '无采集', counterRevised: '平台修正', noTrend: '暂无趋势',
+        trendSingleHint: '暂无足够趋势数据（窗口内仅 1 个采集点）',
         contentMetrics: '内容指标',
         cmEngagement: '综合互动率', cmLikeRate: '点赞率', cmCommentRate: '评论率',
         cmCollectRate: '收藏率', cmShareRate: '分享率', cmCompletion5s: '5秒完播率',
@@ -1279,6 +2030,38 @@ window.__ModuleLoader__.load({
         noWorks: '暂无可统计作品', rangeAllTime: '全部时间', workCountAllTime: '全部时间作品数',
         // 二审（2026-09-16）：排行受 top_n 截断属正常展示语义，明确区分完整账号数与展示数。
         rankingScopeHint: '共 {total} 个账号 · 排行展示 {shown} 个',
+        // AI 账号表现分析（0916 方案 §9）
+        aiTitle: 'AI 账号表现分析',
+        aiStatusNotAnalyzed: '状态：未分析', aiStatusRunning: '状态：分析中',
+        aiStatusSucceeded: '状态：已完成', aiStatusInsufficient: '状态：数据不足', aiStatusFailed: '状态：失败',
+        aiStartButton: 'AI 分析账号表现', aiStartButtonFirst: '开始分析', aiRerunButton: '重新分析', aiRunningButton: '分析中…',
+        aiEntryButton: 'AI 分析',
+        aiExpand: '展开', aiCollapse: '收起',
+        aiSummaryTitle: '结论摘要', aiDimensionsTitle: '表现诊断', aiPatternsTitle: '爆款规律',
+        aiRisksTitle: '风险与机会', aiRecommendationsTitle: '执行建议',
+        aiAssessmentLabel: '整体判定',
+        aiAssessmentStable: '稳定', aiAssessmentGrowing: '增长', aiAssessmentVolatile: '波动',
+        aiLevelStrong: '强', aiLevelMedium: '中', aiLevelWeak: '弱', aiLevelInsufficient: '数据不足',
+        aiGradeHigh: '高', aiGradeMedium: '中', aiGradeLow: '低',
+        aiExpectedSignal: '观察信号',
+        aiMetaRange: '最近 30 天', aiMetaGeneratedAt: '分析时间', aiMetaSample: '样本作品数',
+        aiMetaPrompt: '提示词版本', aiMetaModel: '模型',
+        aiEvidenceWorks: '证据作品',
+        aiDataLimitations: '数据限制', aiDisclaimer: '免责声明',
+        aiConfirmTitle: '重新分析？',
+        aiConfirmBody: '将忽略缓存重新运行 AI 分析，预计需要 1–3 分钟，可能产生模型调用费用。',
+        aiConfirmYes: '重新分析', aiConfirmNo: '取消',
+        aiErrorRetained: 'AI 分析暂时失败，请稍后重试；已保留上次分析结果',
+        aiErrorRunning: '已有进行中的分析任务，请等待完成', aiErrorBusy: '当前分析任务较多，请稍后重试',
+        aiErrorInsufficient: '有效作品样本不足，暂无法生成 AI 分析', aiErrorRetryable: 'AI 分析暂时失败，请稍后重试',
+        aiErrorTimeout: '分析超时，请稍后重试', aiErrorEnqueue: '分析任务提交失败，请重新发起',
+        aiErrorUnavailable: 'AI 分析服务暂不可用，请联系管理员', aiErrorNotFound: '分析记录不存在',
+        aiErrorConflict: '请求与历史记录不一致，请刷新后重试',
+        // 卡片折叠布局（2026-09-17 验收稿）
+        aiDimShortContent: '内容', aiDimShortInteraction: '互动', aiDimShortRetention: '留存',
+        aiDimShortAudience: '受众', aiDimShortStability: '稳定',
+        aiDimDetail: '证据与明细', aiLimitsTitle: '数据限制与免责',
+        aiDigestLimits: '{n} 项',
       },
       en: {
         open: 'Douyin ops', title: 'Douyin ops', subtitle: 'Scan to sign in to a Douyin creator account, collect and review work metrics',
@@ -1356,6 +2139,7 @@ window.__ModuleLoader__.load({
         metric_collect: 'Favorites', metric_share: 'Shares', metric_fans: 'Followers',
         trendCaption: 'Daily-close snapshots (not platform daily deltas); spans are real',
         noCollectGap: 'No collect', counterRevised: 'Revised', noTrend: 'No trend yet',
+        trendSingleHint: 'Not enough trend data (only one point in window)',
         contentMetrics: 'Content metrics',
         cmEngagement: 'Engagement', cmLikeRate: 'Like rate', cmCommentRate: 'Comment rate',
         cmCollectRate: 'Favorite rate', cmShareRate: 'Share rate', cmCompletion5s: '5s completion',
@@ -1373,6 +2157,37 @@ window.__ModuleLoader__.load({
         accountCatalogSyncing: 'Account list and stats are syncing', accountCatalogUnavailable: 'Account list unavailable',
         noWorks: 'No statistically usable works', rangeAllTime: 'All time', workCountAllTime: 'All-time works',
         rankingScopeHint: '{total} accounts in total · ranking shows {shown}',
+        // AI performance analysis (0916 plan §9)
+        aiTitle: 'AI performance analysis',
+        aiStatusNotAnalyzed: 'Status: not analyzed', aiStatusRunning: 'Status: analyzing',
+        aiStatusSucceeded: 'Status: done', aiStatusInsufficient: 'Status: insufficient data', aiStatusFailed: 'Status: failed',
+        aiStartButton: 'Analyze with AI', aiStartButtonFirst: 'Start analysis', aiRerunButton: 'Re-run analysis', aiRunningButton: 'Analyzing…',
+        aiEntryButton: 'AI analysis',
+        aiExpand: 'Expand', aiCollapse: 'Collapse',
+        aiSummaryTitle: 'Summary', aiDimensionsTitle: 'Diagnosis', aiPatternsTitle: 'Viral patterns',
+        aiRisksTitle: 'Risks & opportunities', aiRecommendationsTitle: 'Actions',
+        aiAssessmentLabel: 'Overall',
+        aiAssessmentStable: 'Stable', aiAssessmentGrowing: 'Growing', aiAssessmentVolatile: 'Volatile',
+        aiLevelStrong: 'Strong', aiLevelMedium: 'Medium', aiLevelWeak: 'Weak', aiLevelInsufficient: 'Insufficient data',
+        aiGradeHigh: 'High', aiGradeMedium: 'Medium', aiGradeLow: 'Low',
+        aiExpectedSignal: 'Signal to watch',
+        aiMetaRange: 'Last 30 days', aiMetaGeneratedAt: 'Generated at', aiMetaSample: 'Sample works',
+        aiMetaPrompt: 'Prompt version', aiMetaModel: 'Model',
+        aiEvidenceWorks: 'Evidence works',
+        aiDataLimitations: 'Data limitations', aiDisclaimer: 'Disclaimer',
+        aiConfirmTitle: 'Re-run analysis?',
+        aiConfirmBody: 'This re-runs the AI analysis bypassing the cache. It may take 1–3 minutes and could incur model usage charges.',
+        aiConfirmYes: 'Re-run', aiConfirmNo: 'Cancel',
+        aiErrorRetained: 'AI analysis failed temporarily; the previous result is kept',
+        aiErrorRunning: 'An analysis is already running', aiErrorBusy: 'Too many analyses are running; try again later',
+        aiErrorInsufficient: 'Not enough valid works to generate an AI analysis', aiErrorRetryable: 'AI analysis failed temporarily; try again later',
+        aiErrorTimeout: 'The analysis timed out; try again later', aiErrorEnqueue: 'The analysis could not be submitted; start it again',
+        aiErrorUnavailable: 'The AI analysis service is unavailable; contact your admin', aiErrorNotFound: 'Analysis record not found',
+        aiErrorConflict: 'The request conflicts with a previous one; refresh and retry',
+        aiDimShortContent: 'Content', aiDimShortInteraction: 'Interaction', aiDimShortRetention: 'Retention',
+        aiDimShortAudience: 'Audience', aiDimShortStability: 'Stability',
+        aiDimDetail: 'Evidence & details', aiLimitsTitle: 'Data limits & disclaimer',
+        aiDigestLimits: '{n}',
       },
     }
 
@@ -1769,8 +2584,23 @@ window.__ModuleLoader__.load({
       const [trendError, setTrendError] = useState(null)
       const [trendMetric, setTrendMetric] = useState('play')
       const [analysisExporting, setAnalysisExporting] = useState(false)
+      // AI 账号表现分析（0916 方案 §9）：aiAnalysis 是 get 的 analysis 投影；
+      // aiBusy 只约束「受理」按钮（分析中禁用），轮询期间不阻塞其他只读指标浏览。
+      const [aiAnalysis, setAiAnalysis] = useState(null)
+      // aiStatus 是外层运行态（服务端 get 取最新一条记录）：重跑期间=running、
+      // 失败/数据不足对状态行可见；aiAnalysis 正文取当前结果（旧结果保留展示）。
+      const [aiStatus, setAiStatus] = useState('not_analyzed')
+      const [aiBusy, setAiBusy] = useState(false)
+      const [aiError, setAiError] = useState(null)
+      const [aiConfirming, setAiConfirming] = useState(false)
+      // AI 分析弹框开关（需求 2）：由 client.js 持有以接入统一 Esc 链；
+      // 弹框内容与原内嵌 AI 卡一致，AI 轮询不随弹框开关停止。
+      const [aiModalOpen, setAiModalOpen] = useState(false)
       const loginPollRef = useRef(null)
       const collectPollRef = useRef(null)
+      const aiPollRef = useRef(null)
+      // 当前分析页账号（轮询/预取响应的归属守卫，防止切账号后旧响应覆盖新页面）
+      const aiAccountRef = useRef(null)
 
       const current = useMemo(() => accounts.find(item => item.accountId === selected) || null, [accounts, selected])
 
@@ -1810,26 +2640,27 @@ window.__ModuleLoader__.load({
 
       useEffect(() => {
         if (!visible) return undefined
-        // 统一的生命周期契约：Esc 先关子页面（作品详情 → 爆款抽屉），再关 overlay；
-        // 关闭后焦点回到触发按钮。hotDrawerWork 必须在依赖里，否则闭包捕获旧值、
-        // Esc 会跳过抽屉直接关掉整个 overlay（审查修复补充）。
+        // 统一的生命周期契约：Esc 先关子页面（作品详情 → 爆款抽屉 → AI 分析弹框），
+        // 再关 overlay；关闭后焦点回到触发按钮。hotDrawerWork/aiModalOpen 必须在依赖里，
+        // 否则闭包捕获旧值、Esc 会跳过弹层直接关掉整个 overlay（审查修复补充）。
         const onKey = event => {
           if (event.key === 'Escape') {
             if (detailWorkId) setDetailWorkId(null)
             else if (hotDrawerWork) setHotDrawerWork(null)
+            else if (aiModalOpen) setAiModalOpen(false)
             else closeOverlay()
           }
         }
         document.addEventListener('keydown', onKey)
         shellRef.current?.focus?.()
         return () => document.removeEventListener('keydown', onKey)
-      }, [visible, detailWorkId, hotDrawerWork])
+      }, [visible, detailWorkId, hotDrawerWork, aiModalOpen])
 
       const stopPolling = useCallback(ref => {
         if (ref.current) { clearInterval(ref.current); ref.current = null }
       }, [])
 
-      useEffect(() => () => { stopPolling(loginPollRef); stopPolling(collectPollRef) }, [stopPolling])
+      useEffect(() => () => { stopPolling(loginPollRef); stopPolling(collectPollRef); stopPolling(aiPollRef) }, [stopPolling])
 
       const beginLogin = useCallback(async accountId => {
         setBusy(true)
@@ -2018,10 +2849,11 @@ window.__ModuleLoader__.load({
             return
           }
           setAnalysis(result.analysis || null)
-          // 趋势窗口：toDay=今天、fromDay=今天-89（服务端半开区间，toDay 晚于今天会被 clamp）。
+          // 趋势窗口固定最近 30 个自然日：toDay=今天、fromDay=今天-29
+          //（服务端半开区间，toDay 晚于今天会被 clamp；横轴按自然日定位，缺口不补零）。
           const pad = value => String(value).padStart(2, '0')
           const today = new Date()
-          const from = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 89)
+          const from = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 29)
           const iso = date => `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
           const trendResult = await post({
             action: 'account.trend', accountId,
@@ -2065,6 +2897,90 @@ window.__ModuleLoader__.load({
           setAnalysisExporting(false)
         }
       }, [analysisAccountId, overviewFilters])
+
+      // ---------------------------------------------------------------------------
+      // AI 账号表现分析（0916 方案 §9.3）：受理 + 轮询 + 二次确认。
+      // 切换页面/Tab 不自动重新调用模型：进入分析页只 get 一次现状（只读），
+      // 只有用户点「分析/重新分析」才 start；轮询仅在接受受理后进行。
+      // ---------------------------------------------------------------------------
+
+      const stopAiPolling = useCallback(() => stopPolling(aiPollRef), [stopPolling])
+
+      const loadAiAnalysis = useCallback(async (accountId, { silent = false } = {}) => {
+        if (!accountId) return null
+        let payload = null
+        try {
+          const result = await post({ action: 'aiAnalysis.get', accountId })
+          // 归属守卫：响应回来时若已切走账号（或离开分析页），丢弃不覆盖新页面
+          if (aiAccountRef.current !== accountId) return null
+          if (result.status !== 'ready') {
+            setAiError(result.reason || 'douyin_operation_request_failed')
+            return null
+          }
+          payload = { aiStatus: result.aiStatus || 'not_analyzed', analysis: result.analysis || null }
+          setAiAnalysis(payload.analysis)
+          setAiStatus(payload.aiStatus)
+          setAiError(null)
+        } catch {
+          // 轮询中的单次网络失败不刷整体错误（silent），由轮询计数兜底收敛
+          if (!silent && aiAccountRef.current === accountId) {
+            setAiError('douyin_operation_request_failed')
+          }
+        }
+        return payload
+      }, [])
+
+      const startAiAnalysis = useCallback(async accountId => {
+        if (!accountId || aiBusy) return
+        stopAiPolling()
+        aiAccountRef.current = accountId
+        setAiBusy(true)
+        setAiError(null)
+        try {
+          // 受理（幂等受理响应可能是 running+pending，服务端 after_commit 投递）。
+          const result = await post({
+            action: 'aiAnalysis.start',
+            accountId,
+            idempotencyKey: aiAnalysisIdempotencyKey(),
+          })
+          if (result.status !== 'ready') {
+            setAiError(result.reason || 'douyin_operation_request_failed')
+            return
+          }
+          // 重跑场景：正文仍是旧 current，轮询判断必须看外层运行态 aiStatus（§9.3.2）。
+          const payload = await loadAiAnalysis(accountId)
+          if (payload && payload.aiStatus === 'running') {
+            const interval = Math.max(1, Number(payload.pollIntervalSeconds) || 3) * 1000
+            stopPolling(aiPollRef)
+            let failures = 0
+            aiPollRef.current = setInterval(() => {
+              loadAiAnalysis(accountId, { silent: true }).then(latest => {
+                if (!latest) {
+                  // 网络失败静默重试；连续 5 次失败停轮询并给出错误提示
+                  failures += 1
+                  if (failures >= 5) {
+                    stopAiPolling()
+                    setAiError('douyin_operation_request_failed')
+                  }
+                  return
+                }
+                failures = 0
+                if (latest.aiStatus !== 'running') stopAiPolling()
+              }).catch(() => {})
+            }, interval)
+          }
+        } catch {
+          setAiError('douyin_operation_request_failed')
+        } finally {
+          setAiBusy(false)
+        }
+      }, [aiBusy, loadAiAnalysis, stopAiPolling, stopPolling])
+
+      // 重新分析二次确认（§9.3.4）：确认后以全新幂等键受理（绕过缓存直接重跑）。
+      const confirmAiRerun = useCallback(() => {
+        setAiConfirming(false)
+        startAiAnalysis(analysisAccountId)
+      }, [analysisAccountId, startAiAnalysis])
 
       const openDetail = useCallback(async (workId, accountIdOverride = null) => {
         // 跨账号爆款下钻用作品所属账号（审查 O4），默认仍是当前选中账号。
@@ -2187,7 +3103,12 @@ window.__ModuleLoader__.load({
                 h('button', { type: 'button', 'aria-label': t('close'), onClick: closeOverlay }, h(IconCloseOutline16, { size: 16 }))))),
           h('nav', { className: 'ydo-tabs', 'aria-label': t('data') },
             h('button', { type: 'button', 'aria-current': tab === 'overview' || undefined, onClick: () => setTab('overview') }, t('tabOverview')),
-            h('button', { type: 'button', 'aria-current': tab === 'videos' || undefined, onClick: () => setTab('videos') }, t('tabVideos'))),
+            h('button', {
+              type: 'button', 'aria-current': tab === 'videos' || undefined,
+              // 分析页随 overview Tab 渲染（review P2-1）：切走时清 AI 弹框开关，
+              // 避免切回总览时弹框「自动重开」与本 Tab 下 Esc 空按。
+              onClick: () => { setTab('videos'); setAiModalOpen(false) },
+            }, t('tabVideos'))),
           // 左侧账号管理栏只在「视频数据」Tab 显示（UI 优化方案 §3.1）；
           // 账号总览/单账号分析使用完整宽度内容区（ydo-body-full 单列）。
           h('div', { className: `ydo-body${tab === 'overview' ? ' ydo-body-full' : ''}` },
@@ -2207,7 +3128,10 @@ window.__ModuleLoader__.load({
                     ? t('rangeAllTime')
                     : t(`window_${overviewFilters.window || '30d'}`),
                   onBack: () => {
-                    // 返回总览保留筛选条件（方案 §15.2）。
+                    // 返回总览保留筛选条件（方案 §15.2）；离开分析页停 AI 轮询与归属。
+                    stopAiPolling()
+                    aiAccountRef.current = null
+                    setAiModalOpen(false)
                     setAnalysisAccountId(null)
                     loadOverview().catch(() => {})
                   },
@@ -2216,10 +3140,21 @@ window.__ModuleLoader__.load({
                     loadAnalysis(analysisAccountId, metric)
                   },
                   onExport: exportAnalysis,
-                  onOpenWork: work => {
-                    setAnalysisAccountId(null)
-                    openDetail(work.workId, work.accountId)
-                  },
+                  aiAnalysis,
+                  aiStatus,
+                  aiBusy,
+                  aiError,
+                  aiConfirming,
+                  onAiStart: () => startAiAnalysis(analysisAccountId),
+                  onAiRequestRerun: () => setAiConfirming(true),
+                  onAiConfirmRerun: confirmAiRerun,
+                  onAiCancelConfirm: () => setAiConfirming(false),
+                  aiModalOpen,
+                  onAiModalOpen: () => setAiModalOpen(true),
+                  onAiModalClose: () => setAiModalOpen(false),
+                  // 弹框内点证据作品（需求 2 确认稿）：保留分析页与 AI 轮询，仅叠加
+                  // 作品详情层（Esc/关闭详情后回到分析页 + 弹框）。
+                  onOpenWork: work => openDetail(work.workId, work.accountId),
                   t,
                 }))
               : tab === 'overview'
@@ -2242,6 +3177,15 @@ window.__ModuleLoader__.load({
                     setSelected(accountId)
                     setAnalysisAccountId(accountId)
                     loadAnalysis(accountId)
+                    // 切账号：停掉上一账号的 AI 轮询、清投影，再做只读预取
+                    //（§9.1 有结果默认展开；get 不触发模型）。
+                    stopAiPolling()
+                    aiAccountRef.current = accountId
+                    setAiAnalysis(null)
+                    setAiStatus('not_analyzed')
+                    setAiError(null)
+                    setAiModalOpen(false)
+                    loadAiAnalysis(accountId).catch(() => {})
                   },
                   // 无账号空态的"添加账号"入口：复用左栏既有扫码登录链路。
                   onAddAccount: () => beginLogin(null),
@@ -2314,17 +3258,129 @@ window.__ModuleLoader__.load({
     .ydo-table{width:max-content;min-width:100%}.ydo-table-head,.ydo-table-row{display:grid;align-items:center}.ydo-table-head{position:sticky;top:0;z-index:3;background:var(--dsw-alias-bg-layer-2);border-bottom:1px solid var(--dsw-alias-border-l1)}.ydo-sort{display:flex;width:100%;align-items:center;gap:4px;min-width:0;padding:0;border:0;background:transparent;color:inherit;font:inherit;text-align:left;cursor:pointer}.ydo-sort-text{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.ydo-sort-arrow{flex:none;min-width:12px;color:var(--dsw-alias-label-secondary)}.ydo-sort-active{color:var(--dsw-alias-label-primary)}.ydo-sort-active .ydo-sort-arrow{color:var(--dsw-alias-brand-primary)}.ydo-cell{padding:8px 10px;font-size:var(--dsh-content-font-size-secondary,13px);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.ydo-cell-count,.ydo-cell-pct,.ydo-cell-seconds{text-align:right;font-variant-numeric:tabular-nums}.ydo-cell-sticky{position:sticky;z-index:2;border-right:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-1)}.ydo-table-head .ydo-cell-sticky{z-index:4;background:var(--dsw-alias-bg-layer-2)}.ydo-table-row{cursor:default;border-bottom:1px solid var(--dsw-alias-border-l1)}.ydo-table-row:hover .ydo-cell{background:var(--dsw-alias-bg-layer-2)}.ydo-table-row:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:-2px}.ydo-cell a{color:var(--dsw-alias-brand-primary);text-decoration:none}.ydo-cell a:hover{text-decoration:underline}.ydo-state{display:grid;min-height:200px;place-items:center;align-content:center;gap:10px;color:var(--dsw-alias-label-secondary);font-size:var(--dsh-content-font-size,14px);text-align:center}.ydo-state p{margin:0;max-width:640px;line-height:1.6}.ydo-state-title{color:var(--dsw-alias-label-primary);font-size:var(--dsw-font-base-16-font-size,16px);font-weight:600}.ydo-state-error .ydo-state-title{color:color-mix(in srgb,var(--dsw-alias-state-error-primary) 50%,var(--dsw-alias-label-primary))}.ydo-hint{margin:0;color:var(--dsw-alias-label-secondary);font-size:var(--dsh-content-font-size-secondary,13px);line-height:1.5}.ydo-error{margin:0;color:color-mix(in srgb,var(--dsw-alias-state-error-primary) 50%,var(--dsw-alias-label-primary));font-size:var(--dsh-content-font-size-secondary,13px)}.ydo-warn{margin:0;color:color-mix(in srgb,var(--dsw-alias-state-warn-primary,#d29922) 50%,var(--dsw-alias-label-primary));font-size:var(--dsh-content-font-size-secondary,13px)}.ydo-ok{margin:0;color:color-mix(in srgb,var(--dsw-alias-state-success-primary,#1a7f37) 50%,var(--dsw-alias-label-primary));font-size:var(--dsh-content-font-size-secondary,13px)}.ydo-spinner{width:16px;height:16px;border:2px solid var(--dsw-alias-border-l2);border-top-color:var(--dsw-alias-brand-primary);border-radius:50%;animation:ydo-spin .8s linear infinite}@keyframes ydo-spin{to{transform:rotate(360deg)}}.ydo-modal-overlay{position:fixed;inset:0;z-index:540;display:grid;place-items:center;background:color-mix(in srgb,var(--dsw-alias-bg-base) 60%,transparent)}.ydo-modal{width:min(1080px,calc(100vw - 48px));max-height:calc(100vh - 64px);display:grid;grid-template-rows:auto 1fr;border:1px solid var(--dsw-alias-border-l1);border-radius:8px;background:var(--dsw-alias-bg-layer-1);box-shadow:0 16px 48px rgba(0,0,0,.24);overflow:hidden}.ydo-modal-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;padding:16px 20px;border-bottom:1px solid var(--dsw-alias-border-l1)}.ydo-modal-head h3{margin:0;font-size:var(--dsw-font-base-16-font-size,16px)}.ydo-modal-meta{margin:4px 0 0;color:var(--dsw-alias-label-secondary);font-size:var(--dsh-content-font-size-secondary,13px)}.ydo-modal-body{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px;padding:20px;overflow:auto}.ydo-panel{padding:14px;border:1px solid var(--dsw-alias-border-l1);border-radius:8px;background:var(--dsw-alias-bg-base)}.ydo-panel h4{margin:0 0 10px;font-size:var(--dsh-content-font-size,14px)}.ydo-panel-gap{border-color:var(--dsw-alias-state-warn-primary,#d29922)}.ydo-gap-list{margin:0;padding-left:18px;display:grid;gap:4px;color:var(--dsw-alias-label-secondary);font-size:var(--dsh-content-font-size-secondary,13px)}.ydo-gap-list code{font-size:var(--dsh-content-font-size-secondary,13px);color:var(--dsw-alias-label-primary)}.ydo-gap-list .ydo-gap-failed{color:color-mix(in srgb,var(--dsw-alias-state-error-primary) 60%,var(--dsw-alias-label-primary))}.ydo-bars{margin:0;padding:0;list-style:none;display:grid;gap:6px}.ydo-bars li{display:grid;grid-template-columns:72px 1fr 56px;align-items:center;gap:8px;font-size:var(--dsh-content-font-size-secondary,13px)}.ydo-bar-label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.ydo-bar-track{display:block;height:6px;border-radius:3px;background:var(--dsw-alias-bg-layer-2);overflow:hidden}.ydo-bar-fill{display:block;height:100%;border-radius:3px;background:var(--dsw-alias-brand-primary)}.ydo-bar-value{text-align:right;font-variant-numeric:tabular-nums;color:var(--dsw-alias-label-secondary)}.ydo-donut-wrap{display:flex;align-items:center;gap:16px}.ydo-donut{position:relative;width:96px;height:96px;border-radius:50%;flex:none}.ydo-donut-hole{position:absolute;inset:22px;border-radius:50%;background:var(--dsw-alias-bg-base)}.ydo-legend{margin:0;padding:0;list-style:none;display:grid;gap:6px;font-size:var(--dsh-content-font-size-secondary,13px)}.ydo-legend li{display:flex;align-items:center;gap:6px}.ydo-legend-dot{width:10px;height:10px;border-radius:50%;flex:none;background:var(--dsw-alias-brand-primary)}.ydo-tags{display:flex;flex-wrap:wrap;gap:6px}.ydo-tag{padding:3px 8px;border-radius:4px;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-secondary);font-size:var(--dsh-content-font-size-secondary,13px)}.ydo-confirm-overlay{position:fixed;inset:0;z-index:560;display:grid;place-items:center;background:color-mix(in srgb,var(--dsw-alias-bg-base) 45%,transparent)}.ydo-confirm{width:min(420px,calc(100vw - 32px));padding:24px;border:1px solid var(--dsw-alias-border-l1);border-radius:8px;background:var(--dsw-alias-bg-layer-1);box-shadow:0 12px 40px rgba(0,0,0,.18)}.ydo-confirm-title{margin:0 0 20px;font-size:var(--dsw-font-base-16-font-size,15px);line-height:1.6}.ydo-confirm-actions{display:flex;justify-content:flex-end;gap:12px}.ydo-confirm-primary{min-height:36px;padding:0 18px;border:0;border-radius:6px;background:var(--dsw-alias-brand-primary);color:var(--dsw-alias-label-primary-foreground);font:inherit;font-weight:600;cursor:pointer}.ydo-confirm-secondary{min-height:36px;padding:0 18px;border:1px solid var(--dsw-alias-border-l1);border-radius:6px;background:var(--dsw-alias-bg-layer-1);color:inherit;font:inherit;cursor:pointer}.ydo-delete-retry{display:grid;gap:8px;justify-items:start;padding:10px 12px;border:1px solid var(--dsw-alias-state-error-primary);border-radius:8px;background:var(--dsw-alias-bg-layer-1)}.ydo-delete-retry .ydo-secondary{min-height:32px}/* 二次优化（§5.2）色彩变量定义在 overlay 作用域，不引入全局污染：性别男=淡蓝/女=柔和红；四类分布（年龄/流量来源/地域/城市级别）条形图淡绿填充，进度分析不受影响。 */
     .ydo-overlay{--ydo-gender-male:#91C5EB;--ydo-gender-female:#E88989;--ydo-distribution-fill:#A6D9B0;--ydo-distribution-fill-hover:#8FC99B}.ydo-bars-distribution .ydo-bar-fill{background:var(--ydo-distribution-fill,#A6D9B0)}.ydo-bars-distribution .ydo-bar-fill:hover{background:var(--ydo-distribution-fill-hover,#8FC99B)}.ydo-ov-page{display:grid;gap:12px;align-content:start;overflow:auto;min-height:0}/* 工具栏（UI 优化方案 v2 §4.1）：grid 两列 minmax(0,1fr) auto——筛选项在左列内部换行，操作区固定行尾。 */
     .ydo-ov-toolbar{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:12px}.ydo-ov-filters{display:flex;align-items:center;gap:12px;flex-wrap:wrap;min-width:0}/* 筛选控件带可见说明文字、高度统一 36px；取消浏览器黑 outline，仅 :focus-visible 显品牌色外环（v2 §4.1/§7）。 */
-    .ydo-ov-filter{display:inline-flex;align-items:center;gap:6px;color:var(--dsw-alias-label-secondary);font-size:var(--dsh-content-font-size-secondary,13px);white-space:nowrap}.ydo-ov-toolbar select{height:36px;max-width:220px;padding:0 10px;border:1px solid var(--dsw-alias-border-l1);border-radius:6px;background:var(--dsw-alias-bg-layer-1);color:inherit;font:inherit;font-size:var(--dsh-content-font-size-secondary,13px);cursor:pointer}.ydo-ov-toolbar select:focus{outline:0;border-color:var(--dsw-alias-border-l1);box-shadow:none}.ydo-ov-toolbar select:focus-visible{outline:0;border-color:#3B82F6;box-shadow:0 0 0 2px color-mix(in srgb,#3B82F6 28%,transparent)}.ydo-ov-actions{display:flex;align-items:center;gap:8px;margin-left:auto}.ydo-ov-loading{display:flex;align-items:center;gap:8px;color:var(--dsw-alias-label-secondary);font-size:var(--dsh-content-font-size-secondary,13px)}.ydo-ov-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px}.ydo-ov-kpi{display:grid;gap:4px;padding:14px;border:1px solid var(--dsw-alias-border-l1);border-radius:8px;background:var(--dsw-alias-bg-layer-1)}.ydo-ov-kpi-label{color:var(--dsw-alias-label-secondary);font-size:var(--dsh-content-font-size-secondary,13px)}.ydo-ov-kpi-value{font-size:20px;font-weight:650}.ydo-ov-kpi-hint{color:var(--dsw-alias-label-secondary);font-size:12px}.ydo-ov-panel{padding:14px;border:1px solid var(--dsw-alias-border-l1);border-radius:8px;background:var(--dsw-alias-bg-layer-1);container-type:inline-size;container-name:ydo-panel}/* 面板即容器：窄屏表格重排按面板实际宽度触发（容器查询），不受宿主侧栏/窗口差异影响（二审 P2）。 */.ydo-ov-panel h3{margin:0 0 10px;font-size:var(--dsh-content-font-size,14px)}.ydo-ov-panels{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px}.ydo-ov-table{display:grid;border:1px solid var(--dsw-alias-border-l1);border-radius:8px;overflow-x:hidden;overflow-y:auto;max-height:420px}/* 总览表格列轨道按表分组固定（v2 §3.3/§4.2/§4.4）：数值列窄定宽，长文本只由标题/依据列伸缩；表头与数据行共用同一模板；容器禁横向滚动，纵向超限只纵向滚。 */
+    .ydo-filter-option:hover{background:var(--dsw-alias-bg-layer-2)}.ydo-ov-filter{display:inline-flex;align-items:center;gap:6px;color:var(--dsw-alias-label-secondary);font-size:var(--dsh-content-font-size-secondary,13px);white-space:nowrap}.ydo-filter-select{display:inline-flex;position:relative;min-width:0}.ydo-filter-trigger{display:flex;align-items:center;justify-content:space-between;gap:10px;height:36px;min-width:90px;max-width:220px;padding:0 10px;border:1px solid var(--dsw-alias-border-l1);border-radius:6px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);font:inherit;font-size:var(--dsh-content-font-size-secondary,13px);cursor:pointer}.ydo-filter-trigger:focus{outline:0}.ydo-filter-trigger:focus-visible{border-color:#3B82F6;box-shadow:0 0 0 2px color-mix(in srgb,#3B82F6 28%,transparent)}.ydo-filter-trigger:disabled{opacity:.55;cursor:default}.ydo-filter-value{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.ydo-filter-chevron{width:6px;height:6px;flex:none;margin:-4px 2px 0 0;border-right:1.5px solid currentColor;border-bottom:1.5px solid currentColor;transform:rotate(45deg)}.ydo-filter-menu{position:fixed;z-index:560;box-sizing:border-box;overflow-y:auto;padding:4px;border:1px solid var(--dsw-alias-border-l1);border-radius:6px;background:var(--dsw-alias-bg-layer-1);box-shadow:0 8px 24px rgba(0,0,0,.16)}.ydo-filter-option{display:flex;align-items:center;box-sizing:border-box;height:36px;padding:0 10px;border-radius:4px;color:var(--dsw-alias-label-primary);cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.ydo-filter-option-active{background:var(--dsw-alias-bg-layer-2)}.ydo-filter-option[aria-selected=true]{color:var(--dsw-alias-brand-primary);font-weight:600}.ydo-filter-option[aria-disabled=true]{opacity:.5;cursor:default}.ydo-ov-actions{display:flex;align-items:center;gap:8px;margin-left:auto}.ydo-ov-loading{display:flex;align-items:center;gap:8px;color:var(--dsw-alias-label-secondary);font-size:var(--dsh-content-font-size-secondary,13px)}.ydo-ov-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px}.ydo-ov-kpi-label{color:var(--dsw-alias-label-secondary);font-size:var(--dsh-content-font-size-secondary,13px)}.ydo-ov-kpi{display:grid;gap:4px;padding:14px;border:1px solid var(--dsw-alias-border-l1);border-radius:8px;background:var(--dsw-alias-bg-layer-1)}.ydo-ov-kpi-value{font-size:20px;font-weight:650}.ydo-ov-kpi-hint{color:var(--dsw-alias-label-secondary);font-size:12px}.ydo-ov-panel{padding:14px;border:1px solid var(--dsw-alias-border-l1);border-radius:8px;background:var(--dsw-alias-bg-layer-1);container-type:inline-size;container-name:ydo-panel}/* 面板即容器：窄屏表格重排按面板实际宽度触发（容器查询），不受宿主侧栏/窗口差异影响（二审 P2）。 */.ydo-ov-panel h3{margin:0 0 10px;font-size:var(--dsh-content-font-size,14px)}.ydo-ov-panels{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px}.ydo-ov-table{display:grid;border:1px solid var(--dsw-alias-border-l1);border-radius:8px;overflow-x:hidden;overflow-y:auto;max-height:420px}/* 总览表格列轨道按表分组固定（v2 §3.3/§4.2/§4.4）：数值列窄定宽，长文本只由标题/依据列伸缩；表头与数据行共用同一模板；容器禁横向滚动，纵向超限只纵向滚。 */
     .ydo-ov-tr{display:grid;box-sizing:border-box;padding:8px 10px;align-items:center;gap:8px;font-size:var(--dsh-content-font-size-secondary,13px);border-bottom:1px solid var(--dsw-alias-border-l1);min-width:100%}.ydo-ov-tr-rank{grid-template-columns:48px minmax(90px,.8fr) repeat(6,minmax(72px,.35fr))}.ydo-ov-tr-hot{grid-template-columns:minmax(220px,2fr) minmax(110px,1fr) 124px 84px 76px minmax(220px,1.7fr)}/* 分析页爆款表列序不同（排名居首，方案 §5.5），用专属轨道避免排名落进宽轨（验收建议 1）；发布时间/播放量/互动率固定窄列（v2 §5.4）。 */
     .ydo-ov-tr-hot-rank{grid-template-columns:minmax(56px,.5fr) minmax(200px,2fr) 124px 84px 76px minmax(220px,1.7fr)}.ydo-ov-tr:last-child{border-bottom:0}.ydo-ov-head{background:var(--dsw-alias-bg-layer-2);font-weight:600}.ydo-ov-num{text-align:right;font-variant-numeric:tabular-nums}.ydo-ov-hot-basis-head{text-align:center;padding-inline:12px}.ydo-ov-rankcell{text-align:center;font-variant-numeric:tabular-nums}.ydo-ov-flag{margin-left:8px;padding:2px 6px;border-radius:4px;font-size:12px}.ydo-ov-flag-suspicious{background:var(--dsw-alias-bg-layer-2);color:color-mix(in srgb,var(--dsw-alias-state-warn-primary,#d29922) 70%,var(--dsw-alias-label-primary))}.ydo-ov-flag-expired{background:var(--dsw-alias-bg-layer-2);color:color-mix(in srgb,var(--dsw-alias-state-error-primary) 60%,var(--dsw-alias-label-primary))}/* 状态过旧用语义色（橙），正常数据颜色不变（UI 优化方案 §4.3/§7）。 */
     .ydo-ov-session-stale{color:color-mix(in srgb,var(--dsw-alias-state-warn-primary,#d29922) 70%,var(--dsw-alias-label-primary))}.ydo-ov-dist{margin:0;padding:0;list-style:none;display:grid;gap:6px}.ydo-ov-dist li{display:grid;grid-template-columns:20px minmax(96px,140px) 1fr 44px;align-items:center;gap:8px;font-size:var(--dsh-content-font-size-secondary,13px)}/* 爆款分布前三名固定语义色（v2 §4.3）：1 橙 / 2 蓝 / 3 紫，第 4 名起中性品牌色；名次同时用排名数字表达。 */
     .ydo-ov-dist-rank{text-align:center;font-variant-numeric:tabular-nums;color:var(--dsw-alias-label-secondary)}.ydo-ov-dist-top1 .ydo-bar-fill{background:#E8833A}.ydo-ov-dist-top1 .ydo-ov-dist-rank{color:#E8833A;font-weight:650}.ydo-ov-dist-top2 .ydo-bar-fill{background:#3B82F6}.ydo-ov-dist-top2 .ydo-ov-dist-rank{color:#3B82F6;font-weight:650}.ydo-ov-dist-top3 .ydo-bar-fill{background:#8B5CF6}.ydo-ov-dist-top3 .ydo-ov-dist-rank{color:#8B5CF6;font-weight:650}.ydo-ov-alerts{margin:0;padding-left:18px;display:grid;gap:6px;font-size:var(--dsh-content-font-size-secondary,13px);color:var(--dsw-alias-label-secondary)}.ydo-ov-drawer-overlay{position:fixed;inset:0;z-index:560;display:flex;justify-content:flex-end;background:color-mix(in srgb,var(--dsw-alias-bg-base) 45%,transparent)}/* 抽屉（UI 优化方案 v2 §6.2）：宽度 min(720px,72vw)、高度 min(860px,84vh) 且不低于视口 75%；纵向 flex——内容不足时操作按钮沉底，超出时随滚动区排布。 */
     .ydo-ov-drawer{width:min(720px,72vw);height:min(860px,84vh);min-height:75vh;display:flex;flex-direction:column;gap:12px;padding:20px;border-left:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-1);overflow:auto}.ydo-ov-drawer header{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}.ydo-ov-drawer h3{margin:0;font-size:var(--dsw-font-base-16-font-size,16px)}/* 关闭按钮 40×40、::after 外扩 2px 保证 ≥44px 点击区域（v2 §6.2）；焦点态同全局 :focus-visible 约定。 */
-    .ydo-ov-drawer-close{position:relative;display:grid;width:40px;height:40px;flex:none;place-items:center;border:1px solid var(--dsw-alias-border-l1);border-radius:6px;background:var(--dsw-alias-bg-layer-1);color:inherit;font-size:18px;cursor:pointer}.ydo-ov-drawer-close::after{content:"";position:absolute;inset:-2px}.ydo-ov-drawer-close:focus{outline:none}.ydo-ov-drawer-close:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:1px}.ydo-ov-drawer-action{margin-top:auto}.ydo-ov-basis-head{margin:0;padding:10px;display:grid;gap:4px;border:1px solid var(--dsw-alias-state-warn-primary,#d29922);border-radius:8px;font-size:var(--dsh-content-font-size-secondary,13px)}.ydo-ov-drawer-meta{margin:0;display:grid;gap:8px}.ydo-ov-drawer-meta>div{display:flex;justify-content:space-between;gap:12px;font-size:var(--dsh-content-font-size-secondary,13px)}.ydo-ov-drawer-meta dt{color:var(--dsw-alias-label-secondary)}.ydo-ov-drawer-meta dd{margin:0}.ydo-ov-drawer-metrics{margin:0;padding:0;list-style:none;display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:var(--dsh-content-font-size-secondary,13px)}.ydo-ov-work-link{border:0;background:transparent;color:var(--dsw-alias-brand-primary);font:inherit;font-size:var(--dsh-content-font-size-secondary,13px);cursor:pointer;padding:0;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:320px}.ydo-ov-tr span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.ydo-ov-account-row{cursor:pointer}.ydo-ov-account-row:hover{background:var(--dsw-alias-bg-layer-2)}/* 爆款依据列允许多行显示，不把长依据挤成单行（UI 优化方案 §4.4/§6.1）。 */
-    .ydo-ov-basis{display:grid;gap:2px;min-width:0;white-space:normal;line-height:1.5}.ydo-ov-basis div{overflow-wrap:anywhere}.ydo-an-kpi{display:grid;gap:4px;padding:14px;border:1px solid var(--dsw-alias-border-l1);border-radius:8px;background:var(--dsw-alias-bg-layer-1)}.ydo-an-page{display:grid;gap:12px;align-content:start;overflow:auto;min-height:0}.ydo-an-toolbar{display:flex;align-items:center;gap:12px;flex-wrap:wrap}.ydo-an-head{display:grid;gap:6px}.ydo-an-trend{position:relative;height:180px;border:1px solid var(--dsw-alias-border-l1);border-radius:8px;background:var(--dsw-alias-bg-layer-1)}.ydo-an-point{position:absolute;top:50%;transform:translate(-50%,-50%);display:grid;justify-items:center;gap:4px}.ydo-an-dot{width:10px;height:10px;border-radius:50%;background:var(--dsw-alias-brand-primary)}.ydo-an-gap{font-size:12px;color:var(--dsw-alias-label-tertiary,#737d8c)}.ydo-an-revised{font-size:12px;color:var(--dsw-alias-state-warn-primary,#9a6700)}/* 内容指标（UI 优化方案 v2 §5.2）：指标名、主值、状态三段结构，指标卡两列标签布局、数值列对齐；观众与流量四块 2×2 网格（v2 §5.3）。 */
-    .ydo-an-metrics{margin:0;padding:0;list-style:none;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px 20px;font-size:var(--dsh-content-font-size-secondary,13px)}.ydo-an-metrics li{display:grid;grid-template-columns:minmax(88px,auto) 1fr auto;align-items:baseline;gap:8px}.ydo-an-metric-label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.ydo-an-metric-value{text-align:right;font-variant-numeric:tabular-nums}.ydo-an-metric-note{color:var(--dsw-alias-label-secondary);font-size:12px;text-align:right}.ydo-an-audience{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.ydo-an-audience-block{display:grid;gap:8px;padding:10px;border:1px solid var(--dsw-alias-border-l1);border-radius:6px;background:var(--dsw-alias-bg-base)}.ydo-an-audience-block h4{margin:0;font-size:var(--dsh-content-font-size,14px)}@media(max-width:720px){.ydo-ov-drawer-metrics{grid-template-columns:1fr}.ydo-an-metrics{grid-template-columns:1fr}.ydo-an-audience{grid-template-columns:1fr}}/* 窄屏表格重排（二审 P2）：面板内容宽度不足以容纳固定列轨道（<940px）时，隐藏表头、行改「字段名 + 值」卡片，内容完整可读——不是仅隐藏横向溢出。字段名来自各单元格的 data-label；文本类单元格（账号名/标题/爆款依据）保持块流，避免多子节点被二维网格错误排位。 */
-    @container ydo-panel (max-width:940px){.ydo-ov-table{overflow:visible;max-height:none}.ydo-ov-tr.ydo-ov-head{display:none}.ydo-ov-tr{display:block;min-width:0;padding:10px 0}.ydo-ov-tr>[role=cell]{display:grid;grid-template-columns:minmax(76px,auto) 1fr;gap:2px 12px;align-items:baseline;padding:2px 0}.ydo-ov-tr>[role=cell]::before{content:attr(data-label);color:var(--dsw-alias-label-secondary);font-size:12px}.ydo-ov-tr>[role=cell].ydo-ov-num{text-align:right}.ydo-ov-tr>.ydo-ov-account-name,.ydo-ov-tr>.ydo-ov-hot-title,.ydo-ov-tr>.ydo-ov-basis{display:block}.ydo-ov-tr>.ydo-ov-account-name::before,.ydo-ov-tr>.ydo-ov-hot-title::before,.ydo-ov-tr>.ydo-ov-basis::before{display:block;margin-bottom:4px}}@media(max-width:1120px){.ydo-body{display:block;overflow:auto}.ydo-accounts{border-right:0;border-bottom:1px solid var(--dsw-alias-border-l1)}.ydo-right{overflow:visible}.ydo-table-wrap{max-height:60vh}}`
-
+    .ydo-ov-drawer-close{position:relative;display:grid;width:40px;height:40px;flex:none;place-items:center;border:1px solid var(--dsw-alias-border-l1);border-radius:6px;background:var(--dsw-alias-bg-layer-1);color:inherit;font-size:18px;cursor:pointer}.ydo-ov-drawer-close::after{content:"";position:absolute;inset:-2px}.ydo-ov-drawer-close:focus{outline:none}.ydo-ov-drawer-close:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:1px}.ydo-ov-drawer-action{margin-top:auto}.ydo-ov-basis-head{margin:0;padding:10px;display:grid;gap:4px;border:1px solid var(--dsw-alias-state-warn-primary,#d29922);border-radius:8px;font-size:var(--dsh-content-font-size-secondary,13px)}.ydo-ov-drawer-meta{margin:0;display:grid;gap:8px}.ydo-ov-drawer-meta>div{display:flex;justify-content:space-between;gap:12px;font-size:var(--dsh-content-font-size-secondary,13px)}.ydo-ov-drawer-meta dt{color:var(--dsw-alias-label-secondary)}.ydo-ov-drawer-meta dd{margin:0}.ydo-ov-work-link{border:0;background:transparent;color:var(--dsw-alias-brand-primary);font:inherit;font-size:var(--dsh-content-font-size-secondary,13px);cursor:pointer;padding:0;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:320px}.ydo-ov-tr span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.ydo-ov-account-row{cursor:pointer}.ydo-ov-account-row:hover{background:var(--dsw-alias-bg-layer-2)}/* 爆款依据列允许多行显示，不把长依据挤成单行（UI 优化方案 §4.4/§6.1）。 */
+    .ydo-ov-basis{display:grid;gap:2px;min-width:0;white-space:normal;line-height:1.5}.ydo-ov-basis div{overflow-wrap:anywhere}.ydo-an-kpi{display:grid;gap:4px;padding:14px;border:1px solid var(--dsw-alias-border-l1);border-radius:8px;background:var(--dsw-alias-bg-layer-1)}.ydo-an-page{display:grid;gap:12px;align-content:start;overflow:auto;min-height:0}.ydo-an-toolbar{display:flex;align-items:center;gap:12px;flex-wrap:wrap}.ydo-an-head{display:grid;gap:6px}/* 趋势图 SVG（2026-09-17：30 天固定窗口、黑色折线、缺口虚线、浅灰网格） */
+    /* height:168px 与 analysis-ui.js 的 TREND_VIEW_HEIGHT=168（viewBox 高）联动，单改一处会变形 */
+    .ydo-an-trend-svg{display:block;width:100%;height:168px;border:1px solid var(--dsw-alias-border-l1);border-radius:8px;background:var(--dsw-alias-bg-layer-1)}
+    .ydo-an-seg{stroke:var(--dsw-alias-label-primary);stroke-width:2;stroke-linecap:round}
+    .ydo-an-seg-dashed{stroke-dasharray:6 5;opacity:.75}
+    .ydo-an-dot-circle{fill:var(--dsw-alias-label-primary)}
+    .ydo-an-dot-circle:hover{fill:var(--dsw-alias-brand-primary)}
+    .ydo-an-trend-area{fill:var(--dsw-alias-label-primary);opacity:.06}
+    .ydo-an-grid-line{stroke:var(--dsw-alias-border-l1);stroke-width:1}
+    .ydo-an-axis-text{fill:var(--dsw-alias-label-tertiary,#737d8c);font-size:11px}
+    .ydo-an-axis-label{fill:var(--dsw-alias-label-tertiary,#737d8c);font-size:11px;text-anchor:middle}
+    .ydo-an-axis-start{text-anchor:start}
+    .ydo-ai-axis-end,.ydo-an-axis-end{text-anchor:end}
+    .ydo-an-axis-minor{display:none}
+    @container ydo-panel (min-width:640px){.ydo-an-axis-minor{display:block}}
+    .ydo-an-gap-text{fill:var(--dsw-alias-label-tertiary,#737d8c);font-size:10px;text-anchor:middle}
+    .ydo-an-revised-text{fill:var(--dsw-alias-state-warn-primary,#9a6700);font-size:10px;text-anchor:start}/* 内容指标（UI 优化方案 v2 §5.2）：指标名、主值、状态三段结构，指标卡两列标签布局、数值列对齐；观众与流量四块 2×2 网格（v2 §5.3）。 */
+    .ydo-an-metrics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}.ydo-an-metric-card{display:flex;flex-direction:column;gap:6px;min-width:0;padding:12px 14px;border-radius:10px;background:var(--dsw-alias-bg-base)}.ydo-an-metric-head{display:flex;align-items:center;justify-content:space-between;gap:8px;min-width:0}.ydo-an-metric-label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--dsw-alias-label-secondary);font-size:12px}.ydo-an-metric-note{flex:none;padding:1px 8px;border-radius:999px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-secondary);font-size:11px}.ydo-an-metric-value{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:20px;line-height:1.2;font-weight:700;font-variant-numeric:tabular-nums}.ydo-an-audience{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.ydo-an-audience-block{display:grid;gap:8px;padding:10px;border:1px solid var(--dsw-alias-border-l1);border-radius:6px;background:var(--dsw-alias-bg-base)}.ydo-an-audience-block h4{margin:0;font-size:var(--dsh-content-font-size,14px)}@media(max-width:720px){.ydo-an-metrics{grid-template-columns:1fr}.ydo-an-audience{grid-template-columns:1fr}}/* 窄屏表格重排（二审 P2）：面板内容宽度不足以容纳固定列轨道（<940px）时，隐藏表头、行改「字段名 + 值」卡片，内容完整可读——不是仅隐藏横向溢出。字段名来自各单元格的 data-label；文本类单元格（账号名/标题/爆款依据）保持块流，避免多子节点被二维网格错误排位。 */
+    @container ydo-panel (max-width:940px){.ydo-ov-table{overflow:visible;max-height:none}.ydo-ov-tr.ydo-ov-head{display:none}.ydo-ov-tr{display:block;min-width:0;padding:10px 0}.ydo-ov-tr>[role=cell]{display:grid;grid-template-columns:minmax(76px,auto) 1fr;gap:2px 12px;align-items:baseline;padding:2px 0}.ydo-ov-tr>[role=cell]::before{content:attr(data-label);color:var(--dsw-alias-label-secondary);font-size:12px}.ydo-ov-tr>[role=cell].ydo-ov-num{text-align:right}.ydo-ov-tr>.ydo-ov-account-name,.ydo-ov-tr>.ydo-ov-hot-title,.ydo-ov-tr>.ydo-ov-basis{display:block}.ydo-ov-tr>.ydo-ov-account-name::before,.ydo-ov-tr>.ydo-ov-hot-title::before,.ydo-ov-tr>.ydo-ov-basis::before{display:block;margin-bottom:4px}}@media(max-width:1120px){.ydo-body{display:block;overflow:auto}.ydo-accounts{border-right:0;border-bottom:1px solid var(--dsw-alias-border-l1)}.ydo-right{overflow:visible}.ydo-table-wrap{max-height:60vh}}
+    /* AI 账号表现分析·卡片折叠布局（0916 方案 §9；2026-09-17 验收稿）：
+       左边框 3px 语义色区分类别（蓝=结论/红=风险/绿=建议/紫=规律/灰=诊断与限制），
+       收起态头部暴露一行 digest；色值映射 dsw 主题变量。 */
+    .ydo-an-ai .ydo-ov-toolbar{grid-template-columns:minmax(0,1fr) auto}
+    /* AI 分析弹框（需求 2）：宽 min(880px, vw-48px)；z-index 530 介于主 overlay(520)
+       与作品详情(540)之间——弹框内点证据作品时详情叠加其上；关闭按钮 40×40、
+       ::after 扩 ≥44px 命中区（与爆款抽屉关闭按钮同一规格）。 */
+    .ydo-ai-modal-overlay{position:fixed;inset:0;z-index:530;display:grid;place-items:center;background:color-mix(in srgb,var(--dsw-alias-bg-base) 60%,transparent)}
+    .ydo-ai-modal{position:relative;width:min(880px,calc(100vw - 48px));max-height:calc(100vh - 64px);display:flex;flex-direction:column;border:1px solid var(--dsw-alias-border-l1);border-radius:8px;background:var(--dsw-alias-bg-layer-1);box-shadow:0 16px 48px rgba(0,0,0,.24);overflow:hidden}
+    .ydo-ai-modal-body{flex:1;min-height:0;overflow:auto;padding:16px}
+    .ydo-ai-modal-close{position:absolute;top:10px;right:10px;z-index:1;display:grid;width:40px;height:40px;place-items:center;border:1px solid var(--dsw-alias-border-l1);border-radius:6px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-secondary);font-size:16px;cursor:pointer}
+    .ydo-ai-modal-close::after{content:"";position:absolute;inset:-2px}
+    .ydo-ai-modal-close:hover{color:var(--dsw-alias-label-primary);background:var(--dsw-alias-bg-layer-2)}
+    .ydo-ai-modal .ydo-an-ai{border:0;border-radius:0;background:transparent;padding:0}
+    .ydo-ai-modal .ydo-an-ai-controls{margin-right:44px}
+    .ydo-an-ai-controls{display:flex;align-items:center;gap:10px}
+    .ydo-an-ai-status{color:var(--dsw-alias-label-secondary);font-size:var(--dsh-content-font-size-secondary,13px)}
+    .ydo-an-ai-status-succeeded{color:color-mix(in srgb,var(--dsw-alias-state-success-primary,#1a7f37) 55%,var(--dsw-alias-label-primary))}
+    .ydo-an-ai-status-running{color:var(--dsw-alias-brand-primary)}
+    .ydo-an-ai-status-failed{color:color-mix(in srgb,var(--dsw-alias-state-error-primary) 50%,var(--dsw-alias-label-primary))}
+    .ydo-ai-cards{display:grid;gap:10px;margin-top:12px}
+    .ydo-ai-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+    @container ydo-panel (max-width:720px){.ydo-ai-grid{grid-template-columns:1fr}}
+    .ydo-ai-card{display:flex;flex-direction:column;background:var(--dsw-alias-bg-layer-1);border:1px solid var(--dsw-alias-border-l1);border-left-width:3px;border-radius:8px;overflow:hidden}
+    .ydo-ai-card-summary{border-left-color:var(--dsw-alias-brand-primary)}
+    .ydo-ai-card-risks{border-left-color:var(--dsw-alias-state-error-primary)}
+    .ydo-ai-card-recs{border-left-color:var(--dsw-alias-state-success-primary,#1a7f37)}
+    .ydo-ai-card-patterns{border-left-color:#7c5cff}
+    .ydo-ai-card-dims{border-left-color:var(--dsw-alias-border-l1)}
+    .ydo-ai-card-limits{border-left-color:var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-2)}
+    .ydo-ai-card-toggle{width:100%;display:flex;align-items:center;gap:10px;padding:11px 14px;border:0;background:transparent;cursor:pointer;font:inherit;color:inherit;text-align:left}
+    .ydo-ai-card-toggle:hover{background:var(--dsw-alias-bg-layer-2)}
+    .ydo-ai-card-toggle h4{margin:0;font-size:13.5px;flex:none}
+    .ydo-ai-card-open>.ydo-ai-card-toggle{border-bottom:1px solid var(--dsw-alias-border-l1)}
+    .ydo-ai-card-toggle:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:-2px}
+    .ydo-ai-arrow{flex:none;color:var(--dsw-alias-label-secondary);font-size:10px;transition:transform .15s}
+    .ydo-ai-card-open .ydo-ai-arrow{transform:rotate(90deg)}
+    .ydo-ai-digest{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--dsw-alias-label-secondary);font-size:12px}
+    .ydo-ai-count{flex:none;font-size:11px;font-weight:600;padding:1px 8px;border-radius:10px;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-secondary)}
+    .ydo-ai-card-risks .ydo-ai-count{background:var(--dsw-alias-state-error-weak,#fdecec);color:var(--dsw-alias-state-error-primary)}
+    .ydo-ai-card-recs .ydo-ai-count{background:var(--dsw-alias-state-success-weak,#e9f7ee);color:var(--dsw-alias-state-success-primary,#1a7f37)}
+    .ydo-ai-card-body{padding:12px 14px 14px}
+    .ydo-ai-summary-text{margin:0;font-size:14px;font-weight:600;line-height:1.7}
+    .ydo-ai-summary-meta{display:flex;flex-wrap:wrap;gap:4px 14px;margin-top:10px;color:var(--dsw-alias-label-secondary);font-size:12px}
+    .ydo-ai-digest-levels{flex:1;min-width:0;display:flex;gap:6px;overflow:hidden}
+    .ydo-ai-dl{flex:none;font-size:11px;padding:1px 8px;border-radius:10px;white-space:nowrap}
+    .ydo-ai-dl-strong{background:var(--dsw-alias-state-success-weak,#e9f7ee);color:var(--dsw-alias-state-success-primary,#1a7f37)}
+    .ydo-ai-dl-medium{background:var(--dsw-alias-brand-weak,#e8f0ff);color:var(--dsw-alias-brand-primary)}
+    .ydo-ai-dl-weak{background:var(--dsw-alias-state-warn-weak,#fdf3e3);color:var(--dsw-alias-state-warn-primary,#d97706)}
+    .ydo-ai-dl-insufficient{background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-secondary)}
+    .ydo-ai-dims{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+    @container ydo-panel (max-width:720px){.ydo-ai-dims{grid-template-columns:1fr}}
+    .ydo-ai-dim{border:1px solid var(--dsw-alias-border-l1);border-radius:6px;padding:10px 12px}
+    .ydo-ai-dim-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:6px}
+    .ydo-ai-dim-head b{font-size:13px}
+    .ydo-ai-level{flex:none;font-size:11px;font-weight:700;padding:1px 9px;border-radius:10px}
+    .ydo-ai-level-strong{background:var(--dsw-alias-state-success-weak,#e9f7ee);color:var(--dsw-alias-state-success-primary,#1a7f37)}
+    .ydo-ai-level-medium{background:var(--dsw-alias-brand-weak,#e8f0ff);color:var(--dsw-alias-brand-primary)}
+    .ydo-ai-level-weak{background:var(--dsw-alias-state-warn-weak,#fdf3e3);color:var(--dsw-alias-state-warn-primary,#d97706)}
+    .ydo-ai-level-insufficient{background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-secondary)}
+    .ydo-ai-dim-fact{margin:0 0 4px;color:var(--dsw-alias-label-secondary);font-size:12px}
+    .ydo-ai-dim-insight{margin:0;font-size:12px}
+    .ydo-ai-dim-detail{margin-top:6px;font-size:12px}
+    .ydo-ai-dim-detail summary{cursor:pointer;color:var(--dsw-alias-brand-primary);list-style:none}
+    .ydo-ai-dim-detail summary::before{content:"▸ "}
+    .ydo-ai-dim-detail[open] summary::before{content:"▾ "}
+    .ydo-ai-dim-detail:focus-visible summary{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:2px}
+    .ydo-ai-dim-limit{margin:6px 0 0;color:var(--dsw-alias-label-secondary)}
+    .ydo-ai-item{padding:9px 11px;border-radius:6px;background:var(--dsw-alias-bg-layer-2);margin-bottom:8px}
+    .ydo-ai-item:last-child{margin-bottom:0}
+    .ydo-ai-item-head{display:flex;align-items:baseline;gap:8px}
+    /* 条目标题对齐卡片标题字号（13.5px），正文比标题小一档（13px）——此前无 font-size
+       继承面板默认大字，风险/建议/规律三类条目视觉过大（用户反馈 2026-09-18）。 */
+    .ydo-ai-item-title{font-weight:600;font-size:13.5px}
+    .ydo-ai-item-reason{margin:4px 0 0;color:var(--dsw-alias-label-secondary);font-size:13px}
+    .ydo-ai-pri{flex:none;font-size:11px;font-weight:700;padding:0 7px;border-radius:4px}
+    /* 高/中/低三色为风险、建议、规律置信度徽章与收起态计数共用（用户反馈 2026-09-18 需求 2）。 */
+    .ydo-ai-pri-high,.ydo-ai-conf-high{background:var(--dsw-alias-state-error-weak,#fdecec);color:var(--dsw-alias-state-error-primary)}
+    .ydo-ai-pri-medium,.ydo-ai-conf-medium{background:var(--dsw-alias-state-warn-weak,#fdf3e3);color:var(--dsw-alias-state-warn-primary,#d97706)}
+    .ydo-ai-pri-low,.ydo-ai-conf-low{background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-secondary)}
+    .ydo-ai-signal{margin:4px 0 0;font-size:12px;color:var(--dsw-alias-state-success-primary,#1a7f37)}
+    .ydo-ai-signal-label{color:var(--dsw-alias-label-secondary)}
+    .ydo-ai-conf{flex:none;font-size:11px;font-weight:700;padding:1px 8px;border-radius:4px}
+    /* 收起态「高N 中N 低N」计数徽章（风险/建议/规律三卡共用，配色即 .ydo-ai-pri-*）。 */
+    .ydo-ai-digest-counts{flex:none;display:flex;gap:4px}
+    .ydo-ai-digest-counts .ydo-ai-pri{padding:1px 7px}
+    /* 证据作品（用户反馈 2026-09-18）：标签固定左列、chips 右列流式换行左对齐；
+       chip 用 11px 小字（二次反馈：13px 仍显突兀，缩小 2px；font 简写在前保证字体族
+       继承正文、显式字号在后生效），品牌色弱底高亮，与普通说明文字区分。 */
+    .ydo-ai-evidence{display:grid;grid-template-columns:auto minmax(0,1fr);gap:6px 8px;margin-top:7px;align-items:start}
+    .ydo-ai-evidence-label{font-size:11px;color:var(--dsw-alias-label-secondary);padding-top:3px}
+    .ydo-ai-evidence-list{display:flex;flex-wrap:wrap;gap:5px}
+    .ydo-ai-chip{max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font:inherit;font-size:11px;padding:1px 8px;border-radius:4px;background:var(--dsw-alias-brand-weak,#e8f0ff);border:1px solid color-mix(in srgb,var(--dsw-alias-brand-primary) 30%,transparent);color:var(--dsw-alias-brand-primary);cursor:pointer}
+    .ydo-ai-chip:hover{background:var(--dsw-alias-brand-primary);border-color:var(--dsw-alias-brand-primary);color:var(--dsw-alias-label-primary-foreground)}
+    .ydo-ai-limits{margin:0;padding-left:16px;display:grid;gap:4px;color:var(--dsw-alias-label-secondary);font-size:12px}
+    .ydo-ai-disclaimer{margin:10px 0 0;font-size:11px;color:var(--dsw-alias-label-secondary)}
+    `;
     function apply(ctx) {
       ctx.effect(() => ctx.locale.register(NS, copy), 'dofe-yootun-douyin-operation: dictionaries')
       ctx.effect(() => { window.addEventListener(OVERLAY_EVENT, closeOtherOverlay); return () => window.removeEventListener(OVERLAY_EVENT, closeOtherOverlay) }, 'dofe-yootun-douyin-operation: exclusive-overlay')

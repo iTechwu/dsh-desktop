@@ -28,6 +28,9 @@ export const TOOL_NAMES = [
   'douyin_account_analysis',
   'douyin_account_trend',
   'douyin_account_analysis_export',
+  // AI 账号表现分析（0916 方案）：start 写（幂等键）、get 只读轮询
+  'douyin_account_ai_analysis_start',
+  'douyin_account_ai_analysis_get',
 ]
 
 const ALLOWED_ERROR_CODES = new Set([
@@ -61,6 +64,18 @@ const ALLOWED_ERROR_CODES = new Set([
   'CONTRACT_VERSION_MISMATCH',
   'TREND_RANGE_TOO_LARGE',
   'INVALID_METRIC',
+  // AI 账号表现分析（0916 方案）稳定码：受理与运行态全部白名单化后按
+  // ANALYSIS_ERROR_REASON_COPY 收敛为中文提示；同键不同参数冲突也入白名单。
+  'AI_ANALYSIS_RUNNING',
+  'AI_ANALYSIS_GLOBAL_CONCURRENCY_LIMIT',
+  'AI_ANALYSIS_INSUFFICIENT_DATA',
+  'AI_ANALYSIS_MODEL_FAILED',
+  'AI_ANALYSIS_SCHEMA_INVALID',
+  'AI_ANALYSIS_TIMEOUT',
+  'AI_ANALYSIS_ENQUEUE_FAILED',
+  'AI_ANALYSIS_MODEL_CONFIG_MISSING',
+  'AI_ANALYSIS_PROMPT_INVALID',
+  'IDEMPOTENCY_CONFLICT',
 ])
 
 export class ToolsUnavailableError extends Error {
@@ -265,6 +280,10 @@ export const heartbeatIdempotencyKey = (runId, seq) => `douyin:heartbeat:${runId
 export const ingestIdempotencyKey = (runId, batchNo) => `douyin:ingest:${runId}:${batchNo}`
 export const runFinishIdempotencyKey = runId => `douyin:run_finish:${runId}`
 export const runCancelIdempotencyKey = runId => `douyin:run_cancel:${runId}`
+// AI 分析受理键（0916 方案 §5.1）：每次点击受理生成全新 UUID（页面内不跨点击复用）。
+// 不双跑/双计费由服务端兜底：同账号 running 互斥（部分唯一索引）+ 成功收据重放 +
+// 结果缓存；键不嵌账号（服务端以 request.accountId 绑定并做 stable_request_hash 冲突校验）。
+export const aiAnalysisIdempotencyKey = requestUuid => `douyin:ai_analysis:${requestUuid}`
 // 账号保存/删除的键带**时间戳**而不是固定值，这是刻意为之：
 // - `account_save` 是 upsert，昵称/粉丝数会变；固定键会让第二次保存命中历史回执、
 //   把新资料吞掉；`account_remove` 是一次性单向清理，账号删除后可能被重新登录创建，

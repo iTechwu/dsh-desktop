@@ -16,6 +16,7 @@
 // 页面不展示规则版本/数据来源/参与样本数（字段仍由接口返回供导出与诊断）。
 
 import { basisLines, formatDateTime } from './ui-format.js'
+import { FilterSelect } from './select-ui.js'
 
 const React = require('react')
 const { createElement: h } = React
@@ -184,8 +185,12 @@ function HotWorkDrawer({ work, detail, detailLoading, onClose, onOpenFull, t }) 
         ...(lines.length
           ? lines.map(line => h('div', { key: line, role: 'listitem' }, line))
           : [h('div', { key: 'na', role: 'listitem' }, '—')])),
-      h('ul', { className: 'ydo-ov-drawer-metrics' },
-        ...metrics.map(([key, value]) => h('li', { key }, `${key} ${value}`))),
+      // 指标摘要复用单账号分析页的内容指标卡片（用户反馈 2026-09-18 需求 4）：
+      // 标签小字在上、数值大字在下，3 列网格浅灰底圆角卡；窄屏单列规则随 .ydo-an-metrics。
+      h('div', { className: 'ydo-an-metrics', role: 'list' },
+        ...metrics.map(([key, value]) => h('div', { key, className: 'ydo-an-metric-card', role: 'listitem' },
+          h('span', { className: 'ydo-an-metric-label' }, key),
+          h('strong', { className: 'ydo-an-metric-value' }, value)))),
       detailLoading ? h('p', { className: 'ydo-hint' }, t('loading')) : null,
       h('button', {
         type: 'button',
@@ -281,38 +286,45 @@ export function OverviewPage({
     // 内部换行，操作区固定行尾；下拉取消浏览器黑 outline，仅 :focus-visible 显外环。
     h('div', { className: 'ydo-ov-toolbar' },
       h('div', { className: 'ydo-ov-filters' },
-        h('label', { className: 'ydo-ov-filter' },
-          t('overviewAccountFilter'),
+        h('div', { className: 'ydo-ov-filter' },
+          h('span', null, t('overviewAccountFilter')),
           // 账号选择为单选下拉：默认「全部账号」= 空 accountIds，选择具体账号只传一个 ID；
           // 「全部账号」始终保留（选中单个账号后再次打开仍可切回）。
-          h('select', {
+          h(FilterSelect, {
+            label: t('overviewAccountFilter'),
             value: selected[0] || '',
             // 空目录即使服务端返回 accountTotal=0 也不可选择；只有非空且数量闭合时启用。
             disabled: !catalog.length || !catalogComplete,
-            onChange: event => onFilterChange({
+            onChange: value => onFilterChange({
               ...filters,
-              accountIds: event.target.value ? [event.target.value] : [],
+              accountIds: value ? [value] : [],
             }),
-          },
-          h('option', { key: 'all', value: '' }, t('allAccounts')),
-          ...catalog.map(option => h('option', { key: option.id, value: option.id },
-            option.workCount === 0 ? `${option.label}（${t('noWorks')}）` : option.label))),
+            options: [
+              { value: '', label: t('allAccounts') },
+              ...catalog.map(option => ({
+                value: option.id,
+                label: option.workCount === 0 ? `${option.label}（${t('noWorks')}）` : option.label,
+              })),
+            ],
+          }),
         !catalog.length ? h('span', { className: 'ydo-hint' }, t('accountCatalogUnavailable')) : null),
-        h('label', { className: 'ydo-ov-filter' },
-          t('overviewWindow'),
-          h('select', {
+        h('div', { className: 'ydo-ov-filter' },
+          h('span', null, t('overviewWindow')),
+          h(FilterSelect, {
+            label: t('overviewWindow'),
             value: filters.window || '30d',
-            onChange: event => onFilterChange({ ...filters, window: event.target.value }),
-          },
-          ...windowOptions.map(option => h('option', { key: option, value: option }, t(`window_${option}`))))),
-        h('label', { className: 'ydo-ov-filter' },
-          t('overviewSort'),
-          h('select', {
+            onChange: value => onFilterChange({ ...filters, window: value }),
+            options: windowOptions.map(option => ({ value: option, label: t(`window_${option}`) })),
+          })),
+        h('div', { className: 'ydo-ov-filter' },
+          h('span', null, t('overviewSort')),
+          h(FilterSelect, {
+            label: t('overviewSort'),
             value: filters.sort || 'hot_count',
-            onChange: event => onFilterChange({ ...filters, sort: event.target.value }),
-          },
-          ...['hot_count', 'hot_rate', 'median_play', 'total_play', 'engagement_rate'].map(option =>
-            h('option', { key: option, value: option }, t(`sort_${option}`)))))),
+            onChange: value => onFilterChange({ ...filters, sort: value }),
+            options: ['hot_count', 'hot_rate', 'median_play', 'total_play', 'engagement_rate'].map(option =>
+              ({ value: option, label: t(`sort_${option}`) })),
+          }))),
       h('div', { className: 'ydo-ov-actions' },
         // 「刷新」执行当前条件的只读查询；筛选变更的自动查询走列表区加载态，
         // 不借用刷新按钮的禁用/按下态表达（UI 优化方案 §4.1）。

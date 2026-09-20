@@ -12,6 +12,7 @@
 // （这些字段仍由接口返回并保留在导出报告中）。
 
 import { basisLines, formatDateTime, formatAgeBucket, genderLabel, trafficSourceLabel, trimNumber } from './ui-format.js'
+import { FilterSelect } from './select-ui.js'
 
 // React 由 client.js 内联作用域提供（构建时剥离本模块的 require，与 overview-ui 同法）。
 let __react = null
@@ -55,41 +56,253 @@ function labelText(labels, t) {
 
 export const TREND_METRICS = ['play', 'like', 'comment', 'collect', 'share', 'fans']
 
-// 趋势图坐标（本地展示几何，非口径）：按真实 elapsedSeconds 比例定位横轴
-//（审查 O3——横轴与 gap 都从 elapsedSeconds 派生；缺失时退回日历日差兜底）。
-export function trendLayout(points, { width = 600 } = {}) {
-  if (!Array.isArray(points) || points.length < 2) {
-    return { renderable: false, nodes: [] }
+// ---------------------------------------------------------------------------
+// 趋势图展示几何（2026-09-17 优化：30 天固定窗口 + 自然日横轴 + min/max 纵轴）。
+//
+// - 时间范围固定最近 30 个自然日（fromDay=今天-29 ~ toDay=今天），与请求窗口一致；
+//   没有采集记录的日期不补 0，只作为缺口处理；
+// - 数据点横坐标按自然日位置计算 x=(day-fromDay)/(toDay-fromDay)，两次采集之间
+//   保留真实日期间隔，不按已有点压缩；elapsedSeconds 只用于 tooltip 与间隔说明；
+// - 纵轴取窗口内有效值 min/max 上下各 10% 边距，小幅变化可见；所有点同值时纵轴
+//   固定居中；yPct 保留小数不再取整。yPct 语义 = 值在 [yMin,yMax] 归一化位置的
+//   百分比（值越大 yPct 越大）；SVG 的 y 轴向下，渲染层用 (100-yPct) 折算成像素
+//   y，值大的点在视觉上方（用户反馈 2026-09-18：此前两层各反一次导致曲线整体
+//   上下颠倒，递增数据显示成递减）；
+// - 相邻采集日间隔 >1 天即为缺口：连线用虚线、缺口两端数据点保留，
+//   前后不补零、不伪造数据；单点只显示数据点并提示样本不足。
+// ---------------------------------------------------------------------------
+
+const TREND_WINDOW_DAYS = 30
+const TREND_AXIS_TICKS = [0, 7, 14, 21, 29]
+
+function localIsoDay(date) {
+  const pad = n => String(n).padStart(2, '0')
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
+}
+
+function addDaysIso(iso, days) {
+  const base = new Date(`${iso}T00:00:00Z`)
+  base.setUTCDate(base.getUTCDate() + days)
+  return localIsoDay(new Date(base.getTime() + base.getTimezoneOffset() * 60000))
+}
+
+export function trendLayout(points, { width = 600, now = null } = {}) {
+  const empty = { renderable: false, single: false, nodes: [], segments: [], axisLabels: [] }
+  const days = (Array.isArray(points) ? points : [])
+    .filter(point => point && typeof point.day === 'string' && Number.isFinite(Number(point.value)))
+    .map(point => ({ ...point, value: Number(point.value) }))
+    .sort((a, b) => (a.day < b.day ? -1 : a.day > b.day ? 1 : 0))
+  if (!days.length) return empty
+
+  // 30 天固定窗口（本地自然日；服务端对越界日期已 clamp，这里再做防御收敛）。
+  const todayIso = localIsoDay(now ? new Date(now) : new Date())
+  const fromDay = addDaysIso(todayIso, -(TREND_WINDOW_DAYS - 1))
+  const fromMs = Date.parse(`${fromDay}T00:00:00Z`)
+  const spanMs = (TREND_WINDOW_DAYS - 1) * 86400000
+  const clampDayMs = day => {
+    const ms = Date.parse(`${day}T00:00:00Z`)
+    if (Number.isNaN(ms)) return null
+    return Math.min(fromMs + spanMs, Math.max(fromMs, ms))
   }
-  const dayMs = points.map(point => Date.parse(point.day))
-  // 相邻点时间跨度：优先 elapsedSeconds（真实采集跨度），缺失退回日历日差。
-  const spans = points.map((point, index) => {
-    if (index === 0) return 0
-    if (Number.isFinite(Number(point.elapsedSeconds))) return Number(point.elapsedSeconds)
-    return Math.max(0, dayMs[index] - dayMs[index - 1])
-  })
-  let cumulative = 0
-  const offsets = points.map((_, index) => {
-    cumulative += spans[index]
-    return cumulative
-  })
-  const span = offsets[offsets.length - 1]
-  const values = points.map(point => Number(point.value)).filter(value => Number.isFinite(value))
-  const maxValue = Math.max(...values, 1)
-  const nodes = points.map((point, index) => ({
-    index,
-    day: point.day,
-    value: point.value,
-    counterRevised: point.counterRevised === true,
-    // 前一 gap 天数（首点为 0）：日历差口径，用于渲染显式断点"无采集"标注。
-    gapDaysBefore: index === 0
-      ? 0
-      : Math.max(0, Math.round((dayMs[index] - dayMs[index - 1]) / 86400000) - 1),
-    x: Math.round((offsets[index] / (span || 1)) * width),
-    yPct: Math.round((Number(point.value) / maxValue) * 100),
-    elapsedSeconds: point.elapsedSeconds,
+
+  const nodes = []
+  for (const point of days) {
+    const clamped = clampDayMs(point.day)
+    if (clamped === null) continue
+    const prev = nodes[nodes.length - 1]
+    const gapDaysBefore = prev
+      ? Math.max(0, Math.round((clamped - prev._ms) / 86400000) - 1)
+      : 0
+    nodes.push({
+      day: point.day,
+      value: point.value,
+      elapsedSeconds: point.elapsedSeconds,
+      counterRevised: point.counterRevised === true,
+      gapDaysBefore,
+      x: Math.round(((clamped - fromMs) / spanMs) * width * 100) / 100,
+      yPct: 0,
+      _ms: clamped,
+    })
+  }
+  if (!nodes.length) return empty
+
+  // 纵轴：窗口内有效值 min/max 上下各 10% 边距；同值固定居中；yPct 保留小数。
+  // yPct = 值的归一化位置百分比（值越大 yPct 越大）；SVG y 轴向下的翻转只在
+  // 渲染层 (100-yPct) 做一次，布局层不再预反——两层各反一次会把曲线画颠倒。
+  const values = nodes.map(node => node.value)
+  const rawMin = Math.min(...values)
+  const rawMax = Math.max(...values)
+  const sameValue = rawMin === rawMax
+  let yMin = rawMin
+  let yMax = rawMax
+  if (!sameValue) {
+    const pad = (rawMax - rawMin) * 0.1
+    yMin = rawMin - pad
+    yMax = rawMax + pad
+  }
+  for (const node of nodes) {
+    node.yPct = sameValue
+      ? 50
+      : Math.round(((node.value - yMin) / (yMax - yMin)) * 10000) / 100
+  }
+
+  // 分段：相邻采集日间隔 >1 天为缺口（虚线），否则实线；缺口两端数据点保留。
+  const segments = []
+  for (let index = 1; index < nodes.length; index += 1) {
+    const prev = nodes[index - 1]
+    const node = nodes[index]
+    segments.push({
+      x1: prev.x, y1: prev.yPct,
+      x2: node.x, y2: node.yPct,
+      dashed: node.gapDaysBefore > 0,
+      gapDaysBefore: node.gapDaysBefore,
+      prevX: prev.x, prevDay: prev.day,
+    })
+  }
+
+  // 横轴日期标签：固定 5 个刻度位（0/7/14/21/29 天处），窄屏由 CSS 隐藏偶数位。
+  const axisLabels = TREND_AXIS_TICKS.map((offset, index) => ({
+    day: addDaysIso(fromDay, offset),
+    x: Math.round((offset / (TREND_WINDOW_DAYS - 1)) * width * 100) / 100,
+    pos: index === 0 ? 'start' : index === TREND_AXIS_TICKS.length - 1 ? 'end' : 'middle',
+    minor: index % 2 === 1,
   }))
-  return { renderable: true, nodes, maxValue }
+
+  return {
+    renderable: true,
+    single: nodes.length === 1,
+    width,
+    nodes,
+    segments,
+    axisLabels,
+    yMax: rawMax,
+    yMin: rawMin,
+    sameValue,
+    fromDay,
+    toDay: todayIso,
+  }
+}
+
+// 注意联动：SVG viewBox 高与 client.js 中 `.ydo-an-trend-svg{height:168px}` 必须一致，
+// 单改一处会因 viewBox/CSS 比例失配导致图形变形（测试有字面值锁定）。
+const TREND_VIEW_HEIGHT = 168
+const TREND_PAD_TOP = 16
+const TREND_PAD_BOTTOM = 30
+
+// y 轴标签专用格式化（需求 5a，2026-09-18）：≥1万固定保留 1 位小数万单位
+//（如 165.3万），<1万千分位。不走 formatWan 的「≥100万取整」口径——那会让
+// ±10% 边距下的 yMin/yMax（如 165.1万/165.9万）同显「165万」。
+export function axisValueText(value) {
+  // null/undefined/空串是「缺失」（上层显示 —），绝不格式化成 0（与 formatWan 同防御）。
+  if (value === null || value === undefined || value === '') return null
+  const num = Number(value)
+  if (!Number.isFinite(num)) return null
+  if (Math.abs(num) >= 10000) return `${(num / 10000).toFixed(1)}万`
+  return num.toLocaleString('en-US')
+}
+
+// 容器实测宽度（需求 5b，2026-09-18）：趋势 SVG 的 viewBox 用真实面板宽度，
+// 消除「固定 600 宽被 width:100% 拉伸 ~3 倍导致轴文字/点线过大」的根因；
+// ResizeObserver 跟随面板尺寸变化。沙箱/无 ResizeObserver 环境降级为默认宽。
+// callback ref 模式：hook 必须在 AnalysisPage 任何早退 return 之前调用（Rules of
+// Hooks），effect 依赖 [node, width]——node 入依赖才能感知「早退→完整渲染」后
+// 容器才真正挂载的时机，否则 observer 永远 attach 不上、宽停在校正值。
+function useMeasuredWidth(fallbackWidth = 600) {
+  const { useState, useEffect } = react()
+  const [node, setNode] = useState(null)
+  const [width, setWidth] = useState(fallbackWidth)
+  useEffect(() => {
+    if (!node || typeof ResizeObserver === 'undefined') return undefined
+    const observer = new ResizeObserver(entries => {
+      const entry = entries && entries[0]
+      const nextWidth = entry && entry.contentRect ? Math.round(entry.contentRect.width) : 0
+      // 忽略塌缩态（隐藏/折叠时的 0 宽）与同值，避免无效重渲。
+      if (nextWidth >= 200 && nextWidth !== width) setWidth(nextWidth)
+    })
+    observer.observe(node)
+    return () => observer.disconnect()
+  }, [node, width])
+  return [setNode, width]
+}
+
+// SVG 趋势图（2026-09-17 优化）：黑色折线 2px、缺口虚线、数据点 6px、
+// 低透明度面积填充、浅灰网格与坐标文字、日期标签固定 5 刻度位（窄屏隐藏偶数位）。
+function TrendChart({ layout, t }) {
+  const { width, nodes, segments, axisLabels, yMax, yMin } = layout
+  const plotHeight = TREND_VIEW_HEIGHT - TREND_PAD_TOP - TREND_PAD_BOTTOM
+  const yOf = node => TREND_PAD_TOP + ((100 - node.yPct) / 100) * plotHeight
+  const areaPoints = nodes.map(node => `${node.x},${yOf(node)}`).join(' ') +
+    ` ${nodes[nodes.length - 1].x},${TREND_PAD_TOP + plotHeight} ${nodes[0].x},${TREND_PAD_TOP + plotHeight}`
+  const gridYs = [TREND_PAD_TOP, TREND_PAD_TOP + plotHeight / 2, TREND_PAD_TOP + plotHeight]
+  // y 轴标签（需求 5a）：专用格式化保留 1 位小数万单位；min/max 格式化同文时
+  // 退千分位完整数字（不走 formatWan——其 ≥100万取整口径正是同文根因），
+  // 保证两端可区分。非有限数回退 —，超长截断兜底。
+  const axisFallback = value => {
+    const formatted = count(value)
+    return formatted === null ? '—' : (formatted.length > 12 ? `${formatted.slice(0, 12)}…` : formatted)
+  }
+  let yMaxText = axisValueText(yMax) || axisFallback(yMax)
+  let yMinText = axisValueText(yMin) || axisFallback(yMin)
+  if (yMaxText === yMinText) {
+    yMaxText = Math.round(Number(yMax)).toLocaleString('en-US')
+    yMinText = Math.round(Number(yMin)).toLocaleString('en-US')
+  }
+
+  return h2('svg', {
+    className: 'ydo-an-trend-svg',
+    viewBox: `0 0 ${width} ${TREND_VIEW_HEIGHT}`,
+    role: 'img',
+    'aria-label': t('trendTitle'),
+  },
+  ...gridYs.map((gy, index) => h2('line', {
+    key: `grid-${index}`,
+    x1: 0, y1: gy, x2: width, y2: gy,
+    className: 'ydo-an-grid-line',
+  })),
+  h2('text', { x: 2, y: TREND_PAD_TOP + 8, className: 'ydo-an-axis-text' }, yMaxText),
+  h2('text', { x: 2, y: TREND_PAD_TOP + plotHeight - 2, className: 'ydo-an-axis-text' }, yMinText),
+
+  nodes.length > 1 ? h2('polygon', {
+    points: areaPoints,
+    className: 'ydo-an-trend-area',
+  }) : null,
+
+  ...segments.map((segment, index) => h2('line', {
+    key: `seg-${index}`,
+    x1: segment.x1, y1: TREND_PAD_TOP + ((100 - segment.y1) / 100) * plotHeight,
+    x2: segment.x2, y2: TREND_PAD_TOP + ((100 - segment.y2) / 100) * plotHeight,
+    className: segment.dashed ? 'ydo-an-seg ydo-an-seg-dashed' : 'ydo-an-seg',
+  })),
+
+  ...nodes.map((node, index) => h2('circle', {
+    key: `dot-${node.day}-${index}`,
+    cx: node.x, cy: yOf(node), r: 4,
+    className: 'ydo-an-dot-circle',
+  }, h2('title', null,
+    // 悬浮提示与 y 轴同口径（axisValueText，≥1万保留 1 位小数），
+    // 不走 count/formatWan 的「≥100万取整」口径，避免同图两种万单位文本。
+    `${node.day} ${axisValueText(node.value) || '—'}` +
+    (node.gapDaysBefore > 0 ? ` · ${t('noCollectGap')} ${node.gapDaysBefore}d` : '')))),
+
+  ...nodes.filter(node => node.gapDaysBefore > 0).map((node, index) => h2('text', {
+    key: `gap-${index}`,
+    x: Math.max(24, Math.min(width - 24, node.x - node.gapDaysBefore * (width / 29) / 2 + 12)),
+    y: TREND_PAD_TOP + plotHeight + 12,
+    className: 'ydo-an-gap-text',
+  }, `${t('noCollectGap')} ${node.gapDaysBefore}d`)),
+
+  ...nodes.filter(node => node.counterRevised).map((node, index) => h2('text', {
+    key: `revised-${index}`,
+    x: Math.min(width - 30, node.x + 6),
+    y: Math.max(10, yOf(node) - 9),
+    className: 'ydo-an-revised-text',
+  }, t('counterRevised'))),
+
+  ...axisLabels.map(label => h2('text', {
+    key: `axis-${label.day}`,
+    x: label.x, y: TREND_VIEW_HEIGHT - 8,
+    className: `ydo-an-axis-label ydo-an-axis-${label.pos}${label.minor ? ' ydo-an-axis-minor' : ''}`,
+  }, label.day.slice(5).replace('-', '/'))))
 }
 
 export function deriveAnalysisAlerts(analysis, t) {
@@ -203,12 +416,11 @@ const CONTENT_METRICS = [
 ]
 
 function contentMetricNote(item, t) {
-  // 第三段只保留数据状态：覆盖率缺失或为 0 → 数据不足；0<x<100 → 部分数据；
-  // 覆盖完整 → 不显示状态。覆盖率数值属于内部质量信息，不在内容指标中展示。
-  // 真实数值 0 永远照常渲染，不因隐藏覆盖率变成空值。
+  // 第三段只保留数据状态：覆盖率缺失或为 0 → 数据不足；其余（部分覆盖或完整）
+  // 一律不显示状态（用户反馈 2026-09-18：「部分数据」徽标去除）。覆盖率数值属于
+  // 内部质量信息，不在内容指标中展示。真实数值 0 永远照常渲染，不因隐藏覆盖率变成空值。
   const coverage = Number(item && item.coveragePct)
   if (!Number.isFinite(coverage) || coverage <= 0) return t('dataInsufficient')
-  if (coverage < 100) return t('dataPartial')
   return null
 }
 
@@ -284,6 +496,339 @@ function hotWorksTable(analysis, onOpenWork, t) {
     }))
 }
 
+
+// ---------------------------------------------------------------------------
+// AI 账号表现分析（0916 方案 §9；v1 §2.1；卡片折叠式布局 2026-09-17 验收稿）。
+//
+// 六张折叠卡：结论摘要（蓝，默认展开）/ 表现诊断（灰，收起态=五维等级徽章行）/
+// 风险与机会（红）/ 执行建议（绿）/ 爆款规律（紫）/ 数据限制与免责（灰，最弱化）。
+// 左边框 3px 语义色区分类别；条目内按优先级/等级徽章区分重要程度。
+// 收起时头部仍暴露一行关键信息（digest），点击头部展开/收起明细。
+// ---------------------------------------------------------------------------
+
+const AI_LEVEL_LABELS = { strong: 'aiLevelStrong', medium: 'aiLevelMedium', weak: 'aiLevelWeak', insufficient: 'aiLevelInsufficient' }
+const AI_ASSESSMENT_LABELS = { stable: 'aiAssessmentStable', growing: 'aiAssessmentGrowing', volatile: 'aiAssessmentVolatile' }
+const AI_GRADE_LABELS = { high: 'aiGradeHigh', medium: 'aiGradeMedium', low: 'aiGradeLow' }
+const AI_DIM_SHORT_KEYS = { content: 'aiDimShortContent', interaction: 'aiDimShortInteraction', retention: 'aiDimShortRetention', audience: 'aiDimShortAudience', stability: 'aiDimShortStability' }
+const AI_DIM_FALLBACK = { content: '内容吸引力', interaction: '互动质量', retention: '留存与观看深度', audience: '流量与受众匹配', stability: '稳定性与可复制性' }
+
+const AI_STATUS_COPY = Object.freeze({
+  not_analyzed: 'aiStatusNotAnalyzed',
+  running: 'aiStatusRunning',
+  succeeded: 'aiStatusSucceeded',
+  insufficient: 'aiStatusInsufficient',
+  failed: 'aiStatusFailed',
+})
+
+// AI 稳定错误码 → 文案键（§9.3.5：失败显示中文提示与重试入口，不透传原始报文）。
+const AI_ERROR_REASON_COPY = Object.freeze({
+  AI_ANALYSIS_RUNNING: 'aiErrorRunning',
+  AI_ANALYSIS_GLOBAL_CONCURRENCY_LIMIT: 'aiErrorBusy',
+  AI_ANALYSIS_INSUFFICIENT_DATA: 'aiErrorInsufficient',
+  AI_ANALYSIS_MODEL_FAILED: 'aiErrorRetryable',
+  AI_ANALYSIS_SCHEMA_INVALID: 'aiErrorRetryable',
+  AI_ANALYSIS_TIMEOUT: 'aiErrorTimeout',
+  AI_ANALYSIS_ENQUEUE_FAILED: 'aiErrorEnqueue',
+  AI_ANALYSIS_MODEL_CONFIG_MISSING: 'aiErrorUnavailable',
+  AI_ANALYSIS_PROMPT_INVALID: 'aiErrorUnavailable',
+  AI_ANALYSIS_NOT_FOUND: 'aiErrorNotFound',
+  IDEMPOTENCY_CONFLICT: 'aiErrorConflict',
+})
+
+function aiText(value) {
+  return value === null || value === undefined || value === '' ? null : String(value)
+}
+
+function aiLevelBadge(level, t) {
+  const key = level || 'insufficient'
+  return h2('span', { className: `ydo-ai-level ydo-ai-level-${key}` },
+    t(AI_LEVEL_LABELS[key] || 'aiLevelInsufficient'))
+}
+
+function aiGradeText(value, t) {
+  if (!value) return null
+  const key = AI_GRADE_LABELS[value]
+  return key ? t(key) : null
+}
+
+function aiPriorityBadge(priority, t) {
+  const key = AI_GRADE_LABELS[priority]
+  return h2('span', { className: `ydo-ai-pri ydo-ai-pri-${priority || 'low'}` },
+    key ? t(key) : t('aiGradeLow'))
+}
+
+// 用户反馈 2026-09-18（需求 2）：风险/建议/规律卡收起徽章统一改「高N 中N 低N」
+// 三色计数，与展开后条目徽章同一配色体系（.ydo-ai-pri-*）。pick 取条目级别
+// （风险/建议 = priority，爆款规律 = confidence）；为 0 的级别不显示，全部为 0
+// 时不渲染（数据异常退化为无徽章，不伪造计数）。
+function aiPriorityDigestCounts(items, pick, t) {
+  const counts = { high: 0, medium: 0, low: 0 }
+  for (const item of Array.isArray(items) ? items : []) {
+    const key = pick(item)
+    if (key === 'high' || key === 'medium' || key === 'low') counts[key] += 1
+  }
+  const parts = ['high', 'medium', 'low'].filter(key => counts[key] > 0)
+  if (!parts.length) return null
+  return h2('span', { className: 'ydo-ai-digest-counts' },
+    ...parts.map(key => h2('span', { key, className: `ydo-ai-pri ydo-ai-pri-${key}` },
+      `${t(AI_GRADE_LABELS[key])}${counts[key]}`)))
+}
+
+function aiEvidenceChips(ids, evidenceMap, onOpenWork, t) {
+  if (!Array.isArray(ids) || !ids.length) return null
+  const unique = [...new Set(ids)]
+  // 标签 + chip 列表拆两列网格（用户反馈 2026-09-18）：标签固定左列，chips 在右列
+  // 内流式换行且左缘对齐，不再与标签混排在同一行流里导致换行后参差错乱。
+  return h2('div', { className: 'ydo-ai-evidence' },
+    h2('span', { className: 'ydo-ai-evidence-label' }, t('aiEvidenceWorks')),
+    h2('div', { className: 'ydo-ai-evidence-list' },
+      ...unique.map(workId => {
+        // 服务端 get 投影反查的作品名；缺失回退 ID 截断，不伪造
+        const title = (evidenceMap && evidenceMap[workId]) || null
+        return h2('button', {
+          key: workId,
+          type: 'button',
+          className: 'ydo-ai-chip',
+          title: title || workId,
+          onClick: () => onOpenWork && onOpenWork({ workId }),
+        }, title ? (title.length > 18 ? `${title.slice(0, 18)}…` : title) : `${workId.slice(0, 8)}…`)
+      })))
+}
+
+function aiDigestCount(text) {
+  return h2('span', { className: 'ydo-ai-count' }, text)
+}
+
+function AiCard({ tone, title, open, onToggle, digest, count, children }) {
+  return h2('section', { className: `ydo-ai-card ydo-ai-card-${tone}${open ? ' ydo-ai-card-open' : ''}` },
+    h2('button', { type: 'button', className: 'ydo-ai-card-toggle', 'aria-expanded': !!open, onClick: onToggle },
+      h2('h4', null, title),
+      digest || null,
+      typeof count === 'string' ? aiDigestCount(count) : (count || null),
+      h2('span', { className: 'ydo-ai-arrow', 'aria-hidden': 'true' }, '▶')),
+    h2('div', { className: 'ydo-ai-card-body', hidden: !open }, children))
+}
+
+function AiAnalysisSection({
+  ai, aiStatus = 'not_analyzed', busy, error, confirming,
+  onStart, onRequestRerun, onConfirmRerun, onCancelConfirm, onOpenWork, t,
+}) {
+  const { useState } = react()
+  // 折叠态：仅结论摘要默认展开；点击卡片头部切换（§验收稿 2026-09-17）
+  const [openCards, setOpenCards] = useState({ summary: true })
+  const toggle = key => setOpenCards(prev => ({ ...prev, [key]: !prev[key] }))
+
+  const result = (ai && ai.result) || null
+  const hasResult = Boolean(ai && ai.status === 'succeeded' && result)
+  // 运行态以外层 aiStatus 为准（重跑时正文仍是旧 current，投影 status 不反映重跑）
+  const running = aiStatus === 'running' || Boolean(ai && ai.status === 'running')
+  const isRunning = busy || running
+  const statusKey = AI_STATUS_COPY[aiStatus || (ai && ai.status)] || 'aiStatusNotAnalyzed'
+
+  // 服务端 get 投影反查的证据作品标题（workId → title）
+  const evidenceMap = {}
+  for (const work of ((ai && ai.evidenceWorks) || [])) {
+    if (work && work.workId) evidenceMap[work.workId] = work.title || null
+  }
+
+  const dims = hasResult ? (result.dimensions || []) : []
+  const risks = hasResult ? (result.risks || []) : []
+  const recs = hasResult ? (result.recommendations || []) : []
+  const patterns = hasResult ? (result.viralPatterns || []) : []
+  const limits = hasResult ? (result.dataLimitations || []) : []
+
+  // 从未分析过（外层状态仍为 not_analyzed）时首按钮用短文案「开始分析」（需求 4）；
+  // 首次失败（failed）后仍走原「AI 分析账号表现」入口，语义不与重跑混淆。
+  const startLabel = aiStatus === 'not_analyzed' ? 'aiStartButtonFirst' : 'aiStartButton'
+  const button = isRunning
+    ? h2('button', { type: 'button', className: 'ydo-secondary', disabled: true, 'aria-busy': true }, t('aiRunningButton'))
+    : hasResult || (ai && ai.status === 'insufficient')
+      ? h2('button', { type: 'button', className: 'ydo-secondary', onClick: onRequestRerun }, t('aiRerunButton'))
+      : h2('button', {
+        type: 'button', className: 'ydo-secondary', disabled: busy,
+        onClick: () => { if (onStart) onStart() },
+      }, t(startLabel))
+
+  const errorText = error ? t(AI_ERROR_REASON_COPY[error] || 'aiErrorRetryable') : null
+  // 「已保留上次分析结果」警示改读服务端显式 retainedError 字段（2026-09-18 语义）：
+  // 仅当最新一次运行 failed/insufficient 且存在不同 analysis_id 的保留结果时才非空，
+  // 重跑成功/首次失败/脏数据残留都不会再误报（需求 3）。客户端再以 ai.result 兜底：
+  // 字段存在但正文为空（脏数据）时不说「已保留结果」，避免与六卡空态矛盾展示。
+  const retainedWarn = ai && ai.retainedError && ai.result
+    ? t(ai.retainedError.code === 'AI_ANALYSIS_INSUFFICIENT_DATA' ? 'aiErrorInsufficient' : 'aiErrorRetained')
+    : null
+
+  // —— 卡片 digest（收起态一行关键信息）——
+  const dimsDigest = h2('span', { className: 'ydo-ai-digest-levels' },
+    ...dims.map(d => h2('span', { key: d.key, className: `ydo-ai-dl ydo-ai-dl-${d.level || 'insufficient'}` },
+      `${t(AI_DIM_SHORT_KEYS[d.key] || d.key)} · ${t(AI_LEVEL_LABELS[d.level] || 'aiLevelInsufficient')}`)))
+  const risksDigest = risks.length
+    ? h2('span', { className: 'ydo-ai-digest' },
+      (risks[0].title || '').length > 24 ? `${risks[0].title.slice(0, 24)}…` : risks[0].title)
+    : null
+  const recsDigest = recs.length
+    ? h2('span', { className: 'ydo-ai-digest' },
+      (recs[0].action || '').length > 24 ? `${recs[0].action.slice(0, 24)}…` : recs[0].action)
+    : null
+  const patternsDigest = patterns.length
+    ? h2('span', { className: 'ydo-ai-digest' },
+      (patterns[0].pattern || '').length > 24 ? `${patterns[0].pattern.slice(0, 24)}…` : patterns[0].pattern)
+    : null
+
+  return h2('section', { className: 'ydo-ov-panel ydo-an-ai' },
+    h2('div', { className: 'ydo-ov-toolbar' },
+      h2('h3', null, t('aiTitle')),
+      h2('div', { className: 'ydo-an-ai-controls' },
+        h2('span', { className: `ydo-an-ai-status ydo-an-ai-status-${aiStatus || (ai && ai.status) || 'not_analyzed'}`, role: 'status' }, t(statusKey)),
+        button)),
+    errorText ? h2('p', { className: 'ydo-error', role: 'alert' }, errorText) : null,
+    retainedWarn ? h2('p', { className: 'ydo-warn', role: 'status' }, retainedWarn) : null,
+
+    h2('div', { className: 'ydo-ai-cards' },
+      // 卡 1：结论摘要（蓝，默认展开）
+      h2(AiCard, {
+        key: 'card-summary', tone: 'summary', title: t('aiSummaryTitle'),
+        open: !!openCards.summary, onToggle: () => toggle('summary'),
+        digest: h2('span', { className: 'ydo-ai-digest' },
+          `${t('aiAssessmentLabel')}：${t(AI_ASSESSMENT_LABELS[result?.overallAssessment] || result?.overallAssessment || '—')}`),
+      },
+      hasResult ? [
+        h2('p', { className: 'ydo-ai-summary-text' }, result.summary),
+        h2('div', { className: 'ydo-ai-summary-meta' },
+          h2('span', null, t('aiMetaRange')),
+          payloadTime(ai.generatedAt) ? h2('span', null, `${t('aiMetaGeneratedAt')} ${payloadTime(ai.generatedAt)}`) : null,
+          Number.isFinite(Number(ai.sampleCount)) ? h2('span', null, `${t('aiMetaSample')} ${count(ai.sampleCount)}`) : null),
+      ] : h2('p', { className: 'ydo-hint' },
+        isRunning ? t('aiRunningButton') : t(AI_STATUS_COPY[aiStatus] || 'aiStatusNotAnalyzed'))),
+
+      // 卡 2：表现诊断（灰；收起态=五维等级徽章行）
+      h2(AiCard, {
+        key: 'card-dims', tone: 'dims', title: t('aiDimensionsTitle'),
+        open: !!openCards.dims, onToggle: () => toggle('dims'),
+        digest: dimsDigest,
+      },
+      h2('div', { className: 'ydo-ai-dims' },
+        ...dims.map(dimension => h2('div', { key: dimension.key, className: 'ydo-ai-dim' },
+          h2('div', { className: 'ydo-ai-dim-head' },
+            h2('b', null, dimension.title || AI_DIM_FALLBACK[dimension.key] || dimension.key),
+            aiLevelBadge(dimension.level, t)),
+          (dimension.facts || []).length ? h2('p', { className: 'ydo-ai-dim-fact' }, dimension.facts[0]) : null,
+          aiText(dimension.insight) ? h2('p', { className: 'ydo-ai-dim-insight' }, dimension.insight) : null,
+          h2('details', { className: 'ydo-ai-dim-detail' },
+            h2('summary', null, t('aiDimDetail')),
+            ...(dimension.facts || []).slice(1).map((fact, index) =>
+              h2('p', { key: `${index}-${String(fact).slice(0, 6)}`, className: 'ydo-ai-dim-fact' }, fact)),
+            (dimension.limitations || []).length
+              ? h2('p', { className: 'ydo-ai-dim-limit' },
+                `${t('aiDataLimitations')}：${dimension.limitations.join('；')}`)
+              : null,
+            aiEvidenceChips(dimension.evidenceWorkIds, evidenceMap, onOpenWork, t)))))),
+
+      // 卡 3+4：风险（红）与 建议（绿）双列
+      h2('div', { className: 'ydo-ai-grid' },
+        h2(AiCard, {
+          key: 'card-risks', tone: 'risks', title: t('aiRisksTitle'),
+          open: !!openCards.risks, onToggle: () => toggle('risks'),
+          digest: risksDigest,
+          count: risks.length ? aiPriorityDigestCounts(risks, item => item.priority, t) : null,
+        },
+        ...risks.map((risk, index) => h2('div', { key: `risk-${index}`, className: 'ydo-ai-item' },
+          h2('div', { className: 'ydo-ai-item-head' },
+            aiPriorityBadge(risk.priority, t),
+            h2('span', { className: 'ydo-ai-item-title' }, risk.title || '—')),
+          aiText(risk.reason) ? h2('p', { className: 'ydo-ai-item-reason' }, risk.reason) : null,
+          aiEvidenceChips(risk.evidenceWorkIds, evidenceMap, onOpenWork, t)))),
+
+        h2(AiCard, {
+          key: 'card-recs', tone: 'recs', title: t('aiRecommendationsTitle'),
+          open: !!openCards.recs, onToggle: () => toggle('recs'),
+          digest: recsDigest,
+          count: recs.length ? aiPriorityDigestCounts(recs, item => item.priority, t) : null,
+        },
+        ...recs.map((recommendation, index) => h2('div', { key: `rec-${index}`, className: 'ydo-ai-item' },
+          h2('div', { className: 'ydo-ai-item-head' },
+            aiPriorityBadge(recommendation.priority, t),
+            h2('span', { className: 'ydo-ai-item-title' }, recommendation.action || '—')),
+          aiText(recommendation.expectedSignal)
+            ? h2('p', { className: 'ydo-ai-signal' },
+              h2('span', { className: 'ydo-ai-signal-label' }, `${t('aiExpectedSignal')}：`),
+              recommendation.expectedSignal)
+            : (aiText(recommendation.reason)
+              ? h2('p', { className: 'ydo-ai-item-reason' }, recommendation.reason)
+              : null),
+          aiEvidenceChips(recommendation.evidenceWorkIds, evidenceMap, onOpenWork, t))))),
+
+      // 卡 5+6：规律（紫）与 限制（灰）双列
+      h2('div', { className: 'ydo-ai-grid' },
+        h2(AiCard, {
+          key: 'card-patterns', tone: 'patterns', title: t('aiPatternsTitle'),
+          open: !!openCards.patterns, onToggle: () => toggle('patterns'),
+          digest: patternsDigest,
+          count: patterns.length ? aiPriorityDigestCounts(patterns, item => item.confidence, t) : null,
+        },
+        ...patterns.map((pattern, index) => h2('div', { key: `pattern-${index}`, className: 'ydo-ai-item' },
+          h2('div', { className: 'ydo-ai-item-head' },
+            h2('span', { className: 'ydo-ai-item-title' }, pattern.pattern || '—'),
+            aiGradeText(pattern.confidence, t)
+              // 置信度徽章按高/中/低分级配色（用户反馈 2026-09-18）：与风险/建议的
+              // 优先级徽章同一三色体系，收起态「高N 中N 低N」计数与展开色对齐。
+              ? h2('span', { className: `ydo-ai-conf ydo-ai-conf-${pattern.confidence || 'low'}` },
+                aiGradeText(pattern.confidence, t))
+              : null),
+          aiEvidenceChips(pattern.evidenceWorkIds, evidenceMap, onOpenWork, t)))),
+
+        h2(AiCard, {
+          key: 'card-limits', tone: 'limits', title: t('aiLimitsTitle'),
+          open: !!openCards.limits, onToggle: () => toggle('limits'),
+          digest: null,
+          count: limits.length ? t('aiDigestLimits').replace('{n}', String(limits.length)) : null,
+        },
+        h2('ul', { className: 'ydo-ai-limits' },
+          ...limits.map((item, index) => h2('li', { key: `${index}-${String(item).slice(0, 6)}` }, item))),
+        hasResult && aiText(result.disclaimer)
+          ? h2('p', { className: 'ydo-ai-disclaimer' }, `${t('aiDisclaimer')}：${result.disclaimer}`)
+          : null))),
+
+    confirming
+      ? h2('div', { className: 'ydo-confirm-overlay', role: 'dialog', 'aria-modal': true, 'aria-label': t('aiConfirmTitle') },
+        h2('div', { className: 'ydo-confirm' },
+          h2('p', { className: 'ydo-confirm-title' }, t('aiConfirmTitle')),
+          h2('p', { className: 'ydo-hint' }, t('aiConfirmBody')),
+          h2('div', { className: 'ydo-confirm-actions' },
+            h2('button', { type: 'button', className: 'ydo-confirm-primary', onClick: onConfirmRerun }, t('aiConfirmYes')),
+            h2('button', { type: 'button', className: 'ydo-confirm-secondary', onClick: onCancelConfirm }, t('aiConfirmNo')))))
+      : null)
+}
+
+/**
+ * AI 账号表现分析弹框（需求 2，2026-09-18）：内容与 AiAnalysisSection 完全一致
+ * （状态行、开始/重新分析、二次确认、六张折叠卡），仅把展示容器从页面内嵌
+ * 面板改为独立弹框层（z-index 530，低于作品详情 540——弹框内点证据作品时
+ * 详情叠加在分析页与弹框之上）。开关由 client.js 持有，接入统一 Esc 链。
+ */
+function AiAnalysisModal({ open, onClose, t, ...sectionProps }) {
+  if (!open) return null
+  return h2('div', { className: 'ydo-ai-modal-overlay' },
+    h2('div', { className: 'ydo-ai-modal', role: 'dialog', 'aria-modal': true, 'aria-label': t('aiTitle') },
+      h2('button', {
+        type: 'button', className: 'ydo-ai-modal-close', onClick: onClose, 'aria-label': t('close'),
+      }, '✕'),
+      h2('div', { className: 'ydo-ai-modal-body' },
+        h2(AiAnalysisSection, { ...sectionProps, t }))))
+}
+
+function payloadTime(value) {
+  if (!value || value === '—') return null
+  try {
+    const parsed = new Date(value)
+    if (Number.isNaN(parsed.getTime())) return null
+    const pad = n => String(n).padStart(2, '0')
+    return `${parsed.getFullYear()}-${pad(parsed.getMonth() + 1)}-${pad(parsed.getDate())} ${pad(parsed.getHours())}:${pad(parsed.getMinutes())}`
+  } catch {
+    return String(value)
+  }
+}
+
 /**
  * 单账号分析页（账号总览 Tab 内的下钻页，方案 §6）。
  *
@@ -295,7 +840,14 @@ function hotWorksTable(analysis, onOpenWork, t) {
 export function AnalysisPage({
   analysis, trend, trendMetric, trendErrorReason, loading, errorReason, exporting,
   rangeLabel = null, onBack, onMetricChange, onExport, onOpenWork, t,
+  aiAnalysis = null, aiStatus = 'not_analyzed', aiBusy = false, aiError = null, aiConfirming = false,
+  onAiStart = null, onAiRequestRerun = null, onAiConfirmRerun = null, onAiCancelConfirm = null,
+  aiModalOpen = false, onAiModalOpen = null, onAiModalClose = null,
 }) {
+  // 需求 5b：容器实测宽驱动 viewBox（初始 600 兜底，挂载后 ResizeObserver 校正）。
+  // hook 必须在下方任何早退 return 之前调用（Rules of Hooks）；完整渲染分支把
+  // trendWrapRef（callback ref）挂到趋势容器上，早退分支不渲染容器即无观察目标。
+  const [trendWrapRef, trendWidth] = useMeasuredWidth()
   if (errorReason) {
     return h2('div', { className: 'ydo-state ydo-state-error', role: 'alert' },
       h2('p', null, t(ANALYSIS_ERROR_REASON_COPY[errorReason] || 'operationUnavailable')),
@@ -306,11 +858,17 @@ export function AnalysisPage({
     return h2('div', { className: 'ydo-state', role: 'status' }, h2('p', null, t('none')))
   }
   const kpi = analysis?.kpi || {}
-  const layout = trendLayout(trend?.points || [])
+  const layout = trendLayout(trend?.points || [], { width: trendWidth })
 
   return h2('div', { className: 'ydo-an-page' },
     h2('div', { className: 'ydo-an-toolbar' },
       h2('button', { type: 'button', className: 'ydo-secondary', onClick: onBack }, t('backToOverview')),
+      // 「AI 分析」入口在「导出账号分析报告」前（需求 2）：打开 AI 分析弹框，
+      // 内容与原内嵌 AI 卡完全一致。
+      h2('button', {
+        type: 'button', className: 'ydo-secondary',
+        onClick: () => { if (onAiModalOpen) onAiModalOpen() },
+      }, t('aiEntryButton')),
       // "导出账号分析报告"只在单账号分析页局部工具栏（方案 §10.3）。
       h2('button', {
         type: 'button', className: 'ydo-secondary ydo-export',
@@ -338,43 +896,43 @@ export function AnalysisPage({
     account ? h2('section', { className: 'ydo-ov-panel' },
       h2('div', { className: 'ydo-ov-toolbar' },
         h2('h3', null, t('trendTitle')),
-        h2('label', { className: 'ydo-ov-filter' },
-          t('trendMetric'),
-          h2('select', {
+        h2('div', { className: 'ydo-ov-filter' },
+          h2('span', null, t('trendMetric')),
+          h2(FilterSelect, {
+            label: t('trendMetric'),
             value: trendMetric,
-            onChange: event => onMetricChange && onMetricChange(event.target.value),
-          },
-          ...TREND_METRICS.map(metric => h2('option', { key: metric, value: metric }, t(`metric_${metric}`)))))),
+            onChange: value => onMetricChange && onMetricChange(value),
+            options: TREND_METRICS.map(metric => ({ value: metric, label: t(`metric_${metric}`) })),
+          }))),
       h2('p', { className: 'ydo-hint' }, t('trendCaption')),
       trendErrorReason
         ? h2('p', { className: 'ydo-error', role: 'alert' },
           t(ANALYSIS_ERROR_REASON_COPY[trendErrorReason] || 'operationUnavailable'))
         : null,
-      layout.renderable
-        ? h2('div', { className: 'ydo-an-trend', role: 'img', 'aria-label': t('trendTitle') },
-          ...layout.nodes.map(node => h2('div', {
-            key: node.day,
-            className: 'ydo-an-point',
-            style: { left: `${Math.min(96, Math.max(2, (node.x / 600) * 100))}%` },
-            title: `${node.day} ${count(node.value)}`,
-            'data-day': node.day,
-          },
-          node.gapDaysBefore > 0 ? h2('span', { className: 'ydo-an-gap' }, `${t('noCollectGap')} ${node.gapDaysBefore}d`) : null,
-          node.counterRevised ? h2('span', { className: 'ydo-an-revised' }, t('counterRevised')) : null,
-          h2('span', { className: 'ydo-an-dot' }))))
-        : h2('p', { className: 'ydo-hint' }, t('noTrend')))
+      // 测宽容器（需求 5b）：包裹趋势图（含单点分支），ref 供 ResizeObserver
+      // 读取实际内容宽度驱动 viewBox。
+      h2('div', { ref: trendWrapRef },
+        !layout.renderable || layout.single
+          ? h2('p', { className: 'ydo-hint' },
+            layout.single ? t('trendSingleHint') : t('noTrend'),
+            layout.single && layout.nodes.length
+              ? h2(TrendChart, { layout, t })
+              : null)
+          : h2(TrendChart, { layout, t })))
       : null,
 
     account ? h2('div', { className: 'ydo-ov-panels' },
       h2('section', { className: 'ydo-ov-panel' },
         h2('h3', null, t('contentMetrics')),
-        // 固定指标清单：「指标名 / 主值 / 数据状态」三段（UI 优化方案 §5.3）；
-        // 缺失值显示 —，真实的 0 保持为 0，服务端未返回的段显式「数据不足」。
-        h2('ul', { className: 'ydo-an-metrics' },
-          ...contentMetricRows(analysis, t).map(row => h2('li', { key: row.key },
-            h2('span', { className: 'ydo-an-metric-label' }, row.label),
-            h2('span', { className: 'ydo-an-metric-value' }, row.value),
-            row.note ? h2('span', { className: 'ydo-an-metric-note' }, row.note) : null)))),
+        // 固定指标清单改浅灰底圆角卡片网格（创作中心风格，需求 1）：标签小字在上、
+        // 数据状态小徽标同排右侧、数值大字加粗在下；缺失值显示 —，真实的 0 保持
+        // 为 0，服务端未返回的段显式「数据不足」，数值口径不变。
+        h2('div', { className: 'ydo-an-metrics', role: 'list' },
+          ...contentMetricRows(analysis, t).map(row => h2('div', { key: row.key, className: 'ydo-an-metric-card', role: 'listitem' },
+            h2('div', { className: 'ydo-an-metric-head' },
+              h2('span', { className: 'ydo-an-metric-label' }, row.label),
+              row.note ? h2('span', { className: 'ydo-an-metric-note' }, row.note) : null),
+            h2('strong', { className: 'ydo-an-metric-value' }, row.value))))),
       h2('section', { className: 'ydo-ov-panel' },
         h2('h3', null, t('audienceTraffic')),
         // 观众与流量（UI 优化方案 v2 §5.3）：性别/年龄/地域/城市级别/主要来源
@@ -384,7 +942,26 @@ export function AnalysisPage({
     account ? h2('section', { className: 'ydo-ov-panel' },
       h2('h3', null, t('accountHotWorks')),
       hotWorksTable(analysis, onOpenWork, t))
-      : null)
+      : null,
+
+    // AI 账号表现分析弹框（需求 2）：默认关闭；内容由 AiAnalysisSection 提供，
+    // 功能与原内嵌卡完全一致；开关状态由 client.js 持有以接入统一 Esc 链。
+    account ? h2(AiAnalysisModal, {
+      key: 'ai-modal',
+      open: aiModalOpen,
+      onClose: () => { if (onAiModalClose) onAiModalClose() },
+      ai: aiAnalysis,
+      aiStatus,
+      busy: aiBusy,
+      error: aiError,
+      confirming: aiConfirming,
+      onStart: onAiStart,
+      onRequestRerun: onAiRequestRerun,
+      onConfirmRerun: onAiConfirmRerun,
+      onCancelConfirm: onAiCancelConfirm,
+      onOpenWork,
+      t,
+    }) : null)
 }
 
 // 稳定 reason → 已登记文案键（与 overview-ui 同一策略）。
