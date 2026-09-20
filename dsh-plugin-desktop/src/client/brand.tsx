@@ -8,6 +8,7 @@ import { heroBrandDataUrl, sidebarBrandDataUrl, sidebarBrandMarkDataUrl } from '
 import { BRAND_DISPLAY_NAME, BRAND_MISSION, BRAND_VARIANT, BRAND_WORDMARK_DISPLAY } from '../generated-product-identity.ts'
 
 const DESKTOP_BRAND_PRIORITY = -100
+const DESKTOP_BRAND_MISSION_KEY = '__DSH_DESKTOP_BRAND_MISSION__'
 
 const sidebarStyle: CSSProperties = {
   display: 'block',
@@ -66,6 +67,15 @@ export function YootunHeroBrandMark({ size, className }: HeroBrandMarkOwnerProps
 
 /** Register the Desktop brand as one declaration-aware occupant set. */
 export function applyDesktopBrand(ctx: ClientContext): void {
+  ctx.effect(() => {
+    const target = globalThis as typeof globalThis & { [DESKTOP_BRAND_MISSION_KEY]?: string }
+    const previous = target[DESKTOP_BRAND_MISSION_KEY]
+    target[DESKTOP_BRAND_MISSION_KEY] = BRAND_MISSION.zh
+    return () => {
+      if (previous === undefined) delete target[DESKTOP_BRAND_MISSION_KEY]
+      else target[DESKTOP_BRAND_MISSION_KEY] = previous
+    }
+  }, 'dsh-plugin-desktop: brand mission')
   ctx.effect(() => {
     const style = document.createElement('style')
     style.dataset.plugin = 'dsh-plugin-desktop'
