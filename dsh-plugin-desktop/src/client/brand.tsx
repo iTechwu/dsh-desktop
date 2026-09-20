@@ -84,7 +84,7 @@ export function applyDesktopBrand(ctx: ClientContext): void {
       'button:has([data-dsh-yootun-brand="sidebar"]) > [aria-hidden="true"] { height: 36px; }',
       '.dshBrandSidebarLockup { display: flex; align-items: center; gap: 8px; height: 36px; min-width: 0; }',
       '.dshBrandSidebarLockup img { display: block; flex: 0 0 36px; object-fit: contain; }',
-      '.dshBrandSidebarLockup span { overflow: hidden; color: #0f172a; font-size: 17px; font-weight: 600; line-height: 1; white-space: nowrap; text-overflow: ellipsis; }',
+      '.dshBrandSidebarLockup span { overflow: hidden; color: #0f172a; font-size: 17px; font-weight: 600; line-height: 36px; white-space: nowrap; text-overflow: ellipsis; }',
     ].join('\n')
     document.head.appendChild(style)
     return () => { style.remove() }
