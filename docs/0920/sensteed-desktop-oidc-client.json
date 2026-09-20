@@ -1,0 +1,10 @@
+{
+  "clientId": "sensteed-desktop",
+  "publicClient": true,
+  "grantTypes": ["authorization_code", "refresh_token"],
+  "scopes": ["openid", "profile", "email", "tenant", "offline_access"],
+  "redirectUri": "http://127.0.0.1:<dynamic-port>/callback",
+  "pkce": "S256",
+  "clientSecret": null,
+  "issuer": "https://sso.ixicai.cn/api"
+}
