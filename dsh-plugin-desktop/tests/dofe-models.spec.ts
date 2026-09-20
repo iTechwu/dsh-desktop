@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { dofeModelCatalogUrl, parseDofeModelCatalog } from '../src/dofe-models.ts'
+import { DOFE_ANTHROPIC_BASE_URL, dofeModelCatalogUrl, parseDofeModelCatalog } from '../src/dofe-models.ts'
 
 describe('DoFe model catalog parsing', () => {
+  it('keeps the native Anthropic endpoint under the models API prefix', () => {
+    expect(DOFE_ANTHROPIC_BASE_URL).toBe('https://ixicai.cn/api/anthropic')
+  })
+
   it('accepts OpenAI-compatible data responses and removes invalid duplicates', () => {
     expect(parseDofeModelCatalog({ data: [
       { id: 'alpha', name: 'Alpha', context_window: 128000 },

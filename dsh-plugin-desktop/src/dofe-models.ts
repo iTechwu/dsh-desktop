@@ -2,7 +2,11 @@
 
 export type DofeProtocol = 'chat-completions' | 'messages' | 'responses'
 export const DEFAULT_DOFE_PROTOCOL: DofeProtocol = 'chat-completions'
-export const DOFE_MODEL_CATALOG_BASE_URL = 'https://ixicai.cn/api/v1/models'
+/** Canonical public API prefix owned by the models project. */
+export const DOFE_API_BASE_URL = 'https://ixicai.cn/api'
+export const DOFE_MODEL_CATALOG_BASE_URL = `${DOFE_API_BASE_URL}/v1/models`
+/** Native Anthropic Messages namespace; unlike OpenAI it is not under /api/v1. */
+export const DOFE_ANTHROPIC_BASE_URL = `${DOFE_API_BASE_URL}/anthropic`
 const DOFE_PROTOCOL_QUERY: Record<DofeProtocol, string> = {
   'chat-completions': 'openai',
   messages: 'anthropic',

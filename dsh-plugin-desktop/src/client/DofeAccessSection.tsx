@@ -11,7 +11,7 @@ import { BRAND_TENANT, BRAND_VARIANT } from '../generated-product-identity.ts'
 import { DOFE_ACCESS_KEY, type DofeAccessLocaleKey } from './dofe-access.ts'
 import { dofePluginsForBrand, normalizeDofePluginIds, DOFE_ACCESS_SETTINGS_NAMESPACE, DOFE_ACCESS_VALIDATION_VERSION, type DofeAccessSettings, type DofePluginId, DEFAULT_DOFE_PLUGIN_IDS } from '../dofe-plugins.ts'
 import { DOFE_ACCESS_MODELS_PATH, DOFE_ACCESS_VALIDATE_PATH } from '../dofe-access-route.ts'
-import { DEFAULT_DOFE_PROTOCOL, parseDofeModelCatalog, type DofeModel, type DofeProtocol } from '../dofe-models.ts'
+import { DEFAULT_DOFE_PROTOCOL, DOFE_ANTHROPIC_BASE_URL, parseDofeModelCatalog, type DofeModel, type DofeProtocol } from '../dofe-models.ts'
 
 const STYLE_ID = 'dsh-dofe-access-styles'
 const ACCESS_REQUEST_TIMEOUT_MS = 15000
@@ -288,7 +288,7 @@ function AccessForm({ credentials, settingsApi, settingsScope, t, onboarding, on
       const route = protocol === 'messages' ? 'dofe-messages' : protocol === 'responses' ? 'dofe-responses' : 'dofe-chat'
       const api = protocol === 'messages' ? 'anthropic-messages' : protocol === 'responses' ? 'openai-responses' : 'openai-completions'
       const displayName = protocol === 'messages' ? 'DoFe Anthropic Messages' : protocol === 'responses' ? 'DoFe OpenAI Responses' : 'DoFe OpenAI Chat'
-      const baseURL = protocol === 'messages' ? 'https://ixicai.cn/anthropic' : 'https://ixicai.cn/api/v1'
+      const baseURL = protocol === 'messages' ? DOFE_ANTHROPIC_BASE_URL : 'https://ixicai.cn/api/v1'
       const result = await settingsApi.mutate('llm-pi-ai', [
         { op: 'unset', path: ['providers', 'dofe-chat'] },
         { op: 'unset', path: ['providers', 'dofe-messages'] },

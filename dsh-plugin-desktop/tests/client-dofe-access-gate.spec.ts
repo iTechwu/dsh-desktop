@@ -215,6 +215,8 @@ describe('mandatory DoFe access gate', () => {
     expect(source).toContain("{ op: 'unset', path: ['providers', 'dofe-responses'] }")
     expect(source).toContain("value: protocol === 'responses' ? 'dofe-responses' : protocol === 'messages' ? 'dofe-messages' : 'dofe-chat'")
     expect(source).not.toContain("settingsApi.mutate('llm-deepseek'")
+    expect(source).toContain('DOFE_ANTHROPIC_BASE_URL')
+    expect(source).not.toContain("'https://ixicai.cn/anthropic'")
     expect(source.indexOf('id="dofe-protocol-select"')).toBeLessThan(source.indexOf("onClick={() => void loadModels()}"))
   })
 })
