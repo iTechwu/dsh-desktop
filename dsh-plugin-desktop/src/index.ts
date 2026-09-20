@@ -32,6 +32,7 @@ import {
 } from './dofe-access-route.ts'
 import { DOFE_AUTH_PATHS, handleDofeAuthRequest } from './dofe-auth-route.ts'
 import type {} from './dofe-managed.ts'
+import { watchDofeAuthAudit } from './dofe-auth-audit.ts'
 import { BRAND_VARIANT } from './generated-product-identity.ts'
 import {
   handleYootunRecruiterRequest,
@@ -332,6 +333,9 @@ export function apply(ctx: Context, config: Config): void {
     logger: ctx.logger,
   })
   ctx.provide('yootunAudit', audit)
+  if (BRAND_VARIANT === 'sensteed') {
+    ctx.effect(() => watchDofeAuthAudit(ctx.dofeAuth, audit), 'dsh-plugin-desktop: SSO audit binding')
+  }
   ctx.effect(() => {
     void audit.start()
     return () => { audit.dispose() }

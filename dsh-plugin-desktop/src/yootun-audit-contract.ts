@@ -1,6 +1,9 @@
 import { randomUUID } from 'node:crypto'
 
 export const YOOTUN_AUDIT_ACTIONS = Object.freeze({
+  'desktop.login.succeeded': ['execute', 'desktop_session'],
+  'desktop.key.provisioned': ['execute', 'desktop_session'],
+  'desktop.permissions.updated': ['update', 'desktop_session'],
   'recruiter.requirement.created': ['create', 'requirement'],
   'recruiter.requirement.updated': ['update', 'requirement'],
   'recruiter.candidate_analysis.saved': ['update', 'candidate'],
@@ -39,6 +42,9 @@ export const YOOTUN_AUDIT_ACTIONS = Object.freeze({
 export type YootunAuditActionCode = keyof typeof YOOTUN_AUDIT_ACTIONS
 
 export const YOOTUN_AUDIT_CHANGE_FIELDS = Object.freeze({
+  'desktop.login.succeeded': [],
+  'desktop.key.provisioned': [],
+  'desktop.permissions.updated': ['pluginCount', 'protocolCount'],
   'recruiter.requirement.created': ['status'],
   'recruiter.requirement.updated': ['status'],
   'recruiter.candidate_analysis.saved': ['feedbackStatus'],

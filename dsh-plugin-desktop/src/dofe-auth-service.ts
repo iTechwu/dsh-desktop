@@ -56,6 +56,7 @@ export class DofeAuthService {
   private cancelPending: (() => void) | undefined
   private cancelled = false
   private abort = new AbortController()
+  private readonly bindingListeners = new Set<(snapshot: DofeAuthSnapshot) => void>()
 
   constructor(
     private readonly runtime: DesktopRuntime,
@@ -65,6 +66,12 @@ export class DofeAuthService {
   ) {}
 
   getStatus(): DofeAuthSnapshot { return structuredClone(this.snapshot) }
+
+  watchBinding(listener: (snapshot: DofeAuthSnapshot) => void): () => void {
+    this.bindingListeners.add(listener)
+    if (this.snapshot.status === 'bound') listener(this.getStatus())
+    return () => { this.bindingListeners.delete(listener) }
+  }
 
   async restore(): Promise<DofeAuthSnapshot> {
     await this.start(false)
@@ -249,6 +256,9 @@ export class DofeAuthService {
     await this.onBound?.(snapshot)
     this.abort.signal.throwIfAborted()
     this.snapshot = snapshot
+    for (const listener of this.bindingListeners) {
+      try { listener(this.getStatus()) } catch { /* Observers must not change authentication results. */ }
+    }
   }
 
   private closeLoopback(): void {
