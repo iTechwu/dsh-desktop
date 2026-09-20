@@ -28,10 +28,12 @@ test('registers menu at order 41 and renders the three-region overlay', async ()
     '/_dsh/uploader/uploadStart',
     '/_dsh/uploader/uploadStatus',
     '/_dsh/uploader/media',
-    '小红书仿写',
+    '小红书运营',
+    '爆款仿写',
+    'yxh-page-tabs',
     '开始仿写',
     '正在仿写',
-    '上传图片或者视频素材，根据提供的对标笔记或者账号风格，生成爆款小红书文案',
+    '小红书平台运营，包括内容创作、运营数据汇总与分析等常用功能',
     'coverIndex = 0',
     'versionCount: 3',
     'references',
@@ -45,6 +47,9 @@ test('registers menu at order 41 and renders the three-region overlay', async ()
   assert.match(source, /mediaType === 'images'/)
   assert.match(source, /videoUrl/)
   assert.match(source, /\.yxh-tabs button\[aria-current="true"\]/)
+  // 顶部功能 Tab（对齐抖音运营页）：固定「爆款仿写」单页 + 三行 shell 网格。
+  assert.match(source, /\.yxh-page-tabs button\[aria-current="true"\]/)
+  assert.match(source, /grid-template-rows:auto auto 1fr/)
   assert.match(source, /grid-template-columns:minmax\(460px,1\.15fr\) minmax\(420px,\.85fr\)/)
   assert.match(source, /yxh-right-title/)
   assert.match(source, /width:min\(360px,calc\(100vw - 32px\)\)/)
