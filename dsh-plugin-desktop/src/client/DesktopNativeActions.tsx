@@ -14,6 +14,7 @@ export interface DesktopNativeActionsProps {
     & Partial<Pick<DesktopSettingsApi, 'exportDiagnostics'>>
   readonly t: (key: DesktopSettingsLocaleKey) => string
   readonly placement: 'settings' | 'titlebar'
+  readonly terminalAvailable?: boolean
 }
 
 interface DesktopRestartMenuItemsProps {
@@ -88,7 +89,7 @@ export function DesktopDeveloperMenuItems({
   )
 }
 
-export function DesktopNativeActions({ api, t, placement }: DesktopNativeActionsProps) {
+export function DesktopNativeActions({ api, t, placement, terminalAvailable = true }: DesktopNativeActionsProps) {
   const [exportingDiagnostics, setExportingDiagnostics] = useState(false)
   const [opening, setOpening] = useState(false)
   const [restarting, setRestarting] = useState(false)
@@ -96,6 +97,24 @@ export function DesktopNativeActions({ api, t, placement }: DesktopNativeActions
   const [restartMenuOpen, setRestartMenuOpen] = useState(false)
   const [developerMenuOpen, setDeveloperMenuOpen] = useState(false)
   const [failed, setFailed] = useState<'diagnostics' | 'terminal' | 'restart' | 'reload' | 'devtools'>()
+
+  useEffect(() => {
+    if (restartMenuOpen) restartMenuRef.current?.querySelector<HTMLButtonElement>('[role="menuitem"]')?.focus()
+  }, [restartMenuOpen])
+  const restartKeys = (event: ReactKeyboardEvent<HTMLDivElement>): void => {
+    const trigger = restartMenuRef.current?.querySelector<HTMLButtonElement>('[aria-haspopup="menu"]')
+    if (event.key === 'Escape' && restartMenuOpen) {
+      event.preventDefault(); event.stopPropagation(); setRestartMenuOpen(false); trigger?.focus(); return
+    }
+    if (event.key === 'Tab') { setRestartMenuOpen(false); return }
+    if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return
+    event.preventDefault(); event.stopPropagation()
+    if (!restartMenuOpen) { setRestartMenuOpen(true); return }
+    const items = [...(restartMenuRef.current?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]:not(:disabled)') ?? [])]
+    const index = items.indexOf(document.activeElement as HTMLButtonElement)
+    const next = event.key === 'Home' ? 0 : event.key === 'End' ? items.length - 1 : (index + (event.key === 'ArrowUp' ? -1 : 1) + items.length) % items.length
+    items[next]?.focus()
+  }
 
   const busy = exportingDiagnostics || opening || restarting || rendererAction !== undefined
 
@@ -168,7 +187,7 @@ export function DesktopNativeActions({ api, t, placement }: DesktopNativeActions
             {t(exportingDiagnostics ? 'exportingDiagnostics' : 'exportDiagnostics')}
           </button>
         )}
-        <button
+        {terminalAvailable && <button
           type="button"
           className="sensteedAgentSettingsHeaderButton"
           disabled={busy}

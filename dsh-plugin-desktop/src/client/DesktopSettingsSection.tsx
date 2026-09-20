@@ -153,7 +153,7 @@ export function resolveDesktopLanConfirmation(
   if (confirmed) enableLan()
 }
 
-function useScope<T>(scope: SettingsScope<T>) {
+function useScope<T>(scope: Pick<SettingsScope<T>, 'getSnapshot' | 'subscribe'>) {
   const subscribe = useCallback((listener: () => void) => scope.subscribe(listener), [scope])
   const snapshot = useCallback(() => scope.getSnapshot(), [scope])
   return useSyncExternalStore(subscribe, snapshot)
@@ -227,7 +227,7 @@ function RepositoryLink({ href, children }: { href: string; children: ReactNode 
   )
 }
 
-function ToggleRow({
+export function DesktopSettingsToggleRow({
   label,
   badge,
   checked,
@@ -405,6 +405,7 @@ export function DesktopSettingsSection({
     void run('select-profile', async () => {
       const response = await api.selectProfile(name)
       if (response.restartRequired) requestRestart()
+      else setView(await refreshView())
     })
   }
 
@@ -426,6 +427,7 @@ export function DesktopSettingsSection({
         })
         setAaStatus('saved')
         if (response.restartRequired) requestRestart()
+        else setView(await refreshView())
       } catch (cause) {
         setAaStatus('failed')
         throw cause
@@ -441,7 +443,14 @@ export function DesktopSettingsSection({
         market: { requested: provider, effective: current.market.effective, legacyDefaulted: false },
       })
       if (response.restartRequired) requestRestart()
+      else setView(await refreshView())
     })
+  }
+
+  const openBrowser = (event: React.MouseEvent<HTMLAnchorElement>, url: string): void => {
+    if (!api.openBrowser) return
+    event.preventDefault()
+    void run('web', () => api.openBrowser!(url))
   }
 
   const setMode = (next: DesktopShellSettings['mode']): void => {
@@ -464,7 +473,7 @@ export function DesktopSettingsSection({
         }
         await desktopSettings.set('windowsMaterial', next)
       }
-      requestRestart()
+      if (capabilities?.materialRequiresRestart !== false) requestRestart()
     })
   }
 
@@ -617,7 +626,7 @@ export function DesktopSettingsSection({
                 body={marketBody(option, t)}
                 selected={view.market.requested === option.id}
                 reselectable={view.market.requested === option.id && view.market.requested !== view.market.effective}
-                disabled={busy !== undefined || restart !== 'none'}
+                disabled={capabilities?.featuresReadOnly === true || busy !== undefined || restart !== 'none'}
                 action={() => { selectMarket(option.id) }}
                 status={view.market.requested === option.id && view.market.requested !== view.market.effective
                     ? t('retryMarket')
@@ -649,7 +658,7 @@ export function DesktopSettingsSection({
             body={t(enabled ? 'aaEnabledBody' : 'aaDisabledBody')}
             selected={(view.aa?.requested ?? false) === enabled}
             reselectable={enabled && view.aa?.requested === true && !view.aa.effective}
-            disabled={busy !== undefined || restart !== 'none'}
+            disabled={capabilities?.featuresReadOnly === true || busy !== undefined || restart !== 'none'}
             action={() => { selectAa(enabled) }}
             status={enabled && view.aa?.requested === true && !view.aa.effective
               ? t('retryAa') : (view.aa?.requested ?? false) === enabled ? t('selected') : undefined}
@@ -688,7 +697,7 @@ export function DesktopSettingsSection({
             action={() => { setMode('advanced') }}
             status={mode === 'advanced' ? t('selected') : undefined}
           />
-        </div>
+        </div>}
         {platform !== 'linux' && (
           <label className="sensteedAgentSettingsMaterialField">
             <span className="sensteedAgentSettingsMaterialCopy">
@@ -724,7 +733,7 @@ export function DesktopSettingsSection({
           <h3 id="sensteed-agent-web-title">{t('webTitle')}</h3>
           <p className="sensteedAgentSettingsGroupIntro">{t('webIntro')}</p>
         </div>
-        <ToggleRow
+        <DesktopSettingsToggleRow
           label={t('openBrowser')}
           checked={browserAccess}
           disabled={!desktopBrowserAccessAvailable(mode) || !settingsWritable || busy !== undefined}
@@ -737,7 +746,8 @@ export function DesktopSettingsSection({
           checked={networkExposure === 'lan'}
           disabled={!browserAccess || !settingsWritable || busy !== undefined}
           onChange={(checked) => {
-            if (checked) setConfirmLan(true)
+            if (checked && capabilities?.nativeLanConfirmation !== true) setConfirmLan(true)
+            else if (checked) setNetworkExposure('lan')
             else setNetworkExposure('loopback')
           }}
         />
@@ -800,19 +810,19 @@ export function DesktopSettingsSection({
             disabled={!notificationValue.enabled || !notificationsWritable || busy !== undefined}
             onChange={checked => { setNotification('notifyOnTurnCompletion', checked) }}
           />
-          <ToggleRow
+          <DesktopSettingsToggleRow
             label={t('turnFailure')}
             checked={notificationValue.notifyOnTurnFailure}
             disabled={!notificationValue.enabled || !notificationsWritable || busy !== undefined}
             onChange={checked => { setNotification('notifyOnTurnFailure', checked) }}
           />
-          <ToggleRow
+          <DesktopSettingsToggleRow
             label={t('jobCompletion')}
             checked={notificationValue.notifyOnJobCompletion}
             disabled={!notificationValue.enabled || !notificationsWritable || busy !== undefined}
             onChange={checked => { setNotification('notifyOnJobCompletion', checked) }}
           />
-          <ToggleRow
+          <DesktopSettingsToggleRow
             label={t('jobFailure')}
             checked={notificationValue.notifyOnJobFailure}
             disabled={!notificationValue.enabled || !notificationsWritable || busy !== undefined}
@@ -820,6 +830,7 @@ export function DesktopSettingsSection({
           />
         </div>
       </section>
+      {extraSections}
       {confirmLan && (
         <div className="sensteedAgentSettingsDialogBackdrop" role="presentation">
           <div className="sensteedAgentSettingsDialog" role="alertdialog" aria-modal="true" aria-labelledby="sensteed-agent-lan-warning-title" aria-describedby="sensteed-agent-lan-warning-body">
