@@ -1,96 +1,124 @@
 import { describe, expect, it, vi } from 'vitest'
-import { DofeAuthService, DOFE_AUTH_REFRESH_TOKEN_REF } from '../src/dofe-auth-service.ts'
+import type { CredentialRecord } from '@deepseek-ai/dsh-credentials'
+import { DofeAuthService, DOFE_AUTH_GRANT_KEY } from '../src/dofe-auth-service.ts'
 
-function response(value: unknown, status = 200): Response {
-  return new Response(JSON.stringify(value), { status, headers: { 'content-type': 'application/json' } })
+const discovery = {
+  issuer: 'https://sso.ixicai.cn/api',
+  authorization_endpoint: 'https://sso.ixicai.cn/api/oauth/authorize',
+  token_endpoint: 'https://sso.ixicai.cn/api/oauth/token',
 }
-
-async function waitForBound(service: DofeAuthService): Promise<void> {
-  for (let attempt = 0; attempt < 20; attempt += 1) {
-    if (service.getStatus().status === 'bound') return
-    await new Promise(resolve => setTimeout(resolve, 0))
+const provisioned = {
+  key: 'sk-secret', user: { ssoSub: 'sub-1', name: 'Alice' },
+  tenant: { tenantId: 'tenant-1', ssoTeamId: 'team-1', tenantSlug: 'sensteed' },
+  entitlements: { plugins: ['knowledge'], defaultModel: 'model-a', allowedProtocols: ['messages'] },
+}
+function response(value: unknown, status = 200): Response {
+  return new Response(JSON.stringify(value), { status })
+}
+function credentialStore(refreshToken?: string) {
+  let record: CredentialRecord | undefined = refreshToken ? { kind: 'grant', payload: { refreshToken } } : undefined
+  return {
+    set: vi.fn(async () => {}),
+    readRecord: vi.fn(async () => record),
+    modifyRecord: vi.fn(async (_key: string, mutate: (current: CredentialRecord | undefined) => Promise<CredentialRecord | undefined>) => {
+      record = await mutate(record) ?? record
+      return record
+    }),
   }
-  throw new Error(`unexpected auth status: ${service.getStatus().status}`)
 }
 
 describe('DofeAuthService', () => {
-  it('silently refreshes and provisions without opening an external browser', async () => {
-    const values = new Map<string, string>([[DOFE_AUTH_REFRESH_TOKEN_REF, 'refresh-old']])
-    const credentials = {
-      resolve: vi.fn(async (ref: string) => values.has(ref) ? { value: values.get(ref), source: 'memory' } : undefined),
-      set: vi.fn(async (ref: string, value: string) => { values.set(ref, value) }),
-      unset: vi.fn(async (ref: string) => { values.delete(ref) }),
-    }
+  it('rotates its Host grant before provisioning and never returns secrets', async () => {
+    const credentials = credentialStore('refresh-old')
     const openExternal = vi.fn()
-    const fetcher = vi.fn()
-      .mockResolvedValueOnce(response({
-        issuer: 'https://sso.ixicai.cn/api',
-        authorization_endpoint: 'https://sso.ixicai.cn/api/oauth/authorize',
-        token_endpoint: 'https://sso.ixicai.cn/api/oauth/token',
-      }))
+    const fetcher = vi.fn().mockResolvedValueOnce(response(discovery))
       .mockResolvedValueOnce(response({ access_token: 'access-new', refresh_token: 'refresh-new' }))
-      .mockResolvedValueOnce(response({
-        key: 'sk-secret',
-        user: { ssoSub: 'sub-1', name: 'Alice' },
-        tenant: { tenantId: 'tenant-1', ssoTeamId: 'team-1', tenantSlug: 'sensteed' },
-        entitlements: { plugins: ['knowledge'], defaultModel: 'model-a', allowedProtocols: ['messages'] },
-      }))
+      .mockImplementationOnce(async () => {
+        expect(await credentials.readRecord()).toEqual({ kind: 'grant', payload: { refreshToken: 'refresh-new' } })
+        return response(provisioned)
+      })
     const service = new DofeAuthService({ openExternal } as never, credentials as never, fetcher)
-
     await service.start()
-    await waitForBound(service)
-
+    await vi.waitFor(() => expect(service.getStatus().status).toBe('bound'))
     expect(openExternal).not.toHaveBeenCalled()
-    expect(credentials.set).toHaveBeenCalledWith(expect.any(String), 'sk-secret')
-    expect(credentials.set).toHaveBeenCalledWith(DOFE_AUTH_REFRESH_TOKEN_REF, 'refresh-new')
-    expect(service.getStatus()).toEqual(expect.objectContaining({ status: 'bound', user: { ssoSub: 'sub-1', name: 'Alice', avatar: null } }))
-    expect(JSON.stringify(service.getStatus())).not.toContain('sk-secret')
+    expect(credentials.set).toHaveBeenCalledWith('MODELS_API_KEY', 'sk-secret')
+    expect(credentials.modifyRecord).toHaveBeenCalledWith(DOFE_AUTH_GRANT_KEY, expect.any(Function))
+    expect(JSON.stringify(service.getStatus())).not.toMatch(/sk-secret|access-new|refresh-new/)
     await service.dispose()
   })
 
-  it('clears an invalid refresh token before falling back to browser login', async () => {
-    const values = new Map<string, string>([[DOFE_AUTH_REFRESH_TOKEN_REF, 'refresh-old']])
-    const credentials = {
-      resolve: vi.fn(async (ref: string) => values.has(ref) ? { value: values.get(ref), source: 'memory' } : undefined),
-      set: vi.fn(),
-      unset: vi.fn(async (ref: string) => { values.delete(ref) }),
-    }
-    const fetcher = vi.fn()
-      .mockResolvedValueOnce(response({
-        issuer: 'https://sso.ixicai.cn/api',
-        authorization_endpoint: 'https://sso.ixicai.cn/api/oauth/authorize',
-        token_endpoint: 'https://sso.ixicai.cn/api/oauth/token',
-      }))
+  it('retains the rotated grant when Models is unavailable', async () => {
+    const credentials = credentialStore('refresh-old')
+    const fetcher = vi.fn().mockResolvedValueOnce(response(discovery))
+      .mockResolvedValueOnce(response({ access_token: 'access-new', refresh_token: 'refresh-new' }))
+      .mockResolvedValueOnce(response({ error: 'unavailable' }, 503))
+    const service = new DofeAuthService({ openExternal: vi.fn() } as never, credentials as never, fetcher)
+    await service.start()
+    await vi.waitFor(() => expect(service.getStatus().status).toBe('error'))
+    expect(await credentials.readRecord()).toEqual({ kind: 'grant', payload: { refreshToken: 'refresh-new' } })
+    expect(credentials.set).not.toHaveBeenCalled()
+    await service.dispose()
+  })
+
+  it('falls back to loopback PKCE once for invalid_grant', async () => {
+    const credentials = credentialStore('refresh-old')
+    const fetcher = vi.fn().mockResolvedValueOnce(response(discovery))
       .mockResolvedValueOnce(response({ error: 'invalid_grant' }, 400))
-    const openExternal = vi.fn()
+      .mockResolvedValueOnce(response({ access_token: 'access-new', refresh_token: 'refresh-new' }))
+      .mockResolvedValueOnce(response(provisioned))
+    const openExternal = vi.fn(async (href: string) => {
+      const authorize = new URL(href)
+      const callback = new URL(authorize.searchParams.get('redirect_uri')!)
+      callback.searchParams.set('state', authorize.searchParams.get('state')!)
+      callback.searchParams.set('code', 'test-code')
+      await fetch(callback)
+    })
     const service = new DofeAuthService({ openExternal } as never, credentials as never, fetcher)
-
     await service.start()
-    await new Promise(resolve => setTimeout(resolve, 0))
-
-    expect(credentials.unset).toHaveBeenCalledWith(DOFE_AUTH_REFRESH_TOKEN_REF)
+    await vi.waitFor(() => expect(service.getStatus().status).toBe('bound'))
     expect(openExternal).toHaveBeenCalledOnce()
-    expect(service.getStatus().status).toBe('pending')
+    const body = new URLSearchParams(fetcher.mock.calls[2]![1].body)
+    expect(body.get('grant_type')).toBe('authorization_code')
+    expect(body.get('code_verifier')).toHaveLength(43)
     await service.dispose()
   })
 
-  it('cancels the pending browser session without converting it into an error', async () => {
-    const fetcher = vi.fn().mockResolvedValue(response({
-      issuer: 'https://sso.ixicai.cn/api',
-      authorization_endpoint: 'https://sso.ixicai.cn/api/oauth/authorize',
-      token_endpoint: 'https://sso.ixicai.cn/api/oauth/token',
-    }))
-    const service = new DofeAuthService({ openExternal: vi.fn() } as never, {
-      resolve: vi.fn().mockResolvedValue(undefined),
-      set: vi.fn(),
-      unset: vi.fn(),
-    } as never, fetcher)
-
+  it('does not persist a late provisioning response after cancellation', async () => {
+    const credentials = credentialStore('refresh-old')
+    let finish!: (response: Response) => void
+    const fetcher = vi.fn().mockResolvedValueOnce(response(discovery))
+      .mockResolvedValueOnce(response({ access_token: 'access-new', refresh_token: 'refresh-new' }))
+      .mockImplementationOnce(() => new Promise<Response>(resolve => { finish = resolve }))
+    const service = new DofeAuthService({ openExternal: vi.fn() } as never, credentials as never, fetcher)
     await service.start()
+    await vi.waitFor(() => expect(fetcher).toHaveBeenCalledTimes(3))
     await service.cancel()
-    expect(service.getStatus()).toEqual({ status: 'cancelled' })
-    await new Promise(resolve => setTimeout(resolve, 0))
-    expect(service.getStatus()).toEqual({ status: 'cancelled' })
+    finish(response(provisioned))
     await service.dispose()
+    expect(service.getStatus()).toEqual({ status: 'cancelled' })
+    expect(credentials.set).not.toHaveBeenCalled()
+  })
+
+  it('rejects untrusted discovery endpoints before transmitting a refresh token', async () => {
+    const credentials = credentialStore('refresh-old')
+    const fetcher = vi.fn().mockResolvedValueOnce(response({ ...discovery, token_endpoint: 'https://other.example/token' }))
+    const service = new DofeAuthService({ openExternal: vi.fn() } as never, credentials as never, fetcher)
+    await service.start()
+    await vi.waitFor(() => expect(service.getStatus().status).toBe('error'))
+    expect(fetcher).toHaveBeenCalledOnce()
+    expect(credentials.modifyRecord).not.toHaveBeenCalled()
+    await service.dispose()
+  })
+
+  it('releases the pending loopback listener on dispose', async () => {
+    const openExternal = vi.fn()
+    const service = new DofeAuthService({ openExternal } as never, credentialStore() as never,
+      vi.fn().mockResolvedValue(response(discovery)))
+    await service.start()
+    await vi.waitFor(() => expect(openExternal).toHaveBeenCalledOnce())
+    const callback = new URL(openExternal.mock.calls[0]![0] as string).searchParams.get('redirect_uri')!
+    await service.dispose()
+    await expect(fetch(callback)).rejects.toThrow()
+    expect(service.getStatus().status).toBe('cancelled')
   })
 })
