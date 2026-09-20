@@ -220,6 +220,16 @@ describe('mandatory DoFe access gate', () => {
     expect(source.indexOf('id="dofe-protocol-select"')).toBeLessThan(source.indexOf("onClick={() => void loadModels()}"))
   })
 
+  it('offers only the OpenAI-compatible and Anthropic Messages protocols in the UI', async () => {
+    const source = await readFile(resolve(process.cwd(), 'src/client/DofeAccessSection.tsx'), 'utf8')
+
+    expect(source).toContain('{UI_DOFE_PROTOCOLS.map(')
+    expect(source).toContain("p === 'messages' ? t('protocolMessages') : t('protocolChat')")
+    expect(source).not.toContain('value="responses"')
+    expect(source).not.toContain("{t('protocolResponses')}")
+    expect(source).toContain('normalizeDofeUiProtocol(settings.value?.protocol)')
+  })
+
   it('asks the host to resolve stored credentials only when no draft key is entered', () => {
     expect(dofeModelsRequestBody('  ', true, 'messages')).toEqual({ key: '', protocol: 'messages', useStored: true })
     expect(dofeModelsRequestBody('  ', undefined, 'messages')).toEqual({ key: '', protocol: 'messages', useStored: false })

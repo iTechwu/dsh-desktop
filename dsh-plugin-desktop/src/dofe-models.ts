@@ -2,6 +2,13 @@
 
 export type DofeProtocol = 'chat-completions' | 'messages' | 'responses'
 export const DEFAULT_DOFE_PROTOCOL: DofeProtocol = 'chat-completions'
+/** Protocols surfaced in the activation UI; 'responses' stays host/API-only. */
+export const UI_DOFE_PROTOCOLS = ['chat-completions', 'messages'] as const satisfies readonly DofeProtocol[]
+export type DofeUiProtocol = (typeof UI_DOFE_PROTOCOLS)[number]
+/** Stored 'responses' settings remain valid host-side; the activation UI falls back to the OpenAI-compatible default. */
+export function normalizeDofeUiProtocol(value: string | undefined): DofeUiProtocol {
+  return value === 'messages' ? 'messages' : 'chat-completions'
+}
 /** Canonical public API prefix owned by the models project. */
 export const DOFE_API_BASE_URL = 'https://ixicai.cn/api'
 export const DOFE_MODEL_CATALOG_BASE_URL = `${DOFE_API_BASE_URL}/v1/models`

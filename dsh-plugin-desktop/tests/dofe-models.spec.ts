@@ -1,9 +1,17 @@
 import { describe, expect, it } from 'vitest'
-import { DOFE_ANTHROPIC_BASE_URL, dofeModelCatalogUrl, parseDofeModelCatalog } from '../src/dofe-models.ts'
+import { DOFE_ANTHROPIC_BASE_URL, dofeModelCatalogUrl, normalizeDofeUiProtocol, parseDofeModelCatalog, UI_DOFE_PROTOCOLS } from '../src/dofe-models.ts'
 
 describe('DoFe model catalog parsing', () => {
   it('keeps the native Anthropic endpoint under the models API prefix', () => {
     expect(DOFE_ANTHROPIC_BASE_URL).toBe('https://ixicai.cn/api/anthropic')
+  })
+
+  it('surfaces only the activation UI protocols and falls back from responses', () => {
+    expect([...UI_DOFE_PROTOCOLS]).toEqual(['chat-completions', 'messages'])
+    expect(normalizeDofeUiProtocol('messages')).toBe('messages')
+    expect(normalizeDofeUiProtocol('responses')).toBe('chat-completions')
+    expect(normalizeDofeUiProtocol('bogus')).toBe('chat-completions')
+    expect(normalizeDofeUiProtocol(undefined)).toBe('chat-completions')
   })
 
   it('accepts OpenAI-compatible data responses and removes invalid duplicates', () => {

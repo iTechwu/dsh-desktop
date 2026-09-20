@@ -11,7 +11,7 @@ import { BRAND_TENANT, BRAND_VARIANT } from '../generated-product-identity.ts'
 import { DOFE_ACCESS_KEY, type DofeAccessLocaleKey } from './dofe-access.ts'
 import { dofePluginsForBrand, normalizeDofePluginIds, DOFE_ACCESS_SETTINGS_NAMESPACE, DOFE_ACCESS_VALIDATION_VERSION, type DofeAccessSettings, type DofePluginId, DEFAULT_DOFE_PLUGIN_IDS } from '../dofe-plugins.ts'
 import { DOFE_ACCESS_MODELS_PATH, DOFE_ACCESS_VALIDATE_PATH } from '../dofe-access-route.ts'
-import { DEFAULT_DOFE_PROTOCOL, DOFE_ANTHROPIC_BASE_URL, parseDofeModelCatalog, type DofeModel, type DofeProtocol } from '../dofe-models.ts'
+import { DEFAULT_DOFE_PROTOCOL, DOFE_ANTHROPIC_BASE_URL, normalizeDofeUiProtocol, parseDofeModelCatalog, UI_DOFE_PROTOCOLS, type DofeModel, type DofeProtocol } from '../dofe-models.ts'
 
 const STYLE_ID = 'dsh-dofe-access-styles'
 const ACCESS_REQUEST_TIMEOUT_MS = 15000
@@ -187,7 +187,7 @@ function AccessForm({ credentials, settingsApi, settingsScope, t, onboarding, on
   const [enabledPlugins, setEnabledPlugins] = useState<DofePluginId[]>(() => normalizeDofePluginIds(settings.value?.enabledPlugins ?? defaultPluginIds, BRAND_VARIANT))
   const [models, setModels] = useState<readonly DofeModel[]>([])
   const [selectedModel, setSelectedModel] = useState('')
-  const [protocol, setProtocol] = useState<DofeProtocol>(() => settings.value?.protocol ?? DEFAULT_DOFE_PROTOCOL)
+  const [protocol, setProtocol] = useState<DofeProtocol>(() => normalizeDofeUiProtocol(settings.value?.protocol))
   const [loadingModels, setLoadingModels] = useState(false)
   const loadingRef = useRef(false)
   const [busy, setBusy] = useState(false)
@@ -200,7 +200,7 @@ function AccessForm({ credentials, settingsApi, settingsScope, t, onboarding, on
     if (settings.value?.modelId !== undefined) setSelectedModel(settings.value.modelId)
   }, [settings.value?.modelId])
   useEffect(() => {
-    if (settings.value?.protocol !== undefined) setProtocol(settings.value.protocol)
+    if (settings.value?.protocol !== undefined) setProtocol(normalizeDofeUiProtocol(settings.value.protocol))
   }, [settings.value?.protocol])
   useEffect(() => {
     let cancelled = false
@@ -369,7 +369,7 @@ function AccessForm({ credentials, settingsApi, settingsScope, t, onboarding, on
       <div className="dshDofeAccessFieldHeader"><label className="dshDofeAccessLabel" htmlFor="dofe-model-api-key">{t('key')}</label>{onboarding && <span className="dshDofeAccessHint"><ShieldCheck size={13} aria-hidden="true" /> {t('credentialHint')}</span>}</div>
       <div className="dshDofeAccessInputWrap"><Input className="dshDofeAccessInput" id="dofe-model-api-key" type={revealKey ? 'text' : 'password'} autoComplete="off" value={draft} disabled={interactionBusy} placeholder={onboarding ? t('placeholder') : configured ? t('configured') : t('placeholder')} onChange={event => { setDraft(event.currentTarget.value); setModels([]); setSelectedModel('') }} onKeyDown={event => { if (event.key === 'Enter') void loadModels() }} /><button type="button" className="dshDofeAccessReveal" title={revealKey ? t('hideKey') : t('showKey')} aria-label={revealKey ? t('hideKey') : t('showKey')} disabled={interactionBusy} onClick={() => setRevealKey(current => !current)}>{revealKey ? <EyeOff size={17} /> : <Eye size={17} />}</button></div>
     </div>
-    <div className="dshDofeAccessField"><div className="dshDofeAccessFieldHeader"><label className="dshDofeAccessLabel" htmlFor="dofe-protocol-select">{t('protocolTitle')}</label></div><select id="dofe-protocol-select" className="dshDofeAccessModelSelect" value={protocol} disabled={interactionBusy} onChange={event => { const next = event.currentTarget.value as DofeProtocol; setProtocol(next); setModels([]); setSelectedModel(''); setError(undefined) }}><option value="chat-completions">{t('protocolChat')}</option><option value="messages">{t('protocolMessages')}</option><option value="responses">{t('protocolResponses')}</option></select></div>
+    <div className="dshDofeAccessField"><div className="dshDofeAccessFieldHeader"><label className="dshDofeAccessLabel" htmlFor="dofe-protocol-select">{t('protocolTitle')}</label></div><select id="dofe-protocol-select" className="dshDofeAccessModelSelect" value={protocol} disabled={interactionBusy} onChange={event => { const next = event.currentTarget.value as DofeProtocol; setProtocol(next); setModels([]); setSelectedModel(''); setError(undefined) }}>{UI_DOFE_PROTOCOLS.map(p => <option key={p} value={p}>{p === 'messages' ? t('protocolMessages') : t('protocolChat')}</option>)}</select></div>
     <div className="dshDofeAccessActions"><Button disabled={interactionBusy || (!draft.trim() && configured !== true)} onClick={() => void loadModels()}>{loadingModels ? t('loadingModels') : t('loadModels')}</Button></div>
     <div className="dshDofeAccessField"><div className="dshDofeAccessFieldHeader"><label className="dshDofeAccessLabel" htmlFor="dofe-model-select">{t('modelsTitle')}</label></div>{configured === true && !draft.trim() && models.length === 0 && !loadingModels && <p className="dshDofeAccessHint" role="status">{t('storedReady')}</p>}<select id="dofe-model-select" className="dshDofeAccessModelSelect" value={selectedModel} disabled={interactionBusy || models.length === 0} onChange={event => setSelectedModel(event.currentTarget.value)}><option value="">{models.length === 0 ? t('modelsPlaceholder') : t('modelsEmpty')}</option>{models.map(model => <option key={model.id} value={model.id}>{model.name} ({model.id})</option>)}</select></div>
     {onboarding && <p className="dshDofeAccessHelp"><Phone size={15} aria-hidden="true" /><span>{t('onboardingHelp')}</span></p>}
