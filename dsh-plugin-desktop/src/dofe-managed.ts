@@ -15,6 +15,11 @@ import {
 } from './dofe-plugins.ts'
 import { BRAND_TENANT, BRAND_VARIANT } from './generated-product-identity.ts'
 import { KNOWLEDGE_ROUTING_PROMPT } from './knowledge-routing.ts'
+import { DofeAuthService } from './dofe-auth-service.ts'
+
+declare module '@deepseek-ai/cordis' {
+  interface Context { dofeAuth: DofeAuthService }
+}
 
 export const name = 'dofe-managed'
 export const inject = ['credentials', 'tools', 'systemPrompt', 'desktopRuntime', 'settings']
@@ -75,6 +80,33 @@ export async function apply(ctx: Context): Promise<void> {
       },
     },
   )
+  if (BRAND_VARIANT === 'sensteed') {
+    const auth = new DofeAuthService(ctx.desktopRuntime, ctx.credentials, globalThis.fetch, async snapshot => {
+      const current = access.get()
+      const entitlements = snapshot.entitlements!
+      const sameUser = current.identity?.ssoSub === snapshot.user!.ssoSub
+      await ctx.settings.update(DOFE_ACCESS_SETTINGS_NAMESPACE, {
+        authMode: 'feishu',
+        identity: snapshot.user,
+        entitlements,
+        enabledPlugins: normalizeDofePluginIds(sameUser ? current.enabledPlugins : entitlements.plugins, BRAND_VARIANT)
+          .filter(plugin => entitlements.plugins.includes(plugin)),
+        setupComplete: sameUser && current.validationVersion === DOFE_ACCESS_VALIDATION_VERSION
+          && Boolean(current.modelId) && entitlements.allowedProtocols.includes(current.protocol ?? 'chat-completions'),
+      })
+    })
+    ctx.provide('dofeAuth', auth)
+    const restore = async () => {
+      await ctx.settings.update(DOFE_ACCESS_SETTINGS_NAMESPACE, { setupComplete: false })
+      await auth.restore()
+    }
+    ctx.effect(() => {
+      const timer = setInterval(() => { void restore().catch(() => ctx.logger.error('Unable to refresh desktop authorization')) }, 15 * 60_000)
+      timer.unref()
+      return () => { clearInterval(timer); return auth.dispose() }
+    }, 'dofe-managed: SSO session lifetime')
+    await restore()
+  }
   ctx.systemPrompt.section({
     name: 'dofe:managed-access',
     order: 4,
@@ -89,15 +121,16 @@ export async function apply(ctx: Context): Promise<void> {
     const resolved = await ctx.credentials.resolve(MODELS_API_KEY_REF)
     const next = resolved?.value
     const accessSettings = access.get()
-    activeKey = next
-    tray?.refresh()
+    activeKey = undefined
     const old = clients
     clients = []
     await Promise.all(old.map(client => client.dispose()))
-    if (!next
-      || !accessSettings.setupComplete
-      || accessSettings.validationVersion !== DOFE_ACCESS_VALIDATION_VERSION) return
-    if (BRAND_VARIANT === 'sensteed' && (accessSettings.authMode !== 'feishu' || !accessSettings.identity?.ssoSub)) return
+    if (!next || !accessSettings.setupComplete
+      || accessSettings.validationVersion !== DOFE_ACCESS_VALIDATION_VERSION
+      || (BRAND_VARIANT === 'sensteed' && (accessSettings.authMode !== 'feishu' || !accessSettings.identity?.ssoSub))) {
+      tray?.refresh()
+      return
+    }
 
     const created: { dispose(): void | Promise<void> }[] = []
     try {
@@ -107,6 +140,8 @@ export async function apply(ctx: Context): Promise<void> {
           if (!accessSettings.entitlements?.plugins.includes(plugin)) enabled.delete(plugin)
         }
       }
+      activeKey = enabled.has('openmontage') ? next : undefined
+      tray?.refresh()
       for (const route of ROUTES) {
         if (route.plugin !== undefined && !enabled.has(route.plugin)) continue
         const config: McpConfig = {

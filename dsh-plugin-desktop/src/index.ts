@@ -31,7 +31,7 @@ import {
   handleDofeModelCatalogRequest,
 } from './dofe-access-route.ts'
 import { DOFE_AUTH_PATHS, handleDofeAuthRequest } from './dofe-auth-route.ts'
-import { DofeAuthService } from './dofe-auth-service.ts'
+import type {} from './dofe-managed.ts'
 import { BRAND_VARIANT } from './generated-product-identity.ts'
 import {
   handleYootunRecruiterRequest,
@@ -123,7 +123,7 @@ export const name = 'desktop-shell'
 
 /** Services required before the shell can register its renderer generation. */
 /** Services required by the desktop shell; `desktopRuntime` is probed, not required. */
-export const inject = ['webServer', 'webRuntime', 'appExit', 'settings', 'connection', 'tools', 'credentials']
+export const inject = ['webServer', 'webRuntime', 'appExit', 'settings', 'connection', 'tools', 'credentials', ...(BRAND_VARIANT === 'sensteed' ? ['dofeAuth'] : [])]
 
 /** Standard settings namespace shared by tray and configuration surfaces. */
 export const DESKTOP_SETTINGS_NAMESPACE = 'sensteed-agent' as const
@@ -304,8 +304,7 @@ export function apply(ctx: Context, config: Config): void {
   )
   const rendererOrigin = `http://127.0.0.1:${String(ctx.webServer.port)}`
   if (BRAND_VARIANT === 'sensteed') {
-    const dofeAuth = new DofeAuthService(runtime, ctx.credentials)
-    ctx.effect(() => () => dofeAuth.dispose(), 'dsh-plugin-desktop: Sensteed SSO auth lifetime')
+    const dofeAuth = ctx.dofeAuth
     for (const path of DOFE_AUTH_PATHS) {
       ctx.effect(
         () => ctx.webServer.register({

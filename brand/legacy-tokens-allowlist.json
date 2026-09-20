@@ -170,6 +170,7 @@
     "dsh-plugin-desktop/tests/dofe-auth-service.spec.ts": 3,
     "dsh-plugin-desktop/tests/dofe-managed-knowledge.spec.ts": 1,
     "dsh-plugin-desktop/tests/dofe-managed-media.spec.ts": 1,
+    "dsh-plugin-desktop/tests/dofe-managed-sso.spec.ts": 3,
     "dsh-plugin-desktop/tests/dofe-models.spec.ts": 4,
     "dsh-plugin-desktop/tests/dofe-opencli.spec.ts": 2,
     "dsh-plugin-desktop/tests/douyin-operation-integration.spec.ts": 1,

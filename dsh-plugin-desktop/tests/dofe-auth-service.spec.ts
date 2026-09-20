@@ -28,6 +28,34 @@ function credentialStore(refreshToken?: string) {
 }
 
 describe('DofeAuthService', () => {
+  it('restores a saved session without launching a browser and publishes binding before completion', async () => {
+    const credentials = credentialStore('refresh-old')
+    const openExternal = vi.fn()
+    const onBound = vi.fn(async () => { expect(credentials.set).toHaveBeenCalled() })
+    const fetcher = vi.fn().mockResolvedValueOnce(response(discovery))
+      .mockResolvedValueOnce(response({ access_token: 'access-new', refresh_token: 'refresh-new' }))
+      .mockResolvedValueOnce(response(provisioned))
+    const service = new DofeAuthService({ openExternal } as never, credentials as never, fetcher, onBound)
+    expect((await service.restore()).status).toBe('bound')
+    expect(onBound).toHaveBeenCalledOnce()
+    expect(openExternal).not.toHaveBeenCalled()
+    await service.dispose()
+  })
+
+  it('keeps first launch offline and requires an explicit login for an expired grant', async () => {
+    const openExternal = vi.fn()
+    const fetcher = vi.fn().mockResolvedValueOnce(response(discovery))
+      .mockResolvedValueOnce(response({ error: 'invalid_grant' }, 400))
+    const first = new DofeAuthService({ openExternal } as never, credentialStore() as never, fetcher)
+    expect((await first.restore()).status).toBe('idle')
+    expect(fetcher).not.toHaveBeenCalled()
+    const expired = new DofeAuthService({ openExternal } as never, credentialStore('expired') as never, fetcher)
+    expect((await expired.restore()).status).toBe('error')
+    expect(openExternal).not.toHaveBeenCalled()
+    await first.dispose()
+    await expired.dispose()
+  })
+
   it('rotates its Host grant before provisioning and never returns secrets', async () => {
     const credentials = credentialStore('refresh-old')
     const openExternal = vi.fn()

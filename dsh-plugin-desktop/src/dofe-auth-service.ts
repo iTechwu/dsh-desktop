@@ -61,16 +61,23 @@ export class DofeAuthService {
     private readonly runtime: DesktopRuntime,
     private readonly credentials: CredentialProvider,
     private readonly fetcher: typeof fetch = globalThis.fetch,
+    private readonly onBound?: (snapshot: DofeAuthSnapshot) => Promise<void>,
   ) {}
 
   getStatus(): DofeAuthSnapshot { return structuredClone(this.snapshot) }
 
-  async start(): Promise<DofeAuthSnapshot> {
+  async restore(): Promise<DofeAuthSnapshot> {
+    await this.start(false)
+    await this.operation
+    return this.getStatus()
+  }
+
+  async start(interactive = true): Promise<DofeAuthSnapshot> {
     if (this.operation !== undefined) return this.getStatus()
     this.cancelled = false
     this.abort = new AbortController()
     this.snapshot = { status: 'pending' }
-    this.operation = this.openAuthorization().catch(error => {
+    this.operation = this.openAuthorization(interactive).catch(error => {
       if (!this.cancelled) this.fail(error instanceof DofeAuthTokenError ? '登录授权已失效，请重新登录' : '登录未完成，请检查网络或稍后重试')
     }).finally(() => { this.closeLoopback(); this.operation = undefined })
     return this.getStatus()
@@ -88,7 +95,14 @@ export class DofeAuthService {
 
   async dispose(): Promise<void> { await this.cancel(); await this.operation }
 
-  private async openAuthorization(): Promise<void> {
+  private async openAuthorization(interactive: boolean): Promise<void> {
+    if (!interactive) {
+      const record = await this.credentials.readRecord(DOFE_AUTH_GRANT_KEY)
+      if (record?.kind !== 'grant' || !asString((record.payload as { refreshToken?: unknown })?.refreshToken)) {
+        this.snapshot = { status: 'idle' }
+        return
+      }
+    }
     const discovery = await this.readDiscovery()
     this.abort.signal.throwIfAborted()
     let accessToken: string | undefined
@@ -112,6 +126,7 @@ export class DofeAuthService {
       await this.provision(accessToken)
       return
     }
+    if (!interactive) throw new DofeAuthTokenError('登录授权已失效', 'invalid_grant')
     const port = await this.listen()
     if (this.cancelled) throw new Error('登录已取消')
     const session = createOidcAuthorizationSession(discovery, port, SENSTEED_SSO_CLIENT_ID)
@@ -225,12 +240,15 @@ export class DofeAuthService {
     this.abort.signal.throwIfAborted()
     const plugins = Array.isArray(value.entitlements?.plugins) ? value.entitlements.plugins.filter((item): item is string => typeof item === 'string') : []
     const allowedProtocols = Array.isArray(value.entitlements?.allowedProtocols) ? value.entitlements.allowedProtocols.filter((item): item is string => typeof item === 'string') : []
-    this.snapshot = {
+    const snapshot: DofeAuthSnapshot = {
       status: 'bound',
       user: { ssoSub, name: asString(value.user?.name) ?? ssoSub, avatar: asString(value.user?.avatar) ?? null },
       tenant: { tenantId, ssoTeamId, tenantSlug },
       entitlements: { plugins, defaultModel: asString(value.entitlements?.defaultModel) ?? '', allowedProtocols },
     }
+    await this.onBound?.(snapshot)
+    this.abort.signal.throwIfAborted()
+    this.snapshot = snapshot
   }
 
   private closeLoopback(): void {
