@@ -238,7 +238,7 @@ function AccessForm({ credentials, settingsApi, settingsScope, t, onboarding, on
       if (!response.ok || found.length === 0) {
         setModels([])
         setSelectedModel('')
-        setError(failureReason === 'tenant_mismatch' ? t('tenantMismatch') : t('modelsError'))
+        setError(failureReason === 'tenant_mismatch' ? t('tenantMismatch') : failureReason === 'tenant_unavailable' ? t('tenantUnavailable') : t('modelsError'))
         return
       }
       setModels(found)
@@ -267,7 +267,7 @@ function AccessForm({ credentials, settingsApi, settingsScope, t, onboarding, on
       if (!validation.valid) {
         busyRef.current = false
         setBusy(false)
-        setError(validation.reason === 'tenant_mismatch' ? t('tenantMismatch') : t('invalidKey'))
+        setError(validation.reason === 'tenant_mismatch' ? t('tenantMismatch') : validation.reason === 'tenant_unavailable' ? t('tenantUnavailable') : t('invalidKey'))
         return
       }
     }

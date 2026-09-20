@@ -67,12 +67,16 @@ async function verifyDofeTenant(
     const record = typeof value === 'object' && value !== null && !Array.isArray(value)
       ? value as Record<string, unknown>
       : undefined
-    const nestedTenant = record?.tenant && typeof record.tenant === 'object' && !Array.isArray(record.tenant)
-      ? record.tenant as Record<string, unknown>
+    const data = record?.data && typeof record.data === 'object' && !Array.isArray(record.data)
+      ? record.data as Record<string, unknown>
       : undefined
-    const tenantSlug = [record?.tenantSlug, record?.tenant_slug, record?.slug, nestedTenant?.tenantSlug, nestedTenant?.slug]
+    const candidates = [record, data, record?.tenant, data?.tenant]
+      .filter((candidate): candidate is Record<string, unknown> => candidate !== undefined && typeof candidate === 'object' && !Array.isArray(candidate))
+    const tenantSlug = candidates
+      .flatMap(candidate => [candidate.tenantSlug, candidate.tenant_slug, candidate.slug])
       .find(candidate => typeof candidate === 'string' && candidate.trim().length > 0)
-    const tenantId = [record?.tenantId, record?.tenant_id, record?.id, nestedTenant?.tenantId, nestedTenant?.tenant_id, nestedTenant?.id]
+    const tenantId = candidates
+      .flatMap(candidate => [candidate.tenantId, candidate.tenant_id, candidate.id])
       .find(candidate => typeof candidate === 'string' && candidate.trim().length > 0)
     if (typeof tenantId === 'string' && tenantId.trim().length > 0) {
       return tenantId.trim().toLowerCase() === BRAND_TENANT_ID.toLowerCase()

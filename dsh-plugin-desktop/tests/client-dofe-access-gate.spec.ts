@@ -198,6 +198,13 @@ describe('mandatory DoFe access gate', () => {
     expect(source).toContain("}).catch(() => { setCredentialConfigured(false) })")
   })
 
+  it('surfaces tenant ownership failures as actionable access errors', async () => {
+    const source = await readFile(resolve(process.cwd(), 'src/client/DofeAccessSection.tsx'), 'utf8')
+
+    expect(source).toContain("failureReason === 'tenant_mismatch' ? t('tenantMismatch') : failureReason === 'tenant_unavailable' ? t('tenantUnavailable')")
+    expect(source).toContain("validation.reason === 'tenant_mismatch' ? t('tenantMismatch') : validation.reason === 'tenant_unavailable' ? t('tenantUnavailable')")
+  })
+
   it('removes stale protocol routes whenever the selected protocol is saved', async () => {
     const source = await readFile(resolve(process.cwd(), 'src/client/DofeAccessSection.tsx'), 'utf8')
 

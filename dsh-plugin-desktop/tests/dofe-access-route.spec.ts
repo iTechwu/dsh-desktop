@@ -129,6 +129,20 @@ describe('DoFe model_api_key validation route', () => {
     expect(rejectedFetcher).toHaveBeenCalledTimes(1)
   })
 
+  it('reads tenant identity from the gateway response envelope', async () => {
+    const accepted = response()
+    await handleDofeAccessValidationRequest(
+      request({ key: 'enveloped-secret' }),
+      accepted,
+      ORIGIN,
+      vi.fn()
+        .mockResolvedValueOnce(new Response(JSON.stringify({ data: { tenant: { id: '869856a5-760a-4570-9177-8823ed84da78' } } }), { status: 200 }))
+        .mockResolvedValueOnce(new Response('{}', { status: 200 })),
+    )
+
+    expect(JSON.parse(accepted.body)).toEqual({ valid: true })
+  })
+
   it('returns the normalized remote model catalog without returning the key', async () => {
     const fetcher = vi.fn()
       .mockResolvedValueOnce(new Response(JSON.stringify({ tenantSlug: 'yootun' }), { status: 200 }))
