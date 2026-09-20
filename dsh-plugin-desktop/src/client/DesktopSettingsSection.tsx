@@ -37,6 +37,15 @@ export interface DesktopNotificationSettings {
   readonly notifyOnJobFailure: boolean
 }
 
+/** Host/next-channel capability overrides that constrain which settings actions apply. */
+export interface DesktopSettingsCapabilities {
+  readonly windowModes?: boolean
+  readonly featuresReadOnly?: boolean
+  readonly markets?: readonly DesktopMarketProvider[]
+  readonly materialRequiresRestart?: boolean
+  readonly nativeLanConfirmation?: boolean
+}
+
 /** Registration-side business face for the Desktop settings section. */
 export interface DesktopSettingsSectionInjected {
   readonly api: DesktopSettingsApi
@@ -47,6 +56,8 @@ export interface DesktopSettingsSectionInjected {
   readonly desktopSettings: SettingsScope<DesktopShellSettings>
   readonly notificationSettings: SettingsScope<DesktopNotificationSettings>
   readonly searchCredentials?: Pick<ClientRemote['credentials'], 'describe' | 'set' | 'unset'>
+  readonly capabilities?: DesktopSettingsCapabilities
+  readonly extraSections?: ReactNode
 }
 
 /** Renderer-composed props for the official settings section entry. */
@@ -312,6 +323,8 @@ export function DesktopSettingsSection({
   desktopSettings,
   notificationSettings,
   searchCredentials,
+  capabilities,
+  extraSections,
 }: DesktopSettingsSectionProps) {
   const desktop = useScope(desktopSettings)
   const notifications = useScope(notificationSettings)
@@ -697,7 +710,7 @@ export function DesktopSettingsSection({
             action={() => { setMode('advanced') }}
             status={mode === 'advanced' ? t('selected') : undefined}
           />
-        </div>}
+        </div>
         {platform !== 'linux' && (
           <label className="sensteedAgentSettingsMaterialField">
             <span className="sensteedAgentSettingsMaterialCopy">
@@ -740,7 +753,7 @@ export function DesktopSettingsSection({
           onChange={setBrowserAccess}
         />
         <p className="sensteedAgentSettingsNotice">{t('browserCompatibilityNotice')}</p>
-        <ToggleRow
+        <DesktopSettingsToggleRow
           label={t('lanAccess')}
           badge={t('beta')}
           checked={networkExposure === 'lan'}
@@ -767,9 +780,9 @@ export function DesktopSettingsSection({
         {desktopBrowserUrlsShouldRender(browserAccess, networkExposure) && view !== undefined && (
           <div className="sensteedAgentSettingsUrls">
             <span className="sensteedAgentSettingsChoiceTitle">{t('browserUrls')}</span>
-            <a href={view.web.localUrl} target="_blank" rel="noopener noreferrer">{view.web.localUrl}</a>
+            <a href={view.web.localUrl} target="_blank" rel="noopener noreferrer" onClick={event => openBrowser(event, view.web.localUrl)}>{view.web.localUrl}</a>
             {view.web.lanUrls.length > 0 && <span className="sensteedAgentSettingsChoiceTitle">{t('lanHttpsUrls')}</span>}
-            {view.web.lanUrls.map(url => <a href={url} key={url} target="_blank" rel="noopener noreferrer">{url}</a>)}
+            {view.web.lanUrls.map(url => <a href={url} key={url} target="_blank" rel="noopener noreferrer" onClick={event => openBrowser(event, url)}>{url}</a>)}
           </div>
         )}
         {networkExposure === 'lan' && view !== undefined && (
@@ -784,7 +797,7 @@ export function DesktopSettingsSection({
                   </span>
                 )}
                 {view.web.lanCaUrls.length > 0 && <span className="sensteedAgentSettingsChoiceBody">{t('lanCaDownloads')}</span>}
-                {view.web.lanCaUrls.map(url => <a href={url} key={url} target="_blank" rel="noopener noreferrer">{url}</a>)}
+                {view.web.lanCaUrls.map(url => <a href={url} key={url} target="_blank" rel="noopener noreferrer" onClick={event => openBrowser(event, url)}>{url}</a>)}
               </div>
             )}
           </>
@@ -797,14 +810,14 @@ export function DesktopSettingsSection({
           <p className="sensteedAgentSettingsGroupIntro">{t('notificationsIntro')}</p>
         </div>
         {notifications.status === 'unavailable' && <p className="sensteedAgentSettingsNotice">{t('readOnly')}</p>}
-        <ToggleRow
+        <DesktopSettingsToggleRow
           label={t('notificationsEnabled')}
           checked={notificationValue.enabled}
           disabled={!notificationsWritable || busy !== undefined}
           onChange={checked => { setNotification('enabled', checked) }}
         />
         <div className="sensteedAgentSettingsDetails">
-          <ToggleRow
+          <DesktopSettingsToggleRow
             label={t('turnCompletion')}
             checked={notificationValue.notifyOnTurnCompletion}
             disabled={!notificationValue.enabled || !notificationsWritable || busy !== undefined}

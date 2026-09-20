@@ -2,7 +2,7 @@
 
 import { Bug, ChevronDown, LifeBuoy, RefreshCw, RotateCw, SquareTerminal, Wrench } from 'lucide-react'
 import { Menu } from '@base-ui/react/menu'
-import { type ReactElement, type ReactNode, useRef, useState } from 'react'
+import { type KeyboardEvent as ReactKeyboardEvent, type ReactElement, type ReactNode, useEffect, useRef, useState } from 'react'
 import type { DesktopSettingsApi } from './desktop-settings-api.ts'
 import type { DesktopSettingsLocaleKey } from './desktop-settings-locales.ts'
 
@@ -26,17 +26,23 @@ interface DesktopRestartMenuItemsProps {
 }
 
 /** Shared keyboard, dismissal, and focus ownership for both menu entry points. */
-function DesktopActionMenu({ open, onOpenChange, busy, trigger, children }: {
+function DesktopActionMenu({ open, onOpenChange, busy, trigger, children, anchorRef, onKeyDown }: {
   readonly open: boolean
   readonly onOpenChange: (open: boolean) => void
   readonly busy: boolean
   readonly trigger: ReactElement
   readonly children: ReactNode
+  readonly anchorRef?: { current: HTMLDivElement | null }
+  readonly onKeyDown?: (event: ReactKeyboardEvent<HTMLDivElement>) => void
 }) {
-  const anchor = useRef<HTMLDivElement>(null)
+  const anchor = useRef<HTMLDivElement | null>(null)
   return (
     <Menu.Root modal={false} open={open} onOpenChange={onOpenChange}>
-      <div className="sensteedAgentNativeActionMenuAnchor" ref={anchor}>
+      <div
+        className="sensteedAgentNativeActionMenuAnchor"
+        ref={node => { anchor.current = node; if (anchorRef !== undefined) anchorRef.current = node }}
+        onKeyDown={onKeyDown}
+      >
         <Menu.Trigger disabled={busy} render={trigger} />
         <Menu.Portal container={anchor}>
           <Menu.Positioner className="sensteedAgentActionMenuPositioner" sideOffset={5} align="end">
@@ -97,6 +103,7 @@ export function DesktopNativeActions({ api, t, placement, terminalAvailable = tr
   const [restartMenuOpen, setRestartMenuOpen] = useState(false)
   const [developerMenuOpen, setDeveloperMenuOpen] = useState(false)
   const [failed, setFailed] = useState<'diagnostics' | 'terminal' | 'restart' | 'reload' | 'devtools'>()
+  const restartMenuRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     if (restartMenuOpen) restartMenuRef.current?.querySelector<HTMLButtonElement>('[role="menuitem"]')?.focus()
@@ -194,8 +201,8 @@ export function DesktopNativeActions({ api, t, placement, terminalAvailable = tr
           onClick={open}
         >
           {t(opening ? 'openingTerminal' : 'openTerminal')}
-        </button>
-        <DesktopActionMenu open={restartMenuOpen} onOpenChange={setRestartMenuOpen} busy={busy} trigger={
+        </button>}
+        <DesktopActionMenu open={restartMenuOpen} onOpenChange={setRestartMenuOpen} busy={busy} anchorRef={restartMenuRef} onKeyDown={restartKeys} trigger={
           <button
             type="button"
             className="sensteedAgentSettingsHeaderButton"
@@ -234,7 +241,7 @@ export function DesktopNativeActions({ api, t, placement, terminalAvailable = tr
       <DesktopActionMenu open={restartMenuOpen} onOpenChange={open => {
         setRestartMenuOpen(open)
         if (open) setDeveloperMenuOpen(false)
-      }} busy={busy} trigger={
+      }} busy={busy} anchorRef={restartMenuRef} onKeyDown={restartKeys} trigger={
         <button
           type="button"
           className="sensteedAgentTitlebarIconButton"
