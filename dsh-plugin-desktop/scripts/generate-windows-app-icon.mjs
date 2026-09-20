@@ -1,6 +1,6 @@
 /** Generate a Windows ICO with exact-DPI frames for the application and NSIS. */
 
-import { readFile, writeFile } from 'node:fs/promises'
+import { writeFile } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import sharp from 'sharp'
@@ -52,13 +52,11 @@ async function loadSmallFrameArtwork() {
  * Small frames use the simplified vector treatment and receive a restrained
  * unsharp pass after Lanczos downsampling.
  * @param {string} source - absolute path to the canonical 1024px PNG.
- * @param {Buffer} smallArtwork - simplified vector artwork for native small sizes.
  * @param {number} size - square output size in native pixels.
  * @returns {Promise<{ png: Buffer, rgba: Buffer }>} Encoded and raw 8-bit RGBA data.
  */
-async function renderFrame(source, smallArtwork, size) {
-  const input = size <= SMALL_FRAME_MAX_SIZE ? smallArtwork : source
-  let pipeline = sharp(input, { failOn: 'warning' })
+async function renderFrame(source, size) {
+  let pipeline = sharp(source, { failOn: 'warning' })
     .resize({ width: size, height: size, fit: 'fill', kernel: sharp.kernel.lanczos3 })
     .toColourspace('srgb')
     .ensureAlpha()
@@ -157,7 +155,7 @@ function encodeIco(frames) {
 }
 
 /**
- * Generate the stable Windows icon without changing the cross-platform source.
+ * Generate the Windows icon without changing the cross-platform source.
  * @param {string} source - absolute path to the canonical source PNG.
  * @param {string} output - absolute path for the generated ICO.
  * @returns {Promise<void>} Resolves after the complete ICO has been written.
@@ -184,9 +182,8 @@ export async function generateWindowsAppIcon(source = sourcePath, output = outpu
     )
   }
 
-  const smallArtwork = await loadSmallFrameArtwork()
   const rendered = await Promise.all(WINDOWS_APP_ICON_SIZES.map(async size => {
-    const frame = await renderFrame(source, smallArtwork, size)
+    const frame = await renderFrame(source, size)
     return {
       size,
       data: size === 256 ? frame.png : encodeDibFrame(frame.rgba, size),

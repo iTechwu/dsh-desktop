@@ -4,6 +4,7 @@ import {
   useCallback, useEffect, useId, useRef, useState, useSyncExternalStore, type FormEvent, type ReactNode,
 } from 'react'
 import type { SettingsScope } from '@deepseek-ai/dsh-client-ui-settings/client'
+import { Check, Copy } from 'lucide-react'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ClientRemote } from '@deepseek-ai/dsh-api-remotes/client'
 import type {
@@ -39,11 +40,13 @@ export interface DesktopNotificationSettings {
 
 /** Host/next-channel capability overrides that constrain which settings actions apply. */
 export interface DesktopSettingsCapabilities {
+  readonly pluginSelectors?: boolean
   readonly windowModes?: boolean
   readonly featuresReadOnly?: boolean
   readonly markets?: readonly DesktopMarketProvider[]
   readonly materialRequiresRestart?: boolean
   readonly nativeLanConfirmation?: boolean
+  readonly jobNotifications?: boolean
 }
 
 /** Registration-side business face for the Desktop settings section. */
@@ -53,10 +56,12 @@ export interface DesktopSettingsSectionInjected {
   readonly initialMode: DesktopShellSettings['mode']
   readonly micaSupported: boolean
   readonly setMode: (mode: DesktopShellSettings['mode']) => Promise<void>
-  readonly desktopSettings: SettingsScope<DesktopShellSettings>
-  readonly notificationSettings: SettingsScope<DesktopNotificationSettings>
+  readonly desktopSettings: Pick<SettingsScope<DesktopShellSettings>, 'getSnapshot' | 'subscribe' | 'set'>
+  readonly notificationSettings: Pick<SettingsScope<DesktopNotificationSettings>, 'getSnapshot' | 'subscribe' | 'set'>
   readonly searchCredentials?: Pick<ClientRemote['credentials'], 'describe' | 'set' | 'unset'>
   readonly capabilities?: DesktopSettingsCapabilities
+  readonly introNotice?: ReactNode
+  readonly browserActions?: ReactNode
   readonly extraSections?: ReactNode
 }
 
@@ -170,7 +175,7 @@ function useScope<T>(scope: Pick<SettingsScope<T>, 'getSnapshot' | 'subscribe'>)
   return useSyncExternalStore(subscribe, snapshot)
 }
 
-function Choice({
+export function Choice({
   title,
   body,
   aside,
@@ -278,7 +283,7 @@ function profileState(profile: DesktopProfileView, t: Translate): string {
   return t('profileReady')
 }
 
-const MARKET_OPTIONS: readonly {
+export const MARKET_OPTIONS: readonly {
   id: DesktopMarketProvider
   title: DesktopSettingsLocaleKey
   body: DesktopSettingsLocaleKey
@@ -292,7 +297,7 @@ const COMMUNITY_MARKET_URL = 'https://github.com/anywhere-labs/deepseek-harness-
 const DSH_MARKET_URL = 'https://github.com/dsh-market/dsh-market'
 const AWESOME_DSH_PLUGIN_URL = 'https://github.com/awesome-dsh-plugin/awesome-dsh-plugin'
 
-function marketTitle(option: (typeof MARKET_OPTIONS)[number], t: Translate): ReactNode {
+export function marketTitle(option: (typeof MARKET_OPTIONS)[number], t: Translate): ReactNode {
   if (option.id === 'community-market') {
     return <RepositoryLink href={COMMUNITY_MARKET_URL}>{t(option.title)}</RepositoryLink>
   }
@@ -302,7 +307,7 @@ function marketTitle(option: (typeof MARKET_OPTIONS)[number], t: Translate): Rea
   return t(option.title)
 }
 
-function marketBody(option: (typeof MARKET_OPTIONS)[number], t: Translate): ReactNode {
+export function marketBody(option: (typeof MARKET_OPTIONS)[number], t: Translate): ReactNode {
   if (option.id !== 'dsh-market') return t(option.body)
   return (
     <>
@@ -310,6 +315,39 @@ function marketBody(option: (typeof MARKET_OPTIONS)[number], t: Translate): Reac
       <RepositoryLink href={AWESOME_DSH_PLUGIN_URL}>awesome-dsh-plugin</RepositoryLink>
     </>
   )
+}
+
+function DesktopBrowserUrl({ url, api, t, onOpen }: {
+  url: string
+  api: DesktopSettingsApi
+  t: Translate
+  onOpen: React.MouseEventHandler<HTMLAnchorElement>
+}) {
+  const [busy, setBusy] = useState(false)
+  const [copied, setCopied] = useState(false)
+  const [failed, setFailed] = useState(false)
+  useEffect(() => {
+    if (!copied) return
+    const timer = setTimeout(() => setCopied(false), 2000)
+    return () => clearTimeout(timer)
+  }, [copied])
+  const link = <a href={url} onClick={onOpen} target="_blank" rel="noopener noreferrer">{url}</a>
+  if (!api.copyBrowser) return link
+  const copy = async (): Promise<void> => {
+    setBusy(true); setFailed(false); setCopied(false)
+    try { await api.copyBrowser!(url); setCopied(true) } catch { setFailed(true) } finally { setBusy(false) }
+  }
+  return <>
+    <div className="sensteedAgentSettingsUrlRow">
+      {link}
+      <button type="button" className="sensteedAgentSettingsUrlCopy" disabled={busy}
+        aria-label={`${t('copyBrowserUrl')} ${new URL(url).host}`} title={t(copied ? 'browserUrlCopied' : 'copyBrowserUrl')}
+        onClick={() => { void copy() }}>
+        {copied ? <Check size={16} /> : <Copy size={16} />}
+      </button>
+    </div>
+    {failed && <p role="alert" className="sensteedAgentSettingsError">{t('operationFailed')}</p>}
+  </>
 }
 
 /** Render the Desktop settings page. */
@@ -324,6 +362,8 @@ export function DesktopSettingsSection({
   notificationSettings,
   searchCredentials,
   capabilities,
+  introNotice,
+  browserActions,
   extraSections,
 }: DesktopSettingsSectionProps) {
   const desktop = useScope(desktopSettings)
@@ -519,6 +559,7 @@ export function DesktopSettingsSection({
         <p>{t('intro')}</p>
       </header>
 
+      {introNotice}
       {operationFailed && aaStatus !== 'failed' && <p className="sensteedAgentSettingsError" role="alert">{t('operationFailed')}</p>}
       {restart !== 'none' && (
         <p className="sensteedAgentSettingsSuccess" role="status">
@@ -620,6 +661,7 @@ export function DesktopSettingsSection({
         )}
       </section>
 
+      {capabilities?.pluginSelectors !== false && <>
       <section className="sensteedAgentSettingsGroup" aria-labelledby="sensteed-agent-market-title">
         <div>
           <h3 id="sensteed-agent-market-title">{t('marketTitle')}</h3>
@@ -678,6 +720,8 @@ export function DesktopSettingsSection({
           />)}
         </div>}
       </section>
+
+      </>}
 
       <section className="sensteedAgentSettingsGroup" aria-labelledby="sensteed-agent-presentation-title">
         <div>
@@ -777,14 +821,15 @@ export function DesktopSettingsSection({
             )}
           </div>
         )}
-        {desktopBrowserUrlsShouldRender(browserAccess, networkExposure) && view !== undefined && (
+        {desktopBrowserUrlsShouldRender(browserAccess, networkExposure) && view !== undefined && view.web.localUrl !== '' && (
           <div className="sensteedAgentSettingsUrls">
             <span className="sensteedAgentSettingsChoiceTitle">{t('browserUrls')}</span>
-            <a href={view.web.localUrl} target="_blank" rel="noopener noreferrer" onClick={event => openBrowser(event, view.web.localUrl)}>{view.web.localUrl}</a>
+            <DesktopBrowserUrl key={view.web.localUrl} url={view.web.localUrl} api={api} t={t} onOpen={event => openBrowser(event, view.web.localUrl)} />
             {view.web.lanUrls.length > 0 && <span className="sensteedAgentSettingsChoiceTitle">{t('lanHttpsUrls')}</span>}
-            {view.web.lanUrls.map(url => <a href={url} key={url} target="_blank" rel="noopener noreferrer" onClick={event => openBrowser(event, url)}>{url}</a>)}
+            {view.web.lanUrls.map(url => <DesktopBrowserUrl key={url} url={url} api={api} t={t} onOpen={event => openBrowser(event, url)} />)}
           </div>
         )}
+        {browserActions}
         {networkExposure === 'lan' && view !== undefined && (
           <>
             <p className="sensteedAgentSettingsNotice">{t('lanTrustNotice')}</p>
@@ -829,7 +874,7 @@ export function DesktopSettingsSection({
             disabled={!notificationValue.enabled || !notificationsWritable || busy !== undefined}
             onChange={checked => { setNotification('notifyOnTurnFailure', checked) }}
           />
-          <DesktopSettingsToggleRow
+          {capabilities?.jobNotifications !== false && <><DesktopSettingsToggleRow
             label={t('jobCompletion')}
             checked={notificationValue.notifyOnJobCompletion}
             disabled={!notificationValue.enabled || !notificationsWritable || busy !== undefined}
@@ -840,7 +885,7 @@ export function DesktopSettingsSection({
             checked={notificationValue.notifyOnJobFailure}
             disabled={!notificationValue.enabled || !notificationsWritable || busy !== undefined}
             onChange={checked => { setNotification('notifyOnJobFailure', checked) }}
-          />
+          /></>}
         </div>
       </section>
       {extraSections}

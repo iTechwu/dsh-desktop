@@ -1,12 +1,13 @@
 /** Headless owner of the Host, desktop preferences, Profiles and recovery. */
 import { randomBytes } from 'node:crypto'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync } from 'node:fs'
+import { cleanupDisposableTree } from '../../dsh-plugin-desktop-beta/src/disposable-tree.ts'
 import { join } from 'node:path'
 import { DesktopBackendController } from './backend-controller.ts'
 import { DesktopHostProcess } from './host-process.ts'
 import { DesktopPreferenceStore, parsePreferences } from './desktop-preferences.ts'
 import { DEFAULT_FEATURES, NextProfiles } from './profiles.ts'
-import { DEFAULT_PREFERENCES, type DesktopPreferences, type DesktopState, type NotificationOutcome } from './desktop-contract.ts'
+import { DEFAULT_PREFERENCES, DEFAULT_PROFILE, type DesktopBrowserLinks, type DesktopPreferences, type DesktopState, type DesktopNotification } from './desktop-contract.ts'
 import { DesktopDiagnostics } from './diagnostics.ts'
 import { NextRecovery } from './recovery.ts'
 import { maskSecrets } from './mask-secrets.ts'
@@ -14,6 +15,7 @@ import { privateDirectory } from './private-files.ts'
 import { authenticateWebHost } from './web-document.ts'
 import { DesktopLanHttpsRuntime } from './lan-https-runtime.ts'
 import type { DesktopLanHttpsCertificate } from './lan-https-certificate.ts'
+import type { DesktopPermission, DesktopPermissionAction, DesktopPermissionSnapshot } from './permissions.ts'
 
 interface RuntimeOptions {
   home: string
@@ -25,7 +27,8 @@ interface RuntimeOptions {
   onChange(): void
   onRestart(): void
   onTerminal(): void
-  onNotification(outcome: NotificationOutcome): void
+  onNotification(notification: DesktopNotification): void
+  onPermission?(action: DesktopPermissionAction, permission: DesktopPermission): Promise<DesktopPermissionSnapshot>
 }
 
 export class NextDesktopRuntime {
@@ -35,7 +38,7 @@ export class NextDesktopRuntime {
   readonly diagnostics: DesktopDiagnostics
   readonly backend: DesktopBackendController<{ start(): Promise<void>; stop(): Promise<void> }>
   preferences: DesktopPreferences = { ...DEFAULT_PREFERENCES }
-  selected = 'default'
+  selected: string = DEFAULT_PROFILE
   safeMode = false
   recoveryMode = false
   busy = false
@@ -81,8 +84,8 @@ export class NextDesktopRuntime {
         privateDirectory(this.recovery.directory)
         this.safeHome = mkdtempSync(join(this.recovery.directory, 'safe-runtime-'))
         const safe = new NextProfiles(this.safeHome)
-        safe.ensure('default')
-        safe.setFeatures('default', { remoteControl: false, market: false })
+        safe.ensure(DEFAULT_PROFILE)
+        safe.setFeatures(DEFAULT_PROFILE, { remoteControl: false, market: false })
       }
       if (!this.safeMode) this.profiles.ensure(this.selected)
     })
@@ -95,8 +98,19 @@ export class NextDesktopRuntime {
     await this.backend.stop()
     if (this.closing) return
     await change()
-    if (!this.safeMode && this.safeHome) { rmSync(this.safeHome, { recursive: true, force: true }); this.safeHome = undefined }
+    if (!this.safeMode) this.cleanupSafeHome()
     await this.start()
+  }
+
+  /** Native repair tools target the original Profile; app tools follow the running environment. */
+  terminalTarget(repair = false): { homeDir: string; profileDir: string; profileName: string; mode: 'normal' | 'safe' | 'recovery' } {
+    if (this.closing) throw new Error('Next is shutting down')
+    const safe = this.safeMode && !repair
+    if (safe && !this.safeHome) throw new Error('Safe mode environment is not ready')
+    const homeDir = safe ? this.safeHome! : this.options.home
+    const profileName = safe ? DEFAULT_PROFILE : this.selected
+    return { homeDir, profileName, profileDir: new NextProfiles(homeDir).directory(profileName),
+      mode: safe ? 'safe' : repair || this.recoveryMode ? 'recovery' : 'normal' }
   }
 
   writePreferences(value: unknown): void {
@@ -154,28 +168,56 @@ export class NextDesktopRuntime {
       lan: this.lan?.snapshot() ?? null, checkpoint, logs: this.diagnostics.snapshot() }
   }
 
+  browserLinks(): DesktopBrowserLinks {
+    if (!this.auth || this.closing || this.recoveryMode || this.backend.state.phase !== 'ready' || !this.preferences.browserAccess || this.safeMode) return { localUrl: null, lanUrls: [] }
+    const localUrl = new URL(this.auth.url).href
+    const edge = this.lan?.snapshot()
+    const lanUrls = this.preferences.networkExposure === 'lan' && edge?.state === 'ready' && edge.actualPort
+      ? edge.addresses.map(address => {
+        const url = new URL(localUrl)
+        url.protocol = 'https:'; url.hostname = address; url.port = String(edge.actualPort)
+        return url.href
+      }) : []
+    return { localUrl, lanUrls }
+  }
+
   browserLink(lan = false): string {
-    if (!this.auth || this.backend.state.phase !== 'ready' || !this.preferences.browserAccess || this.safeMode) throw new Error('Browser access is unavailable')
-    const url = new URL(this.auth.url)
-    if (lan) {
-      const edge = this.lan?.snapshot()
-      if (edge?.state !== 'ready' || !edge.addresses[0] || !edge.actualPort) throw new Error('LAN HTTPS is unavailable')
-      url.protocol = 'https:'; url.hostname = edge.addresses[0]; url.port = String(edge.actualPort)
-    }
-    return url.href
+    const links = this.browserLinks()
+    const url = lan ? links.lanUrls[0] : links.localUrl
+    if (!url) throw new Error(lan ? 'LAN HTTPS is unavailable' : 'Browser access is unavailable')
+    return url
+  }
+
+  resolveBrowserLink(value: unknown): string {
+    const links = this.browserLinks()
+    if (typeof value !== 'string' || !value || (value !== links.localUrl && !links.lanUrls.includes(value))) throw new Error('Browser address is unavailable')
+    return value
   }
 
   async close(): Promise<void> {
     this.closing = true
     await this.backend.close()
-    if (this.safeHome) { rmSync(this.safeHome, { recursive: true, force: true }); this.safeHome = undefined }
+    this.cleanupSafeHome()
     this.diagnostics.flush()
+  }
+
+  private cleanupSafeHome(): void {
+    const home = this.safeHome
+    if (!home) return
+    this.safeHome = undefined
+    try {
+      // Share Stable/Beta's explicit junction unlinking and bounded retries.
+      cleanupDisposableTree(home)
+    } catch (error) {
+      // Temporary files must not prevent relaunch or returning to the original Profile.
+      this.diagnostics.append(`Safe mode temporary directory cleanup failed (${home}): ${String(error)}`, 'warn')
+    }
   }
 
   private createHost(onFailure: (error: Error) => void) {
     const { options } = this
     const actualHome = this.safeMode ? this.safeHome! : options.home
-    const profile = this.safeMode ? 'default' : this.selected
+    const profile = this.safeMode ? DEFAULT_PROFILE : this.selected
     const effective = this.safeMode ? { ...this.preferences, browserAccess: false, networkExposure: 'loopback' as const, port: 0 } : this.preferences
     const addresses = options.addresses()
     const token = randomBytes(32).toString('base64url')
@@ -188,7 +230,7 @@ export class NextDesktopRuntime {
         DSH_NEXT_PREFERENCES: JSON.stringify(effective), DSH_NEXT_TRUSTED_HOSTS: JSON.stringify(addresses),
         ...(this.safeMode ? { DSH_TELEMETRY_DISABLED: '1' } : {}) },
       onFailure, undefined, 'runtime', undefined, join(options.root, 'lib', 'host.js'), options.onRestart, options.onNotification,
-      chunk => this.diagnostics.hostChunk(chunk), options.onTerminal)
+      chunk => this.diagnostics.hostChunk(chunk), options.onTerminal, options.onPermission)
     this.hostProcess = host
     return {
       start: async (): Promise<void> => {

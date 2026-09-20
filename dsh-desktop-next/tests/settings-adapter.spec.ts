@@ -1,18 +1,20 @@
 import { expect, it } from 'vitest'
 import { NextSettingsAdapter, projectSettings } from '../src/client/settings-adapter.ts'
-import { DEFAULT_PREFERENCES, type DesktopBridge, type DesktopCommand, type DesktopState } from '../src/desktop-contract.ts'
+import { DEFAULT_PREFERENCES, type DesktopBridge, type DesktopBrowserLinks, type DesktopCommand, type DesktopState } from '../src/desktop-contract.ts'
 
 function fixture() {
   const state: DesktopState = {
-    selected: 'default', profiles: ['default', 'work', 'broken'], unavailableProfiles: ['broken'],
+    selected: 'desktop', profiles: ['desktop', 'work', 'broken'], unavailableProfiles: ['broken'],
     features: { market: true, remoteControl: false }, preferences: { ...DEFAULT_PREFERENCES },
     phase: 'ready', busy: false, failure: '', safeMode: false, home: '/fixture', platform: 'darwin', version: '0.1.0',
     trayAvailable: true, notificationsAvailable: true, windowsMicaSupported: false, browserUrl: null, lan: null, checkpoint: null, logs: '',
   }
   const commands: DesktopCommand[] = []
+  const links: DesktopBrowserLinks = { localUrl: null, lanUrls: [] }
   let fail = false
   const bridge: DesktopBridge = {
     state: async () => structuredClone(state),
+    browserLinks: async () => structuredClone(links),
     command: async command => {
       commands.push(command)
       if (fail) { fail = false; throw new Error('Fixture save failure') }
@@ -20,7 +22,7 @@ function fixture() {
       if (command.type === 'switch') state.selected = command.name
     },
   }
-  return { state, commands, bridge, rejectNext: () => { fail = true }, adapter: new NextSettingsAdapter(bridge) }
+  return { state, links, commands, bridge, rejectNext: () => { fail = true }, adapter: new NextSettingsAdapter(bridge) }
 }
 
 it('shares stable subscription snapshots and serializes independent preference writes', async () => {
@@ -57,26 +59,32 @@ it('maps only supported features and available Profiles to the shared settings A
   const { adapter, state, commands } = fixture()
   const view = await adapter.api.read()
   expect(view.profiles.find(item => item.name === 'broken')?.selectable).toBe(false)
-  expect(view.profiles.find(item => item.name === 'default')?.deletable).toBe(false)
-  await expect(adapter.api.selectMarket('dsh-market')).rejects.toThrow('unavailable')
+  expect(view.profiles.find(item => item.name === 'desktop')?.deletable).toBe(false)
+  await expect(adapter.api.selectMarket('dsh-market')).rejects.toThrow('Plugins page')
   expect(commands).toEqual([])
   state.safeMode = true
-  await expect(adapter.api.selectAa!(true)).rejects.toThrow('safe mode')
+  expect(adapter.api.selectAa).toBeUndefined()
   expect(projectSettings(state).market.effective).toBe('disabled')
   await adapter.api.selectProfile('work')
-  expect((await adapter.api.read()).current).toBe('work')
+  const switched = await adapter.api.read()
+  expect(switched.current).toBe('work')
+  expect(switched.profiles.find(item => item.name === 'desktop')?.deletable).toBe(false)
 })
 
-it('opens credential-free browser addresses through the native launcher', async () => {
-  const { state, adapter, commands } = fixture()
+it('renders full login links and opens or copies the exact selected address', async () => {
+  const { state, links, adapter, commands } = fixture()
   state.browserUrl = 'http://127.0.0.1:1234/'
-  state.lan = { state: 'ready', actualPort: 5678, addresses: ['192.168.1.20'], caFingerprint: 'fixture', errorCode: null }
-  expect(projectSettings(state).web).toMatchObject({
-    lanUrls: ['https://192.168.1.20:5678/'],
-    lanCaUrls: ['https://192.168.1.20:5678/.well-known/dsh-desktop-ca.crt'],
+  state.lan = { state: 'ready', actualPort: 5678, addresses: ['192.168.1.20', '10.0.0.20'], caFingerprint: 'fixture', errorCode: null }
+  links.localUrl = state.browserUrl + '?token=browser-login'
+  links.lanUrls = state.lan.addresses.map(address => `https://${address}:5678/?token=browser-login`)
+  expect((await adapter.api.read()).web).toMatchObject({
+    localUrl: links.localUrl, lanUrls: links.lanUrls,
+    lanCaUrls: state.lan.addresses.map(address => `https://${address}:5678/.well-known/dsh-desktop-ca.crt`),
   })
-  await adapter.api.openBrowser!('http://127.0.0.1:1234/')
-  await adapter.api.openBrowser!('https://192.168.1.20:5678/')
-  await expect(adapter.api.openBrowser!('https://untrusted.test/')).rejects.toThrow('unavailable')
-  expect(commands).toEqual([{ type: 'open-browser' }, { type: 'open-lan' }])
+  for (const url of [links.localUrl, ...links.lanUrls]) {
+    await adapter.api.openBrowser!(url)
+    await adapter.api.copyBrowser!(url)
+  }
+  expect(commands).toEqual([links.localUrl, ...links.lanUrls].flatMap(url => [{ type: 'open-browser-url', url }, { type: 'copy-browser-url', url }]))
+  expect(adapter.getSnapshot()?.browserUrl).not.toContain('token=')
 })

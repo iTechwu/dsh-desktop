@@ -110,7 +110,10 @@
     "README.md",
     "README.zh.md",
     "README.i18n.yaml",
-    "THIRD_PARTY_NOTICES.md"
+    "THIRD_PARTY_NOTICES.md",
+    "build/app-icon.icon/**",
+    "build/app-icon.icns",
+    "build/app-icon.resources.json"
   ],
   "engines": {
     "node": "^22.19.0 || >=24.0.0"
