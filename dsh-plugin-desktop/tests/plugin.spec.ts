@@ -128,6 +128,7 @@ function createHarness(
     locale: 'en',
     openBossWeb: async () => {},
     openContentPlatformWeb: async () => {},
+    pickFile: async () => null,
     updates: {
       isPackaged: false,
       canDownload: platform === 'darwin' || platform === 'win32',

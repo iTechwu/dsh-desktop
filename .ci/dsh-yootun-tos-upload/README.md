@@ -87,7 +87,7 @@ storage_auth_failed      storage_unavailable  upload_failed
 `UPLOAD_TYPE_NOT_ALLOWED`→`extension_not_allowed`、`UNAUTHORIZED`/`STORAGE_AUTH_FAILED`→
 `storage_auth_failed`、`STORAGE_UNAVAILABLE`→`storage_unavailable`。
 
-## 接入 sensteed-agent
+## 接入 dsh-desktop
 
 1. `dsh-plugin-desktop/package.json` 加依赖：
    `"@dofe/dsh-yootun-tos-upload": "file:../../docker-helm.dofe.ai/plugins/dsh-yootun-tos-upload"`

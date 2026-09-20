@@ -177,6 +177,14 @@ export interface DesktopShellSpec extends DesktopWindowConfig {
   enableRemoteControl?(): Promise<void>
 }
 
+/** Inputs the Host may shape for the restricted native file chooser bridge. */
+export interface DesktopFilePickOptions {
+  /** Chooser window title. */
+  title?: string
+  /** Extension filters, e.g. `[{ name: 'Images', extensions: ['png', 'jpg'] }]`. */
+  filters?: Array<{ name: string, extensions: string[] }>
+}
+
 /** Electron bootstrap capability supplied before the profile tree mounts. */
 export interface DesktopRuntime {
   /** Current Electron platform. */
@@ -233,6 +241,13 @@ export interface DesktopRuntime {
 
   /** Open the desktop operating system's native workspace-folder chooser. */
   pickDirectory(): Promise<string | null>
+
+  /**
+   * Open the native single-file chooser for Host plugins (restricted bridge:
+   * the selection mode is fixed to one file, callers shape only title and
+   * extension filters). Resolves to the picked path, or null when cancelled.
+   */
+  pickFile(options?: DesktopFilePickOptions): Promise<string | null>
 
   /** Launch the OpenMontage web app with one managed DoFe credential. */
   openOpenMontage(apiKey: string): Promise<void>

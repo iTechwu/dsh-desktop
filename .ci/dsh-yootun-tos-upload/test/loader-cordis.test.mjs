@@ -2,7 +2,7 @@
  * 真实 Cordis Loader 测试：用真正的 Cordis Context + Fiber + cordis-plugin-loader
  * 加载本插件，而不是普通对象 mock。
  *
- * Cordis / loader 从 sibling 的 sensteed-agent / deepseek-harness node_modules 解析；
+ * Cordis / loader 从 sibling 的 dsh-desktop / deepseek-harness node_modules 解析；
  * 插件自身用 file:// URL 直接加载（不依赖本仓库之外未提交的 node_modules）。
  * 若 Cordis 不可解析，整组测试跳过（本仓库是零运行时依赖的纯插件仓库）。
  *
@@ -17,6 +17,8 @@
 
 import assert from 'node:assert/strict'
 import { createRequire } from 'node:module'
+import { mkdtemp, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import test from 'node:test'
@@ -28,8 +30,8 @@ const pluginUrl = fileURLToPath(new URL('../index.js', import.meta.url))
 function resolveCordis(specifier) {
   const workspaceRoot = fileURLToPath(new URL('../../../../', import.meta.url))
   const bases = [
-    join(workspaceRoot, 'sensteed-agent/dsh-plugin-desktop'),
-    join(workspaceRoot, 'sensteed-agent'),
+    join(workspaceRoot, 'dsh-desktop/dsh-plugin-desktop'),
+    join(workspaceRoot, 'dsh-desktop'),
     join(workspaceRoot, 'deepseek-harness/vendor/cordis'),
     join(workspaceRoot, 'deepseek-harness'),
   ]
@@ -61,7 +63,7 @@ const Loader = loaderModule?.Loader ?? loaderModule?.default
 const AUTHORIZE_PUBLIC_NAME = 'mcp__tools-tos-upload__tos_upload_authorize'
 
 /** 提供一个真实 Cordis Context，并在 root 作用域提供 webServer/tools/systemPrompt。 */
-async function bootServices({ withSystemPrompt = true } = {}) {
+async function bootServices({ withSystemPrompt = true, desktopRuntime } = {}) {
   const root = new Context()
   const state = { routes: new Map(), tools: new Map(), sections: [] }
 
@@ -108,6 +110,9 @@ async function bootServices({ withSystemPrompt = true } = {}) {
           }
         },
       })
+    }
+    if (desktopRuntime !== undefined) {
+      ctx.provide('desktopRuntime', desktopRuntime)
     }
   })
 
@@ -227,5 +232,76 @@ if (!cordis || !Loader) {
     )
     assert.equal(state.tools.size, 0, '工具注册失败不得留下半注册工具')
     assert.equal(state.routes.size, 0, '工具注册失败时路由必须回滚')
+  })
+
+  // ---------- desktopRuntime 原生选择器桥（desktop 隔离宿主） ----------
+
+  const ORIGIN = 'http://127.0.0.1:3000'
+
+  /** pick-file 路由的最小请求替身：无 body，仅需方法/Origin/loopback 校验字段。 */
+  function pickReq() {
+    return { method: 'POST', headers: { origin: ORIGIN }, socket: { remoteAddress: '127.0.0.1' } }
+  }
+
+  function pickRes() {
+    return {
+      statusCode: 0,
+      body: '',
+      setHeader() {},
+      end(payload) { this.body = payload ?? '' },
+      json() { return JSON.parse(this.body) },
+    }
+  }
+
+  async function tempFile() {
+    const dir = await mkdtemp(join(tmpdir(), 'tos-upload-bridge-'))
+    const path = join(dir, 'video.mp4')
+    await writeFile(path, 'demo')
+    return { dir, path }
+  }
+
+  test('pick-file route drives the desktopRuntime bridge when the host provides it', async () => {
+    const { path } = await tempFile()
+    const picks = []
+    const { loader, state } = await bootServices({
+      desktopRuntime: {
+        async pickFile(options) {
+          picks.push(options)
+          return picks.length === 1 ? path : null
+        },
+      },
+    })
+    await loadEntry(loader, {})
+    const handler = state.routes.get('/_dsh/uploader/pick-file')
+    assert.ok(handler, 'desktop 宿主提供 desktopRuntime 时 pick-file 必须注册')
+
+    const res = pickRes()
+    await handler(pickReq(), res)
+    assert.equal(res.statusCode, 200)
+    assert.equal(res.json().picked, true)
+    assert.equal(res.json().path, path)
+    // 桥只透传 title/filters；单文件属性由主进程桥硬编码，不经过插件。
+    assert.equal(picks[0].title, '选择要上传的文件')
+    assert.ok(Array.isArray(picks[0].filters) && picks[0].filters.length > 0)
+
+    // 用户取消：桥返回 null -> picked:false。
+    const cancelRes = pickRes()
+    await handler(pickReq(), cancelRes)
+    assert.deepEqual(cancelRes.json(), { picked: false })
+
+    await loader.remove('dofe-yootun-tos-upload')
+  })
+
+  test('pick-file route keeps the structured picker_unavailable error without a desktopRuntime bridge', async () => {
+    const { loader, state } = await bootServices()
+    await loadEntry(loader, {})
+    const handler = state.routes.get('/_dsh/uploader/pick-file')
+
+    const res = pickRes()
+    await handler(pickReq(), res)
+    assert.equal(res.statusCode, 503)
+    assert.equal(res.json().error, 'picker_unavailable')
+
+    await loader.remove('dofe-yootun-tos-upload')
   })
 }

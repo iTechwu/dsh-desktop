@@ -31,6 +31,10 @@ const ALLOWED = {
  * Electron 主进程里 require('electron') 返回模块对象；普通 Node（如 dsh web
  * profile）下要么抛 MODULE_NOT_FOUND，要么拿到 npm 占位包的路径字符串，
  * 两种情况都归一为 null（选择器不可用，路由/工具返回结构化错误）。
+ *
+ * desktop 隔离宿主（utilityProcess）跑在普通 Node 里，require('electron') 永远
+ * 拿不到真 dialog——该环境由 index.js 探测宿主 desktopRuntime 服务并用其
+ * pickFile 受限桥构造 dialog-like 注入（本函数是其回退路径，不再是唯一来源）。
  */
 export function loadElectronDialog() {
   try {

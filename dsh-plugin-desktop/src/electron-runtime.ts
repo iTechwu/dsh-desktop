@@ -20,6 +20,7 @@ import { packagedDependencyPath } from './packaged-runtime-path.ts'
 import { ElectronShellGeneration } from './electron-shell-generation.ts'
 import { electronPlatformStrategy, type ElectronPlatformStrategy } from './electron-platform.ts'
 import type {
+  DesktopFilePickOptions,
   DesktopNotification,
   DesktopLocale,
   DesktopPlatform,
@@ -368,6 +369,26 @@ export class ElectronDesktopRuntime implements DesktopRuntime {
   /** @inheritdoc */
   async pickDirectory(): Promise<string | null> {
     return await this.workspaceAdmission.pickDirectory()
+  }
+
+  /** @inheritdoc */
+  async pickFile(options: DesktopFilePickOptions = {}): Promise<string | null> {
+    // Restricted bridge: the selection mode is always one file; Host callers
+    // shape only the title and the extension filters, never the properties.
+    const filters = Array.isArray(options.filters) ? options.filters : []
+    const dialogOptions: Electron.OpenDialogOptions = {
+      properties: ['openFile', 'dontAddToRecent'],
+      ...(options.title === undefined ? {} : { title: options.title }),
+      ...(filters.length === 0 ? {} : {
+        filters: filters
+          .filter(entry => typeof entry?.name === 'string' && Array.isArray(entry.extensions))
+          .map(entry => ({ name: entry.name, extensions: entry.extensions.filter(ext => typeof ext === 'string') })),
+      }),
+    }
+    const result = this.generation === undefined
+      ? await dialog.showOpenDialog(dialogOptions)
+      : await this.generation.showOpenDialog(dialogOptions)
+    return result.canceled ? null : result.filePaths[0] ?? null
   }
 
   /** @inheritdoc */

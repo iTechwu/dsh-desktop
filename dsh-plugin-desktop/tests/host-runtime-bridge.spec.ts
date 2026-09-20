@@ -111,3 +111,30 @@ it('carries cancellation and response acknowledgement across the private restart
     expect(events).toEqual(['HTTP response finished', 'restart'])
   } finally { await release(); parent.close(); child.close(); port1.close(); port2.close() }
 })
+
+it('bridges the restricted native file chooser to Host plugins without the RPC deadline', async () => {
+  const { port1, port2 } = new MessageChannel()
+  // Child side carries the ordinary 5ms deadline; the interactive chooser must
+  // outlive it exactly like the directory picker and restart confirmation.
+  const makeRpc = (port: typeof port1, timeout: number) => new HostRpc({
+    send: value => port.postMessage(value),
+    listen: receive => { port.on('message', receive); return () => { port.off('message', receive) } },
+  }, timeout)
+  const parent = makeRpc(port1, 1000)
+  const child = makeRpc(port2, 5)
+  const pickFile = vi.fn(async (options?: { title?: string }) =>
+    options?.title === undefined ? null : 'C:\\media\\clip.mp4')
+  const native = { platform: 'win32', locale: 'zh', updates: {}, pickFile } as unknown as DesktopRuntime
+  const release = bindNativeRuntime(parent, native)
+  try {
+    const runtime = createHostRuntime(child, runtimeSnapshot(native))
+    const filters = [{ name: '视频', extensions: ['mp4'] }]
+    const picking = runtime.pickFile({ title: '选择要上传的文件', filters })
+    // Interactive: the ordinary 5ms RPC deadline does not apply while the user chooses.
+    await new Promise(resolve => setTimeout(resolve, 20))
+    await expect(picking).resolves.toBe('C:\\media\\clip.mp4')
+    expect(pickFile).toHaveBeenCalledWith({ title: '选择要上传的文件', filters })
+    await expect(runtime.pickFile()).resolves.toBeNull()
+    expect(pickFile).toHaveBeenLastCalledWith({})
+  } finally { await release(); parent.close(); child.close(); port1.close(); port2.close() }
+})

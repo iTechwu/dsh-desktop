@@ -11,8 +11,10 @@
  * Cordis 契约：
  * - apply(ctx, config) 第二参数是 Loader 行 config（非敏感项），插件绝不读
  *   上下文里的 config 服务，也不把 config 加入 inject；
- * - 硬依赖 webServer/tools 走 inject；可选服务 systemPrompt 用 ctx.get() 读取——
- *   缺失时不阻断插件加载；logger 用 Cordis 内置上下文属性，不加入 inject；
+ * - 硬依赖 webServer/tools 走 inject；可选服务 systemPrompt/desktopRuntime 用
+ *   ctx.get() 读取——缺失时不阻断插件加载（desktopRuntime 是 desktop 隔离宿主
+ *   提供的原生能力桥，缺失时选择器回退 require('electron') 探测）；logger 用
+ *   Cordis 内置上下文属性，不加入 inject；
  * - 注册具备事务性：任一步失败即逆序注销已注册内容并释放驱动/允许清单，
  *   不会留下半注册状态；重载后不会出现重复工具/路由/prompt。
  */
@@ -88,8 +90,28 @@ export async function apply(ctx, config = {}, overrides = {}) {
       logger?.warn?.('yootun-tos-upload: 上传能力不可用（配置非法），插件以降级状态加载；请检查 limits.maxBytes / tool.timeoutMs')
     }
 
+    // 原生选择器能力探测（desktop 隔离宿主）：desktopRuntime 是宿主提供的可选服务
+    // （Electron 主进程 dialog 的受限 RPC 桥），存在且带 pickFile 时优先使用；
+    // 否则回退 loadElectronDialog()。普通 Node 宿主（dsh web profile）两者皆缺，
+    // picker 保持结构化 picker_unavailable 错误，不阻断插件加载。
+    const desktopRuntime = ctx.get?.('desktopRuntime')
+    let dialog = overrides.dialog
+    if (dialog === undefined && desktopRuntime && typeof desktopRuntime.pickFile === 'function') {
+      dialog = {
+        // 受限桥适配：主进程硬编码单文件 openFile 属性，这里只透传 title/filters；
+        // 路径是否可上传仍由宿主侧允许清单复查（showAndAdmit -> validateUploadableFile）。
+        showOpenDialog: async options => {
+          const path = await desktopRuntime.pickFile({
+            ...(options?.title === undefined ? {} : { title: options.title }),
+            ...(options?.filters === undefined ? {} : { filters: options.filters }),
+          })
+          return path === null ? { canceled: true, filePaths: [] } : { canceled: false, filePaths: [path] }
+        },
+      }
+    }
+
     const picker = createFilePicker({
-      ...(overrides.dialog !== undefined ? { dialog: overrides.dialog } : {}),
+      ...(dialog !== undefined ? { dialog } : {}),
       maxBytes: effectiveConfig.limits.maxBytes,
     })
     state.picker = picker
