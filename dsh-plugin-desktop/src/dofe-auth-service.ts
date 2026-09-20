@@ -2,6 +2,8 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import type { CredentialProvider } from '@deepseek-ai/dsh-credentials'
 import { credentialKey, credentialRef } from '@deepseek-ai/dsh-credentials'
 import type { DesktopRuntime } from './runtime.ts'
+import type { DofeAuthSnapshot } from './dofe-auth-contract.ts'
+export * from './dofe-auth-contract.ts'
 import {
   createOidcAuthorizationSession,
   parseOidcCallback,
@@ -10,24 +12,10 @@ import {
   type OidcDiscovery,
 } from './dofe-auth-oidc.ts'
 
-export const DOFE_AUTH_SESSION_PATH = '/api/desktop/auth/feishu/session'
-export const DOFE_AUTH_STATUS_PATH = '/api/desktop/auth/feishu/status'
-export const DOFE_AUTH_COMPLETE_PATH = '/api/desktop/auth/feishu/complete'
-export const DOFE_AUTH_CANCEL_PATH = '/api/desktop/auth/feishu/cancel'
 export const DOFE_AUTH_GRANT_KEY = credentialKey('dsh-plugin-desktop', 'sensteed-auth')
 const MODELS_API_KEY_REF = credentialRef('MODELS_API_KEY')
 const MODELS_PROVISION_URL = 'https://ixicai.cn/api/auth/desktop/provision-key'
 const SESSION_TIMEOUT_MS = 5 * 60_000
-
-export type DofeAuthStatus = 'idle' | 'pending' | 'issued' | 'bound' | 'error' | 'cancelled'
-
-export interface DofeAuthSnapshot {
-  status: DofeAuthStatus
-  user?: { ssoSub: string; name: string; avatar: string | null }
-  tenant?: { tenantId: string; ssoTeamId: string; tenantSlug: string }
-  entitlements?: { plugins: string[]; defaultModel: string; allowedProtocols: string[] }
-  error?: string
-}
 
 interface TokenResponse { access_token?: unknown; refresh_token?: unknown; error?: unknown }
 interface ProvisionResponse {

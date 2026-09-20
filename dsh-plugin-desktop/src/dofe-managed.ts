@@ -62,6 +62,7 @@ export async function apply(ctx: Context): Promise<void> {
       protocol: z.union(['chat-completions', 'messages', 'responses']).default('chat-completions'),
       authMode: z.union(['feishu', 'manual']).default('manual'),
       identity: z.any().default(undefined),
+      entitlements: z.object({ plugins: z.array(z.string()), defaultModel: z.string(), allowedProtocols: z.array(z.string()) }).default({ plugins: [], defaultModel: '', allowedProtocols: [] }),
     }),
     {
       validate: value => {
@@ -96,10 +97,16 @@ export async function apply(ctx: Context): Promise<void> {
     if (!next
       || !accessSettings.setupComplete
       || accessSettings.validationVersion !== DOFE_ACCESS_VALIDATION_VERSION) return
+    if (BRAND_VARIANT === 'sensteed' && (accessSettings.authMode !== 'feishu' || !accessSettings.identity?.ssoSub)) return
 
     const created: { dispose(): void | Promise<void> }[] = []
     try {
       const enabled = new Set(normalizeDofePluginIds(accessSettings.enabledPlugins, BRAND_VARIANT))
+      if (BRAND_VARIANT === 'sensteed') {
+        for (const plugin of enabled) {
+          if (!accessSettings.entitlements?.plugins.includes(plugin)) enabled.delete(plugin)
+        }
+      }
       for (const route of ROUTES) {
         if (route.plugin !== undefined && !enabled.has(route.plugin)) continue
         const config: McpConfig = {

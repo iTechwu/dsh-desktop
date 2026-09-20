@@ -1,4 +1,5 @@
 /** Built-in DoFe capabilities shipped by each white-label product. */
+import type { DofeAuthEntitlements } from './dofe-auth-contract.ts'
 
 export const DOFE_ACCESS_SETTINGS_NAMESPACE = 'dofe-access' as const
 // Tenant ownership is now part of authorization; previously accepted keys
@@ -81,6 +82,7 @@ export interface DofeAccessSettings {
   authMode?: 'feishu' | 'manual'
   /** Non-secret SSO identity shown in settings and diagnostics. */
   identity?: { ssoSub: string; name: string; avatar?: string }
+  entitlements?: DofeAuthEntitlements
 }
 
 export const DEFAULT_DOFE_PLUGIN_IDS: DofePluginId[] = DOFE_PLUGIN_CATALOG.map(plugin => plugin.id)

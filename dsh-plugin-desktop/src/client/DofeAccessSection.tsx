@@ -6,6 +6,8 @@ import { Button, Input } from '@deepseek-ai/dsh-client-ui-primitives'
 import { ArrowRight, Check, Eye, EyeOff, Loader2, Phone, RefreshCw, ShieldCheck } from 'lucide-react'
 import type { SettingsScope } from '@deepseek-ai/dsh-client-ui-settings/client'
 import { DofeOnboardingModal } from './DofeOnboardingModal.tsx'
+import { DofeLoginSection } from './DofeLoginSection.tsx'
+import type { DofeAuthSnapshot } from '../dofe-auth-contract.ts'
 import { heroBrandDataUrl } from './generated-brand-assets.ts'
 import { BRAND_TENANT, BRAND_VARIANT } from '../generated-product-identity.ts'
 import { DOFE_ACCESS_KEY, type DofeAccessLocaleKey } from './dofe-access.ts'
@@ -196,7 +198,7 @@ function AccessForm({ credentials, settingsApi, settingsScope, t, onboarding, on
   const [revealKey, setRevealKey] = useState(false)
   const settingsStore = useMemo(() => dofeAccessSettingsStore(settingsScope), [settingsScope])
   const settings = useSyncExternalStore(settingsStore.subscribe, settingsStore.getSnapshot, settingsStore.getSnapshot)
-  const availablePlugins = useMemo(() => dofePluginsForBrand(BRAND_VARIANT), [])
+  const availablePlugins = useMemo(() => dofePluginsForBrand(BRAND_VARIANT).filter(plugin => BRAND_VARIANT !== 'sensteed' || settings.value?.entitlements?.plugins.includes(plugin.id)), [settings.value?.entitlements])
   const defaultPluginIds = useMemo(() => normalizeDofePluginIds(DEFAULT_DOFE_PLUGIN_IDS, BRAND_VARIANT), [])
   const [enabledPlugins, setEnabledPlugins] = useState<DofePluginId[]>(() => normalizeDofePluginIds(settings.value?.enabledPlugins ?? defaultPluginIds, BRAND_VARIANT))
   const [models, setModels] = useState<readonly DofeModel[]>([])
@@ -207,51 +209,24 @@ function AccessForm({ credentials, settingsApi, settingsScope, t, onboarding, on
   const [busy, setBusy] = useState(false)
   const busyRef = useRef(false)
   const [error, setError] = useState<string>()
-  const [ssoPending, setSsoPending] = useState(false)
-  const [ssoBound, setSsoBound] = useState(settings.value?.authMode === 'feishu')
-  const startFeishuLogin = async (): Promise<void> => {
-    if (ssoPending) return
-    setSsoPending(true)
-    setError(undefined)
-    try {
-      const response = await fetch('/api/desktop/auth/feishu/session', {
-        method: 'POST', credentials: 'same-origin', redirect: 'error',
-        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-        body: '{}',
-      })
-      if (!response.ok) throw new Error('SSO session start failed')
-      for (let attempt = 0; attempt < 150; attempt += 1) {
-        await new Promise(resolve => setTimeout(resolve, 2_000))
-        const statusResponse = await fetch('/api/desktop/auth/feishu/status', {
-          method: 'POST', credentials: 'same-origin', redirect: 'error',
-          headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: '{}',
-        })
-        const status = await statusResponse.json() as { status?: string; user?: { ssoSub?: string; name?: string; avatar?: string | null }; error?: string }
-        if (status.status === 'bound') {
-          setSsoBound(true)
-          setConfigured(true)
-          if (status.user?.ssoSub !== undefined) {
-            await mutateDofeAccessSettings(settingsApi, [{
-              op: 'set', path: ['authMode'], value: 'feishu',
-            }, {
-              op: 'set', path: ['identity'], value: {
-                ssoSub: status.user.ssoSub,
-                name: status.user.name ?? status.user.ssoSub,
-                ...(status.user.avatar === undefined || status.user.avatar === null ? {} : { avatar: status.user.avatar }),
-              },
-            }])
-          }
-          await loadModels({ key: '', protocol, configured: true })
-          return
-        }
-        if (status.status === 'error' || status.status === 'cancelled') throw new Error(status.error ?? '登录未完成')
-      }
-      throw new Error('登录等待超时，请重新扫码')
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : '飞书登录失败，请重试')
-    } finally {
-      setSsoPending(false)
-    }
+  const ssoBound = settings.value?.authMode === 'feishu' && Boolean(settings.value.identity?.ssoSub)
+  const bindFeishuLogin = async (status: DofeAuthSnapshot): Promise<void> => {
+    if (!status.user?.ssoSub || !status.entitlements) throw new Error('登录身份不完整')
+    const nextProtocol = UI_DOFE_PROTOCOLS.find(candidate => status.entitlements?.allowedProtocols.includes(candidate))
+    if (!nextProtocol) throw new Error('当前账号没有可用的模型协议')
+    const plugins = normalizeDofePluginIds(status.entitlements.plugins, BRAND_VARIANT)
+    await mutateDofeAccessSettings(settingsApi, [
+      { op: 'set', path: ['setupComplete'], value: false },
+      { op: 'set', path: ['authMode'], value: 'feishu' },
+      { op: 'set', path: ['identity'], value: { ssoSub: status.user.ssoSub, name: status.user.name, ...(status.user.avatar ? { avatar: status.user.avatar } : {}) } },
+      { op: 'set', path: ['entitlements'], value: { ...status.entitlements } },
+      { op: 'set', path: ['enabledPlugins'], value: plugins },
+      { op: 'set', path: ['protocol'], value: nextProtocol },
+    ])
+    setConfigured(true)
+    setEnabledPlugins(plugins)
+    setProtocol(nextProtocol)
+    await loadModels({ key: '', protocol: nextProtocol, configured: true })
   }
   useEffect(() => {
     if (settings.value?.enabledPlugins !== undefined) setEnabledPlugins(normalizeDofePluginIds(settings.value.enabledPlugins, BRAND_VARIANT))
@@ -296,7 +271,7 @@ function AccessForm({ credentials, settingsApi, settingsScope, t, onboarding, on
       let found: DofeModel[] = []
       if (typeof payload === 'object' && payload !== null && Array.isArray((payload as { models?: unknown }).models)) {
         try {
-          found = parseDofeModelCatalog((payload as { models: unknown[] }).models, protocol)
+          found = parseDofeModelCatalog((payload as { models: unknown[] }).models, request.protocol)
         } catch {
           // A gateway response is external input. Keep the settings page alive
           // if a future catalog shape violates the parser's expectations.
@@ -321,6 +296,7 @@ function AccessForm({ credentials, settingsApi, settingsScope, t, onboarding, on
     }
   }
   const save = async (): Promise<void> => {
+    if (BRAND_VARIANT === 'sensteed' && (!ssoBound || !settings.value?.entitlements?.allowedProtocols.includes(protocol))) return
     const key = draft.trim()
     const useStoredCredential = key.length === 0 && (configured === true || ssoBound)
     if (busyRef.current || loadingRef.current || (!key && !useStoredCredential) || enabledPlugins.length === 0 || !selectedModel || models.length === 0) {
@@ -387,7 +363,7 @@ function AccessForm({ credentials, settingsApi, settingsScope, t, onboarding, on
       await mutateDofeAccessSettings(settingsApi, [
         { op: 'set', path: ['setupComplete'], value: true },
         { op: 'set', path: ['validationVersion'], value: DOFE_ACCESS_VALIDATION_VERSION },
-        { op: 'set', path: ['enabledPlugins'], value: normalizeDofePluginIds(enabledPlugins, BRAND_VARIANT) },
+        { op: 'set', path: ['enabledPlugins'], value: normalizeDofePluginIds(enabledPlugins, BRAND_VARIANT).filter(id => BRAND_VARIANT !== 'sensteed' || settings.value?.entitlements?.plugins.includes(id)) },
         { op: 'set', path: ['modelId'], value: selectedModel },
         { op: 'set', path: ['protocol'], value: protocol },
         { op: 'set', path: ['authMode'], value: ssoBound ? 'feishu' : 'manual' },
@@ -425,15 +401,15 @@ function AccessForm({ credentials, settingsApi, settingsScope, t, onboarding, on
   const interactionBusy = busy || loadingModels
   return <div className={`dshDofeAccess${onboarding ? ' dshDofeAccessOnboarding' : ''}`} aria-busy={interactionBusy}>
     {!onboarding && <h2>{t('title')}</h2>}
-    {!onboarding && <p className="dshDofeAccessIntro">{t('intro')}</p>}
-    {BRAND_VARIANT === 'sensteed' && <button type="button" className="dshDofeAccessPrimary" disabled={interactionBusy || ssoPending} onClick={() => void startFeishuLogin()}>{ssoPending ? '正在等待飞书登录…' : '飞书扫码登录'}</button>}
-    <div className="dshDofeAccessField">
+    {!onboarding && BRAND_VARIANT === 'yootun' && <p className="dshDofeAccessIntro">{t('intro')}</p>}
+    {BRAND_VARIANT === 'sensteed' && <DofeLoginSection disabled={interactionBusy} name={settings.value?.identity?.name} onBound={bindFeishuLogin} />}
+    {BRAND_VARIANT === 'yootun' && <div className="dshDofeAccessField">
       <div className="dshDofeAccessFieldHeader"><label className="dshDofeAccessLabel" htmlFor="dofe-model-api-key">{t('key')}</label>{onboarding && <span className="dshDofeAccessHint"><ShieldCheck size={13} aria-hidden="true" /> {t('credentialHint')}</span>}</div>
       <div className="dshDofeAccessInputWrap"><Input className="dshDofeAccessInput" id="dofe-model-api-key" type={revealKey ? 'text' : 'password'} autoComplete="off" value={draft} disabled={interactionBusy} placeholder={onboarding ? t('placeholder') : configured ? t('configured') : t('placeholder')} onChange={event => { setDraft(event.currentTarget.value); setModels([]); setSelectedModel('') }} onKeyDown={event => { if (event.key === 'Enter') void loadModels() }} /><button type="button" className="dshDofeAccessReveal" title={revealKey ? t('hideKey') : t('showKey')} aria-label={revealKey ? t('hideKey') : t('showKey')} disabled={interactionBusy} onClick={() => setRevealKey(current => !current)}>{revealKey ? <EyeOff size={17} /> : <Eye size={17} />}</button></div>
-    </div>
-    <div className="dshDofeAccessField"><div className="dshDofeAccessFieldHeader"><span className="dshDofeAccessLabel" id="dofe-protocol-label">{t('protocolTitle')}</span></div><div className="dshDofeAccessProtocols" role="radiogroup" aria-labelledby="dofe-protocol-label">{UI_DOFE_PROTOCOLS.map(p => <label key={p} className={`dshDofeAccessProtocol${protocol === p ? ' dshDofeAccessProtocolSelected' : ''}`}><input type="radio" name="dofe-protocol" value={p} checked={protocol === p} disabled={interactionBusy} onChange={() => { setProtocol(p); setModels([]); setSelectedModel(''); setError(undefined); void loadModels({ protocol: p }) }} /><span>{p === 'messages' ? t('protocolMessages') : t('protocolChat')}</span></label>)}</div></div>
+    </div>}
+    <div className="dshDofeAccessField"><div className="dshDofeAccessFieldHeader"><span className="dshDofeAccessLabel" id="dofe-protocol-label">{t('protocolTitle')}</span></div><div className="dshDofeAccessProtocols" role="radiogroup" aria-labelledby="dofe-protocol-label">{UI_DOFE_PROTOCOLS.map(p => <label key={p} className={`dshDofeAccessProtocol${protocol === p ? ' dshDofeAccessProtocolSelected' : ''}`}><input type="radio" name="dofe-protocol" value={p} checked={protocol === p} disabled={interactionBusy || (BRAND_VARIANT === 'sensteed' && !settings.value?.entitlements?.allowedProtocols.includes(p))} onChange={() => { setProtocol(p); setModels([]); setSelectedModel(''); setError(undefined); void loadModels({ protocol: p }) }} /><span>{p === 'messages' ? t('protocolMessages') : t('protocolChat')}</span></label>)}</div></div>
     <div className="dshDofeAccessField"><div className="dshDofeAccessFieldHeader"><label className="dshDofeAccessLabel" htmlFor="dofe-model-select">{t('modelsTitle')}</label></div>{configured === true && !draft.trim() && models.length === 0 && !loadingModels && <p className="dshDofeAccessHint" role="status">{t('storedReady')}</p>}<div className="dshDofeAccessModelRow"><select id="dofe-model-select" className="dshDofeAccessModelSelect" value={selectedModel} disabled={interactionBusy || models.length === 0} onChange={event => setSelectedModel(event.currentTarget.value)}><option value="">{models.length === 0 ? t('modelsPlaceholder') : t('modelsEmpty')}</option>{models.map(model => <option key={model.id} value={model.id}>{model.name} ({model.id})</option>)}</select><button type="button" className="dshDofeAccessModelRefresh" title={loadingModels ? t('loadingModels') : t('loadModels')} aria-label={loadingModels ? t('loadingModels') : t('loadModels')} disabled={interactionBusy || (!draft.trim() && configured !== true)} onClick={() => void loadModels()}>{loadingModels ? <Loader2 size={16} className="dshDofeAccessSpin" /> : <RefreshCw size={16} />}</button></div></div>
-    {onboarding && <p className="dshDofeAccessHelp"><Phone size={15} aria-hidden="true" /><span>{t('onboardingHelp')}</span></p>}
+    {onboarding && BRAND_VARIANT === 'yootun' && <p className="dshDofeAccessHelp"><Phone size={15} aria-hidden="true" /><span>{t('onboardingHelp')}</span></p>}
     {onboarding && <div className="dshDofeAccessField"><div className="dshDofeAccessFieldHeader"><span className="dshDofeAccessLabel">{t('pluginsTitle')}</span><span className="dshDofeAccessCount">{t('selectedCount').replace('{count}', String(enabledPlugins.length))}</span></div><div className="dshDofeAccessPlugins">{availablePlugins.map(plugin => { const selected = enabledPlugins.includes(plugin.id); return <label className={`dshDofeAccessPlugin${selected ? ' dshDofeAccessPluginSelected' : ''}`} key={plugin.id}><input type="checkbox" checked={selected} disabled={interactionBusy} onChange={event => { const checked = event.currentTarget.checked; setEnabledPlugins(current => checked ? [...new Set([...current, plugin.id])] : current.filter(id => id !== plugin.id)) }} /><span className="dshDofeAccessPluginCheck" aria-hidden="true"><Check size={14} strokeWidth={2.5} /></span><span><span className="dshDofeAccessPluginName">{plugin.name}</span><span className="dshDofeAccessPluginDescription">{plugin.description}</span></span></label> })}</div></div>}
     {error !== undefined && <p className="dshDofeAccessError" role="alert">{error}</p>}
     <div className={`dshDofeAccessActions${onboarding ? ' dshDofeAccessActionsOnboarding' : ''}`}><Button className="dshDofeAccessPrimary" variant="primary" disabled={interactionBusy || (!draft.trim() && configured !== true) || models.length === 0 || !selectedModel || (onboarding && enabledPlugins.length === 0)} onClick={() => void save()}>{busy ? t('saving') : t('save')}{!busy && <ArrowRight size={16} aria-hidden="true" />}</Button>{!onboarding && <Button className="dshDofeAccessDanger" disabled={interactionBusy || configured !== true} onClick={() => void remove()}>{busy ? t('removing') : t('remove')}</Button>}{!onboarding && <span className="dshDofeAccessStatus" role="status">{configured === true ? t('configured') : configured === false ? t('missing') : ''}</span>}</div>
@@ -462,10 +438,10 @@ export function DofeAccessGate({ credentials, settingsApi, settingsScope, t, onA
   const authorized = credentialConfigured
     && settings.value?.setupComplete === true
     && settings.value.validationVersion === DOFE_ACCESS_VALIDATION_VERSION
-    && (settings.value.authMode !== 'feishu' || settings.value.identity?.ssoSub !== undefined)
+    && (BRAND_VARIANT !== 'sensteed' || (settings.value.authMode === 'feishu' && Boolean(settings.value.identity?.ssoSub)))
   useEffect(() => { onAuthorizationChange?.(authorized) }, [authorized, onAuthorizationChange])
   if (authorized) return null
-  return <DofeOnboardingModal eyebrow={t('onboardingEyebrow')} title={t('onboardingTitle')} description={t('onboardingIntro')} brandLogo={heroBrandDataUrl} brandLogoAlt={BRAND_TENANT}><AccessForm credentials={credentials} settingsApi={settingsApi} settingsScope={settingsScope} t={t} onboarding onDone={() => setCredentialConfigured(true)} /></DofeOnboardingModal>
+  return <DofeOnboardingModal eyebrow={t('onboardingEyebrow')} title={BRAND_VARIANT === 'sensteed' ? '登录 Sensteed Agent' : t('onboardingTitle')} description={BRAND_VARIANT === 'sensteed' ? '' : t('onboardingIntro')} brandLogo={heroBrandDataUrl} brandLogoAlt={BRAND_TENANT}><AccessForm credentials={credentials} settingsApi={settingsApi} settingsScope={settingsScope} t={t} onboarding onDone={() => setCredentialConfigured(true)} /></DofeOnboardingModal>
 }
 
 /** Mount the mandatory credential gate independently of upstream session onboarding. */
