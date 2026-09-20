@@ -985,6 +985,9 @@ window.__ModuleLoader__.load({
 
     const TREND_WINDOW_DAYS = 30
     const TREND_AXIS_TICKS = [0, 7, 14, 21, 29]
+    // 数据点与绘图区左右边缘的安全边距（用户反馈 2026-09-20 需求 2）：起止日的点
+    // 半径 4px，不加边距会半个点被 viewBox 裁掉（当天收盘点贴右缘最明显）。
+    const TREND_PAD_X = 6
 
     function localIsoDay(date) {
       const pad = n => String(n).padStart(2, '0')
@@ -1030,7 +1033,7 @@ window.__ModuleLoader__.load({
           elapsedSeconds: point.elapsedSeconds,
           counterRevised: point.counterRevised === true,
           gapDaysBefore,
-          x: Math.round(((clamped - fromMs) / spanMs) * width * 100) / 100,
+          x: Math.round((TREND_PAD_X + ((clamped - fromMs) / spanMs) * (width - TREND_PAD_X * 2)) * 100) / 100,
           yPct: 0,
           _ms: clamped,
         })
@@ -1074,7 +1077,7 @@ window.__ModuleLoader__.load({
       // 横轴日期标签：固定 5 个刻度位（0/7/14/21/29 天处），窄屏由 CSS 隐藏偶数位。
       const axisLabels = TREND_AXIS_TICKS.map((offset, index) => ({
         day: addDaysIso(fromDay, offset),
-        x: Math.round((offset / (TREND_WINDOW_DAYS - 1)) * width * 100) / 100,
+        x: Math.round((TREND_PAD_X + (offset / (TREND_WINDOW_DAYS - 1)) * (width - TREND_PAD_X * 2)) * 100) / 100,
         pos: index === 0 ? 'start' : index === TREND_AXIS_TICKS.length - 1 ? 'end' : 'middle',
         minor: index % 2 === 1,
       }))
@@ -2003,10 +2006,10 @@ window.__ModuleLoader__.load({
         // 单账号分析页（0914 方案 §6，阶段 2；UI 优化方案 §5）
         backToOverview: '← 返回账号总览', exportAnalysis: '导出账号分析报告',
         accountTitle: '账号：{name}',
-        colHighestPlay: '最高播放量', trendTitle: '采集快照累计值变化', trendMetric: '指标',
+        colHighestPlay: '最高播放量', trendTitle: '数据趋势', trendMetric: '指标',
         metric_play: '累计播放量', metric_like: '累计点赞量', metric_comment: '累计评论量',
         metric_collect: '累计收藏量', metric_share: '累计分享量', metric_fans: '粉丝数',
-        trendCaption: '最近 30 天采集日收盘值；缺采集日期以虚线连接，不补零',
+        trendCaption: '采集最近30天数据，缺采集日期以虚线连接，不补零',
         noCollectGap: '无采集', counterRevised: '平台修正', noTrend: '暂无趋势',
         trendSingleHint: '暂无足够趋势数据（窗口内仅 1 个采集点）',
         contentMetrics: '内容指标',
@@ -2134,10 +2137,10 @@ window.__ModuleLoader__.load({
         ruleVersionMismatch: 'The overview rule version changed — refresh and retry',
         backToOverview: '← Back to overview', exportAnalysis: 'Export account analysis',
         accountTitle: 'Account: {name}',
-        colHighestPlay: 'Max plays', trendTitle: 'Snapshot cumulative change', trendMetric: 'Metric',
+        colHighestPlay: 'Max plays', trendTitle: 'Data trend', trendMetric: 'Metric',
         metric_play: 'Plays', metric_like: 'Likes', metric_comment: 'Comments',
         metric_collect: 'Favorites', metric_share: 'Shares', metric_fans: 'Followers',
-        trendCaption: 'Daily-close snapshots (not platform daily deltas); spans are real',
+        trendCaption: 'Collected data over the last 30 days; missing days are dashed, not zero-filled',
         noCollectGap: 'No collect', counterRevised: 'Revised', noTrend: 'No trend yet',
         trendSingleHint: 'Not enough trend data (only one point in window)',
         contentMetrics: 'Content metrics',
@@ -3153,8 +3156,12 @@ window.__ModuleLoader__.load({
                   onAiModalOpen: () => setAiModalOpen(true),
                   onAiModalClose: () => setAiModalOpen(false),
                   // 弹框内点证据作品（需求 2 确认稿）：保留分析页与 AI 轮询，仅叠加
-                  // 作品详情层（Esc/关闭详情后回到分析页 + 弹框）。
-                  onOpenWork: work => openDetail(work.workId, work.accountId),
+                  // 作品详情层（Esc/关闭详情后回到分析页 + 弹框）。AI 证据 chip 的
+                  // work 只有 {workId,title}（review P1 2026-09-20），爆款表行才有
+                  // accountId；分析页是单账号页，回退 analysisAccountId，不依赖
+                  // 视频 Tab 的 selected（与本批状态解耦一致）。
+                  onOpenWork: work =>
+                    openDetail(work.workId, work.accountId || analysisAccountId),
                   t,
                 }))
               : tab === 'overview'
@@ -3174,7 +3181,11 @@ window.__ModuleLoader__.load({
                   // 账号行下钻：阶段 2 打开单账号分析页；阶段 1 先切到视频数据 Tab 并选中该账号。
                   // 账号行下钻：打开单账号分析页并携带当前筛选（方案 §15.2）。
                   onOpenAccount: accountId => {
-                    setSelected(accountId)
+                    // 不再 setSelected（用户反馈 2026-09-20 bug 3）：总览聚合账号
+                    // （如矩阵内未本地登录的账号）一旦写进 selected，切到视频数据 Tab
+                    // 会出现「列表无高亮 + loadWorks 拉取非选中账号作品」的错位。
+                    // 视频数据 Tab 的选中态（selected）与单账号分析页（analysisAccountId）
+                    // 各自独立；分析页内作品/爆款抽屉下钻均显式携带 accountId，不依赖 selected。
                     setAnalysisAccountId(accountId)
                     loadAnalysis(accountId)
                     // 切账号：停掉上一账号的 AI 轮询、清投影，再做只读预取
@@ -3282,7 +3293,7 @@ window.__ModuleLoader__.load({
     @container ydo-panel (min-width:640px){.ydo-an-axis-minor{display:block}}
     .ydo-an-gap-text{fill:var(--dsw-alias-label-tertiary,#737d8c);font-size:10px;text-anchor:middle}
     .ydo-an-revised-text{fill:var(--dsw-alias-state-warn-primary,#9a6700);font-size:10px;text-anchor:start}/* 内容指标（UI 优化方案 v2 §5.2）：指标名、主值、状态三段结构，指标卡两列标签布局、数值列对齐；观众与流量四块 2×2 网格（v2 §5.3）。 */
-    .ydo-an-metrics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}.ydo-an-metric-card{display:flex;flex-direction:column;gap:6px;min-width:0;padding:12px 14px;border-radius:10px;background:var(--dsw-alias-bg-base)}.ydo-an-metric-head{display:flex;align-items:center;justify-content:space-between;gap:8px;min-width:0}.ydo-an-metric-label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--dsw-alias-label-secondary);font-size:12px}.ydo-an-metric-note{flex:none;padding:1px 8px;border-radius:999px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-secondary);font-size:11px}.ydo-an-metric-value{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:20px;line-height:1.2;font-weight:700;font-variant-numeric:tabular-nums}.ydo-an-audience{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.ydo-an-audience-block{display:grid;gap:8px;padding:10px;border:1px solid var(--dsw-alias-border-l1);border-radius:6px;background:var(--dsw-alias-bg-base)}.ydo-an-audience-block h4{margin:0;font-size:var(--dsh-content-font-size,14px)}@media(max-width:720px){.ydo-an-metrics{grid-template-columns:1fr}.ydo-an-audience{grid-template-columns:1fr}}/* 窄屏表格重排（二审 P2）：面板内容宽度不足以容纳固定列轨道（<940px）时，隐藏表头、行改「字段名 + 值」卡片，内容完整可读——不是仅隐藏横向溢出。字段名来自各单元格的 data-label；文本类单元格（账号名/标题/爆款依据）保持块流，避免多子节点被二维网格错误排位。 */
+    .ydo-an-metrics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}.ydo-an-metric-card{display:flex;flex-direction:column;gap:6px;min-width:0;padding:12px 14px;border-radius:8px;background:var(--dsw-alias-bg-base)}.ydo-an-metric-head{display:flex;align-items:center;justify-content:space-between;gap:8px;min-width:0}.ydo-an-metric-label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--dsw-alias-label-secondary);font-size:12px}.ydo-an-metric-note{flex:none;padding:1px 8px;border-radius:999px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-secondary);font-size:11px}.ydo-an-metric-value{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:20px;line-height:1.2;font-weight:700;font-variant-numeric:tabular-nums}.ydo-an-audience{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.ydo-an-audience-block{display:grid;gap:8px;padding:10px;border:1px solid var(--dsw-alias-border-l1);border-radius:6px;background:var(--dsw-alias-bg-base)}.ydo-an-audience-block h4{margin:0;font-size:var(--dsh-content-font-size,14px)}@media(max-width:720px){.ydo-an-metrics{grid-template-columns:1fr}.ydo-an-audience{grid-template-columns:1fr}}/* 窄屏表格重排（二审 P2）：面板内容宽度不足以容纳固定列轨道（<940px）时，隐藏表头、行改「字段名 + 值」卡片，内容完整可读——不是仅隐藏横向溢出。字段名来自各单元格的 data-label；文本类单元格（账号名/标题/爆款依据）保持块流，避免多子节点被二维网格错误排位。 */
     @container ydo-panel (max-width:940px){.ydo-ov-table{overflow:visible;max-height:none}.ydo-ov-tr.ydo-ov-head{display:none}.ydo-ov-tr{display:block;min-width:0;padding:10px 0}.ydo-ov-tr>[role=cell]{display:grid;grid-template-columns:minmax(76px,auto) 1fr;gap:2px 12px;align-items:baseline;padding:2px 0}.ydo-ov-tr>[role=cell]::before{content:attr(data-label);color:var(--dsw-alias-label-secondary);font-size:12px}.ydo-ov-tr>[role=cell].ydo-ov-num{text-align:right}.ydo-ov-tr>.ydo-ov-account-name,.ydo-ov-tr>.ydo-ov-hot-title,.ydo-ov-tr>.ydo-ov-basis{display:block}.ydo-ov-tr>.ydo-ov-account-name::before,.ydo-ov-tr>.ydo-ov-hot-title::before,.ydo-ov-tr>.ydo-ov-basis::before{display:block;margin-bottom:4px}}@media(max-width:1120px){.ydo-body{display:block;overflow:auto}.ydo-accounts{border-right:0;border-bottom:1px solid var(--dsw-alias-border-l1)}.ydo-right{overflow:visible}.ydo-table-wrap{max-height:60vh}}
     /* AI 账号表现分析·卡片折叠布局（0916 方案 §9；2026-09-17 验收稿）：
        左边框 3px 语义色区分类别（蓝=结论/红=风险/绿=建议/紫=规律/灰=诊断与限制），
@@ -3323,16 +3334,16 @@ window.__ModuleLoader__.load({
     .ydo-ai-card-open .ydo-ai-arrow{transform:rotate(90deg)}
     .ydo-ai-digest{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--dsw-alias-label-secondary);font-size:12px}
     .ydo-ai-count{flex:none;font-size:11px;font-weight:600;padding:1px 8px;border-radius:10px;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-secondary)}
-    .ydo-ai-card-risks .ydo-ai-count{background:var(--dsw-alias-state-error-weak,#fdecec);color:var(--dsw-alias-state-error-primary)}
-    .ydo-ai-card-recs .ydo-ai-count{background:var(--dsw-alias-state-success-weak,#e9f7ee);color:var(--dsw-alias-state-success-primary,#1a7f37)}
+    .ydo-ai-card-risks .ydo-ai-count{background:color-mix(in srgb,var(--dsw-alias-state-error-primary) 12%,transparent);color:var(--dsw-alias-state-error-primary)}
+    .ydo-ai-card-recs .ydo-ai-count{background:color-mix(in srgb,var(--dsw-alias-state-success-primary) 12%,transparent);color:var(--dsw-alias-state-success-primary,#1a7f37)}
     .ydo-ai-card-body{padding:12px 14px 14px}
     .ydo-ai-summary-text{margin:0;font-size:14px;font-weight:600;line-height:1.7}
     .ydo-ai-summary-meta{display:flex;flex-wrap:wrap;gap:4px 14px;margin-top:10px;color:var(--dsw-alias-label-secondary);font-size:12px}
     .ydo-ai-digest-levels{flex:1;min-width:0;display:flex;gap:6px;overflow:hidden}
     .ydo-ai-dl{flex:none;font-size:11px;padding:1px 8px;border-radius:10px;white-space:nowrap}
-    .ydo-ai-dl-strong{background:var(--dsw-alias-state-success-weak,#e9f7ee);color:var(--dsw-alias-state-success-primary,#1a7f37)}
-    .ydo-ai-dl-medium{background:var(--dsw-alias-brand-weak,#e8f0ff);color:var(--dsw-alias-brand-primary)}
-    .ydo-ai-dl-weak{background:var(--dsw-alias-state-warn-weak,#fdf3e3);color:var(--dsw-alias-state-warn-primary,#d97706)}
+    .ydo-ai-dl-strong{background:color-mix(in srgb,var(--dsw-alias-state-success-primary) 12%,transparent);color:var(--dsw-alias-state-success-primary,#1a7f37)}
+    .ydo-ai-dl-medium{background:color-mix(in srgb,var(--dsw-alias-brand-primary) 12%,transparent);color:var(--dsw-alias-brand-primary)}
+    .ydo-ai-dl-weak{background:color-mix(in srgb,var(--dsw-alias-state-warn-primary) 12%,transparent);color:var(--dsw-alias-state-warn-primary,#d97706)}
     .ydo-ai-dl-insufficient{background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-secondary)}
     .ydo-ai-dims{display:grid;grid-template-columns:1fr 1fr;gap:10px}
     @container ydo-panel (max-width:720px){.ydo-ai-dims{grid-template-columns:1fr}}
@@ -3340,9 +3351,9 @@ window.__ModuleLoader__.load({
     .ydo-ai-dim-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:6px}
     .ydo-ai-dim-head b{font-size:13px}
     .ydo-ai-level{flex:none;font-size:11px;font-weight:700;padding:1px 9px;border-radius:10px}
-    .ydo-ai-level-strong{background:var(--dsw-alias-state-success-weak,#e9f7ee);color:var(--dsw-alias-state-success-primary,#1a7f37)}
-    .ydo-ai-level-medium{background:var(--dsw-alias-brand-weak,#e8f0ff);color:var(--dsw-alias-brand-primary)}
-    .ydo-ai-level-weak{background:var(--dsw-alias-state-warn-weak,#fdf3e3);color:var(--dsw-alias-state-warn-primary,#d97706)}
+    .ydo-ai-level-strong{background:color-mix(in srgb,var(--dsw-alias-state-success-primary) 12%,transparent);color:var(--dsw-alias-state-success-primary,#1a7f37)}
+    .ydo-ai-level-medium{background:color-mix(in srgb,var(--dsw-alias-brand-primary) 12%,transparent);color:var(--dsw-alias-brand-primary)}
+    .ydo-ai-level-weak{background:color-mix(in srgb,var(--dsw-alias-state-warn-primary) 12%,transparent);color:var(--dsw-alias-state-warn-primary,#d97706)}
     .ydo-ai-level-insufficient{background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-secondary)}
     .ydo-ai-dim-fact{margin:0 0 4px;color:var(--dsw-alias-label-secondary);font-size:12px}
     .ydo-ai-dim-insight{margin:0;font-size:12px}
@@ -3361,8 +3372,8 @@ window.__ModuleLoader__.load({
     .ydo-ai-item-reason{margin:4px 0 0;color:var(--dsw-alias-label-secondary);font-size:13px}
     .ydo-ai-pri{flex:none;font-size:11px;font-weight:700;padding:0 7px;border-radius:4px}
     /* 高/中/低三色为风险、建议、规律置信度徽章与收起态计数共用（用户反馈 2026-09-18 需求 2）。 */
-    .ydo-ai-pri-high,.ydo-ai-conf-high{background:var(--dsw-alias-state-error-weak,#fdecec);color:var(--dsw-alias-state-error-primary)}
-    .ydo-ai-pri-medium,.ydo-ai-conf-medium{background:var(--dsw-alias-state-warn-weak,#fdf3e3);color:var(--dsw-alias-state-warn-primary,#d97706)}
+    .ydo-ai-pri-high,.ydo-ai-conf-high{background:color-mix(in srgb,var(--dsw-alias-state-error-primary) 12%,transparent);color:var(--dsw-alias-state-error-primary)}
+    .ydo-ai-pri-medium,.ydo-ai-conf-medium{background:color-mix(in srgb,var(--dsw-alias-state-warn-primary) 12%,transparent);color:var(--dsw-alias-state-warn-primary,#d97706)}
     .ydo-ai-pri-low,.ydo-ai-conf-low{background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-secondary)}
     .ydo-ai-signal{margin:4px 0 0;font-size:12px;color:var(--dsw-alias-state-success-primary,#1a7f37)}
     .ydo-ai-signal-label{color:var(--dsw-alias-label-secondary)}
@@ -3376,7 +3387,7 @@ window.__ModuleLoader__.load({
     .ydo-ai-evidence{display:grid;grid-template-columns:auto minmax(0,1fr);gap:6px 8px;margin-top:7px;align-items:start}
     .ydo-ai-evidence-label{font-size:11px;color:var(--dsw-alias-label-secondary);padding-top:3px}
     .ydo-ai-evidence-list{display:flex;flex-wrap:wrap;gap:5px}
-    .ydo-ai-chip{max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font:inherit;font-size:11px;padding:1px 8px;border-radius:4px;background:var(--dsw-alias-brand-weak,#e8f0ff);border:1px solid color-mix(in srgb,var(--dsw-alias-brand-primary) 30%,transparent);color:var(--dsw-alias-brand-primary);cursor:pointer}
+    .ydo-ai-chip{max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font:inherit;font-size:11px;padding:1px 8px;border-radius:4px;background:color-mix(in srgb,var(--dsw-alias-brand-primary) 12%,transparent);border:1px solid color-mix(in srgb,var(--dsw-alias-brand-primary) 30%,transparent);color:var(--dsw-alias-brand-primary);cursor:pointer}
     .ydo-ai-chip:hover{background:var(--dsw-alias-brand-primary);border-color:var(--dsw-alias-brand-primary);color:var(--dsw-alias-label-primary-foreground)}
     .ydo-ai-limits{margin:0;padding-left:16px;display:grid;gap:4px;color:var(--dsw-alias-label-secondary);font-size:12px}
     .ydo-ai-disclaimer{margin:10px 0 0;font-size:11px;color:var(--dsw-alias-label-secondary)}

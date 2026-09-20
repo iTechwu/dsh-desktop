@@ -35,6 +35,8 @@
 
 ## 插件管理浏览器验证边界（2026-09-11）
 
+抖音账号 AI 分析补充入口：`douyin_account_ai_analysis_start`、`douyin_account_ai_analysis_get`。前者创建受控分析任务，后者只读查询进度和结果；Models 调用、异步队列与费用归因由 Tools 服务负责，桌面不持有服务端委托凭据。
+
 上表描述需要满足的能力与体验契约，不代表每个入口都已完成同等范围的浏览器验证。当前 Plugin Console 的直接证据来自 `dsh-plugin-desktop/tests/browser/plugin-console-modal.browser.mjs`：
 
 - 已覆盖自定义主题、官方浅色/深色主题，以及 320、390、768、1024、1440px 布局；管理按钮不得遮挡正文，软件源名称、主源标记和长地址必须可读。

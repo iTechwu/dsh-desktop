@@ -74,6 +74,9 @@ export const TREND_METRICS = ['play', 'like', 'comment', 'collect', 'share', 'fa
 
 const TREND_WINDOW_DAYS = 30
 const TREND_AXIS_TICKS = [0, 7, 14, 21, 29]
+// 数据点与绘图区左右边缘的安全边距（用户反馈 2026-09-20 需求 2）：起止日的点
+// 半径 4px，不加边距会半个点被 viewBox 裁掉（当天收盘点贴右缘最明显）。
+const TREND_PAD_X = 6
 
 function localIsoDay(date) {
   const pad = n => String(n).padStart(2, '0')
@@ -119,7 +122,7 @@ export function trendLayout(points, { width = 600, now = null } = {}) {
       elapsedSeconds: point.elapsedSeconds,
       counterRevised: point.counterRevised === true,
       gapDaysBefore,
-      x: Math.round(((clamped - fromMs) / spanMs) * width * 100) / 100,
+      x: Math.round((TREND_PAD_X + ((clamped - fromMs) / spanMs) * (width - TREND_PAD_X * 2)) * 100) / 100,
       yPct: 0,
       _ms: clamped,
     })
@@ -163,7 +166,7 @@ export function trendLayout(points, { width = 600, now = null } = {}) {
   // 横轴日期标签：固定 5 个刻度位（0/7/14/21/29 天处），窄屏由 CSS 隐藏偶数位。
   const axisLabels = TREND_AXIS_TICKS.map((offset, index) => ({
     day: addDaysIso(fromDay, offset),
-    x: Math.round((offset / (TREND_WINDOW_DAYS - 1)) * width * 100) / 100,
+    x: Math.round((TREND_PAD_X + (offset / (TREND_WINDOW_DAYS - 1)) * (width - TREND_PAD_X * 2)) * 100) / 100,
     pos: index === 0 ? 'start' : index === TREND_AXIS_TICKS.length - 1 ? 'end' : 'middle',
     minor: index % 2 === 1,
   }))

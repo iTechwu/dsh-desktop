@@ -1036,9 +1036,14 @@ test('analysis-ui：趋势布局 30 天固定窗口、自然日定位、缺口�
   assert.equal(layout.single, false)
   assert.equal(layout.fromDay, '2026-08-19')
   assert.equal(layout.toDay, '2026-09-17')
-  // x = (day - fromDay) / 29 * 600：9/2=14 天 → 289.66；9/17=29 天 → 600
-  assert.equal(layout.nodes[0].x, 289.66)
-  assert.equal(layout.nodes[3].x, 600)
+  // x = 6 + (day - fromDay) / 29 * (600 - 12)：左右各 6px 安全边距（2026-09-20
+  // 需求 2）——起止日的点（半径 3px）不再被 viewBox 裁掉半个。9/2=14 天 → 289.86；
+  // 9/17=29 天 → 594（窗口最右端仍在绘图区内完整可见）。
+  assert.equal(layout.nodes[0].x, 289.86)
+  assert.equal(layout.nodes[3].x, 594)
+  assert.ok(layout.nodes[0].x >= 6 && layout.nodes[3].x <= 594, '全部数据点落在左右安全边距内')
+  // 轴刻度与数据点共用同一 pad 公式：末刻度（offset 29）与窗口末日的点 x 相同。
+  assert.equal(layout.axisLabels[layout.axisLabels.length - 1].x, 594)
 
   // gap 断点与 counter_revised 保留：09-03/04 无采集 → gap 2 天；9/6 负 delta 标记
   assert.deepEqual(Array.from(layout.nodes.map(node => node.gapDaysBefore)), [0, 2, 0, 10])
@@ -1077,8 +1082,8 @@ test('analysis-ui：趋势布局 30 天固定窗口、自然日定位、缺口�
     { day: '2026-09-02', value: 100 },
     { day: '2026-09-17', value: 400 },
   ], { ...opts, width: 900 })
-  assert.equal(wide.nodes[0].x, Math.round(14 / 29 * 900 * 100) / 100)
-  assert.equal(wide.nodes[1].x, 900)
+  assert.equal(wide.nodes[0].x, Math.round((6 + (14 / 29) * 888) * 100) / 100)
+  assert.equal(wide.nodes[1].x, 894)
   assert.equal(wide.width, 900)
 
   // 需求 5a：y 轴专用格式化——≥1万固定 1 位小数万单位，<1万千分位，非有限数 null
@@ -2108,7 +2113,7 @@ test('v2 源码样式契约：窄列轨道、分布配色、抽屉尺寸与关�
   // §5.2/§5.3：内容指标 3 列浅灰底圆角卡片（创作中心风格：标签小字在上、数值大字在下）、
   // 观众卡片两列；窄屏均退单列。
   assert.match(source, /\.ydo-an-metrics\{[^}]*grid-template-columns:repeat\(3,minmax\(0,1fr\)\)/u)
-  assert.match(source, /\.ydo-an-metric-card\{[^}]*border-radius:10px;background:var\(--dsw-alias-bg-base\)/u)
+  assert.match(source, /\.ydo-an-metric-card\{[^}]*border-radius:8px;background:var\(--dsw-alias-bg-base\)/u)
   assert.match(source, /\.ydo-an-metric-value\{[^}]*font-size:20px[^}]*font-weight:700/u)
   // 用户反馈 2026-09-18：AI 风险/建议/规律条目标题 13.5px（对齐卡片标题 h4）、正文 13px，
   // 此前无 font-size 继承面板默认大字导致视觉过大。
@@ -2119,7 +2124,7 @@ test('v2 源码样式契约：窄列轨道、分布配色、抽屉尺寸与关�
   assert.match(source, /\.ydo-ai-evidence\{display:grid;grid-template-columns:auto minmax\(0,1fr\)/u)
   assert.match(source, /\.ydo-ai-evidence-list\{display:flex;flex-wrap:wrap;gap:5px\}/u)
   assert.match(source, /\.ydo-ai-chip\{[^}]*font-size:11px/u)
-  assert.match(source, /\.ydo-ai-chip\{[^}]*background:var\(--dsw-alias-brand-weak/u)
+  assert.match(source, /\.ydo-ai-chip\{[^}]*background:color-mix\(in srgb,var\(--dsw-alias-brand-primary\)/u)
   // font 简写若出现在 font-size 之后会重置字号（历史 bug）；正确形态是简写在前、
   // 显式字号在后（同 .ydo-link 惯例），断言按顺序锁定。
   assert.match(source, /\.ydo-ai-chip\{[^}]*font:inherit;font-size:11px/u)
@@ -2130,6 +2135,16 @@ test('v2 源码样式契约：窄列轨道、分布配色、抽屉尺寸与关�
   assert.match(source, /\.ydo-ai-pri-medium,\.ydo-ai-conf-medium\{/u)
   assert.match(source, /\.ydo-ai-pri-low,\.ydo-ai-conf-low\{/u)
   assert.doesNotMatch(source, /aiDigestHigh|aiDigestMedium|aiDigestItems/u)
+  // 用户反馈 2026-09-20：趋势图标题/副标题文案改版。
+  assert.match(source, /trendTitle: '数据趋势'/u)
+  assert.match(source, /trendCaption: '采集最近30天数据，缺采集日期以虚线连接，不补零'/u)
+  // bug 3：总览下钻不得写 selected——视频数据 Tab 选中态与单账号分析页解耦，
+  // 防止切 Tab 后列表无高亮且 loadWorks 拉取非本地登录账号的作品。
+  assert.doesNotMatch(source, /onOpenAccount: accountId => \{[\s\S]{0,120}setSelected\(accountId\)/u)
+  // review P1（2026-09-20）：AI 证据 chip 的 work 只有 {workId}（evidenceWorks
+  // 契约无 accountId），分析页 onOpenWork 回退 analysisAccountId 打开作品详情，
+  // 不依赖视频 Tab 的 selected。
+  assert.match(source, /onOpenWork: work =>\s*openDetail\(work\.workId, work\.accountId \|\| analysisAccountId\)/u)
   // 需求 4（2026-09-18）：爆款抽屉指标摘要复用内容指标卡片，旧单行文本列表样式已删除。
   assert.doesNotMatch(source, /ydo-ov-drawer-metrics/u)
   // 需求 5b：趋势 SVG 高度固定 168px（不再 height:auto 随拉伸变形），viewBox 宽由
@@ -2318,6 +2333,7 @@ test('AI 表现分析模块：无记录折叠、有结果展开、位置在爆�
 
   // 2) 有结果：默认展开 + 五个子块 + 元数据 + 五维中文等级 + 位置在爆款视频之前
   hLog.length = 0
+  let openedFromChip = null
   AnalysisPage({
     analysis, trend: null, trendMetric: 'play', trendErrorReason: null, loading: false,
     errorReason: null, exporting: false, onBack: () => {}, onMetricChange: () => {},
@@ -2331,7 +2347,7 @@ test('AI 表现分析模块：无记录折叠、有结果展开、位置在爆�
     aiStatus: 'succeeded',
     aiBusy: false, aiError: null, aiConfirming: false,
     onAiStart: () => {}, onAiRequestRerun: () => {}, onAiConfirmRerun: () => {}, onAiCancelConfirm: () => {},
-    onOpenWork: () => {}, t,
+    onOpenWork: work => { openedFromChip = work }, t,
     aiModalOpen: true,
   })
   for (let i = 0; i < hLog.length; i += 1) if (typeof hLog[i].type === 'function') hLog[i].type(hLog[i].props)
@@ -2394,6 +2410,13 @@ test('AI 表现分析模块：无记录折叠、有结果展开、位置在爆�
   assert.ok(chipList.children.length >= 1
     && chipList.children.every(chip => chip.props?.className === 'ydo-ai-chip' && chip.type === 'button'),
   'chips 全部为 list 容器内的 button')
+  // review P1/P2（2026-09-20）：chip 点击仅转发 {workId}——evidenceWorks 契约无
+  // accountId，组件层不伪造；client 层由 onOpenWork 回退 analysisAccountId（源码
+  // 契约已锁定），两条断言合起来覆盖完整下钻链。
+  assert.ok(typeof chipList.children[0].props.onClick === 'function', 'chip 有点击回调')
+  chipList.children[0].props.onClick()
+  assert.ok(openedFromChip && openedFromChip.workId === 'w1' && !('accountId' in openedFromChip),
+    'chip 点击仅转发 {workId}，不带伪造 accountId')
   assert.ok(text.includes('辅助分析，不构成官方判定'), '免责声明')
   // 原始枚举不进「可见文本」（className 里的样式钩子不算可见文本）：
   // 递归拼接 children 中的字符串字面量再断言。
