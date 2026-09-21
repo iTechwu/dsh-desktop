@@ -10,7 +10,7 @@ vi.mock('../src/generated-product-identity.ts', async importOriginal => ({
 }))
 afterEach(() => vi.unstubAllGlobals())
 
-it('completes first login with the catalog default and commits authorization last', async () => {
+it('requires login before showing model setup and commits authorization only after setup', async () => {
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
   let snapshot = { value: { setupComplete: false, validationVersion: 0, enabledPlugins: [], modelId: '', protocol: 'chat-completions' } as Record<string, unknown> }
   let configured = false
@@ -48,13 +48,20 @@ it('completes first login with the catalog default and commits authorization las
       t: (key: string) => key,
     } as never)))
     expect(container.querySelector('input[type="password"]')).toBeNull()
+    expect(container.querySelector('select')).toBeNull()
     await act(async () => {
       const login = [...container.querySelectorAll('button')].find(button => button.textContent?.includes('飞书登录'))!
       login.click()
     })
-    expect(snapshot.value.setupComplete).toBe(true)
-    expect(snapshot.value.modelId).toBe('preferred-model')
+    expect(snapshot.value.setupComplete).toBe(false)
+    expect(snapshot.value.modelId).toBe('')
     expect(snapshot.value.protocol).toBe('messages')
+    expect(container.querySelector('select')).not.toBeNull()
+    expect((container.querySelector('select') as HTMLSelectElement).value).toBe('preferred-model')
+    expect(writes).toEqual(['dofe-access'])
+    const setup = [...container.querySelectorAll('.dshDofeAccessPrimary')].at(-1) as HTMLButtonElement
+    await act(async () => setup.click())
+    expect(snapshot.value.setupComplete).toBe(true)
     expect(writes.slice(-3)).toEqual(['llm-pi-ai', 'agent-default-model', 'dofe-access'])
     expect(container.querySelector('[role="dialog"]')).toBeNull()
   } finally {
