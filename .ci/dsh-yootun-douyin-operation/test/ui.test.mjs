@@ -1330,9 +1330,13 @@ test('筛选流契约：UI 形态状态、请求时归一、筛选变更不重�
   // 分析页与其导出沿用总览窗口：从 UI 形态派生日期，而不是读状态里的旧字段。
   assert.match(source, /const \{ publishFrom, publishTo \} = buildOverviewFilters\(overviewFilters\)/u)
   // 筛选变更只 setOverviewFilters：查询由 loadOverview 身份变化触发一次，不显式重复调用。
-  const changeBody = source.match(/const changeOverviewFilters = useCallback\(filters => \{([\s\S]*?)\}, \[\]\)/u)
+  const changeBody = source.match(/const changeOverviewFilters = useCallback\(filters => \{([\s\S]*?)\}, \[overviewFilters\]\)/u)
   assert.ok(changeBody, 'changeOverviewFilters 存在')
   assert.ok(!changeBody[1].includes('loadOverview('), '筛选变更不显式重复发起查询')
+  // 切到「自定义」不触发查询（用户反馈 2026-09-21）：changeOverviewFilters 置跳过
+  // 标记（仅默认日期、来自预设窗口时），查询 effect 消费复位——标记恰好跳过一次。
+  assert.match(changeBody[1], /skipOverviewQueryRef\.current = overviewFilters\.window !== 'custom'\n\s*&& filters\.window === 'custom'/u)
+  assert.match(source, /if \(skipOverviewQueryRef\.current\) \{\n\s*skipOverviewQueryRef\.current = false\n\s*return undefined\n\s*\}/u)
   // 请求序列号守卫（验收 P1）：过期响应的数据/错误/复位一律丢弃，loading 只由最新请求结束。
   const loadOverviewBody = source.match(/const loadOverview = useCallback\(async \(filters = overviewFilters\) => \{([\s\S]*?)\}, \[overviewFilters\]\)/u)
   assert.ok(loadOverviewBody, 'loadOverview 存在')
@@ -2071,6 +2075,47 @@ test('v2 账号目录：accountOptions 驱动下拉、零作品标注、失同�
     onOpenAccount: () => {}, onAddAccount: () => {}, t,
   })
   assert.ok(JSON.stringify(hLog).includes('2026-08-22 ~ 2026-09-21'), '自定义范围下 KPI 辅助文案显示日期区间')
+})
+
+test('自定义窗口范围内无作品：保留完整页面与筛选器 + 可调整范围提示，绝不整页替换成采集引导（用户反馈 2026-09-21）', async () => {
+  const hLog = []
+  const reactStub = {
+    createElement: (type, props, ...children) => {
+      hLog.push({ type, props, children })
+      return { type, props, children }
+    },
+  }
+  const sandbox = await evalUiModule(new URL('../src/overview-ui.js', import.meta.url), {}, reactStub)
+  const OverviewPage = vm.runInContext('OverviewPage', sandbox)
+  const emptySummary = { accountCount: 2, workCount: 0, totalPlayCount: 0, hotWorkCount: 0, hotRatePct: null }
+  const accounts = [{ accountId: 'a1', nickname: '燃豚豚', workCount: 0 }]
+  const base = {
+    overview: {
+      summary: emptySummary,
+      accounts: [],
+      accountOptions: [{ accountId: 'a1', nickname: '燃豚豚', workCount: 0 }],
+      accountTotal: 1,
+      hotWorks: [],
+    },
+    loading: false, errorReason: null,
+    accounts, collecting: false, exporting: false,
+    onFilterChange: () => {}, onRefresh: () => {}, onExport: () => {},
+    onOpenAccount: () => {}, onAddAccount: () => {}, t,
+  }
+
+  // 自定义窗口 + 范围内 0 作品：「请先采集」整页空态必须让位——工具栏（含日期框）
+  // 与 KPI 保持渲染，数据区给出「可调整范围」状态提示。
+  OverviewPage({ ...base, filters: { window: 'custom', sort: 'hot_count', accountIds: [], customFrom: '2026-09-15', customTo: '2026-09-21' } })
+  const pageText = JSON.stringify(hLog)
+  assert.ok(!pageText.includes('collectFirstHint'), '自定义窗口 0 作品不显示「请先采集作品数据」')
+  assert.ok(pageText.includes('customRangeEmpty'), '显示「当前范围内暂无作品，可调整日期」提示')
+  assert.ok(hLog.some(node => node.type === 'input' && node.props.type === 'date'), '工具栏与日期筛选器保持可操作')
+  assert.ok(hLog.some(node => String(node.props?.className || '').includes('ydo-ov-kpis')), 'KPI 区保留（0 值可见）')
+
+  // 回归保护：预设窗口（30d）+ 0 作品仍走既有「请先采集作品数据」整页空态（方案 §14）。
+  hLog.length = 0
+  OverviewPage({ ...base, filters: { window: '30d', sort: 'hot_count', accountIds: [] } })
+  assert.ok(JSON.stringify(hLog).includes('collectFirstHint'), '预设窗口 0 作品维持「请先采集」既有语义')
 })
 
 test('v2 爆款账号分布：服务端 hotAccountDistribution 驱动、保持服务端顺序、最多 5 个、前三名专属配色类', async () => {

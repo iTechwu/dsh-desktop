@@ -255,8 +255,12 @@ export function OverviewPage({
     return h('div', { className: 'ydo-state', role: 'status' }, h('p', null, t('emptyAccounts')))
   }
   const totalWorks = summary ? summary.workCount : 0
-  if (!loading && summary && summary.accountCount > 0 && totalWorks === 0) {
-    // 有账号但没有作品 → "请先采集作品数据"（方案 §14）。
+  // 有账号但没有作品 → "请先采集作品数据"（方案 §14）。该整页空态只服务
+  // 「从未采集」语义；自定义窗口是用户显式筛选，范围内 0 作品属正常筛选结果，
+  // 整页替换会把工具栏/筛选器一并抹掉（用户反馈 2026-09-21 的"闪退"观感），
+  // 改为继续渲染完整页面并在数据区给出可调整范围的状态提示。
+  if (!loading && summary && summary.accountCount > 0 && totalWorks === 0
+    && filters.window !== 'custom') {
     return h('div', { className: 'ydo-state', role: 'status' }, h('p', null, t('collectFirstHint')))
   }
 
@@ -382,6 +386,12 @@ export function OverviewPage({
     loading && summary
       ? h('div', { className: 'ydo-ov-loading', role: 'status' },
         h('span', { className: 'ydo-spinner' }), h('span', null, t('loading')))
+      : null,
+
+    // 自定义窗口范围内无作品（用户反馈 2026-09-21）：空是筛选结果的正常形态，
+    // 明确提示可调整范围；页面其余部分（工具栏/KPI/面板）保持完整可操作。
+    !loading && summary && totalWorks === 0 && filters.window === 'custom'
+      ? h('div', { className: 'ydo-state', role: 'status' }, h('p', null, t('customRangeEmpty')))
       : null,
 
     summary

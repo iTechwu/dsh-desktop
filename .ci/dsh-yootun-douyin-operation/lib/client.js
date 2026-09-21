@@ -714,8 +714,12 @@ window.__ModuleLoader__.load({
         return h('div', { className: 'ydo-state', role: 'status' }, h('p', null, t('emptyAccounts')))
       }
       const totalWorks = summary ? summary.workCount : 0
-      if (!loading && summary && summary.accountCount > 0 && totalWorks === 0) {
-        // 有账号但没有作品 → "请先采集作品数据"（方案 §14）。
+      // 有账号但没有作品 → "请先采集作品数据"（方案 §14）。该整页空态只服务
+      // 「从未采集」语义；自定义窗口是用户显式筛选，范围内 0 作品属正常筛选结果，
+      // 整页替换会把工具栏/筛选器一并抹掉（用户反馈 2026-09-21 的"闪退"观感），
+      // 改为继续渲染完整页面并在数据区给出可调整范围的状态提示。
+      if (!loading && summary && summary.accountCount > 0 && totalWorks === 0
+        && filters.window !== 'custom') {
         return h('div', { className: 'ydo-state', role: 'status' }, h('p', null, t('collectFirstHint')))
       }
 
@@ -841,6 +845,12 @@ window.__ModuleLoader__.load({
         loading && summary
           ? h('div', { className: 'ydo-ov-loading', role: 'status' },
             h('span', { className: 'ydo-spinner' }), h('span', null, t('loading')))
+          : null,
+
+        // 自定义窗口范围内无作品（用户反馈 2026-09-21）：空是筛选结果的正常形态，
+        // 明确提示可调整范围；页面其余部分（工具栏/KPI/面板）保持完整可操作。
+        !loading && summary && totalWorks === 0 && filters.window === 'custom'
+          ? h('div', { className: 'ydo-state', role: 'status' }, h('p', null, t('customRangeEmpty')))
           : null,
 
         summary
@@ -2058,6 +2068,7 @@ window.__ModuleLoader__.load({
         allAccounts: '全部账号', colAccount: '账号', colVideo: '视频',
         window_7d: '近7天', window_30d: '近30天', window_90d: '近90天', window_custom: '自定义',
         customRangeStart: '开始日期', customRangeEnd: '截止日期',
+        customRangeEmpty: '当前发布时间范围内暂无作品，可调整开始/截止日期后重新查询',
         sort_hot_count: '按爆款数排序', sort_hot_rate: '按爆款率排序', sort_median_play: '按中位播放排序',
         sort_total_play: '按总播放排序', sort_engagement_rate: '按互动率排序',
         kpiAccounts: '管理账号', kpiWorks: '作品总数', kpiTotalPlay: '累计播放量',
@@ -2191,6 +2202,7 @@ window.__ModuleLoader__.load({
         allAccounts: 'All accounts', colAccount: 'Account', colVideo: 'Video',
         window_7d: 'Last 7 days', window_30d: 'Last 30 days', window_90d: 'Last 90 days', window_custom: 'Custom',
         customRangeStart: 'Start date', customRangeEnd: 'End date',
+        customRangeEmpty: 'No works in the selected publish range; adjust the start/end dates and query again',
         sort_hot_count: 'By hot works', sort_hot_rate: 'By hot rate', sort_median_play: 'By median plays',
         sort_total_play: 'By total plays', sort_engagement_rate: 'By engagement',
         kpiAccounts: 'Accounts', kpiWorks: 'Works', kpiTotalPlay: 'Total plays',
@@ -2649,6 +2661,9 @@ window.__ModuleLoader__.load({
       // 请求序列号（验收 P1 竞态防护）：快速切换筛选/账号时只接受最新一次请求的结果，
       // 过期响应的数据、错误与 loading 复位一律丢弃。
       const overviewRequestRef = useRef(0)
+      // 「切到自定义」跳过一次筛选联动查询的标记（用户反馈 2026-09-21）：由
+      // changeOverviewFilters 置位、查询 effect 消费复位，仅此一处语义。
+      const skipOverviewQueryRef = useRef(false)
       const analysisRequestRef = useRef(0)
       const [overviewExporting, setOverviewExporting] = useState(false)
       const [hotDrawerWork, setHotDrawerWork] = useState(null)
@@ -2880,6 +2895,14 @@ window.__ModuleLoader__.load({
 
       useEffect(() => {
         if (!visible || tab !== 'overview') return undefined
+        // 切到「自定义」的那一次筛选变更不触发查询（用户反馈 2026-09-21）：选中
+        // 「自定义」只是展开日期范围 UI，默认范围与刚离开的预设窗口几乎重合，此刻
+        // 的查询是噪音；真正的查询由随后任一日期框变更（或显式刷新/导出）发起。
+        // 标记只消费一次，不影响其他筛选变更与 Tab 重入的常规查询。
+        if (skipOverviewQueryRef.current) {
+          skipOverviewQueryRef.current = false
+          return undefined
+        }
         loadOverview().catch(() => setOverviewError('douyin_operation_request_failed'))
         return undefined
       }, [visible, tab, loadOverview])
@@ -2904,8 +2927,14 @@ window.__ModuleLoader__.load({
         // 筛选即查询（只读刷新，不触发任何采集）：setOverviewFilters 改变 loadOverview
         // 身份 → 上方 [visible, tab, loadOverview] effect 恰好发起一次查询；
         // 不在此显式调用 loadOverview，避免同一条件重复请求（验收建议 3）。
+        // 例外：从预设窗口切到「自定义」且日期仍是切走前的值 → 打一次跳过标记
+        //（effect 消费；日期改动/刷新/导出走各自入口，不受影响）。
+        skipOverviewQueryRef.current = overviewFilters.window !== 'custom'
+          && filters.window === 'custom'
+          && overviewFilters.customFrom === filters.customFrom
+          && overviewFilters.customTo === filters.customTo
         setOverviewFilters(filters)
-      }, [])
+      }, [overviewFilters])
 
       const loadAnalysis = useCallback(async (accountId, metric = trendMetric) => {
         if (!accountId) return
