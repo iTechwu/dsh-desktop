@@ -260,7 +260,10 @@ export class DofeAuthService {
     const tenantId = asString(value.tenant?.tenantId)
     const ssoTeamId = asString(value.tenant?.ssoTeamId)
     const tenantSlug = asString(value.tenant?.tenantSlug)
-    if (!response.ok || key === undefined || ssoSub === undefined || tenantId === undefined || ssoTeamId === undefined || tenantSlug !== 'sensteed') throw new Error('models 未返回有效的 Sensteed 身份绑定')
+    // Keep the response body out of the message: a success payload carries the
+    // API key, so only the envelope code/msg is safe to surface.
+    if (!response.ok) throw new Error(`models provision 失败（${response.status}）：${asString((value as unknown as { msg?: unknown }).msg) ?? '无错误详情'}`)
+    if (key === undefined || ssoSub === undefined || tenantId === undefined || ssoTeamId === undefined || tenantSlug !== 'sensteed') throw new Error('models 未返回有效的 Sensteed 身份绑定')
     this.abort.signal.throwIfAborted()
     await this.credentials.set(MODELS_API_KEY_REF, key)
     this.abort.signal.throwIfAborted()
