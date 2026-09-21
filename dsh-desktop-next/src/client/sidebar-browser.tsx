@@ -1,33 +1,12 @@
 /** Adapt the official Browser body to Electron while retaining its toolbar and store. */
-import { useEffect, useRef, useSyncExternalStore, type ComponentType, type ReactNode } from 'react'
+import { useEffect, useRef, useSyncExternalStore } from 'react'
 import type { Context } from '@deepseek-ai/cordis'
-import type { BrowserBodyProps } from '@deepseek-ai/dsh-client-ui-sidebar-browser/client'
+import type {} from '@deepseek-ai/dsh-client-ui-sidebar-browser/client'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 import type { PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { SidebarBrowserBridge } from '../sidebar-browser-contract.ts'
 import { NativeBrowserTabs } from './sidebar-browser-state.ts'
 import { observeBrowserSurface } from './sidebar-browser-geometry.ts'
-
-interface NativeSurface {
-  url: string | undefined
-  error: string | null
-  canGoBack: boolean
-  canGoForward: boolean
-  navigate(value: string): void
-  back(): void
-  forward(): void
-  reload(): void
-  content: ReactNode
-}
-interface BrowserCarrier {
-  bodyProps: BrowserBodyProps
-  Body: ComponentType<BrowserBodyProps & { native: NativeSurface }>
-}
-declare module '@deepseek-ai/dsh-client-ui-slots' {
-  interface SlotMap {
-    'sidebar.browser.carrier': { kind: 'single'; scope: 'session'; owner: BrowserCarrier }
-  }
-}
 
 export function registerNativeSidebarBrowser(ctx: Context, bridge: SidebarBrowserBridge): void {
   const tabs = new NativeBrowserTabs(bridge)
