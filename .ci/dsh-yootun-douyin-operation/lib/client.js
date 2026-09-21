@@ -737,9 +737,21 @@ window.__ModuleLoader__.load({
           catalog: catalog.length, accountTotal,
         })
       }
-      const windowOptions = ['7d', '30d', '90d', 'all']
-      // KPI 作品数带明确范围文案（UI 优化方案 v2 §3.2/§4.2）：近 N 天 / 全部时间。
-      const rangeLabel = filters.window === 'all' ? t('rangeAllTime') : t(`window_${filters.window || '30d'}`)
+      const windowOptions = ['7d', '30d', '90d', 'custom']
+      // 自定义范围基础判断（2026-09-21 需求）：清空不提交（受控值保持，不触发查询）；
+      // 越界自动纠偏——改开始致开始>截止 → 截止跟随开始，改截止致截止<开始 → 开始跟随截止
+      //（YYYY-MM-DD 字典序即日期序；min/max 先在日历层拦截，手输越界走这里），纠偏后仍只触发一次查询。
+      const applyCustomRange = (key, value) => {
+        if (!value) return
+        const next = { ...filters, [key]: value }
+        if (next.customFrom && next.customTo && next.customFrom > next.customTo) {
+          if (key === 'customFrom') next.customTo = value
+          else next.customFrom = value
+        }
+        onFilterChange(next)
+      }
+      // KPI 作品数带明确范围文案（UI 优化方案 v2 §3.2/§4.2）：近 N 天 / 自定义日期区间。
+      const rangeLabel = overviewRangeLabel(filters, t)
 
       return h('div', { className: 'ydo-ov-page' },
         // 工具栏（UI 优化方案 v2 §4.1）：grid 两列（minmax(0,1fr) auto），筛选项在左列
@@ -775,7 +787,30 @@ window.__ModuleLoader__.load({
                 value: filters.window || '30d',
                 onChange: value => onFilterChange({ ...filters, window: value }),
                 options: windowOptions.map(option => ({ value: option, label: t(`window_${option}`) })),
-              })),
+              }),
+              // 自定义范围（2026-09-21 需求）：仅 window=custom 时渲染并参与查询条件，
+              // 其余预设隐藏；任一日期变化即触发一次查询（onFilterChange → client
+              // setOverviewFilters → 查询 effect）。两个日期框精确到天（YYYY-MM-DD）。
+              filters.window === 'custom' ? h('span', { className: 'ydo-custom-range' },
+                h('span', null, t('customRangeStart')),
+                h('input', {
+                  type: 'date',
+                  className: 'ydo-date-input',
+                  'aria-label': t('customRangeStart'),
+                  value: filters.customFrom || '',
+                  max: filters.customTo || undefined,
+                  onChange: event => applyCustomRange('customFrom', event.target.value),
+                }),
+                h('span', { className: 'ydo-custom-range-dash', 'aria-hidden': true }, '-'),
+                h('span', null, t('customRangeEnd')),
+                h('input', {
+                  type: 'date',
+                  className: 'ydo-date-input',
+                  'aria-label': t('customRangeEnd'),
+                  value: filters.customTo || '',
+                  min: filters.customFrom || undefined,
+                  onChange: event => applyCustomRange('customTo', event.target.value),
+                })) : null),
             h('div', { className: 'ydo-ov-filter' },
               h('span', null, t('overviewSort')),
               h(FilterSelect, {
@@ -900,18 +935,44 @@ window.__ModuleLoader__.load({
       return h(HotWorkDrawer, props)
     }
 
-    function buildOverviewFilters({ window = '30d', sort = 'hot_count', accountIds = [], now = null } = {}) {
+    const _pad2 = value => String(value).padStart(2, '0')
+    const _isoDay = date => `${date.getFullYear()}-${_pad2(date.getMonth() + 1)}-${_pad2(date.getDate())}`
+
+    // 自定义窗口默认范围（2026-09-21 需求）：截止 = 今天、开始 = 往前推一个自然月。
+    // 仅作 UI 初值；用户改动后随筛选状态持久，请求日期仍由 buildOverviewFilters 派生。
+    function defaultCustomRange(now = null) {
+      const base = now ? new Date(now) : new Date()
+      const from = new Date(base.getFullYear(), base.getMonth() - 1, base.getDate())
+      return { customFrom: _isoDay(from), customTo: _isoDay(base) }
+    }
+
+    function buildOverviewFilters({
+      window = '30d', sort = 'hot_count', accountIds = [], customFrom = null, customTo = null, now = null,
+    } = {}) {
       // 展示偏好（决策 15 允许本地保存）：时间 preset → 自然日窗口字符串。
       // 近 N 天 = [今天-(N-1), 明天)——服务端转 UTC 半开区间，排他终点取明天才能包含今天。
-      // "全部"不带窗口字段。
-      if (window === 'all') return { sort, accountIds }
+      // 自定义窗口 = [customFrom, customTo+1)：用户语义「截止日含当天」，排他终点 = 截止+1；
+      // 同一天选择（from=to）因此合法。日期缺失属防御分支（正常交互下 UI 保证成对），回退近 30 天。
+      if (window === 'custom' && customFrom && customTo) {
+        const [year, month, day] = customTo.split('-').map(Number)
+        return {
+          sort, accountIds,
+          publishFrom: customFrom,
+          publishTo: _isoDay(new Date(year, month - 1, day + 1)),
+        }
+      }
       const days = window === '7d' ? 7 : window === '90d' ? 90 : 30
       const base = now ? new Date(now) : new Date()
       const from = new Date(base.getFullYear(), base.getMonth(), base.getDate() - (days - 1))
       const to = new Date(base.getFullYear(), base.getMonth(), base.getDate() + 1)
-      const pad = value => String(value).padStart(2, '0')
-      const iso = date => `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
-      return { sort, accountIds, publishFrom: iso(from), publishTo: iso(to) }
+      return { sort, accountIds, publishFrom: _isoDay(from), publishTo: _isoDay(to) }
+    }
+
+    // 范围文案统一出口：KPI 作品数 hint 与单账号分析页共用（§3.2 口径标识同源）。
+    // 自定义窗口显示具体日期区间，预设窗口沿用近 N 天文案。
+    function overviewRangeLabel(filters, t) {
+      if (filters?.window === 'custom') return `${filters.customFrom || '?'} ~ ${filters.customTo || '?'}`
+      return t(`window_${filters?.window || '30d'}`)
     }
 
     // 单账号分析页 UI 模块（0914 方案 §6 线框，阶段 2；UI 优化方案 2026-09-16）。
@@ -1995,7 +2056,8 @@ window.__ModuleLoader__.load({
         alertStaleCollect: '最近 7 天没有成功的采集，数据可能过旧',
         overviewAccountFilter: '账号：', overviewWindow: '发布时间：', overviewSort: '排序：',
         allAccounts: '全部账号', colAccount: '账号', colVideo: '视频',
-        window_7d: '近7天', window_30d: '近30天', window_90d: '近90天', window_all: '全部时间',
+        window_7d: '近7天', window_30d: '近30天', window_90d: '近90天', window_custom: '自定义',
+        customRangeStart: '开始日期', customRangeEnd: '截止日期',
         sort_hot_count: '按爆款数排序', sort_hot_rate: '按爆款率排序', sort_median_play: '按中位播放排序',
         sort_total_play: '按总播放排序', sort_engagement_rate: '按互动率排序',
         kpiAccounts: '管理账号', kpiWorks: '作品总数', kpiTotalPlay: '累计播放量',
@@ -2037,7 +2099,7 @@ window.__ModuleLoader__.load({
         labelOther: '其他标签', alertRuleOther: '其他规则提醒',
         // UI 优化方案 v2（2026-09-16）：账号目录一致性、作品数范围口径、加权说明。
         accountCatalogSyncing: '账号列表与统计正在同步', accountCatalogUnavailable: '账号列表暂不可用',
-        noWorks: '暂无可统计作品', rangeAllTime: '全部时间', workCountAllTime: '全部时间作品数',
+        noWorks: '暂无可统计作品', workCountAllTime: '全部时间作品数',
         // 二审（2026-09-16）：排行受 top_n 截断属正常展示语义，明确区分完整账号数与展示数。
         rankingScopeHint: '共 {total} 个账号 · 排行展示 {shown} 个',
         // AI 账号表现分析（0916 方案 §9）
@@ -2127,7 +2189,8 @@ window.__ModuleLoader__.load({
         alertStaleCollect: 'No successful collection in the last 7 days; data may be stale',
         overviewAccountFilter: 'Accounts:', overviewWindow: 'Publish window:', overviewSort: 'Sort:',
         allAccounts: 'All accounts', colAccount: 'Account', colVideo: 'Video',
-        window_7d: 'Last 7 days', window_30d: 'Last 30 days', window_90d: 'Last 90 days', window_all: 'All time',
+        window_7d: 'Last 7 days', window_30d: 'Last 30 days', window_90d: 'Last 90 days', window_custom: 'Custom',
+        customRangeStart: 'Start date', customRangeEnd: 'End date',
         sort_hot_count: 'By hot works', sort_hot_rate: 'By hot rate', sort_median_play: 'By median plays',
         sort_total_play: 'By total plays', sort_engagement_rate: 'By engagement',
         kpiAccounts: 'Accounts', kpiWorks: 'Works', kpiTotalPlay: 'Total plays',
@@ -2165,7 +2228,7 @@ window.__ModuleLoader__.load({
         labelAbsolute: 'Absolute', labelAccountRelative: 'In-account', labelPotential: 'Potential',
         labelOther: 'Other label', alertRuleOther: 'Other rule alert',
         accountCatalogSyncing: 'Account list and stats are syncing', accountCatalogUnavailable: 'Account list unavailable',
-        noWorks: 'No statistically usable works', rangeAllTime: 'All time', workCountAllTime: 'All-time works',
+        noWorks: 'No statistically usable works', workCountAllTime: 'All-time works',
         rankingScopeHint: '{total} accounts in total · ranking shows {shown}',
         // AI performance analysis (0916 plan §9)
         aiTitle: 'AI performance analysis',
@@ -2575,10 +2638,14 @@ window.__ModuleLoader__.load({
       const [overview, setOverview] = useState(null)
       const [overviewLoading, setOverviewLoading] = useState(false)
       const [overviewError, setOverviewError] = useState(null)
-      // 总览筛选存 UI 形态（window/sort/accountIds）：窗口选项「全部」无需清理遗留日期，
-      // 请求字段（publishFrom/publishTo）统一在发请求时经 buildOverviewFilters 归一派生
-      //（UI 优化方案 §4.1；验收建议 2——此前 30d 的日期会残留进「全部」窗口）。
-      const [overviewFilters, setOverviewFilters] = useState(() => ({ window: '30d', sort: 'hot_count', accountIds: [] }))
+      // 总览筛选存 UI 形态（window/sort/accountIds + 自定义范围 customFrom/customTo）：
+      // 自定义范围初值 = 截止今天、开始往前推一个自然月（defaultCustomRange），切到
+      // 「自定义」直接使用；请求字段（publishFrom/publishTo）统一在发请求时经
+      // buildOverviewFilters 归一派生（自定义截止含当天 → 服务端排他终点 = 截止+1；
+      // UI 优化方案 §4.1；验收建议 2——筛选不残留跨窗口的日期）。
+      const [overviewFilters, setOverviewFilters] = useState(() => ({
+        window: '30d', sort: 'hot_count', accountIds: [], ...defaultCustomRange(),
+      }))
       // 请求序列号（验收 P1 竞态防护）：快速切换筛选/账号时只接受最新一次请求的结果，
       // 过期响应的数据、错误与 loading 复位一律丢弃。
       const overviewRequestRef = useRef(0)
@@ -3133,10 +3200,8 @@ window.__ModuleLoader__.load({
                   loading: analysisLoading,
                   errorReason: analysisError,
                   exporting: analysisExporting,
-                  // 作品数范围文案与总览 KPI 同源（UI 优化方案 v2 §3.2 统一口径标识）。
-                  rangeLabel: overviewFilters.window === 'all'
-                    ? t('rangeAllTime')
-                    : t(`window_${overviewFilters.window || '30d'}`),
+                  // 作品数范围文案与总览 KPI 同源（overviewRangeLabel 统一口径标识）。
+                  rangeLabel: overviewRangeLabel(overviewFilters, t),
                   onBack: () => {
                     // 返回总览保留筛选条件（方案 §15.2）；离开分析页停 AI 轮询与归属。
                     stopAiPolling()
@@ -3276,7 +3341,8 @@ window.__ModuleLoader__.load({
     .ydo-table{width:max-content;min-width:100%}.ydo-table-head,.ydo-table-row{display:grid;align-items:center}.ydo-table-head{position:sticky;top:0;z-index:3;background:var(--dsw-alias-bg-layer-2);border-bottom:1px solid var(--dsw-alias-border-l1)}.ydo-sort{display:flex;width:100%;align-items:center;gap:4px;min-width:0;padding:0;border:0;background:transparent;color:inherit;font:inherit;text-align:left;cursor:pointer}.ydo-sort-text{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.ydo-sort-arrow{flex:none;min-width:12px;color:var(--dsw-alias-label-secondary)}.ydo-sort-active{color:var(--dsw-alias-label-primary)}.ydo-sort-active .ydo-sort-arrow{color:var(--dsw-alias-brand-primary)}.ydo-cell{padding:8px 10px;font-size:var(--dsh-content-font-size-secondary,13px);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.ydo-cell-count,.ydo-cell-pct,.ydo-cell-seconds{text-align:right;font-variant-numeric:tabular-nums}.ydo-cell-sticky{position:sticky;z-index:2;border-right:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-1)}.ydo-table-head .ydo-cell-sticky{z-index:4;background:var(--dsw-alias-bg-layer-2)}.ydo-table-row{cursor:default;border-bottom:1px solid var(--dsw-alias-border-l1)}.ydo-table-row:hover .ydo-cell{background:var(--dsw-alias-bg-layer-2)}.ydo-table-row:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:-2px}.ydo-cell a{color:var(--dsw-alias-brand-primary);text-decoration:none}.ydo-cell a:hover{text-decoration:underline}.ydo-state{display:grid;min-height:200px;place-items:center;align-content:center;gap:10px;color:var(--dsw-alias-label-secondary);font-size:var(--dsh-content-font-size,14px);text-align:center}.ydo-state p{margin:0;max-width:640px;line-height:1.6}.ydo-state-title{color:var(--dsw-alias-label-primary);font-size:var(--dsw-font-base-16-font-size,16px);font-weight:600}.ydo-state-error .ydo-state-title{color:color-mix(in srgb,var(--dsw-alias-state-error-primary) 50%,var(--dsw-alias-label-primary))}.ydo-hint{margin:0;color:var(--dsw-alias-label-secondary);font-size:var(--dsh-content-font-size-secondary,13px);line-height:1.5}.ydo-error{margin:0;color:color-mix(in srgb,var(--dsw-alias-state-error-primary) 50%,var(--dsw-alias-label-primary));font-size:var(--dsh-content-font-size-secondary,13px)}.ydo-warn{margin:0;color:color-mix(in srgb,var(--dsw-alias-state-warn-primary,#d29922) 50%,var(--dsw-alias-label-primary));font-size:var(--dsh-content-font-size-secondary,13px)}.ydo-ok{margin:0;color:color-mix(in srgb,var(--dsw-alias-state-success-primary,#1a7f37) 50%,var(--dsw-alias-label-primary));font-size:var(--dsh-content-font-size-secondary,13px)}.ydo-spinner{width:16px;height:16px;border:2px solid var(--dsw-alias-border-l2);border-top-color:var(--dsw-alias-brand-primary);border-radius:50%;animation:ydo-spin .8s linear infinite}@keyframes ydo-spin{to{transform:rotate(360deg)}}.ydo-modal-overlay{position:fixed;inset:0;z-index:540;display:grid;place-items:center;background:color-mix(in srgb,var(--dsw-alias-bg-base) 60%,transparent)}.ydo-modal{width:min(1080px,calc(100vw - 48px));max-height:calc(100vh - 64px);display:grid;grid-template-rows:auto 1fr;border:1px solid var(--dsw-alias-border-l1);border-radius:8px;background:var(--dsw-alias-bg-layer-1);box-shadow:0 16px 48px rgba(0,0,0,.24);overflow:hidden}.ydo-modal-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;padding:16px 20px;border-bottom:1px solid var(--dsw-alias-border-l1)}.ydo-modal-head h3{margin:0;font-size:var(--dsw-font-base-16-font-size,16px)}.ydo-modal-meta{margin:4px 0 0;color:var(--dsw-alias-label-secondary);font-size:var(--dsh-content-font-size-secondary,13px)}.ydo-modal-body{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px;padding:20px;overflow:auto}.ydo-panel{padding:14px;border:1px solid var(--dsw-alias-border-l1);border-radius:8px;background:var(--dsw-alias-bg-base)}.ydo-panel h4{margin:0 0 10px;font-size:var(--dsh-content-font-size,14px)}.ydo-panel-gap{border-color:var(--dsw-alias-state-warn-primary,#d29922)}.ydo-gap-list{margin:0;padding-left:18px;display:grid;gap:4px;color:var(--dsw-alias-label-secondary);font-size:var(--dsh-content-font-size-secondary,13px)}.ydo-gap-list code{font-size:var(--dsh-content-font-size-secondary,13px);color:var(--dsw-alias-label-primary)}.ydo-gap-list .ydo-gap-failed{color:color-mix(in srgb,var(--dsw-alias-state-error-primary) 60%,var(--dsw-alias-label-primary))}.ydo-bars{margin:0;padding:0;list-style:none;display:grid;gap:6px}.ydo-bars li{display:grid;grid-template-columns:72px 1fr 56px;align-items:center;gap:8px;font-size:var(--dsh-content-font-size-secondary,13px)}.ydo-bar-label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.ydo-bar-track{display:block;height:6px;border-radius:3px;background:var(--dsw-alias-bg-layer-2);overflow:hidden}.ydo-bar-fill{display:block;height:100%;border-radius:3px;background:var(--dsw-alias-brand-primary)}.ydo-bar-value{text-align:right;font-variant-numeric:tabular-nums;color:var(--dsw-alias-label-secondary)}.ydo-donut-wrap{display:flex;align-items:center;gap:16px}.ydo-donut{position:relative;width:96px;height:96px;border-radius:50%;flex:none}.ydo-donut-hole{position:absolute;inset:22px;border-radius:50%;background:var(--dsw-alias-bg-base)}.ydo-legend{margin:0;padding:0;list-style:none;display:grid;gap:6px;font-size:var(--dsh-content-font-size-secondary,13px)}.ydo-legend li{display:flex;align-items:center;gap:6px}.ydo-legend-dot{width:10px;height:10px;border-radius:50%;flex:none;background:var(--dsw-alias-brand-primary)}.ydo-tags{display:flex;flex-wrap:wrap;gap:6px}.ydo-tag{padding:3px 8px;border-radius:4px;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-secondary);font-size:var(--dsh-content-font-size-secondary,13px)}.ydo-confirm-overlay{position:fixed;inset:0;z-index:560;display:grid;place-items:center;background:color-mix(in srgb,var(--dsw-alias-bg-base) 45%,transparent)}.ydo-confirm{width:min(420px,calc(100vw - 32px));padding:24px;border:1px solid var(--dsw-alias-border-l1);border-radius:8px;background:var(--dsw-alias-bg-layer-1);box-shadow:0 12px 40px rgba(0,0,0,.18)}.ydo-confirm-title{margin:0 0 20px;font-size:var(--dsw-font-base-16-font-size,15px);line-height:1.6}.ydo-confirm-actions{display:flex;justify-content:flex-end;gap:12px}.ydo-confirm-primary{min-height:36px;padding:0 18px;border:0;border-radius:6px;background:var(--dsw-alias-brand-primary);color:var(--dsw-alias-label-primary-foreground);font:inherit;font-weight:600;cursor:pointer}.ydo-confirm-secondary{min-height:36px;padding:0 18px;border:1px solid var(--dsw-alias-border-l1);border-radius:6px;background:var(--dsw-alias-bg-layer-1);color:inherit;font:inherit;cursor:pointer}.ydo-delete-retry{display:grid;gap:8px;justify-items:start;padding:10px 12px;border:1px solid var(--dsw-alias-state-error-primary);border-radius:8px;background:var(--dsw-alias-bg-layer-1)}.ydo-delete-retry .ydo-secondary{min-height:32px}/* 二次优化（§5.2）色彩变量定义在 overlay 作用域，不引入全局污染：性别男=淡蓝/女=柔和红；四类分布（年龄/流量来源/地域/城市级别）条形图淡绿填充，进度分析不受影响。 */
     .ydo-overlay{--ydo-gender-male:#91C5EB;--ydo-gender-female:#E88989;--ydo-distribution-fill:#A6D9B0;--ydo-distribution-fill-hover:#8FC99B}.ydo-bars-distribution .ydo-bar-fill{background:var(--ydo-distribution-fill,#A6D9B0)}.ydo-bars-distribution .ydo-bar-fill:hover{background:var(--ydo-distribution-fill-hover,#8FC99B)}.ydo-ov-page{display:grid;gap:12px;align-content:start;overflow:auto;min-height:0}/* 工具栏（UI 优化方案 v2 §4.1）：grid 两列 minmax(0,1fr) auto——筛选项在左列内部换行，操作区固定行尾。 */
     .ydo-ov-toolbar{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:12px}.ydo-ov-filters{display:flex;align-items:center;gap:12px;flex-wrap:wrap;min-width:0}/* 筛选控件带可见说明文字、高度统一 36px；取消浏览器黑 outline，仅 :focus-visible 显品牌色外环（v2 §4.1/§7）。 */
-    .ydo-filter-option:hover{background:var(--dsw-alias-bg-layer-2)}.ydo-ov-filter{display:inline-flex;align-items:center;gap:6px;color:var(--dsw-alias-label-secondary);font-size:var(--dsh-content-font-size-secondary,13px);white-space:nowrap}.ydo-filter-select{display:inline-flex;position:relative;min-width:0}.ydo-filter-trigger{display:flex;align-items:center;justify-content:space-between;gap:10px;height:36px;min-width:90px;max-width:220px;padding:0 10px;border:1px solid var(--dsw-alias-border-l1);border-radius:6px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);font:inherit;font-size:var(--dsh-content-font-size-secondary,13px);cursor:pointer}.ydo-filter-trigger:focus{outline:0}.ydo-filter-trigger:focus-visible{border-color:#3B82F6;box-shadow:0 0 0 2px color-mix(in srgb,#3B82F6 28%,transparent)}.ydo-filter-trigger:disabled{opacity:.55;cursor:default}.ydo-filter-value{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.ydo-filter-chevron{width:6px;height:6px;flex:none;margin:-4px 2px 0 0;border-right:1.5px solid currentColor;border-bottom:1.5px solid currentColor;transform:rotate(45deg)}.ydo-filter-menu{position:fixed;z-index:560;box-sizing:border-box;overflow-y:auto;padding:4px;border:1px solid var(--dsw-alias-border-l1);border-radius:6px;background:var(--dsw-alias-bg-layer-1);box-shadow:0 8px 24px rgba(0,0,0,.16)}.ydo-filter-option{display:flex;align-items:center;box-sizing:border-box;height:36px;padding:0 10px;border-radius:4px;color:var(--dsw-alias-label-primary);cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.ydo-filter-option-active{background:var(--dsw-alias-bg-layer-2)}.ydo-filter-option[aria-selected=true]{color:var(--dsw-alias-brand-primary);font-weight:600}.ydo-filter-option[aria-disabled=true]{opacity:.5;cursor:default}.ydo-ov-actions{display:flex;align-items:center;gap:8px;margin-left:auto}.ydo-ov-loading{display:flex;align-items:center;gap:8px;color:var(--dsw-alias-label-secondary);font-size:var(--dsh-content-font-size-secondary,13px)}.ydo-ov-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px}.ydo-ov-kpi-label{color:var(--dsw-alias-label-secondary);font-size:var(--dsh-content-font-size-secondary,13px)}.ydo-ov-kpi{display:grid;gap:4px;padding:14px;border:1px solid var(--dsw-alias-border-l1);border-radius:8px;background:var(--dsw-alias-bg-layer-1)}.ydo-ov-kpi-value{font-size:20px;font-weight:650}.ydo-ov-kpi-hint{color:var(--dsw-alias-label-secondary);font-size:12px}.ydo-ov-panel{padding:14px;border:1px solid var(--dsw-alias-border-l1);border-radius:8px;background:var(--dsw-alias-bg-layer-1);container-type:inline-size;container-name:ydo-panel}/* 面板即容器：窄屏表格重排按面板实际宽度触发（容器查询），不受宿主侧栏/窗口差异影响（二审 P2）。 */.ydo-ov-panel h3{margin:0 0 10px;font-size:var(--dsh-content-font-size,14px)}.ydo-ov-panels{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px}.ydo-ov-table{display:grid;border:1px solid var(--dsw-alias-border-l1);border-radius:8px;overflow-x:hidden;overflow-y:auto;max-height:420px}/* 总览表格列轨道按表分组固定（v2 §3.3/§4.2/§4.4）：数值列窄定宽，长文本只由标题/依据列伸缩；表头与数据行共用同一模板；容器禁横向滚动，纵向超限只纵向滚。 */
+    .ydo-filter-option:hover{background:var(--dsw-alias-bg-layer-2)}.ydo-ov-filter{display:inline-flex;align-items:center;gap:6px;color:var(--dsw-alias-label-secondary);font-size:var(--dsh-content-font-size-secondary,13px);white-space:nowrap}/* 自定义日期范围（2026-09-21 需求）：与筛选下拉同规格（36px/边框/圆角）；color-scheme 跟随宿主主题，日历图标明暗自适应。 */
+    .ydo-custom-range{display:inline-flex;align-items:center;gap:6px;white-space:nowrap}.ydo-custom-range-dash{color:var(--dsw-alias-label-secondary)}.ydo-date-input{height:36px;padding:0 8px;border:1px solid var(--dsw-alias-border-l1);border-radius:6px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);font:inherit;font-size:var(--dsh-content-font-size-secondary,13px);color-scheme:light dark}.ydo-date-input:focus{outline:0}.ydo-date-input:focus-visible{border-color:#3B82F6;box-shadow:0 0 0 2px color-mix(in srgb,#3B82F6 28%,transparent)}.ydo-filter-select{display:inline-flex;position:relative;min-width:0}.ydo-filter-trigger{display:flex;align-items:center;justify-content:space-between;gap:10px;height:36px;min-width:90px;max-width:220px;padding:0 10px;border:1px solid var(--dsw-alias-border-l1);border-radius:6px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);font:inherit;font-size:var(--dsh-content-font-size-secondary,13px);cursor:pointer}.ydo-filter-trigger:focus{outline:0}.ydo-filter-trigger:focus-visible{border-color:#3B82F6;box-shadow:0 0 0 2px color-mix(in srgb,#3B82F6 28%,transparent)}.ydo-filter-trigger:disabled{opacity:.55;cursor:default}.ydo-filter-value{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.ydo-filter-chevron{width:6px;height:6px;flex:none;margin:-4px 2px 0 0;border-right:1.5px solid currentColor;border-bottom:1.5px solid currentColor;transform:rotate(45deg)}.ydo-filter-menu{position:fixed;z-index:560;box-sizing:border-box;overflow-y:auto;padding:4px;border:1px solid var(--dsw-alias-border-l1);border-radius:6px;background:var(--dsw-alias-bg-layer-1);box-shadow:0 8px 24px rgba(0,0,0,.16)}.ydo-filter-option{display:flex;align-items:center;box-sizing:border-box;height:36px;padding:0 10px;border-radius:4px;color:var(--dsw-alias-label-primary);cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.ydo-filter-option-active{background:var(--dsw-alias-bg-layer-2)}.ydo-filter-option[aria-selected=true]{color:var(--dsw-alias-brand-primary);font-weight:600}.ydo-filter-option[aria-disabled=true]{opacity:.5;cursor:default}.ydo-ov-actions{display:flex;align-items:center;gap:8px;margin-left:auto}.ydo-ov-loading{display:flex;align-items:center;gap:8px;color:var(--dsw-alias-label-secondary);font-size:var(--dsh-content-font-size-secondary,13px)}.ydo-ov-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px}.ydo-ov-kpi-label{color:var(--dsw-alias-label-secondary);font-size:var(--dsh-content-font-size-secondary,13px)}.ydo-ov-kpi{display:grid;gap:4px;padding:14px;border:1px solid var(--dsw-alias-border-l1);border-radius:8px;background:var(--dsw-alias-bg-layer-1)}.ydo-ov-kpi-value{font-size:20px;font-weight:650}.ydo-ov-kpi-hint{color:var(--dsw-alias-label-secondary);font-size:12px}.ydo-ov-panel{padding:14px;border:1px solid var(--dsw-alias-border-l1);border-radius:8px;background:var(--dsw-alias-bg-layer-1);container-type:inline-size;container-name:ydo-panel}/* 面板即容器：窄屏表格重排按面板实际宽度触发（容器查询），不受宿主侧栏/窗口差异影响（二审 P2）。 */.ydo-ov-panel h3{margin:0 0 10px;font-size:var(--dsh-content-font-size,14px)}.ydo-ov-panels{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px}.ydo-ov-table{display:grid;border:1px solid var(--dsw-alias-border-l1);border-radius:8px;overflow-x:hidden;overflow-y:auto;max-height:420px}/* 总览表格列轨道按表分组固定（v2 §3.3/§4.2/§4.4）：数值列窄定宽，长文本只由标题/依据列伸缩；表头与数据行共用同一模板；容器禁横向滚动，纵向超限只纵向滚。 */
     .ydo-ov-tr{display:grid;box-sizing:border-box;padding:8px 10px;align-items:center;gap:8px;font-size:var(--dsh-content-font-size-secondary,13px);border-bottom:1px solid var(--dsw-alias-border-l1);min-width:100%}.ydo-ov-tr-rank{grid-template-columns:48px minmax(90px,.8fr) repeat(6,minmax(72px,.35fr))}.ydo-ov-tr-hot{grid-template-columns:minmax(220px,2fr) minmax(110px,1fr) 124px 84px 76px minmax(220px,1.7fr)}/* 分析页爆款表列序不同（排名居首，方案 §5.5），用专属轨道避免排名落进宽轨（验收建议 1）；发布时间/播放量/互动率固定窄列（v2 §5.4）。 */
     .ydo-ov-tr-hot-rank{grid-template-columns:minmax(56px,.5fr) minmax(200px,2fr) 124px 84px 76px minmax(220px,1.7fr)}.ydo-ov-tr:last-child{border-bottom:0}.ydo-ov-head{background:var(--dsw-alias-bg-layer-2);font-weight:600}.ydo-ov-num{text-align:right;font-variant-numeric:tabular-nums}.ydo-ov-hot-basis-head{text-align:center;padding-inline:12px}.ydo-ov-rankcell{text-align:center;font-variant-numeric:tabular-nums}.ydo-ov-flag{margin-left:8px;padding:2px 6px;border-radius:4px;font-size:12px}.ydo-ov-flag-suspicious{background:var(--dsw-alias-bg-layer-2);color:color-mix(in srgb,var(--dsw-alias-state-warn-primary,#d29922) 70%,var(--dsw-alias-label-primary))}.ydo-ov-flag-expired{background:var(--dsw-alias-bg-layer-2);color:color-mix(in srgb,var(--dsw-alias-state-error-primary) 60%,var(--dsw-alias-label-primary))}/* 状态过旧用语义色（橙），正常数据颜色不变（UI 优化方案 §4.3/§7）。 */
     .ydo-ov-session-stale{color:color-mix(in srgb,var(--dsw-alias-state-warn-primary,#d29922) 70%,var(--dsw-alias-label-primary))}.ydo-ov-dist{margin:0;padding:0;list-style:none;display:grid;gap:6px}.ydo-ov-dist li{display:grid;grid-template-columns:20px minmax(96px,140px) 1fr 44px;align-items:center;gap:8px;font-size:var(--dsh-content-font-size-secondary,13px)}/* 爆款分布前三名固定语义色（v2 §4.3）：1 橙 / 2 蓝 / 3 紫，第 4 名起中性品牌色；名次同时用排名数字表达。 */

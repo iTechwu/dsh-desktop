@@ -278,9 +278,21 @@ export function OverviewPage({
       catalog: catalog.length, accountTotal,
     })
   }
-  const windowOptions = ['7d', '30d', '90d', 'all']
-  // KPI 作品数带明确范围文案（UI 优化方案 v2 §3.2/§4.2）：近 N 天 / 全部时间。
-  const rangeLabel = filters.window === 'all' ? t('rangeAllTime') : t(`window_${filters.window || '30d'}`)
+  const windowOptions = ['7d', '30d', '90d', 'custom']
+  // 自定义范围基础判断（2026-09-21 需求）：清空不提交（受控值保持，不触发查询）；
+  // 越界自动纠偏——改开始致开始>截止 → 截止跟随开始，改截止致截止<开始 → 开始跟随截止
+  //（YYYY-MM-DD 字典序即日期序；min/max 先在日历层拦截，手输越界走这里），纠偏后仍只触发一次查询。
+  const applyCustomRange = (key, value) => {
+    if (!value) return
+    const next = { ...filters, [key]: value }
+    if (next.customFrom && next.customTo && next.customFrom > next.customTo) {
+      if (key === 'customFrom') next.customTo = value
+      else next.customFrom = value
+    }
+    onFilterChange(next)
+  }
+  // KPI 作品数带明确范围文案（UI 优化方案 v2 §3.2/§4.2）：近 N 天 / 自定义日期区间。
+  const rangeLabel = overviewRangeLabel(filters, t)
 
   return h('div', { className: 'ydo-ov-page' },
     // 工具栏（UI 优化方案 v2 §4.1）：grid 两列（minmax(0,1fr) auto），筛选项在左列
@@ -316,7 +328,30 @@ export function OverviewPage({
             value: filters.window || '30d',
             onChange: value => onFilterChange({ ...filters, window: value }),
             options: windowOptions.map(option => ({ value: option, label: t(`window_${option}`) })),
-          })),
+          }),
+          // 自定义范围（2026-09-21 需求）：仅 window=custom 时渲染并参与查询条件，
+          // 其余预设隐藏；任一日期变化即触发一次查询（onFilterChange → client
+          // setOverviewFilters → 查询 effect）。两个日期框精确到天（YYYY-MM-DD）。
+          filters.window === 'custom' ? h('span', { className: 'ydo-custom-range' },
+            h('span', null, t('customRangeStart')),
+            h('input', {
+              type: 'date',
+              className: 'ydo-date-input',
+              'aria-label': t('customRangeStart'),
+              value: filters.customFrom || '',
+              max: filters.customTo || undefined,
+              onChange: event => applyCustomRange('customFrom', event.target.value),
+            }),
+            h('span', { className: 'ydo-custom-range-dash', 'aria-hidden': true }, '-'),
+            h('span', null, t('customRangeEnd')),
+            h('input', {
+              type: 'date',
+              className: 'ydo-date-input',
+              'aria-label': t('customRangeEnd'),
+              value: filters.customTo || '',
+              min: filters.customFrom || undefined,
+              onChange: event => applyCustomRange('customTo', event.target.value),
+            })) : null),
         h('div', { className: 'ydo-ov-filter' },
           h('span', null, t('overviewSort')),
           h(FilterSelect, {
@@ -441,16 +476,42 @@ export function WorkDrawerContainer(props) {
   return h(HotWorkDrawer, props)
 }
 
-export function buildOverviewFilters({ window = '30d', sort = 'hot_count', accountIds = [], now = null } = {}) {
+const _pad2 = value => String(value).padStart(2, '0')
+const _isoDay = date => `${date.getFullYear()}-${_pad2(date.getMonth() + 1)}-${_pad2(date.getDate())}`
+
+// 自定义窗口默认范围（2026-09-21 需求）：截止 = 今天、开始 = 往前推一个自然月。
+// 仅作 UI 初值；用户改动后随筛选状态持久，请求日期仍由 buildOverviewFilters 派生。
+export function defaultCustomRange(now = null) {
+  const base = now ? new Date(now) : new Date()
+  const from = new Date(base.getFullYear(), base.getMonth() - 1, base.getDate())
+  return { customFrom: _isoDay(from), customTo: _isoDay(base) }
+}
+
+export function buildOverviewFilters({
+  window = '30d', sort = 'hot_count', accountIds = [], customFrom = null, customTo = null, now = null,
+} = {}) {
   // 展示偏好（决策 15 允许本地保存）：时间 preset → 自然日窗口字符串。
   // 近 N 天 = [今天-(N-1), 明天)——服务端转 UTC 半开区间，排他终点取明天才能包含今天。
-  // "全部"不带窗口字段。
-  if (window === 'all') return { sort, accountIds }
+  // 自定义窗口 = [customFrom, customTo+1)：用户语义「截止日含当天」，排他终点 = 截止+1；
+  // 同一天选择（from=to）因此合法。日期缺失属防御分支（正常交互下 UI 保证成对），回退近 30 天。
+  if (window === 'custom' && customFrom && customTo) {
+    const [year, month, day] = customTo.split('-').map(Number)
+    return {
+      sort, accountIds,
+      publishFrom: customFrom,
+      publishTo: _isoDay(new Date(year, month - 1, day + 1)),
+    }
+  }
   const days = window === '7d' ? 7 : window === '90d' ? 90 : 30
   const base = now ? new Date(now) : new Date()
   const from = new Date(base.getFullYear(), base.getMonth(), base.getDate() - (days - 1))
   const to = new Date(base.getFullYear(), base.getMonth(), base.getDate() + 1)
-  const pad = value => String(value).padStart(2, '0')
-  const iso = date => `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
-  return { sort, accountIds, publishFrom: iso(from), publishTo: iso(to) }
+  return { sort, accountIds, publishFrom: _isoDay(from), publishTo: _isoDay(to) }
+}
+
+// 范围文案统一出口：KPI 作品数 hint 与单账号分析页共用（§3.2 口径标识同源）。
+// 自定义窗口显示具体日期区间，预设窗口沿用近 N 天文案。
+export function overviewRangeLabel(filters, t) {
+  if (filters?.window === 'custom') return `${filters.customFrom || '?'} ~ ${filters.customTo || '?'}`
+  return t(`window_${filters?.window || '30d'}`)
 }

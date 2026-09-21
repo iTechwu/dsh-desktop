@@ -999,13 +999,30 @@ test('overview-ui 行为：账号行点击触发下钻、无账号空态渲染�
 
   // F3 回归：近 N 天窗口必须带 publishFrom 与 publishTo（排他终点=明天，含今天）。
   const buildOverviewFilters = vm.runInContext('buildOverviewFilters', sandbox)
+  const defaultCustomRange = vm.runInContext('defaultCustomRange', sandbox)
   const fixed = Date.parse('2026-09-15T04:00:00Z')
   const filters = buildOverviewFilters({ window: '30d', now: fixed })
   assert.equal(filters.publishFrom, '2026-08-17', '近 30 天起点 = 今天-29')
   assert.equal(filters.publishTo, '2026-09-16', '半开排他终点 = 明天，服务端 [from, to) 含今天')
-  const allFilters = buildOverviewFilters({ window: 'all', now: fixed })
-  assert.equal(allFilters.publishFrom, undefined)
-  assert.equal(allFilters.publishTo, undefined)
+  // 自定义窗口（2026-09-21 需求）：用户语义「截止日含当天」→ publishTo = 截止+1。
+  const custom = buildOverviewFilters({ window: 'custom', customFrom: '2026-08-22', customTo: '2026-09-21', now: fixed })
+  assert.equal(custom.publishFrom, '2026-08-22', '自定义起点原样传递')
+  assert.equal(custom.publishTo, '2026-09-22', '自定义截止含当天 → 排他终点 = 截止+1')
+  // 同一天选择合法：[9-21, 9-22) 即 9-21 当天（服务端要求 to > from，+1 后天然满足）。
+  const sameDay = buildOverviewFilters({ window: 'custom', customFrom: '2026-09-21', customTo: '2026-09-21', now: fixed })
+  assert.equal(sameDay.publishFrom, '2026-09-21')
+  assert.equal(sameDay.publishTo, '2026-09-22', '单日窗口合法')
+  // 截止+1 的自然日进位边界：月末与跨年都依赖 Date 溢出规范化。
+  const monthEnd = buildOverviewFilters({ window: 'custom', customFrom: '2026-08-01', customTo: '2026-08-31', now: fixed })
+  assert.equal(monthEnd.publishTo, '2026-09-01', '截止为月末 → 排他终点进位到次月 1 日')
+  const yearEnd = buildOverviewFilters({ window: 'custom', customFrom: '2026-12-01', customTo: '2026-12-31', now: fixed })
+  assert.equal(yearEnd.publishTo, '2027-01-01', '截止为年末 → 排他终点进位到次年 1 月 1 日')
+  // 防御：自定义缺日期回退近 30 天预设（正常交互下 UI 保证成对，min/max + 纠偏）。
+  const fallback = buildOverviewFilters({ window: 'custom', now: fixed })
+  assert.equal(fallback.publishFrom, '2026-08-17', '自定义缺日期防御回退近 30 天')
+  assert.equal(fallback.publishTo, '2026-09-16')
+  // 自定义默认范围：截止 = 今天、开始 = 往前推一个自然月。
+  assert.deepEqual({ ...defaultCustomRange(fixed) }, { customFrom: '2026-08-15', customTo: '2026-09-15' })
 })
 
 // ---------------------------------------------------------------------------
@@ -1306,7 +1323,7 @@ test('formatWan：万单位与千分位展示（构建内联后 analysis-ui 依�
 test('筛选流契约：UI 形态状态、请求时归一、筛选变更不重复请求（验收建议 2/3）', async () => {
   const source = await readFile(new URL('../src/client.js', import.meta.url), 'utf8')
   // 初始状态为 UI 形态（含 window 键），不带日期字段。
-  assert.match(source, /useState\(\(\) => \(\{ window: '30d', sort: 'hot_count', accountIds: \[\] \}\)\)/u)
+  assert.match(source, /useState\(\(\) => \(\{\n    window: '30d', sort: 'hot_count', accountIds: \[\], \.\.\.defaultCustomRange\(\),\n  \}\)\)/u)
   // overview.get / overview.export 请求前统一经 buildOverviewFilters 归一（「全部」不带日期）。
   assert.match(source, /action: 'overview\.get', \.\.\.buildOverviewFilters\(filters\)/u)
   assert.match(source, /action: 'overview\.export', \.\.\.buildOverviewFilters\(overviewFilters\)/u)
@@ -1404,13 +1421,68 @@ test('总览工具栏：单选账号下拉（默认全部账号）、日期/排�
   accountSelect.props.onChange('')
   assert.deepEqual([...changes[1].accountIds], [])
   // 窗口下拉改 UI 形态（window 键）：请求日期由 client.js 发请求时经
-  // buildOverviewFilters 归一——切「全部」不会残留旧 publishFrom/publishTo（验收建议 2）。
+  // buildOverviewFilters 归一——切「自定义」不会残留预设窗口日期（验收建议 2）。
   const windowSelect = selects[1]
   assert.equal(windowSelect.props.value, '30d')
-  windowSelect.props.onChange('all')
-  assert.equal(changes[2].window, 'all')
+  // 「全部时间」已被「自定义」替代（2026-09-21 需求）：下拉四选项。
+  assert.deepEqual([...windowSelect.props.options.map(option => option.value)], ['7d', '30d', '90d', 'custom'])
+  windowSelect.props.onChange('custom')
+  assert.equal(changes[2].window, 'custom')
   assert.equal(changes[2].publishFrom, undefined, 'UI 形态筛选不携带日期字段')
   assert.equal(changes[2].publishTo, undefined)
+  // 自定义窗口渲染开始/截止两个日期框（YYYY-MM-DD）：min/max 互相约束、任一变化即
+  // 触发一次查询；清空不提交；越界自动纠偏（2026-09-21 需求的基础判断）。
+  hLog.length = 0
+  OverviewPage({
+    overview: fixture,
+    loading: true,
+    errorReason: null,
+    filters: { window: 'custom', sort: 'hot_count', accountIds: [], customFrom: '2026-08-22', customTo: '2026-09-21' },
+    accounts: fixture.accounts,
+    collecting: false,
+    exporting: false,
+    onFilterChange: filters => changes.push(filters),
+    onRefresh: () => {},
+    onExport: () => {},
+    onAddAccount: () => {},
+    t: key => key,
+  })
+  const dateInputs = hLog.filter(node => node.type === 'input')
+  assert.equal(dateInputs.length, 2, '自定义窗口渲染开始/截止两个日期框')
+  assert.equal(dateInputs[0].props.type, 'date')
+  assert.equal(dateInputs[0].props.value, '2026-08-22')
+  assert.equal(dateInputs[0].props.max, '2026-09-21', '开始日期 max=截止，日历层拦截越界')
+  assert.equal(dateInputs[1].props.value, '2026-09-21')
+  assert.equal(dateInputs[1].props.min, '2026-08-22', '截止日期 min=开始')
+  dateInputs[0].props.onChange({ target: { value: '2026-09-25' } })
+  const crossed = changes[changes.length - 1]
+  assert.equal(crossed.customFrom, '2026-09-25')
+  assert.equal(crossed.customTo, '2026-09-25', '开始>截止 → 截止自动纠偏跟随，仍触发一次查询')
+  // 反向纠偏分支：改截止到开始之前 → 开始跟随截止。
+  dateInputs[1].props.onChange({ target: { value: '2026-08-10' } })
+  const crossedBack = changes[changes.length - 1]
+  assert.equal(crossedBack.customTo, '2026-08-10')
+  assert.equal(crossedBack.customFrom, '2026-08-10', '截止<开始 → 开始自动纠偏跟随')
+  const changesBeforeClear = changes.length
+  dateInputs[1].props.onChange({ target: { value: '' } })
+  assert.equal(changes.length, changesBeforeClear, '清空日期不触发查询（不提交不完整范围）')
+  // 非自定义窗口不渲染日期框：隐藏且不参与查询条件。
+  hLog.length = 0
+  OverviewPage({
+    overview: fixture,
+    loading: true,
+    errorReason: null,
+    filters: { window: '30d', sort: 'hot_count', accountIds: [] },
+    accounts: fixture.accounts,
+    collecting: false,
+    exporting: false,
+    onFilterChange: filters => changes.push(filters),
+    onRefresh: () => {},
+    onExport: () => {},
+    onAddAccount: () => {},
+    t: key => key,
+  })
+  assert.equal(hLog.filter(node => node.type === 'input').length, 0, '非自定义窗口不渲染日期框')
   // 日期与排序下拉前有可见文字说明。
   const labels = hLog.filter(node => node.props?.className === 'ydo-ov-filter')
   assert.ok(labels.some(label => JSON.stringify(label).includes('overviewWindow')), '发布时间下拉带可见文字')
@@ -1524,8 +1596,9 @@ test('总览页面文案回归：不出现规则版本/数据来源/参与样本
     sessionCheckValid: '最近检测有效', none: '暂无数据',
     // v2 §3.1/§3.2/§4.1：账号目录、时间范围与同步/失败文案。
     allAccounts: '全部账号', overviewAccountFilter: '账号：', overviewWindow: '发布时间：', overviewSort: '排序：',
-    window_7d: '近7天', window_30d: '近30天', window_90d: '近90天', window_all: '全部时间',
-    rangeAllTime: '全部时间', noWorks: '无作品',
+    window_7d: '近7天', window_30d: '近30天', window_90d: '近90天', window_custom: '自定义',
+    customRangeStart: '开始日期', customRangeEnd: '截止日期',
+    noWorks: '无作品',
     accountCatalogSyncing: '账号列表与统计正在同步', accountCatalogUnavailable: '账号列表暂不可用',
     rankingScopeHint: '共 {total} 个账号 · 排行展示 {shown} 个',
     refresh: '刷新', exportOverview: '导出总览',
@@ -1987,17 +2060,17 @@ test('v2 账号目录：accountOptions 驱动下拉、零作品标注、失同�
   assert.ok(hLog.some(node => JSON.stringify(node.children || []).includes('accountCatalogSyncing')),
     '缺 accountTotal 时提示目录正在同步')
 
-  // KPI 作品数辅助文案带明确范围（§3.2/§4.2）：近 N 天 / 全部时间。
+  // KPI 作品数辅助文案带明确范围（§3.2/§4.2）：近 N 天 / 自定义日期区间。
   hLog.length = 0
   OverviewPage({
     overview: { summary: baseSummary, accounts, accountOptions: [{ accountId: 'a1', nickname: '燃豚豚', workCount: 19 }], hotWorks: [] },
     loading: false, errorReason: null,
-    filters: { window: 'all', sort: 'hot_count', accountIds: [] },
+    filters: { window: 'custom', sort: 'hot_count', accountIds: [], customFrom: '2026-08-22', customTo: '2026-09-21' },
     accounts, collecting: false, exporting: false,
     onFilterChange: () => {}, onRefresh: () => {}, onExport: () => {},
     onOpenAccount: () => {}, onAddAccount: () => {}, t,
   })
-  assert.ok(JSON.stringify(hLog).includes('rangeAllTime'), '全部时间范围下 KPI 辅助文案用 rangeAllTime')
+  assert.ok(JSON.stringify(hLog).includes('2026-08-22 ~ 2026-09-21'), '自定义范围下 KPI 辅助文案显示日期区间')
 })
 
 test('v2 爆款账号分布：服务端 hotAccountDistribution 驱动、保持服务端顺序、最多 5 个、前三名专属配色类', async () => {
