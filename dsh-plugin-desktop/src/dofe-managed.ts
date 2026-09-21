@@ -94,7 +94,7 @@ export async function apply(ctx: Context): Promise<void> {
         setupComplete: sameUser && current.validationVersion === DOFE_ACCESS_VALIDATION_VERSION
           && Boolean(current.modelId) && entitlements.allowedProtocols.includes(current.protocol ?? 'chat-completions'),
       })
-    })
+    }, ctx.logger)
     ctx.provide('dofeAuth', auth)
     const restore = async () => {
       await ctx.settings.update(DOFE_ACCESS_SETTINGS_NAMESPACE, { setupComplete: false })

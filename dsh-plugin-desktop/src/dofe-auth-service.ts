@@ -1,6 +1,8 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import type { CredentialProvider } from '@deepseek-ai/dsh-credentials'
 import { credentialKey, credentialRef } from '@deepseek-ai/dsh-credentials'
+import type { DesktopLogger } from './desktop-logger.ts'
+import { formatDesktopErrorDetails } from './desktop-logger.ts'
 import type { DesktopRuntime } from './runtime.ts'
 import type { DofeAuthSnapshot } from './dofe-auth-contract.ts'
 export * from './dofe-auth-contract.ts'
@@ -65,6 +67,7 @@ export class DofeAuthService {
     private readonly credentials: CredentialProvider,
     private readonly fetcher: typeof fetch = globalThis.fetch,
     private readonly onBound?: (snapshot: DofeAuthSnapshot) => Promise<void>,
+    private readonly logger?: Pick<DesktopLogger, 'error'>,
   ) {}
 
   getStatus(): DofeAuthSnapshot { return structuredClone(this.snapshot) }
@@ -87,7 +90,12 @@ export class DofeAuthService {
     this.abort = new AbortController()
     this.snapshot = { status: 'pending' }
     this.operation = this.openAuthorization(interactive).catch(error => {
-      if (!this.cancelled) this.fail(error instanceof DofeAuthTokenError ? '登录授权已失效，请重新登录' : '登录未完成，请检查网络或稍后重试')
+      if (!this.cancelled) {
+        // The generic dialog copy hides the underlying failure; keep the cause
+        // chain in the diagnostic log so network vs provisioning is decidable.
+        this.logger?.error(`dsh-plugin-desktop: dofe 登录流程失败: ${formatDesktopErrorDetails(error)}`)
+        this.fail(error instanceof DofeAuthTokenError ? '登录授权已失效，请重新登录' : '登录未完成，请检查网络或稍后重试')
+      }
     }).finally(() => { this.closeLoopback(); this.operation = undefined })
     return this.getStatus()
   }
