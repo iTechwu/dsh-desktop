@@ -121,8 +121,8 @@ test('loads and registers the sidebar action and global overlay', async () => {
             'IconAgentPresetOutline16', 'IconArchiveOutline20', 'IconBrowseOutline16', 'IconCheckOutline16',
             'IconChecklistOutline14', 'IconChevronRightOutline14', 'IconClockOutline16', 'IconCloseOutline16',
             'IconCodeOutline16', 'IconDatabaseOutline16', 'IconDataOutline16', 'IconEditOutline16',
-            'IconEnhanceOutline16', 'IconLoadingOutline16', 'IconPlayOutline16', 'IconQueueOutline14',
-            'IconRefreshOutline16', 'IconSendOutline16', 'IconSettingsOutline16', 'IconSparkle16',
+            'IconEnhanceOutline16', 'IconLoadingOutline16', 'IconPaperPlaneOutline14', 'IconPlayOutline16',
+            'IconQueueOutline14', 'IconRefreshOutline16', 'IconSettingsOutline16', 'IconSparkle16',
             'IconWarningOutline16', 'Tooltip',
           ].map(name => [name, () => {}]))
           throw new Error(`unexpected module ${specifier}`)
@@ -867,3 +867,11 @@ async function invokeRoute(route, method, body) {
   await route.handler(req, res)
   return { status, body: raw ? JSON.parse(raw) : undefined }
 }
+
+test('uses only DSH exported icons', async () => {
+  const source = await readFile(new URL('src/client.js', root), 'utf8')
+  const imports = source.match(/const \{([^}]+)\} = require\('@deepseek-ai\/dsh-client-ui-primitives'\)/u)?.[1] || ''
+  const exported = await readFile(new URL('../../../deepseek-harness/packages/client/ui-primitives/src/icons/index.tsx', root), 'utf8')
+  for (const name of imports.split(',').map(token => token.trim()).filter(token => token.startsWith('Icon')))
+    assert.match(exported, new RegExp(`export const ${name}\\b`, 'u'))
+})
