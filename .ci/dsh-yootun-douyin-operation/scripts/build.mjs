@@ -23,18 +23,29 @@ const stripUiFormatImport = (text, file) => {
   if (!uiFormatImport.test(text)) throw new Error(`build: ui-format import not found in ${file}`)
   return text.replace(uiFormatImport, '')
 }
+// overview-ui / analysis-ui 对 UI primitives 的解构 require 同样剥离：图标绑定集中在
+// client.js 顶部解构（内联后同一工厂作用域），UI 模块源码里的 require 只作显式依赖
+// 声明。新增图标必须同步加进 client.js:15 的解构，否则内联后 ReferenceError。
+const stripUiPrimitivesRequire = text =>
+  text.replace(/^const \{ [\w, ]+ \} = require\('@deepseek-ai\/dsh-client-ui-primitives'\)\n/m, '')
 const uiFormat = strip(await readFile(new URL('src/ui-format.js', root), 'utf8'))
 const selectUi = strip(await readFile(new URL('src/select-ui.js', root), 'utf8'))
 // overview-ui 里的 React require 与 client.js 重复（内联后同一工厂作用域）：剥离，
 // React / createElement:h 由 client.js 顶部的声明提供。
 const overviewUi = strip(
-  stripUiFormatImport(await readFile(new URL('src/overview-ui.js', root), 'utf8'), 'overview-ui.js')
-    .replace(selectUiImport, '')
-    .replace(/^const React = require\('react'\)\n/m, '')
-    .replace(/^const \{ createElement: h \} = React\n/m, ''),
+  stripUiPrimitivesRequire(
+    stripUiFormatImport(await readFile(new URL('src/overview-ui.js', root), 'utf8'), 'overview-ui.js')
+      .replace(selectUiImport, '')
+      .replace(/^const React = require\('react'\)\n/m, '')
+      .replace(/^const \{ createElement: h \} = React\n/m, ''),
+  ),
 )
 // analysis-ui 的 React 获取是惰性 let（不与 client.js 的 const React 冲突），原样内联。
-const analysisUi = strip(stripUiFormatImport(await readFile(new URL('src/analysis-ui.js', root), 'utf8'), 'analysis-ui.js').replace(selectUiImport, ''))
+const analysisUi = strip(
+  stripUiPrimitivesRequire(
+    stripUiFormatImport(await readFile(new URL('src/analysis-ui.js', root), 'utf8'), 'analysis-ui.js').replace(selectUiImport, ''),
+  ),
+)
 const body = [uiFormat, selectUi, overviewUi, analysisUi, source.trimEnd()].join('\n\n')
 
 await mkdir(new URL('lib/', root), { recursive: true })

@@ -21,6 +21,9 @@ function react() {
   return __react
 }
 
+// 下载图标与视频数据页"导出 Excel"按钮同款（v2 §4.1 同一导出语义）。
+const { IconDownloadOutline16 } = require('@deepseek-ai/dsh-client-ui-primitives')
+
 function h2(...args) {
   return react().createElement(...args)
 }
@@ -876,7 +879,9 @@ export function AnalysisPage({
       h2('button', {
         type: 'button', className: 'ydo-secondary ydo-export',
         disabled: exporting, 'aria-busy': exporting, onClick: onExport,
-      }, exporting ? t('exporting') : t('exportAnalysis'))),
+      },
+      h2(IconDownloadOutline16, { size: 14 }),
+      h2('span', null, exporting ? t('exporting') : t('exportAnalysis')))),
 
     account ? h2('header', { className: 'ydo-an-head' },
       // 标题统一「账号：{名称}」（UI 优化方案 §5.1），与返回/导出按钮同属工具栏层级。

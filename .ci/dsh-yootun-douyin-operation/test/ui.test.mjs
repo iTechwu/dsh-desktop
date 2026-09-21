@@ -58,6 +58,7 @@ async function evalUiModule(url, sandbox, reactStub) {
     ...uiFormatModule,
     require: name => {
       if (name === 'react') return reactStub || { createElement: () => null }
+      if (name === '@deepseek-ai/dsh-client-ui-primitives') return { IconDownloadOutline16: () => null }
       throw new Error(`unexpected require: ${name}`)
     },
     Date,
@@ -357,6 +358,7 @@ test('构建产物 lib/client.js 可加载，且内联了展示逻辑', async ()
     },
     '@deepseek-ai/dsh-client-ui-primitives': {
       IconCloseOutline16: () => null,
+      IconDownloadOutline16: () => null,
       IconPlayOutline16: () => null,
       Tooltip: () => null,
     },
@@ -720,6 +722,7 @@ async function loadBundle() {
     },
     '@deepseek-ai/dsh-client-ui-primitives': {
       IconCloseOutline16: props => ({ type: 'icon-close', props: props || {}, children: null }),
+      IconDownloadOutline16: props => ({ type: 'icon-download', props: props || {}, children: null }),
       IconPlayOutline16: props => ({ type: 'icon-play', props: props || {}, children: null }),
       Tooltip: props => ({ type: 'tooltip', props: props || {}, children: props && props.children }),
     },

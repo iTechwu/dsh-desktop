@@ -20,6 +20,7 @@ import { FilterSelect } from './select-ui.js'
 
 const React = require('react')
 const { createElement: h } = React
+const { IconDownloadOutline16 } = require('@deepseek-ai/dsh-client-ui-primitives')
 
 // 万单位格式化（仅展示层换算，非口径）：≥1万 → x.x万，千分位分隔。
 export function formatWan(value) {
@@ -329,14 +330,17 @@ export function OverviewPage({
         // 「刷新」执行当前条件的只读查询；筛选变更的自动查询走列表区加载态，
         // 不借用刷新按钮的禁用/按下态表达（UI 优化方案 §4.1）。
         h('button', { type: 'button', className: 'ydo-secondary', onClick: onRefresh }, t('refresh')),
-        // "导出总览"只属于账号总览 Tab 的局部工具栏（方案 §5.1/§10.2）。
+        // "导出总览"只属于账号总览 Tab 的局部工具栏（方案 §5.1/§10.2）；
+        // 下载图标与视频数据页"导出 Excel"按钮同款（v2 §4.1 同一导出语义）。
         h('button', {
           type: 'button',
           className: 'ydo-secondary ydo-export',
           disabled: exporting,
           'aria-busy': exporting,
           onClick: onExport,
-        }, exporting ? t('exporting') : t('exportOverview')),
+        },
+        h(IconDownloadOutline16, { size: 14 }),
+        h('span', null, exporting ? t('exporting') : t('exportOverview'))),
         collecting ? h('span', { className: 'ydo-ov-collecting', role: 'status' }, t('collecting')) : null)),
 
     // 筛选自动查询期间的加载态显示在列表区域，不触发刷新按钮（UI 优化方案 §4.1）。
