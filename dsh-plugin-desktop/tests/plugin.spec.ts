@@ -34,6 +34,11 @@ import { YOOTUN_SALES_PATH } from '../src/yootun-sales-route.ts'
 import { YOOTUN_SUPPLY_WATCH_PATH } from '../src/yootun-supply-watch-route.ts'
 import { YOOTUN_CONTENT_COMMAND_PATH } from '../src/yootun-content-command-route.ts'
 import { YOOTUN_AUDIT_PATH } from '../src/yootun-audit-route.ts'
+import { DOFE_AUTH_PATHS } from '../src/dofe-auth-route.ts'
+import { BRAND_RELEASE_IDENTITIES, BRAND_ACTIVE_CHANNEL } from '../src/generated-product-identity.ts'
+
+/** The installed identity of the active release channel, whatever the brand. */
+const BRAND_ACTIVE_IDENTITY = BRAND_RELEASE_IDENTITIES[BRAND_ACTIVE_CHANNEL]
 import {
   DESKTOP_DEVELOPER_TOOLS_TOGGLE_PATH,
   DESKTOP_DIAGNOSTICS_EXPORT_PATH,
@@ -204,6 +209,9 @@ function createHarness(
     connection: { authenticatedUrl, requestRejection },
     tools: { schemas: vi.fn(() => []), execute: vi.fn() },
     credentials: { resolve: vi.fn(), describe: vi.fn(), set: vi.fn(), unset: vi.fn() },
+    // The sensteed brand injects 'dofeAuth'; the loader provides it from
+    // dofe-managed in production, so the hand-rolled harness needs a stub.
+    dofeAuth: { watchBinding: vi.fn(() => () => {}) },
     logger: { warn: vi.fn(), error: vi.fn() },
     get: vi.fn((key: unknown) => {
       if (String(key) === 'desktopRuntime') return runtime
@@ -379,8 +387,8 @@ describe('desktop Host plugin', () => {
       mode: 'compatibility',
       url: 'http://127.0.0.1:43120/?sensteed-agent-mode=compatibility&sensteed-agent-platform=darwin&sensteed-agent-version=2.0.0&sensteed-agent-material=transparent&sensteed-agent-titlebar-inset=36',
       authenticationUrl: 'http://127.0.0.1:43120/?token=test-token',
-      productName: 'Yootun-Agent Beta',
-      windowTitle: 'Yootun-Agent Beta',
+      productName: BRAND_ACTIVE_IDENTITY.productName,
+      windowTitle: BRAND_ACTIVE_IDENTITY.productName,
       rendererAccessHeader: {
         name: 'x-sensteed-agent-renderer',
         value: Buffer.alloc(32, 6).toString('base64url'),
@@ -462,6 +470,7 @@ describe('desktop Host plugin', () => {
       DESKTOP_DIAGNOSTICS_EXPORT_PATH,
       DOFE_ACCESS_MODELS_PATH,
       DOFE_ACCESS_VALIDATE_PATH,
+      ...DOFE_AUTH_PATHS,
       YOOTUN_RECRUITER_PATH,
       YOOTUN_SALES_PATH,
       YOOTUN_SUPPLY_WATCH_PATH,

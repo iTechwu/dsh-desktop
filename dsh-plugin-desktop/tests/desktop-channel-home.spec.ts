@@ -10,8 +10,10 @@ import { DESKTOP_RELEASE_IDENTITIES } from '../src/product-identity.ts'
 const stable = DESKTOP_RELEASE_IDENTITIES.stable
 const beta = DESKTOP_RELEASE_IDENTITIES.beta
 const userHome = process.platform === 'win32' ? 'C:\Users\tester' : '/home/tester'
-const legacy = resolve(join(userHome, '.dsh'))
-const betaHome = resolve(join(userHome, '.dsh-beta'))
+// Channel homes follow the active brand identity; the specs below only care
+// that stable and beta stay distinct.
+const legacy = resolve(join(userHome, stable.homeDirectoryName))
+const betaHome = resolve(join(userHome, beta.homeDirectoryName))
 const inUse = (...paths: string[]) => (path: string) => paths.includes(path)
 const none = () => false
 

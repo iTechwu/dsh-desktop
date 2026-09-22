@@ -3,6 +3,11 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import { Readable } from 'node:stream'
 import { describe, expect, it, vi } from 'vitest'
 import { DOFE_ACCESS_MODELS_PATH, DOFE_AUTH_CONTEXT_URL, handleDofeAccessValidationRequest, handleDofeModelCatalogRequest } from '../src/dofe-access-route.ts'
+import { BRAND_TENANT, BRAND_TENANT_ID } from '../src/generated-product-identity.ts'
+
+// The gateway fixtures follow the active brand so the suite stays green for
+// every white-label variant; the foreign tenant values stay hard-coded.
+const FOREIGN_TENANT_ID = '00000000-0000-0000-0000-000000000000'
 
 const ORIGIN = 'http://127.0.0.1:43120'
 
@@ -43,7 +48,7 @@ describe('DoFe model_api_key validation route', () => {
 
   it('validates the key through the managed gateway without returning the secret', async () => {
     const fetcher = vi.fn()
-      .mockResolvedValueOnce(new Response(JSON.stringify({ tenantSlug: 'yootun' }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ tenantSlug: BRAND_TENANT }), { status: 200 }))
       .mockResolvedValueOnce(new Response('{}', { status: 200 }))
     const res = response()
 
@@ -52,14 +57,14 @@ describe('DoFe model_api_key validation route', () => {
     expect(fetcher).toHaveBeenCalledWith(
       DOFE_AUTH_CONTEXT_URL,
       expect.objectContaining({
-        headers: expect.objectContaining({ Authorization: 'Bearer entered-secret', 'X-Company-Code': 'yootun' }),
+        headers: expect.objectContaining({ Authorization: 'Bearer entered-secret', 'X-Company-Code': BRAND_TENANT }),
         redirect: 'error',
       }),
     )
     expect(fetcher).toHaveBeenCalledWith(
       'https://ixicai.cn/api/v1/models?protocol=openai',
       expect.objectContaining({
-        headers: expect.objectContaining({ Authorization: 'Bearer entered-secret', 'X-Company-Code': 'yootun' }),
+        headers: expect.objectContaining({ Authorization: 'Bearer entered-secret', 'X-Company-Code': BRAND_TENANT }),
         redirect: 'error',
       }),
     )
@@ -92,7 +97,7 @@ describe('DoFe model_api_key validation route', () => {
       res,
       ORIGIN,
       vi.fn()
-        .mockResolvedValueOnce(new Response(JSON.stringify({ tenantSlug: 'yootun' }), { status: 200 }))
+        .mockResolvedValueOnce(new Response(JSON.stringify({ tenantSlug: BRAND_TENANT }), { status: 200 }))
         .mockResolvedValueOnce(new Response('{}', { status: 401 })),
     )
 
@@ -113,17 +118,17 @@ describe('DoFe model_api_key validation route', () => {
   it('accepts the current tenant id and rejects another tenant id when the live service omits its slug', async () => {
     const accepted = response()
     await handleDofeAccessValidationRequest(
-      request({ key: 'sensteed-secret' }),
+      request({ key: 'branded-secret' }),
       accepted,
       ORIGIN,
       vi.fn()
-        .mockResolvedValueOnce(new Response(JSON.stringify({ tenantId: '869856a5-760a-4570-9177-8823ed84da78' }), { status: 200 }))
+        .mockResolvedValueOnce(new Response(JSON.stringify({ tenantId: BRAND_TENANT_ID }), { status: 200 }))
         .mockResolvedValueOnce(new Response('{}', { status: 200 })),
     )
     expect(JSON.parse(accepted.body)).toEqual({ valid: true })
 
     const rejected = response()
-    const rejectedFetcher = vi.fn(async () => new Response(JSON.stringify({ tenantId: '7a8866f9-3994-4341-ade6-b9fa942efe99' }), { status: 200 }))
+    const rejectedFetcher = vi.fn(async () => new Response(JSON.stringify({ tenantId: FOREIGN_TENANT_ID }), { status: 200 }))
     await handleDofeAccessValidationRequest(request({ key: 'other-secret' }), rejected, ORIGIN, rejectedFetcher)
     expect(JSON.parse(rejected.body)).toEqual({ valid: false, reason: 'tenant_mismatch' })
     expect(rejectedFetcher).toHaveBeenCalledTimes(1)
@@ -136,7 +141,7 @@ describe('DoFe model_api_key validation route', () => {
       accepted,
       ORIGIN,
       vi.fn()
-        .mockResolvedValueOnce(new Response(JSON.stringify({ data: { tenant: { id: '869856a5-760a-4570-9177-8823ed84da78' } } }), { status: 200 }))
+        .mockResolvedValueOnce(new Response(JSON.stringify({ data: { tenant: { id: BRAND_TENANT_ID } } }), { status: 200 }))
         .mockResolvedValueOnce(new Response('{}', { status: 200 })),
     )
 
@@ -145,7 +150,7 @@ describe('DoFe model_api_key validation route', () => {
 
   it('returns the normalized remote model catalog without returning the key', async () => {
     const fetcher = vi.fn()
-      .mockResolvedValueOnce(new Response(JSON.stringify({ tenantSlug: 'yootun' }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ tenantSlug: BRAND_TENANT }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ data: [{ id: 'remote-a', name: 'Remote A' }] }), { status: 200 }))
     const res = response()
 
@@ -153,7 +158,7 @@ describe('DoFe model_api_key validation route', () => {
 
     expect(fetcher).toHaveBeenCalledWith(
       'https://ixicai.cn/api/v1/models?protocol=openai',
-      expect.objectContaining({ headers: expect.objectContaining({ Authorization: 'Bearer entered-secret', Accept: 'application/json', 'X-Company-Code': 'yootun' }) }),
+      expect.objectContaining({ headers: expect.objectContaining({ Authorization: 'Bearer entered-secret', Accept: 'application/json', 'X-Company-Code': BRAND_TENANT }) }),
     )
     expect(JSON.parse(res.body)).toEqual({ models: [{ id: 'remote-a', name: 'Remote A' }] })
     expect(res.body).not.toContain('entered-secret')
@@ -162,7 +167,7 @@ describe('DoFe model_api_key validation route', () => {
 
   it('uses the selected protocol for validation and model discovery', async () => {
     const fetcher = vi.fn()
-      .mockResolvedValueOnce(new Response(JSON.stringify({ tenantSlug: 'yootun' }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ tenantSlug: BRAND_TENANT }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ data: [{ id: 'claude', protocol: 'anthropic-messages' }] }), { status: 200 }))
     const res = response()
 
@@ -174,7 +179,7 @@ describe('DoFe model_api_key validation route', () => {
 
     const catalogRes = response()
     const catalogFetcher = vi.fn()
-      .mockResolvedValueOnce(new Response(JSON.stringify({ tenantSlug: 'yootun' }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ tenantSlug: BRAND_TENANT }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ data: [{ id: 'o3', protocol: 'openai_responses' }] }), { status: 200 }))
     await handleDofeModelCatalogRequest(request({ key: 'entered-secret', protocol: 'responses' }), catalogRes, ORIGIN, catalogFetcher)
     expect(catalogFetcher).toHaveBeenLastCalledWith(
@@ -196,7 +201,7 @@ describe('DoFe model_api_key validation route', () => {
 
   it('resolves the stored credential for useStored catalog requests without echoing it', async () => {
     const fetcher = vi.fn()
-      .mockResolvedValueOnce(new Response(JSON.stringify({ tenantSlug: 'yootun' }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ tenantSlug: BRAND_TENANT }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ data: [{ id: 'remote-a', name: 'Remote A' }] }), { status: 200 }))
     const res = response()
 
@@ -210,7 +215,7 @@ describe('DoFe model_api_key validation route', () => {
 
     expect(fetcher).toHaveBeenCalledWith(
       'https://ixicai.cn/api/v1/models?protocol=anthropic',
-      expect.objectContaining({ headers: expect.objectContaining({ Authorization: 'Bearer stored-secret', 'X-Company-Code': 'yootun' }) }),
+      expect.objectContaining({ headers: expect.objectContaining({ Authorization: 'Bearer stored-secret', 'X-Company-Code': BRAND_TENANT }) }),
     )
     expect(JSON.parse(res.body)).toEqual({ models: [{ id: 'remote-a', name: 'Remote A' }] })
     expect(res.body).not.toContain('stored-secret')
