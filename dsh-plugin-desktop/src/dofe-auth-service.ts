@@ -94,7 +94,11 @@ export class DofeAuthService {
         // The generic dialog copy hides the underlying failure; keep the cause
         // chain in the diagnostic log so network vs provisioning is decidable.
         this.logger?.error(`dsh-plugin-desktop: dofe 登录流程失败: ${formatDesktopErrorDetails(error)}`)
-        this.fail(error instanceof DofeAuthTokenError ? '登录授权已失效，请重新登录' : '登录未完成，请检查网络或稍后重试')
+        const invalid = error instanceof DofeAuthTokenError && error.code === 'invalid_grant'
+        this.fail(
+          invalid ? '登录授权已失效，请重新登录' : '登录未完成，请检查网络或稍后重试',
+          invalid ? 'invalid_grant' : undefined,
+        )
       }
     }).finally(() => { this.closeLoopback(); this.operation = undefined })
     return this.getStatus()
@@ -321,9 +325,9 @@ export class DofeAuthService {
     return AbortSignal.any([this.abort.signal, AbortSignal.timeout(timeout)])
   }
 
-  private fail(message: string): void {
+  private fail(message: string, code?: 'invalid_grant'): void {
     this.closeLoopback()
-    this.snapshot = { status: 'error', error: message.slice(0, 240) }
+    this.snapshot = { status: 'error', error: message.slice(0, 240), ...(code === undefined ? {} : { code }) }
   }
 }
 

@@ -18,4 +18,6 @@ export interface DofeAuthSnapshot {
   groups?: string[]
   groupNames?: Record<string, string>
   error?: string
+  /** Set on `error` when the saved session is definitively dead (`invalid_grant`). */
+  code?: 'invalid_grant'
 }

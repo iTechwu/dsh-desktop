@@ -33,7 +33,13 @@ function harness() {
     on: vi.fn(), provide: vi.fn(), logger: { error: vi.fn() },
     effect: (effect: () => (() => unknown)) => { effects.push(effect()) },
   }
-  return { ctx, tray, getSettings: () => settings, dispose: async () => { for (const effect of effects) await effect() } }
+  return {
+    ctx,
+    tray,
+    getSettings: () => settings,
+    forgetGrant: () => { grant = undefined },
+    dispose: async () => { for (const effect of effects) await effect() },
+  }
 }
 
 const discovery = {
@@ -50,7 +56,8 @@ describe('Sensteed startup authorization', () => {
     const h = harness()
     vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(json(discovery))
       .mockImplementationOnce(async () => {
-        expect(h.getSettings().setupComplete).toBe(false)
+        // The refresh runs before any gate reset: the last good state stays up
+        // until the renewal finishes.
         expect(h.ctx.plugin).not.toHaveBeenCalled()
         return json({ access_token: 'access-new', refresh_token: 'refresh-new' })
       }).mockResolvedValueOnce(json({
@@ -75,6 +82,27 @@ describe('Sensteed startup authorization', () => {
     expect(h.getSettings().setupComplete).toBe(false)
     expect(h.ctx.plugin).not.toHaveBeenCalled()
     expect(h.tray.enabled()).toBe(false)
+    expect(h.ctx.desktopRuntime.openExternal).not.toHaveBeenCalled()
+    await h.dispose()
+  })
+
+  it('keeps the last good gate state across a transient provisioning failure', async () => {
+    const h = harness()
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(json(discovery))
+      .mockResolvedValueOnce(json({ access_token: 'access-new' }))
+      .mockResolvedValueOnce(json({ error: 'unavailable' }, 503)))
+    await apply(h.ctx as never)
+    expect(h.getSettings().setupComplete).toBe(true)
+    expect(h.ctx.desktopRuntime.openExternal).not.toHaveBeenCalled()
+    await h.dispose()
+  })
+
+  it('closes the gate when the home has no saved session', async () => {
+    const h = harness()
+    h.forgetGrant()
+    await apply(h.ctx as never)
+    expect(h.getSettings().setupComplete).toBe(false)
+    expect(h.ctx.plugin).not.toHaveBeenCalled()
     expect(h.ctx.desktopRuntime.openExternal).not.toHaveBeenCalled()
     await h.dispose()
   })

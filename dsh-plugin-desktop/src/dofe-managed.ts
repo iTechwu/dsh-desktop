@@ -97,8 +97,14 @@ export async function apply(ctx: Context): Promise<void> {
     }, ctx.logger)
     ctx.provide('dofeAuth', auth)
     const restore = async () => {
-      await ctx.settings.update(DOFE_ACCESS_SETTINGS_NAMESPACE, { setupComplete: false })
-      await auth.restore()
+      const snapshot = await auth.restore()
+      // Only a definitively dead session closes the gate. A transient network
+      // or provisioning failure keeps the last good state so the MCP clients
+      // stay up, and the next cycle retries the refresh.
+      if (snapshot.status === 'error' && snapshot.code !== 'invalid_grant') return
+      if (snapshot.status !== 'bound') {
+        await ctx.settings.update(DOFE_ACCESS_SETTINGS_NAMESPACE, { setupComplete: false })
+      }
     }
     ctx.effect(() => {
       const timer = setInterval(() => { void restore().catch(() => ctx.logger.error('Unable to refresh desktop authorization')) }, 15 * 60_000)
