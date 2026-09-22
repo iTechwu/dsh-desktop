@@ -92,10 +92,11 @@ vi.mock('electron', async () => {
     constructor() { super(); fixture.trays.push(this) }
     isDestroyed() { return this.destroyed }
     setToolTip(value: string) { this.tooltip = value }
+    setTitle() {}
     setContextMenu(menu: any) { this.menu = menu }
     destroy() { this.destroyed = true }
   }
-  return { app, BrowserWindow, Tray,
+  return { app, BrowserWindow, Tray, autoUpdater: Object.assign(new EventEmitter(), { setFeedURL: vi.fn(), checkForUpdates: vi.fn(), quitAndInstall: vi.fn() }), net: { fetch: vi.fn() },
     Notification: class { static isSupported() { return false } },
     clipboard: {}, dialog: { showMessageBox: vi.fn(async () => ({ response: 0 })) }, shell: {}, safeStorage: {}, nativeTheme: { shouldUseDarkColors: true, on() {} },
     nativeImage: { createFromPath: () => ({ isEmpty: () => false, setTemplateImage() {} }) },
@@ -117,10 +118,45 @@ beforeEach(async () => {
   fixture.load.mockReset(); fixture.report.mockReset();
   fixture.terminalTarget.mockReset(); fixture.openTerminal.mockClear();
   fixture.stop.mockClear(); fixture.start.mockClear(); fixture.close.mockReset().mockResolvedValue(undefined)
-  const { app } = await import('electron')
+  const { app, autoUpdater } = await import('electron')
+  autoUpdater.removeAllListeners()
   app.removeAllListeners()
   vi.mocked(app.relaunch).mockClear()
   vi.mocked(app.quit).mockClear()
+})
+
+it('stages an explicit update before hiding windows, and hands off only after the Host closes', async () => {
+  const home = mkdtempSync(join(tmpdir(), 'next-install-update-'))
+  vi.stubEnv('DSH_DESKTOP_NEXT_HOME', home)
+  let stageReady!: () => void
+  const stage = vi.fn(() => new Promise<void>(resolve => { stageReady = resolve }))
+  const launch = vi.fn(async () => {})
+  vi.doMock('../src/update-installer.ts', () => ({ NextUpdateInstaller: class { stage = stage; launch = launch } }))
+  vi.doMock('../src/updates.ts', () => ({ NextUpdates: class {
+    constructor(private options: { install(): Promise<void> }) {}
+    snapshot() { return { phase: 'ready', version: '2.0.15-next.1', installable: true } }
+    start() {}
+    dispose = async () => {}
+    install = () => this.options.install()
+  } }))
+  let closed!: () => void
+  fixture.close.mockImplementationOnce(() => new Promise<void>(resolve => { closed = resolve }))
+  try {
+    await import('../src/main.ts')
+    await vi.waitFor(() => expect(fixture.windows).toHaveLength(1))
+    const window = fixture.windows[0]; window.visible = true
+    const sender = { sender: window.webContents, senderFrame: window.webContents.mainFrame }
+    await fixture.handlers.get('dsh-next:command')!(sender, { type: 'install-update' })
+    expect(stage).toHaveBeenCalledOnce(); expect(fixture.close).not.toHaveBeenCalled(); expect(window.visible).toBe(true)
+    stageReady()
+    await vi.waitFor(() => expect(fixture.close).toHaveBeenCalledOnce())
+    expect(window.visible).toBe(false); expect(launch).not.toHaveBeenCalled()
+    closed()
+    await vi.waitFor(() => expect(launch).toHaveBeenCalledOnce())
+  } finally {
+    vi.doUnmock('../src/update-installer.ts'); vi.doUnmock('../src/updates.ts')
+    vi.unstubAllEnvs(); rmSync(home, { recursive: true, force: true })
+  }
 })
 
 it('retains the Host when hiding to tray, restores the window, keeps failed-Host controls, validates IPC, and stops on explicit quit', async () => {
@@ -131,7 +167,7 @@ it('retains the Host when hiding to tray, restores the window, keeps failed-Host
     await vi.waitFor(() => expect(fixture.windows).toHaveLength(1))
     const window = fixture.windows[0]
     const tray = fixture.trays[0]
-    expect(tray.menu[0].label).toBe('打开 DSH Desktop Next')
+    expect(tray.menu[0].label).toBe('打开 DSH NEXT')
     expect(tray.menu.at(-1).accelerator).toBe('CmdOrCtrl+Q')
     expect(tray.menu.some((item: any) => item.accelerator === 'CmdOrCtrl+,')).toBe(true)
     const preventDefault = vi.fn()
@@ -181,9 +217,9 @@ it('retains the Host when hiding to tray, restores the window, keeps failed-Host
     expect(() => takeSettings({ sender: controls.webContents, senderFrame: controls.webContents.mainFrame })).toThrow('Rejected')
     fixture.phase = 'ready'
     fixture.handlers.get('dsh-next:locale')!({ ...sender, senderFrame: {} }, 'en')
-    expect(tray.menu[0].label).toBe('打开 DSH Desktop Next')
+    expect(tray.menu[0].label).toBe('打开 DSH NEXT')
     fixture.handlers.get('dsh-next:locale')!(sender, 'en')
-    expect(tray.menu[0].label).toBe('Open DSH Desktop Next')
+    expect(tray.menu[0].label).toBe('Open DSH NEXT')
     const { app, dialog, systemPreferences, desktopCapturer } = await import('electron')
     const previousUrl = controls.webContents.mainFrame.url
     expect((await fixture.onPermission!('query', 'screen')).status).not.toBe('granted')
@@ -643,7 +679,9 @@ it.each(['success', 'cancel', 'failure'] as const)('restores a checkpoint with d
     }
     const failed = outcome === 'failure' ? expect(pending).rejects.toThrow('插件依赖安装失败') : undefined
     await vi.waitFor(() => expect(fixture.plugin).toHaveBeenCalled())
-    expect(fixture.plugin.mock.calls[0]![0]).toEqual(['install'])
+    // Recovery restores configuration without the lockfile, so its reconciling install must never
+    // run frozen, which is what pnpm defaults to whenever it treats the environment as CI.
+    expect(fixture.plugin.mock.calls[0]![0]).toEqual(['install', '--no-frozen-lockfile'])
     expect(fixture.plugin.mock.calls[0]![1]).toBe(manager.directory('desktop'))
     expect(readFileSync(patch, 'utf8')).toContain('saved')
     expect(state().busy).toBe(true)

@@ -1,4 +1,4 @@
-# DSH Desktop Next
+# DSH NEXT
 
 English | [中文](README.zh.md)
 
@@ -43,7 +43,7 @@ Set `DSH_NEXT_TEST_BROWSER_CHANNEL=chrome` to use an installed Google Chrome ins
 
 `build/app-icon.icon` is the editable Icon Composer project with the final NEXT badge layout and System Dark background. On macOS with Xcode 27 and Icon Composer, run `corepack yarn icons:export --channel next` from the repository root to refresh `build/app-icon.png`, the Windows `build/app-icon.ico`, native compiler output `build/app-icon.icns`, and the development Dock image `build/app-icon-mac.png`. Commit these files and `build/app-icon.resources.json` together; `corepack yarn icons:check` verifies them headlessly on any OS.
 
-Next currently has no installer pipeline. Its future macOS packager should consume the layered `.icon` source and compile `Assets.car`, as Stable and Beta do. The raster Dock image is used only during unpackaged development; Windows and Linux windows use their ICO and PNG exports respectively.
+Next macOS packaging consumes the layered `.icon` source and compiles `Assets.car`, as Stable and Beta do. The raster Dock image is used only during unpackaged development; Windows and Linux windows use their ICO and PNG exports respectively.
 
 ## Usage
 
@@ -119,7 +119,7 @@ Recovery opened at startup follows the operating system's preferred language ord
 
 Backups stay under `home/recovery/`. Diagnostics export a bounded JSON report with versions, state and redacted logs, without reading session or credential files. Logs can still contain local paths and plugin output; inspect the report before sharing. Local desktop logs are bounded to 128 KiB at `home/logs/desktop-next.log`. Desktop preferences live independently of Host settings in `home/desktop-preferences.json`.
 
-The default data directory is `.desktop-next/home` inside this package, including Electron state. Set `DSH_DESKTOP_NEXT_HOME` to an absolute path to choose a dedicated directory. Next does not select its home from the existing `DSH_HOME`. First launch does not migrate Stable/Beta data.
+Development keeps `.desktop-next/home` inside this package. Packaged builds use `DSH NEXT/home` below the system application-data directory, including Electron state; updates do not replace that directory. Set `DSH_DESKTOP_NEXT_HOME` to an absolute path to choose a dedicated directory. Next does not select its home from the existing `DSH_HOME`. First launch does not migrate Stable/Beta data.
 
 ## Architecture and provenance
 
@@ -146,4 +146,21 @@ Next is a profile bundle so shared plugin-manager reconciliation retains its cap
 
 ## Current limits
 
-This is a runnable development package without signed installers, automatic updates, or Stable/Beta data migration. The official distribution's offline Python/Office runtime and skill payloads are not yet integrated. Our enhanced/extended window modes remain deferred. Unavailable update channels and window modes have no placeholder actions; Next never installs a Stable/Beta package. Headless Node/Electron checks do not qualify cross-platform installers or visual behavior.
+Packaging entry points and the Next update client are implemented. Releases still require producing and validating platform artifacts and configuring the online Next channel. Stable/Beta data migration is not provided. The official distribution's offline Python/Office runtime and skill payloads are not yet integrated. Our enhanced/extended window modes remain deferred. An unpublished Next update channel is reported as unavailable; Next never installs a Stable/Beta package. Enhanced window modes remain hidden. Headless Node/Electron checks do not qualify cross-platform installers or visual behavior.
+
+## Packaging and updates
+
+The product version is `2.0.14-next`. Run from the repository root:
+
+```sh
+corepack yarn package:dir:next
+corepack yarn dist:mac-smoke:next
+corepack yarn dist:mac:next
+corepack yarn dist:win:next
+```
+
+Packaging reuses Beta's directory builds, universal macOS DMGs, signing/notarization preflight and Windows x64 NSIS flow, including its unsigned Windows build policy. Runtime layout remains `asar: false`, with `RunAsNode`, a complete dependency closure and both macOS native architectures. Next does not require the legacy shell's fs-ext lock binding. These commands build artifacts without publishing or opening a GUI; release gates still require the latest AA preparation and repository checks.
+
+Settings and the tray expose update checks. Packaged builds check shortly after startup and every six hours; downloads start only on a user click. The tray displays bytes or a percentage, then Install and restart. Installation hides windows and stops the Host before handing off. macOS verifies Next identity, version and signing team, packages the application from the downloaded DMG into a local ZIP, and hands it to Electron's Squirrel.Mac for signature validation and replacement, without implementing our own application replacement or weakening signing. Windows verifies the Next installer identity/version and hands off to NSIS for a silent update and relaunch. Development runs can check but cannot replace the source tree or development Electron runtime.
+
+The AA landingpage contract is `GET https://www.dshdesktop.cn/api/desktop/version`, with `X-DSH-Desktop-Channel: next` and the installed version; installation identity is sent only to this endpoint. Downloads use `/api/downloads/mac` or `/api/downloads/windows` with a pinned `X-DSH-Desktop-Target-Version`. Storage redirects receive none of these headers. Only Next versions are accepted; SHA-256 is enforced when supplied. Failures, unpublished channels and older servers never appear as up to date. The service must deploy Next support and configure real artifacts whose embedded versions match the response (`x.y.z-next` or `x.y.z-next.N`).

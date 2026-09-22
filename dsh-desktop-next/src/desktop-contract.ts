@@ -15,6 +15,8 @@ export interface DesktopPreferences {
   closeToTray: boolean
   macosMaterial: 'off' | 'transparent'
   windowsMaterial: 'off' | 'mica'
+  /** Accepted for the shared settings surface; Linux still renders an opaque frame. */
+  linuxMaterial: 'off' | 'transparent'
   browserAccess: boolean
   networkExposure: 'loopback' | 'lan'
   port: number
@@ -29,7 +31,7 @@ export interface DesktopPreferences {
 }
 
 export const DEFAULT_PREFERENCES: Readonly<DesktopPreferences> = Object.freeze({
-  closeToTray: true, macosMaterial: 'transparent', windowsMaterial: 'off',
+  closeToTray: true, macosMaterial: 'transparent', windowsMaterial: 'off', linuxMaterial: 'off',
   browserAccess: false, networkExposure: 'loopback', port: 0, lanPort: 0, logLevel: 'info',
   notifications: true, turnCompleted: true, turnFailed: true, jobCompleted: false, jobFailed: false,
 })
@@ -51,6 +53,7 @@ export interface DesktopState {
   home: string
   platform: string
   version: string
+  updates?: import('./update-state.ts').NextUpdateState
   trayAvailable: boolean
   notificationsAvailable: boolean
   windowsMicaSupported: boolean
@@ -76,6 +79,7 @@ export interface DesktopBrowserLinks {
 }
 
 export type DesktopCommand =
+  | { type: 'check-updates' | 'download-update' | 'install-update' }
   | { type: 'recovery-action'; action: string; id?: string }
   | ({ type: 'onboarding-complete'; profile: string } & OnboardingChoices)
   | { type: 'onboarding-skip'; profile: string }

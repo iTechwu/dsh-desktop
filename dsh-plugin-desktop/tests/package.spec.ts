@@ -23,6 +23,7 @@ const workspaceRoot = new URL('../', packageRoot)
 const manifest = JSON.parse(readFileSync(new URL('package.json', packageRoot), 'utf8')) as {
   name?: unknown
   version?: unknown
+  desktopName?: unknown
   bin?: Record<string, unknown>
   exports?: Record<string, unknown>
   files?: unknown
@@ -52,7 +53,13 @@ const manifest = JSON.parse(readFileSync(new URL('package.json', packageRoot), '
     win?: { asar?: unknown; compression?: unknown; icon?: unknown; asarUnpack?: unknown; target?: unknown; artifactName?: unknown }
     nsis?: Record<string, unknown>
     portable?: Record<string, unknown>
-    linux?: { icon?: unknown; asarUnpack?: unknown }
+    linux?: {
+      icon?: unknown
+      asarUnpack?: unknown
+      synopsis?: unknown
+      syncDesktopName?: unknown
+    }
+    deb?: Record<string, unknown>
   }
   dependencies?: Record<string, unknown>
   optionalDependencies?: Record<string, unknown>
@@ -83,7 +90,8 @@ const builderConfig = JSON.parse(readFileSync(new URL('electron-builder.json', p
   win?: { icon?: unknown; files?: unknown; target?: unknown; artifactName?: unknown }
   nsis?: Record<string, unknown>
   portable?: Record<string, unknown>
-  linux?: { icon?: unknown }
+  linux?: { icon?: unknown; target?: unknown; artifactName?: unknown; executableName?: unknown }
+  deb?: Record<string, unknown>
 }
 // Resolve the brand document the same way the build does, so packaging jobs
 // dispatched with a non-default BRAND compare against the matching channel.
@@ -851,6 +859,17 @@ describe('published package surface', () => {
       artifactName: `${String(activeBrandChannel.artifactPrefix)}-\${version}-\${arch}-Setup.\${ext}`,
     })
     expect(builderConfig?.linux?.icon).toBe('build/app-icon.png')
+    expect(builderConfig?.linux?.target).toEqual([
+      { target: 'AppImage', arch: ['x64'] },
+      { target: 'deb', arch: ['x64'] },
+    ])
+    expect(builderConfig?.linux?.artifactName).toBe(`${String(activeBrandChannel.artifactPrefix)}-\${version}-\${arch}.\${ext}`)
+    expect(builderConfig?.linux?.executableName).toBe(String(activeBrandChannel.artifactPrefix).toLowerCase())
+    expect(builderConfig?.deb).toEqual({
+      packageName: String(activeBrandChannel.artifactPrefix).toLowerCase(),
+      packageCategory: 'devel',
+      priority: 'optional',
+    })
   })
 
   it('separates unsigned smoke packaging from the signed macOS release', () => {
@@ -861,6 +880,9 @@ describe('published package surface', () => {
     expect(manifest.scripts?.['generate:brand']).toContain('node scripts/generate-mac-app-icon.mjs')
     expect(manifest.scripts?.['generate:brand']).toContain('node scripts/generate-brand-assets.mjs')
     expect(manifest.scripts?.['package:dir']).toBe('corepack pnpm run build && node scripts/package-dir.mjs')
+    expect(manifest.scripts?.['dist:linux']).toBe('node scripts/package-linux.ts')
+    expect(manifest.scripts?.['check:linux-package']).toContain('tests/package-linux.spec.ts')
+    expect(manifest.scripts?.['check:linux-package']).toContain('tests/verify-linux-artifacts.spec.ts')
     expect(packageDir).toContain("CSC_IDENTITY_AUTO_DISCOVERY: 'false'")
     expect(manifest.scripts?.['dist:mac']).toBe('node scripts/release-mac.ts')
     expect(manifest.scripts?.['dist:mac-smoke']).toBe('node scripts/package-mac.ts')
@@ -894,6 +916,8 @@ describe('published package surface', () => {
       .toBe('pnpm --filter dsh-community-market build && pnpm --filter dsh-plugin-desktop dist:win')
     expect(workspaceManifest.scripts?.['dist:win-portable'])
       .toBe('pnpm --filter dsh-community-market build && pnpm --filter dsh-plugin-desktop dist:win-portable')
+    expect(workspaceManifest.scripts?.['dist:linux'])
+      .toBe('pnpm --filter dsh-community-market build && pnpm --filter dsh-plugin-desktop dist:linux')
     expect(builderConfig?.afterPack).toBe('./scripts/verify-packaged-runtime.ts')
     expect(builderConfig?.electronDownload?.checksums).toEqual({
       'electron-v43.4.0-darwin-arm64.zip':
@@ -1085,6 +1109,41 @@ describe('published package surface', () => {
     expect(manifest.optionalDependencies?.['@img/sharp-win32-x64']).toBe('0.35.3')
     expect(parsedLockfile.packages?.['@img/sharp-win32-x64@0.35.3']).toBeDefined()
     expect(parsedLockfile.snapshots?.['@img/sharp-win32-x64@0.35.3']).toBeDefined()
+  })
+
+  it('starts the private runner in Electron Node mode on every platform without changing target environment', () => {
+    const workspaceRequire = createRequire(new URL('package.json', packageRoot))
+    const root = dirname(workspaceRequire.resolve('@deepseek-ai/dsh-subprocess-local/package.json'))
+    const index = readFileSync(join(root, 'lib/index.js'), 'utf8')
+    const entry = /from "(\.\/runner-launch-[^"/]+\.js)"/u.exec(index)?.[1]
+    if (entry === undefined) throw new Error('Cannot find the subprocess runner entry')
+    const source = readFileSync(join(root, 'lib', entry), 'utf8')
+    const body = /function runnerEnvironment\(selection, invocation\) \{[\s\S]*?\n\}/u.exec(source)?.[0]
+    if (body === undefined) throw new Error('Cannot find runnerEnvironment')
+    const target = { PATH: 'target-path', electron_run_as_node: '0', NODE_OPTIONS: '--trace-warnings' }
+    const evaluate = (platform: string, electron?: string, selection = 'windows') => runInNewContext(
+      `${body}\nrunnerEnvironment(selection, ['electron', 'runner.js'])`,
+      {
+        process: { platform, versions: electron === undefined ? {} : { electron } },
+        childEnv: () => ({ ...target }),
+        RUNNER_CONTROL_ENV_PREFIXES: ['NODE_', 'TSX_'],
+        SUBPROCESS_RUNNER_ENV: 'DSH_SUBPROCESS_RUNNER',
+        WINDOWS_RUNNER_SELECTION: 'windows',
+        selection,
+      },
+    ) as Record<string, string>
+
+    const runner = evaluate('win32', '43.3.0')
+    expect(runner.ELECTRON_RUN_AS_NODE).toBe('1')
+    expect(runner).not.toHaveProperty('electron_run_as_node')
+    expect(runner).not.toHaveProperty('NODE_OPTIONS')
+    expect(runner.PATH).toBe('target-path')
+    expect(runner.DSH_SUBPROCESS_RUNNER).toBe('windows')
+    expect(target).toEqual({ PATH: 'target-path', electron_run_as_node: '0', NODE_OPTIONS: '--trace-warnings' })
+    expect(evaluate('win32')).not.toHaveProperty('ELECTRON_RUN_AS_NODE')
+    expect(evaluate('darwin', '43.3.0')).toHaveProperty('ELECTRON_RUN_AS_NODE', '1')
+    expect(evaluate('linux', '43.3.0', '/request')).toHaveProperty('ELECTRON_RUN_AS_NODE', '1')
+    expect(evaluate('linux')).not.toHaveProperty('ELECTRON_RUN_AS_NODE')
   })
 
   it('declares the first-party Web bundle entry points at the Desktop root', () => {

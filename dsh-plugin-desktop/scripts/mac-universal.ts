@@ -540,6 +540,8 @@ export const FORBIDDEN_MACOS_UNIVERSAL_ENTRIES = [
 
 /** Injectable filesystem seam for source-runtime preparation. */
 export interface MacUniversalPreparationOptions {
+  /** Override only when a shell does not depend on part of the legacy native inventory. */
+  readonly nativeEntries?: readonly { readonly arch: MacUniversalArch; readonly path: string }[]
   readonly desktopRoot: string
   readonly exists: (path: string) => boolean
   readonly chmod: (path: string, mode: number) => void

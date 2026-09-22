@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs'
 import { writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { dirname, isAbsolute, join, resolve } from 'node:path'
-import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeTheme, Notification, protocol, safeStorage, session, shell, type IpcMainInvokeEvent, type MenuItemConstructorOptions } from 'electron'
+import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeTheme, net, Notification, protocol, safeStorage, session, shell, type IpcMainInvokeEvent, type MenuItemConstructorOptions } from 'electron'
 import { appRequestHeaders, forwardWebRequest, serveWebDocument } from './web-document.ts'
 import { claimDesktopSingleInstance } from './single-instance.ts'
 import { NEXT_PACKAGE, parseFeatures, profileName } from './profiles.ts'
@@ -27,15 +27,19 @@ import { createNativePermissions, installMediaPermissions } from './electron-per
 import { readDataDirectory, validateDataDirectory } from './data-directory.ts'
 import { maskSecrets } from './mask-secrets.ts'
 import { NativeSidebarBrowser } from './sidebar-browser.ts'
+import { NextUpdates } from './updates.ts'
+import { NextUpdateInstaller } from './update-installer.ts'
+import { updateLabel } from './update-state.ts'
 
 const root = dirname(NEXT_PACKAGE)
-const defaultHome = resolve(process.env.DSH_DESKTOP_NEXT_HOME ?? join(root, '.desktop-next', 'home'))
+const defaultHome = resolve(process.env.DSH_DESKTOP_NEXT_HOME ?? (app.isPackaged
+  ? join(app.getPath('appData'), 'DSH NEXT', 'home') : join(root, '.desktop-next', 'home')))
 const locationFile = join(defaultHome, 'desktop-next-location.json')
 const dataLocation = readDataDirectory(defaultHome)
 const home = dataLocation.home
 const electronData = join(home, 'electron-user-data')
 privateDirectory(electronData)
-app.setName('DSH Desktop Next')
+app.setName('DSH NEXT')
 app.setPath('userData', electronData)
 protocol.registerSchemesAsPrivileged([{ scheme: 'dsh-app', privileges: {
   standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true,
@@ -54,6 +58,7 @@ let quitting = false
 let onboarding = false
 let onboardingComputerUse = false
 let relaunch: string[] | undefined
+let installingUpdate = false
 let ownsInstance = false
 let windowsLanguage = 'en'
 const require = createRequire(NEXT_PACKAGE)
@@ -75,8 +80,10 @@ const runtime = new NextDesktopRuntime({
   onPermission: async (action, permission) => {
     if (quitting) throw new Error('Desktop is shutting down')
     const snapshot = permissions.query(permission)
-    // Host calls reveal the permission dialog; only a user click there may prompt the OS.
-    if (action === 'open-settings' || action === 'request' && snapshot.status !== 'granted' && (snapshot.canRequest || snapshot.canOpenSettings)) {
+    // Host calls reveal the permission dialog on every platform; only a user click there may prompt
+    // the OS. Platforms without an OS request or settings shortcut still receive the dialog, which
+    // reports the current status, because silence would leave the request without any visible answer.
+    if (action === 'open-settings' || action === 'request' && snapshot.status !== 'granted') {
       openSettings('permissions')
     }
     return snapshot
@@ -85,6 +92,21 @@ const runtime = new NextDesktopRuntime({
 const native = new NativeDesktop({ root, language: () => windowsLanguage, state, window: () => mainWindow,
   show: openMain, run, warn: error => runtime.diagnostics.append(String(error), 'warn') })
 const permissions = createNativePermissions()
+const updateInstaller = new NextUpdateInstaller({ platform: process.platform, executable: process.execPath,
+  log: error => runtime.diagnostics.append(String(error), 'warn') })
+const updates = new NextUpdates({ version, platform: process.platform, packaged: app.isPackaged, userData: electronData,
+  request: (url, init) => net.fetch(url, { ...init, credentials: 'omit' }),
+  changed: () => { if (app.isReady() && !quitting) native.refresh() },
+  log: error => runtime.diagnostics.append(String(error), 'warn'),
+  prepare: (path, nextVersion, directory, signal) => updateInstaller.prepare(path, nextVersion, directory, signal),
+  install: async () => {
+    runtime.busy = true; native.refresh()
+    try {
+      await updateInstaller.stage()
+      if (!quitting) { installingUpdate = true; app.quit() }
+    } finally { runtime.busy = false; if (!quitting) native.refresh() }
+  },
+})
 
 function state(): DesktopState {
   let recovery: DesktopState['recovery']
@@ -96,10 +118,10 @@ function state(): DesktopState {
     recovery = { bundles: [], checkpoints: [], profileDirectory: join(home, 'profiles', runtime.selected),
       usingDefaultDirectory: home === defaultHome, error: String(error), diagnosticsFile, notice: recoveryNotice }
   }
-  return { ...runtime.state(), recovery, onboarding, ...(onboarding ? { onboardingComputerUse } : {}), platform: process.platform, version,
+  return { ...runtime.state(), recovery, onboarding, ...(onboarding ? { onboardingComputerUse } : {}), platform: process.platform, version, updates: updates.snapshot(),
     trayAvailable: native.available, notificationsAvailable: Notification.isSupported(), windowsMicaSupported: process.platform === 'win32' && supportsMica() }
 }
-function run(value: DesktopCommand): void { void command(value).catch(error => runtime.report(error)) }
+function run(value: DesktopCommand): void { void command(value, 'native').catch(error => runtime.report(error)) }
 
 function assertSender(event: Pick<IpcMainInvokeEvent, 'sender' | 'senderFrame'>, owner: BrowserWindow | undefined, origin: string): void {
   if (!owner || owner.isDestroyed() || event.sender !== owner.webContents
@@ -117,7 +139,7 @@ function show(window: BrowserWindow): void {
 
 function createWindow(preload: string, primary = false): BrowserWindow {
   const window = new BrowserWindow({ width: 1280, height: 840, minWidth: 800, minHeight: 580,
-    show: false, title: 'DSH Desktop Next',
+    show: false, title: 'DSH NEXT',
     ...(process.platform !== 'darwin' ? { icon: join(root, 'build', process.platform === 'win32' ? 'app-icon.ico' : 'app-icon.png') } : {}),
     ...(!primary ? auxiliaryWindowChromeOptions() : {}),
     ...(process.platform === 'win32' && primary ? {
@@ -238,13 +260,13 @@ async function reloadMain(): Promise<void> {
 }
 
 async function confirmed(message: string, detail = t('将停止当前 Host，正在运行的任务会被中断。', 'This stops the current Host and interrupts running tasks.')): Promise<boolean> {
-  const result = await dialog.showMessageBox({ type: 'question', title: 'DSH Desktop Next', message, detail,
+  const result = await dialog.showMessageBox({ type: 'question', title: 'DSH NEXT', message, detail,
     buttons: [t('继续', 'Continue'), t('取消', 'Cancel')], defaultId: 1, cancelId: 1 })
   return result.response === 0 && !quitting
 }
 async function openPath(path: string): Promise<void> { const error = await shell.openPath(path); if (error) throw new Error(error) }
 
-async function command(value: unknown, source: 'app' | 'shell' = 'app'): Promise<void> {
+async function command(value: unknown, source: 'app' | 'shell' | 'native' = 'app'): Promise<void> {
   if (!value || typeof value !== 'object' || !('type' in value)) throw new Error('Invalid Next command')
   const input = value as Record<string, unknown>
   const type = input.type
@@ -255,6 +277,26 @@ async function command(value: unknown, source: 'app' | 'shell' = 'app'): Promise
   }
   if (type === 'close-controls') { shellWindow?.close(); return }
   if (type === 'quit') { app.quit(); return }
+  if (['check-updates', 'download-update', 'install-update'].includes(type)) {
+    if (quitting || runtime.busy) return
+    if (type === 'check-updates') {
+      void updates.check().then(async () => {
+        if (source !== 'native' || quitting) return
+        const snapshot = updates.snapshot()
+        if (snapshot.phase === 'available' && snapshot.installable) {
+          const choice = await dialog.showMessageBox({ type: 'info', title: 'DSH NEXT',
+            message: updateLabel(snapshot, windowsLanguage), buttons: [t('下载更新', 'Download update'), t('稍后', 'Later')], defaultId: 0, cancelId: 1,
+            detail: t('下载完成后可一键安装并重启。', 'When the download finishes, choose Install and restart.') })
+          if (choice.response === 0 && !quitting) void updates.download()
+        } else await dialog.showMessageBox({ type: 'info', title: 'DSH NEXT', message: updateLabel(snapshot, windowsLanguage) })
+      }).catch(error => runtime.diagnostics.append(String(error), 'warn'))
+    } else if (type === 'download-update') void updates.download()
+    else {
+      if (updates.snapshot().phase !== 'ready') return
+      void updates.install()
+    }
+    return
+  }
   if (runtime.busy || quitting) throw new Error(t('另一项操作正在进行，请稍候。', 'Another operation is in progress.'))
   runtime.busy = true; native.refresh()
   try {
@@ -282,7 +324,7 @@ async function command(value: unknown, source: 'app' | 'shell' = 'app'): Promise
     if (type === 'restart-app' || type === 'restart-recovery') {
       if (!await confirmed(type === 'restart-recovery'
         ? t('重启应用并进入恢复模式？', 'Restart the application in recovery mode?')
-        : t('现在重启 DSH Desktop Next？', 'Restart DSH Desktop Next now?'), type === 'restart-recovery'
+        : t('现在重启 DSH NEXT？', 'Restart DSH NEXT now?'), type === 'restart-recovery'
         ? t('应用将先打开恢复助手，暂不加载当前 Profile 和插件。正在运行的任务会中断。', 'The recovery assistant will open before loading the current Profile and plugins. Running tasks will be interrupted.')
         : undefined)) return
       relaunch = relaunchArguments(process.argv.slice(1), type === 'restart-recovery', runtime.safeMode)
@@ -367,7 +409,7 @@ async function command(value: unknown, source: 'app' | 'shell' = 'app'): Promise
       'repair-global': t('备份并停用全局补丁？这会影响所有 Next Profile。', 'Back up and disable the global patch? This affects every Next Profile.'),
       rollback: t('恢复最近成功启动的 Profile 配置？当前配置会先备份。', 'Restore the last successful-start Profile configuration? The current configuration will be backed up first.'),
       'safe-mode': t('在独立的临时环境中进入安全模式？原有数据和配置会保留。', 'Enter safe mode in a separate temporary environment? Existing data and configuration are preserved.'),
-      'normal-mode': t('退出安全模式，重新启动原 Profile？', 'Leave safe mode and restart the original Profile?'),
+      'normal-mode': t('退出安全模式并重启原 Profile？', 'Exit Safe Mode and restart the original Profile?'),
     }
     if (!await confirmed(messages[String(type)] ?? t('重启工作环境以应用更改？', 'Restart the environment to apply this change?'))) return
     if (type === 'switch') {
@@ -398,11 +440,16 @@ async function command(value: unknown, source: 'app' | 'shell' = 'app'): Promise
 
 async function restoreCheckpoint(id?: string): Promise<void> {
   await runtime.recovery.restore(runtime.selected, id)
-  try { await runRecoveryPlugin(['install']) } catch (error) {
+  // A checkpoint holds configuration only, so the restored manifest deliberately disagrees with the
+  // lockfile until this install reconciles them. pnpm refuses that reconciliation whenever it treats
+  // the environment as CI, which would make recovery fail exactly where it is needed.
+  try { await runRecoveryPlugin(['install', '--no-frozen-lockfile']) } catch (error) {
     throw new Error(t('配置已恢复，但插件依赖安装失败。请检查以下错误并重试恢复：', 'Configuration was restored, but plugin dependencies could not be installed. Check the error and retry recovery:') + '\n' + String(error))
   }
   recoveryNotice = { tone: 'success', title: t('检查点已恢复', 'Checkpoint restored'),
-    body: t('配置和所需插件依赖已恢复。请点击“退出并重启”使恢复生效。', 'Configuration and required plugin dependencies have been restored. Choose “Quit and restart” to apply them.') }
+    body: runtime.safeMode
+      ? t('配置和所需插件依赖已恢复。请点击“退出安全模式并重启”使恢复生效。', 'Configuration and required plugin dependencies have been restored. Choose “Exit Safe Mode and Restart” to apply them.')
+      : t('配置和所需插件依赖已恢复。请点击“退出并重启”使恢复生效。', 'Configuration and required plugin dependencies have been restored. Choose “Quit and restart” to apply them.') }
   runtime.diagnostics.append(`Recovered checkpoint ${id} for ${runtime.selected}`)
 }
 
@@ -429,8 +476,10 @@ async function recoveryAction(input: Record<string, unknown>): Promise<void> {
   const action = input.action
   recoveryNotice = undefined
   if (action === 'restart') {
-    if (!await confirmed(t('现在重启 DSH Desktop Next？', 'Restart DSH Desktop Next now?'),
-      t('应用将退出安全模式和恢复助手，重新启动原 Profile。正在运行的任务会中断。', 'The app will leave safe mode and recovery, then restart the original Profile. Running tasks will be interrupted.'))) return
+    if (!await confirmed(runtime.safeMode ? t('退出安全模式并重启？', 'Exit Safe Mode and restart?') : t('现在重启 DSH NEXT？', 'Restart DSH NEXT now?'),
+      runtime.safeMode
+        ? t('应用将返回原 Profile，并移除临时环境。临时数据不会保留，正在运行的任务会中断。', 'The app will return to the original Profile and remove the temporary environment. Temporary data will not be kept, and running tasks will be interrupted.')
+        : t('应用将退出恢复助手，重新启动原 Profile。', 'The app will leave the recovery assistant and restart the original Profile.'))) return
     relaunch = relaunchArguments(process.argv.slice(1), false, false)
     app.quit()
     return
@@ -607,8 +656,9 @@ async function main(): Promise<void> {
     }
   }
   native.createTray()
+  updates.start()
   Menu.setApplicationMenu(process.platform === 'win32' ? null : Menu.buildFromTemplate([
-    { label: 'DSH Desktop Next', submenu: native.items() }, { role: 'editMenu' }, { role: 'viewMenu' }, { role: 'windowMenu' },
+    { label: 'DSH NEXT', submenu: native.items() }, { role: 'editMenu' }, { role: 'viewMenu' }, { role: 'windowMenu' },
   ]))
   if (process.platform === 'win32') {
     ipcMain.handle(IPC.windowsMenu, (event, name: unknown, x: unknown, y: unknown) => {
@@ -656,7 +706,17 @@ app.on('before-quit', event => {
     if (window && !window.isDestroyed()) window.hide()
   }
   native.close()
-  void (async () => { await recoveryRunner?.dispose(); await runtime.close() })().then(() => {
+  void Promise.all([updates.dispose(installingUpdate), (async () => { await recoveryRunner?.dispose(); await runtime.close() })()]).then(async () => {
+    if (installingUpdate) {
+      try { await updateInstaller.launch() }
+      catch (error) {
+        runtime.diagnostics.append(String(error), 'error')
+        dialog.showErrorBox(t('更新未能安装', 'Update could not be installed'), t('应用将重新打开，请在设置中重试更新。', 'The application will reopen. Retry the update in Settings.'))
+        app.relaunch({ args: relaunchArguments(process.argv.slice(1), false, false) })
+        app.quit()
+      }
+      if (process.platform === 'darwin') return
+    }
     if (relaunch) app.relaunch({ args: relaunch })
     app.quit()
   }, error => { console.error(error); app.exit(1) })

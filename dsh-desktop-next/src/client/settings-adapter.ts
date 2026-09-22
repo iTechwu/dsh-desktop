@@ -4,7 +4,7 @@ import type { DesktopSettingsApi, DesktopSettingsView } from '../../../dsh-plugi
 import type { DesktopNotificationSettings, DesktopShellSettings } from '../../../dsh-plugin-desktop/src/client/DesktopSettingsSection.tsx'
 import { DEFAULT_PROFILE, type DesktopBridge, type DesktopBrowserLinks, type DesktopCommand, type DesktopPreferences, type DesktopState } from '../desktop-contract.ts'
 
-const shellFields = { macosMaterial: 'macosMaterial', windowsMaterial: 'windowsMaterial', port: 'port', openBrowser: 'browserAccess', networkExposure: 'networkExposure', logLevel: 'logLevel' } as const
+const shellFields = { macosMaterial: 'macosMaterial', windowsMaterial: 'windowsMaterial', linuxMaterial: 'linuxMaterial', port: 'port', openBrowser: 'browserAccess', networkExposure: 'networkExposure', logLevel: 'logLevel' } as const
 const notificationFields = { enabled: 'notifications', notifyOnTurnCompletion: 'turnCompleted', notifyOnTurnFailure: 'turnFailed', notifyOnJobCompletion: 'jobCompleted', notifyOnJobFailure: 'jobFailed' } as const
 
 export function projectSettings(state: DesktopState, links: DesktopBrowserLinks = { localUrl: null, lanUrls: [] }): DesktopSettingsView {
@@ -43,7 +43,7 @@ export class NextSettingsAdapter {
     if (JSON.stringify(state) !== JSON.stringify(this.current)) {
       this.current = state
       const p = state.preferences
-      this.shellSnapshot = this.snapshot({ mode: 'compatibility', macosMaterial: p.macosMaterial, windowsMaterial: p.windowsMaterial, port: p.port, openBrowser: p.browserAccess, networkExposure: p.networkExposure, logLevel: p.logLevel }, !state.busy && !state.safeMode)
+      this.shellSnapshot = this.snapshot({ mode: 'compatibility', macosMaterial: p.macosMaterial, windowsMaterial: p.windowsMaterial, linuxMaterial: p.linuxMaterial, port: p.port, openBrowser: p.browserAccess, networkExposure: p.networkExposure, logLevel: p.logLevel }, !state.busy && !state.safeMode)
       this.notificationSnapshot = this.snapshot({ enabled: p.notifications, notifyOnTurnCompletion: p.turnCompleted, notifyOnTurnFailure: p.turnFailed, notifyOnJobCompletion: p.jobCompleted, notifyOnJobFailure: p.jobFailed }, !state.busy && state.notificationsAvailable)
       for (const listener of this.listeners) listener()
     }
@@ -90,7 +90,7 @@ export class NextSettingsAdapter {
     restartToRecovery: () => this.command({ type: 'restart-recovery' }),
     reloadRenderer: () => this.command({ type: 'reload' }),
     toggleDeveloperTools: () => this.command({ type: 'devtools' }),
-    checkForUpdates: async () => { throw new Error('Updates are unavailable in Next') },
+    checkForUpdates: () => this.command({ type: 'check-updates' }),
     exportDiagnostics: () => this.command({ type: 'diagnostics' }),
   }
 }

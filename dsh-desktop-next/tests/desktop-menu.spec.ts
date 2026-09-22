@@ -16,7 +16,7 @@ it('keeps the original tray tool order, direct recovery actions and Profile crea
   const show = vi.fn()
   const menu = desktopMenu(state, 'zh-CN', show, run)
   expect(menu.filter(item => item.type !== 'separator').map(item => item.label)).toEqual([
-    '打开 DSH Desktop Next', '重新加载界面', '打开 DSH 终端', '导出诊断信息…', '进入安全模式…',
+    '打开 DSH NEXT', '重新加载界面', '打开 DSH 终端', '导出诊断信息…', '进入安全模式…',
     'Profile：desktop', '设置…', '恢复助手…', '退出',
   ])
   const profiles = menu.find(item => item.label === 'Profile：desktop')!.submenu

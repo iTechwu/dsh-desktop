@@ -339,6 +339,16 @@ const CSS = `
   padding-left: 14px;
   border-left: 2px solid var(--dsw-alias-border-l1);
 }
+.sensteedAgentSettingsUpdateRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 13px 14px;
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-layer-1);
+}
 .sensteedAgentSettingsLanStatus {
   display: grid;
   gap: 3px;
@@ -436,6 +446,7 @@ const CSS = `
 .sensteedAgentSettingsDialogActions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
 @media (max-width: 720px) {
   .sensteedAgentSettingsChoice,
+  .sensteedAgentSettingsUpdateRow,
   .sensteedAgentSettingsToggleRow { align-items: flex-start; }
   .sensteedAgentSettingsForm { align-items: stretch; flex-direction: column; }
   .sensteedAgentSettingsCredentialForm { align-items: stretch; flex-direction: column; }

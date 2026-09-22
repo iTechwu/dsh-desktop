@@ -16,7 +16,7 @@ import './theme.css'
 
 function App() {
   const adapter = useMemo(() => window.desktopNext ? new NextSettingsAdapter(window.desktopNext) : undefined, [])
-  if (!adapter) return <Alert variant="destructive"><AlertDescription>Desktop controls could not load. Restart DSH Desktop Next.</AlertDescription></Alert>
+  if (!adapter) return <Alert variant="destructive"><AlertDescription>Desktop controls could not load. Restart DSH NEXT.</AlertDescription></Alert>
   return <NativePages adapter={adapter} />
 }
 
@@ -80,8 +80,9 @@ function NativePages({ adapter }: { adapter: NextSettingsAdapter }) {
   if (page === 'profiles') return <ProfileSelectorApp state={{ locale, profiles, busy: busy || state.busy, restartReady: false, ...(notice ? { notice } : {}) }} />
   // Recovery, first-run setup and Profile tools work without a Host. Settings live in the app.
   const copy = { ...desktopRecoveryCopy(locale),
-    restart: t('退出并重启', 'Quit and restart'),
-    safeModeBody: t('使用独立的临时环境，不载入原环境的插件、补丁和凭据。退出后移除临时数据，返回原 Profile。', 'Use a temporary environment without the original plugins, patches or credentials. Leaving removes temporary data and returns to the original Profile.'),
+    restart: state.safeMode ? t('退出安全模式并重启', 'Exit Safe Mode and Restart') : t('退出并重启', 'Quit and restart'),
+    safeModeBody: t('使用独立的临时环境，不载入原环境的插件、补丁和凭据。退出安全模式后移除临时数据，返回原 Profile。', 'Use a temporary environment without the original plugins, patches or credentials. Leaving Safe Mode removes temporary data and returns to the original Profile.'),
+    safeModeActiveBody: t('当前主窗口使用临时环境。可在恢复助手中检查和修复原 Profile。退出安全模式并重启后，将返回原 Profile，临时数据不会保留。', 'The main window is using a temporary environment. Use the recovery assistant to inspect and repair the original Profile. Exiting Safe Mode and restarting returns to that Profile and removes the temporary data.'),
     rollbackGuideBody: t('将当前 Profile 的配置恢复到最近一次成功启动的状态。', 'Restore this Profile to its last successful-start configuration.'),
     rollbackBody: t('还原所选检查点的 Profile 配置并安装所需插件依赖，不回滚共享数据。', 'Restore the selected Profile configuration and install its required plugin dependencies, without reverting shared data.'),
   }

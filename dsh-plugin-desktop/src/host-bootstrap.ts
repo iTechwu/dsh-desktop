@@ -22,6 +22,7 @@ import type { DesktopPnpmBootstrap } from './pnpm.ts'
 import type { DesktopRuntime } from './runtime.ts'
 import type { DesktopStartupGenerationHost } from './startup-generation.ts'
 import { FileExporter } from './file-exporter.ts'
+import { installAgentErrorLogging } from './agent-error-logging.ts'
 import { LogFileSink } from './log-files.ts'
 
 function desktopProfileMarketSnapshot(market: DesktopMarketProvider): DesktopMarketSnapshot {
@@ -129,6 +130,8 @@ export async function bootDesktopHost(options: DesktopHostOptions, runtime: Desk
           fileExporter = new FileExporter(logSink)
           hostCtx.logger.exporter(fileExporter)
         }
+        // Registered before the plugin tree mounts, so no agent can fail unrecorded.
+        installAgentErrorLogging(hostCtx)
         await hostCtx.plugin(DesktopProfileService, {
           current: {
             name: activeProfileName,

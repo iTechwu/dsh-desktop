@@ -36,7 +36,7 @@ export function Onboarding({ state, locale, bridge }: { state: DesktopState; loc
   const disabled = busy || transitioning
   const steps = [t('欢迎', 'Welcome'), t('插件市场', 'Plugin market'), t('远程控制', 'Remote control'), 'Computer Use', t('恢复模式', 'Recovery')]
   const lastPage = steps.length - 1
-  const titles = [t('欢迎使用\nDSH Desktop Next', 'Welcome to\nDSH Desktop Next'), t('用插件，\n拓展更多可能。', 'Make room\nfor more possibilities.'), t('离开电脑，\n也能继续。', 'Keep going.\nAway from your desk.'), t('让 AI 帮你\n操作电脑。', 'Let AI work\non your desktop.'), t('遇到问题，\n从这里恢复。', 'A way back,\nwhen you need it.')]
+  const titles = [t('欢迎使用\nDSH NEXT', 'Welcome to\nDSH NEXT'), t('用插件，\n拓展更多可能。', 'Make room\nfor more possibilities.'), t('离开电脑，\n也能继续。', 'Keep going.\nAway from your desk.'), t('让 AI 帮你\n操作电脑。', 'Let AI work\non your desktop.'), t('遇到问题，\n从这里恢复。', 'A way back,\nwhen you need it.')]
   const descriptions = [
     t(`为 Profile「${state.selected}」选好常用功能。\n几步设置，就可以开始。`, `Set up the essentials for Profile “${state.selected}”.\nA few choices, then you’re ready to go.`),
     t('选择一个插件市场，浏览和安装社区插件。\n也可以暂不开启，以后在插件页面调整。', 'Choose a market to browse and install community plugins.\nYou can also leave it off and decide later in Plugins.'),

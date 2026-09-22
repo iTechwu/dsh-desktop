@@ -17,7 +17,7 @@ export const DESKTOP_CURRENT_VERSION_HEADER = BRAND_UPDATE_SERVICE.versionHeader
 export const DESKTOP_RELEASE_CHANNEL_HEADER = BRAND_UPDATE_SERVICE.channelHeader
 
 /** Release streams supported by the Desktop service. */
-export type DesktopReleaseChannel = 'stable' | 'beta'
+export type DesktopReleaseChannel = 'stable' | 'beta' | 'next'
 
 /** Maximum response body bytes accepted from the version service. */
 export const MAX_VERSION_RESPONSE_BYTES = 4 * 1024
@@ -254,20 +254,21 @@ function parseVersionResponse(body: string, expectedChannel: DesktopReleaseChann
     return null
   }
   if (!isRecord(value) || typeof value.version !== 'string') return null
-  if (expectedChannel === 'beta' && value.channel !== 'beta') return null
+  if (expectedChannel !== 'stable' && value.channel !== expectedChannel) return null
   if (value.channel !== undefined && value.channel !== expectedChannel) return null
   return parseCanonicalChannelVersion(value.version, expectedChannel)
 }
 
-function parseCanonicalChannelVersion(
+export function parseCanonicalChannelVersion(
   input: string,
   channel: DesktopReleaseChannel,
 ): ParsedSemVer | null {
   const parsed = parseCanonicalVersion(input)
   if (parsed === null) return null
   if (channel === 'stable') return parsed.prerelease.length === 0 ? parsed : null
+  if (channel === 'next' && parsed.prerelease.length === 1 && parsed.prerelease[0] === 'next') return parsed
   return parsed.prerelease.length === 2
-    && parsed.prerelease[0] === 'beta'
+    && parsed.prerelease[0] === channel
     && isNumeric(parsed.prerelease[1]!)
     ? parsed
     : null
@@ -297,6 +298,7 @@ function parseInstallerDigestResponse(value: unknown): UpdateCheckResult['instal
 function parseCanonicalSupportedVersion(input: string): ParsedSemVer | null {
   return parseCanonicalChannelVersion(input, 'stable')
     ?? parseCanonicalChannelVersion(input, 'beta')
+    ?? parseCanonicalChannelVersion(input, 'next')
 }
 
 function parseCanonicalVersion(input: string): ParsedSemVer | null {

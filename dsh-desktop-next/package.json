@@ -1,6 +1,6 @@
 {
   "name": "dsh-desktop-next",
-  "version": "0.1.0-dev.0",
+  "version": "2.0.14-next",
   "private": true,
   "description": "Experimental upstream-inspired DSH Desktop with Profiles, recovery, remote control and Community Market",
   "license": "MIT",
@@ -11,7 +11,7 @@
   },
   "scripts": {
     "build": "tsdown && vite build --config vite.native-ui.config.ts",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.packaging.json --noEmit",
     "test": "vitest run",
     "verify:host": "node scripts/verify-host.mjs",
     "verify:host:electron": "node scripts/verify-host.mjs --electron",
@@ -25,7 +25,13 @@
     "start": "node scripts/start.mjs",
     "verify:desktop-runtime": "node scripts/verify-desktop-runtime.mjs",
     "verify:safe-cleanup": "node scripts/verify-safe-cleanup.mjs",
-    "icons:export": "node ../scripts/export-app-icons.mjs --channel next"
+    "icons:export": "node ../scripts/export-app-icons.mjs --channel next",
+    "package:dir": "yarn build && node scripts/package.ts dir",
+    "dist:mac": "node scripts/package.ts mac",
+    "dist:mac-smoke": "node scripts/package.ts mac-smoke",
+    "dist:win": "node scripts/package.ts win",
+    "check:mac-package": "yarn check",
+    "check:win-package": "yarn check"
   },
   "dependencies": {
     "@agents-anywhere/dsh-bridge-next": "file:../vendor/agents-anywhere/agents-anywhere-dsh-bridge-next-0.1.0-dev.0.desktop.ca022d9286dd0.rc4b2a1d2.tgz",
@@ -208,6 +214,7 @@
     "clsx": "^2.1.1",
     "diff": "^9.0.0",
     "electron": "44.0.0",
+    "electron-builder": "26.15.7",
     "katex": "^0.16.47",
     "lucide-react": "^1.33.0",
     "mdast-util-from-markdown": "^2.0.3",
@@ -269,5 +276,106 @@
         "dshmarket"
       ]
     ]
+  },
+  "build": {
+    "appId": "ai.deepseek.dsh.desktop.next",
+    "productName": "DSH NEXT",
+    "asar": false,
+    "npmRebuild": false,
+    "afterPack": "./scripts/verify-packaged.ts",
+    "afterAllArtifactBuild": "./scripts/verify-fuses.ts",
+    "electronFuses": {
+      "enableEmbeddedAsarIntegrityValidation": false,
+      "onlyLoadAppFromAsar": false,
+      "resetAdHocDarwinSignature": true,
+      "runAsNode": true
+    },
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "toolsets": {
+      "nsis": "1.2.1"
+    },
+    "files": [
+      "assets/**",
+      "build/app-icon.ico",
+      "build/app-icon.png",
+      "build/app-icon-mac.png",
+      "cordis.patch.yml",
+      "lib/**",
+      "package.json",
+      "!node_modules/node-pty/build/**",
+      "!node_modules/fs-ext/build/**"
+    ],
+    "mac": {
+      "artifactName": "DSH-NEXT-${version}-${arch}.${ext}",
+      "target": [
+        "dir"
+      ],
+      "category": "public.app-category.developer-tools",
+      "extendInfo": {
+        "CFBundleAllowMixedLocalizations": true,
+        "CFBundleDevelopmentRegion": "en",
+        "CFBundleLocalizations": [
+          "en",
+          "zh_CN"
+        ],
+        "NSMicrophoneUsageDescription": "DSH NEXT uses the microphone when you enable a feature that records audio.",
+        "NSAudioCaptureUsageDescription": "DSH NEXT captures screen audio when you request it.",
+        "NSLocalNetworkUsageDescription": "DSH NEXT connects to devices on your local network when you enable network access.",
+        "NSAppTransportSecurity": {
+          "NSAllowsLocalNetworking": true
+        }
+      },
+      "hardenedRuntime": true,
+      "icon": "build/app-icon.icon",
+      "mergeASARs": false,
+      "notarize": true,
+      "signIgnore": [
+        "\\.(?:pak|dat|wasm)$"
+      ],
+      "x64ArchFiles": "**/node_modules/{@deepseek-ai/node-addon-system-darwin-*/**,node-pty/prebuilds/darwin-*/**,fs-ext/prebuilds/darwin-*/**,node-addon-require-builtin-darwin-*/**,@vscode/ripgrep-darwin-*/**,@img/sharp-darwin-*/**,@img/sharp-libvips-darwin-*/**,@koromix/koffi-darwin-*/**,@dataiku/uv-darwin-*/**,@deepseek-ai/libreoffice-kit-darwin-*/**,@trycua/cua-driver-darwin-*/**,@ubjs/node-darwin-*/**}",
+      "asar": false
+    },
+    "win": {
+      "compression": "normal",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "DSH-NEXT-${version}-${arch}-Portable.${ext}",
+      "icon": "build/app-icon.ico",
+      "asar": false
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowElevation": true,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "differentialPackage": false,
+      "shortcutName": "DSH NEXT",
+      "useZip": false,
+      "artifactName": "DSH-NEXT-${version}-${arch}-Setup.${ext}",
+      "installerIcon": "build/app-icon.ico",
+      "uninstallerIcon": "build/app-icon.ico",
+      "include": "../dsh-plugin-desktop-beta/build/installer.nsh"
+    },
+    "linux": {
+      "target": [
+        "dir"
+      ],
+      "icon": "build/app-icon.png",
+      "asar": false
+    },
+    "dmg": {
+      "icon": "build/app-icon.icns"
+    }
   }
 }

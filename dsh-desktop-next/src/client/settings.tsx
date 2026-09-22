@@ -8,6 +8,7 @@ import type { DesktopCommand, DesktopState } from '../desktop-contract.ts'
 import { NextSettingsAdapter } from './settings-adapter.ts'
 import { DesktopPermissionsSection } from './permissions.tsx'
 import { useDesktopState } from './desktop-state.ts'
+import { NextUpdateSettings } from './updates.tsx'
 
 export function desktopTranslate(language: string): (key: string) => string {
   const copy = language.startsWith('zh') ? zh : en
@@ -25,11 +26,11 @@ export function NextDesktopSettings({ adapter, language, onOpenPlugins }: { adap
   const state = useDesktopState(adapter)
   const t = desktopTranslate(language)
   return <div data-next-desktop-settings=""><DesktopSettingsSection
-    t={t} api={adapter.api} platform={state?.platform === 'darwin' || state?.platform === 'win32' ? state.platform : 'linux'}
+    t={t} api={adapter.api} version={state?.version ?? ''} platform={state?.platform === 'darwin' || state?.platform === 'win32' ? state.platform : 'linux'}
     initialMode="compatibility" micaSupported={state?.windowsMicaSupported ?? false}
     setMode={async () => { throw new Error('Window modes are not supported in Next') }}
     desktopSettings={adapter.desktopSettings} notificationSettings={adapter.notificationSettings}
-    capabilities={{ windowModes: false, pluginSelectors: false, materialRequiresRestart: false, nativeLanConfirmation: true, jobNotifications: false }}
+    capabilities={{ windowModes: false, pluginSelectors: false, updates: false, materialRequiresRestart: false, nativeLanConfirmation: true, jobNotifications: false }}
     introNotice={<div className="dshDesktopSettingsNotice dshNextPluginSettingsNotice" data-next-plugin-settings-notice>
       <span>{language.startsWith('zh') ? '插件市场和远程控制设置已移至插件页面。' : 'Plugin market and remote control settings have moved to the Plugins page.'}</span>
       <Button variant="outline" size="sm" onClick={onOpenPlugins}>{language.startsWith('zh') ? '前往插件页面' : 'Go to Plugins'}</Button>
@@ -75,6 +76,7 @@ function NextDesktopOptions({ adapter, state, language }: { adapter: NextSetting
   const action = (type: DesktopCommand['type'], cn: string, en: string, unavailable = false) => <button key={type} type="button" className="dshDesktopSettingsButton dshDesktopSettingsButtonSecondary" disabled={busy || state.busy || unavailable} onClick={() => { void run(() => adapter.command({ type } as DesktopCommand)) }}>{t(cn, en)}</button>
   return <>
     {failure && <p role="alert" className="dshDesktopSettingsError">{failure}</p>}
+    <NextUpdateSettings state={state} language={language} run={command => { void run(() => adapter.command(command)) }} />
     <section className="dshDesktopSettingsGroup"><h3>{t('后台运行', 'Background operation')}</h3>
       <DesktopSettingsToggleRow label={t('关闭窗口后保持后台运行', 'Keep running after closing the window')} checked={state.preferences.closeToTray} disabled={busy || state.busy} onChange={closeToTray => { void run(() => adapter.savePreferences({ closeToTray })) }} />
       <p className="dshDesktopSettingsHint">{state.trayAvailable ? t('可从托盘重新打开窗口。', 'Reopen the window from the tray.') : t('系统托盘不可用，关闭主窗口将退出应用。', 'The tray is unavailable; closing the main window quits the application.')}</p>

@@ -13,6 +13,8 @@ import { DESKTOP_PRODUCT_NAME } from '../src/product-identity.ts'
 
 /** Injectable filesystem and command boundaries for release verification. */
 export interface MacReleaseVerificationOptions {
+  /** Native inventory for shells which do not load legacy-only modules. */
+  readonly nativeEntries?: readonly { readonly arch: string; readonly path: string }[]
   /** Directory containing exactly one release DMG. */
   readonly distDir: string
   /** Installed application name inside the mounted image. */

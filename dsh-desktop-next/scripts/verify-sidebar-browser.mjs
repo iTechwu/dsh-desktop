@@ -50,7 +50,9 @@ async function verify() {
     assert.equal(contents.getLastWebPreferences().sandbox, true)
     browser.command({ type: 'bounds', id: 'one', bounds: { x: 400, y: 80, width: 300, height: 400 } })
     assert.equal(nativeView.getVisible(), true)
-    await contents.executeJavaScript("document.querySelector('a').click()")
+    // A real click carries user activation; without it Chromium replaces the current history
+    // entry instead of pushing one, so the Back button below would have nothing to return to.
+    await contents.executeJavaScript("document.querySelector('a').click()", true)
     await wait(() => states.get('one')?.url.endsWith('/second') && states.get('one')?.canGoBack)
     browser.command({ type: 'back', id: 'one' })
     await wait(() => states.get('one')?.url.endsWith('/first') && states.get('one')?.canGoForward)

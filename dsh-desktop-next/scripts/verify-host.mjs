@@ -231,10 +231,12 @@ try {
   assert.equal(finalManifest.dsh.profile.bundles.includes('fixture-next-plugin'), false)
   await runner.dispose()
   await stop()
-  // Reinstall dependencies after restoring a manifest that refers to a removed plugin.
+  // Reinstall dependencies after restoring a manifest that refers to a removed plugin. The restored
+  // manifest is ahead of the lockfile by design, so this repeats the flag the recovery assistant
+  // passes: a frozen install, which is pnpm's default under CI, refuses that reconciliation.
   await recovery.restore('desktop', checkpoint.id)
   runner = createPackageRunner(pnpmInvocation, dir)
-  const reconcile = runner.runPlugin(['install', '--offline', '--ignore-scripts'], dir)
+  const reconcile = runner.runPlugin(['install', '--offline', '--ignore-scripts', '--no-frozen-lockfile'], dir)
   let reconciliationOutput = ''
   reconcile.stdout.on('data', chunk => { reconciliationOutput += chunk })
   reconcile.stderr.on('data', chunk => { reconciliationOutput += chunk })

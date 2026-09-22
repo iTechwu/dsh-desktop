@@ -1,9 +1,9 @@
 /** Official Desktop boot in headless Chromium; simulated IPC/platform, no native window or user profile. */
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { delimiter, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
 import { DesktopHostProcess } from '../lib/host-process.js'
@@ -21,8 +21,23 @@ const screenshots = join(root, '.desktop-next', 'verification')
 const manager = new NextProfiles(home)
 manager.ensure('desktop')
 manager.setFeatures('desktop', { market: false, remoteControl: false })
+// The renderer below simulates darwin, so the Host must mount the matching
+// `native` directory flow for the preload-backed picker to be the surface under
+// test. Upstream's chooser resolves `browse` on a Linux host with no
+// zenity/kdialog on PATH, which is every headless CI runner: hand it a display
+// and an executable chooser stub so one platform does not silently verify a
+// different flow. Nothing ever runs the stub — the client short-circuits to the
+// injected `__DSH_DIRECTORY_PICKER__` before the Host backend is consulted.
+const chooserEnv = {}
+if (process.platform === 'linux') {
+  const chooserDir = join(home, 'chooser-bin')
+  mkdirSync(chooserDir)
+  writeFileSync(join(chooserDir, 'zenity'), '#!/bin/sh\nexit 1\n', { mode: 0o755 })
+  chooserEnv.PATH = `${chooserDir}${delimiter}${process.env.PATH ?? ''}`
+  chooserEnv.DISPLAY = process.env.DISPLAY ?? ':0'
+}
 const host = new DesktopHostProcess(process.execPath, root, manager.directory('desktop'), undefined,
-  { ...process.env, DSH_HOME: home, DSH_TELEMETRY_DISABLED: '1' }, undefined, undefined, 'runtime', undefined,
+  { ...process.env, ...chooserEnv, DSH_HOME: home, DSH_TELEMETRY_DISABLED: '1' }, undefined, undefined, 'runtime', undefined,
   join(root, 'lib', 'host.js'))
 let browser
 let page
@@ -54,7 +69,7 @@ try {
       networkExposure: 'loopback', port: 0, lanPort: 0, logLevel: 'info', notifications: true,
       turnCompleted: true, turnFailed: true, jobCompleted: false, jobFailed: false },
     phase: 'ready', busy: false, failure: '', safeMode: false, home: '[temporary test home]', platform: 'darwin',
-    version: '0.1.0-dev.0', trayAvailable: true, notificationsAvailable: true, windowsMicaSupported: false, browserUrl: null, lan: null,
+    version: '2.0.14-next', updates: { phase: 'idle', installable: true }, trayAvailable: true, notificationsAvailable: true, windowsMicaSupported: false, browserUrl: null, lan: null,
     recovery: { bundles: [{ bundleId: 'fixture-plugin', packageName: 'fixture-plugin', owner: 'profile', status: 'active', action: 'uninstall' }],
       checkpoints: [{ id: 'fixture-checkpoint', created: new Date().toISOString(), fileCount: 3, totalBytes: 128 }],
       profileDirectory: '[temporary profile]', usingDefaultDirectory: true },
@@ -499,6 +514,18 @@ try {
   await page.getByRole('button', { name: /^(桌面设置|Desktop settings)$/ }).click()
   await settings.getByRole('heading', { name: /^(DSH Desktop 设置|DSH Desktop Settings)$/ }).waitFor()
   assert.equal(await settings.locator('nav').count(), 0)
+  const updateSection = settings.locator('[data-next-updates]')
+  await updateSection.getByRole('button', { name: /检查更新|Check for updates/ }).click()
+  assert.equal(controlCommands.at(-1).type, 'check-updates')
+  controlState.updates = { phase: 'downloading', version: '2.0.15-next.1', installable: true, received: 50, total: 100 }
+  await updateSection.getByText(/正在下载更新 50%|Downloading update 50%/).waitFor()
+  assert.equal(await updateSection.locator('progress').getAttribute('value'), '50')
+  await updateSection.scrollIntoViewIfNeeded()
+  await page.screenshot({ path: join(screenshots, 'desktop-update-progress.png'), animations: 'disabled' })
+  controlState.updates = { phase: 'ready', version: '2.0.15-next.1', installable: true }
+  await updateSection.getByRole('button', { name: /安装并重启|Install and restart/ }).click()
+  assert.equal(controlCommands.at(-1).type, 'install-update')
+  controlState.updates = { phase: 'idle', installable: true }
   const setupWizard = settings.getByRole('button', { name: /^(设置向导|Setup wizard)$/ })
   await setupWizard.click()
   assert.equal(controlCommands.at(-1).type, 'restart-onboarding')

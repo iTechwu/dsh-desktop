@@ -117,7 +117,10 @@ import {
   type MacosWindowMaterial,
   type PersistedWindowsWindowMaterial,
   windowsSupportsMica,
+  DEFAULT_LINUX_WINDOW_MATERIAL,
 } from './window-material.ts'
+import type { LinuxWindowMaterial } from './window-material.ts'
+import { DESKTOP_PRODUCT_NAME } from './product-identity.ts
 
 /** Stable Cordis plugin name. */
 export const name = 'desktop-shell'
@@ -159,6 +162,8 @@ export interface DesktopSettings {
   macosMaterial: MacosWindowMaterial
   /** Native backdrop preference used on Windows custom-chrome modes. */
   windowsMaterial: PersistedWindowsWindowMaterial
+  /** Electron-native transparency preference used on Linux generations. */
+  linuxMaterial: LinuxWindowMaterial
   /** Loopback Web port selected for the next application generation; zero requests a random port. */
   port: number
   /** Whether Desktop advertises its marker-free compatibility client for browser use. */
@@ -174,6 +179,7 @@ export const DesktopSettingsSchema: z<DesktopSettings> = z.object({
   mode: z.union(['compatibility', 'extended', 'advanced'] as const).default('compatibility'),
   macosMaterial: z.union(['off', 'transparent'] as const).default(DEFAULT_MACOS_WINDOW_MATERIAL),
   windowsMaterial: z.union(['off', 'acrylic', 'mica'] as const).default(DEFAULT_WINDOWS_WINDOW_MATERIAL),
+  linuxMaterial: z.union(['off', 'transparent'] as const).default(DEFAULT_LINUX_WINDOW_MATERIAL),
   port: z.number().step(1).min(0).max(65_535).default(DESKTOP_DEFAULT_WEB_PORT),
   openBrowser: z.boolean().default(false),
   networkExposure: z.union(['loopback', 'lan'] as const).default('loopback'),
@@ -188,6 +194,8 @@ export interface Config {
   macosMaterial: MacosWindowMaterial
   /** Native backdrop preference used on Windows custom-chrome modes. */
   windowsMaterial: PersistedWindowsWindowMaterial
+  /** Electron-native transparency preference used on Linux generations. */
+  linuxMaterial: LinuxWindowMaterial
   /** Configured loopback Web port used to detect restart-applied settings changes. */
   port: number
   /** Configured listener exposure used to detect restart-applied settings changes. */
@@ -209,6 +217,7 @@ export const Config: z<Config> = z.object({
   mode: z.union(['compatibility', 'extended', 'advanced'] as const).default('compatibility'),
   macosMaterial: z.union(['off', 'transparent'] as const).default(DEFAULT_MACOS_WINDOW_MATERIAL),
   windowsMaterial: z.union(['off', 'acrylic', 'mica'] as const).default(DEFAULT_WINDOWS_WINDOW_MATERIAL),
+  linuxMaterial: z.union(['off', 'transparent'] as const).default(DEFAULT_LINUX_WINDOW_MATERIAL),
   port: z.number().step(1).min(0).max(65_535).default(DESKTOP_DEFAULT_WEB_PORT),
   networkExposure: z.union(['loopback', 'lan'] as const).default('loopback'),
   width: z.number().step(1).min(800).default(1280),
@@ -604,7 +613,8 @@ export function apply(ctx: Context, config: Config): void {
       if (next.mode === config.mode
         && next.port === config.port
         && next.macosMaterial === config.macosMaterial
-        && next.windowsMaterial === config.windowsMaterial) {
+        && next.windowsMaterial === config.windowsMaterial
+        && next.linuxMaterial === config.linuxMaterial) {
         if (pending !== undefined) clearImmediate(pending)
         pending = undefined
         return
@@ -641,6 +651,7 @@ export function apply(ctx: Context, config: Config): void {
         config.macosMaterial,
         config.windowsMaterial,
         runtime.windowsBuild,
+        config.linuxMaterial,
       )
       const url = desktopRendererUrl(
         ctx.webServer.port,
