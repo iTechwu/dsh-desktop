@@ -152,11 +152,15 @@ try {
     show() {},
     async requestRestart() {},
     prepareToQuit() {},
+    // dofe-managed registers its launcher entry through the native tray.
+    registerTrayItem() { return { refresh() {}, dispose() {} } },
   }
   ctx = await boot(
     BIN_NAME,
     prepared.rootConfig,
     [{ insert: [
+      // sensteed builds: desktop-shell injects 'dofeAuth', which this plugin provides.
+      { id: 'dofe-managed', name: 'dsh-plugin-desktop/dofe-managed' },
       { id: 'desktop-shell', name: 'dsh-plugin-desktop' },
       { id: 'community-market', name: 'dsh-community-market' },
       { id: 'dsh-market', name: 'dshmarket' },
@@ -186,6 +190,8 @@ try {
       })
       host.provide('webRuntime', {})
       host.provide('appExit', () => {})
+      // dofe-managed publishes its workflow guidance through this seam.
+      host.provide('systemPrompt', { section() {} })
       host.provide('settings', {
         register() {
           return {
