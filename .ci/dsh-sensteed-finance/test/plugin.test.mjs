@@ -9,6 +9,9 @@ process.env.DATASOURCE_TENANT_ID ||= 'tenant-1'
 process.env.DATASOURCE_INTERNAL_API_SECRET ||= 'sec'
 process.env.DATASOURCE_BASE_URL ||= 'https://ds.local'
 
+// 前缀路由注册名：子路径用例统一从 BASE 拼接，避免散落完整字面量
+const BASE = '/api/desktop/sensteed/finance'
+
 function jsonResponse(body, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
 }
@@ -63,7 +66,7 @@ test('manifest wires the MCP client and the web client', async () => {
 
 test('registers a prefix route, a bootstrap tool, and finance guidance', async () => {
   const { routes, tools, sections } = await loadHost()
-  assert.equal(routes.get('/api/desktop/sensteed/finance').kind, 'prefix')
+  assert.equal(routes.get(BASE).kind, 'prefix')
   assert.ok(tools.get('sensteed_finance_bootstrap'))
   assert.equal(sections[0].name, 'sensteed:finance-guidance')
   assert.match(sections[0].text, /finance_analysis_brief/u)
@@ -79,8 +82,8 @@ test('GET routes proxy finance reads through the stateless MCP endpoint', async 
     if (name === 'finance_get_orgs') return mcpJson({ list: [{ id: 'org-1', name: '主体A' }] })
     return mcpJson({ list: [], total: 0, page: 1, limit: 20 })
   } })
-  const route = routes.get('/api/desktop/sensteed/finance')
-  const brief = await invokeRoute(route, 'GET', '/api/desktop/sensteed/finance/brief?year=2026')
+  const route = routes.get(BASE)
+  const brief = await invokeRoute(route, 'GET', BASE + '/brief?year=2026')
   assert.equal(brief.status, 200)
   assert.equal(brief.body.ok, true)
   assert.equal(brief.body.data.year, 2026)
@@ -89,34 +92,34 @@ test('GET routes proxy finance reads through the stateless MCP endpoint', async 
   assert.equal(briefCall.init.headers.authorization, 'Bearer cred-secret', 'credential-store value must win over process.env')
   assert.ok(JSON.parse(briefCall.init.body).params.arguments.tenantId, 'tenant must be injected')
 
-  const quality = await invokeRoute(route, 'GET', '/api/desktop/sensteed/finance/quality')
+  const quality = await invokeRoute(route, 'GET', BASE + '/quality')
   assert.equal(quality.status, 200)
   assert.ok(quality.body.quality, 'quality block present')
   assert.ok(quality.body.batches, 'batches block present')
 
-  const missing = await invokeRoute(route, 'GET', '/api/desktop/sensteed/finance/nope')
+  const missing = await invokeRoute(route, 'GET', BASE + '/nope')
   assert.equal(missing.status, 404)
 })
 
 test('write routes map to MCP write tools with path ids', async () => {
   const calls = []
   const { routes } = await loadHost({ fetch: async (url, init) => { calls.push({ url: String(url), body: JSON.parse(init.body) }); return mcpJson({ created: { id: 'row-1' } }) } })
-  const route = routes.get('/api/desktop/sensteed/finance')
-  const created = await invokeRoute(route, 'POST', '/api/desktop/sensteed/finance/payment-plans', { orgId: 'org-1', planType: 'PURCHASE', year: 2026, description: '测试', plannedAmount: 100 })
+  const route = routes.get(BASE)
+  const created = await invokeRoute(route, 'POST', BASE + '/payment-plans', { orgId: 'org-1', planType: 'PURCHASE', year: 2026, description: '测试', plannedAmount: 100 })
   assert.equal(created.status, 200)
   assert.equal(calls[0].body.params.name, 'finance_create_payment_plan')
   assert.equal(calls[0].body.params.arguments.tenantId, 'tenant-1')
 
-  const patched = await invokeRoute(route, 'POST', '/api/desktop/sensteed/finance/revenue-plans/row-9/actuals', { actualAmount: 50 })
+  const patched = await invokeRoute(route, 'POST', BASE + '/revenue-plans/row-9/actuals', { actualAmount: 50 })
   assert.equal(patched.status, 200)
   assert.equal(calls[1].body.params.name, 'finance_patch_revenue_plan_actuals')
   assert.equal(calls[1].body.params.arguments.id, 'row-9')
 
-  const rung = await invokeRoute(route, 'POST', '/api/desktop/sensteed/finance/alerts/run', { year: 2026 })
+  const rung = await invokeRoute(route, 'POST', BASE + '/alerts/run', { year: 2026 })
   assert.equal(rung.status, 200)
   assert.equal(calls[2].body.params.name, 'finance_run_alert_engine')
 
-  const bad = await invokeRoute(route, 'POST', '/api/desktop/sensteed/finance/nope', {})
+  const bad = await invokeRoute(route, 'POST', BASE + '/nope', {})
   assert.equal(bad.status, 404)
 })
 
@@ -136,11 +139,11 @@ test('rejects tenant-dependent reads without a configured tenant while /quality 
       credentialRefs: {},
       fetch: async () => mcpJson({ issues: [], list: [] }),
     })
-    const route = routes.get('/api/desktop/sensteed/finance')
-    const brief = await invokeRoute(route, 'GET', '/api/desktop/sensteed/finance/brief')
+    const route = routes.get(BASE)
+    const brief = await invokeRoute(route, 'GET', BASE + '/brief')
     assert.equal(brief.status, 400)
     assert.match(brief.body.error, /DATASOURCE_TENANT_ID/u)
-    const quality = await invokeRoute(route, 'GET', '/api/desktop/sensteed/finance/quality')
+    const quality = await invokeRoute(route, 'GET', BASE + '/quality')
     assert.equal(quality.status, 200, 'quality reads need no tenant')
   } finally {
     if (previous !== undefined) process.env.DATASOURCE_TENANT_ID = previous
@@ -149,8 +152,8 @@ test('rejects tenant-dependent reads without a configured tenant while /quality 
 
 test('keeps the secret out of URLs and never fabricates upstream data', async () => {
   const { routes } = await loadHost({ fetch: async () => new Response('denied', { status: 403 }) })
-  const route = routes.get('/api/desktop/sensteed/finance')
-  const response = await invokeRoute(route, 'GET', '/api/desktop/sensteed/finance/brief')
+  const route = routes.get(BASE)
+  const response = await invokeRoute(route, 'GET', BASE + '/brief')
   assert.equal(response.status, 502)
   assert.equal(response.body.ok, false)
   assert.equal(response.body.error, 'auth_unavailable')
@@ -164,8 +167,8 @@ test('falls back to the legacy INTERNAL_API_SECRET ref when the named one is abs
     credentialRefs: { INTERNAL_API_SECRET: 'legacy-secret' },
     fetch: async (url, init) => { calls.push({ init }); return mcpJson({ list: [] }) },
   })
-  const route = routes.get('/api/desktop/sensteed/finance')
-  await invokeRoute(route, 'GET', '/api/desktop/sensteed/finance/brief')
+  const route = routes.get(BASE)
+  await invokeRoute(route, 'GET', BASE + '/brief')
   assert.equal(calls[0].init.headers.authorization, 'Bearer legacy-secret')
 })
 

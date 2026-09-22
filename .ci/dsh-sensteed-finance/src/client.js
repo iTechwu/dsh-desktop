@@ -548,7 +548,7 @@ function Dashboard({ t }) {
   const [error, setError] = useState(false)
   const [partial, setPartial] = useState(false)
   const shellRef = useRef(null)
-  const loadRef = useRef(false)
+  const loadingRef = useRef(false)
 
   useEffect(() => {
     if (!opened) return undefined
@@ -558,8 +558,8 @@ function Dashboard({ t }) {
   }, [opened, revision])
 
   useEffect(() => {
-    if (!opened) { loadRef.current = false; return undefined }
-    loadRef.current = true
+    if (!opened) { loadingRef.current = false; return undefined }
+    loadingRef.current = true
     setLoading(true); setError(false); setPartial(false)
     const query = new URLSearchParams({ year })
     if (orgId) query.set('orgId', orgId)
@@ -588,16 +588,17 @@ function Dashboard({ t }) {
       const failed = settled.filter(result => result.status === 'rejected').length
       setPartial(failed > 0 && failed < settled.length)
       setError(failed === settled.length)
-      loadRef.current = false
+      loadingRef.current = false
       setLoading(false)
     })()
     return () => { cancelled = true }
     // context 仅提供主体筛选项，不参与数据查询：不进依赖，避免主体列表到达时整页重复加载
   }, [opened, year, orgId, revision])
 
+  // 统一的重载入口：sf:refresh 事件与界面按钮都经由它触发 revision 递增
+  const refresh = () => setRevision(value => value + 1)
   useEffect(() => {
     if (!opened) return undefined
-    const refresh = () => setRevision(value => value + 1)
     window.addEventListener('sf:refresh', refresh)
     return () => window.removeEventListener('sf:refresh', refresh)
   }, [opened])
@@ -617,7 +618,7 @@ function Dashboard({ t }) {
   const body = loading && !Object.keys(blocks).length
     ? h('div', { className: 'sf-loading', role: 'status' }, h(Glyph, { name: 'loading' }), t('loading'))
     : error && !Object.keys(blocks).length
-      ? h('div', { className: 'sf-fatal', role: 'alert' }, h(Glyph, { name: 'warning' }), h('strong', null, t('loadError')), h('button', { type: 'button', onClick: () => setRevision(value => value + 1) }, t('retry')))
+      ? h('div', { className: 'sf-fatal', role: 'alert' }, h(Glyph, { name: 'warning' }), h('strong', null, t('loadError')), h('button', { type: 'button', onClick: refresh }, t('retry')))
       : h(React.Fragment, null,
         partial ? h('div', { className: 'sf-stale-notice', role: 'status' }, t('partialLoad')) : null,
         tab === 'overview' ? h(Overview, { brief: blocks.brief, t }) : null,
@@ -634,7 +635,7 @@ function Dashboard({ t }) {
       h('header', { className: 'sf-header' },
         h('div', null, h('h1', { id: 'sf-title' }, t('title')), h('p', null, t('subtitle'))),
         h('div', { className: 'sf-header-buttons' },
-          h(Tooltip, { label: t('refresh') }, h('button', { type: 'button', className: 'sf-icon-button', 'aria-label': t('refresh'), onClick: () => setRevision(value => value + 1) }, h(IconRefreshOutline16, { size: 16 }))),
+          h(Tooltip, { label: t('refresh') }, h('button', { type: 'button', className: 'sf-icon-button', 'aria-label': t('refresh'), onClick: refresh }, h(IconRefreshOutline16, { size: 16 }))),
           h(Tooltip, { label: t('close') }, h('button', { type: 'button', className: 'sf-icon-button', 'aria-label': t('close'), onClick: closeOverlay }, h(IconCloseOutline16, { size: 16 }))))),
       h('div', { className: 'sf-toolbar' },
         h(FormRow, { label: t('year') }, h(Select, { value: year, onChange: setYear, options: years })),

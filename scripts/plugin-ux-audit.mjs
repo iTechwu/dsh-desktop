@@ -8,7 +8,8 @@ const ciEntries = (await readdir(ciRoot, { withFileTypes: true }))
   .filter(entry => entry.isDirectory())
   .map(entry => entry.name)
   .sort()
-const entries = ciEntries.filter(name => name.startsWith('dsh-yootun-'))
+// Client-plugin discovery spans every white-label brand family under .ci/.
+const entries = ciEntries.filter(name => /^dsh-(?:yootun|sensteed)-/.test(name))
 
 async function readSourceTree(root, extensions) {
   const paths = await readdir(root, { recursive: true })
