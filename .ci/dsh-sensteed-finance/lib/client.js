@@ -56,7 +56,7 @@ window.__ModuleLoader__.load({
         analysis_revenue: '收入达成分析', analysis_revenue_desc: '计划 vs 实际到账逐项比对，归因差额并评估对资金平衡的影响。',
         analysis_quality: '数据质量影响评估', analysis_quality_desc: '列出质量问题清单，说明哪些分析结论会失真及补数优先级。',
         analysis_forecast: '成本与资金预判', analysis_forecast_desc: '按近 3 个月外推未来支出与月末资金余额区间，标注置信度。',
-        alertsTitle: '预警清单', runEngine: '触发预警引擎', running: '引擎执行中', runDone: '已触发：新建 {created} · 更新 {updated} · 关闭 {resolved}', severity: '级别', alertType: '类型', title: '标题', detail: '说明', firstSeen: '首次发现', lastSeen: '最近出现',
+        alertsTitle: '预警清单', runEngine: '触发预警引擎', running: '引擎执行中', runDone: '已触发：新建 {created} · 更新 {updated} · 关闭 {resolved}', severity: '级别', alertType: '类型', alertTitle: '标题', detail: '说明', firstSeen: '首次发现', lastSeen: '最近出现',
         sevCritical: '重大', sevWarn: '关注', sevInfo: '提示', statusOpen: '待处理', statusAll: '全部状态', total: '合计',
         qualityTitle: '数据质量清单', batchesTitle: '导入批次', issue: '问题', dataset: '数据集', count: '数量', sourceFile: '来源文件', rows: '行数', successRows: '成功', failedRows: '失败', batchStatus: '状态', startedAt: '开始时间',
         entryTitle: '财务数据录入', entryPaymentPlan: '录入付款计划', entryRevenuePlan: '录入收入计划', entryBudgetLine: '录入预算行', description: '付款描述', payee: '收款方', planMonth: '计划月份', quarter: '季度', note: '备注', entryHint: '录入直接写入财务数据中心；提交前请核对金额与期间。提交后建议在预警页触发一次规则引擎。',
@@ -79,7 +79,7 @@ window.__ModuleLoader__.load({
         analysis_revenue: 'Revenue attainment', analysis_revenue_desc: 'Plan vs actual receipts with variance attribution.',
         analysis_quality: 'Data quality impact', analysis_quality_desc: 'Issue list, which conclusions are distorted, and remediation priorities.',
         analysis_forecast: 'Cost & cash forecast', analysis_forecast_desc: '3-month-average extrapolation with confidence labels.',
-        alertsTitle: 'Alerts', runEngine: 'Run alert engine', running: 'Running...', runDone: 'Done: created {created} · updated {updated} · resolved {resolved}', severity: 'Severity', alertType: 'Type', title: 'Title', detail: 'Detail', firstSeen: 'First seen', lastSeen: 'Last seen',
+        alertsTitle: 'Alerts', runEngine: 'Run alert engine', running: 'Running...', runDone: 'Done: created {created} · updated {updated} · resolved {resolved}', severity: 'Severity', alertType: 'Type', alertTitle: 'Title', detail: 'Detail', firstSeen: 'First seen', lastSeen: 'Last seen',
         sevCritical: 'Critical', sevWarn: 'Warn', sevInfo: 'Info', statusOpen: 'Open', statusAll: 'All', total: 'Total',
         qualityTitle: 'Data quality', batchesTitle: 'Import batches', issue: 'Issue', dataset: 'Dataset', count: 'Count', sourceFile: 'Source file', rows: 'Rows', successRows: 'OK', failedRows: 'Failed', batchStatus: 'Status', startedAt: 'Started',
         entryTitle: 'Finance data entry', entryPaymentPlan: 'Payment plan', entryRevenuePlan: 'Revenue plan', entryBudgetLine: 'Budget line', description: 'Description', payee: 'Payee', planMonth: 'Plan month', quarter: 'Quarter', note: 'Note', entryHint: 'Entries write to the finance data center directly. Verify amounts and periods before submitting; run the alert engine afterwards.',
@@ -228,7 +228,7 @@ window.__ModuleLoader__.load({
           h('section', { className: 'sf-panel' }, h('h2', null, t('alertSummary')), h(Table, {
             columns: [
               { label: t('severity'), render: row => h(SeverityBadge, { severity: row.severity, t }) },
-              { label: t('title'), key: 'title' },
+              { label: t('alertTitle'), key: 'title' },
               { label: t('org'), key: 'orgName' },
             ],
             rows: summary.top || [],
@@ -393,7 +393,7 @@ window.__ModuleLoader__.load({
           columns: [
             { label: t('severity'), render: row => h(SeverityBadge, { severity: row.severity, t }) },
             { label: t('alertType'), key: 'alertType' },
-            { label: t('title'), key: 'title' },
+            { label: t('alertTitle'), key: 'title' },
             { label: t('detail'), key: 'detail' },
             { label: t('org'), key: 'orgName' },
             { label: t('lastSeen'), render: row => shortDate(row.lastSeenAt) ?? '—' },
