@@ -161,22 +161,22 @@
       }
     ],
     "icon": "build/app-icon.png",
-    "artifactName": "Yootun-Agent-Beta-${version}-${arch}.${ext}",
     "category": "Development",
     "maintainer": "Yootun <dshdesktop@dshdesktop.cn>",
-    "executableName": "yootun-agent-beta",
     "asarUnpack": [
       "build/app-icon.png",
       "build/tray-icon-blue.png",
       "build/tray-icon-blue@1.25x.png",
       "build/tray-icon-blue@1.5x.png",
       "build/tray-icon-blue@2x.png"
-    ]
+    ],
+    "artifactName": "Yootun-Agent-Beta-${version}-${arch}.${ext}",
+    "executableName": "yootun-agent-beta"
   },
   "deb": {
-    "packageName": "yootun-agent-beta",
     "packageCategory": "devel",
-    "priority": "optional"
+    "priority": "optional",
+    "packageName": "yootun-agent-beta"
   },
   "appId": "ai.yootun.agent.beta",
   "productName": "Yootun-Agent Beta"

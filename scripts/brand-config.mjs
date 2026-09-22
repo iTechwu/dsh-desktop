@@ -264,6 +264,7 @@ export const BRAND_WORDMARK_DISPLAY = Object.freeze({
  */
 export function renderBuilderConfig(config, base) {
   const active = resolveActiveChannel(config)
+  const linuxStem = active.artifactPrefix.toLowerCase()
   return {
     ...base,
     appId: active.appId,
@@ -276,6 +277,15 @@ export function renderBuilderConfig(config, base) {
       ...base.nsis,
       shortcutName: config.nsis.shortcutName,
       artifactName: `${active.artifactPrefix}-\${version}-\${arch}-Setup.\${ext}`,
+    },
+    linux: {
+      ...base.linux,
+      artifactName: `${active.artifactPrefix}-\${version}-\${arch}.\${ext}`,
+      executableName: linuxStem,
+    },
+    deb: {
+      ...base.deb,
+      packageName: linuxStem,
     },
   }
 }

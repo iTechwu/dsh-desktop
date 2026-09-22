@@ -154,8 +154,32 @@ export const ELECTRON_BUILDER_BASE = Object.freeze({
   },
   linux: {
     target: [
-      'dir',
+      {
+        target: 'AppImage',
+        arch: [
+          'x64',
+        ],
+      },
+      {
+        target: 'deb',
+        arch: [
+          'x64',
+        ],
+      },
     ],
     icon: 'build/app-icon.png',
+    category: 'Development',
+    maintainer: 'Yootun <dshdesktop@dshdesktop.cn>',
+    asarUnpack: [
+      'build/app-icon.png',
+      'build/tray-icon-blue.png',
+      'build/tray-icon-blue@1.25x.png',
+      'build/tray-icon-blue@1.5x.png',
+      'build/tray-icon-blue@2x.png',
+    ],
+  },
+  deb: {
+    packageCategory: 'devel',
+    priority: 'optional',
   },
 })

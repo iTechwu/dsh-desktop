@@ -103,6 +103,7 @@
     "dsh-plugin-desktop/cordis.patch.yml": 3,
     "dsh-plugin-desktop/electron-builder.json": 8,
     "dsh-plugin-desktop/package.json": 1,
+    "dsh-plugin-desktop/scripts/electron-builder-base.mjs": 3,
     "dsh-plugin-desktop/scripts/reproduce-windows-installer-running-check.ps1": 1,
     "dsh-plugin-desktop/scripts/smoke-windows-installer-upgrade.ps1": 4,
     "dsh-plugin-desktop/scripts/verify-yootun-client-runtime.mjs": 2,
