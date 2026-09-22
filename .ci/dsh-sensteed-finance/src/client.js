@@ -611,7 +611,8 @@ function Dashboard({ t }) {
   }, [opened])
 
   // 打开时把焦点移入看板容器，保证键盘导航与 Escape 生效
-  useEffect(() => { if (opened) requestAnimationFrame(() => shellRef.current?.focus?.()) }, [opened, focusReady])
+  // 依赖只能是 opened：依赖数组在渲染期求值，引用未声明标识符会让看板首渲染即崩
+  useEffect(() => { if (opened) requestAnimationFrame(() => shellRef.current?.focus?.()) }, [opened])
 
   const orgOptions = (context?.data?.orgs || []).map(org => [org.id, org.name])
   const years = yearOptions()

@@ -186,6 +186,81 @@ test('client source wires sidebar entry, overlay, and analysis entries', async (
   assert.doesNotMatch(source, /fetch\(`https?:\/\//u, 'client must only call same-origin routes')
 })
 
+test('clicking the sidebar button renders the dashboard without render-time reference errors', async () => {
+  // 回归：hook 依赖数组在渲染期求值，引用未声明标识符（曾经的 focusReady）会让
+  // 看板首渲染即抛 ReferenceError，shell.overlay slot entry 崩溃，表现为“点击看板无反应”。
+  // 桩 React 会真正调用函数组件（仅顶层一层），让渲染期错误在测试里当场抛出。
+  globalThis.window = { dispatchEvent() {}, addEventListener() {}, removeEventListener() {} }
+  globalThis.CustomEvent = class { constructor(type, init) { this.type = type; this.detail = init?.detail } }
+  globalThis.document = { activeElement: null, createElement: () => ({ dataset: {}, remove() {} }), head: { appendChild() {} } }
+  globalThis.requestAnimationFrame = () => 0
+  const source = await readFile(new URL('src/client.js', root), 'utf8')
+  const module = { exports: {} }
+  let renderDepth = 0
+  const createElement = (type, props, ...children) => {
+    const merged = { ...props, children }
+    if (typeof type === 'function' && renderDepth === 0) {
+      renderDepth += 1
+      try { return type(merged) } finally { renderDepth -= 1 }
+    }
+    return { type, props: merged }
+  }
+  const reactStub = {
+    createElement,
+    Fragment: 'Fragment',
+    useState: initial => [typeof initial === 'function' ? initial() : initial, () => {}],
+    useRef: initial => ({ current: initial }),
+    useEffect: () => {},
+    useSyncExternalStore: (_subscribe, getSnapshot) => getSnapshot(),
+  }
+  const primitivesStub = new Proxy({}, { get: (_target, key) => key === 'Tooltip' ? props => props.children : () => null })
+  const requireStub = name => {
+    if (name === 'react') return reactStub
+    if (name === '@deepseek-ai/dsh-client-ui-primitives') return primitivesStub
+    throw new Error(`unexpected require: ${name}`)
+  }
+  new Function('require', 'module', 'exports', `${source}\nmodule.exports = { apply, Button, Overlay }`)(requireStub, module, module.exports)
+  const { apply, Button, Overlay } = module.exports
+
+  const registered = {}
+  apply({
+    effect(factory) { return factory() },
+    locale: { register() {}, bind: () => key => key },
+    slots: { inject(_key, register) { register() }, register(options, component) { registered[options.name] = component; return () => {} } },
+    get: () => undefined,
+  })
+  assert.equal(registered['shell.overlay'], Overlay, 'shell.overlay must register the Overlay')
+
+  const closed = Overlay({ t: key => key })
+  assert.equal(closed, null, 'closed overlay renders nothing')
+
+  // 点侧栏按钮 → openOverlay 置 opened=true（点击链路本身不许出错）
+  const button = Button({ wide: true, t: key => key })
+  const findClick = node => {
+    if (Array.isArray(node)) {
+      for (const child of node) {
+        const found = findClick(child)
+        if (found) return found
+      }
+      return undefined
+    }
+    if (!node || typeof node !== 'object') return undefined
+    if (node.props?.onClick) return node.props.onClick
+    for (const child of [].concat(node.props?.children ?? [])) {
+      const found = findClick(child)
+      if (found) return found
+    }
+    return undefined
+  }
+  const onClick = findClick(button)
+  assert.equal(typeof onClick, 'function', 'sidebar button must carry the open handler')
+  onClick({ currentTarget: null })
+
+  // 打开状态的首渲染：曾因 focusReady 未定义在这里抛 ReferenceError
+  const opened = Overlay({ t: key => key })
+  assert.equal(opened?.props?.className, 'sf-overlay', 'opened overlay must render the dashboard shell')
+})
+
 test('client field names match the finance contract schemas', async () => {
   const source = await readFile(new URL('src/client.js', root), 'utf8')
   // 契约字段回归：FinanceMetric/trend 扁平 *Amount、BudgetSummary {list,totals}、PaymentPlan remainingAmount
