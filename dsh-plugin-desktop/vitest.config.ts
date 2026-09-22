@@ -1,6 +1,8 @@
 import { defineConfig } from 'vitest/config'
 
 export default defineConfig({
+  // Desktop and sibling UI packages must share the renderer's React instance.
+  resolve: { dedupe: ['react', 'react-dom'] },
   test: {
     environment: 'node',
     include: ['tests/**/*.spec.ts'],
@@ -9,7 +11,7 @@ export default defineConfig({
     // Keep it in Vitest's module graph so the builtin mock reaches its imports.
     server: {
       deps: {
-        inline: ['@deepseek-ai/dsh-host-directory-picker-browse'],
+        inline: ['@deepseek-ai/dsh-host-directory-picker-browse', '@deepseek-ai/dsh-client-ui-primitives'],
       },
     },
     // Profile integration tests create a full package-junction closure; higher

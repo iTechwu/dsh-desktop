@@ -7,6 +7,12 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { blockDofeApplicationRoot, dofeAccessSettingsStore, dofeModelsRequestBody, installDofeAccessGate, installDofeAccessStyles, mutateDofeAccessSettings, removeDofeAccess } from '../src/client/DofeAccessSection.tsx'
 import { DofeOnboardingModal, installDofeModalFocusTrap } from '../src/client/DofeOnboardingModal.tsx'
 
+// This suite covers manual-key activation; Sensteed SSO has its own suite.
+vi.mock('../src/generated-product-identity.ts', async importOriginal => ({
+  ...await importOriginal<typeof import('../src/generated-product-identity.ts')>(),
+  BRAND_VARIANT: 'yootun', BRAND_TENANT: 'yootun',
+}))
+
 describe('mandatory DoFe access gate', () => {
   it('preserves the SettingsScope receiver for subscriptions and snapshots', () => {
     const snapshot = { value: undefined }
