@@ -41,6 +41,18 @@ test('registers menu at order 41 and renders the three-region overlay', async ()
     '15000',
     '取消任务',
     '确认取消当前任务',
+    // 步骤名中文化：进度与失败行展示本地化步骤名，不用服务端英文标识。
+    '素材下载',
+    '图片理解',
+    '事实提取',
+    '文案生成',
+    'function stepLabel(t, step)',
+    // 失败原因透出：受控短语匹配后展示可操作的中文引导与失败步骤。
+    '失败步骤',
+    '素材中未提取到车型、价格等有效事实',
+    'function failureHintKey(errorCode, errorMessage)',
+    'hintNoFactNoReference',
+    'errorMessage: res.errorMessage',
   ]) assert.match(source, new RegExp(escape(token), 'u'))
   // 互斥与上限：最多 5 张、视频单选、提交只读当前 Tab
   assert.match(source, /const MAX_IMAGES = 5/)

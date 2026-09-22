@@ -69,6 +69,47 @@ test('create returning failed surfaces failure', async () => {
   assert.equal(machine.get().versions, null)
 })
 
+test('poll failed keeps step and controlled reason for display', async () => {
+  const { machine } = makeMachine({
+    queryStatus: async () => ({
+      taskStatus: 'failed', currentStep: 'copywriting', nextStep: 'copywriting',
+      errorCode: 'copywriting_failed', errorMessage: 'no fact or reference basis for copywriting',
+    }),
+  })
+  await machine.submit({ action: 'create', mediaType: 'images', idempotencyKey: 'k1' })
+  const state = machine.get()
+  assert.equal(state.error, 'failed')
+  assert.deepEqual(state.failure, { step: 'copywriting', errorCode: 'copywriting_failed', errorMessage: 'no fact or reference basis for copywriting' })
+})
+
+test('poll cancelled clears failure detail', async () => {
+  const { machine } = makeMachine({ queryStatus: async () => ({ taskStatus: 'cancelled', currentStep: 'copywriting' }) })
+  await machine.submit({ action: 'create', mediaType: 'images', idempotencyKey: 'k1' })
+  assert.equal(machine.get().error, 'cancelled')
+  assert.equal(machine.get().failure, null)
+})
+
+test('failed failure detail survives terminal resume and is cleared on resubmit', async () => {
+  let statusCalls = 0
+  const { machine } = makeMachine({
+    createTask: async body => ({ taskId: body.idempotencyKey, taskStatus: 'queued', mediaType: body.mediaType }),
+    queryStatus: async () => {
+      statusCalls++
+      if (statusCalls === 1) return { taskStatus: 'failed', currentStep: 'copywriting', errorCode: 'copywriting_failed', errorMessage: 'no fact or reference basis for copywriting' }
+      return { taskStatus: 'queued', currentStep: 'ingest' }
+    },
+  })
+  await machine.submit({ action: 'create', mediaType: 'images', idempotencyKey: 'k1' })
+  assert.deepEqual(machine.get().failure, { step: 'copywriting', errorCode: 'copywriting_failed', errorMessage: 'no fact or reference basis for copywriting' })
+  // 终态 resume：轮询走 isTerminal 分支，failure 详情保留（跨页面开关可见）
+  await machine.resume()
+  assert.deepEqual(machine.get().failure, { step: 'copywriting', errorCode: 'copywriting_failed', errorMessage: 'no fact or reference basis for copywriting' })
+  // 重新提交新任务（queued）：failure 清空，不残留上一轮失败引导
+  await machine.submit({ action: 'create', mediaType: 'images', idempotencyKey: 'k2' })
+  assert.equal(machine.get().failure, null)
+  assert.equal(machine.get().task.idempotencyKey, 'k2')
+})
+
 test('create returning cancelled surfaces cancelled', async () => {
   const { machine } = makeMachine({ createTask: async () => ({ taskId: 't-1', taskStatus: 'cancelled' }) })
   await machine.submit({ action: 'create', mediaType: 'video', idempotencyKey: 'k1' })

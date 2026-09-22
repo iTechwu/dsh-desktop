@@ -99,6 +99,29 @@ test('status delegates to task_get and projects the safe task view', async () =>
   assert.equal(calls[0].arguments.taskId, 'xhst-1')
 })
 
+test('status projects failure errorCode/errorMessage from the failed step row', async () => {
+  const projection = JSON.stringify({
+    taskId: 'xhst-f', status: 'failed', currentStep: 'copywriting', nextStep: 'copywriting',
+    errorCode: 'copywriting_failed', errorMessage: 'no fact or reference basis for copywriting',
+    steps: [
+      { step: 'ingest', status: 'succeeded' },
+      { step: 'copywriting', status: 'failed', errorCode: 'copywriting_failed', errorMessage: 'no fact or reference basis for copywriting' },
+      { step: 'quality', status: 'failed' },
+    ],
+  })
+  const { route } = makeCtx(async () => ({ content: [{ type: 'text', text: projection }] }))
+  const result = await invoke(route, { action: 'status', taskId: 'xhst-f' })
+  assert.equal(result.status, 200)
+  assert.equal(result.body.taskStatus, 'failed')
+  assert.equal(result.body.errorCode, 'copywriting_failed')
+  assert.equal(result.body.errorMessage, 'no fact or reference basis for copywriting')
+  assert.deepEqual(result.body.steps, [
+    { step: 'ingest', status: 'succeeded' },
+    { step: 'copywriting', status: 'failed', errorCode: 'copywriting_failed', errorMessage: 'no fact or reference basis for copywriting' },
+    { step: 'quality', status: 'failed' },
+  ])
+})
+
 test('result delegates to result_get and projects only display fields', async () => {
   const calls = []
   const payload = JSON.stringify({ taskId: 'xhst-1', status: 'succeeded', versions: [

@@ -31,6 +31,11 @@ window.__ModuleLoader__.load({
         submit: '开始仿写', submitting: '正在仿写…', uploadFailed: '上传失败，请重试',
         uploadingBlock: '当前照片/视频正在上传中，等待上传完成', retrying: '重试中', uploadedBytes: '已传 {written} / {total}',
         empty: '上传素材后点击“开始仿写”，生成三套文案', processing: '正在生成文案', stepLabel: '当前步骤',
+        failedStep: '失败步骤', hintNoFactNoReference: '素材中未提取到车型、价格等有效事实，且未添加对标内容。建议：填写主题、更换或补充含明确信息的素材，或添加对标笔记/账号后重新开始',
+        stepIngest: '素材下载', stepProbe: '媒体探测', stepAsr: '语音转写', stepCorrectTranscript: '转写校对',
+        stepFrames: '关键帧抽取', stepVision: '画面理解', stepImagesVision: '图片理解',
+        stepFactCard: '事实提取', stepStylePortrait: '风格画像', stepCopywriting: '文案生成',
+        stepQuality: '质量检查', stepFinalize: '完成整理',
         versionA: '版本 A', versionB: '版本 B', versionC: '版本 C',
         failed: '生成失败', failedHint: '已保留你的输入与已上传素材，可修改后重新开始', cancelled: '已取消',
         cancelTask: '取消任务', cancelConfirm: '确认取消当前任务？', confirmYes: '是', confirmNo: '否', cancelFailed: '取消失败，请重试',
@@ -47,6 +52,11 @@ window.__ModuleLoader__.load({
         submit: 'Start', submitting: 'Rewriting…', uploadFailed: 'Upload failed, retry',
         uploadingBlock: 'Uploading in progress — wait for the current photo/video to finish uploading.', retrying: 'Retrying', uploadedBytes: '{written} / {total} sent',
         empty: 'Upload media then press “Start” to generate three copies', processing: 'Generating copies', stepLabel: 'Current step',
+        failedStep: 'Failed step', hintNoFactNoReference: 'No usable facts (model, price, selling points) were extracted from the media, and no references were provided. Fill in the theme, use clearer media, or add a reference note/account, then retry',
+        stepIngest: 'Downloading media', stepProbe: 'Probing media', stepAsr: 'Transcribing audio', stepCorrectTranscript: 'Proofreading transcript',
+        stepFrames: 'Extracting frames', stepVision: 'Understanding visuals', stepImagesVision: 'Understanding images',
+        stepFactCard: 'Extracting facts', stepStylePortrait: 'Profiling style', stepCopywriting: 'Writing copies',
+        stepQuality: 'Checking quality', stepFinalize: 'Finalizing',
         versionA: 'Version A', versionB: 'Version B', versionC: 'Version C',
         failed: 'Generation failed', failedHint: 'Your input and uploaded media are kept; adjust and retry', cancelled: 'Cancelled',
         cancelTask: 'Cancel', cancelConfirm: 'Cancel the current task?', confirmYes: 'Yes', confirmNo: 'No', cancelFailed: 'Cancel failed, retry',
@@ -112,7 +122,7 @@ window.__ModuleLoader__.load({
     // 职责：创建 → 轮询 → 读结果 → 终态；暂态失败按间隔重试；stop 停止轮询不取消任务；resume 恢复。
     // 注入 createTask/queryStatus/queryResult/schedule/clearSchedule，便于单测用假定时器与假 fetch。
     function createTaskMachine({ createTask, queryStatus, queryResult, cancelTask, intervalMs = POLL_INTERVAL_MS, schedule = setTimeout, clearSchedule = clearTimeout, onChange }) {
-      let snapshot = { task: null, versions: null, error: '' }
+      let snapshot = { task: null, versions: null, error: '', failure: null }
       let timer = null
       let generation = 0
       let submission = 0
@@ -155,7 +165,15 @@ window.__ModuleLoader__.load({
           update({ ...snapshot, task: next, error: '' })
           if (status.taskStatus === 'succeeded') { await loadResult(task.taskId, gen); return }
           if (status.taskStatus === 'failed' || status.taskStatus === 'cancelled') {
-            update({ ...snapshot, error: status.taskStatus === 'cancelled' ? 'cancelled' : 'failed' })
+            update({
+              ...snapshot,
+              task: next,
+              error: status.taskStatus === 'cancelled' ? 'cancelled' : 'failed',
+              // 失败详情（受控错误码/原因短语 + 失败步骤）供界面映射中文引导
+              failure: status.taskStatus === 'failed'
+                ? { step: next.currentStep || '', errorCode: status.errorCode || '', errorMessage: status.errorMessage || '' }
+                : null,
+            })
             return
           }
           timer = schedule(poll, intervalMs)
@@ -169,7 +187,7 @@ window.__ModuleLoader__.load({
       const submit = async body => {
         const submissionId = ++submission
         cancel()
-        update({ task: snapshot.task, versions: null, error: '' })
+        update({ task: snapshot.task, versions: null, error: '', failure: null })
         let created
         try {
           created = await createTask(body)
@@ -179,7 +197,7 @@ window.__ModuleLoader__.load({
         }
         if (submissionId !== submission) return
         // 创建期间允许页面开关：始终保存最新任务，只有页面当前激活时才开始轮询。
-        update({ task: { taskId: created.taskId, idempotencyKey: body.idempotencyKey, taskStatus: created.taskStatus || 'queued', mediaType: body.mediaType, input: body }, versions: null, error: '' })
+        update({ task: { taskId: created.taskId, idempotencyKey: body.idempotencyKey, taskStatus: created.taskStatus || 'queued', mediaType: body.mediaType, input: body }, versions: null, error: '', failure: null })
         if (!active) return
         await poll()
       }
@@ -398,6 +416,33 @@ window.__ModuleLoader__.load({
       }
     }
 
+    // 工作流步骤名展示映射：进度与失败行用本地化步骤名（ingest/images_vision 等服务端
+    // 步骤标识对用户不可读），未登记步骤回退服务端原文。
+    const STEP_LABEL_KEYS = {
+      ingest: 'stepIngest', probe: 'stepProbe', asr: 'stepAsr', correct_transcript: 'stepCorrectTranscript',
+      frames: 'stepFrames', vision: 'stepVision', images_vision: 'stepImagesVision',
+      fact_card: 'stepFactCard', style_portrait: 'stepStylePortrait', copywriting: 'stepCopywriting',
+      quality: 'stepQuality', finalize: 'stepFinalize',
+    }
+    function stepLabel(t, step) {
+      const key = STEP_LABEL_KEYS[step]
+      return key ? t(key) : (step || '')
+    }
+
+    // 失败原因受控短语 → 引导文案键：服务端 errorCode 为稳定错误码，errorMessage 为
+    // 服务端白名单产出的受控短语（不透传 Provider 原文），此处精确匹配后给出可操作的
+    // 中文引导；未登记组合返回空，界面只显示通用失败文案。
+    const FAILURE_HINT_RULES = [
+      { code: 'copywriting_failed', message: 'no fact or reference basis for copywriting', key: 'hintNoFactNoReference' },
+    ]
+    function failureHintKey(errorCode, errorMessage) {
+      if (!errorCode) return ''
+      for (const rule of FAILURE_HINT_RULES) {
+        if (rule.code === errorCode && rule.message === errorMessage) return rule.key
+      }
+      return ''
+    }
+
     // 模块级单例：跨 overlay 开关保留任务与轮询进度。
     const machineListeners = new Set()
     const machine = createTaskMachine({
@@ -409,7 +454,7 @@ window.__ModuleLoader__.load({
       queryStatus: async taskId => {
         const res = await post({ action: 'status', taskId })
         if (!res || res.status !== 'ready') throw new Error('status_failed')
-        return { taskStatus: res.taskStatus, currentStep: res.currentStep, nextStep: res.nextStep }
+        return { taskStatus: res.taskStatus, currentStep: res.currentStep, nextStep: res.nextStep, errorCode: res.errorCode || '', errorMessage: res.errorMessage || '' }
       },
       queryResult: async taskId => {
         const res = await post({ action: 'result', taskId })
@@ -507,7 +552,7 @@ window.__ModuleLoader__.load({
       const [refNote, setRefNote] = useState('')
       const [refAccount, setRefAccount] = useState('')
       const machineState = useSyncExternalStore(subscribeMachine, () => machine.get(), () => machine.get())
-      const { task, versions, error } = machineState
+      const { task, versions, error, failure } = machineState
       const [busy, setBusy] = useState(false)
       const busyRef = useRef(false)
       const [confirming, setConfirming] = useState(false)
@@ -694,14 +739,17 @@ window.__ModuleLoader__.load({
       if (taskStatus === 'succeeded' && Array.isArray(versions)) {
         right = h('div', { className: 'yxh-versions' }, versions.map((version, index) => h(Version, { key: version.version || index, version, index, t })))
       } else if (taskErrorText) {
+        const hintKey = taskStatus === 'failed' && failure ? failureHintKey(failure.errorCode, failure.errorMessage) : ''
         right = h('div', { className: 'yxh-state yxh-state-error', role: 'alert' },
           h('p', null, taskErrorText),
+          hintKey ? h('p', null, t(hintKey)) : null,
+          taskStatus === 'failed' && failure?.step ? h('p', { className: 'yxh-step' }, `${t('failedStep')} · ${stepLabel(t, failure.step)}`) : null,
           h('p', { className: 'yxh-hint' }, t('failedHint')))
       } else if (processing || taskStatus === 'succeeded') {
         right = h('div', { className: 'yxh-state', role: 'status' },
           h('span', { className: 'yxh-spinner' }),
           h('p', null, t('processing')),
-          task?.currentStep ? h('p', { className: 'yxh-step' }, `${t('stepLabel')} · ${task.currentStep}`) : null)
+          task?.currentStep ? h('p', { className: 'yxh-step' }, `${t('stepLabel')} · ${stepLabel(t, task.currentStep)}`) : null)
       } else {
         right = h('div', { className: 'yxh-state', role: 'status' }, h('p', null, t('empty')))
       }

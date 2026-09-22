@@ -99,6 +99,7 @@ async function handleStatus(ctx, body, res, signal = AbortSignal.timeout(TOOL_CA
     currentStep: firstString(payload.currentStep),
     nextStep: firstString(payload.nextStep),
     errorCode: firstString(payload.errorCode),
+    errorMessage: cleanString(payload.errorMessage, 512),
     steps: projectSteps(payload.steps),
   })
 }
@@ -220,7 +221,19 @@ function projectAccounts(value) {
 
 function projectSteps(list) {
   if (!Array.isArray(list)) return []
-  return list.map(item => ({ step: cleanString(item?.step, 64), status: cleanString(item?.status, 24) })).filter(item => item.step)
+  const out = []
+  for (const item of list) {
+    const step = cleanString(item?.step, 64)
+    if (!step) continue
+    const entry = { step, status: cleanString(item?.status, 24) }
+    // 失败步骤行的受控错误码/原因短语（供客户端映射中文引导）；非失败行不出现
+    const errorCode = cleanString(item?.errorCode, 64)
+    const errorMessage = cleanString(item?.errorMessage, 512)
+    if (errorCode) entry.errorCode = errorCode
+    if (errorMessage) entry.errorMessage = errorMessage
+    out.push(entry)
+  }
+  return out
 }
 
 // 版本投影：只保留服务端已校验的展示字段，正文 body 交给客户端 MarkdownText 渲染。
