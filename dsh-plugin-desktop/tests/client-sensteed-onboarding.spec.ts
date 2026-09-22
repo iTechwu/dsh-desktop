@@ -95,3 +95,35 @@ it('requires login before showing model setup and commits authorization only aft
     container.remove()
   }
 })
+
+it('opens the settings panel with the stored-credential model list already loaded', async () => {
+  vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
+  const snapshot = { value: { setupComplete: true, validationVersion: 1, enabledPlugins: ['knowledge'], modelId: 'preferred-model', protocol: 'messages', authMode: 'feishu', identity: { ssoSub: 'user', name: 'User' }, entitlements: { plugins: ['knowledge'], allowedProtocols: ['messages'], defaultModel: '' } } }
+  const settingsScope = {
+    getSnapshot: () => snapshot,
+    subscribe: () => () => {},
+  }
+  const settingsApi = { describe: vi.fn(), mutate: vi.fn() }
+  const credentials = { describe: vi.fn(async () => ({ ok: true, value: { MODELS_API_KEY: { configured: true } } })) }
+  const fetcher = vi.fn(async () => Response.json({ models: [{ id: 'first-model' }, { id: 'preferred-model' }] }))
+  vi.stubGlobal('fetch', fetcher)
+  const props = { settingsApi, settingsScope, credentials, t: (key: string) => key }
+  const container = document.createElement('div')
+  document.body.append(container)
+  const root = createRoot(container)
+  try {
+    await act(async () => root.render(createElement(DofeAccessSection, props as never)))
+    await act(async () => {})
+    // No refresh click: the stored credential resolves the list on open.
+    const select = container.querySelector('select') as HTMLSelectElement
+    expect(select.value).toBe('preferred-model')
+    expect([...select.options].map(option => option.value)).toEqual(['', 'first-model', 'preferred-model'])
+    expect(fetcher).toHaveBeenCalledOnce()
+    const [path, init] = fetcher.mock.calls[0] as unknown as [string, RequestInit]
+    expect(path).toBe('/api/desktop/dofe/models')
+    expect(JSON.parse(String(init.body))).toEqual({ key: '', protocol: 'messages', useStored: true })
+  } finally {
+    await act(async () => root.unmount())
+    container.remove()
+  }
+})

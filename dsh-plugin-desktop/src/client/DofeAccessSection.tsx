@@ -321,6 +321,15 @@ function AccessForm({ credentials, settingsApi, settingsScope, t, onboarding, on
       setLoadingModels(false)
     }
   }
+  // A stored credential should surface its model list as soon as the form
+  // opens; the refresh button stays for manual reloads and typed keys. The
+  // one-shot ref keeps a failed fetch from re-entering an automatic retry loop.
+  const autoLoadedRef = useRef(false)
+  useEffect(() => {
+    if (configured !== true || autoLoadedRef.current) return
+    autoLoadedRef.current = true
+    void loadModels()
+  }, [configured])
   const save = async (): Promise<void> => {
     if (BRAND_VARIANT === 'sensteed' && (!ssoBound || !settings.value?.entitlements?.allowedProtocols.includes(protocol))) return
     const key = draft.trim()
