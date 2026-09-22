@@ -18,6 +18,8 @@ const PATH = '/api/desktop/yootun/retrofit'
 const OVERLAY_ID = '@dofe/dsh-yootun-retrofit'
 const OVERLAY_EVENT = 'dofe:yootun-overlay:open'
 const PLATFORMS = ['xiaohongshu-v2', 'douyin', 'kuaishou', 'bilibili', 'weibo', 'toutiao', 'lemon8', 'youtube']
+// UI 层隐藏开关：true 时客户端不注册侧边栏入口与弹层；harness 侧工具与本地 API 不受影响。
+const UI_HIDDEN = true
 const copy = {
   zh: {
         open: '改装方案库', title: '车辆改装方案库', subtitle: '案例来自定时入库数据，公开检索仅作临时参考', close: '关闭改装方案库', search: '筛选方案库', refresh: '刷新公开来源', refreshing: '正在检索', placeholder: '输入车型、改装项目或使用场景', allPlatforms: '全部平台', platform: '内容平台', sourceSaved: '定时入库数据', sourceExternal: '即时公开检索', sourceLabel: '数据来源', updated: '数据时间', privacy: '列表、统计和详情只读取数据库；“刷新公开来源”不会写入案例库。执行改装前请人工核验方案与配件信息。', total: '方案总量', returned: '当前结果', coverage: '平台覆盖', engagement: '互动数据完整', records: '条', platforms: '个平台', listTitle: '改装内容', listHint: '按发布时间优先展示，标题、正文与互动来自公开页面。', emptyTitle: '方案库正在积累', emptyBody: '定时任务会持续采集并写入公开改装内容，当前不会自动发起外部检索。', noMatchesTitle: '方案库中暂无匹配结果', noMatchesBody: '可调整筛选条件；需要临时参考时，请点击“刷新公开来源”。', unavailableTitle: '改装数据暂不可用', unavailableBody: '数据库读取没有成功，未自动发起外部检索。', errorTitle: '查询失败', errorBody: '当前结果未更新，请稍后重试。', externalTitle: '公开来源参考', externalBody: '这些内容来自即时检索，尚未进入定时方案库，也不会计入案例统计。', comments: '评论', shares: '互动', openSource: '查看原文', untitled: '未命名改装内容', noText: '暂无正文摘要', queryExamples: '常用筛选', example1: '新能源车改装', example2: '二手车整备', example3: 'SUV 灯光升级', rawExternal: '检索结果', platformXhs: '小红书', platformDouyin: '抖音', platformKuaishou: '快手', platformBilibili: '哔哩哔哩', platformWeibo: '微博', platformToutiao: '今日头条', platformLemon8: 'Lemon8', platformYoutube: 'YouTube',
@@ -171,7 +173,9 @@ function apply(ctx) {
   ctx.effect(() => { window.addEventListener(OVERLAY_EVENT, closeOtherOverlay); window.addEventListener('keydown', closeOnEscape); return () => { window.removeEventListener(OVERLAY_EVENT, closeOtherOverlay); window.removeEventListener('keydown', closeOnEscape) } }, 'dofe-yootun-retrofit: overlay-events')
   ctx.effect(() => { const style = document.createElement('style'); style.dataset.plugin = '@dofe/dsh-yootun-retrofit'; style.textContent = css + interactionCss; document.head.appendChild(style); return () => style.remove() }, 'dofe-yootun-retrofit: styles')
   const t = ctx.locale.bind(NS)
-  ctx.slots.inject('sidebar.footer.action', () => ctx.slots.register({ name: 'sidebar.footer.action', id: 'dofe-yootun-retrofit', order: 45, inject: () => ({ t }) }, Button))
-  ctx.slots.inject('shell.overlay', () => ctx.slots.register({ name: 'shell.overlay', id: 'dofe-yootun-retrofit', order: 45, inject: () => ({ t }) }, Overlay))
+  if (!UI_HIDDEN) {
+    ctx.slots.inject('sidebar.footer.action', () => ctx.slots.register({ name: 'sidebar.footer.action', id: 'dofe-yootun-retrofit', order: 45, inject: () => ({ t }) }, Button))
+    ctx.slots.inject('shell.overlay', () => ctx.slots.register({ name: 'shell.overlay', id: 'dofe-yootun-retrofit', order: 45, inject: () => ({ t }) }, Overlay))
+  }
 }
 module.exports = { apply, inject: ['slots', 'locale'] }
