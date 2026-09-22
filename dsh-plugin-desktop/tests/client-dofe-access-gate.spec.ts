@@ -260,4 +260,13 @@ describe('mandatory DoFe access gate', () => {
     expect(source).toContain('const request = dofeModelsRequestBody(overrides.key ?? draft, overrides.configured ?? configured, overrides.protocol ?? protocol)')
     expect(source).not.toContain('const key = (keyOverride ?? draft).trim()')
   })
+
+  it('closes the settings panel behind a success toast after a verified save', async () => {
+    const source = await readFile(resolve(process.cwd(), 'src/client/DofeAccessSection.tsx'), 'utf8')
+
+    // The banner mounts at section level (body portal) so closing the shell
+    // panel cannot unmount it mid-hold.
+    expect(source).toContain("{success && <Toast text={props.t('loginSuccess')} icon={<Check size={18} />} onDone={() => setSuccess(false)} />}")
+    expect(source).toContain('const onDone = props.close === undefined ? undefined : (): void => { setSuccess(true); props.close() }')
+  })
 })

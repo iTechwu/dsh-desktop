@@ -459,7 +459,17 @@ export function installDofeAccessStyles(): () => void {
   return () => { style.remove() }
 }
 
-export function DofeAccessSection(props: DofeAccessSectionProps): ReactNode { if (props.credentials === undefined || props.settingsApi === undefined || props.settingsScope === undefined || props.t === undefined) return null; return <AccessForm credentials={props.credentials} settingsApi={props.settingsApi} settingsScope={props.settingsScope} t={props.t} /> }
+export function DofeAccessSection(props: DofeAccessSectionProps): ReactNode {
+  // The success banner lives at section level so the body-portal toast
+  // outlives the panel the shell closes underneath it.
+  const [success, setSuccess] = useState(false)
+  if (props.credentials === undefined || props.settingsApi === undefined || props.settingsScope === undefined || props.t === undefined) return null
+  const onDone = props.close === undefined ? undefined : (): void => { setSuccess(true); props.close() }
+  return <>
+    {success && <Toast text={props.t('loginSuccess')} icon={<Check size={18} />} onDone={() => setSuccess(false)} />}
+    <AccessForm credentials={props.credentials} settingsApi={props.settingsApi} settingsScope={props.settingsScope} t={props.t} {...(onDone === undefined ? {} : { onDone })} />
+  </>
+}
 export function DofeAccessGate({ credentials, settingsApi, settingsScope, t, onAuthorizationChange }: DofeAccessInjected & { onAuthorizationChange?: (authorized: boolean) => void }): ReactNode {
   const settingsStore = useMemo(() => dofeAccessSettingsStore(settingsScope), [settingsScope])
   const settings = useSyncExternalStore(settingsStore.subscribe, settingsStore.getSnapshot, settingsStore.getSnapshot)
