@@ -181,7 +181,7 @@
     "dsh-plugin-desktop/tests/dofe-opencli.spec.ts": 2,
     "dsh-plugin-desktop/tests/douyin-operation-integration.spec.ts": 1,
     "dsh-plugin-desktop/tests/electron-platform.spec.ts": 3,
-    "dsh-plugin-desktop/tests/electron-runtime.spec.ts": 44,
+    "dsh-plugin-desktop/tests/electron-runtime.spec.ts": 45,
     "dsh-plugin-desktop/tests/installer-messages.spec.ts": 1,
     "dsh-plugin-desktop/tests/knowledge-routing.spec.ts": 2,
     "dsh-plugin-desktop/tests/market-pnpm-integration.spec.ts": 1,
