@@ -149,7 +149,7 @@ export class DofeAuthService {
     })
     this.abort.signal.throwIfAborted()
     if (accessToken !== undefined) {
-      await this.provision(accessToken)
+      await this.provision(discovery, accessToken)
       return
     }
     if (!interactive) throw new DofeAuthTokenError('登录授权已失效', 'invalid_grant')
@@ -177,7 +177,7 @@ export class DofeAuthService {
       if (token.refreshToken !== undefined) {
         await this.credentials.modifyRecord(DOFE_AUTH_GRANT_KEY, async () => ({ kind: 'grant', payload: { refreshToken: token.refreshToken } }))
       }
-      await this.provision(token.accessToken)
+      await this.provision(discovery, token.accessToken)
     } finally {
       this.cancelPending = undefined
       this.closeLoopback()
@@ -191,14 +191,17 @@ export class DofeAuthService {
     const issuer = asString(value.issuer)
     const authorizationEndpoint = asString(value.authorization_endpoint)
     const tokenEndpoint = asString(value.token_endpoint)
-    if (authorizationEndpoint === undefined || tokenEndpoint === undefined || issuer === undefined) throw new Error('SSO discovery 缺少必要端点')
+    const userinfoEndpoint = asString(value.userinfo_endpoint)
+    if (authorizationEndpoint === undefined || tokenEndpoint === undefined || userinfoEndpoint === undefined || issuer === undefined) {
+      throw new Error('SSO discovery 缺少必要端点')
+    }
     const expectedIssuer = new URL('.', SENSTEED_SSO_DISCOVERY_URL).origin + '/api'
     if (issuer !== expectedIssuer) throw new Error('SSO issuer 不匹配')
-    for (const endpoint of [authorizationEndpoint, tokenEndpoint]) {
+    for (const endpoint of [authorizationEndpoint, tokenEndpoint, userinfoEndpoint]) {
       const parsed = new URL(endpoint)
       if (parsed.origin !== new URL(expectedIssuer).origin || !parsed.pathname.startsWith('/api/') || parsed.username || parsed.password) throw new Error('SSO 端点不受信任')
     }
-    return { issuer, authorization_endpoint: authorizationEndpoint, token_endpoint: tokenEndpoint }
+    return { issuer, authorization_endpoint: authorizationEndpoint, token_endpoint: tokenEndpoint, userinfo_endpoint: userinfoEndpoint }
   }
 
   private listen(): Promise<number> {
@@ -248,7 +251,7 @@ export class DofeAuthService {
     return { accessToken, ...(refreshToken === undefined ? {} : { refreshToken }) }
   }
 
-  private async provision(accessToken: string): Promise<void> {
+  private async provision(discovery: OidcDiscovery, accessToken: string): Promise<void> {
     this.abort.signal.throwIfAborted()
     const response = await this.fetcher(MODELS_PROVISION_URL, {
       method: 'POST', redirect: 'error', signal: this.signal(15_000),
@@ -269,9 +272,12 @@ export class DofeAuthService {
     this.abort.signal.throwIfAborted()
     const plugins = Array.isArray(value.entitlements?.plugins) ? value.entitlements.plugins.filter((item): item is string => typeof item === 'string') : []
     const allowedProtocols = Array.isArray(value.entitlements?.allowedProtocols) ? value.entitlements.allowedProtocols.filter((item): item is string => typeof item === 'string') : []
+    // Models may not mirror the SSO profile picture; the userinfo `picture`
+    // claim is the fallback. Best-effort: an avatar failure never fails binding.
+    const avatar = asString(value.user?.avatar) ?? await this.readAvatar(discovery, accessToken)
     const snapshot: DofeAuthSnapshot = {
       status: 'bound',
-      user: { ssoSub, name: asString(value.user?.name) ?? ssoSub, avatar: asString(value.user?.avatar) ?? null },
+      user: { ssoSub, name: asString(value.user?.name) ?? ssoSub, avatar: avatar ?? null },
       tenant: { tenantId, ssoTeamId, tenantSlug },
       entitlements: { plugins, defaultModel: asString(value.entitlements?.defaultModel) ?? '', allowedProtocols },
       groups: Array.isArray(value.groups) ? value.groups.filter((group): group is string => typeof group === 'string') : [],
@@ -283,6 +289,23 @@ export class DofeAuthService {
     this.snapshot = snapshot
     for (const listener of this.bindingListeners) {
       try { listener(this.getStatus()) } catch { /* Observers must not change authentication results. */ }
+    }
+  }
+
+  private async readAvatar(discovery: OidcDiscovery, accessToken: string): Promise<string | undefined> {
+    try {
+      const response = await this.fetcher(discovery.userinfo_endpoint, {
+        redirect: 'error', signal: this.signal(10_000),
+        headers: { authorization: `Bearer ${accessToken}`, accept: 'application/json' },
+      })
+      if (!response.ok) return undefined
+      const value = await response.json() as { picture?: unknown }
+      return asString(value.picture)
+    } catch (error) {
+      // An aborted session is handled by the caller's abort checks; everything
+      // else only costs the avatar, never the binding itself.
+      if (!this.abort.signal.aborted) this.logger?.error(`dsh-plugin-desktop: 读取 SSO 头像失败: ${formatDesktopErrorDetails(error)}`)
+      return undefined
     }
   }
 

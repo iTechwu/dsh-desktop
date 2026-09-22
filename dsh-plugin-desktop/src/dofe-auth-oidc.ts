@@ -8,6 +8,8 @@ export interface OidcDiscovery {
   issuer: string
   authorization_endpoint: string
   token_endpoint: string
+  /** Standard userinfo endpoint; the desktop reads the `picture` claim as the avatar. */
+  userinfo_endpoint: string
 }
 
 export interface OidcAuthorizationSession {

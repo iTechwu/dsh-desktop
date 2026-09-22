@@ -11,6 +11,7 @@ const discovery = {
   issuer: 'https://sso.ixicai.cn/api',
   authorization_endpoint: 'https://sso.ixicai.cn/api/oauth/authorize',
   token_endpoint: 'https://sso.ixicai.cn/api/oauth/token',
+  userinfo_endpoint: 'https://sso.ixicai.cn/api/oauth/userinfo',
 }
 
 describe('sensteed OIDC authorization primitives', () => {

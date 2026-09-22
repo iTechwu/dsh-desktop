@@ -6,12 +6,14 @@ const discovery = {
   issuer: 'https://sso.ixicai.cn/api',
   authorization_endpoint: 'https://sso.ixicai.cn/api/oauth/authorize',
   token_endpoint: 'https://sso.ixicai.cn/api/oauth/token',
+  userinfo_endpoint: 'https://sso.ixicai.cn/api/oauth/userinfo',
 }
 const provisioned = {
   key: 'sk-secret', user: { ssoSub: 'sub-1', name: 'Alice' },
   tenant: { tenantId: 'tenant-1', ssoTeamId: 'team-1', tenantSlug: 'sensteed' },
   entitlements: { plugins: ['knowledge'], defaultModel: 'model-a', allowedProtocols: ['messages'] },
 }
+const userinfo = { sub: 'sub-1', name: 'Alice', picture: 'https://sso.ixicai.cn/avatar/sub-1.png' }
 function response(value: unknown, status = 200): Response {
   return new Response(JSON.stringify(value), { status })
 }
@@ -48,8 +50,11 @@ describe('DofeAuthService', () => {
     const fetcher = vi.fn().mockResolvedValueOnce(response(discovery))
       .mockResolvedValueOnce(response({ access_token: 'access-new', refresh_token: 'refresh-new' }))
       .mockResolvedValueOnce(response(provisioned))
+      .mockResolvedValueOnce(response(userinfo))
     const service = new DofeAuthService({ openExternal } as never, credentials as never, fetcher, onBound)
-    expect((await service.restore()).status).toBe('bound')
+    const snapshot = await service.restore()
+    expect(snapshot.status).toBe('bound')
+    expect(snapshot.user?.avatar).toBe(userinfo.picture)
     expect(onBound).toHaveBeenCalledOnce()
     expect(openExternal).not.toHaveBeenCalled()
     await service.dispose()
@@ -78,6 +83,7 @@ describe('DofeAuthService', () => {
         expect(await credentials.readRecord()).toEqual({ kind: 'grant', payload: { refreshToken: 'refresh-new' } })
         return response(provisioned)
       })
+      .mockResolvedValueOnce(response(userinfo))
     const service = new DofeAuthService({ openExternal } as never, credentials as never, fetcher)
     await service.start()
     await vi.waitFor(() => expect(service.getStatus().status).toBe('bound'))
@@ -86,6 +92,31 @@ describe('DofeAuthService', () => {
     expect(credentials.modifyRecord).toHaveBeenCalledWith(DOFE_AUTH_GRANT_KEY, expect.any(Function))
     expect(JSON.stringify(service.getStatus())).not.toMatch(/sk-secret|access-new|refresh-new/)
     await service.dispose()
+  })
+
+  it('keeps a provision-supplied avatar without calling userinfo and survives a failed avatar read', async () => {
+    const credentials = credentialStore('refresh-old')
+    const withAvatar = { ...provisioned, user: { ...provisioned.user, avatar: 'https://cdn.example/a.png' } }
+    const fetcher = vi.fn().mockResolvedValueOnce(response(discovery))
+      .mockResolvedValueOnce(response({ access_token: 'access-new' }))
+      .mockResolvedValueOnce(response(withAvatar))
+    const service = new DofeAuthService({ openExternal: vi.fn() } as never, credentials as never, fetcher)
+    await service.start()
+    await vi.waitFor(() => expect(service.getStatus().status).toBe('bound'))
+    expect(fetcher).toHaveBeenCalledTimes(3)
+    expect(service.getStatus().user?.avatar).toBe(withAvatar.user.avatar)
+
+    const failing = new DofeAuthService({ openExternal: vi.fn() } as never, credentialStore('refresh-old') as never,
+      vi.fn().mockResolvedValueOnce(response(discovery))
+        .mockResolvedValueOnce(response({ access_token: 'access-new' }))
+        .mockResolvedValueOnce(response(provisioned))
+        .mockRejectedValueOnce(new Error('userinfo down')))
+    await failing.start()
+    await vi.waitFor(() => expect(failing.getStatus().status).toBe('bound'))
+    const bound = failing.getStatus()
+    expect(bound.user?.avatar).toBeNull()
+    await service.dispose()
+    await failing.dispose()
   })
 
   it('retains the rotated grant when Models is unavailable', async () => {
@@ -107,6 +138,7 @@ describe('DofeAuthService', () => {
       .mockResolvedValueOnce(response({ error: 'invalid_grant' }, 400))
       .mockResolvedValueOnce(response({ access_token: 'access-new', refresh_token: 'refresh-new' }))
       .mockResolvedValueOnce(response(provisioned))
+      .mockResolvedValueOnce(response(userinfo))
     const openExternal = vi.fn(async (href: string) => {
       const authorize = new URL(href)
       const callback = new URL(authorize.searchParams.get('redirect_uri')!)
