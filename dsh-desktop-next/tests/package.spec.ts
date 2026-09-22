@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { expect, it } from 'vitest'
 const read = (path: string) => JSON.parse(readFileSync(new URL(path, import.meta.url), 'utf8'))
 it('keeps Next installer topology, native modules, fuses and Composer source aligned with Beta', () => {
-  const next = read('../package.json'); const beta = read('../../dsh-plugin-desktop-beta/package.json')
+  const next = read('../package.json'); const beta = read('../../dsh-plugin-desktop/package.json')
   expect(next.version).toBe('2.0.14-next')
   expect(next.build.appId).toBe('ai.deepseek.dsh.desktop.next')
   expect(next.build.asar).toBe(false)

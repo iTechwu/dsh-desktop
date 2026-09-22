@@ -3,7 +3,7 @@ import { spawnSync } from 'node:child_process'
 import { mkdtempSync, readdirSync, rmdirSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
-import { verifyMacRelease } from '../../dsh-plugin-desktop-beta/scripts/verify-mac-release.ts'
+import { verifyMacRelease } from '../../dsh-plugin-desktop/scripts/verify-mac-release.ts'
 import { NEXT_MAC_NATIVE_ENTRIES } from './mac-runtime.ts'
 
 export function verifyNextMac(signed: boolean): void {

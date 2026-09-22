@@ -6,7 +6,7 @@ import { NextUpdates, type NextUpdateOptions } from '../src/updates.ts'
 import { artifactRequest } from '../src/update-transport.ts'
 import { serveMacUpdate } from '../src/mac-update-feed.ts'
 import { updateAction, updateLabel } from '../src/update-state.ts'
-import type { UpdateRequest } from '../../dsh-plugin-desktop-beta/src/update-checker.ts'
+import type { UpdateRequest } from '../../dsh-plugin-desktop/src/update-checker.ts'
 
 const roots: string[] = []
 const owners: NextUpdates[] = []

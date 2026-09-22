@@ -1,6 +1,6 @@
 /** Follow reviewed artifact redirects without forwarding release telemetry to storage. */
-import { assertAllowedDownloadOrigin, type UpdateArtifactRequest } from '../../dsh-plugin-desktop-beta/src/update-download.ts'
-import type { UpdateRequest } from '../../dsh-plugin-desktop-beta/src/update-checker.ts'
+import { assertAllowedDownloadOrigin, type UpdateArtifactRequest } from '../../dsh-plugin-desktop/src/update-download.ts'
+import type { UpdateRequest } from '../../dsh-plugin-desktop/src/update-checker.ts'
 
 export function artifactRequest(request: UpdateRequest): UpdateArtifactRequest {
   return async (url, init) => {

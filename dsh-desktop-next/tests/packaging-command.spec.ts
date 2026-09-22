@@ -23,7 +23,7 @@ it('includes the Next build after the shared gate and aborts packaging when eith
 
 it('routes the shared Windows package gate to Next without adding unrelated commands', () => {
   spawn.mockReturnValue(succeeded)
-  runNextPackagingCommand('cmd.exe', ['/d', '/s', '/c', 'corepack yarn workspace dsh-plugin-desktop-beta check:win-package'], '/workspace', {}, '/workspace')
+  runNextPackagingCommand('cmd.exe', ['/d', '/s', '/c', 'corepack yarn workspace dsh-plugin-desktop check:win-package'], '/workspace', {}, '/workspace')
   expect(spawn).toHaveBeenCalledOnce()
   expect(spawn.mock.calls[0]?.[1]).toContain('corepack yarn workspace dsh-desktop-next check:win-package')
 })
