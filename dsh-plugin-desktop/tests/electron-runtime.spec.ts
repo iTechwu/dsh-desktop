@@ -882,7 +882,7 @@ describe('Electron desktop runtime', () => {
 
     expect(electron.dialog.showMessageBox).toHaveBeenCalledWith(expect.objectContaining({
       type: 'error',
-      buttons: ['Restart Yootun-Agent', 'Open DSH Terminal', 'Dismiss'],
+      buttons: ['Restart 山子Agent', 'Open DSH Terminal', 'Dismiss'],
       defaultId: 0,
       cancelId: 2,
       detail: expect.stringContaining('0 / 0x00000000'),
@@ -2237,7 +2237,7 @@ describe('Electron desktop runtime', () => {
       title: 'Plugin Load Failed',
       message: 'Some plugins could not be loaded.',
       detail: expect.stringContaining('dsh-vision-router'),
-      buttons: ['Open DSH Terminal', 'Restart Yootun-Agent', 'Dismiss'],
+      buttons: ['Open DSH Terminal', 'Restart 山子Agent', 'Dismiss'],
     }))
     const recoveryCalls = electron.dialog.showMessageBox.mock.calls as unknown as Array<[{ detail?: string }]>
     expect(recoveryCalls[0]?.[0].detail).toContain('vision_crop')
@@ -2333,7 +2333,7 @@ describe('Electron desktop runtime', () => {
 
     expect(restart).not.toHaveBeenCalled()
     expect(electron.dialog.showMessageBox).toHaveBeenCalledWith(expect.objectContaining({
-      type: 'question', title: 'Restart Yootun-Agent', buttons: ['Restart', 'Cancel'], defaultId: 1, cancelId: 1,
+      type: 'question', title: 'Restart 山子Agent', buttons: ['Restart', 'Cancel'], defaultId: 1, cancelId: 1,
     }))
 
     electron.dialog.showMessageBox.mockResolvedValueOnce({ response: 0, checkboxChecked: false })
@@ -2384,7 +2384,7 @@ describe('Electron desktop runtime', () => {
     electron.dialog.showMessageBox.mockResolvedValueOnce({ response: 0, checkboxChecked: false })
     await expect(runtime.confirmRestart(async () => {})).rejects.toThrow('private restart detail')
     expect(electron.dialog.showMessageBox.mock.calls.at(-1)?.at(-1)).toEqual({
-      type: 'error', title: '桌面重启失败', message: '桌面重启失败', detail: '请保存当前工作，然后手动关闭并重新打开 Yootun-Agent。',
+      type: 'error', title: '桌面重启失败', message: '桌面重启失败', detail: '请保存当前工作，然后手动关闭并重新打开 山子Agent。',
     })
   })
 
@@ -2553,7 +2553,7 @@ describe('Electron desktop runtime', () => {
     expect(electron.dialog.showMessageBox).toHaveBeenLastCalledWith(
       activeWindow,
       expect.objectContaining({
-        title: 'Yootun-Agent Is Up to Date',
+        title: '山子Agent Is Up to Date',
         detail: 'Installed version: 2.0.0',
         buttons: ['OK'],
       }),
@@ -2603,7 +2603,7 @@ describe('Electron desktop runtime', () => {
     expect(electron.dialog.showMessageBox).toHaveBeenLastCalledWith(
       activeWindow,
       expect.objectContaining({
-        title: 'Yootun-Agent Update Downloaded',
+        title: '山子Agent Update Downloaded',
         buttons: ['OK'],
       }),
     )

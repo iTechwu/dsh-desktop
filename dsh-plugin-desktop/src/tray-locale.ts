@@ -1,7 +1,11 @@
 /** Desktop-owned native tray copy for the locales shipped by DSH. */
 
 import type { DesktopLocale } from './runtime.ts'
+import { BRAND_DISPLAY_NAME } from './generated-product-identity.ts'
 import { desktopRecoveryCopy } from './recovery-copy.ts'
+
+/** 原生文案里的产品名统一取品牌身份，禁止任一品牌的硬编码字面量。 */
+const PRODUCT_NAME = BRAND_DISPLAY_NAME.locale
 
 export type DesktopTrayLabelKey =
   | 'addProfile'
@@ -30,7 +34,7 @@ const labels: Record<DesktopLocale, Record<DesktopTrayLabelKey, (value: string) 
     addProfile: () => 'New Profile…',
     checkForUpdates: () => 'Check for Updates…',
     checkingForUpdates: () => 'Checking for Updates…',
-    downloadingUpdate: version => `Downloading Yootun-Agent ${version}…`,
+    downloadingUpdate: version => `Downloading ${PRODUCT_NAME} ${version}…`,
     enterSafeMode: () => 'Enter Safe Mode…',
     exportDiagnostics: () => 'Export Diagnostics…',
     exitSafeMode: () => 'Exit Safe Mode and Restart…',
@@ -46,13 +50,13 @@ const labels: Record<DesktopLocale, Record<DesktopTrayLabelKey, (value: string) 
     extended: () => 'Extended Window',
     installStable: () => 'Install Stable Edition…',
     unavailableForDesktop: profileName => `${profileName} (Unavailable for Desktop)`,
-    updateAvailable: version => `Yootun-Agent ${version} Available`,
+    updateAvailable: version => `${PRODUCT_NAME} ${version} Available`,
   },
   zh: {
     addProfile: () => '新建 Profile…',
     checkForUpdates: () => '检查更新…',
     checkingForUpdates: () => '正在检查更新…',
-    downloadingUpdate: version => `正在下载 Yootun-Agent ${version}…`,
+    downloadingUpdate: version => `正在下载 ${PRODUCT_NAME} ${version}…`,
     enterSafeMode: () => '进入安全模式…',
     exportDiagnostics: () => '导出诊断信息…',
     exitSafeMode: () => '退出安全模式并重启…',
@@ -68,7 +72,7 @@ const labels: Record<DesktopLocale, Record<DesktopTrayLabelKey, (value: string) 
     extended: () => '扩展窗口',
     installStable: () => '安装稳定版…',
     unavailableForDesktop: profileName => `${profileName}（不可用于桌面端）`,
-    updateAvailable: version => `Yootun-Agent ${version} 可用`,
+    updateAvailable: version => `${PRODUCT_NAME} ${version} 可用`,
   },
 }
 
@@ -90,16 +94,16 @@ export interface DesktopRestartConfirmationCopy {
 
 export const rendererRecoveryCopy: Record<DesktopLocale, DesktopRestartConfirmationCopy> = {
   en: {
-    title: 'Restore Sensteed Agent',
+    title: `Restore ${PRODUCT_NAME}`,
     message: 'The interface could not recover automatically.',
-    detail: 'Automatic recovery stopped after repeated failures to avoid a restart loop. You can try again without restarting the background service. Unsent input may be lost. Export diagnostics from the tray to investigate. Choose Open Sensteed Agent from the tray to return to this prompt later.',
+    detail: `Automatic recovery stopped after repeated failures to avoid a restart loop. You can try again without restarting the background service. Unsent input may be lost. Export diagnostics from the tray to investigate. Choose Open ${PRODUCT_NAME} from the tray to return to this prompt later.`,
     confirm: 'Try recovery again',
     cancel: 'Not now',
   },
   zh: {
-    title: '恢复 Sensteed Agent',
+    title: `恢复 ${PRODUCT_NAME}`,
     message: '界面未能自动恢复。',
-    detail: '自动恢复连续失败，为避免重启循环已暂停。可以再次尝试恢复，无需重启后台服务。未发送的输入可能丢失。请从托盘导出诊断信息以继续调查。稍后可从托盘选择“打开 Sensteed Agent”再次打开此提示。',
+    detail: `自动恢复连续失败，为避免重启循环已暂停。可以再次尝试恢复，无需重启后台服务。未发送的输入可能丢失。请从托盘导出诊断信息以继续调查。稍后可从托盘选择“打开 ${PRODUCT_NAME}”再次打开此提示。`,
     confirm: '再次尝试恢复',
     cancel: '暂不处理',
   },
@@ -108,15 +112,15 @@ export const rendererRecoveryCopy: Record<DesktopLocale, DesktopRestartConfirmat
 const restartConfirmationCopy: Record<DesktopLocale, Record<'normal' | 'recovery', DesktopRestartConfirmationCopy>> = {
   en: {
     normal: {
-      title: 'Restart Yootun-Agent',
-      message: 'Restart Yootun-Agent now?',
+      title: `Restart ${PRODUCT_NAME}`,
+      message: `Restart ${PRODUCT_NAME} now?`,
       detail: 'Running operations and unsent input may be interrupted. Saved settings will not be lost.',
       confirm: 'Restart',
       cancel: 'Cancel',
     },
     recovery: {
       title: 'Restart in Recovery Mode',
-      message: 'Restart Yootun-Agent in Recovery Mode?',
+      message: `Restart ${PRODUCT_NAME} in Recovery Mode?`,
       detail: 'The next launch opens the recovery assistant before the Profile and plugin Host start. Running operations and unsent input may be interrupted.',
       confirm: 'Restart in Recovery Mode',
       cancel: 'Cancel',
@@ -124,15 +128,15 @@ const restartConfirmationCopy: Record<DesktopLocale, Record<'normal' | 'recovery
   },
   zh: {
     normal: {
-      title: '重启 Yootun-Agent',
-      message: '现在重启 Yootun-Agent？',
+      title: `重启 ${PRODUCT_NAME}`,
+      message: `现在重启 ${PRODUCT_NAME}？`,
       detail: '正在运行的操作和未发送的输入可能会中断，已保存的设置不会丢失。',
       confirm: '重启',
       cancel: '取消',
     },
     recovery: {
       title: '重启到恢复模式',
-      message: '重启 Yootun-Agent 并进入恢复模式？',
+      message: `重启 ${PRODUCT_NAME} 并进入恢复模式？`,
       detail: '下次启动会在 Profile 和插件 Host 运行前打开恢复助手。正在运行的操作和未发送的输入可能会中断。',
       confirm: '重启到恢复模式',
       cancel: '取消',
@@ -197,6 +201,6 @@ export function desktopRestartConfirmationCopy(
 /** A restart accepted by an HTTP caller can still fail during native teardown. */
 export function desktopRestartFailureCopy(locale: DesktopLocale): { title: string; detail: string } {
   return locale === 'zh'
-    ? { title: '桌面重启失败', detail: '请保存当前工作，然后手动关闭并重新打开 Yootun-Agent。' }
-    : { title: 'Desktop restart failed', detail: 'Save your work, then close and reopen Yootun-Agent manually.' }
+    ? { title: `桌面重启失败`, detail: `请保存当前工作，然后手动关闭并重新打开 ${PRODUCT_NAME}。` }
+    : { title: `Desktop restart failed`, detail: `Save your work, then close and reopen ${PRODUCT_NAME} manually.` }
 }

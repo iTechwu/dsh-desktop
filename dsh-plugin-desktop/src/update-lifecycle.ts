@@ -10,6 +10,7 @@ import type {
   DesktopUpdateAdapter,
 } from './runtime.ts'
 import { desktopTrayLabel } from './tray-locale.ts'
+import { BRAND_DISPLAY_NAME } from './generated-product-identity.ts'
 import {
   checkForDesktopUpdate,
   parseSemVer,
@@ -358,9 +359,10 @@ function parseState(text: string): ParsedUpdateState {
 }
 
 function updateAvailableNotification(locale: DesktopLocale, version: string): DesktopNotification {
+  const productName = BRAND_DISPLAY_NAME.locale
   return locale === 'zh'
-    ? { title: 'Yootun-Agent 有可用更新', body: `版本 ${version} 已可下载。打开 Yootun-Agent 即可继续。` }
-    : { title: 'Yootun-Agent Update Available', body: `Version ${version} is ready to download. Open Yootun-Agent to continue.` }
+    ? { title: `${productName} 有可用更新`, body: `版本 ${version} 已可下载。打开 ${productName} 即可继续。` }
+    : { title: `${productName} Update Available`, body: `Version ${version} is ready to download. Open ${productName} to continue.` }
 }
 
 async function readState(filename: string): Promise<string> {
