@@ -74,7 +74,7 @@ describe('desktop client environment', () => {
       .toEqual({ version: '2.0.3', mode: 'extended', platform: 'win32', material: 'mica', micaSupported: true })
     expect(parseDesktopClientEnvironment('?sensteed-agent-mode=extended&sensteed-agent-platform=win32&sensteed-agent-version=2.0.3&sensteed-agent-material=acrylic&sensteed-agent-mica=0'))
       .toEqual({ version: '2.0.3', mode: 'extended', platform: 'win32', material: 'off', micaSupported: false })
-    expect(parseDesktopClientEnvironment('?dsh-desktop-mode=compatibility&dsh-desktop-platform=linux&dsh-desktop-version=2.0.3&dsh-desktop-material=off'))
+    expect(parseDesktopClientEnvironment('?sensteed-agent-mode=compatibility&sensteed-agent-platform=linux&sensteed-agent-version=2.0.3&sensteed-agent-material=off'))
       .toEqual({ version: '2.0.3', mode: 'compatibility', platform: 'linux', material: 'off', micaSupported: false })
   })
 

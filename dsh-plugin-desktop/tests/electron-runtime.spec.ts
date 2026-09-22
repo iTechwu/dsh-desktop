@@ -882,7 +882,7 @@ describe('Electron desktop runtime', () => {
 
     expect(electron.dialog.showMessageBox).toHaveBeenCalledWith(expect.objectContaining({
       type: 'error',
-      buttons: ['Restart DSH Desktop', 'Open DSH Terminal', 'Dismiss'],
+      buttons: ['Restart Yootun-Agent', 'Open DSH Terminal', 'Dismiss'],
       defaultId: 0,
       cancelId: 2,
       detail: expect.stringContaining('0 / 0x00000000'),
