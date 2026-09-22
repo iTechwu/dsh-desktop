@@ -228,7 +228,7 @@ corepack.cmd pnpm dist:win
 Python and Visual Studio C++ Build Tools are not required. The Windows command uses `node-pty`'s bundled x64 Node-API binaries instead of asking Electron Builder to rebuild them from source, and the packaged-runtime gate rejects an installer staging tree that omits those binaries.
 
 `dist:win` refuses non-Windows and non-x64 hosts, runs a Windows-safe gate containing the build, all TypeScript compiler faces, packaging and native-shell focused tests, and the runtime-closure verifier, then builds an assisted NSIS installer and verifies both generated PE files. The full cross-platform suite remains CI-owned because some POSIX execution tests are not Windows programs. The installer allows a per-user or elevated all-users installation, permits changing the installation directory, creates Start Menu and desktop shortcuts, and preserves DSH user data when the application is uninstalled. <!-- brand:plugin-artifact-setup:start -->
-Beta version `2.0.11-beta.11` is written to `dsh-plugin-desktop\dist\Yootun-Agent-Beta-2.0.11-beta.11-x64-Setup.exe`; the unpacked application is `dsh-plugin-desktop\dist\win-unpacked\Yootun-Agent Beta.exe` for smoke testing.<!-- brand:plugin-artifact-setup:end -->
+Beta version `2.0.11-beta.12` is written to `dsh-plugin-desktop\dist\Yootun-Agent-Beta-2.0.11-beta.12-x64-Setup.exe`; the unpacked application is `dsh-plugin-desktop\dist\win-unpacked\Yootun-Agent Beta.exe` for smoke testing.<!-- brand:plugin-artifact-setup:end -->
 
 This local command deliberately strips Windows certificate variables and sets `signExecutable=false`. Its output is installable for testing but has no Authenticode publisher, so Windows can display an Unknown publisher or SmartScreen warning. A signed Windows release, certificate verification, installer upgrade/uninstall testing, and native UI/sandbox smoke remain separate release gates.
 
@@ -241,7 +241,7 @@ corepack.cmd pnpm dist:win-portable
 ```
 
 <!-- brand:plugin-artifact-portable:start -->
-The output is `dsh-plugin-desktop\dist\Yootun-Agent-Beta-2.0.11-beta.11-x64-Portable.zip`. Extract it to any writable directory and launch `Yootun-Agent Beta.exe` without an installer, administrator access, Start Menu registration, or uninstall step.<!-- brand:plugin-artifact-portable:end --> The application still keeps its profiles, logs, and caches in the normal Windows user-data directory, so this is portable distribution rather than a self-contained data sandbox. Portable archives are not handed to the NSIS updater and must be replaced manually when a new version is released. Local builds are unsigned and may trigger an Unknown publisher or SmartScreen warning; signed portable artifacts remain a release gate.
+The output is `dsh-plugin-desktop\dist\Yootun-Agent-Beta-2.0.11-beta.12-x64-Portable.zip`. Extract it to any writable directory and launch `Yootun-Agent Beta.exe` without an installer, administrator access, Start Menu registration, or uninstall step.<!-- brand:plugin-artifact-portable:end --> The application still keeps its profiles, logs, and caches in the normal Windows user-data directory, so this is portable distribution rather than a self-contained data sandbox. Portable archives are not handed to the NSIS updater and must be replaced manually when a new version is released. Local builds are unsigned and may trigger an Unknown publisher or SmartScreen warning; signed portable artifacts remain a release gate.
 
 ### macOS DMG smoke
 
