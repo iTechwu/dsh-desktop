@@ -120,7 +120,6 @@ import {
   DEFAULT_LINUX_WINDOW_MATERIAL,
 } from './window-material.ts'
 import type { LinuxWindowMaterial } from './window-material.ts'
-import { DESKTOP_PRODUCT_NAME } from './product-identity.ts'
 
 /** Stable Cordis plugin name. */
 export const name = 'desktop-shell'
