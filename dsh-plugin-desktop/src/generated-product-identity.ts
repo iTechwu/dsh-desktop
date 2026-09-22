@@ -5,16 +5,16 @@ export const BRAND_RELEASE_IDENTITIES = Object.freeze({
   stable: Object.freeze({
     releaseChannel: 'stable' as const,
     packageName: "dsh-plugin-desktop",
-    productName: "Yootun-Agent",
-    appId: "ai.yootun.agent",
-    homeDirectoryName: ".dsh",
+    productName: "Sensteed-Agent",
+    appId: "com.sensteed.agent",
+    homeDirectoryName: ".sensteed-agent",
   }),
   beta: Object.freeze({
     releaseChannel: 'beta' as const,
     packageName: "dsh-plugin-desktop",
-    productName: "Yootun-Agent Beta",
-    appId: "ai.yootun.agent.beta",
-    homeDirectoryName: ".dsh-beta",
+    productName: "Sensteed-Agent Beta",
+    appId: "com.sensteed.agent.beta",
+    homeDirectoryName: ".sensteed-agent-beta",
   }),
 })
 
@@ -25,37 +25,37 @@ export const BRAND_ACTIVE_CHANNEL = "beta" as const
 export type BrandVariant = 'yootun' | 'sensteed'
 
 /** Build-time white-label variant. */
-export const BRAND_VARIANT: BrandVariant = "yootun"
+export const BRAND_VARIANT: BrandVariant = "sensteed"
 
 /** Tenant identity bound to the build-time brand. */
-export const BRAND_TENANT = "yootun" as const
+export const BRAND_TENANT = "sensteed" as const
 
 /** Stable tenant id accepted by the activation gate for this brand only. */
-export const BRAND_TENANT_ID = "869856a5-760a-4570-9177-8823ed84da78" as const
+export const BRAND_TENANT_ID = "7a8866f9-3994-4341-ade6-b9fa942efe99" as const
 
 /** Artifact filename prefix for the active channel (Setup/Portable/DMG stems). */
-export const BRAND_ARTIFACT_PREFIX = "Yootun-Agent-Beta"
+export const BRAND_ARTIFACT_PREFIX = "Sensteed-Agent-Beta"
 
 /** Electron Builder shortcutName for the active channel. */
-export const BRAND_SHORTCUT_NAME = "Yootun-Agent Beta"
+export const BRAND_SHORTCUT_NAME = "Sensteed-Agent Beta"
 
 /** Display names shown in chrome that is identical across release channels. */
 export const BRAND_DISPLAY_NAME = Object.freeze({
-  titlebar: "Yootun-Agent",
-  locale: "Yootun-Agent",
+  titlebar: "山子Agent",
+  locale: "山子Agent",
 })
 
 /** Brand mission shown by the client brand surfaces. */
 export const BRAND_MISSION = Object.freeze({
-  zh: "青年人买车就到优惠豚",
-  en: "The destination for young car buyers",
+  zh: "成就中国智造的全球竞争力",
+  en: "Serve and advance the global competitiveness of Chinese intelligent manufacturing",
 })
 
 /** Update service contract served by the release infrastructure. */
 export const BRAND_UPDATE_SERVICE = Object.freeze({
   endpoint: "https://ixicai.cn/api/desktop/version",
-  versionHeader: "X-Yootun-Agent-Version",
-  channelHeader: "X-Yootun-Agent-Channel",
+  versionHeader: "X-Sensteed-Agent-Version",
+  channelHeader: "X-Sensteed-Agent-Channel",
 })
 
 /** Sidebar lockup display box consumed by the client brand slots. */

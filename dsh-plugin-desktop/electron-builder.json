@@ -128,7 +128,7 @@
       }
     ],
     "icon": "build/app-icon.ico",
-    "artifactName": "Yootun-Agent-Beta-${version}-${arch}-Portable.${ext}"
+    "artifactName": "Sensteed-Agent-Beta-${version}-${arch}-Portable.${ext}"
   },
   "nsis": {
     "include": "installer.nsh",
@@ -142,8 +142,8 @@
     "createStartMenuShortcut": true,
     "differentialPackage": false,
     "useZip": false,
-    "shortcutName": "Yootun-Agent Beta",
-    "artifactName": "Yootun-Agent-Beta-${version}-${arch}-Setup.${ext}"
+    "shortcutName": "Sensteed-Agent Beta",
+    "artifactName": "Sensteed-Agent-Beta-${version}-${arch}-Setup.${ext}"
   },
   "linux": {
     "target": [
@@ -170,14 +170,14 @@
       "build/tray-icon-blue@1.5x.png",
       "build/tray-icon-blue@2x.png"
     ],
-    "artifactName": "Yootun-Agent-Beta-${version}-${arch}.${ext}",
-    "executableName": "yootun-agent-beta"
+    "artifactName": "Sensteed-Agent-Beta-${version}-${arch}.${ext}",
+    "executableName": "sensteed-agent-beta"
   },
   "deb": {
     "packageCategory": "devel",
     "priority": "optional",
-    "packageName": "yootun-agent-beta"
+    "packageName": "sensteed-agent-beta"
   },
-  "appId": "ai.yootun.agent.beta",
-  "productName": "Yootun-Agent Beta"
+  "appId": "com.sensteed.agent.beta",
+  "productName": "Sensteed-Agent Beta"
 }
