@@ -5,6 +5,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import { DofeAccessSection, installDofeAccessGate, installDofeAccessStyles } from './DofeAccessSection.tsx'
+import { registerDofePluginItems } from './DofePluginItems.tsx'
 import { DOFE_ACCESS_COPY } from './dofe-access.ts'
 import { DOFE_ACCESS_SETTINGS_NAMESPACE, type DofeAccessSettings } from '../dofe-plugins.ts'
 
@@ -15,6 +16,9 @@ export function applyDofeAccess(ctx: Context): void {
   const t = ctx.locale.bind('dofe.access')
   const props = { credentials: ctx.remote.credentials, settingsApi: ctx.remote.settings, settingsScope, t }
   ctx.effect(() => installDofeAccessGate(props), 'desktop: mandatory access gate')
+  // The Plugins page lists every brand-eligible DoFe datasource as a read-only
+  // card; the activation switch stays in the access section.
+  registerDofePluginItems(ctx, settingsScope, t)
   if (BRAND_VARIANT === 'sensteed') {
     ctx.slots.inject('settings.trigger', () => ctx.slots.register({
       name: 'settings.trigger', priority: -100, inject: () => ({ settingsScope }),

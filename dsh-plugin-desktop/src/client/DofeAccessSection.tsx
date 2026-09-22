@@ -76,6 +76,14 @@ const CSS = `
 .dshDofeAccessPlugin:has(input:focus-visible) .dshDofeAccessPluginCheck { outline: 2px solid var(--dsw-alias-brand-primary, #245eea); outline-offset: 2px; }
 .dshDofeAccessPluginName { display: block; color: var(--dsw-alias-label-primary, #172033); font-size: 14px; font-weight: 650; line-height: 1.35; }
 .dshDofeAccessPluginDescription { display: block; color: var(--dsw-alias-label-secondary, #667085); font-size: 12px; line-height: 1.4; margin-top: 2px; }
+.dshDofePluginSummary { display: inline-flex; align-items: center; gap: 8px; color: var(--dsw-alias-label-secondary, #667085); font-size: 13px; }
+.dshDofePluginState { flex: none; display: inline-flex; align-items: center; padding: 2px 10px; color: var(--dsw-alias-label-secondary, #667085); background: var(--dsw-alias-bg-layer-2, #f5f7fa); border-radius: 999px; font-size: 12px; font-weight: 600; }
+.dshDofePluginStateOn { color: var(--dsw-alias-state-success-primary, #12805c); background: color-mix(in srgb, var(--dsw-alias-state-success-primary, #12805c) 10%, transparent); }
+.dshDofePluginPage { display: grid; gap: 14px; max-width: 640px; }
+.dshDofePluginDescription { margin: 0; color: var(--dsw-alias-label-secondary, #667085); line-height: 1.55; }
+.dshDofePluginServers { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.dshDofePluginServer { padding: 3px 10px; color: var(--dsw-alias-label-primary, #172033); background: var(--dsw-alias-bg-layer-2, #f5f7fa); border: 1px solid var(--dsw-alias-border-l1, #e2e6ed); border-radius: 999px; font-size: 12px; }
+.dshDofePluginHint { margin: 0; padding: 10px 12px; color: var(--dsw-alias-label-secondary, #667085); background: var(--dsw-alias-bg-layer-2, #f5f7fa); border-left: 3px solid var(--dsw-alias-brand-primary, #245eea); font-size: 13px; line-height: 1.45; }
 .dshDofeAccessProtocols { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); border: 1px solid var(--dsw-alias-border-l2, #c7ced9); border-radius: 6px; overflow: hidden; }
 .dshDofeAccessProtocol { position: relative; display: grid; place-items: center; min-height: 42px; padding: 0 10px; color: var(--dsw-alias-label-secondary, #667085); font-size: 14px; font-weight: 550; line-height: 1.35; cursor: pointer; user-select: none; }
 .dshDofeAccessProtocol + .dshDofeAccessProtocol { border-left: 1px solid var(--dsw-alias-border-l2, #c7ced9); }
@@ -219,7 +227,7 @@ function AccessForm({ credentials, settingsApi, settingsScope, t, onboarding, on
   const [revealKey, setRevealKey] = useState(false)
   const settingsStore = useMemo(() => dofeAccessSettingsStore(settingsScope), [settingsScope])
   const settings = useSyncExternalStore(settingsStore.subscribe, settingsStore.getSnapshot, settingsStore.getSnapshot)
-  const availablePlugins = useMemo(() => dofePluginsForBrand(BRAND_VARIANT).filter(plugin => BRAND_VARIANT !== 'sensteed' || settings.value?.entitlements?.plugins.includes(plugin.id)), [settings.value?.entitlements])
+  const availablePlugins = useMemo(() => dofePluginsForBrand(BRAND_VARIANT).filter(plugin => !plugin.builtIn && (BRAND_VARIANT !== 'sensteed' || settings.value?.entitlements?.plugins.includes(plugin.id))), [settings.value?.entitlements])
   const defaultPluginIds = useMemo(() => normalizeDofePluginIds(DEFAULT_DOFE_PLUGIN_IDS, BRAND_VARIANT), [])
   const [enabledPlugins, setEnabledPlugins] = useState<DofePluginId[]>(() => normalizeDofePluginIds(settings.value?.enabledPlugins ?? defaultPluginIds, BRAND_VARIANT))
   const [models, setModels] = useState<readonly DofeModel[]>([])

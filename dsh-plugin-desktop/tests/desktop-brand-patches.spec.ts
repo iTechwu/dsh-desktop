@@ -17,7 +17,7 @@ function patchFixture(): PatchOptions[] {
   }]
 }
 
-function rowIds(patches: PatchOptions[]): string[] {
+function rowIds(patches: PatchOptions[]): Array<string | undefined> {
   return (patches[0]?.insert as Array<{ id?: string }> ?? []).map(row => row.id)
 }
 
@@ -28,13 +28,15 @@ describe('desktop brand patch filtering', () => {
     // The desktop client owns activation and branding in both distributions.
     expect(ids).not.toContain('dofe-yootun-ui')
     expect(ids).toContain('desktop-shell')
+    // The shared knowledge row stays in both distributions.
     expect(ids).toContain('dofe-yootun-knowledge')
+    // yootun-private rows are dropped everywhere outside the yootun build.
     if (BRAND_VARIANT === 'sensteed') {
       expect(ids).toContain('dofe-sensteed-finance')
       expect(ids).toContain('dofe-sensteed-supplier-intelligence')
       expect(ids).not.toContain('dofe-yootun-sales')
     } else {
-      expect(ids).toContain('dofe-yootun-sales')
+      expect(ids).not.toContain('dofe-yootun-sales')
       expect(ids).not.toContain('dofe-sensteed-finance')
       expect(ids).not.toContain('dofe-sensteed-supplier-intelligence')
     }
