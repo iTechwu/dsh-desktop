@@ -147,6 +147,11 @@ const YOOTUN_PRIVATE_PLUGIN_ROW_IDS = new Set([
   'dofe-yootun-finops', 'dofe-yootun-tos-upload', 'yootun-agent-knowledge-capture',
 ])
 
+/** Sensteed-only datasource plugins: never composed into the yootun build. */
+const SENSTEED_PRIVATE_PLUGIN_ROW_IDS = new Set([
+  'dofe-sensteed-finance', 'dofe-sensteed-supplier-intelligence',
+])
+
 /** Sensteed ships only shared surfaces while its company-specific pages are planned. */
 export function filterDesktopBrandPatches(patches: PatchOptions[]): PatchOptions[] {
   return patches.map(patch => {
@@ -161,7 +166,8 @@ export function filterDesktopBrandPatches(patches: PatchOptions[]): PatchOptions
       const id = String((row as { id?: unknown }).id ?? '')
       // The desktop client owns activation and branding in both distributions.
       if (id === 'dofe-yootun-ui') return false
-      return BRAND_VARIANT === 'yootun' || !YOOTUN_PRIVATE_PLUGIN_ROW_IDS.has(id)
+      if (BRAND_VARIANT === 'yootun') return !YOOTUN_PRIVATE_PLUGIN_ROW_IDS.has(id) && !SENSTEED_PRIVATE_PLUGIN_ROW_IDS.has(id)
+      return !YOOTUN_PRIVATE_PLUGIN_ROW_IDS.has(id)
     }) }
   })
 }

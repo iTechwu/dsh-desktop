@@ -9,6 +9,8 @@ const preinstalledPlugins = [
   'dsh-georank-mcp',
   'dsh-opencli',
   'dsh-plugin-console',
+  'dsh-sensteed-finance',
+  'dsh-sensteed-supplier-intelligence',
   'dsh-tools-mcp',
   'dsh-yootun-ui',
   'dsh-yootun-dashboard',

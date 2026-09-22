@@ -1515,6 +1515,12 @@ importers:
       '@dofe/dsh-openmontage-mcp':
         specifier: workspace:*
         version: link:../deepseek-harness/plugins/dsh-openmontage-mcp
+      '@dofe/dsh-sensteed-finance':
+        specifier: file:../../docker-helm.dofe.ai/plugins/dsh-sensteed-finance
+        version: file:../docker-helm.dofe.ai/plugins/dsh-sensteed-finance
+      '@dofe/dsh-sensteed-supplier-intelligence':
+        specifier: file:../../docker-helm.dofe.ai/plugins/dsh-sensteed-supplier-intelligence
+        version: file:../docker-helm.dofe.ai/plugins/dsh-sensteed-supplier-intelligence
       '@dofe/dsh-tools-mcp':
         specifier: file:../../docker-helm.dofe.ai/plugins/dsh-tools-mcp
         version: file:../docker-helm.dofe.ai/plugins/dsh-tools-mcp
@@ -2488,6 +2494,12 @@ packages:
 
   '@dofe/dsh-opencli@file:../docker-helm.dofe.ai/plugins/dsh-opencli':
     resolution: {directory: ../docker-helm.dofe.ai/plugins/dsh-opencli, type: directory}
+
+  '@dofe/dsh-sensteed-finance@file:../docker-helm.dofe.ai/plugins/dsh-sensteed-finance':
+    resolution: {directory: ../docker-helm.dofe.ai/plugins/dsh-sensteed-finance, type: directory}
+
+  '@dofe/dsh-sensteed-supplier-intelligence@file:../docker-helm.dofe.ai/plugins/dsh-sensteed-supplier-intelligence':
+    resolution: {directory: ../docker-helm.dofe.ai/plugins/dsh-sensteed-supplier-intelligence, type: directory}
 
   '@dofe/dsh-tools-mcp@file:../docker-helm.dofe.ai/plugins/dsh-tools-mcp':
     resolution: {directory: ../docker-helm.dofe.ai/plugins/dsh-tools-mcp, type: directory}
@@ -7905,6 +7917,10 @@ snapshots:
   '@dofe/dsh-knowledge-capture@file:../docker-helm.dofe.ai/plugins/dsh-knowledge-capture': {}
 
   '@dofe/dsh-opencli@file:../docker-helm.dofe.ai/plugins/dsh-opencli': {}
+
+  '@dofe/dsh-sensteed-finance@file:../docker-helm.dofe.ai/plugins/dsh-sensteed-finance': {}
+
+  '@dofe/dsh-sensteed-supplier-intelligence@file:../docker-helm.dofe.ai/plugins/dsh-sensteed-supplier-intelligence': {}
 
   '@dofe/dsh-tools-mcp@file:../docker-helm.dofe.ai/plugins/dsh-tools-mcp': {}
 

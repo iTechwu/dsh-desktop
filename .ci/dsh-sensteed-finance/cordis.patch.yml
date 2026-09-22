@@ -1,0 +1,25 @@
+# 注册财务数据中心 MCP 客户端与看板插件到 DSH bundle。
+# 数据源：统一走本地 nginx 入口 https://datasource.local.dofe.ai/api/mcp
+# （不直连 127.0.0.1/localhost）。mkcert 自签证书由插件 index.js 的
+# ensureNodeExtraCaCerts() 自动引导 Node 信任，也可用环境变量
+# NODE_EXTRA_CA_CERTS 显式指定。特殊部署如需换源，直接修改下方 url
+# （bundle patch 为静态值，不支持环境变量插值——测试 plugin.test.mjs 契约）。
+# 鉴权：authorizationCredential 从凭据服务解析 DATASOURCE_INTERNAL_API_SECRET
+# （层级：进程环境 > .credentials.yaml > ~/.dsh/.env），自动附加 Bearer 头。
+- insert:
+    # 财务数据中心 MCP：把 datasource 财务 tools 以 mcp__finance__* 暴露给 Agent。
+    - id: mcp-finance
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        transport: streamable-http
+        serverName: finance
+        url: 'https://datasource.local.dofe.ai/api/mcp'
+        authorizationCredential: DATASOURCE_INTERNAL_API_SECRET
+        toolCallTimeoutMs: 120000
+        failOnStartupError: false
+        reconnect:
+          enabled: true
+
+    # Agent 使用财务数据中心 MCP 的操作 guidance（见 index.js）。
+    - id: sensteed-finance-guidance
+      name: '@dofe/dsh-sensteed-finance'

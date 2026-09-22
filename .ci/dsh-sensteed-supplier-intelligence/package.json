@@ -1,0 +1,28 @@
+{
+  "name": "@dofe/dsh-sensteed-supplier-intelligence",
+  "version": "0.1.0",
+  "description": "Sensteed supplier collection coverage and public-opinion analysis skill",
+  "type": "module",
+  "main": "./index.js",
+  "exports": {
+    ".": "./index.js",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "files": [
+    "cordis.patch.yml",
+    "index.js",
+    "skills"
+  ],
+  "scripts": {
+    "test": "node --test test/plugin.test.mjs",
+    "check": "node --check index.js && npm test"
+  },
+  "license": "MIT",
+  "private": true
+}

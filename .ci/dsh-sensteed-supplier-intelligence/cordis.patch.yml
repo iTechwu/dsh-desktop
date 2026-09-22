@@ -1,0 +1,15 @@
+# Register the supply-chain MCP and supplier-intelligence guidance for Sensteed Agent.
+- insert:
+    - id: mcp-supply-chain
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        transport: streamable-http
+        serverName: supply-chain
+        url: 'https://api.tools.dofe.ai/mcp/supply-chain'
+        toolCallTimeoutMs: 120000
+        failOnStartupError: false
+        reconnect:
+          enabled: true
+
+    - id: sensteed-supplier-intelligence
+      name: '@dofe/dsh-sensteed-supplier-intelligence'

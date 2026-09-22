@@ -60,6 +60,13 @@
         tool:
           # agent 工具单次上传超时（大视频走整段 await）。
           timeoutMs: 1800000
+    # Sensteed 专属数据源插件：财务数据中心（datasource MCP + 看板）与供应商
+    # 情报（supply-chain MCP + 舆情技能）。yootun 构建由 profile.ts 的品牌
+    # 过滤剔除；bundle 自带 MCP 与 guidance，桌面侧只做登记。
+    - id: dofe-sensteed-finance
+      name: '@dofe/dsh-sensteed-finance'
+    - id: dofe-sensteed-supplier-intelligence
+      name: '@dofe/dsh-sensteed-supplier-intelligence'
     - id: desktop-terminal
       name: dsh-plugin-desktop/terminal
       disabled: !!js process.platform === 'linux'
