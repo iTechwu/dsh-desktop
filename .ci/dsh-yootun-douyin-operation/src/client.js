@@ -1059,14 +1059,6 @@ function Overlay({ t }) {
     return undefined
   }, [visible, tab, loadOverview])
 
-  // 爆款拆解 Tab 进入：拉规则清单（纯配置只读）与拆解历史（团队共享，只读）。
-  useEffect(() => {
-    if (!visible || tab !== 'breakdown') return undefined
-    loadBdRules().catch(() => {})
-    loadBdHistory().catch(() => {})
-    return undefined
-  }, [visible, tab, loadBdRules, loadBdHistory])
-
   const exportOverview = useCallback(async () => {
     setOverviewExporting(true)
     try {
@@ -1488,6 +1480,16 @@ function Overlay({ t }) {
     setBdRewriting(true)
     Promise.resolve(startBdWorkflow(candidateId, ruleId)).finally(() => setBdRewriting(false))
   }, [bdDetailWorkflow, startBdWorkflow])
+
+  // 爆款拆解 Tab 进入：拉规则清单（纯配置只读）与拆解历史（团队共享，只读）。
+  // 置于 bd 声明块之后：依赖数组渲染期即求值，不得前向引用下方 useCallback
+  // 声明（const 无提升，前向引用触发 TDZ ReferenceError，整个插件页渲染崩）。
+  useEffect(() => {
+    if (!visible || tab !== 'breakdown') return undefined
+    loadBdRules().catch(() => {})
+    loadBdHistory().catch(() => {})
+    return undefined
+  }, [visible, tab, loadBdRules, loadBdHistory])
 
   const openDetail = useCallback(async (workId, accountIdOverride = null) => {
     // 跨账号爆款下钻用作品所属账号（审查 O4），默认仍是当前选中账号。
