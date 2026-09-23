@@ -13,6 +13,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { afterEach, describe, expect, it } from 'vitest'
+import { parseDocument } from 'yaml'
 import {
   composeEntries,
   healProfilesModuleFallback,
@@ -521,6 +522,21 @@ virtualStoreDirMaxLength: 60
     expect(rows.find(row => row.id === 'desktop-profiles')).toEqual(expect.objectContaining({
       name: 'dsh-plugin-desktop/profiles',
     }))
+  })
+
+  it('ships bounded retry behavior for transient DoFe model failures', () => {
+    const patchPath = fileURLToPath(new URL('../cordis.patch.yml', import.meta.url))
+    const source = readFileSync(patchPath, 'utf8')
+    const entries = parseDocument(source).toJSON() as Array<Record<string, unknown>>
+    const modelPatch = entries.find(entry => entry.id === 'llm-deepseek')
+    const config = modelPatch?.config as Record<string, unknown> | undefined
+
+    expect(config?.retryPolicy).toEqual({
+      mode: 'normal',
+      maxRetries: 2,
+      retryableCodes: ['EMPTY_RESPONSE', 'RATE_LIMIT', 'SERVER', 'TIMEOUT', 'TRANSPORT', 'STREAM_CLOSED'],
+      backoff: { initialDelayMs: 1000, maxDelayMs: 10000, jitterRatio: 0.1 },
+    })
   })
 
   it('overrides direct model connection facts from the user patch in the final Desktop layer', () => {
