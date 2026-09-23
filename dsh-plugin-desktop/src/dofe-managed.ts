@@ -87,7 +87,13 @@ export async function apply(ctx: Context): Promise<void> {
       const sameUser = current.identity?.ssoSub === snapshot.user!.ssoSub
       await ctx.settings.update(DOFE_ACCESS_SETTINGS_NAMESPACE, {
         authMode: 'feishu',
-        identity: { ...(sameUser ? current.identity : {}), ...snapshot.user, groups: snapshot.groups ?? [], groupNames: snapshot.groupNames ?? {} },
+        identity: {
+          ...(sameUser ? current.identity : {}), ...snapshot.user,
+          // Models can still contain login-time profile data during an SSO
+          // outage. Keep the last synchronized profile for the same account.
+          ...(sameUser && snapshot.profileSynced === false ? { name: current.identity!.name, avatar: current.identity!.avatar ?? null } : {}),
+          groups: snapshot.groups ?? [], groupNames: snapshot.groupNames ?? {},
+        },
         entitlements,
         enabledPlugins: normalizeDofePluginIds(sameUser ? current.enabledPlugins : entitlements.plugins, BRAND_VARIANT)
           .filter(plugin => entitlements.plugins.includes(plugin)),

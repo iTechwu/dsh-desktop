@@ -13,6 +13,8 @@ export interface DofeAuthEntitlements {
 export interface DofeAuthSnapshot {
   status: 'idle' | 'pending' | 'issued' | 'bound' | 'error' | 'cancelled'
   user?: { ssoSub: string; name: string; avatar?: string | null }
+  /** False when userinfo is unavailable and user fields came from Models. */
+  profileSynced?: boolean
   tenant?: { tenantId: string; ssoTeamId: string; tenantSlug: string }
   entitlements?: DofeAuthEntitlements
   groups?: string[]

@@ -113,10 +113,11 @@ it.each([true, false])('preserves setup completion (%s) while refreshing profile
   vi.useFakeTimers()
   const h = harness({ setupComplete: complete, validationVersion: 1 })
   let revision = 0
+  let profileUnavailable = false
   vi.stubGlobal('fetch', vi.fn(async (url: string) => {
     if (url.endsWith('openid-configuration')) return json(discovery)
     if (url.endsWith('/token')) return json({ access_token: 'new-access', refresh_token: 'new-refresh' })
-    if (url.endsWith('/userinfo')) return json({ sub: 'user-1', name: `Name ${revision}`, picture: revision ? null : 'https://example.com/avatar.png' })
+    if (url.endsWith('/userinfo')) return profileUnavailable ? json({}, 503) : json({ sub: 'user-1', name: `Name ${revision}`, picture: revision ? null : 'https://example.com/avatar.png' })
     return json({
       key: 'model-key', user: { ssoSub: 'user-1', name: 'Stale name' },
       tenant: { tenantId: 'tenant', ssoTeamId: 'team', tenantSlug: 'sensteed' },
@@ -129,6 +130,11 @@ it.each([true, false])('preserves setup completion (%s) while refreshing profile
     expect(h.getSettings().setupComplete).toBe(complete)
     expect(h.getSettings().validationVersion).toBe(complete ? DOFE_ACCESS_VALIDATION_VERSION : 1)
     expect(h.getSettings().identity).toMatchObject({ name: 'Name 0', avatar: 'https://example.com/avatar.png' })
+    profileUnavailable = true
+    await vi.advanceTimersByTimeAsync(15 * 60_000)
+    expect(h.getSettings().setupComplete).toBe(complete)
+    expect(h.getSettings().identity).toMatchObject({ name: 'Name 0', avatar: 'https://example.com/avatar.png' })
+    profileUnavailable = false
     revision = 1
     await vi.advanceTimersByTimeAsync(15 * 60_000)
     expect(h.getSettings().setupComplete).toBe(complete)

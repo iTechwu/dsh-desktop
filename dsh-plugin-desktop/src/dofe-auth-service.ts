@@ -283,6 +283,7 @@ export class DofeAuthService {
     const avatar = profile ? asString(profile.picture) ?? null : asString(value.user?.avatar)
     const snapshot: DofeAuthSnapshot = {
       status: 'bound',
+      profileSynced: profile !== undefined,
       user: { ssoSub, name: asString(profile?.name) ?? asString(value.user?.name) ?? ssoSub, ...(avatar === undefined ? {} : { avatar }) },
       tenant: { tenantId, ssoTeamId, tenantSlug },
       entitlements: { plugins, defaultModel: asString(value.entitlements?.defaultModel) ?? '', allowedProtocols },
