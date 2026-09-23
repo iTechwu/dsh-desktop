@@ -304,36 +304,65 @@ test('BreakdownNewPage：规则单选可切换/再点取消，onStart 回传 (sh
   assert.equal(retried, 1, '重新加载按钮回传 onRetryRules')
 })
 
-test('BreakdownHistoryList：空态/错误态/行渲染与 onOpen 回传行对象', async () => {
+test('BreakdownHistoryList：表格结构（五列表头）、规则 pill、分页「加载更多」与 onOpen 回传', async () => {
   const { stub } = recordingReact()
   const sandbox = await evalBdModule(stub)
   const BreakdownHistoryList = vm.runInContext('BreakdownHistoryList', sandbox)
 
-  const empty = BreakdownHistoryList({ history: [], loading: false, errorReason: null, onOpen: () => {}, t })
+  const empty = BreakdownHistoryList({ history: [], rules: [], loading: false, errorReason: null, onOpen: () => {}, t })
   assert.ok(collectText(empty).includes('bdHistoryEmpty'), '空历史显示引导文案')
-  const loading = BreakdownHistoryList({ history: [], loading: true, errorReason: null, onOpen: () => {}, t })
+  // 预览稿 panel 口径：空态/错误态同样带可见标题「拆解记录（团队共享，按时间倒序）」。
+  assert.ok(collectText(empty).includes('bdHistoryLabel') && collectText(empty).includes('bdHistorySub'), '空态带可见标题与副标题')
+  const loading = BreakdownHistoryList({ history: [], rules: [], loading: true, errorReason: null, onOpen: () => {}, t })
   assert.ok(collectText(loading).includes('loading'), '加载态显示加载中文案')
 
-  const errored = BreakdownHistoryList({ history: [], loading: false, errorReason: 'operationUnavailable', onOpen: () => {}, t })
+  const errored = BreakdownHistoryList({ history: [], rules: [], loading: false, errorReason: 'operationUnavailable', onOpen: () => {}, t })
   assert.equal(collectFlat(errored).find(node => node.props && node.props.role === 'alert').props.className, 'ydo-error', '错误态 role=alert')
+  assert.ok(collectText(errored).includes('bdHistoryLabel'), '错误态同样带可见标题')
 
   const opened = []
+  const rules = [{ rewriteRuleId: 'r1', name: '规则一', description: '描述一' }]
   const rows = [
-    { candidateId: 'c1', candidateTitle: '标题甲', candidateAuthor: '作者A', status: 'succeeded', currentStepLabel: '已完成', updatedAt: '2026-09-22T08:00:00.000Z', hasStoryboard: true, admin: { workflowId: 'w1' } },
-    { candidateId: 'c2', candidateTitle: null, candidateAuthor: null, status: 'failed', currentStepLabel: '拍摄脚本', updatedAt: null, hasStoryboard: false, admin: {} },
+    { candidateId: 'c1', candidateTitle: '标题甲', candidateAuthor: '作者A', candidatePlayCount: 2865000, rewriteRuleId: 'r1', status: 'succeeded', currentStepLabel: '已完成', updatedAt: '2026-09-22T08:00:00.000Z', hasStoryboard: true, admin: { workflowId: 'w1' } },
+    { candidateId: 'c2', candidateTitle: null, candidateAuthor: null, candidatePlayCount: null, rewriteRuleId: null, status: 'failed', currentStepLabel: '拍摄脚本', updatedAt: null, hasStoryboard: false, admin: {} },
+    { candidateId: 'c3', candidateTitle: '标题丙', candidateAuthor: '作者C', candidatePlayCount: null, rewriteRuleId: null, status: 'running', currentStepLabel: '画面理解', updatedAt: null, hasStoryboard: false, admin: {} },
   ]
-  const list = BreakdownHistoryList({ history: rows, loading: false, errorReason: null, onOpen: item => opened.push(item), t })
-  const items = collectFlat(list).filter(node => node.props && node.props.role === 'listitem')
-  assert.equal(items.length, 2)
+  const list = BreakdownHistoryList({
+    history: rows, rules, loading: false, errorReason: null,
+    hasMore: true, loadingMore: false, onLoadMore: () => {}, onOpen: item => opened.push(item), t,
+  })
+  // 表格结构：五列表头（视频/状态/仿写规则/当前步骤/时间）+ 三行。
+  const table = collectFlat(list).find(node => node.type === 'table')
+  assert.ok(table, '渲染表格结构')
+  const headCells = collectFlat(list).filter(node => node.type === 'th').map(node => collectText(node))
+  assert.deepEqual(headCells, ['bdColVideo', 'bdColStatus', 'bdColRule', 'bdColStep', 'bdColTime'], '五列表头走文案键')
+  const trs = collectFlat(list).filter(node => node.type === 'tr' && node.props && node.props.tabIndex === 0)
+  assert.equal(trs.length, 3)
   const text = collectText(list)
-  assert.ok(text.includes('标题甲') && text.includes('作者A'), '标题与作者渲染')
+  assert.ok(text.includes('标题甲') && text.includes('@作者A'), '标题与作者副行渲染')
+  assert.ok(text.includes('bdPlayLabel') && text.includes('286.5万'), '播放数万格式化（formatCount）')
+  assert.ok(text.includes('规则一'), '规则名从 rules 清单解析渲染')
   assert.ok(text.includes('c2'), '缺标题行回退渲染 candidateId')
   assert.ok(text.includes('2026-09-22 16:00'), '时间按上海时区展示（formatDateTime）')
   assert.ok(text.includes('—'), '缺失步骤/时间显示 —')
   const failedBadge = collectFlat(list).find(node => String(node.props.className || '').includes('ydo-bd-status-error'))
   assert.ok(failedBadge, '失败状态徽标语义色')
-  items[0].props.onClick()
+  const failedStep = collectFlat(list).find(node => String(node.props.className || '').includes('ydo-bd-row-step-failed'))
+  assert.ok(failedStep && collectText(failedStep).includes('bdStatusFailed'), '失败行步骤列红色显示失败')
+  const runningStep = collectFlat(list).find(node => String(node.props.className || '').includes('ydo-bd-row-step-running'))
+  assert.ok(runningStep && collectText(runningStep).includes('画面理解'), '运行行步骤列蓝色显示当前步')
+  const defaultPill = collectFlat(list).find(node => String(node.props.className || '').includes('ydo-bd-rule-pill-default'))
+  assert.ok(defaultPill && collectText(defaultPill).includes('bdRuleDefault'), '未选规则显示中性「默认」pill')
+  const loadMore = collectFlat(list).filter(node => node.type === 'button').find(node => collectText(node) === 'bdLoadMore')
+  assert.ok(loadMore, 'hasMore 渲染加载更多按钮')
+  trs[0].props.onClick()
   assert.equal(opened[0].candidateId, 'c1', '行点击回传原始行对象')
+  trs[0].props.onKeyDown({ key: 'Enter', preventDefault: () => {} })
+  assert.equal(opened.length, 2, '键盘 Enter 打开行（可访问性）')
+
+  // 无更多数据：不渲染加载更多。
+  const noMore = BreakdownHistoryList({ history: rows, rules, loading: false, errorReason: null, hasMore: false, loadingMore: false, onLoadMore: () => {}, onOpen: () => {}, t })
+  assert.equal(collectFlat(noMore).filter(node => node.type === 'button').length, 0, 'hasMore=false 无加载更多按钮')
 })
 
 const fullWorkflow = {
@@ -448,13 +477,15 @@ test('BreakdownDetailPage：失败/进行中/无数据与错误态，重新改�
   const sandbox = await evalBdModule(stub)
   const BreakdownDetailPage = vm.runInContext('BreakdownDetailPage', sandbox)
 
-  // 失败 payload（含小写 errorCode）：失败文案 + 改写按钮可用（failed 非运行态）。
+  // 失败 payload（含小写 errorCode）：err-box 失败文案 + 改写按钮可用（failed 非运行态）。
   const failed = BreakdownDetailPage({
     workflow: { ...fullWorkflow, status: 'failed', currentStep: 'storyboard', admin: { workflowId: 'wf-1', errorCode: 'storyboard_quality' } },
     detail: null, loading: false, errorReason: null, onBack: () => {}, onRequestRewrite: () => {}, t,
   })
   const failedText = collectText(failed)
   assert.ok(failedText.includes('bdErrorRetryable'), 'storyboard_quality 映射可重试文案')
+  const errorBox = collectFlat(failed).find(node => String(node.props.className || '').includes('ydo-bd-error-box'))
+  assert.ok(errorBox && errorBox.props.role === 'alert', '失败文案在预览稿 err-box 中（role=alert）')
   const failedRewrite = collectFlat(failed).filter(node => node.type === 'button').find(node => collectText(node) === 'bdRewriteButton')
   assert.equal(failedRewrite.props.disabled, false, '失败态允许重新改写')
 
@@ -471,23 +502,26 @@ test('BreakdownDetailPage：失败/进行中/无数据与错误态，重新改�
   const needsRewrite = collectFlat(needsInput).filter(node => node.type === 'button').find(node => collectText(node) === 'bdRewriteButton')
   assert.equal(needsRewrite.props.disabled, false, 'needs_input 允许换规则重新改写')
 
-  // 进行中：改写按钮禁用 + 进行中提示。
+  // 进行中且无产物：大空态（主文案 bdRunningTitle + 副文案 bdRunningSub），
+  // 改写按钮禁用；当前步在 8 段进度条中高亮。
   const running = BreakdownDetailPage({
     workflow: { ...fullWorkflow, status: 'running', currentStep: 'vision' },
     detail: null, loading: false, errorReason: null, onBack: () => {}, onRequestRewrite: () => {}, t,
   })
   const runningText = collectText(running)
-  assert.ok(runningText.includes('bdRunningHint'), '进行中提示可见')
+  assert.ok(runningText.includes('bdRunningTitle') && runningText.includes('bdRunningSub'), '进行中大空态主副文案可见')
+  const emptyState = collectFlat(running).find(node => String(node.props.className || '').includes('ydo-bd-empty'))
+  assert.ok(emptyState && emptyState.props.role === 'status', '空态容器 role=status')
   const runningRewrite = collectFlat(running).filter(node => node.type === 'button').find(node => collectText(node) === 'bdRewriteButton')
   assert.equal(runningRewrite.props.disabled, true, '进行中禁用重新改写')
   const activeStep = collectFlat(running).find(node => String(node.props.className || '').includes('ydo-bd-step-active'))
-  assert.ok(activeStep && collectText(activeStep) === 'bdStep_vision', '当前步高亮 vision')
+  assert.ok(activeStep && collectText(activeStep).includes('bdStep_vision'), '当前步高亮 vision')
 
-  // detail 为 null + loading：加载态；非 loading：空态。
+  // detail 为 null + loading：加载态；非 loading 且无 workflow：空态引导。
   const loading = BreakdownDetailPage({ workflow: null, detail: null, loading: true, errorReason: null, onBack: () => {}, onRequestRewrite: () => {}, t })
   assert.ok(collectText(loading).includes('loading'))
   const empty = BreakdownDetailPage({ workflow: null, detail: null, loading: false, errorReason: null, onBack: () => {}, onRequestRewrite: () => {}, t })
-  assert.ok(collectText(empty).includes('bdDetailEmpty'))
+  assert.ok(collectText(empty).includes('bdDetailEmpty') && collectText(empty).includes('bdDetailEmptySub'), '空态主副文案')
 
   // 明细加载失败：错误态 + 返回按钮回传 onBack。
   let backed = false

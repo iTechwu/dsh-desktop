@@ -1969,16 +1969,17 @@ window.__ModuleLoader__.load({
       douyin_operation_request_failed: 'operationUnavailable',
     })
 
-    // 爆款拆解 Tab UI 模块（0922 方案 §4.1）。
+    // 爆款拆解 Tab UI 模块（0922 方案 §4.1；0923 视觉对齐 docs/0922/douyin/breakdown-tab-preview.html）。
     //
     // 职责边界与 overview-ui / analysis-ui 相同：只做展示与本地格式化，零口径计算；
     // 状态文案（状态标签/步骤名/错误文案）一律以 copy 登记为准，组件只按 reason 键取文案。
     // 数据源 = 宿主 breakdown.* action（index.js 组合 viral_video 域工具）：
-    // - workflow 投影（history / workflowStatus）：状态/当前步骤/标题作者（P2 已把服务端
-    //   蛇形 candidate_id 归一化为 candidateId）
+    // - workflow 投影（history / workflowStatus）：状态/当前步骤/标题/作者/播放量/规则 id
+    //   （P2 已把服务端蛇形 candidate_id 归一化为 candidateId）
     // - detail.storyboards[0]：originalVideoAnalysis / rewrittenStoryboard / shotScript /
     //   input（规则回显）四块投影
     // - detail.analysis.candidates[0].products.asr.transcript：口播全文
+    // - detail.candidate：候选公开指标（互动数据/发布时间/原视频链接），缺失独立降级为 —
     // 拍摄脚本是服务端产出的 Markdown 表格（纯文本），用 shotScriptTable 解析后以普通
     // 表格元素渲染（React 文本子节点自动转义，无 HTML 注入面），不引入 markdown 依赖。
 
@@ -2088,20 +2089,44 @@ window.__ModuleLoader__.load({
       return body.split('|').map(cell => cell.trim())
     }
 
-    // 折叠卡复用 0916 AI 卡结构（.ydo-ai-card + 左边框色调类 summary/patterns/recs/dims），
-    // 开关状态每卡内部持有（方案 §4.2：原视频拆解与改写分镜默认展开）。
-    function FoldCard({ tone, title, defaultOpen = false, digest = null, children }) {
-      const [open, setOpen] = React.useState(defaultOpen)
-      return h('section', { className: `ydo-ai-card ydo-ai-card-${tone}${open ? ' ydo-ai-card-open' : ''}` },
-        h('button', {
-          type: 'button', className: 'ydo-ai-card-toggle', 'aria-expanded': open,
-          onClick: () => setOpen(value => !value),
-        },
-        h('span', { className: 'ydo-ai-arrow', 'aria-hidden': true }, '▶'),
-        h('h4', null, title),
-        digest ? h('span', { className: 'ydo-ai-digest' }, digest) : null),
-        open ? h('div', { className: 'ydo-ai-card-body' }, children) : null)
+    // 原视频链接白名单（与 ui-format safeWorkUrl 同策略的拆解版）：分享链接可能来自
+    // v.douyin.com 短链域，只放行 http(s) 且主机名以 douyin.com / iesdouyin.com 结尾；
+    // 不满足返回 null，链接按普通文本展示，绝不调用外部浏览器打开未知地址。
+    function safeShareUrl(value) {
+      if (typeof value !== 'string') return null
+      const trimmed = value.trim()
+      if (!trimmed || trimmed.length > 2048) return null
+      let url
+      try {
+        url = new URL(trimmed)
+      } catch {
+        return null
+      }
+      if (url.protocol !== 'https:' && url.protocol !== 'http:') return null
+      const host = url.hostname.toLowerCase()
+      return host === 'douyin.com' || host.endsWith('.douyin.com')
+        || host === 'iesdouyin.com' || host.endsWith('.iesdouyin.com')
+        ? trimmed
+        : null
     }
+
+    // 互动率是 (赞+评+转+藏)/播放 的小数（服务端 5 位小数），展示为百分比两位小数。
+    function formatInteractionRate(value) {
+      const num = Number(value)
+      if (value === null || value === undefined || !Number.isFinite(num)) return '—'
+      return `${Math.round(num * 10000) / 100}%`
+    }
+
+    /** 规则 id → 已加载规则（name/description）；未加载到时回退用 id 兜底显示。 */
+    function ruleById(rules, ruleId) {
+      if (!ruleId) return null
+      const found = (Array.isArray(rules) ? rules : []).find(rule => rule && rule.rewriteRuleId === ruleId)
+      return found || { rewriteRuleId: ruleId, name: ruleId, description: null }
+    }
+
+    // ---------------------------------------------------------------------------
+    // 展示原子（状态徽标 / 规则 pill / 步骤条 / KPI）
+    // ---------------------------------------------------------------------------
 
     function StatusBadge({ status, t }) {
       const tone = breakdownStatusTone(status)
@@ -2114,9 +2139,16 @@ window.__ModuleLoader__.load({
       return h('span', { className: `ydo-bd-status ydo-bd-status-${tone}` }, t(key))
     }
 
-    // 8 步进度条：终态（succeeded 或 currentStep=completed）整条完成；进行中当前步
-    // 高亮、之前的步视为已过。失败时服务端把 current_step 覆写为 'failed'（不在本
-    // 数组内，indexOf=-1），进度条整体保持灰态——失败原因由详情页失败文案专门承载。
+    // 仿写规则 pill（列表列与详情规则卡共用）：有规则紫色弱底，未选规则中性「默认」。
+    function RulePill({ rule, t }) {
+      if (!rule) return h('span', { className: 'ydo-bd-rule-pill ydo-bd-rule-pill-default' }, t('bdRuleDefault'))
+      return h('span', { className: 'ydo-bd-rule-pill' }, rule.name || rule.rewriteRuleId)
+    }
+
+    // 8 步进度条（预览稿段条式）：每步上方 4px 色条 + 下方步骤名；终态（succeeded 或
+    // currentStep=completed）整条完成；进行中当前步蓝、之前的步绿。失败时服务端把
+    // current_step 覆写为 'failed'（不在本数组内，indexOf=-1），进度条整体保持灰态
+    // ——失败原因由详情页失败文案专门承载。
     function StepProgress({ workflow, t }) {
       const steps = BREAKDOWN_WORKFLOW_STEPS
       const currentIndex = steps.indexOf(workflow?.currentStep)
@@ -2130,8 +2162,26 @@ window.__ModuleLoader__.load({
             key: step,
             className: `ydo-bd-step ydo-bd-step-${state}`,
             'aria-current': active ? 'step' : undefined,
-          }, t(`bdStep_${step}`))
+          },
+          h('span', { className: 'ydo-bd-step-bar', 'aria-hidden': true }),
+          h('span', { className: 'ydo-bd-step-name' }, t(`bdStep_${step}`)))
         }))
+    }
+
+    // 候选公开指标 6 卡（预览稿 KPI 条）：数值缺失显示 —，绝不回填或估算。
+    function KpiGrid({ candidate, t }) {
+      const cells = [
+        ['bdKpiPlay', formatCount(candidate?.playCount)],
+        ['bdKpiLike', formatCount(candidate?.likeCount)],
+        ['bdKpiComment', formatCount(candidate?.commentCount)],
+        ['bdKpiCollect', formatCount(candidate?.collectCount)],
+        ['bdKpiShare', formatCount(candidate?.shareCount)],
+        ['bdKpiInteraction', formatInteractionRate(candidate?.interactionRate)],
+      ]
+      return h('div', { className: 'ydo-bd-kpis', role: 'list', 'aria-label': t('bdKpiLabel') },
+        ...cells.map(([key, value]) => h('div', { key, className: 'ydo-bd-kpi', role: 'listitem' },
+          h('div', { className: 'ydo-bd-kpi-label' }, t(key)),
+          h('div', { className: 'ydo-bd-kpi-value' }, value))))
     }
 
     // 段落角色语义色标签（hook/build/turn/cta），未登记角色走中性「其他」。
@@ -2142,44 +2192,65 @@ window.__ModuleLoader__.load({
       return h('span', { className: `ydo-bd-role ydo-bd-role-${tone}` }, t(`bdRole_${tone}`))
     }
 
-    // 原视频拆解分段：时间 + 角色标签 + 画面 + 口播，纵向卡片列表（窄幅不挤压）。
-    function OriginalSegmentList({ segments, t }) {
-      return h('div', { className: 'ydo-bd-seg-list' },
-        ...segments.map((segment, index) => h('div', { key: index, className: 'ydo-bd-seg' },
-          h('div', { className: 'ydo-bd-seg-head' },
-            h('span', { className: 'ydo-bd-seg-time' }, segment.timeRange || '—'),
-            h(RoleTag, { role: segment.role, t })),
-          h('p', { className: 'ydo-bd-seg-visual' }, segment.originalVisual || '—'),
-          segment.originalSpeech ? h('p', { className: 'ydo-bd-seg-speech' }, segment.originalSpeech) : null)))
+    // 原视频拆解分段表（预览稿四列：时间/角色/画面/口播）。
+    function OriginalSegmentTable({ segments, t }) {
+      return h('div', { className: 'ydo-bd-seg-wrap' },
+        h('table', { className: 'ydo-bd-table' },
+          h('thead', null, h('tr', null,
+            h('th', null, t('bdColTime')), h('th', null, t('bdColRole')),
+            h('th', null, t('bdColVisual')), h('th', null, t('bdColSpeech')))),
+          h('tbody', null, ...segments.map((segment, index) => h('tr', { key: index },
+            h('td', { className: 'ydo-bd-cell-time' }, segment.timeRange || '—'),
+            h('td', null, h(RoleTag, { role: segment.role, t })),
+            h('td', { className: 'ydo-bd-cell-visual' }, segment.originalVisual || '—'),
+            h('td', null, segment.originalSpeech || '—'))))))
     }
 
-    // 改写分镜卡片：新口播为主行、新画面次行，标注来源段落（sourceSegmentIndexes）。
-    function RewrittenSegmentList({ segments, t }) {
-      return h('div', { className: 'ydo-bd-seg-list' },
-        ...segments.map((segment, index) => h('div', { key: index, className: 'ydo-bd-seg' },
-          h('div', { className: 'ydo-bd-seg-head' },
-            h('span', { className: 'ydo-bd-seg-time' }, segment.timeRange || '—'),
-            h(RoleTag, { role: segment.role, t }),
-            h('span', { className: 'ydo-bd-seg-source' },
-              `${t('bdSourceFrom')} ${Array.isArray(segment.sourceSegmentIndexes) && segment.sourceSegmentIndexes.length
-                ? segment.sourceSegmentIndexes.map(i => `#${i}`).join(' ')
-                : '—'}`)),
-          segment.rewrittenSpeech ? h('p', { className: 'ydo-bd-seg-copy' }, segment.rewrittenSpeech) : null,
-          segment.rewrittenVisual ? h('p', { className: 'ydo-bd-seg-visual' }, segment.rewrittenVisual) : null)))
+    // 改写分镜卡片（预览稿 shot 卡）：角色 + 时间 + 来源段落标注、原片段引用（从原视频
+    // 段落按 sourceSegmentIndexes 装配，纯投影读取）、新口播主行、画面提示次行；
+    // 「原片段/改写文案/画面提示」前缀走文案键（不用 CSS content，保证双语）。
+    function RewrittenSegmentList({ segments, originalSegments, t }) {
+      const source = (index => (originalSegments && originalSegments[index] ? originalSegments[index] : null))
+      return h('div', { className: 'ydo-bd-shot-list' },
+        ...segments.map((segment, index) => {
+          const sources = Array.isArray(segment.sourceSegmentIndexes) ? segment.sourceSegmentIndexes : []
+          const sourceTexts = sources
+            .map(i => {
+              const row = source(Number(i) - 1)
+              return row && row.originalSpeech ? `#${i} ${row.originalSpeech}` : null
+            })
+            .filter(Boolean)
+          return h('div', { key: index, className: 'ydo-bd-shot' },
+            h('div', { className: 'ydo-bd-shot-head' },
+              h(RoleTag, { role: segment.role, t }),
+              h('span', { className: 'ydo-bd-seg-time' }, segment.timeRange || '—'),
+              h('span', { className: 'ydo-bd-seg-source' },
+                `${t('bdSourceFrom')} ${sources.length ? sources.map(i => `#${i}`).join(' ') : '—'}`)),
+            sourceTexts.length
+              ? h('p', { className: 'ydo-bd-shot-src' },
+                h('span', { className: 'ydo-bd-shot-prefix' }, t('bdShotSrcPrefix')),
+                sourceTexts.join('；'))
+              : null,
+            segment.rewrittenSpeech
+              ? h('p', { className: 'ydo-bd-shot-copy' },
+                h('span', { className: 'ydo-bd-shot-prefix ydo-bd-shot-prefix-copy' }, t('bdShotCopyPrefix')),
+                segment.rewrittenSpeech)
+              : null,
+            segment.rewrittenVisual
+              ? h('p', { className: 'ydo-bd-shot-visual' },
+                h('span', { className: 'ydo-bd-shot-prefix' }, t('bdShotVisualPrefix')),
+                segment.rewrittenVisual)
+              : null)
+        }))
     }
 
-    // 拍摄脚本：景别配额摘要行 + Markdown 表格横向滚动 + 表格外段落。
+    // 拍摄脚本：Markdown 表格横向滚动 + 表格外段落（配额摘要移到卡 digest，预览稿口径）。
     function ShotScriptBlock({ shotScript, t }) {
       if (!shotScript || shotScript.status !== 'succeeded' || !shotScript.markdown) {
         return h('p', { className: 'ydo-hint' }, t('bdSectionPending'))
       }
       const parsed = shotScriptTable(shotScript.markdown)
-      const quotas = shotScript.shotSizeQuotas
-      const quotaText = quotas && typeof quotas === 'object' && !Array.isArray(quotas)
-        ? Object.entries(quotas).map(([size, count]) => `${size}×${count}`).join(' · ')
-        : ''
       return h('div', null,
-        quotaText ? h('p', { className: 'ydo-hint' }, `${t('bdShotQuotas')}：${quotaText}`) : null,
         parsed.head.length
           ? h('div', { className: 'ydo-bd-shot-wrap' },
             h('table', { className: 'ydo-bd-shot-table' },
@@ -2215,6 +2286,14 @@ window.__ModuleLoader__.load({
       return { id, prompt }
     }
 
+    // 拍摄脚本配额摘要（预览稿 digest 口径：「远2/中3/近1/特1」形态）。
+    function shotQuotaDigest(shotScript) {
+      const quotas = shotScript?.shotSizeQuotas
+      if (!quotas || typeof quotas !== 'object' || Array.isArray(quotas)) return null
+      const text = Object.entries(quotas).map(([size, count]) => `${size}×${count}`).join(' · ')
+      return text || null
+    }
+
     // 规则单选卡片组：主视图与重新改写弹框共用；再点一次取消选中（= 不带规则仿写）。
     function BreakdownRulePicker({ rules, value, onChange, disabled, t }) {
       return h('div', { className: 'ydo-bd-rules', role: 'radiogroup', 'aria-label': t('bdRulesLabel') },
@@ -2234,7 +2313,7 @@ window.__ModuleLoader__.load({
     }
 
     // ---------------------------------------------------------------------------
-    // 三个视图 + 重新改写弹框（开关由 client.js 持有，接入统一 Esc 链）。
+    // 主视图：发起拆解 + 拆解记录（预览稿 view-main 结构）。
     // ---------------------------------------------------------------------------
 
     function BreakdownNewPage({ rules, rulesError, onRetryRules, submitting, archiveTask, startError, onStart, t }) {
@@ -2266,7 +2345,7 @@ window.__ModuleLoader__.load({
             onClick: submit,
           }, submitting ? t('bdSubmitting') : t('bdStartButton'))),
         startError ? h('p', { className: 'ydo-error', role: 'alert', 'aria-live': 'assertive' }, t(startError)) : null,
-        h('p', { className: 'ydo-hint' }, t('bdRulesHint')),
+        // 规则标签在网格上方（预览稿 field-label 口径）；失败态与提示语在网格下方。
         rulesError
           ? h('div', null,
             h('p', { className: 'ydo-error', role: 'alert' }, t(rulesError)),
@@ -2276,7 +2355,12 @@ window.__ModuleLoader__.load({
                 onClick: () => onRetryRules(),
               }, t('bdRulesRetry'))
               : null)
-          : h(BreakdownRulePicker, { rules, value: ruleId, onChange: setRuleId, disabled: submitting, t }),
+          : h('div', { className: 'ydo-bd-rules-field' },
+            h('p', { className: 'ydo-bd-field-label' },
+              t('bdRulesLabel'),
+              h('span', { className: 'ydo-bd-field-label-opt' }, t('bdRulesOptional'))),
+            h(BreakdownRulePicker, { rules, value: ruleId, onChange: setRuleId, disabled: submitting, t })),
+        h('p', { className: 'ydo-hint' }, t('bdRulesHint')),
         archiveTask
           ? h('div', { className: 'ydo-progress', role: 'status', 'aria-live': 'polite', 'aria-busy': true },
             h('span', { className: 'ydo-spinner' }),
@@ -2284,43 +2368,99 @@ window.__ModuleLoader__.load({
           : null)
     }
 
-    function BreakdownHistoryList({ history, loading, errorReason, onOpen, t }) {
-      if (errorReason) return h('p', { className: 'ydo-error', role: 'alert' }, t(errorReason))
-      if (!history.length) {
-        return h('p', { className: 'ydo-hint', role: 'status' }, loading ? t('loading') : t('bdHistoryEmpty'))
-      }
-      // 行数据 = workflow 投影（无播放量/规则字段；规则回显在详情页第五卡）。
-      return h('div', { className: 'ydo-bd-history', role: 'list', 'aria-label': t('bdHistoryLabel') },
-        ...history.map((item, index) => h('button', {
+    function BreakdownHistoryList({ history, rules, loading, errorReason, hasMore, loadingMore, onLoadMore, onOpen, t }) {
+      // 行数据 = workflow 投影：标题/作者/播放量/规则 id（服务端投影直出，防 N+1）。
+      // 表格结构（预览稿 tbl）：视频 | 状态 | 仿写规则 | 当前步骤 | 时间。
+      const rows = history.map((item, index) => {
+        const tone = breakdownStatusTone(item.status)
+        const failed = tone === 'error'
+        const running = tone === 'running' && item.currentStepLabel
+        return h('tr', {
           key: `${item.candidateId}-${item.admin?.workflowId || index}`,
-          type: 'button', className: 'ydo-bd-row', role: 'listitem',
+          tabIndex: 0,
           onClick: () => onOpen(item),
+          onKeyDown: event => {
+            if (event.key === 'Enter' || event.key === ' ') {
+              event.preventDefault()
+              onOpen(item)
+            }
+          },
         },
-        h('span', { className: 'ydo-bd-row-main' },
+        h('td', { className: 'ydo-bd-cell-main' },
           h('span', { className: 'ydo-bd-row-title' }, item.candidateTitle || item.candidateId || '—'),
-          item.candidateAuthor ? h('span', { className: 'ydo-bd-row-author' }, item.candidateAuthor) : null),
-        h(StatusBadge, { status: item.status, t }),
-        h('span', { className: 'ydo-bd-row-step' }, item.currentStepLabel || '—'),
-        h('span', { className: 'ydo-bd-row-time' }, formatDateTime(item.updatedAt)))))
+          h('span', { className: 'ydo-bd-row-sub' },
+            item.candidateAuthor ? `@${item.candidateAuthor}` : null,
+            item.candidateAuthor && item.candidatePlayCount !== null && item.candidatePlayCount !== undefined
+              ? ` · ${t('bdPlayLabel')} ${formatCount(item.candidatePlayCount)}`
+              : null)),
+        h('td', null, h(StatusBadge, { status: item.status, t })),
+        h('td', null, h(RulePill, { rule: ruleById(rules, item.rewriteRuleId), t })),
+        h('td', { className: `ydo-bd-row-step${failed ? ' ydo-bd-row-step-failed' : running ? ' ydo-bd-row-step-running' : ''}` },
+          failed ? t('bdStatusFailed') : (item.currentStepLabel || '—')),
+        h('td', { className: 'ydo-bd-row-time' }, formatDateTime(item.updatedAt)))
+      })
+      // 预览稿 panel 口径：可见标题「拆解记录（团队共享，按时间倒序）」，记录区与
+      // 发起区同为 ydo-ov-panel；空态/错误态同样带标题，保持结构对称。
+      return h('section', { className: 'ydo-ov-panel ydo-bd-history', role: 'group', 'aria-label': t('bdHistoryLabel') },
+        h('h3', null, t('bdHistoryLabel'),
+          h('span', { className: 'ydo-bd-history-sub' }, t('bdHistorySub'))),
+        errorReason
+          ? h('p', { className: 'ydo-error', role: 'alert' }, t(errorReason))
+          : !history.length
+            ? h('p', { className: 'ydo-hint', role: 'status' }, loading ? t('loading') : t('bdHistoryEmpty'))
+            : [
+              h('table', { key: 'table', className: 'ydo-bd-table' },
+                h('thead', null, h('tr', null,
+                  h('th', null, t('bdColVideo')),
+                  h('th', null, t('bdColStatus')),
+                  h('th', null, t('bdColRule')),
+                  h('th', null, t('bdColStep')),
+                  h('th', null, t('bdColTime')))),
+                h('tbody', null, ...rows)),
+              hasMore
+                ? h('div', { key: 'more', className: 'ydo-bd-more' },
+                  h('button', {
+                    type: 'button', className: 'ydo-secondary', disabled: loadingMore,
+                    'aria-busy': loadingMore,
+                    onClick: onLoadMore,
+                  }, t('bdLoadMore')))
+                : null,
+            ])
     }
 
-    function BreakdownDetailPage({ workflow, detail, loading, errorReason, onBack, onRequestRewrite, t }) {
+    // ---------------------------------------------------------------------------
+    // 详情页（预览稿 view-detail 结构）：白卡头部（标题/meta/状态/步骤条）+ KPI 条
+    // + 五张折叠卡。规则名从已加载规则清单解析；候选指标缺失独立降级为 —。
+    // ---------------------------------------------------------------------------
+
+    function BreakdownDetailPage({ workflow, detail, candidate, rules, loading, errorReason, onBack, onRequestRewrite, t }) {
       if (errorReason) {
         return h('div', { className: 'ydo-state ydo-state-error', role: 'alert' },
           h('p', null, t(errorReason)),
           h('button', { type: 'button', className: 'ydo-secondary', onClick: onBack }, t('bdBackToList')))
       }
       const storyboardRow = latestStoryboard(detail)
-      const original = storyboardRow?.originalVideoAnalysis || null
-      const rewritten = storyboardRow?.rewrittenStoryboard || null
+      const originalRaw = storyboardRow?.originalVideoAnalysis || null
+      const rewrittenRaw = storyboardRow?.rewrittenStoryboard || null
+      // segments 契约上恒为数组；单条坏记录按空数组降级，不崩整个详情页。
+      const original = originalRaw
+        ? { ...originalRaw, segments: Array.isArray(originalRaw.segments) ? originalRaw.segments : [] }
+        : null
+      const rewritten = rewrittenRaw
+        ? { ...rewrittenRaw, segments: Array.isArray(rewrittenRaw.segments) ? rewrittenRaw.segments : [] }
+        : null
       const transcript = asrTranscript(detail)
       const rule = usedRule(storyboardRow)
+      const ruleResolved = rule ? ruleById(rules, rule.id) : null
+      const shareUrl = safeShareUrl(candidate?.shareUrl)
       // 失败文案承载两态：error 色失败，以及 needs_input（warn 色但带 errorCode 的
       // 同步失败 payload，如 needs_product_input——用户需要知道为什么没有产出）。
       const failed = Boolean(
         workflow && (breakdownStatusTone(workflow.status) === 'error' || workflow.status === 'needs_input'),
       )
-      const pending = !workflow || (!failed && breakdownStatusTone(workflow.status) === 'running')
+      // 仅在确有 workflow 且处于运行态时显示「拆解进行中」；无 workflow 的空态
+      // 走「暂无拆解内容」引导，避免误导。
+      const pending = Boolean(workflow) && !failed && breakdownStatusTone(workflow.status) === 'running'
       return h('div', { className: 'ydo-bd-page' },
         h('div', { className: 'ydo-an-toolbar' },
           h('button', { type: 'button', className: 'ydo-secondary', onClick: onBack }, t('bdBackToList')),
@@ -2330,50 +2470,97 @@ window.__ModuleLoader__.load({
             onClick: onRequestRewrite,
           }, t('bdRewriteButton'))),
         workflow
-          ? h('header', { className: 'ydo-an-head' },
+          ? h('header', { className: 'ydo-bd-head' },
             h('div', { className: 'ydo-bd-head-row' },
-              h('h3', null, workflow.candidateTitle || workflow.candidateId || '—'),
+              h('div', { className: 'ydo-bd-head-main' },
+                h('h3', null, workflow.candidateTitle || workflow.candidateId || '—'),
+                workflow.candidateAuthor || candidate?.publishedAt || shareUrl
+                  ? h('p', { className: 'ydo-bd-head-meta' },
+                    workflow.candidateAuthor ? h('span', null, `@${workflow.candidateAuthor}`) : null,
+                    candidate?.publishedAt
+                      ? h('span', null, `${t('bdPublishedAt')} ${formatDateTime(candidate.publishedAt)}`)
+                      : null,
+                    shareUrl ? h('a', { href: shareUrl, target: '_blank', rel: 'noreferrer noopener' }, `${t('bdOriginalLink')} ↗`) : null)
+                  : null),
               h(StatusBadge, { status: workflow.status, t })),
-            workflow.candidateAuthor ? h('p', { className: 'ydo-hint' }, workflow.candidateAuthor) : null,
             h(StepProgress, { workflow, t }),
-            failed ? h('p', { className: 'ydo-error', role: 'alert' }, t(workflowErrorCopyKey(workflow))) : null,
-            pending ? h('p', { className: 'ydo-hint', role: 'status' }, t('bdRunningHint')) : null)
+            failed ? h('p', { className: 'ydo-bd-error-box', role: 'alert' }, t(workflowErrorCopyKey(workflow))) : null)
+          : null,
+        Number.isFinite(Number(candidate?.playCount)) || candidate
+          ? h(KpiGrid, { candidate, t })
           : null,
         loading && !storyboardRow
           ? h('div', { className: 'ydo-state', role: 'status' }, h('span', { className: 'ydo-spinner' }), h('p', null, t('loading')))
           : !storyboardRow
-          ? h('p', { className: 'ydo-hint', role: 'status' }, t('bdDetailEmpty'))
+          ? h('div', { className: 'ydo-bd-empty', role: 'status' },
+            pending ? h('span', { className: 'ydo-spinner ydo-bd-empty-spinner', 'aria-hidden': true }) : null,
+            h('p', { className: 'ydo-bd-empty-title' }, pending ? t('bdRunningTitle') : t('bdDetailEmpty')),
+            h('p', { className: 'ydo-bd-empty-sub' }, pending ? t('bdRunningSub') : t('bdDetailEmptySub')))
           : h('div', { className: 'ydo-bd-cards' },
             h(FoldCard, {
               tone: 'summary', title: t('bdCardOriginal'), defaultOpen: true,
-              digest: original ? `${original.segments.length} ${t('bdSegmentUnit')}` : null,
+              digest: original?.summary ? String(original.summary).slice(0, 60) : null,
             },
             original
-              ? h('div', null,
+              ? h('div', { className: 'ydo-bd-card-body-gap' },
                 original.summary ? h('blockquote', { className: 'ydo-bd-quote' }, original.summary) : null,
-                h(OriginalSegmentList, { segments: original.segments, t }))
+                h(OriginalSegmentTable, { segments: original.segments, t }))
               : h('p', { className: 'ydo-hint' }, t('bdSectionPending'))),
-            h(FoldCard, { tone: 'dims', title: t('bdCardTranscript') },
-              transcript
-                ? h('blockquote', { className: 'ydo-bd-quote' }, transcript)
-                : h('p', { className: 'ydo-hint' }, t('bdSectionPending'))),
+            h(FoldCard, {
+              tone: 'dims', title: t('bdCardTranscript'),
+              digest: transcript ? `${t('bdDigestAsr')} · ${transcript.length}${t('bdDigestCharUnit')}` : null,
+            },
+            transcript
+              ? h('blockquote', { className: 'ydo-bd-quote' }, transcript)
+              : h('p', { className: 'ydo-hint' }, t('bdSectionPending'))),
             h(FoldCard, {
               tone: 'patterns', title: t('bdCardStoryboard'), defaultOpen: true,
-              digest: rewritten ? `${rewritten.segments.length} ${t('bdSegmentUnit')}` : null,
+              digest: rewritten
+                ? `${rewritten.segments.length}${t('bdSegmentUnit')}${ruleResolved ? ` · ${ruleResolved.name || ruleResolved.rewriteRuleId}` : ''}`
+                : null,
             },
             rewritten
-              ? h('div', null,
+              ? h('div', { className: 'ydo-bd-card-body-gap' },
                 rewritten.summary ? h('p', { className: 'ydo-hint' }, rewritten.summary) : null,
-                h(RewrittenSegmentList, { segments: rewritten.segments, t }))
+                h(RewrittenSegmentList, { segments: rewritten.segments, originalSegments: original?.segments || null, t }))
               : h('p', { className: 'ydo-hint' }, t('bdSectionPending'))),
-            h(FoldCard, { tone: 'recs', title: t('bdCardShotScript') },
-              h(ShotScriptBlock, { shotScript: storyboardRow.shotScript, t })),
-            h(FoldCard, { tone: 'dims', title: t('bdCardRule'), digest: rule ? rule.id : null },
-              rule
-                ? h('div', { className: 'ydo-bd-rule-used' },
-                  h('span', { className: 'ydo-bd-role ydo-bd-role-other' }, rule.id),
-                  rule.prompt ? h('p', { className: 'ydo-hint' }, rule.prompt) : null)
-                : h('p', { className: 'ydo-hint' }, t('bdRuleNone')))))
+            h(FoldCard, {
+              tone: 'recs', title: t('bdCardShotScript'),
+              digest: shotQuotaDigest(storyboardRow.shotScript),
+            },
+            h(ShotScriptBlock, { shotScript: storyboardRow.shotScript, t })),
+            h(FoldCard, {
+              tone: 'dims', title: t('bdCardRule'),
+              digest: ruleResolved
+                ? (ruleResolved.name || ruleResolved.rewriteRuleId)
+                : t('bdRuleDefault'),
+            },
+            ruleResolved
+              ? h('div', { className: 'ydo-bd-rule-used' },
+                h('div', null,
+                  h(RulePill, { rule: ruleResolved, t }),
+                  ruleResolved.description && ruleResolved.description !== ruleResolved.name
+                    ? h('span', { className: 'ydo-bd-rule-desc' }, ruleResolved.description)
+                    : null),
+                rule.prompt && rule.prompt !== ruleResolved.description
+                  ? h('p', { className: 'ydo-hint' }, rule.prompt)
+                  : null)
+              : h('p', { className: 'ydo-hint' }, t('bdRuleNone')))))
+    }
+
+    // 折叠卡复用 0916 AI 卡结构（.ydo-ai-card + 左边框色调类 summary/patterns/recs/dims），
+    // 开关状态每卡内部持有（方案 §4.2：原视频拆解与改写分镜默认展开）。
+    function FoldCard({ tone, title, defaultOpen = false, digest = null, children }) {
+      const [open, setOpen] = React.useState(defaultOpen)
+      return h('section', { className: `ydo-ai-card ydo-ai-card-${tone}${open ? ' ydo-ai-card-open' : ''}` },
+        h('button', {
+          type: 'button', className: 'ydo-ai-card-toggle', 'aria-expanded': open,
+          onClick: () => setOpen(value => !value),
+        },
+        h('span', { className: 'ydo-ai-arrow', 'aria-hidden': true }, '▶'),
+        h('h4', null, title),
+        digest ? h('span', { className: 'ydo-ai-digest' }, digest) : null),
+        open ? h('div', { className: 'ydo-ai-card-body' }, children) : null)
     }
 
     // 重新改写弹框（方案 §4.1）：规则单选 + 取消/开始改写。确认回传选中的
@@ -2436,6 +2623,9 @@ window.__ModuleLoader__.load({
     const BD_WORKFLOW_POLL_INTERVAL_MS = 5000
     // workflow 轮询连续失败上限：25s（5 次 × 5s 间隔）内持续不可用即终止轮询。
     const BD_WORKFLOW_POLL_MAX_FAILURES = 5
+    // 拆解记录默认每页 10 条；「加载更多」逐页 +10，200 与宿主 handler clamp 上限一致。
+    const BD_HISTORY_PAGE_SIZE = 10
+    const BD_HISTORY_LIMIT_MAX = 200
 
     // 删除账号的客户端生命周期（能力矩阵的写操作状态语义）：
     // idle → awaiting_confirmation（确认框）→ confirmed_pending_adapter（设备清理 + 远端删除进行中）；
@@ -2584,29 +2774,40 @@ window.__ModuleLoader__.load({
         aiDimShortAudience: '受众', aiDimShortStability: '稳定',
         aiDimDetail: '证据与明细', aiLimitsTitle: '数据限制与免责',
         aiDigestLimits: '{n} 项',
-        // 爆款拆解 Tab（0922 方案 §4.1）
+        // 爆款拆解 Tab（0922 方案 §4.1；0923 视觉对齐预览稿 breakdown-tab-preview.html）
         tabBreakdown: '爆款拆解',
-        bdNewTitle: '新建拆解',
-        bdShareLabel: '抖音分享链接', bdSharePlaceholder: '粘贴抖音视频分享链接',
+        bdNewTitle: '发起拆解',
+        bdShareLabel: '抖音分享链接', bdSharePlaceholder: '粘贴抖音视频分享链接，如 https://v.douyin.com/xxxx/',
         bdStartButton: '开始拆解', bdSubmitting: '提交中…',
         bdArchivePending: '正在下载并归档视频，通常需要十几秒…',
-        bdRulesHint: '仿写规则可选：不选则按默认链路改写；拆解历史团队共享。',
-        bdRulesLabel: '仿写规则', bdRulesEmpty: '暂无可用仿写规则，将按默认链路改写', bdRulesRetry: '重新加载规则',
-        bdHistoryLabel: '拆解历史', bdHistoryEmpty: '还没有拆解记录，粘贴分享链接开始第一次拆解',
-        bdStatusSucceeded: '已完成', bdStatusFailed: '失败', bdStatusCancelled: '已取消', bdStatusRunning: '进行中',
+        bdRulesLabel: '仿写规则', bdRulesOptional: '（可选，单选；不选择则按默认方式仿写）',
+        bdRulesHint: '规则由服务端统一配置，一次仿写只应用一条主方向规则；提交后按所选规则生成仿写分镜与拍摄脚本。',
+        bdRulesEmpty: '暂无可用仿写规则，将按默认链路改写', bdRulesRetry: '重新加载规则',
+        bdHistoryLabel: '拆解记录', bdHistorySub: '（团队共享，按时间倒序）',
+        bdHistoryEmpty: '还没有拆解记录，粘贴分享链接开始第一次拆解',
+        bdColVideo: '视频', bdColStatus: '状态', bdColRule: '仿写规则', bdColStep: '当前步骤', bdColTime: '时间',
+        bdPlayLabel: '播放', bdRuleDefault: '默认', bdLoadMore: '加载更多',
+        bdStatusSucceeded: '已完成', bdStatusFailed: '失败', bdStatusCancelled: '已取消', bdStatusRunning: '拆解中',
         bdStatusNeedsInput: '待补充信息',
         bdProgressLabel: '拆解进度',
-        bdStep_archive_original: '归档', bdStep_transcode_audio: '转码', bdStep_asr: '语音识别',
+        bdStep_archive_original: '视频归档', bdStep_transcode_audio: '转码', bdStep_asr: '语音识别',
         bdStep_extract_frames: '抽帧', bdStep_vision: '画面理解', bdStep_breakdown: '结构拆解',
-        bdStep_storyboard: '改写分镜', bdStep_shot_script: '拍摄脚本',
+        bdStep_storyboard: '分镜仿写', bdStep_shot_script: '拍摄脚本',
+        bdKpiLabel: '视频数据', bdKpiPlay: '播放', bdKpiLike: '点赞', bdKpiComment: '评论',
+        bdKpiCollect: '收藏', bdKpiShare: '分享', bdKpiInteraction: '互动率',
+        bdPublishedAt: '发布于', bdOriginalLink: '原视频链接',
         bdRole_hook: '钩子', bdRole_build: '铺垫', bdRole_turn: '转折', bdRole_cta: '引导', bdRole_other: '其他',
-        bdSourceFrom: '来源段落',
+        bdColRole: '角色', bdColVisual: '画面', bdColSpeech: '口播',
+        bdSourceFrom: '源片段', bdShotSrcPrefix: '原片段：', bdShotCopyPrefix: '改写文案：', bdShotVisualPrefix: '画面提示：',
         bdCardOriginal: '原视频拆解', bdCardTranscript: '口播全文', bdCardStoryboard: '改写分镜',
         bdCardShotScript: '拍摄脚本', bdCardRule: '使用的仿写规则',
+        bdDigestAsr: '语音识别', bdDigestCharUnit: '字',
         bdSegmentUnit: '段', bdSectionPending: '本段内容尚未生成', bdDetailEmpty: '暂无拆解内容',
+        bdDetailEmptySub: '拆解完成后，此处将展示原视频拆解、改写分镜与拍摄脚本',
+        bdRunningTitle: '拆解进行中', bdRunningSub: '页面会自动刷新进度，拆解完成后此处展示拆解结果',
         bdShotQuotas: '景别配额', bdRuleNone: '本次拆解未使用仿写规则（默认链路改写）',
         bdBackToList: '← 返回列表', bdRewriteButton: '重新改写',
-        bdRewriteTitle: '重新改写这条视频', bdRewriteHint: '选择仿写规则后将以新规则版本重新生成分镜与脚本；原拆解记录保留。',
+        bdRewriteTitle: '重新改写这条视频', bdRewriteHint: '基于已完成的拆解结果，重新生成分镜与拍摄脚本；换用不同规则将生成一条新记录。',
         bdRewriteStart: '开始改写', bdRunningHint: '拆解进行中，页面会自动刷新进度…',
         bdErrorInvalidKey: '请求参数不合法，请刷新后重试', bdErrorRunNotFound: '任务不存在或已过期，请重新发起',
         bdErrorUnknownRule: '所选仿写规则不存在或已下线，请刷新规则列表', bdErrorConflict: '请求与历史记录不一致，请刷新后重试',
@@ -2741,29 +2942,41 @@ window.__ModuleLoader__.load({
         aiDimShortAudience: 'Audience', aiDimShortStability: 'Stability',
         aiDimDetail: 'Evidence & details', aiLimitsTitle: 'Data limits & disclaimer',
         aiDigestLimits: '{n}',
-        // Viral breakdown tab (0922 plan §4.1)
+        // Viral breakdown tab (0922 plan §4.1; 0923 visual alignment with breakdown-tab-preview.html)
         tabBreakdown: 'Viral breakdown',
-        bdNewTitle: 'New breakdown',
-        bdShareLabel: 'Douyin share link', bdSharePlaceholder: 'Paste a Douyin video share link',
+        bdNewTitle: 'Start a breakdown',
+        bdShareLabel: 'Douyin share link', bdSharePlaceholder: 'Paste a Douyin video share link, e.g. https://v.douyin.com/xxxx/',
         bdStartButton: 'Start breakdown', bdSubmitting: 'Submitting…',
         bdArchivePending: 'Downloading and archiving the video, usually takes a while…',
-        bdRulesHint: 'Rewrite rules are optional; without one the default pipeline applies. Breakdown history is shared with the team.',
-        bdRulesLabel: 'Rewrite rules', bdRulesEmpty: 'No rewrite rules available; the default pipeline will be used', bdRulesRetry: 'Reload rules',
-        bdHistoryLabel: 'Breakdown history', bdHistoryEmpty: 'No breakdowns yet — paste a share link to start the first one',
+        bdRulesLabel: 'Rewrite rules', bdRulesOptional: ' (optional, pick one; leave empty for the default rewrite)',
+        bdRulesHint: 'Rules are configured server-side; one rewrite applies a single primary rule. The storyboard and shot script are generated with the selected rule.',
+        bdRulesEmpty: 'No rewrite rules available; the default pipeline will be used', bdRulesRetry: 'Reload rules',
+        bdHistoryLabel: 'Breakdown records', bdHistorySub: ' (team-shared, newest first)',
+        bdHistoryEmpty: 'No breakdowns yet — paste a share link to start the first one',
+        bdColVideo: 'Video', bdColStatus: 'Status', bdColRule: 'Rewrite rule', bdColStep: 'Current step', bdColTime: 'Time',
+        bdPlayLabel: 'Plays', bdRuleDefault: 'Default', bdLoadMore: 'Load more',
         bdStatusSucceeded: 'Done', bdStatusFailed: 'Failed', bdStatusCancelled: 'Cancelled', bdStatusRunning: 'Running',
         bdStatusNeedsInput: 'Needs input',
         bdProgressLabel: 'Breakdown progress',
         bdStep_archive_original: 'Archive', bdStep_transcode_audio: 'Transcode', bdStep_asr: 'Speech-to-text',
         bdStep_extract_frames: 'Frames', bdStep_vision: 'Vision', bdStep_breakdown: 'Breakdown',
         bdStep_storyboard: 'Storyboard', bdStep_shot_script: 'Shot script',
+        bdKpiLabel: 'Video metrics', bdKpiPlay: 'Plays', bdKpiLike: 'Likes', bdKpiComment: 'Comments',
+        bdKpiCollect: 'Collects', bdKpiShare: 'Shares', bdKpiInteraction: 'Interaction',
+        bdPublishedAt: 'Published', bdOriginalLink: 'Original video',
         bdRole_hook: 'Hook', bdRole_build: 'Build-up', bdRole_turn: 'Turn', bdRole_cta: 'CTA', bdRole_other: 'Other',
-        bdSourceFrom: 'Source segments',
+        bdColRole: 'Role', bdColVisual: 'Visual', bdColSpeech: 'Voiceover',
+        bdSourceFrom: 'Source segment', bdShotSrcPrefix: 'Original: ', bdShotCopyPrefix: 'Rewritten: ', bdShotVisualPrefix: 'Visual: ',
         bdCardOriginal: 'Original breakdown', bdCardTranscript: 'Transcript', bdCardStoryboard: 'Rewritten storyboard',
         bdCardShotScript: 'Shot script', bdCardRule: 'Rewrite rule used',
+        bdDigestAsr: 'Speech-to-text', bdDigestCharUnit: ' chars',
         bdSegmentUnit: ' segments', bdSectionPending: 'Not generated yet', bdDetailEmpty: 'No breakdown content yet',
+        bdDetailEmptySub: 'Once the breakdown completes, the original analysis, rewritten storyboard and shot script appear here',
+        bdRunningTitle: 'Breakdown in progress',
+        bdRunningSub: 'This page refreshes automatically; results appear here once the breakdown completes',
         bdShotQuotas: 'Shot-size quotas', bdRuleNone: 'No rewrite rule was used (default pipeline)',
         bdBackToList: '← Back to list', bdRewriteButton: 'Rewrite',
-        bdRewriteTitle: 'Rewrite this video', bdRewriteHint: 'Picking a rule regenerates the storyboard and shot script as a new rule version; the original breakdown is kept.',
+        bdRewriteTitle: 'Rewrite this video', bdRewriteHint: 'Regenerate the storyboard and shot script from the completed breakdown; a different rule creates a new record.',
         bdRewriteStart: 'Start rewrite', bdRunningHint: 'Breakdown in progress — this page refreshes automatically…',
         bdErrorInvalidKey: 'Invalid request — refresh and retry', bdErrorRunNotFound: 'Task not found or expired — start again',
         bdErrorUnknownRule: 'The selected rewrite rule does not exist or is retired — refresh the rule list', bdErrorConflict: 'The request conflicts with a previous one — refresh and retry',
@@ -3197,6 +3410,13 @@ window.__ModuleLoader__.load({
       const [bdHistory, setBdHistory] = useState([])
       const [bdHistoryLoading, setBdHistoryLoading] = useState(false)
       const [bdHistoryError, setBdHistoryError] = useState(null)
+      // 拆解记录分页（预览稿「加载更多」）：默认 10 条，逐页 +10 递增拉取；服务端
+      // 无游标，翻页 = limit 递增全量重拉（上限 200 与宿主 handler clamp 一致），
+      // 切 Tab/详情返回不重置页码。
+      const [bdHistoryLimit, setBdHistoryLimit] = useState(BD_HISTORY_PAGE_SIZE)
+      const [bdHistoryLoadingMore, setBdHistoryLoadingMore] = useState(false)
+      // 页码的 ref 镜像：loadBdHistory 无参调用读这里（见其注释）。
+      const bdHistoryLimitRef = useRef(BD_HISTORY_PAGE_SIZE)
       const [bdSubmitting, setBdSubmitting] = useState(false)
       // 主视图「新建拆解」的提交/归档失败文案（与详情页错误独立）。
       const [bdStartError, setBdStartError] = useState(null)
@@ -3652,18 +3872,28 @@ window.__ModuleLoader__.load({
         }
       }, [bdErrorKey])
 
-      const loadBdHistory = useCallback(async () => {
-        setBdHistoryLoading(true)
+      // 拆解记录加载（预览稿分页口径）：limit 递增全量重拉。当前页码用 ref 镜像——
+      // 归档完成/返回列表/Tab 进入的后续刷新读 ref，闭包恒新鲜且不进依赖数组
+      //（进 useEffect 依赖会让「加载更多」成功后的 setBdHistoryLimit 再触发一次重拉）。
+      const loadBdHistory = useCallback(async (limit, { more = false } = {}) => {
+        const pageLimit = Math.min(Math.max(Number(limit) || bdHistoryLimitRef.current, 1), BD_HISTORY_LIMIT_MAX)
+        if (more) {
+          setBdHistoryLoadingMore(true)
+        } else {
+          setBdHistoryLoading(true)
+        }
         setBdHistoryError(null)
         try {
-          // 服务端无游标，total 是本页计数；首屏 limit=20，方案 §4.2 不做「加载更多」。
-          const result = await post({ action: 'breakdown.history', limit: 20 })
+          const result = await post({ action: 'breakdown.history', limit: pageLimit })
           if (result.status !== 'ready') { setBdHistoryError(bdErrorKey(result.reason)); return }
           setBdHistory(Array.isArray(result.history) ? result.history : [])
+          setBdHistoryLimit(pageLimit)
+          bdHistoryLimitRef.current = pageLimit
         } catch {
           setBdHistoryError('operationUnavailable')
         } finally {
           setBdHistoryLoading(false)
+          setBdHistoryLoadingMore(false)
         }
       }, [bdErrorKey])
 
@@ -3680,7 +3910,12 @@ window.__ModuleLoader__.load({
             setBdDetailError(bdErrorKey(result.reason))
             return
           }
-          setBdDetail({ storyboards: Array.isArray(result.storyboards) ? result.storyboards : [], analysis: result.analysis || null })
+          setBdDetail({
+            storyboards: Array.isArray(result.storyboards) ? result.storyboards : [],
+            analysis: result.analysis || null,
+            // 候选公开指标（互动数据/发布时间/原视频链接）：独立降级源，缺失为 null。
+            candidate: result.candidate || null,
+          })
         } catch {
           if (requestId !== bdDetailRequestRef.current) return
           setBdDetailError('operationUnavailable')
@@ -4119,6 +4354,9 @@ window.__ModuleLoader__.load({
                   ? h(BreakdownDetailPage, {
                     workflow: bdDetailWorkflow,
                     detail: bdDetail,
+                    // 候选公开指标与规则清单（规则名解析）：独立降级，缺失按 — 展示。
+                    candidate: bdDetail?.candidate || null,
+                    rules: bdRules,
                     loading: bdDetailLoading,
                     errorReason: bdDetailError,
                     onBack: backToBdList,
@@ -4138,8 +4376,13 @@ window.__ModuleLoader__.load({
                     }),
                     h(BreakdownHistoryList, {
                       history: bdHistory,
+                      rules: bdRules,
                       loading: bdHistoryLoading,
                       errorReason: bdHistoryError,
+                      // 分页（预览稿「加载更多」）：拉满当前页码且未到上限才显示入口。
+                      hasMore: bdHistory.length >= bdHistoryLimit && bdHistoryLimit < BD_HISTORY_LIMIT_MAX,
+                      loadingMore: bdHistoryLoadingMore,
+                      onLoadMore: () => loadBdHistory(bdHistoryLimit + BD_HISTORY_PAGE_SIZE, { more: true }).catch(() => {}),
                       onOpen: openBdDetail,
                       t,
                     })))
@@ -4332,12 +4575,17 @@ window.__ModuleLoader__.load({
     .ydo-ai-chip:hover{background:var(--dsw-alias-brand-primary);border-color:var(--dsw-alias-brand-primary);color:var(--dsw-alias-label-primary-foreground)}
     .ydo-ai-limits{margin:0;padding-left:16px;display:grid;gap:4px;color:var(--dsw-alias-label-secondary);font-size:12px}
     .ydo-ai-disclaimer{margin:10px 0 0;font-size:11px;color:var(--dsw-alias-label-secondary)}
-    /* 爆款拆解 Tab（0922 方案 §4.1）：单列纵向滚动页；主视图两块（新建+历史），详情页复用 AI 卡折叠结构。 */
+    /* 爆款拆解 Tab（0922 方案 §4.1；0923 视觉对齐预览稿 breakdown-tab-preview.html）：
+       主视图 = 发起拆解卡 + 拆解记录表格（默认 10 条 + 「加载更多」分页）；详情页 =
+       白卡头部（标题/meta 行/状态徽标/8 段进度条）+ 6 指标条 + 五张折叠卡（复用 AI 卡色调：
+       summary=蓝 / dims=灰 / patterns=紫 / recs=绿，与预览稿五卡一致）。 */
     .ydo-bd-body{grid-template-rows:1fr;overflow:auto}
     .ydo-bd-main{display:grid;gap:16px;align-content:start;min-width:0}
     .ydo-bd-page{display:grid;gap:12px;align-content:start;min-width:0}
     .ydo-bd-new{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
     .ydo-bd-input{flex:1;min-width:260px;max-width:560px}
+    .ydo-bd-rules-field{display:grid;gap:8px;margin-top:14px}
+    .ydo-bd-field-label{margin:0;color:var(--dsw-alias-label-secondary);font-size:12px}
     .ydo-bd-rules{display:flex;flex-wrap:wrap;gap:10px}
     .ydo-bd-radio{display:grid;gap:4px;min-width:200px;max-width:320px;padding:10px 12px;border:1px solid var(--dsw-alias-border-l1);border-radius:8px;background:var(--dsw-alias-bg-layer-1);color:inherit;font:inherit;text-align:left;cursor:pointer}
     .ydo-bd-radio:hover{background:var(--dsw-alias-bg-layer-2)}
@@ -4346,37 +4594,76 @@ window.__ModuleLoader__.load({
     .ydo-bd-radio:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:2px}
     .ydo-bd-radio-name{font-size:var(--dsh-content-font-size,14px);font-weight:600}
     .ydo-bd-radio-desc{color:var(--dsw-alias-label-secondary);font-size:var(--dsh-content-font-size-secondary,13px);line-height:1.5}
-    .ydo-bd-history{display:grid;gap:8px}
-    .ydo-bd-row{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(90px,auto) auto;align-items:center;gap:12px;padding:10px 12px;border:1px solid var(--dsw-alias-border-l1);border-radius:8px;background:var(--dsw-alias-bg-layer-1);color:inherit;font:inherit;text-align:left;cursor:pointer}
-    .ydo-bd-row:hover{background:var(--dsw-alias-bg-layer-2)}
-    .ydo-bd-row:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:-2px}
-    .ydo-bd-row-main{display:grid;gap:2px;min-width:0}
-    .ydo-bd-row-title{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:var(--dsh-content-font-size,14px);font-weight:600}
-    .ydo-bd-row-author{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--dsw-alias-label-secondary);font-size:var(--dsh-content-font-size-secondary,13px)}
-    .ydo-bd-row-step{color:var(--dsw-alias-label-secondary);font-size:var(--dsh-content-font-size-secondary,13px);white-space:nowrap}
-    .ydo-bd-row-time{color:var(--dsw-alias-label-secondary);font-size:var(--dsh-content-font-size-secondary,13px);white-space:nowrap;font-variant-numeric:tabular-nums}
-    .ydo-bd-status{padding:2px 8px;border-radius:4px;background:var(--dsw-alias-bg-layer-2);font-size:var(--dsh-content-font-size-secondary,13px);white-space:nowrap;flex:none}
-    .ydo-bd-status-ok{color:color-mix(in srgb,var(--dsw-alias-state-success-primary,#1a7f37) 60%,var(--dsw-alias-label-primary))}
-    .ydo-bd-status-error{color:color-mix(in srgb,var(--dsw-alias-state-error-primary) 60%,var(--dsw-alias-label-primary))}
-    .ydo-bd-status-warn{color:color-mix(in srgb,var(--dsw-alias-state-warn-primary,#d29922) 60%,var(--dsw-alias-label-primary))}
-    .ydo-bd-status-running{color:var(--dsw-alias-brand-primary)}
-    .ydo-bd-head-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
-    .ydo-bd-head-row h3{margin:0;font-size:var(--dsw-font-base-16-font-size,16px)}
-    .ydo-bd-steps{display:flex;flex-wrap:wrap;gap:6px;margin:0;padding:0;list-style:none}
-    .ydo-bd-step{padding:3px 10px;border:1px solid var(--dsw-alias-border-l1);border-radius:999px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-secondary);font-size:12px;white-space:nowrap}
-    .ydo-bd-step-done{color:color-mix(in srgb,var(--dsw-alias-state-success-primary,#1a7f37) 60%,var(--dsw-alias-label-primary));border-color:color-mix(in srgb,var(--dsw-alias-state-success-primary,#1a7f37) 35%,transparent)}
-    .ydo-bd-step-active{color:var(--dsw-alias-brand-primary);border-color:var(--dsw-alias-brand-primary);font-weight:600}
+    /* 拆解记录表格（预览稿 tbl）：表头次要色 12px；行 hover 弱底、标题粗体 + 作者·播放副行；
+       当前步骤列随行状态着色（运行蓝/失败红），时间列等宽数字。 */
+    .ydo-bd-history{min-width:0}.ydo-bd-history-sub{margin-left:6px;font-size:12px;font-weight:400;color:var(--dsw-alias-label-secondary)}
+    .ydo-bd-table{width:100%;border-collapse:collapse}
+    .ydo-bd-table th{text-align:left;padding:8px 10px;border-bottom:1px solid var(--dsw-alias-border-l1);color:var(--dsw-alias-label-secondary);font-size:12px;font-weight:500;white-space:nowrap}
+    .ydo-bd-table td{padding:10px;border-bottom:1px solid var(--dsw-alias-bg-layer-2);vertical-align:top;font-size:var(--dsh-content-font-size-secondary,13px)}
+    .ydo-bd-history tbody tr{cursor:pointer}
+    .ydo-bd-history tbody tr:hover{background:var(--dsw-alias-bg-layer-2)}
+    .ydo-bd-history tbody tr:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:-2px}
+    .ydo-bd-cell-main{display:grid;gap:2px;min-width:0;max-width:320px}
+    .ydo-bd-row-title{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600}
+    .ydo-bd-row-sub{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--dsw-alias-label-secondary);font-size:12px}
+    .ydo-bd-row-step{color:var(--dsw-alias-label-secondary);white-space:nowrap}
+    .ydo-bd-row-step-running{color:var(--dsw-alias-brand-primary)}
+    .ydo-bd-row-step-failed{color:var(--dsw-alias-state-error-primary)}
+    .ydo-bd-row-time{color:var(--dsw-alias-label-secondary);white-space:nowrap;font-variant-numeric:tabular-nums}
+    /* 状态/规则 pill（预览稿 tag）：语义色弱底圆角；规则紫、未选规则中性灰。 */
+    .ydo-bd-status{display:inline-block;padding:1px 8px;border-radius:10px;font-size:11px;font-weight:600;white-space:nowrap}
+    .ydo-bd-status-ok{background:color-mix(in srgb,var(--dsw-alias-state-success-primary,#1a7f37) 12%,transparent);color:color-mix(in srgb,var(--dsw-alias-state-success-primary,#1a7f37) 80%,var(--dsw-alias-label-primary))}
+    .ydo-bd-status-error{background:color-mix(in srgb,var(--dsw-alias-state-error-primary) 12%,transparent);color:var(--dsw-alias-state-error-primary)}
+    .ydo-bd-status-warn{background:color-mix(in srgb,var(--dsw-alias-state-warn-primary,#d29922) 14%,transparent);color:color-mix(in srgb,var(--dsw-alias-state-warn-primary,#d29922) 75%,var(--dsw-alias-label-primary))}
+    .ydo-bd-status-running{background:color-mix(in srgb,var(--dsw-alias-brand-primary) 12%,transparent);color:var(--dsw-alias-brand-primary)}
+    .ydo-bd-rule-pill{display:inline-block;padding:1px 8px;border-radius:10px;font-size:11px;font-weight:500;background:color-mix(in srgb,#7c5cff 12%,transparent);color:#7c5cff;white-space:nowrap}
+    .ydo-bd-rule-pill-default{background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-secondary)}
+    .ydo-bd-more{display:flex;justify-content:center;padding-top:12px}
+    /* 详情页白卡头部（预览稿 detail-head）。 */
+    .ydo-bd-head{display:grid;gap:12px;padding:14px 16px;border:1px solid var(--dsw-alias-border-l1);border-radius:8px;background:var(--dsw-alias-bg-layer-1)}
+    .ydo-bd-head-row{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+    .ydo-bd-head-main{display:grid;gap:4px;min-width:0}
+    .ydo-bd-head-row h3{margin:0;font-size:15px;line-height:1.4}
+    .ydo-bd-head-meta{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0;color:var(--dsw-alias-label-secondary);font-size:12px}
+    .ydo-bd-head-meta a{color:var(--dsw-alias-brand-primary);text-decoration:none}
+    .ydo-bd-head-meta a:hover{text-decoration:underline}
+    /* 8 段进度条（预览稿 steps）：每步 4px 色条在上、步骤名在下；完成绿/当前蓝。 */
+    .ydo-bd-steps{display:flex;gap:4px;margin:0;padding:0;list-style:none}
+    .ydo-bd-step{flex:1;min-width:0;text-align:center}
+    .ydo-bd-step-bar{display:block;height:4px;border-radius:2px;background:var(--dsw-alias-bg-layer-2);margin-bottom:6px}
+    .ydo-bd-step-name{font-size:11px;color:var(--dsw-alias-label-secondary);white-space:nowrap}
+    .ydo-bd-step-done .ydo-bd-step-bar{background:var(--dsw-alias-state-success-primary,#1a7f37)}
+    .ydo-bd-step-done .ydo-bd-step-name{color:color-mix(in srgb,var(--dsw-alias-state-success-primary,#1a7f37) 80%,var(--dsw-alias-label-primary))}
+    .ydo-bd-step-active .ydo-bd-step-bar{background:var(--dsw-alias-brand-primary)}
+    .ydo-bd-step-active .ydo-bd-step-name{color:var(--dsw-alias-brand-primary);font-weight:600}
+    /* 6 指标条（预览稿 kpis）：auto-fit 自适应列数，面板 ≥616px 一行六列，更窄自动换行。 */
+    .ydo-bd-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(96px,1fr));gap:8px}
+    .ydo-bd-kpi{min-width:0;padding:8px 10px;border:1px solid var(--dsw-alias-border-l1);border-radius:8px;background:var(--dsw-alias-bg-layer-1)}
+    .ydo-bd-kpi-label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;color:var(--dsw-alias-label-secondary)}
+    .ydo-bd-kpi-value{margin-top:2px;font-size:15px;font-weight:700;font-variant-numeric:tabular-nums}
+    /* 失败提示框（预览稿 err-box）。 */
+    .ydo-bd-error-box{margin:0;padding:12px 14px;border:1px solid var(--dsw-alias-state-error-primary);border-radius:8px;background:color-mix(in srgb,var(--dsw-alias-state-error-primary) 8%,transparent);color:var(--dsw-alias-state-error-primary);font-weight:600;font-size:var(--dsh-content-font-size-secondary,13px)}
+    /* 空态/进行中大卡（0923 体验优化）：居中留白、主副文案分层，替换原先拥挤的小字提示。 */
+    .ydo-bd-empty{display:grid;justify-items:center;gap:10px;padding:44px 24px;border:1px dashed var(--dsw-alias-border-l1);border-radius:8px;background:var(--dsw-alias-bg-layer-1);text-align:center}
+    .ydo-bd-empty-spinner{width:22px;height:22px;border-width:3px}
+    .ydo-bd-empty-title{margin:0;font-size:15px;font-weight:600}
+    .ydo-bd-empty-sub{margin:0;max-width:420px;font-size:var(--dsh-content-font-size-secondary,13px);line-height:1.7;color:var(--dsw-alias-label-secondary)}
     .ydo-bd-cards{display:grid;gap:12px;min-width:0}
-    .ydo-bd-quote{margin:0 0 10px;padding:10px 12px;border-left:3px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-2);border-radius:0 6px 6px 0;white-space:pre-wrap;word-break:break-word;font-size:var(--dsh-content-font-size-secondary,13px);line-height:1.6}
-    .ydo-bd-seg-list{display:grid;gap:10px}
-    .ydo-bd-seg{display:grid;gap:6px;padding:10px 12px;border:1px solid var(--dsw-alias-border-l1);border-radius:8px;background:var(--dsw-alias-bg-base)}
-    .ydo-bd-seg-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-    .ydo-bd-seg-time{font-variant-numeric:tabular-nums;color:var(--dsw-alias-label-secondary);font-size:var(--dsh-content-font-size-secondary,13px)}
-    .ydo-bd-seg p{margin:0;font-size:var(--dsh-content-font-size-secondary,13px);line-height:1.6;word-break:break-word}
-    .ydo-bd-seg-visual{color:var(--dsw-alias-label-secondary)}
-    .ydo-bd-seg-speech{color:var(--dsw-alias-label-primary)}
-    .ydo-bd-seg-copy{color:var(--dsw-alias-label-primary);font-weight:550}
-    .ydo-bd-seg-source{margin-left:auto;color:var(--dsw-alias-label-secondary);font-size:12px}
+    .ydo-bd-card-body-gap{display:grid;gap:10px;min-width:0}
+    .ydo-bd-quote{margin:0;padding:10px 12px;border-left:3px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-2);border-radius:0 6px 6px 0;white-space:pre-wrap;word-break:break-word;font-size:var(--dsh-content-font-size-secondary,13px);line-height:1.6}
+    /* 原视频拆解四列表（时间/角色/画面/口播）与列表同基样式，容器负责窄幅横向滚动。 */
+    .ydo-bd-seg-wrap{overflow-x:auto}
+    .ydo-bd-seg-time{font-variant-numeric:tabular-nums;color:var(--dsw-alias-label-secondary);font-size:12px;white-space:nowrap}
+    .ydo-bd-seg-source{margin-left:auto;color:var(--dsw-alias-label-secondary);font-size:12px;white-space:nowrap}
+    /* 改写分镜卡（预览稿 shot）：原片段灰底引用、改写文案主行、画面提示次行；前缀走文案键。 */
+    .ydo-bd-shot-list{display:grid;gap:8px}
+    .ydo-bd-shot{display:grid;gap:6px;padding:10px 12px;border:1px solid var(--dsw-alias-border-l1);border-radius:6px;background:var(--dsw-alias-bg-base)}
+    .ydo-bd-shot-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+    .ydo-bd-shot-src{margin:0;padding:6px 8px;border-radius:4px;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-secondary);font-size:12px;line-height:1.6;word-break:break-word}
+    .ydo-bd-shot-copy{margin:0;font-size:var(--dsh-content-font-size,14px);line-height:1.6;word-break:break-word}
+    .ydo-bd-shot-visual{margin:0;color:var(--dsw-alias-label-secondary);font-size:var(--dsh-content-font-size-secondary,13px);line-height:1.6;word-break:break-word}
+    .ydo-bd-shot-prefix{font-weight:600;color:var(--dsw-alias-label-secondary);font-size:12px}
+    .ydo-bd-shot-prefix-copy{color:var(--dsw-alias-brand-primary)}
     .ydo-bd-role{padding:1px 8px;border-radius:4px;font-size:11px;white-space:nowrap}
     .ydo-bd-role-hook{background:color-mix(in srgb,var(--dsw-alias-brand-primary) 12%,transparent);color:var(--dsw-alias-brand-primary)}
     .ydo-bd-role-build{background:color-mix(in srgb,var(--dsw-alias-state-success-primary,#1a7f37) 12%,transparent);color:color-mix(in srgb,var(--dsw-alias-state-success-primary,#1a7f37) 70%,var(--dsw-alias-label-primary))}
@@ -4388,7 +4675,8 @@ window.__ModuleLoader__.load({
     .ydo-bd-shot-table th,.ydo-bd-shot-table td{padding:6px 10px;border:1px solid var(--dsw-alias-border-l1);text-align:left;vertical-align:top;white-space:pre-wrap;word-break:break-word}
     .ydo-bd-shot-table th{background:var(--dsw-alias-bg-layer-2);font-weight:600;white-space:nowrap}
     .ydo-bd-shot-note{margin:8px 0 0;color:var(--dsw-alias-label-secondary);font-size:var(--dsh-content-font-size-secondary,13px);line-height:1.6;white-space:pre-wrap;word-break:break-word}
-    .ydo-bd-rule-used{display:grid;gap:8px;justify-items:start}
+    .ydo-bd-rule-used{display:grid;gap:8px}
+    .ydo-bd-rule-desc{color:var(--dsw-alias-label-secondary);font-size:var(--dsh-content-font-size-secondary,13px);line-height:1.5}
     .ydo-bd-modal-actions{display:flex;justify-content:flex-end;gap:12px;padding:14px 16px;border-top:1px solid var(--dsw-alias-border-l1)}
     `;
     function apply(ctx) {
