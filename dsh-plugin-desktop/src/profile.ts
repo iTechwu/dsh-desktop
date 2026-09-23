@@ -166,7 +166,9 @@ export function filterDesktopBrandPatches(patches: PatchOptions[]): PatchOptions
       const id = String((row as { id?: unknown }).id ?? '')
       // The desktop client owns activation and branding in both distributions.
       if (id === 'dofe-yootun-ui') return false
-      if (BRAND_VARIANT === 'yootun') return !YOOTUN_PRIVATE_PLUGIN_ROW_IDS.has(id) && !SENSTEED_PRIVATE_PLUGIN_ROW_IDS.has(id)
+      // The yootun build keeps its own private rows and drops only the
+      // sensteed-only datasource rows.
+      if (BRAND_VARIANT === 'yootun') return !SENSTEED_PRIVATE_PLUGIN_ROW_IDS.has(id)
       return !YOOTUN_PRIVATE_PLUGIN_ROW_IDS.has(id)
     }) }
   })

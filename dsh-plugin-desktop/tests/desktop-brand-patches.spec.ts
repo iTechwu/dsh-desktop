@@ -36,7 +36,9 @@ describe('desktop brand patch filtering', () => {
       expect(ids).toContain('dofe-sensteed-supplier-intelligence')
       expect(ids).not.toContain('dofe-yootun-sales')
     } else {
-      expect(ids).not.toContain('dofe-yootun-sales')
+      // The yootun build keeps its own private rows and drops only the
+      // sensteed-only datasource rows.
+      expect(ids).toContain('dofe-yootun-sales')
       expect(ids).not.toContain('dofe-sensteed-finance')
       expect(ids).not.toContain('dofe-sensteed-supplier-intelligence')
     }
