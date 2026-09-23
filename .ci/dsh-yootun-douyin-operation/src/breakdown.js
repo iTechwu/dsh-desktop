@@ -340,7 +340,9 @@ export function BreakdownRulePicker({ rules, value, onChange, disabled, t }) {
         disabled,
         onClick: () => onChange(value === rule.rewriteRuleId ? null : rule.rewriteRuleId),
       },
-      h('span', { className: 'ydo-bd-radio-name' }, rule.name),
+      h('span', { className: 'ydo-bd-radio-name' },
+        h('span', { className: 'ydo-bd-radio-box', 'aria-hidden': true }),
+        rule.name),
       rule.description ? h('span', { className: 'ydo-bd-radio-desc' }, rule.description) : null))
       : h('span', { className: 'ydo-hint' }, t('bdRulesEmpty')))
 }
@@ -359,7 +361,7 @@ export function BreakdownNewPage({ rules, rulesError, onRetryRules, submitting, 
     setShareUrl('')
     setRuleId(null)
   }
-  return h('section', { className: 'ydo-ov-panel' },
+  return h('section', { className: 'ydo-ov-panel ydo-bd-panel' },
     h('h3', null, t('bdNewTitle')),
     h('div', { className: 'ydo-bd-new' },
       h('input', {
@@ -434,7 +436,7 @@ export function BreakdownHistoryList({ history, rules, loading, errorReason, has
   })
   // 预览稿 panel 口径：可见标题「拆解记录（团队共享，按时间倒序）」，记录区与
   // 发起区同为 ydo-ov-panel；空态/错误态同样带标题，保持结构对称。
-  return h('section', { className: 'ydo-ov-panel ydo-bd-history', role: 'group', 'aria-label': t('bdHistoryLabel') },
+  return h('section', { className: 'ydo-ov-panel ydo-bd-panel ydo-bd-history', role: 'group', 'aria-label': t('bdHistoryLabel') },
     h('h3', null, t('bdHistoryLabel'),
       h('span', { className: 'ydo-bd-history-sub' }, t('bdHistorySub'))),
     errorReason
@@ -495,10 +497,11 @@ export function BreakdownDetailPage({ workflow, detail, candidate, rules, loadin
   // 走「暂无拆解内容」引导，避免误导。
   const pending = Boolean(workflow) && !failed && breakdownStatusTone(workflow.status) === 'running'
   return h('div', { className: 'ydo-bd-page' },
+    // 预览稿 detail-top：返回靠左、「重新改写」靠右（弹性撑开）。
     h('div', { className: 'ydo-an-toolbar' },
       h('button', { type: 'button', className: 'ydo-secondary', onClick: onBack }, t('bdBackToList')),
       h('button', {
-        type: 'button', className: 'ydo-secondary',
+        type: 'button', className: 'ydo-secondary ydo-bd-toolbar-rewrite',
         disabled: pending || loading,
         onClick: onRequestRewrite,
       }, t('bdRewriteButton'))),
@@ -602,8 +605,10 @@ function FoldCard({ tone, title, defaultOpen = false, digest = null, children })
 export function BreakdownRewriteModal({ open, rules, submitting, onConfirm, onClose, t }) {
   const [ruleId, setRuleId] = React.useState(null)
   if (!open) return null
-  return h('div', { className: 'ydo-ai-modal-overlay', role: 'dialog', 'aria-modal': true, 'aria-label': t('bdRewriteTitle') },
-    h('div', { className: 'ydo-ai-modal' },
+  // 预览稿 dialog 口径：560px 居中、radius 10、深遮罩；特化类只覆盖宽度/
+  // 遮罩/字号/底部按钮行，交互复用 ydo-ai-modal 既有结构（含右上 × 关闭）。
+  return h('div', { className: 'ydo-ai-modal-overlay ydo-bd-modal-overlay', role: 'dialog', 'aria-modal': true, 'aria-label': t('bdRewriteTitle') },
+    h('div', { className: 'ydo-ai-modal ydo-bd-modal' },
       h('button', { type: 'button', className: 'ydo-ai-modal-close', 'aria-label': t('close'), onClick: onClose },
         h(IconCloseOutline16, { size: 16 })),
       h('div', { className: 'ydo-ai-modal-body' },

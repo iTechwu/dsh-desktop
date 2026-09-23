@@ -2307,7 +2307,9 @@ window.__ModuleLoader__.load({
             disabled,
             onClick: () => onChange(value === rule.rewriteRuleId ? null : rule.rewriteRuleId),
           },
-          h('span', { className: 'ydo-bd-radio-name' }, rule.name),
+          h('span', { className: 'ydo-bd-radio-name' },
+            h('span', { className: 'ydo-bd-radio-box', 'aria-hidden': true }),
+            rule.name),
           rule.description ? h('span', { className: 'ydo-bd-radio-desc' }, rule.description) : null))
           : h('span', { className: 'ydo-hint' }, t('bdRulesEmpty')))
     }
@@ -2326,7 +2328,7 @@ window.__ModuleLoader__.load({
         setShareUrl('')
         setRuleId(null)
       }
-      return h('section', { className: 'ydo-ov-panel' },
+      return h('section', { className: 'ydo-ov-panel ydo-bd-panel' },
         h('h3', null, t('bdNewTitle')),
         h('div', { className: 'ydo-bd-new' },
           h('input', {
@@ -2401,7 +2403,7 @@ window.__ModuleLoader__.load({
       })
       // 预览稿 panel 口径：可见标题「拆解记录（团队共享，按时间倒序）」，记录区与
       // 发起区同为 ydo-ov-panel；空态/错误态同样带标题，保持结构对称。
-      return h('section', { className: 'ydo-ov-panel ydo-bd-history', role: 'group', 'aria-label': t('bdHistoryLabel') },
+      return h('section', { className: 'ydo-ov-panel ydo-bd-panel ydo-bd-history', role: 'group', 'aria-label': t('bdHistoryLabel') },
         h('h3', null, t('bdHistoryLabel'),
           h('span', { className: 'ydo-bd-history-sub' }, t('bdHistorySub'))),
         errorReason
@@ -2462,10 +2464,11 @@ window.__ModuleLoader__.load({
       // 走「暂无拆解内容」引导，避免误导。
       const pending = Boolean(workflow) && !failed && breakdownStatusTone(workflow.status) === 'running'
       return h('div', { className: 'ydo-bd-page' },
+        // 预览稿 detail-top：返回靠左、「重新改写」靠右（弹性撑开）。
         h('div', { className: 'ydo-an-toolbar' },
           h('button', { type: 'button', className: 'ydo-secondary', onClick: onBack }, t('bdBackToList')),
           h('button', {
-            type: 'button', className: 'ydo-secondary',
+            type: 'button', className: 'ydo-secondary ydo-bd-toolbar-rewrite',
             disabled: pending || loading,
             onClick: onRequestRewrite,
           }, t('bdRewriteButton'))),
@@ -2569,8 +2572,10 @@ window.__ModuleLoader__.load({
     function BreakdownRewriteModal({ open, rules, submitting, onConfirm, onClose, t }) {
       const [ruleId, setRuleId] = React.useState(null)
       if (!open) return null
-      return h('div', { className: 'ydo-ai-modal-overlay', role: 'dialog', 'aria-modal': true, 'aria-label': t('bdRewriteTitle') },
-        h('div', { className: 'ydo-ai-modal' },
+      // 预览稿 dialog 口径：560px 居中、radius 10、深遮罩；特化类只覆盖宽度/
+      // 遮罩/字号/底部按钮行，交互复用 ydo-ai-modal 既有结构（含右上 × 关闭）。
+      return h('div', { className: 'ydo-ai-modal-overlay ydo-bd-modal-overlay', role: 'dialog', 'aria-modal': true, 'aria-label': t('bdRewriteTitle') },
+        h('div', { className: 'ydo-ai-modal ydo-bd-modal' },
           h('button', { type: 'button', className: 'ydo-ai-modal-close', 'aria-label': t('close'), onClick: onClose },
             h(IconCloseOutline16, { size: 16 })),
           h('div', { className: 'ydo-ai-modal-body' },
@@ -4580,20 +4585,27 @@ window.__ModuleLoader__.load({
        白卡头部（标题/meta 行/状态徽标/8 段进度条）+ 6 指标条 + 五张折叠卡（复用 AI 卡色调：
        summary=蓝 / dims=灰 / patterns=紫 / recs=绿，与预览稿五卡一致）。 */
     .ydo-bd-body{grid-template-rows:1fr;overflow:auto}
-    .ydo-bd-main{display:grid;gap:16px;align-content:start;min-width:0}
-    .ydo-bd-page{display:grid;gap:12px;align-content:start;min-width:0}
-    .ydo-bd-new{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
-    .ydo-bd-input{flex:1;min-width:260px;max-width:560px}
+    /* 预览稿 .page 容器口径：拆解 Tab 两个视图统一 980px 限宽居中。 */
+    .ydo-bd-main{display:grid;gap:16px;align-content:start;min-width:0;max-width:980px;margin:0 auto;width:100%}
+    .ydo-bd-page{display:grid;gap:12px;align-content:start;min-width:0;max-width:980px;margin:0 auto;width:100%}
+    .ydo-bd-new{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+    .ydo-bd-input{flex:1;min-width:260px;max-width:560px;background:var(--dsw-alias-bg-layer-2)}
+    .ydo-bd-input:focus{background:var(--dsw-alias-bg-layer-1)}
     .ydo-bd-rules-field{display:grid;gap:8px;margin-top:14px}
     .ydo-bd-field-label{margin:0;color:var(--dsw-alias-label-secondary);font-size:12px}
-    .ydo-bd-rules{display:flex;flex-wrap:wrap;gap:10px}
-    .ydo-bd-radio{display:grid;gap:4px;min-width:200px;max-width:320px;padding:10px 12px;border:1px solid var(--dsw-alias-border-l1);border-radius:8px;background:var(--dsw-alias-bg-layer-1);color:inherit;font:inherit;text-align:left;cursor:pointer}
-    .ydo-bd-radio:hover{background:var(--dsw-alias-bg-layer-2)}
+    /* 规则单选（预览稿 rule-grid）：两列网格、卡内圆圈单选、选中浅蓝底。 */
+    .ydo-bd-rules{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+    @container ydo-panel (max-width:760px){.ydo-bd-rules{grid-template-columns:1fr}}
+    .ydo-bd-radio{display:grid;gap:4px;padding:10px 12px;border:1px solid var(--dsw-alias-border-l1);border-radius:6px;background:var(--dsw-alias-bg-layer-1);color:inherit;font:inherit;text-align:left;cursor:pointer}
+    .ydo-bd-radio:hover{border-color:var(--dsw-alias-brand-primary)}
     .ydo-bd-radio:disabled{opacity:.55;cursor:default}
-    .ydo-bd-radio-active{border-color:var(--dsw-alias-brand-primary);box-shadow:0 0 0 1px var(--dsw-alias-brand-primary)}
+    .ydo-bd-radio-active{border-color:var(--dsw-alias-brand-primary);background:color-mix(in srgb,var(--dsw-alias-brand-primary) 10%,var(--dsw-alias-bg-layer-1))}
     .ydo-bd-radio:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:2px}
-    .ydo-bd-radio-name{font-size:var(--dsh-content-font-size,14px);font-weight:600}
-    .ydo-bd-radio-desc{color:var(--dsw-alias-label-secondary);font-size:var(--dsh-content-font-size-secondary,13px);line-height:1.5}
+    .ydo-bd-radio-name{display:flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600}
+    .ydo-bd-radio-box{flex:none;width:14px;height:14px;border:1px solid var(--dsw-alias-border-l1);border-radius:50%;background:var(--dsw-alias-bg-layer-1)}
+    .ydo-bd-radio-active .ydo-bd-radio-box{border-color:var(--dsw-alias-brand-primary);position:relative}
+    .ydo-bd-radio-active .ydo-bd-radio-box::after{content:"";position:absolute;inset:2px;border-radius:50%;background:var(--dsw-alias-brand-primary)}
+    .ydo-bd-radio-desc{color:var(--dsw-alias-label-secondary);font-size:12px;line-height:1.5}
     /* 拆解记录表格（预览稿 tbl）：表头次要色 12px；行 hover 弱底、标题粗体 + 作者·播放副行；
        当前步骤列随行状态着色（运行蓝/失败红），时间列等宽数字。 */
     .ydo-bd-history{min-width:0}.ydo-bd-history-sub{margin-left:6px;font-size:12px;font-weight:400;color:var(--dsw-alias-label-secondary)}
@@ -4619,6 +4631,10 @@ window.__ModuleLoader__.load({
     .ydo-bd-rule-pill{display:inline-block;padding:1px 8px;border-radius:10px;font-size:11px;font-weight:500;background:color-mix(in srgb,#7c5cff 12%,transparent);color:#7c5cff;white-space:nowrap}
     .ydo-bd-rule-pill-default{background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-secondary)}
     .ydo-bd-more{display:flex;justify-content:center;padding-top:12px}
+    /* 预览稿 detail-top：返回靠左、「重新改写」靠右。 */
+    .ydo-bd-toolbar-rewrite{margin-left:auto}
+    /* 预览稿 .panel：拆解页两块面板 16px 内边距（ydo-ov-panel 默认 14）。 */
+    .ydo-bd-panel{padding:16px}
     /* 详情页白卡头部（预览稿 detail-head）。 */
     .ydo-bd-head{display:grid;gap:12px;padding:14px 16px;border:1px solid var(--dsw-alias-border-l1);border-radius:8px;background:var(--dsw-alias-bg-layer-1)}
     .ydo-bd-head-row{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
@@ -4677,7 +4693,14 @@ window.__ModuleLoader__.load({
     .ydo-bd-shot-note{margin:8px 0 0;color:var(--dsw-alias-label-secondary);font-size:var(--dsh-content-font-size-secondary,13px);line-height:1.6;white-space:pre-wrap;word-break:break-word}
     .ydo-bd-rule-used{display:grid;gap:8px}
     .ydo-bd-rule-desc{color:var(--dsw-alias-label-secondary);font-size:var(--dsh-content-font-size-secondary,13px);line-height:1.5}
-    .ydo-bd-modal-actions{display:flex;justify-content:flex-end;gap:12px;padding:14px 16px;border-top:1px solid var(--dsw-alias-border-l1)}
+    /* 重新改写弹框（预览稿 dialog）：560px 居中、radius 10、深遮罩；底部按钮行
+       无分隔线并入弹框内边距；标题 14px / 副文案 12px。交互复用 ydo-ai-modal。 */
+    .ydo-bd-modal-overlay{background:color-mix(in srgb,var(--dsw-alias-label-primary) 45%,transparent)}
+    .ydo-bd-modal{width:min(560px,calc(100vw - 48px));border-radius:10px}
+    .ydo-bd-modal .ydo-ai-modal-body{padding:18px}
+    .ydo-bd-modal .ydo-ai-modal-body h3{margin:0 0 4px;font-size:14px}
+    .ydo-bd-modal .ydo-ai-modal-body .ydo-hint{font-size:12px;margin-bottom:12px}
+    .ydo-bd-modal-actions{display:flex;justify-content:flex-end;gap:8px;padding:0 18px 18px;border-top:0}
     `;
     function apply(ctx) {
       ctx.effect(() => ctx.locale.register(NS, copy), 'dofe-yootun-douyin-operation: dictionaries')

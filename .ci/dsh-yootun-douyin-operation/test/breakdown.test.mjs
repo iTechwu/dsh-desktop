@@ -260,6 +260,11 @@ test('BreakdownNewPage：规则单选可切换/再点取消，onStart 回传 (sh
   radios = collectFlat(page).filter(node => node.props && node.props.role === 'radio')
   assert.equal(radios[0].props['aria-checked'], true, '点选后 aria-checked')
   assert.ok(radios[0].props.className.includes('ydo-bd-radio-active'), '选中态类')
+  // 预览稿对齐：规则卡名称前有单选圆圈（ydo-bd-radio-box）；面板挂 16px 特化类。
+  const radioBox = collectFlat(page).find(node => String(node.props.className || '') === 'ydo-bd-radio-box')
+  assert.ok(radioBox && radioBox.props['aria-hidden'] === true, '规则卡含单选圆圈')
+  const panel = collectFlat(page).find(node => String(node.props.className || '').includes('ydo-bd-panel'))
+  assert.ok(panel, '发起区面板挂 ydo-bd-panel（16px 内边距）')
   radios[0].props.onClick()
   page = render()
   radios = collectFlat(page).filter(node => node.props && node.props.role === 'radio')
