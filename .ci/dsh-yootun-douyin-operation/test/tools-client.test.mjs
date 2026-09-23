@@ -151,3 +151,43 @@ test('sessionIdempotencyKey：与服务端模板严格一致，同 seq 稳定、
   // 76 字符真实 sec_uid + 模板固定部分 ≤ 128（服务端 schema 上限内）。
   assert.ok(sessionIdempotencyKey('MS4wLjABAAAA-real-76-chars-account-id', 999999).length <= 128)
 })
+// ---------------------------------------------------------------------------
+// 爆款拆解（0922 方案）：工具白名单登记、稳定码白名单、受理键模板。
+// ---------------------------------------------------------------------------
+
+test('爆款拆解：七个 viral_video 工具全部进入 TOOL_NAMES 白名单', async () => {
+  const { TOOL_NAMES } = await import('../src/tools-client.js')
+  for (const name of [
+    'viral_video_archive_submit',
+    'viral_video_async_submit_get',
+    'viral_video_workflow_start',
+    'viral_video_workflow_get',
+    'viral_video_storyboards_list',
+    'viral_video_analysis_status_get',
+    'viral_video_rewrite_rules_list',
+  ]) {
+    assert.ok(TOOL_NAMES.includes(name), `missing ${name}`)
+  }
+})
+
+test('爆款拆解：新增稳定码进入白名单，未登记码仍收敛为兜底码', async () => {
+  for (const code of ['IDEMPOTENCY_KEY_REQUIRED', 'ASYNC_RUN_NOT_FOUND', 'UNKNOWN_REWRITE_RULE']) {
+    assert.equal(safeErrorCode(code), code)
+    const result = { structuredContent: envelope(code) }
+    assert.throws(
+      () => parseToolResult(result),
+      error => error instanceof ToolsCallError && error.code === code,
+    )
+  }
+  // 服务端未预期的码不允许透传（如内部 INTERNAL_ERROR 原文形态）
+  assert.equal(safeErrorCode('SOME_VIRAL_VIDEO_INTERNAL_CODE'), 'douyin_operation_request_failed')
+})
+
+test('爆款拆解：受理键模板与 0916 分析键同风格，每次点击独立 UUID', async () => {
+  const { viralVideoArchiveIdempotencyKey, viralVideoWorkflowIdempotencyKey } = await import('../src/tools-client.js')
+  assert.equal(viralVideoArchiveIdempotencyKey('uuid-a'), 'douyin:vv_archive:uuid-a')
+  assert.equal(viralVideoWorkflowIdempotencyKey('uuid-b'), 'douyin:vv_workflow:uuid-b')
+  // 长度上限校验：最长 UUID（36 字符）+ 前缀远小于服务端 1–128 约束
+  const longest = viralVideoArchiveIdempotencyKey('u'.repeat(36))
+  assert.ok(longest.length <= 128)
+})

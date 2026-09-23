@@ -1361,9 +1361,9 @@ test('Tab 激活态：只有当前 Tab 有底部指示线；左侧账号栏只�
   assert.match(activeTab[0], /border-bottom-color:var\(--dsw-alias-brand-primary\)/u)
   // 两个 Tab 的下划线互斥：aria-current 由 tab 状态单点决定（React 属性不存在同元素双值）。
   assert.ok(source.indexOf("'aria-current': tab === 'overview' || undefined") < source.indexOf("'aria-current': tab === 'videos' || undefined"))
-  // 左侧账号管理栏只在视频数据 Tab 渲染；总览上下文占满整行。
+  // 左侧账号管理栏只在视频数据 Tab 渲染；总览/单账号分析与爆款拆解（0922）占满整行。
   assert.match(source, /tab === 'videos' \? left : null/u)
-  assert.match(source, /className: `ydo-body\$\{tab === 'overview' \? ' ydo-body-full' : ''\}`/u)
+  assert.match(source, /className: `ydo-body\$\{tab === 'overview' \|\| tab === 'breakdown' \? ' ydo-body-full' : ''\}`/u)
   const css = source.match(/const css = `[\s\S]*`/u)[0]
   assert.match(css, /\.ydo-body-full\{grid-template-columns:1fr\}/u)
 })
@@ -2228,9 +2228,10 @@ test('v2 源码样式契约：窄列轨道、分布配色、抽屉尺寸与关�
   assert.match(source, /\.ydo-ai-modal\{[^}]*width:min\(880px,calc\(100vw - 48px\)\)/u)
   assert.match(source, /\.ydo-ai-modal-overlay\{position:fixed;inset:0;z-index:530/u)
   assert.match(source, /\.ydo-ai-modal-close\{[^}]*width:40px;height:40px/u)
-  // 需求 2：Esc 链插入 AI 弹框层（详情 → 抽屉 → AI 弹框 → overlay），且入依赖数组。
+  // 需求 2：Esc 链插入 AI 弹框层（详情 → 抽屉 → AI 弹框 → overlay），且入依赖数组；
+  // 0922 追加改写弹框层（AI 弹框之后、overlay 之前），依赖数组同步扩充。
   assert.match(source, /else if \(aiModalOpen\) setAiModalOpen\(false\)/u)
-  assert.match(source, /\[visible, detailWorkId, hotDrawerWork, aiModalOpen\]/u)
+  assert.match(source, /\[visible, detailWorkId, hotDrawerWork, aiModalOpen, bdRewriteOpen\]/u)
   // §5.2/§5.3：内容指标 3 列浅灰底圆角卡片（创作中心风格：标签小字在上、数值大字在下）、
   // 观众卡片两列；窄屏均退单列。
   assert.match(source, /\.ydo-an-metrics\{[^}]*grid-template-columns:repeat\(3,minmax\(0,1fr\)\)/u)

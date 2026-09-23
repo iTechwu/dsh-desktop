@@ -102,6 +102,20 @@ export function apply(ctx, overrides = {}) {
               return send(res, 200, await handleAiAnalysisStart(deps, toolCtx, body))
             case 'aiAnalysis.get':
               return send(res, 200, await handleAiAnalysisGet(deps, toolCtx, body))
+            case 'breakdown.rewriteRules':
+              return send(res, 200, await handleBreakdownRewriteRules(deps, toolCtx))
+            case 'breakdown.archiveStart':
+              return send(res, 200, await handleBreakdownArchiveStart(deps, toolCtx, body))
+            case 'breakdown.archiveStatus':
+              return send(res, 200, await handleBreakdownArchiveStatus(deps, toolCtx, body))
+            case 'breakdown.workflowStart':
+              return send(res, 200, await handleBreakdownWorkflowStart(deps, toolCtx, body))
+            case 'breakdown.workflowStatus':
+              return send(res, 200, await handleBreakdownWorkflowStatus(deps, toolCtx, body))
+            case 'breakdown.detail':
+              return send(res, 200, await handleBreakdownDetail(deps, toolCtx, body))
+            case 'breakdown.history':
+              return send(res, 200, await handleBreakdownHistory(deps, toolCtx, body))
             default:
               return send(res, 400, { status: 'error', reason: 'unknown_action' })
           }
@@ -642,6 +656,131 @@ async function handleAiAnalysisGet(deps, ctx, body) {
   // 服务端 get 返回 {status, analysis}（analysis=null 表示从未分析）：展平为
   // 页面单层投影——aiStatus 是运行态（分析中/失败优先展示），analysis 是当前结果。
   return { status: 'ready', aiStatus: payload.status, analysis: payload.analysis || null }
+}
+
+// ---------------------------------------------------------------------------
+// 爆款拆解（0922 方案）：直链归档 → 仿写工作流 → 状态组合。
+// archiveStart / workflowStart 是幂等写（confirm + 幂等键必需，键由页面生成并经
+// 前缀校验）；其余只读。服务端 workflow 状态投影里 candidate_id 是蛇形而其余字段
+// 是驼峰，宿主统一归一化为 candidateId 后再交给页面。
+// ---------------------------------------------------------------------------
+
+const BREAKDOWN_ARCHIVE_KEY_PATTERN = /^douyin:vv_archive:.+$/
+const BREAKDOWN_WORKFLOW_KEY_PATTERN = /^douyin:vv_workflow:.+$/
+
+function projectWorkflowItem(item) {
+  if (!item || typeof item !== 'object') return item
+  const { candidate_id: candidateId, ...rest } = item
+  return candidateId !== undefined ? { ...rest, candidateId } : rest
+}
+
+function projectWorkflowItems(payload) {
+  const items = Array.isArray(payload?.items) ? payload.items.map(projectWorkflowItem) : []
+  return { items, total: Number.isFinite(Number(payload?.total)) ? Number(payload.total) : items.length }
+}
+
+async function handleBreakdownRewriteRules(deps, ctx) {
+  const payload = await callTool(ctx, 'viral_video_rewrite_rules_list', {})
+  const items = Array.isArray(payload?.items) ? payload.items : []
+  // items 只含 rewriteRuleId/name/description：prompt 正文留在服务端配置里，不下发。
+  return { status: 'ready', rules: items, total: items.length }
+}
+
+async function handleBreakdownArchiveStart(deps, ctx, body) {
+  const shareUrl = cleanString(body.shareUrl, 2048)
+  if (!shareUrl) return { status: 'error', reason: 'share_url_required' }
+  const idempotencyKey = cleanString(body.idempotencyKey, 128)
+  if (!BREAKDOWN_ARCHIVE_KEY_PATTERN.test(idempotencyKey)) {
+    return { status: 'error', reason: 'INVALID_IDEMPOTENCY_KEY' }
+  }
+  // 服务端从键摘要派生 runId：waiting → 页面轮询 archiveStatus；同键重放返回
+  // 同一 run 回执，不重复下载/入库。
+  const payload = await callTool(ctx, 'viral_video_archive_submit', {
+    douyinVideoUrl: shareUrl,
+    confirm: true,
+    idempotencyKey,
+  })
+  return { status: 'ready', archive: payload }
+}
+
+async function handleBreakdownArchiveStatus(deps, ctx, body) {
+  const runId = cleanString(body.runId, MAX_ID)
+  if (!runId) return { status: 'error', reason: 'run_id_required' }
+  // 回执 {runId, runStatus, progress, result, nextAction}；completed 时 result
+  // 携带 candidateId，failed 时 error 携带稳定码。runId 不存在报 ASYNC_RUN_NOT_FOUND。
+  const payload = await callTool(ctx, 'viral_video_async_submit_get', { runId })
+  return { status: 'ready', archive: payload }
+}
+
+async function handleBreakdownWorkflowStart(deps, ctx, body) {
+  const candidateId = cleanString(body.candidateId, MAX_ID)
+  if (!candidateId) return { status: 'error', reason: 'candidate_id_required' }
+  const idempotencyKey = cleanString(body.idempotencyKey, 128)
+  if (!BREAKDOWN_WORKFLOW_KEY_PATTERN.test(idempotencyKey)) {
+    return { status: 'error', reason: 'INVALID_IDEMPOTENCY_KEY' }
+  }
+  const args = { candidateId, idempotencyKey, confirm: true }
+  // 规则单选可选：不传 = 与现有链路完全一致的默认改写；传入未知 id 时服务端
+  // 在成功 envelope 内返回 errorCode=unknown_rewrite_rule（不是 isError）。
+  const rewriteRuleId = cleanString(body.rewriteRuleId, 64)
+  if (rewriteRuleId) args.rewriteRuleId = rewriteRuleId
+  const payload = await callTool(ctx, 'viral_video_workflow_start', args)
+  return { status: 'ready', workflow: payload }
+}
+
+async function handleBreakdownWorkflowStatus(deps, ctx, body) {
+  // 轮询约定（R2）：优先传 workflowId 精确查询——同候选可并存多条工作流（多规则
+  // 版本），且旧记录被协调器补偿推进时会刷新 updated_at，按 candidateId 的
+  // 「最新一条」不保证就是本次受理的目标；workflowStart 回执已含 workflowId。
+  const args = {}
+  const workflowId = cleanString(body.workflowId, MAX_ID)
+  const candidateId = cleanString(body.candidateId, MAX_ID)
+  if (workflowId) args.workflowId = workflowId
+  else if (candidateId) args.candidateId = candidateId
+  else return { status: 'error', reason: 'candidate_id_required' }
+  const limit = clampInt(body.limit, 1, 20, 1)
+  if (limit > 0) args.limit = limit
+  const payload = await callTool(ctx, 'viral_video_workflow_get', args)
+  const projected = projectWorkflowItems(payload)
+  return { status: 'ready', workflows: projected.items, total: projected.total }
+}
+
+async function handleBreakdownDetail(deps, ctx, body) {
+  const candidateId = cleanString(body.candidateId, MAX_ID)
+  if (!candidateId) return { status: 'error', reason: 'candidate_id_required' }
+  // 两个数据源独立降级：storyboard 是详情主体（缺失即失败，不拖假数据），
+  // 分析步骤状态是辅助信息（失败单独透出 analysisError，不影响主体展示）。
+  let storyboards
+  try {
+    const payload = await callTool(ctx, 'viral_video_storyboards_list', { candidateId, limit: 20 })
+    storyboards = Array.isArray(payload?.items) ? payload.items : []
+  } catch (error) {
+    return { status: 'error', reason: safeErrorCode(error) }
+  }
+  let analysis = null
+  let analysisError = null
+  try {
+    analysis = await callTool(ctx, 'viral_video_analysis_status_get', { candidateId })
+  } catch (error) {
+    analysisError = safeErrorCode(error)
+  }
+  return { status: 'ready', storyboards, analysis, analysisError }
+}
+
+async function handleBreakdownHistory(deps, ctx, body) {
+  const args = { limit: clampInt(body.limit, 1, 20, 20) }
+  const payload = await callTool(ctx, 'viral_video_workflow_get', args)
+  const projected = projectWorkflowItems(payload)
+  // 服务端已按 updated_at 倒序。status=succeeded 由服务端在故事板与拍摄脚本**双成功**
+  // 后置位，因此该标记是保守方向：标 true 必有可展示拆解内容，标 false 不代表
+  // storyboard 未落库（拆解成功但脚本失败时 workflow=failed）。列表标记直接用状态
+  // 判定，避免逐条记录再查一次 storyboards 的 N+1；total 是本页计数，非全表剩余量
+  //（服务端无游标），「加载更多」只能 limit 递增全量拉。
+  const history = projected.items.map(item => ({
+    ...item,
+    hasStoryboard: item.status === 'succeeded',
+  }))
+  return { status: 'ready', history, total: projected.total }
 }
 
 function clampInt(value, min, max, fallback) {

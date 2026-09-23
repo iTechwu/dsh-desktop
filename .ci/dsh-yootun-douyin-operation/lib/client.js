@@ -1969,6 +1969,435 @@ window.__ModuleLoader__.load({
       douyin_operation_request_failed: 'operationUnavailable',
     })
 
+    // 爆款拆解 Tab UI 模块（0922 方案 §4.1）。
+    //
+    // 职责边界与 overview-ui / analysis-ui 相同：只做展示与本地格式化，零口径计算；
+    // 状态文案（状态标签/步骤名/错误文案）一律以 copy 登记为准，组件只按 reason 键取文案。
+    // 数据源 = 宿主 breakdown.* action（index.js 组合 viral_video 域工具）：
+    // - workflow 投影（history / workflowStatus）：状态/当前步骤/标题作者（P2 已把服务端
+    //   蛇形 candidate_id 归一化为 candidateId）
+    // - detail.storyboards[0]：originalVideoAnalysis / rewrittenStoryboard / shotScript /
+    //   input（规则回显）四块投影
+    // - detail.analysis.candidates[0].products.asr.transcript：口播全文
+    // 拍摄脚本是服务端产出的 Markdown 表格（纯文本），用 shotScriptTable 解析后以普通
+    // 表格元素渲染（React 文本子节点自动转义，无 HTML 注入面），不引入 markdown 依赖。
+
+
+    // React 由 client.js 内联作用域提供（构建时剥离本模块的 require，与 overview-ui 同法）；
+    // hooks 以 React.xxx 形式使用，避免与 client.js 顶部解构重复声明同名绑定。
+    // 关闭图标与作品详情/AI 弹框同款（client.js 顶部解构统一提供，构建时剥离此处 require）。
+
+    // 稳定 reason → 已登记文案键（与 overview-ui 同一策略；未登记码由调用方兜底）。
+    // 仅收 isError 形态 envelope 的白名单码；workflow_start 失败 payload 内的小写
+    // errorCode 走 WORKFLOW_ERROR_COPY，不经此处。
+    const BREAKDOWN_ERROR_REASON_COPY = Object.freeze({
+      IDEMPOTENCY_KEY_REQUIRED: 'bdErrorInvalidKey',
+      ASYNC_RUN_NOT_FOUND: 'bdErrorRunNotFound',
+      UNKNOWN_REWRITE_RULE: 'bdErrorUnknownRule',
+      IDEMPOTENCY_CONFLICT: 'bdErrorConflict',
+      DOUYIN_TOOL_UNAVAILABLE: 'operationUnavailable',
+      douyin_operation_request_failed: 'operationUnavailable',
+    })
+
+    // workflow 投影 status → 徽标语义色（类名后缀）；workflow_start 失败 payload 的
+    // status（invalid_input 等）一并收敛，未登记值按进行中处理（不误报成功/失败）。
+    const BREAKDOWN_STATUS_TONE = Object.freeze({
+      succeeded: 'ok',
+      failed: 'error',
+      cancelled: 'warn',
+      invalid_input: 'error',
+      idempotency_conflict: 'error',
+      needs_input: 'warn',
+      queued: 'running',
+      running: 'running',
+      waiting: 'running',
+    })
+
+    // Workflow Driver 推进步骤顺序（服务端 _WORKFLOW_STEP_LABELS 同序；queued/completed
+    // 是首尾状态不进条）。进行中条按此渲染 8 步：当前步高亮、之前的步视为已过。
+    const BREAKDOWN_WORKFLOW_STEPS = Object.freeze([
+      'archive_original',
+      'transcode_audio',
+      'asr',
+      'extract_frames',
+      'vision',
+      'breakdown',
+      'storyboard',
+      'shot_script',
+    ])
+
+    // 服务端 workflow 失败 errorCode（小写蛇形，payload/admin.errorCode）→ 文案键。
+    const WORKFLOW_ERROR_COPY = Object.freeze({
+      unknown_rewrite_rule: 'bdErrorUnknownRule',
+      candidate_not_found: 'bdErrorCandidateNotFound',
+      idempotency_conflict: 'bdErrorConflict',
+      invalid_input: 'bdErrorInvalidInput',
+      needs_product_input: 'bdErrorNeedsInput',
+      soft_time_limit: 'bdErrorRetryable',
+      waiting_timeout: 'bdErrorRetryable',
+      nonretryable_step: 'bdErrorFailed',
+      storyboard_quality: 'bdErrorRetryable',
+    })
+
+    function workflowErrorCopyKey(workflow) {
+      const code = workflow?.admin?.errorCode || workflow?.errorCode
+      return WORKFLOW_ERROR_COPY[code] || 'bdErrorFailed'
+    }
+
+    function breakdownStatusTone(status) {
+      return BREAKDOWN_STATUS_TONE[status] || 'running'
+    }
+
+    /**
+     * 解析拍摄脚本的 Markdown 表格（服务端 _request_shot_script_once 产出九列表）。
+     * 只认 `|` 分隔的连续表格块（首行是表头、第二行是 `---` 分隔线）；表格外非空行
+     * 按段落收集。全部以纯文本返回，渲染交给 React 子节点（自动转义）。
+     */
+    function shotScriptTable(markdown) {
+      const text = typeof markdown === 'string' ? markdown : ''
+      const lines = text.split(/\r?\n/)
+      const head = []
+      const rows = []
+      const paragraphs = []
+      let i = 0
+      while (i < lines.length) {
+        const cells = splitMarkdownRow(lines[i])
+        const separator = /^[\s|:-]+$/u.test(lines[i + 1] || '')
+        if (cells.length >= 2 && separator) {
+          head.push(...cells)
+          i += 2
+          while (i < lines.length) {
+            const row = splitMarkdownRow(lines[i])
+            if (row.length < 2) break
+            rows.push(row)
+            i += 1
+          }
+          continue
+        }
+        const trimmed = lines[i].trim()
+        if (trimmed) paragraphs.push(trimmed)
+        i += 1
+      }
+      return { head, rows, paragraphs }
+    }
+
+    function splitMarkdownRow(line) {
+      const text = typeof line === 'string' ? line.trim() : ''
+      if (!text.startsWith('|')) return []
+      const body = text.endsWith('|') ? text.slice(1, -1) : text.slice(1)
+      return body.split('|').map(cell => cell.trim())
+    }
+
+    // 折叠卡复用 0916 AI 卡结构（.ydo-ai-card + 左边框色调类 summary/patterns/recs/dims），
+    // 开关状态每卡内部持有（方案 §4.2：原视频拆解与改写分镜默认展开）。
+    function FoldCard({ tone, title, defaultOpen = false, digest = null, children }) {
+      const [open, setOpen] = React.useState(defaultOpen)
+      return h('section', { className: `ydo-ai-card ydo-ai-card-${tone}${open ? ' ydo-ai-card-open' : ''}` },
+        h('button', {
+          type: 'button', className: 'ydo-ai-card-toggle', 'aria-expanded': open,
+          onClick: () => setOpen(value => !value),
+        },
+        h('span', { className: 'ydo-ai-arrow', 'aria-hidden': true }, '▶'),
+        h('h4', null, title),
+        digest ? h('span', { className: 'ydo-ai-digest' }, digest) : null),
+        open ? h('div', { className: 'ydo-ai-card-body' }, children) : null)
+    }
+
+    function StatusBadge({ status, t }) {
+      const tone = breakdownStatusTone(status)
+      // needs_input 语义是「待补充信息」（warn 色），不落入 warn 默认的「已取消」。
+      const key = status === 'needs_input'
+        ? 'bdStatusNeedsInput'
+        : {
+          ok: 'bdStatusSucceeded', error: 'bdStatusFailed', warn: 'bdStatusCancelled', running: 'bdStatusRunning',
+        }[tone]
+      return h('span', { className: `ydo-bd-status ydo-bd-status-${tone}` }, t(key))
+    }
+
+    // 8 步进度条：终态（succeeded 或 currentStep=completed）整条完成；进行中当前步
+    // 高亮、之前的步视为已过。失败时服务端把 current_step 覆写为 'failed'（不在本
+    // 数组内，indexOf=-1），进度条整体保持灰态——失败原因由详情页失败文案专门承载。
+    function StepProgress({ workflow, t }) {
+      const steps = BREAKDOWN_WORKFLOW_STEPS
+      const currentIndex = steps.indexOf(workflow?.currentStep)
+      const done = workflow?.status === 'succeeded' || workflow?.currentStep === 'completed'
+      return h('ol', { className: 'ydo-bd-steps', 'aria-label': t('bdProgressLabel') },
+        ...steps.map((step, index) => {
+          const active = !done && index === currentIndex
+          const passed = done || (currentIndex >= 0 && index < currentIndex)
+          const state = active ? 'active' : passed ? 'done' : 'todo'
+          return h('li', {
+            key: step,
+            className: `ydo-bd-step ydo-bd-step-${state}`,
+            'aria-current': active ? 'step' : undefined,
+          }, t(`bdStep_${step}`))
+        }))
+    }
+
+    // 段落角色语义色标签（hook/build/turn/cta），未登记角色走中性「其他」。
+    const ROLE_TONES = Object.freeze(['hook', 'build', 'turn', 'cta'])
+
+    function RoleTag({ role, t }) {
+      const tone = ROLE_TONES.includes(role) ? role : 'other'
+      return h('span', { className: `ydo-bd-role ydo-bd-role-${tone}` }, t(`bdRole_${tone}`))
+    }
+
+    // 原视频拆解分段：时间 + 角色标签 + 画面 + 口播，纵向卡片列表（窄幅不挤压）。
+    function OriginalSegmentList({ segments, t }) {
+      return h('div', { className: 'ydo-bd-seg-list' },
+        ...segments.map((segment, index) => h('div', { key: index, className: 'ydo-bd-seg' },
+          h('div', { className: 'ydo-bd-seg-head' },
+            h('span', { className: 'ydo-bd-seg-time' }, segment.timeRange || '—'),
+            h(RoleTag, { role: segment.role, t })),
+          h('p', { className: 'ydo-bd-seg-visual' }, segment.originalVisual || '—'),
+          segment.originalSpeech ? h('p', { className: 'ydo-bd-seg-speech' }, segment.originalSpeech) : null)))
+    }
+
+    // 改写分镜卡片：新口播为主行、新画面次行，标注来源段落（sourceSegmentIndexes）。
+    function RewrittenSegmentList({ segments, t }) {
+      return h('div', { className: 'ydo-bd-seg-list' },
+        ...segments.map((segment, index) => h('div', { key: index, className: 'ydo-bd-seg' },
+          h('div', { className: 'ydo-bd-seg-head' },
+            h('span', { className: 'ydo-bd-seg-time' }, segment.timeRange || '—'),
+            h(RoleTag, { role: segment.role, t }),
+            h('span', { className: 'ydo-bd-seg-source' },
+              `${t('bdSourceFrom')} ${Array.isArray(segment.sourceSegmentIndexes) && segment.sourceSegmentIndexes.length
+                ? segment.sourceSegmentIndexes.map(i => `#${i}`).join(' ')
+                : '—'}`)),
+          segment.rewrittenSpeech ? h('p', { className: 'ydo-bd-seg-copy' }, segment.rewrittenSpeech) : null,
+          segment.rewrittenVisual ? h('p', { className: 'ydo-bd-seg-visual' }, segment.rewrittenVisual) : null)))
+    }
+
+    // 拍摄脚本：景别配额摘要行 + Markdown 表格横向滚动 + 表格外段落。
+    function ShotScriptBlock({ shotScript, t }) {
+      if (!shotScript || shotScript.status !== 'succeeded' || !shotScript.markdown) {
+        return h('p', { className: 'ydo-hint' }, t('bdSectionPending'))
+      }
+      const parsed = shotScriptTable(shotScript.markdown)
+      const quotas = shotScript.shotSizeQuotas
+      const quotaText = quotas && typeof quotas === 'object' && !Array.isArray(quotas)
+        ? Object.entries(quotas).map(([size, count]) => `${size}×${count}`).join(' · ')
+        : ''
+      return h('div', null,
+        quotaText ? h('p', { className: 'ydo-hint' }, `${t('bdShotQuotas')}：${quotaText}`) : null,
+        parsed.head.length
+          ? h('div', { className: 'ydo-bd-shot-wrap' },
+            h('table', { className: 'ydo-bd-shot-table' },
+              h('thead', null, h('tr', null, ...parsed.head.map((cell, index) => h('th', { key: index }, cell)))),
+              h('tbody', null, ...parsed.rows.map((row, rowIndex) =>
+                h('tr', { key: rowIndex }, ...row.map((cell, cellIndex) => h('td', { key: cellIndex }, cell)))))))
+          : null,
+        ...parsed.paragraphs.map((text, index) => h('p', { key: index, className: 'ydo-bd-shot-note' }, text)))
+    }
+
+    // ---------------------------------------------------------------------------
+    // 详情页数据装配（全部是投影读取，无口径计算）。
+    // ---------------------------------------------------------------------------
+
+    function latestStoryboard(detail) {
+      const items = Array.isArray(detail?.storyboards) ? detail.storyboards : []
+      return items.length ? items[0] : null
+    }
+
+    function asrTranscript(detail) {
+      const candidates = Array.isArray(detail?.analysis?.candidates) ? detail.analysis.candidates : []
+      const transcript = candidates.length ? candidates[0]?.products?.asr?.transcript : null
+      return typeof transcript === 'string' && transcript.trim() ? transcript : null
+    }
+
+    // 规则回显：input 投影里的保留 key（P1 契约：rewriteRuleId + rewriteRulePrompt）。
+    function usedRule(storyboardRow) {
+      const input = storyboardRow?.input
+      if (!input || typeof input !== 'object') return null
+      const id = typeof input.rewriteRuleId === 'string' ? input.rewriteRuleId : ''
+      if (!id) return null
+      const prompt = typeof input.rewriteRulePrompt === 'string' ? input.rewriteRulePrompt : ''
+      return { id, prompt }
+    }
+
+    // 规则单选卡片组：主视图与重新改写弹框共用；再点一次取消选中（= 不带规则仿写）。
+    function BreakdownRulePicker({ rules, value, onChange, disabled, t }) {
+      return h('div', { className: 'ydo-bd-rules', role: 'radiogroup', 'aria-label': t('bdRulesLabel') },
+        rules.length
+          ? rules.map(rule => h('button', {
+            key: rule.rewriteRuleId,
+            type: 'button',
+            className: `ydo-bd-radio${value === rule.rewriteRuleId ? ' ydo-bd-radio-active' : ''}`,
+            role: 'radio',
+            'aria-checked': value === rule.rewriteRuleId,
+            disabled,
+            onClick: () => onChange(value === rule.rewriteRuleId ? null : rule.rewriteRuleId),
+          },
+          h('span', { className: 'ydo-bd-radio-name' }, rule.name),
+          rule.description ? h('span', { className: 'ydo-bd-radio-desc' }, rule.description) : null))
+          : h('span', { className: 'ydo-hint' }, t('bdRulesEmpty')))
+    }
+
+    // ---------------------------------------------------------------------------
+    // 三个视图 + 重新改写弹框（开关由 client.js 持有，接入统一 Esc 链）。
+    // ---------------------------------------------------------------------------
+
+    function BreakdownNewPage({ rules, rulesError, onRetryRules, submitting, archiveTask, startError, onStart, t }) {
+      const [shareUrl, setShareUrl] = React.useState('')
+      const [ruleId, setRuleId] = React.useState(null)
+      const submit = () => {
+        const value = shareUrl.trim()
+        if (!value || submitting) return
+        onStart(value, ruleId)
+        setShareUrl('')
+        setRuleId(null)
+      }
+      return h('section', { className: 'ydo-ov-panel' },
+        h('h3', null, t('bdNewTitle')),
+        h('div', { className: 'ydo-bd-new' },
+          h('input', {
+            className: 'ydo-date-input ydo-bd-input',
+            type: 'text',
+            value: shareUrl,
+            placeholder: t('bdSharePlaceholder'),
+            'aria-label': t('bdShareLabel'),
+            disabled: submitting,
+            onChange: event => setShareUrl(event.target.value),
+            onKeyDown: event => { if (event.key === 'Enter') submit() },
+          }),
+          h('button', {
+            type: 'button', className: 'ydo-primary', disabled: submitting || !shareUrl.trim(),
+            'aria-busy': submitting,
+            onClick: submit,
+          }, submitting ? t('bdSubmitting') : t('bdStartButton'))),
+        startError ? h('p', { className: 'ydo-error', role: 'alert', 'aria-live': 'assertive' }, t(startError)) : null,
+        h('p', { className: 'ydo-hint' }, t('bdRulesHint')),
+        rulesError
+          ? h('div', null,
+            h('p', { className: 'ydo-error', role: 'alert' }, t(rulesError)),
+            onRetryRules
+              ? h('button', {
+                type: 'button', className: 'ydo-secondary', style: { marginTop: 6 },
+                onClick: () => onRetryRules(),
+              }, t('bdRulesRetry'))
+              : null)
+          : h(BreakdownRulePicker, { rules, value: ruleId, onChange: setRuleId, disabled: submitting, t }),
+        archiveTask
+          ? h('div', { className: 'ydo-progress', role: 'status', 'aria-live': 'polite', 'aria-busy': true },
+            h('span', { className: 'ydo-spinner' }),
+            h('span', null, t('bdArchivePending')))
+          : null)
+    }
+
+    function BreakdownHistoryList({ history, loading, errorReason, onOpen, t }) {
+      if (errorReason) return h('p', { className: 'ydo-error', role: 'alert' }, t(errorReason))
+      if (!history.length) {
+        return h('p', { className: 'ydo-hint', role: 'status' }, loading ? t('loading') : t('bdHistoryEmpty'))
+      }
+      // 行数据 = workflow 投影（无播放量/规则字段；规则回显在详情页第五卡）。
+      return h('div', { className: 'ydo-bd-history', role: 'list', 'aria-label': t('bdHistoryLabel') },
+        ...history.map((item, index) => h('button', {
+          key: `${item.candidateId}-${item.admin?.workflowId || index}`,
+          type: 'button', className: 'ydo-bd-row', role: 'listitem',
+          onClick: () => onOpen(item),
+        },
+        h('span', { className: 'ydo-bd-row-main' },
+          h('span', { className: 'ydo-bd-row-title' }, item.candidateTitle || item.candidateId || '—'),
+          item.candidateAuthor ? h('span', { className: 'ydo-bd-row-author' }, item.candidateAuthor) : null),
+        h(StatusBadge, { status: item.status, t }),
+        h('span', { className: 'ydo-bd-row-step' }, item.currentStepLabel || '—'),
+        h('span', { className: 'ydo-bd-row-time' }, formatDateTime(item.updatedAt)))))
+    }
+
+    function BreakdownDetailPage({ workflow, detail, loading, errorReason, onBack, onRequestRewrite, t }) {
+      if (errorReason) {
+        return h('div', { className: 'ydo-state ydo-state-error', role: 'alert' },
+          h('p', null, t(errorReason)),
+          h('button', { type: 'button', className: 'ydo-secondary', onClick: onBack }, t('bdBackToList')))
+      }
+      const storyboardRow = latestStoryboard(detail)
+      const original = storyboardRow?.originalVideoAnalysis || null
+      const rewritten = storyboardRow?.rewrittenStoryboard || null
+      const transcript = asrTranscript(detail)
+      const rule = usedRule(storyboardRow)
+      // 失败文案承载两态：error 色失败，以及 needs_input（warn 色但带 errorCode 的
+      // 同步失败 payload，如 needs_product_input——用户需要知道为什么没有产出）。
+      const failed = Boolean(
+        workflow && (breakdownStatusTone(workflow.status) === 'error' || workflow.status === 'needs_input'),
+      )
+      const pending = !workflow || (!failed && breakdownStatusTone(workflow.status) === 'running')
+      return h('div', { className: 'ydo-bd-page' },
+        h('div', { className: 'ydo-an-toolbar' },
+          h('button', { type: 'button', className: 'ydo-secondary', onClick: onBack }, t('bdBackToList')),
+          h('button', {
+            type: 'button', className: 'ydo-secondary',
+            disabled: pending || loading,
+            onClick: onRequestRewrite,
+          }, t('bdRewriteButton'))),
+        workflow
+          ? h('header', { className: 'ydo-an-head' },
+            h('div', { className: 'ydo-bd-head-row' },
+              h('h3', null, workflow.candidateTitle || workflow.candidateId || '—'),
+              h(StatusBadge, { status: workflow.status, t })),
+            workflow.candidateAuthor ? h('p', { className: 'ydo-hint' }, workflow.candidateAuthor) : null,
+            h(StepProgress, { workflow, t }),
+            failed ? h('p', { className: 'ydo-error', role: 'alert' }, t(workflowErrorCopyKey(workflow))) : null,
+            pending ? h('p', { className: 'ydo-hint', role: 'status' }, t('bdRunningHint')) : null)
+          : null,
+        loading && !storyboardRow
+          ? h('div', { className: 'ydo-state', role: 'status' }, h('span', { className: 'ydo-spinner' }), h('p', null, t('loading')))
+          : !storyboardRow
+          ? h('p', { className: 'ydo-hint', role: 'status' }, t('bdDetailEmpty'))
+          : h('div', { className: 'ydo-bd-cards' },
+            h(FoldCard, {
+              tone: 'summary', title: t('bdCardOriginal'), defaultOpen: true,
+              digest: original ? `${original.segments.length} ${t('bdSegmentUnit')}` : null,
+            },
+            original
+              ? h('div', null,
+                original.summary ? h('blockquote', { className: 'ydo-bd-quote' }, original.summary) : null,
+                h(OriginalSegmentList, { segments: original.segments, t }))
+              : h('p', { className: 'ydo-hint' }, t('bdSectionPending'))),
+            h(FoldCard, { tone: 'dims', title: t('bdCardTranscript') },
+              transcript
+                ? h('blockquote', { className: 'ydo-bd-quote' }, transcript)
+                : h('p', { className: 'ydo-hint' }, t('bdSectionPending'))),
+            h(FoldCard, {
+              tone: 'patterns', title: t('bdCardStoryboard'), defaultOpen: true,
+              digest: rewritten ? `${rewritten.segments.length} ${t('bdSegmentUnit')}` : null,
+            },
+            rewritten
+              ? h('div', null,
+                rewritten.summary ? h('p', { className: 'ydo-hint' }, rewritten.summary) : null,
+                h(RewrittenSegmentList, { segments: rewritten.segments, t }))
+              : h('p', { className: 'ydo-hint' }, t('bdSectionPending'))),
+            h(FoldCard, { tone: 'recs', title: t('bdCardShotScript') },
+              h(ShotScriptBlock, { shotScript: storyboardRow.shotScript, t })),
+            h(FoldCard, { tone: 'dims', title: t('bdCardRule'), digest: rule ? rule.id : null },
+              rule
+                ? h('div', { className: 'ydo-bd-rule-used' },
+                  h('span', { className: 'ydo-bd-role ydo-bd-role-other' }, rule.id),
+                  rule.prompt ? h('p', { className: 'ydo-hint' }, rule.prompt) : null)
+                : h('p', { className: 'ydo-hint' }, t('bdRuleNone')))))
+    }
+
+    // 重新改写弹框（方案 §4.1）：规则单选 + 取消/开始改写。确认回传选中的
+    // rewriteRuleId（可为 null = 不带规则）；client.js 以新幂等键 workflowStart，
+    // 新规则版本 = 新 workflow 记录。规则选中态在弹框内部持有，关闭即复位（open 分支重挂）。
+    function BreakdownRewriteModal({ open, rules, submitting, onConfirm, onClose, t }) {
+      const [ruleId, setRuleId] = React.useState(null)
+      if (!open) return null
+      return h('div', { className: 'ydo-ai-modal-overlay', role: 'dialog', 'aria-modal': true, 'aria-label': t('bdRewriteTitle') },
+        h('div', { className: 'ydo-ai-modal' },
+          h('button', { type: 'button', className: 'ydo-ai-modal-close', 'aria-label': t('close'), onClick: onClose },
+            h(IconCloseOutline16, { size: 16 })),
+          h('div', { className: 'ydo-ai-modal-body' },
+            h('h3', null, t('bdRewriteTitle')),
+            h('p', { className: 'ydo-hint' }, t('bdRewriteHint')),
+            h(BreakdownRulePicker, { rules, value: ruleId, onChange: setRuleId, disabled: submitting, t })),
+          h('div', { className: 'ydo-bd-modal-actions' },
+            h('button', { type: 'button', className: 'ydo-confirm-secondary', disabled: submitting, onClick: onClose }, t('confirmNo')),
+            h('button', {
+              type: 'button', className: 'ydo-confirm-primary', disabled: submitting, 'aria-busy': submitting,
+              onClick: () => { onConfirm(ruleId); setRuleId(null) },
+            }, t('bdRewriteStart')))))
+    }
+
     // 抖音运营客户端：左下角菜单入口 + 整页 overlay（左侧账号管理区 + 右侧作品数据区）。
     //
     // 数据来源：本地同源路由 /api/desktop/yootun/douyin-operation（宿主再经公共网关调 tools）。
@@ -1997,6 +2426,16 @@ window.__ModuleLoader__.load({
       return `r${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
     }
     const aiAnalysisIdempotencyKey = () => `douyin:ai_analysis:${newAiAnalysisRequestUuid()}`
+    // 爆款拆解受理键（0922 方案）：与 P2 index.js 的键前缀校验、tools-client.js 的
+    // viralVideo*IdempotencyKey 模板一致；每次点击生成全新 UUID，页面内不跨点击复用。
+    const bdArchiveIdempotencyKey = () => `douyin:vv_archive:${newAiAnalysisRequestUuid()}`
+    const bdWorkflowIdempotencyKey = () => `douyin:vv_workflow:${newAiAnalysisRequestUuid()}`
+    // 归档轮询固定 3s；workflow 轮询优先后端 retryAfterSeconds（缺失退回 5s），
+    // 实际间隔 = max(5s, retryAfterSeconds)。
+    const BD_ARCHIVE_POLL_INTERVAL_MS = 3000
+    const BD_WORKFLOW_POLL_INTERVAL_MS = 5000
+    // workflow 轮询连续失败上限：25s（5 次 × 5s 间隔）内持续不可用即终止轮询。
+    const BD_WORKFLOW_POLL_MAX_FAILURES = 5
 
     // 删除账号的客户端生命周期（能力矩阵的写操作状态语义）：
     // idle → awaiting_confirmation（确认框）→ confirmed_pending_adapter（设备清理 + 远端删除进行中）；
@@ -2145,6 +2584,35 @@ window.__ModuleLoader__.load({
         aiDimShortAudience: '受众', aiDimShortStability: '稳定',
         aiDimDetail: '证据与明细', aiLimitsTitle: '数据限制与免责',
         aiDigestLimits: '{n} 项',
+        // 爆款拆解 Tab（0922 方案 §4.1）
+        tabBreakdown: '爆款拆解',
+        bdNewTitle: '新建拆解',
+        bdShareLabel: '抖音分享链接', bdSharePlaceholder: '粘贴抖音视频分享链接',
+        bdStartButton: '开始拆解', bdSubmitting: '提交中…',
+        bdArchivePending: '正在下载并归档视频，通常需要十几秒…',
+        bdRulesHint: '仿写规则可选：不选则按默认链路改写；拆解历史团队共享。',
+        bdRulesLabel: '仿写规则', bdRulesEmpty: '暂无可用仿写规则，将按默认链路改写', bdRulesRetry: '重新加载规则',
+        bdHistoryLabel: '拆解历史', bdHistoryEmpty: '还没有拆解记录，粘贴分享链接开始第一次拆解',
+        bdStatusSucceeded: '已完成', bdStatusFailed: '失败', bdStatusCancelled: '已取消', bdStatusRunning: '进行中',
+        bdStatusNeedsInput: '待补充信息',
+        bdProgressLabel: '拆解进度',
+        bdStep_archive_original: '归档', bdStep_transcode_audio: '转码', bdStep_asr: '语音识别',
+        bdStep_extract_frames: '抽帧', bdStep_vision: '画面理解', bdStep_breakdown: '结构拆解',
+        bdStep_storyboard: '改写分镜', bdStep_shot_script: '拍摄脚本',
+        bdRole_hook: '钩子', bdRole_build: '铺垫', bdRole_turn: '转折', bdRole_cta: '引导', bdRole_other: '其他',
+        bdSourceFrom: '来源段落',
+        bdCardOriginal: '原视频拆解', bdCardTranscript: '口播全文', bdCardStoryboard: '改写分镜',
+        bdCardShotScript: '拍摄脚本', bdCardRule: '使用的仿写规则',
+        bdSegmentUnit: '段', bdSectionPending: '本段内容尚未生成', bdDetailEmpty: '暂无拆解内容',
+        bdShotQuotas: '景别配额', bdRuleNone: '本次拆解未使用仿写规则（默认链路改写）',
+        bdBackToList: '← 返回列表', bdRewriteButton: '重新改写',
+        bdRewriteTitle: '重新改写这条视频', bdRewriteHint: '选择仿写规则后将以新规则版本重新生成分镜与脚本；原拆解记录保留。',
+        bdRewriteStart: '开始改写', bdRunningHint: '拆解进行中，页面会自动刷新进度…',
+        bdErrorInvalidKey: '请求参数不合法，请刷新后重试', bdErrorRunNotFound: '任务不存在或已过期，请重新发起',
+        bdErrorUnknownRule: '所选仿写规则不存在或已下线，请刷新规则列表', bdErrorConflict: '请求与历史记录不一致，请刷新后重试',
+        bdErrorCandidateNotFound: '原视频记录不存在，请重新发起拆解', bdErrorInvalidInput: '请求参数不合法，请检查后重试',
+        bdErrorNeedsInput: '该视频缺少必要信息，暂不支持拆解', bdErrorRetryable: '拆解暂时失败（可能是视频过长或服务繁忙），请稍后重新改写',
+        bdErrorFailed: '拆解失败，请重新发起', bdErrorArchiveFailed: '视频下载或归档失败，请确认链接后重试',
       },
       en: {
         open: 'Douyin ops', title: 'Douyin ops', subtitle: 'Scan to sign in to a Douyin creator account, collect and review work metrics',
@@ -2273,6 +2741,35 @@ window.__ModuleLoader__.load({
         aiDimShortAudience: 'Audience', aiDimShortStability: 'Stability',
         aiDimDetail: 'Evidence & details', aiLimitsTitle: 'Data limits & disclaimer',
         aiDigestLimits: '{n}',
+        // Viral breakdown tab (0922 plan §4.1)
+        tabBreakdown: 'Viral breakdown',
+        bdNewTitle: 'New breakdown',
+        bdShareLabel: 'Douyin share link', bdSharePlaceholder: 'Paste a Douyin video share link',
+        bdStartButton: 'Start breakdown', bdSubmitting: 'Submitting…',
+        bdArchivePending: 'Downloading and archiving the video, usually takes a while…',
+        bdRulesHint: 'Rewrite rules are optional; without one the default pipeline applies. Breakdown history is shared with the team.',
+        bdRulesLabel: 'Rewrite rules', bdRulesEmpty: 'No rewrite rules available; the default pipeline will be used', bdRulesRetry: 'Reload rules',
+        bdHistoryLabel: 'Breakdown history', bdHistoryEmpty: 'No breakdowns yet — paste a share link to start the first one',
+        bdStatusSucceeded: 'Done', bdStatusFailed: 'Failed', bdStatusCancelled: 'Cancelled', bdStatusRunning: 'Running',
+        bdStatusNeedsInput: 'Needs input',
+        bdProgressLabel: 'Breakdown progress',
+        bdStep_archive_original: 'Archive', bdStep_transcode_audio: 'Transcode', bdStep_asr: 'Speech-to-text',
+        bdStep_extract_frames: 'Frames', bdStep_vision: 'Vision', bdStep_breakdown: 'Breakdown',
+        bdStep_storyboard: 'Storyboard', bdStep_shot_script: 'Shot script',
+        bdRole_hook: 'Hook', bdRole_build: 'Build-up', bdRole_turn: 'Turn', bdRole_cta: 'CTA', bdRole_other: 'Other',
+        bdSourceFrom: 'Source segments',
+        bdCardOriginal: 'Original breakdown', bdCardTranscript: 'Transcript', bdCardStoryboard: 'Rewritten storyboard',
+        bdCardShotScript: 'Shot script', bdCardRule: 'Rewrite rule used',
+        bdSegmentUnit: ' segments', bdSectionPending: 'Not generated yet', bdDetailEmpty: 'No breakdown content yet',
+        bdShotQuotas: 'Shot-size quotas', bdRuleNone: 'No rewrite rule was used (default pipeline)',
+        bdBackToList: '← Back to list', bdRewriteButton: 'Rewrite',
+        bdRewriteTitle: 'Rewrite this video', bdRewriteHint: 'Picking a rule regenerates the storyboard and shot script as a new rule version; the original breakdown is kept.',
+        bdRewriteStart: 'Start rewrite', bdRunningHint: 'Breakdown in progress — this page refreshes automatically…',
+        bdErrorInvalidKey: 'Invalid request — refresh and retry', bdErrorRunNotFound: 'Task not found or expired — start again',
+        bdErrorUnknownRule: 'The selected rewrite rule does not exist or is retired — refresh the rule list', bdErrorConflict: 'The request conflicts with a previous one — refresh and retry',
+        bdErrorCandidateNotFound: 'The original video record is missing — start the breakdown again', bdErrorInvalidInput: 'Invalid request — check the input and retry',
+        bdErrorNeedsInput: 'This video lacks required information and cannot be broken down', bdErrorRetryable: 'Breakdown failed temporarily (video may be too long or the service busy) — retry later',
+        bdErrorFailed: 'Breakdown failed — start again', bdErrorArchiveFailed: 'Video download or archive failed — check the link and retry',
       },
     }
 
@@ -2693,6 +3190,42 @@ window.__ModuleLoader__.load({
       const aiPollRef = useRef(null)
       // 当前分析页账号（轮询/预取响应的归属守卫，防止切账号后旧响应覆盖新页面）
       const aiAccountRef = useRef(null)
+      // 爆款拆解 Tab（0922 方案 §4）：主视图（新建+历史）与详情页共用一组状态。
+      // bdDetailWorkflow 非空 = 详情页（轮询目标，含 workflowId）；空 = 主视图。
+      const [bdRules, setBdRules] = useState([])
+      const [bdRulesError, setBdRulesError] = useState(null)
+      const [bdHistory, setBdHistory] = useState([])
+      const [bdHistoryLoading, setBdHistoryLoading] = useState(false)
+      const [bdHistoryError, setBdHistoryError] = useState(null)
+      const [bdSubmitting, setBdSubmitting] = useState(false)
+      // 主视图「新建拆解」的提交/归档失败文案（与详情页错误独立）。
+      const [bdStartError, setBdStartError] = useState(null)
+      // bdArchiveTask = 归档过渡态（archiveStart 回执）；轮询 completed 后清除。
+      const [bdArchiveTask, setBdArchiveTask] = useState(null)
+      const [bdDetailWorkflow, setBdDetailWorkflow] = useState(null)
+      const [bdDetail, setBdDetail] = useState(null)
+      const [bdDetailLoading, setBdDetailLoading] = useState(false)
+      const [bdDetailError, setBdDetailError] = useState(null)
+      const [bdRewriteOpen, setBdRewriteOpen] = useState(false)
+      const [bdRewriting, setBdRewriting] = useState(false)
+      const bdArchivePollRef = useRef(null)
+      const bdWorkflowPollRef = useRef(null)
+      // 详情请求序列号（与 overviewRequestRef 同法）：快速点不同历史行时旧响应丢弃。
+      const bdDetailRequestRef = useRef(0)
+      // 归档/workflow 轮询的归属守卫：响应与当前目标不符时丢弃（防串台）。
+      const bdArchiveRunRef = useRef(null)
+      const bdWorkflowIdRef = useRef(null)
+      // 归档完成时用户若已进入其他详情页，自动启动的 workflow 挂起于此，
+      // 返回列表时补启动（防顶页，也防新候选的拆解静默丢失）。
+      const bdPendingWorkflowRef = useRef(null)
+      // bdDetailWorkflow 的 latest 镜像：归档轮询回调是长存 interval 闭包，直接读
+      // state 会拿到创建时刻的旧值，经 ref 读最新值判断用户是否已进入详情页。
+      // 写入侧在 setState 处同步维护（消除 setState→effect flush 之间的竞态窗口），
+      // useEffect 仅作兜底同步。
+      const bdDetailWorkflowRef = useRef(null)
+      useEffect(() => {
+        bdDetailWorkflowRef.current = bdDetailWorkflow
+      }, [bdDetailWorkflow])
 
       const current = useMemo(() => accounts.find(item => item.accountId === selected) || null, [accounts, selected])
 
@@ -2732,27 +3265,35 @@ window.__ModuleLoader__.load({
 
       useEffect(() => {
         if (!visible) return undefined
-        // 统一的生命周期契约：Esc 先关子页面（作品详情 → 爆款抽屉 → AI 分析弹框），
-        // 再关 overlay；关闭后焦点回到触发按钮。hotDrawerWork/aiModalOpen 必须在依赖里，
-        // 否则闭包捕获旧值、Esc 会跳过弹层直接关掉整个 overlay（审查修复补充）。
+        // 统一的生命周期契约：Esc 先关子页面（作品详情 → 爆款抽屉 → AI 分析弹框 →
+        // 重新改写弹框），再关 overlay；关闭后焦点回到触发按钮。hotDrawerWork/
+        // aiModalOpen/bdRewriteOpen 必须在依赖里，否则闭包捕获旧值、Esc 会跳过弹层
+        // 直接关掉整个 overlay（审查修复补充）。
         const onKey = event => {
           if (event.key === 'Escape') {
             if (detailWorkId) setDetailWorkId(null)
             else if (hotDrawerWork) setHotDrawerWork(null)
             else if (aiModalOpen) setAiModalOpen(false)
+            else if (bdRewriteOpen) setBdRewriteOpen(false)
             else closeOverlay()
           }
         }
         document.addEventListener('keydown', onKey)
         shellRef.current?.focus?.()
         return () => document.removeEventListener('keydown', onKey)
-      }, [visible, detailWorkId, hotDrawerWork, aiModalOpen])
+      }, [visible, detailWorkId, hotDrawerWork, aiModalOpen, bdRewriteOpen])
 
       const stopPolling = useCallback(ref => {
         if (ref.current) { clearInterval(ref.current); ref.current = null }
       }, [])
 
-      useEffect(() => () => { stopPolling(loginPollRef); stopPolling(collectPollRef); stopPolling(aiPollRef) }, [stopPolling])
+      useEffect(() => () => {
+        stopPolling(loginPollRef)
+        stopPolling(collectPollRef)
+        stopPolling(aiPollRef)
+        stopPolling(bdArchivePollRef)
+        stopPolling(bdWorkflowPollRef)
+      }, [stopPolling])
 
       const beginLogin = useCallback(async accountId => {
         setBusy(true)
@@ -2906,6 +3447,14 @@ window.__ModuleLoader__.load({
         loadOverview().catch(() => setOverviewError('douyin_operation_request_failed'))
         return undefined
       }, [visible, tab, loadOverview])
+
+      // 爆款拆解 Tab 进入：拉规则清单（纯配置只读）与拆解历史（团队共享，只读）。
+      useEffect(() => {
+        if (!visible || tab !== 'breakdown') return undefined
+        loadBdRules().catch(() => {})
+        loadBdHistory().catch(() => {})
+        return undefined
+      }, [visible, tab, loadBdRules, loadBdHistory])
 
       const exportOverview = useCallback(async () => {
         setOverviewExporting(true)
@@ -3088,6 +3637,247 @@ window.__ModuleLoader__.load({
         startAiAnalysis(analysisAccountId)
       }, [analysisAccountId, startAiAnalysis])
 
+      // ---------------------------------------------------------------------------
+      // 爆款拆解（0922 方案 §4.2/§5）：归档受理 → 3s 轮询 → 自动 workflow 受理 →
+      // 5s（或 retryAfterSeconds）轮询 → 详情双源拉取。轮询都带归属守卫（runId/
+      // workflowId 不匹配的响应丢弃）与离开清理；错误一律收敛为
+      // BREAKDOWN_ERROR_REASON_COPY 登记的文案键，未登记码兜底 operationUnavailable。
+      // 注意 workflow_start 的规则错误（unknown_rewrite_rule 等）是「成功 envelope 内」
+      // 的 failed payload，不是 isError：走 result.workflow.status==='failed' 分支，
+      // 详情页按 WORKFLOW_ERROR_COPY（组件内）显示失败文案。
+      // ---------------------------------------------------------------------------
+
+      const bdErrorKey = useCallback(reason => BREAKDOWN_ERROR_REASON_COPY[reason] || 'operationUnavailable', [])
+
+      const loadBdRules = useCallback(async () => {
+        try {
+          const result = await post({ action: 'breakdown.rewriteRules' })
+          if (result.status !== 'ready') { setBdRulesError(bdErrorKey(result.reason)); return }
+          setBdRules(Array.isArray(result.rules) ? result.rules : [])
+          setBdRulesError(null)
+        } catch {
+          setBdRulesError('operationUnavailable')
+        }
+      }, [bdErrorKey])
+
+      const loadBdHistory = useCallback(async () => {
+        setBdHistoryLoading(true)
+        setBdHistoryError(null)
+        try {
+          // 服务端无游标，total 是本页计数；首屏 limit=20，方案 §4.2 不做「加载更多」。
+          const result = await post({ action: 'breakdown.history', limit: 20 })
+          if (result.status !== 'ready') { setBdHistoryError(bdErrorKey(result.reason)); return }
+          setBdHistory(Array.isArray(result.history) ? result.history : [])
+        } catch {
+          setBdHistoryError('operationUnavailable')
+        } finally {
+          setBdHistoryLoading(false)
+        }
+      }, [bdErrorKey])
+
+      const loadBdDetail = useCallback(async candidateId => {
+        // 序列号守卫：快速点不同历史行时，旧候选的明细响应整体丢弃。
+        const requestId = ++bdDetailRequestRef.current
+        setBdDetailLoading(true)
+        setBdDetailError(null)
+        try {
+          const result = await post({ action: 'breakdown.detail', candidateId })
+          if (requestId !== bdDetailRequestRef.current) return
+          if (result.status !== 'ready') {
+            setBdDetail(null)
+            setBdDetailError(bdErrorKey(result.reason))
+            return
+          }
+          setBdDetail({ storyboards: Array.isArray(result.storyboards) ? result.storyboards : [], analysis: result.analysis || null })
+        } catch {
+          if (requestId !== bdDetailRequestRef.current) return
+          setBdDetailError('operationUnavailable')
+        } finally {
+          if (requestId === bdDetailRequestRef.current) setBdDetailLoading(false)
+        }
+      }, [bdErrorKey])
+
+      const stopBdWorkflowPolling = useCallback(() => stopPolling(bdWorkflowPollRef), [stopPolling])
+
+      // 详情页 workflow 轮询：优先 workflowId 精确定位（R2 约定——同候选多规则版本
+      // 并存时 candidateId 的「最新一条」不保证是本次受理目标）。workflowStart 回执
+      // 顶层带 workflowId；历史列表投影顶层不带（只在 admin.workflowId，服务端投影
+      // 刻意裁剪），所以锚点两处都取，取不到就不启动轮询（详情保留进入时快照）。
+      // 终态停轮询，succeeded 再拉双源明细；间隔优先后端 retryAfterSeconds，变化时
+      // 重启 interval。连续失败达上限停轮询：分钟级长轮询若服务端/链路持续不可用，
+      // 静默空转只会白白打请求；进度冻结用户可返回列表重进恢复。归档轮询不加此
+      // 上限——窗口只有归档耗时十几秒且用户在主视图等待，误导性报错弊大于利。
+      const startBdWorkflowPolling = useCallback(target => {
+        const workflowId = target.workflowId || target.admin?.workflowId
+        if (!workflowId) return
+        stopPolling(bdWorkflowPollRef)
+        bdWorkflowIdRef.current = workflowId
+        let interval = Math.max(BD_WORKFLOW_POLL_INTERVAL_MS, (Number(target.retryAfterSeconds) || 0) * 1000)
+        let failures = 0
+        const tick = async () => {
+          try {
+            const result = await post({ action: 'breakdown.workflowStatus', workflowId })
+            if (bdWorkflowIdRef.current !== workflowId) return
+            if (result.status !== 'ready') {
+              failures += 1
+              if (failures >= BD_WORKFLOW_POLL_MAX_FAILURES) stopBdWorkflowPolling()
+              return // 单次失败静默，下个周期重试
+            }
+            failures = 0
+            const latest = Array.isArray(result.workflows) ? result.workflows[0] : null
+            if (!latest) return
+            setBdDetailWorkflow(latest)
+            const next = Math.max(BD_WORKFLOW_POLL_INTERVAL_MS, (Number(latest.retryAfterSeconds) || 0) * 1000)
+            if (next !== interval && bdWorkflowPollRef.current) {
+              clearInterval(bdWorkflowPollRef.current)
+              interval = next
+              bdWorkflowPollRef.current = setInterval(tick, interval)
+            }
+            if (latest.status === 'succeeded' || latest.status === 'failed' || latest.status === 'cancelled') {
+              stopBdWorkflowPolling()
+              bdWorkflowIdRef.current = null
+              if (latest.status === 'succeeded') loadBdDetail(latest.candidateId)
+            }
+          } catch {
+            // 单次网络失败静默，下个周期重试（与 AI 轮询同策略；拆解是分钟级任务，
+            // 短暂网络抖动不构成整体失败）；连续失败由 failures 上限终止。
+            failures += 1
+            if (failures >= BD_WORKFLOW_POLL_MAX_FAILURES) stopBdWorkflowPolling()
+          }
+        }
+        bdWorkflowPollRef.current = setInterval(tick, interval)
+      }, [loadBdDetail, stopBdWorkflowPolling, stopPolling])
+
+      // workflow 受理：succeeded（幂等重放/秒回）直接拉明细；运行态白名单
+      // （queued/running/waiting）启动轮询；failed / needs_input / invalid_input /
+      // idempotency_conflict 是同步失败 payload（无 workflowId），交详情页失败文案，
+      // 不进轮询。
+      const startBdWorkflow = useCallback(async (candidateId, rewriteRuleId) => {
+        setBdDetail(null)
+        setBdDetailError(null)
+        try {
+          const body = { action: 'breakdown.workflowStart', candidateId, idempotencyKey: bdWorkflowIdempotencyKey() }
+          if (rewriteRuleId) body.rewriteRuleId = rewriteRuleId
+          const result = await post(body)
+          if (result.status !== 'ready') {
+            setBdDetailError(bdErrorKey(result.reason))
+            return
+          }
+          const workflow = result.workflow || null
+          setBdDetailWorkflow(workflow)
+          bdDetailWorkflowRef.current = workflow
+          if (!workflow) return
+          if (workflow.status === 'succeeded') loadBdDetail(workflow.candidateId)
+          else if (['queued', 'running', 'waiting'].includes(workflow.status)) startBdWorkflowPolling(workflow)
+        } catch {
+          setBdDetailError('operationUnavailable')
+        }
+      }, [bdErrorKey, loadBdDetail, startBdWorkflowPolling])
+
+      // 主视图受理：归档 → 轮询 completed → 刷新历史 → 自动以（可选）所选规则发起
+      // 拆解工作流。归档失败统一给「下载或归档失败」文案（失败码集合不稳定，不逐一映射）。
+      const startBreakdown = useCallback(async (shareUrl, rewriteRuleId) => {
+        if (bdSubmitting) return
+        setBdSubmitting(true)
+        setBdStartError(null)
+        try {
+          const result = await post({
+            action: 'breakdown.archiveStart',
+            shareUrl,
+            idempotencyKey: bdArchiveIdempotencyKey(),
+          })
+          if (result.status !== 'ready') {
+            setBdStartError(bdErrorKey(result.reason))
+            return
+          }
+          const archive = result.archive || null
+          if (!archive || !archive.runId) {
+            setBdStartError('operationUnavailable')
+            return
+          }
+          setBdArchiveTask(archive)
+          bdArchiveRunRef.current = archive.runId
+          stopPolling(bdArchivePollRef)
+          bdArchivePollRef.current = setInterval(async () => {
+            try {
+              const poll = await post({ action: 'breakdown.archiveStatus', runId: bdArchiveRunRef.current })
+              if (bdArchiveRunRef.current !== archive.runId) return
+              if (poll.status !== 'ready') return
+              const latest = poll.archive || null
+              if (!latest) return
+              if (latest.runStatus === 'completed') {
+                stopPolling(bdArchivePollRef)
+                bdArchiveRunRef.current = null
+                setBdArchiveTask(null)
+                loadBdHistory().catch(() => {})
+                const candidateId = latest.result && latest.result.candidateId
+                if (candidateId && bdDetailWorkflowRef.current) {
+                  // 用户已在查看其他详情页：不顶页，挂起自动启动，返回列表时补启动。
+                  bdPendingWorkflowRef.current = { candidateId, rewriteRuleId }
+                } else if (candidateId) {
+                  startBdWorkflow(candidateId, rewriteRuleId)
+                } else {
+                  setBdStartError('bdErrorArchiveFailed')
+                }
+              } else if (latest.runStatus === 'failed' || latest.runStatus === 'cancelled' || latest.runStatus === 'partial_failed') {
+                stopPolling(bdArchivePollRef)
+                bdArchiveRunRef.current = null
+                setBdArchiveTask(null)
+                setBdStartError('bdErrorArchiveFailed')
+              }
+            } catch {
+              // 归档轮询单次失败静默：任务本身仍在服务端推进，下个周期重试。
+            }
+          }, BD_ARCHIVE_POLL_INTERVAL_MS)
+        } catch {
+          setBdStartError('operationUnavailable')
+        } finally {
+          setBdSubmitting(false)
+        }
+      }, [bdErrorKey, bdSubmitting, loadBdHistory, startBdWorkflow, stopPolling])
+
+      // 历史行进入详情：立即拉明细；仍在运行态的记录同时启动 workflow 轮询。
+      const openBdDetail = useCallback(workflow => {
+        if (!workflow || !workflow.candidateId) return
+        setBdDetail(null)
+        setBdDetailError(null)
+        setBdDetailWorkflow(workflow)
+        bdDetailWorkflowRef.current = workflow
+        loadBdDetail(workflow.candidateId)
+        if (breakdownStatusTone(workflow.status) === 'running') startBdWorkflowPolling(workflow)
+      }, [loadBdDetail, startBdWorkflowPolling])
+
+      // 返回列表：停全部拆解轮询、失效在途明细请求、复位详情态并刷新历史。
+      // 若归档完成时因本详情页挂起了新候选的自动启动，此处补启动（进入新拆解详情，
+      // 与归档完成即自动开始的主流程体验一致）。
+      const backToBdList = useCallback(() => {
+        stopPolling(bdWorkflowPollRef)
+        bdWorkflowIdRef.current = null
+        stopPolling(bdArchivePollRef)
+        bdArchiveRunRef.current = null
+        bdDetailRequestRef.current += 1
+        const pending = bdPendingWorkflowRef.current
+        bdPendingWorkflowRef.current = null
+        setBdArchiveTask(null)
+        setBdDetailWorkflow(null)
+        bdDetailWorkflowRef.current = null
+        setBdDetail(null)
+        setBdDetailError(null)
+        setBdRewriteOpen(false)
+        loadBdHistory().catch(() => {})
+        if (pending && pending.candidateId) startBdWorkflow(pending.candidateId, pending.rewriteRuleId)
+      }, [loadBdHistory, startBdWorkflow, stopPolling])
+
+      // 重新改写确认（弹框回调）：以选中规则（可为 null = 默认链路）发起新 workflow；
+      // 每次点击新幂等键，新规则版本 = 新记录，原拆解保留。
+      const confirmBdRewrite = useCallback(ruleId => {
+        setBdRewriteOpen(false)
+        const candidateId = bdDetailWorkflow && bdDetailWorkflow.candidateId
+        if (!candidateId) return
+        setBdRewriting(true)
+        Promise.resolve(startBdWorkflow(candidateId, ruleId)).finally(() => setBdRewriting(false))
+      }, [bdDetailWorkflow, startBdWorkflow])
+
       const openDetail = useCallback(async (workId, accountIdOverride = null) => {
         // 跨账号爆款下钻用作品所属账号（审查 O4），默认仍是当前选中账号。
         const targetAccount = accountIdOverride || selected
@@ -3214,10 +4004,16 @@ window.__ModuleLoader__.load({
               // 分析页随 overview Tab 渲染（review P2-1）：切走时清 AI 弹框开关，
               // 避免切回总览时弹框「自动重开」与本 Tab 下 Esc 空按。
               onClick: () => { setTab('videos'); setAiModalOpen(false) },
-            }, t('tabVideos'))),
+            }, t('tabVideos')),
+            h('button', {
+              type: 'button', 'aria-current': tab === 'breakdown' || undefined,
+              // 进入拆解 Tab 同样收起 AI 弹框（跨 Tab 不残留弹层）；拆解轮询不随
+              // Tab 切换停止——服务端任务继续推进，切回 Tab 仍能看到最新进度。
+              onClick: () => { setTab('breakdown'); setAiModalOpen(false) },
+            }, t('tabBreakdown'))),
           // 左侧账号管理栏只在「视频数据」Tab 显示（UI 优化方案 §3.1）；
-          // 账号总览/单账号分析使用完整宽度内容区（ydo-body-full 单列）。
-          h('div', { className: `ydo-body${tab === 'overview' ? ' ydo-body-full' : ''}` },
+          // 账号总览/单账号分析与爆款拆解使用完整宽度内容区（ydo-body-full 单列）。
+          h('div', { className: `ydo-body${tab === 'overview' || tab === 'breakdown' ? ' ydo-body-full' : ''}` },
             tab === 'videos' ? left : null,
             tab === 'overview' && analysisAccountId
               ? h('section', { className: 'ydo-right', 'aria-label': t('accountHotWorks') },
@@ -3315,6 +4111,36 @@ window.__ModuleLoader__.load({
                     t,
                   })
                   : null)
+              : tab === 'breakdown'
+              ? h('section', { className: 'ydo-right ydo-bd-body', 'aria-label': t('tabBreakdown') },
+                bdDetailWorkflow
+                  ? h(BreakdownDetailPage, {
+                    workflow: bdDetailWorkflow,
+                    detail: bdDetail,
+                    loading: bdDetailLoading,
+                    errorReason: bdDetailError,
+                    onBack: backToBdList,
+                    onRequestRewrite: () => setBdRewriteOpen(true),
+                    t,
+                  })
+                  : h('div', { className: 'ydo-bd-main' },
+                    h(BreakdownNewPage, {
+                      rules: bdRules,
+                      rulesError: bdRulesError,
+                      onRetryRules: () => loadBdRules().catch(() => {}),
+                      submitting: bdSubmitting,
+                      archiveTask: bdArchiveTask,
+                      startError: bdStartError,
+                      onStart: startBreakdown,
+                      t,
+                    }),
+                    h(BreakdownHistoryList, {
+                      history: bdHistory,
+                      loading: bdHistoryLoading,
+                      errorReason: bdHistoryError,
+                      onOpen: openBdDetail,
+                      t,
+                    })))
               : h('section', { className: 'ydo-right', 'aria-label': t('data') },
               h('div', { className: 'ydo-toolbar' },
                 h('button', {
@@ -3348,6 +4174,17 @@ window.__ModuleLoader__.load({
           accountId: selected, workId: detailWorkId, detail, trend, loading: !detail, t,
           onClose: () => { setDetailWorkId(null); setDetail(null); setTrend(null) },
         }) : null,
+        // 重新改写弹框（0922 方案 §4.1）：overlay 级渲染，接入统一 Esc 链（bdRewriteOpen）。
+        bdRewriteOpen
+          ? h(BreakdownRewriteModal, {
+            open: true,
+            rules: bdRules,
+            submitting: bdRewriting,
+            onConfirm: confirmBdRewrite,
+            onClose: () => setBdRewriteOpen(false),
+            t,
+          })
+          : null,
         confirming
           ? h('div', { className: 'ydo-confirm-overlay', role: 'dialog', 'aria-modal': true, 'aria-label': t('deleteConfirm') },
             h('div', { className: 'ydo-confirm' },
@@ -3493,6 +4330,64 @@ window.__ModuleLoader__.load({
     .ydo-ai-chip:hover{background:var(--dsw-alias-brand-primary);border-color:var(--dsw-alias-brand-primary);color:var(--dsw-alias-label-primary-foreground)}
     .ydo-ai-limits{margin:0;padding-left:16px;display:grid;gap:4px;color:var(--dsw-alias-label-secondary);font-size:12px}
     .ydo-ai-disclaimer{margin:10px 0 0;font-size:11px;color:var(--dsw-alias-label-secondary)}
+    /* 爆款拆解 Tab（0922 方案 §4.1）：单列纵向滚动页；主视图两块（新建+历史），详情页复用 AI 卡折叠结构。 */
+    .ydo-bd-body{grid-template-rows:1fr;overflow:auto}
+    .ydo-bd-main{display:grid;gap:16px;align-content:start;min-width:0}
+    .ydo-bd-page{display:grid;gap:12px;align-content:start;min-width:0}
+    .ydo-bd-new{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+    .ydo-bd-input{flex:1;min-width:260px;max-width:560px}
+    .ydo-bd-rules{display:flex;flex-wrap:wrap;gap:10px}
+    .ydo-bd-radio{display:grid;gap:4px;min-width:200px;max-width:320px;padding:10px 12px;border:1px solid var(--dsw-alias-border-l1);border-radius:8px;background:var(--dsw-alias-bg-layer-1);color:inherit;font:inherit;text-align:left;cursor:pointer}
+    .ydo-bd-radio:hover{background:var(--dsw-alias-bg-layer-2)}
+    .ydo-bd-radio:disabled{opacity:.55;cursor:default}
+    .ydo-bd-radio-active{border-color:var(--dsw-alias-brand-primary);box-shadow:0 0 0 1px var(--dsw-alias-brand-primary)}
+    .ydo-bd-radio:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:2px}
+    .ydo-bd-radio-name{font-size:var(--dsh-content-font-size,14px);font-weight:600}
+    .ydo-bd-radio-desc{color:var(--dsw-alias-label-secondary);font-size:var(--dsh-content-font-size-secondary,13px);line-height:1.5}
+    .ydo-bd-history{display:grid;gap:8px}
+    .ydo-bd-row{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(90px,auto) auto;align-items:center;gap:12px;padding:10px 12px;border:1px solid var(--dsw-alias-border-l1);border-radius:8px;background:var(--dsw-alias-bg-layer-1);color:inherit;font:inherit;text-align:left;cursor:pointer}
+    .ydo-bd-row:hover{background:var(--dsw-alias-bg-layer-2)}
+    .ydo-bd-row:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:-2px}
+    .ydo-bd-row-main{display:grid;gap:2px;min-width:0}
+    .ydo-bd-row-title{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:var(--dsh-content-font-size,14px);font-weight:600}
+    .ydo-bd-row-author{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--dsw-alias-label-secondary);font-size:var(--dsh-content-font-size-secondary,13px)}
+    .ydo-bd-row-step{color:var(--dsw-alias-label-secondary);font-size:var(--dsh-content-font-size-secondary,13px);white-space:nowrap}
+    .ydo-bd-row-time{color:var(--dsw-alias-label-secondary);font-size:var(--dsh-content-font-size-secondary,13px);white-space:nowrap;font-variant-numeric:tabular-nums}
+    .ydo-bd-status{padding:2px 8px;border-radius:4px;background:var(--dsw-alias-bg-layer-2);font-size:var(--dsh-content-font-size-secondary,13px);white-space:nowrap;flex:none}
+    .ydo-bd-status-ok{color:color-mix(in srgb,var(--dsw-alias-state-success-primary,#1a7f37) 60%,var(--dsw-alias-label-primary))}
+    .ydo-bd-status-error{color:color-mix(in srgb,var(--dsw-alias-state-error-primary) 60%,var(--dsw-alias-label-primary))}
+    .ydo-bd-status-warn{color:color-mix(in srgb,var(--dsw-alias-state-warn-primary,#d29922) 60%,var(--dsw-alias-label-primary))}
+    .ydo-bd-status-running{color:var(--dsw-alias-brand-primary)}
+    .ydo-bd-head-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+    .ydo-bd-head-row h3{margin:0;font-size:var(--dsw-font-base-16-font-size,16px)}
+    .ydo-bd-steps{display:flex;flex-wrap:wrap;gap:6px;margin:0;padding:0;list-style:none}
+    .ydo-bd-step{padding:3px 10px;border:1px solid var(--dsw-alias-border-l1);border-radius:999px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-secondary);font-size:12px;white-space:nowrap}
+    .ydo-bd-step-done{color:color-mix(in srgb,var(--dsw-alias-state-success-primary,#1a7f37) 60%,var(--dsw-alias-label-primary));border-color:color-mix(in srgb,var(--dsw-alias-state-success-primary,#1a7f37) 35%,transparent)}
+    .ydo-bd-step-active{color:var(--dsw-alias-brand-primary);border-color:var(--dsw-alias-brand-primary);font-weight:600}
+    .ydo-bd-cards{display:grid;gap:12px;min-width:0}
+    .ydo-bd-quote{margin:0 0 10px;padding:10px 12px;border-left:3px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-2);border-radius:0 6px 6px 0;white-space:pre-wrap;word-break:break-word;font-size:var(--dsh-content-font-size-secondary,13px);line-height:1.6}
+    .ydo-bd-seg-list{display:grid;gap:10px}
+    .ydo-bd-seg{display:grid;gap:6px;padding:10px 12px;border:1px solid var(--dsw-alias-border-l1);border-radius:8px;background:var(--dsw-alias-bg-base)}
+    .ydo-bd-seg-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+    .ydo-bd-seg-time{font-variant-numeric:tabular-nums;color:var(--dsw-alias-label-secondary);font-size:var(--dsh-content-font-size-secondary,13px)}
+    .ydo-bd-seg p{margin:0;font-size:var(--dsh-content-font-size-secondary,13px);line-height:1.6;word-break:break-word}
+    .ydo-bd-seg-visual{color:var(--dsw-alias-label-secondary)}
+    .ydo-bd-seg-speech{color:var(--dsw-alias-label-primary)}
+    .ydo-bd-seg-copy{color:var(--dsw-alias-label-primary);font-weight:550}
+    .ydo-bd-seg-source{margin-left:auto;color:var(--dsw-alias-label-secondary);font-size:12px}
+    .ydo-bd-role{padding:1px 8px;border-radius:4px;font-size:11px;white-space:nowrap}
+    .ydo-bd-role-hook{background:color-mix(in srgb,var(--dsw-alias-brand-primary) 12%,transparent);color:var(--dsw-alias-brand-primary)}
+    .ydo-bd-role-build{background:color-mix(in srgb,var(--dsw-alias-state-success-primary,#1a7f37) 12%,transparent);color:color-mix(in srgb,var(--dsw-alias-state-success-primary,#1a7f37) 70%,var(--dsw-alias-label-primary))}
+    .ydo-bd-role-turn{background:color-mix(in srgb,var(--dsw-alias-state-warn-primary,#d29922) 14%,transparent);color:color-mix(in srgb,var(--dsw-alias-state-warn-primary,#d29922) 70%,var(--dsw-alias-label-primary))}
+    .ydo-bd-role-cta{background:color-mix(in srgb,#7c5cff 12%,transparent);color:#7c5cff}
+    .ydo-bd-role-other{background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-secondary)}
+    .ydo-bd-shot-wrap{overflow-x:auto;border:1px solid var(--dsw-alias-border-l1);border-radius:8px}
+    .ydo-bd-shot-table{border-collapse:collapse;min-width:100%;font-size:12px;line-height:1.5}
+    .ydo-bd-shot-table th,.ydo-bd-shot-table td{padding:6px 10px;border:1px solid var(--dsw-alias-border-l1);text-align:left;vertical-align:top;white-space:pre-wrap;word-break:break-word}
+    .ydo-bd-shot-table th{background:var(--dsw-alias-bg-layer-2);font-weight:600;white-space:nowrap}
+    .ydo-bd-shot-note{margin:8px 0 0;color:var(--dsw-alias-label-secondary);font-size:var(--dsh-content-font-size-secondary,13px);line-height:1.6;white-space:pre-wrap;word-break:break-word}
+    .ydo-bd-rule-used{display:grid;gap:8px;justify-items:start}
+    .ydo-bd-modal-actions{display:flex;justify-content:flex-end;gap:12px;padding:14px 16px;border-top:1px solid var(--dsw-alias-border-l1)}
     `;
     function apply(ctx) {
       ctx.effect(() => ctx.locale.register(NS, copy), 'dofe-yootun-douyin-operation: dictionaries')

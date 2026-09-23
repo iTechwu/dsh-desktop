@@ -985,3 +985,207 @@ test('aiAnalysis.get：只透传 accountId，返回分析投影', async () => {
   assert.equal(calls.length, 1)
   assert.deepEqual(calls[0], { accountId: 'acc-1' })
 })
+
+// ---------------------------------------------------------------------------
+// 爆款拆解（0922 方案）：直链归档 → 仿写工作流 → 状态组合。
+// 受理动作做幂等键前缀校验；只读动作白名单透传；workflow 投影归一化 candidateId。
+// ---------------------------------------------------------------------------
+
+test('breakdown.rewriteRules：只透传规则清单三项，不含 prompt 正文', async () => {
+  const calls = []
+  const { ctx, registered } = createContext({
+    tools: [{ name: 'mcp__tools-douyin-operation__viral_video_rewrite_rules_list' }],
+    execute: async ({ name }) => {
+      calls.push(name)
+      return { structuredContent: { items: [{ rewriteRuleId: 'keep_script', name: '保留原脚本', description: '…' }], total: 1 } }
+    },
+  })
+  apply(ctx, { root: '/tmp/unused', browserStatus: async () => ({ chromeAvailable: true, driverAvailable: true, platform: 'linux' }) })
+  const response = await call(registered[0].handler, { action: 'breakdown.rewriteRules' })
+  assert.equal(response.payload.status, 'ready')
+  assert.deepEqual(response.payload.rules, [{ rewriteRuleId: 'keep_script', name: '保留原脚本', description: '…' }])
+  assert.equal(response.payload.total, 1)
+  assert.equal(calls[0], 'mcp__tools-douyin-operation__viral_video_rewrite_rules_list')
+})
+
+test('breakdown.archiveStart：shareUrl 与幂等键前缀校验，合法时 confirm 透传', async () => {
+  const calls = []
+  const { ctx, registered } = createContext({
+    tools: [{ name: 'mcp__tools-douyin-operation__viral_video_archive_submit' }],
+    execute: async ({ arguments: args }) => {
+      calls.push(args)
+      return { structuredContent: { runId: 'mcp-vv-archive-abc', status: 'waiting', nextAction: 'poll_status' } }
+    },
+  })
+  apply(ctx, { root: '/tmp/unused', browserStatus: async () => ({ chromeAvailable: true, driverAvailable: true, platform: 'linux' }) })
+  const dispatch = registered[0].handler
+
+  const noUrl = await call(dispatch, { action: 'breakdown.archiveStart', idempotencyKey: 'douyin:vv_archive:u1' })
+  assert.equal(noUrl.payload.reason, 'share_url_required')
+
+  const badKey = await call(dispatch, { action: 'breakdown.archiveStart', shareUrl: 'https://v.douyin.com/x/', idempotencyKey: 'douyin:ai_analysis:u1' })
+  assert.equal(badKey.payload.reason, 'INVALID_IDEMPOTENCY_KEY')
+  assert.equal(calls.length, 0)
+
+  const ok = await call(dispatch, { action: 'breakdown.archiveStart', shareUrl: 'https://v.douyin.com/x/', idempotencyKey: 'douyin:vv_archive:u1' })
+  assert.equal(ok.payload.status, 'ready')
+  assert.equal(ok.payload.archive.runId, 'mcp-vv-archive-abc')
+  assert.deepEqual(calls[0], { douyinVideoUrl: 'https://v.douyin.com/x/', confirm: true, idempotencyKey: 'douyin:vv_archive:u1' })
+})
+
+test('breakdown.archiveStatus：runId 必填，稳定码透传', async () => {
+  const { ctx, registered } = createContext({
+    tools: [{ name: 'mcp__tools-douyin-operation__viral_video_async_submit_get' }],
+    execute: async () => { const e = new Error('ASYNC_RUN_NOT_FOUND'); e.code = 'ASYNC_RUN_NOT_FOUND'; throw e },
+  })
+  apply(ctx, { root: '/tmp/unused', browserStatus: async () => ({ chromeAvailable: true, driverAvailable: true, platform: 'linux' }) })
+  const dispatch = registered[0].handler
+
+  const missing = await call(dispatch, { action: 'breakdown.archiveStatus' })
+  assert.equal(missing.payload.reason, 'run_id_required')
+
+  const response = await call(dispatch, { action: 'breakdown.archiveStatus', runId: 'mcp-vv-archive-abc' })
+  assert.equal(response.payload.reason, 'ASYNC_RUN_NOT_FOUND')
+})
+
+test('breakdown.workflowStart：candidateId/幂等键校验，rewriteRuleId 可选透传', async () => {
+  const calls = []
+  const { ctx, registered } = createContext({
+    tools: [{ name: 'mcp__tools-douyin-operation__viral_video_workflow_start' }],
+    execute: async ({ arguments: args }) => {
+      calls.push(args)
+      return { structuredContent: { workflowId: 'wf-1', candidateId: 'cand-1', status: 'queued', currentStep: 'queued', nextAction: 'wait', retryAfterSeconds: 5 } }
+    },
+  })
+  apply(ctx, { root: '/tmp/unused', browserStatus: async () => ({ chromeAvailable: true, driverAvailable: true, platform: 'linux' }) })
+  const dispatch = registered[0].handler
+
+  const noCandidate = await call(dispatch, { action: 'breakdown.workflowStart', idempotencyKey: 'douyin:vv_workflow:u1' })
+  assert.equal(noCandidate.payload.reason, 'candidate_id_required')
+
+  const badKey = await call(dispatch, { action: 'breakdown.workflowStart', candidateId: 'cand-1' })
+  assert.equal(badKey.payload.reason, 'INVALID_IDEMPOTENCY_KEY')
+
+  // 不选规则：参数里完全不出现 rewriteRuleId（与既有链路零差异）
+  await call(dispatch, { action: 'breakdown.workflowStart', candidateId: 'cand-1', idempotencyKey: 'douyin:vv_workflow:u1' })
+  assert.deepEqual(calls[0], { candidateId: 'cand-1', idempotencyKey: 'douyin:vv_workflow:u1', confirm: true })
+
+  // 选规则：单选 id 透传
+  const withRule = await call(dispatch, { action: 'breakdown.workflowStart', candidateId: 'cand-1', idempotencyKey: 'douyin:vv_workflow:u2', rewriteRuleId: 'new_script' })
+  assert.equal(withRule.payload.status, 'ready')
+  assert.equal(withRule.payload.workflow.workflowId, 'wf-1')
+  assert.deepEqual(calls[1], { candidateId: 'cand-1', idempotencyKey: 'douyin:vv_workflow:u2', confirm: true, rewriteRuleId: 'new_script' })
+})
+
+test('breakdown.workflowStatus：workflowId 优先，items 归一化 candidateId', async () => {
+  const calls = []
+  const { ctx, registered } = createContext({
+    tools: [{ name: 'mcp__tools-douyin-operation__viral_video_workflow_get' }],
+    execute: async ({ arguments: args }) => {
+      calls.push(args)
+      return {
+        structuredContent: {
+          items: [{
+            candidate_id: 'cand-1', candidateTitle: '标题', candidateAuthor: '作者',
+            status: 'running', currentStep: 'vision', nextAction: 'wait', retryAfterSeconds: 5,
+            admin: { workflowId: 'wf-1', errorCode: null },
+          }],
+          total: 1,
+        },
+      }
+    },
+  })
+  apply(ctx, { root: '/tmp/unused', browserStatus: async () => ({ chromeAvailable: true, driverAvailable: true, platform: 'linux' }) })
+  const dispatch = registered[0].handler
+
+  const missing = await call(dispatch, { action: 'breakdown.workflowStatus' })
+  assert.equal(missing.payload.reason, 'candidate_id_required')
+
+  const byWorkflow = await call(dispatch, { action: 'breakdown.workflowStatus', workflowId: 'wf-1', candidateId: 'cand-1' })
+  assert.deepEqual(calls[0], { workflowId: 'wf-1', limit: 1 })
+  assert.equal(byWorkflow.payload.workflows[0].candidateId, 'cand-1')
+  assert.equal(byWorkflow.payload.workflows[0].candidateTitle, '标题')
+  assert.ok(!('candidate_id' in byWorkflow.payload.workflows[0]))
+
+  await call(dispatch, { action: 'breakdown.workflowStatus', candidateId: 'cand-1' })
+  assert.deepEqual(calls[1], { candidateId: 'cand-1', limit: 1 })
+})
+
+test('breakdown.detail：storyboard 主体失败整体失败；分析状态失败单独降级', async () => {
+  // 主体失败：storyboards_list 抛稳定码 → 整体 error
+  const { ctx, registered } = createContext({
+    tools: [{ name: 'mcp__tools-douyin-operation__viral_video_storyboards_list' }],
+    execute: async () => { const e = new Error('VALIDATION_ERROR'); e.code = 'VALIDATION_ERROR'; throw e },
+  })
+  apply(ctx, { root: '/tmp/unused', browserStatus: async () => ({ chromeAvailable: true, driverAvailable: true, platform: 'linux' }) })
+  const failBody = await call(registered[0].handler, { action: 'breakdown.detail', candidateId: 'cand-1' })
+  assert.equal(failBody.payload.reason, 'VALIDATION_ERROR')
+
+  // 辅助信息失败：analysis_status_get 抛错不影响主体
+  const seen = []
+  const { ctx: ctx2, registered: registered2 } = createContext({
+    tools: [
+      { name: 'mcp__tools-douyin-operation__viral_video_storyboards_list' },
+      { name: 'mcp__tools-douyin-operation__viral_video_analysis_status_get' },
+    ],
+    execute: async ({ name, arguments: args }) => {
+      seen.push({ name, args })
+      if (name.endsWith('storyboards_list')) {
+        return { structuredContent: { items: [{ storyboardId: 'sb-1', status: 'succeeded' }], total: 1 } }
+      }
+      throw Object.assign(new Error('douyin_operation_request_failed'), { code: 'douyin_operation_request_failed' })
+    },
+  })
+  apply(ctx2, { root: '/tmp/unused', browserStatus: async () => ({ chromeAvailable: true, driverAvailable: true, platform: 'linux' }) })
+  const okBody = await call(registered2[0].handler, { action: 'breakdown.detail', candidateId: 'cand-1' })
+  assert.equal(okBody.payload.status, 'ready')
+  assert.equal(okBody.payload.storyboards.length, 1)
+  assert.equal(okBody.payload.analysisError, 'douyin_operation_request_failed')
+  assert.ok(okBody.payload.analysis === null)
+  assert.deepEqual(seen.map(item => item.args), [
+    { candidateId: 'cand-1', limit: 20 },
+    { candidateId: 'cand-1' },
+  ])
+})
+
+test('breakdown.history：succeeded 标记 hasStoryboard，limit 收敛', async () => {
+  const calls = []
+  const { ctx, registered } = createContext({
+    tools: [{ name: 'mcp__tools-douyin-operation__viral_video_workflow_get' }],
+    execute: async ({ arguments: args }) => {
+      calls.push(args)
+      return {
+        structuredContent: {
+          items: [
+            { candidate_id: 'cand-1', status: 'succeeded', currentStep: 'completed' },
+            { candidate_id: 'cand-2', status: 'running', currentStep: 'asr' },
+            { candidate_id: 'cand-3', status: 'failed', currentStep: 'failed' },
+          ],
+          total: 3,
+        },
+      }
+    },
+  })
+  apply(ctx, { root: '/tmp/unused', browserStatus: async () => ({ chromeAvailable: true, driverAvailable: true, platform: 'linux' }) })
+  const response = await call(registered[0].handler, { action: 'breakdown.history', limit: 999 })
+  assert.deepEqual(calls[0], { limit: 20 })
+  assert.equal(response.payload.status, 'ready')
+  assert.equal(response.payload.history[0].candidateId, 'cand-1')
+  assert.equal(response.payload.history[0].hasStoryboard, true)
+  assert.equal(response.payload.history[1].hasStoryboard, false)
+  assert.equal(response.payload.history[2].hasStoryboard, false)
+  assert.equal(response.payload.total, 3)
+})
+
+test('breakdown.*：宿主未注册 viral_video 工具时收敛为 DOUYIN_TOOL_UNAVAILABLE', async () => {
+  // 空 schemas 模拟宿主端工具域未升级：requireTool 抛 ToolsUnavailableError，
+  // 经外层 catch 的 safeErrorCode 收敛为稳定 reason，P3 UI 据此展示「功能不可用」。
+  const { ctx, registered } = createContext({ tools: [] })
+  apply(ctx, { root: '/tmp/unused', browserStatus: async () => ({ chromeAvailable: true, driverAvailable: true, platform: 'linux' }) })
+  const dispatch = registered[0].handler
+  for (const action of ['breakdown.rewriteRules', 'breakdown.archiveStart', 'breakdown.history']) {
+    const response = await call(dispatch, { action, shareUrl: 'https://v.douyin.com/x/', idempotencyKey: 'douyin:vv_archive:u1' })
+    assert.equal(response.payload.status, 'error', action)
+    assert.equal(response.payload.reason, 'DOUYIN_TOOL_UNAVAILABLE', action)
+  }
+})

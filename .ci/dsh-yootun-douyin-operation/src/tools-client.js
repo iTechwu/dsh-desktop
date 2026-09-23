@@ -31,6 +31,15 @@ export const TOOL_NAMES = [
   // AI 账号表现分析（0916 方案）：start 写（幂等键）、get 只读轮询
   'douyin_account_ai_analysis_start',
   'douyin_account_ai_analysis_get',
+  // 爆款拆解（0922 方案）：直链归档受理/轮询、仿写工作流受理/轮询、
+  // 故事板与分析状态查询、仿写规则清单（纯配置只读）。
+  'viral_video_archive_submit',
+  'viral_video_async_submit_get',
+  'viral_video_workflow_start',
+  'viral_video_workflow_get',
+  'viral_video_storyboards_list',
+  'viral_video_analysis_status_get',
+  'viral_video_rewrite_rules_list',
 ]
 
 const ALLOWED_ERROR_CODES = new Set([
@@ -76,6 +85,16 @@ const ALLOWED_ERROR_CODES = new Set([
   'AI_ANALYSIS_MODEL_CONFIG_MISSING',
   'AI_ANALYSIS_PROMPT_INVALID',
   'IDEMPOTENCY_CONFLICT',
+  // 爆款拆解（0922 方案）稳定码：写工具缺幂等键、异步 Run 不存在、
+  // 仿写规则 id 不存在或已下线（与 tools 侧 mcp/domains/common.py 的
+  // ValueError 哨兵映射一一对应；确认/幂等冲突等通用码沿用上方白名单）。
+  // 注意：workflow_start 的规则/候选错误是**成功 envelope 内**的小写 errorCode
+  // 字段（如 unknown_rewrite_rule / candidate_not_found），不经本白名单；归档的
+  // 失败码（如 DOUYIN_VIDEO_DOWNLOAD_FAILED）同样随 async_submit_get 的 error
+  // 字段透传。本白名单只收敛 isError 形态的 envelope。
+  'IDEMPOTENCY_KEY_REQUIRED',
+  'ASYNC_RUN_NOT_FOUND',
+  'UNKNOWN_REWRITE_RULE',
 ])
 
 export class ToolsUnavailableError extends Error {
@@ -284,6 +303,12 @@ export const runCancelIdempotencyKey = runId => `douyin:run_cancel:${runId}`
 // 不双跑/双计费由服务端兜底：同账号 running 互斥（部分唯一索引）+ 成功收据重放 +
 // 结果缓存；键不嵌账号（服务端以 request.accountId 绑定并做 stable_request_hash 冲突校验）。
 export const aiAnalysisIdempotencyKey = requestUuid => `douyin:ai_analysis:${requestUuid}`
+// 爆款拆解受理键（0922 方案）：每次点击生成全新 UUID，页面内不跨点击复用。
+// 服务端 viral_video 域对键只做 1–128 长度约束、无模板校验；前缀沿用 douyin 域
+// 风格标识来源。归档 runId 由服务端从键摘要派生（mcp-vv-archive-{sha256[:24]}），
+// 同键重放返回同一 run 回执，不重复下载；工作流同键同输入走自然键 resume。
+export const viralVideoArchiveIdempotencyKey = requestUuid => `douyin:vv_archive:${requestUuid}`
+export const viralVideoWorkflowIdempotencyKey = requestUuid => `douyin:vv_workflow:${requestUuid}`
 // 账号保存/删除的键带**时间戳**而不是固定值，这是刻意为之：
 // - `account_save` 是 upsert，昵称/粉丝数会变；固定键会让第二次保存命中历史回执、
 //   把新资料吞掉；`account_remove` 是一次性单向清理，账号删除后可能被重新登录创建，
