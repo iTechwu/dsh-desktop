@@ -4,7 +4,10 @@ import { createLaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environ
 import type { DesktopStartupGenerationHost } from '../src/startup-generation.ts'
 const state = vi.hoisted(() => ({ fork: vi.fn() }))
 vi.mock('electron', () => ({ utilityProcess: { fork: state.fork } }))
-import { startIsolatedDesktopHost, type IsolatedHostOptions } from '../src/host-process.ts'
+import {
+  formatUnexpectedHostExit, HOST_STDERR_TAIL_CHARS, startIsolatedDesktopHost,
+  type IsolatedHostExit, type IsolatedHostOptions,
+} from '../src/host-process.ts'
 
 function fixture() {
   const child = Object.assign(new EventEmitter(), {
@@ -56,4 +59,26 @@ it('leaves a Desktop-requested teardown off the unexpected-exit record', async (
   await startIsolatedDesktopHost(f.options)
   await f.host().fiber.dispose()
   expect(f.onFailure).not.toHaveBeenCalled()
+})
+it('keeps what a fatal Host said last, since its stderr is otherwise never persisted', async () => {
+  const f = fixture()
+  vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
+  try {
+    await startIsolatedDesktopHost(f.options)
+    f.child.stderr.emit('data', Buffer.from('x'.repeat(HOST_STDERR_TAIL_CHARS)))
+    // A multibyte character split across two chunks must not turn into replacement characters.
+    const euro = Buffer.from('€')
+    f.child.stderr.emit('data', Buffer.concat([Buffer.from('dsh: fatal load failure: boom '), euro.subarray(0, 1)]))
+    f.child.stderr.emit('data', euro.subarray(1))
+    f.child.emit('exit', 1)
+  } finally { vi.restoreAllMocks() }
+  const [error, exit] = f.onFailure.mock.calls[0] as [Error, IsolatedHostExit]
+  expect(exit.stderrTail).toHaveLength(HOST_STDERR_TAIL_CHARS)
+  expect(exit.stderrTail.endsWith('dsh: fatal load failure: boom €')).toBe(true)
+  expect(formatUnexpectedHostExit(error, exit))
+    .toBe(`DSH Host exited (1); restart the application to reconnect\nLast DSH Host stderr:\n${exit.stderrTail}`)
+})
+it('logs only the exit reason when the Host wrote nothing', () => {
+  const error = new Error('DSH Host exited (0); restart the application to reconnect')
+  expect(formatUnexpectedHostExit(error, { exitCode: 0, uptimeMs: 1, stderrTail: '\n' })).toBe(error.message)
 })

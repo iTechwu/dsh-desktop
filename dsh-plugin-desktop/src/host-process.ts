@@ -3,6 +3,7 @@ import { serializeHostEnvironment } from './host-launch-environment.ts'
 import { utilityProcess } from 'electron'
 import { fileURLToPath } from 'node:url'
 import { performance } from 'node:perf_hooks'
+import { StringDecoder } from 'node:string_decoder'
 import { HostRpc } from './host-rpc.ts'
 import { bindNativeRuntime, runtimeSnapshot } from './host-runtime-bridge.ts'
 import type { DesktopHostOptions } from './host-bootstrap.ts'
@@ -26,6 +27,20 @@ export interface IsolatedHostExit {
   readonly exitCode: number
   /** Milliseconds between fork and exit; separates an instant death from one hours in. */
   readonly uptimeMs: number
+  /**
+   * The Host's last stderr output, bounded to {@link HOST_STDERR_TAIL_CHARS}. A fatal Host writes
+   * its reason there (the fail-loud diagnostic, or Node's own crash stack) and nowhere else.
+   */
+  readonly stderrTail: string
+}
+
+/** Enough for a fail-loud diagnostic with its inspected cause chain, small enough for one log entry. */
+export const HOST_STDERR_TAIL_CHARS = 16 * 1024
+
+/** The Desktop log entry for an unexpected Host exit: the reason, then what the Host said last. */
+export function formatUnexpectedHostExit(error: Error, exit: IsolatedHostExit): string {
+  const tail = exit.stderrTail.trimEnd()
+  return tail === '' ? error.message : `${error.message}\nLast DSH Host stderr:\n${tail}`
 }
 
 export async function startIsolatedDesktopHost(options: IsolatedHostOptions): Promise<void> {
@@ -35,7 +50,12 @@ export async function startIsolatedDesktopHost(options: IsolatedHostOptions): Pr
   })
   // Keep normal Host logs in its own files; stderr includes bootstrap failures.
   child.stdout?.on('data', (data: Buffer) => { process.stdout.write(data) })
-  child.stderr?.on('data', (data: Buffer) => { process.stderr.write(data) })
+  const stderrDecoder = new StringDecoder('utf8')
+  let stderrTail = ''
+  child.stderr?.on('data', (data: Buffer) => {
+    process.stderr.write(data)
+    stderrTail = (stderrTail + stderrDecoder.write(data)).slice(-HOST_STDERR_TAIL_CHARS)
+  })
   const rpc = new HostRpc({
     send: message => child.postMessage(message),
     listen: receive => { child.on('message', receive); return () => { child.removeListener('message', receive) } },
@@ -55,7 +75,7 @@ export async function startIsolatedDesktopHost(options: IsolatedHostOptions): Pr
     if (!stopping && booted) {
       options.onFailure(
         new Error(`DSH Host exited (${code}); restart the application to reconnect`),
-        { exitCode: code, uptimeMs: Math.max(0, performance.now() - forkedAt) },
+        { exitCode: code, uptimeMs: Math.max(0, performance.now() - forkedAt), stderrTail },
       )
     }
   })

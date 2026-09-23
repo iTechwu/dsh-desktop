@@ -170,6 +170,7 @@ function createHarness(
     confirmRestart: async acknowledge => { await acknowledge(); await restart(); return true },
     requestRecoveryRestart: restart,
     prepareToQuit: () => {},
+    platformLogin: () => {},
   }
   const settings = {
     get: vi.fn((namespace: unknown) => {
@@ -223,6 +224,9 @@ function createHarness(
     provide: vi.fn((key: string, value: unknown) => {
       Object.assign(ctx, { [key]: value })
     }),
+    // 0.1.5-rc.2 provides no optional service this plugin waits for (such as
+    // 0.1.7's `deepseekAccount`), so an injected row never activates here.
+    inject: vi.fn(),
     effect: vi.fn((register: () => unknown) => register()),
     on: vi.fn((event: string, listener: (namespace: unknown, next: unknown) => void) => {
       if (event === 'settings/updated') settingsUpdated.add(listener)

@@ -36,7 +36,6 @@ export function apply(ctx: Context): void {
   ctx.effect(installPluginControlsStyles, 'Plugin controls and permission dialog styles')
   registerPluginControls(ctx)
   if (window.desktopNext) {
-    if (window.desktopNext.sidebarBrowser) registerNativeSidebarBrowser(ctx, window.desktopNext.sidebarBrowser)
     const permissions = window.desktopNext.permissions
     if (permissions) ctx.effect(() => {
       const dispose = ctx.reflect.provide('desktopPermissions', permissions)

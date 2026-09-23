@@ -25,6 +25,38 @@ import { buildMacSystemRuntime, installedMacSystemPackage } from './mac-system-r
 
 export type MacUniversalArch = 'arm64' | 'x86_64'
 
+/** Architectures the unsigned macOS smoke can package. */
+export type MacSmokeArchitecture = 'universal' | 'arm64' | 'x64'
+
+/**
+ * Read the smoke architecture from `DSH_MAC_SMOKE_ARCH`, defaulting to the
+ * universal application the signed release ships. CI pull requests select one
+ * CPU because the universal merge alone dominates the macOS job.
+ * @param environment - Environment of the packaging or verification process.
+ * @returns The electron-builder architecture to package.
+ */
+export function macSmokeArchitecture(environment: NodeJS.ProcessEnv): MacSmokeArchitecture {
+  const value = environment.DSH_MAC_SMOKE_ARCH
+  if (value === undefined || value === '') return 'universal'
+  if (value === 'universal' || value === 'arm64' || value === 'x64') return value
+  throw new Error(
+    `DSH_MAC_SMOKE_ARCH must be universal, arm64, or x64; received ${JSON.stringify(value)}`,
+  )
+}
+
+/**
+ * List the Mach-O slices the packaged main executable must contain.
+ * @param architecture - Architecture the smoke packaged.
+ * @returns `lipo` architecture names, Intel first.
+ */
+export function macSmokeExecutableSlices(
+  architecture: MacSmokeArchitecture,
+): readonly MacUniversalArch[] {
+  if (architecture === 'arm64') return ['arm64']
+  if (architecture === 'x64') return ['x86_64']
+  return ['x86_64', 'arm64']
+}
+
 /** Thin native files that must be present for each CPU inside the packaged app directory. */
 export const MACOS_UNIVERSAL_NATIVE_ENTRIES = [
   {

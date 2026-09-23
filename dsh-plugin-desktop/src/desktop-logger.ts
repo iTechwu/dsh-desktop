@@ -7,6 +7,14 @@ export interface DesktopLogger {
   error(message: string): void
   /** Log an unknown cause, normalizing errors/objects/strings. */
   errorCause(cause: unknown): void
+  /**
+   * Log a message that records what the process decided, not that something went wrong.
+   *
+   * Startup facts belong in the log even when nothing failed: a report of "it cannot reach the
+   * network" is unanswerable without knowing which egress route the process chose, and a line that
+   * only appears on failure cannot establish that.
+   */
+  info(message: string): void
 }
 
 /** Process events needed to make uncaught exceptions observable and fatal. */
@@ -109,6 +117,48 @@ export function installDesktopUncaughtExceptionLogging(
   return () => { proc.off('uncaughtException', handler) }
 }
 
+/** Process surface the fail-loud adapter forwards subscriptions to. */
+export interface DesktopFailLoudEventSource {
+  on(event: string, handler: (err: unknown) => void): unknown
+  off(event: string, handler: (err: unknown) => void): unknown
+}
+
+/** `FailLoudProcess` shape accepted by both runtimes' `installFailLoud`. */
+export interface DesktopFailLoudProcess {
+  on(event: string, handler: (err: unknown) => void): unknown
+  off(event: string, handler: (err: unknown) => void): unknown
+  readonly stderr: { write(chunk: string): unknown }
+  exit(code: number): void
+}
+
+/**
+ * Adapt `process` for dsh-app-boot's `installFailLoud`.
+ *
+ * dsh 0.1.7's fail-loud subscribes to `uncaughtException` as well as
+ * `unhandledRejection`, which Desktop's own uncaught-exception handler already
+ * owns; with both installed one crash is logged twice. When fail-loud claims the
+ * event, `onClaimUncaughtException` retires Desktop's handler so the crash is
+ * reported once, and fail-loud's handler stays subscribed to absorb any further
+ * exception raised while the fatal exit drains. 0.1.5's fail-loud only takes
+ * `unhandledRejection`, so there Desktop's handler keeps the event.
+ */
+export function createDesktopFailLoudProcess(
+  proc: DesktopFailLoudEventSource,
+  stderr: { write(chunk: string): unknown },
+  exit: (code: number) => void,
+  onClaimUncaughtException: () => void,
+): DesktopFailLoudProcess {
+  return {
+    on: (event, handler) => {
+      if (event === 'uncaughtException') onClaimUncaughtException()
+      return proc.on(event, handler)
+    },
+    off: (event, handler) => proc.off(event, handler),
+    stderr,
+    exit,
+  }
+}
+
 /** DesktopLogger that writes to the shared sink and mirrors to process.stderr. */
 export class ElectronStderrLogger implements DesktopLogger {
   constructor(private readonly sink: LogFileSink | undefined) {}
@@ -131,5 +181,15 @@ export class ElectronStderrLogger implements DesktopLogger {
 
   errorCause(cause: unknown): void {
     this.error(formatDesktopErrorDetails(cause))
+  }
+
+  info(message: string): void {
+    const masked = maskSecrets(message)
+    try {
+      this.sink?.write('info', masked)
+    } catch {
+      // Persistent diagnostics are best-effort; stderr must remain available.
+    }
+    process.stderr.write(`${masked}\n`)
   }
 }

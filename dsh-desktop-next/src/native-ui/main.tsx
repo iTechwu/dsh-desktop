@@ -50,7 +50,8 @@ function NativePages({ adapter }: { adapter: NextSettingsAdapter }) {
         recover: { type: 'recover' }, 'repair-global': { type: 'repair-global' },
         'open-home': { type: 'open-home' }, 'open-logs': { type: 'open-logs' },
       }
-      const recoveryActions = ['open-checkpoint', 'preview-checkpoint', 'preview-uninstall', 'open-settings-document',
+      const recoveryActions = ['open-checkpoint', 'preview-checkpoint', 'preview-uninstall',
+        'preview-disable', 'preview-enable', 'open-settings-document',
         'open-profile-patch', 'open-profile-manifest', 'show-diagnostics', 'begin-change-data-directory',
         'restore-default-data-directory', 'factory-reset']
       if (recoveryActions.includes(url.hostname)) {

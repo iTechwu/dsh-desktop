@@ -12,6 +12,7 @@ import { APP_URL, IPC, SHELL_URL } from './ipc.ts'
 import { WINDOWS_TITLEBAR_HEIGHT } from './windows-layout.ts'
 import { preferredDesktopLocale, resolveDesktopLocale } from './menu-locale.ts'
 import { NextDesktopRuntime } from './desktop-runtime.ts'
+import { probeSystemProxy, type DesktopSystemProxyProbe } from './system-proxy.ts'
 import { DEFAULT_PROFILE, NATIVE_ACCESS_HEADER, type DesktopCommand, type DesktopState, type DesktopSettingsPage } from './desktop-contract.ts'
 import { portsChanged, parsePreferences } from './desktop-preferences.ts'
 import { NativeDesktop, applyWindowMaterial } from './native-desktop.ts'
@@ -26,7 +27,8 @@ import { ONBOARDING_ARGUMENT, RECOVERY_ARGUMENT, SAFE_ARGUMENT, relaunchArgument
 import { createNativePermissions, installMediaPermissions } from './electron-permissions.ts'
 import { readDataDirectory, validateDataDirectory } from './data-directory.ts'
 import { maskSecrets } from './mask-secrets.ts'
-import { NativeSidebarBrowser } from './sidebar-browser.ts'
+import { DesktopBrowserGuests } from './browser-guests.ts'
+import { PlatformLoginWindow } from './platform-login-window.ts'
 import { NextUpdates } from './updates.ts'
 import { NextUpdateInstaller } from './update-installer.ts'
 import { updateLabel } from './update-state.ts'
@@ -46,7 +48,8 @@ protocol.registerSchemesAsPrivileged([{ scheme: 'dsh-app', privileges: {
 } }])
 
 let mainWindow: BrowserWindow | undefined
-let sidebarBrowser: NativeSidebarBrowser | undefined
+// Storage partitions outlive individual windows, so the guest owner is process-scoped.
+const browserGuests = new DesktopBrowserGuests(() => runtime.auth ? [new URL(runtime.auth.url).origin] : [])
 let shellWindow: BrowserWindow | undefined
 let recoveryRunner: ReturnType<typeof createPackageRunner> | undefined
 let replacingWindow = false
@@ -59,6 +62,7 @@ let onboarding = false
 let onboardingComputerUse = false
 let relaunch: string[] | undefined
 let installingUpdate = false
+let systemProxy: DesktopSystemProxyProbe = {}
 let ownsInstance = false
 let windowsLanguage = 'en'
 const require = createRequire(NEXT_PACKAGE)
@@ -66,7 +70,7 @@ const webRoot = dirname(require.resolve('@deepseek-ai/dsh-web-frontend/dist/inde
 const version = (JSON.parse(readFileSync(NEXT_PACKAGE, 'utf8')) as { version: string }).version
 const t = (zh: string, en: string): string => windowsLanguage.toLowerCase().startsWith('zh') ? zh : en
 const runtime = new NextDesktopRuntime({
-  home, root, executable: process.execPath, addresses: () => [...desktopLanAddresses()],
+  home, root, executable: process.execPath, addresses: () => [...desktopLanAddresses()], systemProxy: () => systemProxy,
   certificate: addresses => createLanHttpsCertificate(electronData, addresses, {
     available: () => safeStorage.isEncryptionAvailable() && (process.platform !== 'linux' || safeStorage.getSelectedStorageBackend() !== 'basic_text'),
     seal: bytes => safeStorage.encryptString(Buffer.from(bytes).toString('utf8')),
@@ -77,6 +81,20 @@ const runtime = new NextDesktopRuntime({
   onRestart: () => run({ type: 'restart' }),
   onTerminal: () => run({ type: 'terminal' }),
   onNotification: notification => native.notify(notification),
+  onPlatformLogin: (request) => {
+    if (quitting || !app.isReady()) return
+    if (request.action === 'close') {
+      platformLogin.close()
+      if (request.focus) openMain()
+      return
+    }
+    const url = platformLoginUrl(request.url)
+    // A system browser reaches the Host's loopback callback only while browser access is on;
+    // otherwise the built-in window replays the callback with the native credentials.
+    if (runtime.state().browserUrl !== null) {
+      void shell.openExternal(url).catch(error => runtime.diagnostics.append(String(error), 'warn'))
+    } else platformLogin.open(url)
+  },
   onPermission: async (action, permission) => {
     if (quitting) throw new Error('Desktop is shutting down')
     const snapshot = permissions.query(permission)
@@ -88,6 +106,11 @@ const runtime = new NextDesktopRuntime({
     }
     return snapshot
   },
+})
+const platformLogin = new PlatformLoginWindow({
+  BrowserWindow, session: partition => session.fromPartition(partition), host: () => runtime.auth,
+  parent: () => mainWindow, title: () => t('登录 DeepSeek', 'Sign in to DeepSeek'), dark: () => nativeTheme.shouldUseDarkColors,
+  warn: error => runtime.diagnostics.append(String(error), 'warn'),
 })
 const native = new NativeDesktop({ root, language: () => windowsLanguage, state, window: () => mainWindow,
   show: openMain, run, warn: error => runtime.diagnostics.append(String(error), 'warn') })
@@ -131,6 +154,18 @@ function assertDesktopSender(event: Pick<IpcMainInvokeEvent, 'sender' | 'senderF
   if (event.sender === mainWindow?.webContents) assertSender(event, mainWindow, APP_URL)
   else assertSender(event, shellWindow, 'dsh-app://shell/')
 }
+/**
+ * Carry the effective palette into the Platform login page, as upstream Desktop does.
+ * `system` resolves through `nativeTheme.shouldUseDarkColors`, which follows the theme
+ * source preload-theme.ts publishes.
+ * @param authorizeUrl - authorization URL already validated by host-process.ts.
+ * @returns the URL carrying `theme=light` or `theme=dark`.
+ */
+function platformLoginUrl(authorizeUrl: string): string {
+  const url = new URL(authorizeUrl)
+  url.searchParams.set('theme', nativeTheme.shouldUseDarkColors ? 'dark' : 'light')
+  return url.href
+}
 function show(window: BrowserWindow): void {
   if (quitting || window.isDestroyed()) return
   if (window.isMinimized()) window.restore()
@@ -152,7 +187,9 @@ function createWindow(preload: string, primary = false): BrowserWindow {
       vibrancy: runtime.preferences.macosMaterial === 'transparent' ? 'sidebar' as const : undefined,
       visualEffectState: 'active' as const, backgroundColor: '#00000000',
     } : {}),
-    webPreferences: { preload: join(root, 'lib', preload), contextIsolation: true, sandbox: true, nodeIntegration: false },
+    // `webviewTag` only on the application document: every attachment is still refused unless
+    // `DesktopBrowserGuests` issued the lease, and the guest itself never gets the tag.
+    webPreferences: { preload: join(root, 'lib', preload), contextIsolation: true, sandbox: true, nodeIntegration: false, webviewTag: primary },
   })
   window.once('ready-to-show', () => show(window))
   if (primary) {
@@ -226,15 +263,9 @@ function openMain(): void {
   if (mainWindow && !mainWindow.isDestroyed()) { show(mainWindow); return }
   mainWindow = createWindow('preload-app.cjs', true)
   const owner = mainWindow
-  const browser = new NativeSidebarBrowser(owner, state => {
-    if (!owner.webContents.isDestroyed()) owner.webContents.send(IPC.sidebarBrowserState, state)
-  }, () => runtime.auth ? [new URL(runtime.auth.url).origin] : [])
-  sidebarBrowser = browser
-  owner.webContents.on('did-start-navigation', (_event, _url, inPlace, isMainFrame) => {
-    if (isMainFrame && !inPlace) browser.dispose()
-  })
-  owner.webContents.on('render-process-gone', () => browser.dispose())
-  mainWindow.on('closed', () => { browser.dispose(); sidebarBrowser = undefined; mainWindow = undefined })
+  // The guest owner installs its own navigation, crash and destruction release paths.
+  browserGuests.bind(owner)
+  mainWindow.on('closed', () => { mainWindow = undefined })
   mainWindow.webContents.on('render-process-gone', (_event, details) => { if (!quitting) runtime.report(new Error(`Renderer: ${details.reason}`)) })
   mainWindow.webContents.on('preload-error', (_event, _path, error) => runtime.report(error))
   mainWindow.webContents.on('did-fail-load', (_event, code, message, _url, isMain) => {
@@ -259,9 +290,40 @@ async function reloadMain(): Promise<void> {
   if (existing && existing === mainWindow && !existing.isDestroyed()) await loadMainDocument(existing)
 }
 
+/**
+ * Raise the window a modal dialog must belong to, and return it as its owner.
+ *
+ * Electron's `dialog.*` overloads that take no `BrowserWindow` open an unowned
+ * top-level window. On Windows that window disables nothing and is ordered
+ * against every other top-level window, so one click on the app sends the
+ * prompt behind it leaving no taskbar hint and no visual trace. Every recovery
+ * action waits on `confirmed()` before it touches a single file, so an occluded
+ * prompt is indistinguishable from an action that hung forever: no file change,
+ * no diagnostic line, no error, and no timeout to end it. Owning the dialog
+ * makes it window-modal, which is what the recovery UI's own busy state already
+ * promises the user.
+ *
+ * Recovery, safe mode and onboarding all run in `shellWindow` while
+ * `mainWindow` is destroyed, and `shellWindow` is only open while the user is
+ * looking at it, so preferring it puts the prompt on the surface that raised it.
+ *
+ * @returns the owning window, or `undefined` when no window is alive and an
+ *   unowned dialog is the only thing left.
+ */
+function raiseDialogOwner(): BrowserWindow | undefined {
+  for (const window of [shellWindow, mainWindow]) {
+    if (window === undefined || window.isDestroyed()) continue
+    show(window)
+    return window
+  }
+  return undefined
+}
+
 async function confirmed(message: string, detail = t('将停止当前 Host，正在运行的任务会被中断。', 'This stops the current Host and interrupts running tasks.')): Promise<boolean> {
-  const result = await dialog.showMessageBox({ type: 'question', title: 'DSH NEXT', message, detail,
-    buttons: [t('继续', 'Continue'), t('取消', 'Cancel')], defaultId: 1, cancelId: 1 })
+  const owner = raiseDialogOwner()
+  const options = { type: 'question' as const, title: 'DSH NEXT', message, detail,
+    buttons: [t('继续', 'Continue'), t('取消', 'Cancel')], defaultId: 1, cancelId: 1 }
+  const result = await (owner === undefined ? dialog.showMessageBox(options) : dialog.showMessageBox(owner, options))
   return result.response === 0 && !quitting
 }
 async function openPath(path: string): Promise<void> { const error = await shell.openPath(path); if (error) throw new Error(error) }
@@ -370,9 +432,11 @@ async function command(value: unknown, source: 'app' | 'shell' | 'native' = 'app
     if (type === 'export-ca' || type === 'diagnostics') {
       const certificate = runtime.lan?.caCertificate
       if (type === 'export-ca' && !certificate) throw new Error('LAN certificate is unavailable')
-      const result = await dialog.showSaveDialog({ title: type === 'export-ca' ? t('导出局域网 CA 证书', 'Export LAN CA certificate') : t('导出诊断（分享前请检查内容）', 'Export diagnostics (review before sharing)'),
+      const owner = raiseDialogOwner()
+      const options = { title: type === 'export-ca' ? t('导出局域网 CA 证书', 'Export LAN CA certificate') : t('导出诊断（分享前请检查内容）', 'Export diagnostics (review before sharing)'),
         defaultPath: type === 'export-ca' ? 'dsh-desktop-next-ca.crt' : `dsh-desktop-next-diagnostics-${Date.now()}.json`,
-        filters: [{ name: type === 'export-ca' ? 'CA certificate' : 'Diagnostics', extensions: [type === 'export-ca' ? 'crt' : 'json'] }] })
+        filters: [{ name: type === 'export-ca' ? 'CA certificate' : 'Diagnostics', extensions: [type === 'export-ca' ? 'crt' : 'json'] }] }
+      const result = await (owner === undefined ? dialog.showSaveDialog(options) : dialog.showSaveDialog(owner, options))
       if (!result.canceled && result.filePath && !quitting) {
         await writeFile(result.filePath, type === 'export-ca' ? certificate! : runtime.diagnostics.export(state()), { mode: 0o600 })
         if (type === 'diagnostics') diagnosticsFile = result.filePath
@@ -507,6 +571,26 @@ async function recoveryAction(input: Record<string, unknown>): Promise<void> {
     await restoreCheckpoint(checkpoint.id)
     return
   }
+  if (action === 'preview-disable' || action === 'preview-enable') {
+    const enable = action === 'preview-enable'
+    const bundle = runtime.recovery.bundles(runtime.selected).find(item => item.bundleId === input.id)
+    if (!bundle || bundle.toggle !== (enable ? 'enable' : 'disable')
+      || !/^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/u.test(bundle.packageName)) throw new Error('This plugin cannot be changed')
+    if (!await confirmed(
+      enable ? t(`启用插件「${bundle.packageName}」？`, `Enable “${bundle.packageName}”?`)
+        : t(`禁用插件「${bundle.packageName}」？`, `Disable “${bundle.packageName}”?`),
+      enable ? t('下次启动时会重新加载此插件。', 'The plugin will load again on the next start.')
+        : t('不会删除任何内容：插件、版本声明和配置都会保留，只是下次启动时不再加载。随时可以重新启用。',
+          'Nothing is deleted: the plugin, its version declaration and its configuration all stay. It simply will not load on the next start, and you can enable it again at any time.'))) return
+    await recoveryStopping
+    if (!runtime.safeMode) await runtime.backend.stop()
+    await runtime.recovery.setBundleSelected(runtime.selected, bundle.packageName, enable)
+    recoveryNotice = { tone: 'success', title: bundle.packageName, body: enable
+      ? t('插件已重新启用。请点击“退出并重启”使其生效。', 'The plugin is enabled again. Choose “Quit and restart” to apply it.')
+      : t('插件已禁用，安装内容仍然保留。请点击“退出并重启”使其生效。', 'The plugin is disabled and still installed. Choose “Quit and restart” to apply it.') }
+    runtime.diagnostics.append(`${enable ? 'Enabled' : 'Disabled'} bundle for ${runtime.selected}`)
+    return
+  }
   if (action === 'preview-uninstall') {
     const bundle = runtime.recovery.bundles(runtime.selected).find(item => item.bundleId === input.id)
     if (!bundle || bundle.action !== 'uninstall' || !/^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/u.test(bundle.packageName)) throw new Error('This bundle cannot be uninstalled')
@@ -519,7 +603,11 @@ async function recoveryAction(input: Record<string, unknown>): Promise<void> {
     return
   }
   if (action === 'begin-change-data-directory' || action === 'restore-default-data-directory') {
-    const choice = action === 'begin-change-data-directory' ? await dialog.showOpenDialog({ properties: ['openDirectory', 'createDirectory'] }) : undefined
+    const owner = action === 'begin-change-data-directory' ? raiseDialogOwner() : undefined
+    const choice = action !== 'begin-change-data-directory' ? undefined
+      : await (owner === undefined
+        ? dialog.showOpenDialog({ properties: ['openDirectory', 'createDirectory'] })
+        : dialog.showOpenDialog(owner, { properties: ['openDirectory', 'createDirectory'] }))
     if (choice?.canceled) return
     const target = action === 'restore-default-data-directory' ? defaultHome : choice?.filePaths[0]
     if (!target || !isAbsolute(target)) return
@@ -550,6 +638,10 @@ async function main(): Promise<void> {
   if (process.platform === 'darwin' && !app.isPackaged) app.dock?.setIcon(join(root, 'build', 'app-icon-mac.png'))
   // Recovery can open without a Host; Chromium's app locale may differ from the OS language.
   windowsLanguage = preferredDesktopLocale([...app.getPreferredSystemLanguages(), app.getLocale()])
+  // Read once, before anything can start a Host: a proxy client's "system proxy" switch sets no
+  // environment variable, and only Chromium can evaluate it (PAC/WPAD included). Changing the
+  // proxy takes effect on the next application start.
+  systemProxy = await probeSystemProxy(session.defaultSession)
   protocol.handle('dsh-app', async request => {
     const url = new URL(request.url)
     if (url.hostname === 'shell') {
@@ -568,7 +660,7 @@ async function main(): Promise<void> {
     assertSender(event, mainWindow, APP_URL)
     await runtime.startup
     if (!runtime.backend.host || !runtime.auth) throw new Error('Next Host is unavailable')
-    return { injections: runtime.auth.injections, streamBaseUrl: new URL(runtime.auth.url).origin }
+    return { injections: await runtime.injections(), streamBaseUrl: new URL(runtime.auth.url).origin }
   })
   ipcMain.handle(IPC.failed, (event, message: unknown) => {
     assertSender(event, mainWindow, APP_URL)
@@ -583,10 +675,14 @@ async function main(): Promise<void> {
     return page
   })
   ipcMain.handle(IPC.browserLinks, event => { assertDesktopSender(event); return runtime.browserLinks() })
-  ipcMain.handle(IPC.sidebarBrowser, (event, command: unknown) => {
+  ipcMain.handle(IPC.browserAcquire, (event, workspace: unknown) => {
     assertSender(event, mainWindow, APP_URL)
-    if (quitting || !sidebarBrowser) throw new Error('Desktop browser is unavailable')
-    return sidebarBrowser.command(command)
+    if (quitting) throw new Error('Desktop browser is unavailable')
+    return browserGuests.acquire(event.sender, workspace)
+  })
+  ipcMain.handle(IPC.browserRelease, (event, lease: unknown) => {
+    assertSender(event, mainWindow, APP_URL)
+    return browserGuests.release(event.sender, lease)
   })
   ipcMain.handle(IPC.permissionQuery, (event, permission: unknown) => { assertDesktopSender(event); return permissions.query(permission) })
   const permissionGesture = async (event: IpcMainInvokeEvent): Promise<void> => {
@@ -706,6 +802,7 @@ app.on('before-quit', event => {
     if (window && !window.isDestroyed()) window.hide()
   }
   native.close()
+  platformLogin.close()
   void Promise.all([updates.dispose(installingUpdate), (async () => { await recoveryRunner?.dispose(); await runtime.close() })()]).then(async () => {
     if (installingUpdate) {
       try { await updateInstaller.launch() }

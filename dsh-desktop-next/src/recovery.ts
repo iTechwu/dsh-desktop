@@ -97,7 +97,9 @@ export class NextRecovery {
   bundles(name: string) {
     const manifest = JSON.parse(readPrivateFile(join(this.profiles.directory(name), 'package.json')) ?? '{}')
     const bundles: unknown = manifest.dsh?.profile?.bundles
-    if (!Array.isArray(bundles) || bundles.some(item => typeof item !== 'string')) throw new Error('Invalid Next Profile manifest')
+    const ledger: unknown = manifest.dsh?.desktopNextDeselectedBundles ?? []
+    if (!Array.isArray(bundles) || bundles.some(item => typeof item !== 'string')
+      || !Array.isArray(ledger) || ledger.some(item => typeof item !== 'string')) throw new Error('Invalid Next Profile manifest')
     // Default web layers are only part of the product: optional shipped bundles
     // and official extensions must never become recovery uninstall targets.
     const shipped = JSON.parse(readPrivateFile(NEXT_PACKAGE)!) as {
@@ -105,10 +107,47 @@ export class NextRecovery {
     }
     const protectedNames = new Set([shipped.name, ...WEB_BUNDLES,
       ...Object.keys(shipped.dependencies ?? {}), ...shipped.dsh?.optionalBundles ?? []])
-    return [...new Set(bundles as string[])].filter(packageName =>
-      !protectedNames.has(packageName) && !packageName.startsWith('@deepseek-ai/'))
-      .map(packageName => ({ bundleId: packageName, packageName,
-        status: 'active' as const, owner: 'profile' as const, action: 'uninstall' as const }))
+    const eligible = (packageName: string): boolean =>
+      !protectedNames.has(packageName) && !packageName.startsWith('@deepseek-ai/')
+    const selected = [...new Set(bundles as string[])].filter(eligible)
+    // A deselected name is only shown while it is still a declared dependency:
+    // reselected or uninstalled elsewhere, the ledger entry is simply forgotten.
+    const dependencies = new Set(Object.keys(manifest.dependencies ?? {}))
+    const deselected = [...new Set(ledger as string[])].filter(packageName =>
+      eligible(packageName) && dependencies.has(packageName) && !selected.includes(packageName))
+    return [
+      ...selected.map(packageName => ({ bundleId: packageName, packageName,
+        status: 'active' as const, owner: 'profile' as const, action: 'uninstall' as const, toggle: 'disable' as const })),
+      ...deselected.map(packageName => ({ bundleId: packageName, packageName,
+        status: 'disabled' as const, owner: 'profile' as const, action: 'uninstall' as const, toggle: 'enable' as const })),
+    ]
+  }
+
+  /**
+   * Select or deselect one eligible bundle in `dsh.profile.bundles`. Nothing is
+   * deleted: the dependency entry and the installed package both stay, so the
+   * change is reversible and needs no package manager run.
+   */
+  async setBundleSelected(name: string, packageName: string, selected: boolean): Promise<void> {
+    const target = this.bundles(name).find(item => item.packageName === packageName)
+    if (!target || target.toggle !== (selected ? 'enable' : 'disable')) throw new Error('This plugin cannot be changed')
+    const dir = this.profiles.directory(name)
+    await withFileLock(join(dir, 'lock'), async () => {
+      this.backup(name, selected ? 'before-plugin-enable' : 'before-plugin-disable')
+      const manifest = JSON.parse(readPrivateFile(join(dir, 'package.json')) ?? '{}')
+      const bundles: unknown = manifest.dsh?.profile?.bundles
+      if (!Array.isArray(bundles) || bundles.some(item => typeof item !== 'string')) throw new Error('Invalid Next Profile manifest')
+      manifest.dsh.profile.bundles = selected
+        ? [...(bundles as string[]).filter(item => item !== packageName), packageName]
+        : (bundles as string[]).filter(item => item !== packageName)
+      const previous: unknown = manifest.dsh.desktopNextDeselectedBundles ?? []
+      const ledger = new Set(Array.isArray(previous) ? previous as string[] : [])
+      if (selected) ledger.delete(packageName)
+      else ledger.add(packageName)
+      if (ledger.size === 0) delete manifest.dsh.desktopNextDeselectedBundles
+      else manifest.dsh.desktopNextDeselectedBundles = [...ledger].sort()
+      atomicJson(join(dir, 'package.json'), manifest)
+    })
   }
 
   /** The original environment is stopped by the shell before resetting its data. */

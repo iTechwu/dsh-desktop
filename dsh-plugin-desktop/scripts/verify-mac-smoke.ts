@@ -8,6 +8,9 @@ import { fileURLToPath } from 'node:url'
 import {
   MACOS_UNIVERSAL_PACKAGED_ENTRIES,
   selectMacUniversalPackagedEntries,
+  macSmokeArchitecture,
+  macSmokeExecutableSlices,
+  type MacUniversalArch,
 } from './mac-universal.ts'
 import { DESKTOP_PRODUCT_NAME } from '../src/product-identity.ts'
 
@@ -17,6 +20,8 @@ export interface MacSmokeVerificationOptions {
   readonly distDir: string
   /** Installed application name inside the mounted image. */
   readonly productName: string
+  /** Mach-O slices the main executable must contain; defaults to both CPUs. */
+  readonly executableSlices?: readonly MacUniversalArch[]
   /** Return regular DMG files in the distribution directory. */
   readonly listDmgs: (distDir: string) => readonly string[]
   /** Create a private empty mount point. */
@@ -57,6 +62,7 @@ function defaultOptions(): MacSmokeVerificationOptions {
       ? join(packageRoot, 'dist', 'mac-smoke')
       : resolve(process.argv[2]),
     productName: DESKTOP_PRODUCT_NAME,
+    executableSlices: macSmokeExecutableSlices(macSmokeArchitecture(process.env)),
     listDmgs,
     makeMountPoint: () => mkdtempSync(join(tmpdir(), 'sensteed-agent-dmg-smoke-')),
     run,
@@ -118,8 +124,9 @@ export function verifyMacSmoke(
     ) {
       throw new Error(`packaged application has an invalid main executable: ${executablePath}`)
     }
-    options.run('lipo', [executablePath, '-verify_arch', 'x86_64'])
-    options.run('lipo', [executablePath, '-verify_arch', 'arm64'])
+    for (const slice of options.executableSlices ?? macSmokeExecutableSlices('universal')) {
+      options.run('lipo', [executablePath, '-verify_arch', slice])
+    }
 
     const appAsarPath = join(appPath, 'Contents', 'Resources', 'app.asar')
     if (!options.exists(appAsarPath)) {

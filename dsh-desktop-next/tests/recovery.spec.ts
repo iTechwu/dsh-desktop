@@ -69,11 +69,79 @@ it('omits shipped optional and official bundles from recovery while retaining th
   manifest.dsh.profile.bundles.push(
     '@agents-anywhere/dsh-bridge-next', 'dsh-community-market', 'dshmarket',
     '@deepseek-ai/dsh-experimental-agent-team-profile',
-    '@deepseek-ai/dsh-experimental-agent-team-web-profile',
     '@deepseek-ai/future-official-plugin',
     'third-party-plugin', '@community/example', 'third-party-plugin',
   )
   writeFileSync(path, JSON.stringify(manifest))
   expect(recovery.bundles('desktop').map(item => item.packageName)).toEqual(['third-party-plugin', '@community/example'])
   expect(recovery.bundles('desktop').every(item => item.action === 'uninstall')).toBe(true)
+})
+
+it('disables and re-enables a bundle without deleting its dependency, taking a backup each time', async () => {
+  const { directory, recovery } = fixture()
+  const path = join(directory, 'package.json')
+  const manifest = JSON.parse(readFileSync(path, 'utf8'))
+  manifest.dsh.profile.bundles.push('my-plugin')
+  manifest.dependencies = { ...manifest.dependencies, 'my-plugin': '1.0.0' }
+  writeFileSync(path, JSON.stringify(manifest))
+  expect(recovery.bundles('desktop').find(item => item.packageName === 'my-plugin')?.toggle).toBe('disable')
+
+  await recovery.setBundleSelected('desktop', 'my-plugin', false)
+  const disabled = JSON.parse(readFileSync(path, 'utf8'))
+  expect(disabled.dsh.profile.bundles).not.toContain('my-plugin')
+  expect(disabled.dependencies['my-plugin']).toBe('1.0.0')
+  expect(disabled.dsh.desktopNextDeselectedBundles).toEqual(['my-plugin'])
+  expect(recovery.bundles('desktop').find(item => item.packageName === 'my-plugin'))
+    .toMatchObject({ status: 'disabled', action: 'uninstall', toggle: 'enable' })
+  expect(readdirSync(recovery.directory)).toHaveLength(1)
+
+  await recovery.setBundleSelected('desktop', 'my-plugin', true)
+  const enabled = JSON.parse(readFileSync(path, 'utf8'))
+  expect(enabled.dsh.profile.bundles).toContain('my-plugin')
+  expect(enabled.dsh.desktopNextDeselectedBundles).toBeUndefined()
+  expect(recovery.bundles('desktop').find(item => item.packageName === 'my-plugin')?.toggle).toBe('disable')
+  expect(readdirSync(recovery.directory)).toHaveLength(2)
+})
+
+it('refuses a protected, unknown, or already-applied selection change', async () => {
+  const { directory, recovery } = fixture()
+  const path = join(directory, 'package.json')
+  const manifest = JSON.parse(readFileSync(path, 'utf8'))
+  manifest.dsh.profile.bundles.push('my-plugin', 'dsh-community-market')
+  manifest.dependencies = { ...manifest.dependencies, 'my-plugin': '1.0.0' }
+  writeFileSync(path, JSON.stringify(manifest))
+  const before = readFileSync(path, 'utf8')
+
+  for (const [name, selected] of [
+    ['dsh-community-market', false],
+    ['dsh-desktop-next', false],
+    ['never-installed', false],
+    ['my-plugin', true],
+  ] as const) {
+    await expect(recovery.setBundleSelected('desktop', name, selected))
+      .rejects.toThrow('cannot be changed')
+  }
+  expect(readFileSync(path, 'utf8')).toBe(before)
+})
+
+it('forgets a ledger entry once the bundle is reselected or its dependency is gone', async () => {
+  const { directory, recovery } = fixture()
+  const path = join(directory, 'package.json')
+  const manifest = JSON.parse(readFileSync(path, 'utf8'))
+  manifest.dsh.profile.bundles.push('my-plugin')
+  manifest.dependencies = { ...manifest.dependencies, 'my-plugin': '1.0.0' }
+  writeFileSync(path, JSON.stringify(manifest))
+  await recovery.setBundleSelected('desktop', 'my-plugin', false)
+
+  const reselected = JSON.parse(readFileSync(path, 'utf8'))
+  reselected.dsh.profile.bundles.push('my-plugin')
+  writeFileSync(path, JSON.stringify(reselected))
+  expect(recovery.bundles('desktop').filter(item => item.packageName === 'my-plugin'))
+    .toEqual([expect.objectContaining({ status: 'active', toggle: 'disable' })])
+
+  const removed = JSON.parse(readFileSync(path, 'utf8'))
+  removed.dsh.profile.bundles = removed.dsh.profile.bundles.filter((name: string) => name !== 'my-plugin')
+  delete removed.dependencies['my-plugin']
+  writeFileSync(path, JSON.stringify(removed))
+  expect(recovery.bundles('desktop').some(item => item.packageName === 'my-plugin')).toBe(false)
 })

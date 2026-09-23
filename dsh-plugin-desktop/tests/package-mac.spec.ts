@@ -66,8 +66,6 @@ describe('macOS DMG smoke packaging', () => {
       command: '/usr/local/bin/node',
       args: [
         '/repo/node_modules/electron-builder/cli.js',
-        '--config',
-        'electron-builder.json',
         '--mac',
         'dmg',
         '--universal',
@@ -115,8 +113,6 @@ describe('macOS DMG smoke packaging', () => {
     expect(calls).toHaveLength(2)
     expect(calls[0]?.args).toEqual([
       '/repo/node_modules/electron-builder/cli.js',
-      '--config',
-      'electron-builder.json',
       '--mac',
       'dmg',
       '--universal',
@@ -132,30 +128,42 @@ describe('macOS DMG smoke packaging', () => {
     ])
   })
 
-  it('preserves the pnpm environment for Electron Builder package discovery', () => {
+  it('packages one CPU without the universal merge when requested', () => {
     const calls: CommandCall[] = []
+    const logs: string[] = []
     const value = {
-      ...options(calls),
+      ...options(calls, logs),
       env: {
         ...options(calls).env,
         DSH_PACKAGE_CHECK_ALREADY_RAN: '1',
-        npm_config_user_agent: 'pnpm/11.7.0 npm/? node/v22.23.2 darwin arm64',
-        npm_execpath: '/usr/local/bin/pnpm',
+        DSH_MAC_SMOKE_ARCH: 'arm64',
       },
     }
 
     packageMacSmoke(value)
 
-    expect(calls[0]?.env).toMatchObject({
-      npm_config_user_agent: 'pnpm/11.7.0 npm/? node/v22.23.2 darwin arm64',
-      npm_execpath: '/usr/local/bin/pnpm',
-    })
+    expect(calls).toHaveLength(2)
+    expect(calls[0]?.args).toContain('--arm64')
+    expect(calls[0]?.args).not.toContain('--universal')
+    expect(calls[1]?.env.DSH_MAC_SMOKE_ARCH).toBe('arm64')
+    expect(logs).toContain('Packaging only the arm64 application; the universal merge is skipped.')
+  })
+
+  it('rejects an unknown smoke architecture before running commands', () => {
+    const calls: CommandCall[] = []
+    const value = {
+      ...options(calls),
+      env: { ...options(calls).env, DSH_MAC_SMOKE_ARCH: 'ia32' },
+    }
+
+    expect(() => packageMacSmoke(value)).toThrow('DSH_MAC_SMOKE_ARCH must be universal, arm64, or x64')
+    expect(calls).toEqual([])
   })
 
   it.each([
     ['win32', 'arm64', '22.23.2', 'native macOS host'],
     ['darwin', 'ia32', '22.23.2', 'requires x64 or arm64 Node'],
-    ['darwin', 'arm64', '23.0.0', 'Node 22.19+ or Node 24+'],
+    ['darwin', 'arm64', '25.0.0', 'Node 22.19+ or Node 24+'],
   ] as const)(
     'rejects unsupported host %s/%s with Node %s before running commands',
     (platform, arch, nodeVersion, message) => {

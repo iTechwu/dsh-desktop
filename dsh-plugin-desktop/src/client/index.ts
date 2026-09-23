@@ -8,6 +8,9 @@ import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type {} from '@deepseek-ai/dsh-client-ui-theme/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
+// Type-only service convergence for the launch-folder bridge's scoped inject.
+import type {} from '@deepseek-ai/dsh-api-workspace-controller/client'
+import type {} from '@deepseek-ai/dsh-client-ui-workspace/client'
 import { applyAdvancedShell } from './advanced-shell.ts'
 import { applyDofeAccess } from './register-dofe-access.ts'
 import { applyDesktopBrand } from './brand.tsx'
@@ -16,6 +19,8 @@ import { applyDesktopSettings } from './desktop-settings.ts'
 import { installDesktopDirectoryPickerBridge } from './directory-picker.ts'
 import { parseDesktopClientEnvironment } from './environment.ts'
 import { applyExtendedShell } from './extended-shell.ts'
+import { installDesktopLaunchWorkspaceBridge } from './launch-workspace.ts'
+import { DESKTOP_SETTINGS_FORMS_SERVICE } from './settings-bridge.ts'
 import { installSidebarFooterStyles } from './sidebar-footer-styles.ts'
 import { desktopWindowService, provideDesktopWindow } from './window-service.ts'
 
@@ -69,6 +74,40 @@ export type {
   DesktopWindowInsets,
   DesktopWindowService,
 } from './contracts.ts'
+export {
+  installDesktopLaunchWorkspaceBridge,
+  openDesktopLaunchWorkspace,
+} from './launch-workspace.ts'
+export type {
+  DesktopLaunchWorkspaceTarget,
+  DesktopLaunchWorkspaceWindow,
+} from './launch-workspace.ts'
+
+/**
+ * Settle once both Host-backed lists the open path depends on have arrived.
+ *
+ * Registering before the first Workspace baseline installs is not merely early:
+ * the baseline replaces the list wholesale, so the echoed row disappears and the
+ * open that follows fails against an id the list no longer holds. Waiting for
+ * the session list as well keeps a repeated launch from minting a second blank
+ * session that the reuse scan could not yet see.
+ * @param ctx - scope holding both controller services.
+ */
+async function whenWorkspaceListsReady(ctx: ClientContext): Promise<void> {
+  const settled = (): boolean => ctx.workspaces.list.getSnapshot().phase === 'ready'
+    && ctx.sessions.list.getSnapshot().phase === 'ready'
+  if (settled()) return
+  await new Promise<void>(resolve => {
+    const disposers: (() => void)[] = []
+    const check = (): void => {
+      if (!settled()) return
+      for (const dispose of disposers.splice(0)) dispose()
+      resolve()
+    }
+    disposers.push(ctx.workspaces.list.subscribe(check), ctx.sessions.list.subscribe(check))
+    check()
+  })
+}
 
 /** Services required by Desktop settings and Desktop-owned presentations. */
 export const inject = [
@@ -78,7 +117,7 @@ export const inject = [
   'remote',
   'remote.credentials',
   'remote.settings',
-  'settingsScope',
+  DESKTOP_SETTINGS_FORMS_SERVICE,
   'sessions',
   'theme',
   'uiRenderer',
@@ -128,4 +167,19 @@ export function apply(ctx: ClientContext): void {
   }
   if (environment.mode === 'advanced') applyAdvancedShell(ctx, environment)
   if (environment.mode === 'extended') applyExtendedShell(ctx, environment, desktopSettings)
+  // Scoped rather than module-level on purpose: the shells above provide
+  // `layout`, and upstream's `uiWorkspace` injects it. Naming `uiWorkspace` in
+  // the module-level inject list would deadlock the two against each other.
+  // Not gated on win32 either — the launcher's folder argument works on Linux.
+  ctx.inject(['workspaces', 'uiWorkspace'], (scope: ClientContext) => {
+    scope.effect(
+      () => installDesktopLaunchWorkspaceBridge({
+        ready: async () => { await whenWorkspaceListsReady(scope) },
+        create: async path => (await scope.workspaces.create({ path })).workspaceId,
+        open: async workspaceId => { await scope.uiWorkspace.openWorkspace(workspaceId) },
+        reportError: message => { console.error(`dsh-plugin-desktop: ${message}`) },
+      }),
+      'dsh-plugin-desktop: launch workspace bridge',
+    )
+  })
 }

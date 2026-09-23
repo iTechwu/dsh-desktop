@@ -4,7 +4,7 @@ import { mkdtempSync } from 'node:fs'
 import { cleanupDisposableTree } from '../../dsh-plugin-desktop/src/disposable-tree.ts'
 import { join } from 'node:path'
 import { DesktopBackendController } from './backend-controller.ts'
-import { DesktopHostProcess } from './host-process.ts'
+import { DesktopHostFatalError, DesktopHostProcess, type DesktopPlatformLoginRequest } from './host-process.ts'
 import { DesktopPreferenceStore, parsePreferences } from './desktop-preferences.ts'
 import { DEFAULT_FEATURES, NextProfiles } from './profiles.ts'
 import { DEFAULT_PREFERENCES, DEFAULT_PROFILE, type DesktopBrowserLinks, type DesktopPreferences, type DesktopState, type DesktopNotification } from './desktop-contract.ts'
@@ -16,12 +16,15 @@ import { authenticateWebHost } from './web-document.ts'
 import { DesktopLanHttpsRuntime } from './lan-https-runtime.ts'
 import type { DesktopLanHttpsCertificate } from './lan-https-certificate.ts'
 import type { DesktopPermission, DesktopPermissionAction, DesktopPermissionSnapshot } from './permissions.ts'
+import { SYSTEM_PROXY_ENV, type DesktopSystemProxyProbe } from './system-proxy.ts'
 
 interface RuntimeOptions {
   home: string
   root: string
   executable: string
   addresses(): string[]
+  /** The system proxy main probed at startup; the Host decides whether it applies. */
+  systemProxy?(): DesktopSystemProxyProbe
   certificate(addresses: readonly string[]): Promise<DesktopLanHttpsCertificate>
   onFailure(): void
   onChange(): void
@@ -29,6 +32,7 @@ interface RuntimeOptions {
   onTerminal(): void
   onNotification(notification: DesktopNotification): void
   onPermission?(action: DesktopPermissionAction, permission: DesktopPermission): Promise<DesktopPermissionSnapshot>
+  onPlatformLogin?(request: DesktopPlatformLoginRequest): void
 }
 
 export class NextDesktopRuntime {
@@ -57,7 +61,16 @@ export class NextDesktopRuntime {
     this.settings = new DesktopPreferenceStore(options.home)
     this.diagnostics = new DesktopDiagnostics(options.home)
     this.backend = new DesktopBackendController(onFailure => this.createHost(onFailure), state => {
-      if (state.phase === 'error' && !this.closing) this.report(state.message)
+      if (state.phase === 'error' && !this.closing) {
+        this.report(state.message)
+        // The Host now ships its complete inspected error with `fatal`. Recovery
+        // shows only the message; the stack, properties and cause chain go to the
+        // diagnostics log so a startup failure stays diagnosable after the fact.
+        const failure = state.failure
+        if (failure instanceof DesktopHostFatalError && failure.diagnostic !== undefined) {
+          this.diagnostics.append(maskSecrets(failure.diagnostic), 'error')
+        }
+      }
       this.options.onChange()
     })
   }
@@ -117,6 +130,23 @@ export class NextDesktopRuntime {
     this.preferences = this.settings.write(parsePreferences(value))
     this.diagnostics.level = this.preferences.logLevel
     this.options.onChange()
+  }
+
+  /**
+   * Boot rows for a document that is loading now.
+   * @returns The Host's current Web boot table, or the table captured at startup when the running
+   * Host cannot answer. dsh 0.1.7 addresses boot bundles by revision and republishes the table
+   * whenever a plugin registers, so replaying the startup table breaks every reload that follows
+   * a plugin installation.
+   */
+  async injections(): Promise<readonly unknown[]> {
+    const auth = this.auth
+    if (!auth) throw new Error('Next Host is unavailable')
+    try { return await (this.hostProcess?.collectInjections() ?? Promise.resolve(auth.injections)) }
+    catch (error) {
+      this.diagnostics.append(`Web boot injections: ${String(error)}`, 'warn')
+      return auth.injections
+    }
   }
 
   /** Apply access toggles without stopping conversations or changing the renderer capability. */
@@ -228,9 +258,10 @@ export class NextDesktopRuntime {
     const host = new DesktopHostProcess(options.executable, options.root, new NextProfiles(actualHome).directory(profile), undefined,
       { ...process.env, DSH_HOME: actualHome, DSH_NEXT_NATIVE_TOKEN: token,
         DSH_NEXT_PREFERENCES: JSON.stringify(effective), DSH_NEXT_TRUSTED_HOSTS: JSON.stringify(addresses),
+        [SYSTEM_PROXY_ENV]: JSON.stringify(options.systemProxy?.() ?? {}),
         ...(this.safeMode ? { DSH_TELEMETRY_DISABLED: '1' } : {}) },
-      onFailure, undefined, 'runtime', undefined, join(options.root, 'lib', 'host.js'), options.onRestart, options.onNotification,
-      chunk => this.diagnostics.hostChunk(chunk), options.onTerminal, options.onPermission)
+      onFailure, undefined, undefined, join(options.root, 'lib', 'host.js'), options.onRestart, options.onNotification,
+      chunk => this.diagnostics.hostChunk(chunk), options.onTerminal, options.onPermission, undefined, options.onPlatformLogin)
     this.hostProcess = host
     return {
       start: async (): Promise<void> => {

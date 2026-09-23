@@ -4,6 +4,7 @@ import type { RendererBootReport } from './renderer-boot-contract.ts'
 import type { DesktopReleaseChannel, UpdateCheckResult, UpdateRequest } from './update-checker.ts'
 import type { DesktopInstallationId } from './desktop-installation-id.ts'
 import type { ProfileCreateWindowOptions } from './profile-create-window.ts'
+import type { DesktopPlatformLoginRequest } from './platform-login.ts'
 import type {
   DesktopWindowMaterial,
   MacosWindowMaterial,
@@ -263,6 +264,12 @@ export interface DesktopRuntime {
 
   /** Open the isolated native Profile creator, focusing an existing instance. */
   openProfileCreateWindow(options: Omit<ProfileCreateWindowOptions, 'locale'>): void
+
+  /**
+   * Open a DeepSeek Platform sign-in page, or settle the page after its attempt ended.
+   * @param request - validated request from the Host's account watcher.
+   */
+  platformLogin(request: DesktopPlatformLoginRequest): void
 
   /** Confirm that one renderer-selected workspace is safe to persist. */
   validateDirectory(path: string): Promise<boolean>

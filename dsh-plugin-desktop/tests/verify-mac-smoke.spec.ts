@@ -147,6 +147,20 @@ describe('macOS DMG smoke artifact verification', () => {
       dmgPath: `/release/dist/${dmgName}.dmg`,
     })
     expect(harness.calls.some(call => call.args.some(arg => arg.includes('@dataiku/uv-')))).toBe(false)
+
+  it('checks only the packaged slice of a single-architecture smoke', () => {
+    const value = fixture()
+    const harness = options(
+      { makeMountPoint: () => value.root, executableSlices: ['arm64'] },
+      value.modeOverrides,
+    )
+
+    verifyMacSmoke(harness.value)
+
+    const executableChecks = harness.calls
+      .filter(call => call.command === 'lipo' && call.args[0] === value.executable)
+      .map(call => call.args)
+    expect(executableChecks).toEqual([[value.executable, '-verify_arch', 'arm64']])
   })
 
   it('rejects the mount when no DMG is present', () => {

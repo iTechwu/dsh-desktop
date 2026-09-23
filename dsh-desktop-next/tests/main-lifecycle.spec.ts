@@ -695,3 +695,48 @@ it.each(['success', 'cancel', 'failure'] as const)('restores a checkpoint with d
     expect(fixture.start).not.toHaveBeenCalled()
   } finally { process.argv.splice(0, process.argv.length, ...argv); vi.unstubAllEnvs(); rmSync(home, { recursive: true, force: true }) }
 })
+
+
+it('disables and re-enables a Profile bundle from recovery without running the package manager', async () => {
+  const home = mkdtempSync(join(tmpdir(), 'next-bundle-selection-'))
+  vi.stubEnv('DSH_DESKTOP_NEXT_HOME', home)
+  const argv = [...process.argv]
+  process.argv.push('--next-recovery')
+  try {
+    await import('../src/main.ts')
+    await vi.waitFor(() => expect(fixture.windows).toHaveLength(1))
+    const manager = new NextProfiles(home)
+    const path = join(manager.directory('desktop'), 'package.json')
+    const manifest = JSON.parse(readFileSync(path, 'utf8'))
+    manifest.dsh.profile.bundles.push('my-plugin')
+    manifest.dependencies = { ...manifest.dependencies, 'my-plugin': '1.0.0' }
+    writeFileSync(path, JSON.stringify(manifest))
+    const window = fixture.windows[0]
+    const sender = { sender: window.webContents, senderFrame: window.webContents.mainFrame }
+    const command = fixture.handlers.get('dsh-next:command')!
+    const state = () => fixture.handlers.get('dsh-next:state')!(sender)
+    const { dialog } = await import('electron')
+
+    await command(sender, { type: 'recovery-action', action: 'preview-disable', id: 'my-plugin' })
+    // Nothing is installed or removed, so a half-written package directory and a
+    // Windows file lock can never block the one action that unblocks startup.
+    expect(fixture.plugin).not.toHaveBeenCalled()
+    const disabled = JSON.parse(readFileSync(path, 'utf8'))
+    expect(disabled.dsh.profile.bundles).not.toContain('my-plugin')
+    expect(disabled.dependencies['my-plugin']).toBe('1.0.0')
+    expect(state().recovery.bundles.find((item: { packageName: string }) => item.packageName === 'my-plugin'))
+      .toMatchObject({ status: 'disabled', toggle: 'enable' })
+    expect(state().recovery.notice).toMatchObject({ tone: 'success' })
+
+    vi.mocked(dialog.showMessageBox).mockResolvedValueOnce({ response: 1, checkboxChecked: false })
+    await command(sender, { type: 'recovery-action', action: 'preview-enable', id: 'my-plugin' })
+    expect(JSON.parse(readFileSync(path, 'utf8')).dsh.profile.bundles).not.toContain('my-plugin')
+
+    await expect(command(sender, { type: 'recovery-action', action: 'preview-disable', id: 'my-plugin' }))
+      .rejects.toThrow('cannot be changed')
+
+    await command(sender, { type: 'recovery-action', action: 'preview-enable', id: 'my-plugin' })
+    expect(JSON.parse(readFileSync(path, 'utf8')).dsh.profile.bundles).toContain('my-plugin')
+    expect(fixture.plugin).not.toHaveBeenCalled()
+  } finally { process.argv.splice(0, process.argv.length, ...argv); vi.unstubAllEnvs(); rmSync(home, { recursive: true, force: true }) }
+})

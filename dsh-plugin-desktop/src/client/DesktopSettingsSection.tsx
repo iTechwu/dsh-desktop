@@ -3,22 +3,20 @@
 import {
   useCallback, useEffect, useId, useRef, useState, useSyncExternalStore, type FormEvent, type ReactNode,
 } from 'react'
-import type { SettingsScope } from '@deepseek-ai/dsh-client-ui-settings/client'
+import type { DesktopSettingsForm } from './settings-bridge.ts'
 import { Check, Copy } from 'lucide-react'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
-import type { ClientRemote } from '@deepseek-ai/dsh-api-remotes/client'
 import type {
   DesktopMarketProvider, DesktopProfileView, DesktopSettingsApi, DesktopSettingsView,
 } from './desktop-settings-api.ts'
 import type { DesktopSettingsLocaleKey } from './desktop-settings-locales.ts'
 import type { DesktopClientPlatform } from './environment.ts'
-import { DeepSeekSearchSettings } from './DeepSeekSearchSettings.tsx'
 import {
   desktopBrowserAccessAvailable,
   desktopBrowserAccessEnabled,
 } from '../desktop-network.ts'
 
-/** Browser view of the Host `sensteed-agent` settings namespace. */
+/** Browser view of the Host `dsh-desktop` settings namespace. */
 export interface DesktopShellSettings {
   readonly mode: 'compatibility' | 'extended' | 'advanced'
   readonly macosMaterial: 'off' | 'transparent'
@@ -30,25 +28,13 @@ export interface DesktopShellSettings {
   readonly logLevel: 'debug' | 'info' | 'warn' | 'error'
 }
 
-/** Browser view of the Host `sensteed-agent-notifications` settings namespace. */
+/** Browser view of the Host `dsh-desktop-notifications` settings namespace. */
 export interface DesktopNotificationSettings {
   readonly enabled: boolean
   readonly notifyOnTurnCompletion: boolean
   readonly notifyOnTurnFailure: boolean
   readonly notifyOnJobCompletion: boolean
   readonly notifyOnJobFailure: boolean
-}
-
-/** Host/next-channel capability overrides that constrain which settings actions apply. */
-export interface DesktopSettingsCapabilities {
-  readonly pluginSelectors?: boolean
-  readonly windowModes?: boolean
-  readonly featuresReadOnly?: boolean
-  readonly markets?: readonly DesktopMarketProvider[]
-  readonly materialRequiresRestart?: boolean
-  readonly nativeLanConfirmation?: boolean
-  readonly jobNotifications?: boolean
-  readonly updates?: boolean
 }
 
 /** Registration-side business face for the Desktop settings section. */
@@ -60,10 +46,19 @@ export interface DesktopSettingsSectionInjected {
   readonly initialMode: DesktopShellSettings['mode']
   readonly micaSupported: boolean
   readonly setMode: (mode: DesktopShellSettings['mode']) => Promise<void>
-  readonly desktopSettings: Pick<SettingsScope<DesktopShellSettings>, 'getSnapshot' | 'subscribe' | 'set'>
-  readonly notificationSettings: Pick<SettingsScope<DesktopNotificationSettings>, 'getSnapshot' | 'subscribe' | 'set'>
-  readonly searchCredentials?: Pick<ClientRemote['credentials'], 'describe' | 'set' | 'unset'>
-  readonly capabilities?: DesktopSettingsCapabilities
+  readonly desktopSettings: Pick<DesktopSettingsForm<DesktopShellSettings>, 'getSnapshot' | 'subscribe' | 'set'>
+  readonly notificationSettings: Pick<DesktopSettingsForm<DesktopNotificationSettings>, 'getSnapshot' | 'subscribe' | 'set'>
+  /** Hosts can omit unsupported features while sharing the existing page. */
+  readonly capabilities?: {
+    readonly pluginSelectors?: boolean
+    readonly windowModes?: boolean
+    readonly featuresReadOnly?: boolean
+    readonly markets?: readonly DesktopMarketProvider[]
+    readonly materialRequiresRestart?: boolean
+    readonly nativeLanConfirmation?: boolean
+    readonly jobNotifications?: boolean
+    readonly updates?: boolean
+  }
   readonly introNotice?: ReactNode
   readonly browserActions?: ReactNode
   readonly extraSections?: ReactNode
@@ -133,7 +128,7 @@ export async function readDesktopSettingsUntilLanSettled(
 
 /** Persist ordinary-browser permission and refresh the already-running edge. */
 export async function persistDesktopBrowserAccessHot(
-  settings: Pick<SettingsScope<DesktopShellSettings>, 'set'>,
+  settings: Pick<DesktopSettingsForm<DesktopShellSettings>, 'set'>,
   checked: boolean,
   currentExposure: DesktopShellSettings['networkExposure'],
   refresh: () => Promise<DesktopSettingsView>,
@@ -147,7 +142,7 @@ export async function persistDesktopBrowserAccessHot(
 
 /** Persist LAN intent and refresh its hot HTTPS ingress state. */
 export async function persistDesktopNetworkExposureHot(
-  settings: Pick<SettingsScope<DesktopShellSettings>, 'set'>,
+  settings: Pick<DesktopSettingsForm<DesktopShellSettings>, 'set'>,
   exposure: DesktopShellSettings['networkExposure'],
   refresh: () => Promise<DesktopSettingsView>,
 ): Promise<DesktopSettingsView> {
@@ -173,7 +168,7 @@ export function resolveDesktopLanConfirmation(
   if (confirmed) enableLan()
 }
 
-function useScope<T>(scope: Pick<SettingsScope<T>, 'getSnapshot' | 'subscribe'>) {
+function useScope<T>(scope: Pick<DesktopSettingsForm<T>, 'getSnapshot' | 'subscribe'>) {
   const subscribe = useCallback((listener: () => void) => scope.subscribe(listener), [scope])
   const snapshot = useCallback(() => scope.getSnapshot(), [scope])
   return useSyncExternalStore(subscribe, snapshot)
@@ -207,7 +202,7 @@ export function Choice({
   return (
     <div
       role="radio"
-      className="sensteedAgentSettingsChoice"
+      className="dshDesktopSettingsChoice"
       data-selected={selected ? 'true' : undefined}
       data-actionable={actionable ? 'true' : undefined}
       aria-checked={selected}
@@ -220,13 +215,13 @@ export function Choice({
         choose()
       }}
     >
-      <span className="sensteedAgentSettingsChoiceCopy">
-        <span className="sensteedAgentSettingsChoiceTitle">
+      <span className="dshDesktopSettingsChoiceCopy">
+        <span className="dshDesktopSettingsChoiceTitle">
           {title}
-          {badge !== undefined && <span className="sensteedAgentSettingsBadge">{badge}</span>}
-          {status !== undefined && <span className="sensteedAgentSettingsBadge">{status}</span>}
+          {badge !== undefined && <span className="dshDesktopSettingsBadge">{badge}</span>}
+          {status !== undefined && <span className="dshDesktopSettingsBadge">{status}</span>}
         </span>
-        <span className="sensteedAgentSettingsChoiceBody">{body}</span>
+        <span className="dshDesktopSettingsChoiceBody">{body}</span>
       </span>
       {aside}
     </div>
@@ -236,7 +231,7 @@ export function Choice({
 function RepositoryLink({ href, children }: { href: string; children: ReactNode }) {
   return (
     <a
-      className="sensteedAgentSettingsChoiceLink"
+      className="dshDesktopSettingsChoiceLink"
       href={href}
       target="_blank"
       rel="noopener noreferrer"
@@ -262,21 +257,21 @@ export function DesktopSettingsToggleRow({
 }) {
   const labelId = useId()
   return (
-    <div className="sensteedAgentSettingsToggleRow">
-      <span className="sensteedAgentSettingsToggleLabel" id={labelId}>
+    <div className="dshDesktopSettingsToggleRow">
+      <span className="dshDesktopSettingsToggleLabel" id={labelId}>
         {label}
-        {badge !== undefined && <span className="sensteedAgentSettingsBadge">{badge}</span>}
+        {badge !== undefined && <span className="dshDesktopSettingsBadge">{badge}</span>}
       </span>
       <button
         type="button"
         role="switch"
-        className="sensteedAgentSettingsToggle"
+        className="dshDesktopSettingsToggle"
         aria-checked={checked}
         aria-labelledby={labelId}
         disabled={disabled}
         onClick={() => { onChange(!checked) }}
       >
-        <span className="sensteedAgentSettingsToggleKnob" aria-hidden="true" />
+        <span className="dshDesktopSettingsToggleKnob" aria-hidden="true" />
       </button>
     </div>
   )
@@ -342,15 +337,15 @@ function DesktopBrowserUrl({ url, api, t, onOpen }: {
     try { await api.copyBrowser!(url); setCopied(true) } catch { setFailed(true) } finally { setBusy(false) }
   }
   return <>
-    <div className="sensteedAgentSettingsUrlRow">
+    <div className="dshDesktopSettingsUrlRow">
       {link}
-      <button type="button" className="sensteedAgentSettingsUrlCopy" disabled={busy}
+      <button type="button" className="dshDesktopSettingsUrlCopy" disabled={busy}
         aria-label={`${t('copyBrowserUrl')} ${new URL(url).host}`} title={t(copied ? 'browserUrlCopied' : 'copyBrowserUrl')}
         onClick={() => { void copy() }}>
         {copied ? <Check size={16} /> : <Copy size={16} />}
       </button>
     </div>
-    {failed && <p role="alert" className="sensteedAgentSettingsError">{t('operationFailed')}</p>}
+    {failed && <p role="alert" className="dshDesktopSettingsError">{t('operationFailed')}</p>}
   </>
 }
 
@@ -365,12 +360,11 @@ export function DesktopSettingsSection({
   setMode: persistMode,
   desktopSettings,
   notificationSettings,
-  searchCredentials,
   capabilities,
   introNotice,
   browserActions,
   extraSections,
-}: DesktopSettingsSectionProps) {
+}: DesktopSettingsSectionInjected & Pick<PropsLocale<'desktop.settings'>, 't'>) {
   const desktop = useScope(desktopSettings)
   const notifications = useScope(notificationSettings)
   const [view, setView] = useState<DesktopSettingsView>()
@@ -573,49 +567,47 @@ export function DesktopSettingsSection({
   }
 
   return (
-    <div className="sensteedAgentSettings">
-      <header className="sensteedAgentSettingsHeader">
+    <div className="dshDesktopSettings">
+      <header className="dshDesktopSettingsHeader">
         <h2>{t('title')}</h2>
         <p>{t('intro')}</p>
       </header>
 
       {introNotice}
-      {operationFailed && aaStatus !== 'failed' && <p className="sensteedAgentSettingsError" role="alert">{t('operationFailed')}</p>}
+      {operationFailed && aaStatus !== 'failed' && <p className="dshDesktopSettingsError" role="alert">{t('operationFailed')}</p>}
       {restart !== 'none' && (
-        <p className="sensteedAgentSettingsSuccess" role="status">
+        <p className="dshDesktopSettingsSuccess" role="status">
           {t(restart === 'restarting' ? 'restarting' : 'restartRequired')}
         </p>
       )}
 
-      {searchCredentials !== undefined && <DeepSeekSearchSettings credentials={searchCredentials} t={t} />}
-
-      <section className="sensteedAgentSettingsGroup" aria-labelledby="sensteed-agent-profile-title">
+      <section className="dshDesktopSettingsGroup" aria-labelledby="dsh-desktop-profile-title">
         <div>
-          <h3 id="sensteed-agent-profile-title">{t('profileTitle')}</h3>
-          <p className="sensteedAgentSettingsGroupIntro">{t('profileIntro')}</p>
+          <h3 id="dsh-desktop-profile-title">{t('profileTitle')}</h3>
+          <p className="dshDesktopSettingsGroupIntro">{t('profileIntro')}</p>
         </div>
-        {busy === 'load' && view === undefined && <p className="sensteedAgentSettingsHint">{t('loading')}</p>}
+        {busy === 'load' && view === undefined && <p className="dshDesktopSettingsHint">{t('loading')}</p>}
         {loadFailed && view === undefined && (
           <div>
-            <p className="sensteedAgentSettingsError" role="alert">{t('unavailable')}</p>
-            <button type="button" className="sensteedAgentSettingsButton" onClick={() => { void load() }}>{t('retry')}</button>
+            <p className="dshDesktopSettingsError" role="alert">{t('unavailable')}</p>
+            <button type="button" className="dshDesktopSettingsButton" onClick={() => { void load() }}>{t('retry')}</button>
           </div>
         )}
         {view !== undefined && (
           <>
-            <div className="sensteedAgentSettingsList" role="radiogroup" aria-labelledby="sensteed-agent-profile-title">
+            <div className="dshDesktopSettingsList" role="radiogroup" aria-labelledby="dsh-desktop-profile-title">
               {view.profiles.map((profile) => {
                 const current = profile.name === view.current
                 const deleteAction = profile.deletable && !current && busy === undefined && restart === 'none'
                   ? (
-                    <div className="sensteedAgentSettingsChoiceAside" onClick={event => { event.stopPropagation() }}>
+                    <div className="dshDesktopSettingsChoiceAside" onClick={event => { event.stopPropagation() }}>
                       {pendingProfileDelete === profile.name ? (
-                        <div className="sensteedAgentSettingsDeleteConfirm" role="group" aria-label={t('confirmDeleteProfile')}>
-                          <span className="sensteedAgentSettingsDeleteWarning">{t('deleteProfileWarning')}</span>
-                          <span className="sensteedAgentSettingsDeleteActions">
+                        <div className="dshDesktopSettingsDeleteConfirm" role="group" aria-label={t('confirmDeleteProfile')}>
+                          <span className="dshDesktopSettingsDeleteWarning">{t('deleteProfileWarning')}</span>
+                          <span className="dshDesktopSettingsDeleteActions">
                             <button
                               type="button"
-                              className="sensteedAgentSettingsButton sensteedAgentSettingsButtonDanger"
+                              className="dshDesktopSettingsButton dshDesktopSettingsButtonDanger"
                               disabled={busy !== undefined}
                               onClick={() => { deleteProfile(profile.name) }}
                             >
@@ -623,7 +615,7 @@ export function DesktopSettingsSection({
                             </button>
                             <button
                               type="button"
-                              className="sensteedAgentSettingsButton sensteedAgentSettingsButtonSecondary"
+                              className="dshDesktopSettingsButton dshDesktopSettingsButtonSecondary"
                               disabled={busy !== undefined}
                               onClick={() => { setPendingProfileDelete(undefined) }}
                             >
@@ -634,7 +626,7 @@ export function DesktopSettingsSection({
                       ) : (
                         <button
                           type="button"
-                          className="sensteedAgentSettingsButton sensteedAgentSettingsButtonSecondary"
+                          className="dshDesktopSettingsButton dshDesktopSettingsButtonSecondary"
                           onClick={() => { setPendingProfileDelete(profile.name) }}
                         >
                           {t('deleteProfile')}
@@ -656,11 +648,11 @@ export function DesktopSettingsSection({
                 )
               })}
             </div>
-            <form className="sensteedAgentSettingsForm" onSubmit={createProfile}>
-              <label className="sensteedAgentSettingsField">
+            <form className="dshDesktopSettingsForm" onSubmit={createProfile}>
+              <label className="dshDesktopSettingsField">
                 {t('profileName')}
                 <input
-                  className="sensteedAgentSettingsInput"
+                  className="dshDesktopSettingsInput"
                   value={profileName}
                   maxLength={128}
                   autoComplete="off"
@@ -671,7 +663,7 @@ export function DesktopSettingsSection({
               </label>
               <button
                 type="submit"
-                className="sensteedAgentSettingsButton"
+                className="dshDesktopSettingsButton"
                 disabled={profileName.trim().length === 0 || busy !== undefined || restart !== 'none'}
               >
                 {busy === 'create-profile' ? t('creatingProfile') : t('create')}
@@ -682,18 +674,18 @@ export function DesktopSettingsSection({
       </section>
 
       {capabilities?.pluginSelectors !== false && <>
-      <section className="sensteedAgentSettingsGroup" aria-labelledby="sensteed-agent-market-title">
+      <section className="dshDesktopSettingsGroup" aria-labelledby="dsh-desktop-market-title">
         <div>
-          <h3 id="sensteed-agent-market-title">{t('marketTitle')}</h3>
-          <p className="sensteedAgentSettingsGroupIntro">{t('marketIntro')}</p>
+          <h3 id="dsh-desktop-market-title">{t('marketTitle')}</h3>
+          <p className="dshDesktopSettingsGroupIntro">{t('marketIntro')}</p>
         </div>
-        {view?.market.legacyDefaulted === true && <p className="sensteedAgentSettingsNotice">{t('legacyMarketNotice')}</p>}
+        {view?.market.legacyDefaulted === true && <p className="dshDesktopSettingsNotice">{t('legacyMarketNotice')}</p>}
         {view !== undefined && view.market.requested !== view.market.effective && restart === 'none' && (
-          <p className="sensteedAgentSettingsNotice" role="status">{t('marketLoadFailed')}</p>
+          <p className="dshDesktopSettingsNotice" role="status">{t('marketLoadFailed')}</p>
         )}
         {view !== undefined && (
-          <div className="sensteedAgentSettingsList" role="radiogroup" aria-labelledby="sensteed-agent-market-title">
-            {MARKET_OPTIONS.map(option => (
+          <div className="dshDesktopSettingsList" role="radiogroup" aria-labelledby="dsh-desktop-market-title">
+            {MARKET_OPTIONS.filter(option => capabilities?.markets === undefined || capabilities.markets.includes(option.id)).map(option => (
               <Choice
                 key={option.id}
                 title={marketTitle(option, t)}
@@ -712,20 +704,20 @@ export function DesktopSettingsSection({
         )}
       </section>
 
-      <section className="sensteedAgentSettingsGroup" aria-labelledby="sensteed-agent-aa-title">
+      <section className="dshDesktopSettingsGroup" aria-labelledby="dsh-desktop-aa-title">
         <div>
-          <h3 id="sensteed-agent-aa-title">{t('aaTitle')}</h3>
-          <p className="sensteedAgentSettingsGroupIntro">{t('aaIntro')}</p>
+          <h3 id="dsh-desktop-aa-title">{t('aaTitle')}</h3>
+          <p className="dshDesktopSettingsGroupIntro">{t('aaIntro')}</p>
         </div>
         {view?.aa?.requested === true && !view.aa.effective && restart === 'none' && (
-          <p className="sensteedAgentSettingsNotice" role="status">{t('aaLoadFailed')}</p>
+          <p className="dshDesktopSettingsNotice" role="status">{t('aaLoadFailed')}</p>
         )}
-        {aaStatus === 'saving' && <p className="sensteedAgentSettingsNotice" role="status">{t('aaSaving')}</p>}
-        {aaStatus === 'failed' && <p className="sensteedAgentSettingsError" role="alert">{t('aaSaveFailed')}</p>}
-        {aaStatus === 'saved' && <p className="sensteedAgentSettingsSuccess" role="status">
+        {aaStatus === 'saving' && <p className="dshDesktopSettingsNotice" role="status">{t('aaSaving')}</p>}
+        {aaStatus === 'failed' && <p className="dshDesktopSettingsError" role="alert">{t('aaSaveFailed')}</p>}
+        {aaStatus === 'saved' && <p className="dshDesktopSettingsSuccess" role="status">
           {t(restart === 'restarting' ? 'restarting' : restart === 'required' ? 'restartRequired' : 'aaSaved')}
         </p>}
-        {view !== undefined && <div className="sensteedAgentSettingsList" role="radiogroup" aria-labelledby="sensteed-agent-aa-title">
+        {view !== undefined && <div className="dshDesktopSettingsList" role="radiogroup" aria-labelledby="dsh-desktop-aa-title">
           {[false, true].map(enabled => <Choice
             key={String(enabled)}
             title={t(enabled ? 'aaEnabled' : 'aaDisabled')}
@@ -743,13 +735,13 @@ export function DesktopSettingsSection({
 
       </>}
 
-      <section className="sensteedAgentSettingsGroup" aria-labelledby="sensteed-agent-presentation-title">
+      <section className="dshDesktopSettingsGroup" aria-labelledby="dsh-desktop-presentation-title">
         <div>
-          <h3 id="sensteed-agent-presentation-title">{t('presentationTitle')}</h3>
-          <p className="sensteedAgentSettingsGroupIntro">{t('presentationIntro')}</p>
+          <h3 id="dsh-desktop-presentation-title">{t('presentationTitle')}</h3>
+          <p className="dshDesktopSettingsGroupIntro">{t('presentationIntro')}</p>
         </div>
-        {desktop.status === 'unavailable' && <p className="sensteedAgentSettingsNotice">{t('readOnly')}</p>}
-        <div className="sensteedAgentSettingsList" role="radiogroup" aria-labelledby="sensteed-agent-presentation-title">
+        {desktop.status === 'unavailable' && <p className="dshDesktopSettingsNotice">{t('readOnly')}</p>}
+        {capabilities?.windowModes !== false && <div className="dshDesktopSettingsList" role="radiogroup" aria-labelledby="dsh-desktop-presentation-title">
           <Choice
             title={t('compatibilityMode')}
             body={t('compatibilityModeBody')}
@@ -774,15 +766,15 @@ export function DesktopSettingsSection({
             action={() => { setMode('advanced') }}
             status={mode === 'advanced' ? t('selected') : undefined}
           />
-        </div>
+        </div>}
         {platform !== 'linux' && (
-          <label className="sensteedAgentSettingsMaterialField">
-            <span className="sensteedAgentSettingsMaterialCopy">
-              <span className="sensteedAgentSettingsChoiceTitle">{t('windowMaterial')}</span>
-              <span className="sensteedAgentSettingsChoiceBody">{t('windowMaterialBody')}</span>
+          <label className="dshDesktopSettingsMaterialField">
+            <span className="dshDesktopSettingsMaterialCopy">
+              <span className="dshDesktopSettingsChoiceTitle">{t('windowMaterial')}</span>
+              <span className="dshDesktopSettingsChoiceBody">{t('windowMaterialBody')}</span>
             </span>
             <select
-              className="sensteedAgentSettingsSelect"
+              className="dshDesktopSettingsSelect"
               value={platform === 'darwin'
                 ? desktop.value?.macosMaterial ?? 'transparent'
                 : desktop.value?.windowsMaterial === 'acrylic'
@@ -805,10 +797,10 @@ export function DesktopSettingsSection({
         )}
       </section>
 
-      <section className="sensteedAgentSettingsGroup" aria-labelledby="sensteed-agent-web-title">
+      <section className="dshDesktopSettingsGroup" aria-labelledby="dsh-desktop-web-title">
         <div>
-          <h3 id="sensteed-agent-web-title">{t('webTitle')}</h3>
-          <p className="sensteedAgentSettingsGroupIntro">{t('webIntro')}</p>
+          <h3 id="dsh-desktop-web-title">{t('webTitle')}</h3>
+          <p className="dshDesktopSettingsGroupIntro">{t('webIntro')}</p>
         </div>
         <DesktopSettingsToggleRow
           label={t('openBrowser')}
@@ -816,7 +808,7 @@ export function DesktopSettingsSection({
           disabled={!desktopBrowserAccessAvailable(mode) || !settingsWritable || busy !== undefined}
           onChange={setBrowserAccess}
         />
-        <p className="sensteedAgentSettingsNotice">{t('browserCompatibilityNotice')}</p>
+        <p className="dshDesktopSettingsNotice">{t('browserCompatibilityNotice')}</p>
         <DesktopSettingsToggleRow
           label={t('lanAccess')}
           badge={t('beta')}
@@ -829,59 +821,59 @@ export function DesktopSettingsSection({
           }}
         />
         {view !== undefined && (
-          <div className="sensteedAgentSettingsLanStatus" data-state={view.web.lanState} role="status">
-            <span className="sensteedAgentSettingsChoiceTitle">
+          <div className="dshDesktopSettingsLanStatus" data-state={view.web.lanState} role="status">
+            <span className="dshDesktopSettingsChoiceTitle">
               {t('lanStatus')}
-              <span className="sensteedAgentSettingsBadge">{t(LAN_STATE_LOCALE_KEYS[view.web.lanState])}</span>
+              <span className="dshDesktopSettingsBadge">{t(LAN_STATE_LOCALE_KEYS[view.web.lanState])}</span>
             </span>
             {view.web.lanError !== null && (
-              <span className="sensteedAgentSettingsChoiceBody">
+              <span className="dshDesktopSettingsChoiceBody">
                 {t('lanError')}: <code>{view.web.lanError}</code>
               </span>
             )}
           </div>
         )}
         {desktopBrowserUrlsShouldRender(browserAccess, networkExposure) && view !== undefined && view.web.localUrl !== '' && (
-          <div className="sensteedAgentSettingsUrls">
-            <span className="sensteedAgentSettingsChoiceTitle">{t('browserUrls')}</span>
+          <div className="dshDesktopSettingsUrls">
+            <span className="dshDesktopSettingsChoiceTitle">{t('browserUrls')}</span>
             <DesktopBrowserUrl key={view.web.localUrl} url={view.web.localUrl} api={api} t={t} onOpen={event => openBrowser(event, view.web.localUrl)} />
-            {view.web.lanUrls.length > 0 && <span className="sensteedAgentSettingsChoiceTitle">{t('lanHttpsUrls')}</span>}
+            {view.web.lanUrls.length > 0 && <span className="dshDesktopSettingsChoiceTitle">{t('lanHttpsUrls')}</span>}
             {view.web.lanUrls.map(url => <DesktopBrowserUrl key={url} url={url} api={api} t={t} onOpen={event => openBrowser(event, url)} />)}
           </div>
         )}
         {browserActions}
         {networkExposure === 'lan' && view !== undefined && (
           <>
-            <p className="sensteedAgentSettingsNotice">{t('lanTrustNotice')}</p>
+            <p className="dshDesktopSettingsNotice">{t('lanTrustNotice')}</p>
             {(view.web.lanCaFingerprint !== null || view.web.lanCaUrls.length > 0) && (
-              <div className="sensteedAgentSettingsUrls">
-                <span className="sensteedAgentSettingsChoiceTitle">{t('lanCaTitle')}</span>
+              <div className="dshDesktopSettingsUrls">
+                <span className="dshDesktopSettingsChoiceTitle">{t('lanCaTitle')}</span>
                 {view.web.lanCaFingerprint !== null && (
-                  <span className="sensteedAgentSettingsLanFingerprint">
+                  <span className="dshDesktopSettingsLanFingerprint">
                     {t('lanCaFingerprint')}: <code>{view.web.lanCaFingerprint}</code>
                   </span>
                 )}
-                {view.web.lanCaUrls.length > 0 && <span className="sensteedAgentSettingsChoiceBody">{t('lanCaDownloads')}</span>}
-                {view.web.lanCaUrls.map(url => <a href={url} key={url} target="_blank" rel="noopener noreferrer" onClick={event => openBrowser(event, url)}>{url}</a>)}
+                {view.web.lanCaUrls.length > 0 && <span className="dshDesktopSettingsChoiceBody">{t('lanCaDownloads')}</span>}
+                {view.web.lanCaUrls.map(url => <a href={url} key={url} target="_blank" rel="noopener noreferrer">{url}</a>)}
               </div>
             )}
           </>
         )}
       </section>
 
-      <section className="sensteedAgentSettingsGroup" aria-labelledby="sensteed-agent-notifications-title">
+      <section className="dshDesktopSettingsGroup" aria-labelledby="dsh-desktop-notifications-title">
         <div>
-          <h3 id="sensteed-agent-notifications-title">{t('notificationsTitle')}</h3>
-          <p className="sensteedAgentSettingsGroupIntro">{t('notificationsIntro')}</p>
+          <h3 id="dsh-desktop-notifications-title">{t('notificationsTitle')}</h3>
+          <p className="dshDesktopSettingsGroupIntro">{t('notificationsIntro')}</p>
         </div>
-        {notifications.status === 'unavailable' && <p className="sensteedAgentSettingsNotice">{t('readOnly')}</p>}
+        {notifications.status === 'unavailable' && <p className="dshDesktopSettingsNotice">{t('readOnly')}</p>}
         <DesktopSettingsToggleRow
           label={t('notificationsEnabled')}
           checked={notificationValue.enabled}
           disabled={!notificationsWritable || busy !== undefined}
           onChange={checked => { setNotification('enabled', checked) }}
         />
-        <div className="sensteedAgentSettingsDetails">
+        <div className="dshDesktopSettingsDetails">
           <DesktopSettingsToggleRow
             label={t('turnCompletion')}
             checked={notificationValue.notifyOnTurnCompletion}
@@ -937,14 +929,14 @@ export function DesktopSettingsSection({
 
       {extraSections}
       {confirmLan && (
-        <div className="sensteedAgentSettingsDialogBackdrop" role="presentation">
-          <div className="sensteedAgentSettingsDialog" role="alertdialog" aria-modal="true" aria-labelledby="sensteed-agent-lan-warning-title" aria-describedby="sensteed-agent-lan-warning-body">
-            <h3 id="sensteed-agent-lan-warning-title">{t('lanWarningTitle')}</h3>
-            <p id="sensteed-agent-lan-warning-body">{t('lanWarningBody')}</p>
-            <div className="sensteedAgentSettingsDialogActions">
+        <div className="dshDesktopSettingsDialogBackdrop" role="presentation">
+          <div className="dshDesktopSettingsDialog" role="alertdialog" aria-modal="true" aria-labelledby="dsh-desktop-lan-warning-title" aria-describedby="dsh-desktop-lan-warning-body">
+            <h3 id="dsh-desktop-lan-warning-title">{t('lanWarningTitle')}</h3>
+            <p id="dsh-desktop-lan-warning-body">{t('lanWarningBody')}</p>
+            <div className="dshDesktopSettingsDialogActions">
               <button
                 type="button"
-                className="sensteedAgentSettingsButton sensteedAgentSettingsButtonSecondary"
+                className="dshDesktopSettingsButton dshDesktopSettingsButtonSecondary"
                 onClick={() => {
                   resolveDesktopLanConfirmation(false, () => { setConfirmLan(false) }, () => { setNetworkExposure('lan') })
                 }}
@@ -953,7 +945,7 @@ export function DesktopSettingsSection({
               </button>
               <button
                 type="button"
-                className="sensteedAgentSettingsButton sensteedAgentSettingsButtonDanger"
+                className="dshDesktopSettingsButton dshDesktopSettingsButtonDanger"
                 onClick={() => {
                   resolveDesktopLanConfirmation(true, () => { setConfirmLan(false) }, () => { setNetworkExposure('lan') })
                 }}

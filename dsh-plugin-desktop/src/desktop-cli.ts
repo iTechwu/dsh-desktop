@@ -10,6 +10,7 @@ import { assertDesktopProfileName } from './profile-manager.ts'
 import { withoutForwardedDesktopPnpmPolicy } from './pnpm-policy.ts'
 import { installProfilePackageResolver } from './module-resolution.ts'
 import { withAsarModuleResolver } from './asar-module-resolver-state.ts'
+import { disableAsarArchiveView, type AsarArchiveProcess } from './asar-archive-policy.ts'
 
 const RUN_AS_NODE = 'ELECTRON_RUN_AS_NODE'
 const DEFAULT_PROFILE = 'DSH_DESKTOP_DEFAULT_PROFILE'
@@ -98,9 +99,12 @@ export async function runDesktopDshCli(
   load: (url: string) => Promise<{ runCli(): Promise<void> }> = url => import(url),
   argv: string[] = process.argv,
   packagedEntry: boolean = /([\\/])app\.asar\1/u.test(fileURLToPath(DSH_ENTRY_URL)),
+  asarProcess: AsarArchiveProcess = process,
 ): Promise<void> {
   const profileName = takeDefaultProfile(environment)
   clearElectronRunAsNode(environment)
+  // The CLI's agent lists and reads user workspaces; see asar-archive-policy.ts.
+  disableAsarArchiveView(DSH_ENTRY_URL, asarProcess)
   const selected = profileName === undefined
     ? argv.slice(2)
     : withDefaultDesktopProfile(argv.slice(2), profileName)

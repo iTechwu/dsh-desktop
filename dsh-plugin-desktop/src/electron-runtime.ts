@@ -18,6 +18,9 @@ import { desktopTerminalStateDirectory, openDesktopTerminal } from './desktop-te
 import { showDesktopMessageBox } from './desktop-dialog-window.ts'
 import { packagedDependencyPath } from './packaged-runtime-path.ts'
 import { ElectronShellGeneration } from './electron-shell-generation.ts'
+import { isPlatformLoginDestination, type DesktopPlatformLoginRequest } from './platform-login.ts'
+import { PLATFORM_LOGIN_TITLE, platformLoginUrl } from './platform-login-window.ts'
+import type { DesktopOpenWorkspaceDelivery } from './launch-workspace-contract.ts'
 import { electronPlatformStrategy, type ElectronPlatformStrategy } from './electron-platform.ts'
 import type {
   DesktopFilePickOptions,
@@ -316,6 +319,7 @@ export class ElectronDesktopRuntime implements DesktopRuntime {
         },
         logError: message => { this.logError(message) },
         mainWindowState: this.mainWindowState,
+        platformLoginTitle: () => PLATFORM_LOGIN_TITLE[this.currentLocale],
         chromeActions: {
           ...(remoteOffer ? { remoteControl: {
             read: () => remoteOffer.read(),
@@ -368,6 +372,30 @@ export class ElectronDesktopRuntime implements DesktopRuntime {
   }
 
   /** @inheritdoc */
+  platformLogin(request: DesktopPlatformLoginRequest): void {
+    if (this.quitting) return
+    if (request.action === 'close') {
+      this.generation?.closePlatformLogin()
+      if (request.focus) this.show()
+      return
+    }
+    if (!isPlatformLoginDestination(request.url)) {
+      this.logError('dsh-plugin-desktop: refused a platform sign-in page outside HTTPS or loopback HTTP')
+      return
+    }
+    const url = platformLoginUrl(request.url, nativeTheme.shouldUseDarkColors)
+    // A system browser reaches the Host's loopback callback only while browser access is on;
+    // otherwise the built-in window replays the callback with the renderer's credentials.
+    if (request.external) {
+      void shell.openExternal(url).catch((cause: unknown) => {
+        this.logError(`dsh-plugin-desktop: failed to open the platform sign-in page: ${cause instanceof Error ? cause.message : String(cause)}`)
+      })
+      return
+    }
+    this.generation?.openPlatformLogin(url)
+  }
+
+  /** @inheritdoc */
   async pickDirectory(): Promise<string | null> {
     return await this.workspaceAdmission.pickDirectory()
   }
@@ -395,6 +423,31 @@ export class ElectronDesktopRuntime implements DesktopRuntime {
   /** @inheritdoc */
   async validateDirectory(path: string): Promise<boolean> {
     return await this.workspaceAdmission.validateDirectory(path)
+  }
+
+  /**
+   * Apply native policy to a folder named by a launch.
+   *
+   * Launch hand-offs stay off the Host runtime contract: the path is native
+   * input that the main process already owns, and nothing in the Host needs to
+   * be able to ask for it.
+   * @param path - absolute folder the launch asked Desktop to open.
+   * @returns whether the folder may be registered as a workspace.
+   */
+  async admitWorkspacePath(path: string): Promise<boolean> {
+    return await this.workspaceAdmission.admitWorkspacePath(path)
+  }
+
+  /**
+   * Hand one admitted launch folder to the mounted Host page.
+   * @param path - absolute folder already admitted by native policy.
+   * @returns how the page took the folder, or `'unavailable'` before a shell
+   *   generation is mounted.
+   */
+  async openWorkspacePath(path: string): Promise<DesktopOpenWorkspaceDelivery | 'unavailable'> {
+    const generation = this.generation
+    if (generation === undefined) return 'unavailable'
+    return await generation.openWorkspacePath(path)
   }
 
   /** @inheritdoc */
@@ -702,6 +755,7 @@ export class ElectronDesktopRuntime implements DesktopRuntime {
   prepareToQuit(): void {
     this.quitting = true
     this.generation?.stopRendererRecovery()
+    this.generation?.closePlatformLogin()
     this.stopRendererBootMonitoring()
   }
 
