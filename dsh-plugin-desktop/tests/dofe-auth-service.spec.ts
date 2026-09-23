@@ -94,17 +94,18 @@ describe('DofeAuthService', () => {
     await service.dispose()
   })
 
-  it('keeps a provision-supplied avatar without calling userinfo and survives a failed avatar read', async () => {
+  it('prefers the current SSO profile to the Models copy and survives a failed profile read', async () => {
     const credentials = credentialStore('refresh-old')
     const withAvatar = { ...provisioned, user: { ...provisioned.user, avatar: 'https://cdn.example/a.png' } }
     const fetcher = vi.fn().mockResolvedValueOnce(response(discovery))
       .mockResolvedValueOnce(response({ access_token: 'access-new' }))
       .mockResolvedValueOnce(response(withAvatar))
+      .mockResolvedValueOnce(response({ ...userinfo, name: 'Updated Alice' }))
     const service = new DofeAuthService({ openExternal: vi.fn() } as never, credentials as never, fetcher)
     await service.start()
     await vi.waitFor(() => expect(service.getStatus().status).toBe('bound'))
-    expect(fetcher).toHaveBeenCalledTimes(3)
-    expect(service.getStatus().user?.avatar).toBe(withAvatar.user.avatar)
+    expect(fetcher).toHaveBeenCalledTimes(4)
+    expect(service.getStatus().user).toEqual({ ssoSub: 'sub-1', name: 'Updated Alice', avatar: userinfo.picture })
 
     const failing = new DofeAuthService({ openExternal: vi.fn() } as never, credentialStore('refresh-old') as never,
       vi.fn().mockResolvedValueOnce(response(discovery))
@@ -114,7 +115,7 @@ describe('DofeAuthService', () => {
     await failing.start()
     await vi.waitFor(() => expect(failing.getStatus().status).toBe('bound'))
     const bound = failing.getStatus()
-    expect(bound.user?.avatar).toBeNull()
+    expect(bound.user?.avatar).toBeUndefined()
     await service.dispose()
     await failing.dispose()
   })
@@ -194,4 +195,15 @@ describe('DofeAuthService', () => {
     await expect(fetch(callback)).rejects.toThrow()
     expect(service.getStatus().status).toBe('cancelled')
   })
+})
+
+it('does not apply profile data belonging to a different SSO subject', async () => {
+  const fetcher = vi.fn().mockResolvedValueOnce(response(discovery))
+    .mockResolvedValueOnce(response({ access_token: 'access-new' }))
+    .mockResolvedValueOnce(response(provisioned))
+    .mockResolvedValueOnce(response({ sub: 'another-user', name: 'Other', picture: 'https://example.com/other.png' }))
+  const service = new DofeAuthService({ openExternal: vi.fn() } as never, credentialStore('refresh') as never, fetcher)
+  try {
+    expect((await service.restore()).user).toEqual({ ssoSub: 'sub-1', name: 'Alice' })
+  } finally { await service.dispose() }
 })

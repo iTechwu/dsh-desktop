@@ -276,12 +276,14 @@ export class DofeAuthService {
     this.abort.signal.throwIfAborted()
     const plugins = Array.isArray(value.entitlements?.plugins) ? value.entitlements.plugins.filter((item): item is string => typeof item === 'string') : []
     const allowedProtocols = Array.isArray(value.entitlements?.allowedProtocols) ? value.entitlements.allowedProtocols.filter((item): item is string => typeof item === 'string') : []
-    // Models may not mirror the SSO profile picture; the userinfo `picture`
-    // claim is the fallback. Best-effort: an avatar failure never fails binding.
-    const avatar = asString(value.user?.avatar) ?? await this.readAvatar(discovery, accessToken)
+    // Read the current SSO profile on every renewal, even when Models still
+    // carries a previous name/avatar. A missing picture clears an old avatar;
+    // an unavailable profile leaves it unchanged in the persisted identity.
+    const profile = await this.readProfile(discovery, accessToken, ssoSub)
+    const avatar = profile ? asString(profile.picture) ?? null : asString(value.user?.avatar)
     const snapshot: DofeAuthSnapshot = {
       status: 'bound',
-      user: { ssoSub, name: asString(value.user?.name) ?? ssoSub, avatar: avatar ?? null },
+      user: { ssoSub, name: asString(profile?.name) ?? asString(value.user?.name) ?? ssoSub, ...(avatar === undefined ? {} : { avatar }) },
       tenant: { tenantId, ssoTeamId, tenantSlug },
       entitlements: { plugins, defaultModel: asString(value.entitlements?.defaultModel) ?? '', allowedProtocols },
       groups: Array.isArray(value.groups) ? value.groups.filter((group): group is string => typeof group === 'string') : [],
@@ -296,19 +298,20 @@ export class DofeAuthService {
     }
   }
 
-  private async readAvatar(discovery: OidcDiscovery, accessToken: string): Promise<string | undefined> {
+  private async readProfile(discovery: OidcDiscovery, accessToken: string, subject: string): Promise<{ name?: unknown; picture?: unknown } | undefined> {
     try {
       const response = await this.fetcher(discovery.userinfo_endpoint, {
         redirect: 'error', signal: this.signal(10_000),
         headers: { authorization: `Bearer ${accessToken}`, accept: 'application/json' },
       })
       if (!response.ok) return undefined
-      const value = await response.json() as { picture?: unknown }
-      return asString(value.picture)
+      const value = await response.json() as { sub?: unknown; name?: unknown; picture?: unknown }
+      if (value.sub !== subject) return undefined
+      return value
     } catch (error) {
       // An aborted session is handled by the caller's abort checks; everything
-      // else only costs the avatar, never the binding itself.
-      if (!this.abort.signal.aborted) this.logger?.error(`dsh-plugin-desktop: 读取 SSO 头像失败: ${formatDesktopErrorDetails(error)}`)
+      // else only costs this profile refresh, never the binding itself.
+      if (!this.abort.signal.aborted) this.logger?.error(`dsh-plugin-desktop: 读取 SSO 用户资料失败: ${formatDesktopErrorDetails(error)}`)
       return undefined
     }
   }

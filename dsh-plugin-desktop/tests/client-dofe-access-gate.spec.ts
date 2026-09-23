@@ -197,11 +197,10 @@ describe('mandatory DoFe access gate', () => {
     expect(source).not.toContain('setEnabledPlugins(current => event.currentTarget.checked')
   })
 
-  it('surfaces credential read failures instead of leaving the gate silent', async () => {
+  it('surfaces credential read failures in the settings form', async () => {
     const source = await readFile(resolve(process.cwd(), 'src/client/DofeAccessSection.tsx'), 'utf8')
 
     expect(source).toContain("if (!cancelled) setError(t('loadError'))")
-    expect(source).toContain("}).catch(() => { setCredentialConfigured(false) })")
   })
 
   it('surfaces tenant ownership failures as actionable access errors', async () => {

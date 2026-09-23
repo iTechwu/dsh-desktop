@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { LogIn, LogOut, Loader2, UserRound, X } from 'lucide-react'
+import { LogIn, LogOut, Loader2, X } from 'lucide-react'
+import { DofeUserAvatar } from './DofeUserAvatar.tsx'
 import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
 import { DOFE_AUTH_CANCEL_PATH, DOFE_AUTH_SESSION_PATH, DOFE_AUTH_STATUS_PATH, type DofeAuthSnapshot } from '../dofe-auth-contract.ts'
 
@@ -16,7 +17,7 @@ async function request(path: string, signal?: AbortSignal): Promise<DofeAuthSnap
 export function DofeLoginSection({ disabled, name, avatar, onBound, onLogout }: {
   disabled: boolean
   name?: string | undefined
-  avatar?: string | undefined
+  avatar?: string | null | undefined
   onBound: (snapshot: DofeAuthSnapshot) => Promise<void>
   onLogout?: () => Promise<void>
 }) {
@@ -69,10 +70,7 @@ export function DofeLoginSection({ disabled, name, avatar, onBound, onLogout }: 
   if (name !== undefined && name.length > 0) {
     return <div className="dshDofeAccessField dshDofeAccessIdentity">
       <div className="dshDofeAccessIdentityCard">
-        <span className="dshDofeAccessAvatar" aria-hidden="true">
-          <UserRound size={20} />
-          {avatar && <img src={avatar} alt="" onError={event => { event.currentTarget.hidden = true }} />}
-        </span>
+        <DofeUserAvatar avatar={avatar} />
         <span className="dshDofeAccessIdentityName">{name}</span>
         {onLogout && <Button className="dshDofeAccessLogout" disabled={disabled || busy} onClick={() => void onLogout()}>
           <LogOut size={15} aria-hidden="true" />

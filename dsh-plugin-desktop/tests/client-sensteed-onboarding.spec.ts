@@ -127,3 +127,57 @@ it('opens the settings panel with the stored-credential model list already loade
     container.remove()
   }
 })
+
+it('does not flash setup while loading saved credentials or reopen it for a profile update', async () => {
+  vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
+  let snapshot = { value: { setupComplete: true, validationVersion: 5, modelId: 'model-a', enabledPlugins: ['knowledge'], authMode: 'feishu', identity: { ssoSub: 'user', name: 'Before' } } }
+  const listeners = new Set<() => void>()
+  let finish!: (value: unknown) => void
+  const credentials = { describe: vi.fn(() => new Promise(resolve => { finish = resolve })) }
+  const settingsScope = { getSnapshot: () => snapshot, subscribe: (listener: () => void) => { listeners.add(listener); return () => listeners.delete(listener) } }
+  const container = document.createElement('div')
+  document.body.append(container)
+  const root = createRoot(container)
+  const props = { credentials, settingsScope, settingsApi: {}, t: (key: string) => key }
+  try {
+    await act(async () => root.render(createElement(DofeAccessGate, props as never)))
+    expect(container.querySelector('[role="dialog"]')).toBeNull()
+    await act(async () => finish({ ok: true, value: { MODELS_API_KEY: { configured: true } } }))
+    expect(container.querySelector('[role="dialog"]')).toBeNull()
+    await act(async () => {
+      snapshot = { value: { ...snapshot.value, identity: { ssoSub: 'user', name: 'After' } } }
+      listeners.forEach(listener => listener())
+    })
+    expect(container.querySelector('[role="dialog"]')).toBeNull()
+    expect(credentials.describe).toHaveBeenCalledOnce()
+  } finally {
+    await act(async () => root.unmount())
+    container.remove()
+  }
+})
+
+it('retries a temporary credential read failure without asking the user to configure again', async () => {
+  vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
+  vi.useFakeTimers()
+  const settingsScope = {
+    getSnapshot: () => snapshot,
+    subscribe: () => () => {},
+  }
+  const snapshot = { value: { setupComplete: true, validationVersion: 5, authMode: 'feishu', identity: { ssoSub: 'user', name: 'User' } } }
+  const credentials = { describe: vi.fn().mockRejectedValueOnce(new Error('offline')).mockResolvedValue({ ok: true, value: { MODELS_API_KEY: { configured: true } } }) }
+  const container = document.createElement('div')
+  document.body.append(container)
+  const root = createRoot(container)
+  try {
+    await act(async () => root.render(createElement(DofeAccessGate, { credentials, settingsScope, settingsApi: {}, t: (key: string) => key } as never)))
+    expect(container.querySelector('[role="dialog"]')).toBeNull()
+    expect(container.querySelector('[role="status"]')?.textContent).toBe('loadError')
+    await act(async () => { await vi.advanceTimersByTimeAsync(5_000) })
+    expect(credentials.describe).toHaveBeenCalledTimes(2)
+    expect(container.textContent).toBe('')
+  } finally {
+    await act(async () => root.unmount())
+    container.remove()
+    vi.useRealTimers()
+  }
+})

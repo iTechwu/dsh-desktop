@@ -1,5 +1,5 @@
 import { useMemo, useSyncExternalStore } from 'react'
-import { UserRound } from 'lucide-react'
+import { DofeUserAvatar } from './DofeUserAvatar.tsx'
 import type { InjectFace, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { SettingsScope } from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { DofeAccessSettings } from '../dofe-plugins.ts'
@@ -14,10 +14,7 @@ export function SensteedUserSettingsTrigger({ wide, settingsScope }: Props) {
   const identity = settings.value?.authMode === 'feishu' ? settings.value.identity : undefined
   const name = identity?.name?.trim() || '用户'
   return <span className="dshSensteedUserSettingsTrigger" title={`${name} · 用户设置`}>
-    <span className="dshDofeAccessAvatar" aria-hidden="true">
-      <UserRound size={18} />
-      {identity?.avatar && <img src={identity.avatar} alt="" onError={event => { event.currentTarget.hidden = true }} />}
-    </span>
+    <DofeUserAvatar avatar={identity?.avatar} size={18} />
     {wide && <span className="dshSensteedUserSettingsName">{name}</span>}
   </span>
 }

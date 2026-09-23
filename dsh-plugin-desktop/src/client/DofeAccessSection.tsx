@@ -19,6 +19,7 @@ const STYLE_ID = 'dsh-dofe-access-styles'
 const ACCESS_REQUEST_TIMEOUT_MS = 15000
 const CSS = `
 #dsh-dofe-access-gate { position: fixed; inset: 0; z-index: 2147483000; pointer-events: none; }
+.dshDofeAccessLoading { position: absolute; left: 50%; top: 24px; transform: translateX(-50%); padding: 12px 20px; border-radius: 8px; background: var(--dsw-alias-bg-layer-1, #fff); color: var(--dsw-alias-label-primary, #172033); box-shadow: 0 2px 8px rgba(5, 10, 18, .12); }
 .dshDofeGate { position: fixed; inset: 0; display: grid; place-items: center; padding: 32px; background: rgba(14, 18, 24, .58); backdrop-filter: blur(10px) saturate(.8); pointer-events: auto; }
 .dshDofeModal { width: min(680px, calc(100vw - 64px)); max-height: calc(100vh - 64px); display: grid; grid-template-rows: auto minmax(0, 1fr); overflow: hidden; color: var(--dsw-alias-label-primary, #172033); background: var(--dsw-alias-bg-layer-1, #fff); border: 1px solid var(--dsw-alias-border-l1, #d9dee8); border-radius: 8px; box-shadow: 0 24px 72px rgba(5, 10, 18, .28), 0 2px 8px rgba(5, 10, 18, .12); }
 .dshDofeModalHeader { display: grid; grid-template-columns: 44px 1fr; gap: 16px; padding: 26px 28px 22px; border-bottom: 1px solid var(--dsw-alias-border-l1, #e2e6ed); }
@@ -490,19 +491,39 @@ export function DofeAccessSection(props: DofeAccessSectionProps): ReactNode {
 export function DofeAccessGate({ credentials, settingsApi, settingsScope, t, onAuthorizationChange }: DofeAccessInjected & { onAuthorizationChange?: (authorized: boolean) => void }): ReactNode {
   const settingsStore = useMemo(() => dofeAccessSettingsStore(settingsScope), [settingsScope])
   const settings = useSyncExternalStore(settingsStore.subscribe, settingsStore.getSnapshot, settingsStore.getSnapshot)
-  const [credentialConfigured, setCredentialConfigured] = useState(false)
+  const [credentialConfigured, setCredentialConfigured] = useState<boolean>()
+  const [credentialReadFailed, setCredentialReadFailed] = useState(false)
   const [success, setSuccess] = useState(false)
   useEffect(() => {
-    void credentials.describe([DOFE_ACCESS_KEY]).then(result => {
-      setCredentialConfigured(result.ok && result.value[DOFE_ACCESS_KEY]?.configured === true)
-    }).catch(() => { setCredentialConfigured(false) })
+    let cancelled = false
+    let retry: ReturnType<typeof setTimeout> | undefined
+    const check = async () => {
+      try {
+        const result = await credentials.describe([DOFE_ACCESS_KEY])
+        if (cancelled) return
+        if (result.ok) {
+          setCredentialReadFailed(false)
+          setCredentialConfigured(result.value[DOFE_ACCESS_KEY]?.configured === true)
+          return
+        }
+      } catch { /* A temporary read failure is not a credential revocation. */ }
+      if (!cancelled) {
+        setCredentialReadFailed(true)
+        retry = setTimeout(() => { void check() }, 5_000)
+      }
+    }
+    void check()
+    return () => { cancelled = true; clearTimeout(retry) }
   }, [credentials, settings.value?.setupComplete, settings.value?.validationVersion])
-  const authorized = credentialConfigured
+  const authorized = credentialConfigured === true
     && settings.value?.setupComplete === true
     && settings.value.validationVersion === DOFE_ACCESS_VALIDATION_VERSION
     && (BRAND_VARIANT !== 'sensteed' || (settings.value.authMode === 'feishu' && Boolean(settings.value.identity?.ssoSub)))
   useEffect(() => { onAuthorizationChange?.(authorized) }, [authorized, onAuthorizationChange])
   if (authorized) return success ? <Toast text={t('loginSuccess')} icon={<Check size={18} />} onDone={() => setSuccess(false)} /> : null
+  // Do not flash onboarding while the persisted account/credential is loading.
+  if (settings.value === undefined || credentialConfigured === undefined) return credentialReadFailed
+    ? <div className="dshDofeAccessLoading" role="status">{t('loadError')}</div> : null
   const ssoBound = settings.value?.authMode === 'feishu' && Boolean(settings.value.identity?.ssoSub)
   return <DofeOnboardingModal eyebrow={t('onboardingEyebrow')} title={BRAND_VARIANT === 'sensteed' ? ssoBound ? t('sensteedSetupTitle') : t('sensteedLoginTitle') : t('onboardingTitle')} description={BRAND_VARIANT === 'sensteed' ? ssoBound ? t('sensteedSetupIntro') : t('sensteedLoginIntro') : t('onboardingIntro')} brandLogo={heroBrandDataUrl} brandLogoAlt={BRAND_TENANT}><AccessForm credentials={credentials} settingsApi={settingsApi} settingsScope={settingsScope} t={t} onboarding onDone={() => { setCredentialConfigured(true); setSuccess(true) }} /></DofeOnboardingModal>
 }

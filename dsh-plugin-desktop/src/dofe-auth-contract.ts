@@ -12,7 +12,7 @@ export interface DofeAuthEntitlements {
 
 export interface DofeAuthSnapshot {
   status: 'idle' | 'pending' | 'issued' | 'bound' | 'error' | 'cancelled'
-  user?: { ssoSub: string; name: string; avatar: string | null }
+  user?: { ssoSub: string; name: string; avatar?: string | null }
   tenant?: { tenantId: string; ssoTeamId: string; tenantSlug: string }
   entitlements?: DofeAuthEntitlements
   groups?: string[]

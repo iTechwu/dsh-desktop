@@ -27,6 +27,17 @@ it('updates the sidebar identity on account changes and keeps an avatar when col
     await act(async () => root.render(createElement(SensteedUserSettingsTrigger, { wide: true, settingsScope } as never)))
     expect(container.textContent).toBe('吴敏')
     expect(container.querySelector('img')?.getAttribute('src')).toBe('https://example.com/avatar.png')
+    expect(container.querySelector('svg')).toBeNull()
+    await act(async () => container.querySelector('img')!.dispatchEvent(new Event('error')))
+    expect(container.querySelector('img')).toBeNull()
+    expect(container.querySelector('svg')).not.toBeNull()
+    await act(async () => {
+      snapshot = { value: { authMode: 'feishu', identity: { name: '新姓名', avatar: 'https://example.com/new-avatar.png' } } }
+      listeners.forEach(listener => listener())
+    })
+    expect(container.textContent).toBe('新姓名')
+    expect(container.querySelector('img')?.getAttribute('src')).toBe('https://example.com/new-avatar.png')
+    expect(container.querySelector('svg')).toBeNull()
     await act(async () => root.render(createElement(SensteedUserSettingsTrigger, { wide: false, settingsScope } as never)))
     expect(container.querySelector('img')).not.toBeNull()
     expect(container.querySelector('.dshSensteedUserSettingsName')).toBeNull()

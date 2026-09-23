@@ -87,11 +87,14 @@ export async function apply(ctx: Context): Promise<void> {
       const sameUser = current.identity?.ssoSub === snapshot.user!.ssoSub
       await ctx.settings.update(DOFE_ACCESS_SETTINGS_NAMESPACE, {
         authMode: 'feishu',
-        identity: { ...snapshot.user, groups: snapshot.groups ?? [], groupNames: snapshot.groupNames ?? {} },
+        identity: { ...(sameUser ? current.identity : {}), ...snapshot.user, groups: snapshot.groups ?? [], groupNames: snapshot.groupNames ?? {} },
         entitlements,
         enabledPlugins: normalizeDofePluginIds(sameUser ? current.enabledPlugins : entitlements.plugins, BRAND_VARIANT)
           .filter(plugin => entitlements.plugins.includes(plugin)),
-        setupComplete: sameUser && current.validationVersion === DOFE_ACCESS_VALIDATION_VERSION
+        // A successful tenant-bound renewal validates an existing setup across
+        // desktop upgrades; profile refresh must never complete an unfinished setup.
+        validationVersion: sameUser && current.setupComplete ? DOFE_ACCESS_VALIDATION_VERSION : current.validationVersion,
+        setupComplete: sameUser && current.setupComplete
           && Boolean(current.modelId) && entitlements.allowedProtocols.includes(current.protocol ?? 'chat-completions'),
       })
     }, ctx.logger)
