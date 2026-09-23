@@ -18,7 +18,6 @@ import { rgPath } from '@vscode/ripgrep'
 import AdmZip from 'adm-zip'
 import { exportDiagnosticsZip } from './diagnostic-export.ts'
 import { installProfilePackageResolver } from './module-resolution.ts'
-import { unpackedAsarPath } from './packaged-runtime-path.ts'
 
 const OK_MARKER = 'DSH_PACKAGED_RUNTIME_OK'
 
@@ -35,12 +34,13 @@ assert(
   `did not start from a packaged application root: ${installAnchor.pathname}`,
 )
 assert(
-  /([\\/])app\.asar(?:\.unpacked)?\1/u.test(rgPath),
-  `resolved ripgrep outside the packaged ASAR: ${rgPath}`,
+  usesAsar
+    ? /(?:^|[\\/])app\.asar\.unpacked[\\/]/u.test(rgPath)
+    : packagedDirectoryRoot.test(rgPath),
+  `resolved ripgrep outside the packaged application root: ${rgPath}`,
 )
-const physicalRgPath = unpackedAsarPath(rgPath)
-assert(existsSync(physicalRgPath), `cannot find physical ripgrep at ${physicalRgPath}`)
-const rgVersion = execFileSync(physicalRgPath, ['--version'], { encoding: 'utf8', windowsHide: true })
+assert(existsSync(rgPath), `cannot find ripgrep at ${rgPath}`)
+const rgVersion = execFileSync(rgPath, ['--version'], { encoding: 'utf8', windowsHide: true })
 assert(/^ripgrep\s/u.test(rgVersion), `received an invalid ripgrep version: ${JSON.stringify(rgVersion.trim())}`)
 if (process.platform === 'win32') {
   const sessionBackend = await import('@deepseek-ai/dsh-session-persistence-jsonl')
@@ -72,12 +72,12 @@ async function smokeSessionMigration(): Promise<void> {
     await ctx.plugin(JsonlSessionPersistence, { root, compression: 'none' })
     const handle = await ctx.sessionPersistence.open(id, 'write')
     try {
-      assert(handle.header.version === 3 && handle.header.agentPreset === 'ptc', 'did not migrate the legacy preset through the upstream worker')
+      assert(handle.header.version === 4 && handle.header.agentPreset === 'ptc', 'did not migrate the legacy preset through the upstream worker')
     } finally {
       await handle.close()
     }
     await ctx.sessionPersistence.flush()
-    assert(existsSync(join(directory, 'session.v3.jsonl')), 'did not publish the V3 session log')
+    assert(existsSync(join(directory, 'session.v4.jsonl')), 'did not publish the V4 session log')
     assert(readFileSync(join(directory, 'session.v2.jsonl'), 'utf8') === source, 'changed the original V2 session log')
   } finally {
     await ctx.fiber.dispose()

@@ -56,6 +56,9 @@ export interface DesktopRecoveryCopy {
   readonly profileDependency: string
   readonly external: string
   readonly disabled: string
+  readonly disable: string
+  readonly enable: string
+  readonly disabledHint: string
   readonly uninstall: string
   readonly diagnostics: string
   readonly savingDiagnostics: string
@@ -128,10 +131,18 @@ export interface DesktopRecoveryCopy {
   readonly cancel: string
   readonly confirmUninstall: string
   readonly confirmUninstallBody: string
+  readonly confirmDisable: string
+  readonly confirmDisableBody: string
+  readonly confirmDisableAction: string
+  readonly confirmEnable: string
+  readonly confirmEnableBody: string
+  readonly confirmEnableAction: string
   readonly confirmRollback: string
   readonly confirmRollbackBody: (capturedAt: string) => string
   readonly confirmRollbackAction: string
   readonly uninstalledSuccess: string
+  readonly disabledSuccess: string
+  readonly enabledSuccess: string
   readonly rollbackSuccess: (slotId: string) => string
   readonly profileSelectedSuccess: string
   readonly actionFailed: string
@@ -139,6 +150,8 @@ export interface DesktopRecoveryCopy {
   readonly rollbackFailedMessage: string
   readonly uninstallFailedTitle: string
   readonly uninstallFailedMessage: string
+  readonly bundleSelectionFailedTitle: string
+  readonly bundleSelectionFailedMessage: string
   readonly operationStage: string
   readonly operationStageLabels: Readonly<Record<DesktopStartupRecoveryOperationStage, string>>
   readonly errorCode: string
@@ -190,13 +203,16 @@ const COPY: Record<DesktopLocale, DesktopRecoveryCopy> = {
     checkpointsUnavailable: 'Startup checkpoints cannot be read right now.',
     rollbackBody: 'Checkpoints save configuration from successful startups. Restoring one also restores the current Profile, the shared settings.yaml file, and patches in the DSH data directory.',
     plugins: 'Plugin management',
-    pluginsBody: 'View plugins installed directly in the current Profile and uninstall plugins causing problems.',
+    pluginsBody: 'View plugins installed directly in the current Profile. Disable a plugin to keep it installed without loading it, or uninstall it completely.',
     pluginsUnavailable: 'Plugin information for the current Profile has not loaded. Open Diagnostics to view configuration files or export a diagnostic archive.',
     pluginsEmpty: 'No plugins were found in the current Profile.',
     core: 'Built in',
     profileDependency: 'Directly installed plugin',
     external: 'Not directly removable',
     disabled: 'Disabled',
+    disable: 'Disable',
+    enable: 'Enable',
+    disabledHint: 'Still installed, not loaded',
     uninstall: 'Uninstall',
     diagnostics: 'Diagnostic archive',
     savingDiagnostics: 'Saving a local diagnostic archive…',
@@ -269,10 +285,18 @@ const COPY: Record<DesktopLocale, DesktopRecoveryCopy> = {
     cancel: 'Cancel',
     confirmUninstall: 'Uninstall this plugin?',
     confirmUninstallBody: 'DSH will remove this dependency from the current Profile and reconcile its plugin layers. This does not depend on which market installed it.',
+    confirmDisable: 'Disable this plugin?',
+    confirmDisableBody: 'Nothing is deleted. The plugin, its version declaration and its configuration all stay in the current Profile — Yootun-Agent simply will not load it on the next start. You can enable it again here at any time.',
+    confirmDisableAction: 'Disable plugin',
+    confirmEnable: 'Enable this plugin?',
+    confirmEnableBody: 'Yootun-Agent will load this plugin again on the next start. If this plugin caused the startup failure, the recovery assistant will open again and you can disable it once more.',
+    confirmEnableAction: 'Enable plugin',
     confirmRollback: 'Roll back this configuration?',
-    confirmRollbackBody: capturedAt => `This immediately restores the current Profile plus the checkpointed settings.yaml and Harness-home patch captured at ${capturedAt}. After restarting, Yootun-Agent will use the rolled-back configuration.`,
+    confirmRollbackBody: capturedAt => `This immediately restores the current Profile plus the checkpointed settings.yaml and Harness-home patch captured at ${capturedAt}, including which plugins are enabled. After restarting, Yootun-Agent will use the rolled-back configuration.`,
     confirmRollbackAction: 'Roll Back',
     uninstalledSuccess: 'The plugin was removed from the current Profile. Restart Yootun-Agent to use the updated plugin configuration.',
+    disabledSuccess: 'The plugin is disabled and still installed. Restart Yootun-Agent to start without it; nothing was removed from the Profile.',
+    enabledSuccess: 'The plugin is enabled again. Restart Yootun-Agent to load it.',
     rollbackSuccess: slotId => `Rolled back to ${slotId}. Restart Yootun-Agent to use this configuration; the first healthy start after rollback will preserve all three existing slots.`,
     profileSelectedSuccess: 'This Profile is now selected. Restart Yootun-Agent to use it.',
     actionFailed: 'The recovery action could not be completed. Review the diagnostic archive and try again.',
@@ -280,8 +304,11 @@ const COPY: Record<DesktopLocale, DesktopRecoveryCopy> = {
     rollbackFailedMessage: 'The rollback did not finish. The Recovery Assistant remains open so you can review the details and try again.',
     uninstallFailedTitle: 'Plugin uninstall failed',
     uninstallFailedMessage: 'Plugin removal did not complete. Check the error details and try again. The recovery assistant will stay open.',
+    bundleSelectionFailedTitle: 'Could not change the plugin',
+    bundleSelectionFailedMessage: 'The Profile plugin list was not changed. Check the error details and try again. The recovery assistant will stay open.',
     operationStage: 'Operation stage',
     operationStageLabels: {
+      'bundle-selection': 'Profile plugin selection',
       'checkpoint-restore': 'Checkpoint file restore',
       'dependency-materialization': 'Profile dependency rebuild',
       'plugin-change': 'DSH plugin uninstall',
@@ -333,13 +360,16 @@ const COPY: Record<DesktopLocale, DesktopRecoveryCopy> = {
     checkpointsUnavailable: '当前无法读取启动检查点。',
     rollbackBody: '检查点保存成功启动时的配置。选择一个检查点，将同时恢复当前 Profile、共享设置文件 settings.yaml 和 DSH 数据目录中的补丁。',
     plugins: '插件管理',
-    pluginsBody: '查看当前 Profile 中直接安装的插件，并卸载引发问题的插件。',
+    pluginsBody: '查看当前 Profile 中直接安装的插件。可以禁用插件（保留安装，启动时不加载），也可以彻底卸载。',
     pluginsUnavailable: '尚未读取到当前 Profile 的插件信息。可前往“诊断”查看配置或导出诊断包。',
     pluginsEmpty: '当前 Profile 中没有插件。',
     core: '内置组件',
     profileDependency: '直接安装的插件',
     external: '不可直接卸载',
     disabled: '已禁用',
+    disable: '禁用',
+    enable: '启用',
+    disabledHint: '仍已安装，启动时不加载',
     uninstall: '卸载',
     diagnostics: '诊断包',
     savingDiagnostics: '正在保存本地诊断包…',
@@ -412,10 +442,18 @@ const COPY: Record<DesktopLocale, DesktopRecoveryCopy> = {
     cancel: '取消',
     confirmUninstall: '卸载这个插件？',
     confirmUninstallBody: 'DSH 将从当前 Profile 中移除此依赖，并重新整理插件层。无论插件由哪个市场安装，都会使用相同的卸载流程。',
+    confirmDisable: '禁用这个插件？',
+    confirmDisableBody: '不会删除任何内容。插件本身、版本声明和配置都会完整保留在当前 Profile 中，只是下次启动时不再加载。随时可以在这里重新启用。',
+    confirmDisableAction: '禁用插件',
+    confirmEnable: '启用这个插件？',
+    confirmEnableBody: '下次启动时会重新加载此插件。如果之前的启动失败正是由它引起，恢复助手会再次打开，届时可以再次禁用。',
+    confirmEnableAction: '启用插件',
     confirmRollback: '回滚这套配置？',
-    confirmRollbackBody: capturedAt => `将立即恢复 ${capturedAt} 保存的当前 Profile、settings.yaml 与 DSH 数据目录补丁；重启后，Yootun-Agent 将使用检查点中的配置。`,
+    confirmRollbackBody: capturedAt => `将立即恢复 ${capturedAt} 保存的当前 Profile、settings.yaml 与 DSH 数据目录补丁（包括插件的启用状态）；重启后，Yootun-Agent 将使用检查点中的配置。`,
     confirmRollbackAction: '回滚',
     uninstalledSuccess: '插件已从当前 Profile 中卸载。请重启 Yootun-Agent 以使用更新后的插件配置。',
+    disabledSuccess: '插件已禁用，安装内容仍然保留。重启 Yootun-Agent 后将不再加载；Profile 中没有任何内容被删除。',
+    enabledSuccess: '插件已重新启用。重启 Yootun-Agent 后将重新加载。',
     rollbackSuccess: slotId => `已回滚到${slotId}。请重启 Yootun-Agent 以使用该配置；回滚后的第一次健康启动会保留现有三个槽位。`,
     profileSelectedSuccess: '已设为当前 Profile。请重启 Yootun-Agent 以使用该 Profile。',
     actionFailed: '无法完成恢复操作。请检查诊断包后重试。',
@@ -423,8 +461,11 @@ const COPY: Record<DesktopLocale, DesktopRecoveryCopy> = {
     rollbackFailedMessage: '回滚未能完成。恢复助手会保持打开，你可以查看详细错误后重试。',
     uninstallFailedTitle: '插件卸载失败',
     uninstallFailedMessage: '未能完成插件卸载。请查看错误详情后重试。恢复助手会保持打开。',
+    bundleSelectionFailedTitle: '未能更改插件状态',
+    bundleSelectionFailedMessage: 'Profile 的插件列表未被修改。请查看错误详情后重试。恢复助手会保持打开。',
     operationStage: '操作阶段',
     operationStageLabels: {
+      'bundle-selection': 'Profile 插件启用状态',
       'checkpoint-restore': '恢复检查点文件',
       'dependency-materialization': 'Profile 依赖重建',
       'plugin-change': 'DSH 插件卸载',

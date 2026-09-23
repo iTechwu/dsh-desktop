@@ -336,12 +336,12 @@ export function apply(ctx: Context, config: Config): void {
           break
         }
         const command = step.run
-        const result = await ctx.shell.run(ctx.shell.resolve({
+        const result = await (await ctx.shell.execute(ctx.shell.resolve({
           command,
           signal: exec.signal,
           timeoutMs: step.timeoutMs ?? resolved.timeoutMs,
           ...step.workdir !== undefined ? { workdir: resolvePipelinePath(step.workdir, process.cwd()) } : {},
-        }))
+        }))).result()
         const ok = result.exitCode === 0 && !result.aborted && !result.timedOut
         stepResults.push({
           name: step.name,

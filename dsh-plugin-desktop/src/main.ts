@@ -9,6 +9,7 @@
 
 import { formatUnexpectedHostExit, startIsolatedDesktopHost } from './host-process.ts'
 import { app, crashReporter, safeStorage, session, shell } from 'electron'
+import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import { randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { dirname, join } from 'node:path'

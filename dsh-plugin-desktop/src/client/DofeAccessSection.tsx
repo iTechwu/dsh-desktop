@@ -4,7 +4,7 @@ import type { ClientRemote } from '@deepseek-ai/dsh-api-remotes/client'
 import type { InjectFace, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import { Button, Input, Toast } from '@deepseek-ai/dsh-client-ui-primitives'
 import { ArrowRight, Check, Eye, EyeOff, Loader2, Phone, RefreshCw, ShieldCheck } from 'lucide-react'
-import type { SettingsScope } from '@deepseek-ai/dsh-client-ui-settings/client'
+import type { ConfigForm } from '@deepseek-ai/dsh-client-ui-settings/client'
 import { DofeOnboardingModal } from './DofeOnboardingModal.tsx'
 import { DofeLoginSection } from './DofeLoginSection.tsx'
 import { DOFE_AUTH_LOGOUT_PATH, type DofeAuthSnapshot } from '../dofe-auth-contract.ts'
@@ -155,7 +155,7 @@ type SettingsOperations = Parameters<SettingsApi['mutate']>[1]
 export interface DofeAccessInjected {
   credentials: Credentials
   settingsApi: SettingsApi
-  settingsScope: SettingsScope<DofeAccessSettings>
+  settingsScope: ConfigForm<DofeAccessSettings>
   t: (key: DofeAccessLocaleKey) => string
 }
 export type DofeAccessSectionProps = PropsRuntime<'settings.section'> & InjectFace<DofeAccessInjected>
@@ -201,8 +201,8 @@ export async function removeDofeAccess(settingsApi: SettingsApi, credentials: Cr
   if (!result.ok) throw new Error(result.error.message)
 }
 
-/** Adapt receiver-dependent SettingsScope methods for React's callback contract. */
-export function dofeAccessSettingsStore(settingsScope: SettingsScope<DofeAccessSettings>) {
+/** Adapt receiver-dependent ConfigForm methods for React's callback contract. */
+export function dofeAccessSettingsStore(settingsScope: ConfigForm<DofeAccessSettings>) {
   return {
     subscribe: (listener: () => void) => settingsScope.subscribe(listener),
     getSnapshot: () => settingsScope.getSnapshot(),

@@ -58,18 +58,33 @@ import { createDesktopBrowserAccess } from '../src/desktop-browser-access.ts'
 import { DESKTOP_LAN_HTTPS_CA_PATH, DesktopLanHttpsRuntime } from '../src/lan-https-runtime.ts'
 import { RENDERER_BOOT_REPORT_PATH, type RendererBootReport } from '../src/renderer-boot-contract.ts'
 
-const config: DesktopConfig = {
-  mode: 'compatibility',
-  macosMaterial: 'transparent',
-  windowsMaterial: 'off',
-      linuxMaterial: 'off',
-  port: 43_120,
-  networkExposure: 'loopback',
+/**
+ * dsh 0.1.7 boxes every editable field in a `Volatile` reference, so the live
+ * configuration fixture wraps plain values in `{ get }` refs; geometry stays
+ * plain (adopted once at window construction).
+ */
+const configState = { auditSyncEnabled: false }
+const config = {
+  mode: { get: () => 'compatibility' as const },
+  macosMaterial: { get: () => 'transparent' as const },
+  windowsMaterial: { get: () => 'off' as const },
+  linuxMaterial: { get: () => 'off' as const },
+  port: { get: () => 43_120 },
+  networkExposure: { get: () => 'loopback' as const },
   width: 1280,
   height: 840,
   minWidth: 900,
   minHeight: 640,
-  auditSyncEnabled: false,
+  auditSyncEnabled: { get: () => configState.auditSyncEnabled },
+} as unknown as DesktopConfig
+
+
+/** Overlay plain overrides onto the volatile fixture, wrapping each value. */
+function withConfig(overrides: Record<string, unknown>): DesktopConfig {
+  const wrapped = Object.fromEntries(
+    Object.entries(overrides).map(([key, value]) => [key, { get: () => value }]),
+  )
+  return { ...config, ...wrapped } as unknown as DesktopConfig
 }
 
 afterEach(() => { vi.useRealTimers() })
@@ -264,8 +279,10 @@ function createHarness(
 
 describe('desktop Host plugin', () => {
   it('defaults to compatibility mode and validates both schemas', () => {
-    expect(Config({} as DesktopConfig)).toEqual({ ...config, auditSyncEnabled: true })
-    expect(Config({ mode: 'advanced', auditSyncEnabled: false } as DesktopConfig)).toEqual({ ...config, mode: 'advanced' })
+    const defaults = Config({}) as unknown as Record<string, unknown>
+    expect(defaults.auditSyncEnabled).toBe(true)
+    const overridden = Config({ auditSyncEnabled: false }) as unknown as Record<string, unknown>
+    expect(overridden.auditSyncEnabled).toBe(false)
     expect(DesktopSettingsSchema({} as DesktopSettings)).toEqual({
       mode: 'compatibility',
       macosMaterial: 'transparent',
@@ -653,7 +670,7 @@ describe('desktop Host plugin', () => {
 
   it('projects live built-in theme changes into an advanced native material', () => {
     const harness = createHarness()
-    apply(harness.ctx, { ...config, mode: 'advanced' })
+    apply(harness.ctx, withConfig({ mode: 'advanced' }))
 
     expect(harness.shell()?.readThemeSource()).toBe('system')
     harness.notifyTheme('dark')
@@ -680,11 +697,11 @@ describe('desktop Host plugin', () => {
     Object.assign(harness.ctx.webServer, { host: '0.0.0.0' })
 
     expect(() => apply(harness.ctx, config)).toThrow('does not match networkExposure')
-    expect(() => apply(harness.ctx, { ...config, networkExposure: 'lan' }))
+    expect(() => apply(harness.ctx, withConfig({ networkExposure: 'lan' })))
       .toThrow('does not match networkExposure')
 
     Object.assign(harness.ctx.webServer, { host: '127.0.0.1' })
-    expect(() => apply(harness.ctx, { ...config, networkExposure: 'lan' })).not.toThrow()
+    expect(() => apply(harness.ctx, withConfig({ networkExposure: 'lan' }))).not.toThrow()
   })
 
   it('validates the effective Linux mode while a browser migration is deferred', () => {

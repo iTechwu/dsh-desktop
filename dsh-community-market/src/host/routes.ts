@@ -2,6 +2,8 @@ import { randomUUID } from 'node:crypto'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { BlockList, isIP } from 'node:net'
 import type { Context } from '@deepseek-ai/cordis'
+import z from '@deepseek-ai/schemastery'
+import type { SettingsScope } from '@deepseek-ai/dsh-settings'
 import type { CatalogSourceManifest } from '../contracts/index.js'
 import { parseCatalogSnapshot, parseCatalogSource, validateLocalSourceRecords } from '../contracts/validate.js'
 import type { CatalogHttpClient } from '../contracts/types.js'
@@ -32,8 +34,7 @@ import {
 import { DSHFIND_ADAPTER_ID, DSHFIND_HOSTNAME } from '../adapters/dshfind.js'
 import { assertStandardSourceTrustRoot } from '../adapters/standard-http.js'
 import { BUILT_IN_PROVIDERS, DefaultCatalogService, type CatalogFetchScope, type CatalogFullIndex } from '../catalog/service.js'
-import { PersistentCatalogSourceStore } from '../catalog/source-store.js'
-import type { MarketCatalogCache, MarketStateStore } from '../catalog/state-store.js'
+import { SettingsCatalogSourceStore, type MarketCatalogCache, type MarketSettingsDocument } from '../catalog/source-store.js'
 import { MARKET_MEDIA_ASSET_REF_PATTERN } from '../media/ref.js'
 import { createRestrictedImageFetcher } from '../media/restricted-image.js'
 import { createMarketMediaService } from '../media/service.js'
@@ -547,7 +548,7 @@ export async function readStandardSourceManifest(
 }
 
 async function mutateSources(
-  state: MarketStateStore,
+  scope: SettingsScope<MarketSettingsDocument>,
   mutation: MarketSourceMutation,
   signal: AbortSignal,
   onUnavailable?: (sourceRecordId: string) => void,
@@ -557,7 +558,7 @@ async function mutateSources(
   ) => Promise<CatalogSourceManifest> = readStandardSourceManifest,
 ): Promise<void> {
   signal.throwIfAborted()
-  const store = new PersistentCatalogSourceStore(state)
+  const store = new SettingsCatalogSourceStore(scope)
   const records = [...await store.load()]
   const unavailableSourceRecordIds = new Set<string>()
   const nextOrder = records.reduce((maximum, record) => Math.max(maximum, record.order), -1) + 1
@@ -626,7 +627,7 @@ async function mutateSources(
 }
 
 export function createMarketSourceMutator(
-  state: MarketStateStore,
+  scope: SettingsScope<MarketSettingsDocument>,
   onUnavailable?: (sourceRecordId: string) => void,
   readManifest?: (manifestUrl: string, signal: AbortSignal) => Promise<CatalogSourceManifest>,
 ): (
@@ -637,7 +638,7 @@ export function createMarketSourceMutator(
   return (mutation, signal) => {
     const pending = tail.then(async () => {
       signal.throwIfAborted()
-      await mutateSources(state, mutation, signal, onUnavailable, readManifest)
+      await mutateSources(scope, mutation, signal, onUnavailable, readManifest)
     })
     tail = pending.catch(() => {})
     return pending
@@ -646,14 +647,14 @@ export function createMarketSourceMutator(
 
 export function registerMarketRoutes(
   ctx: Context,
-  state: MarketStateStore,
+  scope: SettingsScope<MarketSettingsDocument>,
   installProvider?: MarketInstallServiceProvider,
   desktopActionsProvider?: MarketDesktopActionsProvider,
   desktopPluginsProvider?: MarketDesktopPluginsProvider,
 ): () => void {
   const expectedPort = ctx.webServer.port
   const generationController = new AbortController()
-  const store = new PersistentCatalogSourceStore(state)
+  const store = new SettingsCatalogSourceStore(scope)
   const media = createMarketMediaService({
     fetchImage: createRestrictedImageFetcher({
       // These are compiled-in adapter hosts, not names supplied by a remote source.
@@ -675,7 +676,7 @@ export function registerMarketRoutes(
   })
   const servedCatalogPreviews = new Set<string>()
   const catalogPreviewKey = (sourceRecordId: string, locale: string) => `${sourceRecordId}\0${locale}`
-  const mutateSource = createMarketSourceMutator(state, sourceRecordId => {
+  const mutateSource = createMarketSourceMutator(scope, sourceRecordId => {
     service.invalidateSource(sourceRecordId)
     for (const key of servedCatalogPreviews) {
       if (key.startsWith(`${sourceRecordId}\0`)) servedCatalogPreviews.delete(key)
@@ -712,7 +713,7 @@ export function registerMarketRoutes(
     const cache = catalogCacheFromResponse(response, sourceRecordId, locale)
     if (cache === undefined) return
     try {
-      await state.setCatalogCache(cache)
+      await scope.update({ catalogCache: cache })
     } catch (cause) {
       // Catalog browsing already succeeded; a failed cache write must not
       // escalate into an unhandled rejection that terminates the host.
@@ -721,6 +722,7 @@ export function registerMarketRoutes(
       }`)
     }
   }
+  const settingsScope = scope
   const routes = [
     ctx.webServer.register({ kind: 'exact', path: ROUTE_STATE, handler: async (_req, res) => {
       if (generationController.signal.aborted) return
@@ -839,7 +841,7 @@ export function registerMarketRoutes(
         if (!force && previewKey !== undefined && !servedCatalogPreviews.has(previewKey)) {
           const cached = activeSource === undefined
             ? undefined
-            : cachedCatalogResponse(state.getCatalogCache(), activeSource, localeKey)
+            : cachedCatalogResponse(settingsScope.get().catalogCache, activeSource, localeKey)
           if (cached !== undefined) {
             servedCatalogPreviews.add(previewKey)
             if (!signal.aborted && !res.destroyed) sendJson(res, 200, cached)
@@ -1179,6 +1181,10 @@ export function registerMarketRoutes(
     media.dispose()
     routes.forEach(dispose => dispose())
   }
+}
+
+export function registerMarketSettings(ctx: Context): SettingsScope<MarketSettingsDocument> {
+  return ctx.settings.register(MARKET_SETTINGS_NAMESPACE, SETTINGS_SCHEMA, { applies: 'live' })
 }
 
 export const marketRoutes = {

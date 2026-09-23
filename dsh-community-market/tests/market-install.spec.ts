@@ -3,9 +3,10 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Readable } from 'node:stream'
+import type { SettingsScope } from '@deepseek-ai/dsh-settings'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { DSH_1024STORE_ADAPTER_ID, DSH_1024STORE_PROVIDER_ID } from '../src/adapters/dsh-1024store.js'
-import { MemoryMarketStateStore } from '../src/catalog/state-store.js'
+import type { MarketSettingsDocument } from '../src/catalog/source-store.js'
 import type { CatalogHttpClient, CatalogSnapshot } from '../src/contracts/index.js'
 import { marketRoutes, registerMarketRoutes } from '../src/host/routes.js'
 import {
@@ -21,6 +22,16 @@ const temporaryDirectories: string[] = []
 afterEach(async () => {
   await Promise.all(temporaryDirectories.splice(0).map(async path => await rm(path, { recursive: true, force: true })))
 })
+
+function memoryScope(): SettingsScope<MarketSettingsDocument> {
+  let document: MarketSettingsDocument = { sources: [] }
+  return {
+    get: () => document,
+    watch: () => () => {},
+    update: vi.fn(async patch => { document = { ...document, ...patch } as MarketSettingsDocument }),
+    replace: vi.fn(async section => { document = section as MarketSettingsDocument }),
+  }
+}
 
 function snapshot(): CatalogSnapshot {
   return {
@@ -185,7 +196,7 @@ describe('simplified Profile package operations', () => {
   it('installs npm latest with one pnpm add and does not persist a market receipt', async () => {
     const profileDir = await createProfile()
     const calls: string[][] = []
-    const state = new MemoryMarketStateStore()
+    const scope = memoryScope()
     const verify = vi.fn(async () => ({ version }))
     const service = new MarketInstallService(
       () => ({ name: 'desktop', dir: profileDir }),
@@ -206,8 +217,7 @@ describe('simplified Profile package operations', () => {
       '--registry=https://registry.npmjs.org/',
       `${packageName}@${version}`,
     ]])
-    expect(state.getSources()).toEqual([])
-    expect(state.getCatalogCache()).toBeUndefined()
+    expect(scope.get()).toEqual({ sources: [] })
     expect(JSON.parse(await readFile(join(profileDir, 'package.json'), 'utf8'))).toMatchObject({
       dependencies: { [packageName]: version },
       dsh: { profile: { bundles: [packageName] } },
@@ -340,7 +350,7 @@ describe('market Profile inventory routes', () => {
     } as unknown as MarketInstallService
     const dispose = registerMarketRoutes(
       ctx as never,
-      new MemoryMarketStateStore(),
+      memoryScope(),
       { get: () => install },
       undefined,
       { get: () => desktopPlugins },

@@ -12,7 +12,7 @@ import { DOFE_ACCESS_SETTINGS_NAMESPACE, type DofeAccessSettings } from '../dofe
 export function applyDofeAccess(ctx: Context): void {
   ctx.effect(() => ctx.locale.register('dofe.access', DOFE_ACCESS_COPY), 'desktop: access dictionaries')
   ctx.effect(() => installDofeAccessStyles(), 'desktop: access styles')
-  const settingsScope = ctx.settingsScope.bind<DofeAccessSettings>({ namespace: DOFE_ACCESS_SETTINGS_NAMESPACE })
+  const settingsScope = ctx.configForms.get<DofeAccessSettings>(DOFE_ACCESS_SETTINGS_NAMESPACE)
   const t = ctx.locale.bind('dofe.access')
   const props = { credentials: ctx.remote.credentials, settingsApi: ctx.remote.settings, settingsScope, t }
   ctx.effect(() => installDofeAccessGate(props), 'desktop: mandatory access gate')

@@ -3,7 +3,7 @@ import { useMemo, useSyncExternalStore } from 'react'
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-client-ui-plugin-manager/client'
 import type { InjectFace, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
-import type { SettingsScope } from '@deepseek-ai/dsh-client-ui-settings/client'
+import type { ConfigForm } from '@deepseek-ai/dsh-client-ui-settings/client'
 import { dofePluginsForBrand, DOFE_ACCESS_VALIDATION_VERSION, type DofeAccessSettings, type DofePluginId } from '../dofe-plugins.ts'
 import type { DofeAccessLocaleKey } from './dofe-access.ts'
 import { dofeAccessSettingsStore } from './DofeAccessSection.tsx'
@@ -16,7 +16,7 @@ type DofePluginCardState = 'built-in' | 'enabled' | 'unentitled' | 'disabled'
 
 interface DofePluginCardInjected {
   readonly plugin: { id: DofePluginId; name: string; description: string; servers: readonly string[]; builtIn: boolean }
-  readonly settingsScope: SettingsScope<DofeAccessSettings>
+  readonly settingsScope: ConfigForm<DofeAccessSettings>
   readonly t: Copy
 }
 
@@ -75,7 +75,7 @@ export function DofePluginCard(props: DofePluginCardProps) {
  * @param settingsScope - the DoFe access scope the cards report from.
  * @param t - the access dictionary binding for card copy.
  */
-export function registerDofePluginItems(ctx: Context, settingsScope: SettingsScope<DofeAccessSettings>, t: Copy): void {
+export function registerDofePluginItems(ctx: Context, settingsScope: ConfigForm<DofeAccessSettings>, t: Copy): void {
   dofePluginsForBrand(BRAND_VARIANT).forEach((plugin, index) => {
     ctx.slots.inject('plugins.item', () => ctx.slots.register({
       name: 'plugins.item',

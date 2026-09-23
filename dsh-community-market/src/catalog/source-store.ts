@@ -1,11 +1,29 @@
+import type { SettingsScope } from '@deepseek-ai/dsh-settings'
+import type { CatalogSnapshot } from '../contracts/generated/catalog-snapshot.js'
 import { validateLocalSourceRecords } from '../contracts/validate.js'
 import type { CatalogSourceStore, LocalSourceRecord } from '../contracts/types.js'
-import type { MarketStateStore } from './state-store.js'
+
+export interface MarketCatalogCache {
+  readonly version: 1
+  readonly sourceRecordId: string
+  readonly locale: string
+  readonly savedAt: string
+  readonly snapshot: CatalogSnapshot
+  readonly categories: readonly string[]
+  readonly scannedAt: string
+  readonly expiresAt: string
+  readonly providerRevision?: string
+}
+
+export interface MarketSettingsDocument {
+  readonly sources: readonly LocalSourceRecord[]
+  readonly catalogCache?: MarketCatalogCache
+}
 
 /**
- * Reconcile legacy multi-enabled registries into the single active-source
- * model. The first enabled record by user order wins. An all-disabled registry
- * keeps its explicit no-selection state.
+ * Reconcile legacy multi-enabled settings into the single active-source model.
+ * The first enabled record by user order wins. An all-disabled registry keeps
+ * its explicit no-selection state.
  */
 export function normalizeActiveSourceRecords(
   records: readonly LocalSourceRecord[],
@@ -18,17 +36,11 @@ export function normalizeActiveSourceRecords(
   }))
 }
 
-/**
- * The catalogue's view of market's persisted registry. Validation stays here
- * rather than at the durable boundary: the storage schema answers "is this the
- * right shape", the local-source contract answers "is this a registry market is
- * willing to act on", and only the second one is allowed to reject.
- */
-export class PersistentCatalogSourceStore implements CatalogSourceStore {
-  constructor(private readonly state: MarketStateStore) {}
+export class SettingsCatalogSourceStore implements CatalogSourceStore {
+  constructor(private readonly scope: SettingsScope<MarketSettingsDocument>) {}
 
   async load(): Promise<readonly LocalSourceRecord[]> {
-    const records = [...this.state.getSources()]
+    const records = [...this.scope.get().sources]
     validateLocalSourceRecords(records)
     return normalizeActiveSourceRecords(records)
   }
@@ -36,7 +48,7 @@ export class PersistentCatalogSourceStore implements CatalogSourceStore {
   async save(records: readonly LocalSourceRecord[]): Promise<void> {
     const normalized = normalizeActiveSourceRecords(records)
     validateLocalSourceRecords(normalized)
-    await this.state.setSources(normalized)
+    await this.scope.update({ sources: normalized })
   }
 }
 

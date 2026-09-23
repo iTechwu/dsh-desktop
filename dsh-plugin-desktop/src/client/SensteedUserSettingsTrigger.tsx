@@ -1,11 +1,11 @@
 import { useMemo, useSyncExternalStore } from 'react'
 import { DofeUserAvatar } from './DofeUserAvatar.tsx'
 import type { InjectFace, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
-import type { SettingsScope } from '@deepseek-ai/dsh-client-ui-settings/client'
+import type { ConfigForm } from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { DofeAccessSettings } from '../dofe-plugins.ts'
 import { dofeAccessSettingsStore } from './DofeAccessSection.tsx'
 
-type Props = PropsRuntime<'settings.trigger'> & InjectFace<{ settingsScope: SettingsScope<DofeAccessSettings> }>
+type Props = PropsRuntime<'settings.trigger'> & InjectFace<{ settingsScope: ConfigForm<DofeAccessSettings> }>
 
 /** Keep the sidebar identity subscribed to the same account as the login gate. */
 export function SensteedUserSettingsTrigger({ wide, settingsScope }: Props) {

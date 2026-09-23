@@ -66,7 +66,7 @@ describe('packaged dsh bootstrap', () => {
       expect(asarProcess.noAsar).toBe(true)
       return { runCli: async () => {} }
     })
-    await runDesktopDshCli({}, load, ['node', 'desktop-cli', '--version'], asarProcess)
+    await runDesktopDshCli({}, load, ['node', 'desktop-cli', '--version'], undefined, asarProcess)
     expect(load).toHaveBeenCalledOnce()
   })
 

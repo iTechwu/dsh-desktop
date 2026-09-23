@@ -147,6 +147,7 @@ describe('macOS DMG smoke artifact verification', () => {
       dmgPath: `/release/dist/${dmgName}.dmg`,
     })
     expect(harness.calls.some(call => call.args.some(arg => arg.includes('@dataiku/uv-')))).toBe(false)
+  })
 
   it('checks only the packaged slice of a single-architecture smoke', () => {
     const value = fixture()

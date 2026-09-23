@@ -81,8 +81,7 @@
     "ajv-formats": "^3.0.1",
     "semver": "^7.7.3",
     "sharp": "0.35.3",
-    "yaml": "^2.9.0",
-    "zod": "^4.4.3"
+    "yaml": "^2.9.0"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "workspace:*",
@@ -93,13 +92,10 @@
     "@deepseek-ai/dsh-agent": {
       "optional": true
     },
-    "@deepseek-ai/dsh-agent-preset-registry": {
+    "@deepseek-ai/dsh-agent-presets": {
       "optional": true
     },
     "@deepseek-ai/dsh-api-gateway": {
-      "optional": true
-    },
-    "@deepseek-ai/dsh-api-job-controller": {
       "optional": true
     },
     "@deepseek-ai/dsh-api-remotes": {
@@ -154,12 +150,6 @@
       "optional": true
     },
     "@deepseek-ai/dsh-session-persistence": {
-      "optional": true
-    },
-    "@deepseek-ai/dsh-storage": {
-      "optional": true
-    },
-    "@deepseek-ai/dsh-storage-domain": {
       "optional": true
     },
     "@deepseek-ai/dsh-subagent": {

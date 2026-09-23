@@ -2,8 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Button,
   IconCheckOutlineRegular,
-  IconChevronDownOutlineRegular,
-  IconChevronUpOutlineRegular,
+  IconChevronDownOutlineMedium,
+  IconChevronUpOutlineMedium,
   IconCordisPluginOutlineRegular,
   IconDataOutlineRegular,
   IconDownloadOutlineRegular,
@@ -1678,7 +1678,7 @@ function SourceRow({ source, result, pending, canMoveUp, canMoveDown, onMoveUp, 
             size="sm"
             aria-label={t('moveUp')}
             disabled={pending || !canMoveUp}
-            icon={<IconChevronUpOutlineRegular size={14} />}
+            icon={<IconChevronUpOutlineMedium />}
             onClick={onMoveUp}
           />
         </Tooltip>
@@ -1689,7 +1689,7 @@ function SourceRow({ source, result, pending, canMoveUp, canMoveDown, onMoveUp, 
             size="sm"
             aria-label={t('moveDown')}
             disabled={pending || !canMoveDown}
-            icon={<IconChevronDownOutlineRegular size={14} />}
+            icon={<IconChevronDownOutlineMedium />}
             onClick={onMoveDown}
           />
         </Tooltip>

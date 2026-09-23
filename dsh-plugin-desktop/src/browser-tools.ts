@@ -202,11 +202,11 @@ Do not click a platform's final publish control without explicit user approval.`
     async execute(args, exec) {
       const browserArgs = args as BrowserArgs
       const command = buildBrowserCommand(resolved.opencliCommand, browserArgs)
-      const result = await ctx.shell.run(ctx.shell.resolve({
+      const result = await (await ctx.shell.execute(ctx.shell.resolve({
         command,
         signal: exec.signal,
         timeoutMs: resolved.timeoutMs,
-      }))
+      }))).result()
       return toResult(
         browserArgs.action,
         result.exitCode,

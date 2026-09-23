@@ -18,11 +18,9 @@ import { isIP } from 'node:net'
 import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { evaluate, isJsExpr, type EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
-import { withAsarModuleResolver } from './asar-module-resolver-state.ts'
 import type { PatchOptions } from '@deepseek-ai/cordis-plugin-include'
 import {
   composeEntries,
-  healProfilesModuleFallback,
   initProfile,
   loadOptionalPatches,
   loadOverlayPatches,
@@ -588,7 +586,7 @@ function loadRecoveryFilteredProfile(
       layers.push({
         packageName,
         packageDir,
-        patchPath,
+        patchPaths: [patchPath],
         patches: loadOverlayPatches(BIN_NAME, patchPath),
       })
     } catch (cause) {
@@ -1250,18 +1248,11 @@ const MAX_FALLBACK_MANIFEST_BYTES = 1024 * 1024
 
 /** Maintain the upstream module fallback for one fully resolved Desktop profile. */
 export async function healDesktopProfileModuleFallback(home: string, profile?: Profile): Promise<void> {
-  const heal = () => healProfilesModuleFallback({
-    installAnchor: INSTALL_ANCHOR,
-    home,
-    ...(profile === undefined ? {} : { profile }),
-  })
-  // The harness heal reports the computed fallback generation; callers only
-  // need the materialization side effect, so the value stays internal.
-  if (!/([\\/])app\.asar\1/u.test(INSTALL_ANCHOR)) {
-    await heal()
-    return
-  }
-  await withAsarModuleResolver(heal)
+  // dsh 0.1.7 replaced the profile module-fallback heal with the refreshed
+  // module graph (#4569); the desktop keeps the call site so the packaged
+  // flow stays edition-neutral, but there is nothing left to heal.
+  void home
+  void profile
 }
 
 function isDshManagedModuleProxy(directory: string): boolean {

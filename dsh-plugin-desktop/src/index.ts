@@ -252,7 +252,7 @@ export function apply(ctx: Context, config: DesktopShellConfig): void {
     store: new YootunAuditStore(dshHomePath('storages', 'yootun-audit')),
     remote: new YootunAuditModelsClient(),
     resolveApiKey: async () => (await ctx.credentials.resolve(MODELS_API_KEY_REF))?.value,
-    enabled: config.auditSyncEnabled,
+    enabled: resolved.auditSyncEnabled,
     logger: ctx.logger,
   })
   ctx.provide('yootunAudit', audit)
