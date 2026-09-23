@@ -748,8 +748,9 @@ async function handleBreakdownWorkflowStatus(deps, ctx, body) {
 async function handleBreakdownDetail(deps, ctx, body) {
   const candidateId = cleanString(body.candidateId, MAX_ID)
   if (!candidateId) return { status: 'error', reason: 'candidate_id_required' }
-  // 两个数据源独立降级：storyboard 是详情主体（缺失即失败，不拖假数据），
-  // 分析步骤状态是辅助信息（失败单独透出 analysisError，不影响主体展示）。
+  // 三个数据源独立降级：storyboard 是详情主体（缺失即失败，不拖假数据），
+  // 分析步骤状态与候选公开指标（互动数据/发布时间/原视频链接）是辅助信息
+  //（失败单独透出，不影响主体展示）。
   let storyboards
   try {
     const payload = await callTool(ctx, 'viral_video_storyboards_list', { candidateId, limit: 20 })
@@ -764,11 +765,21 @@ async function handleBreakdownDetail(deps, ctx, body) {
   } catch (error) {
     analysisError = safeErrorCode(error)
   }
-  return { status: 'ready', storyboards, analysis, analysisError }
+  let candidate = null
+  let candidateError = null
+  try {
+    const payload = await callTool(ctx, 'viral_video_candidates_list', { candidateId, limit: 1 })
+    candidate = Array.isArray(payload?.candidates) ? payload.candidates[0] || null : null
+  } catch (error) {
+    candidateError = safeErrorCode(error)
+  }
+  return { status: 'ready', storyboards, analysis, analysisError, candidate, candidateError }
 }
 
 async function handleBreakdownHistory(deps, ctx, body) {
-  const args = { limit: clampInt(body.limit, 1, 20, 20) }
+  // 上限 200 与客户端「加载更多」分页上限一致：服务端无游标，翻页只能
+  // limit 递增全量拉；200 已远超团队拆解记录的实际量级。
+  const args = { limit: clampInt(body.limit, 1, 200, 10) }
   const payload = await callTool(ctx, 'viral_video_workflow_get', args)
   const projected = projectWorkflowItems(payload)
   // 服务端已按 updated_at 倒序。status=succeeded 由服务端在故事板与拍摄脚本**双成功**

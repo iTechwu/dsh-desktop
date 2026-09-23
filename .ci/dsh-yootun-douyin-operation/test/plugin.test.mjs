@@ -1123,6 +1123,7 @@ test('breakdown.detail：storyboard 主体失败整体失败；分析状态失�
 
   // 辅助信息失败：analysis_status_get 抛错不影响主体
   const seen = []
+  const candidateCalls = []
   const { ctx: ctx2, registered: registered2 } = createContext({
     tools: [
       { name: 'mcp__tools-douyin-operation__viral_video_storyboards_list' },
@@ -1146,9 +1147,34 @@ test('breakdown.detail：storyboard 主体失败整体失败；分析状态失�
     { candidateId: 'cand-1', limit: 20 },
     { candidateId: 'cand-1' },
   ])
+  // 未注册 candidates_list：候选指标独立降级（工具缺失码），不影响 ready 主体。
+  assert.equal(okBody.payload.candidate, null)
+  assert.equal(okBody.payload.candidateError, 'DOUYIN_TOOL_UNAVAILABLE')
+
+  // 候选指标成功路径：candidates_list 单查（limit 1）结果透传，供 KPI 卡与
+  // 详情头部（发布时间/原视频链接）使用。
+  const { ctx: ctx3, registered: registered3 } = createContext({
+    tools: [
+      { name: 'mcp__tools-douyin-operation__viral_video_storyboards_list' },
+      { name: 'mcp__tools-douyin-operation__viral_video_candidates_list' },
+    ],
+    execute: async ({ name, arguments: args }) => {
+      if (name.endsWith('storyboards_list')) {
+        return { structuredContent: { items: [{ storyboardId: 'sb-1', status: 'succeeded' }], total: 1 } }
+      }
+      candidateCalls.push(args)
+      return { structuredContent: { candidates: [{ candidateId: 'cand-1', playCount: 2865000, shareUrl: 'https://www.douyin.com/video/1' }], total: 1 } }
+    },
+  })
+  apply(ctx3, { root: '/tmp/unused', browserStatus: async () => ({ chromeAvailable: true, driverAvailable: true, platform: 'linux' }) })
+  const withCandidate = await call(registered3[0].handler, { action: 'breakdown.detail', candidateId: 'cand-1' })
+  assert.equal(withCandidate.payload.status, 'ready')
+  assert.deepEqual(candidateCalls, [{ candidateId: 'cand-1', limit: 1 }])
+  assert.equal(withCandidate.payload.candidate.playCount, 2865000)
+  assert.equal(withCandidate.payload.candidateError, null)
 })
 
-test('breakdown.history：succeeded 标记 hasStoryboard，limit 收敛', async () => {
+test('breakdown.history：succeeded 标记 hasStoryboard，limit 越界回落默认（页上限 200）', async () => {
   const calls = []
   const { ctx, registered } = createContext({
     tools: [{ name: 'mcp__tools-douyin-operation__viral_video_workflow_get' }],
@@ -1167,8 +1193,13 @@ test('breakdown.history：succeeded 标记 hasStoryboard，limit 收敛', async 
     },
   })
   apply(ctx, { root: '/tmp/unused', browserStatus: async () => ({ chromeAvailable: true, driverAvailable: true, platform: 'linux' }) })
-  const response = await call(registered[0].handler, { action: 'breakdown.history', limit: 999 })
-  assert.deepEqual(calls[0], { limit: 20 })
+  // 区间内透传；越界与缺省回落默认 10（handler clampInt 惯例，页上限 200）。
+  await call(registered[0].handler, { action: 'breakdown.history', limit: 50 })
+  assert.deepEqual(calls[0], { limit: 50 })
+  await call(registered[0].handler, { action: 'breakdown.history', limit: 999 })
+  assert.deepEqual(calls[1], { limit: 10 })
+  const response = await call(registered[0].handler, { action: 'breakdown.history' })
+  assert.deepEqual(calls[2], { limit: 10 })
   assert.equal(response.payload.status, 'ready')
   assert.equal(response.payload.history[0].candidateId, 'cand-1')
   assert.equal(response.payload.history[0].hasStoryboard, true)

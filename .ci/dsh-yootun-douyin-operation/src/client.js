@@ -47,6 +47,9 @@ const BD_ARCHIVE_POLL_INTERVAL_MS = 3000
 const BD_WORKFLOW_POLL_INTERVAL_MS = 5000
 // workflow 轮询连续失败上限：25s（5 次 × 5s 间隔）内持续不可用即终止轮询。
 const BD_WORKFLOW_POLL_MAX_FAILURES = 5
+// 拆解记录默认每页 10 条；「加载更多」逐页 +10，200 与宿主 handler clamp 上限一致。
+const BD_HISTORY_PAGE_SIZE = 10
+const BD_HISTORY_LIMIT_MAX = 200
 
 // 删除账号的客户端生命周期（能力矩阵的写操作状态语义）：
 // idle → awaiting_confirmation（确认框）→ confirmed_pending_adapter（设备清理 + 远端删除进行中）；
@@ -195,29 +198,40 @@ const copy = {
     aiDimShortAudience: '受众', aiDimShortStability: '稳定',
     aiDimDetail: '证据与明细', aiLimitsTitle: '数据限制与免责',
     aiDigestLimits: '{n} 项',
-    // 爆款拆解 Tab（0922 方案 §4.1）
+    // 爆款拆解 Tab（0922 方案 §4.1；0923 视觉对齐预览稿 breakdown-tab-preview.html）
     tabBreakdown: '爆款拆解',
-    bdNewTitle: '新建拆解',
-    bdShareLabel: '抖音分享链接', bdSharePlaceholder: '粘贴抖音视频分享链接',
+    bdNewTitle: '发起拆解',
+    bdShareLabel: '抖音分享链接', bdSharePlaceholder: '粘贴抖音视频分享链接，如 https://v.douyin.com/xxxx/',
     bdStartButton: '开始拆解', bdSubmitting: '提交中…',
     bdArchivePending: '正在下载并归档视频，通常需要十几秒…',
-    bdRulesHint: '仿写规则可选：不选则按默认链路改写；拆解历史团队共享。',
-    bdRulesLabel: '仿写规则', bdRulesEmpty: '暂无可用仿写规则，将按默认链路改写', bdRulesRetry: '重新加载规则',
-    bdHistoryLabel: '拆解历史', bdHistoryEmpty: '还没有拆解记录，粘贴分享链接开始第一次拆解',
-    bdStatusSucceeded: '已完成', bdStatusFailed: '失败', bdStatusCancelled: '已取消', bdStatusRunning: '进行中',
+    bdRulesLabel: '仿写规则', bdRulesOptional: '（可选，单选；不选择则按默认方式仿写）',
+    bdRulesHint: '规则由服务端统一配置，一次仿写只应用一条主方向规则；提交后按所选规则生成仿写分镜与拍摄脚本。',
+    bdRulesEmpty: '暂无可用仿写规则，将按默认链路改写', bdRulesRetry: '重新加载规则',
+    bdHistoryLabel: '拆解记录', bdHistorySub: '（团队共享，按时间倒序）',
+    bdHistoryEmpty: '还没有拆解记录，粘贴分享链接开始第一次拆解',
+    bdColVideo: '视频', bdColStatus: '状态', bdColRule: '仿写规则', bdColStep: '当前步骤', bdColTime: '时间',
+    bdPlayLabel: '播放', bdRuleDefault: '默认', bdLoadMore: '加载更多',
+    bdStatusSucceeded: '已完成', bdStatusFailed: '失败', bdStatusCancelled: '已取消', bdStatusRunning: '拆解中',
     bdStatusNeedsInput: '待补充信息',
     bdProgressLabel: '拆解进度',
-    bdStep_archive_original: '归档', bdStep_transcode_audio: '转码', bdStep_asr: '语音识别',
+    bdStep_archive_original: '视频归档', bdStep_transcode_audio: '转码', bdStep_asr: '语音识别',
     bdStep_extract_frames: '抽帧', bdStep_vision: '画面理解', bdStep_breakdown: '结构拆解',
-    bdStep_storyboard: '改写分镜', bdStep_shot_script: '拍摄脚本',
+    bdStep_storyboard: '分镜仿写', bdStep_shot_script: '拍摄脚本',
+    bdKpiLabel: '视频数据', bdKpiPlay: '播放', bdKpiLike: '点赞', bdKpiComment: '评论',
+    bdKpiCollect: '收藏', bdKpiShare: '分享', bdKpiInteraction: '互动率',
+    bdPublishedAt: '发布于', bdOriginalLink: '原视频链接',
     bdRole_hook: '钩子', bdRole_build: '铺垫', bdRole_turn: '转折', bdRole_cta: '引导', bdRole_other: '其他',
-    bdSourceFrom: '来源段落',
+    bdColRole: '角色', bdColVisual: '画面', bdColSpeech: '口播',
+    bdSourceFrom: '源片段', bdShotSrcPrefix: '原片段：', bdShotCopyPrefix: '改写文案：', bdShotVisualPrefix: '画面提示：',
     bdCardOriginal: '原视频拆解', bdCardTranscript: '口播全文', bdCardStoryboard: '改写分镜',
     bdCardShotScript: '拍摄脚本', bdCardRule: '使用的仿写规则',
+    bdDigestAsr: '语音识别', bdDigestCharUnit: '字',
     bdSegmentUnit: '段', bdSectionPending: '本段内容尚未生成', bdDetailEmpty: '暂无拆解内容',
+    bdDetailEmptySub: '拆解完成后，此处将展示原视频拆解、改写分镜与拍摄脚本',
+    bdRunningTitle: '拆解进行中', bdRunningSub: '页面会自动刷新进度，拆解完成后此处展示拆解结果',
     bdShotQuotas: '景别配额', bdRuleNone: '本次拆解未使用仿写规则（默认链路改写）',
     bdBackToList: '← 返回列表', bdRewriteButton: '重新改写',
-    bdRewriteTitle: '重新改写这条视频', bdRewriteHint: '选择仿写规则后将以新规则版本重新生成分镜与脚本；原拆解记录保留。',
+    bdRewriteTitle: '重新改写这条视频', bdRewriteHint: '基于已完成的拆解结果，重新生成分镜与拍摄脚本；换用不同规则将生成一条新记录。',
     bdRewriteStart: '开始改写', bdRunningHint: '拆解进行中，页面会自动刷新进度…',
     bdErrorInvalidKey: '请求参数不合法，请刷新后重试', bdErrorRunNotFound: '任务不存在或已过期，请重新发起',
     bdErrorUnknownRule: '所选仿写规则不存在或已下线，请刷新规则列表', bdErrorConflict: '请求与历史记录不一致，请刷新后重试',
@@ -352,29 +366,41 @@ const copy = {
     aiDimShortAudience: 'Audience', aiDimShortStability: 'Stability',
     aiDimDetail: 'Evidence & details', aiLimitsTitle: 'Data limits & disclaimer',
     aiDigestLimits: '{n}',
-    // Viral breakdown tab (0922 plan §4.1)
+    // Viral breakdown tab (0922 plan §4.1; 0923 visual alignment with breakdown-tab-preview.html)
     tabBreakdown: 'Viral breakdown',
-    bdNewTitle: 'New breakdown',
-    bdShareLabel: 'Douyin share link', bdSharePlaceholder: 'Paste a Douyin video share link',
+    bdNewTitle: 'Start a breakdown',
+    bdShareLabel: 'Douyin share link', bdSharePlaceholder: 'Paste a Douyin video share link, e.g. https://v.douyin.com/xxxx/',
     bdStartButton: 'Start breakdown', bdSubmitting: 'Submitting…',
     bdArchivePending: 'Downloading and archiving the video, usually takes a while…',
-    bdRulesHint: 'Rewrite rules are optional; without one the default pipeline applies. Breakdown history is shared with the team.',
-    bdRulesLabel: 'Rewrite rules', bdRulesEmpty: 'No rewrite rules available; the default pipeline will be used', bdRulesRetry: 'Reload rules',
-    bdHistoryLabel: 'Breakdown history', bdHistoryEmpty: 'No breakdowns yet — paste a share link to start the first one',
+    bdRulesLabel: 'Rewrite rules', bdRulesOptional: ' (optional, pick one; leave empty for the default rewrite)',
+    bdRulesHint: 'Rules are configured server-side; one rewrite applies a single primary rule. The storyboard and shot script are generated with the selected rule.',
+    bdRulesEmpty: 'No rewrite rules available; the default pipeline will be used', bdRulesRetry: 'Reload rules',
+    bdHistoryLabel: 'Breakdown records', bdHistorySub: ' (team-shared, newest first)',
+    bdHistoryEmpty: 'No breakdowns yet — paste a share link to start the first one',
+    bdColVideo: 'Video', bdColStatus: 'Status', bdColRule: 'Rewrite rule', bdColStep: 'Current step', bdColTime: 'Time',
+    bdPlayLabel: 'Plays', bdRuleDefault: 'Default', bdLoadMore: 'Load more',
     bdStatusSucceeded: 'Done', bdStatusFailed: 'Failed', bdStatusCancelled: 'Cancelled', bdStatusRunning: 'Running',
     bdStatusNeedsInput: 'Needs input',
     bdProgressLabel: 'Breakdown progress',
     bdStep_archive_original: 'Archive', bdStep_transcode_audio: 'Transcode', bdStep_asr: 'Speech-to-text',
     bdStep_extract_frames: 'Frames', bdStep_vision: 'Vision', bdStep_breakdown: 'Breakdown',
     bdStep_storyboard: 'Storyboard', bdStep_shot_script: 'Shot script',
+    bdKpiLabel: 'Video metrics', bdKpiPlay: 'Plays', bdKpiLike: 'Likes', bdKpiComment: 'Comments',
+    bdKpiCollect: 'Collects', bdKpiShare: 'Shares', bdKpiInteraction: 'Interaction',
+    bdPublishedAt: 'Published', bdOriginalLink: 'Original video',
     bdRole_hook: 'Hook', bdRole_build: 'Build-up', bdRole_turn: 'Turn', bdRole_cta: 'CTA', bdRole_other: 'Other',
-    bdSourceFrom: 'Source segments',
+    bdColRole: 'Role', bdColVisual: 'Visual', bdColSpeech: 'Voiceover',
+    bdSourceFrom: 'Source segment', bdShotSrcPrefix: 'Original: ', bdShotCopyPrefix: 'Rewritten: ', bdShotVisualPrefix: 'Visual: ',
     bdCardOriginal: 'Original breakdown', bdCardTranscript: 'Transcript', bdCardStoryboard: 'Rewritten storyboard',
     bdCardShotScript: 'Shot script', bdCardRule: 'Rewrite rule used',
+    bdDigestAsr: 'Speech-to-text', bdDigestCharUnit: ' chars',
     bdSegmentUnit: ' segments', bdSectionPending: 'Not generated yet', bdDetailEmpty: 'No breakdown content yet',
+    bdDetailEmptySub: 'Once the breakdown completes, the original analysis, rewritten storyboard and shot script appear here',
+    bdRunningTitle: 'Breakdown in progress',
+    bdRunningSub: 'This page refreshes automatically; results appear here once the breakdown completes',
     bdShotQuotas: 'Shot-size quotas', bdRuleNone: 'No rewrite rule was used (default pipeline)',
     bdBackToList: '← Back to list', bdRewriteButton: 'Rewrite',
-    bdRewriteTitle: 'Rewrite this video', bdRewriteHint: 'Picking a rule regenerates the storyboard and shot script as a new rule version; the original breakdown is kept.',
+    bdRewriteTitle: 'Rewrite this video', bdRewriteHint: 'Regenerate the storyboard and shot script from the completed breakdown; a different rule creates a new record.',
     bdRewriteStart: 'Start rewrite', bdRunningHint: 'Breakdown in progress — this page refreshes automatically…',
     bdErrorInvalidKey: 'Invalid request — refresh and retry', bdErrorRunNotFound: 'Task not found or expired — start again',
     bdErrorUnknownRule: 'The selected rewrite rule does not exist or is retired — refresh the rule list', bdErrorConflict: 'The request conflicts with a previous one — refresh and retry',
@@ -808,6 +834,13 @@ function Overlay({ t }) {
   const [bdHistory, setBdHistory] = useState([])
   const [bdHistoryLoading, setBdHistoryLoading] = useState(false)
   const [bdHistoryError, setBdHistoryError] = useState(null)
+  // 拆解记录分页（预览稿「加载更多」）：默认 10 条，逐页 +10 递增拉取；服务端
+  // 无游标，翻页 = limit 递增全量重拉（上限 200 与宿主 handler clamp 一致），
+  // 切 Tab/详情返回不重置页码。
+  const [bdHistoryLimit, setBdHistoryLimit] = useState(BD_HISTORY_PAGE_SIZE)
+  const [bdHistoryLoadingMore, setBdHistoryLoadingMore] = useState(false)
+  // 页码的 ref 镜像：loadBdHistory 无参调用读这里（见其注释）。
+  const bdHistoryLimitRef = useRef(BD_HISTORY_PAGE_SIZE)
   const [bdSubmitting, setBdSubmitting] = useState(false)
   // 主视图「新建拆解」的提交/归档失败文案（与详情页错误独立）。
   const [bdStartError, setBdStartError] = useState(null)
@@ -1263,18 +1296,28 @@ function Overlay({ t }) {
     }
   }, [bdErrorKey])
 
-  const loadBdHistory = useCallback(async () => {
-    setBdHistoryLoading(true)
+  // 拆解记录加载（预览稿分页口径）：limit 递增全量重拉。当前页码用 ref 镜像——
+  // 归档完成/返回列表/Tab 进入的后续刷新读 ref，闭包恒新鲜且不进依赖数组
+  //（进 useEffect 依赖会让「加载更多」成功后的 setBdHistoryLimit 再触发一次重拉）。
+  const loadBdHistory = useCallback(async (limit, { more = false } = {}) => {
+    const pageLimit = Math.min(Math.max(Number(limit) || bdHistoryLimitRef.current, 1), BD_HISTORY_LIMIT_MAX)
+    if (more) {
+      setBdHistoryLoadingMore(true)
+    } else {
+      setBdHistoryLoading(true)
+    }
     setBdHistoryError(null)
     try {
-      // 服务端无游标，total 是本页计数；首屏 limit=20，方案 §4.2 不做「加载更多」。
-      const result = await post({ action: 'breakdown.history', limit: 20 })
+      const result = await post({ action: 'breakdown.history', limit: pageLimit })
       if (result.status !== 'ready') { setBdHistoryError(bdErrorKey(result.reason)); return }
       setBdHistory(Array.isArray(result.history) ? result.history : [])
+      setBdHistoryLimit(pageLimit)
+      bdHistoryLimitRef.current = pageLimit
     } catch {
       setBdHistoryError('operationUnavailable')
     } finally {
       setBdHistoryLoading(false)
+      setBdHistoryLoadingMore(false)
     }
   }, [bdErrorKey])
 
@@ -1291,7 +1334,12 @@ function Overlay({ t }) {
         setBdDetailError(bdErrorKey(result.reason))
         return
       }
-      setBdDetail({ storyboards: Array.isArray(result.storyboards) ? result.storyboards : [], analysis: result.analysis || null })
+      setBdDetail({
+        storyboards: Array.isArray(result.storyboards) ? result.storyboards : [],
+        analysis: result.analysis || null,
+        // 候选公开指标（互动数据/发布时间/原视频链接）：独立降级源，缺失为 null。
+        candidate: result.candidate || null,
+      })
     } catch {
       if (requestId !== bdDetailRequestRef.current) return
       setBdDetailError('operationUnavailable')
@@ -1730,6 +1778,9 @@ function Overlay({ t }) {
               ? h(BreakdownDetailPage, {
                 workflow: bdDetailWorkflow,
                 detail: bdDetail,
+                // 候选公开指标与规则清单（规则名解析）：独立降级，缺失按 — 展示。
+                candidate: bdDetail?.candidate || null,
+                rules: bdRules,
                 loading: bdDetailLoading,
                 errorReason: bdDetailError,
                 onBack: backToBdList,
@@ -1749,8 +1800,13 @@ function Overlay({ t }) {
                 }),
                 h(BreakdownHistoryList, {
                   history: bdHistory,
+                  rules: bdRules,
                   loading: bdHistoryLoading,
                   errorReason: bdHistoryError,
+                  // 分页（预览稿「加载更多」）：拉满当前页码且未到上限才显示入口。
+                  hasMore: bdHistory.length >= bdHistoryLimit && bdHistoryLimit < BD_HISTORY_LIMIT_MAX,
+                  loadingMore: bdHistoryLoadingMore,
+                  onLoadMore: () => loadBdHistory(bdHistoryLimit + BD_HISTORY_PAGE_SIZE, { more: true }).catch(() => {}),
                   onOpen: openBdDetail,
                   t,
                 })))
@@ -1943,12 +1999,17 @@ const css = `.ydo-button{display:flex;width:36px;height:36px;align-items:center;
 .ydo-ai-chip:hover{background:var(--dsw-alias-brand-primary);border-color:var(--dsw-alias-brand-primary);color:var(--dsw-alias-label-primary-foreground)}
 .ydo-ai-limits{margin:0;padding-left:16px;display:grid;gap:4px;color:var(--dsw-alias-label-secondary);font-size:12px}
 .ydo-ai-disclaimer{margin:10px 0 0;font-size:11px;color:var(--dsw-alias-label-secondary)}
-/* 爆款拆解 Tab（0922 方案 §4.1）：单列纵向滚动页；主视图两块（新建+历史），详情页复用 AI 卡折叠结构。 */
+/* 爆款拆解 Tab（0922 方案 §4.1；0923 视觉对齐预览稿 breakdown-tab-preview.html）：
+   主视图 = 发起拆解卡 + 拆解记录表格（默认 10 条 + 「加载更多」分页）；详情页 =
+   白卡头部（标题/meta 行/状态徽标/8 段进度条）+ 6 指标条 + 五张折叠卡（复用 AI 卡色调：
+   summary=蓝 / dims=灰 / patterns=紫 / recs=绿，与预览稿五卡一致）。 */
 .ydo-bd-body{grid-template-rows:1fr;overflow:auto}
 .ydo-bd-main{display:grid;gap:16px;align-content:start;min-width:0}
 .ydo-bd-page{display:grid;gap:12px;align-content:start;min-width:0}
 .ydo-bd-new{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .ydo-bd-input{flex:1;min-width:260px;max-width:560px}
+.ydo-bd-rules-field{display:grid;gap:8px;margin-top:14px}
+.ydo-bd-field-label{margin:0;color:var(--dsw-alias-label-secondary);font-size:12px}
 .ydo-bd-rules{display:flex;flex-wrap:wrap;gap:10px}
 .ydo-bd-radio{display:grid;gap:4px;min-width:200px;max-width:320px;padding:10px 12px;border:1px solid var(--dsw-alias-border-l1);border-radius:8px;background:var(--dsw-alias-bg-layer-1);color:inherit;font:inherit;text-align:left;cursor:pointer}
 .ydo-bd-radio:hover{background:var(--dsw-alias-bg-layer-2)}
@@ -1957,37 +2018,76 @@ const css = `.ydo-button{display:flex;width:36px;height:36px;align-items:center;
 .ydo-bd-radio:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:2px}
 .ydo-bd-radio-name{font-size:var(--dsh-content-font-size,14px);font-weight:600}
 .ydo-bd-radio-desc{color:var(--dsw-alias-label-secondary);font-size:var(--dsh-content-font-size-secondary,13px);line-height:1.5}
-.ydo-bd-history{display:grid;gap:8px}
-.ydo-bd-row{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(90px,auto) auto;align-items:center;gap:12px;padding:10px 12px;border:1px solid var(--dsw-alias-border-l1);border-radius:8px;background:var(--dsw-alias-bg-layer-1);color:inherit;font:inherit;text-align:left;cursor:pointer}
-.ydo-bd-row:hover{background:var(--dsw-alias-bg-layer-2)}
-.ydo-bd-row:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:-2px}
-.ydo-bd-row-main{display:grid;gap:2px;min-width:0}
-.ydo-bd-row-title{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:var(--dsh-content-font-size,14px);font-weight:600}
-.ydo-bd-row-author{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--dsw-alias-label-secondary);font-size:var(--dsh-content-font-size-secondary,13px)}
-.ydo-bd-row-step{color:var(--dsw-alias-label-secondary);font-size:var(--dsh-content-font-size-secondary,13px);white-space:nowrap}
-.ydo-bd-row-time{color:var(--dsw-alias-label-secondary);font-size:var(--dsh-content-font-size-secondary,13px);white-space:nowrap;font-variant-numeric:tabular-nums}
-.ydo-bd-status{padding:2px 8px;border-radius:4px;background:var(--dsw-alias-bg-layer-2);font-size:var(--dsh-content-font-size-secondary,13px);white-space:nowrap;flex:none}
-.ydo-bd-status-ok{color:color-mix(in srgb,var(--dsw-alias-state-success-primary,#1a7f37) 60%,var(--dsw-alias-label-primary))}
-.ydo-bd-status-error{color:color-mix(in srgb,var(--dsw-alias-state-error-primary) 60%,var(--dsw-alias-label-primary))}
-.ydo-bd-status-warn{color:color-mix(in srgb,var(--dsw-alias-state-warn-primary,#d29922) 60%,var(--dsw-alias-label-primary))}
-.ydo-bd-status-running{color:var(--dsw-alias-brand-primary)}
-.ydo-bd-head-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
-.ydo-bd-head-row h3{margin:0;font-size:var(--dsw-font-base-16-font-size,16px)}
-.ydo-bd-steps{display:flex;flex-wrap:wrap;gap:6px;margin:0;padding:0;list-style:none}
-.ydo-bd-step{padding:3px 10px;border:1px solid var(--dsw-alias-border-l1);border-radius:999px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-secondary);font-size:12px;white-space:nowrap}
-.ydo-bd-step-done{color:color-mix(in srgb,var(--dsw-alias-state-success-primary,#1a7f37) 60%,var(--dsw-alias-label-primary));border-color:color-mix(in srgb,var(--dsw-alias-state-success-primary,#1a7f37) 35%,transparent)}
-.ydo-bd-step-active{color:var(--dsw-alias-brand-primary);border-color:var(--dsw-alias-brand-primary);font-weight:600}
+/* 拆解记录表格（预览稿 tbl）：表头次要色 12px；行 hover 弱底、标题粗体 + 作者·播放副行；
+   当前步骤列随行状态着色（运行蓝/失败红），时间列等宽数字。 */
+.ydo-bd-history{min-width:0}.ydo-bd-history-sub{margin-left:6px;font-size:12px;font-weight:400;color:var(--dsw-alias-label-secondary)}
+.ydo-bd-table{width:100%;border-collapse:collapse}
+.ydo-bd-table th{text-align:left;padding:8px 10px;border-bottom:1px solid var(--dsw-alias-border-l1);color:var(--dsw-alias-label-secondary);font-size:12px;font-weight:500;white-space:nowrap}
+.ydo-bd-table td{padding:10px;border-bottom:1px solid var(--dsw-alias-bg-layer-2);vertical-align:top;font-size:var(--dsh-content-font-size-secondary,13px)}
+.ydo-bd-history tbody tr{cursor:pointer}
+.ydo-bd-history tbody tr:hover{background:var(--dsw-alias-bg-layer-2)}
+.ydo-bd-history tbody tr:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:-2px}
+.ydo-bd-cell-main{display:grid;gap:2px;min-width:0;max-width:320px}
+.ydo-bd-row-title{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600}
+.ydo-bd-row-sub{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--dsw-alias-label-secondary);font-size:12px}
+.ydo-bd-row-step{color:var(--dsw-alias-label-secondary);white-space:nowrap}
+.ydo-bd-row-step-running{color:var(--dsw-alias-brand-primary)}
+.ydo-bd-row-step-failed{color:var(--dsw-alias-state-error-primary)}
+.ydo-bd-row-time{color:var(--dsw-alias-label-secondary);white-space:nowrap;font-variant-numeric:tabular-nums}
+/* 状态/规则 pill（预览稿 tag）：语义色弱底圆角；规则紫、未选规则中性灰。 */
+.ydo-bd-status{display:inline-block;padding:1px 8px;border-radius:10px;font-size:11px;font-weight:600;white-space:nowrap}
+.ydo-bd-status-ok{background:color-mix(in srgb,var(--dsw-alias-state-success-primary,#1a7f37) 12%,transparent);color:color-mix(in srgb,var(--dsw-alias-state-success-primary,#1a7f37) 80%,var(--dsw-alias-label-primary))}
+.ydo-bd-status-error{background:color-mix(in srgb,var(--dsw-alias-state-error-primary) 12%,transparent);color:var(--dsw-alias-state-error-primary)}
+.ydo-bd-status-warn{background:color-mix(in srgb,var(--dsw-alias-state-warn-primary,#d29922) 14%,transparent);color:color-mix(in srgb,var(--dsw-alias-state-warn-primary,#d29922) 75%,var(--dsw-alias-label-primary))}
+.ydo-bd-status-running{background:color-mix(in srgb,var(--dsw-alias-brand-primary) 12%,transparent);color:var(--dsw-alias-brand-primary)}
+.ydo-bd-rule-pill{display:inline-block;padding:1px 8px;border-radius:10px;font-size:11px;font-weight:500;background:color-mix(in srgb,#7c5cff 12%,transparent);color:#7c5cff;white-space:nowrap}
+.ydo-bd-rule-pill-default{background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-secondary)}
+.ydo-bd-more{display:flex;justify-content:center;padding-top:12px}
+/* 详情页白卡头部（预览稿 detail-head）。 */
+.ydo-bd-head{display:grid;gap:12px;padding:14px 16px;border:1px solid var(--dsw-alias-border-l1);border-radius:8px;background:var(--dsw-alias-bg-layer-1)}
+.ydo-bd-head-row{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+.ydo-bd-head-main{display:grid;gap:4px;min-width:0}
+.ydo-bd-head-row h3{margin:0;font-size:15px;line-height:1.4}
+.ydo-bd-head-meta{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0;color:var(--dsw-alias-label-secondary);font-size:12px}
+.ydo-bd-head-meta a{color:var(--dsw-alias-brand-primary);text-decoration:none}
+.ydo-bd-head-meta a:hover{text-decoration:underline}
+/* 8 段进度条（预览稿 steps）：每步 4px 色条在上、步骤名在下；完成绿/当前蓝。 */
+.ydo-bd-steps{display:flex;gap:4px;margin:0;padding:0;list-style:none}
+.ydo-bd-step{flex:1;min-width:0;text-align:center}
+.ydo-bd-step-bar{display:block;height:4px;border-radius:2px;background:var(--dsw-alias-bg-layer-2);margin-bottom:6px}
+.ydo-bd-step-name{font-size:11px;color:var(--dsw-alias-label-secondary);white-space:nowrap}
+.ydo-bd-step-done .ydo-bd-step-bar{background:var(--dsw-alias-state-success-primary,#1a7f37)}
+.ydo-bd-step-done .ydo-bd-step-name{color:color-mix(in srgb,var(--dsw-alias-state-success-primary,#1a7f37) 80%,var(--dsw-alias-label-primary))}
+.ydo-bd-step-active .ydo-bd-step-bar{background:var(--dsw-alias-brand-primary)}
+.ydo-bd-step-active .ydo-bd-step-name{color:var(--dsw-alias-brand-primary);font-weight:600}
+/* 6 指标条（预览稿 kpis）：auto-fit 自适应列数，面板 ≥616px 一行六列，更窄自动换行。 */
+.ydo-bd-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(96px,1fr));gap:8px}
+.ydo-bd-kpi{min-width:0;padding:8px 10px;border:1px solid var(--dsw-alias-border-l1);border-radius:8px;background:var(--dsw-alias-bg-layer-1)}
+.ydo-bd-kpi-label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;color:var(--dsw-alias-label-secondary)}
+.ydo-bd-kpi-value{margin-top:2px;font-size:15px;font-weight:700;font-variant-numeric:tabular-nums}
+/* 失败提示框（预览稿 err-box）。 */
+.ydo-bd-error-box{margin:0;padding:12px 14px;border:1px solid var(--dsw-alias-state-error-primary);border-radius:8px;background:color-mix(in srgb,var(--dsw-alias-state-error-primary) 8%,transparent);color:var(--dsw-alias-state-error-primary);font-weight:600;font-size:var(--dsh-content-font-size-secondary,13px)}
+/* 空态/进行中大卡（0923 体验优化）：居中留白、主副文案分层，替换原先拥挤的小字提示。 */
+.ydo-bd-empty{display:grid;justify-items:center;gap:10px;padding:44px 24px;border:1px dashed var(--dsw-alias-border-l1);border-radius:8px;background:var(--dsw-alias-bg-layer-1);text-align:center}
+.ydo-bd-empty-spinner{width:22px;height:22px;border-width:3px}
+.ydo-bd-empty-title{margin:0;font-size:15px;font-weight:600}
+.ydo-bd-empty-sub{margin:0;max-width:420px;font-size:var(--dsh-content-font-size-secondary,13px);line-height:1.7;color:var(--dsw-alias-label-secondary)}
 .ydo-bd-cards{display:grid;gap:12px;min-width:0}
-.ydo-bd-quote{margin:0 0 10px;padding:10px 12px;border-left:3px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-2);border-radius:0 6px 6px 0;white-space:pre-wrap;word-break:break-word;font-size:var(--dsh-content-font-size-secondary,13px);line-height:1.6}
-.ydo-bd-seg-list{display:grid;gap:10px}
-.ydo-bd-seg{display:grid;gap:6px;padding:10px 12px;border:1px solid var(--dsw-alias-border-l1);border-radius:8px;background:var(--dsw-alias-bg-base)}
-.ydo-bd-seg-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-.ydo-bd-seg-time{font-variant-numeric:tabular-nums;color:var(--dsw-alias-label-secondary);font-size:var(--dsh-content-font-size-secondary,13px)}
-.ydo-bd-seg p{margin:0;font-size:var(--dsh-content-font-size-secondary,13px);line-height:1.6;word-break:break-word}
-.ydo-bd-seg-visual{color:var(--dsw-alias-label-secondary)}
-.ydo-bd-seg-speech{color:var(--dsw-alias-label-primary)}
-.ydo-bd-seg-copy{color:var(--dsw-alias-label-primary);font-weight:550}
-.ydo-bd-seg-source{margin-left:auto;color:var(--dsw-alias-label-secondary);font-size:12px}
+.ydo-bd-card-body-gap{display:grid;gap:10px;min-width:0}
+.ydo-bd-quote{margin:0;padding:10px 12px;border-left:3px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-2);border-radius:0 6px 6px 0;white-space:pre-wrap;word-break:break-word;font-size:var(--dsh-content-font-size-secondary,13px);line-height:1.6}
+/* 原视频拆解四列表（时间/角色/画面/口播）与列表同基样式，容器负责窄幅横向滚动。 */
+.ydo-bd-seg-wrap{overflow-x:auto}
+.ydo-bd-seg-time{font-variant-numeric:tabular-nums;color:var(--dsw-alias-label-secondary);font-size:12px;white-space:nowrap}
+.ydo-bd-seg-source{margin-left:auto;color:var(--dsw-alias-label-secondary);font-size:12px;white-space:nowrap}
+/* 改写分镜卡（预览稿 shot）：原片段灰底引用、改写文案主行、画面提示次行；前缀走文案键。 */
+.ydo-bd-shot-list{display:grid;gap:8px}
+.ydo-bd-shot{display:grid;gap:6px;padding:10px 12px;border:1px solid var(--dsw-alias-border-l1);border-radius:6px;background:var(--dsw-alias-bg-base)}
+.ydo-bd-shot-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.ydo-bd-shot-src{margin:0;padding:6px 8px;border-radius:4px;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-secondary);font-size:12px;line-height:1.6;word-break:break-word}
+.ydo-bd-shot-copy{margin:0;font-size:var(--dsh-content-font-size,14px);line-height:1.6;word-break:break-word}
+.ydo-bd-shot-visual{margin:0;color:var(--dsw-alias-label-secondary);font-size:var(--dsh-content-font-size-secondary,13px);line-height:1.6;word-break:break-word}
+.ydo-bd-shot-prefix{font-weight:600;color:var(--dsw-alias-label-secondary);font-size:12px}
+.ydo-bd-shot-prefix-copy{color:var(--dsw-alias-brand-primary)}
 .ydo-bd-role{padding:1px 8px;border-radius:4px;font-size:11px;white-space:nowrap}
 .ydo-bd-role-hook{background:color-mix(in srgb,var(--dsw-alias-brand-primary) 12%,transparent);color:var(--dsw-alias-brand-primary)}
 .ydo-bd-role-build{background:color-mix(in srgb,var(--dsw-alias-state-success-primary,#1a7f37) 12%,transparent);color:color-mix(in srgb,var(--dsw-alias-state-success-primary,#1a7f37) 70%,var(--dsw-alias-label-primary))}
@@ -1999,7 +2099,8 @@ const css = `.ydo-button{display:flex;width:36px;height:36px;align-items:center;
 .ydo-bd-shot-table th,.ydo-bd-shot-table td{padding:6px 10px;border:1px solid var(--dsw-alias-border-l1);text-align:left;vertical-align:top;white-space:pre-wrap;word-break:break-word}
 .ydo-bd-shot-table th{background:var(--dsw-alias-bg-layer-2);font-weight:600;white-space:nowrap}
 .ydo-bd-shot-note{margin:8px 0 0;color:var(--dsw-alias-label-secondary);font-size:var(--dsh-content-font-size-secondary,13px);line-height:1.6;white-space:pre-wrap;word-break:break-word}
-.ydo-bd-rule-used{display:grid;gap:8px;justify-items:start}
+.ydo-bd-rule-used{display:grid;gap:8px}
+.ydo-bd-rule-desc{color:var(--dsw-alias-label-secondary);font-size:var(--dsh-content-font-size-secondary,13px);line-height:1.5}
 .ydo-bd-modal-actions{display:flex;justify-content:flex-end;gap:12px;padding:14px 16px;border-top:1px solid var(--dsw-alias-border-l1)}
 `;
 function apply(ctx) {
