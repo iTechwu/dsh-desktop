@@ -579,10 +579,18 @@ function loadRecoveryFilteredProfile(
       const declared = bundleManifest !== null && typeof bundleManifest === 'object'
         ? (bundleManifest as { dsh?: { bundle?: { patch?: unknown } } }).dsh?.bundle?.patch
         : undefined
-      if (typeof declared !== 'string' || declared.length === 0) {
-        throw new Error(`${BIN_NAME}: profile bundle ${JSON.stringify(packageName)} declares no dsh.bundle in its package.json`)
+      // 0.1.7 bundles declare `dsh.bundle.patch` as the base cordis patch plus
+      // preset template patches. The desktop profile composes only the base
+      // patch (the preset templates belong to initProfile selection); accept
+      // both the historical single-string and the new list shape.
+      const declaredList = Array.isArray(declared) ? declared : [declared]
+      const baseDeclared = declaredList.find((entry): entry is string =>
+        typeof entry === 'string' && /cordis\.patch\.ya?ml$/u.test(entry))
+        ?? (typeof declaredList[0] === 'string' ? declaredList[0] : undefined)
+      if (typeof baseDeclared !== 'string' || baseDeclared.length === 0) {
+        throw new Error(`${BIN_NAME}: profile bundle ${JSON.stringify(packageName)} declares no dsh.bundle patches in its package.json`)
       }
-      const patchPath = join(packageDir, declared)
+      const patchPath = join(packageDir, baseDeclared)
       layers.push({
         packageName,
         packageDir,
@@ -1018,8 +1026,11 @@ export function prepareDesktopProfile(
     if (typeof row.id === 'string') rows.set(row.id, row)
   }
   const settings = rows.get('settings')
-  if (settings?.name !== SETTINGS_FILE_PACKAGE) {
-    throw new Error(`${BIN_NAME}: desktop profile must use ${SETTINGS_FILE_PACKAGE} in the settings row`)
+  // 0.1.7 renamed the settings provider package from dsh-settings-file to
+  // dsh-settings; the composed settings row now carries the new name.
+  const settingsRowNames = ['@deepseek-ai/dsh-settings', SETTINGS_FILE_PACKAGE]
+  if (settings === undefined || !settingsRowNames.includes(settings.name)) {
+    throw new Error(`${BIN_NAME}: desktop profile must use ${settingsRowNames.join(' or ')} in the settings row`)
   }
   const settingsConfig = FileSettingsProvider.Config({
     dshHome: home,
