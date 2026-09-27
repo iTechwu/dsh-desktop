@@ -16,11 +16,12 @@ import {
   BreakdownNewPage,
   BreakdownRewriteModal,
   breakdownStatusTone,
+  filterBreakdownHistory,
 } from './breakdown.js'
 
 const React = require('react')
 const { createElement: h, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } = React
-const { IconCloseOutline16, IconDownloadOutline16, IconPlayOutline16, Tooltip } = require('@deepseek-ai/dsh-client-ui-primitives')
+const { IconCloseOutlineRegular, IconDownloadOutlineRegular, IconPlayOutlineRegular, Tooltip } = require('@deepseek-ai/dsh-client-ui-primitives')
 
 const NS = 'dofe.yootun-douyin-operation'
 const PATH = '/api/desktop/yootun/douyin-operation'
@@ -209,6 +210,9 @@ const copy = {
     bdRulesEmpty: '暂无可用仿写规则，将按默认链路改写', bdRulesRetry: '重新加载规则',
     bdHistoryLabel: '拆解记录', bdHistorySub: '（团队共享，按时间倒序）',
     bdHistoryEmpty: '还没有拆解记录，粘贴分享链接开始第一次拆解',
+    bdFilterLabel: '状态',
+    bdFilterAll: '全部', bdFilterRunning: '进行中', bdFilterSucceeded: '成功', bdFilterFailed: '失败',
+    bdHistoryEmptyFiltered: '当前已加载记录中暂无该状态',
     bdColVideo: '视频', bdColStatus: '状态', bdColRule: '仿写规则', bdColStep: '当前步骤', bdColTime: '时间',
     bdPlayLabel: '播放', bdRuleDefault: '默认', bdLoadMore: '加载更多',
     bdStatusSucceeded: '已完成', bdStatusFailed: '失败', bdStatusCancelled: '已取消', bdStatusRunning: '拆解中',
@@ -377,6 +381,9 @@ const copy = {
     bdRulesEmpty: 'No rewrite rules available; the default pipeline will be used', bdRulesRetry: 'Reload rules',
     bdHistoryLabel: 'Breakdown records', bdHistorySub: ' (team-shared, newest first)',
     bdHistoryEmpty: 'No breakdowns yet — paste a share link to start the first one',
+    bdFilterLabel: 'Status',
+    bdFilterAll: 'All', bdFilterRunning: 'Running', bdFilterSucceeded: 'Succeeded', bdFilterFailed: 'Failed',
+    bdHistoryEmptyFiltered: 'No loaded records in this status',
     bdColVideo: 'Video', bdColStatus: 'Status', bdColRule: 'Rewrite rule', bdColStep: 'Current step', bdColTime: 'Time',
     bdPlayLabel: 'Plays', bdRuleDefault: 'Default', bdLoadMore: 'Load more',
     bdStatusSucceeded: 'Done', bdStatusFailed: 'Failed', bdStatusCancelled: 'Cancelled', bdStatusRunning: 'Running',
@@ -483,7 +490,7 @@ function downloadWorkbook(result) {
 function Button({ wide, t }) {
   return h(Tooltip, { label: t('open'), disabled: wide },
     h('button', { type: 'button', className: `ydo-button${wide ? ' ydo-wide' : ''}`, 'aria-label': t('open'), onClick: openOverlay },
-      h(IconPlayOutline16, { size: wide ? 14 : 18 }), wide ? h('span', null, t('open')) : null))
+      h(IconPlayOutlineRegular, { size: wide ? 14 : 18 }), wide ? h('span', null, t('open')) : null))
 }
 
 function openOverlay(event) {
@@ -611,7 +618,7 @@ function WorkDetailModal({ accountId, workId, detail, trend, loading, onClose, t
             work && work.visibility === 'not_in_list' ? ` · ${t('privateBadge')}` : null),
           h('p', { className: 'ydo-modal-meta' }, `${t('latestCollected')} ${latestText === EMPTY ? t('noRecord') : latestText}`)),
         h(Tooltip, { label: t('close') },
-          h('button', { type: 'button', 'aria-label': t('close'), onClick: onClose }, h(IconCloseOutline16, { size: 16 })))),
+          h('button', { type: 'button', 'aria-label': t('close'), onClick: onClose }, h(IconCloseOutlineRegular, { size: 16 })))),
       loading
         ? h('div', { className: 'ydo-state', role: 'status' }, h('span', { className: 'ydo-spinner' }), h('p', null, t('collecting')))
         : h('div', { className: 'ydo-modal-body' },
@@ -839,6 +846,8 @@ function Overlay({ t }) {
   // 切 Tab/详情返回不重置页码。
   const [bdHistoryLimit, setBdHistoryLimit] = useState(BD_HISTORY_PAGE_SIZE)
   const [bdHistoryLoadingMore, setBdHistoryLoadingMore] = useState(false)
+  // 拆解记录状态筛选（全部/进行中/成功/失败）：纯前端过滤，不改加载与分页链路。
+  const [bdStatusFilter, setBdStatusFilter] = useState('all')
   // 页码的 ref 镜像：loadBdHistory 无参调用读这里（见其注释）。
   const bdHistoryLimitRef = useRef(BD_HISTORY_PAGE_SIZE)
   const [bdSubmitting, setBdSubmitting] = useState(false)
@@ -1657,7 +1666,7 @@ function Overlay({ t }) {
         h('div', null, h('h1', { id: 'ydo-title' }, t('title')), h('p', null, t('subtitle'))),
         h('div', { className: 'ydo-header-buttons' },
           h(Tooltip, { label: t('close') },
-            h('button', { type: 'button', 'aria-label': t('close'), onClick: closeOverlay }, h(IconCloseOutline16, { size: 16 }))))),
+            h('button', { type: 'button', 'aria-label': t('close'), onClick: closeOverlay }, h(IconCloseOutlineRegular, { size: 16 }))))),
       h('nav', { className: 'ydo-tabs', 'aria-label': t('data') },
         h('button', { type: 'button', 'aria-current': tab === 'overview' || undefined, onClick: () => setTab('overview') }, t('tabOverview')),
         h('button', {
@@ -1808,6 +1817,8 @@ function Overlay({ t }) {
                   loadingMore: bdHistoryLoadingMore,
                   onLoadMore: () => loadBdHistory(bdHistoryLimit + BD_HISTORY_PAGE_SIZE, { more: true }).catch(() => {}),
                   onOpen: openBdDetail,
+                  statusFilter: bdStatusFilter,
+                  onStatusFilterChange: setBdStatusFilter,
                   t,
                 })))
           : h('section', { className: 'ydo-right', 'aria-label': t('data') },
@@ -1824,7 +1835,7 @@ function Overlay({ t }) {
               title: !selected || !works.length ? t('exportNoData') : undefined,
               onClick: () => exportExcel(selected),
             },
-            h(IconDownloadOutline16, { size: 14 }),
+            h(IconDownloadOutlineRegular, { size: 14 }),
             h('span', null, exporting ? t('exporting') : t('exportExcel'))),
             // 账号顶部「上次采集」= 账号最近一次采集运行完成时间（远端 account.lastCollectedAt），
             // 与作品发布时间/作品级采集时间含义不同；格式统一走 formatDateTime（二次优化 §5.6）。

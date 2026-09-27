@@ -68,7 +68,9 @@ export function apply(ctx) {
     pnpm = installDesktopPnpmRuntime({ platform: process.platform, appExecutable: process.execPath, pnpmBinPath,
       electronVersion, stateDir: join(home, 'runtime'), environment: process.env })
     child = fork(fileURLToPath(new URL('./fixtures/isolated-host/child.mjs', import.meta.url)), [], {
-      execArgv: [], stdio: ['ignore', 'pipe', 'pipe', 'ipc'], serialization: 'advanced',
+      // 0.1.7 config-editor/HMR needs the same internal ESM loader hooks as
+      // the production Electron utility process.
+      execArgv: ['--expose-internals'], stdio: ['ignore', 'pipe', 'pipe', 'ipc'], serialization: 'advanced',
     })
     child.stderr?.on('data', data => { stderr += String(data) })
     const [ready] = await once(child, 'message')

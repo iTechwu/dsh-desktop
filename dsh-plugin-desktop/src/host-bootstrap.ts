@@ -1,6 +1,7 @@
 /** Headless bootstrap for the Beta isolated Host experiment. */
 import { boot, resolveProfileDir } from '@deepseek-ai/dsh-app-boot'
 import { provideCmdline } from '@deepseek-ai/dsh-cmdline'
+import type { AppReady } from '@deepseek-ai/dsh-cmdline'
 import { DSH_LAUNCH_ENVIRONMENT_KEY, type LaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
 import { DESKTOP_PACKAGE_NAME as BIN_NAME } from './product-identity.ts'
 import { observeDesktopPreferenceSettings } from './settings-bridge.ts'
@@ -13,7 +14,7 @@ import { desktopMarketSnapshotWithEffective, selectDesktopMarketProvider, type D
 import DesktopSettingsController from './desktop-settings-controller.ts'
 import { clearDesktopProfilePreferences, desktopProfilePreferencesFromSettings, writeDesktopProfilePreferences, type DesktopProfilePreferences, type DesktopProfilePreferencesStateV1 } from './profile-preferences.ts'
 import { clearDesktopProfileUsageHistory, type DesktopReleaseUserDataLocations } from './profile-channel-admission.ts'
-import { desktopInstallAnchor, type PreparedDesktopProfile } from './profile.ts'
+import { desktopInstallAnchor, desktopProfileContext, type PreparedDesktopProfile } from './profile.ts'
 import { desktopLanBrowserUrls, desktopLoopbackBrowserUrl } from './desktop-network.ts'
 import { DESKTOP_LAN_HTTPS_CA_PATH, type DesktopLanHttpsRuntime } from './lan-https-runtime.ts'
 import type { DesktopBrowserAccess } from './desktop-browser-access.ts'
@@ -23,6 +24,7 @@ import type { DesktopStartupGenerationHost } from './startup-generation.ts'
 import { FileExporter } from './file-exporter.ts'
 import { installAgentErrorLogging } from './agent-error-logging.ts'
 import { LogFileSink } from './log-files.ts'
+import { desktopInternalModuleLoader } from './module-resolution.ts'
 
 function desktopProfileMarketSnapshot(market: DesktopMarketProvider): DesktopMarketSnapshot {
   return Object.freeze({
@@ -103,9 +105,13 @@ export async function bootDesktopHost(options: DesktopHostOptions, runtime: Desk
       prepared.rootConfig,
       prepared.patches,
       async (hostCtx) => {
-        // Keep Host imports and browser bundle discovery on the same public
-        // profile-overlay resolver used by packaged Electron.
-        hostCtx.loader.internal = undefined
+        hostCtx.loader.internal = desktopInternalModuleLoader()
+        hostCtx.provide('appReady', {
+          onReady: listener => {
+            listener()
+            return () => {}
+          },
+        } satisfies AppReady)
         bindHost(hostCtx)
         hostCtx.effect(() => () => logSink.close(), 'dsh-plugin-desktop: Host log sink')
         hostCtx.effect(
@@ -121,6 +127,9 @@ export async function bootDesktopHost(options: DesktopHostOptions, runtime: Desk
         hostCtx.provide('desktopLanHttps', lanHttps)
         hostCtx.provide('desktopRuntime', runtime)
         hostCtx.provide('desktopPnpmBootstrap', desktopPnpmBootstrap)
+        // 0.1.7 settings/config-editor rows wait on profileContext; supply the
+        // same launch facts the CLI profile boot provides.
+        hostCtx.provide('profileContext', desktopProfileContext(prepared, activeProfileName))
         await hostCtx.plugin(DesktopActionsService, {
           openTerminal: () => { runtime.openTerminal() },
           requestRestart: () => runtime.requestRestart(),

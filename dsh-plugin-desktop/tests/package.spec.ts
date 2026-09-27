@@ -542,7 +542,7 @@ describe('published package surface', () => {
     expect(boot).toBeGreaterThan(installDsh)
     expect(main).toContain("'dsh-plugin-desktop: packaged pnpm runtime PATH'")
     expect(main).toContain("'dsh-plugin-desktop: packaged dsh runtime PATH'")
-    expect(main).toContain('hostCtx.loader.internal = undefined')
+    expect(main).toContain('hostCtx.loader.internal = desktopInternalModuleLoader()')
     expect(main).toContain('pnpmBinDir: pnpmRuntime.pathDir')
     expect(main).not.toContain("'--host'")
     expect(readFileSync(new URL('src/profile.ts', packageRoot), 'utf8'))

@@ -11,11 +11,15 @@ import {
   createLaunchEnvironmentSnapshot,
   DSH_LAUNCH_ENVIRONMENT_KEY,
 } from '@deepseek-ai/dsh-launch-environment'
-import { DESKTOP_SETTINGS_NAMESPACE } from '../lib/index.js'
 import { installDesktopPnpmRuntime } from '../lib/desktop-runtime-environment.js'
 import { installProfilePackageResolver } from '../lib/module-resolution.js'
-import { healDesktopProfileModuleFallback, prepareDesktopProfile } from '../lib/profile.js'
+import {
+  desktopProfileContext,
+  healDesktopProfileModuleFallback,
+  prepareDesktopProfile,
+} from '../lib/profile.js'
 import { DesktopProfileService } from '../lib/profile-service.js'
+import { desktopInternalModuleLoader } from '../lib/module-resolution.js'
 
 const BIN_NAME = 'dsh-plugin-desktop-profile-smoke'
 const HOST_SERVICE_PLUGIN_NAME = 'sensteed-agent-host-services-smoke-plugin'
@@ -55,8 +59,8 @@ try {
   writeFileSync(join(home, 'settings.yaml'), [
     'sensteed-agent:',
     '  mode: advanced',
-    'agent-presets:',
-    '  default: minimal',
+    'agent-preset-registry:',
+    '  selectedDefault: minimal',
     '',
   ].join('\n'))
   const aaRequested = process.env.DSH_VERIFY_AA === '1'
@@ -91,7 +95,7 @@ try {
     hostServicePluginDir,
     { recursive: true, force: false, errorOnExist: true },
   )
-  const patches = [
+  const smokePatches = [
     // Deliberately compose the consumer before the desktop-pnpm provider row.
     // Its required injection must keep it pending until that service mounts.
     {
@@ -101,11 +105,17 @@ try {
       }],
     },
     ...prepared.patches,
+    // 0.1.7 keeps the registry's shipped `standard` default in the Web bundle;
+    // this smoke explicitly selects the historically exercised `minimal` row.
+    { id: 'agent-preset-registry', config: { default: 'standard', selectedDefault: 'minimal' } },
     // Keep this headless probe independent of the operator's AA account.
     ...(prepared.aaEnabled ? [{ id: 'agents-anywhere-bridge-next', config: {
       dshHome: home, stateRoot: join(home, 'aa-smoke-state'), uvPath: 'uv',
     } }] : []),
   ]
+  prepared.patches.splice(prepared.launcherPatchBoundary.beforeUser, 0, ...smokePatches)
+  prepared.launcherPatchBoundary.beforeUser += smokePatches.length
+  prepared.launcherPatchBoundary.afterUser += smokePatches.length
   const packageRoot = new URL('../', import.meta.url)
   const pnpmBinPath = fileURLToPath(new URL('node_modules/pnpm/bin/pnpm.mjs', packageRoot))
   const electronVersion = JSON.parse(
@@ -167,10 +177,17 @@ try {
   ctx = await boot(
     BIN_NAME,
     prepared.rootConfig,
-    patches,
+    prepared.patches,
     async (host) => {
-      // Match the public resolver path used by packaged Electron.
-      host.loader.internal = undefined
+      // Match the 0.1.7 packaged Electron resolver and profile facts.
+      host.loader.internal = desktopInternalModuleLoader()
+      host.provide('appReady', {
+        onReady: listener => {
+          listener()
+          return () => {}
+        },
+      })
+      host.provide('profileContext', desktopProfileContext(prepared, 'desktop'))
       host.provide(DSH_LAUNCH_ENVIRONMENT_KEY, createLaunchEnvironmentSnapshot([]))
       host.provide('desktopBrowserAccess', BROWSER_ACCESS)
       host.provide('desktopLanHttps', LAN_HTTPS)
@@ -274,7 +291,7 @@ try {
   if (nativeThemeSource !== 'system') {
     throw new Error(`desktop plugin produced an unexpected native theme source: ${nativeThemeSource}`)
   }
-  const desktopSettings = ctx.settings.get(DESKTOP_SETTINGS_NAMESPACE)
+  const desktopSettings = ctx.settings.get('desktop-shell')
   if (desktopSettings?.mode !== 'advanced') {
     throw new Error('assembled Host settings are missing the advanced sensteed-agent mode')
   }
@@ -321,7 +338,7 @@ try {
     redirect: 'manual',
   })
   await exchange.body?.cancel()
-  if (exchange.status !== 303 || exchange.headers.get('location') !== '/') {
+  if (exchange.status !== 303 || exchange.headers.get('location') !== './') {
     throw new Error(
       `browser authentication exchange returned HTTP ${String(exchange.status)} instead of a root redirect`,
     )

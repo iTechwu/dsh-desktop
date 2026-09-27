@@ -2,6 +2,9 @@
 
 export type DofeProtocol = 'chat-completions' | 'messages' | 'responses'
 export const DEFAULT_DOFE_PROTOCOL: DofeProtocol = 'chat-completions'
+/** Conservative bounds used when a legacy catalog row omits capacities. */
+export const DEFAULT_DOFE_CONTEXT_WINDOW = 1_000_000
+export const DEFAULT_DOFE_MAX_TOKENS = 131_072
 /** Protocols surfaced in the activation UI; 'responses' stays host/API-only. */
 export const UI_DOFE_PROTOCOLS = ['chat-completions', 'messages'] as const satisfies readonly DofeProtocol[]
 export type DofeUiProtocol = (typeof UI_DOFE_PROTOCOLS)[number]
@@ -55,6 +58,54 @@ export function dofeModelInputModalities(
 ): readonly ('text' | 'image')[] | undefined {
   if (DOFE_VISION_MODEL_IDS.has(id)) return ['text', 'image']
   return declared
+}
+
+/** Build the 0.1.7 `llm-pi-ai` model shape for a DoFe catalog row. */
+export function dofeProviderModelSpec(model: DofeModel): {
+  id: string
+  name: string
+  contextWindow: number
+  maxTokens: number
+  input: ('text' | 'image')[]
+} {
+  return {
+    id: model.id,
+    name: model.name,
+    contextWindow: model.contextWindow ?? DEFAULT_DOFE_CONTEXT_WINDOW,
+    maxTokens: model.maxTokens ?? DEFAULT_DOFE_MAX_TOKENS,
+    input: [...(model.inputModalities ?? ['text'])],
+  }
+}
+
+/** Resolve the adapter API and endpoint for one DoFe wire protocol. */
+export function dofeProviderRoute(protocol: DofeProtocol): {
+  id: 'dofe-chat' | 'dofe-messages' | 'dofe-responses'
+  displayName: string
+  api: 'openai-completions' | 'anthropic-messages' | 'openai-responses'
+  baseURL: string
+} {
+  if (protocol === 'messages') {
+    return {
+      id: 'dofe-messages',
+      displayName: 'DoFe Anthropic Messages',
+      api: 'anthropic-messages',
+      baseURL: DOFE_ANTHROPIC_BASE_URL,
+    }
+  }
+  if (protocol === 'responses') {
+    return {
+      id: 'dofe-responses',
+      displayName: 'DoFe OpenAI Responses',
+      api: 'openai-responses',
+      baseURL: DOFE_MODEL_CATALOG_BASE_URL.replace(/\/models$/u, ''),
+    }
+  }
+  return {
+    id: 'dofe-chat',
+    displayName: 'DoFe OpenAI Chat',
+    api: 'openai-completions',
+    baseURL: DOFE_MODEL_CATALOG_BASE_URL.replace(/\/models$/u, ''),
+  }
 }
 
 /** Return whether a catalog row advertises an OpenAI-compatible chat surface. */

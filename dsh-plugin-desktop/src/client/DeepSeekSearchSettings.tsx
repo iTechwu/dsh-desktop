@@ -83,22 +83,22 @@ export function DeepSeekSearchSettings({ credentials, t }: DeepSeekSearchSetting
     : configured === false ? t('searchMissing') : ''
 
   return (
-    <section className="sensteedAgentSettingsGroup" aria-labelledby="sensteed-agent-search-title">
+    <section className="dshDesktopSettingsGroup" aria-labelledby="sensteed-agent-search-title">
       <div>
         <h3 id="sensteed-agent-search-title">{t('searchTitle')}</h3>
-        <p className="sensteedAgentSettingsGroupIntro">{t('searchIntro')}</p>
+        <p className="dshDesktopSettingsGroupIntro">{t('searchIntro')}</p>
       </div>
-      <form className="sensteedAgentSettingsCredentialForm" onSubmit={save}>
-        <label className="sensteedAgentSettingsField" htmlFor="dsh-deepseek-search-api-key">
-          <span className="sensteedAgentSettingsFieldHeader">
+      <form className="dshDesktopSettingsCredentialForm" onSubmit={save}>
+        <label className="dshDesktopSettingsField" htmlFor="dsh-deepseek-search-api-key">
+          <span className="dshDesktopSettingsFieldHeader">
             <span>{t('searchKeyLabel')}</span>
-            <span className="sensteedAgentSettingsCredentialStatus" role="status">{status}</span>
+            <span className="dshDesktopSettingsCredentialStatus" role="status">{status}</span>
           </span>
-          <span className="sensteedAgentSettingsSecretInput">
+          <span className="dshDesktopSettingsSecretInput">
             <input
               id="dsh-deepseek-search-api-key"
               name="deepseek-search-api-key"
-              className="sensteedAgentSettingsInput"
+              className="dshDesktopSettingsInput"
               type={revealed ? 'text' : 'password'}
               autoComplete="off"
               value={draft}
@@ -108,7 +108,7 @@ export function DeepSeekSearchSettings({ credentials, t }: DeepSeekSearchSetting
             />
             <button
               type="button"
-              className="sensteedAgentSettingsSecretReveal"
+              className="dshDesktopSettingsSecretReveal"
               title={revealed ? t('hideSearchKey') : t('showSearchKey')}
               aria-label={revealed ? t('hideSearchKey') : t('showSearchKey')}
               disabled={!writable || busy !== undefined}
@@ -119,17 +119,17 @@ export function DeepSeekSearchSettings({ credentials, t }: DeepSeekSearchSetting
           </span>
           <span>{t('searchKeyHint')}</span>
         </label>
-        <div className="sensteedAgentSettingsCredentialActions">
+        <div className="dshDesktopSettingsCredentialActions">
           <button
             type="submit"
-            className="sensteedAgentSettingsButton"
+            className="dshDesktopSettingsButton"
             disabled={!writable || busy !== undefined || draft.trim().length === 0}
           >
             {busy === 'save' ? t('searchSaving') : t('searchSave')}
           </button>
           <button
             type="button"
-            className="sensteedAgentSettingsButton sensteedAgentSettingsButtonDanger"
+            className="dshDesktopSettingsButton dshDesktopSettingsButtonDanger"
             disabled={!writable || busy !== undefined || configured !== true}
             onClick={remove}
           >
@@ -139,7 +139,7 @@ export function DeepSeekSearchSettings({ credentials, t }: DeepSeekSearchSetting
       </form>
       {message !== undefined && (
         <p
-          className={message.kind === 'success' ? 'sensteedAgentSettingsSuccess' : 'sensteedAgentSettingsError'}
+          className={message.kind === 'success' ? 'dshDesktopSettingsSuccess' : 'dshDesktopSettingsError'}
           role={message.kind === 'error' ? 'alert' : 'status'}
         >
           {message.text}

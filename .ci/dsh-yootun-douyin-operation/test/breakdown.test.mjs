@@ -10,15 +10,25 @@ import { test } from 'node:test'
 // ui-format 注入真实实现（内联后同作用域）；React/primitives 用记录式桩。
 // ---------------------------------------------------------------------------
 const UI_FORMAT_IMPORT = /^import \{[\s\S]*?\} from '\.\/ui-format\.js'\n/m
+const SELECT_UI_IMPORT = /^import \{[\s\S]*?\} from '\.\/select-ui\.js'\n/m
 
 async function evalBdModule(reactStub) {
   let source = await readFile(new URL('../src/breakdown.js', import.meta.url), 'utf8')
   if (!UI_FORMAT_IMPORT.test(source)) throw new Error('test: ui-format import not found')
-  source = source.replace(UI_FORMAT_IMPORT, '').replace(/^export /gm, '')
+  if (!SELECT_UI_IMPORT.test(source)) throw new Error('test: select-ui import not found')
+  source = source
+    .replace(UI_FORMAT_IMPORT, '')
+    .replace(SELECT_UI_IMPORT, '')
+    .replace(/^export /gm, '')
   const uiFormatModule = await import(new URL('../src/ui-format.js', import.meta.url).href)
   const context = {
     console,
     ...uiFormatModule,
+    // FilterSelect 桩（构建时与 ui-format/select-ui 同为内联同作用域）：只记录 props，
+    // 不执行真实下拉逻辑。FilterSelect 本体已在 overview/analysis 生产路径验证；
+    // render-smoke 只覆盖初始关闭态 Overlay，不执行 overlay 打开分支里的本列表，
+    // 其真实 React 渲染路径与既有列表测试同为 vm 桩覆盖。
+    FilterSelect: props => ({ type: 'filter-select', props: props || {}, children: null }),
     require: name => {
       if (name === 'react') return reactStub
       if (name === '@deepseek-ai/dsh-client-ui-primitives') return { IconCloseOutline16: props => ({ type: 'icon-close', props: props || {}, children: null }) }
@@ -368,6 +378,78 @@ test('BreakdownHistoryList：表格结构（五列表头）、规则 pill、分�
   // 无更多数据：不渲染加载更多。
   const noMore = BreakdownHistoryList({ history: rows, rules, loading: false, errorReason: null, hasMore: false, loadingMore: false, onLoadMore: () => {}, onOpen: () => {}, t })
   assert.equal(collectFlat(noMore).filter(node => node.type === 'button').length, 0, 'hasMore=false 无加载更多按钮')
+})
+
+test('filterBreakdownHistory：按 tone 分组过滤（失败组收 error+warn，未知状态归进行中）', async () => {
+  const sandbox = await evalBdModule(recordingReact().stub)
+  const filterBreakdownHistory = vm.runInContext('filterBreakdownHistory', sandbox)
+  const rows = [
+    { candidateId: 'ok', status: 'succeeded' },
+    { candidateId: 'err', status: 'failed' },
+    { candidateId: 'bad-input', status: 'invalid_input' },
+    { candidateId: 'warn', status: 'cancelled' },
+    { candidateId: 'needs', status: 'needs_input' },
+    { candidateId: 'run', status: 'running' },
+    { candidateId: 'queued', status: 'queued' },
+    { candidateId: 'mystery', status: 'some_new_status' },
+  ]
+  assert.equal(filterBreakdownHistory(rows, 'all').length, 8, 'all 原样返回')
+  // vm 沙箱数组与主 realm 原型不同，统一 Array.from 后断言。
+  assert.deepEqual(Array.from(filterBreakdownHistory(rows, 'succeeded'), r => r.candidateId), ['ok'], '成功组只留 ok')
+  assert.deepEqual(
+    Array.from(filterBreakdownHistory(rows, 'failed'), r => r.candidateId),
+    ['err', 'bad-input', 'warn', 'needs'],
+    '失败组收 error + warn（未成功终态）',
+  )
+  assert.deepEqual(
+    Array.from(filterBreakdownHistory(rows, 'running'), r => r.candidateId),
+    ['run', 'queued', 'mystery'],
+    '进行中组收 running 态与未知状态',
+  )
+  assert.deepEqual(Array.from(filterBreakdownHistory(null, 'all')), [], '非数组入参安全返回空')
+})
+
+test('BreakdownHistoryList：状态筛选下拉（toolbar 范式）、过滤渲染、筛选后空态与回调', async () => {
+  const { stub } = recordingReact()
+  const sandbox = await evalBdModule(stub)
+  const BreakdownHistoryList = vm.runInContext('BreakdownHistoryList', sandbox)
+  const rows = [
+    { candidateId: 'c1', candidateTitle: '标题甲', status: 'succeeded', currentStepLabel: '已完成', updatedAt: null, admin: {} },
+    { candidateId: 'c2', candidateTitle: '标题乙', status: 'failed', currentStepLabel: '', updatedAt: null, admin: {} },
+  ]
+  const changes = []
+  const base = {
+    history: rows, rules: [], loading: false, errorReason: null,
+    hasMore: false, loadingMore: false, onLoadMore: () => {},
+    onOpen: () => {}, statusFilter: 'all', onStatusFilterChange: value => changes.push(value), t,
+  }
+  // 筛选控件复用总览/分析页范式：ydo-ov-toolbar 标题行 + ydo-ov-filter 说明 + FilterSelect 下拉。
+  const list = BreakdownHistoryList(base)
+  const filterLabel = collectFlat(list).find(node => String(node.props.className || '') === 'ydo-ov-filter')
+  assert.ok(filterLabel, '标题行带 ydo-ov-filter 筛选容器')
+  const select = collectFlat(list).find(node => node.type === 'filter-select')
+  assert.ok(select, '渲染 FilterSelect 下拉（桩）')
+  assert.deepEqual(
+    Array.from(select.props.options, option => option.value),
+    ['all', 'running', 'succeeded', 'failed'],
+    '下拉选项 = 全部/进行中/成功/失败',
+  )
+  select.props.onChange('failed')
+  assert.deepEqual(changes, ['failed'], '下拉变更回传筛选值')
+
+  // statusFilter=failed：只渲染失败行。
+  const failedOnly = BreakdownHistoryList({ ...base, statusFilter: 'failed' })
+  const failedTrs = collectFlat(failedOnly).filter(node => node.type === 'tr' && node.props && node.props.tabIndex === 0)
+  assert.equal(failedTrs.length, 1, '失败筛选只渲染失败行')
+  assert.ok(collectText(failedOnly).includes('标题乙') && !collectText(failedOnly).includes('标题甲'), '失败行内容正确')
+
+  // 筛选后为空：显示「该状态下暂无」，且不渲染表格。
+  const noneSucceeded = BreakdownHistoryList({ ...base, statusFilter: 'running' })
+  assert.ok(collectText(noneSucceeded).includes('bdHistoryEmptyFiltered'), '筛选后空态走专用文案')
+  assert.ok(!collectFlat(noneSucceeded).some(node => node.type === 'table'), '筛选后空不渲染表格')
+  // 全量本来就空：仍走原「还没有拆解记录」引导，不显示筛选空态。
+  const emptyAll = BreakdownHistoryList({ ...base, history: [], statusFilter: 'failed' })
+  assert.ok(collectText(emptyAll).includes('bdHistoryEmpty'), '全量空保持原引导文案')
 })
 
 const fullWorkflow = {

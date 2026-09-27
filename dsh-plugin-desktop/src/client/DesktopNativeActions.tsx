@@ -187,7 +187,7 @@ export function DesktopNativeActions({ api, t, placement, terminalAvailable = tr
         {api.exportDiagnostics !== undefined && (
           <button
             type="button"
-            className="sensteedAgentSettingsHeaderButton"
+            className="dshDesktopSettingsHeaderButton"
             disabled={busy}
             onClick={exportDiagnostics}
           >
@@ -196,7 +196,7 @@ export function DesktopNativeActions({ api, t, placement, terminalAvailable = tr
         )}
         {terminalAvailable && <button
           type="button"
-          className="sensteedAgentSettingsHeaderButton"
+          className="dshDesktopSettingsHeaderButton"
           disabled={busy}
           onClick={open}
         >
@@ -205,7 +205,7 @@ export function DesktopNativeActions({ api, t, placement, terminalAvailable = tr
         <DesktopActionMenu open={restartMenuOpen} onOpenChange={setRestartMenuOpen} busy={busy} anchorRef={restartMenuRef} onKeyDown={restartKeys} trigger={
           <button
             type="button"
-            className="sensteedAgentSettingsHeaderButton"
+            className="dshDesktopSettingsHeaderButton"
           >
             {t(restarting ? 'restartingDesktop' : 'restartDesktop')}
             <ChevronDown aria-hidden="true" />

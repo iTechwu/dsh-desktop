@@ -36,4 +36,5 @@ export const BETA_DESKTOP_PACKAGE_NAME = OTHER_DESKTOP_PRODUCT_IDENTITY.packageN
 export const DESKTOP_PACKAGE_NAMES: ReadonlySet<string> = new Set([
   DESKTOP_PACKAGE_NAME,
   BETA_DESKTOP_PACKAGE_NAME,
+  'dsh-plugin-desktop-beta',
 ])

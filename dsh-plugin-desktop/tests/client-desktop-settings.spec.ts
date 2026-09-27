@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
+import { Menu } from '@base-ui/react/menu'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
@@ -520,7 +521,7 @@ describe('Desktop native action presentation', () => {
       placement: 'titlebar',
     }))
 
-    expect(markup.match(/dshDesktopTitlebarIconButton/g)).toHaveLength(3)
+    expect(markup.match(/sensteedAgentTitlebarIconButton/g)).toHaveLength(3)
     expect(markup).toContain('aria-label="Open DSH Terminal"')
     expect(markup).toContain('aria-label="Restart options"')
     expect(markup).toContain('aria-label="Developer options"')
@@ -576,18 +577,18 @@ describe('Desktop native action presentation', () => {
   })
 
   it('groups reload with both restart actions and leaves only Developer Tools in its menu', () => {
-    const restartMarkup = renderToStaticMarkup(createElement(DesktopRestartMenuItems, {
+    const restartMarkup = renderToStaticMarkup(createElement(Menu.Root, null, createElement(DesktopRestartMenuItems, {
       busy: false,
       t,
       onReload: vi.fn(),
       onRestart: vi.fn(),
       onRestartToRecovery: vi.fn(),
-    }))
-    const developerMarkup = renderToStaticMarkup(createElement(DesktopDeveloperMenuItems, {
+    })))
+    const developerMarkup = renderToStaticMarkup(createElement(Menu.Root, null, createElement(DesktopDeveloperMenuItems, {
       busy: false,
       t,
       onToggleDeveloperTools: vi.fn(),
-    }))
+    })))
 
     expect(restartMarkup.match(/role="menuitem"/g)).toHaveLength(3)
     expect(restartMarkup.indexOf('Reload')).toBeLessThan(restartMarkup.indexOf('Restart'))
@@ -616,8 +617,8 @@ describe('Desktop native action presentation', () => {
 
     try {
       const dispose = installDesktopSettingsStyles()
-      expect(css).toMatch(/data-placement="settings"\] \.dshDesktopActionMenu \{[^}]*position: absolute;[^}]*display: grid;[^}]*grid-auto-flow: row;[^}]*grid-template-columns: minmax\(0, 1fr\);[^}]*min-width: 220px;/)
-      expect(css).toMatch(/data-placement="settings"\] \.dshDesktopActionMenuItem \{[^}]*display: flex;[^}]*width: 100%;[^}]*white-space: nowrap;/)
+      expect(css).toMatch(/sensteedAgentNativeActions\[data-placement="settings"\] \.sensteedAgentActionMenu \{[^}]*display: grid;[^}]*grid-auto-flow: row;[^}]*grid-template-columns: minmax\(0, 1fr\);[^}]*min-width: 220px;/)
+      expect(css).toMatch(/sensteedAgentNativeActions\[data-placement="settings"\] \.sensteedAgentActionMenuItem \{[^}]*display: flex;[^}]*width: 100%;[^}]*white-space: nowrap;/)
       expect(appendChild).toHaveBeenCalledWith(style)
       dispose()
       expect(remove).toHaveBeenCalledOnce()
@@ -676,7 +677,7 @@ describe('Desktop settings Slot registration', () => {
     ]
     expect(options).toMatchObject({
       name: 'settings.section',
-      id: 'desktop',
+      id: 'desktop-app',
       order: 100,
       locale: DESKTOP_SETTINGS_LOCALE_NAMESPACE,
     })

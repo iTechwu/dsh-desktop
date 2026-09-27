@@ -30,6 +30,7 @@ import {
   resolveProfileDir,
   writeProfileManifest,
   type Profile,
+  type ProfileContext,
   type ProfileManifest,
 } from '@deepseek-ai/dsh-app-boot'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
@@ -76,6 +77,11 @@ import {
   type DesktopMarketProvider,
   type DesktopMarketSnapshot,
 } from './desktop-market.ts'
+import { DOFE_ACCESS_VALIDATION_VERSION } from './dofe-plugins.ts'
+import {
+  dofeProviderRoute,
+  type DofeProtocol,
+} from './dofe-models.ts'
 
 /** Persistent profile managed by the desktop launcher and the ordinary dsh plugin command. */
 export const DESKTOP_PROFILE_NAME = 'desktop'
@@ -107,17 +113,12 @@ const PWSH_SANDBOX_ROW_ID = 'pwsh-sandbox'
 const UPSTREAM_PWSH_SANDBOX_PACKAGE = '@deepseek-ai/dsh-pwsh-sandbox'
 const DESKTOP_WINDOWS_PWSH_SANDBOX_ROW_ID = 'desktop-windows-pwsh-sandbox'
 const DESKTOP_WINDOWS_PWSH_SANDBOX_PACKAGE = `${DESKTOP_PACKAGE_NAME}/windows-pwsh-sandbox`
-const AGENT_PRESETS_ROW_ID = 'agent-presets'
-/** Harness-home directory holding locally authored presets (`agent-presets/discovery`). */
-const USER_PRESET_DIRNAME = '.agent-presets'
 const DEFAULT_DESKTOP_SHELL_MODE: DesktopShellMode = 'compatibility'
 const DEFAULT_DESKTOP_PORT = DESKTOP_DEFAULT_WEB_PORT
 const DESKTOP_WEB_SERVER_ROW_ID = 'desktop-webserver'
 const DESKTOP_WEB_SERVER_PACKAGE = `${DESKTOP_PACKAGE_NAME}/webserver`
 const SETTINGS_FILE_PACKAGE = '@deepseek-ai/dsh-settings-file'
-const DOFE_MODEL_PROVIDER = 'deepseek-official'
-const DOFE_MODEL_API_KEY_ENV = 'MODELS_API_KEY'
-const DOFE_MODEL_BASE_URL = 'https://ixicai.cn/api/v1'
+const LEGACY_SETTINGS_FILENAME = 'settings-legacy.yaml'
 const DESKTOP_SETTINGS_NAMESPACE = 'sensteed-agent'
 const UI_LAYOUT_PACKAGE = '@deepseek-ai/dsh-client-ui-layout'
 const UI_SIDEBAR_PACKAGE = '@deepseek-ai/dsh-client-ui-sidebar'
@@ -286,6 +287,39 @@ export function readDesktopShellMode(config: SettingsFileConfig): DesktopShellMo
   return readDesktopStartupSettings(config).mode
 }
 
+/**
+ * Recover the model selection saved by the pre-0.1.7 DoFe Access gate. New
+ * kernels store model routes in the `llm-pi-ai` entry instead of the desktop
+ * settings document, so the legacy section is the only bridge across upgrade.
+ */
+function readLegacyDofeModelSelection(home: string): {
+  modelId: string
+  protocol: DofeProtocol
+} | undefined {
+  const path = join(home, LEGACY_SETTINGS_FILENAME)
+  if (!existsSync(path)) return undefined
+  let document: unknown
+  try {
+    const parsed = parseDocument(readFileSync(path, 'utf8'), { prettyErrors: true })
+    if (parsed.errors.length > 0) return undefined
+    document = parsed.toJS() ?? {}
+  } catch {
+    return undefined
+  }
+  if (typeof document !== 'object' || document === null || Array.isArray(document)) return undefined
+  const access = (document as Record<string, unknown>)['dofe-access']
+  if (typeof access !== 'object' || access === null || Array.isArray(access)) return undefined
+  const values = access as Record<string, unknown>
+  const protocol = values.protocol
+  if (values.setupComplete !== true
+    || values.validationVersion !== DOFE_ACCESS_VALIDATION_VERSION
+    || typeof values.modelId !== 'string' || values.modelId.trim().length === 0
+    || (protocol !== 'chat-completions' && protocol !== 'messages' && protocol !== 'responses')) {
+    return undefined
+  }
+  return { modelId: values.modelId.trim(), protocol }
+}
+
 /** Resolve the public Web template once and reject an incompatible DSH release. */
 function requiredWebBundles(): string[] {
   const template = PROFILE_TEMPLATES.web
@@ -307,6 +341,8 @@ export interface PreparedDesktopProfile {
   bareModuleBaseUrl: string
   /** Complete ordered patch list for this desktop generation. */
   patches: PatchOptions[]
+  /** Boundary of launcher-owned patches around persisted profile/home layers. */
+  launcherPatchBoundary: { beforeUser: number; afterUser: number }
   /** Optional Client UI entries skipped because this profile cannot resolve them. */
   skippedOptionalEntries: SkippedOptionalEntry[]
   /** Persisted shell mode applied after every user-owned patch. */
@@ -580,22 +616,21 @@ function loadRecoveryFilteredProfile(
         ? (bundleManifest as { dsh?: { bundle?: { patch?: unknown } } }).dsh?.bundle?.patch
         : undefined
       // 0.1.7 bundles declare `dsh.bundle.patch` as the base cordis patch plus
-      // preset template patches. The desktop profile composes only the base
-      // patch (the preset templates belong to initProfile selection); accept
-      // both the historical single-string and the new list shape.
+      // shipped preset template patches. Desktop consumes the same ordered list
+      // as the upstream profile loader; otherwise restored sessions cannot find
+      // their preset identity.
       const declaredList = Array.isArray(declared) ? declared : [declared]
-      const baseDeclared = declaredList.find((entry): entry is string =>
-        typeof entry === 'string' && /cordis\.patch\.ya?ml$/u.test(entry))
-        ?? (typeof declaredList[0] === 'string' ? declaredList[0] : undefined)
-      if (typeof baseDeclared !== 'string' || baseDeclared.length === 0) {
+      const patchFiles = declaredList.filter((entry): entry is string =>
+        typeof entry === 'string' && entry.length > 0)
+      if (patchFiles.length === 0) {
         throw new Error(`${BIN_NAME}: profile bundle ${JSON.stringify(packageName)} declares no dsh.bundle patches in its package.json`)
       }
-      const patchPath = join(packageDir, baseDeclared)
+      const patchPaths = patchFiles.map(patchFile => join(packageDir, patchFile))
       layers.push({
         packageName,
         packageDir,
-        patchPaths: [patchPath],
-        patches: loadOverlayPatches(BIN_NAME, patchPath),
+        patchPaths,
+        patches: patchPaths.flatMap(patchPath => loadOverlayPatches(BIN_NAME, patchPath)),
       })
     } catch (cause) {
       if (isAa) aaFailure = marketFailureMessage(cause)
@@ -620,7 +655,7 @@ function loadRecoveryFilteredProfile(
 /** Resolve the agent presets shipped by the matching presets dependency. */
 export function shippedPresetRoot(moduleUrl: string = import.meta.url): string {
   const require = createRequire(moduleUrl)
-  return join(dirname(require.resolve('@deepseek-ai/dsh-agent-presets/package.json')), 'presets')
+  return join(dirname(require.resolve('@deepseek-ai/dsh-agent-preset/package.json')), 'skills')
 }
 
 /** Read a row's object config without trusting arbitrary YAML values. */
@@ -994,6 +1029,8 @@ export function prepareDesktopProfile(
     ...filteredProfile.patches,
     ...filteredHome.patches,
   ], isAaEntry)
+  const persistedPatchCount = filteredProfile.patches.length + filteredHome.patches.length
+  const ordinaryPatchCount = ordinary.patches.length
   const aaPatches: PatchOptions[] = []
   let aaFailure = loadedProfile.aaFailure
   if (hooks.aaEnabled === true && aaFailure === undefined) {
@@ -1082,18 +1119,9 @@ export function prepareDesktopProfile(
       { id: 'ui-conversation', disabled: false },
     )
   }
-  const presets = rows.get(AGENT_PRESETS_ROW_ID)
-  if (presets !== undefined) {
-    const shippedRoot = shippedPresetRoot()
-    const roots: Array<{ path: string, trust: 'system' | 'user' }> = [
-      { path: shippedRoot, trust: 'system' },
-      { path: join(home, USER_PRESET_DIRNAME), trust: 'user' },
-    ]
-    patches.push({
-      id: AGENT_PRESETS_ROW_ID,
-      config: { ...rowConfig(presets), roots, includeUserRoot: false },
-    })
-  }
+  // 0.1.7 removed the `agent-presets` composition row: preset compositions are
+  // web-app patch templates and the registry loads through the web-app
+  // dependency graph, so there is no row config left to project here.
   const webserver = rows.get('webserver')
   if (webserver === undefined) {
     throw new Error(`${BIN_NAME}: desktop profile has no webserver row`)
@@ -1186,32 +1214,27 @@ export function prepareDesktopProfile(
   if ((telemetryDisabled ?? '') !== '' && rows.has('session-telemetry-otel')) {
     patches.push({ id: 'session-telemetry-otel', disabled: true })
   }
+  const legacyModelSelection = readLegacyDofeModelSelection(home)
+  const dofeRoute = dofeProviderRoute(legacyModelSelection?.protocol ?? 'chat-completions')
+  const defaultDofeModel = legacyModelSelection?.modelId ?? 'deepseek-v4-flash'
   patches.push(
     {
+      // 0.1.7 llm-deepseek speaks Anthropic Messages only. DoFe routes live in
+      // llm-pi-ai and are populated from the model gateway catalog.
       id: 'llm-deepseek',
-      disabled: false,
-      config: {
-        apiKeyEnv: DOFE_MODEL_API_KEY_ENV,
-        baseURL: DOFE_MODEL_BASE_URL,
-        headers: { 'X-Company-Code': BRAND_TENANT },
-        // Chat Completions and Anthropic Messages are served by the direct
-        // DeepSeek adapter. OpenAI Responses is configured as a dedicated
-        // llm-pi-ai route because the direct adapter does not implement it.
-        protocol: 'chat-completions',
-        connectionPolicy: 'composition',
-        models: [{
-          id: 'deepseek-v4-flash',
-          name: 'DeepSeek V4 Flash',
-          description: 'DoFe managed DeepSeek model',
-          contextWindow: 1_000_000,
-          inputModalities: ['text', 'image'],
-        }],
-      },
+      disabled: true,
     },
-    { id: 'llm-pi-ai', disabled: false, config: { providers: {} } },
+    { id: 'llm-pi-ai', disabled: false },
+    // The yootun distribution authenticates models through the DoFe gateway
+    // key; the 0.1.7 kernel's DeepSeek platform login surface stays hidden.
+    // account-controller injects the deepseekAccount service, so it disables
+    // together with the platform row instead of pending forever.
+    { id: 'deepseek-account', disabled: true },
+    { id: 'account-controller', disabled: true },
+    { id: 'ui-settings-account', disabled: true },
     {
       id: 'agent-default-model',
-      config: { provider: DOFE_MODEL_PROVIDER, model: 'deepseek-v4-flash' },
+      config: { provider: dofeRoute.id, model: defaultDofeModel },
     },
   )
   const desktopShell = rows.get('desktop-shell')
@@ -1237,6 +1260,10 @@ export function prepareDesktopProfile(
     rootConfig,
     bareModuleBaseUrl,
     patches: structuredClone(patches),
+    launcherPatchBoundary: {
+      beforeUser: ordinaryPatchCount - persistedPatchCount,
+      afterUser: ordinaryPatchCount,
+    },
     skippedOptionalEntries,
     mode,
     port,
@@ -1365,6 +1392,66 @@ export function removeObsoleteDesktopSharedModuleFallback(home: string): number 
 /** Expose the package anchor for focused resolution tests. */
 export function desktopInstallAnchor(): string {
   return INSTALL_ANCHOR
+}
+
+/** Re-read persisted patches with the same optional/provider admission as boot. */
+function currentPersistedPatches(
+  prepared: PreparedDesktopProfile,
+  profilePatches?: readonly PatchOptions[],
+): PatchOptions[] {
+  const loadedProfilePatches = profilePatches ?? (
+    existsSync(prepared.profile.patchPath)
+      ? loadOptionalPatches(BIN_NAME, prepared.profile.patchPath) ?? []
+      : []
+  )
+  const homePatches = omitUnresolvedOptionalEntries(
+    loadDesktopMachinePatches(prepared.homeDir),
+    prepared.bareModuleBaseUrl,
+  ).patches
+  const filteredProfile = filterMarketProviderPatches([...loadedProfilePatches])
+  const filteredHome = filterMarketProviderPatches([...homePatches])
+  const filteredPersisted = filterMarketProviderPatches([
+    ...filteredProfile.patches,
+    ...filteredHome.patches,
+  ], isAaEntry)
+  return [...filteredPersisted.patches]
+}
+
+/**
+ * Launch facts for the 0.1.7 `profileContext` service: settings and
+ * config-editor mount behind it, and the desktop launcher owns the same
+ * facts the CLI profile boot supplies.
+ */
+export function desktopProfileContext(
+  prepared: PreparedDesktopProfile,
+  activeProfileName: string,
+): ProfileContext {
+  const readPatches = (profilePatches?: readonly PatchOptions[]): readonly PatchOptions[] => {
+    const launcherPatches = [
+      ...prepared.patches.slice(0, prepared.launcherPatchBoundary.beforeUser),
+    ]
+    const launcherFinalPatches = prepared.patches.slice(prepared.launcherPatchBoundary.afterUser)
+    const persistedPatches = currentPersistedPatches(prepared, profilePatches)
+    return structuredClone([
+      ...launcherPatches,
+      ...persistedPatches,
+      ...launcherFinalPatches,
+    ])
+  }
+  return {
+    name: activeProfileName,
+    dir: prepared.profile.dir,
+    patchPath: prepared.profile.patchPath,
+    installAnchor: INSTALL_ANCHOR,
+    startedBundles: prepared.profile.layers.map(layer => layer.packageName),
+    cwd: process.cwd(),
+    home: prepared.homeDir,
+    overlays: [],
+    telemetryDisabledEnv: process.env.DSH_TELEMETRY_DISABLED,
+    // 0.1.7 HMR recomposes from persisted layers. Keep launcher-owned final
+    // rows above profile/home edits while reapplying Desktop admission policy.
+    readPatches,
+  }
 }
 
 /** Preserve the public manifest type in the declaration graph used by plugin tooling. */

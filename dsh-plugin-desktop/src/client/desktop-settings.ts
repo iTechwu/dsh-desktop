@@ -90,7 +90,10 @@ export function applyDesktopSettings(
   )
   ctx.slots.inject('settings.section', () => ctx.slots.register({
     name: 'settings.section',
-    id: 'desktop',
+    // 0.1.7 ui-settings-general owns a `desktop` section (update story under
+    // the Electron preload carrier); the hand-written desktop app section
+    // registers under its own id to avoid the duplicate-entry throw.
+    id: 'desktop-app',
     order: 100,
     label: () => t('nav'),
     locale: DESKTOP_SETTINGS_LOCALE_NAMESPACE,

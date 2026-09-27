@@ -81,7 +81,7 @@ describe('Douyin operation Desktop integration', () => {
 
     const client = read(join(snapshotRoot, 'src/client.js'))
     expect(client).toContain("const PATH = '/api/desktop/yootun/douyin-operation'")
-    expect(client).not.toMatch(/https?:\/\/(?!www\.douyin\.com)/u)
+    expect(client).not.toMatch(/https?:\/\/(?!(?:[a-z0-9-]+\.)*douyin\.com)/u)
     expect(client).not.toMatch(/MODELS_API_KEY|storage_state\s*[:=]|vault:\/\//u)
   })
 

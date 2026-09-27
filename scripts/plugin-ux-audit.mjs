@@ -304,9 +304,9 @@ if (!deliverablesStyles.includes('--deliverable-fill:')
 if (!deliverablesStyles.includes('[data-ds-dark-theme]')) {
   failures.push('ui-deliverables: delivery surfaces have no dark-theme adaptation')
 }
-// Sibling 0.1.5-rc.2 aligned delivery cards with the upstream 18px/10px radius
-// and static-neutral fills (deepseek-harness 215bf40ad3); the audit follows.
-for (const [selector, radius] of [['.file', '18px'], ['.fileIcon', '10px'], ['.split', '10px']]) {
+// Delivery cards use the upstream 18px/10px radius and static-neutral fills.
+// The split surface was removed by the 0.1.7 deliverables redesign.
+for (const [selector, radius] of [['.file', '18px'], ['.fileIcon', '10px']]) {
   const selectorRule = deliverablesStyles.match(new RegExp(`\\${selector} \\{[^}]*\\}`, 'u'))?.[0] || ''
   if (!selectorRule.includes(`border-radius: ${radius}`)) {
     failures.push(`ui-deliverables: ${selector} does not follow the ${radius} surface radius contract`)
@@ -331,7 +331,7 @@ if (!bootHealthSource.includes('const BOOT_REPORT_TIMEOUT_MS = 15_000')
   failures.push('dsh-plugin-desktop: renderer boot report has no bounded timeout policy')
 }
 const defaultModelWrite = dofeAccessSource.indexOf("const defaultModel = descriptor.find(item => item.ns === 'agent-default-model')")
-const authorizationWrite = dofeAccessSource.indexOf('await mutateDofeAccessSettings(settingsApi', defaultModelWrite)
+const authorizationWrite = dofeAccessSource.indexOf('await mutateDofeAccessAfterReload(settingsApi', defaultModelWrite)
 if (defaultModelWrite < 0 || authorizationWrite < defaultModelWrite) {
   failures.push('dsh-plugin-desktop: native access form must commit authorization after default model configuration')
 }

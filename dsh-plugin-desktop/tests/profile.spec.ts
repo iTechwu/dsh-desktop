@@ -7,6 +7,7 @@ import {
   rmSync,
   writeFileSync,
 } from 'node:fs'
+import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -22,6 +23,7 @@ import {
   desktopShellModeFromSettings,
   desktopStartupSettingsFromSettings,
   desktopBundleList,
+  desktopProfileContext,
   ensureDesktopProfile,
   prepareDesktopProfile,
   readDesktopShellMode,
@@ -81,10 +83,14 @@ describe('desktop profile composition', {
   timeout: process.platform === 'win32' ? 10_000 : 5_000,
 }, () => {
   it('ships a PowerShell-backed minimal preset for Windows', () => {
-    const minimalPreset = readFileSync(
-      join(shippedPresetRoot(), 'minimal', 'agent.cordis.yml'),
-      'utf8',
-    )
+    // 0.1.7 ships preset compositions as web-app patch templates; the pwsh
+    // twin of the minimal preset lives in presets/minimal.patch.yml.
+    const require = createRequire(import.meta.url)
+    const minimalPreset = readFileSync(join(
+      dirname(require.resolve('@deepseek-ai/dsh-web-app/package.json')),
+      'presets',
+      'minimal.patch.yml',
+    ), 'utf8')
 
     expect(minimalPreset).toContain("name: '@deepseek-ai/dsh-tool-pwsh-persistent'")
     expect(minimalPreset).toContain("disabled: !!js process.platform !== 'win32'")
@@ -93,26 +99,20 @@ describe('desktop profile composition', {
   it('reads packaged Cordis skills from the logical ASAR preset root', () => {
     const home = temporaryHome()
     const resources = join(home, 'resources')
-    const archivedPresets = join(
+    const archivedPresetPkg = join(
       resources,
       'app.asar',
       'node_modules',
       '@deepseek-ai',
-      'dsh-agent-presets',
+      'dsh-agent-preset',
     )
-    const archivedPresetRoot = join(archivedPresets, 'presets')
-    const skillPath = join(
-      archivedPresetRoot,
-      'cordis',
-      'skills',
-      'cordis-plugin-development',
-      'SKILL.md',
-    )
+    const archivedSkillRoot = join(archivedPresetPkg, 'skills')
+    const skillPath = join(archivedSkillRoot, 'cordis-plugin-development', 'SKILL.md')
     mkdirSync(join(resources, 'app.asar', 'lib'), { recursive: true })
-    mkdirSync(archivedPresets, { recursive: true })
+    mkdirSync(archivedPresetPkg, { recursive: true })
     mkdirSync(dirname(skillPath), { recursive: true })
-    writeFileSync(join(archivedPresets, 'package.json'), JSON.stringify({
-      name: '@deepseek-ai/dsh-agent-presets',
+    writeFileSync(join(archivedPresetPkg, 'package.json'), JSON.stringify({
+      name: '@deepseek-ai/dsh-agent-preset',
       exports: { './package.json': './package.json' },
     }) + '\n')
     writeFileSync(skillPath, '# Cordis plugin development\n')
@@ -120,11 +120,9 @@ describe('desktop profile composition', {
     const moduleUrl = pathToFileURL(join(resources, 'app.asar', 'lib', 'profile.js')).href
     const resolvedRoot = shippedPresetRoot(moduleUrl)
 
-    expect(resolvedRoot).toBe(realpathSync(archivedPresetRoot))
+    expect(resolvedRoot).toBe(realpathSync(archivedSkillRoot))
     expect(readFileSync(join(
       resolvedRoot,
-      'cordis',
-      'skills',
       'cordis-plugin-development',
       'SKILL.md',
     ), 'utf8')).toBe('# Cordis plugin development\n')
@@ -156,6 +154,88 @@ describe('desktop profile composition', {
 
     expect(rows.find(row => row.id === 'web-ui-task-board')).toBeUndefined()
     expect(rows.find(row => row.id === 'web-ui-remote-web-ui')).toBeUndefined()
+  })
+
+  it('keeps the Desktop CI pipeline twin and retires the gate-only upstream tool', () => {
+    const home = temporaryHome()
+    const rows = composeEntries([prepareDesktopProfile(undefined, home).patches])
+
+    const desktopCi = rows.find(row => row.id === 'desktop-ci-tools')
+    expect(desktopCi).toEqual(expect.objectContaining({
+      name: 'dsh-plugin-desktop/ci-tools',
+    }))
+    expect(desktopCi?.disabled).toBeUndefined()
+    expect(rows.find(row => row.id === 'tool-ci')).toEqual(expect.objectContaining({
+      disabled: true,
+    }))
+  })
+
+  it('recomposes profile patches with the same launcher-owned final rows as startup', () => {
+    const home = temporaryHome()
+    const initial = prepareDesktopProfile(undefined, home, 'win32')
+    writeFileSync(initial.profile.patchPath, [
+      '- id: settings',
+      '  config:',
+      '    watch: false',
+      '- id: desktop-shell',
+      '  config:',
+      '    port: 9999',
+      '',
+    ].join('\n'))
+
+    const prepared = prepareDesktopProfile(undefined, home, 'win32')
+    const startupRows = composeEntries([prepared.patches])
+    const readPatches = desktopProfileContext(prepared, 'desktop').readPatches
+    if (readPatches === undefined) throw new Error('test requires launcher-owned patch recomposition')
+    const hmrPatches = [...readPatches()]
+    const hmrRows = composeEntries([hmrPatches])
+
+    expect(hmrRows).toEqual(startupRows)
+    expect(hmrRows.find(row => row.id === 'settings')).toEqual(expect.objectContaining({
+      config: expect.objectContaining({ dshHome: home, watch: false }),
+    }))
+    expect(hmrRows.find(row => row.id === 'desktop-shell')).toEqual(expect.objectContaining({
+      config: expect.objectContaining({ port: prepared.port }),
+    }))
+  })
+
+  it('reapplies startup admission filters when recomposing persisted patches', () => {
+    const home = temporaryHome()
+    const initial = prepareDesktopProfile(undefined, home, 'win32')
+    writeFileSync(initial.profile.patchPath, [
+      '- insert:',
+      '    - id: community-market',
+      '      name: dsh-community-market',
+      '- id: agents-anywhere-bridge-next',
+      "  name: '@agents-anywhere/dsh-bridge-next'",
+      '- id: settings',
+      '  config:',
+      '    watch: false',
+      '',
+    ].join('\n'))
+    writeFileSync(join(home, 'cordis.patch.yml'), [
+      '- insert:',
+      '    - id: missing-optional-ui',
+      "      name: '@deepseek-ai/dsh-client-ui-definitely-missing'",
+      '',
+    ].join('\n'))
+
+    const prepared = prepareDesktopProfile(undefined, home, 'win32')
+    const readPatches = desktopProfileContext(prepared, 'desktop').readPatches
+    if (readPatches === undefined) throw new Error('test requires launcher-owned patch recomposition')
+    const startupRows = composeEntries([prepared.patches])
+    const hmrRows = composeEntries([[...readPatches()]])
+    const ids = hmrRows.map(row => row.id)
+
+    expect(hmrRows).toEqual(startupRows)
+    expect(prepared.market.effective).toBe('disabled')
+    expect(prepared.skippedOptionalEntries).toEqual([{
+      id: 'missing-optional-ui',
+      name: '@deepseek-ai/dsh-client-ui-definitely-missing',
+    }])
+    expect(ids).not.toContain('community-market')
+    expect(ids).not.toContain('agents-anywhere-bridge-next')
+    expect(ids).not.toContain('missing-optional-ui')
   })
 
   it('repairs a base-only CLI profile without replacing dependencies', () => {
@@ -338,16 +418,6 @@ virtualStoreDirMaxLength: 60
       name: 'dsh-plugin-desktop/webserver',
       config: { host: '127.0.0.1', port: 43_120 },
     }))
-    expect(patches).toContainEqual(expect.objectContaining({
-      id: 'agent-presets',
-      config: expect.objectContaining({
-        roots: [
-          { path: shippedPresetRoot(), trust: 'system' },
-          { path: join(home, '.agent-presets'), trust: 'user' },
-        ],
-        includeUserRoot: false,
-      }),
-    }))
     expect(existsSync(join(
       prepared.profile.dir,
       'agent-preset-compat',
@@ -389,9 +459,6 @@ virtualStoreDirMaxLength: 60
       id: 'sandbox',
       name: '@deepseek-ai/dsh-sandbox-local',
     })
-    expect(rows.find(row => row.id === 'agent-presets')).toEqual(expect.objectContaining({
-      name: '@deepseek-ai/dsh-agent-presets',
-    }))
     expect(rows.map(row => row.id)).not.toContain('desktop-windows-agent-presets')
     expect(rows.find(row => row.id === 'pwsh-sandbox')).toEqual(expect.objectContaining({
       name: '@deepseek-ai/dsh-pwsh-sandbox',
@@ -411,16 +478,20 @@ virtualStoreDirMaxLength: 60
       name: 'dsh-plugin-desktop/notifications',
     }))
     expect(rows.find(row => row.id === 'llm-deepseek')).toEqual(expect.objectContaining({
-      disabled: false,
-      config: expect.objectContaining({
-        apiKeyEnv: 'MODELS_API_KEY',
-        baseURL: 'https://ixicai.cn/api/v1',
-        connectionPolicy: 'composition',
-      }),
+      disabled: true,
     }))
-    expect(rows.find(row => row.id === 'llm-pi-ai')).toEqual(expect.objectContaining({ disabled: false }))
+    expect(rows.find(row => row.id === 'llm-pi-ai')).toEqual(expect.objectContaining({
+      disabled: false,
+    }))
+    expect(rows.find(row => row.id === 'preset-standard')).toEqual(expect.objectContaining({
+      name: '@deepseek-ai/dsh-agent-preset',
+      config: expect.objectContaining({ id: 'standard' }),
+    }))
+    expect(rows.find(row => row.id === 'preset-ptc')).toEqual(expect.objectContaining({
+      config: expect.objectContaining({ id: 'ptc' }),
+    }))
     expect(rows.find(row => row.id === 'agent-default-model')).toEqual(expect.objectContaining({
-      config: { provider: 'deepseek-official', model: 'deepseek-v4-flash' },
+      config: { provider: 'dofe-chat', model: 'deepseek-v4-flash' },
     }))
     expect(rows.find(row => row.id === 'desktop-profiles')).toEqual(expect.objectContaining({
       name: 'dsh-plugin-desktop/profiles',
@@ -442,6 +513,27 @@ virtualStoreDirMaxLength: 60
     })
   })
 
+  it('migrates the legacy DoFe model selection into the 0.1.7 default model', () => {
+    const home = temporaryHome()
+    writeFileSync(join(home, 'settings-legacy.yaml'), [
+      'dofe-access:',
+      '  setupComplete: true',
+      '  validationVersion: 5',
+      '  modelId: glm-5.3-flash',
+      '  protocol: responses',
+      '',
+    ].join('\n'))
+
+    const rows = composeEntries([prepareDesktopProfile(undefined, home, 'darwin').patches])
+    const providers = (rows.find(row => row.id === 'llm-pi-ai')?.config as {
+      providers?: Record<string, unknown>
+    } | undefined)?.providers
+    expect(providers).toBeUndefined()
+    expect(rows.find(row => row.id === 'agent-default-model')).toEqual(expect.objectContaining({
+      config: { provider: 'dofe-responses', model: 'glm-5.3-flash' },
+    }))
+  })
+
   it('overrides direct model connection facts from the user patch in the final Desktop layer', () => {
     const home = temporaryHome()
     writeFileSync(join(home, 'cordis.patch.yml'), [
@@ -461,16 +553,13 @@ virtualStoreDirMaxLength: 60
     const rows = composeEntries([prepareDesktopProfile(undefined, home, 'darwin').patches])
 
     expect(rows.find(row => row.id === 'llm-deepseek')).toEqual(expect.objectContaining({
-      disabled: false,
-      config: expect.objectContaining({
-        apiKeyEnv: 'MODELS_API_KEY',
-        baseURL: 'https://ixicai.cn/api/v1',
-        connectionPolicy: 'composition',
-      }),
+      disabled: true,
     }))
-    expect(rows.find(row => row.id === 'llm-pi-ai')).toEqual(expect.objectContaining({ disabled: false }))
+    expect(rows.find(row => row.id === 'llm-pi-ai')).toEqual(expect.objectContaining({
+      disabled: false,
+    }))
     expect(rows.find(row => row.id === 'agent-default-model')).toEqual(expect.objectContaining({
-      config: { provider: 'deepseek-official', model: 'deepseek-v4-flash' },
+      config: { provider: 'dofe-chat', model: 'deepseek-v4-flash' },
     }))
   })
 
@@ -1044,17 +1133,6 @@ virtualStoreDirMaxLength: 60
       id: 'sandbox',
       name: '@deepseek-ai/dsh-sandbox-local',
     })
-    expect(rows.find(row => row.id === 'agent-presets')).toEqual(expect.objectContaining({
-      name: '@deepseek-ai/dsh-agent-presets',
-      config: expect.objectContaining({
-        roots: [
-          { path: shippedPresetRoot(), trust: 'system' },
-          { path: join(home, '.agent-presets'), trust: 'user' },
-        ],
-        includeUserRoot: false,
-      }),
-    }))
-    expect(rows.find(row => row.id === 'agent-presets')?.disabled).toBeFalsy()
     expect(rows.map(row => row.id)).not.toContain('desktop-windows-agent-presets')
     expect(rows.find(row => row.id === 'pwsh-sandbox')).toEqual(expect.objectContaining({
       name: '@deepseek-ai/dsh-pwsh-sandbox',

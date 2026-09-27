@@ -22,7 +22,7 @@ function react() {
 }
 
 // 下载图标与视频数据页"导出 Excel"按钮同款（v2 §4.1 同一导出语义）。
-const { IconDownloadOutline16 } = require('@deepseek-ai/dsh-client-ui-primitives')
+const { IconDownloadOutlineRegular } = require('@deepseek-ai/dsh-client-ui-primitives')
 
 function h2(...args) {
   return react().createElement(...args)
@@ -880,7 +880,7 @@ export function AnalysisPage({
         type: 'button', className: 'ydo-secondary ydo-export',
         disabled: exporting, 'aria-busy': exporting, onClick: onExport,
       },
-      h2(IconDownloadOutline16, { size: 14 }),
+      h2(IconDownloadOutlineRegular, { size: 14 }),
       h2('span', null, exporting ? t('exporting') : t('exportAnalysis')))),
 
     account ? h2('header', { className: 'ydo-an-head' },

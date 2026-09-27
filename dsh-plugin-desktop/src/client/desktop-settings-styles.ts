@@ -454,6 +454,9 @@ const CSS = `
 }
 `
 
+/** The 0.1.7 settings markup uses the desktop class prefix. */
+const ACTIVE_CSS = CSS.replaceAll('sensteedAgentSettings', 'dshDesktopSettings')
+
 /** Install one scoped stylesheet; tolerate headless Client boot. */
 export function installDesktopSettingsStyles(): () => void {
   if (typeof document === 'undefined') return () => {}
@@ -461,7 +464,7 @@ export function installDesktopSettingsStyles(): () => void {
   if (existing !== null) return () => {}
   const style = document.createElement('style')
   style.id = STYLE_ID
-  style.textContent = CSS
+  style.textContent = ACTIVE_CSS
   document.head.appendChild(style)
   return () => { style.remove() }
 }

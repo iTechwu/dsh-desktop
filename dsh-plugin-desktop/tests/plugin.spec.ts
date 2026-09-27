@@ -70,7 +70,9 @@ const config = {
   windowsMaterial: { get: () => 'off' as const },
   linuxMaterial: { get: () => 'off' as const },
   port: { get: () => 43_120 },
+  openBrowser: { get: () => false },
   networkExposure: { get: () => 'loopback' as const },
+  logLevel: { get: () => 'info' as const },
   width: 1280,
   height: 840,
   minWidth: 900,
@@ -104,6 +106,7 @@ interface PluginHarness {
   lanHttps: DesktopLanHttpsRuntime
   setLanHttpsEnabled: ReturnType<typeof vi.fn<DesktopLanHttpsRuntime['setEnabled']>>
   requestRejection: ReturnType<typeof vi.fn<(request: ConnectionTrustRequest) => ConnectionRequestRejection>>
+  validateConfigCandidate(settings: DesktopSettings): void
   route(path: string): WebRoute | undefined
   routes(): readonly WebRoute[]
   notify(next: DesktopSettings, prev: DesktopSettings): Promise<void>
@@ -116,7 +119,6 @@ function createHarness(
   ordinaryBrowserEnabled = false,
 ): PluginHarness {
   let shell: DesktopShellSpec | undefined
-  let watcher: ((next: DesktopSettings, prev: DesktopSettings) => void | Promise<void>) | undefined
   const update = vi.fn(async (_patch: object) => {})
   const restart = vi.fn(async () => {})
   const setLocalePreference = vi.fn<(locale: LocaleId | undefined) => void>()
@@ -129,6 +131,9 @@ function createHarness(
   ) => ConnectionRequestRejection>(() => undefined)
   const routes = new Map<string, WebRoute>()
   const settingsUpdated = new Set<(namespace: unknown, next: unknown) => void>()
+  const settingsDocumentUpdated = new Set<(namespace: unknown, revision: unknown) => void>()
+  const volatileUpdated = new Set<() => void>()
+  const internalConfigUpdated = new Set<(raw: unknown, next: () => unknown) => void>()
   let localePreference: LocaleId | undefined
   let themePreference: ThemePreference = 'system'
   const browserAccess = createDesktopBrowserAccess(
@@ -142,6 +147,33 @@ function createHarness(
     url.pathname = '/'
     url.search = 'token=test-token'
     return url.href
+  })
+  const volatileConfigKeys = [
+    'mode',
+    'macosMaterial',
+    'windowsMaterial',
+    'linuxMaterial',
+    'port',
+    'openBrowser',
+    'networkExposure',
+    'logLevel',
+  ] as const
+  const applyVolatilePatch = (patch: Partial<DesktopSettings>): void => {
+    const liveConfig = config as unknown as Record<string, { get(): unknown }>
+    for (const key of volatileConfigKeys) {
+      if (key in patch) liveConfig[key] = { get: () => patch[key] }
+    }
+    for (const listener of volatileUpdated) listener()
+  }
+  applyVolatilePatch({
+    mode: 'compatibility',
+    macosMaterial: 'transparent',
+    windowsMaterial: 'off',
+    linuxMaterial: 'off',
+    port: 43_120,
+    openBrowser: ordinaryBrowserEnabled,
+    networkExposure: 'loopback',
+    logLevel: 'info',
   })
   const runtime: DesktopRuntime = {
     platform,
@@ -203,13 +235,20 @@ function createHarness(
         networkExposure: config.networkExposure,
         logLevel: 'info' as const,
       }),
-      watch: (callback: typeof watcher) => {
-        watcher = callback
-        return () => { watcher = undefined }
-      },
+      watch: () => () => {},
       update,
       replace: vi.fn(async () => {}),
     })),
+    describe: vi.fn(() => [
+      { ns: 'ui-theme', value: { preference: themePreference } },
+      { ns: 'locale', value: { preference: localePreference } },
+    ]),
+    configure: vi.fn(),
+    update: vi.fn(async (namespace: unknown, patch: Partial<DesktopSettings>) => {
+      if (String(namespace) !== 'desktop-shell') return
+      applyVolatilePatch(patch)
+      await update(patch)
+    }),
   }
   const ctx = {
     desktopRuntime: runtime,
@@ -233,6 +272,7 @@ function createHarness(
       if (String(key) === 'desktopRuntime') return runtime
       if (String(key) === 'desktopBrowserAccess') return browserAccess
       if (String(key) === 'desktopLanHttps') return lanHttps
+      if (String(key) === 'settings') return settings
       if (String(key) === 'dshHomePath') return (...segments: string[]) => join('/tmp', 'sensteed-agent-audit-tests', ...segments)
       return () => {}
     }),
@@ -245,8 +285,25 @@ function createHarness(
     effect: vi.fn((register: () => unknown) => register()),
     on: vi.fn((event: string, listener: (namespace: unknown, next: unknown) => void) => {
       if (event === 'settings/updated') settingsUpdated.add(listener)
-      return () => { settingsUpdated.delete(listener) }
+      if (event === 'settings/document-updated') {
+        settingsDocumentUpdated.add(listener as (namespace: unknown, revision: unknown) => void)
+      }
+      if (event === 'loader/volatile-update') volatileUpdated.add(listener as () => void)
+      if (event === 'internal/config') {
+        internalConfigUpdated.add(listener as (raw: unknown, next: () => unknown) => void)
+      }
+      return () => {
+        if (event === 'settings/updated') settingsUpdated.delete(listener)
+        if (event === 'settings/document-updated') {
+          settingsDocumentUpdated.delete(listener as (namespace: unknown, revision: unknown) => void)
+        }
+        if (event === 'loader/volatile-update') volatileUpdated.delete(listener as () => void)
+        if (event === 'internal/config') {
+          internalConfigUpdated.delete(listener as (raw: unknown, next: () => unknown) => void)
+        }
+      }
     }),
+    fiber: {},
   } as unknown as Context
   return {
     ctx,
@@ -263,16 +320,24 @@ function createHarness(
     lanHttps,
     setLanHttpsEnabled,
     requestRejection,
+    validateConfigCandidate: (candidate: DesktopSettings) => {
+      const owner = (ctx as { fiber?: unknown }).fiber
+      for (const listener of internalConfigUpdated) {
+        listener.call(owner, candidate, () => candidate)
+      }
+    },
     route: path => routes.get(path),
     routes: () => [...routes.values()],
-    notify: async (next, prev) => { await watcher?.(next, prev) },
+    notify: async (next) => { applyVolatilePatch(next) },
     notifyLocale: (preference) => {
       localePreference = preference
       for (const listener of settingsUpdated) listener(settingsNamespace('locale'), { preference })
+      for (const listener of settingsDocumentUpdated) listener(settingsNamespace('locale'), 1)
     },
     notifyTheme: (preference) => {
       themePreference = preference
       for (const listener of settingsUpdated) listener(settingsNamespace('ui-theme'), { preference })
+      for (const listener of settingsDocumentUpdated) listener(settingsNamespace('ui-theme'), 1)
     },
   }
 }
@@ -280,9 +345,10 @@ function createHarness(
 describe('desktop Host plugin', () => {
   it('defaults to compatibility mode and validates both schemas', () => {
     const defaults = Config({}) as unknown as Record<string, unknown>
-    expect(defaults.auditSyncEnabled).toBe(true)
+    expect(defaults.auditSyncEnabled).toHaveProperty('get')
+    expect((defaults.auditSyncEnabled as { get(): boolean }).get()).toBe(true)
     const overridden = Config({ auditSyncEnabled: false }) as unknown as Record<string, unknown>
-    expect(overridden.auditSyncEnabled).toBe(false)
+    expect((overridden.auditSyncEnabled as { get(): boolean }).get()).toBe(false)
     expect(DesktopSettingsSchema({} as DesktopSettings)).toEqual({
       mode: 'compatibility',
       macosMaterial: 'transparent',
@@ -400,9 +466,7 @@ describe('desktop Host plugin', () => {
       expect.objectContaining({ record: expect.any(Function), workspace: expect.any(Function) }),
     )
     expect(harness.route(YOOTUN_AUDIT_PATH)).toBeDefined()
-    const register = vi.mocked(harness.ctx.settings.register)
-    expect(register.mock.calls[0]?.[2]).toEqual(expect.objectContaining({ applies: 'restart' }))
-    expect(register.mock.calls[0]?.[2]).not.toHaveProperty('base')
+    expect(harness.ctx.settings.register).not.toHaveBeenCalled()
     expect(loaderAwait).not.toHaveBeenCalled()
     expect(harness.shell()).toEqual(expect.objectContaining({
       mode: 'compatibility',
@@ -707,9 +771,6 @@ describe('desktop Host plugin', () => {
   it('validates the effective Linux mode while a browser migration is deferred', () => {
     const harness = createHarness('linux')
     apply(harness.ctx, config)
-    const register = vi.mocked(harness.ctx.settings.register)
-    const options = register.mock.calls[0]?.[2]
-
     const settings: DesktopSettings = {
       mode: 'compatibility',
       macosMaterial: 'transparent',
@@ -720,19 +781,19 @@ describe('desktop Host plugin', () => {
       networkExposure: 'loopback',
       logLevel: 'info',
     }
-    expect(() => options?.validate?.({ ...settings, mode: 'advanced' })).toThrow(
+    expect(() => harness.validateConfigCandidate({ ...settings, mode: 'advanced' })).toThrow(
       'supported on macOS and Windows',
     )
-    expect(() => options?.validate?.({ ...settings, mode: 'extended' })).toThrow(
+    expect(() => harness.validateConfigCandidate({ ...settings, mode: 'extended' })).toThrow(
       'supported on macOS and Windows',
     )
-    expect(() => options?.validate?.({ ...settings, mode: 'compatibility' })).not.toThrow()
-    expect(() => options?.validate?.({
+    expect(() => harness.validateConfigCandidate({ ...settings, mode: 'compatibility' })).not.toThrow()
+    expect(() => harness.validateConfigCandidate({
       ...settings,
       mode: 'advanced',
       openBrowser: true,
     })).toThrow('browser access requires compatibility mode')
-    expect(() => options?.validate?.({
+    expect(() => harness.validateConfigCandidate({
       ...settings,
       mode: 'advanced',
       networkExposure: 'lan',
@@ -742,9 +803,8 @@ describe('desktop Host plugin', () => {
   it('accepts a deferred LAN preference independently of browser mode on supported platforms', () => {
     const harness = createHarness('darwin')
     apply(harness.ctx, config)
-    const options = vi.mocked(harness.ctx.settings.register).mock.calls[0]?.[2]
 
-    expect(() => options?.validate?.({
+    expect(() => harness.validateConfigCandidate({
       mode: 'advanced',
       macosMaterial: 'transparent',
       windowsMaterial: 'off',

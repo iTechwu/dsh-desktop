@@ -213,15 +213,14 @@ describe('mandatory DoFe access gate', () => {
   it('removes stale protocol routes whenever the selected protocol is saved', async () => {
     const source = await readFile(resolve(process.cwd(), 'src/client/DofeAccessSection.tsx'), 'utf8')
 
-    expect(source).toContain("const route = protocol === 'messages' ? 'dofe-messages' : protocol === 'responses' ? 'dofe-responses' : 'dofe-chat'")
-    expect(source).toContain("const api = protocol === 'messages' ? 'anthropic-messages' : protocol === 'responses' ? 'openai-responses' : 'openai-completions'")
+    expect(source).toContain('const route = dofeProviderRoute(protocol)')
+    expect(source).toContain('api: route.api')
     expect(source).toContain("{ op: 'unset', path: ['providers', 'dofe-chat'] }")
     expect(source).toContain("{ op: 'unset', path: ['providers', 'dofe-messages'] }")
     expect(source).toContain("{ op: 'unset', path: ['providers', 'dofe-responses'] }")
-    expect(source).toContain("value: protocol === 'responses' ? 'dofe-responses' : protocol === 'messages' ? 'dofe-messages' : 'dofe-chat'")
+    expect(source).toContain('value: route.id')
     expect(source).not.toContain("settingsApi.mutate('llm-deepseek'")
-    expect(source).toContain('DOFE_ANTHROPIC_BASE_URL')
-    expect(source).not.toContain("'https://ixicai.cn/anthropic'")
+    expect(source).toContain('baseURL: route.baseURL')
   })
 
   it('renders the protocol picker as a radiogroup above the merged model row', async () => {

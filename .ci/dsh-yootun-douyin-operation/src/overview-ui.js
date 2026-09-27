@@ -20,7 +20,7 @@ import { FilterSelect } from './select-ui.js'
 
 const React = require('react')
 const { createElement: h } = React
-const { IconDownloadOutline16 } = require('@deepseek-ai/dsh-client-ui-primitives')
+const { IconDownloadOutlineRegular } = require('@deepseek-ai/dsh-client-ui-primitives')
 
 // 万单位格式化（仅展示层换算，非口径）：≥1万 → x.x万，千分位分隔。
 export function formatWan(value) {
@@ -378,7 +378,7 @@ export function OverviewPage({
           'aria-busy': exporting,
           onClick: onExport,
         },
-        h(IconDownloadOutline16, { size: 14 }),
+        h(IconDownloadOutlineRegular, { size: 14 }),
         h('span', null, exporting ? t('exporting') : t('exportOverview'))),
         collecting ? h('span', { className: 'ydo-ov-collecting', role: 'status' }, t('collecting')) : null)),
 

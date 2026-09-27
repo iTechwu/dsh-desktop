@@ -13,7 +13,7 @@ import { BRAND_TENANT, BRAND_VARIANT } from '../generated-product-identity.ts'
 import { DOFE_ACCESS_KEY, type DofeAccessLocaleKey } from './dofe-access.ts'
 import { dofePluginsForBrand, normalizeDofePluginIds, DOFE_ACCESS_SETTINGS_NAMESPACE, DOFE_ACCESS_VALIDATION_VERSION, type DofeAccessSettings, type DofePluginId, DEFAULT_DOFE_PLUGIN_IDS } from '../dofe-plugins.ts'
 import { DOFE_ACCESS_MODELS_PATH, DOFE_ACCESS_VALIDATE_PATH } from '../dofe-access-route.ts'
-import { DEFAULT_DOFE_PROTOCOL, DOFE_ANTHROPIC_BASE_URL, normalizeDofeUiProtocol, parseDofeModelCatalog, UI_DOFE_PROTOCOLS, type DofeModel, type DofeProtocol } from '../dofe-models.ts'
+import { DEFAULT_DOFE_PROTOCOL, dofeProviderModelSpec, dofeProviderRoute, normalizeDofeUiProtocol, parseDofeModelCatalog, UI_DOFE_PROTOCOLS, type DofeModel, type DofeProtocol } from '../dofe-models.ts'
 
 const STYLE_ID = 'dsh-dofe-access-styles'
 const ACCESS_REQUEST_TIMEOUT_MS = 15000
@@ -173,6 +173,46 @@ export async function mutateDofeAccessSettings(settingsApi: SettingsApi, operati
     const result = await settingsApi.mutate(DOFE_ACCESS_SETTINGS_NAMESPACE, operations, access.revision)
     if (result.ok) return
     if (result.error.code !== 'settings/conflict' || attempt === 1) throw new Error(result.error.message)
+  }
+}
+
+/** Retry a settings write while a plugin route reload briefly removes its Remote. */
+async function mutateDofeAccessAfterReload(settingsApi: SettingsApi, operations: SettingsOperations): Promise<void> {
+  for (let attempt = 0; attempt < 6; attempt += 1) {
+    try {
+      await mutateDofeAccessSettings(settingsApi, operations)
+      return
+    } catch (cause) {
+      if (attempt === 5 || !(cause instanceof Error) || !cause.message.includes('HTTP 404')) throw cause
+      await delay(250 * 2 ** attempt)
+    }
+  }
+}
+
+/** Wait briefly for the Host to finish a config write before retrying. */
+function delay(ms: number): Promise<void> {
+  return new Promise(resolve => { setTimeout(resolve, ms) })
+}
+
+/**
+ * A provider-route change reloads composed entries. The reload can briefly
+ * make the settings Remote 404, so write immediate follow-ups after the Host
+ * accepts the next describe/mutate call.
+ */
+async function mutateSettingsAfterReload(settingsApi: SettingsApi, namespace: string, operations: SettingsOperations): Promise<void> {
+  for (let attempt = 0; attempt < 6; attempt += 1) {
+    try {
+      const described = await settingsApi.describe()
+      if (!described.ok) throw new Error(described.error.message)
+      const namespaceDescriptor = described.value.namespaces.find(item => item.ns === namespace)
+      if (namespaceDescriptor === undefined) throw new Error(`${namespace} unavailable`)
+      const result = await settingsApi.mutate(namespace, operations, namespaceDescriptor.revision)
+      if (result.ok) return
+      throw new Error(result.error.message)
+    } catch (cause) {
+      if (attempt === 5 || !(cause instanceof Error) || !cause.message.includes('HTTP 404')) throw cause
+      await delay(250 * 2 ** attempt)
+    }
   }
 }
 
@@ -364,48 +404,36 @@ function AccessForm({ credentials, settingsApi, settingsScope, t, onboarding, on
       const describe = await settingsApi.describe()
       if (!describe.ok) throw new Error(describe.error.message)
       const descriptor = describe.value.namespaces
-      const modelConfig = models.map(model => ({
-          id: model.id,
-          name: model.name,
-          ...(model.description === undefined ? {} : { description: model.description }),
-          ...(model.contextWindow === undefined ? {} : { contextWindow: model.contextWindow }),
-          ...(model.maxTokens === undefined ? {} : { maxTokens: model.maxTokens }),
-          inputModalities: model.inputModalities === undefined ? ['text'] : [...model.inputModalities],
-      }))
+      const modelConfig = models.map(dofeProviderModelSpec)
       const piAi = descriptor.find(item => item.ns === 'llm-pi-ai')
       if (piAi === undefined) throw new Error('llm-pi-ai unavailable')
-      const route = protocol === 'messages' ? 'dofe-messages' : protocol === 'responses' ? 'dofe-responses' : 'dofe-chat'
-      const api = protocol === 'messages' ? 'anthropic-messages' : protocol === 'responses' ? 'openai-responses' : 'openai-completions'
-      const displayName = protocol === 'messages' ? 'DoFe Anthropic Messages' : protocol === 'responses' ? 'DoFe OpenAI Responses' : 'DoFe OpenAI Chat'
-      const baseURL = protocol === 'messages' ? DOFE_ANTHROPIC_BASE_URL : 'https://ixicai.cn/api/v1'
-      const result = await settingsApi.mutate('llm-pi-ai', [
+      const route = dofeProviderRoute(protocol)
+      await mutateSettingsAfterReload(settingsApi, 'llm-pi-ai', [
         { op: 'unset', path: ['providers', 'dofe-chat'] },
         { op: 'unset', path: ['providers', 'dofe-messages'] },
         { op: 'unset', path: ['providers', 'dofe-responses'] },
-        { op: 'set', path: ['providers', route], value: {
-          displayName,
+        { op: 'set', path: ['providers', route.id], value: {
+          displayName: route.displayName,
           apiKeyEnv: DOFE_ACCESS_KEY,
-          api,
-          baseURL,
+          api: route.api,
+          baseURL: route.baseURL,
           headers: { 'X-Company-Code': BRAND_TENANT },
           models: modelConfig,
         } },
-      ], piAi.revision)
-      if (!result.ok) throw new Error(result.error.message)
+      ])
       if (key.length > 0) {
         const result = await credentials.set(DOFE_ACCESS_KEY, key)
         if (!result.ok) throw new Error(result.error.message)
       }
       const defaultModel = descriptor.find(item => item.ns === 'agent-default-model')
       if (defaultModel !== undefined) {
-        const result = await settingsApi.mutate('agent-default-model', [
-          { op: 'set', path: ['provider'], value: protocol === 'responses' ? 'dofe-responses' : protocol === 'messages' ? 'dofe-messages' : 'dofe-chat' },
+        await mutateSettingsAfterReload(settingsApi, 'agent-default-model', [
+          { op: 'set', path: ['provider'], value: route.id },
           { op: 'set', path: ['model'], value: selectedModel },
-        ], defaultModel.revision)
-        if (!result.ok) throw new Error(result.error.message)
+        ])
       }
       // Commit authorization last so partial configuration cannot unlock the application.
-      await mutateDofeAccessSettings(settingsApi, [
+      await mutateDofeAccessAfterReload(settingsApi, [
         { op: 'set', path: ['setupComplete'], value: true },
         { op: 'set', path: ['validationVersion'], value: DOFE_ACCESS_VALIDATION_VERSION },
         { op: 'set', path: ['enabledPlugins'], value: normalizeDofePluginIds(enabledPlugins, BRAND_VARIANT).filter(id => BRAND_VARIANT !== 'sensteed' || settings.value?.entitlements?.plugins.includes(id)) },

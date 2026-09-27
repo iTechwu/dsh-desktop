@@ -74,6 +74,7 @@ function packageVersion(packageRoot: string): string {
 
 const DSH_RUNTIME_VERSION = packageVersion(DSH_PACKAGE_ROOT)
 const PNPM_RUNTIME_VERSION = packageVersion(PNPM_PACKAGE_ROOT)
+const AGENT_PRESET_PACKAGE_ROOT = resolveRuntimePackageRoot('@deepseek-ai/dsh-agent-preset')
 
 /** Maximum physical file count accepted beside ASAR after smart unpack. */
 export const MAX_UNPACKED_RUNTIME_FILES = 3_000
@@ -119,6 +120,8 @@ export const ALLOWED_SMART_UNPACK_PACKAGE_PREFIXES = [
   'node_modules/@vscode/ripgrep-',
   'node_modules/lightningcss-',
   'node_modules/node-addon-require-builtin-',
+  // 0.1.7 speech-to-text chain ships platform-specific sherpa-onnx native builds.
+  'node_modules/sherpa-onnx-',
 ] as const
 
 /** Large platform runtime families intentionally kept outside the generic unpacked payload budget. */
@@ -134,11 +137,20 @@ export const REQUIRED_DSH_CLI_RUNTIME_ENTRIES = Object.freeze(
     .sort(),
 )
 
-/** PTC preset inputs selected by upstream's historical Session migration. */
-export const REQUIRED_AGENT_PRESET_RUNTIME_ENTRIES = [
-  'node_modules/@deepseek-ai/dsh-agent-presets/presets/ptc/agent.cordis.yml',
-  'node_modules/@deepseek-ai/dsh-agent-presets/presets/ptc/preset.yml',
-] as const
+/** Shipped Agent preset authoring skills used by the 0.1.7 preset registry. */
+export const REQUIRED_AGENT_PRESET_RUNTIME_ENTRIES = Object.freeze(
+  (function listSkillEntries(directory: string, relative = ''): string[] {
+    return readdirSync(directory, { withFileTypes: true }).flatMap(entry => {
+      const childRelative = relative === '' ? entry.name : `${relative}/${entry.name}`
+      if (entry.isDirectory()) {
+        return listSkillEntries(join(directory, entry.name), childRelative)
+      }
+      return entry.isFile()
+        ? [`node_modules/@deepseek-ai/dsh-agent-preset/skills/${childRelative}`]
+        : []
+    })
+  })(join(AGENT_PRESET_PACKAGE_ROOT, 'skills')).sort(),
+)
 
 /** AfterPack fields consumed without importing Electron Builder's incomplete declaration graph. */
 export interface PackagedRuntimeContext {

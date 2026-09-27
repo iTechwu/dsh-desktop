@@ -124,8 +124,8 @@ async function launchElectron(workspacePath?: string): Promise<number> {
   // a running instance receives this command line, and a space separated value
   // is torn away from its flag when Chromium rebuilds that command line.
   const args = workspacePath === undefined
-    ? [mainPath]
-    : [mainPath, `${DESKTOP_WORKSPACE_ARGUMENT}=${workspacePath}`]
+    ? ['--expose-internals', mainPath]
+    : ['--expose-internals', mainPath, `${DESKTOP_WORKSPACE_ARGUMENT}=${workspacePath}`]
   return new Promise<number>((resolveExit, reject) => {
     const child = spawn(electronPath, args, {
       stdio: 'inherit',

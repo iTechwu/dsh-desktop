@@ -97,6 +97,11 @@
     - id: dofe-opencli
       name: dsh-plugin-desktop/dofe-opencli
 
+# Keep the Desktop pipeline contract (`ci_validate` + `.dsh/ci.yml`-backed
+# `ci_run`) and retire the 0.1.7 gate-only native twin to avoid a duplicate.
+- id: tool-ci
+  disabled: true
+
 # DoFe owns the model route in the Desktop distribution. The upstream adapter
 # remains in place, but Desktop fixes its single managed key and endpoint.
 - id: llm-deepseek

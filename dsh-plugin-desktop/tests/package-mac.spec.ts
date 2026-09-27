@@ -66,6 +66,8 @@ describe('macOS DMG smoke packaging', () => {
       command: '/usr/local/bin/node',
       args: [
         '/repo/node_modules/electron-builder/cli.js',
+        '--config',
+        'electron-builder.json',
         '--mac',
         'dmg',
         '--universal',
@@ -113,6 +115,8 @@ describe('macOS DMG smoke packaging', () => {
     expect(calls).toHaveLength(2)
     expect(calls[0]?.args).toEqual([
       '/repo/node_modules/electron-builder/cli.js',
+      '--config',
+      'electron-builder.json',
       '--mac',
       'dmg',
       '--universal',
@@ -163,7 +167,7 @@ describe('macOS DMG smoke packaging', () => {
   it.each([
     ['win32', 'arm64', '22.23.2', 'native macOS host'],
     ['darwin', 'ia32', '22.23.2', 'requires x64 or arm64 Node'],
-    ['darwin', 'arm64', '25.0.0', 'Node 22.19+ or Node 24+'],
+    ['darwin', 'arm64', '23.0.0', 'Node 22.19+ or Node 24+'],
   ] as const)(
     'rejects unsupported host %s/%s with Node %s before running commands',
     (platform, arch, nodeVersion, message) => {

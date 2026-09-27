@@ -60,13 +60,16 @@ describe('packaged dsh bootstrap', () => {
     await expect(runDesktopDshCli({}, load, ['node', 'desktop-cli', '--dump-config'])).rejects.toBe(failure)
   })
 
-  it('reads user files physically before the unpacked CLI starts', async () => {
+  it('disables ASAR before the version shortcut and a normal CLI import', async () => {
     const asarProcess: { noAsar?: boolean } = {}
     const load = vi.fn(async () => {
       expect(asarProcess.noAsar).toBe(true)
       return { runCli: async () => {} }
     })
     await runDesktopDshCli({}, load, ['node', 'desktop-cli', '--version'], undefined, asarProcess)
+    expect(asarProcess.noAsar).toBe(true)
+    expect(load).not.toHaveBeenCalled()
+    await runDesktopDshCli({}, load, ['node', 'desktop-cli', '--dump-config'], undefined, asarProcess)
     expect(load).toHaveBeenCalledOnce()
   })
 

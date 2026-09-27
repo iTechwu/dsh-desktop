@@ -85,7 +85,7 @@ import {
 import { LogFileSink } from './log-files.ts'
 import { maskSecrets } from './mask-secrets.ts'
 import { resolveDesktopShellEnvironment } from './shell-environment.ts'
-import { installProfilePackageResolver } from './module-resolution.ts'
+import { desktopInternalModuleLoader, installProfilePackageResolver } from './module-resolution.ts'
 import { packagedDependencyPath } from './packaged-runtime-path.ts'
 import {
   beginDesktopProfileStartup,
@@ -139,6 +139,7 @@ import { routeDesktopStartupFailure } from './startup-failure-routing.ts'
 import { DesktopStartupGeneration } from './startup-generation.ts'
 import {
   desktopInstallAnchor,
+  desktopProfileContext,
   healDesktopProfileModuleFallback,
   prepareDesktopProfile,
   type SkippedOptionalEntry,
@@ -656,7 +657,10 @@ async function start(): Promise<void> {
   }, electronLogger, undefined, undefined, installationId)
   const finalExit = (code: number): void => { nativeExit.finish(code) }
   shutdown = createDesktopShutdown(
-    async () => { await generation.release() },
+    async () => {
+      await generation.release()
+      await runtime.release()
+    },
     finalExit,
   )
   const requestQuit = (code: number): void => { void shutdown.request(code) }
@@ -1710,7 +1714,7 @@ async function start(): Promise<void> {
         async (hostCtx) => {
           // Keep Host imports and browser bundle discovery on the same public
           // profile-overlay resolver used by packaged Electron.
-          hostCtx.loader.internal = undefined
+          hostCtx.loader.internal = desktopInternalModuleLoader()
           generation.bindHost(hostCtx)
           hostCtx.effect(
             () => async () => { await flushProfilePreferencesWrites() },
@@ -1735,6 +1739,9 @@ async function start(): Promise<void> {
           hostCtx.provide('desktopLanHttps', lanHttps)
           hostCtx.provide('desktopRuntime', runtime)
           hostCtx.provide('desktopPnpmBootstrap', desktopPnpmBootstrap)
+          // 0.1.7 settings/config-editor rows wait on profileContext; supply the
+          // same launch facts the CLI profile boot provides.
+          hostCtx.provide('profileContext', desktopProfileContext(prepared, activeProfileName))
           await hostCtx.plugin(DesktopActionsService, {
             openTerminal: () => { runtime.openTerminal() },
             requestRestart: () => runtime.requestRestart(),

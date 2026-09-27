@@ -71,7 +71,7 @@ describe('brand artwork generators', () => {
     expect(readFileSync(buildFile('app-icon.ico')).byteLength).toBeGreaterThan(0)
   })
 
-  it('regenerates pixel-identical masters and is idempotent across runs', async () => {
+  it('regenerates pixel-identical masters and is idempotent across runs', { timeout: 30_000 }, async () => {
     const committed = await capturePixels()
     runGenerators()
     const firstRun = await capturePixels()

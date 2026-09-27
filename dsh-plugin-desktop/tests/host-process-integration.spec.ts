@@ -12,7 +12,9 @@ import { HostRpc } from '../src/host-rpc.ts'
 import { bindNativeRuntime, runtimeSnapshot } from '../src/host-runtime-bridge.ts'
 import type { DesktopRuntime, DesktopShellSpec } from '../src/runtime.ts'
 
-it.each(['disabled', 'missing', 'installed'] as const)('boots a separate Web Host with client plugins (AA provider: %s)', async aaProvider => {
+const canForkHost = process.platform !== "linux" || process.env.DISPLAY !== undefined || process.env.WAYLAND_DISPLAY !== undefined
+
+it.skipIf(!canForkHost).each(["disabled", "missing", "installed"] as const)('boots a separate Web Host with client plugins (AA provider: %s)', async aaProvider => {
   const aaRequested = aaProvider !== 'disabled'
   const aaEnabled = aaProvider === 'installed'
   const home = mkdtempSync(join(tmpdir(), 'dsh-isolated-host-'))
@@ -56,7 +58,7 @@ it.each(['disabled', 'missing', 'installed'] as const)('boots a separate Web Hos
     pnpm = installDesktopPnpmRuntime({ platform: process.platform, appExecutable: process.execPath, pnpmBinPath,
       electronVersion, stateDir: join(home, 'runtime'), environment: process.env })
     child = fork(fileURLToPath(new URL('./fixtures/isolated-host/child.mjs', import.meta.url)), [], {
-      execArgv: [], stdio: ['ignore', 'pipe', 'pipe', 'ipc'], serialization: 'advanced',
+      execArgv: ['--expose-internals'], stdio: ['ignore', 'pipe', 'pipe', 'ipc'], serialization: 'advanced',
     })
     child.stderr?.on('data', data => { stderr += String(data) })
     const [ready] = await once(child, 'message')

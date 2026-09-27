@@ -196,8 +196,8 @@ describe('Windows x64 installer packaging', () => {
 
     packageWindowsArtifact(value, 'zip', 'portable archive')
 
-    expect(calls).toHaveLength(2)
-    expect(calls[0]?.args.at(-1)).toBe('--config.win.compression=store')
+    expect(calls).toHaveLength(3)
+    expect(calls[1]?.args.at(-1)).toBe('--config.win.compression=store')
     expect(logs).toContain('Packaging the portable archive with store compression.')
   })
 

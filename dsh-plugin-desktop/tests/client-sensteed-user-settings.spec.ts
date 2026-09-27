@@ -58,7 +58,7 @@ it('registers user settings before General so each normal settings open defaults
   const register = vi.fn()
   const bind = vi.fn(() => (key: keyof typeof DOFE_ACCESS_COPY.zh) => DOFE_ACCESS_COPY.zh[key])
   applyDofeAccess({
-    effect: vi.fn(), locale: { bind }, settingsScope: { bind: vi.fn() }, remote: {},
+    effect: vi.fn(), locale: { bind }, configForms: { get: () => ({}) }, remote: {},
     slots: { inject: (_name: string, callback: () => void) => callback(), register },
   } as never)
   const section = register.mock.calls.find(([options]) => options.name === 'settings.section')![0]

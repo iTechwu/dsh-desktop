@@ -23,6 +23,7 @@ export function createHostRuntime(rpc: HostRpc, snapshot: RuntimeSnapshot): Desk
   const trayPublishers = new Map<string, () => Promise<void>>()
   const trackSetup = (task: Promise<unknown>) => { if (booting) setup.push(task) }
   const shellSpecs = new Map<string, DesktopShellSpec>()
+  let shellId: string | undefined
   const send = <T = void>(method: string, args: unknown[] = [], signal?: AbortSignal): Promise<T> => {
     const interactive = ['update:confirmDownload', 'update:showManualCheckResult', 'update:downloadAndOpen',
       'native:pickDirectory', 'native:pickFile', 'native:exportDiagnostics', 'native:confirmRestart'].includes(method)
@@ -68,9 +69,19 @@ export function createHostRuntime(rpc: HostRpc, snapshot: RuntimeSnapshot): Desk
         ...(spec.enableRemoteControl ? { remoteEnable: spec.enableRemoteControl } : {}),
       })
       const { readLocalePreference, readThemeSource, requestQuit: _quit, requestModeChange: _mode, readRemoteControl: _remoteRead, enableRemoteControl: _remoteEnable, ...data } = spec
-      shellSpecs.set(callback.id, spec)
-      trackSetup(send('shell:schedule', [callback.id, data, readLocalePreference(), readThemeSource(), Boolean(spec.readRemoteControl && spec.enableRemoteControl)]))
-      return async () => { try { await send('shell:dispose', [callback.id]) } finally { shellSpecs.delete(callback.id); callback.release() } }
+      if (shellId === undefined) {
+        shellId = callback.id
+        shellSpecs.set(shellId, spec)
+        trackSetup(send('shell:schedule', [shellId, data, readLocalePreference(), readThemeSource(), Boolean(spec.readRemoteControl && spec.enableRemoteControl)]))
+      } else {
+        shellSpecs.set(shellId, spec)
+        callback.release()
+      }
+      return async () => {
+        if (shellId !== callback.id) return
+        try { await send('shell:dispose', [callback.id]) }
+        finally { shellSpecs.delete(callback.id); shellId = undefined; callback.release() }
+      }
     },
     // The parent mounts only after Host boot and this barrier finish.
     async mountScheduled() {

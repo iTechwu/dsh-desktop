@@ -9,7 +9,7 @@ overrides:
 
 patchedDependencies:
   app-builder-lib@26.15.7: 85e8d51fba419b223d4312c090fd64bfc70e551a48d10cc30328474d7e2d8b2f
-  dshmarket@1.39.0: 3bc46b1b0e5a4ed0906580c0905ee109b98178769c517fda651b68cd79900cc2
+  dshmarket@1.39.0: b2dda1351f3f7b4b383baf62aa51146dc8598a4fa345b83683e4627ffa0c11dc
   open@11.0.1: 383484d0b84b1bb856145936155333d024f1dfc5d6eaf86104b2a00bac8e8612
 
 importers:
@@ -63,9 +63,6 @@ importers:
       '@deepseek-ai/dsh-agent-loop-testkit':
         specifier: workspace:*
         version: link:../deepseek-harness/packages/test-support/agent-loop-testkit
-      '@deepseek-ai/dsh-agent-presets':
-        specifier: workspace:*
-        version: link:../deepseek-harness/packages/preset/agent-presets
       '@deepseek-ai/dsh-agent-tool-presentation':
         specifier: workspace:*
         version: link:../deepseek-harness/packages/core/agent-tool-presentation
@@ -828,18 +825,27 @@ importers:
       '@deepseek-ai/dsh-agent-loop':
         specifier: workspace:*
         version: link:../deepseek-harness/packages/core/agent-loop
-      '@deepseek-ai/dsh-agent-presets':
+      '@deepseek-ai/dsh-agent-preset':
         specifier: workspace:*
-        version: link:../deepseek-harness/packages/preset/agent-presets
+        version: link:../deepseek-harness/packages/preset/agent-preset
+      '@deepseek-ai/dsh-agent-preset-registry':
+        specifier: workspace:*
+        version: link:../deepseek-harness/packages/preset/agent-preset-registry
       '@deepseek-ai/dsh-agent-tool-presentation':
         specifier: workspace:*
         version: link:../deepseek-harness/packages/core/agent-tool-presentation
       '@deepseek-ai/dsh-anonymous-user-id':
         specifier: workspace:*
         version: link:../deepseek-harness/packages/identity/anonymous-user-id
+      '@deepseek-ai/dsh-api-account-controller':
+        specifier: workspace:*
+        version: link:../deepseek-harness/packages/api/account-controller
       '@deepseek-ai/dsh-api-gateway':
         specifier: workspace:*
         version: link:../deepseek-harness/packages/api/gateway
+      '@deepseek-ai/dsh-api-job-controller':
+        specifier: workspace:*
+        version: link:../deepseek-harness/packages/api/job-controller
       '@deepseek-ai/dsh-api-remotes':
         specifier: workspace:*
         version: link:../deepseek-harness/packages/api/remotes
@@ -849,6 +855,9 @@ importers:
       '@deepseek-ai/dsh-api-settings-controller':
         specifier: workspace:*
         version: link:../deepseek-harness/packages/api/settings-controller
+      '@deepseek-ai/dsh-api-terminal-controller':
+        specifier: workspace:*
+        version: link:../deepseek-harness/packages/api/terminal-controller
       '@deepseek-ai/dsh-api-workspace-controller':
         specifier: workspace:*
         version: link:../deepseek-harness/packages/api/workspace-controller
@@ -984,6 +993,12 @@ importers:
       '@deepseek-ai/dsh-client-ui-settings':
         specifier: workspace:*
         version: link:../deepseek-harness/packages/client/ui-settings
+      '@deepseek-ai/dsh-client-ui-settings-account':
+        specifier: workspace:*
+        version: link:../deepseek-harness/packages/client/ui-settings-account
+      '@deepseek-ai/dsh-client-ui-settings-agent-loop':
+        specifier: workspace:*
+        version: link:../deepseek-harness/packages/client/ui-settings-agent-loop
       '@deepseek-ai/dsh-client-ui-settings-general':
         specifier: workspace:*
         version: link:../deepseek-harness/packages/client/ui-settings-general
@@ -996,9 +1011,21 @@ importers:
       '@deepseek-ai/dsh-client-ui-settings-plugins':
         specifier: workspace:*
         version: link:../deepseek-harness/packages/client/ui-settings-plugins
+      '@deepseek-ai/dsh-client-ui-settings-shell':
+        specifier: workspace:*
+        version: link:../deepseek-harness/packages/client/ui-settings-shell
+      '@deepseek-ai/dsh-client-ui-settings-subagent':
+        specifier: workspace:*
+        version: link:../deepseek-harness/packages/client/ui-settings-subagent
+      '@deepseek-ai/dsh-client-ui-settings-web-search':
+        specifier: workspace:*
+        version: link:../deepseek-harness/packages/client/ui-settings-web-search
       '@deepseek-ai/dsh-client-ui-sidebar':
         specifier: workspace:*
         version: link:../deepseek-harness/packages/client/ui-sidebar
+      '@deepseek-ai/dsh-client-ui-sidebar-browser':
+        specifier: workspace:*
+        version: link:../deepseek-harness/packages/client/ui-sidebar-browser
       '@deepseek-ai/dsh-client-ui-sidebar-documentpreview':
         specifier: workspace:*
         version: link:../deepseek-harness/packages/client/ui-sidebar-documentpreview
@@ -1008,6 +1035,9 @@ importers:
       '@deepseek-ai/dsh-client-ui-sidebar-right':
         specifier: workspace:*
         version: link:../deepseek-harness/packages/client/ui-sidebar-right
+      '@deepseek-ai/dsh-client-ui-sidebar-terminal':
+        specifier: workspace:*
+        version: link:../deepseek-harness/packages/client/ui-sidebar-terminal
       '@deepseek-ai/dsh-client-ui-skill':
         specifier: workspace:*
         version: link:../deepseek-harness/packages/client/ui-skill
@@ -1062,6 +1092,9 @@ importers:
       '@deepseek-ai/dsh-compaction-tool-result-pruner':
         specifier: workspace:*
         version: link:../deepseek-harness/packages/compaction/compaction-tool-result-pruner
+      '@deepseek-ai/dsh-config-editor':
+        specifier: workspace:*
+        version: link:../deepseek-harness/packages/boot/config-editor
       '@deepseek-ai/dsh-cordis-client-runner':
         specifier: workspace:*
         version: link:../deepseek-harness/packages/extensions/cordis-client-runner
@@ -1074,6 +1107,12 @@ importers:
       '@deepseek-ai/dsh-credentials-local':
         specifier: workspace:*
         version: link:../deepseek-harness/packages/credentials/credentials-local
+      '@deepseek-ai/dsh-deepseek-account':
+        specifier: workspace:*
+        version: link:../deepseek-harness/packages/credentials/deepseek-account
+      '@deepseek-ai/dsh-deepseek-account-platform':
+        specifier: workspace:*
+        version: link:../deepseek-harness/packages/credentials/deepseek-account-platform
       '@deepseek-ai/dsh-deepseek-llm-api-extensions':
         specifier: workspace:*
         version: link:../deepseek-harness/packages/llm/deepseek-llm-api-extensions
@@ -1083,6 +1122,12 @@ importers:
       '@deepseek-ai/dsh-experimental-agent-team':
         specifier: workspace:*
         version: link:../deepseek-harness/packages/experimental/agent-team
+      '@deepseek-ai/dsh-experimental-api-speech-to-text':
+        specifier: workspace:*
+        version: link:../deepseek-harness/packages/experimental/api-speech-to-text
+      '@deepseek-ai/dsh-experimental-speech-to-text':
+        specifier: workspace:*
+        version: link:../deepseek-harness/packages/experimental/speech-to-text
       '@deepseek-ai/dsh-file-reference':
         specifier: workspace:*
         version: link:../deepseek-harness/packages/context/file-reference
@@ -1110,6 +1155,9 @@ importers:
       '@deepseek-ai/dsh-headless':
         specifier: workspace:*
         version: link:../deepseek-harness/packages/bundle/headless
+      '@deepseek-ai/dsh-hmr':
+        specifier: workspace:*
+        version: link:../deepseek-harness/packages/boot/hmr
       '@deepseek-ai/dsh-home-paths':
         specifier: workspace:*
         version: link:../deepseek-harness/packages/util/home-paths
@@ -1176,12 +1224,18 @@ importers:
       '@deepseek-ai/dsh-mcp-client':
         specifier: workspace:*
         version: link:../deepseek-harness/packages/mcp/mcp-client
+      '@deepseek-ai/dsh-mcp-resources':
+        specifier: workspace:*
+        version: link:../deepseek-harness/packages/mcp/mcp-resources
       '@deepseek-ai/dsh-message-feedback':
         specifier: workspace:*
         version: link:../deepseek-harness/packages/feedback/message-feedback
       '@deepseek-ai/dsh-native-command':
         specifier: workspace:*
         version: link:../deepseek-harness/packages/util/native-command
+      '@deepseek-ai/dsh-office-to-pdf':
+        specifier: workspace:*
+        version: link:../deepseek-harness/packages/document/office-to-pdf
       '@deepseek-ai/dsh-output-retention':
         specifier: workspace:*
         version: link:../deepseek-harness/packages/util/output-retention
@@ -1194,6 +1248,9 @@ importers:
       '@deepseek-ai/dsh-plan-mode':
         specifier: workspace:*
         version: link:../deepseek-harness/packages/plan/plan-mode
+      '@deepseek-ai/dsh-plugin-manager':
+        specifier: workspace:*
+        version: link:../deepseek-harness/packages/boot/plugin-manager
       '@deepseek-ai/dsh-plugin-package-inventory-deepseek':
         specifier: workspace:*
         version: link:../deepseek-harness/packages/llm/plugin-package-inventory-deepseek
@@ -1497,9 +1554,15 @@ importers:
       '@deepseek-ai/dsh-workflow':
         specifier: workspace:*
         version: link:../deepseek-harness/packages/workflow/workflow
+      '@deepseek-ai/dsh-workflow-ptc':
+        specifier: workspace:*
+        version: link:../deepseek-harness/packages/workflow/workflow-ptc
       '@deepseek-ai/dsh-workspace':
         specifier: workspace:*
         version: link:../deepseek-harness/packages/workspace/workspace
+      '@deepseek-ai/dsh-workspace-changes':
+        specifier: workspace:*
+        version: link:../deepseek-harness/packages/deliverables/workspace-changes
       '@deepseek-ai/schemastery':
         specifier: workspace:*
         version: link:../deepseek-harness/vendor/schemastery
@@ -1625,7 +1688,7 @@ importers:
         version: 0.3.6(react@18.3.1)
       '@linxin666/dsh-web-ui-all':
         specifier: 0.3.6
-        version: 0.3.6(36d39c6202961086db60aa43585305b3)
+        version: 0.3.6(310e78ff6ef59064b64fb918fad2e1c9)
       '@mlgbnb/dsh-archive-manager':
         specifier: 1.0.7
         version: 1.0.7(react@18.3.1)
@@ -1643,13 +1706,13 @@ importers:
         version: 4.0.3
       dsh-better-sidebar:
         specifier: 0.15.2
-        version: 0.15.2(5f2afa9efeaaad04e24a68f689506cfa)
+        version: 0.15.2(9b3a758132d3bc267846fc87e8bf8bd6)
       dsh-community-market:
         specifier: 0.1.0-dev.0
         version: link:../dsh-community-market
       dshmarket:
         specifier: 1.39.0
-        version: 1.39.0(patch_hash=3bc46b1b0e5a4ed0906580c0905ee109b98178769c517fda651b68cd79900cc2)(@deepseek-ai/cordis@deepseek-harness+vendor+cordis)(@deepseek-ai/dsh-settings@deepseek-harness+packages+settings+settings)(@deepseek-ai/schemastery@deepseek-harness+vendor+schemastery)
+        version: 1.39.0(patch_hash=b2dda1351f3f7b4b383baf62aa51146dc8598a4fa345b83683e4627ffa0c11dc)(@deepseek-ai/cordis@deepseek-harness+vendor+cordis)(@deepseek-ai/dsh-settings@deepseek-harness+packages+settings+settings)(@deepseek-ai/schemastery@deepseek-harness+vendor+schemastery)
       fs-ext:
         specifier: 2.1.1
         version: 2.1.1
@@ -2176,6 +2239,21 @@ packages:
       '@deepseek-ai/dsh-invariants': ^0.1.0-rc.8
       '@deepseek-ai/dsh-llm': ^0.1.0-rc.8
       '@deepseek-ai/dsh-settings': ^0.1.0-rc.8
+
+  '@deepseek-ai/dsh-agent-presets@0.1.0-rc.8':
+    resolution: {integrity: sha512-7h+kE0KDrJCk2Y8GAqF4fu4YqZmFi5U8/AarFkGUqRI3HDugD6oYf05c7ZWNF7lQXh1OmwmrSbuPhT/YXJapOg==}
+    peerDependencies:
+      '@deepseek-ai/cordis': ^4.0.1
+      '@deepseek-ai/cordis-plugin-include': ^1.0.6
+      '@deepseek-ai/cordis-plugin-loader': ^1.0.2
+      '@deepseek-ai/dsh-agent': ^0.1.0-rc.8
+      '@deepseek-ai/dsh-atomic-write': ^0.1.0-rc.8
+      '@deepseek-ai/dsh-home-paths': ^0.1.0-rc.8
+      '@deepseek-ai/dsh-invariants': ^0.1.0-rc.8
+      '@deepseek-ai/dsh-scope': ^0.1.0-rc.8
+      '@deepseek-ai/dsh-session': ^0.1.0-rc.8
+      '@deepseek-ai/dsh-settings': ^0.1.0-rc.8
+      '@deepseek-ai/dsh-system-prompt': ^0.1.0-rc.8
 
   '@deepseek-ai/dsh-agent@0.1.0-rc.8':
     resolution: {integrity: sha512-fOl46ZvzoYHalrlyfOJAHNhzyKeVDTUnZZKNSJEr9GY/98WJTjcV21agVEofTXldkJ7a/ws2HpJkVNJVFMtslg==}
@@ -7584,6 +7662,22 @@ snapshots:
       '@deepseek-ai/dsh-settings': 0.1.0-rc.8(@deepseek-ai/cordis@deepseek-harness+vendor+cordis)(@deepseek-ai/dsh-brand@0.1.0-rc.8(@deepseek-ai/cordis@deepseek-harness+vendor+cordis)(@deepseek-ai/dsh-invariants@deepseek-harness+packages+runtime-diagnostics+invariants))(@deepseek-ai/dsh-invariants@deepseek-harness+packages+runtime-diagnostics+invariants)(@deepseek-ai/schemastery@3.18.2)
       '@deepseek-ai/schemastery': 3.18.2
 
+  '@deepseek-ai/dsh-agent-presets@0.1.0-rc.8(@deepseek-ai/cordis-plugin-include@deepseek-harness+vendor+include)(@deepseek-ai/cordis-plugin-loader@deepseek-harness+vendor+loader)(@deepseek-ai/cordis@deepseek-harness+vendor+cordis)(@deepseek-ai/dsh-agent@deepseek-harness+packages+core+agent)(@deepseek-ai/dsh-atomic-write@deepseek-harness+packages+util+atomic-write)(@deepseek-ai/dsh-home-paths@deepseek-harness+packages+util+home-paths)(@deepseek-ai/dsh-invariants@deepseek-harness+packages+runtime-diagnostics+invariants)(@deepseek-ai/dsh-scope@deepseek-harness+packages+core+scope)(@deepseek-ai/dsh-session@deepseek-harness+packages+core+session)(@deepseek-ai/dsh-settings@deepseek-harness+packages+settings+settings)(@deepseek-ai/dsh-system-prompt@deepseek-harness+packages+core+system-prompt)':
+    dependencies:
+      '@deepseek-ai/cordis': link:deepseek-harness/vendor/cordis
+      '@deepseek-ai/cordis-plugin-include': link:deepseek-harness/vendor/include
+      '@deepseek-ai/cordis-plugin-loader': link:deepseek-harness/vendor/loader
+      '@deepseek-ai/dsh-agent': link:deepseek-harness/packages/core/agent
+      '@deepseek-ai/dsh-atomic-write': link:deepseek-harness/packages/util/atomic-write
+      '@deepseek-ai/dsh-home-paths': link:deepseek-harness/packages/util/home-paths
+      '@deepseek-ai/dsh-invariants': link:deepseek-harness/packages/runtime-diagnostics/invariants
+      '@deepseek-ai/dsh-scope': link:deepseek-harness/packages/core/scope
+      '@deepseek-ai/dsh-session': link:deepseek-harness/packages/core/session
+      '@deepseek-ai/dsh-settings': link:deepseek-harness/packages/settings/settings
+      '@deepseek-ai/dsh-system-prompt': link:deepseek-harness/packages/core/system-prompt
+      '@deepseek-ai/schemastery': 3.18.2
+      js-yaml: 4.3.1
+
   '@deepseek-ai/dsh-agent@0.1.0-rc.8(44504ab6ff21b9afb6c7be24dcba1d00)':
     dependencies:
       '@deepseek-ai/cordis': link:deepseek-harness/vendor/cordis
@@ -7594,11 +7688,11 @@ snapshots:
       '@deepseek-ai/dsh-system-prompt': link:deepseek-harness/packages/core/system-prompt
       '@deepseek-ai/dsh-typert-protocol': link:deepseek-harness/packages/typert/protocol
 
-  '@deepseek-ai/dsh-api-remotes@0.1.0-rc.8(44be3de613f014351866629d233c9f46)':
+  '@deepseek-ai/dsh-api-remotes@0.1.0-rc.8(53c5ec3d4318bdb22b3287f0e99be35d)':
     dependencies:
       '@deepseek-ai/cordis': link:deepseek-harness/vendor/cordis
       '@deepseek-ai/dsh-agent': 0.1.0-rc.8(44504ab6ff21b9afb6c7be24dcba1d00)
-      '@deepseek-ai/dsh-agent-presets': link:deepseek-harness/packages/preset/agent-presets
+      '@deepseek-ai/dsh-agent-presets': 0.1.0-rc.8(@deepseek-ai/cordis-plugin-include@deepseek-harness+vendor+include)(@deepseek-ai/cordis-plugin-loader@deepseek-harness+vendor+loader)(@deepseek-ai/cordis@deepseek-harness+vendor+cordis)(@deepseek-ai/dsh-agent@deepseek-harness+packages+core+agent)(@deepseek-ai/dsh-atomic-write@deepseek-harness+packages+util+atomic-write)(@deepseek-ai/dsh-home-paths@deepseek-harness+packages+util+home-paths)(@deepseek-ai/dsh-invariants@deepseek-harness+packages+runtime-diagnostics+invariants)(@deepseek-ai/dsh-scope@deepseek-harness+packages+core+scope)(@deepseek-ai/dsh-session@deepseek-harness+packages+core+session)(@deepseek-ai/dsh-settings@deepseek-harness+packages+settings+settings)(@deepseek-ai/dsh-system-prompt@deepseek-harness+packages+core+system-prompt)
       '@deepseek-ai/dsh-api-gateway': link:deepseek-harness/packages/api/gateway
       '@deepseek-ai/dsh-commands': 0.1.0-rc.8(63ce1ef30715a668f09dcb67215a9b8f)
       '@deepseek-ai/dsh-cordis-host-runner': link:deepseek-harness/packages/extensions/cordis-host-runner
@@ -7627,7 +7721,7 @@ snapshots:
       '@deepseek-ai/cordis': link:deepseek-harness/vendor/cordis
       '@deepseek-ai/dsh-invariants': link:deepseek-harness/packages/runtime-diagnostics/invariants
 
-  '@deepseek-ai/dsh-client-runtime@0.1.0-rc.8(e53fcf12f553745b26c3f2dafb0d8082)':
+  '@deepseek-ai/dsh-client-runtime@0.1.0-rc.8(b1f29eeda6bddce9852c80278fb1e3ee)':
     dependencies:
       '@deepseek-ai/cordis': link:deepseek-harness/vendor/cordis
       '@deepseek-ai/dsh-agent': link:deepseek-harness/packages/core/agent
@@ -7635,7 +7729,7 @@ snapshots:
       '@deepseek-ai/dsh-attachment': link:deepseek-harness/packages/attachment/attachment
       '@deepseek-ai/dsh-client-connection': link:deepseek-harness/packages/client/connection
       '@deepseek-ai/dsh-commands': link:deepseek-harness/packages/interaction/commands
-      '@deepseek-ai/dsh-host-apiproxy': 0.1.0-rc.8(352ee60de44af771668fdecdb0793509)
+      '@deepseek-ai/dsh-host-apiproxy': 0.1.0-rc.8(5f133863d5032be1c61cf821f5fe4ceb)
       '@deepseek-ai/dsh-invariants': link:deepseek-harness/packages/runtime-diagnostics/invariants
       '@deepseek-ai/dsh-llm': link:deepseek-harness/packages/llm/llm
       '@deepseek-ai/dsh-llm-retry': link:deepseek-harness/packages/llm/llm-retry
@@ -7689,13 +7783,13 @@ snapshots:
       '@deepseek-ai/schemastery': 3.18.2
       zod: 4.5.4
 
-  '@deepseek-ai/dsh-host-apiproxy@0.1.0-rc.8(352ee60de44af771668fdecdb0793509)':
+  '@deepseek-ai/dsh-host-apiproxy@0.1.0-rc.8(5f133863d5032be1c61cf821f5fe4ceb)':
     dependencies:
       '@deepseek-ai/cordis': link:deepseek-harness/vendor/cordis
       '@deepseek-ai/dsh-agent': 0.1.0-rc.8(44504ab6ff21b9afb6c7be24dcba1d00)
       '@deepseek-ai/dsh-agent-default-model': 0.1.0-rc.8(8952820b21ec78c04fb8438c9e2701b4)
-      '@deepseek-ai/dsh-agent-presets': link:deepseek-harness/packages/preset/agent-presets
-      '@deepseek-ai/dsh-api-remotes': 0.1.0-rc.8(44be3de613f014351866629d233c9f46)
+      '@deepseek-ai/dsh-agent-presets': 0.1.0-rc.8(@deepseek-ai/cordis-plugin-include@deepseek-harness+vendor+include)(@deepseek-ai/cordis-plugin-loader@deepseek-harness+vendor+loader)(@deepseek-ai/cordis@deepseek-harness+vendor+cordis)(@deepseek-ai/dsh-agent@deepseek-harness+packages+core+agent)(@deepseek-ai/dsh-atomic-write@deepseek-harness+packages+util+atomic-write)(@deepseek-ai/dsh-home-paths@deepseek-harness+packages+util+home-paths)(@deepseek-ai/dsh-invariants@deepseek-harness+packages+runtime-diagnostics+invariants)(@deepseek-ai/dsh-scope@deepseek-harness+packages+core+scope)(@deepseek-ai/dsh-session@deepseek-harness+packages+core+session)(@deepseek-ai/dsh-settings@deepseek-harness+packages+settings+settings)(@deepseek-ai/dsh-system-prompt@deepseek-harness+packages+core+system-prompt)
+      '@deepseek-ai/dsh-api-remotes': 0.1.0-rc.8(53c5ec3d4318bdb22b3287f0e99be35d)
       '@deepseek-ai/dsh-attachment': 0.1.0-rc.8(@deepseek-ai/cordis@deepseek-harness+vendor+cordis)(@deepseek-ai/dsh-brand@0.1.0-rc.8(@deepseek-ai/cordis@deepseek-harness+vendor+cordis)(@deepseek-ai/dsh-invariants@deepseek-harness+packages+runtime-diagnostics+invariants))(@deepseek-ai/dsh-invariants@deepseek-harness+packages+runtime-diagnostics+invariants)
       '@deepseek-ai/dsh-brand': 0.1.0-rc.8(@deepseek-ai/cordis@deepseek-harness+vendor+cordis)(@deepseek-ai/dsh-invariants@deepseek-harness+packages+runtime-diagnostics+invariants)
       '@deepseek-ai/dsh-commands': 0.1.0-rc.8(63ce1ef30715a668f09dcb67215a9b8f)
@@ -7715,7 +7809,7 @@ snapshots:
       '@deepseek-ai/dsh-session-title': 0.1.0-rc.8(373a78a6d55c151c32b6f4826256bd66)
       '@deepseek-ai/dsh-settings': 0.1.0-rc.8(@deepseek-ai/cordis@deepseek-harness+vendor+cordis)(@deepseek-ai/dsh-brand@0.1.0-rc.8(@deepseek-ai/cordis@deepseek-harness+vendor+cordis)(@deepseek-ai/dsh-invariants@deepseek-harness+packages+runtime-diagnostics+invariants))(@deepseek-ai/dsh-invariants@deepseek-harness+packages+runtime-diagnostics+invariants)(@deepseek-ai/schemastery@3.18.2)
       '@deepseek-ai/dsh-skill': 0.1.0-rc.8(@deepseek-ai/cordis@deepseek-harness+vendor+cordis)(@deepseek-ai/dsh-invariants@deepseek-harness+packages+runtime-diagnostics+invariants)(@deepseek-ai/dsh-llm@0.1.0-rc.8(@deepseek-ai/cordis@deepseek-harness+vendor+cordis)(@deepseek-ai/dsh-attachment@0.1.0-rc.8(@deepseek-ai/cordis@deepseek-harness+vendor+cordis)(@deepseek-ai/dsh-brand@0.1.0-rc.8(@deepseek-ai/cordis@deepseek-harness+vendor+cordis)(@deepseek-ai/dsh-invariants@deepseek-harness+packages+runtime-diagnostics+invariants))(@deepseek-ai/dsh-invariants@deepseek-harness+packages+runtime-diagnostics+invariants))(@deepseek-ai/dsh-brand@0.1.0-rc.8(@deepseek-ai/cordis@deepseek-harness+vendor+cordis)(@deepseek-ai/dsh-invariants@deepseek-harness+packages+runtime-diagnostics+invariants))(@deepseek-ai/dsh-invariants@deepseek-harness+packages+runtime-diagnostics+invariants)(@deepseek-ai/dsh-timeout@deepseek-harness+packages+util+timeout))(@deepseek-ai/dsh-scope@deepseek-harness+packages+core+scope)
-      '@deepseek-ai/dsh-subagent': 0.1.0-rc.8(2f31e556bd021c199291602ade87ca5b)
+      '@deepseek-ai/dsh-subagent': 0.1.0-rc.8(40621d61af652113a06d830360ce3f8d)
       '@deepseek-ai/dsh-tools': 0.1.0-rc.8(8970b69521314102442d2604095c60b3)
       '@deepseek-ai/dsh-user-approval': 0.1.0-rc.8(880a6c8c9be6ac4ee70fc58f0f4d4262)
       '@deepseek-ai/dsh-user-questions': 0.1.0-rc.8(@deepseek-ai/cordis@deepseek-harness+vendor+cordis)(@deepseek-ai/dsh-agent@0.1.0-rc.8(44504ab6ff21b9afb6c7be24dcba1d00))(@deepseek-ai/dsh-invariants@deepseek-harness+packages+runtime-diagnostics+invariants)(@deepseek-ai/dsh-llm@0.1.0-rc.8(@deepseek-ai/cordis@deepseek-harness+vendor+cordis)(@deepseek-ai/dsh-attachment@0.1.0-rc.8(@deepseek-ai/cordis@deepseek-harness+vendor+cordis)(@deepseek-ai/dsh-brand@0.1.0-rc.8(@deepseek-ai/cordis@deepseek-harness+vendor+cordis)(@deepseek-ai/dsh-invariants@deepseek-harness+packages+runtime-diagnostics+invariants))(@deepseek-ai/dsh-invariants@deepseek-harness+packages+runtime-diagnostics+invariants))(@deepseek-ai/dsh-brand@0.1.0-rc.8(@deepseek-ai/cordis@deepseek-harness+vendor+cordis)(@deepseek-ai/dsh-invariants@deepseek-harness+packages+runtime-diagnostics+invariants))(@deepseek-ai/dsh-invariants@deepseek-harness+packages+runtime-diagnostics+invariants)(@deepseek-ai/dsh-timeout@deepseek-harness+packages+util+timeout))
@@ -7839,7 +7933,7 @@ snapshots:
       '@deepseek-ai/dsh-scope': link:deepseek-harness/packages/core/scope
       '@deepseek-ai/schemastery': 3.18.2
 
-  '@deepseek-ai/dsh-subagent@0.1.0-rc.8(2f31e556bd021c199291602ade87ca5b)':
+  '@deepseek-ai/dsh-subagent@0.1.0-rc.8(40621d61af652113a06d830360ce3f8d)':
     dependencies:
       '@deepseek-ai/cordis': link:deepseek-harness/vendor/cordis
       '@deepseek-ai/dsh-agent': 0.1.0-rc.8(44504ab6ff21b9afb6c7be24dcba1d00)
@@ -7851,7 +7945,7 @@ snapshots:
       '@deepseek-ai/dsh-tools': 0.1.0-rc.8(8970b69521314102442d2604095c60b3)
       zod: 4.5.4
     optionalDependencies:
-      '@deepseek-ai/dsh-agent-presets': link:deepseek-harness/packages/preset/agent-presets
+      '@deepseek-ai/dsh-agent-presets': 0.1.0-rc.8(@deepseek-ai/cordis-plugin-include@deepseek-harness+vendor+include)(@deepseek-ai/cordis-plugin-loader@deepseek-harness+vendor+loader)(@deepseek-ai/cordis@deepseek-harness+vendor+cordis)(@deepseek-ai/dsh-agent@deepseek-harness+packages+core+agent)(@deepseek-ai/dsh-atomic-write@deepseek-harness+packages+util+atomic-write)(@deepseek-ai/dsh-home-paths@deepseek-harness+packages+util+home-paths)(@deepseek-ai/dsh-invariants@deepseek-harness+packages+runtime-diagnostics+invariants)(@deepseek-ai/dsh-scope@deepseek-harness+packages+core+scope)(@deepseek-ai/dsh-session@deepseek-harness+packages+core+session)(@deepseek-ai/dsh-settings@deepseek-harness+packages+settings+settings)(@deepseek-ai/dsh-system-prompt@deepseek-harness+packages+core+system-prompt)
       '@deepseek-ai/dsh-jobs': 0.1.0-rc.8(@deepseek-ai/cordis@deepseek-harness+vendor+cordis)(@deepseek-ai/dsh-agent@0.1.0-rc.8(44504ab6ff21b9afb6c7be24dcba1d00))(@deepseek-ai/dsh-brand@0.1.0-rc.8(@deepseek-ai/cordis@deepseek-harness+vendor+cordis)(@deepseek-ai/dsh-invariants@deepseek-harness+packages+runtime-diagnostics+invariants))(@deepseek-ai/dsh-invariants@deepseek-harness+packages+runtime-diagnostics+invariants)(@deepseek-ai/dsh-session@0.1.0-rc.8(19c764b195858d0ebb9a53feb106cbd5))
       '@deepseek-ai/dsh-sandbox': link:deepseek-harness/packages/sandbox/sandbox
       '@deepseek-ai/dsh-sandbox-policy': link:deepseek-harness/packages/sandbox/sandbox-policy
@@ -8580,7 +8674,7 @@ snapshots:
       react: 18.3.1
       schemastery: 3.18.0
 
-  '@linxin666/dsh-web-ui-all@0.3.6(36d39c6202961086db60aa43585305b3)':
+  '@linxin666/dsh-web-ui-all@0.3.6(310e78ff6ef59064b64fb918fad2e1c9)':
     dependencies:
       '@linxin666/dsh-client-ui-aionui-panel': 0.3.6(react@18.3.1)
       '@linxin666/dsh-client-ui-community-plugins': 0.3.6(react@18.3.1)
@@ -8601,7 +8695,7 @@ snapshots:
       '@linxin666/dsh-tool-describe-image': 0.3.6(react@18.3.1)
       '@mlgbnb/dsh-archive-manager': 1.0.7(react@18.3.1)
       '@morlay/better-session': 0.0.11(@deepseek-ai/cordis@deepseek-harness+vendor+cordis)(@deepseek-ai/dsh-invariants@deepseek-harness+packages+runtime-diagnostics+invariants)(@deepseek-ai/dsh-llm@deepseek-harness+packages+llm+llm)(@deepseek-ai/dsh-scope@deepseek-harness+packages+core+scope)(@deepseek-ai/dsh-session-persistence@deepseek-harness+packages+session+session-persistence)(@deepseek-ai/dsh-session@deepseek-harness+packages+core+session)(@deepseek-ai/dsh-settings@deepseek-harness+packages+settings+settings)(@deepseek-ai/schemastery@deepseek-harness+vendor+schemastery)(@opentelemetry/api@1.9.1)(zod@3.24.1)
-      dsh-better-sidebar: 0.15.2(5f2afa9efeaaad04e24a68f689506cfa)
+      dsh-better-sidebar: 0.15.2(9b3a758132d3bc267846fc87e8bf8bd6)
     transitivePeerDependencies:
       - '@aws-sdk/client-rds-data'
       - '@cloudflare/workers-types'
@@ -10221,7 +10315,7 @@ snapshots:
       pg: 8.23.0
       zod: 3.24.1
 
-  dsh-better-sidebar@0.15.2(5f2afa9efeaaad04e24a68f689506cfa):
+  dsh-better-sidebar@0.15.2(9b3a758132d3bc267846fc87e8bf8bd6):
     dependencies:
       '@codemirror/commands': 6.11.0
       '@codemirror/lang-cpp': 6.0.3
@@ -10246,7 +10340,7 @@ snapshots:
       '@deepseek-ai/cordis': link:deepseek-harness/vendor/cordis
       '@deepseek-ai/dsh-agent': link:deepseek-harness/packages/core/agent
       '@deepseek-ai/dsh-client-locale': link:deepseek-harness/packages/client/locale
-      '@deepseek-ai/dsh-client-runtime': 0.1.0-rc.8(e53fcf12f553745b26c3f2dafb0d8082)
+      '@deepseek-ai/dsh-client-runtime': 0.1.0-rc.8(b1f29eeda6bddce9852c80278fb1e3ee)
       '@deepseek-ai/dsh-client-ui-conversation': link:deepseek-harness/packages/client/ui-conversation
       '@deepseek-ai/dsh-client-ui-primitives': link:deepseek-harness/packages/client/ui-primitives
       '@deepseek-ai/dsh-client-ui-settings': link:deepseek-harness/packages/client/ui-settings
@@ -10272,7 +10366,7 @@ snapshots:
       - bufferutil
       - utf-8-validate
 
-  dshmarket@1.39.0(patch_hash=3bc46b1b0e5a4ed0906580c0905ee109b98178769c517fda651b68cd79900cc2)(@deepseek-ai/cordis@deepseek-harness+vendor+cordis)(@deepseek-ai/dsh-settings@deepseek-harness+packages+settings+settings)(@deepseek-ai/schemastery@deepseek-harness+vendor+schemastery):
+  dshmarket@1.39.0(patch_hash=b2dda1351f3f7b4b383baf62aa51146dc8598a4fa345b83683e4627ffa0c11dc)(@deepseek-ai/cordis@deepseek-harness+vendor+cordis)(@deepseek-ai/dsh-settings@deepseek-harness+packages+settings+settings)(@deepseek-ai/schemastery@deepseek-harness+vendor+schemastery):
     dependencies:
       '@deepseek-ai/cordis': link:deepseek-harness/vendor/cordis
       js-yaml: 4.3.1

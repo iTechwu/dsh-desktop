@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { BRAND_DISPLAY_NAME } from '../src/generated-product-identity.ts'
 
 const electron = vi.hoisted(() => {
   type Listener = (...args: unknown[]) => void
@@ -86,7 +87,7 @@ describe('Desktop Profile selection window', () => {
     expect(selectionState.notice).toEqual({
       tone: 'success',
       title: 'work',
-      body: '已设为当前 Profile。请重启 Yootun-Agent 以使用该 Profile。',
+      body: `已设为当前 Profile。请重启 ${BRAND_DISPLAY_NAME.locale} 以使用该 Profile。`,
     })
 
     window.webListeners.get('will-navigate')?.({ preventDefault: vi.fn() }, 'dsh-profile-selector://restart')
@@ -123,7 +124,7 @@ describe('Desktop Profile selection window', () => {
     expect(selectionState.notice).toEqual({
       tone: 'success',
       title: 'fresh',
-      body: '已设为当前 Profile。请重启 Yootun-Agent 以使用该 Profile。',
+      body: `已设为当前 Profile。请重启 ${BRAND_DISPLAY_NAME.locale} 以使用该 Profile。`,
     })
 
     window.webListeners.get('will-navigate')?.({ preventDefault: vi.fn() }, 'dsh-profile-selector://restart')

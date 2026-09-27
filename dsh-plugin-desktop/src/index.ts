@@ -591,7 +591,7 @@ export function apply(ctx: Context, config: DesktopShellConfig): void {
         material,
         runtime.windowsBuild,
       )
-      return runtime.schedule({
+      void runtime.schedule({
         ...resolved,
         material,
         ...(runtime.windowsBuild === undefined ? {} : { windowsBuild: runtime.windowsBuild }),
@@ -625,6 +625,7 @@ export function apply(ctx: Context, config: DesktopShellConfig): void {
             : { mode })
         },
       })
+      return () => {}
     },
     'dsh-plugin-desktop: native shell generation',
   )

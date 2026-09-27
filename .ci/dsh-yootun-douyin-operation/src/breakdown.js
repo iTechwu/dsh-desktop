@@ -13,13 +13,14 @@
 // 表格元素渲染（React 文本子节点自动转义，无 HTML 注入面），不引入 markdown 依赖。
 
 import { formatCount, formatDateTime } from './ui-format.js'
+import { FilterSelect } from './select-ui.js'
 
 // React 由 client.js 内联作用域提供（构建时剥离本模块的 require，与 overview-ui 同法）；
 // hooks 以 React.xxx 形式使用，避免与 client.js 顶部解构重复声明同名绑定。
 const React = require('react')
 const { createElement: h } = React
 // 关闭图标与作品详情/AI 弹框同款（client.js 顶部解构统一提供，构建时剥离此处 require）。
-const { IconCloseOutline16 } = require('@deepseek-ai/dsh-client-ui-primitives')
+const { IconCloseOutlineRegular } = require('@deepseek-ai/dsh-client-ui-primitives')
 
 // 稳定 reason → 已登记文案键（与 overview-ui 同一策略；未登记码由调用方兜底）。
 // 仅收 isError 形态 envelope 的白名单码；workflow_start 失败 payload 内的小写
@@ -80,6 +81,29 @@ export function workflowErrorCopyKey(workflow) {
 
 export function breakdownStatusTone(status) {
   return BREAKDOWN_STATUS_TONE[status] || 'running'
+}
+
+// 拆解记录列表状态筛选（纯前端过滤，不改变加载链路）：tone 归一后分组——
+// 「失败」= error + warn（cancelled/needs_input 同属「未成功」终态），与
+// StatusBadge 的语义色一致；未登记 status 按 running 归「进行中」。
+export const BREAKDOWN_STATUS_FILTERS = Object.freeze([
+  { id: 'all', copyKey: 'bdFilterAll' },
+  { id: 'running', copyKey: 'bdFilterRunning' },
+  { id: 'succeeded', copyKey: 'bdFilterSucceeded' },
+  { id: 'failed', copyKey: 'bdFilterFailed' },
+])
+
+export function filterBreakdownHistory(history, filter) {
+  const rows = Array.isArray(history) ? history : []
+  if (filter === 'succeeded') return rows.filter(item => breakdownStatusTone(item?.status) === 'ok')
+  if (filter === 'failed') {
+    return rows.filter(item => {
+      const tone = breakdownStatusTone(item?.status)
+      return tone === 'error' || tone === 'warn'
+    })
+  }
+  if (filter === 'running') return rows.filter(item => breakdownStatusTone(item?.status) === 'running')
+  return rows
 }
 
 /**
@@ -403,10 +427,15 @@ export function BreakdownNewPage({ rules, rulesError, onRetryRules, submitting, 
       : null)
 }
 
-export function BreakdownHistoryList({ history, rules, loading, errorReason, hasMore, loadingMore, onLoadMore, onOpen, t }) {
+export function BreakdownHistoryList({
+  history, rules, loading, errorReason, hasMore, loadingMore, onLoadMore, onOpen,
+  statusFilter = 'all', onStatusFilterChange, t,
+}) {
   // 行数据 = workflow 投影：标题/作者/播放量/规则 id（服务端投影直出，防 N+1）。
   // 表格结构（预览稿 tbl）：视频 | 状态 | 仿写规则 | 当前步骤 | 时间。
-  const rows = history.map((item, index) => {
+  // 状态筛选是纯前端过滤：只影响展示，不改变加载与分页链路。
+  const filtered = filterBreakdownHistory(history, statusFilter)
+  const rows = filtered.map((item, index) => {
     const tone = breakdownStatusTone(item.status)
     const failed = tone === 'error'
     const running = tone === 'running' && item.currentStepLabel
@@ -436,14 +465,27 @@ export function BreakdownHistoryList({ history, rules, loading, errorReason, has
   })
   // 预览稿 panel 口径：可见标题「拆解记录（团队共享，按时间倒序）」，记录区与
   // 发起区同为 ydo-ov-panel；空态/错误态同样带标题，保持结构对称。
+  // 状态筛选复用总览/分析页的「toolbar 标题行 + FilterSelect 下拉」范式，
+  // 与既有筛选交互（账号/时间范围/趋势指标）保持一致，不另造控件。
   return h('section', { className: 'ydo-ov-panel ydo-bd-panel ydo-bd-history', role: 'group', 'aria-label': t('bdHistoryLabel') },
-    h('h3', null, t('bdHistoryLabel'),
-      h('span', { className: 'ydo-bd-history-sub' }, t('bdHistorySub'))),
+    h('div', { className: 'ydo-ov-toolbar' },
+      h('h3', null, t('bdHistoryLabel'),
+        h('span', { className: 'ydo-bd-history-sub' }, t('bdHistorySub'))),
+      h('div', { className: 'ydo-ov-filter' },
+        h('span', null, t('bdFilterLabel')),
+        h(FilterSelect, {
+          label: t('bdFilterLabel'),
+          value: statusFilter,
+          onChange: value => onStatusFilterChange && onStatusFilterChange(value),
+          options: BREAKDOWN_STATUS_FILTERS.map(item => ({ value: item.id, label: t(item.copyKey) })),
+        }))),
     errorReason
       ? h('p', { className: 'ydo-error', role: 'alert' }, t(errorReason))
       : !history.length
         ? h('p', { className: 'ydo-hint', role: 'status' }, loading ? t('loading') : t('bdHistoryEmpty'))
-        : [
+        : !filtered.length
+          ? h('p', { className: 'ydo-hint', role: 'status' }, t('bdHistoryEmptyFiltered'))
+          : [
           h('table', { key: 'table', className: 'ydo-bd-table' },
             h('thead', null, h('tr', null,
               h('th', null, t('bdColVideo')),
@@ -610,7 +652,7 @@ export function BreakdownRewriteModal({ open, rules, submitting, onConfirm, onCl
   return h('div', { className: 'ydo-ai-modal-overlay ydo-bd-modal-overlay', role: 'dialog', 'aria-modal': true, 'aria-label': t('bdRewriteTitle') },
     h('div', { className: 'ydo-ai-modal ydo-bd-modal' },
       h('button', { type: 'button', className: 'ydo-ai-modal-close', 'aria-label': t('close'), onClick: onClose },
-        h(IconCloseOutline16, { size: 16 })),
+        h(IconCloseOutlineRegular, { size: 16 })),
       h('div', { className: 'ydo-ai-modal-body' },
         h('h3', null, t('bdRewriteTitle')),
         h('p', { className: 'ydo-hint' }, t('bdRewriteHint')),

@@ -47,6 +47,10 @@ export async function startIsolatedDesktopHost(options: IsolatedHostOptions): Pr
   const forkedAt = performance.now()
   const child = utilityProcess.fork(fileURLToPath(new URL('./host-process-entry.js', import.meta.url)), [], {
     serviceName: 'DSH Host', stdio: 'pipe', cwd: process.cwd(), env: { ...process.env },
+    // 0.1.7 config-editor coordinates profile writes through HMR. The Host
+    // utility process therefore needs the same internal ESM hooks as the DSH
+    // terminal bootstrap; the renderer never receives this argv.
+    execArgv: ['--expose-internals'],
   })
   // Keep normal Host logs in its own files; stderr includes bootstrap failures.
   child.stdout?.on('data', (data: Buffer) => { process.stdout.write(data) })

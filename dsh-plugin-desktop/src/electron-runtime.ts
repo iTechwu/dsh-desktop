@@ -250,7 +250,7 @@ export class ElectronDesktopRuntime implements DesktopRuntime {
   /** @inheritdoc */
   schedule(spec: DesktopShellSpec): () => Promise<void> {
     if (this.scheduled !== undefined || this.mountTask !== undefined) {
-      throw new Error('dsh-plugin-desktop: a native shell generation is already registered')
+      return async () => {}
     }
     const previousThemeSource = nativeTheme.themeSource
     this.scheduled = spec
@@ -757,6 +757,17 @@ export class ElectronDesktopRuntime implements DesktopRuntime {
     this.generation?.stopRendererRecovery()
     this.generation?.closePlatformLogin()
     this.stopRendererBootMonitoring()
+  }
+
+  /** Release the native shell after the Host tree has disposed. */
+  async release(): Promise<void> {
+    this.prepareToQuit()
+    const mountTask = this.mountTask
+    if (mountTask !== undefined) await mountTask.catch(() => {})
+    await this.generation?.release()
+    this.generation = undefined
+    this.mountTask = undefined
+    this.scheduled = undefined
   }
 
   private failRendererBoot(reason: RendererHealthFailureReason, error: string): void {

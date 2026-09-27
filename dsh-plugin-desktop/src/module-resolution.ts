@@ -1,6 +1,11 @@
 /** Profile-relative package resolution for Electron's restricted Node runtime. */
 
 import Module, { createRequire, registerHooks } from 'node:module'
+import {
+  ModuleLoader,
+  type ModuleLoader as ModuleLoaderType,
+  type ModuleRequest,
+} from '@deepseek-ai/cordis-plugin-loader'
 import { realpathSync } from 'node:fs'
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -18,6 +23,21 @@ const DESKTOP_ENTRY_URL = pathToFileURL(
 const DESKTOP_PACKAGE_URL = pathToFileURL(
   fileURLToPath(new URL('../package.json', import.meta.url)),
 ).href
+
+function internalModuleLoader(): ModuleLoaderType | undefined {
+  if (process.execArgv.includes('--expose-internals')) {
+    try {
+      const require = createRequire(import.meta.url)
+      const raw = require('internal/modules/esm/loader')?.getOrInitializeCascadedLoader() as ModuleLoaderType | undefined
+      if (raw !== undefined && typeof (raw as { getOrCreateModuleJob?: unknown }).getOrCreateModuleJob === 'function') {
+        return Object.assign(raw, { version: 'v2' as const })
+      }
+    } catch {
+      // Fall through to the portable loader helper.
+    }
+  }
+  return ModuleLoader.fromInternal()
+}
 
 interface CommonJsModuleResolver {
   _resolveFilename(
@@ -67,6 +87,7 @@ function isInsideDirectory(filename: string, directory: string): boolean {
 export function installProfilePackageResolver(profileBaseUrl: string): () => void {
   const profileManifestPath = fileURLToPath(profileBaseUrl)
   const profileDirectory = canonicalFilename(dirname(profileManifestPath))
+  const profileDirectoryUrl = new URL('./', profileBaseUrl).href
   const obsoleteSharedModulesDirectory = join(dirname(profileDirectory), 'node_modules')
 
   const isObsoleteSharedFallback = (url: string): boolean => {
@@ -184,6 +205,7 @@ export function installProfilePackageResolver(profileBaseUrl: string): () => voi
       // manifest anchor used by Electron's internal loader as the same boundary.
       const fromLoader = context.parentURL === LOADER_ENTRY_URL
         || context.parentURL === profileBaseUrl
+        || context.parentURL === profileDirectoryUrl
       const packageName = fromLoader ? packageNameFromSpecifier(specifier) : undefined
       if (packageName !== undefined) {
         const overlay = resolveOverlayPackage(packageName, {
@@ -251,4 +273,33 @@ export function installProfilePackageResolver(profileBaseUrl: string): () => voi
       commonJsModule._resolveFilename = previousResolveFilename
     }
   }
+}
+
+/**
+ * Give 0.1.7 client-module graph discovery a Desktop resolver. Node internal
+ * resolution from an isolated Profile can miss workspace-owned client bundles;
+ * fall back once to the installed Desktop graph before classifying a row as
+ * non-client.
+ */
+export function desktopInternalModuleLoader(): ModuleLoaderType | undefined {
+  const internal = internalModuleLoader()
+  if (internal === undefined) return undefined
+  // Node 22 exposes the v1 internal loader. It already has the public API HMR
+  // needs; only v2 receives the Desktop-graph resolve fallback below.
+  if (internal.version !== 'v2') return internal
+  const wrapped = Object.create(internal) as ModuleLoaderType
+  return Object.assign(wrapped, {
+    version: 'v2' as const,
+    import: internal.import.bind(internal),
+    register: internal.register.bind(internal),
+    getOrCreateModuleJob: internal.getOrCreateModuleJob.bind(internal),
+    load: internal.load.bind(internal),
+    resolveSync: (parentURL: string, request: ModuleRequest) => {
+      try {
+        return internal.resolveSync.call(internal, parentURL, request)
+      } catch {
+        return internal.resolveSync.call(internal, DESKTOP_ENTRY_URL, request)
+      }
+    },
+  })
 }
