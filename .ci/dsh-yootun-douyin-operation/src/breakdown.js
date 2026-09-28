@@ -19,8 +19,9 @@ import { FilterSelect } from './select-ui.js'
 // hooks 以 React.xxx 形式使用，避免与 client.js 顶部解构重复声明同名绑定。
 const React = require('react')
 const { createElement: h } = React
-// 关闭图标与作品详情/AI 弹框同款（client.js 顶部解构统一提供，构建时剥离此处 require）。
-const { IconCloseOutlineRegular } = require('@deepseek-ai/dsh-client-ui-primitives')
+// 关闭/下载图标与作品详情/AI 弹框、导出按钮同款（client.js 顶部解构统一提供，
+// 构建时剥离此处 require）。
+const { IconCloseOutlineRegular, IconDownloadOutlineRegular } = require('@deepseek-ai/dsh-client-ui-primitives')
 
 // 稳定 reason → 已登记文案键（与 overview-ui 同一策略；未登记码由调用方兜底）。
 // 仅收 isError 形态 envelope 的白名单码；workflow_start 失败 payload 内的小写
@@ -32,6 +33,13 @@ export const BREAKDOWN_ERROR_REASON_COPY = Object.freeze({
   IDEMPOTENCY_CONFLICT: 'bdErrorConflict',
   DOUYIN_TOOL_UNAVAILABLE: 'operationUnavailable',
   douyin_operation_request_failed: 'operationUnavailable',
+})
+
+// 详情页导出（breakdown.export）稳定 reason → 文案键：与既有导出同策略，
+// 未登记码由调用方兜底 export_failed 通用文案。
+export const BD_EXPORT_ERROR_COPY = Object.freeze({
+  CANDIDATE_NOT_FOUND: 'bdErrorCandidateNotFound',
+  STORYBOARD_NOT_READY: 'bdErrorExportNotReady',
 })
 
 // workflow 投影 status → 徽标语义色（类名后缀）；workflow_start 失败 payload 的
@@ -421,7 +429,7 @@ export function BreakdownNewPage({ rules, rulesError, onRetryRules, submitting, 
         h(BreakdownRulePicker, { rules, value: ruleId, onChange: setRuleId, disabled: submitting, t })),
     h('p', { className: 'ydo-hint' }, t('bdRulesHint')),
     archiveTask
-      ? h('div', { className: 'ydo-progress', role: 'status', 'aria-live': 'polite', 'aria-busy': true },
+      ? h('div', { className: 'ydo-bd-archive-hint', role: 'status', 'aria-live': 'polite', 'aria-busy': true },
         h('span', { className: 'ydo-spinner' }),
         h('span', null, t('bdArchivePending')))
       : null)
@@ -510,7 +518,7 @@ export function BreakdownHistoryList({
 // + 五张折叠卡。规则名从已加载规则清单解析；候选指标缺失独立降级为 —。
 // ---------------------------------------------------------------------------
 
-export function BreakdownDetailPage({ workflow, detail, candidate, rules, loading, errorReason, onBack, onRequestRewrite, onForceRetry, t }) {
+export function BreakdownDetailPage({ workflow, detail, candidate, rules, loading, errorReason, onBack, onRequestRewrite, onForceRetry, onExport, exporting = false, exportError = null, t }) {
   if (errorReason) {
     return h('div', { className: 'ydo-state ydo-state-error', role: 'alert' },
       h('p', null, t(errorReason)),
@@ -544,18 +552,34 @@ export function BreakdownDetailPage({ workflow, detail, candidate, rules, loadin
   // 在服务端输入校验阶段同步返回、needs_input 缺产品输入，force 到不了失败终态
   // 分支，重试注定同样失败，不渲染入口。
   const retryable = Boolean(workflow && workflow.status === 'failed')
+  // 导出只对成功记录可用（用户需求 2026-09-28）：服务端只认 succeeded storyboard，
+  // 非 succeeded 提前禁用避免点了才报错；明细未加载完（无 storyboardRow）同样禁用。
+  const exportable = Boolean(workflow && workflow.status === 'succeeded' && storyboardRow)
   // 仅在确有 workflow 且处于运行态时显示「拆解进行中」；无 workflow 的空态
   // 走「暂无拆解内容」引导，避免误导。
   const pending = Boolean(workflow) && !failed && breakdownStatusTone(workflow.status) === 'running'
   return h('div', { className: 'ydo-bd-page' },
-    // 预览稿 detail-top：返回靠左、「重新改写」靠右（弹性撑开）。
+    // 预览稿 detail-top：返回与导出靠左、「重新改写」靠右（弹性撑开）。导出按钮
+    // 与账号总览「导出总览」同款（ydo-export + 下载图标，同一导出语义）。
     h('div', { className: 'ydo-an-toolbar' },
       h('button', { type: 'button', className: 'ydo-secondary', onClick: onBack }, t('bdBackToList')),
+      h('button', {
+        type: 'button', className: 'ydo-secondary ydo-export ydo-bd-toolbar-export',
+        disabled: !exportable || exporting || loading,
+        'aria-busy': exporting,
+        onClick: onExport,
+      },
+      h(IconDownloadOutlineRegular, { size: 14 }),
+      h('span', null, exporting ? t('exporting') : t('bdExportExcel'))),
       h('button', {
         type: 'button', className: 'ydo-secondary ydo-bd-toolbar-rewrite',
         disabled: pending || loading,
         onClick: onRequestRewrite,
       }, t('bdRewriteButton'))),
+    // 导出失败轻量提示：不替换页面内容，关闭它的途径是再次导出或离开详情页。
+    exportError
+      ? h('p', { className: 'ydo-error', role: 'alert', 'aria-live': 'assertive' }, t(exportError))
+      : null,
     workflow
       ? h('header', { className: 'ydo-bd-head' },
         h('div', { className: 'ydo-bd-head-row' },

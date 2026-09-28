@@ -10,6 +10,7 @@ import { COLUMNS, DEFAULT_SORT_STATE, EMPTY, accountState, formatAgeBucket, form
 import { ERROR_REASON_COPY, OverviewPage, buildOverviewFilters, defaultCustomRange, overviewRangeLabel } from './overview-ui.js'
 import { ANALYSIS_ERROR_REASON_COPY, AnalysisPage, TREND_METRICS } from './analysis-ui.js'
 import {
+  BD_EXPORT_ERROR_COPY,
   BREAKDOWN_ERROR_REASON_COPY,
   BreakdownDetailPage,
   BreakdownHistoryList,
@@ -235,6 +236,7 @@ const copy = {
     bdRunningTitle: '拆解进行中', bdRunningSub: '页面会自动刷新进度，拆解完成后此处展示拆解结果',
     bdShotQuotas: '景别配额', bdRuleNone: '本次拆解未使用仿写规则（默认链路改写）',
     bdBackToList: '← 返回列表', bdRewriteButton: '重新改写', bdForceRetry: '强制重试',
+    bdExportExcel: '导出拆解', bdErrorExportNotReady: '该记录还没有完成的拆解结果，暂不能导出',
     bdRewriteTitle: '重新改写这条视频', bdRewriteHint: '基于已完成的拆解结果，重新生成分镜与拍摄脚本；换用不同规则将生成一条新记录。',
     bdRewriteStart: '开始改写', bdRunningHint: '拆解进行中，页面会自动刷新进度…',
     bdErrorInvalidKey: '请求参数不合法，请刷新后重试', bdErrorRunNotFound: '任务不存在或已过期，请重新发起',
@@ -407,6 +409,7 @@ const copy = {
     bdRunningSub: 'This page refreshes automatically; results appear here once the breakdown completes',
     bdShotQuotas: 'Shot-size quotas', bdRuleNone: 'No rewrite rule was used (default pipeline)',
     bdBackToList: '← Back to list', bdRewriteButton: 'Rewrite', bdForceRetry: 'Force retry',
+    bdExportExcel: 'Export breakdown', bdErrorExportNotReady: 'No completed breakdown yet, export unavailable',
     bdRewriteTitle: 'Rewrite this video', bdRewriteHint: 'Regenerate the storyboard and shot script from the completed breakdown; a different rule creates a new record.',
     bdRewriteStart: 'Start rewrite', bdRunningHint: 'Breakdown in progress — this page refreshes automatically…',
     bdErrorInvalidKey: 'Invalid request — refresh and retry', bdErrorRunNotFound: 'Task not found or expired — start again',
@@ -861,6 +864,10 @@ function Overlay({ t }) {
   const [bdDetailError, setBdDetailError] = useState(null)
   const [bdRewriteOpen, setBdRewriteOpen] = useState(false)
   const [bdRewriting, setBdRewriting] = useState(false)
+  // 详情页导出过渡态：只读下载，导出中禁点防重复下载（与既有导出同法）；
+  // 失败文案独立于明细错误（bdDetailError），避免已成功记录被整页错误态覆盖。
+  const [bdExporting, setBdExporting] = useState(false)
+  const [bdExportError, setBdExportError] = useState(null)
   const bdArchivePollRef = useRef(null)
   const bdWorkflowPollRef = useRef(null)
   // 详情请求序列号（与 overviewRequestRef 同法）：快速点不同历史行时旧响应丢弃。
@@ -1507,6 +1514,7 @@ function Overlay({ t }) {
     if (!workflow || !workflow.candidateId) return
     setBdDetail(null)
     setBdDetailError(null)
+    setBdExportError(null)
     setBdDetailWorkflow(workflow)
     bdDetailWorkflowRef.current = workflow
     loadBdDetail(workflow.candidateId)
@@ -1529,6 +1537,7 @@ function Overlay({ t }) {
     bdDetailWorkflowRef.current = null
     setBdDetail(null)
     setBdDetailError(null)
+    setBdExportError(null)
     setBdRewriteOpen(false)
     loadBdHistory().catch(() => {})
     if (pending && pending.candidateId) startBdWorkflow(pending.candidateId, pending.rewriteRuleId)
@@ -1564,6 +1573,28 @@ function Overlay({ t }) {
   // 爆款拆解 Tab 进入：拉规则清单（纯配置只读）与拆解历史（团队共享，只读）。
   // 置于 bd 声明块之后：依赖数组渲染期即求值，不得前向引用下方 useCallback
   // 声明（const 无提升，前向引用触发 TDZ ReferenceError，整个插件页渲染崩）。
+  // 详情页导出（只读下载）：把当前详情候选的五块内容经宿主转发下载为多 sheet
+  // XLSX；不改详情状态，导出中禁点防重复下载。失败走独立轻量提示（bdDetailError
+  // 会把整页换成错误态，不适用于已成功记录上的导出失败），下次导出或切换记录清除。
+  const exportBdDetail = useCallback(async () => {
+    const candidateId = bdDetailWorkflowRef.current?.candidateId
+    if (!candidateId) return
+    setBdExporting(true)
+    setBdExportError(null)
+    try {
+      const result = await post({ action: 'breakdown.export', candidateId })
+      if (result.status !== 'ready') {
+        setBdExportError(BD_EXPORT_ERROR_COPY[result.reason] || 'exportFailed')
+        return
+      }
+      downloadWorkbook(result)
+    } catch {
+      setBdExportError('exportFailed')
+    } finally {
+      setBdExporting(false)
+    }
+  }, [])
+
   useEffect(() => {
     if (!visible || tab !== 'breakdown') return undefined
     loadBdRules().catch(() => {})
@@ -1817,6 +1848,11 @@ function Overlay({ t }) {
                 errorReason: bdDetailError,
                 onBack: backToBdList,
                 onRequestRewrite: () => setBdRewriteOpen(true),
+                // 成功记录导出（只读下载五块内容 → 多 sheet XLSX）；exportError
+                // 是工具栏下方的轻量提示，不复用会整页替换的错误态。
+                onExport: exportBdDetail,
+                exporting: bdExporting,
+                exportError: bdExportError,
                 // 失败态强制重试入口：仅在确有候选 id 时提供，无 id 不渲染按钮。
                 onForceRetry: bdDetailWorkflow?.candidateId ? forceRetryBdWorkflow : null,
                 t,
@@ -2043,7 +2079,7 @@ const css = `.ydo-button{display:flex;width:36px;height:36px;align-items:center;
 /* 预览稿 .page 容器口径：拆解 Tab 两个视图统一 980px 限宽居中。 */
 .ydo-bd-main{display:grid;gap:16px;align-content:start;min-width:0;max-width:980px;margin:0 auto;width:100%}
 .ydo-bd-page{display:grid;gap:12px;align-content:start;min-width:0;max-width:980px;margin:0 auto;width:100%}
-.ydo-bd-new{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.ydo-bd-new{display:flex;align-items:center;gap:8px;flex-wrap:wrap}/* 归档进行中提示：承接「新建拆解」输入行，字号与颜色升级为醒目主信息（用户反馈 2026-09-28）。 */.ydo-bd-archive-hint{display:flex;align-items:center;gap:10px;margin-top:10px;color:var(--dsw-alias-label-primary);font-size:15px;font-weight:500}
 .ydo-bd-input{flex:1;min-width:260px;max-width:560px;background:var(--dsw-alias-bg-layer-2)}
 .ydo-bd-input:focus{background:var(--dsw-alias-bg-layer-1)}
 .ydo-bd-rules-field{display:grid;gap:8px;margin-top:14px}
@@ -2095,9 +2131,8 @@ const css = `.ydo-button{display:flex;width:36px;height:36px;align-items:center;
 .ydo-bd-head-row{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
 .ydo-bd-head-main{display:grid;gap:4px;min-width:0}
 .ydo-bd-head-row h3{margin:0;font-size:15px;line-height:1.4}
-.ydo-bd-head-meta{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0;color:var(--dsw-alias-label-secondary);font-size:12px}
-.ydo-bd-head-meta a{color:var(--dsw-alias-brand-primary);text-decoration:none}
-.ydo-bd-head-meta a:hover{text-decoration:underline}
+.ydo-bd-head-meta{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0;color:var(--dsw-alias-label-secondary);font-size:14px}/* 原视频链接高亮为品牌蓝 + 下划线：明确超链接可供点击（用户反馈 2026-09-28）。 */.ydo-bd-head-meta a{color:var(--dsw-alias-brand-primary);text-decoration:underline;text-underline-offset:2px}
+.ydo-bd-head-meta a:hover{text-decoration:underline}.ydo-bd-head-meta a:visited{color:var(--dsw-alias-brand-primary)}
 /* 8 段进度条（预览稿 steps）：每步 4px 色条在上、步骤名在下；完成绿/当前蓝。 */
 .ydo-bd-steps{display:flex;gap:4px;margin:0;padding:0;list-style:none}
 .ydo-bd-step{flex:1;min-width:0;text-align:center}

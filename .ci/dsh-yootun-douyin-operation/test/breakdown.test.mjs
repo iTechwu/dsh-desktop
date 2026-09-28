@@ -310,6 +310,9 @@ test('BreakdownNewPage：规则单选可切换/再点取消，onStart 回传 (sh
   })
   const text = collectText(withStates)
   assert.ok(text.includes('bdArchivePending'), '归档过渡条可见')
+  // 归档提示是醒目主信息（独立样式类，不再是次级灰小字 ydo-progress）。
+  const archiveHint = collectFlat(withStates).find(node => String(node.props.className || '').includes('ydo-bd-archive-hint'))
+  assert.ok(archiveHint && archiveHint.props['aria-busy'] === true, '归档过渡条用 ydo-bd-archive-hint 醒目样式且 aria-busy')
   assert.ok(text.includes('operationUnavailable'), '规则加载失败显示已登记文案')
   assert.ok(text.includes('bdErrorArchiveFailed'), '提交失败显示错误文案')
   assert.equal(collectFlat(withStates).filter(node => node.props && node.props.role === 'radio').length, 0, '规则错误态下不渲染规则卡')
@@ -554,6 +557,35 @@ test('BreakdownDetailPage：展开卡内容完整（引用块/口播全文/脚�
   const rewriteButton = flat.filter(node => node.type === 'button').find(node => collectText(node) === 'bdRewriteButton')
   assert.ok(rewriteButton, '重新改写按钮存在')
   assert.equal(rewriteButton.props.disabled, false, '成功态可发起重新改写')
+  // 导出按钮（用户需求 2026-09-28）：成功态可用，与总览导出同款 ydo-export，
+  // 点击回传 onExport；导出中禁点（exporting=true）。
+  let exported = 0
+  const exportPage = BreakdownDetailPage({
+    workflow: fullWorkflow, detail: fullDetail, loading: false, errorReason: null,
+    onBack: () => {}, onRequestRewrite: () => {}, onExport: () => { exported += 1 }, t,
+  })
+  const exportButton = collectFlat(exportPage).filter(node => node.type === 'button')
+    .find(node => collectText(node).includes('bdExportExcel'))
+  assert.ok(exportButton, '导出按钮存在')
+  assert.ok(String(exportButton.props.className || '').includes('ydo-export'), '导出按钮与总览导出同款样式')
+  assert.equal(exportButton.props.disabled, false, '成功态导出可用')
+  exportButton.props.onClick()
+  assert.equal(exported, 1, '导出按钮触发 onExport')
+  const exportingPage = BreakdownDetailPage({
+    workflow: fullWorkflow, detail: fullDetail, loading: false, errorReason: null,
+    onBack: () => {}, onRequestRewrite: () => {}, onExport: () => {}, exporting: true, t,
+  })
+  const exportingButton = collectFlat(exportingPage).filter(node => node.type === 'button')
+    .find(node => collectText(node).includes('exporting'))
+  assert.equal(exportingButton.props.disabled, true, '导出中禁点')
+  // 导出失败轻量提示：role=alert 段落，不替换页面内容。
+  const exportErrorPage = BreakdownDetailPage({
+    workflow: fullWorkflow, detail: fullDetail, loading: false, errorReason: null,
+    onBack: () => {}, onRequestRewrite: () => {}, onExport: () => {}, exportError: 'bdErrorExportNotReady', t,
+  })
+  assert.ok(collectText(exportErrorPage).includes('bdErrorExportNotReady'), '导出失败文案可见')
+  assert.ok(collectFlat(exportErrorPage).some(node => String(node.props.className || '').includes('ydo-error') && node.props.role === 'alert'), '导出失败是 role=alert 轻量提示')
+  assert.ok(collectFlat(exportErrorPage).some(node => String(node.props.className || '').includes('ydo-ai-card ')), '导出失败不替换页面内容（五卡仍在）')
   const backButton = flat.filter(node => node.type === 'button').find(node => collectText(node) === 'bdBackToList')
   assert.ok(backButton, '返回列表按钮存在')
   assert.ok(text.includes('r1'), '规则 id 在规则卡 digest 中可见')
@@ -577,6 +609,10 @@ test('BreakdownDetailPage：失败/进行中/无数据与错误态，重新改�
   assert.ok(errorBox && errorBox.props.role === 'alert', '失败文案在预览稿 err-box 中（role=alert）')
   const failedRewrite = collectFlat(failed).filter(node => node.type === 'button').find(node => collectText(node) === 'bdRewriteButton')
   assert.equal(failedRewrite.props.disabled, false, '失败态允许重新改写')
+  // 导出仅成功记录可用（用户需求 2026-09-28）：失败/进行中/needs_input 均禁用。
+  const failedExport = collectFlat(failed).filter(node => node.type === 'button').find(node => collectText(node) === 'bdExportExcel')
+  assert.ok(failedExport, '失败态仍渲染导出按钮（禁用态可见）')
+  assert.equal(failedExport.props.disabled, true, '失败态导出禁用')
   // 失败态强制重试入口：按钮紧贴失败文案，点击触发 onForceRetry。
   const failedForceRetry = collectFlat(failed).filter(node => node.type === 'button').find(node => collectText(node) === 'bdForceRetry')
   assert.ok(failedForceRetry, '失败态渲染强制重试按钮')
@@ -644,6 +680,8 @@ test('BreakdownDetailPage：失败/进行中/无数据与错误态，重新改�
   assert.ok(emptyState && emptyState.props.role === 'status', '空态容器 role=status')
   const runningRewrite = collectFlat(running).filter(node => node.type === 'button').find(node => collectText(node) === 'bdRewriteButton')
   assert.equal(runningRewrite.props.disabled, true, '进行中禁用重新改写')
+  const runningExport = collectFlat(running).filter(node => node.type === 'button').find(node => collectText(node) === 'bdExportExcel')
+  assert.equal(runningExport.props.disabled, true, '进行中导出禁用')
   assert.ok(
     !collectFlat(running).some(node => node.type === 'button' && collectText(node) === 'bdForceRetry'),
     '进行中不渲染强制重试按钮',

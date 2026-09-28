@@ -114,6 +114,8 @@ export function apply(ctx, overrides = {}) {
               return send(res, 200, await handleBreakdownWorkflowStatus(deps, toolCtx, body))
             case 'breakdown.detail':
               return send(res, 200, await handleBreakdownDetail(deps, toolCtx, body))
+            case 'breakdown.export':
+              return send(res, 200, await handleBreakdownExport(deps, toolCtx, body))
             case 'breakdown.history':
               return send(res, 200, await handleBreakdownHistory(deps, toolCtx, body))
             default:
@@ -777,6 +779,58 @@ async function handleBreakdownDetail(deps, ctx, body) {
     candidateError = safeErrorCode(error)
   }
   return { status: 'ready', storyboards, analysis, analysisError, candidate, candidateError }
+}
+
+// 拆解详情导出（只读）：转发 tools viral_video_storyboard_export（单候选五块内容
+// → 多 sheet XLSX，仅 succeeded storyboard 可导出）。与既有导出同一安全链路：
+// 文件名二次净化并强制 douyin-storyboard- 前缀、base64/字节数自洽复核、序列化
+// 响应上限复核；稳定业务错误码原样透出供 UI 映射文案。
+function projectStoryboardFileName(value) {
+  const cleaned = typeof value === 'string'
+    ? value.replace(FILENAME_INVALID, '_').replace(/^[\s.]+/, '').slice(0, 128).trim()
+    : ''
+  if (!cleaned || !cleaned.toLowerCase().endsWith('.xlsx') || !cleaned.startsWith('douyin-storyboard-')) {
+    return 'douyin-storyboard-export.xlsx'
+  }
+  return cleaned
+}
+
+async function handleBreakdownExport(deps, ctx, body) {
+  const candidateId = cleanString(body.candidateId, MAX_ID)
+  if (!candidateId) return { status: 'error', reason: 'candidate_id_required' }
+  let payload
+  try {
+    payload = await callTool(ctx, 'viral_video_storyboard_export', { candidateId })
+  } catch (error) {
+    const code = safeErrorCode(error)
+    if (code === 'CANDIDATE_NOT_FOUND') return { status: 'error', reason: 'CANDIDATE_NOT_FOUND' }
+    if (code === 'STORYBOARD_NOT_READY') return { status: 'error', reason: 'STORYBOARD_NOT_READY' }
+    return { status: 'error', reason: 'export_failed' }
+  }
+  // tools 侧信封是 camelCase（fileName/contentBase64/sizeBytes），投影成下载链路
+  // 消费的 snake_case 字段，与其余导出 action 的响应形状保持一致。
+  const contentBase64 = typeof payload.contentBase64 === 'string' ? payload.contentBase64 : ''
+  const contentBytes = Number(payload.sizeBytes)
+  if (!contentBase64 || !Number.isFinite(contentBytes) || contentBytes <= 0) {
+    return { status: 'error', reason: 'export_failed' }
+  }
+  if (contentBytes > EXPORT_MAX_CONTENT_BYTES) return { status: 'error', reason: 'export_too_large' }
+  // base64 长度必须与声明字节数自洽：4*(n/3) 上取整。不一致说明载荷被截断或篡改，
+  // 宁可失败也不能把损坏文件交给浏览器下载。
+  if (contentBase64.length !== Math.ceil(contentBytes / 3) * 4) {
+    return { status: 'error', reason: 'export_failed' }
+  }
+  const projected = {
+    status: 'ready',
+    file_name: projectStoryboardFileName(payload.fileName),
+    mime_type: payload.mimeType || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    content_base64: contentBase64,
+    content_bytes: contentBytes,
+  }
+  if (Buffer.byteLength(JSON.stringify(projected), 'utf8') > EXPORT_MAX_RESPONSE_BYTES) {
+    return { status: 'error', reason: 'export_too_large' }
+  }
+  return projected
 }
 
 async function handleBreakdownHistory(deps, ctx, body) {

@@ -32,7 +32,7 @@ export const TOOL_NAMES = [
   'douyin_account_ai_analysis_start',
   'douyin_account_ai_analysis_get',
   // 爆款拆解（0922 方案）：直链归档受理/轮询、仿写工作流受理/轮询、
-  // 故事板与分析状态查询、仿写规则清单（纯配置只读）。
+  // 故事板与分析状态查询、仿写规则清单（纯配置只读）、拆解详情导出（只读）。
   'viral_video_archive_submit',
   'viral_video_async_submit_get',
   'viral_video_workflow_start',
@@ -40,6 +40,7 @@ export const TOOL_NAMES = [
   'viral_video_storyboards_list',
   'viral_video_analysis_status_get',
   'viral_video_rewrite_rules_list',
+  'viral_video_storyboard_export',
 ]
 
 const ALLOWED_ERROR_CODES = new Set([
@@ -95,6 +96,10 @@ const ALLOWED_ERROR_CODES = new Set([
   'IDEMPOTENCY_KEY_REQUIRED',
   'ASYNC_RUN_NOT_FOUND',
   'UNKNOWN_REWRITE_RULE',
+  // 拆解详情导出（0928 需求）稳定码：候选不存在 / 无已完成拆解不可导出
+  // （isError envelope，经 safeErrorCode 白名单收敛后由 BD_EXPORT_ERROR_COPY 映射文案）。
+  'CANDIDATE_NOT_FOUND',
+  'STORYBOARD_NOT_READY',
 ])
 
 export class ToolsUnavailableError extends Error {

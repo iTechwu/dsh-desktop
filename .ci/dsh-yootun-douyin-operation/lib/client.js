@@ -1986,7 +1986,8 @@ window.__ModuleLoader__.load({
 
     // React 由 client.js 内联作用域提供（构建时剥离本模块的 require，与 overview-ui 同法）；
     // hooks 以 React.xxx 形式使用，避免与 client.js 顶部解构重复声明同名绑定。
-    // 关闭图标与作品详情/AI 弹框同款（client.js 顶部解构统一提供，构建时剥离此处 require）。
+    // 关闭/下载图标与作品详情/AI 弹框、导出按钮同款（client.js 顶部解构统一提供，
+    // 构建时剥离此处 require）。
 
     // 稳定 reason → 已登记文案键（与 overview-ui 同一策略；未登记码由调用方兜底）。
     // 仅收 isError 形态 envelope 的白名单码；workflow_start 失败 payload 内的小写
@@ -1998,6 +1999,13 @@ window.__ModuleLoader__.load({
       IDEMPOTENCY_CONFLICT: 'bdErrorConflict',
       DOUYIN_TOOL_UNAVAILABLE: 'operationUnavailable',
       douyin_operation_request_failed: 'operationUnavailable',
+    })
+
+    // 详情页导出（breakdown.export）稳定 reason → 文案键：与既有导出同策略，
+    // 未登记码由调用方兜底 export_failed 通用文案。
+    const BD_EXPORT_ERROR_COPY = Object.freeze({
+      CANDIDATE_NOT_FOUND: 'bdErrorCandidateNotFound',
+      STORYBOARD_NOT_READY: 'bdErrorExportNotReady',
     })
 
     // workflow 投影 status → 徽标语义色（类名后缀）；workflow_start 失败 payload 的
@@ -2387,7 +2395,7 @@ window.__ModuleLoader__.load({
             h(BreakdownRulePicker, { rules, value: ruleId, onChange: setRuleId, disabled: submitting, t })),
         h('p', { className: 'ydo-hint' }, t('bdRulesHint')),
         archiveTask
-          ? h('div', { className: 'ydo-progress', role: 'status', 'aria-live': 'polite', 'aria-busy': true },
+          ? h('div', { className: 'ydo-bd-archive-hint', role: 'status', 'aria-live': 'polite', 'aria-busy': true },
             h('span', { className: 'ydo-spinner' }),
             h('span', null, t('bdArchivePending')))
           : null)
@@ -2476,7 +2484,7 @@ window.__ModuleLoader__.load({
     // + 五张折叠卡。规则名从已加载规则清单解析；候选指标缺失独立降级为 —。
     // ---------------------------------------------------------------------------
 
-    function BreakdownDetailPage({ workflow, detail, candidate, rules, loading, errorReason, onBack, onRequestRewrite, onForceRetry, t }) {
+    function BreakdownDetailPage({ workflow, detail, candidate, rules, loading, errorReason, onBack, onRequestRewrite, onForceRetry, onExport, exporting = false, exportError = null, t }) {
       if (errorReason) {
         return h('div', { className: 'ydo-state ydo-state-error', role: 'alert' },
           h('p', null, t(errorReason)),
@@ -2510,18 +2518,34 @@ window.__ModuleLoader__.load({
       // 在服务端输入校验阶段同步返回、needs_input 缺产品输入，force 到不了失败终态
       // 分支，重试注定同样失败，不渲染入口。
       const retryable = Boolean(workflow && workflow.status === 'failed')
+      // 导出只对成功记录可用（用户需求 2026-09-28）：服务端只认 succeeded storyboard，
+      // 非 succeeded 提前禁用避免点了才报错；明细未加载完（无 storyboardRow）同样禁用。
+      const exportable = Boolean(workflow && workflow.status === 'succeeded' && storyboardRow)
       // 仅在确有 workflow 且处于运行态时显示「拆解进行中」；无 workflow 的空态
       // 走「暂无拆解内容」引导，避免误导。
       const pending = Boolean(workflow) && !failed && breakdownStatusTone(workflow.status) === 'running'
       return h('div', { className: 'ydo-bd-page' },
-        // 预览稿 detail-top：返回靠左、「重新改写」靠右（弹性撑开）。
+        // 预览稿 detail-top：返回与导出靠左、「重新改写」靠右（弹性撑开）。导出按钮
+        // 与账号总览「导出总览」同款（ydo-export + 下载图标，同一导出语义）。
         h('div', { className: 'ydo-an-toolbar' },
           h('button', { type: 'button', className: 'ydo-secondary', onClick: onBack }, t('bdBackToList')),
+          h('button', {
+            type: 'button', className: 'ydo-secondary ydo-export ydo-bd-toolbar-export',
+            disabled: !exportable || exporting || loading,
+            'aria-busy': exporting,
+            onClick: onExport,
+          },
+          h(IconDownloadOutlineRegular, { size: 14 }),
+          h('span', null, exporting ? t('exporting') : t('bdExportExcel'))),
           h('button', {
             type: 'button', className: 'ydo-secondary ydo-bd-toolbar-rewrite',
             disabled: pending || loading,
             onClick: onRequestRewrite,
           }, t('bdRewriteButton'))),
+        // 导出失败轻量提示：不替换页面内容，关闭它的途径是再次导出或离开详情页。
+        exportError
+          ? h('p', { className: 'ydo-error', role: 'alert', 'aria-live': 'assertive' }, t(exportError))
+          : null,
         workflow
           ? h('header', { className: 'ydo-bd-head' },
             h('div', { className: 'ydo-bd-head-row' },
@@ -2874,6 +2898,7 @@ window.__ModuleLoader__.load({
         bdRunningTitle: '拆解进行中', bdRunningSub: '页面会自动刷新进度，拆解完成后此处展示拆解结果',
         bdShotQuotas: '景别配额', bdRuleNone: '本次拆解未使用仿写规则（默认链路改写）',
         bdBackToList: '← 返回列表', bdRewriteButton: '重新改写', bdForceRetry: '强制重试',
+        bdExportExcel: '导出拆解', bdErrorExportNotReady: '该记录还没有完成的拆解结果，暂不能导出',
         bdRewriteTitle: '重新改写这条视频', bdRewriteHint: '基于已完成的拆解结果，重新生成分镜与拍摄脚本；换用不同规则将生成一条新记录。',
         bdRewriteStart: '开始改写', bdRunningHint: '拆解进行中，页面会自动刷新进度…',
         bdErrorInvalidKey: '请求参数不合法，请刷新后重试', bdErrorRunNotFound: '任务不存在或已过期，请重新发起',
@@ -3046,6 +3071,7 @@ window.__ModuleLoader__.load({
         bdRunningSub: 'This page refreshes automatically; results appear here once the breakdown completes',
         bdShotQuotas: 'Shot-size quotas', bdRuleNone: 'No rewrite rule was used (default pipeline)',
         bdBackToList: '← Back to list', bdRewriteButton: 'Rewrite', bdForceRetry: 'Force retry',
+        bdExportExcel: 'Export breakdown', bdErrorExportNotReady: 'No completed breakdown yet, export unavailable',
         bdRewriteTitle: 'Rewrite this video', bdRewriteHint: 'Regenerate the storyboard and shot script from the completed breakdown; a different rule creates a new record.',
         bdRewriteStart: 'Start rewrite', bdRunningHint: 'Breakdown in progress — this page refreshes automatically…',
         bdErrorInvalidKey: 'Invalid request — refresh and retry', bdErrorRunNotFound: 'Task not found or expired — start again',
@@ -3500,6 +3526,10 @@ window.__ModuleLoader__.load({
       const [bdDetailError, setBdDetailError] = useState(null)
       const [bdRewriteOpen, setBdRewriteOpen] = useState(false)
       const [bdRewriting, setBdRewriting] = useState(false)
+      // 详情页导出过渡态：只读下载，导出中禁点防重复下载（与既有导出同法）；
+      // 失败文案独立于明细错误（bdDetailError），避免已成功记录被整页错误态覆盖。
+      const [bdExporting, setBdExporting] = useState(false)
+      const [bdExportError, setBdExportError] = useState(null)
       const bdArchivePollRef = useRef(null)
       const bdWorkflowPollRef = useRef(null)
       // 详情请求序列号（与 overviewRequestRef 同法）：快速点不同历史行时旧响应丢弃。
@@ -4146,6 +4176,7 @@ window.__ModuleLoader__.load({
         if (!workflow || !workflow.candidateId) return
         setBdDetail(null)
         setBdDetailError(null)
+        setBdExportError(null)
         setBdDetailWorkflow(workflow)
         bdDetailWorkflowRef.current = workflow
         loadBdDetail(workflow.candidateId)
@@ -4168,6 +4199,7 @@ window.__ModuleLoader__.load({
         bdDetailWorkflowRef.current = null
         setBdDetail(null)
         setBdDetailError(null)
+        setBdExportError(null)
         setBdRewriteOpen(false)
         loadBdHistory().catch(() => {})
         if (pending && pending.candidateId) startBdWorkflow(pending.candidateId, pending.rewriteRuleId)
@@ -4203,6 +4235,28 @@ window.__ModuleLoader__.load({
       // 爆款拆解 Tab 进入：拉规则清单（纯配置只读）与拆解历史（团队共享，只读）。
       // 置于 bd 声明块之后：依赖数组渲染期即求值，不得前向引用下方 useCallback
       // 声明（const 无提升，前向引用触发 TDZ ReferenceError，整个插件页渲染崩）。
+      // 详情页导出（只读下载）：把当前详情候选的五块内容经宿主转发下载为多 sheet
+      // XLSX；不改详情状态，导出中禁点防重复下载。失败走独立轻量提示（bdDetailError
+      // 会把整页换成错误态，不适用于已成功记录上的导出失败），下次导出或切换记录清除。
+      const exportBdDetail = useCallback(async () => {
+        const candidateId = bdDetailWorkflowRef.current?.candidateId
+        if (!candidateId) return
+        setBdExporting(true)
+        setBdExportError(null)
+        try {
+          const result = await post({ action: 'breakdown.export', candidateId })
+          if (result.status !== 'ready') {
+            setBdExportError(BD_EXPORT_ERROR_COPY[result.reason] || 'exportFailed')
+            return
+          }
+          downloadWorkbook(result)
+        } catch {
+          setBdExportError('exportFailed')
+        } finally {
+          setBdExporting(false)
+        }
+      }, [])
+
       useEffect(() => {
         if (!visible || tab !== 'breakdown') return undefined
         loadBdRules().catch(() => {})
@@ -4456,6 +4510,11 @@ window.__ModuleLoader__.load({
                     errorReason: bdDetailError,
                     onBack: backToBdList,
                     onRequestRewrite: () => setBdRewriteOpen(true),
+                    // 成功记录导出（只读下载五块内容 → 多 sheet XLSX）；exportError
+                    // 是工具栏下方的轻量提示，不复用会整页替换的错误态。
+                    onExport: exportBdDetail,
+                    exporting: bdExporting,
+                    exportError: bdExportError,
                     // 失败态强制重试入口：仅在确有候选 id 时提供，无 id 不渲染按钮。
                     onForceRetry: bdDetailWorkflow?.candidateId ? forceRetryBdWorkflow : null,
                     t,
@@ -4682,7 +4741,7 @@ window.__ModuleLoader__.load({
     /* 预览稿 .page 容器口径：拆解 Tab 两个视图统一 980px 限宽居中。 */
     .ydo-bd-main{display:grid;gap:16px;align-content:start;min-width:0;max-width:980px;margin:0 auto;width:100%}
     .ydo-bd-page{display:grid;gap:12px;align-content:start;min-width:0;max-width:980px;margin:0 auto;width:100%}
-    .ydo-bd-new{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+    .ydo-bd-new{display:flex;align-items:center;gap:8px;flex-wrap:wrap}/* 归档进行中提示：承接「新建拆解」输入行，字号与颜色升级为醒目主信息（用户反馈 2026-09-28）。 */.ydo-bd-archive-hint{display:flex;align-items:center;gap:10px;margin-top:10px;color:var(--dsw-alias-label-primary);font-size:15px;font-weight:500}
     .ydo-bd-input{flex:1;min-width:260px;max-width:560px;background:var(--dsw-alias-bg-layer-2)}
     .ydo-bd-input:focus{background:var(--dsw-alias-bg-layer-1)}
     .ydo-bd-rules-field{display:grid;gap:8px;margin-top:14px}
@@ -4734,9 +4793,8 @@ window.__ModuleLoader__.load({
     .ydo-bd-head-row{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
     .ydo-bd-head-main{display:grid;gap:4px;min-width:0}
     .ydo-bd-head-row h3{margin:0;font-size:15px;line-height:1.4}
-    .ydo-bd-head-meta{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0;color:var(--dsw-alias-label-secondary);font-size:12px}
-    .ydo-bd-head-meta a{color:var(--dsw-alias-brand-primary);text-decoration:none}
-    .ydo-bd-head-meta a:hover{text-decoration:underline}
+    .ydo-bd-head-meta{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0;color:var(--dsw-alias-label-secondary);font-size:14px}/* 原视频链接高亮为品牌蓝 + 下划线：明确超链接可供点击（用户反馈 2026-09-28）。 */.ydo-bd-head-meta a{color:var(--dsw-alias-brand-primary);text-decoration:underline;text-underline-offset:2px}
+    .ydo-bd-head-meta a:hover{text-decoration:underline}.ydo-bd-head-meta a:visited{color:var(--dsw-alias-brand-primary)}
     /* 8 段进度条（预览稿 steps）：每步 4px 色条在上、步骤名在下；完成绿/当前蓝。 */
     .ydo-bd-steps{display:flex;gap:4px;margin:0;padding:0;list-style:none}
     .ydo-bd-step{flex:1;min-width:0;text-align:center}

@@ -1214,6 +1214,99 @@ test('breakdown.history：succeeded 标记 hasStoryboard，limit 越界回落默
   assert.equal(response.payload.total, 3)
 })
 
+test('breakdown.export：camelCase 信封投影 snake_case，文件名前缀与业务错误码映射', async () => {
+  const calls = []
+  const contentBase64 = Buffer.from('workbook').toString('base64')
+  const { ctx, registered } = createContext({
+    tools: [{ name: 'mcp__tools-douyin-operation__viral_video_storyboard_export' }],
+    execute: async ({ arguments: args }) => {
+      calls.push(args)
+      return {
+        structuredContent: {
+          candidateId: 'cand-1',
+          fileName: 'douyin-storyboard-cand-1-20260928.xlsx',
+          mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          contentBase64,
+          sizeBytes: 8,
+          sheetNames: ['概览', '原视频拆解'],
+        },
+      }
+    },
+  })
+  apply(ctx, { root: '/tmp/unused', browserStatus: async () => ({ chromeAvailable: true, driverAvailable: true, platform: 'linux' }) })
+  const dispatch = registered[0].handler
+
+  // 缺 candidateId 直接拒绝，不调 tools。
+  const missing = await call(dispatch, { action: 'breakdown.export' })
+  assert.equal(missing.payload.reason, 'candidate_id_required')
+  assert.equal(calls.length, 0)
+
+  // 成功：只透传 candidateId；响应投影成下载链路消费的 snake_case 字段。
+  const ok = await call(dispatch, { action: 'breakdown.export', candidateId: 'cand-1' })
+  assert.deepEqual(calls[0], { candidateId: 'cand-1' })
+  assert.equal(ok.payload.status, 'ready')
+  assert.equal(ok.payload.file_name, 'douyin-storyboard-cand-1-20260928.xlsx')
+  assert.equal(ok.payload.content_base64, contentBase64)
+  assert.equal(ok.payload.content_bytes, 8)
+  assert.equal(ok.payload.mime_type, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+  // 下载链路只认 file_name/mime_type/content_base64/content_bytes：camelCase
+  // 原始字段与 sheetNames 不透出，保持与其余导出 action 响应形状一致。
+  assert.equal(ok.payload.contentBase64, undefined)
+  assert.equal(ok.payload.sheetNames, undefined)
+
+  // 文件名前缀不符：回退兜底名（宿主不信任透传值）。
+  const { ctx: ctx2, registered: registered2 } = createContext({
+    tools: [{ name: 'mcp__tools-douyin-operation__viral_video_storyboard_export' }],
+    execute: async () => ({ structuredContent: { fileName: 'evil.xlsx', contentBase64, sizeBytes: 8 } }),
+  })
+  apply(ctx2, { root: '/tmp/unused', browserStatus: async () => ({ chromeAvailable: true, driverAvailable: true, platform: 'linux' }) })
+  const renamed = await call(registered2[0].handler, { action: 'breakdown.export', candidateId: 'cand-1' })
+  assert.equal(renamed.payload.file_name, 'douyin-storyboard-export.xlsx')
+
+  // 业务稳定码原样透出（UI 按 BD_EXPORT_ERROR_COPY 映射文案）。
+  const { ctx: ctx3, registered: registered3 } = createContext({
+    tools: [{ name: 'mcp__tools-douyin-operation__viral_video_storyboard_export' }],
+    execute: async () => { const e = new Error('STORYBOARD_NOT_READY'); e.code = 'STORYBOARD_NOT_READY'; throw e },
+  })
+  apply(ctx3, { root: '/tmp/unused', browserStatus: async () => ({ chromeAvailable: true, driverAvailable: true, platform: 'linux' }) })
+  const notReady = await call(registered3[0].handler, { action: 'breakdown.export', candidateId: 'cand-1' })
+  assert.equal(notReady.payload.reason, 'STORYBOARD_NOT_READY')
+
+  const { ctx: ctx4, registered: registered4 } = createContext({
+    tools: [{ name: 'mcp__tools-douyin-operation__viral_video_storyboard_export' }],
+    execute: async () => { const e = new Error('CANDIDATE_NOT_FOUND'); e.code = 'CANDIDATE_NOT_FOUND'; throw e },
+  })
+  apply(ctx4, { root: '/tmp/unused', browserStatus: async () => ({ chromeAvailable: true, driverAvailable: true, platform: 'linux' }) })
+  const notFound = await call(registered4[0].handler, { action: 'breakdown.export', candidateId: 'cand-x' })
+  assert.equal(notFound.payload.reason, 'CANDIDATE_NOT_FOUND')
+
+  const { ctx: ctx5, registered: registered5 } = createContext({
+    tools: [{ name: 'mcp__tools-douyin-operation__viral_video_storyboard_export' }],
+    execute: async () => { throw new Error('boom') },
+  })
+  apply(ctx5, { root: '/tmp/unused', browserStatus: async () => ({ chromeAvailable: true, driverAvailable: true, platform: 'linux' }) })
+  const failed = await call(registered5[0].handler, { action: 'breakdown.export', candidateId: 'cand-1' })
+  assert.equal(failed.payload.reason, 'export_failed')
+
+  // 超过内容上限（1MB）拒绝整单；base64 长度与声明字节数不自洽视为载荷损坏。
+  const bigPayload = Buffer.alloc(1_000_001).toString('base64')
+  const { ctx: ctx6, registered: registered6 } = createContext({
+    tools: [{ name: 'mcp__tools-douyin-operation__viral_video_storyboard_export' }],
+    execute: async () => ({ structuredContent: { fileName: 'douyin-storyboard-big.xlsx', contentBase64: bigPayload, sizeBytes: 1_000_001 } }),
+  })
+  apply(ctx6, { root: '/tmp/unused', browserStatus: async () => ({ chromeAvailable: true, driverAvailable: true, platform: 'linux' }) })
+  const tooLarge = await call(registered6[0].handler, { action: 'breakdown.export', candidateId: 'cand-1' })
+  assert.equal(tooLarge.payload.reason, 'export_too_large')
+
+  const { ctx: ctx7, registered: registered7 } = createContext({
+    tools: [{ name: 'mcp__tools-douyin-operation__viral_video_storyboard_export' }],
+    execute: async () => ({ structuredContent: { fileName: 'douyin-storyboard-x.xlsx', contentBase64, sizeBytes: 999 } }),
+  })
+  apply(ctx7, { root: '/tmp/unused', browserStatus: async () => ({ chromeAvailable: true, driverAvailable: true, platform: 'linux' }) })
+  const torn = await call(registered7[0].handler, { action: 'breakdown.export', candidateId: 'cand-1' })
+  assert.equal(torn.payload.reason, 'export_failed')
+})
+
 test('breakdown.*：宿主未注册 viral_video 工具时收敛为 DOUYIN_TOOL_UNAVAILABLE', async () => {
   // 空 schemas 模拟宿主端工具域未升级：requireTool 抛 ToolsUnavailableError，
   // 经外层 catch 的 safeErrorCode 收敛为稳定 reason，P3 UI 据此展示「功能不可用」。
