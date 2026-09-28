@@ -16,9 +16,9 @@ export const ELECTRON_BUILDER_BASE = Object.freeze({
   afterPack: './scripts/verify-packaged-runtime.ts',
   electronDownload: {
     checksums: {
-      'electron-v43.4.0-darwin-arm64.zip': '827f9f182566f46846377575b51c547b9926b111637313a373b6f717462aebac',
-      'electron-v43.4.0-darwin-x64.zip': '7ab39ec1b0bcf5463f2dc0040142fbc1c30cd7bc3f99086066f588c717b11e24',
-      'electron-v43.4.0-win32-x64.zip': 'ef0709cfa719739acce73de6f9b684304baf38c6454376638a70d34a7cecffe0',
+      'electron-v43.0.0-darwin-arm64.zip': '0934b54092d9717c74e942e6bb3660500ae25ee30949e11503197d7ffd03bba4607cddd615b685ab4b00e9f3aa0d459bdc719fc4687cc02c249dcd2a1b359406',
+      'electron-v43.0.0-darwin-x64.zip': '70c1184a1805a90241733a37ac341891f607e5fdda1e11ff5d96403c43958eb88ab1c6cbb04019444194863079481731e016d3ded91cd0cbb1c912c1eeff6a61',
+      'electron-v43.0.0-win32-x64.zip': '87996ac885462e92d94ddbae612b5ff8166dbed68a152296c4dd9baf69393a3f73ce2f7f2ec1c112ac0ecb0a2cb15baa966dfe6cb8472b16381074f8a5f95672',
     },
   },
   electronFuses: {

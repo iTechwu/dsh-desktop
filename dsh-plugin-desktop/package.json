@@ -485,6 +485,7 @@
     "dshmarket": "1.39.0",
     "fs-ext": "2.1.1",
     "koffi": "3.1.5",
+    "node-addon-native-custom-loader": "0.1.5",
     "node-addon-require-builtin": "0.1.5",
     "node-pty": "1.2.0-beta.15",
     "open": "11.0.1",
@@ -498,7 +499,7 @@
     "yaml": "^2.9.0"
   },
   "peerDependencies": {
-    "electron": "43.4.0"
+    "electron": "43.0.0"
   },
   "devDependencies": {
     "@base-ui/react": "^1.7.0",
@@ -516,7 +517,7 @@
     "builder-util": "26.15.3",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
-    "electron": "43.4.0",
+    "electron": "43.0.0",
     "electron-builder": "26.15.7",
     "jsdom": "29.1.1",
     "lexical": "0.49.0",

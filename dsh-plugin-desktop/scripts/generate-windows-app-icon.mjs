@@ -1,6 +1,6 @@
 /** Generate a Windows ICO with exact-DPI frames for the application and NSIS. */
 
-import { writeFile } from 'node:fs/promises'
+import { writeFile, unlink } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import sharp from 'sharp'
@@ -193,6 +193,7 @@ export async function generateWindowsAppIcon(source = sourcePath, output = outpu
     throw new Error('generate-windows-app-icon: the 256px frame must use PNG encoding')
   }
 
+  try { await unlink(output) } catch {}
   await writeFile(output, encodeIco(rendered))
 }
 

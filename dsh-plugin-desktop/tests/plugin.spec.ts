@@ -34,7 +34,6 @@ import { YOOTUN_SALES_PATH } from '../src/yootun-sales-route.ts'
 import { YOOTUN_SUPPLY_WATCH_PATH } from '../src/yootun-supply-watch-route.ts'
 import { YOOTUN_CONTENT_COMMAND_PATH } from '../src/yootun-content-command-route.ts'
 import { YOOTUN_AUDIT_PATH } from '../src/yootun-audit-route.ts'
-import { DOFE_AUTH_PATHS } from '../src/dofe-auth-route.ts'
 import { BRAND_RELEASE_IDENTITIES, BRAND_ACTIVE_CHANNEL } from '../src/generated-product-identity.ts'
 
 /** The installed identity of the active release channel, whatever the brand. */
@@ -555,7 +554,6 @@ describe('desktop Host plugin', () => {
       DESKTOP_DIAGNOSTICS_EXPORT_PATH,
       DOFE_ACCESS_MODELS_PATH,
       DOFE_ACCESS_VALIDATE_PATH,
-      ...DOFE_AUTH_PATHS,
       YOOTUN_RECRUITER_PATH,
       YOOTUN_SALES_PATH,
       YOOTUN_SUPPLY_WATCH_PATH,
