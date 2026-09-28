@@ -234,7 +234,7 @@ const copy = {
     bdDetailEmptySub: '拆解完成后，此处将展示原视频拆解、改写分镜与拍摄脚本',
     bdRunningTitle: '拆解进行中', bdRunningSub: '页面会自动刷新进度，拆解完成后此处展示拆解结果',
     bdShotQuotas: '景别配额', bdRuleNone: '本次拆解未使用仿写规则（默认链路改写）',
-    bdBackToList: '← 返回列表', bdRewriteButton: '重新改写',
+    bdBackToList: '← 返回列表', bdRewriteButton: '重新改写', bdForceRetry: '强制重试',
     bdRewriteTitle: '重新改写这条视频', bdRewriteHint: '基于已完成的拆解结果，重新生成分镜与拍摄脚本；换用不同规则将生成一条新记录。',
     bdRewriteStart: '开始改写', bdRunningHint: '拆解进行中，页面会自动刷新进度…',
     bdErrorInvalidKey: '请求参数不合法，请刷新后重试', bdErrorRunNotFound: '任务不存在或已过期，请重新发起',
@@ -406,7 +406,7 @@ const copy = {
     bdRunningTitle: 'Breakdown in progress',
     bdRunningSub: 'This page refreshes automatically; results appear here once the breakdown completes',
     bdShotQuotas: 'Shot-size quotas', bdRuleNone: 'No rewrite rule was used (default pipeline)',
-    bdBackToList: '← Back to list', bdRewriteButton: 'Rewrite',
+    bdBackToList: '← Back to list', bdRewriteButton: 'Rewrite', bdForceRetry: 'Force retry',
     bdRewriteTitle: 'Rewrite this video', bdRewriteHint: 'Regenerate the storyboard and shot script from the completed breakdown; a different rule creates a new record.',
     bdRewriteStart: 'Start rewrite', bdRunningHint: 'Breakdown in progress — this page refreshes automatically…',
     bdErrorInvalidKey: 'Invalid request — refresh and retry', bdErrorRunNotFound: 'Task not found or expired — start again',
@@ -879,6 +879,9 @@ function Overlay({ t }) {
   useEffect(() => {
     bdDetailWorkflowRef.current = bdDetailWorkflow
   }, [bdDetailWorkflow])
+  // 本次会话最近一次发起拆解所选规则：workflowStart 同步失败 payload 不带规则
+  // id，失败态一键强制重试时以此为回退，保证重试输入与失败记录一致。
+  const bdLastRuleRef = useRef(null)
 
   const current = useMemo(() => accounts.find(item => item.accountId === selected) || null, [accounts, selected])
 
@@ -1409,15 +1412,18 @@ function Overlay({ t }) {
   }, [loadBdDetail, stopBdWorkflowPolling, stopPolling])
 
   // workflow 受理：succeeded（幂等重放/秒回）直接拉明细；运行态白名单
-  // （queued/running/waiting）启动轮询；failed / needs_input / invalid_input /
-  // idempotency_conflict 是同步失败 payload（无 workflowId），交详情页失败文案，
-  // 不进轮询。
-  const startBdWorkflow = useCallback(async (candidateId, rewriteRuleId) => {
+  // （queued/running/waiting）启动轮询；failed（带 workflowId 但不在白名单）/
+  // needs_input / invalid_input / idempotency_conflict 是同步失败 payload，交
+  // 详情页失败文案，不进轮询。force=true 走服务端失败终态强制重试（重置可恢复
+  // 失败并重新投递）；所选规则记录进 bdLastRuleRef 供失败后一键重试回退。
+  const startBdWorkflow = useCallback(async (candidateId, rewriteRuleId, { force = false } = {}) => {
     setBdDetail(null)
     setBdDetailError(null)
+    bdLastRuleRef.current = rewriteRuleId || null
     try {
       const body = { action: 'breakdown.workflowStart', candidateId, idempotencyKey: bdWorkflowIdempotencyKey() }
       if (rewriteRuleId) body.rewriteRuleId = rewriteRuleId
+      if (force) body.force = true
       const result = await post(body)
       if (result.status !== 'ready') {
         setBdDetailError(bdErrorKey(result.reason))
@@ -1537,6 +1543,23 @@ function Overlay({ t }) {
     setBdRewriting(true)
     Promise.resolve(startBdWorkflow(candidateId, ruleId)).finally(() => setBdRewriting(false))
   }, [bdDetailWorkflow, startBdWorkflow])
+
+  // 强制重试（失败终态一键重跑）：force=true 让服务端重置可恢复失败并重新投递，
+  // 而不是返回旧失败态。规则输入与失败记录 natural key 保持一致——workflow_get
+  // 投影恒带 rewriteRuleId 键（null = 默认链路）；workflowStart 同步失败 payload
+  // 不带该键，才回退本会话上次发起所选规则（都没有 = 默认链路）。以键存在性区分
+  // 两种形态：若用 ?? 回退，会把「记录真无规则」误判成本会话残留规则，natural key
+  // 随之偏移，重置成另一条新记录而非正在看的失败记录。
+  const forceRetryBdWorkflow = useCallback(() => {
+    const workflow = bdDetailWorkflowRef.current
+    const candidateId = workflow && workflow.candidateId
+    if (!candidateId) return
+    setBdRewriting(true)
+    const ruleId = 'rewriteRuleId' in workflow
+      ? (workflow.rewriteRuleId || null)
+      : (bdLastRuleRef.current ?? null)
+    Promise.resolve(startBdWorkflow(candidateId, ruleId, { force: true })).finally(() => setBdRewriting(false))
+  }, [startBdWorkflow])
 
   // 爆款拆解 Tab 进入：拉规则清单（纯配置只读）与拆解历史（团队共享，只读）。
   // 置于 bd 声明块之后：依赖数组渲染期即求值，不得前向引用下方 useCallback
@@ -1794,6 +1817,8 @@ function Overlay({ t }) {
                 errorReason: bdDetailError,
                 onBack: backToBdList,
                 onRequestRewrite: () => setBdRewriteOpen(true),
+                // 失败态强制重试入口：仅在确有候选 id 时提供，无 id 不渲染按钮。
+                onForceRetry: bdDetailWorkflow?.candidateId ? forceRetryBdWorkflow : null,
                 t,
               })
               : h('div', { className: 'ydo-bd-main' },
@@ -2088,7 +2113,7 @@ const css = `.ydo-button{display:flex;width:36px;height:36px;align-items:center;
 .ydo-bd-kpi-label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;color:var(--dsw-alias-label-secondary)}
 .ydo-bd-kpi-value{margin-top:2px;font-size:15px;font-weight:700;font-variant-numeric:tabular-nums}
 /* 失败提示框（预览稿 err-box）。 */
-.ydo-bd-error-box{margin:0;padding:12px 14px;border:1px solid var(--dsw-alias-state-error-primary);border-radius:8px;background:color-mix(in srgb,var(--dsw-alias-state-error-primary) 8%,transparent);color:var(--dsw-alias-state-error-primary);font-weight:600;font-size:var(--dsh-content-font-size-secondary,13px)}
+.ydo-bd-error-box{margin:0;padding:12px 14px;border:1px solid var(--dsw-alias-state-error-primary);border-radius:8px;background:color-mix(in srgb,var(--dsw-alias-state-error-primary) 8%,transparent);color:var(--dsw-alias-state-error-primary);font-weight:600;font-size:var(--dsh-content-font-size-secondary,13px)}.ydo-bd-error-actions{margin-top:10px;display:flex;gap:8px;flex-wrap:wrap}
 /* 空态/进行中大卡（0923 体验优化）：居中留白、主副文案分层，替换原先拥挤的小字提示。 */
 .ydo-bd-empty{display:grid;justify-items:center;gap:10px;padding:44px 24px;border:1px dashed var(--dsw-alias-border-l1);border-radius:8px;background:var(--dsw-alias-bg-layer-1);text-align:center}
 .ydo-bd-empty-spinner{width:22px;height:22px;border-width:3px}

@@ -1075,6 +1075,12 @@ test('breakdown.workflowStart：candidateId/幂等键校验，rewriteRuleId 可�
   assert.equal(withRule.payload.status, 'ready')
   assert.equal(withRule.payload.workflow.workflowId, 'wf-1')
   assert.deepEqual(calls[1], { candidateId: 'cand-1', idempotencyKey: 'douyin:vv_workflow:u2', confirm: true, rewriteRuleId: 'new_script' })
+
+  // 强制重试：force=true 显式透传；falsy 值不透传（服务端默认 false 语义不变）。
+  await call(dispatch, { action: 'breakdown.workflowStart', candidateId: 'cand-1', idempotencyKey: 'douyin:vv_workflow:u3', force: true })
+  assert.deepEqual(calls[2], { candidateId: 'cand-1', idempotencyKey: 'douyin:vv_workflow:u3', confirm: true, force: true })
+  await call(dispatch, { action: 'breakdown.workflowStart', candidateId: 'cand-1', idempotencyKey: 'douyin:vv_workflow:u4', force: false })
+  assert.deepEqual(calls[3], { candidateId: 'cand-1', idempotencyKey: 'douyin:vv_workflow:u4', confirm: true })
 })
 
 test('breakdown.workflowStatus：workflowId 优先，items 归一化 candidateId', async () => {

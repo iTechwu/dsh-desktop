@@ -724,6 +724,9 @@ async function handleBreakdownWorkflowStart(deps, ctx, body) {
   // 在成功 envelope 内返回 errorCode=unknown_rewrite_rule（不是 isError）。
   const rewriteRuleId = cleanString(body.rewriteRuleId, 64)
   if (rewriteRuleId) args.rewriteRuleId = rewriteRuleId
+  // force 仅在显式 true 时透传（服务端默认 false）：失败终态的强制重试入口，
+  // 服务端重置可恢复失败并重新投递；普通发起不带该字段，请求与既有链路零差异。
+  if (body.force === true) args.force = true
   const payload = await callTool(ctx, 'viral_video_workflow_start', args)
   return { status: 'ready', workflow: payload }
 }

@@ -510,10 +510,15 @@ export function BreakdownHistoryList({
 // + 五张折叠卡。规则名从已加载规则清单解析；候选指标缺失独立降级为 —。
 // ---------------------------------------------------------------------------
 
-export function BreakdownDetailPage({ workflow, detail, candidate, rules, loading, errorReason, onBack, onRequestRewrite, t }) {
+export function BreakdownDetailPage({ workflow, detail, candidate, rules, loading, errorReason, onBack, onRequestRewrite, onForceRetry, t }) {
   if (errorReason) {
     return h('div', { className: 'ydo-state ydo-state-error', role: 'alert' },
       h('p', null, t(errorReason)),
+      // 强制重试（workflowStart 同步失败 / 明细加载失败时由宿主按候选 id 提供入口）；
+      // 无候选 id 宿主传 null，仅保留返回列表。
+      onForceRetry
+        ? h('button', { type: 'button', className: 'ydo-secondary', onClick: onForceRetry }, t('bdForceRetry'))
+        : null,
       h('button', { type: 'button', className: 'ydo-secondary', onClick: onBack }, t('bdBackToList')))
   }
   const storyboardRow = latestStoryboard(detail)
@@ -535,6 +540,10 @@ export function BreakdownDetailPage({ workflow, detail, candidate, rules, loadin
   const failed = Boolean(
     workflow && (breakdownStatusTone(workflow.status) === 'error' || workflow.status === 'needs_input'),
   )
+  // 强制重试仅对运行失败终态（status=failed）有效：invalid_input / idempotency_conflict
+  // 在服务端输入校验阶段同步返回、needs_input 缺产品输入，force 到不了失败终态
+  // 分支，重试注定同样失败，不渲染入口。
+  const retryable = Boolean(workflow && workflow.status === 'failed')
   // 仅在确有 workflow 且处于运行态时显示「拆解进行中」；无 workflow 的空态
   // 走「暂无拆解内容」引导，避免误导。
   const pending = Boolean(workflow) && !failed && breakdownStatusTone(workflow.status) === 'running'
@@ -562,7 +571,16 @@ export function BreakdownDetailPage({ workflow, detail, candidate, rules, loadin
               : null),
           h(StatusBadge, { status: workflow.status, t })),
         h(StepProgress, { workflow, t }),
-        failed ? h('p', { className: 'ydo-bd-error-box', role: 'alert' }, t(workflowErrorCopyKey(workflow))) : null)
+        failed
+          ? h('div', { className: 'ydo-bd-error-actions' },
+            h('p', { className: 'ydo-bd-error-box', role: 'alert' }, t(workflowErrorCopyKey(workflow))),
+            retryable && onForceRetry
+              ? h('button', {
+                type: 'button', className: 'ydo-secondary', disabled: loading,
+                onClick: onForceRetry,
+              }, t('bdForceRetry'))
+              : null)
+          : null)
       : null,
     Number.isFinite(Number(candidate?.playCount)) || candidate
       ? h(KpiGrid, { candidate, t })

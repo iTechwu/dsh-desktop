@@ -565,9 +565,11 @@ test('BreakdownDetailPage：失败/进行中/无数据与错误态，重新改�
   const BreakdownDetailPage = vm.runInContext('BreakdownDetailPage', sandbox)
 
   // 失败 payload（含小写 errorCode）：err-box 失败文案 + 改写按钮可用（failed 非运行态）。
+  let forceRetried = false
   const failed = BreakdownDetailPage({
     workflow: { ...fullWorkflow, status: 'failed', currentStep: 'storyboard', admin: { workflowId: 'wf-1', errorCode: 'storyboard_quality' } },
-    detail: null, loading: false, errorReason: null, onBack: () => {}, onRequestRewrite: () => {}, t,
+    detail: null, loading: false, errorReason: null, onBack: () => {}, onRequestRewrite: () => {},
+    onForceRetry: () => { forceRetried = true }, t,
   })
   const failedText = collectText(failed)
   assert.ok(failedText.includes('bdErrorRetryable'), 'storyboard_quality 映射可重试文案')
@@ -575,6 +577,30 @@ test('BreakdownDetailPage：失败/进行中/无数据与错误态，重新改�
   assert.ok(errorBox && errorBox.props.role === 'alert', '失败文案在预览稿 err-box 中（role=alert）')
   const failedRewrite = collectFlat(failed).filter(node => node.type === 'button').find(node => collectText(node) === 'bdRewriteButton')
   assert.equal(failedRewrite.props.disabled, false, '失败态允许重新改写')
+  // 失败态强制重试入口：按钮紧贴失败文案，点击触发 onForceRetry。
+  const failedForceRetry = collectFlat(failed).filter(node => node.type === 'button').find(node => collectText(node) === 'bdForceRetry')
+  assert.ok(failedForceRetry, '失败态渲染强制重试按钮')
+  assert.equal(failedForceRetry.props.disabled, false, '失败态强制重试可用')
+  failedForceRetry.props.onClick()
+  assert.equal(forceRetried, true, '强制重试按钮触发 onForceRetry')
+  // 明细加载中禁用强制重试（防止对同一失败记录并发重放）。
+  const failedLoading = BreakdownDetailPage({
+    workflow: { ...fullWorkflow, status: 'failed', currentStep: 'storyboard', admin: { workflowId: 'wf-1', errorCode: 'storyboard_quality' } },
+    detail: null, loading: true, errorReason: null, onBack: () => {}, onRequestRewrite: () => {},
+    onForceRetry: () => {}, t,
+  })
+  const loadingRetry = collectFlat(failedLoading).filter(node => node.type === 'button').find(node => collectText(node) === 'bdForceRetry')
+  assert.equal(loadingRetry.props.disabled, true, '明细加载中禁用强制重试')
+
+  // 无 onForceRetry（宿主无候选 id 时传 null）：失败文案仍在，但不渲染强制重试按钮。
+  const failedNoRetry = BreakdownDetailPage({
+    workflow: { ...fullWorkflow, status: 'failed', currentStep: 'storyboard', admin: { workflowId: 'wf-1', errorCode: 'storyboard_quality' } },
+    detail: null, loading: false, errorReason: null, onBack: () => {}, onRequestRewrite: () => {}, t,
+  })
+  assert.ok(
+    !collectFlat(failedNoRetry).some(node => node.type === 'button' && collectText(node) === 'bdForceRetry'),
+    '无候选 id 不渲染强制重试按钮',
+  )
 
   // needs_input（warn 色同步失败 payload，needs_product_input）：徽标显示
   // 「待补充信息」而非 warn 默认的「已取消」，失败文案渲染，可换规则重新改写。
@@ -588,6 +614,23 @@ test('BreakdownDetailPage：失败/进行中/无数据与错误态，重新改�
   assert.ok(needsText.includes('bdErrorNeedsInput'), 'needs_input 渲染缺少产品信息失败文案')
   const needsRewrite = collectFlat(needsInput).filter(node => node.type === 'button').find(node => collectText(node) === 'bdRewriteButton')
   assert.equal(needsRewrite.props.disabled, false, 'needs_input 允许换规则重新改写')
+  assert.ok(
+    !collectFlat(needsInput).some(node => node.type === 'button' && collectText(node) === 'bdForceRetry'),
+    'needs_input 不渲染强制重试（输入校验失败，force 到不了终态分支）',
+  )
+
+  // invalid_input（error 色同步失败 payload）：失败文案渲染，但强制重试同样
+  // 在服务端输入校验阶段被拦下，不渲染按钮。
+  const invalidInput = BreakdownDetailPage({
+    workflow: { ...fullWorkflow, status: 'invalid_input', currentStep: 'queued', admin: { workflowId: null, errorCode: 'unknown_rewrite_rule' } },
+    detail: null, loading: false, errorReason: null, onBack: () => {}, onRequestRewrite: () => {},
+    onForceRetry: () => {}, t,
+  })
+  assert.ok(collectText(invalidInput).includes('bdErrorUnknownRule'), 'invalid_input 渲染对应失败文案')
+  assert.ok(
+    !collectFlat(invalidInput).some(node => node.type === 'button' && collectText(node) === 'bdForceRetry'),
+    'invalid_input 不渲染强制重试按钮',
+  )
 
   // 进行中且无产物：大空态（主文案 bdRunningTitle + 副文案 bdRunningSub），
   // 改写按钮禁用；当前步在 8 段进度条中高亮。
@@ -601,6 +644,10 @@ test('BreakdownDetailPage：失败/进行中/无数据与错误态，重新改�
   assert.ok(emptyState && emptyState.props.role === 'status', '空态容器 role=status')
   const runningRewrite = collectFlat(running).filter(node => node.type === 'button').find(node => collectText(node) === 'bdRewriteButton')
   assert.equal(runningRewrite.props.disabled, true, '进行中禁用重新改写')
+  assert.ok(
+    !collectFlat(running).some(node => node.type === 'button' && collectText(node) === 'bdForceRetry'),
+    '进行中不渲染强制重试按钮',
+  )
   const activeStep = collectFlat(running).find(node => String(node.props.className || '').includes('ydo-bd-step-active'))
   assert.ok(activeStep && collectText(activeStep).includes('bdStep_vision'), '当前步高亮 vision')
 
@@ -616,6 +663,18 @@ test('BreakdownDetailPage：失败/进行中/无数据与错误态，重新改�
   assert.ok(collectText(errored).includes('operationUnavailable'))
   collectFlat(errored).find(node => node.type === 'button').props.onClick()
   assert.equal(backed, true)
+
+  // 错误态强制重试：宿主提供入口时渲染在返回按钮之前（主操作优先），点击触发回调。
+  let errorForceRetried = false
+  const erroredRetry = BreakdownDetailPage({
+    workflow: null, detail: null, loading: false, errorReason: 'bdErrorFailed',
+    onBack: () => {}, onRequestRewrite: () => {}, onForceRetry: () => { errorForceRetried = true }, t,
+  })
+  const erroredButtons = collectFlat(erroredRetry).filter(node => node.type === 'button')
+  assert.equal(collectText(erroredButtons[0]), 'bdForceRetry', '错误态强制重试是主操作（渲染在前）')
+  assert.equal(collectText(erroredButtons[1]), 'bdBackToList', '返回列表仍在')
+  erroredButtons[0].props.onClick()
+  assert.equal(errorForceRetried, true, '错误态强制重试按钮触发 onForceRetry')
 })
 
 test('BreakdownRewriteModal：关闭渲染 null，打开渲染规则单选，确认回传选中规则（可为 null）', async () => {
@@ -721,6 +780,21 @@ test('client.js 接线：Tab 顺序、body-full、Esc 链、轮询守卫、弹�
   assert.match(clientSource, /h\(BreakdownNewPage, \{/u)
   assert.match(clientSource, /h\(BreakdownHistoryList, \{/u)
   assert.match(clientSource, /h\(BreakdownDetailPage, \{/u)
+})
+
+test('client.js 强制重试接线：force 仅显式透传、规则回退链、详情页 onForceRetry 按候选 id 提供', async () => {
+  const clientSource = await readFile(new URL('../src/client.js', import.meta.url), 'utf8')
+  // startBdWorkflow 支持可选 force，仅在显式 true 时写入 body（普通发起零差异）。
+  assert.match(clientSource, /const startBdWorkflow = useCallback\(async \(candidateId, rewriteRuleId, \{ force = false \} = \{\}\) => \{/u)
+  assert.match(clientSource, /if \(force\) body\.force = true/u)
+  // 所选规则记录与强制重试回退链：以键存在性区分投影（恒带 rewriteRuleId 键，
+  // null = 默认链路）与同步失败 payload（缺键 → 回退上次发起所选），防止「记录
+  // 真无规则」误用会话残留规则导致 natural key 偏移、重置成另一条记录。
+  assert.match(clientSource, /bdLastRuleRef\.current = rewriteRuleId \|\| null/u)
+  assert.match(clientSource, /'rewriteRuleId' in workflow\n\s*\? \(workflow\.rewriteRuleId \|\| null\)\n\s*: \(bdLastRuleRef\.current \?\? null\)/u)
+  assert.match(clientSource, /startBdWorkflow\(candidateId, ruleId, \{ force: true \}\)/u)
+  // 详情页接线：仅在确有候选 id 时提供强制重试入口（无 id 传 null 不渲染按钮）。
+  assert.match(clientSource, /onForceRetry: bdDetailWorkflow\?\.candidateId \? forceRetryBdWorkflow : null/u)
 })
 
 test('构建产物内联 breakdown 模块且可加载', async () => {
