@@ -48,6 +48,8 @@ test('宿主注册本地同源路由，且只经 ctx.tools 调用公共 MCP 网�
     // 账号总览（阶段 1）与单账号分析（阶段 2）
     'export', 'overview.get', 'hotWorks.list', 'overview.export',
     'account.analysis', 'account.trend', 'accountAnalysis.export',
+    // 一键采集全部（批量顺序采集）
+    'collectAll.start', 'collectAll.status',
   ]) {
     assert.ok(hostSource.includes(`case '${action}':`), `宿主缺少 action ${action}`)
   }

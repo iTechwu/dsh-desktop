@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import { test } from 'node:test'
 
 import { SessionInvalidError } from '../src/parse.js'
-import { checkCollectionReadiness, createCollectController, ensureRemoteAccount, finishExpiredSession, runAccountCollection, saveDiscoveredAvatar } from '../src/runner.js'
+import { checkCollectionReadiness, createBatchCollectController, createCollectController, ensureRemoteAccount, finishExpiredSession, runAccountCollection, saveDiscoveredAvatar } from '../src/runner.js'
 import { getAccount, paths, readAccounts, updateAccount } from '../src/state.js'
 
 async function withRoot(fn) {
@@ -729,4 +729,193 @@ test('SessionInvalidError 不被当作普通采集失败吞噬', async () => {
   const done = await controller.wait('acc-1')
   assert.equal(done.status, 'failed')
   assert.equal(done.error, 'session_invalid')
+})
+
+// ---------------------------------------------------------------------------
+// 一键采集全部（批量顺序采集）：批量控制器状态机、探测拦截、互斥与终态判定。
+// ---------------------------------------------------------------------------
+
+/** 批量测试骨架：注入可控的单账号控制器与探测结果。 */
+function makeBatchHarness({ order = [], outcomes = {}, probeStates = {} } = {}) {
+  const single = createCollectController({
+    runCollection: async ({ accountId }) => {
+      order.push(accountId)
+      const outcome = outcomes[accountId] || { status: 'ready', runId: `run-${accountId}`, runStatus: 'completed', listComplete: true, expectedWorkCount: 1, succeededWorkCount: 1, failedWorkCount: 0 }
+      if (outcome instanceof Error) throw outcome
+      return outcome
+    },
+  })
+  const probes = []
+  const batch = createBatchCollectController({
+    collect: single,
+    probe: async accountId => {
+      probes.push(accountId)
+      const state = probeStates[accountId]
+      if (state instanceof Error) throw state
+      return state || { sessionStatus: 'ok', reason: null }
+    },
+  })
+  return { single, batch, probes }
+}
+
+test('批量控制器：账号严格按稳定顺序执行，前一个失败后继续下一个（partial）', async () => {
+  const order = []
+  const { batch } = makeBatchHarness({
+    order,
+    outcomes: {
+      'acc-1': { status: 'collect_failed', reason: 'NETWORK_ERROR' },
+      'acc-2': { status: 'ready', runId: 'run-2', runStatus: 'completed', listComplete: true, expectedWorkCount: 1, succeededWorkCount: 1, failedWorkCount: 0 },
+    },
+  })
+  const started = batch.start({
+    accounts: [
+      { accountId: 'acc-2' },
+      { accountId: 'acc-1' },
+      { accountId: 'acc-0', skipped: true, reason: 'session_required' },
+    ],
+    buildOptions: () => ({}),
+  })
+  assert.equal(started.status, 'ready')
+  assert.equal(started.batch.status, 'running')
+  const done = await batch.wait()
+  assert.deepEqual(order, ['acc-1', 'acc-2'], '按 accountId 排序顺序执行,失败不阻断后续')
+  assert.equal(done.status, 'partial', '有成功有失败 → partial')
+  assert.equal(done.completedCount, 1)
+  assert.equal(done.failedCount, 1)
+  assert.equal(done.skippedCount, 1)
+  assert.equal(done.runnableTotal, 2, '参与数 = 全部 - 跳过')
+  assert.equal(done.runnableDone, 2, '已完 = 成功 + 失败')
+  assert.equal(done.probedCount, 2, '探测通过数不含 skipped')
+  const failed = done.items.find(item => item.accountId === 'acc-1')
+  assert.equal(failed.reason, 'NETWORK_ERROR', '失败原因就地保留')
+  assert.equal(done.items.find(item => item.accountId === 'acc-0').reason, 'session_required')
+})
+
+test('批量控制器：全部成功 → completed', async () => {
+  const { batch } = makeBatchHarness({})
+  batch.start({ accounts: [{ accountId: 'acc-1' }, { accountId: 'acc-2' }], buildOptions: () => ({}) })
+  const done = await batch.wait()
+  assert.equal(done.status, 'completed')
+  assert.equal(done.runnableTotal, 2)
+  assert.equal(done.completedCount, 2)
+})
+
+test('批量控制器：没有任何账号成功 → failed', async () => {
+  const { batch } = makeBatchHarness({
+    outcomes: {
+      'acc-1': { status: 'collect_failed', reason: 'X' },
+      'acc-2': { status: 'ingest_failed', reason: 'Y' },
+    },
+  })
+  batch.start({ accounts: [{ accountId: 'acc-1' }, { accountId: 'acc-2' }], buildOptions: () => ({}) })
+  const done = await batch.wait()
+  assert.equal(done.status, 'failed')
+})
+
+test('批量控制器：探测拦截 expired/unknown → skipped 并给稳定原因，不发起采集', async () => {
+  const order = []
+  const { batch, probes } = makeBatchHarness({
+    order,
+    probeStates: {
+      'acc-1': { sessionStatus: 'expired', reason: 'no_session_cookie' },
+      'acc-2': { sessionStatus: 'unknown', reason: 'browser_crashed' },
+      'acc-3': { sessionStatus: 'ok', reason: null },
+    },
+  })
+  batch.start({ accounts: [{ accountId: 'acc-1' }, { accountId: 'acc-2' }, { accountId: 'acc-3' }], buildOptions: () => ({}) })
+  const done = await batch.wait()
+  assert.deepEqual(probes, ['acc-1', 'acc-2', 'acc-3'], '探测按顺序逐账号执行')
+  assert.deepEqual(order, ['acc-3'], '只有实测通过的账号参与采集')
+  assert.equal(done.status, 'completed', '唯一参与账号成功 → completed（skipped 不算失败）')
+  assert.equal(done.items.find(item => item.accountId === 'acc-1').reason, 'session_required')
+  assert.equal(done.items.find(item => item.accountId === 'acc-2').reason, 'probe_failed')
+})
+
+test('批量控制器：探测抛异常 → probe_failed，不阻断批量', async () => {
+  const order = []
+  const { batch } = makeBatchHarness({
+    order,
+    probeStates: { 'acc-1': new Error('boom') },
+  })
+  batch.start({ accounts: [{ accountId: 'acc-1' }], buildOptions: () => ({}) })
+  const done = await batch.wait()
+  assert.deepEqual(order, [], '探测异常的账号不进入采集')
+  assert.equal(done.status, 'failed', '全部被拦截 → failed')
+  assert.equal(done.items[0].reason, 'probe_failed')
+})
+
+test('批量控制器：重复 start 返回现有任务，不创建第二个批量', async () => {
+  const order = []
+  const { batch } = makeBatchHarness({ order, probeStates: {} })
+  const first = batch.start({ accounts: [{ accountId: 'acc-1' }], buildOptions: () => ({}) })
+  const second = batch.start({ accounts: [{ accountId: 'acc-9' }], buildOptions: () => ({}) })
+  assert.equal(second.status, 'ready')
+  assert.equal(second.batch.batchId, first.batch.batchId, '运行中重复点击复用现有批量')
+  await batch.wait()
+})
+
+test('批量控制器：单账号采集运行中启动批量 → collect_busy；批量运行中禁止单账号插入', async () => {
+  let release = null
+  const pending = new Promise(resolve => { release = resolve })
+  const single = createCollectController({
+    runCollection: async () => { await pending; return { status: 'ready', runId: 'r', runStatus: 'completed', listComplete: true, expectedWorkCount: 0, succeededWorkCount: 0, failedWorkCount: 0 } },
+  })
+  const batch = createBatchCollectController({ collect: single, probe: async () => ({ sessionStatus: 'ok' }) })
+  await single.start({ accountId: 'acc-1', options: {} })
+  const blocked = batch.start({ accounts: [{ accountId: 'acc-2' }], buildOptions: () => ({}) })
+  assert.equal(blocked.status, 'error')
+  assert.equal(blocked.reason, 'collect_busy')
+  release()
+  await single.wait('acc-1')
+
+  // 反向互斥：批量运行中（用被挂起的探测占住批量）hasRunning 为真，单账号入口可见。
+  let releaseProbe = null
+  const probeGate = new Promise(resolve => { releaseProbe = resolve })
+  const batch2 = createBatchCollectController({
+    collect: createCollectController({ runCollection: async () => ({ status: 'ready', runId: 'r', runStatus: 'completed', listComplete: true, expectedWorkCount: 0, succeededWorkCount: 0, failedWorkCount: 0 }) }),
+    probe: async () => { await probeGate; return { sessionStatus: 'ok' } },
+  })
+  batch2.start({ accounts: [{ accountId: 'acc-2' }], buildOptions: () => ({}) })
+  assert.equal(batch2.hasRunning(), true, '批量探测阶段即视为运行中')
+  assert.equal(single.hasRunning(), false, '单账号结束后互斥解除')
+  releaseProbe()
+  await batch2.wait()
+})
+
+test('批量控制器：全部账号被入口/探测拦截 → no_eligible_account，不建任务', async () => {
+  const { batch } = makeBatchHarness({})
+  const rejected = batch.start({ accounts: [{ accountId: 'acc-1', skipped: true, reason: 'session_required' }], buildOptions: () => ({}) })
+  assert.equal(rejected.status, 'error')
+  assert.equal(rejected.reason, 'no_eligible_account')
+  assert.equal(rejected.skipped.length, 1)
+  assert.equal(batch.hasRunning(), false, '被拒绝时不产生运行中的批量')
+  const done = await batch.status()
+  assert.equal(done.batch, null, '不产生零执行的任务记录')
+})
+
+test('批量控制器：批量任务内 collect.status 可见当前账号进度（复用单账号控制器）', async () => {
+  let release = null
+  const pending = new Promise(resolve => { release = resolve })
+  const single = createCollectController({
+    runCollection: async ({ onProgress }) => {
+      onProgress({ phase: 'work', index: 1, total: 5, workId: 'w1' })
+      await pending
+      return { status: 'ready', runId: 'run-1', runStatus: 'completed', listComplete: true, expectedWorkCount: 1, succeededWorkCount: 1, failedWorkCount: 0 }
+    },
+  })
+  const batch = createBatchCollectController({ collect: single, probe: async () => ({ sessionStatus: 'ok' }) })
+  batch.start({ accounts: [{ accountId: 'acc-1' }], buildOptions: () => ({}) })
+  // 批量任务体是异步的：等进入采集阶段（探测阶段也会短暂占用 currentAccountId）
+  // 再查单账号进度投影。
+  for (let i = 0; i < 50; i += 1) {
+    const snapshot = batch.status().batch
+    if (snapshot.phase === 'collecting' && snapshot.currentAccountId) break
+    await new Promise(resolve => setImmediate(resolve))
+  }
+  assert.equal(batch.status().batch.currentAccountId, 'acc-1')
+  assert.equal(batch.status().batch.phase, 'collecting')
+  const progress = single.status('acc-1')
+  assert.equal(progress.collect.progress.workId, 'w1', '批量中的当前账号进度经 collect.status 可查')
+  release()
+  await batch.wait()
 })

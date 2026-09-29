@@ -67,6 +67,40 @@ test('built client factory renders the overlay with real React without throwing'
 
     // 不抛错即通过：渲染输出长度不作为断言（overlay 初始为关闭态，输出可为空）。
     renderToString(React.createElement(overlay, { t: key => key }))
+
+    // BatchPanel 三态真实渲染（批量 collecting / probing / 终态 partial）：关闭态
+    // Overlay 中 batch 为 null，该组件分支不被上面那条覆盖，这里直接渲染补盲区。
+    const accounts = [{ accountId: 'acc-1', nickname: '账号一' }]
+    const collecting = {
+      batchId: 'batch-1', status: 'running', phase: 'collecting', currentAccountId: 'acc-1',
+      total: 2, runnableTotal: 2, runnableDone: 1, probedCount: 2,
+      completedCount: 1, failedCount: 0, skippedCount: 0,
+      items: [
+        { accountId: 'acc-1', status: 'running', reason: null },
+        { accountId: 'acc-2', status: 'queued', reason: null },
+      ],
+    }
+    renderToString(React.createElement(plugin.BatchPanel, {
+      batch: collecting,
+      batchCollect: { status: 'running', progress: { phase: 'work', index: 3, total: 12 } },
+      accounts, t: key => key,
+    }))
+    renderToString(React.createElement(plugin.BatchPanel, {
+      batch: { ...collecting, phase: 'probing', runnableDone: 0, completedCount: 0 },
+      batchCollect: null, accounts, t: key => key,
+    }))
+    renderToString(React.createElement(plugin.BatchPanel, {
+      batch: {
+        batchId: 'batch-1', status: 'partial', total: 3, runnableTotal: 2, runnableDone: 2,
+        probedCount: 2, completedCount: 1, failedCount: 1, skippedCount: 1,
+        items: [
+          { accountId: 'acc-1', status: 'completed', reason: null },
+          { accountId: 'acc-2', status: 'failed', reason: 'NETWORK_ERROR' },
+          { accountId: 'acc-0', status: 'skipped', reason: 'session_required' },
+        ],
+      },
+      batchCollect: null, accounts, t: key => key,
+    }))
   } finally {
     delete globalThis.__renderSmokeModule
     delete globalThis.window

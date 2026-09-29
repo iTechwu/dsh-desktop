@@ -11,10 +11,11 @@ import { browserStatus } from './src/chrome.js'
 import {
   DEFAULT_MAX_PAGES,
   checkCollectionReadiness,
+  createBatchCollectController,
   createCollectController,
 } from './src/runner.js'
 import { isPendingAccountId, promotePendingAccount, refreshSessionState, removeLocalAccount } from './src/session.js'
-import { getAccount, paths, readAccounts, stateRoot } from './src/state.js'
+import { getAccount, hasStorageState, paths, readAccounts, stateRoot } from './src/state.js'
 import {
   accountRemoveIdempotencyKey,
   accountSaveIdempotencyKey,
@@ -33,6 +34,7 @@ const MAX_ID = 128
 const loginRuns = new Map()
 
 export function apply(ctx, overrides = {}) {
+  const collectController = overrides.collectController || createCollectController({ logger: ctx.logger })
   const deps = {
     root: overrides.root || stateRoot(),
     browserStatus: overrides.browserStatus || browserStatus,
@@ -43,10 +45,22 @@ export function apply(ctx, overrides = {}) {
     readAccounts: overrides.readAccounts || readAccounts,
     getAccount: overrides.getAccount || getAccount,
     tools: overrides.tools || null,
-    collectController: overrides.collectController || createCollectController({ logger: ctx.logger }),
+    collectController,
+    batchController: null, // 下方立即填充（批量探测需要引用 deps 自身）
     runCollection: overrides.runCollection || null,
     maxPages: overrides.maxPages || DEFAULT_MAX_PAGES,
   }
+  // 批量探测：与单账号 account.probe 同一语义——本地 refreshSessionState 实测后
+  // 尽力上报 tools（失败不阻断，见 reportSessionStatus），让远端会话状态与设备一致。
+  deps.batchController = overrides.batchController || createBatchCollectController({
+    collect: collectController,
+    probe: async accountId => {
+      const state = await deps.refreshSessionState({ accountId, root: deps.root })
+      const reported = await reportSessionStatus(deps.tools || ctx, deps, accountId, state)
+      return { sessionStatus: state.sessionStatus, reason: state.reason || null, reported: reported.ok }
+    },
+    logger: ctx.logger,
+  })
   return ctx.effect(() => {
     const dispose = ctx.webServer.register({
       kind: 'exact',
@@ -76,6 +90,10 @@ export function apply(ctx, overrides = {}) {
               return send(res, 200, await handleCollectStart(ctx, deps, body))
             case 'collect.status':
               return send(res, 200, await handleCollectStatus(deps, toolCtx, body))
+            case 'collectAll.start':
+              return send(res, 200, await handleCollectAllStart(ctx, deps, body))
+            case 'collectAll.status':
+              return send(res, 200, handleCollectAllStatus(deps))
             case 'works.list':
               return send(res, 200, await handleWorksList(deps, toolCtx, body))
             case 'work.get':
@@ -325,6 +343,11 @@ async function handleCollectStart(ctx, deps, body) {
   // 采集前必须确认本地会话就绪；有效性由设备端探测（会话失效请用户重新扫码）。
   const readiness = await checkCollectionReadiness({ accountId, root: deps.root })
   if (!readiness.ready) return { status: 'error', reason: readiness.reason }
+  // 宿主层全局互斥（批量方案 §4.4）：批量运行中禁止插入单账号采集。检查与
+  // collectController.start 的占位之间无 await，与批量入口的同步检查段互斥成立。
+  if (typeof deps.batchController.hasRunning === 'function' && deps.batchController.hasRunning()) {
+    return { status: 'error', reason: 'collect_busy' }
+  }
 
   const maxPages = clampInt(body.maxPages, 1, DEFAULT_MAX_PAGES, deps.maxPages)
   const result = await deps.collectController.start({
@@ -342,6 +365,62 @@ async function handleCollectStart(ctx, deps, body) {
     return { ...result, promoted: true, saveError: resolved.saveError, remoteCleanup: resolved.remoteCleanup }
   }
   return result
+}
+
+/**
+ * 一键采集全部（批量顺序采集）：入口只做同步快速筛选（缓存口径，毫秒级），
+ * 建任务后立即返回；真正的会话实测（逐账号 probe）在批量任务第一阶段完成。
+ */
+async function handleCollectAllStart(ctx, deps) {
+  const accounts = await collectBatchCandidates(deps)
+  const result = await deps.batchController.start({
+    accounts,
+    buildOptions: accountId => ({
+      callTool: (name, args) => callTool(ctx, name, args, { callIdPrefix: 'yootun-douyin-collect' }),
+      root: deps.root,
+      storageStatePath: paths(deps.root).storageStatePath(accountId),
+      maxPages: deps.maxPages,
+      newAttempt: true,
+      ...(deps.runCollection ? { runCollection: deps.runCollection } : {}),
+    }),
+  })
+  if (result.status === 'error' && result.reason === 'no_eligible_account') {
+    return { status: 'error', reason: result.reason, skipped: result.skipped }
+  }
+  return result
+}
+
+function handleCollectAllStatus(deps) {
+  return deps.batchController.status()
+}
+
+/**
+ * 批量候选筛选（缓存口径，纯本地检查）：local 记录 + sessionStatus=ok +
+ * storage_state 存在；pending 占位与不合格账号以 skipped+原因列出，业务方
+ * 能看到「为什么某个账号没有被一键采集」。真正的会话有效性由批量任务内的
+ * 逐账号 probe 实测（session_expired 的缓存 ok 在这里仍会进入队列）。
+ */
+async function collectBatchCandidates(deps) {
+  const { accounts } = await deps.readAccounts(deps.root)
+  const items = []
+  for (const record of Object.values(accounts || {})) {
+    const accountId = record && record.accountId
+    if (!accountId) continue
+    if (isPendingAccountId(accountId)) {
+      items.push({ accountId, skipped: true, reason: 'pending_account' })
+      continue
+    }
+    if ((record.sessionStatus || 'unknown') !== 'ok') {
+      items.push({ accountId, skipped: true, reason: 'session_required' })
+      continue
+    }
+    if (!(await hasStorageState(accountId, deps.root))) {
+      items.push({ accountId, skipped: true, reason: 'storage_state_missing' })
+      continue
+    }
+    items.push({ accountId, skipped: false, reason: null })
+  }
+  return items
 }
 
 async function handleCollectStatus(deps, ctx, body) {

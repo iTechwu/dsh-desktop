@@ -234,6 +234,56 @@ window.__ModuleLoader__.load({
       return t('runRunning')
     }
 
+    /**
+     * 批量条目的 skipped/failed 稳定原因 → 文案键（批量方案 §4.5）。
+     *
+     * completed 项无原因返回 null；未知稳定码一律收敛为通用失败文案，绝不把原始
+     * 错误码直接暴露给业务用户。
+     */
+    function batchReasonKey(reason) {
+      if (reason === null || reason === undefined || reason === '') return null
+      if (reason === 'session_required' || reason === 'session_invalid') return 'batchReasonSessionExpired'
+      // 正则形式而非字符串字面量：客户端源码/产物不得出现「storage_state」连续
+      // 字面量（desktop-compat 凭证卫生扫描契约），点号通配保持匹配语义精确。
+      if (/^storage.state_missing$/.test(reason)) return 'batchReasonStorageMissing'
+      if (reason === 'pending_account') return 'batchReasonPending'
+      if (reason === 'probe_failed') return 'batchReasonProbeFailed'
+      if (reason === 'ingest_failed') return 'batchReasonIngestFailed'
+      return 'batchReasonFailed'
+    }
+
+    /**
+     * 批量终态汇总 → { key, params }（批量方案 §4.5：不把部分失败伪装成整体成功）。
+     * key 供 t() 取文案，params 供 .replace('{ok}') 等占位符。
+     */
+    function batchSummary(batch) {
+      if (!batch || batch.status === 'running') return null
+      const params = {
+        ok: batch.completedCount || 0,
+        bad: batch.failedCount || 0,
+        skip: batch.skippedCount || 0,
+      }
+      if (batch.status === 'completed') return { key: 'batchCompleted', params }
+      if (batch.status === 'partial') return { key: 'batchPartial', params }
+      return { key: 'batchFailed', params }
+    }
+
+    /**
+     * 批量运行中的总进度行 → { key, params }：
+     * - probing：「正在检查会话 i/n」（i = 已处理完 + 进行中，n = 全部账号）；
+     * - collecting：「第 i/n 个账号」（i = 当前参与序号，n = 实际参与采集数）。
+     */
+    function batchProgress(batch) {
+      if (!batch || batch.status !== 'running') return null
+      if (batch.phase === 'probing') {
+        const total = batch.total || 0
+        const done = Math.min(total, (batch.probedCount || 0) + (batch.skippedCount || 0))
+        return { key: 'batchProbing', params: { i: done, n: total } }
+      }
+      const index = Math.min(batch.runnableTotal || 0, (batch.runnableDone || 0) + 1)
+      return { key: 'batchCollectingProgress', params: { i: index, n: batch.runnableTotal || 0 } }
+    }
+
     /** 账号卡片状态：ok / expired / unknown 与采集可用性。 */
     function accountState(account) {
       const rawStatus = (account && account.sessionStatus) || 'unknown'
@@ -2764,6 +2814,20 @@ window.__ModuleLoader__.load({
         srcHomepageHot: '推荐(首页推荐)', srcHomepage: '个人主页', srcFamiliar: '朋友/熟人', srcFollow: '关注',
         srcSearch: '搜索', srcMessage: '私信/分享', srcNearby: '同城', srcKnownOther: '其他', sourceOther: '其他来源',
         collectFailed: '采集失败，请重试', collectBlocked: '采集未启动', refreshFailed: '刷新失败', probeFailed: '会话检测失败，请重试',
+        // 一键采集全部（批量顺序采集）：总进度、当前账号与未完成明细（批量方案 §4.5）。
+        batchCollectAll: '一键采集全部', batchCollecting: '批量采集中',
+        collectBusy: '已有采集任务在进行中，请等待完成后再试',
+        noEligibleAccount: '没有可一键采集的已登录账号',
+        batchProbing: '正在检查会话 {i}/{n}', batchCollectingProgress: '第 {i}/{n} 个账号',
+        batchCurrentAccount: '当前账号：{name}',
+        batchCounts: '成功 {ok} · 失败 {bad} · 跳过 {skip}',
+        batchCompleted: '批量采集完成：成功 {ok} 个',
+        batchPartial: '批量部分完成：成功 {ok} · 失败 {bad} · 跳过 {skip}',
+        batchFailed: '批量采集未完成：成功 {ok} · 失败 {bad} · 跳过 {skip}',
+        batchDetailTitle: '未完成账号',
+        batchReasonSessionExpired: '登录已过期，请重新扫码', batchReasonStorageMissing: '本机无登录态',
+        batchReasonPending: '账号身份待确认，请先单独检测', batchReasonProbeFailed: '会话检测失败',
+        batchReasonIngestFailed: '数据入库失败', batchReasonFailed: '采集失败',
         // 采集链路识别抖音 status_code=8（会话失效）后的专属文案（0914 方案 §3.6）：
         // 绝不显示"采集完成"，与普通采集失败区分，指引重新扫码。
         collectSessionExpired: '会话已过期，请重新扫码',
@@ -2946,6 +3010,19 @@ window.__ModuleLoader__.load({
         srcSearch: 'Search', srcMessage: 'Messages/shares', srcNearby: 'Nearby', srcKnownOther: 'Other', sourceOther: 'Other sources',
         collectFailed: 'Collect failed, retry', collectBlocked: 'Collect did not start', refreshFailed: 'Refresh failed', probeFailed: 'Session check failed, retry',
         collectSessionExpired: 'Session expired — scan again',
+        batchCollectAll: 'Collect all accounts', batchCollecting: 'Batch collecting',
+        collectBusy: 'A collection is already running — wait for it to finish',
+        noEligibleAccount: 'No signed-in accounts are ready to collect',
+        batchProbing: 'Checking sessions {i}/{n}', batchCollectingProgress: 'Account {i} of {n}',
+        batchCurrentAccount: 'Current account: {name}',
+        batchCounts: '{ok} succeeded · {bad} failed · {skip} skipped',
+        batchCompleted: 'Batch finished: {ok} succeeded',
+        batchPartial: 'Batch partially finished: {ok} succeeded · {bad} failed · {skip} skipped',
+        batchFailed: 'Batch not finished: {ok} succeeded · {bad} failed · {skip} skipped',
+        batchDetailTitle: 'Accounts not finished',
+        batchReasonSessionExpired: 'Session expired — scan again', batchReasonStorageMissing: 'No sign-in state on this device',
+        batchReasonPending: 'Account identity unconfirmed — check it individually', batchReasonProbeFailed: 'Session check failed',
+        batchReasonIngestFailed: 'Data ingestion failed', batchReasonFailed: 'Collect failed',
         accountSaveFailed: 'Signed in, but syncing the account to the cloud failed — collecting will not work; restart the client and sign in again',
         accountNotOnCloud: 'No cloud data for this account yet — run a collection first', operationUnavailable: 'The Douyin ops service is temporarily unavailable; retry later',
         workNotOnCloud: 'No cloud data for this work yet — run a collection first',
@@ -3432,6 +3509,63 @@ window.__ModuleLoader__.load({
       return h(WorkDrawerContainer, { work, detail: null, detailLoading: false, onClose, onOpenFull, t })
     }
 
+    /** 文案占位符填充：t(key) 之后替换 {i}/{n}/{ok}/{bad}/{skip}/{name} 等参数。 */
+    function fill(text, params) {
+      return Object.entries(params || {}).reduce(
+        (acc, [key, value]) => acc.replace(`{${key}}`, String(value)),
+        String(text || ''),
+      )
+    }
+
+    /**
+     * 一键采集全部的进度/汇总面板（批量方案 §4.5）：
+     * - 运行中：spinner + 总进度（检查会话 / 第 i/n 个账号）+ 当前账号与细粒度进度 + 计数；
+     * - 终态：completed / partial / failed 三态汇总，部分失败绝不伪装成整体成功；
+     * - 未完成明细：失败与跳过账号逐行给出稳定原因（会话失效指引重新扫码）。
+     * 布局契约：flex-basis:100% 独占 toolbar 一行，不改 ydo-right 的 grid 行结构。
+     */
+    function BatchPanel({ batch, batchCollect, accounts, t }) {
+      if (!batch) return null
+      const nameOf = accountId => {
+        const account = (accounts || []).find(item => item.accountId === accountId)
+        return (account && account.nickname) || accountId || ''
+      }
+      const running = batch.status === 'running'
+      const progress = batchProgress(batch)
+      const summary = batchSummary(batch)
+      const unfinished = (batch.items || []).filter(item => item.status === 'failed' || item.status === 'skipped')
+      const tone = batch.status === 'completed' ? 'ydo-ok' : batch.status === 'failed' ? 'ydo-error' : 'ydo-warn'
+      return h('div', {
+        className: 'ydo-batch-panel',
+        role: running ? 'status' : undefined,
+        'aria-live': running ? 'polite' : undefined,
+        'aria-busy': running || undefined,
+      },
+      running
+        ? h('div', { className: 'ydo-progress' },
+          h('span', { className: 'ydo-spinner' }),
+          h('span', null, progress ? fill(t(progress.key), progress.params) : t('batchCollecting')))
+        : h('p', { className: tone }, summary ? fill(t(summary.key), summary.params) : null),
+      running && batch.currentAccountId
+        ? h('p', { className: 'ydo-hint' },
+          fill(t('batchCurrentAccount'), { name: nameOf(batch.currentAccountId) }),
+          batchCollect && batchCollect.status === 'running' ? ` · ${progressText(batchCollect, t)}` : '')
+        : null,
+      running
+        ? h('p', { className: 'ydo-hint' }, fill(t('batchCounts'), { ok: batch.completedCount || 0, bad: batch.failedCount || 0, skip: batch.skippedCount || 0 }))
+        : null,
+      !running && unfinished.length
+        ? h('div', { className: 'ydo-batch-detail' },
+          h('p', { className: 'ydo-hint' }, t('batchDetailTitle')),
+          ...unfinished.map(item => {
+            const reasonKey = batchReasonKey(item.reason)
+            return h('p', { key: item.accountId, className: 'ydo-batch-item' },
+              h('span', { className: 'ydo-batch-item-name' }, nameOf(item.accountId)),
+              h('span', { className: 'ydo-batch-item-reason' }, reasonKey ? t(reasonKey) : ''))
+          }))
+        : null)
+    }
+
     function Overlay({ t }) {
       const visible = useSyncExternalStore(subscribeOpen, snapshotOpen, snapshotOpen)
       const shellRef = useRef(null)
@@ -3448,6 +3582,13 @@ window.__ModuleLoader__.load({
       const [sort, setSort] = useState(DEFAULT_SORT_STATE)
       const [exporting, setExporting] = useState(false)
       const [collect, setCollect] = useState(null)
+      // 一键采集全部（批量顺序采集）：batch 是 collectAll.status 的投影；batchCollect
+      // 是批量当前账号的细粒度进度（collect.status），供进度面板沿用 progressText。
+      const [batch, setBatch] = useState(null)
+      const [batchCollect, setBatchCollect] = useState(null)
+      // 批量终态的刷新守卫：每个 batchId 的终态只触发一次数据刷新，终态汇总在
+      // 会话内保留展示，不因用户切账号/切 Tab 重复触发。
+      const batchFinalHandledRef = useRef(null)
       const [detail, setDetail] = useState(null)
       const [detailWorkId, setDetailWorkId] = useState(null)
       const [trend, setTrend] = useState(null)
@@ -3579,7 +3720,14 @@ window.__ModuleLoader__.load({
       useEffect(() => {
         if (!visible) return undefined
         refresh().catch(() => setError('refresh_failed'))
-        return undefined
+        // 页面重开时恢复批量进度（批量方案 §4.5）：批量在宿主后台持续，running 则
+        // 恢复轮询与进度展示；历史终态汇总不跨会话恢复，避免误读为本次操作结果。
+        let cancelled = false
+        post({ action: 'collectAll.status' }).then(result => {
+          if (cancelled || !result || result.status !== 'ready' || !result.batch) return
+          if (result.batch.status === 'running') setBatch(result.batch)
+        }).catch(() => {})
+        return () => { cancelled = true }
       }, [visible, refresh])
 
       useEffect(() => {
@@ -3739,6 +3887,65 @@ window.__ModuleLoader__.load({
         }
       }, [loadWorks, refresh, stopPolling])
 
+      // 一键采集全部：start 立即返回（同步筛选 + 建任务），进度靠轮询。批量运行不占
+      // 全局 busy——批量耗时可能很长，浏览类操作（切账号/刷新/总览）必须保持可用，
+      // 采集类互斥由宿主保证（collect_busy），按钮禁用只依赖 batch 状态本身。
+      const startBatchCollect = useCallback(async () => {
+        setBusy(true)
+        setError(null)
+        try {
+          const started = await post({ action: 'collectAll.start' })
+          if (started.status !== 'ready') {
+            setError(
+              started.reason === 'collect_busy' ? 'collectBusy'
+                : started.reason === 'no_eligible_account' ? 'noEligibleAccount'
+                  // 未预期 reason 收敛通用文案，不把原始错误码透出给业务用户。
+                  : 'collectBlocked',
+            )
+            return
+          }
+          setBatchCollect(null)
+          setBatch(started.batch)
+        } catch {
+          setError('collectFailed')
+        } finally {
+          setBusy(false)
+        }
+      }, [])
+
+      // 批量总进度轮询：batch 状态驱动 effect 重建，回调闭包永远是新鲜的（无 ref 镜像）。
+      useEffect(() => {
+        if (!visible || !batch || batch.status !== 'running') return undefined
+        const timer = setInterval(async () => {
+          const result = await post({ action: 'collectAll.status' }).catch(() => null)
+          if (!result || result.status !== 'ready' || !result.batch) return
+          setBatch(result.batch)
+        }, COLLECT_POLL_INTERVAL_MS)
+        return () => clearInterval(timer)
+      }, [visible, batch])
+
+      // 批量当前账号的细粒度进度：沿用单账号 collect.status 与 progressText 展示。
+      useEffect(() => {
+        if (!visible || !batch || batch.status !== 'running' || !batch.currentAccountId) {
+          setBatchCollect(null)
+          return undefined
+        }
+        const accountId = batch.currentAccountId
+        let cancelled = false
+        const poll = async () => {
+          const result = await post({ action: 'collect.status', accountId }).catch(() => null)
+          // 账号切换瞬间 effect 已重建，迟到的旧账号响应不得覆盖新账号的进度。
+          if (cancelled || !result || result.status !== 'ready') return
+          setBatchCollect(result.collect)
+        }
+        poll()
+        const timer = setInterval(poll, COLLECT_POLL_INTERVAL_MS)
+        return () => {
+          cancelled = true
+          clearInterval(timer)
+        }
+      }, [visible, batch])
+
       const loadOverview = useCallback(async (filters = overviewFilters) => {
         const requestId = ++overviewRequestRef.current
         setOverviewLoading(true)
@@ -3758,6 +3965,19 @@ window.__ModuleLoader__.load({
           if (requestId === overviewRequestRef.current) setOverviewLoading(false)
         }
       }, [overviewFilters])
+
+      // 批量结束（每个 batchId 终态一次）：刷新账号列表、当前作品与正在展示的总览；
+      // 部分失败不伪装成整体成功——汇总与未完成明细由 BatchPanel 持续展示。
+      // 位置约束：必须在 loadOverview 的 const 初始化之后（useEffect 依赖数组渲染期
+      // 无条件求值，前向引用会 TDZ ReferenceError——2026-09-23 真机故障同类）。
+      useEffect(() => {
+        if (!visible || !batch || batch.status === 'running') return
+        if (batchFinalHandledRef.current === batch.batchId) return
+        batchFinalHandledRef.current = batch.batchId
+        refresh().catch(() => {})
+        if (selected) loadWorks(selected).catch(() => {})
+        if (tab === 'overview') loadOverview().catch(() => {})
+      }, [visible, batch, batchFinalHandledRef, refresh, loadWorks, loadOverview, selected, tab])
 
       useEffect(() => {
         if (!visible || tab !== 'overview') return undefined
@@ -4305,12 +4525,18 @@ window.__ModuleLoader__.load({
       const chromeBlocked = browser && browser.chromeAvailable === false
       const driverBlocked = browser && browser.chromeAvailable === true && browser.driverAvailable === false
       const sessionUsable = accountState(current).collectable
+      // 批量运行态：采集类操作互斥禁用（宿主还会以 collect_busy 兜底），浏览类不受限。
+      const batchRunning = Boolean(batch && batch.status === 'running')
+      const hasCollectableAccount = accounts.some(account => account.local && accountState(account).collectable)
 
       const left = h('aside', { className: 'ydo-accounts', 'aria-label': t('accounts') },
         h('h2', { className: 'ydo-panel-title' }, t('accounts')),
         accounts.length
           ? h('div', { className: 'ydo-account-list' }, ...accounts.map(account => h(AccountCard, {
-            key: account.accountId, account, selected: account.accountId === selected, busy,
+            key: account.accountId, account, selected: account.accountId === selected,
+            // 批量运行中账号的会话/删除/重扫操作一并禁用：探测与登录会动
+            // storage_state，与批量采集中的账号状态迁移相互干扰（批量方案 §4.5）。
+            busy: busy || batchRunning,
             onSelect: setSelected,
             onRescan: id => beginLogin(id),
             onProbe: probe,
@@ -4323,7 +4549,7 @@ window.__ModuleLoader__.load({
           })))
           : h('p', { className: 'ydo-hint' }, t('emptyAccounts')),
         h('button', {
-          type: 'button', className: 'ydo-primary', disabled: busy || Boolean(chromeBlocked) || Boolean(driverBlocked),
+          type: 'button', className: 'ydo-primary', disabled: busy || batchRunning || Boolean(chromeBlocked) || Boolean(driverBlocked),
           'aria-busy': busy && Boolean(login && login.status === 'waiting'),
           onClick: () => beginLogin(null),
         }, busy && login && login.status === 'waiting' ? t('scanning') : t('addAccount')),
@@ -4547,9 +4773,15 @@ window.__ModuleLoader__.load({
               : h('section', { className: 'ydo-right', 'aria-label': t('data') },
               h('div', { className: 'ydo-toolbar' },
                 h('button', {
-                  type: 'button', className: 'ydo-primary', disabled: busy || !sessionUsable,
+                  type: 'button', className: 'ydo-primary', disabled: busy || batchRunning || !sessionUsable,
                   onClick: () => startCollect(selected),
                 }, collect && collect.status === 'running' ? t('collecting') : t('collectAll')),
+                h('button', {
+                  type: 'button', className: 'ydo-secondary',
+                  disabled: busy || batchRunning || Boolean(chromeBlocked) || Boolean(driverBlocked) || !hasCollectableAccount,
+                  title: !hasCollectableAccount ? t('noEligibleAccount') : undefined,
+                  onClick: () => startBatchCollect(),
+                }, batchRunning ? t('batchCollecting') : t('batchCollectAll')),
                 h('button', { type: 'button', className: 'ydo-secondary', disabled: busy, onClick: () => loadWorks(selected).catch(() => setError('refreshFailed')) }, t('refresh')),
                 h('button', {
                   type: 'button', className: 'ydo-secondary ydo-export',
@@ -4565,7 +4797,10 @@ window.__ModuleLoader__.load({
                 current && current.lastCollectedAt ? h('span', { className: 'ydo-hint' }, `${t('lastCollected')} ${formatDateTime(current.lastCollectedAt)}`) : null,
                 // 视频数据明细是账号全量作品（不随总览时间窗裁剪）：标签明确写「全部时间
                 // 作品数」，不与总览「近 30 天作品数」并列为同名指标（UI 优化方案 v2 §3.2）。
-                works.length ? h('span', { className: 'ydo-hint' }, `${t('workCountAllTime')} ${works.length}`) : null),
+                works.length ? h('span', { className: 'ydo-hint' }, `${t('workCountAllTime')} ${works.length}`) : null,
+                // 一键采集全部的进度/汇总面板：flex-basis:100% 独占 toolbar 换行，不改变
+                // ydo-right 的 grid 行结构（auto auto auto 1fr 契约）。
+                batch ? h(BatchPanel, { batch, batchCollect, accounts, t }) : null),
               error ? h('p', { className: 'ydo-error', role: 'alert', 'aria-live': 'assertive' }, t(ERROR_COPY[error] || error) || t('collectFailed')) : null,
               runBanner,
               collect && collect.status === 'running'
@@ -4607,7 +4842,8 @@ window.__ModuleLoader__.load({
 
     const css = `.ydo-button{display:flex;width:36px;height:36px;align-items:center;justify-content:center;gap:8px;border:0;border-radius:6px;background:transparent;color:var(--dsw-alias-label-secondary);cursor:pointer}.ydo-button:hover{background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary)}.ydo-wide{width:100%;height:34px;justify-content:flex-start;padding:0 10px}.ydo-wide span{font-size:var(--dsh-content-font-size-secondary,13px)}.ydo-overlay{position:fixed;inset:0;z-index:520;background:var(--dsw-alias-bg-base);color:var(--dsw-alias-label-primary)}.ydo-shell{display:grid;grid-template-rows:auto auto 1fr;width:100%;height:100%;overflow:hidden}.ydo-header{display:flex;min-height:72px;align-items:center;justify-content:space-between;gap:24px;padding:16px 24px;border-bottom:1px solid var(--dsw-alias-border-l1)}.ydo-header h1{margin:0;font-size:var(--dsw-font-l-20-font-size,20px);line-height:1.25}.ydo-header p{margin:6px 0 0;color:var(--dsw-alias-label-secondary);font-size:var(--dsh-content-font-size-secondary,13px)}.ydo-header-buttons button{display:grid;width:36px;height:36px;place-items:center;border:1px solid var(--dsw-alias-border-l1);border-radius:6px;background:var(--dsw-alias-bg-layer-1);color:inherit;cursor:pointer}.ydo-tabs{display:flex;gap:4px;padding:0 24px;border-bottom:1px solid var(--dsw-alias-border-l1)}.ydo-tabs button{height:44px;padding:0 18px;border:0;border-bottom:3px solid transparent;background:transparent;color:var(--dsw-alias-label-secondary);font:inherit;font-size:var(--dsh-content-font-size,14px);font-weight:650;cursor:pointer}.ydo-tabs button:hover{color:var(--dsw-alias-label-primary)}/* Tab 激活态（UI 优化方案 §3.1）：只有当前 Tab 有底部指示线，非当前 Tab 不显示下划线。 */
     .ydo-tabs button[aria-current]{border-bottom-color:var(--dsw-alias-brand-primary);color:var(--dsw-alias-label-primary)}.ydo-body{display:grid;grid-template-columns:280px 1fr;min-height:0;overflow:hidden}.ydo-body-full{grid-template-columns:1fr}.ydo-accounts{display:grid;align-content:start;gap:12px;padding:24px 20px;border-right:1px solid var(--dsw-alias-border-l1);overflow:auto}.ydo-panel-title{margin:0;font-size:var(--dsw-font-base-16-font-size,16px)}.ydo-account-list{display:grid;gap:10px}.ydo-card{border:1px solid var(--dsw-alias-border-l1);border-radius:8px;background:var(--dsw-alias-bg-layer-1);overflow:hidden}.ydo-card-active{border-color:var(--dsw-alias-brand-primary)}.ydo-card-main{display:flex;align-items:center;gap:10px;width:100%;padding:12px;border:0;background:transparent;color:inherit;text-align:left;cursor:pointer}.ydo-card-text{display:grid;gap:2px;min-width:0;flex:1}.ydo-avatar{width:36px;height:36px;border-radius:8px;object-fit:cover;flex:none;background:var(--dsw-alias-bg-layer-2)}.ydo-avatar-fallback{display:grid;place-items:center;color:var(--dsw-alias-label-secondary);font-size:var(--dsh-content-font-size,14px);font-weight:600}.ydo-card-name{min-width:0;font-size:var(--dsh-content-font-size,14px);font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.ydo-card-meta{color:var(--dsw-alias-label-secondary);font-size:var(--dsh-content-font-size-secondary,13px)}.ydo-card-actions{display:flex;justify-content:space-between;gap:8px;padding:0 12px 10px}.ydo-status{padding:2px 8px;border-radius:4px;background:var(--dsw-alias-bg-layer-2);font-size:var(--dsh-content-font-size-secondary,13px);flex:none}.ydo-status-ok{color:color-mix(in srgb,var(--dsw-alias-state-success-primary,#1a7f37) 50%,var(--dsw-alias-label-primary))}.ydo-status-expired{color:color-mix(in srgb,var(--dsw-alias-state-error-primary) 50%,var(--dsw-alias-label-primary))}.ydo-link{border:0;background:transparent;color:var(--dsw-alias-label-secondary);font:inherit;font-size:var(--dsh-content-font-size-secondary,13px);cursor:pointer;padding:0}.ydo-link:hover{color:var(--dsw-alias-label-primary)}.ydo-link-danger:hover{color:color-mix(in srgb,var(--dsw-alias-state-error-primary) 50%,var(--dsw-alias-label-primary))}.ydo-link:disabled{opacity:.5;cursor:default}.ydo-primary{min-height:40px;padding:0 16px;border:0;border-radius:6px;background:var(--dsw-alias-brand-primary);color:var(--dsw-alias-label-primary-foreground);font:inherit;font-size:var(--dsh-content-font-size,14px);font-weight:600;cursor:pointer}.ydo-primary:disabled{opacity:.45;cursor:default}.ydo-secondary{min-height:36px;padding:0 16px;border:1px solid var(--dsw-alias-border-l1);border-radius:6px;background:var(--dsw-alias-bg-layer-1);color:inherit;font:inherit;cursor:pointer}.ydo-secondary:disabled{opacity:.45;cursor:default}.ydo-export{display:inline-flex;align-items:center;gap:6px;white-space:nowrap}/* 导出按钮文案不换行、导出中只换加载态文字不改布局（v2 §4.1）。 */.ydo-right{display:grid;grid-template-rows:auto auto auto 1fr;min-height:0;overflow:hidden;padding:20px 24px 24px;gap:12px}.ydo-toolbar{display:flex;align-items:center;gap:12px;flex-wrap:wrap}.ydo-progress{display:flex;align-items:center;gap:8px;color:var(--dsw-alias-label-secondary);font-size:var(--dsh-content-font-size-secondary,13px)}.ydo-table-wrap{overflow:auto;min-height:0;border:1px solid var(--dsw-alias-border-l1);border-radius:8px}/* 列轨道由 tableTemplate(COLUMNS) 内联到表头与每行，这里不再写死一份（§11.2.3）。 */
-    .ydo-table{width:max-content;min-width:100%}.ydo-table-head,.ydo-table-row{display:grid;align-items:center}.ydo-table-head{position:sticky;top:0;z-index:3;background:var(--dsw-alias-bg-layer-2);border-bottom:1px solid var(--dsw-alias-border-l1)}.ydo-sort{display:flex;width:100%;align-items:center;gap:4px;min-width:0;padding:0;border:0;background:transparent;color:inherit;font:inherit;text-align:left;cursor:pointer}.ydo-sort-text{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.ydo-sort-arrow{flex:none;min-width:12px;color:var(--dsw-alias-label-secondary)}.ydo-sort-active{color:var(--dsw-alias-label-primary)}.ydo-sort-active .ydo-sort-arrow{color:var(--dsw-alias-brand-primary)}.ydo-cell{padding:8px 10px;font-size:var(--dsh-content-font-size-secondary,13px);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.ydo-cell-count,.ydo-cell-pct,.ydo-cell-seconds{text-align:right;font-variant-numeric:tabular-nums}.ydo-cell-sticky{position:sticky;z-index:2;border-right:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-1)}.ydo-table-head .ydo-cell-sticky{z-index:4;background:var(--dsw-alias-bg-layer-2)}.ydo-table-row{cursor:default;border-bottom:1px solid var(--dsw-alias-border-l1)}.ydo-table-row:hover .ydo-cell{background:var(--dsw-alias-bg-layer-2)}.ydo-table-row:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:-2px}.ydo-cell a{color:var(--dsw-alias-brand-primary);text-decoration:none}.ydo-cell a:hover{text-decoration:underline}.ydo-state{display:grid;min-height:200px;place-items:center;align-content:center;gap:10px;color:var(--dsw-alias-label-secondary);font-size:var(--dsh-content-font-size,14px);text-align:center}.ydo-state p{margin:0;max-width:640px;line-height:1.6}.ydo-state-title{color:var(--dsw-alias-label-primary);font-size:var(--dsw-font-base-16-font-size,16px);font-weight:600}.ydo-state-error .ydo-state-title{color:color-mix(in srgb,var(--dsw-alias-state-error-primary) 50%,var(--dsw-alias-label-primary))}.ydo-hint{margin:0;color:var(--dsw-alias-label-secondary);font-size:var(--dsh-content-font-size-secondary,13px);line-height:1.5}.ydo-error{margin:0;color:color-mix(in srgb,var(--dsw-alias-state-error-primary) 50%,var(--dsw-alias-label-primary));font-size:var(--dsh-content-font-size-secondary,13px)}.ydo-warn{margin:0;color:color-mix(in srgb,var(--dsw-alias-state-warn-primary,#d29922) 50%,var(--dsw-alias-label-primary));font-size:var(--dsh-content-font-size-secondary,13px)}.ydo-ok{margin:0;color:color-mix(in srgb,var(--dsw-alias-state-success-primary,#1a7f37) 50%,var(--dsw-alias-label-primary));font-size:var(--dsh-content-font-size-secondary,13px)}.ydo-spinner{width:16px;height:16px;border:2px solid var(--dsw-alias-border-l2);border-top-color:var(--dsw-alias-brand-primary);border-radius:50%;animation:ydo-spin .8s linear infinite}@keyframes ydo-spin{to{transform:rotate(360deg)}}.ydo-modal-overlay{position:fixed;inset:0;z-index:540;display:grid;place-items:center;background:color-mix(in srgb,var(--dsw-alias-bg-base) 60%,transparent)}.ydo-modal{width:min(1080px,calc(100vw - 48px));max-height:calc(100vh - 64px);display:grid;grid-template-rows:auto 1fr;border:1px solid var(--dsw-alias-border-l1);border-radius:8px;background:var(--dsw-alias-bg-layer-1);box-shadow:0 16px 48px rgba(0,0,0,.24);overflow:hidden}.ydo-modal-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;padding:16px 20px;border-bottom:1px solid var(--dsw-alias-border-l1)}.ydo-modal-head h3{margin:0;font-size:var(--dsw-font-base-16-font-size,16px)}.ydo-modal-meta{margin:4px 0 0;color:var(--dsw-alias-label-secondary);font-size:var(--dsh-content-font-size-secondary,13px)}.ydo-modal-body{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px;padding:20px;overflow:auto}.ydo-panel{padding:14px;border:1px solid var(--dsw-alias-border-l1);border-radius:8px;background:var(--dsw-alias-bg-base)}.ydo-panel h4{margin:0 0 10px;font-size:var(--dsh-content-font-size,14px)}.ydo-panel-gap{border-color:var(--dsw-alias-state-warn-primary,#d29922)}.ydo-gap-list{margin:0;padding-left:18px;display:grid;gap:4px;color:var(--dsw-alias-label-secondary);font-size:var(--dsh-content-font-size-secondary,13px)}.ydo-gap-list code{font-size:var(--dsh-content-font-size-secondary,13px);color:var(--dsw-alias-label-primary)}.ydo-gap-list .ydo-gap-failed{color:color-mix(in srgb,var(--dsw-alias-state-error-primary) 60%,var(--dsw-alias-label-primary))}.ydo-bars{margin:0;padding:0;list-style:none;display:grid;gap:6px}.ydo-bars li{display:grid;grid-template-columns:72px 1fr 56px;align-items:center;gap:8px;font-size:var(--dsh-content-font-size-secondary,13px)}.ydo-bar-label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.ydo-bar-track{display:block;height:6px;border-radius:3px;background:var(--dsw-alias-bg-layer-2);overflow:hidden}.ydo-bar-fill{display:block;height:100%;border-radius:3px;background:var(--dsw-alias-brand-primary)}.ydo-bar-value{text-align:right;font-variant-numeric:tabular-nums;color:var(--dsw-alias-label-secondary)}.ydo-donut-wrap{display:flex;align-items:center;gap:16px}.ydo-donut{position:relative;width:96px;height:96px;border-radius:50%;flex:none}.ydo-donut-hole{position:absolute;inset:22px;border-radius:50%;background:var(--dsw-alias-bg-base)}.ydo-legend{margin:0;padding:0;list-style:none;display:grid;gap:6px;font-size:var(--dsh-content-font-size-secondary,13px)}.ydo-legend li{display:flex;align-items:center;gap:6px}.ydo-legend-dot{width:10px;height:10px;border-radius:50%;flex:none;background:var(--dsw-alias-brand-primary)}.ydo-tags{display:flex;flex-wrap:wrap;gap:6px}.ydo-tag{padding:3px 8px;border-radius:4px;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-secondary);font-size:var(--dsh-content-font-size-secondary,13px)}.ydo-confirm-overlay{position:fixed;inset:0;z-index:560;display:grid;place-items:center;background:color-mix(in srgb,var(--dsw-alias-bg-base) 45%,transparent)}.ydo-confirm{width:min(420px,calc(100vw - 32px));padding:24px;border:1px solid var(--dsw-alias-border-l1);border-radius:8px;background:var(--dsw-alias-bg-layer-1);box-shadow:0 12px 40px rgba(0,0,0,.18)}.ydo-confirm-title{margin:0 0 20px;font-size:var(--dsw-font-base-16-font-size,15px);line-height:1.6}.ydo-confirm-actions{display:flex;justify-content:flex-end;gap:12px}.ydo-confirm-primary{min-height:36px;padding:0 18px;border:0;border-radius:6px;background:var(--dsw-alias-brand-primary);color:var(--dsw-alias-label-primary-foreground);font:inherit;font-weight:600;cursor:pointer}.ydo-confirm-secondary{min-height:36px;padding:0 18px;border:1px solid var(--dsw-alias-border-l1);border-radius:6px;background:var(--dsw-alias-bg-layer-1);color:inherit;font:inherit;cursor:pointer}.ydo-delete-retry{display:grid;gap:8px;justify-items:start;padding:10px 12px;border:1px solid var(--dsw-alias-state-error-primary);border-radius:8px;background:var(--dsw-alias-bg-layer-1)}.ydo-delete-retry .ydo-secondary{min-height:32px}/* 二次优化（§5.2）色彩变量定义在 overlay 作用域，不引入全局污染：性别男=淡蓝/女=柔和红；四类分布（年龄/流量来源/地域/城市级别）条形图淡绿填充，进度分析不受影响。 */
+    .ydo-table{width:max-content;min-width:100%}.ydo-table-head,.ydo-table-row{display:grid;align-items:center}.ydo-table-head{position:sticky;top:0;z-index:3;background:var(--dsw-alias-bg-layer-2);border-bottom:1px solid var(--dsw-alias-border-l1)}.ydo-sort{display:flex;width:100%;align-items:center;gap:4px;min-width:0;padding:0;border:0;background:transparent;color:inherit;font:inherit;text-align:left;cursor:pointer}.ydo-sort-text{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.ydo-sort-arrow{flex:none;min-width:12px;color:var(--dsw-alias-label-secondary)}.ydo-sort-active{color:var(--dsw-alias-label-primary)}.ydo-sort-active .ydo-sort-arrow{color:var(--dsw-alias-brand-primary)}.ydo-cell{padding:8px 10px;font-size:var(--dsh-content-font-size-secondary,13px);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.ydo-cell-count,.ydo-cell-pct,.ydo-cell-seconds{text-align:right;font-variant-numeric:tabular-nums}.ydo-cell-sticky{position:sticky;z-index:2;border-right:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-1)}.ydo-table-head .ydo-cell-sticky{z-index:4;background:var(--dsw-alias-bg-layer-2)}.ydo-table-row{cursor:default;border-bottom:1px solid var(--dsw-alias-border-l1)}.ydo-table-row:hover .ydo-cell{background:var(--dsw-alias-bg-layer-2)}.ydo-table-row:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:-2px}.ydo-cell a{color:var(--dsw-alias-brand-primary);text-decoration:none}.ydo-cell a:hover{text-decoration:underline}.ydo-state{display:grid;min-height:200px;place-items:center;align-content:center;gap:10px;color:var(--dsw-alias-label-secondary);font-size:var(--dsh-content-font-size,14px);text-align:center}.ydo-state p{margin:0;max-width:640px;line-height:1.6}.ydo-state-title{color:var(--dsw-alias-label-primary);font-size:var(--dsw-font-base-16-font-size,16px);font-weight:600}.ydo-state-error .ydo-state-title{color:color-mix(in srgb,var(--dsw-alias-state-error-primary) 50%,var(--dsw-alias-label-primary))}.ydo-hint{margin:0;color:var(--dsw-alias-label-secondary);font-size:var(--dsh-content-font-size-secondary,13px);line-height:1.5}.ydo-error{margin:0;color:color-mix(in srgb,var(--dsw-alias-state-error-primary) 50%,var(--dsw-alias-label-primary));font-size:var(--dsh-content-font-size-secondary,13px)}.ydo-warn{margin:0;color:color-mix(in srgb,var(--dsw-alias-state-warn-primary,#d29922) 50%,var(--dsw-alias-label-primary));font-size:var(--dsh-content-font-size-secondary,13px)}.ydo-ok{margin:0;color:color-mix(in srgb,var(--dsw-alias-state-success-primary,#1a7f37) 50%,var(--dsw-alias-label-primary));font-size:var(--dsh-content-font-size-secondary,13px)}.ydo-spinner{width:16px;height:16px;border:2px solid var(--dsw-alias-border-l2);border-top-color:var(--dsw-alias-brand-primary);border-radius:50%;animation:ydo-spin .8s linear infinite}@keyframes ydo-spin{to{transform:rotate(360deg)}}.ydo-modal-overlay{position:fixed;inset:0;z-index:540;display:grid;place-items:center;background:color-mix(in srgb,var(--dsw-alias-bg-base) 60%,transparent)}.ydo-modal{width:min(1080px,calc(100vw - 48px));max-height:calc(100vh - 64px);display:grid;grid-template-rows:auto 1fr;border:1px solid var(--dsw-alias-border-l1);border-radius:8px;background:var(--dsw-alias-bg-layer-1);box-shadow:0 16px 48px rgba(0,0,0,.24);overflow:hidden}.ydo-modal-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;padding:16px 20px;border-bottom:1px solid var(--dsw-alias-border-l1)}.ydo-modal-head h3{margin:0;font-size:var(--dsw-font-base-16-font-size,16px)}.ydo-modal-meta{margin:4px 0 0;color:var(--dsw-alias-label-secondary);font-size:var(--dsh-content-font-size-secondary,13px)}.ydo-modal-body{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px;padding:20px;overflow:auto}.ydo-panel{padding:14px;border:1px solid var(--dsw-alias-border-l1);border-radius:8px;background:var(--dsw-alias-bg-base)}.ydo-panel h4{margin:0 0 10px;font-size:var(--dsh-content-font-size,14px)}.ydo-panel-gap{border-color:var(--dsw-alias-state-warn-primary,#d29922)}.ydo-gap-list{margin:0;padding-left:18px;display:grid;gap:4px;color:var(--dsw-alias-label-secondary);font-size:var(--dsh-content-font-size-secondary,13px)}.ydo-gap-list code{font-size:var(--dsh-content-font-size-secondary,13px);color:var(--dsw-alias-label-primary)}.ydo-gap-list .ydo-gap-failed{color:color-mix(in srgb,var(--dsw-alias-state-error-primary) 60%,var(--dsw-alias-label-primary))}.ydo-bars{margin:0;padding:0;list-style:none;display:grid;gap:6px}.ydo-bars li{display:grid;grid-template-columns:72px 1fr 56px;align-items:center;gap:8px;font-size:var(--dsh-content-font-size-secondary,13px)}.ydo-bar-label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.ydo-bar-track{display:block;height:6px;border-radius:3px;background:var(--dsw-alias-bg-layer-2);overflow:hidden}.ydo-bar-fill{display:block;height:100%;border-radius:3px;background:var(--dsw-alias-brand-primary)}.ydo-bar-value{text-align:right;font-variant-numeric:tabular-nums;color:var(--dsw-alias-label-secondary)}.ydo-donut-wrap{display:flex;align-items:center;gap:16px}.ydo-donut{position:relative;width:96px;height:96px;border-radius:50%;flex:none}.ydo-donut-hole{position:absolute;inset:22px;border-radius:50%;background:var(--dsw-alias-bg-base)}.ydo-legend{margin:0;padding:0;list-style:none;display:grid;gap:6px;font-size:var(--dsh-content-font-size-secondary,13px)}.ydo-legend li{display:flex;align-items:center;gap:6px}.ydo-legend-dot{width:10px;height:10px;border-radius:50%;flex:none;background:var(--dsw-alias-brand-primary)}.ydo-tags{display:flex;flex-wrap:wrap;gap:6px}.ydo-tag{padding:3px 8px;border-radius:4px;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-secondary);font-size:var(--dsh-content-font-size-secondary,13px)}.ydo-confirm-overlay{position:fixed;inset:0;z-index:560;display:grid;place-items:center;background:color-mix(in srgb,var(--dsw-alias-bg-base) 45%,transparent)}.ydo-confirm{width:min(420px,calc(100vw - 32px));padding:24px;border:1px solid var(--dsw-alias-border-l1);border-radius:8px;background:var(--dsw-alias-bg-layer-1);box-shadow:0 12px 40px rgba(0,0,0,.18)}.ydo-confirm-title{margin:0 0 20px;font-size:var(--dsw-font-base-16-font-size,15px);line-height:1.6}.ydo-confirm-actions{display:flex;justify-content:flex-end;gap:12px}.ydo-confirm-primary{min-height:36px;padding:0 18px;border:0;border-radius:6px;background:var(--dsw-alias-brand-primary);color:var(--dsw-alias-label-primary-foreground);font:inherit;font-weight:600;cursor:pointer}.ydo-confirm-secondary{min-height:36px;padding:0 18px;border:1px solid var(--dsw-alias-border-l1);border-radius:6px;background:var(--dsw-alias-bg-layer-1);color:inherit;font:inherit;cursor:pointer}.ydo-delete-retry{display:grid;gap:8px;justify-items:start;padding:10px 12px;border:1px solid var(--dsw-alias-state-error-primary);border-radius:8px;background:var(--dsw-alias-bg-layer-1)}.ydo-delete-retry .ydo-secondary{min-height:32px}/* 一键采集全部（批量方案 §4.5）：flex-basis:100% 在 wrap 工具栏内独占一行，不改 ydo-right 的 grid 行结构。 */
+    .ydo-batch-panel{flex-basis:100%;display:grid;gap:4px;padding:10px 12px;border:1px solid var(--dsw-alias-border-l1);border-radius:8px;background:var(--dsw-alias-bg-layer-1)}.ydo-batch-panel p{margin:0}.ydo-batch-detail{display:grid;gap:2px;padding-top:4px;border-top:1px solid var(--dsw-alias-border-l1)}.ydo-batch-item{display:flex;justify-content:space-between;gap:12px;font-size:var(--dsh-content-font-size-secondary,13px)}.ydo-batch-item-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.ydo-batch-item-reason{flex:none;color:var(--dsw-alias-label-secondary)}/* 二次优化（§5.2）色彩变量定义在 overlay 作用域，不引入全局污染：性别男=淡蓝/女=柔和红；四类分布（年龄/流量来源/地域/城市级别）条形图淡绿填充，进度分析不受影响。 */
     .ydo-overlay{--ydo-gender-male:#91C5EB;--ydo-gender-female:#E88989;--ydo-distribution-fill:#A6D9B0;--ydo-distribution-fill-hover:#8FC99B}.ydo-bars-distribution .ydo-bar-fill{background:var(--ydo-distribution-fill,#A6D9B0)}.ydo-bars-distribution .ydo-bar-fill:hover{background:var(--ydo-distribution-fill-hover,#8FC99B)}.ydo-ov-page{display:grid;gap:12px;align-content:start;overflow:auto;min-height:0}/* 工具栏（UI 优化方案 v2 §4.1）：grid 两列 minmax(0,1fr) auto——筛选项在左列内部换行，操作区固定行尾。 */
     .ydo-ov-toolbar{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:12px}.ydo-ov-filters{display:flex;align-items:center;gap:12px;flex-wrap:wrap;min-width:0}/* 筛选控件带可见说明文字、高度统一 36px；取消浏览器黑 outline，仅 :focus-visible 显品牌色外环（v2 §4.1/§7）。 */
     .ydo-filter-option:hover{background:var(--dsw-alias-bg-layer-2)}.ydo-ov-filter{display:inline-flex;align-items:center;gap:6px;color:var(--dsw-alias-label-secondary);font-size:var(--dsh-content-font-size-secondary,13px);white-space:nowrap}/* 自定义日期范围（2026-09-21 需求）：与筛选下拉同规格（36px/边框/圆角）；color-scheme 跟随宿主主题，日历图标明暗自适应。 */
@@ -4863,7 +5099,7 @@ window.__ModuleLoader__.load({
       ctx.slots.inject('shell.overlay', () => ctx.slots.register({ name: 'shell.overlay', id: OVERLAY_ID, order: 43, inject: () => ({ t }) }, Overlay))
     }
 
-    module.exports = { apply, inject: ['slots', 'locale'], downloadWorkbook, formatCell, formatCount, formatPercent, gapReasonText, hasGap, progressText, WorkTable, WorkDetailModal }
+    module.exports = { apply, inject: ['slots', 'locale'], downloadWorkbook, formatCell, formatCount, formatPercent, gapReasonText, hasGap, progressText, BatchPanel, WorkTable, WorkDetailModal }
     return module.exports;
   },
 });

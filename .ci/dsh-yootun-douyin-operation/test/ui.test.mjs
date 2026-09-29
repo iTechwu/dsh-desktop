@@ -2655,3 +2655,67 @@ test('AI 表现分析模块：无记录折叠、有结果展开、位置在爆�
   assert.ok(JSON.stringify(hLog).includes('当前分析任务较多'), '并发上限错误码收敛中文提示')
   assert.ok(hLog.some(node => node.props && node.props.role === 'alert'), '错误以 role=alert 呈现')
 })
+
+// ---------------------------------------------------------------------------
+// 一键采集全部（批量顺序采集）：展示纯函数与源码契约（批量方案 §4.5）。
+// ---------------------------------------------------------------------------
+import {
+  batchProgress,
+  batchReasonKey,
+  batchSummary,
+} from '../src/ui-format.js'
+
+test('批量原因映射：稳定码收敛为文案键，未知原因不透出原始错误码', () => {
+  assert.equal(batchReasonKey(null), null, 'completed 项无原因')
+  assert.equal(batchReasonKey('session_required'), 'batchReasonSessionExpired')
+  assert.equal(batchReasonKey('session_invalid'), 'batchReasonSessionExpired', '采集中会话失效同样指引重新扫码')
+  assert.equal(batchReasonKey('storage_state_missing'), 'batchReasonStorageMissing')
+  assert.equal(batchReasonKey('pending_account'), 'batchReasonPending')
+  assert.equal(batchReasonKey('probe_failed'), 'batchReasonProbeFailed')
+  assert.equal(batchReasonKey('ingest_failed'), 'batchReasonIngestFailed')
+  assert.equal(batchReasonKey('RUN_ACCOUNT_MISMATCH'), 'batchReasonFailed')
+})
+
+test('批量终态汇总：completed/partial/failed 三态参数，运行中不产生汇总', () => {
+  assert.equal(batchSummary(null), null)
+  assert.equal(batchSummary({ status: 'running' }), null, '运行中不展示终态汇总')
+  assert.deepEqual(
+    batchSummary({ status: 'completed', completedCount: 3, failedCount: 0, skippedCount: 0 }),
+    { key: 'batchCompleted', params: { ok: 3, bad: 0, skip: 0 } },
+  )
+  assert.deepEqual(
+    batchSummary({ status: 'partial', completedCount: 1, failedCount: 1, skippedCount: 1 }),
+    { key: 'batchPartial', params: { ok: 1, bad: 1, skip: 1 } },
+    '部分失败绝不伪装成整体成功',
+  )
+  assert.deepEqual(
+    batchSummary({ status: 'failed', completedCount: 0, failedCount: 2, skippedCount: 0 }),
+    { key: 'batchFailed', params: { ok: 0, bad: 2, skip: 0 } },
+  )
+})
+
+test('批量运行中进度：probing 按「已处理/全部」，collecting 按「当前序号/参与数」', () => {
+  assert.equal(batchProgress(null), null)
+  assert.equal(batchProgress({ status: 'completed' }), null)
+  assert.deepEqual(
+    batchProgress({ status: 'running', phase: 'probing', total: 5, probedCount: 1, skippedCount: 1 }),
+    { key: 'batchProbing', params: { i: 2, n: 5 } },
+    '已探测 1 个 + 拦截/入口跳过 1 个 = 已处理 2',
+  )
+  assert.deepEqual(
+    batchProgress({ status: 'running', phase: 'collecting', runnableTotal: 3, runnableDone: 1 }),
+    { key: 'batchCollectingProgress', params: { i: 2, n: 3 } },
+    '采集阶段 i = 已完成 + 当前',
+  )
+})
+
+test('批量源码契约：一键按钮与互斥禁用、BatchPanel 导出、刷新恢复链路存在', async () => {
+  const source = await readFile(new URL('../src/client.js', import.meta.url), 'utf8')
+  assert.match(source, /action: 'collectAll\.start'/u, '一键采集入口')
+  assert.match(source, /action: 'collectAll\.status'/u, '批量状态轮询与页面重开恢复')
+  assert.match(source, /batchRunning \|\| !sessionUsable/u, '批量运行中单账号采集按钮禁用（宿主 collect_busy 双保险）')
+  assert.match(source, /batchRunning \? t\('batchCollecting'\) : t\('batchCollectAll'\)/u, '批量运行中按钮切换文案')
+  assert.match(source, /function BatchPanel/u, '批量进度/汇总面板组件')
+  assert.match(source, /result\.batch\.status === 'running'\) setBatch\(result\.batch\)/u, '页面重开只恢复运行中的批量')
+  assert.match(source, /\.ydo-batch-panel\{flex-basis:100%/u, '批量面板在 toolbar 内独占一行，不改 grid 行结构')
+})

@@ -390,7 +390,15 @@ export function createCollectController({ runCollection = runAccountCollection, 
     return project(record)
   }
 
-  return { start, status, wait, reset: () => runs.clear() }
+  // 批量互斥探测：批量入口用它保证「单账号采集运行中禁止启动批量」。
+  function hasRunning() {
+    for (const record of runs.values()) {
+      if (record.status === 'running') return true
+    }
+    return false
+  }
+
+  return { start, status, wait, hasRunning, reset: () => runs.clear() }
 }
 
 function project(record) {
@@ -430,6 +438,218 @@ function project(record) {
 export async function checkCollectionReadiness({ accountId, root = stateRoot() }) {
   const ready = await hasStorageState(accountId, root)
   return ready ? { ready: true, reason: null } : { ready: false, reason: 'session_required' }
+}
+
+let batchSeq = 0
+
+function defaultBatchId() {
+  batchSeq += 1
+  return `batch-${Date.now().toString(36)}-${batchSeq}`
+}
+
+/**
+ * 批量采集控制器（一键采集全部）：按稳定顺序逐个采集已登录账号。
+ *
+ * 契约（docs/0909/douyin README §并发：跨账号顺序执行；本方案 §4）：
+ * - 宿主层全局互斥：批量与单账号入口互斥，检查与占位都在第一个 await 之前
+ *   同步完成（Node 单线程下无竞态窗口）；重复 start 批量返回现有任务。
+ * - 两段式筛选：入口同步筛选（缓存口径）由宿主完成；控制器内先逐账号串行
+ *   probe（实测口径），probe 不过的账号 skipped 并给稳定原因，不阻断后续。
+ * - 采集复用单账号控制器（collect.start/wait）：collect.status 因此能看到
+ *   批量中当前账号的细粒度进度，runAccountCollection 语义零改动。
+ * - 单账号失败记录原因后继续下一个；终态 completed / partial / failed。
+ *
+ * @param {{
+ *   collect?: { start: Function, wait: Function, hasRunning?: Function },
+ *   probe?: (accountId: string) => Promise<{ sessionStatus: string, reason?: string|null }>,
+ *   logger?: object,
+ *   generateId?: () => string,
+ * }} [options]
+ */
+export function createBatchCollectController({ collect = null, probe = null, logger = null, generateId = defaultBatchId } = {}) {
+  let batch = null
+
+  function hasRunning() {
+    return Boolean(batch && batch.status === 'running')
+  }
+
+  /**
+   * @param {{
+   *   accounts: Array<{ accountId: string, skipped?: boolean, reason?: string|null }>,
+   *   buildOptions?: (accountId: string) => object,
+   * }} payload
+   */
+  function start({ accounts = [], buildOptions = null } = {}) {
+    // 幂等复用：已有批量在跑时直接返回当前状态，不创建第二个任务。
+    if (hasRunning()) return { status: 'ready', batch: projectBatch(batch) }
+    if (collect && typeof collect.hasRunning === 'function' && collect.hasRunning()) {
+      return { status: 'error', reason: 'collect_busy' }
+    }
+    const items = (Array.isArray(accounts) ? accounts : [])
+      .filter(item => item && item.accountId)
+      .sort((a, b) => String(a.accountId).localeCompare(String(b.accountId)))
+      .map(item => ({
+        accountId: item.accountId,
+        status: item.skipped ? 'skipped' : 'queued',
+        reason: item.skipped ? (item.reason || 'not_eligible') : null,
+        collect: null,
+      }))
+    if (!items.some(item => item.status === 'queued')) {
+      // 入口同步筛选后没有任何可采集账号：直接拒绝，不产生零执行的任务记录。
+      return { status: 'error', reason: 'no_eligible_account', skipped: projectItems(items) }
+    }
+    batch = {
+      batchId: generateId(),
+      status: 'running',
+      phase: 'probing',
+      startedAt: new Date().toISOString(),
+      finishedAt: null,
+      currentAccountId: null,
+      error: null,
+      items,
+    }
+    batch.promise = runBatch({ buildOptions })
+    return { status: 'ready', batch: projectBatch(batch) }
+  }
+
+  async function runBatch({ buildOptions }) {
+    try {
+      // 阶段 1：逐账号串行会话探测（缓存口径的 ok 只是上次探测结果，实测后才诚实）。
+      // queued（待探测）→ probing → ready（实测通过，待采集）；不过探测的收敛为
+      // skipped + 稳定原因。ready 与 queued 分开，探测进度因此可计算。
+      batch.phase = 'probing'
+      for (const item of batch.items) {
+        if (item.status !== 'queued') continue
+        batch.currentAccountId = item.accountId
+        item.status = 'probing'
+        const outcome = await probeAccount(item.accountId)
+        if (outcome === 'ok') {
+          item.status = 'ready'
+        } else {
+          item.status = 'skipped'
+          item.reason = outcome
+        }
+      }
+      batch.currentAccountId = null
+      const runnable = batch.items.filter(item => item.status === 'ready')
+      // 全部账号被探测拦截：没有任何可采集账号，以失败收尾（绝不伪装成完成）。
+      if (!runnable.length) {
+        batch.status = 'failed'
+        batch.finishedAt = new Date().toISOString()
+        return
+      }
+      // 阶段 2：严格顺序采集——上一个账号完全结束后才启动下一个（跨账号顺序契约）。
+      batch.phase = 'collecting'
+      for (const item of runnable) {
+        item.status = 'running'
+        batch.currentAccountId = item.accountId
+        const options = buildOptions ? buildOptions(item.accountId) : {}
+        let outcome = null
+        if (collect && typeof collect.start === 'function' && typeof collect.wait === 'function') {
+          const started = await collect.start({ accountId: item.accountId, options })
+          outcome = started.status === 'ready' ? await collect.wait(item.accountId) : null
+          if (!outcome) outcome = { status: 'failed', error: started.reason || 'collect_failed' }
+        } else {
+          outcome = { status: 'failed', error: 'collect_controller_missing' }
+        }
+        item.status = outcome.status === 'completed' ? 'completed' : 'failed'
+        item.reason = outcome.error || null
+        item.collect = {
+          status: outcome.status,
+          error: outcome.error || null,
+          result: outcome.result || null,
+        }
+        batch.currentAccountId = null
+      }
+      const completed = batch.items.filter(item => item.status === 'completed').length
+      const failed = batch.items.filter(item => item.status === 'failed').length
+      batch.status = completed === 0 ? 'failed' : (failed > 0 ? 'partial' : 'completed')
+      batch.finishedAt = new Date().toISOString()
+    } catch (error) {
+      // 防御兜底：单账号失败已在循环内收敛，走到这里说明批量自身异常，收敛为失败终态。
+      batch.status = 'failed'
+      batch.error = safeReason(error)
+      batch.finishedAt = new Date().toISOString()
+      logger?.warn?.(`douyin batch collect failed: ${batch.error}`)
+    }
+  }
+
+  async function probeAccount(accountId) {
+    if (!probe) return 'ok'
+    let state = null
+    try {
+      state = await probe(accountId)
+    } catch (error) {
+      logger?.warn?.(`douyin batch probe failed: ${safeReason(error)}`)
+      return 'probe_failed'
+    }
+    if (state && state.sessionStatus === 'ok') return 'ok'
+    if (state && state.sessionStatus === 'expired') return 'session_required'
+    return 'probe_failed'
+  }
+
+  function status() {
+    if (!batch) return { status: 'ready', batch: null }
+    return { status: 'ready', batch: projectBatch(batch) }
+  }
+
+  async function wait() {
+    if (batch && batch.promise) await batch.promise
+    return batch ? projectBatch(batch) : null
+  }
+
+  return { start, status, wait, hasRunning }
+}
+
+function projectItems(items) {
+  return items.map(item => ({
+    accountId: item.accountId,
+    status: item.status,
+    reason: item.reason || null,
+    ...(item.collect
+      ? {
+        collect: {
+          status: item.collect.status,
+          error: item.collect.error || null,
+          ...(item.collect.result
+            ? {
+              result: {
+                runId: item.collect.result.runId || null,
+                runStatus: item.collect.result.runStatus || null,
+                listComplete: item.collect.result.listComplete ?? null,
+                expectedWorkCount: item.collect.result.expectedWorkCount ?? null,
+                succeededWorkCount: item.collect.result.succeededWorkCount ?? null,
+                failedWorkCount: item.collect.result.failedWorkCount ?? null,
+              },
+            }
+            : {}),
+        },
+      }
+      : {}),
+  }))
+}
+
+function projectBatch(batch) {
+  const counts = { completed: 0, failed: 0, skipped: 0, running: 0, queued: 0, probing: 0, ready: 0 }
+  for (const item of batch.items) counts[item.status] = (counts[item.status] || 0) + 1
+  const runnableTotal = batch.items.length - counts.skipped
+  return {
+    batchId: batch.batchId,
+    status: batch.status,
+    phase: batch.phase || null,
+    startedAt: batch.startedAt,
+    finishedAt: batch.finishedAt,
+    error: batch.error || null,
+    currentAccountId: batch.currentAccountId,
+    total: batch.items.length,
+    runnableTotal,
+    runnableDone: counts.completed + counts.failed,
+    completedCount: counts.completed,
+    failedCount: counts.failed,
+    skippedCount: counts.skipped,
+    probedCount: counts.ready + counts.running + counts.completed + counts.failed,
+    items: projectItems(batch.items),
+  }
 }
 
 async function fileExists(path) {

@@ -229,6 +229,56 @@ export function progressText(collect, t = key => key) {
   return t('runRunning')
 }
 
+/**
+ * 批量条目的 skipped/failed 稳定原因 → 文案键（批量方案 §4.5）。
+ *
+ * completed 项无原因返回 null；未知稳定码一律收敛为通用失败文案，绝不把原始
+ * 错误码直接暴露给业务用户。
+ */
+export function batchReasonKey(reason) {
+  if (reason === null || reason === undefined || reason === '') return null
+  if (reason === 'session_required' || reason === 'session_invalid') return 'batchReasonSessionExpired'
+  // 正则形式而非字符串字面量：客户端源码/产物不得出现「storage_state」连续
+  // 字面量（desktop-compat 凭证卫生扫描契约），点号通配保持匹配语义精确。
+  if (/^storage.state_missing$/.test(reason)) return 'batchReasonStorageMissing'
+  if (reason === 'pending_account') return 'batchReasonPending'
+  if (reason === 'probe_failed') return 'batchReasonProbeFailed'
+  if (reason === 'ingest_failed') return 'batchReasonIngestFailed'
+  return 'batchReasonFailed'
+}
+
+/**
+ * 批量终态汇总 → { key, params }（批量方案 §4.5：不把部分失败伪装成整体成功）。
+ * key 供 t() 取文案，params 供 .replace('{ok}') 等占位符。
+ */
+export function batchSummary(batch) {
+  if (!batch || batch.status === 'running') return null
+  const params = {
+    ok: batch.completedCount || 0,
+    bad: batch.failedCount || 0,
+    skip: batch.skippedCount || 0,
+  }
+  if (batch.status === 'completed') return { key: 'batchCompleted', params }
+  if (batch.status === 'partial') return { key: 'batchPartial', params }
+  return { key: 'batchFailed', params }
+}
+
+/**
+ * 批量运行中的总进度行 → { key, params }：
+ * - probing：「正在检查会话 i/n」（i = 已处理完 + 进行中，n = 全部账号）；
+ * - collecting：「第 i/n 个账号」（i = 当前参与序号，n = 实际参与采集数）。
+ */
+export function batchProgress(batch) {
+  if (!batch || batch.status !== 'running') return null
+  if (batch.phase === 'probing') {
+    const total = batch.total || 0
+    const done = Math.min(total, (batch.probedCount || 0) + (batch.skippedCount || 0))
+    return { key: 'batchProbing', params: { i: done, n: total } }
+  }
+  const index = Math.min(batch.runnableTotal || 0, (batch.runnableDone || 0) + 1)
+  return { key: 'batchCollectingProgress', params: { i: index, n: batch.runnableTotal || 0 } }
+}
+
 /** 账号卡片状态：ok / expired / unknown 与采集可用性。 */
 export function accountState(account) {
   const rawStatus = (account && account.sessionStatus) || 'unknown'

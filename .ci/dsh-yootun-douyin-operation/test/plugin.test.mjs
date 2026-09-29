@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { test } from 'node:test'
 
 import { apply, projectAccounts, projectLogin } from '../index.js'
-import { createCollectController } from '../src/runner.js'
+import { createBatchCollectController, createCollectController } from '../src/runner.js'
 import {
   accountRemoveIdempotencyKey,
   accountSaveIdempotencyKey,
@@ -475,6 +475,177 @@ test('collect.start/status：采集在后台运行，页面轮询读进度', asy
     const done = await call(registered[0].handler, { action: 'collect.status', accountId: 'acc-1' })
     assert.equal(done.payload.collect.status, 'completed')
     assert.equal(done.payload.collect.result.succeededWorkCount, 2)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// 一键采集全部（批量顺序采集）：宿主入口筛选、互斥与状态投影。
+// ---------------------------------------------------------------------------
+
+const BROWSER_OK = { chromeAvailable: true, driverAvailable: true, platform: 'linux' }
+
+test('collectAll.start：没有可采集账号时直接拒绝并给 skipped 明细，不建任务', async () => {
+  await withRoot(async root => {
+    await updateAccount('acc-expired', { sessionStatus: 'expired', sessionSeq: 1 }, root)
+    await updateAccount('acc-unknown', { sessionStatus: 'unknown', sessionSeq: 1 }, root)
+    await updateAccount('pending-x', { sessionStatus: 'ok', sessionSeq: 1 }, root)
+    await updateAccount('acc-nostate', { sessionStatus: 'ok', sessionSeq: 1 }, root)
+    const { ctx, registered } = createContext()
+    apply(ctx, { root, browserStatus: async () => BROWSER_OK })
+    const handler = registered[0].handler
+    const result = await call(handler, { action: 'collectAll.start' })
+    assert.equal(result.payload.status, 'error')
+    assert.equal(result.payload.reason, 'no_eligible_account')
+    const reasons = Object.fromEntries(result.payload.skipped.map(item => [item.accountId, item.reason]))
+    assert.equal(reasons['acc-expired'], 'session_required', '缓存过期账号跳过')
+    assert.equal(reasons['acc-unknown'], 'session_required', '缓存未知账号同样跳过')
+    assert.equal(reasons['pending-x'], 'pending_account', '占位账号不参与批量（身份待升级）')
+    assert.equal(reasons['acc-nostate'], 'storage_state_missing', '无本地登录态账号跳过')
+    const status = await call(handler, { action: 'collectAll.status' })
+    assert.equal(status.payload.status, 'ready')
+    assert.equal(status.payload.batch, null, '被拒绝时不产生任务记录')
+  })
+})
+
+test('collectAll.start/status：批量后台顺序执行并落终态，重复 start 复用运行中任务', async () => {
+  await withRoot(async root => {
+    const { mkdir, writeFile } = await import('node:fs/promises')
+    const { paths } = await import('../src/state.js')
+    await mkdir(paths(root).storageStateDir, { recursive: true })
+    await writeFile(paths(root).storageStatePath('acc-1'), '{"cookies":[],"origins":[]}')
+    await writeFile(paths(root).storageStatePath('acc-2'), '{"cookies":[],"origins":[]}')
+    await updateAccount('acc-1', { sessionStatus: 'ok', sessionSeq: 1 }, root)
+    await updateAccount('acc-2', { sessionStatus: 'ok', sessionSeq: 1 }, root)
+
+    // 采集挂起：保证第一次 start 返回时批量仍在运行，才能验证「运行中重复点击复用」。
+    let releaseRun = null
+    const runGate = new Promise(resolve => { releaseRun = resolve })
+    const order = []
+    const collect = createCollectController({
+      runCollection: async ({ accountId }) => {
+        order.push(accountId)
+        await runGate
+        return { status: 'ready', runId: `run-${accountId}`, runStatus: 'completed', listComplete: true, expectedWorkCount: 1, succeededWorkCount: 1, failedWorkCount: 0 }
+      },
+    })
+    const probes = []
+    const batch = createBatchCollectController({
+      collect,
+      probe: async accountId => { probes.push(accountId); return { sessionStatus: 'ok', reason: null } },
+    })
+    const { ctx, registered } = createContext()
+    apply(ctx, { root, collectController: collect, batchController: batch, browserStatus: async () => BROWSER_OK })
+    const handler = registered[0].handler
+
+    const started = await call(handler, { action: 'collectAll.start' })
+    assert.equal(started.payload.status, 'ready')
+    assert.equal(started.payload.batch.status, 'running')
+    // 运行中重复点击：复用现有批量，不创建第二个任务。
+    const again = await call(handler, { action: 'collectAll.start' })
+    assert.equal(again.payload.batch.batchId, started.payload.batch.batchId)
+    releaseRun()
+    await batch.wait()
+
+    assert.deepEqual(order, ['acc-1', 'acc-2'], '按稳定顺序逐账号采集')
+    assert.deepEqual(probes, ['acc-1', 'acc-2'], '每个参与账号采集前实测会话')
+    const done = await call(handler, { action: 'collectAll.status' })
+    assert.equal(done.payload.batch.status, 'completed')
+    assert.equal(done.payload.batch.completedCount, 2)
+  })
+})
+
+test('批量运行中 collect.start 被拒绝（collect_busy）；单账号运行中 collectAll.start 同样被拒', async () => {
+  await withRoot(async root => {
+    const { mkdir, writeFile } = await import('node:fs/promises')
+    const { paths } = await import('../src/state.js')
+    await mkdir(paths(root).storageStateDir, { recursive: true })
+    await writeFile(paths(root).storageStatePath('acc-1'), '{"cookies":[],"origins":[]}')
+    await writeFile(paths(root).storageStatePath('acc-2'), '{"cookies":[],"origins":[]}')
+    await updateAccount('acc-1', { sessionStatus: 'ok', sessionSeq: 1 }, root)
+    await updateAccount('acc-2', { sessionStatus: 'ok', sessionSeq: 1 }, root)
+
+    // 同一 deps 内验证双向互斥：探测 gate 挂住批量 → 单账号被拒；
+    // 释放后批量完成 → 换新 gate 挂起单账号 → 批量入口被拒。
+    let releaseProbe = null
+    const probeGate = new Promise(resolve => { releaseProbe = resolve })
+    // 可切换的采集 gate：阶段 1 直通（让批量跑完），阶段 2 换成挂起 gate。
+    let runGate = Promise.resolve()
+    const collect = createCollectController({
+      runCollection: async () => {
+        await runGate
+        return { status: 'ready', runId: 'r', runStatus: 'completed', listComplete: true, expectedWorkCount: 0, succeededWorkCount: 0, failedWorkCount: 0 }
+      },
+    })
+    const batch = createBatchCollectController({
+      collect,
+      probe: async () => { await probeGate; return { sessionStatus: 'ok', reason: null } },
+    })
+    const { ctx, registered } = createContext()
+    apply(ctx, { root, collectController: collect, batchController: batch, browserStatus: async () => BROWSER_OK })
+    const handler = registered[0].handler
+
+    await call(handler, { action: 'collectAll.start' })
+    const singleWhileBatch = await call(handler, { action: 'collect.start', accountId: 'acc-2' })
+    assert.equal(singleWhileBatch.payload.status, 'error')
+    assert.equal(singleWhileBatch.payload.reason, 'collect_busy', '批量运行中禁止插入单账号采集')
+    releaseProbe()
+    await batch.wait()
+
+    let releaseRun = null
+    runGate = new Promise(resolve => { releaseRun = resolve })
+    await collect.start({ accountId: 'acc-1', options: {} })
+    const batchWhileSingle = await call(handler, { action: 'collectAll.start' })
+    assert.equal(batchWhileSingle.payload.status, 'error')
+    assert.equal(batchWhileSingle.payload.reason, 'collect_busy', '单账号运行中禁止启动批量')
+    releaseRun()
+    await collect.wait('acc-1')
+  })
+})
+
+test('批量探测后尽力上报会话状态，载荷不含任何 Cookie 内容', async () => {
+  await withRoot(async root => {
+    const { mkdir, writeFile } = await import('node:fs/promises')
+    const { paths } = await import('../src/state.js')
+    await mkdir(paths(root).storageStateDir, { recursive: true })
+    await writeFile(paths(root).storageStatePath('acc-1'), '{"cookies":[],"origins":[]}')
+    await updateAccount('acc-1', { sessionStatus: 'ok', sessionSeq: 1 }, root)
+
+    const toolCalls = []
+    const collect = createCollectController({
+      runCollection: async () => ({ status: 'ready', runId: 'r', runStatus: 'completed', listComplete: true, expectedWorkCount: 0, succeededWorkCount: 0, failedWorkCount: 0 }),
+    })
+    const { ctx, registered } = createContext({
+      tools: [{ name: 'mcp__tools-douyin-operation__douyin_session_status_report' }],
+      execute: async request => {
+        // callTool 传单个请求对象 { callId, name, arguments, signal }。
+        toolCalls.push({ name: request.name, args: request.arguments })
+        return { structuredContent: {} }
+      },
+    })
+    // 不注入 batchController：宿主默认探测链 = refreshSessionState（本地实测，
+    // 注入避免真实浏览器探测）+ reportSessionStatus（尽力上报 tools）。
+    apply(ctx, {
+      root,
+      collectController: collect,
+      refreshSessionState: async () => ({ sessionStatus: 'ok', sessionSeq: 7, checkedAt: '2026-09-29T00:00:00.000Z', reason: null }),
+      browserStatus: async () => BROWSER_OK,
+    })
+    const handler = registered[0].handler
+    await call(handler, { action: 'collectAll.start' })
+    // 宿主探测链（refreshSessionState + 上报）是异步的：轮询等批量落终态。
+    let status = await call(handler, { action: 'collectAll.status' })
+    for (let i = 0; i < 200 && status.payload.batch.status === 'running'; i += 1) {
+      await new Promise(resolve => setTimeout(resolve, 5))
+      status = await call(handler, { action: 'collectAll.status' })
+    }
+    assert.equal(status.payload.batch.status, 'completed', '探测与采集全部成功')
+
+    const report = toolCalls.find(call => String(call.name).includes('douyin_session_status_report'))
+    assert.ok(report, '批量探测后上报会话状态')
+    assert.equal(report.args.sessionStatus, 'ok')
+    assert.equal(report.args.sessionSeq, 7)
+    assert.equal(report.args.sessionRef, 'vault://douyin/acc-1', '只上报不透明引用')
+    assert.equal(JSON.stringify(report.args).includes('cookie'), false, '载荷不含 Cookie 内容')
   })
 })
 
