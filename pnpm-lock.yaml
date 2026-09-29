@@ -8049,7 +8049,9 @@ snapshots:
 
   '@dofe/dsh-yootun-ui@file:../docker-helm.dofe.ai/plugins/dsh-yootun-ui': {}
 
-  '@dofe/dsh-yootun-xhs-operation@file:../docker-helm.dofe.ai/plugins/dsh-yootun-xhs-operation': {}
+  '@dofe/dsh-yootun-xhs-operation@file:../docker-helm.dofe.ai/plugins/dsh-yootun-xhs-operation':
+    dependencies:
+      playwright-core: 1.63.0
 
   '@dotenvx/dotenvx@1.75.1':
     dependencies:
