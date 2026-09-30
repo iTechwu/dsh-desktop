@@ -315,6 +315,7 @@ test('单稿详情：低播放 item_compare 不抛错，记录 below_min_view', 
       '/data/item_analysis/search/keyword': await fixture('search_keywords.sample.json'),
       '/janus/douyin/creator/bff/data/progress/analysis/v2': await fixture('progress_analysis.sample.json'),
       '/web/api/creator/item/mget': { items: [{ id: '7000000000000000001', metrics: { danmaku_count: '15' } }] },
+      '/data/item/summarize/': { item_list: [] },
     },
   })
   const detail = await collectWorkDetail(page, '7000000000000000001')
@@ -338,6 +339,7 @@ test('单稿详情：拦截漏取 item_compare 时由页面内 fetch 兜底', as
       '/data/item_analysis/search/keyword': await fixture('search_keywords.sample.json'),
       '/janus/douyin/creator/bff/data/progress/analysis/v2': await fixture('progress_analysis.sample.json'),
       '/web/api/creator/item/mget': { items: [] },
+      '/data/item/summarize/': { item_list: [] },
     },
   })
   const detail = await collectWorkDetail(page, '7000000000000000001')
@@ -348,6 +350,44 @@ test('单稿详情：拦截漏取 item_compare 时由页面内 fetch 兜底', as
   const compareCall = page.calls.find(call => call.url?.includes('/data/diagnose/item_compare'))
   assert.ok(compareCall, '拦截漏取时必须主动发起同源兜底请求')
   assert.ok(compareCall.url.includes('item_id=7000000000000000001'))
+})
+
+test('单稿详情：item_compare 10005 时 mget/summarize 参与兜底', async () => {
+  const page = fakePage({
+    jsonRoutes: {
+      '/data/diagnose/item_compare': {
+        status_code: 10005,
+        status_msg: 'past item count less than min count',
+        item: {},
+      },
+      '/data/item/play/source': await fixture('play_source.sample.json'),
+      '/data/fans/item/portrait': await fixture('portrait.sample.json'),
+      '/data/item_analysis/search/keyword': await fixture('search_keywords.sample.json'),
+      '/janus/douyin/creator/bff/data/progress/analysis/v2': await fixture('progress_analysis.sample.json'),
+      '/web/api/creator/item/mget': {
+        items: [{
+          id: '7000000000000000001',
+          metrics: {
+            bounce_rate_2s: '0.292388',
+            avg_view_proportion: '0.65836',
+          },
+        }],
+      },
+      '/data/item/summarize/': {
+        item_list: [{
+          aweme_id: '7000000000000000001',
+          summarize_data: { play_finish_ratio: 0.342178 },
+        }],
+      },
+    },
+  })
+  const detail = await collectWorkDetail(page, '7000000000000000001')
+  assert.equal(detail.compare.statusCode, 10005)
+  assert.equal(detail.compare.gapReason, 'past_item_below_min_count')
+  assert.equal(detail.mget.get('7000000000000000001').bounce_rate_2s_pct, 29.24)
+  assert.equal(detail.summarize.get('7000000000000000001').completion_rate_pct, 34.22)
+  assert.ok(detail.endpointsSeen.includes('mget'))
+  assert.ok(detail.endpointsSeen.includes('summarize'))
 })
 
 test('单稿详情：拦截与兜底都失败 → request_failed，不误标低播放', async () => {

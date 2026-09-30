@@ -20,6 +20,7 @@ import {
   parseItemMget,
   parseJsonPreservingIds,
   parseItemPerformance,
+  parseItemSummarize,
   parsePlaySource,
   parsePortrait,
   parseProgressAnalysis,
@@ -44,6 +45,7 @@ export const USER_INFO_PATH = '/web/api/media/user/info/'
 // 单稿指标：详情页概览接口，补齐列表 `statistics` 未暴露的 `danmaku_count`。
 export const ITEM_MGET_PATH = '/web/api/creator/item/mget'
 export const ITEM_MGET_FIELDS = 'metrics,review,play_info,dou_plus,integrated_incentive,item_status,recommend_info'
+export const ITEM_SUMMARIZE_PATH = '/web/api/creator/data/item/summarize/'
 
 export const WORK_MANAGE_URL = 'https://creator.douyin.com/creator-micro/content/manage'
 export const WORK_DETAIL_URL = workId => `https://creator.douyin.com/creator-micro/work-management/work-detail/${workId}`
@@ -59,6 +61,7 @@ export const DETAIL_TARGETS = {
   search: '/data/item_analysis/search/keyword',
   portrait: '/data/fans/item/portrait',
   mget: '/web/api/creator/item/mget',
+  summarize: '/data/item/summarize/',
 }
 
 export const DEFAULT_PAGE_SIZE = 12
@@ -270,8 +273,9 @@ export async function collectWorkDetail(page, workId, { timeoutMs = 25_000, onTa
     search: `${SEARCH_KEYWORD_PATH}?item_id=${workId}`,
     portrait: `${PORTRAIT_PATH}?item_id=${workId}`,
     mget: `${ITEM_MGET_PATH}?ids=${workId}&fields=${ITEM_MGET_FIELDS}`,
+    summarize: `${ITEM_SUMMARIZE_PATH}?item_id=${workId}`,
   }
-  const endpoints = { compare: 'compare', source: 'source', search: 'search', portrait: 'portrait', progress: 'progress', mget: 'mget' }
+  const endpoints = { compare: 'compare', source: 'source', search: 'search', portrait: 'portrait', progress: 'progress', mget: 'mget', summarize: 'summarize' }
   for (const [key, path] of Object.entries(fallback)) {
     if (captured[key]) continue
     const result = await fetchJson(page, path)
@@ -300,6 +304,7 @@ export async function collectWorkDetail(page, workId, { timeoutMs = 25_000, onTa
     search: captured.search ? parseSearchKeywords(captured.search) : null,
     progress: captured.progress ? parseProgressAnalysis(captured.progress) : null,
     mget: captured.mget ? parseItemMget(captured.mget) : null,
+    summarize: captured.summarize ? parseItemSummarize(captured.summarize) : null,
   }
 }
 
@@ -367,7 +372,7 @@ export async function collectAccountWorks(page, {
       error.partialCollected = {
         works: error.partialListWorks.map(work => buildWorkPayload({
           work, performance: null, compare: null, source: null, portrait: null,
-          search: null, progress: null, mget: null, hotword: null, observedAt,
+          search: null, progress: null, mget: null, summarize: null, hotword: null, observedAt,
         })),
         listComplete: false,
         expectedWorkCount: error.partialListWorks.length,
@@ -390,7 +395,7 @@ export async function collectAccountWorks(page, {
       error.partialCollected = {
         works: list.works.map(work => buildWorkPayload({
           work, performance: null, compare: null, source: null, portrait: null,
-          search: null, progress: null, mget: null, hotword: null, observedAt,
+          search: null, progress: null, mget: null, summarize: null, hotword: null, observedAt,
         })),
         listComplete: list.listComplete,
         expectedWorkCount: list.works.length,
@@ -410,7 +415,7 @@ export async function collectAccountWorks(page, {
       error.partialCollected = {
         works: list.works.map(work => buildWorkPayload({
           work, performance: null, compare: null, source: null, portrait: null,
-          search: null, progress: null, mget: null, hotword: null, observedAt,
+          search: null, progress: null, mget: null, summarize: null, hotword: null, observedAt,
         })),
         listComplete: list.listComplete,
         expectedWorkCount: list.works.length,
@@ -438,6 +443,7 @@ export async function collectAccountWorks(page, {
         search: detail.search,
         progress: detail.progress,
         mget: detail.mget,
+        summarize: detail.summarize,
         hotword,
         observedAt,
       }))

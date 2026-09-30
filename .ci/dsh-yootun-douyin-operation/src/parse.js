@@ -8,6 +8,9 @@
 
 export const LOW_PLAY_STATUS_CODE = 10001
 
+/** 抖音单稿对比的历史作品数门槛（`past item count less than min count`）。 */
+export const PAST_ITEM_COUNT_STATUS_CODE = 10005
+
 /**
  * 业务层会话失效码（HTTP 200 下的 `status_code: 8`"用户未登录"）。
  *
@@ -312,11 +315,14 @@ export function parseItemCompare(json) {
   const metrics = (payload.item && payload.item.metrics) || {}
   const hasMetrics = Boolean(metrics && typeof metrics === 'object' && Object.keys(metrics).length)
   const lowPlay = statusCode === LOW_PLAY_STATUS_CODE
-  // 缺口必须区分“抖音明确按最低播放门槛拒绝”和“接口响应里没有指标”。
-  // 前者是 below_min_view；后者在采集层若确认请求也没发出去，会改标 request_failed。
+  // 缺口必须区分抖音的三种拒绝/未暴露形态：10001 是当前观看门槛，10005 是
+  // 历史作品数门槛；成功但无指标才是 not_exposed。请求未发出时采集层改标
+  // request_failed。两类门槛都可能被 mget/summarize 备用通道补齐。
   const gapReason = lowPlay
     ? 'below_min_view'
-    : hasMetrics ? null : 'not_exposed'
+    : statusCode === PAST_ITEM_COUNT_STATUS_CODE
+      ? 'past_item_below_min_count'
+      : hasMetrics ? null : 'not_exposed'
   return {
     statusCode,
     lowPlay,
@@ -462,8 +468,8 @@ export function parseProgressAnalysis(json) {
 /**
  * 单稿指标 `item/mget`：详情页概览自身调用的接口，补齐列表 `statistics` 未暴露的计数类指标。
  *
- * 只取 README §8 canonical 契约已有的 `danmaku_count`；响应里的 `cover_show`、
- * `dislike_*` 等字段暂不入库，避免超出既定列契约。
+ * 取 canonical 契约已有的 `danmaku_count`，以及可作 `item_compare` 缺失时兜底的
+ * 播放/留存指标。`cover_show`、`dislike_*` 等未入列字段仍不入库，避免超出契约。
  *
  * 返回 `Map<workId, {danmaku_count}>` 而**不是**只取 `items[0]`：该接口的 `ids`
  * 是复数，拦截到的响应可能是多作品批量请求，盲取首元素会把别的作品的弹幕数
@@ -480,7 +486,36 @@ export function parseItemMget(json) {
     const metrics = item.metrics || {}
     rows.set(String(id), {
       danmaku_count: toInt(firstPresent(metrics.danmaku_count, metrics.danmakuCount)),
+      play_count: toInt(metrics.view_count),
+      avg_watch_duration_s: round2(metrics.avg_view_second),
+      completion_rate_pct: pct(metrics.completion_rate),
+      completion_rate_5s_pct: pct(metrics.completion_rate_5s),
+      bounce_rate_2s_pct: pct(metrics.bounce_rate_2s),
+      avg_view_proportion_pct: pct(metrics.avg_view_proportion),
+      cover_click_rate_pct: pct(metrics.cover_click_rate),
+      follower_play_ratio_pct: pct(metrics.fan_view_proportion),
     })
+  }
+  return rows
+}
+
+/**
+ * 作品总览 `item/summarize`：提取创作者后台展示的完播率。
+ *
+ * `summarize_data.play_finish_ratio` 是 0..1 比例。按 workId 建索引，避免批量
+ * 响应或多次拦截时把其他作品的值错配到当前作品。
+ */
+export function parseItemSummarize(json) {
+  const payload = json && typeof json === 'object' ? json : {}
+  const list = Array.isArray(payload.item_list) ? payload.item_list : []
+  const rows = new Map()
+  for (const item of list) {
+    if (!item || typeof item !== 'object') continue
+    const id = firstPresent(item.aweme_id, item.item_id, item.id)
+    const summary = item.summarize_data || {}
+    const completionRate = pct(summary.play_finish_ratio)
+    if (id === null || completionRate === null) continue
+    rows.set(String(id), { completion_rate_pct: completionRate })
   }
   return rows
 }
@@ -520,7 +555,7 @@ export function parseWordCloud(json) {
  * `dataGap[field] = { reason, at }`；`reason` 取 `not_exposed`（接口未返回）或
  * 具体原因（如低播放 `below_min_view`、`request_failed`）。
  */
-export function buildWorkPayload({ work, performance, compare, source, portrait, search, progress, mget, hotword, observedAt }) {
+export function buildWorkPayload({ work, performance, compare, source, portrait, search, progress, mget, summarize, hotword, observedAt }) {
   const gaps = {}
   const mark = (field, reason) => { gaps[field] = { reason, at: observedAt } }
   const from = (value, field, reason = 'not_exposed') => {
@@ -543,25 +578,26 @@ export function buildWorkPayload({ work, performance, compare, source, portrait,
     : null
   // 单稿指标按 workId 取值：拦截到的批量响应里可能没有本条作品。
   const mgetRow = mget && typeof mget.get === 'function' ? mget.get(work.work_id) : null
+  const summaryRow = summarize && typeof summarize.get === 'function' ? summarize.get(work.work_id) : null
 
   return {
     work_id: work.work_id,
     title: from(work.title, 'title'),
     url: from(work.url, 'url'),
     publish_time: from(work.publish_time, 'publish_time'),
-    play_count: from(firstNonNull(cmp && cmp.play_count, perf.play_count, work.play_count), 'play_count'),
+    play_count: from(firstNonNull(cmp && cmp.play_count, mgetRow && mgetRow.play_count, perf.play_count, work.play_count), 'play_count'),
     like_count: from(work.like_count, 'like_count'),
     comment_count: from(work.comment_count, 'comment_count'),
     collect_count: from(work.collect_count, 'collect_count'),
     share_count: from(work.share_count, 'share_count'),
     danmaku_count: from(firstNonNull(mgetRow && mgetRow.danmaku_count, work.danmaku_count), 'danmaku_count'),
-    bounce_rate_2s_pct: from(firstNonNull(cmp && cmp.bounce_rate_2s_pct, perf.bounce_rate_2s_pct), 'bounce_rate_2s_pct', lowPlayReason),
-    completion_rate_5s_pct: from(firstNonNull(cmp && cmp.completion_rate_5s_pct, perf.completion_rate_5s_pct), 'completion_rate_5s_pct', lowPlayReason),
-    completion_rate_pct: from(cmp && cmp.completion_rate_pct, 'completion_rate_pct', lowPlayReason),
-    avg_watch_duration_s: from(firstNonNull(cmp && cmp.avg_watch_duration_s, perf.avg_watch_duration_s), 'avg_watch_duration_s', lowPlayReason),
-    avg_view_proportion_pct: from(cmp && cmp.avg_view_proportion_pct, 'avg_view_proportion_pct', lowPlayReason),
-    cover_click_rate_pct: from(cmp && cmp.cover_click_rate_pct, 'cover_click_rate_pct', lowPlayReason),
-    follower_play_ratio_pct: from(cmp && cmp.follower_play_ratio_pct, 'follower_play_ratio_pct', lowPlayReason),
+    bounce_rate_2s_pct: from(firstNonNull(cmp && cmp.bounce_rate_2s_pct, mgetRow && mgetRow.bounce_rate_2s_pct, perf.bounce_rate_2s_pct), 'bounce_rate_2s_pct', lowPlayReason),
+    completion_rate_5s_pct: from(firstNonNull(cmp && cmp.completion_rate_5s_pct, mgetRow && mgetRow.completion_rate_5s_pct, perf.completion_rate_5s_pct), 'completion_rate_5s_pct', lowPlayReason),
+    completion_rate_pct: from(firstNonNull(cmp && cmp.completion_rate_pct, summaryRow && summaryRow.completion_rate_pct, mgetRow && mgetRow.completion_rate_pct), 'completion_rate_pct', lowPlayReason),
+    avg_watch_duration_s: from(firstNonNull(cmp && cmp.avg_watch_duration_s, mgetRow && mgetRow.avg_watch_duration_s, perf.avg_watch_duration_s), 'avg_watch_duration_s', lowPlayReason),
+    avg_view_proportion_pct: from(firstNonNull(cmp && cmp.avg_view_proportion_pct, mgetRow && mgetRow.avg_view_proportion_pct), 'avg_view_proportion_pct', lowPlayReason),
+    cover_click_rate_pct: from(firstNonNull(cmp && cmp.cover_click_rate_pct, mgetRow && mgetRow.cover_click_rate_pct), 'cover_click_rate_pct', lowPlayReason),
+    follower_play_ratio_pct: from(firstNonNull(cmp && cmp.follower_play_ratio_pct, mgetRow && mgetRow.follower_play_ratio_pct), 'follower_play_ratio_pct', lowPlayReason),
     traffic_source: from(source, 'traffic_source'),
     search_keywords: from(search, 'search_keywords'),
     progress_analysis: from(progressValue, 'progress_analysis', progress ? 'no_data' : 'not_exposed'),

@@ -111,6 +111,7 @@ window.__ModuleLoader__.load({
     function gapReasonText(reason, t = key => key) {
       if (reason === 'not_exposed') return t('gapNotExposed')
       if (reason === 'below_min_view') return t('gapBelowMinView')
+      if (reason === 'past_item_below_min_count') return t('gapPastItemBelowMinCount')
       if (reason === 'request_failed') return t('gapRequestFailed')
       if (reason === 'no_data') return t('gapNoData')
       return t('gapOther')
@@ -2807,6 +2808,7 @@ window.__ModuleLoader__.load({
         trafficSource: '流量来源', progressCurve: '进度分析', searchKeywords: '搜索词', hotwords: '评论热词',
         dragBack: '拖回', dragForward: '拖前', engagement: '互动率',
         gapTitle: '数据缺口', gapNotExposed: '本次接口未提供', gapBelowMinView: '播放量低于抖音最小观看门槛',
+        gapPastItemBelowMinCount: '历史作品数低于抖音统计门槛',
         gapRequestFailed: '本次请求失败，请稍后重试', gapNoData: '该作品暂无此数据', gapOther: '本次未取到',
         partialBadge: '部分缺失', privateBadge: '已设为私密', trendCount: '该作品已采集 {count} 次',
         publishTime: '发布时间', latestCollected: '最近采集', noRecord: '暂无记录',
@@ -3002,6 +3004,7 @@ window.__ModuleLoader__.load({
         trafficSource: 'Traffic source', progressCurve: 'Progress', searchKeywords: 'Search keywords', hotwords: 'Comment hotwords',
         dragBack: 'Drag back', dragForward: 'Drag forward', engagement: 'Engagement',
         gapTitle: 'Data gaps', gapNotExposed: 'not returned by this call', gapBelowMinView: 'below Douyin minimum view threshold',
+        gapPastItemBelowMinCount: 'below Douyin historical-work threshold',
         gapRequestFailed: 'Request failed this time; retry later', gapNoData: 'this work has no such data', gapOther: 'not collected this run',
         partialBadge: 'Partial', privateBadge: 'Private', trendCount: '{count} snapshots of this work',
         publishTime: 'Publish time', latestCollected: 'Last collected', noRecord: 'No record',

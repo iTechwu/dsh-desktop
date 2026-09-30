@@ -106,6 +106,7 @@ export function formatCell(value, kind, t = key => key) {
 export function gapReasonText(reason, t = key => key) {
   if (reason === 'not_exposed') return t('gapNotExposed')
   if (reason === 'below_min_view') return t('gapBelowMinView')
+  if (reason === 'past_item_below_min_count') return t('gapPastItemBelowMinCount')
   if (reason === 'request_failed') return t('gapRequestFailed')
   if (reason === 'no_data') return t('gapNoData')
   return t('gapOther')

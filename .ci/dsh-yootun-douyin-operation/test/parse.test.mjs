@@ -20,6 +20,7 @@ import {
   parseItemMget,
   parseItemPerformance,
   parseJsonPreservingIds,
+  parseItemSummarize,
   parsePlaySource,
   parsePortrait,
   parseProgressAnalysis,
@@ -258,6 +259,18 @@ test('item_compare：成功但无 metrics → not_exposed，不得误判低播�
   assert.equal(parsed.gapReason, 'not_exposed')
 })
 
+test('item_compare：历史作品数门槛 10005 → 专用缺口原因', () => {
+  const parsed = parseItemCompare({
+    status_code: 10005,
+    status_msg: 'past item count less than min count',
+    item: {},
+  })
+  assert.equal(parsed.statusCode, 10005)
+  assert.equal(parsed.lowPlay, false)
+  assert.equal(parsed.hasMetrics, false)
+  assert.equal(parsed.gapReason, 'past_item_below_min_count')
+})
+
 test('流量来源解析：key → 中文标签、按占比降序', async () => {
   const json = await fixture('play_source.sample.json')
   const rows = parsePlaySource(json)
@@ -325,12 +338,53 @@ test('进度分析解析：端点可达但作品无数据 → empty 标记（与
 })
 
 test('单稿指标解析：按作品 id 建索引，字符串计数 → 整数', async () => {
-  const rows = parseItemMget({ items: [{ id: '111', metrics: { danmaku_count: '42' } }, { id: '222', metrics: {} }] })
-  assert.deepEqual(rows.get('111'), { danmaku_count: 42 })
+  const rows = parseItemMget({
+    items: [{
+      id: '111',
+      metrics: {
+        danmaku_count: '42',
+        view_count: '1772',
+        avg_view_second: '6.28',
+        completion_rate: '0.3422',
+        completion_rate_5s: '0.4591',
+        bounce_rate_2s: '0.2924',
+        avg_view_proportion: '0.6584',
+        cover_click_rate: '0.123',
+        fan_view_proportion: '0.021',
+      },
+    }, { id: '222', metrics: {} }],
+  })
+  assert.deepEqual(rows.get('111'), {
+    danmaku_count: 42,
+    play_count: 1772,
+    avg_watch_duration_s: 6.28,
+    completion_rate_pct: 34.22,
+    completion_rate_5s_pct: 45.91,
+    bounce_rate_2s_pct: 29.24,
+    avg_view_proportion_pct: 65.84,
+    cover_click_rate_pct: 12.3,
+    follower_play_ratio_pct: 2.1,
+  })
   assert.equal(rows.get('222').danmaku_count, null)
   assert.equal(rows.get('333'), undefined, '批量响应里没有本条作品 → 取不到（记缺口），不张冠李戴')
   assert.equal(parseItemMget({ items: [] }).size, 0)
   assert.equal(parseItemMget({}).size, 0)
+})
+
+test('作品总览解析：summarize 完播率按作品 id 建索引', () => {
+  const rows = parseItemSummarize({
+    item_list: [
+      { aweme_id: '111', summarize_data: { play_finish_ratio: 0.3422 } },
+      { item_id: '222', summarize_data: { play_finish_ratio: '0.1234' } },
+      { aweme_id: '333', summarize_data: {} },
+      { aweme_id: '444' },
+    ],
+  })
+  assert.deepEqual(rows.get('111'), { completion_rate_pct: 34.22 })
+  assert.deepEqual(rows.get('222'), { completion_rate_pct: 12.34 })
+  assert.equal(rows.get('333'), undefined)
+  assert.equal(rows.get('444'), undefined)
+  assert.equal(parseItemSummarize({}).size, 0)
 })
 
 test('流量来源/画像：期望字段缺失时返回 null（缺口而不是空数据）', async () => {
@@ -442,6 +496,49 @@ test('buildWorkPayload：单稿通道完全失败 → 缺口原因是 request_fa
   assert.equal(payload.completion_rate_pct, null)
   assert.equal(payload.dataGap.completion_rate_pct.reason, 'request_failed')
   assert.equal(payload.dataGap.bounce_rate_2s_pct.reason, 'request_failed')
+})
+
+test('buildWorkPayload：item_compare 10005 时用 mget/summarize 补齐红框指标', async () => {
+  const listJson = await fixture('work_list.lastpage.sample.json')
+  const work = parseWorkListPage(listJson).works[0]
+  const compare = parseItemCompare({
+    status_code: 10005,
+    status_msg: 'past item count less than min count',
+    item: {},
+  })
+  const mget = parseItemMget({
+    items: [{
+      id: work.work_id,
+      metrics: {
+        bounce_rate_2s: '0.292388',
+        completion_rate: '0.000001',
+        completion_rate_5s: '0.4591',
+        avg_view_proportion: '0.65836',
+      },
+    }],
+  })
+  const summarize = parseItemSummarize({
+    item_list: [{ aweme_id: work.work_id, summarize_data: { play_finish_ratio: 0.342178 } }],
+  })
+  const payload = buildWorkPayload({
+    work,
+    performance: null,
+    compare,
+    source: null,
+    portrait: null,
+    search: null,
+    progress: null,
+    mget,
+    summarize,
+    hotword: null,
+    observedAt: '2026-09-30T00:00:00.000Z',
+  })
+  assert.equal(payload.completion_rate_pct, 34.22, '完播率优先用 summarize 展示口径')
+  assert.equal(payload.bounce_rate_2s_pct, 29.24)
+  assert.equal(payload.avg_view_proportion_pct, 65.84)
+  assert.ok(!payload.dataGap?.completion_rate_pct)
+  assert.ok(!payload.dataGap?.bounce_rate_2s_pct)
+  assert.ok(!payload.dataGap?.avg_view_proportion_pct)
 })
 
 test('buildWorkPayload：进度分析取到但为空 → no_data，未取到 → not_exposed', async () => {
