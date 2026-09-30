@@ -233,6 +233,8 @@ test('高播放 item_compare：完播/时长/占比/粉丝播放占比全部可�
   assert.equal(parsed.metrics.avg_view_proportion_pct, 17.61)
   assert.equal(parsed.metrics.cover_click_rate_pct, 1.23)
   assert.equal(parsed.metrics.follower_play_ratio_pct, 0.53)
+  assert.equal(parsed.hasMetrics, true)
+  assert.equal(parsed.gapReason, null)
   assert.equal(parsed.engagement_rates.like_rate, 0.91)
   assert.equal(parsed.engagement_rates.favorite_rate, 0.05)
 })
@@ -242,8 +244,18 @@ test('低播放 item_compare：status_code=10001 不算错误，完播类记缺�
   const parsed = parseItemCompare(json)
   assert.equal(parsed.statusCode, LOW_PLAY_STATUS_CODE)
   assert.equal(parsed.lowPlay, true)
+  assert.equal(parsed.hasMetrics, false)
+  assert.equal(parsed.gapReason, 'below_min_view')
   assert.equal(parsed.metrics.completion_rate_pct, null)
   assert.equal(parsed.metrics.avg_watch_duration_s, null)
+})
+
+test('item_compare：成功但无 metrics → not_exposed，不得误判低播放', () => {
+  const parsed = parseItemCompare({ status_code: 0, status_msg: '', item: {} })
+  assert.equal(parsed.statusCode, 0)
+  assert.equal(parsed.lowPlay, false)
+  assert.equal(parsed.hasMetrics, false)
+  assert.equal(parsed.gapReason, 'not_exposed')
 })
 
 test('流量来源解析：key → 中文标签、按占比降序', async () => {
@@ -410,6 +422,26 @@ test('buildWorkPayload：低播放作品保留其他字段且缺口原因是 bel
   assert.equal(payload.hotword.status, 'unavailable', '热词失败保留旧集合由服务端处理')
   assert.ok(payload.traffic_source.length > 0, '低播放不阻塞流量来源')
   assert.ok(payload.audience.gender.length > 0, '低播放不阻塞观众画像')
+})
+
+test('buildWorkPayload：单稿通道完全失败 → 缺口原因是 request_failed', async () => {
+  const listJson = await fixture('work_list.lastpage.sample.json')
+  const work = parseWorkListPage(listJson).works[0]
+  const compare = { ...parseItemCompare(null), gapReason: 'request_failed' }
+  const payload = buildWorkPayload({
+    work,
+    performance: null,
+    compare,
+    source: null,
+    portrait: null,
+    search: null,
+    progress: null,
+    hotword: null,
+    observedAt: '2026-09-10T00:00:00.000Z',
+  })
+  assert.equal(payload.completion_rate_pct, null)
+  assert.equal(payload.dataGap.completion_rate_pct.reason, 'request_failed')
+  assert.equal(payload.dataGap.bounce_rate_2s_pct.reason, 'request_failed')
 })
 
 test('buildWorkPayload：进度分析取到但为空 → no_data，未取到 → not_exposed', async () => {

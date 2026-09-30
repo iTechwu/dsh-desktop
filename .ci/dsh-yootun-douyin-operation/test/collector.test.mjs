@@ -235,6 +235,52 @@ test('批量分析失败：返回空 Map 且记录错误，不影响后续字段
   assert.equal(result.performanceError, null, 'HTTP 200 + 业务错误码仍按已响应处理，由解析层记缺口')
 })
 
+test('批量分析任一端点命中 status_code=8 → 立即抛 SessionInvalidError', async () => {
+  const expiredPayload = { status_code: 8, status_msg: '示例：用户未登录' }
+  for (const expiredRoute of [
+    'item_analysis/involved_vertical',
+    'item_analysis/item_performance',
+    'item_analysis/overview',
+  ]) {
+    const page = fakePage({
+      jsonRoutes: {
+        'item_analysis/involved_vertical': { primary_verticals: [] },
+        'item_analysis/item_performance': await fixture('item_analysis.sample.json'),
+        'item_analysis/overview': { status_code: 0, overview: {} },
+        [expiredRoute]: expiredPayload,
+      },
+    })
+    await assert.rejects(
+      () => collectItemAnalysis(page, { now: () => new Date('2026-09-10T12:00:00Z') }),
+      SessionInvalidError,
+    )
+  }
+})
+
+test('账号采集批量分析命中 status_code=8：错误带出已采集列表，不继续假采集', async () => {
+  const { routes } = await pagedRoutes({ total: 2 })
+  const page = fakePage({
+    jsonRoutes: {
+      ...routes,
+      'item_analysis/involved_vertical': { primary_verticals: [] },
+      'item_analysis/item_performance': { status_code: 8, status_msg: '示例：用户未登录' },
+      'item_analysis/overview': { status_code: 0, overview: {} },
+    },
+  })
+  let thrown = null
+  try {
+    await collectAccountWorks(page, { intervalMs: 0, observedAt: '2026-09-15T00:00:00.000Z' })
+  } catch (error) {
+    thrown = error
+  }
+  assert.ok(thrown instanceof SessionInvalidError)
+  assert.equal(thrown.statusCode, 8)
+  assert.equal(thrown.partialCollected?.works?.length, 2)
+  assert.equal(thrown.partialCollected.listComplete, true)
+  assert.equal(thrown.partialCollected.expectedWorkCount, 2)
+  assert.equal(thrown.partialCollected.works[0].dataGap.bounce_rate_2s_pct.reason, 'not_exposed')
+})
+
 test('单稿详情：响应拦截拿到的数据优先，缺失项用页面内 fetch 兜底', async () => {
   const portrait = await fixture('portrait.sample.json')
   const page = fakePage({
@@ -273,7 +319,7 @@ test('单稿详情：低播放 item_compare 不抛错，记录 below_min_view', 
   })
   const detail = await collectWorkDetail(page, '7000000000000000001')
   assert.equal(detail.compare.lowPlay, true)
-  assert.equal(detail.compare.lowPlayReason, 'below_min_view')
+  assert.equal(detail.compare.gapReason, 'below_min_view')
   assert.ok(detail.source.length, '低播放仍拿到流量来源')
   assert.ok(detail.portrait.gender.length, '低播放仍拿到观众画像')
   assert.equal(detail.mget.get('7000000000000000001').danmaku_count, 15)
@@ -281,6 +327,52 @@ test('单稿详情：低播放 item_compare 不抛错，记录 below_min_view', 
   // 注意 page.calls 也记录 clickByText 的求值（该次 evaluate 的入参是字符串，没有 url）。
   const mgetCall = page.calls.find(call => call.url && call.url.includes('/web/api/creator/item/mget'))
   assert.ok(mgetCall.url.includes('fields=metrics'), '必须带 fields，否则响应不含 metrics')
+})
+
+test('单稿详情：拦截漏取 item_compare 时由页面内 fetch 兜底', async () => {
+  const page = fakePage({
+    jsonRoutes: {
+      '/data/diagnose/item_compare': await fixture('item_compare.high.sample.json'),
+      '/data/item/play/source': await fixture('play_source.sample.json'),
+      '/data/fans/item/portrait': await fixture('portrait.sample.json'),
+      '/data/item_analysis/search/keyword': await fixture('search_keywords.sample.json'),
+      '/janus/douyin/creator/bff/data/progress/analysis/v2': await fixture('progress_analysis.sample.json'),
+      '/web/api/creator/item/mget': { items: [] },
+    },
+  })
+  const detail = await collectWorkDetail(page, '7000000000000000001')
+  assert.equal(detail.compare.lowPlay, false)
+  assert.equal(detail.compare.gapReason, null)
+  assert.equal(detail.compare.metrics.completion_rate_pct, 3.09)
+  assert.ok(detail.endpointsSeen.includes('compare'), 'compare 必须和其他端点一样参与兜底')
+  const compareCall = page.calls.find(call => call.url?.includes('/data/diagnose/item_compare'))
+  assert.ok(compareCall, '拦截漏取时必须主动发起同源兜底请求')
+  assert.ok(compareCall.url.includes('item_id=7000000000000000001'))
+})
+
+test('单稿详情：拦截与兜底都失败 → request_failed，不误标低播放', async () => {
+  const page = fakePage({
+    jsonRoutes: {
+      '/data/item/play/source': await fixture('play_source.sample.json'),
+      '/data/fans/item/portrait': await fixture('portrait.sample.json'),
+      '/data/item_analysis/search/keyword': await fixture('search_keywords.sample.json'),
+    },
+  })
+  const detail = await collectWorkDetail(page, '7000000000000000001')
+  assert.equal(detail.compare.statusCode, null)
+  assert.equal(detail.compare.lowPlay, false)
+  assert.equal(detail.compare.gapReason, 'request_failed')
+  assert.ok(!detail.endpointsSeen.includes('compare'))
+})
+
+test('单稿详情：item_compare 命中 status_code=8 → 立即抛 SessionInvalidError', async () => {
+  const page = fakePage({
+    jsonRoutes: {
+      '/data/diagnose/item_compare': { status_code: 8, status_msg: '示例：用户未登录', item: {} },
+      '/data/item/play/source': await fixture('play_source.sample.json'),
+    },
+  })
+  await assert.rejects(() => collectWorkDetail(page, '7000000000000000001'), SessionInvalidError)
 })
 
 test('单稿详情：goto 瞬时失败退避重试，不把一次抖动扩散成整轮失败', async () => {

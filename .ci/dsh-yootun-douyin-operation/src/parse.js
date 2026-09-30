@@ -310,10 +310,18 @@ export function parseItemCompare(json) {
   const payload = json && typeof json === 'object' ? json : {}
   const statusCode = toInt(payload.status_code)
   const metrics = (payload.item && payload.item.metrics) || {}
-  const lowPlay = statusCode === LOW_PLAY_STATUS_CODE || Object.keys(metrics).length === 0
+  const hasMetrics = Boolean(metrics && typeof metrics === 'object' && Object.keys(metrics).length)
+  const lowPlay = statusCode === LOW_PLAY_STATUS_CODE
+  // 缺口必须区分“抖音明确按最低播放门槛拒绝”和“接口响应里没有指标”。
+  // 前者是 below_min_view；后者在采集层若确认请求也没发出去，会改标 request_failed。
+  const gapReason = lowPlay
+    ? 'below_min_view'
+    : hasMetrics ? null : 'not_exposed'
   return {
     statusCode,
     lowPlay,
+    hasMetrics,
+    gapReason,
     statusMessage: typeof payload.status_msg === 'string' ? payload.status_msg : null,
     metrics: {
       play_count: toInt(metrics.view_count),
@@ -523,8 +531,11 @@ export function buildWorkPayload({ work, performance, compare, source, portrait,
   const perf = performance || {}
   const cmp = compare ? compare.metrics : null
   const engagement = compare ? compare.engagement_rates : null
-  // 低播放：完播类指标不可得，但不影响其余字段。
-  const lowPlayReason = compare && compare.lowPlay ? 'below_min_view' : 'not_exposed'
+  // 单稿缺口原因由采集层严格标注：10001 是抖音最低播放门槛；请求成功但无指标是
+  // not_exposed；拦截与兜底都未取到是 request_failed。不得把后两者混成低播放。
+  const lowPlayReason = compare
+    ? (compare.gapReason || (compare.lowPlay ? 'below_min_view' : 'not_exposed'))
+    : 'not_exposed'
   // 进度分析：只有取到**非空**曲线才算有值。取到但为空 → `no_data`（作品确实没有
   // 拖拽数据）；完全没取到 → `not_exposed`。`empty` 是解析器的内部分隔标记，剥离后入库。
   const progressValue = progress && !progress.empty

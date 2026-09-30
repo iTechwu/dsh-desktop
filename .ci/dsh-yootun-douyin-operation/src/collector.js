@@ -26,6 +26,7 @@ import {
   parseSearchKeywords,
   parseWorkListPage,
   parseWordCloud,
+  toInt,
 } from './parse.js'
 
 export const WORK_LIST_PATH = '/janus/douyin/creator/pc/work_list'
@@ -175,15 +176,24 @@ export async function collectItemAnalysis(page, { days = 30, now = () => new Dat
   const startDate = yyyymmdd(start)
   const endDate = yyyymmdd(end)
   const vertical = await fetchJson(page, `${ITEM_ANALYSIS_BASE}/involved_vertical?start_date=${startDate}&end_date=${endDate}`)
+  if (vertical.ok && isSessionExpiredPayload(vertical.json)) {
+    throw new SessionInvalidError(toInt(vertical.json.status_code))
+  }
   const primaryVerticals = vertical.ok && Array.isArray(vertical.json.primary_verticals) ? vertical.json.primary_verticals : []
   const performance = await fetchJson(page, `${ITEM_ANALYSIS_BASE}/item_performance`, {
     method: 'POST',
     body: { start_date: startDate, end_date: endDate, genres, primary_verticals: primaryVerticals, metric_type: 1 },
   })
+  if (performance.ok && isSessionExpiredPayload(performance.json)) {
+    throw new SessionInvalidError(toInt(performance.json.status_code))
+  }
   const overview = await fetchJson(page, `${ITEM_ANALYSIS_BASE}/overview`, {
     method: 'POST',
     body: { start_date: startDate, end_date: endDate, genres, primary_verticals: primaryVerticals },
   })
+  if (overview.ok && isSessionExpiredPayload(overview.json)) {
+    throw new SessionInvalidError(toInt(overview.json.status_code))
+  }
   return {
     window: { startDate, endDate },
     primaryVerticals,
@@ -261,7 +271,7 @@ export async function collectWorkDetail(page, workId, { timeoutMs = 25_000, onTa
     portrait: `${PORTRAIT_PATH}?item_id=${workId}`,
     mget: `${ITEM_MGET_PATH}?ids=${workId}&fields=${ITEM_MGET_FIELDS}`,
   }
-  const endpoints = { source: 'source', search: 'search', portrait: 'portrait', progress: 'progress', mget: 'mget' }
+  const endpoints = { compare: 'compare', source: 'source', search: 'search', portrait: 'portrait', progress: 'progress', mget: 'mget' }
   for (const [key, path] of Object.entries(fallback)) {
     if (captured[key]) continue
     const result = await fetchJson(page, path)
@@ -272,12 +282,18 @@ export async function collectWorkDetail(page, workId, { timeoutMs = 25_000, onTa
   }
   const compare = captured.compare
   const compareParsed = parseItemCompare(compare)
+  if (compare && isSessionExpiredPayload(compare)) {
+    throw new SessionInvalidError(toInt(compare.status_code))
+  }
   if (compareParsed.lowPlay && compareParsed.statusCode === LOW_PLAY_STATUS_CODE) {
     // 低播放：记录原因，不抛错，不阻塞该作品其余字段。
-    compareParsed.lowPlayReason = 'below_min_view'
+    compareParsed.gapReason = 'below_min_view'
+  } else if (!compare) {
+    // 拦截和页面内 fetch 都没拿到：这是通道失败，不是抖音声明低播放。
+    compareParsed.gapReason = 'request_failed'
   }
   return {
-    endpointsSeen: Object.keys(endpoints).filter(key => captured[key]).concat(compare ? ['compare'] : []),
+    endpointsSeen: Object.keys(endpoints).filter(key => captured[key]),
     compare: compareParsed,
     source: captured.source ? parsePlaySource(captured.source) : null,
     portrait: captured.portrait ? parsePortrait(captured.portrait) : null,
@@ -387,8 +403,20 @@ export async function collectAccountWorks(page, {
   try {
     const analysis = await collectItemAnalysis(page, { days })
     performance = analysis.performance
-  } catch {
-    // 批量分析失败不影响列表与单稿字段；后续按缺口处理。
+  } catch (error) {
+    // 批量分析普通失败仍降级为缺口；但会话失效必须上抛，且保留已完成列表，
+    // 防止“status_code=8 后继续逐稿采集”或丢弃已采集列表造成假成功/数据丢失。
+    if (error instanceof SessionInvalidError) {
+      error.partialCollected = {
+        works: list.works.map(work => buildWorkPayload({
+          work, performance: null, compare: null, source: null, portrait: null,
+          search: null, progress: null, mget: null, hotword: null, observedAt,
+        })),
+        listComplete: list.listComplete,
+        expectedWorkCount: list.works.length,
+      }
+      throw error
+    }
     performance = new Map()
   }
 
