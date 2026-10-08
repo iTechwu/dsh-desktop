@@ -10,12 +10,12 @@ const {
   useSyncExternalStore,
 } = React;
 const {
-  IconCheckOutline16,
-  IconCloseOutline16,
-  IconDataOutline16,
-  IconRefreshOutline16,
-  IconSearchOutline16,
-  IconWarningOutline16,
+  IconCheckOutlineRegular,
+  IconCloseOutlineRegular,
+  IconDataOutlineRegular,
+  IconRefreshOutlineRegular,
+  IconSearchOutlineRegular,
+  IconWarningOutlineRegular,
   Tooltip,
 } = require("@deepseek-ai/dsh-client-ui-primitives");
 const NS = "dofe.yootun-knowledge";
@@ -379,7 +379,7 @@ function RecentDocument({ item, t }) {
     h(
       "div",
       { className: "yk-record-icon" },
-      h(IconDataOutline16, { size: 15 }),
+      h(IconDataOutlineRegular, { size: 15 }),
     ),
     h(
       "div",
@@ -438,7 +438,7 @@ function MemoryRow({ item, t, onGraph, onConfirm, onForget, busy = false }) {
           disabled: busy,
           onClick: () => onGraph?.(item.title || item.content || ""),
         },
-        h(IconDataOutline16, { size: 14 }),
+        h(IconDataOutlineRegular, { size: 14 }),
         t("graph"),
       ),
       status === "CANDIDATE" && onConfirm
@@ -449,7 +449,7 @@ function MemoryRow({ item, t, onGraph, onConfirm, onForget, busy = false }) {
               disabled: busy,
               onClick: () => onConfirm(item),
             },
-            h(IconCheckOutline16, { size: 14 }),
+            h(IconCheckOutlineRegular, { size: 14 }),
             t("confirm"),
           )
         : null,
@@ -462,7 +462,7 @@ function MemoryRow({ item, t, onGraph, onConfirm, onForget, busy = false }) {
               disabled: busy,
               onClick: () => onForget(item),
             },
-            h(IconCloseOutline16, { size: 14 }),
+            h(IconCloseOutlineRegular, { size: 14 }),
             t("forget"),
           )
         : null,
@@ -656,7 +656,7 @@ function Memories({
             disabled: interactionBusy || !query.trim(),
             onClick: onRecall,
           },
-          h(IconSearchOutline16, { size: 15 }),
+          h(IconSearchOutlineRegular, { size: 15 }),
           recallBusy ? t("recalling") : t("recallRun"),
         ),
       ),
@@ -837,7 +837,7 @@ function GraphCanvas({ graph, t, onOpenMemory }) {
     : h(
         "div",
         { className: "yk-graph-empty", role: "status" },
-        h(IconDataOutline16, { size: 25 }),
+        h(IconDataOutlineRegular, { size: 25 }),
         h("p", null, t("graphNoResult")),
       );
   const detail = selectedNode
@@ -958,7 +958,7 @@ function Graph({
             disabled: graphBusy || !query.trim(),
             onClick: onRun,
           },
-          h(IconSearchOutline16, { size: 15 }),
+          h(IconSearchOutlineRegular, { size: 15 }),
           graphBusy ? t("graphLoading") : t("graphRun"),
         ),
       ),
@@ -986,7 +986,7 @@ function Graph({
       ? h(
           "div",
           { className: "yk-inline-error", role: "alert" },
-          h(IconWarningOutline16, { size: 15 }),
+          h(IconWarningOutlineRegular, { size: 15 }),
           actionErrorLabel(graphError, t),
         )
       : graph
@@ -1001,7 +1001,7 @@ function Graph({
             h(
               "div",
               { className: "yk-graph-empty", role: "status" },
-              h(IconDataOutline16, { size: 25 }),
+              h(IconDataOutlineRegular, { size: 25 }),
               h("p", null, graphBusy ? t("graphLoading") : t("graphEmpty")),
             ),
           ),
@@ -1198,12 +1198,12 @@ function Overlay({ t }) {
     body = h(
       "div",
       { role: "alert", className: "yk-empty yk-error" },
-      h(IconWarningOutline16, { size: 22 }),
+      h(IconWarningOutlineRegular, { size: 22 }),
       t("retryOverview"),
       h(
         "button",
         { type: "button", disabled: interactionBusy, onClick: refresh },
-        h(IconRefreshOutline16, { size: 14 }),
+        h(IconRefreshOutlineRegular, { size: 14 }),
         t("retry"),
       ),
     );
@@ -1261,7 +1261,7 @@ function Overlay({ t }) {
       h(
         "div",
         { className: "yk-inline-error", role: "alert" },
-        h(IconWarningOutline16, { size: 15 }),
+        h(IconWarningOutlineRegular, { size: 15 }),
         actionErrorLabel(actionError, t),
       ),
       body,
@@ -1297,7 +1297,7 @@ function Overlay({ t }) {
                 disabled: interactionBusy,
                 onClick: refresh,
               },
-              h(IconRefreshOutline16, { size: 16 }),
+              h(IconRefreshOutlineRegular, { size: 16 }),
             ),
           ),
           h(
@@ -1311,7 +1311,7 @@ function Overlay({ t }) {
                 "aria-label": t("close"),
                 onClick: closeOverlay,
               },
-              h(IconCloseOutline16, { size: 16 }),
+              h(IconCloseOutlineRegular, { size: 16 }),
             ),
           ),
         ),
@@ -1360,7 +1360,7 @@ function Button({ wide, t }) {
         "aria-label": t("open"),
         onClick: openOverlay,
       },
-      h(IconDataOutline16, { size: wide ? 14 : 18 }),
+      h(IconDataOutlineRegular, { size: wide ? 14 : 18 }),
       wide ? h("span", null, t("open")) : null,
     ),
   );

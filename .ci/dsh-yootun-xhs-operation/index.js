@@ -2,14 +2,28 @@
 // dofe-managed 统一创建的 tools-xhs-operation MCP Client（xhs_operation_task_create /
 // task_get / result_get），并把 MCP 信封投影为安全结果。页面不读取 MODELS_API_KEY、
 // 不直连公网 MCP，也不接收凭据、内部地址或原始传输错误（docs/0904/xhs §6.1）。
+// RQ-2026-002（docs/0928/xhs）：create 新增 direction / videoUnderstanding / versionCount=1，
+// 结果单版可编辑（1-3 版兼容投影）。
 
 import { createHash, randomUUID } from 'node:crypto'
+
+import { browserStatus as chromeBrowserStatus } from './src/chrome.js'
+import { collectNotes, summarizeSnapshot } from './src/collector.js'
+import { isAllowedMaterialUrl, publishDraft } from './src/publisher.js'
+import {
+  acquireProfileLock,
+  loginWithQrCode,
+  probeSession,
+  removeLocalAccount,
+} from './src/session.js'
+import { latestSnapshot, readAccounts, stateRoot } from './src/state.js'
 
 const PATH = '/api/desktop/yootun/xhs-operation'
 const TOOL_CALL_TIMEOUT_MS = 60_000
 
 // 字段上限与 docs/0904/xhs §5.1 客户端调用合同一致，页面只开放 images/video。
 const MAX_THEME = 500
+const MAX_DIRECTION = 500
 const MAX_MEDIA_URL = 2048
 const MAX_IMAGE_COUNT = 5
 const MAX_REF_URL = 2048
@@ -19,12 +33,59 @@ const MAX_REF_SOURCE = 16
 const MAX_ACCOUNT_NAME = 200
 const MAX_IDEMPOTENCY_KEY = 128
 const MAX_TASK_ID = 64
+const MAX_ACCOUNT_ID = 128
+
+// 设备端浏览器/会话操作的受控错误码（dev-implementation §2.1）；其余一律收敛。
+const LOCAL_ERROR_CODES = new Set([
+  'GOOGLE_CHROME_MISSING',
+  'PLAYWRIGHT_DRIVER_MISSING',
+  'SESSION_EXPIRED',
+  'LOGIN_TIMEOUT',
+  'CAPTCHA_DETECTED',
+  'UPLOAD_TIMEOUT',
+  'SAVE_DRAFT_NO_RESPONSE',
+  'SELECTOR_MISSING',
+  'COLLECT_FAILED',
+  'PROFILE_BUSY',
+  'PUBLISH_FAILED',
+  'MATERIAL_SOURCE_REJECTED',
+  'IDEMPOTENCY_KEY_REQUIRED',
+  'PROBE_FAILED',
+  'LOGIN_FAILED',
+])
+
+/** 本地浏览器/采集错误 → 受控错误码（error.code 白名单），非受控返回 null。 */
+function localErrorCode(error) {
+  const code = error && typeof error.code === 'string' ? error.code : ''
+  return LOCAL_ERROR_CODES.has(code) ? code : null
+}
 
 export const inject = ['webServer', 'tools', 'yootunAudit']
 
 const auditedTerminalTasks = new Set()
 
-export function apply(ctx) {
+// 登录与采集是后台长动作（等人扫码 / 翻页采集）：状态保存在宿主进程内，页面轮询查询。
+const loginRuns = new Map()
+const collectRuns = new Map()
+// 发布同样是后台长动作（有头拟人化录入，分钟级）：run 状态页面 2s 轮询查询。
+const publishRuns = new Map()
+// 创建型操作幂等（dev-implementation §2.1）：idempotencyKey → collectId/publishId 重放既有 run。
+const collectIdempotency = new Map()
+const publishIdempotency = new Map()
+
+export function apply(ctx, overrides = {}) {
+  const deps = {
+    root: overrides.root || stateRoot(),
+    browserStatus: overrides.browserStatus || chromeBrowserStatus,
+    login: overrides.login || loginWithQrCode,
+    probe: overrides.probe || probeSession,
+    removeLocal: overrides.removeLocal || removeLocalAccount,
+    readAccounts: overrides.readAccounts || readAccounts,
+    latestSnapshot: overrides.latestSnapshot || latestSnapshot,
+    collect: overrides.collect || collectNotes,
+    summarize: overrides.summarize || summarizeSnapshot,
+    publish: overrides.publish || publishDraft,
+  }
   return ctx.effect(() => {
     const dispose = ctx.webServer.register({
       kind: 'exact',
@@ -38,15 +99,32 @@ export function apply(ctx) {
           if (action === 'status') return await handleStatus(ctx, body, res)
           if (action === 'result') return await handleResult(ctx, body, res)
           if (action === 'cancel') return await handleCancel(ctx, body, res)
-          return send(res, 400, { error: 'unknown_action' })
+          if (action === 'browser.status') return send(res, 200, await handleBrowserStatus(deps))
+          if (action === 'accounts.list') return send(res, 200, await handleAccountsList(deps))
+          if (action === 'account.beginLogin') return send(res, 200, await handleBeginLogin(ctx, deps, body))
+          if (action === 'account.loginStatus') return send(res, 200, handleLoginStatus(deps, body))
+          if (action === 'account.probe') return send(res, 200, await handleProbe(deps, body))
+          if (action === 'account.removeLocal') return send(res, 200, await handleRemoveLocal(deps, body))
+          if (action === 'collect.start') return send(res, 200, await handleCollectStart(ctx, deps, body))
+          if (action === 'collect.status') return send(res, 200, handleCollectStatus(deps, body))
+          if (action === 'publish.start') return send(res, 200, await handlePublishStart(ctx, deps, body))
+          if (action === 'publish.status') return send(res, 200, handlePublishStatus(deps, body))
+          return send(res, 400, { status: 'error', reason: 'unknown_action' })
         } catch (error) {
-          const reason = safeToolErrorReason(error)
+          const reason = localErrorCode(error) || safeToolErrorReason(error)
           ctx.logger?.warn?.('yootun xhs operation failed: %s', reason)
           return send(res, 200, { status: 'error', reason })
         }
       },
     })
-    return () => dispose?.()
+    return () => {
+      dispose?.()
+      loginRuns.clear()
+      collectRuns.clear()
+      publishRuns.clear()
+      collectIdempotency.clear()
+      publishIdempotency.clear()
+    }
   })
 }
 
@@ -57,13 +135,19 @@ async function handleCreate(ctx, body, res, signal = AbortSignal.timeout(TOOL_CA
   if (!schema) return send(res, 200, { status: 'unavailable', reason: 'xhs_operation_tool_unavailable' })
 
   const theme = cleanOptional(body.theme, MAX_THEME)
+  // 文案方向（RQ-2026-002）：清洗同 theme，空视为未传。
+  const direction = cleanOptional(body.direction, MAX_DIRECTION)
   const references = projectReferences(body.references)
   const accounts = projectAccounts(body.accounts)
-  const idempotencyKey = cleanIdempotencyKey(body.idempotencyKey)
+  // 单版可编辑场景页面固定传 1；1-3 之外（含非法值）回退 1（服务端 schema 兜底 1-3）。
+  const versionCount = [1, 2, 3].includes(Number(body.versionCount)) ? Number(body.versionCount) : 1
+  // 理解视频内容开关（默认关）：仅 video 生效。
+  const videoUnderstanding = mediaType === 'video' && body.videoUnderstanding === true
 
-  // 对标笔记/账号为空时传 []；theme 为空时不传（与 docs/0904/xhs §5.1 一致）。
-  const args = { mediaType, confirm: true, idempotencyKey, references, accounts, versionCount: 3 }
+  // 对标笔记/账号为空时传 []；theme/direction 为空时不传（与 docs/0904/xhs §5.1 一致）。
+  const args = { mediaType, confirm: true, references, accounts, versionCount }
   if (theme) args.theme = theme
+  if (direction) args.direction = direction
   if (mediaType === 'images') {
     const imageUrls = cleanImageUrls(body.imageUrls)
     if (imageUrls === null) return send(res, 400, { status: 'error', reason: 'image_urls_required' })
@@ -73,14 +157,19 @@ async function handleCreate(ctx, body, res, signal = AbortSignal.timeout(TOOL_CA
     const videoUrl = cleanMediaUrl(body.videoUrl)
     if (!videoUrl) return send(res, 400, { status: 'error', reason: 'video_url_required' })
     args.videoUrl = videoUrl
+    args.videoUnderstanding = videoUnderstanding
   }
+  // 幂等键必填（审查 P2）：创建型/有副作用操作，参数校验全部通过后强制校验。
+  const idempotencyKey = cleanString(body.idempotencyKey, MAX_IDEMPOTENCY_KEY)
+  if (!idempotencyKey) return send(res, 400, { status: 'error', reason: 'idempotency_key_required' })
+  args.idempotencyKey = idempotencyKey
 
   const result = await ctx.tools.execute({ callId: `yootun-xhs-create-${Date.now()}`, name: schema.name, arguments: args, signal })
   const payload = parseResult(result)
   const taskId = firstString(payload.taskId, payload.task_ref, payload.taskRef)
   if (!taskId) return send(res, 200, { status: 'error', reason: 'create_failed_no_task' })
-  await recordCreatedAudit(ctx, taskId, firstString(payload.status) || 'queued')
-  return send(res, 200, { status: 'created', taskId, idempotencyKey, mediaType, taskStatus: firstString(payload.status) || 'queued' })
+  await recordCreatedAudit(ctx, taskId, firstString(payload.status) || 'queued', versionCount)
+  return send(res, 200, { status: 'created', taskId, idempotencyKey, mediaType, versionCount, taskStatus: firstString(payload.status) || 'queued' })
 }
 
 async function handleStatus(ctx, body, res, signal = AbortSignal.timeout(TOOL_CALL_TIMEOUT_MS)) {
@@ -91,7 +180,11 @@ async function handleStatus(ctx, body, res, signal = AbortSignal.timeout(TOOL_CA
   const result = await ctx.tools.execute({ callId: `yootun-xhs-status-${Date.now()}`, name: schema.name, arguments: { taskId }, signal })
   const payload = parseResult(result)
   const taskStatus = firstString(payload.status) || 'unknown'
-  await recordTerminalAudit(ctx, taskId, taskStatus, taskStatus === 'succeeded' ? 3 : 0, firstString(payload.errorCode))
+  // succeeded 的终态审计延迟到 result 读取（versionCount 以实际 versions 长度为准）；
+  // failed/cancelled 只能经 status 观测到，versionCount 记 0（未知）。
+  if (taskStatus !== 'succeeded') {
+    await recordTerminalAudit(ctx, taskId, taskStatus, 0, firstString(payload.errorCode))
+  }
   return send(res, 200, {
     status: 'ready',
     taskId,
@@ -113,8 +206,9 @@ async function handleResult(ctx, body, res, signal = AbortSignal.timeout(TOOL_CA
   const payload = parseResult(result)
   const taskStatus = firstString(payload.status) || 'unknown'
   const versions = projectVersions(payload.versions)
-  // 契约：客户端固定 versionCount=3，succeeded 必须返回三套文案；否则按读取失败处理，避免空白或静默少版本。
-  if (taskStatus === 'succeeded' && versions.length !== 3) {
+  // 契约（RQ-2026-002 单版可编辑）：succeeded 必须返回 1-3 套文案；越界按读取失败处理，
+  // 避免空白或静默异常版本数。期望版本数（1 或 3）由页面按创建时 versionCount 校验。
+  if (taskStatus === 'succeeded' && (versions.length < 1 || versions.length > 3)) {
     return send(res, 200, { status: 'error', reason: 'versions_unavailable', taskId, taskStatus })
   }
   await recordTerminalAudit(ctx, taskId, taskStatus, versions.length, firstString(payload.errorCode))
@@ -136,6 +230,394 @@ async function handleCancel(ctx, body, res, signal = AbortSignal.timeout(TOOL_CA
   return send(res, 200, { status: 'ready', taskId, taskStatus })
 }
 
+// ---------------------------------------------------------------------------
+// 阶段 2（RQ-2026-002）：浏览器能力、账号管理与基本数据采集（设备端本地，Q10 不入库）
+// ---------------------------------------------------------------------------
+
+async function handleBrowserStatus(deps) {
+  const status = await deps.browserStatus()
+  return {
+    status: 'ready',
+    chromeAvailable: status.chromeAvailable,
+    driverAvailable: status.driverAvailable,
+    platform: status.platform,
+    // 阻断文案由 UI 呈现；此处只给布尔与平台，不回传设备路径细节。
+    hint: status.chromeAvailable ? null : 'install_google_chrome',
+  }
+}
+
+// 头像 URL 白名单化：仅放行 http(s) 绝对地址（与登录侧同一约束），超长与
+// javascript:/data: 等危险协议一律置 null。这是宿主侧最终防御，永不删除。
+function projectAvatar(value) {
+  if (typeof value !== 'string') return null
+  const candidate = value.trim()
+  if (!/^https?:\/\//i.test(candidate)) return null
+  return candidate.slice(0, 2048)
+}
+
+/** 最新采集快照的本地聚合投影（不入库，页面直读，Q10）；无快照不落字段。 */
+async function projectSnapshotSummary(deps, accountId) {
+  try {
+    const snapshot = await deps.latestSnapshot(accountId, deps.root)
+    if (!snapshot) return null
+    const summary = deps.summarize(snapshot)
+    return {
+      notesCount: summary.notesCount,
+      totals: summary.totals,
+      gaps: summary.gaps,
+      capturedAt: summary.capturedAt,
+    }
+  } catch {
+    return null
+  }
+}
+
+async function handleAccountsList(deps) {
+  const local = await deps.readAccounts(deps.root)
+  const accounts = []
+  for (const record of Object.values(local.accounts || {})) {
+    if (!record || !record.accountId) continue
+    const entry = {
+      accountId: String(record.accountId).slice(0, MAX_ACCOUNT_ID),
+      nickname: typeof record.nickname === 'string' && record.nickname ? record.nickname.slice(0, 256) : null,
+      avatar: projectAvatar(record.avatar),
+      sessionStatus: record.sessionStatus || 'unknown',
+      sessionCheckedAt: record.sessionCheckedAt || null,
+      lastCollectedAt: record.lastCollectedAt || null,
+    }
+    const summary = await projectSnapshotSummary(deps, entry.accountId)
+    if (summary) entry.summary = summary
+    accounts.push(entry)
+  }
+  accounts.sort((a, b) => a.accountId.localeCompare(b.accountId))
+  return { status: 'ready', accounts }
+}
+
+async function handleBeginLogin(ctx, deps, body) {
+  const requested = cleanString(body.accountId, MAX_ACCOUNT_ID)
+  // 重复调用返回既有 waiting run（幂等；页面刷新重试不重复弹窗）：
+  // 显式账号按 accountId 匹配；新增账号（无 accountId）全进程同时只开一个扫码 run。
+  for (const run of loginRuns.values()) {
+    if (run.status !== 'waiting') continue
+    if (requested ? run.key === requested : run.key.startsWith('pending-')) {
+      return { status: 'ready', login: projectLogin(run) }
+    }
+  }
+  const runKey = requested || `pending-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+  // Profile 互斥（dev-implementation §2.1）：重新登录锁显式账号；新增账号锁 pending 键。
+  const release = acquireProfileLock(runKey)
+  if (!release) return { status: 'error', reason: 'PROFILE_BUSY' }
+  const run = { key: runKey, status: 'waiting', accountId: null, nickname: null, avatar: null, error: null, release }
+  loginRuns.set(runKey, run)
+  // 登录是有头长动作：立即返回 waiting，后台完成后写回 run（页面轮询 loginStatus）。
+  deps.login({ accountId: requested || undefined, root: deps.root })
+    .then(async result => {
+      if (result.status === 'ok') {
+        run.status = 'ok'
+        run.accountId = result.accountId
+        run.nickname = result.profile ? result.profile.nickname : null
+        run.avatar = result.profile ? result.profile.avatar : null
+        if (runKey !== run.accountId) {
+          // pending run 以 resolvedId 补映射供 loginStatus 查询；若该账号已有
+          // 进行中的显式登录 run，绝不覆盖（登录页按 loginId 各查各的）。
+          const existing = loginRuns.get(run.accountId)
+          if (!existing || existing.status !== 'waiting') loginRuns.set(run.accountId, run)
+        }
+        await recordAudit(ctx, {
+          clientEventId: eventUuid(`xhs:login:${run.accountId}:ok`), traceId: `xhs:account:${run.accountId}`,
+          actionCode: 'xhs.account.login', category: 'execute',
+          source: { pluginId: '@dofe/dsh-yootun-xhs-operation', pluginVersion: '0.1.0', surface: 'human_ui' },
+          target: { type: 'xhs_account', id: run.accountId }, outcome: 'succeeded', changes: [], effects: [],
+        })
+      } else {
+        run.status = result.status === 'timeout' ? 'timeout' : 'failed'
+        // 错误码收敛到受控白名单（审查 P2）：不透出原始异常名。
+        run.error = result.reason === 'CAPTCHA_DETECTED'
+          ? 'CAPTCHA_DETECTED'
+          : result.status === 'timeout'
+            ? 'LOGIN_TIMEOUT'
+            : LOCAL_ERROR_CODES.has(String(result.reason || '')) ? result.reason : 'LOGIN_FAILED'
+        await recordAudit(ctx, {
+          clientEventId: eventUuid(`xhs:login:${runKey}:${run.status}`), traceId: `xhs:account:${requested || runKey}`,
+          actionCode: 'xhs.account.login', category: 'execute',
+          source: { pluginId: '@dofe/dsh-yootun-xhs-operation', pluginVersion: '0.1.0', surface: 'human_ui' },
+          target: { type: 'xhs_account', id: requested || runKey }, outcome: 'failed',
+          changes: [], effects: [], errorCode: String(run.error).toLowerCase().slice(0, 80),
+        })
+      }
+    })
+    .catch(error => {
+      run.status = 'failed'
+      run.error = localErrorCode(error) || 'LOGIN_FAILED'
+    })
+    .finally(() => {
+      release()
+      // 终态 run 保留供 loginStatus 查询一次，读取后即清理。
+    })
+  return { status: 'ready', login: projectLogin(run) }
+}
+
+function handleLoginStatus(deps, body) {
+  const key = cleanString(body.loginId, MAX_ACCOUNT_ID) || cleanString(body.accountId, MAX_ACCOUNT_ID)
+  const run = key ? loginRuns.get(key) : null
+  if (!run) {
+    // 无进行中登录：返回 idle（页面刷新后直接查账号列表即可）。
+    return { status: 'ready', login: { status: 'idle', loginId: key || null } }
+  }
+  if (run.status !== 'waiting') {
+    loginRuns.delete(run.key)
+    if (run.accountId && run.accountId !== run.key) loginRuns.delete(run.accountId)
+  }
+  return { status: 'ready', login: projectLogin(run) }
+}
+
+function projectLogin(run) {
+  return {
+    loginId: run.key,
+    status: run.status,
+    accountId: run.accountId,
+    nickname: run.nickname,
+    avatar: run.avatar,
+    reason: run.error || null,
+  }
+}
+
+async function handleProbe(deps, body) {
+  const accountId = cleanString(body.accountId, MAX_ACCOUNT_ID)
+  if (!accountId) return { status: 'error', reason: 'account_id_required' }
+  // Profile 互斥：probe（无头复用 Profile）与其他浏览器操作互斥（dev-implementation §2.1）。
+  const release = acquireProfileLock(accountId)
+  if (!release) return { status: 'error', reason: 'PROFILE_BUSY' }
+  try {
+    const result = await deps.probe({ accountId, root: deps.root })
+    if (result.status === 'ok' || result.status === 'expired') {
+      return { status: 'ready', accountId, sessionStatus: result.status }
+    }
+    // unknown（浏览器/驱动异常）→ 受控 PROBE_FAILED，不透出原始异常名（审查 P2）。
+    return { status: 'error', reason: LOCAL_ERROR_CODES.has(String(result.reason || '')) ? result.reason : 'PROBE_FAILED' }
+  } finally {
+    release()
+  }
+}
+
+async function handleRemoveLocal(deps, body) {
+  const accountId = cleanString(body.accountId, MAX_ACCOUNT_ID)
+  if (!accountId) return { status: 'error', reason: 'account_id_required' }
+  // 移除会递归删除该账号的 Profile/storage_state/快照：与登录/probe/采集互斥，
+  // 否则运行中的浏览器操作会在被删目录上继续写、完成回调还会把记录写回（僵尸账号）。
+  const release = acquireProfileLock(accountId)
+  if (!release) return { status: 'error', reason: 'PROFILE_BUSY' }
+  try {
+    const result = await deps.removeLocal({ accountId, root: deps.root })
+    // 幂等删除：源不存在也视为已清除（removed 布尔仅反映删除动作执行成功）。
+    return { status: 'ready', accountId, removed: { profile: result.cleared.profile !== false, storageState: result.cleared.storageState !== false } }
+  } finally {
+    release()
+  }
+}
+
+async function handleCollectStart(ctx, deps, body) {
+  const accountId = cleanString(body.accountId, MAX_ACCOUNT_ID)
+  if (!accountId) return { status: 'error', reason: 'account_id_required' }
+  const idempotencyKey = cleanString(body.idempotencyKey, MAX_IDEMPOTENCY_KEY)
+  // 幂等键必填（审查 P2）：采集是有副作用操作（写本地快照）。
+  if (!idempotencyKey) return { status: 'error', reason: 'idempotency_key_required' }
+  if (idempotencyKey && collectIdempotency.has(idempotencyKey)) {
+    // 幂等重放：返回既有 run 的当前状态（不重复创建采集任务）。
+    const run = collectRuns.get(collectIdempotency.get(idempotencyKey))
+    if (run) return { status: 'started', collectId: run.collectId, collect: projectCollect(run) }
+  }
+  // Profile 互斥：采集（无头复用 Profile）与其他浏览器操作互斥（dev-implementation §2.1）。
+  const release = acquireProfileLock(accountId)
+  if (!release) return { status: 'error', reason: 'PROFILE_BUSY' }
+  const collectId = `col-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+  const run = { collectId, accountId, status: 'running', pagesDone: 0, notesTotal: 0, truncated: false, summary: null, error: null, release }
+  collectRuns.set(collectId, run)
+  if (idempotencyKey) collectIdempotency.set(idempotencyKey, collectId)
+  await recordAudit(ctx, {
+    clientEventId: eventUuid(`xhs:collect:${collectId}:started`), traceId: `xhs:collect:${accountId}`,
+    actionCode: 'xhs.collect.started', category: 'create',
+    source: { pluginId: '@dofe/dsh-yootun-xhs-operation', pluginVersion: '0.1.0', surface: 'human_ui' },
+    target: { type: 'xhs_collect_run', id: collectId }, outcome: 'accepted', changes: [], effects: [],
+  })
+  // 采集是后台长动作：立即返回 started，结果落设备端快照（不入库，Q10）。
+  deps.collect({ accountId, root: deps.root, onProgress: progress => {
+    if (collectRuns.get(collectId) !== run) return
+    run.pagesDone = Number(progress && progress.pagesDone) || run.pagesDone
+    run.notesTotal = Number(progress && progress.notesTotal) || run.notesTotal
+  } })
+    .then(async result => {
+      run.status = 'completed'
+      run.pagesDone = result.pagesDone
+      run.notesTotal = result.notesTotal
+      run.summary = result.summary
+      run.truncated = result.truncated === true
+      await recordAudit(ctx, {
+        clientEventId: eventUuid(`xhs:collect:${collectId}:completed`), traceId: `xhs:collect:${accountId}`,
+        actionCode: 'xhs.collect.run', category: 'execute',
+        source: { pluginId: '@dofe/dsh-yootun-xhs-operation', pluginVersion: '0.1.0', surface: 'human_ui' },
+        target: { type: 'xhs_collect_run', id: collectId }, outcome: 'succeeded',
+        changes: [{ field: 'notesTotal', after: result.notesTotal }, ...(run.truncated ? [{ field: 'truncated', after: true }] : [])], effects: [],
+      })
+    })
+    .catch(async error => {
+      run.status = 'failed'
+      run.error = localErrorCode(error) || 'COLLECT_FAILED'
+      await recordAudit(ctx, {
+        clientEventId: eventUuid(`xhs:collect:${collectId}:failed`), traceId: `xhs:collect:${accountId}`,
+        actionCode: 'xhs.collect.run', category: 'execute',
+        source: { pluginId: '@dofe/dsh-yootun-xhs-operation', pluginVersion: '0.1.0', surface: 'human_ui' },
+        target: { type: 'xhs_collect_run', id: collectId }, outcome: 'failed',
+        changes: [], effects: [], errorCode: String(run.error).toLowerCase().slice(0, 80),
+      })
+    })
+    .finally(() => release())
+  return { status: 'started', collectId, collect: projectCollect(run) }
+}
+
+function handleCollectStatus(deps, body) {
+  const collectId = cleanString(body.collectId, MAX_ACCOUNT_ID)
+  const run = collectId ? collectRuns.get(collectId) : null
+  if (!run) return { status: 'error', reason: 'collect_id_required' }
+  return { status: 'ready', collect: projectCollect(run) }
+}
+
+function projectCollect(run) {
+  return {
+    collectId: run.collectId,
+    accountId: run.accountId,
+    collectStatus: run.status,
+    pagesDone: run.pagesDone,
+    notesTotal: run.notesTotal,
+    truncated: run.truncated === true,
+    summary: run.summary,
+    error: run.error,
+  }
+}
+
+// 发布入参上限：标题/正文按 publisher 内 20 字截断与编辑器上限留余量，这里只挡超大输入。
+const MAX_PUBLISH_TEXT = 5000
+const MAX_TAG = 50
+
+function cleanTags(value) {
+  // tags 非必填（纯正文无话题也可发布）：未传 → 空数组；显式传非数组 → 拒绝。
+  if (value === undefined || value === null) return []
+  if (!Array.isArray(value)) return null
+  return value.map(item => cleanString(item, MAX_TAG)).filter(Boolean).slice(0, 10)
+}
+
+async function handlePublishStart(ctx, deps, body) {
+  const accountId = cleanString(body.accountId, MAX_ACCOUNT_ID)
+  if (!accountId) return { status: 'error', reason: 'account_id_required' }
+  const title = cleanString(body.title, MAX_PUBLISH_TEXT)
+  if (!title) return { status: 'error', reason: 'title_required' }
+  const content = cleanString(body.body, MAX_PUBLISH_TEXT)
+  if (!content) return { status: 'error', reason: 'body_required' }
+  const tags = cleanTags(body.tags)
+  if (tags === null) return { status: 'error', reason: 'invalid_tags' }
+  // visibility 契约固定 'private'（dev-implementation §2.1）：显式传入其他值即拒绝，
+  // 本流程只保存草稿，不存在公开发布路径。
+  if (body.visibility !== undefined && body.visibility !== 'private') {
+    return { status: 'error', reason: 'invalid_visibility' }
+  }
+  const idempotencyKey = cleanString(body.idempotencyKey, MAX_IDEMPOTENCY_KEY)
+  // 幂等键必填（审查 P2）：发布是重副作用操作（开浏览器/写草稿）。
+  if (!idempotencyKey) return { status: 'error', reason: 'idempotency_key_required' }
+  if (idempotencyKey && publishIdempotency.has(idempotencyKey)) {
+    // 幂等重放：返回既有 run 的当前状态（不重复打开浏览器/重复录入）。
+    const run = publishRuns.get(publishIdempotency.get(idempotencyKey))
+    if (run) return { status: 'started', publishId: run.publishId, publish: projectPublish(run) }
+  }
+  const videoEntry = cleanMaterialEntry(body.videoUrl)
+  const isVideo = Boolean(videoEntry)
+  const imageUrls = cleanMaterialList(body.imageUrls) || []
+  if (!isVideo && !imageUrls.length) return { status: 'error', reason: 'material_required' }
+  if (isVideo && imageUrls.length) return { status: 'error', reason: 'material_conflict' }
+  // SSRF 防护（审查 P2）：内网/明文 URL 在 host 层即拒绝（浏览器保持打开之前）。
+  if (videoEntry === 'rejected' || imageUrls === 'rejected') {
+    return { status: 'error', reason: 'MATERIAL_SOURCE_REJECTED' }
+  }
+  // Profile 互斥：发布（有头）与登录/probe/采集互斥（dev-implementation §2.1）。
+  const release = acquireProfileLock(accountId)
+  if (!release) return { status: 'error', reason: 'PROFILE_BUSY' }
+  const publishId = `pub-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+  const run = { publishId, accountId, status: 'running', step: 'prepare', toast: null, error: null, release }
+  publishRuns.set(publishId, run)
+  if (idempotencyKey) publishIdempotency.set(idempotencyKey, publishId)
+  await recordAudit(ctx, {
+    clientEventId: eventUuid(`xhs:publish:${publishId}:started`), traceId: `xhs:publish:${accountId}`,
+    actionCode: 'xhs.publish.started', category: 'create',
+    source: { pluginId: '@dofe/dsh-yootun-xhs-operation', pluginVersion: '0.1.0', surface: 'human_ui' },
+    target: { type: 'xhs_publish_run', id: publishId }, outcome: 'accepted', changes: [], effects: [],
+  })
+  // 发布是后台长动作：立即返回 started。完成后浏览器保持打开（README §5.3）——
+  // 互斥锁随浏览器窗口生命周期：onContext 挂钩后由 context close 释放；
+  // 早期失败（context 未创建）由 finally 释放（审查 P1）。
+  let releaseProfile = release
+  let contextHooked = false
+  deps.publish({
+    accountId,
+    title,
+    body: content,
+    tags,
+    ...(isVideo ? { videoUrl: videoEntry } : { imageUrls }),
+    root: deps.root,
+    onStep: step => {
+      if (publishRuns.get(publishId) !== run) return
+      run.step = step
+    },
+    // 浏览器生命周期钩子（审查 P1）：run 终态后 Chrome 仍保持打开并占用 Profile，
+    // 互斥锁必须随之保持；用户关闭窗口（context close）时才真正释放。
+    onContext: context => {
+      contextHooked = true
+      context.once('close', () => releaseProfile())
+    },
+  })
+    .then(async result => {
+      run.status = 'completed'
+      run.step = 'done'
+      run.toast = String(result && result.toast ? result.toast : '').slice(0, 60) || null
+      await recordAudit(ctx, {
+        clientEventId: eventUuid(`xhs:publish:${publishId}:completed`), traceId: `xhs:publish:${accountId}`,
+        actionCode: 'xhs.publish.run', category: 'execute',
+        source: { pluginId: '@dofe/dsh-yootun-xhs-operation', pluginVersion: '0.1.0', surface: 'human_ui' },
+        target: { type: 'xhs_publish_run', id: publishId }, outcome: 'succeeded',
+        changes: [{ field: 'step', after: 'done' }], effects: [],
+      })
+    })
+    .catch(async error => {
+      run.status = 'failed'
+      run.error = localErrorCode(error) || 'PUBLISH_FAILED'
+      await recordAudit(ctx, {
+        clientEventId: eventUuid(`xhs:publish:${publishId}:failed`), traceId: `xhs:publish:${accountId}`,
+        actionCode: 'xhs.publish.run', category: 'execute',
+        source: { pluginId: '@dofe/dsh-yootun-xhs-operation', pluginVersion: '0.1.0', surface: 'human_ui' },
+        target: { type: 'xhs_publish_run', id: publishId }, outcome: 'failed',
+        changes: [], effects: [], errorCode: String(run.error).toLowerCase().slice(0, 80),
+      })
+    })
+    .finally(() => { if (!contextHooked) releaseProfile() })
+  return { status: 'started', publishId, publish: projectPublish(run) }
+}
+
+function handlePublishStatus(deps, body) {
+  const publishId = cleanString(body.publishId, MAX_ACCOUNT_ID)
+  const run = publishId ? publishRuns.get(publishId) : null
+  if (!run) return { status: 'error', reason: 'publish_id_required' }
+  return { status: 'ready', publish: projectPublish(run) }
+}
+
+function projectPublish(run) {
+  return {
+    publishId: run.publishId,
+    accountId: run.accountId,
+    publishStatus: run.status,
+    step: run.step,
+    toast: run.toast,
+    error: run.error,
+  }
+}
+
 async function recordCancelledAudit(ctx, taskId, status) {
   // 取消是独立用户动作，记录独立的 cancelled 审计；不写入 auditedTerminalTasks，
   // 避免抢占后续 Driver 真正落 cancelled 时的 xhs.rewrite.completed 终态审计。
@@ -155,13 +637,13 @@ function eventUuid(seed) {
   return `${hex.slice(0, 8).join('')}-${hex.slice(8, 12).join('')}-${hex.slice(12, 16).join('')}-${hex.slice(16, 20).join('')}-${hex.slice(20).join('')}`
 }
 
-async function recordCreatedAudit(ctx, taskId, status) {
+async function recordCreatedAudit(ctx, taskId, status, versionCount) {
   await recordAudit(ctx, {
     clientEventId: eventUuid(`xhs:create:${taskId}`), traceId: `xhs:${taskId}`,
     actionCode: 'xhs.rewrite.created', category: 'create',
     source: { pluginId: '@dofe/dsh-yootun-xhs-operation', pluginVersion: '0.1.0', surface: 'human_ui' },
     target: { type: 'xhs_rewrite_task', id: taskId }, outcome: 'accepted',
-    changes: [{ field: 'status', after: status.slice(0, 160) }, { field: 'versionCount', after: 3 }], effects: [],
+    changes: [{ field: 'status', after: status.slice(0, 160) }, { field: 'versionCount', after: versionCount }], effects: [],
   })
 }
 
@@ -236,7 +718,8 @@ function projectSteps(list) {
   return out
 }
 
-// 版本投影：只保留服务端已校验的展示字段，正文 body 交给客户端 MarkdownText 渲染。
+// 版本投影：只保留服务端已校验的展示字段，正文 body 交给客户端 MarkdownText 渲染；
+// issues（quality 软性问题码）随版本投影，供页面渲染风险提示条。
 const SAFE_VERSION_FIELDS = ['version', 'title', 'body', 'tags', 'coverCopy', 'leadGuide']
 function projectVersions(list) {
   if (!Array.isArray(list)) return []
@@ -244,6 +727,10 @@ function projectVersions(list) {
   for (const item of list) {
     if (!item || typeof item !== 'object') continue
     const version = { version: firstString(item.version) || '?', title: firstString(item.title) || '', body: firstString(item.body) || '', tags: Array.isArray(item.tags) ? item.tags.map(value => String(value)).slice(0, 20) : [], coverCopy: firstString(item.coverCopy) || '', leadGuide: firstString(item.leadGuide) || '' }
+    if (Array.isArray(item.issues)) {
+      const issues = item.issues.map(value => String(value).slice(0, 64)).filter(Boolean).slice(0, 10)
+      if (issues.length) version.issues = issues
+    }
     if (Array.isArray(item.pages)) {
       const pages = []
       for (const page of item.pages) {
@@ -292,6 +779,25 @@ function cleanImageUrls(value) {
   if (!Array.isArray(value)) return null
   const urls = value.map(item => cleanMediaUrl(item)).filter(Boolean).slice(0, MAX_IMAGE_COUNT)
   return urls.length ? urls : null
+}
+// 发布素材条目（阶段 3，review M1）：{path,url} 对象 = 本地原文件优先、URL 下载兜底；
+// 纯字符串（url 或本地路径）保持兼容。仅 publish.start 使用，create 路由仍只收字符串 URL。
+function cleanMaterialEntry(value) {
+  if (typeof value === 'string') return cleanMediaUrl(value) || null
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+  const path = typeof value.path === 'string' ? value.path.trim().slice(0, MAX_MEDIA_URL) : ''
+  const url = typeof value.url === 'string' ? value.url.trim().slice(0, MAX_MEDIA_URL) : ''
+  if (!path && !url) return null
+  // SSRF 防护（审查 P2）：URL 仅接受 https 公网地址，host 层提前拒绝（不必等 publisher）。
+  if (url && !isAllowedMaterialUrl(url)) return 'rejected'
+  return { ...(path ? { path } : {}), ...(url ? { url } : {}) }
+}
+function cleanMaterialList(value) {
+  if (!Array.isArray(value)) return null
+  const entries = value.map(cleanMaterialEntry)
+  if (entries.includes('rejected')) return 'rejected'
+  const valid = entries.filter(Boolean).slice(0, MAX_IMAGE_COUNT)
+  return valid.length ? valid : null
 }
 function firstString(...values) { for (const value of values) if (typeof value === 'string' && value) return value; return null }
 function numberOrNull(value) { return typeof value === 'number' && Number.isFinite(value) ? value : null }

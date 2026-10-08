@@ -2,28 +2,28 @@ const React = require('react')
 const REQUEST_TIMEOUT_MS = 30000
 const { createElement: h, useEffect, useMemo, useRef, useState, useSyncExternalStore } = React
 const {
-  IconAgentPresetOutline16,
-  IconArchiveOutline20,
-  IconBrowseOutline16,
-  IconCheckOutline16,
-  IconChecklistOutline14,
-  IconChevronRightOutline14,
-  IconClockOutline16,
-  IconCloseOutline16,
-  IconCodeOutline16,
-  IconDatabaseOutline16,
-  IconDataOutline16,
-  IconDownloadOutline16,
-  IconEditOutline16,
-  IconEnhanceOutline16,
-  IconLoadingOutline16,
-  IconPaperPlaneOutline14,
-  IconPlayOutline16,
-  IconQueueOutline14,
-  IconRefreshOutline16,
-  IconSettingsOutline16,
-  IconSparkle16,
-  IconWarningOutline16,
+  IconAgentPresetOutlineRegular,
+  IconArchiveOutlineMedium,
+  IconBrowseOutlineRegular,
+  IconCheckOutlineRegular,
+  IconChecklistOutlineRegular,
+  IconChevronRightOutlineRegular,
+  IconClockOutlineRegular,
+  IconCloseOutlineRegular,
+  IconCodeOutlineRegular,
+  IconDatabaseOutlineRegular,
+  IconDataOutlineRegular,
+  IconDownloadOutlineRegular,
+  IconEditOutlineRegular,
+  IconEnhanceOutlineRegular,
+  IconLoadingOutlineRegular,
+  IconPaperPlaneOutlineRegular,
+  IconPlayOutlineRegular,
+  IconQueueOutlineRegular,
+  IconRefreshOutlineRegular,
+  IconSettingsOutlineRegular,
+  IconSparkleRegular,
+  IconWarningOutlineRegular,
   Tooltip,
 } = require('@deepseek-ai/dsh-client-ui-primitives')
 
@@ -42,26 +42,26 @@ const TABS = [
 
 // 语义图标统一在组件层固定；颜色不作为唯一状态信号，图标始终伴随文字。
 const GLYPHS = {
-  geo: IconEditOutline16,
-  views: IconBrowseOutline16,
-  warning: IconWarningOutline16,
-  spark: IconSparkle16,
-  send: IconPaperPlaneOutline14,
-  layers: IconEnhanceOutline16,
-  agent: IconAgentPresetOutline16,
-  tools: IconCodeOutline16,
-  play: IconPlayOutline16,
-  queue: IconQueueOutline14,
-  running: IconLoadingOutline16,
-  check: IconCheckOutline16,
-  checklist: IconChecklistOutline14,
-  archive: IconArchiveOutline20,
-  server: IconSettingsOutline16,
-  clock: IconClockOutline16,
-  database: IconDatabaseOutline16,
-  data: IconDataOutline16,
-  close: IconCloseOutline16,
-  chevron: IconChevronRightOutline14,
+  geo: IconEditOutlineRegular,
+  views: IconBrowseOutlineRegular,
+  warning: IconWarningOutlineRegular,
+  spark: IconSparkleRegular,
+  send: IconPaperPlaneOutlineRegular,
+  layers: IconEnhanceOutlineRegular,
+  agent: IconAgentPresetOutlineRegular,
+  tools: IconCodeOutlineRegular,
+  play: IconPlayOutlineRegular,
+  queue: IconQueueOutlineRegular,
+  running: IconLoadingOutlineRegular,
+  check: IconCheckOutlineRegular,
+  checklist: IconChecklistOutlineRegular,
+  archive: IconArchiveOutlineMedium,
+  server: IconSettingsOutlineRegular,
+  clock: IconClockOutlineRegular,
+  database: IconDatabaseOutlineRegular,
+  data: IconDataOutlineRegular,
+  close: IconCloseOutlineRegular,
+  chevron: IconChevronRightOutlineRegular,
 }
 const STATUS_GLYPH = { ready: 'check', empty: 'database', partial: 'warning', degraded: 'warning', warning: 'warning', unavailable: 'close', error: 'warning' }
 const DATA_STATUSES = new Set(['ready', 'empty', 'partial', 'degraded', 'warning'])
@@ -1036,7 +1036,7 @@ function Overview({ data, t, onOpenTab }) {
 function DashboardButton({ wide, t }) {
   return h(Tooltip, { label: t('open'), delayMs: 500, disabled: wide },
     h('button', { type: 'button', className: `yd-sidebar-action${wide ? ' yd-sidebar-wide' : ''}`, onClick: openOverlay, 'aria-label': t('open') },
-      h(IconDataOutline16, { size: wide ? 14 : 18 }), wide ? h('span', null, t('open')) : null))
+      h(IconDataOutlineRegular, { size: wide ? 14 : 18 }), wide ? h('span', null, t('open')) : null))
 }
 
 function DashboardOverlay({ t }) {
@@ -1118,7 +1118,7 @@ function DashboardOverlay({ t }) {
             loading && data ? h('span', { className: 'yd-refreshing-flag', role: 'status' }, t('refreshing')) : null),
           h('p', null, t('subtitle'))),
         h('div', { className: 'yd-header-actions' },
-          h(Tooltip, { label: t('exportCsv'), side: 'bottom' }, h('button', { type: 'button', className: 'yd-icon-button', disabled: !hasExportableData(data), onClick: () => exportCsv(data, t), 'aria-label': t('exportCsv') }, h(IconDownloadOutline16, { size: 16 }))),
+          h(Tooltip, { label: t('exportCsv'), side: 'bottom' }, h('button', { type: 'button', className: 'yd-icon-button', disabled: !hasExportableData(data), onClick: () => exportCsv(data, t), 'aria-label': t('exportCsv') }, h(IconDownloadOutlineRegular, { size: 16 }))),
           h('div', { className: 'yd-ranges', role: 'group', 'aria-label': t('rangeControl') }, ...RANGES.map(item =>
             h('button', {
               type: 'button', key: item.id, disabled: loading, 'data-active': range === item.id, 'aria-pressed': range === item.id,
@@ -1129,8 +1129,8 @@ function DashboardOverlay({ t }) {
               type: 'button', key: id, disabled: loading, 'data-active': usageScope === id, 'aria-pressed': usageScope === id,
               onClick: () => selectUsageScope(id),
             }, t(id === 'team' ? 'scopeTeam' : 'scopeKey')))),
-          h(Tooltip, { label: t('refresh'), side: 'bottom' }, h('button', { type: 'button', className: 'yd-icon-button', disabled: loading, onClick: refresh, 'aria-label': t('refresh') }, h(IconRefreshOutline16, { size: 16 }))),
-          h(Tooltip, { label: t('close'), side: 'bottom' }, h('button', { type: 'button', className: 'yd-icon-button', onClick: closeOverlay, 'aria-label': t('close') }, h(IconCloseOutline16, { size: 16 }))))),
+          h(Tooltip, { label: t('refresh'), side: 'bottom' }, h('button', { type: 'button', className: 'yd-icon-button', disabled: loading, onClick: refresh, 'aria-label': t('refresh') }, h(IconRefreshOutlineRegular, { size: 16 }))),
+          h(Tooltip, { label: t('close'), side: 'bottom' }, h('button', { type: 'button', className: 'yd-icon-button', onClick: closeOverlay, 'aria-label': t('close') }, h(IconCloseOutlineRegular, { size: 16 }))))),
       h('nav', { className: 'yd-tabs', 'aria-label': t('title') }, ...TABS.map(item =>
         h('button', { type: 'button', key: item.id, 'aria-current': tab === item.id ? 'page' : undefined, onClick: () => setTab(item.id) }, t(item.label)))),
       failed && data ? h('div', { className: 'yd-stale', role: 'status' }, t('error')) : null,

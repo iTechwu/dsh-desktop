@@ -3,18 +3,18 @@ const PLUGIN_BRAND = globalThis.__DSH_PLUGIN_BRAND__ || { tenant: 'yootun', comp
 const REQUEST_TIMEOUT_MS = 30000
 const { createElement: h, useEffect, useState, useRef, useSyncExternalStore } = React
 const {
-  IconAlarmClockOutline16,
-  IconCheckOutline16,
-  IconChevronRightOutline14,
-  IconCloseOutline16,
-  IconDataOutline16,
-  IconDatabaseOutline16,
-  IconEnhanceOutline16,
-  IconGoalOutline16,
-  IconLoadingOutline16,
-  IconRefreshOutline16,
-  IconSparkle16,
-  IconWarningOutline16,
+  IconAlarmClockOutlineRegular,
+  IconCheckOutlineRegular,
+  IconChevronRightOutlineRegular,
+  IconCloseOutlineRegular,
+  IconDataOutlineRegular,
+  IconDatabaseOutlineRegular,
+  IconEnhanceOutlineRegular,
+  IconGoalOutlineRegular,
+  IconLoadingOutlineRegular,
+  IconRefreshOutlineRegular,
+  IconSparkleRegular,
+  IconWarningOutlineRegular,
   Tooltip,
 } = require('@deepseek-ai/dsh-client-ui-primitives')
 
@@ -108,7 +108,7 @@ function budgetStatusLabel(status, t) {
 function budgetStatusIcon(status) { return status === 'healthy' ? 'check' : status === 'unavailable' ? 'close' : 'warning' }
 
 function Glyph({ name, size = 16, className }) {
-  const icons = { check: IconCheckOutline16, database: IconDatabaseOutline16, warning: IconWarningOutline16, close: IconCloseOutline16, refresh: IconRefreshOutline16, data: IconDataOutline16, sparkle: IconSparkle16, goal: IconGoalOutline16, clock: IconAlarmClockOutline16, layers: IconEnhanceOutline16, chevron: IconChevronRightOutline14, loading: IconLoadingOutline16 }
+  const icons = { check: IconCheckOutlineRegular, database: IconDatabaseOutlineRegular, warning: IconWarningOutlineRegular, close: IconCloseOutlineRegular, refresh: IconRefreshOutlineRegular, data: IconDataOutlineRegular, sparkle: IconSparkleRegular, goal: IconGoalOutlineRegular, clock: IconAlarmClockOutlineRegular, layers: IconEnhanceOutlineRegular, chevron: IconChevronRightOutlineRegular, loading: IconLoadingOutlineRegular }
   const Icon = icons[name]
   return Icon ? h(Icon, { size, className }) : null
 }
@@ -333,7 +333,7 @@ function Detail({ tab, data, seriesState, days, onDays, controlsDisabled, t }) {
 }
 
 function Button({ wide, t }) {
-  return h(Tooltip, { label: t('open'), disabled: wide }, h('button', { type: 'button', className: `yf-button${wide ? ' yf-wide' : ''}`, 'aria-label': t('open'), onClick: openOverlay }, h(IconDataOutline16, { size: wide ? 14 : 18 }), wide ? h('span', null, t('open')) : null))
+  return h(Tooltip, { label: t('open'), disabled: wide }, h('button', { type: 'button', className: `yf-button${wide ? ' yf-wide' : ''}`, 'aria-label': t('open'), onClick: openOverlay }, h(IconDataOutlineRegular, { size: wide ? 14 : 18 }), wide ? h('span', null, t('open')) : null))
 }
 
 function Overlay({ t }) {
@@ -392,7 +392,7 @@ function Overlay({ t }) {
     setDays(value)
   }
   const body = loading && !data ? h('div', { className: 'yf-loading', role: 'status' }, h(Glyph, { name: 'loading' }), t('loading')) : error && !data ? h('div', { className: 'yf-fatal', role: 'alert' }, h(Glyph, { name: 'warning' }), h('strong', null, t('sourceError')), h('button', { type: 'button', disabled: interactionBusy, onClick: refresh }, t('retry'))) : data ? h(React.Fragment, null, loading ? h('div', { className: 'yf-stale', role: 'status' }, t('loading')) : error ? h('div', { className: 'yf-stale yf-refresh-error', role: 'alert' }, h('span', null, t('refreshError')), h('button', { type: 'button', disabled: interactionBusy, onClick: refresh }, t('retry'))) : null, tab === 'overview' ? h(Overview, { data, t }) : h(Detail, { tab, data, seriesState: seriesState.days === days ? seriesState : { ...seriesState, loading: true }, days, onDays: selectDays, controlsDisabled: interactionBusy, t })) : null
-  return h('div', { className: 'yf-overlay', role: 'dialog', 'aria-modal': true, 'aria-labelledby': 'yf-title' }, h('main', { className: 'yf-shell', 'aria-labelledby': 'yf-title', ref: shellRef, tabIndex: -1 }, h('header', { className: 'yf-header' }, h('div', null, h('div', { className: 'yf-title-row' }, h('h1', { id: 'yf-title' }, t('title')), data?.period?.label ? h('span', { className: 'yf-period-label' }, data.period.label) : null), h('p', null, t('subtitle'))), h('div', { className: 'yf-header-buttons' }, h(Tooltip, { label: t('refresh') }, h('button', { type: 'button', className: 'yf-icon-button', disabled: interactionBusy, 'aria-label': t('refresh'), onClick: refresh }, h(IconRefreshOutline16, { size: 16 }))), h(Tooltip, { label: t('close') }, h('button', { type: 'button', className: 'yf-icon-button', 'aria-label': t('close'), onClick: closeOverlay }, h(IconCloseOutline16, { size: 16 }))))), h('div', { className: 'yf-toolbar' }, h(RangeControl, { range, onChange: selectRange, disabled: interactionBusy, t }), data?.period?.timeZone ? h('span', { className: 'yf-toolbar-meta' }, `${t('timeZone')}: ${data.period.timeZone}`) : null), h('nav', { className: 'yf-tabs', 'aria-label': t('title') }, ...TABS.map(([id, key]) => h('button', { type: 'button', key: id, 'aria-current': tab === id ? 'page' : undefined, onClick: () => setTab(id) }, t(key)))), h('div', { className: `yf-content${loading && data ? ' yf-refreshing' : ''}`, 'aria-busy': interactionBusy }, body)))
+  return h('div', { className: 'yf-overlay', role: 'dialog', 'aria-modal': true, 'aria-labelledby': 'yf-title' }, h('main', { className: 'yf-shell', 'aria-labelledby': 'yf-title', ref: shellRef, tabIndex: -1 }, h('header', { className: 'yf-header' }, h('div', null, h('div', { className: 'yf-title-row' }, h('h1', { id: 'yf-title' }, t('title')), data?.period?.label ? h('span', { className: 'yf-period-label' }, data.period.label) : null), h('p', null, t('subtitle'))), h('div', { className: 'yf-header-buttons' }, h(Tooltip, { label: t('refresh') }, h('button', { type: 'button', className: 'yf-icon-button', disabled: interactionBusy, 'aria-label': t('refresh'), onClick: refresh }, h(IconRefreshOutlineRegular, { size: 16 }))), h(Tooltip, { label: t('close') }, h('button', { type: 'button', className: 'yf-icon-button', 'aria-label': t('close'), onClick: closeOverlay }, h(IconCloseOutlineRegular, { size: 16 }))))), h('div', { className: 'yf-toolbar' }, h(RangeControl, { range, onChange: selectRange, disabled: interactionBusy, t }), data?.period?.timeZone ? h('span', { className: 'yf-toolbar-meta' }, `${t('timeZone')}: ${data.period.timeZone}`) : null), h('nav', { className: 'yf-tabs', 'aria-label': t('title') }, ...TABS.map(([id, key]) => h('button', { type: 'button', key: id, 'aria-current': tab === id ? 'page' : undefined, onClick: () => setTab(id) }, t(key)))), h('div', { className: `yf-content${loading && data ? ' yf-refreshing' : ''}`, 'aria-busy': interactionBusy }, body)))
 }
 
 const css = `

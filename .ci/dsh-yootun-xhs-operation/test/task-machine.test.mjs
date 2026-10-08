@@ -144,10 +144,25 @@ test('stop() halts polling; resume() continues', async () => {
 })
 
 test('result without exactly three versions sets resultFailed', async () => {
+  // 期望版本数以创建时 body.versionCount 为准；未传时期望 3（历史任务兼容）
   const { machine } = makeMachine({ queryStatus: async () => ({ taskStatus: 'succeeded' }), queryResult: async () => ({ versions: [{ version: 'A' }, { version: 'B' }] }) })
   await machine.submit({ action: 'create', mediaType: 'images', idempotencyKey: 'k1' })
   assert.equal(machine.get().error, 'resultFailed')
   assert.equal(machine.get().versions, null)
+})
+
+test('single-version task (versionCount=1) accepts one version and rejects more', async () => {
+  // RQ-2026-002 单版可编辑：期望 1 版；1 版通过
+  const single = { version: 'A', title: 'a', body: 'a', tags: [] }
+  const ok = makeMachine({ queryStatus: async () => ({ taskStatus: 'succeeded' }), queryResult: async () => ({ versions: [single] }) })
+  await ok.machine.submit({ action: 'create', mediaType: 'video', idempotencyKey: 'k-single', versionCount: 1 })
+  assert.equal(ok.machine.get().versions.length, 1)
+  assert.equal(ok.machine.get().error, '')
+  // 返回 2 版与期望 1 版不符 → resultFailed（防静默异常版本数）
+  const bad = makeMachine({ queryStatus: async () => ({ taskStatus: 'succeeded' }), queryResult: async () => ({ versions: [single, { version: 'B' }] }) })
+  await bad.machine.submit({ action: 'create', mediaType: 'video', idempotencyKey: 'k-single-bad', versionCount: 1 })
+  assert.equal(bad.machine.get().error, 'resultFailed')
+  assert.equal(bad.machine.get().versions, null)
 })
 
 test('create failure surfaces createFailed and keeps no versions', async () => {
