@@ -268,25 +268,43 @@ export async function probeSession({
     ;({ context } = await chromeFactory({ headless: false, profileDir, chromium, platform }))
     const page = context.pages()[0] || (await context.newPage())
     await page.goto(CREATOR_ORIGIN, { waitUntil: 'domcontentloaded', timeout: timeoutMs })
-    // 失效特征（stage0 §2.5）：302 到 /login 或登录框可见。
-    // 稳定复验（真机验收发现：高负载下 SPA 未就绪会瞬时渲染登录组件，单次判定
-    // 误报 expired——表现为「publish 内 probe 全失败、独立 probe 全 ok」假分叉）：
-    // 首次命中特征后 reload 再验一次，连续两次才判失效。
+    // 失效判定以 **user/info 接口探测为准**（审查后真机第二轮：页面视觉状态受 SPA
+    // 时序影响大——未就绪时瞬时渲染登录组件会误报 expired；接口探测不受视觉时序
+    // 影响，且是会话真实有效性的直接证据）。探测失败（接口不可达/无账号标识）时
+    // 短重试，仍失败再用「URL 跳 /login + 登录框可见（含 reload 复验）」兜底判定。
+    const profile = await readAccountProfileWithRetry(page, { attempts: 3, delayMs: 1200 })
+    if (profile && profile.accountId) {
+      const now = new Date().toISOString()
+      const seq = await nextSessionSeq(accountId, root)
+      await updateAccount(accountId, {
+        sessionStatus: 'ok',
+        sessionCheckedAt: now,
+        sessionSeq: seq,
+        ...(profile.nickname ? { nickname: profile.nickname } : {}),
+        ...(profile.avatar ? { avatar: profile.avatar } : {}),
+      }, root)
+      await saveStorageState(accountId, context, root).catch(() => {})
+      return { status: 'ok', profile }
+    }
+    // user/info 未取到：以 URL/登录框兜底判定（含 reload 复验），绝不单次误标。
     const loginPageDetected = async () =>
       String(page.url() || '').includes('/login') ||
       (await page.isVisible(LOGIN_BOX_SELECTOR).catch(() => false))
-    if (await loginPageDetected()) {
+    await sleep(1500)
+    let expiredConfirmed = await loginPageDetected()
+    if (!expiredConfirmed) {
       await page.reload({ waitUntil: 'domcontentloaded', timeout: timeoutMs }).catch(() => {})
       await sleep(2500)
-      if (await loginPageDetected()) {
-        const now = new Date().toISOString()
-        const seq = await nextSessionSeq(accountId, root)
-        await updateAccount(accountId, { sessionStatus: 'expired', sessionCheckedAt: now, sessionSeq: seq }, root)
-        return { status: 'expired', reason: 'login_page_detected' }
-      }
+      expiredConfirmed = await loginPageDetected()
     }
-    // 弱网/SPA 未就绪时 user/info 可能瞬时失败：短重试后再判过期，避免误标。
-    const profile = await readAccountProfileWithRetry(page, { attempts: 2, delayMs: 800 })
+    if (expiredConfirmed) {
+      const now = new Date().toISOString()
+      const seq = await nextSessionSeq(accountId, root)
+      await updateAccount(accountId, { sessionStatus: 'expired', sessionCheckedAt: now, sessionSeq: seq }, root)
+      return { status: 'expired', reason: 'login_page_detected' }
+    }
+    // 既未确认有效也未确认失效（接口抖动且页面无登录特征）→ unknown，不猜测。
+    return { status: 'unknown', reason: 'user_info_unavailable' }
     // 只有真正取到账号标识才算会话有效；页面返回空（未登录/被风控）判定过期。
     if (!profile || !profile.accountId) {
       const now = new Date().toISOString()
@@ -294,18 +312,6 @@ export async function probeSession({
       await updateAccount(accountId, { sessionStatus: 'expired', sessionCheckedAt: now, sessionSeq: seq }, root)
       return { status: 'expired', reason: 'user_info_unavailable' }
     }
-    const now = new Date().toISOString()
-    const seq = await nextSessionSeq(accountId, root)
-    await updateAccount(accountId, {
-      sessionStatus: 'ok',
-      sessionCheckedAt: now,
-      sessionSeq: seq,
-      ...(profile.nickname ? { nickname: profile.nickname } : {}),
-      ...(profile.avatar ? { avatar: profile.avatar } : {}),
-    }, root)
-    // Profile 是运行时会话权威；顺带刷新 storage_state 备份保持一致（尽力而为）。
-    await saveStorageState(accountId, context, root).catch(() => {})
-    return { status: 'ok', profile }
   } catch (error) {
     return { status: 'unknown', reason: safeReason(error) }
   } finally {

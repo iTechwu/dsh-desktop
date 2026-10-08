@@ -289,17 +289,13 @@ test('publishDraft clips the title to 20 chars and clears the body with triple s
   assert.deepEqual(pressKeys.slice(clearIndex, clearIndex + 3), ['Backspace', 'Control+a', 'Delete'])
 })
 
-test('publishDraft sets private visibility before saving the draft', async t => {
+test('publishDraft does not touch visibility (public by default)', async t => {
   const fx = makeFixture({ pageOpts: { toastsQueue: [[{ text: '保存成功' }]] } })
   t.after(() => rm(fx.root, { recursive: true, force: true }).catch(() => {}))
   await publishDraft(fx.options)
-  // 防误发布保险（dev-implementation §2.4）：先点「公开可见」展开菜单，再点「仅自己可见」。
-  const clicks = fx.page.clickLog
-  const publicIndex = clicks.indexOf('text=公开可见')
-  const privateIndex = clicks.indexOf('text=仅自己可见')
-  assert.ok(publicIndex !== -1, '先点击当前可见性控件展开菜单')
-  assert.ok(privateIndex !== -1, '再点击「仅自己可见」')
-  assert.ok(privateIndex > publicIndex, '可见性设置顺序：展开 → 选仅自己可见')
+  // 用户反馈（2026-10-08）：测试期「仅自己可见」保险移除——发布默认公开可见，不触碰可见性控件。
+  assert.ok(!fx.page.clickLog.includes('text=公开可见'), '不得点击可见性控件')
+  assert.ok(!fx.page.clickLog.includes('text=仅自己可见'), '不得选择仅自己可见')
 })
 
 // ---------------------------------------------------------------------------
@@ -342,7 +338,7 @@ test('publishDraft only treats save-success toasts as saved (not upload success)
   assert.deepEqual(fx.trackClosed, [])
 })
 
-test('publishDraft is idempotent when visibility is already private', async t => {
+test('publishDraft completes even without any visibility control on page', async t => {
   const fx = makeFixture({ pageOpts: { visibilityVisible: false, privateVisible: true, toastsQueue: [[{ text: '保存成功' }]] } })
   t.after(() => rm(fx.root, { recursive: true, force: true }).catch(() => {}))
   const result = await publishDraft(fx.options)
@@ -396,15 +392,17 @@ test('publishDraft times out image upload when the title never appears', async t
   assert.deepEqual(fx.trackClosed, [], '上传超时浏览器保持打开，素材与文案不丢')
 })
 
-test('publishDraft requires the visibility control (forced private)', async t => {
-  const fx = makeFixture({ pageOpts: { visibilityVisible: false, toastsQueue: [[{ text: '保存成功' }]] } })
+test('publishDraft strips markdown and trailing topics from the body', async t => {
+  const fx = makeFixture({ pageOpts: { toastsQueue: [[{ text: '保存成功' }]] } })
   t.after(() => rm(fx.root, { recursive: true, force: true }).catch(() => {}))
-  await assert.rejects(
-    publishDraft(fx.options),
-    error => error.code === 'SELECTOR_MISSING',
-    '找不到可见性控件即中断：绝不带着公开可见状态点击保存区按钮',
-  )
-  assert.deepEqual(fx.trackClosed, [])
+  const typed = []
+  fx.page.keyboard.type = async text => { typed.push(String(text)) }
+  await publishDraft({ ...fx.options, body: '**奔驰限量版**，改装颜值天花板\n\n- 哑光银改色\n- 限量外观\n\n#长沙买车 #奔驰 #小钢炮' })
+  const joined = typed.join('')
+  assert.ok(!joined.includes('**'), '正文不得携带 markdown 双星标记')
+  assert.ok(joined.includes('奔驰限量版，改装颜值天花板'), '粗体标记剥离后保留文本')
+  assert.ok(joined.includes('· 哑光银改色'), '行首列表符转「· 」')
+  assert.ok(!joined.includes('#长沙买车'), '正文尾部纯文本话题串已剥离（话题由逐个话题化输入）')
 })
 
 // ---------------------------------------------------------------------------

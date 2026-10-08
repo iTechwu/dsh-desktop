@@ -221,6 +221,29 @@ export async function resolveMaterials({ imageUrls = [], videoUrl = null, workDi
   }
 }
 
+
+/**
+ * 小红书正文纯文本化（审查问题 1/2）：
+ * ① 剥离 markdown 标记（双星粗体、双下划线斜体、行首短横列表 → 「· 」、行首井号标题）——
+ *    小红书正文不渲染 markdown，`**` 会原样暴露；
+ * ② 剥离正文尾部的纯文本话题串（模型按小红书习惯在结尾追加 `#a #b`，与逐个
+ *    话题化输入重复，真机出现「标签输入两遍」）——只剥末尾连续 # 话题块。
+ */
+export function toXhsPlainText(body) {
+  let text = String(body || '').replace(/\r\n/g, '\n')
+  text = text.replace(/\*\*([^*]*)\*\*/g, '$1').replace(/__([^_]*)__/g, '$1')
+  text = text.replace(/^#{1,6}\s+/gm, '')
+  text = text.replace(/^[-*]\s+/gm, '· ')
+  text = text.replace(/^\s*#\S+(?:\s+#\S+)*\s*$/gm, line => line.includes('#') ? '' : line)
+  text = text.replace(/\n{3,}/g, '\n\n')
+  return text.trim()
+}
+
+/** 剥离正文尾部纯文本话题串后的正文（话题化输入前调用，避免标签出现两遍）。 */
+export function stripTrailingTopics(body) {
+  return String(body || '').replace(/(?:\s*#[^#\s]+)+\s*$/u, '').trim()
+}
+
 /** 首个已挂载选择器（隐藏的 file input 也算——真机口径，审查阶段0实测 visible:false 但可 setInputFiles）。 */
 async function firstAttached(page, selectors, timeoutMs = 10_000) {
   const deadline = Date.now() + timeoutMs
@@ -384,7 +407,7 @@ export async function publishDraft({
     await page.keyboard.press('Backspace')
     await page.keyboard.press('Control+a')
     await page.keyboard.press('Delete')
-    const bodyText = String(body)
+    const bodyText = toXhsPlainText(stripTrailingTopics(body))
     for (const ch of bodyText) {
       await page.keyboard.type(ch)
       if ('，。！？\n'.includes(ch)) await sleepFn(randomInRange(delays.bodySentencePause, randomFn))
@@ -401,9 +424,6 @@ export async function publishDraft({
 
     // 验证码检测（审查 P1：fill 阶段同样覆盖，出现即失败绝不绕过）。
     if (await detectCaptcha(page)) throw new PublishError('CAPTCHA_DETECTED', 'captcha during fill')
-
-    // 可见性强制「仅自己可见」（防误点右侧「发布」按钮的保险；dev-implementation §2.4）
-    await setPrivateVisibility(page, { sleepFn })
 
     // ---- saveDraft：CDP pierce + toast 捕获 + 草稿箱最终裁决 ----------------
     step('saveDraft')
@@ -422,17 +442,24 @@ export async function publishDraft({
     // 草稿实际保存成功）。漏捕时降级为**草稿箱最终裁决**：列表出现同标题草稿
     // 即成功（审查/验收口径：以草稿真实落箱为准，toast 仅作快速信号）。
     const urlBeforeSave = page.url()
+    // 草稿箱计数基线（点击前）：「草稿箱(N)」
+    const countBefore = await page.evaluate(() => {
+      const m = (document.body.innerText || '').match(/草稿箱\((\d+)\)/)
+      return m ? Number(m[1]) : null
+    }).catch(() => null)
     const toast = await waitForSaveToast(page, { sleepFn }).catch(() => null)
     let confirmedVia = toast ? 'toast' : null
     if (!toast) {
       // toast 漏捕时多信号裁决（真机：点击「暂存离开」后页面可能跳离发布页）：
       // ① 跳离发布页（暂存并离开的字面行为）② 首页出现「草稿箱中有未发布的作品」
       // ③ 草稿箱列表出现同标题草稿。任一命中即成功。
-      for (let i = 0; i < 15; i++) {
+      for (let i = 0; i < 20; i++) {
         await sleepFn(1000)
         if (!String(page.url() || '').includes('/publish')) { confirmedVia = 'navigated'; break }
-        const bodyText = await page.locator('body').innerText().catch(() => '')
-        if (/草稿箱中有未发布的作品/.test(bodyText)) { confirmedVia = 'home-banner'; break }
+        const probeText = (await page.evaluate(() => document.body.innerText || '').catch(() => '')) || ''
+        const countNow = (probeText.match(/草稿箱\((\d+)\)/) || [])[1]
+        if (countBefore !== null && countNow !== undefined && Number(countNow) > countBefore) { confirmedVia = 'draft-count'; break }
+        if (/草稿箱中有未发布的作品/.test(probeText)) { confirmedVia = 'home-banner'; break }
       }
       if (!confirmedVia) {
         const found = await confirmDraftInBox(page, { isVideo, title: String(title).trim(), sleepFn })
@@ -467,18 +494,19 @@ async function confirmDraftInBox(page, { isVideo, title, sleepFn }) {
     return true
   }, text).catch(() => false)
 
-  if (!(await jsClickByText('草稿箱'))) return false
-  // 保存落盘有延迟（真机实测：点暂存后立即查列表查不到，稍后才出现）——
-  // 轮询重试 3 轮覆盖异步落盘窗口，仍无则判失败。
-  for (let attempt = 0; attempt < 3; attempt++) {
-    await sleepFn(2500)
+  // 弹窗数据懒加载 + 标题可能截断（确认逻辑修复）：4 轮 × [3s 等待 + 重开弹窗 +
+  // 切 Tab + 1.5s + 包含式匹配标题前 10 字]。仍未命中 → false（最终人工确认兜底）。
+  const matchText = String(title).trim().slice(0, 10)
+  for (let round = 0; round < 4; round++) {
+    await sleepFn(3000)
+    if (!(await jsClickByText('草稿箱'))) return false   // 弹窗被关（Escape/点击外部）→ 重开入口
+    await sleepFn(1500)
     const tabName = isVideo ? '视频笔记' : '图文笔记'
-    if (await jsClickByText(tabName)) await sleepFn(3000)
+    if (await jsClickByText(tabName)) await sleepFn(1500)
     const found = await page.evaluate(t => {
-      return [...document.querySelectorAll('*')].some(e => !e.children.length && (e.textContent || '').trim() === t)
-    }, title).catch(() => false)
+      return [...document.querySelectorAll('*')].some(e => (e.textContent || '').includes(t))
+    }, matchText).catch(() => false)
     if (found) {
-      // 关闭弹窗（×）尽力而为：后续浏览器由用户接管。
       await page.keyboard.press('Escape').catch(() => {})
       return true
     }
@@ -486,7 +514,6 @@ async function confirmDraftInBox(page, { isVideo, title, sleepFn }) {
   await page.keyboard.press('Escape').catch(() => {})
   return false
 }
-
 /** 上传就绪等待：图片=标题框 visible ≤120s；视频=完成信号候选 ≤8min（S-10）。 */
 async function waitUploadReady({ page, isVideo, sleepFn, now = Date.now, onCaptcha }) {
   const deadline = now() + (isVideo ? VIDEO_UPLOAD_TIMEOUT_MS : IMAGE_UPLOAD_TIMEOUT_MS)
@@ -524,39 +551,15 @@ async function typeTopic(page, tag, { sleepFn, randomFn, delays }) {
 }
 
 /**
- * 可见性强制私密（save-draft-cdp.mjs 真机口径：点「公开可见」→ 点「仅自己可见」）。
- * 幂等（审查 P2）：页面默认已是「仅自己可见」（无「公开可见」控件）时直接通过；
- * 选择后校验当前值确为私密。
- */
-async function setPrivateVisibility(page, { sleepFn }) {
-  const current = page.locator(VISIBILITY_CURRENT_SELECTOR).first()
-  if (!(await current.isVisible().catch(() => false))) {
-    // 无「公开可见」控件：可能已是私密。校验「仅自己可见」文案可见即视为已私密。
-    if (await page.locator('text=仅自己可见').first().isVisible().catch(() => false)) return
-    throw new PublishError('SELECTOR_MISSING', 'visibility control not visible')
-  }
-  await current.click()
-  const option = page.locator(VISIBILITY_PRIVATE_SELECTOR).first()
-  if (!(await option.isVisible().catch(() => false))) {
-    throw new PublishError('SELECTOR_MISSING', 'private visibility option not visible')
-  }
-  await option.click()
-  // 选择后校验（审查 P2）：下拉收起后当前值应显示「仅自己可见」。
-  await sleepFn(600)
-  if (!(await page.locator('text=仅自己可见').first().isVisible().catch(() => false))) {
-    throw new PublishError('SELECTOR_MISSING', 'private visibility not applied')
-  }
-}
-
-/**
- * 点击后 15s 内轮询 toast，命中「保存成功」才返回（审查 P2：其他「成功」toast
- * 如「上传成功」不得误判为草稿保存成功）；轮询期间同步检测验证码。超时返回 null。
+ * 点击后 15s 内轮询 toast，命中「保存/草稿」相关文案即返回（快速信号，最终以
+ * 草稿箱裁决兜底；不含泛化「成功」避免「上传成功」误命中）；轮询期间同步检测
+ * 验证码。超时返回 null。
  */
 async function waitForSaveToast(page, { sleepFn }) {
   for (let waited = 0; waited < SAVE_TOAST_TIMEOUT_MS; waited += 1000) {
     await sleepFn(1000)
     const toasts = await page.evaluate(DRAIN_TOASTS_JS).catch(() => [])
-    const hit = (Array.isArray(toasts) ? toasts : []).find(item => item && typeof item.text === 'string' && /保存成功/.test(item.text))
+    const hit = (Array.isArray(toasts) ? toasts : []).find(item => item && typeof item.text === 'string' && /保存|草稿/.test(item.text))
     if (hit) return hit.text
     if (await detectCaptcha(page)) throw new PublishError('CAPTCHA_DETECTED', 'captcha while waiting save toast')
   }
