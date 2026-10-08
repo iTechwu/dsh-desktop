@@ -1,4 +1,4 @@
-import { readdir, readFile, stat } from 'node:fs/promises'
+import { readdir, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { auditPluginRequestCancellation } from './plugin-request-policy.mjs'
 import { readCiPackageManifests } from './plugin-ux-audit-packages.mjs'
@@ -9,6 +9,10 @@ const ciEntries = (await readdir(ciRoot, { withFileTypes: true }))
   .map(entry => entry.name)
   .sort()
 // Client-plugin discovery spans every white-label brand family under .ci/.
+// Discovery follows the package's own `dsh.client` declaration so a source
+// tree may split `src/client.js` freely; those packages are audited through
+// the packaged `lib/client.js` module, while single-file sources keep their
+// direct source audit.
 const entries = ciEntries.filter(name => /^dsh-(?:yootun|sensteed)-/.test(name))
 
 async function readSourceTree(root, extensions) {
@@ -21,8 +25,8 @@ async function readSourceTree(root, extensions) {
 const clientPlugins = []
 for (const name of entries) {
   try {
-    await stat(new URL(`../.ci/${name}/src/client.js`, import.meta.url))
-    clientPlugins.push(name)
+    const manifest = JSON.parse(await readFile(new URL(`../.ci/${name}/package.json`, import.meta.url), 'utf8'))
+    if (manifest.dsh?.client !== undefined) clientPlugins.push(name)
   } catch (error) {
     if (error?.code !== 'ENOENT') throw error
   }
@@ -375,7 +379,10 @@ for (const name of ciEntries) {
 }
 
 for (const name of clientPlugins) {
-  const source = await readFile(new URL(`../.ci/${name}/src/client.js`, import.meta.url), 'utf8')
+  const source = await readFile(new URL(`../.ci/${name}/src/client.js`, import.meta.url, ), 'utf8').catch(error => {
+    if (error?.code !== 'ENOENT') throw error
+    return readFile(new URL(`../.ci/${name}/lib/client.js`, import.meta.url), 'utf8')
+  })
   const localApiPaths = new Set(source.match(/\/(?:api\/desktop|_dsh)\/[a-z0-9/_-]+/giu) || [])
   const sidebarOrder = source.match(/name:\s*['"]sidebar\.footer\.action['"][\s\S]{0,180}?order:\s*(\d+)/u)?.[1]
   const overlayOrder = source.match(/name:\s*['"]shell\.overlay['"][\s\S]{0,180}?order:\s*(\d+)/u)?.[1]
