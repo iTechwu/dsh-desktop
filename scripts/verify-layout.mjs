@@ -67,8 +67,8 @@ for (const member of ['dsh-plugin-desktop', 'dsh-community-fabric', 'dsh-communi
     if (existsSync(resolve(root, member, legacy))) fail(`${member}/${legacy} must not exist; the root owns the lockfile`)
   }
 }
-// upstream.json 契约:只描述兄弟 fork 的位置与版本,不钉 commit、不再 vendor。
-const expectedUpstreamKeys = ['branch', 'localCheckout', 'repository', 'sourceVersion'].sort()
+// upstream.json 契约:描述兄弟 fork 的位置、版本与 CI 可复现拉取的 commit,不再 vendor。
+const expectedUpstreamKeys = ['branch', 'localCheckout', 'repository', 'sourceCommit', 'sourceVersion'].sort()
 if (JSON.stringify(Object.keys(upstream).sort()) !== JSON.stringify(expectedUpstreamKeys)) {
   fail(`upstream.json must declare exactly ${expectedUpstreamKeys.join(', ')}`)
 }
@@ -77,6 +77,9 @@ if (typeof upstream.localCheckout !== 'string' || !upstream.localCheckout.starts
 }
 if (typeof upstream.branch !== 'string' || upstream.branch.length === 0) {
   fail('upstream.json must declare the tracked sibling branch')
+}
+if (typeof upstream.sourceCommit !== 'string' || !/^[0-9a-f]{40}$/u.test(upstream.sourceCommit)) {
+  fail('upstream.json must pin sourceCommit as a full 40-character commit SHA')
 }
 if (typeof upstreamPackage.packageManager !== 'string' || !upstreamPackage.packageManager.startsWith('pnpm@')) {
   fail('the upstream checkout must retain its pnpm package manager')

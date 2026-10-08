@@ -2,5 +2,6 @@
   "repository": "git@github.com:iTechwu/deepseek-harness.git",
   "branch": "dev",
   "localCheckout": "../deepseek-harness",
-  "sourceVersion": "0.1.7-rc.2"
+  "sourceVersion": "0.1.7-rc.2",
+  "sourceCommit": "468d4821c87a36c0bbc567b293755632185c6d12"
 }
