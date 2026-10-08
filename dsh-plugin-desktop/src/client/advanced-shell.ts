@@ -1,4 +1,5 @@
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
+import type { ShortcutCommandId } from '@deepseek-ai/dsh-client-shortcuts/client'
 import type {} from '@deepseek-ai/dsh-client-ui-theme/client'
 import type {} from './contracts.ts'
 import type { DesktopClientEnvironment } from './environment.ts'
@@ -72,10 +73,33 @@ export function applyAdvancedShell(ctx: ClientContext, environment: DesktopClien
   // undefined,根插槽一渲染就崩溃(白屏)。这里补上桌面自己的 panelInfo 源。
   ctx.effect(() => ctx.slots.provideRoot({
     hooks: {
-      panelInfo: {
-        getSnapshot: () => desktopLayout.getPanelInfo(),
-        subscribe: listener => desktopLayout.subscribe(listener),
-      },
+      panelInfo: desktopLayout.panelInfo,
     },
   }), 'desktop: panel info provider')
+
+  // 对齐 rc2 layout owner 的两项行为：main slot 变化后回落已卸载的
+  // panel，并保留 Cmd/Ctrl+B 侧栏切换命令。
+  // Generator effect 让每个已申请资源在 setup 中途失败时也能被回收。
+  ctx.effect(function* () {
+    yield ctx.locale.register('shortcuts.desktop-layout', {
+      zh: { toggle: '展开／收起左侧栏' },
+      en: { toggle: 'Toggle left sidebar' },
+    })
+    const toggleLabel = ctx.locale.bind('shortcuts.desktop-layout')
+    yield ctx.slots.subscribe('main', () => { desktopLayout.retainMainPanels() })
+    desktopLayout.retainMainPanels()
+    yield ctx.shortcuts.register({
+      id: 'sidebar.left.toggle' as ShortcutCommandId,
+      label: () => toggleLabel('toggle'),
+      aliases: ['sidebar', 'toggle left sidebar'],
+      defaults: {
+        'desktop:macos': { code: 'KeyB', modifiers: ['primary'] },
+        'desktop:windows': { code: 'KeyB', modifiers: ['primary'] },
+        'desktop:linux': { code: 'KeyB', modifiers: ['primary'] },
+      },
+      regions: ['page', 'editable'],
+      modals: [],
+      resolve: () => ({ status: 'handled', run: () => { desktopLayout.toggleSidebar() } }),
+    })
+  }, 'desktop: advanced layout parity')
 }

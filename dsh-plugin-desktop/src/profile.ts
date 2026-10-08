@@ -593,6 +593,7 @@ function loadRecoveryFilteredProfile(
   }
   if (aaEnabled && !selectedBundles.includes(AA_PACKAGE_NAME)) selectedBundles.push(AA_PACKAGE_NAME)
   const layers: Profile['layers'] = []
+  const skippedBundles: Profile['skippedBundles'] = []
   let aaFailure: string | undefined
   let dshMarketFailure: string | undefined
   const installPackageUrl = pathToFileURL(INSTALL_ANCHOR).href
@@ -633,8 +634,10 @@ function loadRecoveryFilteredProfile(
         patches: patchPaths.flatMap(patchPath => loadOverlayPatches(BIN_NAME, patchPath)),
       })
     } catch (cause) {
-      if (isAa) aaFailure = marketFailureMessage(cause)
-      else if (isDshMarket) dshMarketFailure = marketFailureMessage(cause)
+      const reason = marketFailureMessage(cause)
+      skippedBundles.push({ packageName, reason })
+      if (isAa) aaFailure = reason
+      else if (isDshMarket) dshMarketFailure = reason
       else throw cause
     }
   }
@@ -646,6 +649,7 @@ function loadRecoveryFilteredProfile(
       layers,
       patchPath,
       patches: existsSync(patchPath) ? loadOverlayPatches(BIN_NAME, patchPath) : [],
+      skippedBundles,
     },
     ...(dshMarketFailure === undefined ? {} : { dshMarketFailure }),
     ...(aaFailure === undefined ? {} : { aaFailure }),
@@ -1229,6 +1233,7 @@ export function prepareDesktopProfile(
     // key; the 0.1.7 kernel's DeepSeek platform login surface stays hidden.
     // account-controller injects the deepseekAccount service, so it disables
     // together with the platform row instead of pending forever.
+    { id: 'llm-deepseek-account', disabled: true },
     { id: 'deepseek-account', disabled: true },
     { id: 'account-controller', disabled: true },
     { id: 'ui-settings-account', disabled: true },

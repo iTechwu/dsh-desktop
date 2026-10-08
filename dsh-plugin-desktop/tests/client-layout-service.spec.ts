@@ -60,9 +60,16 @@ function makeCtx() {
       register: vi.fn(() => ({})),
       inject: vi.fn(),
       provideRoot: vi.fn((_contribution?: unknown) => () => {}),
+      subscribe: vi.fn(() => () => {}),
+      entries: vi.fn(() => []),
     },
     theme: { getTheme: vi.fn(() => ({ active: { colorScheme: 'light', tokens: {} } })) },
     on: vi.fn(() => () => {}),
+    locale: {
+      bind: vi.fn(() => (key: string) => key),
+      register: vi.fn(() => () => {}),
+    },
+    shortcuts: { register: vi.fn(() => () => {}) },
   }
 }
 
@@ -132,8 +139,8 @@ describe('applyAdvancedShell presentation ownership', () => {
       applyAdvancedShell(ctx as never, environmentFor('advanced') as never)
 
       // layout service + owned styles/markers + theme presenter + root slot
-      // + panel info provider
-      expect(ctx.effect).toHaveBeenCalledTimes(5)
+      // + panel info provider + rc2 layout parity
+      expect(ctx.effect).toHaveBeenCalledTimes(6)
       expect(ctx.effect).toHaveBeenCalledWith(expect.any(Function), 'desktop: panel info provider')
       expect(ctx.slots.register).toHaveBeenCalledTimes(1)
       // dsh-client-ui-layout is disabled in this mode, so the desktop shell
@@ -191,8 +198,8 @@ describe('applyExtendedShell presentation ownership', () => {
       applyExtendedShell(ctx as never, environmentFor('extended') as never)
 
       // layout + owned styles + presenter + root slot + panel info provider
-      // + framed chrome styles
-      expect(ctx.effect).toHaveBeenCalledTimes(6)
+      // + framed chrome styles + rc2 layout parity
+      expect(ctx.effect).toHaveBeenCalledTimes(7)
       expect(ctx.effect).toHaveBeenCalledWith(expect.any(Function), 'desktop: extended panel info provider')
       expect(ctx.slots.register).toHaveBeenCalledTimes(1)
       // Same root-hook contract as the advanced shell: with ui-layout

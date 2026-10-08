@@ -113,6 +113,7 @@ async function whenWorkspaceListsReady(ctx: ClientContext): Promise<void> {
 export const inject = [
   'slots',
   'locale',
+  'shortcuts',
   'connection',
   'remote',
   'remote.credentials',

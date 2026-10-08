@@ -57,7 +57,7 @@ const ROUTES: readonly ManagedMcpRoute[] = [
  * is the narrowest way to keep its transport aligned with the credential seam.
  */
 export async function apply(ctx: Context): Promise<void> {
-  const access = ctx.settings.register<'dofe-access', DofeAccessSettings>(
+  const access = ctx.settings.register<DofeAccessSettings>(
     DOFE_ACCESS_SETTINGS_NAMESPACE,
     z.object({
       setupComplete: z.boolean().default(false),

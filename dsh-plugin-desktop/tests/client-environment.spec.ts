@@ -4,7 +4,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it, vi } from 'vitest'
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type { MainPanelId, PanelInfo } from '@deepseek-ai/dsh-client-ui-layout/client'
-import { apply } from '../src/client/index.ts'
+import { apply, inject as clientInject } from '../src/client/index.ts'
 import { AdvancedFrame, type AdvancedFrameProps } from '../src/client/AdvancedFrame.tsx'
 import { applyAdvancedShell } from '../src/client/advanced-shell.ts'
 import { claimDesktopLayout } from '../src/client/layout-service.ts'
@@ -29,6 +29,12 @@ import {
 } from '../src/window-chrome.ts'
 
 describe('desktop client environment', () => {
+  it('declares the Cordis services required by owned layout parity', () => {
+    expect(clientInject).toContain('shortcuts')
+    expect(clientInject).toContain('slots')
+    expect(clientInject).toContain('locale')
+  })
+
   it.each(['darwin', 'win32', 'linux'])('keeps compatibility chrome out of the %s client slot tree', platform => {
     const marker = platform === 'win32' ? '&sensteed-agent-mica=0' : ''
     vi.stubGlobal('window', { location: {
@@ -294,6 +300,112 @@ describe('advanced desktop layout', () => {
     expect(changed).toHaveBeenCalledTimes(2)
   })
 
+  it.each([
+    ['advanced', applyAdvancedShell],
+    ['extended', applyExtendedShell],
+  ] as const)('retains unloaded panels and keeps the sidebar shortcut in the owned %s shell', (mode, applyShell) => {
+    const dataset: Record<string, string> = {}
+    vi.stubGlobal('document', {
+      body: {
+        dataset,
+        setAttribute: vi.fn(),
+        removeAttribute: vi.fn(),
+        style: { setProperty: vi.fn(), removeProperty: vi.fn() },
+      },
+      documentElement: { style: { colorScheme: '', removeProperty: vi.fn() } },
+      getElementById: (id: string) => id === 'root' ? { dataset: {} } : null,
+      createElement: vi.fn(() => ({
+        dataset: {},
+        textContent: '',
+        style: { setProperty: vi.fn(), removeProperty: vi.fn() },
+        remove: vi.fn(),
+      })),
+      head: { appendChild: vi.fn() },
+    })
+    vi.stubGlobal('getComputedStyle', () => ({ backgroundColor: 'rgb(0, 0, 0)' }))
+    const registered = new Set(['files'])
+    let mainListener: (() => void) | undefined
+    let runShortcut: (() => void) | undefined
+    let layout: DesktopLayoutState | undefined
+    const ctx = {
+      // 与 Cordis 一致：generator effect 迭代收集 disposer；普通 effect
+      // 直接返回 factory 结果作为 uninstaller。
+      effect: vi.fn((mount: () => unknown) => {
+        const result = mount()
+        if (result !== null && typeof result === 'object' && typeof (result as Generator).next === 'function') {
+          const disposers: Array<() => void> = []
+          for (const dispose of result as Generator<() => void, void, unknown>) {
+            disposers.push(dispose)
+          }
+          return () => { for (const dispose of disposers.reverse()) dispose() }
+        }
+        return result
+      }),
+      on: vi.fn(() => () => {}),
+      theme: {
+        getTheme: vi.fn(() => ({ active: { colorScheme: 'dark', tokens: {} } })),
+      },
+      locale: {
+        bind: vi.fn(() => (key: string) => key),
+        register: vi.fn(() => () => {}),
+      },
+      shortcuts: {
+        register: vi.fn((command: { id: string, resolve: () => { run: () => void } }) => {
+          expect(command.id).toBe('sidebar.left.toggle')
+          runShortcut = command.resolve().run
+          return () => {}
+        }),
+      },
+      reflect: {
+        get: vi.fn(() => undefined),
+        provide: vi.fn((name: string, value: unknown) => {
+          if (name === 'layout') layout = value as DesktopLayoutState
+          return () => {}
+        }),
+      },
+      slots: {
+        entries: vi.fn(() => [...registered].flatMap(key => [{ options: { key } }])),
+        provideRoot: vi.fn(() => () => {}),
+        register: vi.fn(() => () => {}),
+        subscribe: vi.fn((name: string, listener: () => void) => {
+          if (name === 'main') mainListener = listener
+          return () => { if (mainListener === listener) mainListener = undefined }
+        }),
+      },
+    } as unknown as ClientContext
+
+    try {
+      applyShell(ctx, {
+        version: '2.0.3',
+        mode,
+        platform: 'darwin',
+        material: 'transparent',
+        micaSupported: false,
+      })
+      expect(layout).toBeInstanceOf(DesktopLayoutState)
+      expect(mainListener).toBeTypeOf('function')
+      expect(runShortcut).toBeTypeOf('function')
+      const geometryChanged = vi.fn()
+      const panelChanged = vi.fn()
+      layout!.subscribe(geometryChanged)
+      layout!.panelInfo.subscribe(panelChanged)
+      layout!.selectPanel('files' as MainPanelId)
+      expect(layout!.getPanelInfo().activePanelId).toBe('files')
+      expect(geometryChanged).toHaveBeenCalledTimes(1)
+      expect(panelChanged).toHaveBeenCalledTimes(1)
+      registered.delete('files')
+      mainListener!()
+      expect(layout!.getPanelInfo().activePanelId).toBeNull()
+      expect(geometryChanged).toHaveBeenCalledTimes(2)
+      expect(panelChanged).toHaveBeenCalledTimes(2)
+      const sidebarBefore = layout!.getSnapshot().sidebar
+      runShortcut!()
+      expect(layout!.getSnapshot().sidebar).not.toBe(sidebarBefore)
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
   it('keeps the enhanced root registration independent from the extended frame', () => {
     const registrations: Array<Record<string, unknown>> = []
     const occupants: unknown[] = []
@@ -329,6 +441,8 @@ describe('advanced desktop layout', () => {
         getTheme: vi.fn(() => ({ active: { colorScheme: 'dark', tokens: {} } })),
       },
       on: vi.fn(() => () => {}),
+      locale: { bind: vi.fn(() => (key: string) => key), register: vi.fn(() => () => {}) },
+      shortcuts: { register: vi.fn(() => () => {}) },
       slots: {
         provideRoot: vi.fn(() => () => {}),
         subscribe: vi.fn(() => () => {}),
@@ -583,6 +697,8 @@ describe('independent Desktop frame', () => {
         getTheme: vi.fn(() => ({ active: { colorScheme: 'dark', tokens: {} } })),
       },
       on: vi.fn(() => () => {}),
+      locale: { bind: vi.fn(() => (key: string) => key), register: vi.fn(() => () => {}) },
+      shortcuts: { register: vi.fn(() => () => {}) },
       slots: {
         provideRoot: vi.fn(() => () => {}),
         subscribe: vi.fn(() => () => {}),

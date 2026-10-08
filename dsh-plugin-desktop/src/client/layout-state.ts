@@ -1,4 +1,12 @@
 import type { ILayout, MainPanelId, PanelInfo } from '@deepseek-ai/dsh-client-ui-layout/client'
+import type { HostObservable } from '@deepseek-ai/dsh-client-ui-slots'
+
+declare module '@deepseek-ai/dsh-client-ui-slots' {
+  interface LocaleNamespaceMap {
+    /** Desktop-owned sidebar keyboard command label. */
+    'shortcuts.desktop-layout': 'toggle'
+  }
+}
 
 /** Advanced-shell panel state shared by the root slot and layout-service adapter. */
 export interface DesktopLayoutSnapshot {
@@ -75,13 +83,22 @@ function clamp(value: number, min: number, max: number): number {
 
 /** Small observable panel controller used by the advanced root registration. */
 export class DesktopLayoutState implements ILayout {
-  private panelInfo: PanelInfo = Object.freeze({ activePanelId: null })
+  private panelInfoValue: PanelInfo = Object.freeze({ activePanelId: null })
+  private readonly panelListeners = new Set<() => void>()
+  /** Central-panel selection source matching the 0.1.7-rc.2 ILayout contract. */
+  readonly panelInfo: HostObservable<PanelInfo> = {
+    getSnapshot: (): PanelInfo => this.panelInfoValue,
+    subscribe: (listener: () => void): (() => void) => {
+      this.panelListeners.add(listener)
+      return () => { this.panelListeners.delete(listener) }
+    },
+  }
   private navigation = new AbortController()
 
   constructor(private readonly hasMainPanel: (id: MainPanelId) => boolean = () => false) {}
 
   /** Root selection remains independent of the active Session and column geometry. */
-  getPanelInfo(): PanelInfo { return this.panelInfo }
+  getPanelInfo(): PanelInfo { return this.panelInfoValue }
 
   /** Select a registered global panel, or return to the Conversation. */
   selectPanel(panelId: MainPanelId | null): void {
@@ -89,14 +106,17 @@ export class DesktopLayoutState implements ILayout {
       throw new Error(`layout.selectPanel: main panel "${panelId}" is not registered`)
     }
     this.navigation.abort()
-    if (this.panelInfo.activePanelId === panelId) return
-    this.panelInfo = Object.freeze({ activePanelId: panelId })
+    if (this.panelInfoValue.activePanelId === panelId) return
+    this.panelInfoValue = Object.freeze({ activePanelId: panelId })
+    // Geometry subscribers have historically observed panel selection changes;
+    // keep that behavior while panelInfo owns its precise rc.2 subscription.
     for (const listener of this.listeners) listener()
+    for (const listener of this.panelListeners) listener()
   }
 
   /** Return to the Conversation when the selected plugin panel is unloaded. */
   retainMainPanels(): void {
-    const id = this.panelInfo.activePanelId
+    const id = this.panelInfoValue.activePanelId
     if (id !== null && !this.hasMainPanel(id)) this.selectPanel(null)
   }
 

@@ -480,6 +480,9 @@ virtualStoreDirMaxLength: 60
     expect(rows.find(row => row.id === 'llm-deepseek')).toEqual(expect.objectContaining({
       disabled: true,
     }))
+    expect(rows.find(row => row.id === 'llm-deepseek-account')).toEqual(expect.objectContaining({
+      disabled: true,
+    }))
     expect(rows.find(row => row.id === 'llm-pi-ai')).toEqual(expect.objectContaining({
       disabled: false,
     }))
