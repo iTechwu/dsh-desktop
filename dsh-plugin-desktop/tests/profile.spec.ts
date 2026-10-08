@@ -537,7 +537,7 @@ virtualStoreDirMaxLength: 60
     }))
   })
 
-  it('overrides direct model connection facts from the user patch in the final Desktop layer', () => {
+  it('keeps direct model connection facts unreachable while the user patch owns the default model', () => {
     const home = temporaryHome()
     writeFileSync(join(home, 'cordis.patch.yml'), [
       '- id: llm-deepseek',
@@ -555,14 +555,45 @@ virtualStoreDirMaxLength: 60
 
     const rows = composeEntries([prepareDesktopProfile(undefined, home, 'darwin').patches])
 
+    // The direct provider stays launcher-disabled, so a user-patched default
+    // model row cannot reach a non-gateway provider.
     expect(rows.find(row => row.id === 'llm-deepseek')).toEqual(expect.objectContaining({
       disabled: true,
     }))
     expect(rows.find(row => row.id === 'llm-pi-ai')).toEqual(expect.objectContaining({
       disabled: false,
     }))
+    // The default model lives below the user layer so activation settings
+    // forms can persist the activated selection.
     expect(rows.find(row => row.id === 'agent-default-model')).toEqual(expect.objectContaining({
-      config: { provider: 'dofe-chat', model: 'deepseek-v4-flash' },
+      config: { provider: 'deepseek-direct', model: 'deepseek-chat' },
+    }))
+  })
+
+  it('keeps the agent default model below the user layer for activation writes', () => {
+    const prepared = prepareDesktopProfile(undefined, temporaryHome(), 'darwin')
+    const launcherRows = prepared.patches.slice(0, prepared.launcherPatchBoundary.beforeUser).map(row => row.id)
+    const finalRows = prepared.patches.slice(prepared.launcherPatchBoundary.afterUser).map(row => row.id)
+    expect(launcherRows).toContain('agent-default-model')
+    expect(finalRows).not.toContain('agent-default-model')
+    // Bundle and overlay layers seed their own defaults; the composed effective
+    // row must still land on the managed DoFe gateway route.
+    const effective = composeEntries([prepared.patches]).find(row => row.id === 'agent-default-model')
+    expect((effective?.config as { provider?: string }).provider).toMatch(/^dofe-/)
+  })
+
+  it('lets a persisted user selection override the launcher default model', () => {
+    const prepared = prepareDesktopProfile(undefined, temporaryHome(), 'darwin')
+    const beforeUser = prepared.patches.slice(0, prepared.launcherPatchBoundary.beforeUser)
+    const afterUser = prepared.patches.slice(prepared.launcherPatchBoundary.afterUser)
+    const userSelection = [{ id: 'agent-default-model', config: { provider: 'dofe-chat', model: 'glm-5.3-flash' } }]
+    const rows = composeEntries([beforeUser, userSelection, afterUser])
+    expect(rows.find(row => row.id === 'agent-default-model')).toEqual(expect.objectContaining({
+      config: { provider: 'dofe-chat', model: 'glm-5.3-flash' },
+    }))
+    // The direct provider row the final layer disables stays disabled.
+    expect(rows.find(row => row.id === 'llm-deepseek')).toEqual(expect.objectContaining({
+      disabled: true,
     }))
   })
 

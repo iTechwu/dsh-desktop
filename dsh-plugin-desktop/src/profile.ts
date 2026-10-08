@@ -1058,7 +1058,23 @@ export function prepareDesktopProfile(
       aaFailure = marketFailureMessage(cause)
     }
   }
-  const patches: PatchOptions[] = [...ordinary.patches, ...aaPatches]
+  // The agent default model sits below the user layer: 0.1.7 profile-backed
+  // settings forms persist the activated model through the home patch, and a
+  // final launcher row would reject every write as overridden. Direct
+  // providers stay unreachable because the final layer keeps llm-deepseek
+  // disabled regardless of this row.
+  const legacyModelSelection = readLegacyDofeModelSelection(home)
+  const dofeRoute = dofeProviderRoute(legacyModelSelection?.protocol ?? 'chat-completions')
+  const launcherOwnedRows = ordinaryPatchCount - persistedPatchCount
+  const patches: PatchOptions[] = [
+    ...ordinary.patches.slice(0, launcherOwnedRows),
+    {
+      id: 'agent-default-model',
+      config: { provider: dofeRoute.id, model: legacyModelSelection?.modelId ?? 'deepseek-v4-flash' },
+    },
+    ...ordinary.patches.slice(launcherOwnedRows),
+    ...aaPatches,
+  ]
   const composedRows = composeEntries([patches])
   assertUniqueEntryIds(composedRows)
   assertEffectiveMarketRows(composedRows, effectiveMarket)
@@ -1218,9 +1234,6 @@ export function prepareDesktopProfile(
   if ((telemetryDisabled ?? '') !== '' && rows.has('session-telemetry-otel')) {
     patches.push({ id: 'session-telemetry-otel', disabled: true })
   }
-  const legacyModelSelection = readLegacyDofeModelSelection(home)
-  const dofeRoute = dofeProviderRoute(legacyModelSelection?.protocol ?? 'chat-completions')
-  const defaultDofeModel = legacyModelSelection?.modelId ?? 'deepseek-v4-flash'
   patches.push(
     {
       // 0.1.7 llm-deepseek speaks Anthropic Messages only. DoFe routes live in
@@ -1237,10 +1250,6 @@ export function prepareDesktopProfile(
     { id: 'deepseek-account', disabled: true },
     { id: 'account-controller', disabled: true },
     { id: 'ui-settings-account', disabled: true },
-    {
-      id: 'agent-default-model',
-      config: { provider: dofeRoute.id, model: defaultDofeModel },
-    },
   )
   const desktopShell = rows.get('desktop-shell')
   if (desktopShell === undefined) {
@@ -1266,8 +1275,10 @@ export function prepareDesktopProfile(
     bareModuleBaseUrl,
     patches: structuredClone(patches),
     launcherPatchBoundary: {
-      beforeUser: ordinaryPatchCount - persistedPatchCount,
-      afterUser: ordinaryPatchCount,
+      // +1: the launcher-owned agent-default-model row sits below the user
+      // layer so activation can persist the selected model through settings.
+      beforeUser: ordinaryPatchCount - persistedPatchCount + 1,
+      afterUser: ordinaryPatchCount + 1,
     },
     skippedOptionalEntries,
     mode,
