@@ -1141,6 +1141,7 @@ test('analysis-ui：趋势布局 30 天固定窗口、自然日定位、缺口�
       account: { accountId: 'a1', nickname: '燃豚豚', fanCount: 1, lastCollectedAt: null },
       summary: { workCount: 1 }, kpi: {}, interaction: {}, hotWorks: [],
     },
+    trendNow: '2026-09-17T12:00:00',
     trend: { points: [
       { day: '2026-09-02', value: 1651000 },
       { day: '2026-09-05', value: 1659000 },
@@ -2274,7 +2275,7 @@ test('v2 源码样式契约：窄列轨道、分布配色、抽屉尺寸与关�
   assert.match(source, /\.ydo-an-trend-svg\{display:block;width:100%;height:168px/u)
   const analysisSource = await readFile(new URL('../src/analysis-ui.js', import.meta.url), 'utf8')
   assert.match(analysisSource, /typeof ResizeObserver === 'undefined'/u)
-  assert.match(analysisSource, /trendLayout\(trend\?\.points \|\| \[\], \{ width: trendWidth \}\)/u)
+  assert.match(analysisSource, /trendLayout\(trend\?\.points \|\| \[\], \{ width: trendWidth, now: trendNow \}\)/u)
   assert.match(source, /\.ydo-an-audience\{display:grid;grid-template-columns:repeat\(2,minmax\(0,1fr\)\);gap:12px\}/u)
   const mediaStart = source.indexOf('@media(max-width:720px)')
   assert.ok(mediaStart > -1, '存在窄屏断点')

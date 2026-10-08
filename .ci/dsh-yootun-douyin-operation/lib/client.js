@@ -1875,12 +1875,13 @@ window.__ModuleLoader__.load({
      *
      * @param {{ analysis: object|null, trend: object|null, trendMetric: string,
      *   loading: bool, errorReason: string|null, exporting: bool,
+     *   trendNow?: string|Date|null,
      *   onBack: Function, onMetricChange: Function, onExport: Function,
      *   onOpenWork: Function, t: Function }} props
      */
     function AnalysisPage({
       analysis, trend, trendMetric, trendErrorReason, loading, errorReason, exporting,
-      rangeLabel = null, onBack, onMetricChange, onExport, onOpenWork, t,
+      rangeLabel = null, trendNow = null, onBack, onMetricChange, onExport, onOpenWork, t,
       aiAnalysis = null, aiStatus = 'not_analyzed', aiBusy = false, aiError = null, aiConfirming = false,
       onAiStart = null, onAiRequestRerun = null, onAiConfirmRerun = null, onAiCancelConfirm = null,
       aiModalOpen = false, onAiModalOpen = null, onAiModalClose = null,
@@ -1899,7 +1900,7 @@ window.__ModuleLoader__.load({
         return h2('div', { className: 'ydo-state', role: 'status' }, h2('p', null, t('none')))
       }
       const kpi = analysis?.kpi || {}
-      const layout = trendLayout(trend?.points || [], { width: trendWidth })
+      const layout = trendLayout(trend?.points || [], { width: trendWidth, now: trendNow })
 
       return h2('div', { className: 'ydo-an-page' },
         h2('div', { className: 'ydo-an-toolbar' },
