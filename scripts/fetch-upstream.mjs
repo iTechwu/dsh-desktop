@@ -7,13 +7,20 @@
  * 拉取后立即校验 package.json 版本与 sourceVersion 一致，防止两个字段失配。
  */
 import { execFileSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 
 const root = resolve(import.meta.dirname, '..')
 const upstream = JSON.parse(readFileSync(join(root, 'upstream.json'), 'utf8'))
 const fail = message => { throw new Error(`fetch-upstream: ${message}`) }
+
+// Windows 上 PATH 里的 GNU tar 会把 `C:\...` 解释成远程主机（host:file 语法），
+// 报 `Cannot connect to C:`；System32 自带的 bsdtar 原生理解盘符路径。
+const windowsTar = 'C:\\Windows\\System32\\tar.exe'
+const tarExecutable = process.platform === 'win32' && existsSync(windowsTar)
+  ? windowsTar
+  : 'tar'
 
 if (typeof upstream.sourceCommit !== 'string' || !/^[0-9a-f]{40}$/u.test(upstream.sourceCommit)) {
   fail('upstream.json sourceCommit must be a full 40-character commit SHA')
@@ -45,7 +52,7 @@ try {
     '--output', archivePath,
     `https://github.com/${repoPath}/archive/${upstream.sourceCommit}.tar.gz`,
   ], { stdio: 'inherit' })
-  execFileSync('tar', ['-xzf', archivePath, '--strip-components=1', '-C', upstreamDir], { stdio: 'inherit' })
+  execFileSync(tarExecutable, ['-xzf', archivePath, '--strip-components=1', '-C', upstreamDir], { stdio: 'inherit' })
   const fetchedPackage = JSON.parse(readFileSync(join(upstreamDir, 'package.json'), 'utf8'))
   if (fetchedPackage.version !== upstream.sourceVersion) {
     fail(`commit ${upstream.sourceCommit} reports version ${fetchedPackage.version}, but upstream.json pins ${upstream.sourceVersion}`)
