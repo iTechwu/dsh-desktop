@@ -2401,15 +2401,30 @@ window.__ModuleLoader__.load({
     // 主视图：发起拆解 + 拆解记录（预览稿 view-main 结构）。
     // ---------------------------------------------------------------------------
 
-    function BreakdownNewPage({ rules, rulesError, onRetryRules, submitting, archiveTask, startError, onStart, t }) {
+    function BreakdownNewPage({
+      rules, rulesError, onRetryRules, submitting, archiveTask, startError, onStart,
+      downloading, downloadError, onDownload, t,
+    }) {
       const [shareUrl, setShareUrl] = React.useState('')
       const [ruleId, setRuleId] = React.useState(null)
+      const [downloadValidationError, setDownloadValidationError] = React.useState(null)
       const submit = () => {
         const value = shareUrl.trim()
         if (!value || submitting) return
         onStart(value, ruleId)
         setShareUrl('')
         setRuleId(null)
+      }
+      const download = async () => {
+        const value = shareUrl.trim()
+        setDownloadValidationError(null)
+        // 下载与拆解独立校验：按钮保持可点，空态点击时给出明确非空提示。
+        if (!value) {
+          setDownloadValidationError('bdDownloadRequired')
+          return
+        }
+        if (submitting) return
+        await onDownload(value)
       }
       return h('section', { className: 'ydo-ov-panel ydo-bd-panel' },
         h('h3', null, t('bdNewTitle')),
@@ -2428,7 +2443,16 @@ window.__ModuleLoader__.load({
             type: 'button', className: 'ydo-primary', disabled: submitting || !shareUrl.trim(),
             'aria-busy': submitting,
             onClick: submit,
-          }, submitting ? t('bdSubmitting') : t('bdStartButton'))),
+          }, submitting ? t('bdSubmitting') : t('bdStartButton')),
+          h('button', {
+            type: 'button', className: 'ydo-secondary', disabled: downloading || submitting,
+            'aria-busy': downloading,
+            onClick: download,
+          }, downloading ? t('bdDownloading') : t('bdDownloadButton'))),
+        (downloadValidationError || downloadError)
+          ? h('p', { className: 'ydo-error', role: 'alert', 'aria-live': 'assertive' },
+            t(downloadValidationError || downloadError))
+          : null,
         startError ? h('p', { className: 'ydo-error', role: 'alert', 'aria-live': 'assertive' }, t(startError)) : null,
         // 规则标签在网格上方（预览稿 field-label 口径）；失败态与提示语在网格下方。
         rulesError
@@ -2451,6 +2475,42 @@ window.__ModuleLoader__.load({
             h('span', { className: 'ydo-spinner' }),
             h('span', null, t('bdArchivePending')))
           : null)
+    }
+
+    // 即时下载结果弹窗：OneAPI 临时直链不归档、不长期收藏；浏览器打开后使用播放器
+    // 菜单中的「下载」。备用播放链接仅在 download_addr 与 play_addr 不同且均有效时展示。
+    function BreakdownDownloadModal({ open, result, onClose, t }) {
+      if (!open) return null
+      return h('div', {
+        className: 'ydo-ai-modal-overlay ydo-bd-modal-overlay',
+        role: 'dialog', 'aria-modal': true, 'aria-label': t('bdDownloadTitle'),
+      },
+        h('div', { className: 'ydo-ai-modal ydo-bd-modal' },
+          h('button', { type: 'button', className: 'ydo-ai-modal-close', 'aria-label': t('close'), onClick: onClose },
+            h(IconCloseOutlineRegular, { size: 16 })),
+          h('div', { className: 'ydo-ai-modal-body' },
+            h('h3', null, t('bdDownloadTitle')),
+            result?.title ? h('p', { className: 'ydo-bd-download-title' }, result.title) : null,
+            h('a', {
+              className: 'ydo-bd-download-link',
+              href: result?.downloadUrl || '#',
+              target: '_blank',
+              rel: 'noreferrer',
+              download: true,
+            },
+            h(IconDownloadOutlineRegular, { size: 16 }),
+            h('span', null, t('bdDownloadAction'))),
+            result?.fallbackPlayUrl
+              ? h('a', {
+                className: 'ydo-bd-download-fallback',
+                href: result.fallbackPlayUrl,
+                target: '_blank',
+                rel: 'noreferrer',
+              }, t('bdDownloadFallback'))
+              : null,
+            h('p', { className: 'ydo-hint' }, t('bdDownloadHint'))),
+          h('div', { className: 'ydo-bd-modal-actions' },
+            h('button', { type: 'button', className: 'ydo-confirm-secondary', onClick: onClose }, t('close')))))
     }
 
     function BreakdownHistoryList({
@@ -2767,6 +2827,15 @@ window.__ModuleLoader__.load({
     const BD_HISTORY_PAGE_SIZE = 10
     const BD_HISTORY_LIMIT_MAX = 200
 
+    // 即时下载错误只收敛本次按钮所需稳定码；其余保持通用失败文案，不透传 provider 原文。
+    const BD_DOWNLOAD_ERROR_COPY = Object.freeze({
+      DOUYIN_DOWNLOAD_URL_MISSING: 'bdDownloadMissing',
+      PROVIDER_ERROR: 'bdDownloadRetryable',
+      ONEAPI_BUDGET_EXHAUSTED: 'bdDownloadBudget',
+    })
+
+    const bdDownloadErrorKey = code => BD_DOWNLOAD_ERROR_COPY[code] || 'bdDownloadFailed'
+
     // 删除账号的客户端生命周期（能力矩阵的写操作状态语义）：
     // idle → awaiting_confirmation（确认框）→ confirmed_pending_adapter（设备清理 + 远端删除进行中）；
     // 任一环节失败 → cleanup_failed，并保留可重试入口，绝不提前显示「已删除」。
@@ -2934,6 +3003,12 @@ window.__ModuleLoader__.load({
         bdNewTitle: '发起拆解',
         bdShareLabel: '抖音分享链接', bdSharePlaceholder: '粘贴抖音视频分享链接，如 https://v.douyin.com/xxxx/',
         bdStartButton: '开始拆解', bdSubmitting: '提交中…',
+        bdDownloadButton: '抖音视频下载', bdDownloading: '解析中…',
+        bdDownloadRequired: '请先输入抖音分享链接', bdDownloadFailed: '下载链接解析失败，请重试',
+        bdDownloadMissing: '未获取到可下载直链，请稍后重试', bdDownloadRetryable: '解析服务暂时不可用，请重试',
+        bdDownloadBudget: '今日解析额度已用完，请明天再试',
+        bdDownloadTitle: '抖音视频下载', bdDownloadAction: '打开下载链接', bdDownloadFallback: '备用播放链接',
+        bdDownloadHint: '链接为临时直链，打开后可在播放器菜单点击「下载」；失效时请重新解析。',
         bdArchivePending: '正在下载并归档视频，通常需要十几秒…',
         bdRulesLabel: '仿写规则', bdRulesOptional: '（可选，单选；不选择则按默认方式仿写）',
         bdRulesHint: '规则由服务端统一配置，一次仿写只应用一条主方向规则；提交后按所选规则生成仿写分镜与拍摄脚本。',
@@ -3120,6 +3195,12 @@ window.__ModuleLoader__.load({
         bdNewTitle: 'Start a breakdown',
         bdShareLabel: 'Douyin share link', bdSharePlaceholder: 'Paste a Douyin video share link, e.g. https://v.douyin.com/xxxx/',
         bdStartButton: 'Start breakdown', bdSubmitting: 'Submitting…',
+        bdDownloadButton: 'Download Douyin video', bdDownloading: 'Resolving…',
+        bdDownloadRequired: 'Enter a Douyin share link first', bdDownloadFailed: 'Failed to resolve the download link. Try again.',
+        bdDownloadMissing: 'No downloadable direct URL was returned. Try again later.', bdDownloadRetryable: 'The resolver is temporarily unavailable. Try again.',
+        bdDownloadBudget: 'The daily resolver budget is used up. Try again tomorrow.',
+        bdDownloadTitle: 'Download Douyin video', bdDownloadAction: 'Open download link', bdDownloadFallback: 'Fallback play URL',
+        bdDownloadHint: 'This is a temporary direct URL. Use “Download” in the player menu after opening; resolve again if it expires.',
         bdArchivePending: 'Downloading and archiving the video, usually takes a while…',
         bdRulesLabel: 'Rewrite rules', bdRulesOptional: ' (optional, pick one; leave empty for the default rewrite)',
         bdRulesHint: 'Rules are configured server-side; one rewrite applies a single primary rule. The storyboard and shot script are generated with the selected rule.',
@@ -3663,6 +3744,10 @@ window.__ModuleLoader__.load({
       const [bdSubmitting, setBdSubmitting] = useState(false)
       // 主视图「新建拆解」的提交/归档失败文案（与详情页错误独立）。
       const [bdStartError, setBdStartError] = useState(null)
+      // 即时下载状态与拆解归档完全隔离：互不阻塞页面提交，也不共享错误/结果。
+      const [bdDownloading, setBdDownloading] = useState(false)
+      const [bdDownloadResult, setBdDownloadResult] = useState(null)
+      const [bdDownloadError, setBdDownloadError] = useState(null)
       // bdArchiveTask = 归档过渡态（archiveStart 回执）；轮询 completed 后清除。
       const [bdArchiveTask, setBdArchiveTask] = useState(null)
       const [bdDetailWorkflow, setBdDetailWorkflow] = useState(null)
@@ -3752,13 +3837,14 @@ window.__ModuleLoader__.load({
             else if (hotDrawerWork) setHotDrawerWork(null)
             else if (aiModalOpen) setAiModalOpen(false)
             else if (bdRewriteOpen) setBdRewriteOpen(false)
+            else if (bdDownloadResult) setBdDownloadResult(null)
             else closeOverlay()
           }
         }
         document.addEventListener('keydown', onKey)
         shellRef.current?.focus?.()
         return () => document.removeEventListener('keydown', onKey)
-      }, [visible, detailWorkId, hotDrawerWork, aiModalOpen, bdRewriteOpen])
+      }, [visible, detailWorkId, hotDrawerWork, aiModalOpen, bdRewriteOpen, bdDownloadResult])
 
       const stopPolling = useCallback(ref => {
         if (ref.current) { clearInterval(ref.current); ref.current = null }
@@ -4395,6 +4481,32 @@ window.__ModuleLoader__.load({
         }
       }, [bdErrorKey, bdSubmitting, loadBdHistory, startBdWorkflow, stopPolling])
 
+      // 抖音视频即时下载：调用 tools 只读工具拿 OneAPI 临时直链并弹窗展示。
+      // 不带幂等键：每次点击都是一次新鲜解析，避免把过期 URL 当作“成功结果”重放。
+      const downloadBdVideo = useCallback(async shareUrl => {
+        if (bdDownloading) return
+        setBdDownloading(true)
+        setBdDownloadError(null)
+        setBdDownloadResult(null)
+        try {
+          const result = await post({ action: 'breakdown.downloadUrl', shareUrl })
+          if (result.status !== 'ready') {
+            setBdDownloadError(bdDownloadErrorKey(result.reason))
+            return
+          }
+          const download = result.download || null
+          if (!download?.downloadUrl) {
+            setBdDownloadError('bdDownloadMissing')
+            return
+          }
+          setBdDownloadResult(download)
+        } catch (error) {
+          setBdDownloadError(bdDownloadErrorKey(safeErrorCode(error)))
+        } finally {
+          setBdDownloading(false)
+        }
+      }, [bdDownloading])
+
       // 历史行进入详情：立即拉明细；仍在运行态的记录同时启动 workflow 轮询。
       const openBdDetail = useCallback(workflow => {
         if (!workflow || !workflow.candidateId) return
@@ -4758,6 +4870,9 @@ window.__ModuleLoader__.load({
                       archiveTask: bdArchiveTask,
                       startError: bdStartError,
                       onStart: startBreakdown,
+                      downloading: bdDownloading,
+                      downloadError: bdDownloadError,
+                      onDownload: downloadBdVideo,
                       t,
                     }),
                     h(BreakdownHistoryList, {
@@ -4824,6 +4939,14 @@ window.__ModuleLoader__.load({
             submitting: bdRewriting,
             onConfirm: confirmBdRewrite,
             onClose: () => setBdRewriteOpen(false),
+            t,
+          })
+          : null,
+        bdDownloadResult
+          ? h(BreakdownDownloadModal, {
+            open: true,
+            result: bdDownloadResult,
+            onClose: () => setBdDownloadResult(null),
             t,
           })
           : null,
@@ -5093,6 +5216,11 @@ window.__ModuleLoader__.load({
     .ydo-bd-modal .ydo-ai-modal-body h3{margin:0 0 4px;font-size:14px}
     .ydo-bd-modal .ydo-ai-modal-body .ydo-hint{font-size:12px;margin-bottom:12px}
     .ydo-bd-modal-actions{display:flex;justify-content:flex-end;gap:8px;padding:0 18px 18px;border-top:0}
+    /* 即时下载弹窗：主链接足够醒目，长 CDN URL 不参与布局截断；备用链接保持轻量。 */
+    .ydo-bd-download-title{margin:0 0 12px;font-size:var(--dsh-content-font-size,14px);font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .ydo-bd-download-link{display:flex;min-height:40px;align-items:center;justify-content:center;gap:8px;border-radius:6px;background:var(--dsw-alias-brand-primary);color:var(--dsw-alias-label-primary-foreground);font:inherit;font-size:var(--dsh-content-font-size,14px);font-weight:600;text-decoration:none;cursor:pointer}
+    .ydo-bd-download-link:hover{text-decoration:none;filter:opacity(.92)}
+    .ydo-bd-download-fallback{display:inline-block;margin-top:10px;color:var(--dsw-alias-brand-primary);font-size:var(--dsh-content-font-size-secondary,13px);text-decoration:underline;text-underline-offset:2px}
     `;
     function apply(ctx) {
       ctx.effect(() => ctx.locale.register(NS, copy), 'dofe-yootun-douyin-operation: dictionaries')

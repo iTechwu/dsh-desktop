@@ -1219,6 +1219,39 @@ test('breakdown.archiveStatus：runId 必填，稳定码透传', async () => {
   assert.equal(response.payload.reason, 'ASYNC_RUN_NOT_FOUND')
 })
 
+test('breakdown.downloadUrl：非空校验并透传 tools 只读直链', async () => {
+  const calls = []
+  const { ctx, registered } = createContext({
+    tools: [{ name: 'mcp__tools-douyin-operation__viral_video_douyin_download_url' }],
+    execute: async ({ arguments: args }) => {
+      calls.push(args)
+      return {
+        structuredContent: {
+          downloadUrl: 'https://cdn.example.com/download.mp4',
+          fallbackPlayUrl: 'https://cdn.example.com/play.mp4',
+          awemeId: '73456789012',
+          title: '测试视频',
+        },
+      }
+    },
+  })
+  apply(ctx, { root: '/tmp/unused', browserStatus: async () => ({ chromeAvailable: true, driverAvailable: true, platform: 'linux' }) })
+  const dispatch = registered[0].handler
+
+  const missing = await call(dispatch, { action: 'breakdown.downloadUrl', shareUrl: '   ' })
+  assert.equal(missing.payload.status, 'error')
+  assert.equal(missing.payload.reason, 'share_url_required')
+  assert.equal(calls.length, 0)
+
+  const response = await call(dispatch, { action: 'breakdown.downloadUrl', shareUrl: 'https://v.douyin.com/abc/' })
+  assert.equal(response.payload.status, 'ready')
+  assert.equal(response.payload.download.downloadUrl, 'https://cdn.example.com/download.mp4')
+  assert.equal(response.payload.download.awemeId, '73456789012')
+  assert.deepEqual(calls, [{
+    douyinVideoUrl: 'https://v.douyin.com/abc/',
+  }])
+})
+
 test('breakdown.workflowStart：candidateId/幂等键校验，rewriteRuleId 可选透传', async () => {
   const calls = []
   const { ctx, registered } = createContext({

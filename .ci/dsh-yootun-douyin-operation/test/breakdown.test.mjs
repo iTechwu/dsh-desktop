@@ -31,7 +31,12 @@ async function evalBdModule(reactStub) {
     FilterSelect: props => ({ type: 'filter-select', props: props || {}, children: null }),
     require: name => {
       if (name === 'react') return reactStub
-      if (name === '@deepseek-ai/dsh-client-ui-primitives') return { IconCloseOutline16: props => ({ type: 'icon-close', props: props || {}, children: null }) }
+      if (name === '@deepseek-ai/dsh-client-ui-primitives') {
+        return {
+          IconCloseOutline16: props => ({ type: 'icon-close', props: props || {}, children: null }),
+          IconDownloadOutlineRegular: props => ({ type: 'icon-download', props: props || {}, children: null }),
+        }
+      }
       throw new Error(`unexpected require: ${name}`)
     },
     Date,
@@ -147,6 +152,44 @@ test('shotScriptTable 解析标准 Markdown 表格：表头/行/单元格 trim',
   sameJson(parsed.rows[0], ['1', '特写', '产品特写', '开场口播', '3s', '紧张', '固定', '-', '-'])
   assert.equal(parsed.rows[1][3], '卖点讲解')
   sameJson(parsed.paragraphs, [])
+})
+
+test('BreakdownDownloadModal：主下载链接、备用播放链接与关闭行为', async () => {
+  const { stub } = recordingReact()
+  const sandbox = await evalBdModule(stub)
+  const BreakdownDownloadModal = vm.runInContext('BreakdownDownloadModal', sandbox)
+
+  const modal = BreakdownDownloadModal({
+    open: true,
+    result: {
+      title: '测试视频',
+      downloadUrl: 'https://cdn.example.com/download.mp4',
+      fallbackPlayUrl: 'https://cdn.example.com/play.mp4',
+    },
+    onClose: () => {},
+    t,
+  })
+  const text = collectText(modal)
+  assert.ok(text.includes('bdDownloadTitle') && text.includes('测试视频'), '弹窗标题与视频标题可见')
+  const links = collectFlat(modal).filter(node => node.type === 'a')
+  assert.equal(links.length, 2, '主下载 + 备用播放两个链接')
+  assert.equal(links[0].props.href, 'https://cdn.example.com/download.mp4')
+  assert.equal(links[0].props.download, true)
+  assert.equal(links[0].props.rel, 'noreferrer')
+  assert.equal(links[1].props.href, 'https://cdn.example.com/play.mp4')
+
+  let closed = 0
+  const closable = BreakdownDownloadModal({
+    open: true,
+    result: { downloadUrl: 'https://cdn.example.com/download.mp4' },
+    onClose: () => { closed += 1 },
+    t,
+  })
+  assert.ok(collectText(closable).includes('bdDownloadAction'), '无备用链接时只保留主链接')
+  collectFlat(closable).filter(node => node.type === 'button').at(-1).props.onClick()
+  assert.equal(closed, 1, '底部关闭按钮回传 onClose')
+
+  assert.equal(BreakdownDownloadModal({ open: false, result: null, onClose: () => {}, t }), null)
 })
 
 test('shotScriptTable：表格外文本按段落收集、无表格纯段落、空/非字符串安全', async () => {
@@ -784,14 +827,16 @@ test('client.js 接线：Tab 顺序、body-full、Esc 链、轮询守卫、弹�
   assert.ok(clientSource.indexOf("t('tabVideos')") < clientSource.indexOf("t('tabBreakdown')"), '爆款拆解是第三个 Tab')
   // 拆解 Tab 与总览共用单列完整宽度内容区。
   assert.match(clientSource, /tab === 'overview' \|\| tab === 'breakdown' \? ' ydo-body-full'/u)
-  // Esc 链：改写弹框在 AI 弹框之后、overlay 之前。
+  // Esc 链：下载弹窗与改写弹框都在 AI 弹框之后、overlay 之前。
   assert.ok(
     clientSource.indexOf("else if (aiModalOpen) setAiModalOpen(false)") < clientSource.indexOf("else if (bdRewriteOpen) setBdRewriteOpen(false)")
-    && clientSource.indexOf("else if (bdRewriteOpen) setBdRewriteOpen(false)") < clientSource.indexOf('else closeOverlay()'),
-    'Esc 优先级：作品详情 → 爆款抽屉 → AI 弹框 → 改写弹框 → overlay',
+    && clientSource.indexOf("else if (bdRewriteOpen) setBdRewriteOpen(false)")
+    && clientSource.indexOf("else if (bdDownloadResult) setBdDownloadResult(null)")
+    && clientSource.indexOf("else if (bdDownloadResult) setBdDownloadResult(null)") < clientSource.indexOf('else closeOverlay()'),
+    'Esc 优先级：作品详情 → 爆款抽屉 → AI 弹框 → 改写弹框 → 下载弹窗 → overlay',
   )
-  // Esc effect 依赖数组必须包含 bdRewriteOpen（闭包旧值会让 Esc 跳层）。
-  assert.match(clientSource, /\}, \[visible, detailWorkId, hotDrawerWork, aiModalOpen, bdRewriteOpen\]\)/u)
+  // Esc effect 依赖数组必须包含两个弹层开关（闭包旧值会让 Esc 跳层）。
+  assert.match(clientSource, /\}, \[visible, detailWorkId, hotDrawerWork, aiModalOpen, bdRewriteOpen, bdDownloadResult\]\)/u)
   // 轮询与卸载清理：归档/workflow 轮询 ref 在组件卸载时停止。
   assert.match(clientSource, /stopPolling\(bdArchivePollRef\)\n\s*stopPolling\(bdWorkflowPollRef\)/u)
   // workflow 轮询锚点：workflowStart 回执顶层 workflowId，历史投影回退
@@ -812,6 +857,11 @@ test('client.js 接线：Tab 顺序、body-full、Esc 链、轮询守卫、弹�
   // 改写弹框 overlay 级渲染并接入 confirmBdRewrite。
   assert.match(clientSource, /bdRewriteOpen\n?\s*\? h\(BreakdownRewriteModal/u)
   assert.match(clientSource, /onConfirm: confirmBdRewrite/u)
+  // 即时下载链路：独立 action、独立状态与 overlay 级弹窗。
+  assert.match(clientSource, /const downloadBdVideo = useCallback\(async shareUrl => \{/u)
+  assert.match(clientSource, /action: 'breakdown\.downloadUrl', shareUrl \}/u)
+  assert.match(clientSource, /bdDownloadResult\n?\s*\? h\(BreakdownDownloadModal/u)
+  assert.match(clientSource, /onDownload: downloadBdVideo/u)
   // 明细请求序列号守卫：快速切换历史行时旧响应丢弃。
   assert.match(clientSource, /const requestId = \+\+bdDetailRequestRef\.current/u)
   // 主视图/详情页组件接线齐全。

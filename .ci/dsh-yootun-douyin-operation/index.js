@@ -126,6 +126,8 @@ export function apply(ctx, overrides = {}) {
               return send(res, 200, await handleBreakdownArchiveStart(deps, toolCtx, body))
             case 'breakdown.archiveStatus':
               return send(res, 200, await handleBreakdownArchiveStatus(deps, toolCtx, body))
+            case 'breakdown.downloadUrl':
+              return send(res, 200, await handleBreakdownDownloadUrl(deps, toolCtx, body))
             case 'breakdown.workflowStart':
               return send(res, 200, await handleBreakdownWorkflowStart(deps, toolCtx, body))
             case 'breakdown.workflowStatus':
@@ -791,6 +793,18 @@ async function handleBreakdownArchiveStatus(deps, ctx, body) {
   // 携带 candidateId，failed 时 error 携带稳定码。runId 不存在报 ASYNC_RUN_NOT_FOUND。
   const payload = await callTool(ctx, 'viral_video_async_submit_get', { runId })
   return { status: 'ready', archive: payload }
+}
+
+// 抖音视频即时下载（2026-10-09 需求）：分享链接 → tools 只读解析 OneAPI 临时直链。
+// 与 archiveStart 完全解耦：不受理拆解任务、不下载/上传 TOS、不写 viral_video 表；
+// 直链短时效，由前端弹窗即时展示给用户点击。
+async function handleBreakdownDownloadUrl(deps, ctx, body) {
+  const shareUrl = cleanString(body.shareUrl, 2048)
+  if (!shareUrl) return { status: 'error', reason: 'share_url_required' }
+  const payload = await callTool(ctx, 'viral_video_douyin_download_url', {
+    douyinVideoUrl: shareUrl,
+  })
+  return { status: 'ready', download: payload }
 }
 
 async function handleBreakdownWorkflowStart(deps, ctx, body) {

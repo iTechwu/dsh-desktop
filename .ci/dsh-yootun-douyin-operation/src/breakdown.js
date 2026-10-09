@@ -383,15 +383,30 @@ export function BreakdownRulePicker({ rules, value, onChange, disabled, t }) {
 // 主视图：发起拆解 + 拆解记录（预览稿 view-main 结构）。
 // ---------------------------------------------------------------------------
 
-export function BreakdownNewPage({ rules, rulesError, onRetryRules, submitting, archiveTask, startError, onStart, t }) {
+export function BreakdownNewPage({
+  rules, rulesError, onRetryRules, submitting, archiveTask, startError, onStart,
+  downloading, downloadError, onDownload, t,
+}) {
   const [shareUrl, setShareUrl] = React.useState('')
   const [ruleId, setRuleId] = React.useState(null)
+  const [downloadValidationError, setDownloadValidationError] = React.useState(null)
   const submit = () => {
     const value = shareUrl.trim()
     if (!value || submitting) return
     onStart(value, ruleId)
     setShareUrl('')
     setRuleId(null)
+  }
+  const download = async () => {
+    const value = shareUrl.trim()
+    setDownloadValidationError(null)
+    // 下载与拆解独立校验：按钮保持可点，空态点击时给出明确非空提示。
+    if (!value) {
+      setDownloadValidationError('bdDownloadRequired')
+      return
+    }
+    if (submitting) return
+    await onDownload(value)
   }
   return h('section', { className: 'ydo-ov-panel ydo-bd-panel' },
     h('h3', null, t('bdNewTitle')),
@@ -410,7 +425,16 @@ export function BreakdownNewPage({ rules, rulesError, onRetryRules, submitting, 
         type: 'button', className: 'ydo-primary', disabled: submitting || !shareUrl.trim(),
         'aria-busy': submitting,
         onClick: submit,
-      }, submitting ? t('bdSubmitting') : t('bdStartButton'))),
+      }, submitting ? t('bdSubmitting') : t('bdStartButton')),
+      h('button', {
+        type: 'button', className: 'ydo-secondary', disabled: downloading || submitting,
+        'aria-busy': downloading,
+        onClick: download,
+      }, downloading ? t('bdDownloading') : t('bdDownloadButton'))),
+    (downloadValidationError || downloadError)
+      ? h('p', { className: 'ydo-error', role: 'alert', 'aria-live': 'assertive' },
+        t(downloadValidationError || downloadError))
+      : null,
     startError ? h('p', { className: 'ydo-error', role: 'alert', 'aria-live': 'assertive' }, t(startError)) : null,
     // 规则标签在网格上方（预览稿 field-label 口径）；失败态与提示语在网格下方。
     rulesError
@@ -433,6 +457,42 @@ export function BreakdownNewPage({ rules, rulesError, onRetryRules, submitting, 
         h('span', { className: 'ydo-spinner' }),
         h('span', null, t('bdArchivePending')))
       : null)
+}
+
+// 即时下载结果弹窗：OneAPI 临时直链不归档、不长期收藏；浏览器打开后使用播放器
+// 菜单中的「下载」。备用播放链接仅在 download_addr 与 play_addr 不同且均有效时展示。
+export function BreakdownDownloadModal({ open, result, onClose, t }) {
+  if (!open) return null
+  return h('div', {
+    className: 'ydo-ai-modal-overlay ydo-bd-modal-overlay',
+    role: 'dialog', 'aria-modal': true, 'aria-label': t('bdDownloadTitle'),
+  },
+    h('div', { className: 'ydo-ai-modal ydo-bd-modal' },
+      h('button', { type: 'button', className: 'ydo-ai-modal-close', 'aria-label': t('close'), onClick: onClose },
+        h(IconCloseOutlineRegular, { size: 16 })),
+      h('div', { className: 'ydo-ai-modal-body' },
+        h('h3', null, t('bdDownloadTitle')),
+        result?.title ? h('p', { className: 'ydo-bd-download-title' }, result.title) : null,
+        h('a', {
+          className: 'ydo-bd-download-link',
+          href: result?.downloadUrl || '#',
+          target: '_blank',
+          rel: 'noreferrer',
+          download: true,
+        },
+        h(IconDownloadOutlineRegular, { size: 16 }),
+        h('span', null, t('bdDownloadAction'))),
+        result?.fallbackPlayUrl
+          ? h('a', {
+            className: 'ydo-bd-download-fallback',
+            href: result.fallbackPlayUrl,
+            target: '_blank',
+            rel: 'noreferrer',
+          }, t('bdDownloadFallback'))
+          : null,
+        h('p', { className: 'ydo-hint' }, t('bdDownloadHint'))),
+      h('div', { className: 'ydo-bd-modal-actions' },
+        h('button', { type: 'button', className: 'ydo-confirm-secondary', onClick: onClose }, t('close')))))
 }
 
 export function BreakdownHistoryList({

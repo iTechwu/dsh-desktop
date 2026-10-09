@@ -35,6 +35,7 @@ export const TOOL_NAMES = [
   // 故事板与分析状态查询、仿写规则清单（纯配置只读）、拆解详情导出（只读）。
   'viral_video_archive_submit',
   'viral_video_async_submit_get',
+  'viral_video_douyin_download_url',
   'viral_video_workflow_start',
   'viral_video_workflow_get',
   'viral_video_storyboards_list',
@@ -100,6 +101,11 @@ const ALLOWED_ERROR_CODES = new Set([
   // （isError envelope，经 safeErrorCode 白名单收敛后由 BD_EXPORT_ERROR_COPY 映射文案）。
   'CANDIDATE_NOT_FOUND',
   'STORYBOARD_NOT_READY',
+  // 即时下载解析成功但 OneAPI 未给出可通过公网校验的临时直链。
+  'DOUYIN_DOWNLOAD_URL_MISSING',
+  // OneAPI 解析失败/预算耗尽：下载按钮独立提示，不影响拆解归档链路。
+  'PROVIDER_ERROR',
+  'ONEAPI_BUDGET_EXHAUSTED',
 ])
 
 export class ToolsUnavailableError extends Error {

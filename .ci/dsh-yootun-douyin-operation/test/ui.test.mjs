@@ -2232,7 +2232,7 @@ test('v2 源码样式契约：窄列轨道、分布配色、抽屉尺寸与关�
   // 需求 2：Esc 链插入 AI 弹框层（详情 → 抽屉 → AI 弹框 → overlay），且入依赖数组；
   // 0922 追加改写弹框层（AI 弹框之后、overlay 之前），依赖数组同步扩充。
   assert.match(source, /else if \(aiModalOpen\) setAiModalOpen\(false\)/u)
-  assert.match(source, /\[visible, detailWorkId, hotDrawerWork, aiModalOpen, bdRewriteOpen\]/u)
+  assert.match(source, /\[visible, detailWorkId, hotDrawerWork, aiModalOpen, bdRewriteOpen, bdDownloadResult\]/u)
   // §5.2/§5.3：内容指标 3 列浅灰底圆角卡片（创作中心风格：标签小字在上、数值大字在下）、
   // 观众卡片两列；窄屏均退单列。
   assert.match(source, /\.ydo-an-metrics\{[^}]*grid-template-columns:repeat\(3,minmax\(0,1fr\)\)/u)

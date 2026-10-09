@@ -155,11 +155,12 @@ test('sessionIdempotencyKey：与服务端模板严格一致，同 seq 稳定、
 // 爆款拆解（0922 方案）：工具白名单登记、稳定码白名单、受理键模板。
 // ---------------------------------------------------------------------------
 
-test('爆款拆解：七个 viral_video 工具全部进入 TOOL_NAMES 白名单', async () => {
+test('爆款拆解：viral_video 工具全部进入 TOOL_NAMES 白名单', async () => {
   const { TOOL_NAMES } = await import('../src/tools-client.js')
   for (const name of [
     'viral_video_archive_submit',
     'viral_video_async_submit_get',
+    'viral_video_douyin_download_url',
     'viral_video_workflow_start',
     'viral_video_workflow_get',
     'viral_video_storyboards_list',
