@@ -48,7 +48,7 @@ function windowsArtifact(): Uint8Array {
 function chunkedResponse(
   chunks: readonly Uint8Array[],
   headers: HeadersInit = {},
-  finalUrl: string = 'https://www.dshdesktop.cn/api/downloads/mac',
+  finalUrl: string = 'https://ixicai.cn/api/desktop/downloads/mac',
 ): UpdateArtifactResponse {
   let index = 0
   const response = new Response(new ReadableStream<Uint8Array>({
@@ -121,7 +121,7 @@ describe('desktop update installer download', () => {
       destinationPath: destinationPath(directory, 'win32', '2.2.0'),
       request: async (url) => {
         expect(url).toBe(DESKTOP_DOWNLOAD_URLS.win32)
-        return chunkedResponse([artifact], {}, 'https://www.dshdesktop.cn/api/downloads/windows')
+        return chunkedResponse([artifact], {}, 'https://ixicai.cn/api/desktop/downloads/windows')
       },
     })
 
@@ -140,7 +140,7 @@ describe('desktop update installer download', () => {
       request: async () => chunkedResponse(
         [artifact],
         {},
-        'https://modelscope.cn/models/t4wefan/deepseek-harness-desktop/resolve/master/DSH-Desktop-2.2.1-universal.dmg',
+        'https://ixicai.cn/api/desktop/downloads/mac',
       ),
     })
     expect(await readFile(result)).toEqual(Buffer.from(artifact))
@@ -148,10 +148,9 @@ describe('desktop update installer download', () => {
 
   it.each([
     ['an unreviewed host', 'https://attacker.example/installer.dmg'],
-    ['an https downgrade', 'http://www.dshdesktop.cn/api/downloads/mac'],
-    ['a look-alike suffix', 'https://evil-modelscope.cn/installer.dmg'],
-    ['another user uploads path on the mirror host', 'https://modelscope.cn/models/attacker/deepseek-harness-desktop/resolve/master/installer.dmg'],
-    ['an unreviewed mirror subdomain', 'https://cdn.modelscope.cn/installer.dmg'],
+    ['an https downgrade', 'http://ixicai.cn/api/desktop/downloads/mac'],
+    ['a look-alike suffix', 'https://evil-ixicai.cn/installer.dmg'],
+    ['an unreviewed subdomain', 'https://cdn.ixicai.cn/installer.dmg'],
     ['a missing final URL', ''],
   ] as const)('rejects a download that settles on %s', async (_label, finalUrl) => {
     const directory = await temporaryDirectory()
@@ -197,7 +196,7 @@ describe('desktop update installer download', () => {
       destinationPath: destinationPath(directory, 'darwin', '2.4.1'),
       request: async () => ({
         response: new Response(body, { status: 503 }),
-        finalUrl: 'https://www.dshdesktop.cn/api/downloads/mac',
+        finalUrl: 'https://ixicai.cn/api/desktop/downloads/mac',
       }),
     }), 'http-status')
     expect(cancelled).toBe(true)
@@ -311,11 +310,11 @@ describe('desktop update installer download', () => {
   it.each([
     ['an unsuccessful response', async (): Promise<UpdateArtifactResponse> => ({
       response: new Response(null, { status: 503 }),
-      finalUrl: 'https://www.dshdesktop.cn/api/downloads/mac',
+      finalUrl: 'https://ixicai.cn/api/desktop/downloads/mac',
     }), 'http-status'],
     ['a missing response body', async (): Promise<UpdateArtifactResponse> => ({
       response: new Response(null, { status: 200 }),
-      finalUrl: 'https://www.dshdesktop.cn/api/downloads/mac',
+      finalUrl: 'https://ixicai.cn/api/desktop/downloads/mac',
     }), 'empty-body'],
     ['a zero-byte response body', async () => chunkedResponse([]), 'empty-body'],
   ] as const)('rejects %s without leaving a partial file', async (_label, request, code) => {
@@ -355,7 +354,7 @@ describe('desktop update installer download', () => {
           controller.abort(new DOMException('stop', 'AbortError'))
         },
       }))
-      return { response, finalUrl: 'https://www.dshdesktop.cn/api/downloads/mac' }
+      return { response, finalUrl: 'https://ixicai.cn/api/desktop/downloads/mac' }
     }
 
     await expectFailure(downloadDesktopUpdate({

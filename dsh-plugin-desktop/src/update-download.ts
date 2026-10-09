@@ -17,12 +17,12 @@ export type DesktopDownloadPlatform = 'darwin' | 'win32'
 
 /** Fixed download endpoints that record one user-confirmed installer download. */
 export const DESKTOP_DOWNLOAD_URLS: Readonly<Record<DesktopDownloadPlatform, string>> = {
-  darwin: 'https://www.dshdesktop.cn/api/downloads/mac',
-  win32: 'https://www.dshdesktop.cn/api/downloads/windows',
+  darwin: 'https://ixicai.cn/api/desktop/downloads/mac',
+  win32: 'https://ixicai.cn/api/desktop/downloads/windows',
 }
 
 /** Header pinning a download request and response to the checked release. */
-export const DESKTOP_TARGET_VERSION_HEADER = 'X-Sensteed-Agent-Target-Version'
+export const DESKTOP_TARGET_VERSION_HEADER = 'X-Yootun-Agent-Target-Version'
 
 /** Maximum accepted installer size, in bytes. */
 export const MAX_UPDATE_DOWNLOAD_BYTES = 1024 * 1024 * 1024
@@ -54,21 +54,18 @@ export interface UpdateArtifactResponse {
 export type UpdateArtifactRequest = (url: string, init: RequestInit) => Promise<UpdateArtifactResponse>
 
 /**
- * Download targets the installer fetch may settle on: the fixed product
- * endpoint plus the reviewed mirror it redirects through. The mirror is
- * pinned to the maintainer's repository path, not just the host, because the
- * host serves arbitrary user uploads under other paths. A redirect chain
- * that ends anywhere else is treated as a compromised download service
- * instead of being executed after a magic-number check. Adding or moving a
- * target requires a client release.
+ * Download targets the installer fetch may settle on. The single host is the
+ * project's own release endpoint, which serves the installer stream directly
+ * without redirecting to a third-party mirror. A redirect chain that ends
+ * anywhere else is treated as a compromised download service instead of being
+ * executed after a magic-number check. Adding or moving a target requires a
+ * client release.
  */
 const ALLOWED_DOWNLOAD_TARGETS: readonly {
   readonly host: string
   readonly pathPrefix?: string
 }[] = [
-  { host: 'www.dshdesktop.cn' },
-  { host: 'dshdesktop.cn' },
-  { host: 'modelscope.cn', pathPrefix: '/models/t4wefan/deepseek-harness-desktop/' },
+  { host: 'ixicai.cn' },
 ]
 
 /** Inputs for one user-confirmed installer download. */

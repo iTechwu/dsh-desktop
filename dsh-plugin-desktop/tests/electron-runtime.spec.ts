@@ -2534,7 +2534,7 @@ describe('Electron desktop runtime', () => {
     await runtime.mountScheduled()
     const activeWindow = electron.browserWindows[0]
 
-    await expect(runtime.updates.request('https://www.dshdesktop.cn/api/desktop/version', { method: 'GET' }))
+    await expect(runtime.updates.request('https://ixicai.cn/api/desktop/version', { method: 'GET' }))
       .resolves.toBe(response)
     expect(runtime.updates).toMatchObject({
       isPackaged: false,
@@ -3021,7 +3021,7 @@ describe('desktop artifact request adapter', () => {
   }
 
   it('follows redirects with net.request and reports the settled final URL', async () => {
-    const mirror = 'https://modelscope.cn/models/t4wefan/deepseek-harness-desktop/resolve/master/DSH-Desktop-2.1.0-universal.dmg'
+    const mirror = 'https://ixicai.cn/api/desktop/downloads/mac'
     const fake = fakeNetRequest([
       { redirect: [302, 'GET', mirror] },
       { status: 200, body: 'installer', headers: { 'content-type': 'application/octet-stream' } },
@@ -3029,14 +3029,14 @@ describe('desktop artifact request adapter', () => {
     electron.net.request.mockImplementationOnce(() => fake.request)
 
     const { requestDesktopArtifact } = await import('../src/electron-runtime.ts')
-    const settled = await requestDesktopArtifact('https://www.dshdesktop.cn/api/downloads/mac', {
+    const settled = await requestDesktopArtifact('https://ixicai.cn/api/desktop/downloads/mac', {
       method: 'GET',
       cache: 'no-store',
       headers: { accept: '*/*' },
     })
 
     expect(electron.net.request).toHaveBeenCalledWith(
-      expect.objectContaining({ url: 'https://www.dshdesktop.cn/api/downloads/mac', redirect: 'manual' }),
+      expect.objectContaining({ url: 'https://ixicai.cn/api/desktop/downloads/mac', redirect: 'manual' }),
     )
     expect(fake.followRedirect).toHaveBeenCalledOnce()
     expect(settled.finalUrl).toBe(mirror)
@@ -3050,11 +3050,11 @@ describe('desktop artifact request adapter', () => {
     electron.net.request.mockImplementationOnce(() => fake.request)
 
     const { requestDesktopArtifact } = await import('../src/electron-runtime.ts')
-    const settled = await requestDesktopArtifact('https://www.dshdesktop.cn/api/downloads/windows', {
+    const settled = await requestDesktopArtifact('https://ixicai.cn/api/desktop/downloads/windows', {
       method: 'GET',
     })
 
-    expect(settled.finalUrl).toBe('https://www.dshdesktop.cn/api/downloads/windows')
+    expect(settled.finalUrl).toBe('https://ixicai.cn/api/desktop/downloads/windows')
     expect(await settled.response.text()).toBe('direct')
     expect(fake.seenHeaders).toContainEqual(['cache-control', 'no-cache'])
   })
@@ -3064,7 +3064,7 @@ describe('desktop artifact request adapter', () => {
     electron.net.request.mockImplementationOnce(() => fake.request)
 
     const { requestDesktopArtifact } = await import('../src/electron-runtime.ts')
-    await expect(requestDesktopArtifact('https://www.dshdesktop.cn/api/downloads/mac', {
+    await expect(requestDesktopArtifact('https://ixicai.cn/api/desktop/downloads/mac', {
       method: 'GET',
     })).rejects.toThrow('offline')
   })
@@ -3076,7 +3076,7 @@ describe('desktop artifact request adapter', () => {
     electron.net.request.mockImplementationOnce(() => fake.request)
 
     const { requestDesktopArtifact } = await import('../src/electron-runtime.ts')
-    const pending = requestDesktopArtifact('https://www.dshdesktop.cn/api/downloads/mac', {
+    const pending = requestDesktopArtifact('https://ixicai.cn/api/desktop/downloads/mac', {
       method: 'GET',
       signal: controller.signal,
     })
@@ -3091,7 +3091,7 @@ describe('desktop artifact request adapter', () => {
     electron.net.request.mockImplementationOnce(() => fake.request)
 
     const { requestDesktopArtifact } = await import('../src/electron-runtime.ts')
-    const settled = await requestDesktopArtifact('https://www.dshdesktop.cn/api/downloads/mac', {
+    const settled = await requestDesktopArtifact('https://ixicai.cn/api/desktop/downloads/mac', {
       method: 'GET',
     })
 
