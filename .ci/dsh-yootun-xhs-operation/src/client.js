@@ -1,3 +1,7 @@
+// 车衣爆款看板（RQ-2026-003 DEV-06）：状态机与页面组件在 hotboard-ui.js，
+// 构建时内联进同一工厂作用域（本 import 行由 scripts/build.mjs 剥离）。
+import { createHotboardHub, HotboardPage, hotboardCss } from './hotboard-ui.js'
+
 const React = require('react')
 const REQUEST_TIMEOUT_MS = 30000
 const { createElement: h, useEffect, useRef, useState, useSyncExternalStore } = React
@@ -13,7 +17,7 @@ const OVERLAY_EVENT = 'dofe:yootun-overlay:open'
 const DIALOG_ATTRIBUTES = { role: 'dialog', 'aria-modal': true, 'aria-labelledby': 'yxh-title' }
 const POLL_INTERVAL_MS = 15000
 const UPLOAD_POLL_INTERVAL_MS = 350
-const MAX_IMAGES = 5
+const MAX_IMAGES = 9
 
 const copy = {
   zh: {
@@ -24,7 +28,7 @@ const copy = {
     direction: '文案方向', directionPlaceholder: '可选，如：突出省油与家庭出行',
     understandVideo: '理解视频内容', understandVideoHintOff: '默认关闭：基于素材基础信息 + 主题 + 文案方向生成，速度更快', understandVideoHintOn: '已开启：将进行语音转写、抽帧与画面理解，耗时较长',
     refNote: '对标笔记', refNotePlaceholder: '可选，笔记链接', refAccount: '对标账号', refAccountPlaceholder: '可选，账号名称',
-    addImage: '添加图片', remove: '移除', imageHint: '已选 {count} / 5 张', videoLabel: '视频', videoBadge: '视频',
+    addImage: '添加图片', remove: '移除', imageHint: '已选 {count} / 9 张', videoLabel: '视频', videoBadge: '视频',
     submit: '开始生成', submitting: '正在生成…', uploadFailed: '上传失败，请重试',
     uploadingBlock: '当前照片/视频正在上传中，等待上传完成', retrying: '重试中', uploadedBytes: '已传 {written} / {total}',
     empty: '上传素材后点击“开始生成”，生成一篇可编辑文案', processing: '正在生成文案', stepLabel: '当前步骤',
@@ -81,6 +85,64 @@ const copy = {
     publishSaveNoResponse: '未确认到保存结果，请在浏览器窗口人工确认草稿是否已保存',
     publishSelectorMissing: '页面结构变化导致发布中断，请截图反馈',
     publishNeedCopy: '请先生成文案并上传素材后再发布',
+    // 车衣爆款看板（RQ-2026-003 DEV-06）
+    pageTabHotboard: '车衣爆款看板',
+    hbTitle: '车衣爆款看板', hbConfirm: '操作确认',
+    hbSubBoard: '案例看板', hbSubKeywords: '关键词与扩词', hbSubTags: '标签与 AI 标记', hbSubRules: '采集与规则',
+    hbLoading: '加载中…', hbLoadFailed: '数据读取失败，请重试', hbWriteDone: '操作完成', hbWriteFailed: '操作失败，请重试', hbNoRunYet: '还没有可查看的采集 Run',
+    hbFilters: '筛选', hbAll: '全部', hbWindow: '时间窗', hbWindow7d: '近 7 天', hbWindow30d: '近 30 天', hbWindow90d: '近 90 天',
+    hbKeywordFilter: '关键词', hbStyle: '风格', hbColor: '色系', hbNoteWord: '笔记高频词', hbCommentWord: '评论高频词',
+    hbSort: '排序', hbSortScore: '热度分', hbSortPublishTime: '发布时间', hbSortCollect: '收藏', hbSortLike: '点赞', hbSortComment: '评论', hbSortShare: '分享',
+    hbOnlyMain: '仅主案例', hbOnlyTagged: '仅已打标',
+    hbKpiCases: '当前筛选下案例数', hbKpiCoverage: '本轮采集覆盖率', hbKpiAiTagged: 'AI 标记完成率', hbKpiDuplicates: '重复素材组数',
+    hbKpiLowQuality: '低质过滤数', hbKpiFailedKeywords: '失败关键词数', hbKpiLastCollected: '最近采集时间', hbKpiNextRun: '下次采集时间', hbScheduleDisabled: '定时已停用',
+    hbColTitle: '标题', hbColAuthor: '作者', hbColType: '类型', hbColPublishTime: '发布时间', hbColScore: '热度分', hbColInteraction: '互动量', hbColTags: '标签',
+    hbTypeVideo: '视频', hbTypeImage: '图文', hbNoCases: '当前筛选下暂无案例', hbPrev: '上一页', hbNext: '下一页', hbTotal: '共',
+    hbRunIdle: '当前没有进行中的采集 Run', hbRunHistory: '运行历史', hbRunStatus: 'Run 状态', hbRunStarted: '开始', hbRunFinished: '结束',
+    hbRemainingBudget: '剩余搜索额度', hbRunCollected: '采集', hbRunQualified: '入选', hbRunFailedKeywords: '失败词', hbRunDetail: 'Run 详情',
+    hbRunType: '类型', hbRunError: '错误码', hbRunKeywords: '启用词', hbRunSuccess: '成功词', hbRunNoResult: '无结果词', hbRunDuplicates: '去重',
+    hbRunAiTagged: 'AI 已标记', hbRunAiPending: 'AI 待标记',
+    hbPanelKeywords: '正式关键词管理', hbPanelCandidates: 'AI 扩词候选审核', hbPanelProposals: 'AI 候选标签审核', hbPanelLabels: '正式标签库',
+    hbPanelCollect: '采集操作', hbPanelSettings: '当前生效配置', hbPanelFailedKeywords: '失败关键词明细', hbPanelKeywordRuns: 'Run 内关键词执行明细',
+    hbCategory: '类目', hbCategoryProduct: '产品词', hbCategoryScene: '场景词', hbStatus: '状态', hbSource: '来源',
+    hbStatusActive: '启用', hbStatusDisabled: '停用', hbStatusRetired: '已退役',
+    hbSourceBuiltIn: '内置', hbSourceManual: '人工', hbSourceAgent: 'Agent',
+    hbPending: '待审核', hbAccepted: '已接受', hbRejected: '已拒绝', hbExpired: '已过期',
+    hbColKeyword: '关键词', hbColActions: '操作', hbColPick: '选择', hbColScore: '评分', hbColReason: '理由', hbNoKeywords: '暂无关键词', hbNoCandidates: '暂无候选',
+    hbPicked: '已选', hbAccept: '接受', hbReject: '拒绝', hbMerge: '合并入现有标签', hbDisable: '停用', hbEnable: '启用', hbEdit: '编辑', hbRetire: '退役', hbSave: '保存',
+    hbCreateKeyword: '新增关键词', hbKeywordPlaceholder: '输入关键词（1-128 字）', hbConfirmCreateKeyword: '确认新增关键词「{keyword}」？',
+    hbConfirmDisableKeyword: '确认停用关键词「{keyword}」？停用后不再参与采集。', hbConfirmEnableKeyword: '确认启用关键词「{keyword}」？',
+    hbConfirmAcceptCandidates: '确认接受选中的 {count} 个扩词候选为正式关键词？', hbConfirmRejectCandidates: '确认拒绝选中的 {count} 个扩词候选？',
+    hbProposalStatus: '提案状态', hbProposalAuto: '自动激活', hbProposalMerged: '已合并',
+    hbColLabel: '标签', hbColCode: '编码', hbTagType: '维度', hbColConfidence: '置信度', hbColEvidence: '证据数',
+    hbStyleType: '风格', hbColorType: '色系', hbNoProposals: '暂无标签提案', hbNoLabels: '暂无标签',
+    hbMergeHint: '合并需先在下方选择目标标签；未选择时「合并入现有标签」按钮不会生效。',
+    hbMergeTarget: '合并目标标签', hbMergeTargetNone: '请选择目标标签',
+    hbConfirmAcceptProposal: '确认接受标签提案「{label}」并激活为正式标签？', hbConfirmRejectProposal: '确认拒绝标签提案「{label}」？',
+    hbConfirmMergeProposal: '确认把标签提案「{label}」合并进「{target}」？', hbConfirmRetireLabel: '确认退役标签「{label}」？已分类笔记保留原标签。',
+    hbConfirmEnableLabel: '确认重新启用标签「{label}」？', hbConfirmUpdateLabel: '确认保存标签「{label}」的修改？', hbConfirmCreateLabel: '确认新增标签「{label}」？',
+    hbCodePlaceholder: '编码（如 jingjisa）', hbNamePlaceholder: '名称（如 竞技风）', hbDefinitionPlaceholder: '判定说明（可选）', hbCancelEdit: '取消',
+    hbStartIncrement: '手动增量采集', hbManualHint: '手动增量会按当前启用关键词发起一轮采集，受每日搜索额度限制；进行中会显示在 Run 状态条。',
+    hbManualDisabledHint: '当前配置已关闭手动增量采集。', hbConfirmRunStart: '确认发起一轮手动增量采集？将受每日搜索额度限制。',
+    hbSetPublishWindowDays: '发布时间窗（天）', hbSetPerKeywordLimit: '单词采集上限', hbSetCommentTopN: '评论 Top N', hbSetCommentMaxPerNote: '单篇评论上限',
+    hbSetMinInteraction: '最低互动量', hbSetDedupThreshold: '去重汉明阈值', hbSetMinValidSample: '热度分最小样本', hbSetSearchBudget: '每日搜索额度',
+    hbSetCommentBudget: '每日评论额度', hbSetDetailBudget: '单 Run 详情额度', hbSetScheduleEnabled: '定时采集', hbSetManualIncrement: '手动增量',
+    hbSetCommentSample: '评论采样', hbSetManualCommentDefault: '手动采集默认含评论', hbSetFullScheduleCron: '全量调度 cron',
+    hbConfirmSettings: '确认保存 {count} 项配置修改？', hbSaveSettings: '保存配置', hbRuleVersion: '规则版本',
+    hbNoteDetail: '案例详情', hbCloseDrawer: '关闭', hbNoImages: '暂无图片', hbImageBroken: '图片加载失败', hbMetrics: '数据指标',
+    hbCurrentTags: '当前标签（选择即纠错）', hbUntagged: '未打标', hbConfirmTagUpdate: '确认把该案例的风格/色系标签改为「{tag}」？',
+    hbNoteBody: '正文', hbSimilarNotes: '相似笔记', hbWordStats: '高频词', hbScore7d: '7 天分', hbScore30d: '30 天分', hbScore90d: '90 天分',
+    // 宿主错误码经 HB_ERROR_KEYS 映射后的受控文案（review MAJOR-4）；不透出原始错误码。
+    hbErrInvalidArgument: '参数不合法，请检查输入后重试', hbErrNotFound: '目标不存在或已被删除', hbErrActiveRunExists: '已有采集 Run 进行中，请等待完成',
+    hbErrBudgetExhausted: '当日采集额度已用尽，请明日再试', hbErrKeywordEmpty: '没有启用中的关键词，请先在「关键词与扩词」里启用', hbErrKeywordConflict: '关键词已存在或冲突',
+    hbErrEvidenceInsufficient: '标签证据不足，无法完成 AI 标记', hbErrLabelConflict: '标签编码或名称冲突', hbErrAiSchemaInvalid: 'AI 返回格式异常，已按失败处理',
+    hbErrProviderFailed: '模型服务暂不可用，请稍后重试', hbErrInternal: '服务内部错误，请稍后重试', hbErrConfirmation: '缺少操作确认，请重新提交', hbErrValidation: '输入校验未通过，请检查后重试',
+    hbCandidatesPartial: '批量裁决完成：{failed}/{total} 条失败，其余已生效',
+    // 写操作成功提示（runWrite successKey，review 复验 MAJOR-A：此前整组漏注册，
+    // 提示条会显示裸键名；hbRunStartDone 刻意区别于状态条时间标签 hbRunStarted）。
+    hbTagUpdated: '标签已更新', hbKeywordSaved: '关键词已保存', hbSettingsSaved: '配置已保存',
+    hbRunStartDone: '增量采集已发起，进度见 Run 状态条', hbCandidatesReviewed: '候选裁决完成', hbLabelReviewed: '标签提案已裁决', hbLabelSaved: '标签已保存',
+    hbCreateLabel: '新增标签', hbDateFrom: '扩词开始日期', hbDateTo: '扩词结束日期',
   },
   en: {
     open: 'XHS operation', title: 'XHS operation', subtitle: 'XHS platform operations: content creation, performance data aggregation and analysis',
@@ -147,6 +209,64 @@ const copy = {
     publishSaveNoResponse: 'Save not confirmed — check manually in the browser window whether the draft was saved',
     publishSelectorMissing: 'The page structure changed and publishing stopped — please report with a screenshot',
     publishNeedCopy: 'Generate the copy and upload media first',
+    // Hotboard (RQ-2026-003 DEV-06)
+    pageTabHotboard: 'Hotboard',
+    hbTitle: 'Car-wrap hotboard', hbConfirm: 'Confirm',
+    hbSubBoard: 'Cases', hbSubKeywords: 'Keywords & expansion', hbSubTags: 'Tags & AI marking', hbSubRules: 'Collection & rules',
+    hbLoading: 'Loading…', hbLoadFailed: 'Failed to load data, retry', hbWriteDone: 'Done', hbWriteFailed: 'Action failed, retry', hbNoRunYet: 'No collection run to show yet',
+    hbFilters: 'Filters', hbAll: 'All', hbWindow: 'Window', hbWindow7d: 'Last 7 days', hbWindow30d: 'Last 30 days', hbWindow90d: 'Last 90 days',
+    hbKeywordFilter: 'Keyword', hbStyle: 'Style', hbColor: 'Color', hbNoteWord: 'Note word', hbCommentWord: 'Comment word',
+    hbSort: 'Sort', hbSortScore: 'Score', hbSortPublishTime: 'Publish time', hbSortCollect: 'Collects', hbSortLike: 'Likes', hbSortComment: 'Comments', hbSortShare: 'Shares',
+    hbOnlyMain: 'Main cases only', hbOnlyTagged: 'Tagged only',
+    hbKpiCases: 'Cases in filter', hbKpiCoverage: 'Run coverage', hbKpiAiTagged: 'AI tagged', hbKpiDuplicates: 'Duplicate groups',
+    hbKpiLowQuality: 'Low quality', hbKpiFailedKeywords: 'Failed keywords', hbKpiLastCollected: 'Last collected', hbKpiNextRun: 'Next run', hbScheduleDisabled: 'Schedule off',
+    hbColTitle: 'Title', hbColAuthor: 'Author', hbColType: 'Type', hbColPublishTime: 'Published', hbColScore: 'Score', hbColInteraction: 'Interactions', hbColTags: 'Tags',
+    hbTypeVideo: 'Video', hbTypeImage: 'Image', hbNoCases: 'No cases match the current filter', hbPrev: 'Prev', hbNext: 'Next', hbTotal: 'Total',
+    hbRunIdle: 'No collection run in progress', hbRunHistory: 'Run history', hbRunStatus: 'Run status', hbRunStarted: 'Started', hbRunFinished: 'Finished',
+    hbRemainingBudget: 'Search budget left', hbRunCollected: 'Collected', hbRunQualified: 'Qualified', hbRunFailedKeywords: 'Failed words', hbRunDetail: 'Run detail',
+    hbRunType: 'Type', hbRunError: 'Error code', hbRunKeywords: 'Keywords', hbRunSuccess: 'Succeeded', hbRunNoResult: 'No result', hbRunDuplicates: 'Deduped',
+    hbRunAiTagged: 'AI tagged', hbRunAiPending: 'AI pending',
+    hbPanelKeywords: 'Keywords', hbPanelCandidates: 'AI expansion review', hbPanelProposals: 'AI label proposals', hbPanelLabels: 'Label library',
+    hbPanelCollect: 'Collection', hbPanelSettings: 'Current settings', hbPanelFailedKeywords: 'Failed keywords', hbPanelKeywordRuns: 'Keyword runs',
+    hbCategory: 'Category', hbCategoryProduct: 'Product', hbCategoryScene: 'Scene', hbStatus: 'Status', hbSource: 'Source',
+    hbStatusActive: 'Active', hbStatusDisabled: 'Disabled', hbStatusRetired: 'Retired',
+    hbSourceBuiltIn: 'Built-in', hbSourceManual: 'Manual', hbSourceAgent: 'Agent',
+    hbPending: 'Pending', hbAccepted: 'Accepted', hbRejected: 'Rejected', hbExpired: 'Expired',
+    hbColKeyword: 'Keyword', hbColActions: 'Actions', hbColPick: 'Pick', hbColScore: 'Score', hbColReason: 'Reason', hbNoKeywords: 'No keywords', hbNoCandidates: 'No candidates',
+    hbPicked: 'Selected', hbAccept: 'Accept', hbReject: 'Reject', hbMerge: 'Merge into label', hbDisable: 'Disable', hbEnable: 'Enable', hbEdit: 'Edit', hbRetire: 'Retire', hbSave: 'Save',
+    hbCreateKeyword: 'Add keyword', hbKeywordPlaceholder: 'Keyword (1-128 chars)', hbConfirmCreateKeyword: 'Add keyword “{keyword}”?',
+    hbConfirmDisableKeyword: 'Disable keyword “{keyword}”? It will no longer be collected.', hbConfirmEnableKeyword: 'Enable keyword “{keyword}”?',
+    hbConfirmAcceptCandidates: 'Accept {count} selected expansion candidates as keywords?', hbConfirmRejectCandidates: 'Reject {count} selected candidates?',
+    hbProposalStatus: 'Proposal', hbProposalAuto: 'Auto-activated', hbProposalMerged: 'Merged',
+    hbColLabel: 'Label', hbColCode: 'Code', hbTagType: 'Dimension', hbColConfidence: 'Confidence', hbColEvidence: 'Evidence',
+    hbStyleType: 'Style', hbColorType: 'Color', hbNoProposals: 'No proposals', hbNoLabels: 'No labels',
+    hbMergeHint: 'Pick a target label below first; merge does nothing without one.',
+    hbMergeTarget: 'Merge target', hbMergeTargetNone: 'Pick a target label',
+    hbConfirmAcceptProposal: 'Accept proposal “{label}” and activate it?', hbConfirmRejectProposal: 'Reject proposal “{label}”?',
+    hbConfirmMergeProposal: 'Merge proposal “{label}” into “{target}”?', hbConfirmRetireLabel: 'Retire label “{label}”? Existing tags are kept.',
+    hbConfirmEnableLabel: 'Re-enable label “{label}”?', hbConfirmUpdateLabel: 'Save edits to label “{label}”?', hbConfirmCreateLabel: 'Create label “{label}”?',
+    hbCodePlaceholder: 'Code (e.g. jingjisa)', hbNamePlaceholder: 'Name', hbDefinitionPlaceholder: 'Definition (optional)', hbCancelEdit: 'Cancel',
+    hbStartIncrement: 'Start incremental run', hbManualHint: 'Starts one incremental run over the active keywords, bounded by the daily search budget; progress shows in the run bar.',
+    hbManualDisabledHint: 'Manual incremental runs are disabled in settings.', hbConfirmRunStart: 'Start one manual incremental run? It is bounded by the daily search budget.',
+    hbSetPublishWindowDays: 'Publish window (days)', hbSetPerKeywordLimit: 'Per-keyword limit', hbSetCommentTopN: 'Comments top N', hbSetCommentMaxPerNote: 'Comments per note',
+    hbSetMinInteraction: 'Min interactions', hbSetDedupThreshold: 'Dedup hamming', hbSetMinValidSample: 'Min valid sample', hbSetSearchBudget: 'Daily search budget',
+    hbSetCommentBudget: 'Daily comment budget', hbSetDetailBudget: 'Per-run detail budget', hbSetScheduleEnabled: 'Scheduled run', hbSetManualIncrement: 'Manual incremental',
+    hbSetCommentSample: 'Comment sampling', hbSetManualCommentDefault: 'Manual runs include comments', hbSetFullScheduleCron: 'Full-schedule cron',
+    hbConfirmSettings: 'Save {count} setting change(s)?', hbSaveSettings: 'Save settings', hbRuleVersion: 'Rule version',
+    hbNoteDetail: 'Case detail', hbCloseDrawer: 'Close', hbNoImages: 'No images', hbImageBroken: 'Image failed to load', hbMetrics: 'Metrics',
+    hbCurrentTags: 'Current tags (pick to correct)', hbUntagged: 'Untagged', hbConfirmTagUpdate: 'Change this case’s style/color tag to “{tag}”?',
+    hbNoteBody: 'Body', hbSimilarNotes: 'Similar notes', hbWordStats: 'Frequent words', hbScore7d: '7d score', hbScore30d: '30d score', hbScore90d: '90d score',
+    // Controlled copy for host error codes mapped via HB_ERROR_KEYS; raw codes never surface.
+    hbErrInvalidArgument: 'Invalid input — check your entries and retry', hbErrNotFound: 'Target not found or removed', hbErrActiveRunExists: 'A collection run is already active — wait for it to finish',
+    hbErrBudgetExhausted: 'Daily collection budget is exhausted — try again tomorrow', hbErrKeywordEmpty: 'No enabled keywords — enable some under Keywords first', hbErrKeywordConflict: 'Keyword already exists or conflicts',
+    hbErrEvidenceInsufficient: 'Insufficient label evidence for AI tagging', hbErrLabelConflict: 'Label code or name conflicts', hbErrAiSchemaInvalid: 'AI returned an unexpected format — treated as failed',
+    hbErrProviderFailed: 'Model service is unavailable — retry later', hbErrInternal: 'Internal server error — retry later', hbErrConfirmation: 'Missing confirmation — submit again', hbErrValidation: 'Validation failed — check your input',
+    hbCandidatesPartial: 'Review finished: {failed}/{total} failed, the rest applied',
+    // Success copy for runWrite successKeys (review MAJOR-A: the whole group was
+    // missing so notices showed raw keys; hbRunStartDone ≠ run-bar label hbRunStarted).
+    hbTagUpdated: 'Tags updated', hbKeywordSaved: 'Keyword saved', hbSettingsSaved: 'Settings saved',
+    hbRunStartDone: 'Incremental run started — see the run bar', hbCandidatesReviewed: 'Candidates reviewed', hbLabelReviewed: 'Label proposals reviewed', hbLabelSaved: 'Label saved',
+    hbCreateLabel: 'Add label', hbDateFrom: 'Candidates from', hbDateTo: 'Candidates to',
   },
 }
 
@@ -1181,7 +1301,8 @@ function Overlay({ t }) {
   const [edited, setEdited] = useState(null)
   const [confirmingRegen, setConfirmingRegen] = useState(false)
   const [copyState, setCopyState] = useState('')
-  // 顶部功能页（阶段 2）：'rewrite' 爆款仿写工作台 | 'accounts' 账号管理。
+  // 顶部功能页（阶段 2）：'rewrite' 爆款仿写工作台 | 'accounts' 账号管理 |
+  // 'hotboard' 车衣爆款看板（RQ-2026-003 DEV-06）。
   const [page, setPage] = useState('rewrite')
   // 账号管理状态机与 Overlay 同生命周期：状态跨页面切换与 overlay 开关保留。
   const accountsHubRef = useRef(null)
@@ -1199,6 +1320,13 @@ function Overlay({ t }) {
     })
   }
   const accountsHub = accountsHubRef.current
+  // 看板状态机同样与 Overlay 同生命周期：筛选草稿与二级页状态跨 Tab/开关保留，
+  // stop 只停轮询不清数据（§13.3 UI 状态要求 1/2/3）。
+  const hotboardHubRef = useRef(null)
+  if (hotboardHubRef.current === null) {
+    hotboardHubRef.current = createHotboardHub({ post: body => post({ ...body }) })
+  }
+  const hotboardHub = hotboardHubRef.current
   const updateEdited = next => setEdited({ ...next, saved: false })
   // 发布面板状态（阶段 3）：发布 run + 受控提示 + 所选账号；账号列表复用账号
   // 管理状态机（同一本地投影，只读 sessionStatus === 'ok' 的账号）。
@@ -1240,6 +1368,12 @@ function Overlay({ t }) {
     if (visible && page === 'accounts') accountsHub.init()
     else accountsHub.stop()
   }, [visible, page, accountsHub])
+  // 看板生命周期：进入时刷新当前页数据并恢复 active run 轮询；离开或关闭 overlay
+  // 时停止全部轮询（已加载数据保留，重新进入从 hub 快照恢复）。
+  useEffect(() => {
+    if (visible && page === 'hotboard') hotboardHub.init()
+    else hotboardHub.stop()
+  }, [visible, page, hotboardHub])
 
   const pickAndUpload = async kind => {
     if (pickingRef.current || busyRef.current || processing) return
@@ -1519,17 +1653,20 @@ function Overlay({ t }) {
         h('div', null, h('h1', { id: 'yxh-title' }, t('title')), h('p', null, t('subtitle'))),
         h('div', { className: 'yxh-header-buttons' },
           h(Tooltip, { label: t('close') }, h('button', { type: 'button', 'aria-label': t('close'), onClick: closeOverlay }, h(IconCloseOutlineRegular, { size: 16 }))))),
-      // 顶部功能 Tab（对齐抖音运营页 ydo-tabs）：爆款仿写工作台 + 账号管理。
+      // 顶部功能 Tab（对齐抖音运营页 ydo-tabs）：爆款仿写工作台 + 账号管理 + 车衣爆款看板。
       h('nav', { className: 'yxh-page-tabs', 'aria-label': t('title') },
         h('button', { type: 'button', 'aria-current': page === 'rewrite' || undefined, onClick: () => setPage('rewrite') }, t('pageTabRewrite')),
-        h('button', { type: 'button', 'aria-current': page === 'accounts' || undefined, onClick: () => setPage('accounts') }, t('pageTabAccounts'))),
+        h('button', { type: 'button', 'aria-current': page === 'accounts' || undefined, onClick: () => setPage('accounts') }, t('pageTabAccounts')),
+        h('button', { type: 'button', 'aria-current': page === 'hotboard' || undefined, onClick: () => setPage('hotboard') }, t('pageTabHotboard'))),
       page === 'accounts'
         ? h(AccountsPage, { hub: accountsHub, t })
-        : h('div', { className: 'yxh-body' },
-          left,
-          h('div', { className: 'yxh-right', 'aria-label': t('result') },
-            h('h2', { className: 'yxh-right-title' }, t('result')),
-            right))),
+        : page === 'hotboard'
+          ? h(HotboardPage, { hub: hotboardHub, t })
+          : h('div', { className: 'yxh-body' },
+            left,
+            h('div', { className: 'yxh-right', 'aria-label': t('result') },
+              h('h2', { className: 'yxh-right-title' }, t('result')),
+              right))),
     confirming ? h('div', { className: 'yxh-confirm-overlay', role: 'dialog', 'aria-modal': true, 'aria-label': t('cancelConfirm') },
       h('div', { className: 'yxh-confirm' },
         h('p', { className: 'yxh-confirm-title' }, t('cancelConfirm')),
@@ -1559,9 +1696,9 @@ const responsiveCss = '.yxh-confirm{min-width:0;width:min(360px,calc(100vw - 32p
 function apply(ctx) {
   ctx.effect(() => ctx.locale.register(NS, copy), 'dofe-yootun-xhs-operation: dictionaries')
   ctx.effect(() => { window.addEventListener(OVERLAY_EVENT, closeOtherOverlay); return () => window.removeEventListener(OVERLAY_EVENT, closeOtherOverlay) }, 'dofe-yootun-xhs-operation: exclusive-overlay')
-  ctx.effect(() => { const style = document.createElement('style'); style.dataset.plugin = '@dofe/dsh-yootun-xhs-operation'; style.textContent = css + responsiveCss; document.head.appendChild(style); return () => style.remove() }, 'dofe-yootun-xhs-operation: styles')
+  ctx.effect(() => { const style = document.createElement('style'); style.dataset.plugin = '@dofe/dsh-yootun-xhs-operation'; style.textContent = css + responsiveCss + hotboardCss; document.head.appendChild(style); return () => style.remove() }, 'dofe-yootun-xhs-operation: styles')
   const t = ctx.locale.bind(NS)
   ctx.slots.inject('sidebar.footer.action', () => ctx.slots.register({ name: 'sidebar.footer.action', id: 'dofe-yootun-xhs-operation', order: 41, inject: () => ({ t }) }, Button))
   ctx.slots.inject('shell.overlay', () => ctx.slots.register({ name: 'shell.overlay', id: 'dofe-yootun-xhs-operation', order: 41, inject: () => ({ t }) }, Overlay))
 }
-module.exports = { apply, inject: ['slots', 'locale'], createTaskMachine, createUploadManager, createAccountsHub }
+module.exports = { apply, inject: ['slots', 'locale'], createTaskMachine, createUploadManager, createAccountsHub, createHotboardHub }

@@ -25,7 +25,7 @@ const TOOL_CALL_TIMEOUT_MS = 60_000
 const MAX_THEME = 500
 const MAX_DIRECTION = 500
 const MAX_MEDIA_URL = 2048
-const MAX_IMAGE_COUNT = 5
+const MAX_IMAGE_COUNT = 9
 const MAX_REF_URL = 2048
 const MAX_REF_TITLE = 200
 const MAX_REF_BODY = 5000
@@ -109,6 +109,9 @@ export function apply(ctx, overrides = {}) {
           if (action === 'collect.status') return send(res, 200, handleCollectStatus(deps, body))
           if (action === 'publish.start') return send(res, 200, await handlePublishStart(ctx, deps, body))
           if (action === 'publish.status') return send(res, 200, handlePublishStatus(deps, body))
+          // 车衣爆款看板（RQ-2026-003 DEV-06）：hotboard.* 与 MCP 工具一一映射，
+          // 统一走白名单 + 参数清洗 + 错误收敛通道（§13.2）。
+          if (action.startsWith('hotboard.')) return await handleHotboard(ctx, body, res, action)
           return send(res, 400, { status: 'error', reason: 'unknown_action' })
         } catch (error) {
           const reason = localErrorCode(error) || safeToolErrorReason(error)
@@ -616,6 +619,427 @@ function projectPublish(run) {
     toast: run.toast,
     error: run.error,
   }
+}
+
+// ---------------------------------------------------------------------------
+// 车衣爆款看板（RQ-2026-003 DEV-06）：hotboard.* action 与 MCP 工具一一映射。
+// Host 必须做（实施文档 §13.2）：action 白名单、body 大小限制（readBody 32KB）、
+// 枚举与分页校验、confirm 校验、UUID/字符串长度校验、错误转换、响应投影、审计
+// 事件。页面不直连 MCP，也不接收凭据、内部地址或 Provider 原文错误。
+// ---------------------------------------------------------------------------
+
+// action → MCP 工具映射（与 server.py 注册名一致）与写操作审计 target。
+const HOTBOARD_ACTIONS = {
+  'hotboard.overview': { tool: 'xhs_operation_hotboard_overview' },
+  'hotboard.noteDetail': { tool: 'xhs_operation_hotboard_note_detail' },
+  'hotboard.noteTagUpdate': { tool: 'xhs_operation_hotboard_note_tag_update', write: true, target: 'note_tag', op: 'note_tag_update' },
+  'hotboard.keywords': { tool: 'xhs_operation_hotboard_keywords_list' },
+  'hotboard.keywordSave': { tool: 'xhs_operation_hotboard_keyword_save', write: true, target: 'keyword', op: 'keyword_save' },
+  'hotboard.settings': { tool: 'xhs_operation_hotboard_settings_get' },
+  'hotboard.settingsUpdate': { tool: 'xhs_operation_hotboard_settings_update', write: true, target: 'settings', op: 'settings_update' },
+  'hotboard.runStart': { tool: 'xhs_operation_hotboard_run_start', write: true, target: 'run', op: 'run_start', category: 'create' },
+  'hotboard.runGet': { tool: 'xhs_operation_hotboard_run_get' },
+  'hotboard.candidates': { tool: 'xhs_operation_hotboard_candidates_list' },
+  'hotboard.candidateReview': { tool: 'xhs_operation_hotboard_candidate_review', write: true, target: 'candidate', op: 'candidate_review' },
+  'hotboard.labels': { tool: 'xhs_operation_hotboard_labels_list' },
+  'hotboard.labelReview': { tool: 'xhs_operation_hotboard_label_review', write: true, target: 'label', op: 'label_review' },
+  'hotboard.labelSave': { tool: 'xhs_operation_hotboard_label_save', write: true, target: 'label', op: 'label_save' },
+}
+
+// MCP 对外稳定错误码白名单（实施文档 §12.4 + 通用确认/校验码）；其余收敛 INTERNAL。
+const HOTBOARD_ERROR_CODES = new Set([
+  'XHS_HOTBOARD_INVALID_ARGUMENT',
+  'XHS_HOTBOARD_NOT_FOUND',
+  'XHS_HOTBOARD_ACTIVE_RUN_EXISTS',
+  'XHS_HOTBOARD_BUDGET_EXHAUSTED',
+  'XHS_HOTBOARD_KEYWORD_EMPTY',
+  'XHS_HOTBOARD_KEYWORD_CONFLICT',
+  'XHS_HOTBOARD_EVIDENCE_INSUFFICIENT',
+  'XHS_HOTBOARD_LABEL_CONFLICT',
+  'XHS_HOTBOARD_AI_SCHEMA_INVALID',
+  'XHS_HOTBOARD_PROVIDER_FAILED',
+  'XHS_HOTBOARD_INTERNAL_ERROR',
+  'CONFIRMATION_REQUIRED',
+  'VALIDATION_ERROR',
+])
+
+// 枚举白名单（与 server.py Literal 一致）。
+const HOTBOARD_ENUMS = {
+  window: new Set(['7d', '30d', '90d']),
+  sort: new Set(['score', 'publishTime', 'collect', 'like', 'comment', 'share']),
+  keywordCategory: new Set(['product', 'scene']),
+  keywordStatus: new Set(['active', 'disabled']),
+  keywordSource: new Set(['built_in', 'manual', 'agent']),
+  candidateStatus: new Set(['pending', 'accepted', 'rejected', 'expired']),
+  labelStatus: new Set(['active', 'retired']),
+  labelSource: new Set(['business_seed', 'ai', 'manual']),
+  proposalStatus: new Set(['pending', 'auto_activated', 'accepted', 'rejected', 'merged', 'expired']),
+  tagType: new Set(['style', 'color']),
+  keywordAction: new Set(['create', 'update', 'enable', 'disable']),
+  candidateAction: new Set(['accepted', 'rejected']),
+  labelReviewAction: new Set(['accept', 'reject', 'merge', 'enable', 'retire']),
+  runType: new Set(['incremental']),
+}
+
+// settings 受控字段白名单（hotboard_mcp._SETTING_COLUMN_BY_FIELD 同口径）；
+// host 只做键白名单与值类型粗校验，值域/cron 深校验在 tools 侧。
+const HOTBOARD_SETTINGS_BOOL = new Set(['scheduleEnabled', 'manualIncrementEnabled', 'commentSampleEnabled', 'manualCommentDefaultEnabled'])
+const HOTBOARD_SETTINGS_NUMBER = new Set(['publishWindowDays', 'perKeywordLimit', 'commentTopN', 'commentMaxPerNote', 'minInteractionTotal', 'dedupHammingThreshold', 'minValidSample', 'searchMaxCallsPerDay', 'commentMaxCallsPerDay', 'detailMaxCallsPerRun'])
+const HOTBOARD_SETTINGS_KEYS = new Set([...HOTBOARD_SETTINGS_BOOL, ...HOTBOARD_SETTINGS_NUMBER, 'fullScheduleCron'])
+
+// ID 宽松校验：长度 + 字符集（完整 UUID 语义由 tools 侧兜底）。noteId 是平台
+// 笔记 id（非 UUID），单独走 noteId 通道。
+function cleanHotboardId(value, max = 64) {
+  const id = cleanString(value, max)
+  if (!id || !/^[0-9a-f][0-9a-f-]*$/i.test(id)) return null
+  return id
+}
+
+function hotboardPage(body, key) {
+  if (body[key] === undefined || body[key] === null) return undefined
+  const num = Number(body[key])
+  if (!Number.isInteger(num) || num < 1 || num > 100) return null
+  return num
+}
+
+// 分页/枚举/字符串参数清洗：返回 args 或 null（null = 校验失败，400 invalid_argument）。
+function hotboardArgs(action, body) {
+  const args = {}
+  const page = hotboardPage(body, 'page')
+  if (page === null) return null
+  if (page !== undefined) args.page = page
+  const pageSize = hotboardPage(body, 'pageSize')
+  if (pageSize === null) return null
+  if (pageSize !== undefined) args.pageSize = pageSize
+  const enumOr = (key, set) => {
+    if (body[key] === undefined || body[key] === null || body[key] === '') return undefined
+    const value = cleanString(body[key], 64)
+    return set.has(value) ? value : null
+  }
+  const strOr = (key, max) => {
+    if (body[key] === undefined || body[key] === null) return undefined
+    const value = cleanString(body[key], max)
+    if (!value) return null
+    args[key] = value
+    return value
+  }
+  switch (action) {
+    case 'hotboard.overview': {
+      const window = enumOr('window', HOTBOARD_ENUMS.window)
+      if (window === null) return null
+      args.window = window || '30d'
+      const sort = enumOr('sort', HOTBOARD_ENUMS.sort)
+      if (sort === null) return null
+      if (sort) args.sort = sort
+      const style = strOr('style', 64)
+      if (style === null) return null
+      const color = strOr('color', 64)
+      if (color === null) return null
+      if (strOr('noteWord', 64) === null) return null
+      if (strOr('commentWord', 64) === null) return null
+      if (strOr('keyword', 128) === null) return null
+      for (const key of ['scoreMin', 'scoreMax']) {
+        if (body[key] === undefined || body[key] === null || body[key] === '') continue
+        const num = Number(body[key])
+        if (!Number.isFinite(num) || num < 0 || num > 100) return null
+        args[key] = num
+      }
+      if (body.onlyMain !== undefined) args.onlyMain = body.onlyMain === true
+      if (body.onlyTagged !== undefined) args.onlyTagged = body.onlyTagged === true
+      return args
+    }
+    case 'hotboard.noteDetail': {
+      const noteId = cleanString(body.noteId, 128)
+      if (!noteId) return null
+      args.noteId = noteId
+      return args
+    }
+    case 'hotboard.noteTagUpdate': {
+      const noteId = cleanString(body.noteId, 128)
+      if (!noteId) return null
+      args.noteId = noteId
+      const tagType = enumOr('tagType', HOTBOARD_ENUMS.tagType)
+      if (!tagType) return null
+      args.tagType = tagType
+      const labelCode = cleanString(body.labelCode, 64)
+      if (!labelCode) return null
+      args.labelCode = labelCode
+      return args
+    }
+    case 'hotboard.keywords': {
+      const category = enumOr('category', HOTBOARD_ENUMS.keywordCategory)
+      if (category === null) return null
+      if (category) args.category = category
+      const status = enumOr('status', HOTBOARD_ENUMS.keywordStatus)
+      if (status === null) return null
+      if (status) args.status = status
+      const source = enumOr('source', HOTBOARD_ENUMS.keywordSource)
+      if (source === null) return null
+      if (source) args.source = source
+      if (strOr('keyword', 128) === null) return null
+      return args
+    }
+    case 'hotboard.keywordSave': {
+      // 子动作走 op 字段（body.action 是宿主路由名，不能复用）。
+      const act = enumOr('op', HOTBOARD_ENUMS.keywordAction)
+      if (!act) return null
+      args.action = act
+      if (body.keywordId !== undefined && body.keywordId !== null) {
+        const keywordId = cleanHotboardId(body.keywordId)
+        if (!keywordId) return null
+        args.keywordId = keywordId
+      }
+      if (body.keyword !== undefined && body.keyword !== null) {
+        const keyword = cleanString(body.keyword, 128)
+        if (!keyword) return null
+        args.keyword = keyword
+      }
+      const category = enumOr('category', HOTBOARD_ENUMS.keywordCategory)
+      if (category === null) return null
+      if (category) args.category = category
+      return args
+    }
+    case 'hotboard.settings': {
+      // 规则配置只读（OPEN-12 修复）：tools 侧零参工具，空 args 直达（此前缺 case
+      // 走 default 返 null，规则页加载稳定报 XHS_HOTBOARD_INVALID_ARGUMENT）。
+      return args
+    }
+    case 'hotboard.settingsUpdate': {
+      const settings = body.settings
+      if (!settings || typeof settings !== 'object' || Array.isArray(settings)) return null
+      const keys = Object.keys(settings)
+      if (!keys.length || keys.length > HOTBOARD_SETTINGS_KEYS.size) return null
+      for (const key of keys) {
+        if (!HOTBOARD_SETTINGS_KEYS.has(key)) return null
+        const value = settings[key]
+        if (key === 'fullScheduleCron') {
+          if (typeof value !== 'string' || !value.trim() || value.length > 64) return null
+        } else if (HOTBOARD_SETTINGS_BOOL.has(key)) {
+          if (typeof value !== 'boolean') return null
+        } else if (!Number.isFinite(Number(value)) || typeof value === 'boolean') return null
+      }
+      args.settings = settings
+      return args
+    }
+    case 'hotboard.runStart': {
+      const runType = enumOr('runType', HOTBOARD_ENUMS.runType)
+      if (runType === null) return null
+      args.runType = runType || 'incremental'
+      if (body.includeComments !== undefined) args.includeComments = body.includeComments === true
+      return args
+    }
+    case 'hotboard.runGet': {
+      if (body.runId !== undefined && body.runId !== null) {
+        const runId = cleanHotboardId(body.runId)
+        if (!runId) return null
+        args.runId = runId
+      }
+      return args
+    }
+    case 'hotboard.candidates': {
+      const status = enumOr('status', HOTBOARD_ENUMS.candidateStatus)
+      if (status === null) return null
+      if (status) args.status = status
+      const category = enumOr('category', HOTBOARD_ENUMS.keywordCategory)
+      if (category === null) return null
+      if (category) args.category = category
+      if (strOr('keyword', 128) === null) return null
+      // dateRange=[from,to]（YYYY-MM-DD）透传，对应 tools 侧 generatedAt 过滤
+      // （review MINOR-3）；格式收窄为纯日期，完整 ISO 时间不放行。
+      if (body.dateRange !== undefined) {
+        const range = Array.isArray(body.dateRange) && body.dateRange.length === 2
+          ? body.dateRange.map(item => String(item ?? ''))
+          : null
+        if (!range || range.some(item => !/^\d{4}-\d{2}-\d{2}$/.test(item))) return null
+        args.dateRange = range
+      }
+      return args
+    }
+    case 'hotboard.candidateReview': {
+      // 子动作走 op 字段（body.action 是宿主路由名，不能复用）。
+      const act = enumOr('op', HOTBOARD_ENUMS.candidateAction)
+      if (!act) return null
+      args.action = act
+      if (!Array.isArray(body.candidateIds) || !body.candidateIds.length || body.candidateIds.length > 50) return null
+      const ids = body.candidateIds.map(item => cleanHotboardId(item))
+      if (ids.some(id => !id)) return null
+      args.candidateIds = ids
+      return args
+    }
+    case 'hotboard.labels': {
+      const tagType = enumOr('tagType', HOTBOARD_ENUMS.tagType)
+      if (tagType === null) return null
+      if (tagType) args.tagType = tagType
+      const status = enumOr('status', HOTBOARD_ENUMS.labelStatus)
+      if (status === null) return null
+      if (status) args.status = status
+      const source = enumOr('source', HOTBOARD_ENUMS.labelSource)
+      if (source === null) return null
+      if (source) args.source = source
+      const proposalStatus = enumOr('proposalStatus', HOTBOARD_ENUMS.proposalStatus)
+      if (proposalStatus === null) return null
+      if (proposalStatus) args.proposalStatus = proposalStatus
+      if (strOr('keyword', 128) === null) return null
+      return args
+    }
+    case 'hotboard.labelReview': {
+      // 子动作走 op 字段（body.action 是宿主路由名，不能复用）。
+      const act = enumOr('op', HOTBOARD_ENUMS.labelReviewAction)
+      if (!act) return null
+      args.action = act
+      for (const key of ['proposalId', 'labelId', 'targetLabelId']) {
+        if (body[key] === undefined || body[key] === null || body[key] === '') continue
+        const id = cleanHotboardId(body[key])
+        if (!id) return null
+        args[key] = id
+      }
+      return args
+    }
+    case 'hotboard.labelSave': {
+      if (body.labelId !== undefined && body.labelId !== null) {
+        const labelId = cleanHotboardId(body.labelId)
+        if (!labelId) return null
+        args.labelId = labelId
+      }
+      const tagType = enumOr('tagType', HOTBOARD_ENUMS.tagType)
+      if (tagType === null) return null
+      if (tagType) args.tagType = tagType
+      if (body.code !== undefined && body.code !== null) {
+        const code = cleanString(body.code, 64)
+        if (!code) return null
+        args.code = code
+      }
+      if (body.name !== undefined && body.name !== null) {
+        const name = cleanString(body.name, 128)
+        if (!name) return null
+        args.name = name
+      }
+      if (body.aliases !== undefined && body.aliases !== null) {
+        if (!Array.isArray(body.aliases) || body.aliases.length > 20) return null
+        const aliases = body.aliases.map(item => cleanString(item, 128)).filter(Boolean)
+        if (aliases.length !== body.aliases.length) return null
+        args.aliases = aliases
+      }
+      if (body.definition !== undefined && body.definition !== null) {
+        const definition = cleanString(body.definition, 2000)
+        if (!definition) return null
+        args.definition = definition
+      }
+      return args
+    }
+    default:
+      return null
+  }
+}
+
+// MCP 错误信封 → 受控 reason（白名单外一律收敛 INTERNAL，不透传原文）。
+function hotboardErrorReason(payload) {
+  const err = payload && typeof payload === 'object' ? payload.error : null
+  if (!err || typeof err !== 'object') return null
+  const code = typeof err.code === 'string' ? err.code : ''
+  return HOTBOARD_ERROR_CODES.has(code) ? code : 'XHS_HOTBOARD_INTERNAL_ERROR'
+}
+
+async function handleHotboard(ctx, body, res, action) {
+  const spec = HOTBOARD_ACTIONS[action]
+  if (!spec) return send(res, 400, { status: 'error', reason: 'unknown_action' })
+  const schema = findTool(ctx, spec.tool)
+  if (!schema) return send(res, 200, { status: 'unavailable', reason: 'xhs_operation_tool_unavailable' })
+  // 写操作：confirm 必须显式 true，幂等键必填（确定性校验前置，失败不烧键）。
+  let args = null
+  let idempotencyKey = null
+  if (spec.write) {
+    if (body.confirm !== true) return send(res, 400, { status: 'error', reason: 'confirmation_required' })
+    idempotencyKey = cleanString(body.idempotencyKey, MAX_IDEMPOTENCY_KEY)
+    if (!idempotencyKey) return send(res, 400, { status: 'error', reason: 'idempotency_key_required' })
+  }
+  args = hotboardArgs(action, body)
+  if (args === null) return send(res, 200, { status: 'error', reason: 'XHS_HOTBOARD_INVALID_ARGUMENT' })
+  if (spec.write) { args.confirm = true; args.idempotencyKey = idempotencyKey }
+
+  let result
+  try {
+    result = await ctx.tools.execute({ callId: `yootun-xhs-${action}-${Date.now()}`, name: schema.name, arguments: args, signal: AbortSignal.timeout(TOOL_CALL_TIMEOUT_MS) })
+  } catch (error) {
+    const reason = safeHotboardToolError(error)
+    ctx.logger?.warn?.('yootun xhs hotboard failed: %s', reason)
+    await recordHotboardAudit(ctx, spec, action, idempotencyKey, 'failed', reason, null)
+    return send(res, 200, { status: 'error', reason })
+  }
+  const payload = parseResult(result)
+  const errorReason = hotboardErrorReason(payload)
+  if (errorReason) {
+    await recordHotboardAudit(ctx, spec, action, idempotencyKey, 'failed', errorReason, null)
+    return send(res, 200, { status: 'error', reason: errorReason })
+  }
+  if (spec.write) {
+    // 写投影：顶层 {ok, updatedCount, idempotentReplay, changed?/run?...} 原样平铺，
+    // 页面只读这些受控字段（§12.5 写契约）。
+    const runId = payload?.run?.runId ? String(payload.run.runId).slice(0, 64) : null
+    await recordHotboardAudit(ctx, spec, action, idempotencyKey, 'succeeded', null, runId, payload)
+    return send(res, 200, { status: 'ready', ...projectHotboardWrite(payload) })
+  }
+  // 读投影：{data, meta} 白名单透传；无信封时按原对象兜底（settings_get 等）。
+  const data = payload && typeof payload === 'object' && 'data' in payload ? payload.data : payload
+  const meta = payload && typeof payload === 'object' && 'meta' in payload ? payload.meta : null
+  return send(res, 200, { status: 'ready', data, meta })
+}
+
+// 写响应只保留受控字段（不透传服务端内部诊断字段）。
+function projectHotboardWrite(payload) {
+  const out = {}
+  for (const key of ['ok', 'updatedCount', 'idempotentReplay', 'changed', 'conflictWithActive', 'created']) {
+    if (payload && payload[key] !== undefined) out[key] = payload[key]
+  }
+  // 行级失败披露（批量裁决逐条 results，review MAJOR-3）：只放行
+  // candidateId/ok/errorCode 三键，截断 50 条防大响应。
+  if (payload && Array.isArray(payload.results) && payload.results.length) {
+    out.results = payload.results.slice(0, 50).map(item => ({
+      candidateId: cleanString(item?.candidateId, 64) || null,
+      ok: item?.ok === true,
+      errorCode: cleanString(item?.errorCode, 64) || null,
+    }))
+  }
+  if (payload && payload.run && typeof payload.run === 'object') {
+    out.run = { runId: String(payload.run.runId || '').slice(0, 64), status: cleanString(payload.run.status, 32) || null }
+  }
+  return out
+}
+
+async function recordHotboardAudit(ctx, spec, action, idempotencyKey, outcome, errorCode, runId, payload) {
+  // 写操作审计（读操作不审计，对齐现有 collect/publish 模式）；target id 用服务端
+  // 返回的业务 id（run），否则退化为幂等键（不透明标识，非敏感）。
+  if (!spec.write) return
+  const changes = []
+  if (Array.isArray(payload?.changed)) {
+    for (const item of payload.changed.slice(0, 20)) {
+      if (item && typeof item.field === 'string') changes.push({ field: item.field.slice(0, 64), after: item.newValue })
+    }
+  }
+  if (typeof payload?.updatedCount === 'number') changes.push({ field: 'updatedCount', after: payload.updatedCount })
+  if (typeof payload?.idempotentReplay === 'boolean') changes.push({ field: 'idempotentReplay', after: payload.idempotentReplay })
+  await recordAudit(ctx, {
+    clientEventId: eventUuid(`xhs:hb:${action}:${idempotencyKey || 'n/a'}:${outcome}`),
+    traceId: `xhs:hotboard:${runId || idempotencyKey || action}`,
+    actionCode: `xhs.hotboard.${spec.op || action}`,
+    category: spec.category || 'execute',
+    source: { pluginId: '@dofe/dsh-yootun-xhs-operation', pluginVersion: '0.1.0', surface: 'human_ui' },
+    target: { type: `xhs_hotboard_${spec.target}`, id: runId || idempotencyKey || action },
+    outcome,
+    changes: changes.length ? changes : [],
+    effects: [],
+    ...(errorCode ? { errorCode: errorCode.toLowerCase().slice(0, 80) } : {}),
+  })
+}
+
+function safeHotboardToolError(error) {
+  const message = error && typeof error.message === 'string' ? error.message : ''
+  try {
+    const payload = JSON.parse(message)
+    const reason = hotboardErrorReason(payload)
+    if (reason) return reason
+  } catch {}
+  return HOTBOARD_ERROR_CODES.has(message) ? message : 'XHS_HOTBOARD_INTERNAL_ERROR'
 }
 
 async function recordCancelledAudit(ctx, taskId, status) {

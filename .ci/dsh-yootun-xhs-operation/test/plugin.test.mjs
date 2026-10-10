@@ -64,7 +64,7 @@ test('registers menu at order 41 and renders the three-region overlay', async ()
     'errorMessage: res.errorMessage',
   ]) assert.match(source, new RegExp(escape(token), 'u'))
   // 互斥与上限：最多 5 张、视频单选、提交只读当前 Tab
-  assert.match(source, /const MAX_IMAGES = 5/)
+  assert.match(source, /const MAX_IMAGES = 9/)
   assert.match(source, /mediaType === 'images'/)
   assert.match(source, /videoUrl/)
   assert.match(source, /\.yxh-tabs button\[aria-current="true"\]/)
@@ -84,7 +84,7 @@ test('upload experience: per-asset state machine, progress overlay and submit in
   // per-asset 状态机 + 350ms 轮询；全局 uploading flag 已移除。
   assert.match(source, /function createUploadManager/)
   assert.match(source, /const UPLOAD_POLL_INTERVAL_MS = 350/)
-  assert.match(source, /module\.exports = \{ apply, inject: \['slots', 'locale'\], createTaskMachine, createUploadManager, createAccountsHub \}/)
+  assert.match(source, /module\.exports = \{ apply, inject: \['slots', 'locale'\], createTaskMachine, createUploadManager, createAccountsHub, createHotboardHub \}/)
   assert.doesNotMatch(source, /setUploading|UPLOAD_SEND/)
   // 已选即预览：本地媒体路由 + 视频首帧定格 + 角标。
   assert.match(source, /localPreviewUrl/)
@@ -265,4 +265,94 @@ test('publish host pipeline: publisher state machine, mutex and humanized delays
   assert.ok(!/patchright|stealth|AutomationControlled/i.test(publisherCode), '不引入任何反检测内核')
   // 视频完成信号走保守候选（S-10 待真机校准），不使用「标题框出现」。
   assert.match(publisherSource, /VIDEO_UPLOAD_DONE_SELECTORS/)
+})
+
+// RQ-2026-003 DEV-06：车衣爆款看板接入（顶级第三 Tab + 热板 UI + 宿主 14 工具转发）。
+test('hotboard client wiring: top tab, hub lifecycle and css injection', async () => {
+  const source = await readFile(new URL('src/client.js', root), 'utf8')
+  // 顶级 Tab 第三个入口 + hub 工厂与生命周期：仅看板页激活时 init，切走即 stop（停轮询不清数据）。
+  assert.match(source, /pageTabHotboard: '车衣爆款看板'/)
+  assert.match(source, /h\('button', \{ type: 'button', 'aria-current': page === 'hotboard' \|\| undefined, onClick: \(\) => setPage\('hotboard'\) \}, t\('pageTabHotboard'\)\)/)
+  assert.match(source, /hotboardHubRef\.current = createHotboardHub\(\{ post: body => post\(\{ \.\.\.body \}\) \}\)/)
+  assert.match(source, /if \(visible && page === 'hotboard'\) hotboardHub\.init\(\)/)
+  assert.match(source, /else hotboardHub\.stop\(\)/)
+  // 渲染分支：accounts 优先、hotboard 次之、默认爆款仿写三列网格。
+  assert.match(source, /page === 'accounts'\s*\n\s*\? h\(AccountsPage, \{ hub: accountsHub, t \}\)/)
+  assert.match(source, /: page === 'hotboard'\s*\n\s*\? h\(HotboardPage, \{ hub: hotboardHub, t \}\)/)
+  // 看板样式随主题注入，与主样式同一 textContent（DSW token，无独立主题色）。
+  assert.match(source, /css \+ responsiveCss \+ hotboardCss/)
+  // 导出 hub 工厂供沙箱测试复用。
+  assert.match(source, /createAccountsHub, createHotboardHub \}/)
+})
+
+test('hotboard host pipeline: allowlist, confirmation, idempotency, error envelope and audit', async () => {
+  const indexSource = await readFile(new URL('index.js', root), 'utf8')
+  // 前缀分发在 unknown_action 之前；14 个 action 一一映射 MCP 工具（白名单，无通配转发）。
+  assert.match(indexSource, /action\.startsWith\('hotboard\.'\)\) return await handleHotboard\(ctx, body, res, action\)/)
+  for (const tool of [
+    'xhs_operation_hotboard_overview',
+    'xhs_operation_hotboard_note_detail',
+    'xhs_operation_hotboard_note_tag_update',
+    'xhs_operation_hotboard_keywords_list',
+    'xhs_operation_hotboard_keyword_save',
+    'xhs_operation_hotboard_settings_get',
+    'xhs_operation_hotboard_settings_update',
+    'xhs_operation_hotboard_run_start',
+    'xhs_operation_hotboard_run_get',
+    'xhs_operation_hotboard_candidates_list',
+    'xhs_operation_hotboard_candidate_review',
+    'xhs_operation_hotboard_labels_list',
+    'xhs_operation_hotboard_label_review',
+    'xhs_operation_hotboard_label_save',
+  ]) assert.match(indexSource, new RegExp(escape(`'${tool}'`), 'u'))
+  // OPEN-12：settings 只读分支必须存在且直达 return args（缺 case 或退化为 return null
+  // 都会走 default 返 null → 规则页加载稳定报 XHS_HOTBOARD_INVALID_ARGUMENT）。
+  assert.match(indexSource, /case 'hotboard\.settings': \{[^}]*?return args\n    \}/)
+  // 写操作双闸：confirm 必须显式 true；幂等键必填（确定性校验前置，失败不烧键）。
+  assert.match(indexSource, /if \(body\.confirm !== true\) return send\(res, 400, \{ status: 'error', reason: 'confirmation_required' \}\)/)
+  assert.match(indexSource, /reason: 'idempotency_key_required'/)
+  // 工具未登记（Jenkins 未部署）降级 unavailable，不 500。
+  assert.match(indexSource, /const spec = HOTBOARD_ACTIONS\[action\]/)
+  assert.match(indexSource, /status: 'unavailable', reason: 'xhs_operation_tool_unavailable' \}/)
+  // 参数清洗失败返回受控错误码（不透传 tools 内部信息）。
+  assert.match(indexSource, /reason: 'XHS_HOTBOARD_INVALID_ARGUMENT'/)
+  // 错误信封收敛：白名单外一律 INTERNAL；信封错误码提取（JSON.parse message）。
+  assert.match(indexSource, /function safeHotboardToolError\(error\)/)
+  assert.match(indexSource, /return HOTBOARD_ERROR_CODES\.has\(code\) \? code : 'XHS_HOTBOARD_INTERNAL_ERROR'/)
+  assert.match(indexSource, /return HOTBOARD_ERROR_CODES\.has\(message\) \? message : 'XHS_HOTBOARD_INTERNAL_ERROR'/)
+  // 写投影：只放行受控字段（不透传服务端全量 payload）。
+  assert.match(indexSource, /function projectHotboardWrite\(payload\)/)
+  // 审计：actionCode 用 op 段、outcome 与错误码落审计。
+  assert.match(indexSource, /actionCode: `xhs\.hotboard\.\$\{spec\.op \|\| action\}`/)
+  assert.match(indexSource, /await recordHotboardAudit\(ctx, spec, action, idempotencyKey, 'failed', reason, null\)/)
+  assert.match(indexSource, /await recordHotboardAudit\(ctx, spec, action, idempotencyKey, 'succeeded', null, runId, payload\)/)
+})
+
+test('hotboard ui: four sub pages, run polling and display constraints', async () => {
+  const source = await readFile(new URL('src/hotboard-ui.js', root), 'utf8')
+  // 四个二级页签（案例看板/关键词与扩词/标签与 AI 标记/采集与规则）。
+  for (const token of ["{ id: 'board', key: 'hbSubBoard' }", "{ id: 'keywords', key: 'hbSubKeywords' }", "{ id: 'tags', key: 'hbSubTags' }", "{ id: 'rules', key: 'hbSubRules' }"]) {
+    assert.match(source, new RegExp(escape(token), 'u'))
+  }
+  // run 轮询与 tools 同口径：活跃态集合 + 2s 轮询 + 终态停轮询；请求超时 30s。
+  assert.match(source, /const ACTIVE_RUN_STATUSES = new Set\(\['queued', 'collecting', 'deduplicating', 'scoring', 'tagging'\]\)/)
+  assert.match(source, /const RUN_POLL_INTERVAL_MS = 2000/)
+  assert.match(source, /const HB_REQUEST_TIMEOUT_MS = 30000/)
+  // 二级页切换保留筛选草稿（filters/pages 用默认工厂初始化进 hub 快照，切页不重置）。
+  assert.match(source, /filters: defaultFilters\(\)/)
+  assert.match(source, /pages: defaultPage\(\)/)
+  // OPEN-11 B1：默认窗口 90d（搜索召回偏存量笔记 30d 常空，用户可手动切 7d/30d）。
+  assert.match(source, /board: \{ window: '90d', keyword: '', style: '', color: '', noteWord: '', commentWord: '', scoreMin: '', scoreMax: '', sort: 'score', onlyMain: true, onlyTagged: false \}/)
+  assert.match(source, /settingsDirty:/)
+  // 图片加载失败占位（onError 记入 broken 集合），不无限重试。
+  assert.match(source, /onError: \(\) => markBroken\(url\)/)
+  assert.match(source, /yxh-hb-image-broken/)
+  // 确认弹窗 + 待办数刷新（写操作后重拉待办徽标）。
+  assert.match(source, /function ConfirmDialog/)
+  assert.match(source, /async function refreshTodos\(\)/)
+  // 展示约束（实施文档 §13.3）：不显示真实互动率；无 V7/蒲公英入口。
+  // 先剥离注释再断言：约束说明文字本身允许写在注释里，代码与文案中不允许。
+  const hbCode = source.replace(/\/\/[^\n]*/g, '')
+  assert.doesNotMatch(hbCode, /interactionRate|互动率|ctr|cvr/i)
+  assert.doesNotMatch(hbCode, /蒲公英|\bV7\b/)
 })

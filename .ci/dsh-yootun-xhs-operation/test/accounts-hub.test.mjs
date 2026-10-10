@@ -3,18 +3,33 @@ import { readFile } from 'node:fs/promises'
 import test from 'node:test'
 
 // 以受控沙箱加载 src/client.js，取回 createAccountsHub（纯逻辑，无 React/浏览器依赖）。
-function loadClient(source) {
+// hotboard-ui（RQ-2026-003 DEV-06）按构建语义前置内联：剥 export 后与 client.js
+// 同一函数作用域，import 行剥离（build.mjs 同法）。
+function loadClient(source, hotboardSource) {
+  // 与 scripts/build.mjs 同法：剥 import 行；hotboard-ui 剥 export 与顶部
+  // HotReact require / h 解构两行（内联后 h 由 client.js 声明，避免重复声明）。
+  source = source.replace(/^import[^\n]*from '\.\/hotboard-ui\.js'\n/m, '')
+  const hotboard = hotboardSource
+    .replace(/^const HotReact = require\('react'\)\n/m, '')
+    .replace(/^const \{ createElement: h \} = HotReact\n/m, '')
+    .replace(/^export /gm, '')
+  source = `${hotboard}\n${source}`
   const module = { exports: {} }
   const require = name => {
     if (name === 'react') return { createElement: () => ({}), useEffect: () => {}, useState: () => [undefined, () => {}], useSyncExternalStore: () => undefined, useRef: () => ({ current: null }) }
     if (name === '@deepseek-ai/dsh-client-ui-primitives') return { IconCloseOutlineRegular: {}, IconEditOutlineRegular: {}, MarkdownText: {}, Tooltip: {} }
     throw new Error(`unexpected require: ${name}`)
   }
-  new Function('require', 'module', 'exports', source)(require, module, module.exports)
+  const window = {}
+  const document = {}
+  new Function('require', 'module', 'exports', 'window', 'document', source)(require, module, module.exports, window, document)
   return module.exports
 }
 
-const { createAccountsHub } = loadClient(await readFile(new URL('../src/client.js', import.meta.url), 'utf8'))
+const { createAccountsHub } = loadClient(
+  await readFile(new URL('../src/client.js', import.meta.url), 'utf8'),
+  await readFile(new URL('../src/hotboard-ui.js', import.meta.url), 'utf8'),
+)
 
 // createAccountsHub 纯逻辑状态机：依赖注入 listAccounts/beginLogin/loginStatus/
 // probe/removeLocal/startCollect/collectStatus + 假时钟，驱动登录/采集轮询与终态收敛。

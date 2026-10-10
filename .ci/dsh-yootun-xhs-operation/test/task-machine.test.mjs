@@ -4,7 +4,17 @@ import test from 'node:test'
 
 // 以受控沙箱加载 src/client.js，取回 createTaskMachine（纯逻辑，无 React/浏览器依赖）。
 // 顶层的 react / primitives 只做占位，因为本测试只驱动状态机、不渲染组件。
-function loadClient(source) {
+// hotboard-ui（RQ-2026-003 DEV-06）按构建语义前置内联：剥 export 后与 client.js
+// 同一函数作用域，import 行剥离（build.mjs 同法）。
+function loadClient(source, hotboardSource) {
+  // 与 scripts/build.mjs 同法：剥 import 行；hotboard-ui 剥 export 与顶部
+  // HotReact require / h 解构两行（内联后 h 由 client.js 声明，避免重复声明）。
+  source = source.replace(/^import[^\n]*from '\.\/hotboard-ui\.js'\n/m, '')
+  const hotboard = hotboardSource
+    .replace(/^const HotReact = require\('react'\)\n/m, '')
+    .replace(/^const \{ createElement: h \} = HotReact\n/m, '')
+    .replace(/^export /gm, '')
+  source = `${hotboard}\n${source}`
   const module = { exports: {} }
   const require = name => {
     if (name === 'react') return { createElement: () => ({}), useEffect: () => {}, useState: () => [undefined, () => {}], useSyncExternalStore: () => undefined }
@@ -17,7 +27,10 @@ function loadClient(source) {
   return module.exports
 }
 
-const { createTaskMachine } = loadClient(await readFile(new URL('../src/client.js', import.meta.url), 'utf8'))
+const { createTaskMachine } = loadClient(
+  await readFile(new URL('../src/client.js', import.meta.url), 'utf8'),
+  await readFile(new URL('../src/hotboard-ui.js', import.meta.url), 'utf8'),
+)
 
 const VERSIONS = [{ version: 'A', title: 'a', body: '**a**', tags: [] }, { version: 'B', title: 'b', body: 'b', tags: [] }, { version: 'C', title: 'c', body: 'c', tags: [] }]
 
