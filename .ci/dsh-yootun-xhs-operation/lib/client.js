@@ -623,7 +623,7 @@ window.__ModuleLoader__.load({
 
       const kwRows = kwData?.keywords || []
       const pendingCandidates = (candData?.candidates || []).filter(item => item.status === 'pending')
-      const [picked, setPicked] = HotReact.useState(() => new Set())
+      const [picked, setPicked] = React.useState(() => new Set())
       const togglePick = id => setPicked(prev => {
         const next = new Set(prev)
         if (next.has(id)) next.delete(id)
@@ -698,8 +698,8 @@ window.__ModuleLoader__.load({
     // 关键词新增/编辑行内表单（草稿保留在组件 state，页签切换后重置可接受；
     // 筛选草稿在 hub，满足 §13.3 第 1 条）。
     function KeywordEditor({ hub, t, disabled }) {
-      const [text, setText] = HotReact.useState('')
-      const [category, setCategory] = HotReact.useState('product')
+      const [text, setText] = React.useState('')
+      const [category, setCategory] = React.useState('product')
       const submit = () => {
         const keyword = text.trim()
         if (!keyword) return
@@ -723,8 +723,8 @@ window.__ModuleLoader__.load({
       const labels = data?.labels || []
       const proposals = data?.proposals || []
       const pendingProposals = proposals.filter(item => item.status === 'pending')
-      const [mergeTarget, setMergeTarget] = HotReact.useState('')
-      const [editor, setEditor] = HotReact.useState(null) // {labelId?, tagType, code, name, definition}
+      const [mergeTarget, setMergeTarget] = React.useState('')
+      const [editor, setEditor] = React.useState(null) // {labelId?, tagType, code, name, definition}
 
       return h('div', { className: 'yxh-hb-tags' },
         h('section', { className: 'yxh-hb-panel' },
@@ -795,9 +795,9 @@ window.__ModuleLoader__.load({
     // 标签新增/编辑表单：新增带 code/tagType；编辑不改 code/tagType（服务端同约束）。
     function LabelEditor({ hub, t, disabled, editor, labels, onClose }) {
       const isEdit = Boolean(editor.labelId)
-      const [name, setName] = HotReact.useState(editor.name || '')
-      const [code, setCode] = HotReact.useState(editor.code || '')
-      const [definition, setDefinition] = HotReact.useState(editor.definition || '')
+      const [name, setName] = React.useState(editor.name || '')
+      const [code, setCode] = React.useState(editor.code || '')
+      const [definition, setDefinition] = React.useState(editor.definition || '')
       const submit = () => {
         const payload = { labelId: editor.labelId, name: name.trim(), definition: definition.trim() || undefined }
         if (!isEdit) { payload.tagType = editor.tagType; payload.code = code.trim() }
@@ -890,7 +890,7 @@ window.__ModuleLoader__.load({
     // 案例详情抽屉：图片（失败占位）+ 指标 + 当前标签纠错 + 相似笔记 + 高频词。
     function NoteDrawer({ state, hub, t }) {
       // hooks 必须无条件调用：useState 在条件 return 之前（review MAJOR-2）。
-      const [broken, setBroken] = HotReact.useState(() => new Set())
+      const [broken, setBroken] = React.useState(() => new Set())
       const drawer = state.noteDrawer
       if (!drawer) return null
       const data = drawer.data
@@ -1014,7 +1014,7 @@ window.__ModuleLoader__.load({
     }
 
     function HotboardPage({ hub, t }) {
-      const state = HotReact.useSyncExternalStore(hub.subscribe, hub.get, hub.get)
+      const state = React.useSyncExternalStore(hub.subscribe, hub.get, hub.get)
       const todoBadge = sub => {
         if (sub === 'keywords' && state.todos.candidates !== null && state.todos.candidates > 0) return state.todos.candidates
         if (sub === 'tags' && state.todos.proposals !== null && state.todos.proposals > 0) return state.todos.proposals

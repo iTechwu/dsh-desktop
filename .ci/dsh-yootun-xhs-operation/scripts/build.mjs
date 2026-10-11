@@ -11,12 +11,14 @@ if (!hotboardUiImport.test(source)) throw new Error('build: hotboard-ui import n
 source = source.replace(hotboardUiImport, '')
 const strip = text => text.replace(/^export (?=(function|const|let))/gm, '').trimEnd()
 // hotboard-ui 顶部的 React require 与解构由构建剥离：内联后同一工厂作用域，
-// React / createElement:h 由 client.js 顶部声明提供；hotboard-ui 内的 hooks 全部
-// 以 React.xxx 形式使用，不与 client.js 顶部解构的 const 绑定重复声明。
+// React / createElement:h 由 client.js 顶部声明提供；hotboard-ui 正文中的
+// HotReact.xxx hooks 引用统一重写为 React.xxx，不与 client.js 顶部解构的 const
+// 绑定重复声明。
 const hotboardUi = strip(
   (await readFile(new URL('src/hotboard-ui.js', root), 'utf8'))
     .replace(/^const HotReact = require\('react'\)\n/m, '')
-    .replace(/^const \{ createElement: h \} = HotReact\n/m, ''),
+    .replace(/^const \{ createElement: h \} = HotReact\n/m, '')
+    .replace(/HotReact\./g, 'React.'),
 )
 const body = [hotboardUi, source.trimEnd()].join('\n\n')
 
