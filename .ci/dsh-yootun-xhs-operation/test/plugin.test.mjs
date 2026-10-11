@@ -185,9 +185,9 @@ test('accounts page: hub state machine, page tabs and local-only aggregation', a
   assert.match(source, /yxh-avatar-fallback/)
 })
 
-test('publish panel: one-click draft publishing with controlled copy and polling', async () => {
+test('publish panel: open creator center with selected account, controlled copy and polling', async () => {
   const clientSource = await readFile(new URL('src/client.js', root), 'utf8')
-  // 发布面板组件与结果区集成（单版编辑卡 → 复制/保存 → 发布面板）。
+  // 发布面板组件与结果区集成（单版编辑卡 → 复制全文 → 发布面板）。
   assert.match(clientSource, /function PublishPanel/)
   assert.match(clientSource, /h\(PublishPanel, \{/)
   assert.match(clientSource, /publishPanel/)
@@ -197,21 +197,18 @@ test('publish panel: one-click draft publishing with controlled copy and polling
   assert.match(clientSource, /const PUBLISH_POLL_INTERVAL_MS = 2000/)
   assert.match(clientSource, /action: 'publish\.status'/)
   assert.match(clientSource, /action: 'publish\.start'/)
-  // 发布请求固定 private（防误发布保险），素材与账号必带。
-  assert.match(clientSource, /visibility: 'private'/)
+  // 降级契约：只带所选账号 + target + 幂等键；内容交付走「复制全文」手动粘贴。
   assert.match(clientSource, /accountId: effectivePublishAccount/)
-  // 素材本地原文件路径优先（review M1）：path 直传 + url 兜底，不在页面侧只传 TOS URL。
-  assert.match(clientSource, /path: asset\.path \|\| null, url: asset\.url/)
-  // 终态失败按受控错误码映射具体原因（review MINOR-1），未映射才落通用文案。
+  assert.match(clientSource, /target: tab === 'video' \? 'video' : 'image'/)
+  assert.doesNotMatch(clientSource, /visibility: 'private'/, '自动存草稿已移除，无 visibility 契约')
+  assert.match(clientSource, /publishStart: '打开创作者中心'/)
+  // 终态失败按受控错误码映射具体原因，未映射才落通用文案。
   assert.match(clientSource, /accountErrorKey\(publish\?\.error\) \|\| 'publishFailed'/)
-  // 步骤进度映射（dev-implementation §2.1：prepare/open/upload/fill/saveDraft/done）。
+  // 步骤进度映射（降级后：prepare/open/done）。
   assert.match(clientSource, /PUBLISH_STEP_KEYS = \{/)
-  assert.match(clientSource, /publishStepSaveDraft/)
-  // 发布失败受控中文文案：不暴露内部错误码（UPLOAD_TIMEOUT 等映射进错误码表）。
-  assert.match(clientSource, /UPLOAD_TIMEOUT: 'publishUploadTimeout'/)
-  assert.match(clientSource, /SAVE_DRAFT_NO_RESPONSE: 'publishSaveNoResponse'/)
-  assert.match(clientSource, /SELECTOR_MISSING: 'publishSelectorMissing'/)
+  assert.doesNotMatch(clientSource, /publishStepSaveDraft/, '自动存草稿步骤已移除')
   assert.match(clientSource, /PUBLISH_FAILED: 'publishFailed'/)
+  assert.doesNotMatch(clientSource, /UPLOAD_TIMEOUT: 'publishUploadTimeout'/, '自动上传已移除')
   assert.match(clientSource, /publishDone/)
 })
 
@@ -224,47 +221,34 @@ test('publish host pipeline: publisher state machine, mutex and humanized delays
   assert.match(indexSource, /const publishRuns = new Map\(\)/)
   assert.match(indexSource, /const publishIdempotency = new Map\(\)/)
   assert.match(indexSource, /reason: 'PROFILE_BUSY' \}/)
-  // visibility 契约固定 private：显式传其他值即拒绝（本流程只存草稿，无公开发布路径）。
-  assert.match(indexSource, /invalid_visibility/)
-  assert.match(indexSource, /material_conflict/)
+  // 降级契约：target 枚举校验；title/body/素材/visibility 校验随自动录入一并移除。
+  assert.match(indexSource, /invalid_target/)
+  assert.doesNotMatch(indexSource, /invalid_visibility/, 'visibility 契约已随存草稿移除')
+  assert.doesNotMatch(indexSource, /material_conflict/, '素材冲突校验已随自动上传移除')
+  assert.doesNotMatch(indexSource, /MATERIAL_SOURCE_REJECTED/, '素材 SSRF 校验已随自动下载移除')
+  // 幂等键仍必填（打开浏览器是重副作用）。
+  assert.match(indexSource, /idempotency_key_required/)
   // 审计 actionCode 与 run 投影。
   assert.match(indexSource, /xhs\.publish\.run/)
   assert.match(indexSource, /function projectPublish/)
-  // publisher 模块：拟人化延时表 + CDP pierce + 浏览器保持打开。
+  // publisher 模块（降级版）：只打开发布页；按所选账号 Profile 打开 + 会话判定 + 验证码检测。
   const publisherSource = await readFile(new URL('src/publisher.js', root), 'utf8')
-  assert.match(publisherSource, /export const HUMANIZED_DELAYS = \{/)
-  assert.match(publisherSource, /uploadToTitle: \[2000, 4000\]/, '素材上传完成→聚焦标题 2–4s（README §5.3 重点缓冲）')
-  assert.match(publisherSource, /beforeSaveDraft: \[2000, 4000\]/)
-  assert.match(publisherSource, /titleChar: \[80, 160\]/)
-  assert.match(publisherSource, /bodyChar: \[50, 120\]/)
-  assert.match(publisherSource, /bodySentencePause: \[300, 800\]/)
-  // closed Shadow DOM 穿透：CDP pierce + performSearch「暂存离开」+ 0.40 坐标（stage0 §2.3）。
-  assert.match(publisherSource, /DOM\.getDocument/, 'pierce 参数见下一断言')
-  assert.match(publisherSource, /pierce: true/)
-  assert.match(publisherSource, /DOM\.performSearch/)
-  assert.match(publisherSource, /暂存离开/)
-  assert.match(publisherSource, /hostBox\.x \+ hostBox\.w \* 0\.40/)
-  // toast 捕获：MutationObserver + 15s 窗口；未捕获 → SAVE_DRAFT_NO_RESPONSE。
-  assert.match(publisherSource, /MutationObserver/)
-  assert.match(publisherSource, /SAVE_DRAFT_NO_RESPONSE/)
-  // 标题 20 字截断；话题 ≤10；正文清空三连；可见性强制「仅自己可见」。
-  assert.match(publisherSource, /TITLE_MAX_CHARS = 20/)
-  assert.match(publisherSource, /TAGS_MAX = 10/)
-  assert.match(publisherSource, /slice\(0, TITLE_MAX_CHARS\)/)
-  assert.match(publisherSource, /slice\(0, TAGS_MAX\)/)
-  assert.match(publisherSource, /'Backspace'/)
-  assert.match(publisherSource, /'Control\+a'/)
-  assert.match(publisherSource, /'Delete'/)
-  assert.match(publisherSource, /仅自己可见/)
-  // 验证码不绕过（红线）；浏览器保持打开（无 context.close）。
+  assert.match(publisherSource, /publishUrl/)
+  assert.match(publisherSource, /ensureProfileDir\(accountId/, '按所选账号打开对应持久 Profile')
+  assert.match(publisherSource, /confirmSessionFn\(/, '会话判定与 probe 同口径（confirmSessionOnPage）')
+  assert.match(publisherSource, /SESSION_EXPIRED/)
   assert.match(publisherSource, /CAPTCHA_DETECTED/)
-  assert.ok(!/\.close\(\)/.test(publisherSource.replace(/\/\/[^\n]*/g, '')), 'publisher 主流程绝不自动关闭浏览器（由用户关闭）')
-  // 无反检测内核（红线）：仅 --no-sandbox/--disable-dev-shm-usage（复用 chrome.js LAUNCH_ARGS）。
-  // 先剥离注释再检查：红线说明文字本身允许出现在注释里，代码中不允许。
+  assert.match(publisherSource, /target must be image or video/)
+  // 降级红线：发布链路无自动上传/录入/存草稿，无 CDP 穿透，无拟人化延时表。
+  // 先剥离注释再检查：说明文字允许出现在注释里，代码中不允许。
   const publisherCode = publisherSource.replace(/\/\/[^\n]*/g, '')
+  assert.ok(!/setInputFiles/.test(publisherCode), '不做自动素材上传')
+  assert.ok(!/keyboard\./.test(publisherCode), '不做自动键盘录入')
+  assert.ok(!/newCDPSession|DOM\.performSearch/.test(publisherCode), '不使用 CDP（「暂存离开」穿透随存草稿移除）')
+  assert.ok(!/HUMANIZED_DELAYS/.test(publisherCode), '拟人化延时表已随自动录入移除')
   assert.ok(!/patchright|stealth|AutomationControlled/i.test(publisherCode), '不引入任何反检测内核')
-  // 视频完成信号走保守候选（S-10 待真机校准），不使用「标题框出现」。
-  assert.match(publisherSource, /VIDEO_UPLOAD_DONE_SELECTORS/)
+  // 验证码不绕过（红线）；浏览器保持打开（无 context.close，由用户关闭）。
+  assert.ok(!/\.close\(\)/.test(publisherCode), 'publisher 主流程绝不自动关闭浏览器（由用户关闭）')
 })
 
 // RQ-2026-003 DEV-06：车衣爆款看板接入（顶级第三 Tab + 热板 UI + 宿主 14 工具转发）。

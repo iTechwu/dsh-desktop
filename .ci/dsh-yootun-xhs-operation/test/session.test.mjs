@@ -216,7 +216,7 @@ test('loginWithQrCode aborts with PROFILE_BUSY when the resolved account is busy
 })
 
 // ---------------------------------------------------------------------------
-// probeSession：失效判定（stage0 §2.5）与无头复用 Profile
+// probeSession：失效判定（stage0 §2.5）与有头复用 Profile
 // ---------------------------------------------------------------------------
 
 function makeProbeFixtures(t, { loginUrl, loginBoxVisible, profile }) {

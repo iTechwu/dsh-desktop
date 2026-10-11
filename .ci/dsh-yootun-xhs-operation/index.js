@@ -9,7 +9,7 @@ import { createHash, randomUUID } from 'node:crypto'
 
 import { browserStatus as chromeBrowserStatus } from './src/chrome.js'
 import { collectNotes, summarizeSnapshot } from './src/collector.js'
-import { isAllowedMaterialUrl, publishDraft } from './src/publisher.js'
+import { publishDraft } from './src/publisher.js'
 import {
   acquireProfileLock,
   loginWithQrCode,
@@ -36,19 +36,16 @@ const MAX_TASK_ID = 64
 const MAX_ACCOUNT_ID = 128
 
 // 设备端浏览器/会话操作的受控错误码（dev-implementation §2.1）；其余一律收敛。
+// 发布降级后，自动上传/录入/存草稿路径的四个错误码不再有产生源，随之从白名单移除。
 const LOCAL_ERROR_CODES = new Set([
   'GOOGLE_CHROME_MISSING',
   'PLAYWRIGHT_DRIVER_MISSING',
   'SESSION_EXPIRED',
   'LOGIN_TIMEOUT',
   'CAPTCHA_DETECTED',
-  'UPLOAD_TIMEOUT',
-  'SAVE_DRAFT_NO_RESPONSE',
-  'SELECTOR_MISSING',
   'COLLECT_FAILED',
   'PROFILE_BUSY',
   'PUBLISH_FAILED',
-  'MATERIAL_SOURCE_REJECTED',
   'IDEMPOTENCY_KEY_REQUIRED',
   'PROBE_FAILED',
   'LOGIN_FAILED',
@@ -67,7 +64,8 @@ const auditedTerminalTasks = new Set()
 // 登录与采集是后台长动作（等人扫码 / 翻页采集）：状态保存在宿主进程内，页面轮询查询。
 const loginRuns = new Map()
 const collectRuns = new Map()
-// 发布同样是后台长动作（有头拟人化录入，分钟级）：run 状态页面 2s 轮询查询。
+// 发布（打开创作者中心发布页，降级版）是后台动作：有头开浏览器 + 会话校验，
+// 数秒级完成；浏览器保持打开由用户接管发布，run 状态页面 2s 轮询查询。
 const publishRuns = new Map()
 // 创建型操作幂等（dev-implementation §2.1）：idempotencyKey → collectId/publishId 重放既有 run。
 const collectIdempotency = new Map()
@@ -498,53 +496,29 @@ function projectCollect(run) {
   }
 }
 
-// 发布入参上限：标题/正文按 publisher 内 20 字截断与编辑器上限留余量，这里只挡超大输入。
-const MAX_PUBLISH_TEXT = 5000
-const MAX_TAG = 50
-
-function cleanTags(value) {
-  // tags 非必填（纯正文无话题也可发布）：未传 → 空数组；显式传非数组 → 拒绝。
-  if (value === undefined || value === null) return []
-  if (!Array.isArray(value)) return null
-  return value.map(item => cleanString(item, MAX_TAG)).filter(Boolean).slice(0, 10)
-}
+// 发布降级契约（publish.start）：只收 accountId + idempotencyKey + target。
+// 内容不再经宿主录入——用户在发布页手动粘贴文案、上传素材、手动发布；
+// title/body/tags/素材/visibility 字段即使传入也被忽略。
 
 async function handlePublishStart(ctx, deps, body) {
   const accountId = cleanString(body.accountId, MAX_ACCOUNT_ID)
   if (!accountId) return { status: 'error', reason: 'account_id_required' }
-  const title = cleanString(body.title, MAX_PUBLISH_TEXT)
-  if (!title) return { status: 'error', reason: 'title_required' }
-  const content = cleanString(body.body, MAX_PUBLISH_TEXT)
-  if (!content) return { status: 'error', reason: 'body_required' }
-  const tags = cleanTags(body.tags)
-  if (tags === null) return { status: 'error', reason: 'invalid_tags' }
-  // visibility 契约固定 'private'（dev-implementation §2.1）：显式传入其他值即拒绝，
-  // 本流程只保存草稿，不存在公开发布路径。
-  if (body.visibility !== undefined && body.visibility !== 'private') {
-    return { status: 'error', reason: 'invalid_visibility' }
-  }
+  // 发布页目标 Tab（图文/视频）：默认 image，仅接受这两个枚举。
+  const target = body.target === undefined || body.target === null ? 'image' : body.target
+  if (target !== 'image' && target !== 'video') return { status: 'error', reason: 'invalid_target' }
   const idempotencyKey = cleanString(body.idempotencyKey, MAX_IDEMPOTENCY_KEY)
-  // 幂等键必填（审查 P2）：发布是重副作用操作（开浏览器/写草稿）。
+  // 幂等键必填（审查 P2）：打开浏览器是重副作用操作。
   if (!idempotencyKey) return { status: 'error', reason: 'idempotency_key_required' }
-  if (idempotencyKey && publishIdempotency.has(idempotencyKey)) {
-    // 幂等重放：返回既有 run 的当前状态（不重复打开浏览器/重复录入）。
+  if (publishIdempotency.has(idempotencyKey)) {
+    // 幂等重放：返回既有 run 的当前状态（不重复打开浏览器）。
     const run = publishRuns.get(publishIdempotency.get(idempotencyKey))
     if (run) return { status: 'started', publishId: run.publishId, publish: projectPublish(run) }
-  }
-  const videoEntry = cleanMaterialEntry(body.videoUrl)
-  const isVideo = Boolean(videoEntry)
-  const imageUrls = cleanMaterialList(body.imageUrls) || []
-  if (!isVideo && !imageUrls.length) return { status: 'error', reason: 'material_required' }
-  if (isVideo && imageUrls.length) return { status: 'error', reason: 'material_conflict' }
-  // SSRF 防护（审查 P2）：内网/明文 URL 在 host 层即拒绝（浏览器保持打开之前）。
-  if (videoEntry === 'rejected' || imageUrls === 'rejected') {
-    return { status: 'error', reason: 'MATERIAL_SOURCE_REJECTED' }
   }
   // Profile 互斥：发布（有头）与登录/probe/采集互斥（dev-implementation §2.1）。
   const release = acquireProfileLock(accountId)
   if (!release) return { status: 'error', reason: 'PROFILE_BUSY' }
   const publishId = `pub-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-  const run = { publishId, accountId, status: 'running', step: 'prepare', toast: null, error: null, release }
+  const run = { publishId, accountId, status: 'running', step: 'prepare', error: null, release }
   publishRuns.set(publishId, run)
   if (idempotencyKey) publishIdempotency.set(idempotencyKey, publishId)
   await recordAudit(ctx, {
@@ -553,17 +527,14 @@ async function handlePublishStart(ctx, deps, body) {
     source: { pluginId: '@dofe/dsh-yootun-xhs-operation', pluginVersion: '0.1.0', surface: 'human_ui' },
     target: { type: 'xhs_publish_run', id: publishId }, outcome: 'accepted', changes: [], effects: [],
   })
-  // 发布是后台长动作：立即返回 started。完成后浏览器保持打开（README §5.3）——
+  // 打开发布页是后台动作：立即返回 started。完成后浏览器保持打开（README §5.3）——
   // 互斥锁随浏览器窗口生命周期：onContext 挂钩后由 context close 释放；
   // 早期失败（context 未创建）由 finally 释放（审查 P1）。
   let releaseProfile = release
   let contextHooked = false
   deps.publish({
     accountId,
-    title,
-    body: content,
-    tags,
-    ...(isVideo ? { videoUrl: videoEntry } : { imageUrls }),
+    target,
     root: deps.root,
     onStep: step => {
       if (publishRuns.get(publishId) !== run) return
@@ -576,10 +547,9 @@ async function handlePublishStart(ctx, deps, body) {
       context.once('close', () => releaseProfile())
     },
   })
-    .then(async result => {
+    .then(async () => {
       run.status = 'completed'
       run.step = 'done'
-      run.toast = String(result && result.toast ? result.toast : '').slice(0, 60) || null
       await recordAudit(ctx, {
         clientEventId: eventUuid(`xhs:publish:${publishId}:completed`), traceId: `xhs:publish:${accountId}`,
         actionCode: 'xhs.publish.run', category: 'execute',
@@ -616,7 +586,6 @@ function projectPublish(run) {
     accountId: run.accountId,
     publishStatus: run.status,
     step: run.step,
-    toast: run.toast,
     error: run.error,
   }
 }
@@ -1203,25 +1172,6 @@ function cleanImageUrls(value) {
   if (!Array.isArray(value)) return null
   const urls = value.map(item => cleanMediaUrl(item)).filter(Boolean).slice(0, MAX_IMAGE_COUNT)
   return urls.length ? urls : null
-}
-// 发布素材条目（阶段 3，review M1）：{path,url} 对象 = 本地原文件优先、URL 下载兜底；
-// 纯字符串（url 或本地路径）保持兼容。仅 publish.start 使用，create 路由仍只收字符串 URL。
-function cleanMaterialEntry(value) {
-  if (typeof value === 'string') return cleanMediaUrl(value) || null
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
-  const path = typeof value.path === 'string' ? value.path.trim().slice(0, MAX_MEDIA_URL) : ''
-  const url = typeof value.url === 'string' ? value.url.trim().slice(0, MAX_MEDIA_URL) : ''
-  if (!path && !url) return null
-  // SSRF 防护（审查 P2）：URL 仅接受 https 公网地址，host 层提前拒绝（不必等 publisher）。
-  if (url && !isAllowedMaterialUrl(url)) return 'rejected'
-  return { ...(path ? { path } : {}), ...(url ? { url } : {}) }
-}
-function cleanMaterialList(value) {
-  if (!Array.isArray(value)) return null
-  const entries = value.map(cleanMaterialEntry)
-  if (entries.includes('rejected')) return 'rejected'
-  const valid = entries.filter(Boolean).slice(0, MAX_IMAGE_COUNT)
-  return valid.length ? valid : null
 }
 function firstString(...values) { for (const value of values) if (typeof value === 'string' && value) return value; return null }
 function numberOrNull(value) { return typeof value === 'number' && Number.isFinite(value) ? value : null }

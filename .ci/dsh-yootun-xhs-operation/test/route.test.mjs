@@ -455,7 +455,8 @@ test('collect.start returns PROFILE_BUSY while a login for the same account is w
 })
 
 // ---------------------------------------------------------------------------
-// publish.start / publish.status（阶段 3）：后台 run + 幂等 + Profile 互斥矩阵
+// publish.start / publish.status（发布降级版）：打开创作者中心发布页的后台 run +
+// 幂等 + Profile 互斥矩阵；契约只收 accountId + idempotencyKey + target。
 // ---------------------------------------------------------------------------
 
 test('publish.start runs in background, honors idempotency and reports completion', async () => {
@@ -464,16 +465,16 @@ test('publish.start runs in background, honors idempotency and reports completio
   const publish = () => new Promise(resolve => { resolvePublish = resolve })
   const { route } = makeCtx(async () => ({}), SCHEMAS, events, { publish })
   const started = await invoke(route, {
-    action: 'publish.start', accountId: 'acc-8', title: '标题', body: '正文', tags: ['标签一'],
-    imageUrls: ['https://example.com/a.jpg'], visibility: 'private', idempotencyKey: 'k-pub-1',
+    action: 'publish.start', accountId: 'acc-8', target: 'image', idempotencyKey: 'k-pub-1',
+    // 降级前字段（title/body/tags/素材/visibility）允许传入但被忽略，不再必需。
+    title: '标题', body: '正文', tags: ['标签一'], imageUrls: ['https://example.com/a.jpg'], visibility: 'private',
   })
   assert.equal(started.body.status, 'started')
   assert.ok(started.body.publishId)
   assert.equal(started.body.publish.publishStatus, 'running')
   assert.equal(started.body.publish.step, 'prepare')
   const replay = await invoke(route, {
-    action: 'publish.start', accountId: 'acc-8', title: '标题', body: '正文', tags: [],
-    imageUrls: ['https://example.com/a.jpg'], idempotencyKey: 'k-pub-1',
+    action: 'publish.start', accountId: 'acc-8', idempotencyKey: 'k-pub-1',
   })
   assert.equal(replay.body.publishId, started.body.publishId, '幂等重放返回既有 publishId')
   // 发布运行中：同账号 probe 与 collect 均 PROFILE_BUSY（互斥矩阵）
@@ -483,86 +484,126 @@ test('publish.start runs in background, honors idempotency and reports completio
   assert.equal(busyCollect.body.reason, 'PROFILE_BUSY', 'publish 运行中 collect.start → PROFILE_BUSY')
   const running = await invoke(route, { action: 'publish.status', publishId: started.body.publishId })
   assert.equal(running.body.publish.publishStatus, 'running')
-  resolvePublish({ status: 'completed', toast: '保存成功' })
+  resolvePublish({ status: 'completed' })
   await new Promise(resolve => setTimeout(resolve, 0))
   const done = await invoke(route, { action: 'publish.status', publishId: started.body.publishId })
   assert.equal(done.body.publish.publishStatus, 'completed')
   assert.equal(done.body.publish.step, 'done')
-  assert.equal(done.body.publish.toast, '保存成功')
+  assert.equal(done.body.publish.toast, undefined, '降级后无保存裁决，toast 字段移除')
   assert.ok(events.some(event => event.actionCode === 'xhs.publish.run' && event.outcome === 'succeeded'))
   // 释放后同账号可再次发起浏览器操作
   const after = await invoke(route, { action: 'account.probe', accountId: 'acc-8' })
   assert.notEqual(after.body.reason, 'PROFILE_BUSY', 'run 结束释放 Profile')
 })
 
-test('publish.start maps the video material and rejects conflicting inputs', async () => {
-  const publish = async () => ({ status: 'completed', toast: '保存成功' })
+test('publish.start validates the downgraded contract and passes target through', async () => {
+  const captured = []
+  const publish = async options => { captured.push(options); return { status: 'completed' } }
   const { route } = makeCtx(async () => ({}), SCHEMAS, [], { publish })
+  const noAccount = await invoke(route, { action: 'publish.start', idempotencyKey: 'k-pub-a' })
+  assert.equal(noAccount.body.reason, 'account_id_required')
+  const noKey = await invoke(route, { action: 'publish.start', accountId: 'acc-v' })
+  assert.equal(noKey.body.reason, 'idempotency_key_required', '幂等键仍必填（打开浏览器是重副作用）')
+  const badTarget = await invoke(route, {
+    action: 'publish.start', accountId: 'acc-v', target: 'menu', idempotencyKey: 'k-pub-b',
+  })
+  assert.equal(badTarget.body.reason, 'invalid_target', 'target 仅接受 image|video')
+  // 视频 target：透传给 publisher 直达视频发布页。
   const video = await invoke(route, {
-    action: 'publish.start', accountId: 'acc-v', title: '标题', body: '正文',
-    videoUrl: 'https://example.com/v.mp4', idempotencyKey: 'k-pub-video',
+    action: 'publish.start', accountId: 'acc-v', target: 'video', idempotencyKey: 'k-pub-c',
   })
   assert.equal(video.body.status, 'started')
-  const conflict = await invoke(route, {
-    action: 'publish.start', accountId: 'acc-v', title: '标题', body: '正文',
-    videoUrl: 'https://example.com/v.mp4', imageUrls: ['https://example.com/a.jpg'], idempotencyKey: 'k-pub-x1',
-  })
-  assert.equal(conflict.body.reason, 'material_conflict', '图文素材与视频互斥')
-  const missing = await invoke(route, {
-    action: 'publish.start', accountId: 'acc-v', title: '标题', body: '正文', idempotencyKey: 'k-pub-x2',
-  })
-  assert.equal(missing.body.reason, 'material_required', '缺素材即拒绝')
-  const publicDenied = await invoke(route, {
-    action: 'publish.start', accountId: 'acc-v', title: '标题', body: '正文',
-    imageUrls: ['https://example.com/a.jpg'], visibility: 'public', idempotencyKey: 'k-pub-x3',
-  })
-  assert.equal(publicDenied.body.reason, 'invalid_visibility', 'visibility 固定 private，非 private 显式拒绝')
-  const noTitle = await invoke(route, { action: 'publish.start', accountId: 'acc-v', body: '正文', imageUrls: ['https://example.com/a.jpg'] })
-  assert.equal(noTitle.body.reason, 'title_required')
-})
-
-test('publish.start passes {path,url} material entries through for local-first resolution', async () => {
-  const captured = []
-  const publish = async options => { captured.push(options); return { status: 'completed', toast: '保存成功' } }
-  const { route } = makeCtx(async () => ({}), SCHEMAS, [], { publish })
-  // 对象形态（review M1）：本地原文件路径优先、URL 下载兜底；宿主原样透传给 publisher。
-  const started = await invoke(route, {
-    action: 'publish.start', accountId: 'acc-m', title: '标题', body: '正文',
-    imageUrls: [{ path: '/tmp/local/a.png', url: 'https://example.com/a.jpg' }], idempotencyKey: 'k-pub-obj',
-  })
-  assert.equal(started.body.status, 'started')
-  assert.equal(captured[0].imageUrls[0].path, '/tmp/local/a.png', '图片对象素材 path 透传（本地优先）')
-  assert.equal(captured[0].imageUrls[0].url, 'https://example.com/a.jpg', '图片对象素材 url 兜底透传')
+  assert.equal(captured[0].target, 'video')
+  assert.equal(captured[0].accountId, 'acc-v')
   // 等 run 终态微任务释放 Profile 锁（同账号互斥）。
   await new Promise(resolve => setTimeout(resolve, 0))
-  // 视频对象形态：Windows 盘符路径同样透传（win32 兼容）。
-  const videoStarted = await invoke(route, {
-    action: 'publish.start', accountId: 'acc-m', title: '标题', body: '正文',
-    videoUrl: { path: 'C:\\media\\v.mp4', url: 'https://example.com/v.mp4' }, idempotencyKey: 'k-pub-obj2',
+  // 缺省 target 默认 image；不再要求 title/body/素材（内容改由用户手动粘贴/上传）。
+  const minimal = await invoke(route, {
+    action: 'publish.start', accountId: 'acc-v', idempotencyKey: 'k-pub-d',
   })
-  assert.equal(videoStarted.body.status, 'started')
-  assert.equal(captured[1].videoUrl.path, 'C:\\media\\v.mp4', '视频对象素材盘符路径透传')
+  assert.equal(minimal.body.status, 'started')
+  assert.equal(captured[1].target, 'image', 'target 缺省为 image')
+  assert.equal(captured[1].title, undefined, '降级契约不再向 publisher 传 title')
+  assert.equal(captured[1].imageUrls, undefined, '降级契约不再向 publisher 传素材')
 })
 
-test('publish failure surfaces controlled error codes and releases the profile', async () => {
+test('publish early failure (context never created) releases the profile via finally', async () => {
+  // 早期失败：chromeFactory 启动前/抛错，onContext 从未挂上——锁由 finally 释放。
   const publish = async () => {
-    const error = new Error('save toast not captured')
-    error.code = 'SAVE_DRAFT_NO_RESPONSE'
+    const error = new Error('login page detected on publish open')
+    error.code = 'SESSION_EXPIRED'
     throw error
   }
   const events = []
   const { route } = makeCtx(async () => ({}), SCHEMAS, events, { publish })
   const started = await invoke(route, {
-    action: 'publish.start', accountId: 'acc-9', title: '标题', body: '正文',
-    imageUrls: ['https://example.com/a.jpg'], idempotencyKey: 'k-pub-fail',
+    action: 'publish.start', accountId: 'acc-9', idempotencyKey: 'k-pub-fail',
   })
   await new Promise(resolve => setTimeout(resolve, 0))
   const done = await invoke(route, { action: 'publish.status', publishId: started.body.publishId })
   assert.equal(done.body.publish.publishStatus, 'failed')
-  assert.equal(done.body.publish.error, 'SAVE_DRAFT_NO_RESPONSE', '只透出受控错误码')
+  assert.equal(done.body.publish.error, 'SESSION_EXPIRED', '受控错误码原样透出（会话过期）')
   assert.ok(events.some(event => event.actionCode === 'xhs.publish.run' && event.outcome === 'failed'))
   const after = await invoke(route, { action: 'account.probe', accountId: 'acc-9' })
-  assert.notEqual(after.body.reason, 'PROFILE_BUSY', '失败同样释放 Profile（浏览器保持打开，但 run 已结束）')
+  assert.notEqual(after.body.reason, 'PROFILE_BUSY', '早期失败（无窗口）锁由 finally 释放')
+})
+
+test('publish failure after the window opened keeps the profile locked until the user closes it', async () => {
+  // 真实 SESSION_EXPIRED 路径：context 已创建并挂钩 onContext，浏览器保持打开——
+  // 锁必须保持到用户关窗（context close），期间同账号一切浏览器操作 PROFILE_BUSY。
+  let closeWindow = () => {}
+  const publish = async options => {
+    options.onContext({ once: (event, cb) => { if (event === 'close') closeWindow = cb } })
+    const error = new Error('login page detected on publish open')
+    error.code = 'SESSION_EXPIRED'
+    throw error
+  }
+  const { route } = makeCtx(async () => ({}), SCHEMAS, [], { publish })
+  await invoke(route, { action: 'publish.start', accountId: 'acc-w', idempotencyKey: 'k-pub-win' })
+  await new Promise(resolve => setTimeout(resolve, 0))
+  const busy = await invoke(route, { action: 'publish.start', accountId: 'acc-w', idempotencyKey: 'k-pub-win2' })
+  assert.equal(busy.body.reason, 'PROFILE_BUSY', 'run 失败但窗口未关 → 同账号仍 PROFILE_BUSY')
+  const busyProbe = await invoke(route, { action: 'account.probe', accountId: 'acc-w' })
+  assert.equal(busyProbe.body.reason, 'PROFILE_BUSY', '窗口未关时 probe 同样被互斥')
+  closeWindow() // 用户关闭 Chrome 窗口 → context 'close' 事件 → 释放锁
+  const after = await invoke(route, { action: 'account.probe', accountId: 'acc-w' })
+  assert.notEqual(after.body.reason, 'PROFILE_BUSY', '用户关窗后锁释放，同账号可再次操作')
+})
+
+test('publish allows two different accounts to open in parallel', async () => {
+  // 每账号一把锁：A 窗口未关（run 挂起）不影响 B 打开各自的创作者中心。
+  let resolveA
+  const pendingContexts = []
+  const publish = options => {
+    options.onContext({ once: (event, cb) => { if (event === 'close') pendingContexts.push(cb) } })
+    if (options.accountId === 'acc-a') return new Promise(resolve => { resolveA = resolve })
+    return Promise.resolve({ status: 'completed' })
+  }
+  const { route } = makeCtx(async () => ({}), SCHEMAS, [], { publish })
+  const first = await invoke(route, { action: 'publish.start', accountId: 'acc-a', idempotencyKey: 'k-par-a' })
+  assert.equal(first.body.status, 'started')
+  const second = await invoke(route, { action: 'publish.start', accountId: 'acc-b', idempotencyKey: 'k-par-b' })
+  assert.equal(second.body.status, 'started', '不同账号互不阻塞，可同时各开一个窗口')
+  const sameA = await invoke(route, { action: 'publish.start', accountId: 'acc-a', idempotencyKey: 'k-par-a2' })
+  assert.equal(sameA.body.reason, 'PROFILE_BUSY', '同账号并发仍被互斥')
+  resolveA({ status: 'completed' })
+  pendingContexts.forEach(cb => cb())
+  await new Promise(resolve => setTimeout(resolve, 0))
+})
+
+test('publish failure collapses uncontrolled errors to PUBLISH_FAILED', async () => {
+  const publish = async () => {
+    const error = new Error('some unexpected internal boom')
+    throw error
+  }
+  const { route } = makeCtx(async () => ({}), SCHEMAS, [], { publish })
+  const started = await invoke(route, {
+    action: 'publish.start', accountId: 'acc-u', idempotencyKey: 'k-pub-unc',
+  })
+  await new Promise(resolve => setTimeout(resolve, 0))
+  const done = await invoke(route, { action: 'publish.status', publishId: started.body.publishId })
+  assert.equal(done.body.publish.publishStatus, 'failed')
+  assert.equal(done.body.publish.error, 'PUBLISH_FAILED', '非受控错误收敛为 PUBLISH_FAILED，不透出内部细节')
 })
 
 test('publish.start returns PROFILE_BUSY while a collect is running for the same account', async () => {
@@ -574,15 +615,13 @@ test('publish.start returns PROFILE_BUSY while a collect is running for the same
   const started = await invoke(route, { action: 'collect.start', accountId: 'acc-c', idempotencyKey: 'k-col' })
   assert.equal(started.body.status, 'started')
   const busyPublish = await invoke(route, {
-    action: 'publish.start', accountId: 'acc-c', title: '标题', body: '正文',
-    imageUrls: ['https://example.com/a.jpg'], idempotencyKey: 'k-pub-busy',
+    action: 'publish.start', accountId: 'acc-c', idempotencyKey: 'k-pub-busy',
   })
   assert.equal(busyPublish.body.reason, 'PROFILE_BUSY', 'collect 运行中 publish.start → PROFILE_BUSY（互斥矩阵）')
   resolveCollect({ pagesDone: 1, notesTotal: 1, truncated: false, snapshotPath: '/tmp/x', summary: { notesCount: 1, totals: {}, gaps: {}, capturedAt: 'x' } })
   await new Promise(resolve => setTimeout(resolve, 0))
   const okPublish = await invoke(route, {
-    action: 'publish.start', accountId: 'acc-c', title: '标题', body: '正文',
-    imageUrls: ['https://example.com/a.jpg'], idempotencyKey: 'k-pub-busy',
+    action: 'publish.start', accountId: 'acc-c', idempotencyKey: 'k-pub-busy',
   })
   assert.equal(okPublish.body.status, 'started', '采集结束后发布可启动')
   // 幂等键重放同一 publish.start：被拒过的键未登记，正常启动
@@ -682,15 +721,5 @@ test('publish.start returns PROFILE_BUSY while a login is running (mutex matrix)
   await new Promise(resolve => setTimeout(resolve, 0))
 })
 
-test('publish.start rejects intranet/plain-http material urls (SSRF guard)', async () => {
-  const publishCalls = []
-  const publish = options => { publishCalls.push(options); return Promise.resolve({ status: 'completed', toast: 'x' }) }
-  const { route } = makeCtx(async () => ({}), SCHEMAS, [], { publish })
-  const bad = await invoke(route, {
-    action: 'publish.start', accountId: 'acc-ssrf', title: '标题', body: '正文',
-    imageUrls: [{ url: 'http://192.168.1.10/secret.jpg' }], idempotencyKey: 'k-ssrf-1',
-  })
-  assert.equal(bad.body.status, 'error')
-  assert.equal(bad.body.reason, 'MATERIAL_SOURCE_REJECTED', '内网地址拒绝（SSRF 防护）')
-  assert.equal(publishCalls.length, 0, '拒绝发生在打开浏览器之前')
-})
+// 发布降级后素材契约移除（用户在发布页手动上传），SSRF 素材校验用例随之删除；
+// SSRF 防护职责已不存在于发布路径（宿主不再触碰任何素材 URL）。

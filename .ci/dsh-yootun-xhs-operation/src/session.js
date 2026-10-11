@@ -247,7 +247,62 @@ export function isPendingAccountId(accountId) {
 }
 
 /**
- * 设备端会话探测：无头复用该账号持久 Profile 打开创作者中心（stage0 §2.1，
+ * 在已打开的创作者中心页面上做会话判定并回写账号状态（probeSession 与
+ * publishDraft 发布打开共用同一口径）。
+ *
+ * 失效判定以 **user/info 接口探测为准**（审查后真机第二轮：页面视觉状态受 SPA
+ * 时序影响大——未就绪时瞬时渲染登录组件会误报 expired；接口探测不受视觉时序
+ * 影响，且是会话真实有效性的直接证据）。探测失败（接口不可达/无账号标识）时
+ * 短重试，仍失败再用「URL 跳 /login + 登录框可见（含 reload 复验）」兜底判定。
+ *
+ * ok 时回写账号 ok 状态并保存 storage_state 备份；expired 时回写 expired。
+ *
+ * @returns {Promise<{ status: 'ok'|'expired'|'unknown', reason?: string, profile?: object }>}
+ */
+export async function confirmSessionOnPage(page, {
+  accountId,
+  root = stateRoot(),
+  reloadTimeoutMs = PROBE_TIMEOUT_MS,
+} = {}) {
+  const profile = await readAccountProfileWithRetry(page, { attempts: 3, delayMs: 1200 })
+  if (profile && profile.accountId) {
+    const now = new Date().toISOString()
+    const seq = await nextSessionSeq(accountId, root)
+    await updateAccount(accountId, {
+      sessionStatus: 'ok',
+      sessionCheckedAt: now,
+      sessionSeq: seq,
+      ...(profile.nickname ? { nickname: profile.nickname } : {}),
+      ...(profile.avatar ? { avatar: profile.avatar } : {}),
+    }, root)
+    // 备份回写失败可忽略（page/context 可能已关闭）；try/catch 而非 .catch——
+    // page.context() 本身的异常发生在参数求值阶段，Promise catch 兜不住。
+    try { await saveStorageState(accountId, page.context(), root) } catch { }
+    return { status: 'ok', profile }
+  }
+  // user/info 未取到：以 URL/登录框兜底判定（含 reload 复验），绝不单次误标。
+  const loginPageDetected = async () =>
+    String(page.url() || '').includes('/login') ||
+    (await page.isVisible(LOGIN_BOX_SELECTOR).catch(() => false))
+  await sleep(1500)
+  let expiredConfirmed = await loginPageDetected()
+  if (!expiredConfirmed) {
+    await page.reload({ waitUntil: 'domcontentloaded', timeout: reloadTimeoutMs }).catch(() => {})
+    await sleep(2500)
+    expiredConfirmed = await loginPageDetected()
+  }
+  if (expiredConfirmed) {
+    const now = new Date().toISOString()
+    const seq = await nextSessionSeq(accountId, root)
+    await updateAccount(accountId, { sessionStatus: 'expired', sessionCheckedAt: now, sessionSeq: seq }, root)
+    return { status: 'expired', reason: 'login_page_detected' }
+  }
+  // 既未确认有效也未确认失效（接口抖动且页面无登录特征）→ unknown，不猜测。
+  return { status: 'unknown', reason: 'user_info_unavailable' }
+}
+
+/**
+ * 设备端会话探测：有头复用该账号持久 Profile 打开创作者中心（stage0 §2.1，
  * storageState 注入非持久上下文不生效，无捷径），失效特征判定（stage0 §2.5）。
  *
  * @returns {Promise<{ status: 'ok'|'expired'|'unknown', reason?: string, profile?: object }>}
@@ -268,50 +323,7 @@ export async function probeSession({
     ;({ context } = await chromeFactory({ headless: false, profileDir, chromium, platform }))
     const page = context.pages()[0] || (await context.newPage())
     await page.goto(CREATOR_ORIGIN, { waitUntil: 'domcontentloaded', timeout: timeoutMs })
-    // 失效判定以 **user/info 接口探测为准**（审查后真机第二轮：页面视觉状态受 SPA
-    // 时序影响大——未就绪时瞬时渲染登录组件会误报 expired；接口探测不受视觉时序
-    // 影响，且是会话真实有效性的直接证据）。探测失败（接口不可达/无账号标识）时
-    // 短重试，仍失败再用「URL 跳 /login + 登录框可见（含 reload 复验）」兜底判定。
-    const profile = await readAccountProfileWithRetry(page, { attempts: 3, delayMs: 1200 })
-    if (profile && profile.accountId) {
-      const now = new Date().toISOString()
-      const seq = await nextSessionSeq(accountId, root)
-      await updateAccount(accountId, {
-        sessionStatus: 'ok',
-        sessionCheckedAt: now,
-        sessionSeq: seq,
-        ...(profile.nickname ? { nickname: profile.nickname } : {}),
-        ...(profile.avatar ? { avatar: profile.avatar } : {}),
-      }, root)
-      await saveStorageState(accountId, context, root).catch(() => {})
-      return { status: 'ok', profile }
-    }
-    // user/info 未取到：以 URL/登录框兜底判定（含 reload 复验），绝不单次误标。
-    const loginPageDetected = async () =>
-      String(page.url() || '').includes('/login') ||
-      (await page.isVisible(LOGIN_BOX_SELECTOR).catch(() => false))
-    await sleep(1500)
-    let expiredConfirmed = await loginPageDetected()
-    if (!expiredConfirmed) {
-      await page.reload({ waitUntil: 'domcontentloaded', timeout: timeoutMs }).catch(() => {})
-      await sleep(2500)
-      expiredConfirmed = await loginPageDetected()
-    }
-    if (expiredConfirmed) {
-      const now = new Date().toISOString()
-      const seq = await nextSessionSeq(accountId, root)
-      await updateAccount(accountId, { sessionStatus: 'expired', sessionCheckedAt: now, sessionSeq: seq }, root)
-      return { status: 'expired', reason: 'login_page_detected' }
-    }
-    // 既未确认有效也未确认失效（接口抖动且页面无登录特征）→ unknown，不猜测。
-    return { status: 'unknown', reason: 'user_info_unavailable' }
-    // 只有真正取到账号标识才算会话有效；页面返回空（未登录/被风控）判定过期。
-    if (!profile || !profile.accountId) {
-      const now = new Date().toISOString()
-      const seq = await nextSessionSeq(accountId, root)
-      await updateAccount(accountId, { sessionStatus: 'expired', sessionCheckedAt: now, sessionSeq: seq }, root)
-      return { status: 'expired', reason: 'user_info_unavailable' }
-    }
+    return await confirmSessionOnPage(page, { accountId, root, reloadTimeoutMs: timeoutMs })
   } catch (error) {
     return { status: 'unknown', reason: safeReason(error) }
   } finally {

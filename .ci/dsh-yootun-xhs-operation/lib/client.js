@@ -1103,7 +1103,7 @@ window.__ModuleLoader__.load({
         noAccounts: '还没有账号，点击「添加账号」扫码登录',
         loginWaiting: '已打开系统 Chrome，请在弹出的窗口中完成扫码…', loginOk: '登录成功', loginTimeout: '扫码超时，请重试', loginFailed: '登录失败，请重试',
         chromeMissing: '未检测到系统 Google Chrome，请先安装 Google Chrome',
-        profileBusy: '该账号有进行中的浏览器任务，请等待完成后再试',
+        profileBusy: '该账号的 Chrome 窗口正在使用中（可能尚未关闭），请关闭对应窗口后再试',
         captchaHint: '出现安全验证，请在弹出的浏览器窗口中人工完成验证后重试',
         sessionExpiredHint: '登录已过期，请重新扫码',
         collectFailedHint: '采集失败，请稍后重试',
@@ -1118,18 +1118,13 @@ window.__ModuleLoader__.load({
         gapHint: '其中 {count} 篇缺少该数据', notesUnit: '{count} 篇',
         collectDone: '采集完成', removedDone: '已移除本地账号', probeDone: '检测完成',
         listFailed: '账号列表读取失败，请重试',
-        publishPanel: '发布到草稿箱', publishAccountLabel: '发布账号',
+        publishPanel: '发布到小红书', publishAccountLabel: '发布账号',
         publishNoAccount: '暂无可用账号，请先在「账号管理」中扫码登录',
-        publishHint: '点击发布后将弹出该账号的 Chrome 窗口自动填写并保存草稿；完成后浏览器保持打开，可在窗口的发布页「草稿箱」中查看',
-        publishStart: '发布到草稿箱', publishing: '发布中…',
-        publishDone: '已保存到草稿箱，请在弹出的 Chrome 窗口中查看',
-        publishStepPrepare: '准备素材', publishStepOpen: '打开发布页', publishStepUpload: '上传素材',
-        publishStepFill: '填写内容', publishStepSaveDraft: '保存草稿', publishStepDone: '完成',
-        publishFailed: '发布失败，文案已保留，可重试',
-        publishUploadTimeout: '素材上传超时，请在浏览器窗口确认后重试',
-        publishSaveNoResponse: '未确认到保存结果，请在浏览器窗口人工确认草稿是否已保存',
-        publishSelectorMissing: '页面结构变化导致发布中断，请截图反馈',
-        publishNeedCopy: '请先生成文案并上传素材后再发布',
+        publishHint: '点击按钮将打开该账号的 Chrome 窗口进入创作者中心发布页；请在发布页粘贴文案（「复制全文」）、自行上传素材并手动发布',
+        publishStart: '打开创作者中心', publishing: '打开中…',
+        publishDone: '已在浏览器打开创作者中心发布页，请粘贴文案、上传素材后手动发布',
+        publishStepPrepare: '校验会话', publishStepOpen: '打开发布页', publishStepDone: '完成',
+        publishFailed: '打开创作者中心失败，可重试',
         // 车衣爆款看板（RQ-2026-003 DEV-06）
         pageTabHotboard: '车衣爆款看板',
         hbTitle: '车衣爆款看板', hbConfirm: '操作确认',
@@ -1227,7 +1222,7 @@ window.__ModuleLoader__.load({
         noAccounts: 'No accounts yet — click “Add account” to scan and sign in',
         loginWaiting: 'System Chrome opened — scan the QR in the popped-up window…', loginOk: 'Signed in', loginTimeout: 'Scan timed out, retry', loginFailed: 'Sign-in failed, retry',
         chromeMissing: 'System Google Chrome not found — install it first',
-        profileBusy: 'This account has a browser task in progress; try again later',
+        profileBusy: 'This account’s Chrome window is in use (possibly still open) — close it first, then retry',
         captchaHint: 'A security check appeared — complete it manually in the popped-up browser, then retry',
         sessionExpiredHint: 'Sign-in expired, scan again',
         collectFailedHint: 'Collection failed, retry later',
@@ -1242,18 +1237,13 @@ window.__ModuleLoader__.load({
         gapHint: '{count} notes lack this metric', notesUnit: '{count} notes',
         collectDone: 'Collection finished', removedDone: 'Local account removed', probeDone: 'Check finished',
         listFailed: 'Failed to load accounts, retry',
-        publishPanel: 'Publish to drafts', publishAccountLabel: 'Account',
+        publishPanel: 'Publish to Xiaohongshu', publishAccountLabel: 'Account',
         publishNoAccount: 'No account available — scan and sign in under “Accounts” first',
-        publishHint: 'Publishing pops up the account’s Chrome window, fills in and saves the draft automatically; the browser stays open afterwards so you can check the drafts there',
-        publishStart: 'Publish to drafts', publishing: 'Publishing…',
-        publishDone: 'Saved to drafts — check the popped-up Chrome window',
-        publishStepPrepare: 'Preparing media', publishStepOpen: 'Opening publish page', publishStepUpload: 'Uploading media',
-        publishStepFill: 'Filling in content', publishStepSaveDraft: 'Saving draft', publishStepDone: 'Done',
-        publishFailed: 'Publish failed — the copy is kept, retry',
-        publishUploadTimeout: 'Media upload timed out — check the browser window and retry',
-        publishSaveNoResponse: 'Save not confirmed — check manually in the browser window whether the draft was saved',
-        publishSelectorMissing: 'The page structure changed and publishing stopped — please report with a screenshot',
-        publishNeedCopy: 'Generate the copy and upload media first',
+        publishHint: 'The button opens the account’s Chrome window on the creator-center publish page; paste the copy (“Copy all”), upload media and publish manually there',
+        publishStart: 'Open Creator Center', publishing: 'Opening…',
+        publishDone: 'The publish page is open in the browser — paste the copy, upload media and publish manually',
+        publishStepPrepare: 'Checking session', publishStepOpen: 'Opening publish page', publishStepDone: 'Done',
+        publishFailed: 'Failed to open the Creator Center — retry',
         // Hotboard (RQ-2026-003 DEV-06)
         pageTabHotboard: 'Hotboard',
         hbTitle: 'Car-wrap hotboard', hbConfirm: 'Confirm',
@@ -1697,9 +1687,9 @@ window.__ModuleLoader__.load({
 
     // 模块级单例：跨 overlay 开关保留任务与轮询进度。
     const machineListeners = new Set()
-    // 小红书正文纯文本化（与 publisher.toXhsPlainText 同口径）：剥离双星粗体/
-    // 双下划线斜体/行首井号标题/行首短横列表（→ 「· 」）与正文尾部纯文本话题串，
-    // 保证编辑卡与发布到小红书的正文一致（小红书不渲染 markdown）。
+    // 小红书正文纯文本化（「复制全文」用）：剥离双星粗体/双下划线斜体/行首井号标题/
+    // 行首短横列表（→ 「· 」）与正文尾部纯文本话题串；小红书不渲染 markdown，
+    // `**` 等标记会原样暴露，粘贴进发布页前必须先转纯文本。
     function toXhsPlainText(body) {
       let text = String(body || '').replace(/\r\n/g, '\n')
       text = text.replace(/\*\*([^*]*)\*\*/g, '$1').replace(/__([^_]*)__/g, '$1')
@@ -1881,9 +1871,6 @@ window.__ModuleLoader__.load({
       CAPTCHA_DETECTED: 'captchaHint',
       LOGIN_TIMEOUT: 'loginTimeout',
       COLLECT_FAILED: 'collectFailedHint',
-      UPLOAD_TIMEOUT: 'publishUploadTimeout',
-      SAVE_DRAFT_NO_RESPONSE: 'publishSaveNoResponse',
-      SELECTOR_MISSING: 'publishSelectorMissing',
       PUBLISH_FAILED: 'publishFailed',
     }
 
@@ -2253,9 +2240,9 @@ window.__ModuleLoader__.load({
     }
 
     // ---------------------------------------------------------------------------
-    // 发布面板（阶段 3，RQ-2026-002）：结果区下方把当前文案一键发布到所选账号的
-    // 草稿箱（有头 Chrome 自动填写，浏览器保持打开）。进度/结果轮询 publish.status，
-    // 失败一律映射受控中文文案（README §7：不暴露内部错误码）。
+    // 发布面板（发布降级版）：结果区下方按所选账号打开创作者中心发布页（有头
+    // Chrome、浏览器保持打开；内容由用户手动粘贴/上传/发布）。进度/结果轮询
+    // publish.status，失败一律映射受控中文文案（README §7：不暴露内部错误码）。
     // ---------------------------------------------------------------------------
 
     const PUBLISH_POLL_INTERVAL_MS = 2000
@@ -2264,9 +2251,6 @@ window.__ModuleLoader__.load({
     const PUBLISH_STEP_KEYS = {
       prepare: 'publishStepPrepare',
       open: 'publishStepOpen',
-      upload: 'publishStepUpload',
-      fill: 'publishStepFill',
-      saveDraft: 'publishStepSaveDraft',
       done: 'publishStepDone',
     }
 
@@ -2298,7 +2282,7 @@ window.__ModuleLoader__.load({
           : null,
         publish?.publishStatus === 'failed' || notice
           ? h('p', { className: 'yxh-notice yxh-notice-error', role: 'alert' },
-            // 终态失败优先按受控错误码映射具体原因（上传超时/验证码等），未映射才落到通用文案。
+            // 终态失败优先按受控错误码映射具体原因（会话过期/验证码等），未映射才落到通用文案。
             notice ? t(notice) : t(accountErrorKey(publish?.error) || 'publishFailed'))
           : null,
         available.length > 0
@@ -2520,29 +2504,16 @@ window.__ModuleLoader__.load({
         window.setTimeout(() => setCopyState(''), 2000)
       }
 
-      // 一键发布到草稿箱（阶段 3）：以当前编辑卡内容 + 当前 tab 素材发起后台发布 run；
-      // 素材未就绪/文案未生成时受控提示，不发起请求。
+      // 打开创作者中心（发布降级）：按当前 tab 直达图文/视频发布页；文案复制与素材
+      // 上传由用户在发布页手动完成，宿主不再自动录入。
       const onPublish = async () => {
-        if (!edited || publish?.publishStatus === 'running') return
-        const groupAssets = tab === 'images' ? imageAssets : (videoAsset ? [videoAsset] : [])
-        const ready = groupAssets.length > 0
-          && groupAssets.every(asset => asset.status === 'uploaded' && asset.url)
-        if (!ready || !effectivePublishAccount || !String(edited.title || '').trim()) {
-          setPublishNotice('publishNeedCopy')
-          return
-        }
+        if (publish?.publishStatus === 'running' || !effectivePublishAccount) return
         const body = {
           action: 'publish.start',
           accountId: effectivePublishAccount,
-          title: edited.title,
-          body: edited.body || '',
-          tags: [...(edited.tags || [])],
-          visibility: 'private',
+          target: tab === 'video' ? 'video' : 'image',
           idempotencyKey: newIdempotencyKey(),
         }
-        // 素材本地原文件路径优先（README §5.3）：path 失效由宿主按 url 下载兜底。
-        if (tab === 'images') body.imageUrls = groupAssets.map(asset => ({ path: asset.path || null, url: asset.url }))
-        else body.videoUrl = { path: videoAsset.path || null, url: videoAsset.url }
         setPublishNotice(null)
         try {
           const result = await post(body)
@@ -2659,7 +2630,7 @@ window.__ModuleLoader__.load({
       let right
       if (taskStatus === 'succeeded' && Array.isArray(versions) && versions.length && edited) {
         // 单版可编辑结果卡（RQ-2026-002）：编辑 + 风险提示 + 重新生成/复制全文/保存编辑
-        // + 发布面板（阶段 3：一键发布到所选账号草稿箱）。
+        // + 发布面板（发布降级版：打开所选账号的创作者中心发布页）。
         right = h('div', { className: 'yxh-versions' },
           // key 随任务切换：重新生成后重置编辑卡内部状态（正文模式/标签草稿）。
           h(EditableResult, { key: edited.taskId, version: versions[0], edited, onEditedChange: updateEdited, t }),
