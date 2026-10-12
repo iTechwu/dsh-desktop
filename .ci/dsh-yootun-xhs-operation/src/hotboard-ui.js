@@ -33,6 +33,25 @@ function hbText(value) {
   return String(value)
 }
 
+// 调度 cron 转业务可读描述（如 "30 1 * * 1" -> "每周一 凌晨 1:30"）；
+// 仅支持分钟/小时为具体值、日/月为 * 的常见形态，其余原样返回兜底
+export function hotboardScheduleText(cron, t) {
+  const parts = typeof cron === 'string' ? cron.trim().split(/\s+/) : []
+  if (parts.length !== 5) return hbText(cron)
+  const [min, hour, dom, mon, dow] = parts
+  if (dom !== '*' || mon !== '*') return hbText(cron)
+  if (!/^\d{1,2}$/.test(min) || !/^\d{1,2}$/.test(hour)) return hbText(cron)
+  const hh = Number(hour); const mm = Number(min)
+  if (hh > 23 || mm > 59) return hbText(cron)
+  let freq
+  if (dow === '*') freq = t('hbSchedDaily')
+  else if (/^[0-7]$/.test(dow)) freq = t('hbSchedWeekly') + t('hbDowNames')[Number(dow) % 7]
+  else return hbText(cron)
+  const periods = t('hbSchedPeriods')
+  const period = periods[hh <= 5 ? 0 : hh < 12 ? 1 : hh === 12 ? 2 : hh < 18 ? 3 : 4]
+  return [freq, period, `${hh}:${String(mm).padStart(2, '0')}`].filter(Boolean).join(' ')
+}
+
 function hbCount(value) {
   if (value === null || value === undefined || value === '') return '—'
   const num = Number(value)
@@ -589,7 +608,7 @@ function BoardPage({ state, hub, t }) {
       h('div', { className: 'yxh-hb-kpi' }, h('span', { className: 'yxh-hb-kpi-label' }, t('hbKpiLowQuality')), h('span', { className: 'yxh-hb-kpi-value' }, hbCount(kpis?.lowQualityCount))),
       h('div', { className: 'yxh-hb-kpi' }, h('span', { className: 'yxh-hb-kpi-label' }, t('hbKpiFailedKeywords')), h('span', { className: 'yxh-hb-kpi-value' }, hbCount(kpis?.failedKeywordCount))),
       h('div', { className: 'yxh-hb-kpi' }, h('span', { className: 'yxh-hb-kpi-label' }, t('hbKpiLastCollected')), h('span', { className: 'yxh-hb-kpi-value' }, hbTime(kpis?.lastCollectedAt))),
-      h('div', { className: 'yxh-hb-kpi' }, h('span', { className: 'yxh-hb-kpi-label' }, t('hbKpiNextRun')), h('span', { className: 'yxh-hb-kpi-value' }, kpis?.nextRun?.scheduleEnabled ? hbText(kpis.nextRun.cron) : t('hbScheduleDisabled')))),
+      h('div', { className: 'yxh-hb-kpi' }, h('span', { className: 'yxh-hb-kpi-label' }, t('hbKpiNextRun')), h('span', { className: 'yxh-hb-kpi-value' }, kpis?.nextRun?.scheduleEnabled ? hotboardScheduleText(kpis.nextRun.cron, t) : t('hbScheduleDisabled')))),
     h('div', { className: 'yxh-hb-table-wrap' },
       h('table', { className: 'yxh-hb-table' },
         h('thead', null, h('tr', null,

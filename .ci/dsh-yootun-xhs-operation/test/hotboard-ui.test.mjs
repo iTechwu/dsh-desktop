@@ -459,3 +459,36 @@ test('built client factory renders the overlay and hotboard pages with real Reac
     delete globalThis.fetch
   }
 })
+
+// --- hotboardScheduleText：调度 cron 转业务可读描述 ---
+
+// 纯函数专用 loader：hotboard-ui 的 export 被 loadClient 剥成局部声明，
+// 不进 module.exports；这里剥掉顶部 React 依赖后把目标函数显式挂到 exports。
+async function loadHotboardFn(name) {
+  const src = (await readFile(new URL('../src/hotboard-ui.js', import.meta.url), 'utf8'))
+    .replace(/^const HotReact = require\('react'\)\n/m, '')
+    .replace(/^const \{ createElement: h \} = HotReact\n/m, '')
+    .replace(/^export /gm, '')
+  const module = { exports: {} }
+  const require = n => {
+    if (n === 'react') return { createElement: () => {}, useEffect: () => {}, useState: () => [undefined, () => {}], useSyncExternalStore: () => undefined }
+    throw new Error(`unexpected require: ${n}`)
+  }
+  new Function('require', 'module', 'exports', `${src}\nmodule.exports.${name} = ${name}`)(require, module, module.exports)
+  return module.exports[name]
+}
+
+test('hotboardScheduleText 把周调度 cron 转成中文描述', async () => {
+  const hotboardScheduleText = await loadHotboardFn('hotboardScheduleText')
+  const t = key => ({
+    hbSchedDaily: '每天',
+    hbSchedWeekly: '每周',
+    hbDowNames: ['日', '一', '二', '三', '四', '五', '六'],
+    hbSchedPeriods: ['凌晨', '上午', '中午', '下午', '晚上'],
+  })[key]
+  assert.equal(hotboardScheduleText('30 1 * * 1', t), '每周一 凌晨 1:30')
+  assert.equal(hotboardScheduleText('0 6 * * *', t), '每天 上午 6:00')
+  assert.equal(hotboardScheduleText('15 19 * * 0', t), '每周日 晚上 19:15')
+  assert.equal(hotboardScheduleText('5 13 * 5 1', t), '5 13 * 5 1') // 日/月非 * 兜底原表达式
+  assert.equal(hotboardScheduleText('*/5 * * * *', t), '*/5 * * * *') // 分钟非具体值兜底
+})

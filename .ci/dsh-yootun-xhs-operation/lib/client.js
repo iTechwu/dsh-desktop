@@ -36,6 +36,25 @@ window.__ModuleLoader__.load({
       return String(value)
     }
 
+    // 调度 cron 转业务可读描述（如 "30 1 * * 1" -> "每周一 凌晨 1:30"）；
+    // 仅支持分钟/小时为具体值、日/月为 * 的常见形态，其余原样返回兜底
+    function hotboardScheduleText(cron, t) {
+      const parts = typeof cron === 'string' ? cron.trim().split(/\s+/) : []
+      if (parts.length !== 5) return hbText(cron)
+      const [min, hour, dom, mon, dow] = parts
+      if (dom !== '*' || mon !== '*') return hbText(cron)
+      if (!/^\d{1,2}$/.test(min) || !/^\d{1,2}$/.test(hour)) return hbText(cron)
+      const hh = Number(hour); const mm = Number(min)
+      if (hh > 23 || mm > 59) return hbText(cron)
+      let freq
+      if (dow === '*') freq = t('hbSchedDaily')
+      else if (/^[0-7]$/.test(dow)) freq = t('hbSchedWeekly') + t('hbDowNames')[Number(dow) % 7]
+      else return hbText(cron)
+      const periods = t('hbSchedPeriods')
+      const period = periods[hh <= 5 ? 0 : hh < 12 ? 1 : hh === 12 ? 2 : hh < 18 ? 3 : 4]
+      return [freq, period, `${hh}:${String(mm).padStart(2, '0')}`].filter(Boolean).join(' ')
+    }
+
     function hbCount(value) {
       if (value === null || value === undefined || value === '') return '—'
       const num = Number(value)
@@ -592,7 +611,7 @@ window.__ModuleLoader__.load({
           h('div', { className: 'yxh-hb-kpi' }, h('span', { className: 'yxh-hb-kpi-label' }, t('hbKpiLowQuality')), h('span', { className: 'yxh-hb-kpi-value' }, hbCount(kpis?.lowQualityCount))),
           h('div', { className: 'yxh-hb-kpi' }, h('span', { className: 'yxh-hb-kpi-label' }, t('hbKpiFailedKeywords')), h('span', { className: 'yxh-hb-kpi-value' }, hbCount(kpis?.failedKeywordCount))),
           h('div', { className: 'yxh-hb-kpi' }, h('span', { className: 'yxh-hb-kpi-label' }, t('hbKpiLastCollected')), h('span', { className: 'yxh-hb-kpi-value' }, hbTime(kpis?.lastCollectedAt))),
-          h('div', { className: 'yxh-hb-kpi' }, h('span', { className: 'yxh-hb-kpi-label' }, t('hbKpiNextRun')), h('span', { className: 'yxh-hb-kpi-value' }, kpis?.nextRun?.scheduleEnabled ? hbText(kpis.nextRun.cron) : t('hbScheduleDisabled')))),
+          h('div', { className: 'yxh-hb-kpi' }, h('span', { className: 'yxh-hb-kpi-label' }, t('hbKpiNextRun')), h('span', { className: 'yxh-hb-kpi-value' }, kpis?.nextRun?.scheduleEnabled ? hotboardScheduleText(kpis.nextRun.cron, t) : t('hbScheduleDisabled')))),
         h('div', { className: 'yxh-hb-table-wrap' },
           h('table', { className: 'yxh-hb-table' },
             h('thead', null, h('tr', null,
@@ -1170,6 +1189,8 @@ window.__ModuleLoader__.load({
         hbOnlyMain: '仅主案例', hbOnlyTagged: '仅已打标',
         hbKpiCases: '当前筛选下案例数', hbKpiCoverage: '本轮采集覆盖率', hbKpiAiTagged: 'AI 标记完成率', hbKpiDuplicates: '重复素材组数',
         hbKpiLowQuality: '低质过滤数', hbKpiFailedKeywords: '失败关键词数', hbKpiLastCollected: '最近采集时间', hbKpiNextRun: '下次采集时间', hbScheduleDisabled: '定时已停用',
+        hbSchedDaily: '每天', hbSchedWeekly: '每周', hbDowNames: ['日', '一', '二', '三', '四', '五', '六'],
+        hbSchedPeriods: ['凌晨', '上午', '中午', '下午', '晚上'],
         hbColTitle: '标题', hbColAuthor: '作者', hbColType: '类型', hbColPublishTime: '发布时间', hbColScore: '热度分', hbColInteraction: '互动量', hbColTags: '标签',
         hbTypeVideo: '视频', hbTypeImage: '图文', hbNoCases: '当前筛选下暂无案例', hbPrev: '上一页', hbNext: '下一页', hbTotal: '共',
         hbRunIdle: '当前没有进行中的采集 Run', hbRunHistory: '运行历史', hbRunStatus: 'Run 状态', hbRunStarted: '开始', hbRunFinished: '结束',
@@ -1290,6 +1311,8 @@ window.__ModuleLoader__.load({
         hbOnlyMain: 'Main cases only', hbOnlyTagged: 'Tagged only',
         hbKpiCases: 'Cases in filter', hbKpiCoverage: 'Run coverage', hbKpiAiTagged: 'AI tagged', hbKpiDuplicates: 'Duplicate groups',
         hbKpiLowQuality: 'Low quality', hbKpiFailedKeywords: 'Failed keywords', hbKpiLastCollected: 'Last collected', hbKpiNextRun: 'Next run', hbScheduleDisabled: 'Schedule off',
+        hbSchedDaily: 'Every day', hbSchedWeekly: 'Every ', hbDowNames: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'],
+        hbSchedPeriods: ['', '', '', '', ''],
         hbColTitle: 'Title', hbColAuthor: 'Author', hbColType: 'Type', hbColPublishTime: 'Published', hbColScore: 'Score', hbColInteraction: 'Interactions', hbColTags: 'Tags',
         hbTypeVideo: 'Video', hbTypeImage: 'Image', hbNoCases: 'No cases match the current filter', hbPrev: 'Prev', hbNext: 'Next', hbTotal: 'Total',
         hbRunIdle: 'No collection run in progress', hbRunHistory: 'Run history', hbRunStatus: 'Run status', hbRunStarted: 'Started', hbRunFinished: 'Finished',
