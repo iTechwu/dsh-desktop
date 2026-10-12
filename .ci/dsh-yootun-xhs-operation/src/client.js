@@ -125,6 +125,7 @@ const copy = {
     hbSetCommentSample: '评论采样', hbSetManualCommentDefault: '手动采集默认含评论', hbSetFullScheduleCron: '全量调度 cron',
     hbConfirmSettings: '确认保存 {count} 项配置修改？', hbSaveSettings: '保存配置', hbRuleVersion: '规则版本',
     hbNoteDetail: '案例详情', hbCloseDrawer: '关闭', hbNoImages: '暂无图片', hbImageBroken: '图片加载失败', hbMetrics: '数据指标',
+    hbOpenNote: '打开原始笔记', hbLightbox: '图片轮播', hbPrevImage: '上一张', hbNextImage: '下一张',
     hbCurrentTags: '当前标签（选择即纠错）', hbUntagged: '未打标', hbConfirmTagUpdate: '确认把该案例的风格/色系标签改为「{tag}」？',
     hbNoteBody: '正文', hbSimilarNotes: '相似笔记', hbWordStats: '高频词', hbScore7d: '7 天分', hbScore30d: '30 天分', hbScore90d: '90 天分',
     // 宿主错误码经 HB_ERROR_KEYS 映射后的受控文案（review MAJOR-4）；不透出原始错误码。
@@ -244,6 +245,7 @@ const copy = {
     hbSetCommentSample: 'Comment sampling', hbSetManualCommentDefault: 'Manual runs include comments', hbSetFullScheduleCron: 'Full-schedule cron',
     hbConfirmSettings: 'Save {count} setting change(s)?', hbSaveSettings: 'Save settings', hbRuleVersion: 'Rule version',
     hbNoteDetail: 'Case detail', hbCloseDrawer: 'Close', hbNoImages: 'No images', hbImageBroken: 'Image failed to load', hbMetrics: 'Metrics',
+    hbOpenNote: 'Open original note', hbLightbox: 'Image carousel', hbPrevImage: 'Previous image', hbNextImage: 'Next image',
     hbCurrentTags: 'Current tags (pick to correct)', hbUntagged: 'Untagged', hbConfirmTagUpdate: 'Change this case’s style/color tag to “{tag}”?',
     hbNoteBody: 'Body', hbSimilarNotes: 'Similar notes', hbWordStats: 'Frequent words', hbScore7d: '7d score', hbScore30d: '30d score', hbScore90d: '90d score',
     // Controlled copy for host error codes mapped via HB_ERROR_KEYS; raw codes never surface.
