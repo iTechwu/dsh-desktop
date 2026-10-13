@@ -12,6 +12,7 @@ import {
   desktopUpdateFilename,
   downloadDesktopUpdate,
   pendingDesktopUpdateArtifact,
+  pendingInstallableDesktopUpdate,
   recordDesktopUpdateArtifact,
   resolveDesktopUpdateArtifact,
   type DesktopDownloadPlatform,
@@ -88,6 +89,49 @@ afterEach(async () => {
 })
 
 describe('desktop update installer download', () => {
+  it('reuses a validated installer already at the destination without network', async () => {
+    const directory = await temporaryDirectory()
+    const artifact = dmgArtifact()
+    const destination = destinationPath(directory, 'darwin', '2.1.0')
+    await writeFile(destination, artifact)
+    const request = vi.fn()
+
+    const result = await downloadDesktopUpdate({
+      platform: 'darwin',
+      version: '2.1.0',
+      destinationPath: destination,
+      request,
+      expectedSha256: createHash('sha256').update(artifact).digest('hex'),
+    })
+
+    expect(request).not.toHaveBeenCalled()
+    expect(result).toBe(destination)
+    expect(await readFile(result)).toEqual(Buffer.from(artifact))
+  })
+
+  it('re-downloads when the local file does not match the published digest', async () => {
+    const directory = await temporaryDirectory()
+    const artifact = dmgArtifact()
+    const destination = destinationPath(directory, 'darwin', '2.1.0')
+    await writeFile(destination, Buffer.from('corrupted'))
+    const calls: Array<{ url: string }> = []
+    const request: UpdateArtifactRequest = async (url, init) => {
+      calls.push({ url })
+      return chunkedResponse([artifact])
+    }
+
+    const result = await downloadDesktopUpdate({
+      platform: 'darwin',
+      version: '2.1.0',
+      destinationPath: destination,
+      request,
+      expectedSha256: createHash('sha256').update(artifact).digest('hex'),
+    })
+
+    expect(calls).toHaveLength(1)
+    expect(await readFile(result)).toEqual(Buffer.from(artifact))
+  })
+
   it('streams a macOS DMG from only the fixed endpoint and atomically completes it', async () => {
     const directory = await temporaryDirectory()
     const artifact = dmgArtifact()
@@ -503,6 +547,42 @@ describe('desktop update artifact cleanup', () => {
       version: '2.1.0',
       path,
     })
+  })
+
+  it('offers an installable artifact regardless of the installed version', async () => {
+    const userDataPath = await temporaryDirectory()
+    const downloads = await temporaryDirectory()
+    const path = destinationPath(downloads, 'win32', '2.1.0')
+    await writeFile(path, windowsArtifact())
+
+    await expect(pendingInstallableDesktopUpdate(userDataPath, 'win32')).resolves.toBeUndefined()
+
+    await recordDesktopUpdateArtifact(userDataPath, {
+      platform: 'win32',
+      version: '2.1.0',
+      path,
+    })
+
+    await expect(pendingInstallableDesktopUpdate(userDataPath, 'win32')).resolves.toEqual({
+      platform: 'win32',
+      version: '2.1.0',
+      path,
+    })
+  })
+
+  it('hides an installable artifact whose file has disappeared', async () => {
+    const userDataPath = await temporaryDirectory()
+    const downloads = await temporaryDirectory()
+    const path = destinationPath(downloads, 'win32', '2.1.0')
+    await writeFile(path, windowsArtifact())
+    await recordDesktopUpdateArtifact(userDataPath, {
+      platform: 'win32',
+      version: '2.1.0',
+      path,
+    })
+    await rm(path)
+
+    await expect(pendingInstallableDesktopUpdate(userDataPath, 'win32')).resolves.toBeUndefined()
   })
 
   it.each([false, true])('resolves one cleanup choice with remove=%s', async (remove) => {

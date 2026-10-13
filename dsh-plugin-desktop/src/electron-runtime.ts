@@ -205,7 +205,7 @@ export class ElectronDesktopRuntime implements DesktopRuntime {
       request: (url, init) => net.fetch(url, init),
       confirmDownload: (version, channel) => this.confirmUpdateDownload(version, channel),
       showManualCheckResult: result => this.showManualUpdateCheckResult(result),
-      downloadAndOpen: (version, signal, channel, installerSha256) => this.downloadAndOpenUpdate(version, signal, channel, installerSha256),
+      downloadAndOpen: (version, signal, channel, installerSha256, onProgress) => this.downloadAndOpenUpdate(version, signal, channel, installerSha256, onProgress),
       notify: notification => { this.showNotification(notification) },
     }
   }
@@ -958,6 +958,7 @@ export class ElectronDesktopRuntime implements DesktopRuntime {
     signal: AbortSignal,
     channel: DesktopReleaseChannel = 'stable',
     installerSha256?: Readonly<Partial<Record<'win32' | 'darwin', string>>>,
+    onProgress?: (received: number, total: number | undefined) => void,
   ): Promise<void> {
     const copy = desktopNativeCopy(this.currentLocale)
     const platform = this.platformStrategy.updateDownloadPlatform
@@ -975,6 +976,7 @@ export class ElectronDesktopRuntime implements DesktopRuntime {
       request: requestDesktopArtifact,
       signal,
       ...(installerSha256?.[platform] === undefined ? {} : { expectedSha256: installerSha256[platform] }),
+      ...(onProgress === undefined ? {} : { onProgress }),
     })
     signal.throwIfAborted()
     const artifact: DesktopUpdateArtifact = { platform, version, path: artifactPath }

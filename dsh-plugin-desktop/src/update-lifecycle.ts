@@ -68,6 +68,8 @@ class DesktopUpdateLifecycleOwner implements DesktopUpdateLifecycle {
   private checking = false
   private availableVersion: string | undefined
   private downloadingVersion: string | undefined
+  private downloadProgress: { received: number; total: number | undefined } | undefined
+  private lastProgressRefreshAt = 0
   private state: UpdateStateV3 = EMPTY_STATE
   private pollTimer: ReturnType<typeof setTimeout> | undefined
   private requestTimer: ReturnType<typeof setTimeout> | undefined
@@ -253,21 +255,46 @@ class DesktopUpdateLifecycleOwner implements DesktopUpdateLifecycle {
       const controller = new AbortController()
       this.downloadController = controller
       this.downloadingVersion = version
+      this.downloadProgress = undefined
+      this.lastProgressRefreshAt = 0
       this.registration.refresh()
       try {
         // An omitted digest must not surface as a trailing undefined argument:
         // the beta variant's spec pins the exact call shape.
-        const digestArguments = confirmedDigests === undefined ? [] : [confirmedDigests] as const
+        // 位置参数显式占位：installerSha256 固定第 4 位、onProgress 固定第 5 位，
+        // 避免 spread 空数组时后续参数顶位错档。
+        const onProgress = (received: number, total: number | undefined): void => {
+          this.downloadProgress = { received, total }
+          const now = Date.now()
+          // Menu rebuilds are not free: throttle progress refreshes to twice a second.
+          if (now - this.lastProgressRefreshAt < 500) return
+          this.lastProgressRefreshAt = now
+          this.registration.refresh()
+        }
         if (this.options.adapter.releaseChannel === undefined && channel === 'stable') {
-          await this.options.adapter.downloadAndOpen(version, controller.signal, undefined, ...digestArguments)
+          await this.options.adapter.downloadAndOpen(
+            version,
+            controller.signal,
+            undefined,
+            confirmedDigests === undefined ? undefined : confirmedDigests,
+            onProgress,
+          )
         } else {
-          await this.options.adapter.downloadAndOpen(version, controller.signal, channel, ...digestArguments)
+          await this.options.adapter.downloadAndOpen(
+            version,
+            controller.signal,
+            channel,
+            confirmedDigests === undefined ? undefined : confirmedDigests,
+            onProgress,
+          )
         }
       } catch {
         // Network, filesystem, and installer-opening failures are deliberately silent.
       } finally {
         if (this.downloadController === controller) this.downloadController = undefined
         this.downloadingVersion = undefined
+        this.downloadProgress = undefined
+        this.lastProgressRefreshAt = 0
         this.registration.refresh()
       }
     })().finally(() => {
@@ -323,7 +350,15 @@ class DesktopUpdateLifecycleOwner implements DesktopUpdateLifecycle {
 
   private trayLabel(): string {
     if (this.downloadingVersion !== undefined) {
-      return desktopTrayLabel(this.options.locale(), 'downloadingUpdate', this.downloadingVersion)
+      const base = desktopTrayLabel(this.options.locale(), 'downloadingUpdate', this.downloadingVersion)
+      const progress = this.downloadProgress
+      if (progress === undefined) return base
+      if (progress.total !== undefined && progress.total > 0) {
+        const percent = Math.min(100, Math.floor((progress.received / progress.total) * 100))
+        return `${base} (${String(percent)}%)`
+      }
+      const megabytes = (progress.received / (1024 * 1024)).toFixed(1)
+      return `${base} (${megabytes} MB)`
     }
     if (this.availableVersion !== undefined) {
       return desktopTrayLabel(this.options.locale(), 'updateAvailable', this.availableVersion)

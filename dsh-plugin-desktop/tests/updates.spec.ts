@@ -174,6 +174,8 @@ describe('desktop update Host plugin', () => {
       '2.0.4',
       expect.any(AbortSignal),
       'stable',
+      undefined,
+      expect.any(Function),
     )
     const channels = request.mock.calls.map(([, init]) => new Headers(init.headers).get(DESKTOP_RELEASE_CHANNEL_HEADER))
     expect(channels).toContain('beta')

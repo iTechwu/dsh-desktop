@@ -159,6 +159,14 @@ export async function downloadDesktopUpdate(options: DownloadDesktopUpdateOption
   const paths = await prepareDownloadPaths(destinationPath)
   throwIfAborted(options.signal)
 
+  // 上次下载的安装包仍在且校验通过（SHA-256 有值时硬校验，否则仅魔数）：
+  // 秒级复用本地副本，跳过网络重新下载；校验不通过时保留原文件照常重下，
+  // 新包成功落盘后才覆盖（下载失败时原文件不受影响）。
+  if (await reuseCompletedInstallerIfValid(paths.completed, platform, expectedSha256, options.signal)) {
+    await unlinkIfPresent(paths.temporary)
+    return paths.completed
+  }
+
   let response: Response
   let finalUrl: string
   try {
@@ -288,6 +296,36 @@ export async function pendingDesktopUpdateArtifact(
   return value
 }
 
+/**
+ * 查询尚未消费的已下载安装包（状态记录存在、文件仍在且结构校验通过）。
+ * 与 pendingDesktopUpdateArtifact 的清理语义无关：供更新入口在版本未达标时
+ * 提供「已下载待安装」恢复能力（主界面更新卡片将来接入）。
+ */
+export async function pendingInstallableDesktopUpdate(
+  userDataPath: string,
+  platform: DesktopDownloadPlatform,
+): Promise<DesktopUpdateArtifact | undefined> {
+  validatedPlatform(platform)
+  const statePath = artifactStatePath(validatedUserDataPath(userDataPath))
+  let record: DesktopUpdateArtifact
+  try {
+    record = await readArtifactRecord(statePath)
+  } catch (cause) {
+    if ((cause as NodeJS.ErrnoException).code !== 'ENOENT') throw cause
+    return undefined
+  }
+  if (record.platform !== platform) return undefined
+  const stat = await lstatOptional(record.path)
+  if (stat === undefined || !stat.isFile()) return undefined
+  try {
+    await validateArtifact(record.path, platform)
+  } catch (cause) {
+    if (isAbortFailure(cause)) throw cause
+    return undefined
+  }
+  return record
+}
+
 /** Apply one explicit delete/keep choice and consume its cleanup state. */
 export async function resolveDesktopUpdateArtifact(
   userDataPath: string,
@@ -358,6 +396,29 @@ async function prepareDownloadPaths(
   return {
     completed: destinationPath,
     temporary: join(directory, `.${basename(destinationPath)}.${process.pid}.${randomUUID()}.partial`),
+  }
+}
+
+/** 检查目标文件是否为可直接复用的已下载安装包；不匹配时不破坏现有文件并返回 false。 */
+async function reuseCompletedInstallerIfValid(
+  filename: string,
+  platform: DesktopDownloadPlatform,
+  expectedSha256: string | undefined,
+  signal: AbortSignal | undefined,
+): Promise<boolean> {
+  throwIfAborted(signal)
+  const stat = await lstatOptional(filename)
+  if (stat === undefined || !stat.isFile()) return false
+  try {
+    await validateArtifact(filename, platform)
+    if (expectedSha256 !== undefined) {
+      await assertInstallerDigest(filename, expectedSha256)
+    }
+    throwIfAborted(signal)
+    return true
+  } catch (cause) {
+    if (isAbortFailure(cause)) throw cause
+    return false
   }
 }
 

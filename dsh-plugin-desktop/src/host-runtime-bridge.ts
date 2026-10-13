@@ -60,7 +60,10 @@ export function createHostRuntime(rpc: HostRpc, snapshot: RuntimeSnapshot): Desk
       },
       confirmDownload: (version, channel) => send('update:confirmDownload', [version, channel]),
       showManualCheckResult: result => send('update:showManualCheckResult', [result]),
-      downloadAndOpen: (version, signal, channel) => send('update:downloadAndOpen', [version, channel], signal),
+      // 进度回调（onProgress）跨 IPC 不透传：桥接模式下托盘在 Host 侧由
+      // lifecycle 自身的 downloading 状态驱动，百分比留待主界面化时扩展协议。
+      downloadAndOpen: (version, signal, channel, installerSha256) =>
+        send('update:downloadAndOpen', [version, channel, installerSha256], signal),
       notify: notification => { void send('update:notify', [notification]) },
     },
     schedule(spec) {
@@ -221,7 +224,8 @@ export function bindNativeRuntime(rpc: HostRpc, runtime: DesktopRuntime): () => 
   })
   handle('update:confirmDownload', ([version, channel]) => runtime.updates.confirmDownload(version, channel))
   handle('update:showManualCheckResult', ([result]) => runtime.updates.showManualCheckResult(result))
-  handle('update:downloadAndOpen', ([version, channel], signal) => runtime.updates.downloadAndOpen(version, signal, channel))
+  handle('update:downloadAndOpen', ([version, channel, installerSha256], signal) =>
+    runtime.updates.downloadAndOpen(version, signal, channel, installerSha256))
   handle('update:notify', ([value]) => runtime.updates.notify(value))
   return async () => {
     trays.forEach(tray => tray.dispose()); trays.clear()
