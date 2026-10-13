@@ -81,8 +81,8 @@ function makeHub({ overview, runGet, post: postOverride } = {}) {
       case 'hotboard.labels':
         return { status: 'ready', data: { labels: [], proposals: [] }, meta: { page: 1, pageSize: 20, total: 2 } }
       case 'hotboard.settings':
-        // 2026-10-13 只读化裁决：settings 投影只承载真实生效的展示字段。
-        return { status: 'ready', data: { scheduleEnabled: true, fullScheduleCron: '30 1 * * 1', ruleVersion: 'hot-v1-potential' } }
+        // 只读化后的生效口径投影（含 2026-10-13 恢复的阈值只读行字段）。
+        return { status: 'ready', data: { scheduleEnabled: true, fullScheduleCron: '30 1 * * 1', ruleVersion: 'hot-v1-potential', publishWindowDays: 90, perKeywordLimit: 10, commentTopN: 20, commentMaxPerNote: 10, minInteractionTotal: 1000, dedupHammingThreshold: 5, minValidSample: 30, searchMaxCallsPerDay: 60, commentMaxCallsPerDay: 100, detailMaxCallsPerRun: 200 } }
       case 'hotboard.runGet':
         if (runGetQueue && runGetQueue.length) return runGetQueue.shift()
         return { status: 'ready', data: { run: { runId: body.runId, status: 'collecting' } } }
@@ -382,8 +382,8 @@ test('built client factory renders the overlay and hotboard pages with real Reac
             meta: { page: 1, pageSize: 20, total: 1 },
           }
         case 'hotboard.settings':
-          // 只读化后的生效字段投影。
-          return { status: 'ready', data: { scheduleEnabled: true, fullScheduleCron: '30 1 * * 1', ruleVersion: 'hot-v1-potential' } }
+          // 只读化后的生效字段投影（含阈值只读行字段）。
+          return { status: 'ready', data: { scheduleEnabled: true, fullScheduleCron: '30 1 * * 1', ruleVersion: 'hot-v1-potential', publishWindowDays: 90, perKeywordLimit: 10, commentTopN: 20, commentMaxPerNote: 10, minInteractionTotal: 1000, dedupHammingThreshold: 5, minValidSample: 30, searchMaxCallsPerDay: 60, commentMaxCallsPerDay: 100, detailMaxCallsPerRun: 200 } }
         case 'hotboard.noteDetail':
           return {
             status: 'ready',
@@ -418,22 +418,29 @@ test('built client factory renders the overlay and hotboard pages with real Reac
     await flush()
     const render = () => renderToString(React.createElement(HotboardPage, { hub, t: key => key }))
 
-    // 看板页（KPI + Run 状态条 + 11 列案例表），数据直渲可断言（t 为 key 直通，
-    // 断言 key 出现即证明对应列/按钮进了渲染树）。
+    // 看板页（KPI + 11 列案例表；2026-10-13 用户裁决去掉顶部 Run 状态条），
+    // 数据直渲可断言（t 为 key 直通，断言 key 出现即证明对应列/按钮进了渲染树）。
     let output = render()
     assert.ok(output.includes('案例一'), '看板页应渲染案例标题')
     assert.ok(output.includes('hbColCase'), '第一列应为案例列（缩略图列）')
     assert.ok(output.includes('hbColComposite'), '第二列应为综合分列')
+    assert.ok(output.includes('hbColActions'), '末列列头应为「操作」')
     assert.ok(output.includes('hbColViewDetail'), '操作列应渲染「查看详情」按钮')
     assert.ok(output.includes('hbMainRecord'), '重复组列应区分主记录')
-    assert.ok(output.includes('hbRunStatusCollecting'), 'Run 状态条应渲染中文状态枚举')
+    assert.ok(!output.includes('yxh-hb-runbar'), '看板页顶部不应再挂 Run 状态条')
     // 窄容器重排（对齐抖音账号总览表）：主表带 yxh-hb-table-board 限定类，
     // 数据单元格带 role=cell 与 data-label（值=表头 i18n 键），CSS 据此显示字段名。
     assert.ok(output.includes('yxh-hb-table-board'), '案例主表应带窄容器重排限定类')
     assert.ok(output.includes('data-label="hbColCollects"'), '采集列单元格应带 data-label')
     assert.ok(output.includes('data-label="hbColInteraction"'), '互动总量单元格应带 data-label')
     assert.ok(output.includes('data-label="hbColDupGroup"'), '重复组单元格应带 data-label')
+    assert.ok(output.includes('data-label="hbColActions"'), '操作列单元格应带 data-label')
     assert.ok((output.match(/data-label="hb/g) || []).length >= 11, '一行 11 个数据单元格都应带 data-label')
+    // cell-case/cell-score 的 flex/grid 必须落在 td 内层 span（cell-flex/cell-col）：
+    // td 直接设 display:flex/grid 会脱离表格单元格布局（真机列表错位根因），防回归。
+    // 结构断言（td 开标签紧跟内层 span），类名挪回 td 本身时拦截不住的问题不存在。
+    assert.ok(output.includes('class="yxh-hb-cell-case"><span class="yxh-hb-cell-flex"'), '案例单元格 flex 必须落在内层 span')
+    assert.ok(output.includes('class="yxh-hb-cell-score"><span class="yxh-hb-cell-col"'), '综合分单元格 grid 必须落在内层 span')
 
     // 案例详情抽屉 + Run 详情抽屉 + 确认弹窗。
     hub.openNote('n-1')
@@ -463,7 +470,12 @@ test('built client factory renders the overlay and hotboard pages with real Reac
     render()
     hub.setSub('rules')
     await flush()
-    render()
+    output = render()
+    // 阈值只读行（2026-10-13 用户裁决恢复：上轮只读化删过头）。
+    assert.ok(output.includes('hbSetPerKeywordLimit'), '配置页应只读展示单词采集上限')
+    assert.ok(output.includes('hbSetSearchBudget'), '配置页应只读展示每日搜索额度')
+    assert.ok(output.includes('hbSetDedupThreshold'), '配置页应只读展示去重汉明阈值')
+    assert.ok((output.match(/hbSet[A-Z]\w*/g) || []).length >= 11, '定时开关+10 个阈值行都应渲染')
   } finally {
     delete globalThis.__hbSmokeModule
     delete globalThis.window
@@ -484,7 +496,7 @@ async function loadHotboardFn(name) {
     .replace(/^export /gm, '')
   const module = { exports: {} }
   const require = n => {
-    if (n === 'react') return { createElement: () => {}, useEffect: () => {}, useState: () => [undefined, () => {}], useSyncExternalStore: () => undefined }
+    if (n === 'react') return { createElement: () => {}, useEffect: () => {}, useState: () => [undefined, () => {}], useRef: () => ({ current: null }), useSyncExternalStore: () => undefined }
     throw new Error(`unexpected require: ${n}`)
   }
   new Function('require', 'module', 'exports', `${src}\nmodule.exports.${name} = ${name}`)(require, module, module.exports)
