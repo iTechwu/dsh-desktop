@@ -2327,7 +2327,10 @@ const css = `.ydo-button{display:flex;width:36px;height:36px;align-items:center;
    主视图 = 发起拆解卡 + 拆解记录表格（默认 10 条 + 「加载更多」分页）；详情页 =
    白卡头部（标题/meta 行/状态徽标/8 段进度条）+ 6 指标条 + 五张折叠卡（复用 AI 卡色调：
    summary=蓝 / dims=灰 / patterns=紫 / recs=绿，与预览稿五卡一致）。 */
-.ydo-bd-body{grid-template-rows:1fr;overflow:auto}
+/* 拆解页右栏注册与面板同名容器（ydo-panel）：容器查询取最近祖先容器，
+   面板内元素仍按面板自身宽度、详情页（ydo-bd-page，无面板类）按右栏宽度命中；
+   fixed 弹层（重写确认/即时下载）挂在 App 根、不在本节内，不受 layout containment 影响。 */
+.ydo-bd-body{grid-template-rows:1fr;overflow:auto;container-type:inline-size;container-name:ydo-panel}
 /* 预览稿 .page 容器口径：拆解 Tab 两个视图统一 980px 限宽居中。 */
 .ydo-bd-main{display:grid;gap:16px;align-content:start;min-width:0;max-width:980px;margin:0 auto;width:100%}
 .ydo-bd-page{display:grid;gap:12px;align-content:start;min-width:0;max-width:980px;margin:0 auto;width:100%}
@@ -2339,6 +2342,14 @@ const css = `.ydo-button{display:flex;width:36px;height:36px;align-items:center;
 /* 规则单选（预览稿 rule-grid）：两列网格、卡内圆圈单选、选中浅蓝底。 */
 .ydo-bd-rules{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
 @container ydo-panel (max-width:760px){.ydo-bd-rules{grid-template-columns:1fr}}
+/* 拆解记录表窄容器重排（与账号总览表同模式）：940px 以下隐藏表头、行改块级、
+   单元格「字段名+值」两列网格，字段名由 td 的 data-label 提供；行分隔与 hover
+   保持在 tr 上，行点击打开详情不受影响。原视频分段表/分镜表列数动态且含长文本，
+   继续走 seg-wrap/shot-wrap 横向滚动，不参与重排。 */
+@container ydo-panel (max-width:940px){.ydo-bd-history .ydo-bd-table thead{display:none}.ydo-bd-history .ydo-bd-table tbody tr{display:block;min-width:0;padding:10px 0;border-bottom:1px solid var(--dsw-alias-bg-layer-2)}.ydo-bd-history .ydo-bd-table tbody tr:last-child{border-bottom:0}.ydo-bd-history .ydo-bd-table tbody tr>td{display:grid;grid-template-columns:minmax(76px,auto) 1fr;gap:2px 12px;align-items:baseline;padding:2px 0;border-bottom:0}.ydo-bd-history .ydo-bd-table tbody tr>td::before{content:attr(data-label);color:var(--dsw-alias-label-secondary);font-size:12px}.ydo-bd-history .ydo-bd-table tbody tr>td.ydo-bd-cell-main{display:grid;grid-template-columns:1fr;gap:2px;max-width:none}.ydo-bd-history .ydo-bd-cell-main::before{display:block;margin-bottom:4px}}
+/* 详情页头部与步骤条窄容器适配：操作按钮区允许换行；步骤名极窄时允许折行。 */
+@container ydo-panel (max-width:720px){.ydo-bd-head-row{flex-wrap:wrap}}
+@container ydo-panel (max-width:640px){.ydo-bd-step-name{white-space:normal}}
 .ydo-bd-radio{display:grid;gap:4px;padding:10px 12px;border:1px solid var(--dsw-alias-border-l1);border-radius:6px;background:var(--dsw-alias-bg-layer-1);color:inherit;font:inherit;text-align:left;cursor:pointer}
 .ydo-bd-radio:hover{border-color:var(--dsw-alias-brand-primary)}
 .ydo-bd-radio:disabled{opacity:.55;cursor:default}

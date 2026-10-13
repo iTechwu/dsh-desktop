@@ -397,6 +397,19 @@ test('BreakdownHistoryList：表格结构（五列表头）、规则 pill、分�
   assert.ok(table, '渲染表格结构')
   const headCells = collectFlat(list).filter(node => node.type === 'th').map(node => collectText(node))
   assert.deepEqual(headCells, ['bdColVideo', 'bdColStatus', 'bdColRule', 'bdColStep', 'bdColTime'], '五列表头走文案键')
+  // 窄容器重排（对齐总览表 data-label 模式）：数据单元格携带 role=cell 与
+  // data-label（值=表头键），CSS 据此在面板 <940px 时隐藏表头并显示字段名。
+  const labeledTds = collectFlat(list).filter(node => node.type === 'td' && node.props && node.props['data-label'])
+  assert.equal(labeledTds.length, 15, '3 行 × 5 列数据单元格都携带 data-label')
+  assert.deepEqual(
+    labeledTds.slice(0, 5).map(node => node.props['data-label']),
+    ['bdColVideo', 'bdColStatus', 'bdColRule', 'bdColStep', 'bdColTime'],
+    '首行 data-label 与表头键一一对应')
+  // CSS 侧守护：940px 重排块内首列覆盖必须以 td.ydo-bd-cell-main 提升特异性
+  // （(0,3,3) 压过通用 td 规则的 (0,2,3)），否则两列模板仍生效、首列布局错乱。
+  const clientCss = await readFile(new URL('../src/client.js', import.meta.url), 'utf8')
+  assert.match(clientCss, /\.ydo-bd-history \.ydo-bd-table tbody tr>td\.ydo-bd-cell-main\{[^}]*grid-template-columns:1fr/u,
+    '首列单列覆盖须带 td.ydo-bd-cell-main 特异性并声明 grid-template-columns:1fr')
   const trs = collectFlat(list).filter(node => node.type === 'tr' && node.props && node.props.tabIndex === 0)
   assert.equal(trs.length, 3)
   const text = collectText(list)

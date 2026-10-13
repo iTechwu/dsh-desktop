@@ -427,6 +427,13 @@ test('built client factory renders the overlay and hotboard pages with real Reac
     assert.ok(output.includes('hbColViewDetail'), '操作列应渲染「查看详情」按钮')
     assert.ok(output.includes('hbMainRecord'), '重复组列应区分主记录')
     assert.ok(output.includes('hbRunStatusCollecting'), 'Run 状态条应渲染中文状态枚举')
+    // 窄容器重排（对齐抖音账号总览表）：主表带 yxh-hb-table-board 限定类，
+    // 数据单元格带 role=cell 与 data-label（值=表头 i18n 键），CSS 据此显示字段名。
+    assert.ok(output.includes('yxh-hb-table-board'), '案例主表应带窄容器重排限定类')
+    assert.ok(output.includes('data-label="hbColCollects"'), '采集列单元格应带 data-label')
+    assert.ok(output.includes('data-label="hbColInteraction"'), '互动总量单元格应带 data-label')
+    assert.ok(output.includes('data-label="hbColDupGroup"'), '重复组单元格应带 data-label')
+    assert.ok((output.match(/data-label="hb/g) || []).length >= 11, '一行 11 个数据单元格都应带 data-label')
 
     // 案例详情抽屉 + Run 详情抽屉 + 确认弹窗。
     hub.openNote('n-1')

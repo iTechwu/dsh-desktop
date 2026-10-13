@@ -518,18 +518,19 @@ export function BreakdownHistoryList({
         }
       },
     },
-    h('td', { className: 'ydo-bd-cell-main' },
+    // data-label 与账号总览表同口径：窄容器重排后由 CSS ::before 显示字段名。
+    h('td', { role: 'cell', 'data-label': t('bdColVideo'), className: 'ydo-bd-cell-main' },
       h('span', { className: 'ydo-bd-row-title' }, item.candidateTitle || item.candidateId || '—'),
       h('span', { className: 'ydo-bd-row-sub' },
         item.candidateAuthor ? `@${item.candidateAuthor}` : null,
         item.candidateAuthor && item.candidatePlayCount !== null && item.candidatePlayCount !== undefined
           ? ` · ${t('bdPlayLabel')} ${formatCount(item.candidatePlayCount)}`
           : null)),
-    h('td', null, h(StatusBadge, { status: item.status, t })),
-    h('td', null, h(RulePill, { rule: ruleById(rules, item.rewriteRuleId), t })),
-    h('td', { className: `ydo-bd-row-step${failed ? ' ydo-bd-row-step-failed' : running ? ' ydo-bd-row-step-running' : ''}` },
+    h('td', { role: 'cell', 'data-label': t('bdColStatus') }, h(StatusBadge, { status: item.status, t })),
+    h('td', { role: 'cell', 'data-label': t('bdColRule') }, h(RulePill, { rule: ruleById(rules, item.rewriteRuleId), t })),
+    h('td', { role: 'cell', 'data-label': t('bdColStep'), className: `ydo-bd-row-step${failed ? ' ydo-bd-row-step-failed' : running ? ' ydo-bd-row-step-running' : ''}` },
       failed ? t('bdStatusFailed') : (item.currentStepLabel || '—')),
-    h('td', { className: 'ydo-bd-row-time' }, formatDateTime(item.updatedAt)))
+    h('td', { role: 'cell', 'data-label': t('bdColTime'), className: 'ydo-bd-row-time' }, formatDateTime(item.updatedAt)))
   })
   // 预览稿 panel 口径：可见标题「拆解记录（团队共享，按时间倒序）」，记录区与
   // 发起区同为 ydo-ov-panel；空态/错误态同样带标题，保持结构对称。

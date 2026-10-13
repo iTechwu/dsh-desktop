@@ -327,7 +327,9 @@ test('hotboard ui: four sub pages, run polling and display constraints', async (
   assert.match(source, /pages: defaultPage\(\)/)
   // OPEN-11 B1：默认窗口 90d（搜索召回偏存量笔记 30d 常空，用户可手动切 7d/30d）。
   assert.match(source, /board: \{ window: '90d', keyword: '', style: '', color: '', noteWord: '', commentWord: '', scoreMin: '', scoreMax: '', sort: 'score', onlyMain: true, onlyTagged: false \}/)
-  assert.match(source, /settingsDirty:/)
+  // 配置页只读化（UI 改版裁决）：settings 编辑状态机已整体删除，只读展示样式存在。
+  assert.doesNotMatch(source, /settingsDirty/)
+  assert.match(source, /yxh-hb-settings-readonly/)
   // 图片加载失败占位（onError 记入 broken 集合），不无限重试。
   assert.match(source, /onError: \(\) => markBroken\(url\)/)
   assert.match(source, /yxh-hb-image-broken/)
