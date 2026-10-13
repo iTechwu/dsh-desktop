@@ -163,6 +163,36 @@ describe('desktop update installer download', () => {
     await expectNoPartialFiles(directory)
   })
 
+  it('accepts a download that settles on the pinned TOS releases prefix', async () => {
+    const directory = await temporaryDirectory()
+    const result = await downloadDesktopUpdate({
+      platform: 'darwin',
+      version: '2.3.0',
+      destinationPath: destinationPath(directory, 'darwin', '2.3.0'),
+      request: async () => chunkedResponse(
+        [dmgArtifact()],
+        {},
+        'https://dofe-public.tos-cn-beijing.volces.com/yootun-agent/releases/beta/2.3.0/darwin/abc/Yootun-Agent-Beta-2.3.0.dmg',
+      ),
+    })
+    expect(await readFile(result)).toEqual(Buffer.from(dmgArtifact()))
+  })
+
+  it('accepts any product prefix on the pinned TOS bucket host', async () => {
+    const directory = await temporaryDirectory()
+    const result = await downloadDesktopUpdate({
+      platform: 'darwin',
+      version: '2.3.0',
+      destinationPath: destinationPath(directory, 'darwin', '2.3.0'),
+      request: async () => chunkedResponse(
+        [dmgArtifact()],
+        {},
+        'https://dofe-public.tos-cn-beijing.volces.com/sensteed-agent/releases/beta/2.3.0/darwin/abc/Yootun-Agent-Beta-2.3.0.dmg',
+      ),
+    })
+    expect(await readFile(result)).toEqual(Buffer.from(dmgArtifact()))
+  })
+
   it('cancels the response body when the origin gate rejects the settled URL', async () => {
     const directory = await temporaryDirectory()
     let cancelled = false

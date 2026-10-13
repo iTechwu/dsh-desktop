@@ -54,18 +54,20 @@ export interface UpdateArtifactResponse {
 export type UpdateArtifactRequest = (url: string, init: RequestInit) => Promise<UpdateArtifactResponse>
 
 /**
- * Download targets the installer fetch may settle on. The single host is the
- * project's own release endpoint, which serves the installer stream directly
- * without redirecting to a third-party mirror. A redirect chain that ends
- * anywhere else is treated as a compromised download service instead of being
- * executed after a magic-number check. Adding or moving a target requires a
- * client release.
+ * Download targets the installer fetch may settle on. The project's own
+ * release endpoint serves (and now 302-redirects) installer streams; the
+ * pinned TOS bucket host is the only third-party host (all product agent
+ * prefixes live there: yootun-agent, sensteed-agent, ...) because the Models
+ * edge forwards those bytes at a fraction of client-direct bandwidth. The
+ * objects are content-addressed and anonymous read-only, and every download
+ * still passes the magic-number plus digest gates before execution, so the
+ * object path is not a security boundary — the digest is. A redirect chain
+ * that ends anywhere else is treated as a compromised download service.
+ * Adding or moving a target requires a security review and a client release.
  */
-const ALLOWED_DOWNLOAD_TARGETS: readonly {
-  readonly host: string
-  readonly pathPrefix?: string
-}[] = [
+const ALLOWED_DOWNLOAD_TARGETS: readonly { readonly host: string }[] = [
   { host: 'ixicai.cn' },
+  { host: 'dofe-public.tos-cn-beijing.volces.com' },
 ]
 
 /** Inputs for one user-confirmed installer download. */
@@ -474,7 +476,6 @@ export function assertAllowedDownloadOrigin(finalUrl: string): void {
   const host = parsed.hostname.toLowerCase()
   const allowed = ALLOWED_DOWNLOAD_TARGETS.some(target =>
     host === target.host
-    && (target.pathPrefix === undefined || parsed.pathname.startsWith(target.pathPrefix)),
   )
   if (!allowed) {
     throw new UpdateDownloadError(
