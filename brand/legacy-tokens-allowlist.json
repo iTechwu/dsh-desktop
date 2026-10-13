@@ -180,6 +180,7 @@
     "scripts/ci-snapshots/dsh-knowledge-capture/package.json": 1,
     "scripts/ci-snapshots/dsh-knowledge-capture/test/plugin.test.mjs": 1,
     "scripts/plugin-ux-audit.mjs": 1,
-    "scripts/verify-brand-isolation.mjs": 6
+    "scripts/verify-brand-isolation.mjs": 6,
+    "scripts/verify-brand-isolation.test.mjs": 10
   }
 }

@@ -115,7 +115,7 @@ describe('desktop update installer download', () => {
     const destination = destinationPath(directory, 'darwin', '2.1.0')
     await writeFile(destination, Buffer.from('corrupted'))
     const calls: Array<{ url: string }> = []
-    const request: UpdateArtifactRequest = async (url, init) => {
+    const request: UpdateArtifactRequest = async url => {
       calls.push({ url })
       return chunkedResponse([artifact])
     }
