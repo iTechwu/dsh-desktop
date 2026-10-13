@@ -81,7 +81,8 @@ function makeHub({ overview, runGet, post: postOverride } = {}) {
       case 'hotboard.labels':
         return { status: 'ready', data: { labels: [], proposals: [] }, meta: { page: 1, pageSize: 20, total: 2 } }
       case 'hotboard.settings':
-        return { status: 'ready', data: { publishWindowDays: 7, fullScheduleCron: '0 7 * * *' } }
+        // 2026-10-13 只读化裁决：settings 投影只承载真实生效的展示字段。
+        return { status: 'ready', data: { scheduleEnabled: true, fullScheduleCron: '30 1 * * 1', ruleVersion: 'hot-v1-potential' } }
       case 'hotboard.runGet':
         if (runGetQueue && runGetQueue.length) return runGetQueue.shift()
         return { status: 'ready', data: { run: { runId: body.runId, status: 'collecting' } } }
@@ -100,7 +101,7 @@ test('init loads board, settings and todo badges; write requests carry confirm a
   hub.init()
   await flush()
   assert.equal(hub.get().overview?.data.kpis.totalCases, 12)
-  assert.equal(hub.get().settings?.publishWindowDays, 7)
+  assert.equal(hub.get().settings?.scheduleEnabled, true)
   // 待办徽标来自两个 pageSize=1 请求的 meta.total。
   assert.deepEqual(hub.get().todos, { candidates: 3, proposals: 2 })
   assert.ok(countAction(calls, 'hotboard.candidates') >= 1)
@@ -231,20 +232,20 @@ test('candidateReview with row-level failures swaps to the partial notice with s
   assert.deepEqual(hub.get().notice?.extra, { failed: 1, total: 2 })
 })
 
-test('writes are rejected while the hub is stopped and empty dirty settings never post', async () => {
+test('writes are rejected while the hub is stopped; settings page is read-only', async () => {
   const { hub, calls } = makeHub()
   // 未 init（Overlay 未打开）即拒绝写。
   assert.equal(await hub.keywordSave({ action: 'create', keyword: 'x' }), false)
   hub.init()
   await flush()
-  // 空 dirty 的 settingsUpdate 不发请求、返回 false。
-  assert.equal(await hub.settingsUpdate(), false)
-  assert.equal(countAction(calls, 'hotboard.settingsUpdate'), 0)
-  hub.setSettingsField('publishWindowDays', 14)
-  assert.equal(hub.get().settingsDirty.publishWindowDays, 14)
-  hub.resetSettingsDirty()
-  assert.deepEqual(hub.get().settingsDirty, {})
-  assert.equal(await hub.settingsUpdate(), false)
+  // 2026-10-13 只读化裁决：配置页只读展示生效口径，settings 的编辑状态机
+  // （settingsUpdate / setSettingsField / settingsDirty）已整体移除，不再有写入口。
+  assert.equal('settingsUpdate' in hub, false)
+  assert.equal('setSettingsField' in hub, false)
+  assert.equal(hub.get().settingsDirty, undefined)
+  assert.equal(hub.get().settings?.scheduleEnabled, true)
+  assert.equal(hub.get().settings?.fullScheduleCron, '30 1 * * 1')
+  assert.equal(countAction(calls, 'hotboard.settingsUpdate'), 0, '任何路径都不应再发 settingsUpdate')
   // stop 后写操作同样拒绝。
   hub.stop()
   assert.equal(await hub.runStart(), false)
@@ -257,7 +258,7 @@ test('every hotboard copy key used by the UI is registered in copy.zh and copy.e
   // 断言 client.js 里每个 key 至少以 `key:` 形式出现 2 次（zh 与 en 各一次）。
   const ui = await readFile(new URL('../src/hotboard-ui.js', import.meta.url), 'utf8')
   const client = await readFile(new URL('../src/client.js', import.meta.url), 'utf8')
-  const keys = [...new Set([...ui.matchAll(/'(hb[A-Z]\w*)'/g)].map(match => match[1]))]
+  const keys = [...new Set([...ui.matchAll(/['"`](hb[A-Z]\w*)['"`]/g)].map(match => match[1]))]
   assert.ok(keys.length >= 40, `提取到 ${keys.length} 个 key，低于预期说明提取器失效`)
   const missing = keys.filter(key => (client.match(new RegExp(`${key}:`, 'g')) || []).length < 2)
   assert.deepEqual(missing, [], `copy.zh / copy.en 缺少注册的 key: ${missing.join(', ')}`)
@@ -348,8 +349,10 @@ test('built client factory renders the overlay and hotboard pages with real Reac
     assert.equal(typeof HotboardPage, 'function')
 
     const notes = [
-      { noteId: 'n-1', title: '案例一', author: '作者甲', score: 88.5, publishedAt: '2026-10-01T00:00:00Z', coverUrl: 'https://example.com/1.jpg', keyword: '车衣', styleTag: null, colorTag: null },
-      { noteId: 'n-2', title: null, author: null, score: null, publishedAt: null, coverUrl: null, keyword: null, styleTag: null, colorTag: null },
+      // 对齐 tools hotboard.overview 的 note brief 投影（authorName/publishTime/
+      // matchedKeywords/互动计数/retrievedAt/duplicateGroupId）。
+      { noteId: 'n-1', title: '案例一', authorName: '作者甲', publishTime: '2026-10-01T00:00:00Z', score: 88.5, coverUrl: 'https://example.com/1.jpg', noteType: 'normal', matchedKeywords: ['车衣'], collectCount: 900, likeCount: 3000, commentCount: 200, shareCount: 100, interactionTotal: 4200, retrievedAt: '2026-10-09T02:00:00Z', duplicateGroupId: null, styleTag: null, colorTag: null },
+      { noteId: 'n-2', title: null, authorName: null, publishTime: null, score: null, coverUrl: null, noteType: 'video', matchedKeywords: [], collectCount: 0, likeCount: 0, commentCount: 0, shareCount: 0, interactionTotal: 0, retrievedAt: null, duplicateGroupId: 'dup-abc12345', styleTag: null, colorTag: null },
     ]
     const smokePost = async body => {
       switch (body.action) {
@@ -379,26 +382,18 @@ test('built client factory renders the overlay and hotboard pages with real Reac
             meta: { page: 1, pageSize: 20, total: 1 },
           }
         case 'hotboard.settings':
-          return {
-            status: 'ready',
-            data: {
-              publishWindowDays: 30, perKeywordLimit: 20, commentTopN: 20, commentMaxPerNote: 3,
-              minInteractionTotal: 500, dedupHammingThreshold: 8, minValidSample: 50,
-              searchMaxCallsPerDay: 60, commentMaxCallsPerDay: 100, detailMaxCallsPerRun: 120,
-              scheduleEnabled: true, manualIncrementEnabled: true, commentSampleEnabled: true, manualCommentDefaultEnabled: false,
-              fullScheduleCron: '0 7 * * *', ruleVersion: 'hot-v1-potential',
-            },
-          }
+          // 只读化后的生效字段投影。
+          return { status: 'ready', data: { scheduleEnabled: true, fullScheduleCron: '30 1 * * 1', ruleVersion: 'hot-v1-potential' } }
         case 'hotboard.noteDetail':
           return {
             status: 'ready',
             data: {
-              note: { noteId: 'n-1', title: '案例一', author: '作者甲', publishedAt: '2026-10-01T00:00:00Z', bodyText: '正文内容' },
-              metrics: { interactionTotal: 5200, collectCount: 800, likeCount: 3000, commentCount: 200, shareCount: 100 },
+              note: { noteId: 'n-1', title: '案例一', authorName: '作者甲', noteType: 'normal', publishTime: '2026-10-01T00:00:00Z', link: 'https://www.xiaohongshu.com/explore/n-1', body: '正文第一行\n\n#车衣# 改色效果' },
+              metrics: { interactionTotal: 5200, collectCount: 800, likeCount: 3000, commentCount: 200, shareCount: 100, score7d: 80, score30d: 75, score90d: 70 },
               currentTags: [{ tagType: 'style', labelCode: 's-1', labelName: '简约' }],
               images: { coverUrl: 'https://example.com/1.jpg', imageUrls: [] },
-              similarNotes: [{ noteId: 'n-2', title: '相似案例', score: 80 }],
-              commentWords: ['好看'], noteWords: ['车衣'],
+              similarNotes: [{ noteId: 'n-2', title: '相似案例', coverUrl: 'https://example.com/2.jpg' }],
+              wordStats: [{ wordType: 'note', word: '车衣', frequency: 5 }, { wordType: 'comment', word: '好看', frequency: 3 }],
             },
           }
         case 'hotboard.runGet':
@@ -408,7 +403,7 @@ test('built client factory renders the overlay and hotboard pages with real Reac
               run: { runId: 'r-smoke', runType: 'incremental', triggerType: 'manual', status: 'collecting', startedAt: '2026-10-09T01:00:00Z', finishedAt: null, errorCode: null, activeKeywordCount: 1, successKeywordCount: 1, failedKeywordCount: 0, noResultKeywordCount: 0, collectedNoteCount: 5, qualifiedNoteCount: 3, duplicateNoteCount: 1, lowQualityNoteCount: 1, aiTaggedCount: 2, aiPendingCount: 1, commentCollectedNoteCount: 2, detailCompletedCount: 2, detailFailedCount: 0 },
               deadlineAt: '2026-10-09T01:25:00Z',
               remainingSearchBudget: 50,
-              keywordRuns: [{ keyword: '车衣', status: 'succeeded', errorCode: null, collectedCount: 5, qualifiedCount: 3, startedAt: '2026-10-09T01:00:00Z', finishedAt: '2026-10-09T01:01:00Z' }],
+              keywordRuns: [{ keyword: '车衣', status: 'success', errorCode: null, collectedCount: 5, qualifiedCount: 3, startedAt: '2026-10-09T01:00:00Z', finishedAt: '2026-10-09T01:01:00Z' }],
               failedKeywords: [],
             },
           }
@@ -423,18 +418,29 @@ test('built client factory renders the overlay and hotboard pages with real Reac
     await flush()
     const render = () => renderToString(React.createElement(HotboardPage, { hub, t: key => key }))
 
-    // 看板页（KPI + Run 状态条 + 案例表），数据直渲可断言。
+    // 看板页（KPI + Run 状态条 + 11 列案例表），数据直渲可断言（t 为 key 直通，
+    // 断言 key 出现即证明对应列/按钮进了渲染树）。
     let output = render()
     assert.ok(output.includes('案例一'), '看板页应渲染案例标题')
+    assert.ok(output.includes('hbColCase'), '第一列应为案例列（缩略图列）')
+    assert.ok(output.includes('hbColComposite'), '第二列应为综合分列')
+    assert.ok(output.includes('hbColViewDetail'), '操作列应渲染「查看详情」按钮')
+    assert.ok(output.includes('hbMainRecord'), '重复组列应区分主记录')
+    assert.ok(output.includes('hbRunStatusCollecting'), 'Run 状态条应渲染中文状态枚举')
 
     // 案例详情抽屉 + Run 详情抽屉 + 确认弹窗。
     hub.openNote('n-1')
     await flush()
-    render()
+    output = render()
+    assert.ok(output.includes('hbOpenNote'), '详情抽屉应渲染醒目外链按钮')
+    assert.ok(output.includes('hbNoteImages'), '详情抽屉应渲染笔记图片分区')
+    assert.ok(output.includes('hbNoteBody'), '详情抽屉应渲染正文分区')
     hub.closeNote()
     hub.openRun(null)
     await flush()
-    render()
+    output = render()
+    assert.ok(output.includes('hbRunTypeIncremental'), 'Run 概要应渲染类型枚举（中文）')
+    assert.ok(output.includes('hbRunCounters'), 'Run 详情应渲染执行计数分区')
     hub.closeRun()
     hub.askConfirm('确认启动增量采集？', () => {})
     output = render()

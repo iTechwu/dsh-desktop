@@ -110,6 +110,61 @@ window.__ModuleLoader__.load({
     }
     const hbErrorKey = reason => HB_ERROR_KEYS[reason] || 'hbWriteFailed'
 
+    // 枚举值中文映射（页面不透出英文枚举，见 i18n zh/en 同名 key）；白名单外
+    // 原样返回兜底，缺失一律 —（对齐 hbText 口径）。
+    function hbEnumText(t, mapping, value) {
+      if (value === null || value === undefined || value === '') return '—'
+      const key = mapping[value]
+      return key ? t(key) : String(value)
+    }
+
+    // run 状态（tools hotboard_constants.HotboardRunStatus 同口径）。
+    const HB_RUN_STATUS_KEYS = {
+      queued: 'hbRunStatusQueued', collecting: 'hbRunStatusCollecting', deduplicating: 'hbRunStatusDeduplicating',
+      scoring: 'hbRunStatusScoring', tagging: 'hbRunStatusTagging', completed: 'hbRunStatusCompleted',
+      partial: 'hbRunStatusPartial', failed: 'hbRunStatusFailed', cancelled: 'hbRunStatusCancelled',
+    }
+    // run 状态 → 徽标配色（active 品牌色 / completed 绿 / partial 橙 / 终止红）。
+    function hbRunStatusBadgeClass(status) {
+      if (ACTIVE_RUN_STATUSES.has(status)) return 'yxh-hb-badge yxh-hb-badge-info'
+      if (status === 'completed') return 'yxh-hb-badge yxh-hb-badge-ok'
+      if (status === 'partial') return 'yxh-hb-badge yxh-hb-badge-warn'
+      if (status === 'failed' || status === 'cancelled') return 'yxh-hb-badge yxh-hb-badge-expired'
+      return 'yxh-hb-badge yxh-hb-badge-muted'
+    }
+    // run 类型（full/incremental）。
+    const HB_RUN_TYPE_KEYS = { full: 'hbRunTypeFull', incremental: 'hbRunTypeIncremental' }
+    // run 内关键词执行状态。
+    const HB_KEYWORD_RUN_STATUS_KEYS = {
+      pending: 'hbKwRunPending', success: 'hbKwRunSuccess', failed: 'hbKwRunFailed',
+      empty: 'hbKwRunEmpty', skipped_budget: 'hbKwRunSkippedBudget', skipped_active_run: 'hbKwRunSkippedActive',
+    }
+    // 关键词/标签来源（built_in/manual/agent）。
+    const HB_SOURCE_KEYS = { built_in: 'hbSourceBuiltIn', manual: 'hbSourceManual', agent: 'hbSourceAgent' }
+    // 扩词候选状态。
+    const HB_CANDIDATE_STATUS_KEYS = {
+      pending: 'hbPending', accepted: 'hbAccepted', rejected: 'hbRejected', expired: 'hbExpired',
+    }
+    // 标签提案状态。
+    const HB_PROPOSAL_STATUS_KEYS = {
+      pending: 'hbPending', auto_activated: 'hbProposalAuto', accepted: 'hbAccepted',
+      rejected: 'hbRejected', merged: 'hbProposalMerged', expired: 'hbExpired',
+    }
+    // run 内部 errorCode（tools hotboard_constants HOTBOARD_RUN_ERROR_*）中文描述；
+    // MCP 错误信封类 XHS_HOTBOARD_* 已有 HB_ERROR_KEYS/hbErr* 文案，此处只收 run 负载。
+    const HB_RUN_ERROR_TEXT_KEYS = {
+      DETAIL_BUDGET_EXHAUSTED: 'hbRunErrDetailBudget',
+      DETAIL_DEADLINE_EXCEEDED: 'hbRunErrDetailDeadline',
+      COMMENT_BUDGET_EXHAUSTED: 'hbRunErrCommentBudget',
+      SOFT_DEADLINE_EXCEEDED: 'hbRunErrSoftDeadline',
+      SCORE_UPDATE_FAILED: 'hbRunErrScoreFailed',
+    }
+    const hbRunErrorText = (t, code) => {
+      if (code === null || code === undefined || code === '') return '—'
+      const key = HB_RUN_ERROR_TEXT_KEYS[code]
+      return key ? t(key) : String(code)
+    }
+
     // ---------------------------------------------------------------------------
     // 状态机（纯逻辑）
     // ---------------------------------------------------------------------------
@@ -142,7 +197,6 @@ window.__ModuleLoader__.load({
         candidates: null,
         labels: null,
         settings: null,
-        settingsDirty: {},
         runLive: null,
         runDrawer: null,
         noteDrawer: null,
@@ -229,12 +283,15 @@ window.__ModuleLoader__.load({
         }
       }
 
+      // 配置只读（2026-10-13 用户裁决：页面上可编辑的配置项在执行链路不生效——
+      // 口径全部读服务端部署 TOML，DB settings 仅 scheduleEnabled 真实生效；
+      // 因此 UI 移除编辑与保存，settings 只作只读展示）。
       async function loadSettings() {
         try {
           const res = await call({ action: 'hotboard.settings' })
           if (res.status === 'error') return
-          update({ settings: res.data, settingsDirty: {} })
-        } catch { /* 配置读取失败不阻塞页面；保存时可见报错 */ }
+          update({ settings: res.data })
+        } catch { /* 配置读取失败不阻塞页面 */ }
       }
 
       // 待办数（页签徽标）：pending 候选与 pending 提案的 total（pageSize=1 只取 meta）。
@@ -322,6 +379,18 @@ window.__ModuleLoader__.load({
       // 筛选草稿更新：保留草稿（不重置为默认），重置该组页码并重拉。
       function setFilter(group, key, value) {
         const filters = { ...snapshot.filters, [group]: { ...snapshot.filters[group], [key]: value } }
+        const pages = { ...snapshot.pages, [group]: 1 }
+        update({ filters, pages })
+        if (stopped) return
+        if (group === 'board') loadBoard()
+        else if (group === 'keywords') loadKeywords()
+        else if (group === 'candidates') loadCandidates()
+        else if (group === 'labels') loadLabels()
+      }
+
+      // 一键清空整组筛选（「清空全部」chip）：单次重拉，不逐项发请求。
+      function resetFilters(group) {
+        const filters = { ...snapshot.filters, [group]: defaultFilters()[group] }
         const pages = { ...snapshot.pages, [group]: 1 }
         update({ filters, pages })
         if (stopped) return
@@ -437,21 +506,10 @@ window.__ModuleLoader__.load({
         }, { successKey: 'hbKeywordSaved', reload: 'keywords' })
       }
 
-      function settingsUpdate() {
-        return runWrite(async () => {
-          const dirty = snapshot.settingsDirty
-          if (!Object.keys(dirty).length) return false
-          const res = await call({ action: 'hotboard.settingsUpdate', settings: dirty, confirm: true, idempotencyKey: hbIdempotencyKey() }).catch(hotboardError)
-          if (res.status !== 'ready') hotboardError(res)
-          return { detail: { changed: Array.isArray(res.changed) ? res.changed : [] } }
-        }, { successKey: 'hbSettingsSaved', reload: 'settings' })
-      }
-
       function runStart() {
         return runWrite(async () => {
           const res = await call({ action: 'hotboard.runStart', runType: 'incremental', confirm: true, idempotencyKey: hbIdempotencyKey() }).catch(hotboardError)
           if (res.status !== 'ready') hotboardError(res)
-          update({ settingsDirty: {} })
           // run 创建即进入活跃轮询。
           if (res.run?.runId) syncRunPoll({ runId: res.run.runId, status: res.run.status || 'queued' })
           return null
@@ -506,20 +564,12 @@ window.__ModuleLoader__.load({
 
       function dismissNotice() { update({ notice: null }) }
 
-      function setSettingsField(field, value) {
-        update({ settingsDirty: { ...snapshot.settingsDirty, [field]: value } })
-      }
-
-      function resetSettingsDirty() {
-        update({ settingsDirty: {} })
-      }
-
       return {
         subscribe, get, init, stop, refresh,
-        setSub, setFilter, setPage,
+        setSub, setFilter, resetFilters, setPage,
         openNote, closeNote, openRun, closeRun,
-        noteTagUpdate, keywordSave, settingsUpdate, runStart, candidateReview, labelReview, labelSave,
-        setSettingsField, resetSettingsDirty, askConfirm, resolveConfirm, dismissConfirm, dismissNotice,
+        noteTagUpdate, keywordSave, runStart, candidateReview, labelReview, labelSave,
+        askConfirm, resolveConfirm, dismissConfirm, dismissNotice,
       }
     }
 
@@ -565,13 +615,61 @@ window.__ModuleLoader__.load({
       const active = ACTIVE_RUN_STATUSES.has(status)
       return h('div', { className: `yxh-hb-runbar${active ? ' yxh-hb-runbar-active' : ''}`, role: 'status' },
         active ? h('span', { className: 'yxh-spinner', 'aria-hidden': true }) : null,
-        h('span', { className: 'yxh-hb-runbar-status' }, `${t('hbRunStatus')} · ${hbText(status)}`),
+        h('span', { className: 'yxh-hb-runbar-status' },
+          h('span', { className: hbRunStatusBadgeClass(status) }, hbEnumText(t, HB_RUN_STATUS_KEYS, status))),
         h('span', null, `${t('hbRunStarted')} ${hbTime(live?.run?.startedAt || runStatus?.startedAt)}`),
         live?.remainingSearchBudget !== null && live?.remainingSearchBudget !== undefined
           ? h('span', null, `${t('hbRemainingBudget')} ${hbCount(live.remainingSearchBudget)}`)
           : null,
         live ? h('span', null, `${t('hbRunCollected')} ${hbCount(live.run?.collectedNoteCount)} · ${t('hbRunQualified')} ${hbCount(live.run?.qualifiedNoteCount)} · ${t('hbRunFailedKeywords')} ${hbCount(live.run?.failedKeywordCount)}`) : null,
         h('button', { type: 'button', className: 'yxh-hb-link', onClick: () => hub.openRun(runStatus?.runId || null) }, t('hbRunDetail')))
+    }
+
+    function Kpi({ label, value, sub }) {
+      return h('div', { className: 'yxh-hb-kpi' },
+        h('span', { className: 'yxh-hb-kpi-label' }, label),
+        h('span', { className: 'yxh-hb-kpi-value' }, value),
+        sub ? h('span', { className: 'yxh-hb-kpi-sub' }, sub) : null)
+    }
+
+    // 时间窗值 → 文案 key（综合分列小注与筛选 chips 复用）。
+    const HB_WINDOW_LABEL_KEYS = { '7d': 'hbWindow7d', '30d': 'hbWindow30d', '90d': 'hbWindow90d' }
+    // 排序值 → 文案 key（排序下拉与筛选 chips 共用，review 建议）。
+    const HB_SORT_LABEL_KEYS = { score: 'hbSortScore', publishTime: 'hbSortPublishTime', collect: 'hbSortCollect', like: 'hbSortLike', comment: 'hbSortComment', share: 'hbSortShare' }
+    // 「清空全部」与单个 chip × 的默认值表（对齐 defaultFilters().board；chips 只
+    // 覆盖 chip 化的键，onlyMain/onlyTagged 关闭态在勾选框本身可见，不做 chip）。
+    const HB_BOARD_FILTER_DEFAULTS = { window: '90d', keyword: '', style: '', color: '', noteWord: '', commentWord: '', scoreMin: '', scoreMax: '', sort: 'score', onlyMain: true, onlyTagged: false }
+
+    // 案例缩略图（列表第一列，2026-10-13 用户裁决对齐 web 参考稿）：coverUrl 缺失
+    // 或加载失败显示类型占位；角标区分图文/视频。broken 由页级 state 收集。
+    function NoteThumb({ note, broken, onBroken, t }) {
+      const url = note.coverUrl
+      const typeLabel = note.noteType === 'video' ? t('hbTypeVideo') : t('hbTypeImage')
+      if (!url || broken.has(url)) {
+        return h('span', { className: 'yxh-hb-thumb yxh-hb-thumb-empty' },
+          h('span', { className: 'yxh-hb-thumb-fallback' }, typeLabel))
+      }
+      return h('span', { className: 'yxh-hb-thumb' },
+        h('img', { src: url, alt: '', loading: 'lazy', onError: () => onBroken(url) }),
+        h('span', { className: 'yxh-hb-thumb-badge' }, typeLabel))
+    }
+
+    // 已启用筛选 chips（偏离默认值即一枚，可单个 × 移除，也可一键清空）。
+    function BoardFilterChips({ filters, hub, t }) {
+      const f = filters
+      const chips = []
+      if (f.window !== '90d') chips.push({ key: 'window', label: t(HB_WINDOW_LABEL_KEYS[f.window] || f.window) })
+      for (const [key, label] of [['keyword', t('hbKeywordFilter')], ['style', t('hbStyle')], ['color', t('hbColor')], ['noteWord', t('hbNoteWord')], ['commentWord', t('hbCommentWord')]]) {
+        if (f[key]) chips.push({ key, label: `${label}: ${f[key]}` })
+      }
+      if (f.scoreMin !== '' && f.scoreMin !== null && f.scoreMin !== undefined) chips.push({ key: 'scoreMin', label: `${t('hbScoreMin')} ≥ ${f.scoreMin}` })
+      if (f.sort && f.sort !== 'score') chips.push({ key: 'sort', label: `${t('hbSort')}: ${t(HB_SORT_LABEL_KEYS[f.sort] || f.sort)}` })
+      if (!chips.length) return null
+      return h('div', { className: 'yxh-hb-chip-row' },
+        chips.map(chip => h('span', { key: chip.key, className: 'yxh-hb-chip-filter' },
+          chip.label,
+          h('button', { type: 'button', 'aria-label': t('close'), onClick: () => hub.setFilter('board', chip.key, HB_BOARD_FILTER_DEFAULTS[chip.key]) }, '×'))),
+        h('button', { type: 'button', className: 'yxh-hb-link', onClick: () => hub.resetFilters('board') }, t('hbClearFilters')))
     }
 
     function BoardPage({ state, hub, t }) {
@@ -582,7 +680,19 @@ window.__ModuleLoader__.load({
       const options = data?.filterOptions || null
       const kpis = data?.kpis || null
       const disabled = state.loading || state.pending > 0
+      // 缩略图加载失败集合（页级，避免行内 state 触发整表重挂）。
+      const [brokenThumbs, setBrokenThumbs] = React.useState(() => new Set())
+      const markBrokenThumb = url => setBrokenThumbs(prev => {
+        const next = new Set(prev)
+        next.add(url)
+        return next
+      })
+      const total = Number(meta?.total) || 0
+      const pageSize = Number(meta?.pageSize) || 20
+      const pagesCount = Math.max(1, Math.ceil(total / pageSize))
+      const scheduleEnabled = kpis?.nextRun?.scheduleEnabled === true
       return h('div', { className: 'yxh-hb-board' },
+        h(RunStatusBar, { state, hub, t }),
         h('div', { className: 'yxh-hb-filters', 'aria-label': t('hbFilters') },
           h(Select, { label: t('hbWindow'), value: f.window, disabled, onChange: v => hub.setFilter('board', 'window', v), options: [
             { value: '7d', label: t('hbWindow7d') }, { value: '30d', label: t('hbWindow30d') }, { value: '90d', label: t('hbWindow90d') },
@@ -592,41 +702,69 @@ window.__ModuleLoader__.load({
           h(Select, { label: t('hbColor'), value: f.color, disabled, onChange: v => hub.setFilter('board', 'color', v), options: [{ value: '', label: t('hbAll') }, ...(options?.colors || []).map(item => ({ value: item.code, label: item.name }))] }),
           h(Select, { label: t('hbNoteWord'), value: f.noteWord, disabled, onChange: v => hub.setFilter('board', 'noteWord', v), options: [{ value: '', label: t('hbAll') }, ...(options?.noteWords || []).map(w => ({ value: w, label: w }))] }),
           h(Select, { label: t('hbCommentWord'), value: f.commentWord, disabled, onChange: v => hub.setFilter('board', 'commentWord', v), options: [{ value: '', label: t('hbAll') }, ...(options?.commentWords || []).map(w => ({ value: w, label: w }))] }),
-          h(Select, { label: t('hbSort'), value: f.sort, disabled, onChange: v => hub.setFilter('board', 'sort', v), options: [
-            { value: 'score', label: t('hbSortScore') }, { value: 'publishTime', label: t('hbSortPublishTime') },
-            { value: 'collect', label: t('hbSortCollect') }, { value: 'like', label: t('hbSortLike') },
-            { value: 'comment', label: t('hbSortComment') }, { value: 'share', label: t('hbSortShare') },
-          ] }),
+          h('label', { className: 'yxh-hb-filter' }, t('hbScoreMin'),
+            h('input', { className: 'yxh-hb-input yxh-hb-input-narrow', type: 'number', min: 0, max: 100, placeholder: t('hbScoreMinPlaceholder'), value: f.scoreMin, disabled,
+              onChange: e => hub.setFilter('board', 'scoreMin', e.target.value === '' ? '' : Number(e.target.value)) })),
+          h(Select, { label: t('hbSort'), value: f.sort, disabled, onChange: v => hub.setFilter('board', 'sort', v), options: Object.entries(HB_SORT_LABEL_KEYS).map(([value, key]) => ({ value, label: t(key) })) }),
           h('label', { className: 'yxh-hb-check' },
             h('input', { type: 'checkbox', checked: f.onlyMain === true, disabled, onChange: e => hub.setFilter('board', 'onlyMain', e.target.checked) }),
             h('span', null, t('hbOnlyMain'))),
           h('label', { className: 'yxh-hb-check' },
             h('input', { type: 'checkbox', checked: f.onlyTagged === true, disabled, onChange: e => hub.setFilter('board', 'onlyTagged', e.target.checked) }),
             h('span', null, t('hbOnlyTagged')))),
+        h(BoardFilterChips, { filters: f, hub, t }),
         h('div', { className: 'yxh-hb-kpis' },
-          h('div', { className: 'yxh-hb-kpi' }, h('span', { className: 'yxh-hb-kpi-label' }, t('hbKpiCases')), h('span', { className: 'yxh-hb-kpi-value' }, hbCount(kpis?.totalCases))),
-          h('div', { className: 'yxh-hb-kpi' }, h('span', { className: 'yxh-hb-kpi-label' }, t('hbKpiCoverage')), h('span', { className: 'yxh-hb-kpi-value' }, hbPct(kpis?.coverageRate))),
-          h('div', { className: 'yxh-hb-kpi' }, h('span', { className: 'yxh-hb-kpi-label' }, t('hbKpiAiTagged')), h('span', { className: 'yxh-hb-kpi-value' }, hbPct(kpis?.aiTaggedRate))),
-          h('div', { className: 'yxh-hb-kpi' }, h('span', { className: 'yxh-hb-kpi-label' }, t('hbKpiDuplicates')), h('span', { className: 'yxh-hb-kpi-value' }, hbCount(kpis?.duplicateGroupCount))),
-          h('div', { className: 'yxh-hb-kpi' }, h('span', { className: 'yxh-hb-kpi-label' }, t('hbKpiLowQuality')), h('span', { className: 'yxh-hb-kpi-value' }, hbCount(kpis?.lowQualityCount))),
-          h('div', { className: 'yxh-hb-kpi' }, h('span', { className: 'yxh-hb-kpi-label' }, t('hbKpiFailedKeywords')), h('span', { className: 'yxh-hb-kpi-value' }, hbCount(kpis?.failedKeywordCount))),
-          h('div', { className: 'yxh-hb-kpi' }, h('span', { className: 'yxh-hb-kpi-label' }, t('hbKpiLastCollected')), h('span', { className: 'yxh-hb-kpi-value' }, hbTime(kpis?.lastCollectedAt))),
-          h('div', { className: 'yxh-hb-kpi' }, h('span', { className: 'yxh-hb-kpi-label' }, t('hbKpiNextRun')), h('span', { className: 'yxh-hb-kpi-value' }, kpis?.nextRun?.scheduleEnabled ? hotboardScheduleText(kpis.nextRun.cron, t) : t('hbScheduleDisabled')))),
+          h(Kpi, { label: t('hbKpiCases'), value: hbCount(kpis?.totalCases), sub: tf(t, 'hbKpiCasesHint', { page, pages: pagesCount }) }),
+          h(Kpi, { label: t('hbKpiCoverage'), value: hbPct(kpis?.coverageRate), sub: t('hbKpiCoverageHint') }),
+          h(Kpi, { label: t('hbKpiAiTagged'), value: hbPct(kpis?.aiTaggedRate), sub: t('hbKpiAiTaggedHint') }),
+          h(Kpi, { label: t('hbKpiDuplicates'), value: hbCount(kpis?.duplicateGroupCount), sub: t('hbKpiDuplicatesHint') }),
+          h(Kpi, { label: t('hbKpiLowQuality'), value: hbCount(kpis?.lowQualityCount), sub: t('hbKpiLowQualityHint') }),
+          h(Kpi, { label: t('hbKpiFailedKeywords'), value: hbCount(kpis?.failedKeywordCount), sub: t('hbKpiFailedKeywordsHint') }),
+          h(Kpi, { label: t('hbKpiLastCollected'), value: hbTime(kpis?.lastCollectedAt) }),
+          h(Kpi, { label: t('hbKpiNextRun'), value: scheduleEnabled ? t('hbScheduleOn') : t('hbScheduleOff'), sub: scheduleEnabled ? hotboardScheduleText(kpis.nextRun.cron, t) : null })),
         h('div', { className: 'yxh-hb-table-wrap' },
           h('table', { className: 'yxh-hb-table' },
             h('thead', null, h('tr', null,
-              [t('hbColTitle'), t('hbColAuthor'), t('hbColType'), t('hbColPublishTime'), t('hbColScore'), t('hbColInteraction'), t('hbColTags')].map(label => h('th', { key: label }, label)))),
+              [t('hbColCase'), t('hbColComposite'), t('hbColCollects'), t('hbColLikes'), t('hbColCommentsCount'), t('hbColShares'), t('hbColInteraction'), t('hbColAuthorPublish'), t('hbColTagsWords'), t('hbColDupGroup'), t('hbColViewDetail')].map(label => h('th', { key: label }, label)))),
             h('tbody', null,
-              (data?.notes || []).map(note => h('tr', { key: note.noteId, className: 'yxh-hb-row', onClick: () => hub.openNote(note.noteId) },
-                h('td', { className: 'yxh-hb-cell-title' }, hbText(note.title)),
-                h('td', null, hbText(note.authorName)),
-                h('td', null, note.noteType === 'video' ? t('hbTypeVideo') : t('hbTypeImage')),
-                h('td', null, hbTime(note.publishTime)),
-                h('td', null, hbScore(note.score)),
-                h('td', null, hbCount(note.interactionTotal)),
-                h('td', null, [note.styleTag?.name, note.colorTag?.name].filter(Boolean).join(' / ') || '—')))),
+              (data?.notes || []).map(note => {
+                const tagNames = [note.styleTag?.name, note.colorTag?.name].filter(Boolean)
+                const words = Array.isArray(note.matchedKeywords) ? note.matchedKeywords : []
+                const scoreNumber = note.score === null || note.score === undefined ? null : Number(note.score)
+                return h('tr', { key: note.noteId, className: 'yxh-hb-row', onClick: () => hub.openNote(note.noteId) },
+                  h('td', { className: 'yxh-hb-cell-case' },
+                    h(NoteThumb, { note, broken: brokenThumbs, onBroken: markBrokenThumb, t }),
+                    h('span', { className: 'yxh-hb-case-main' },
+                      h('span', { className: 'yxh-hb-case-title' }, hbText(note.title)),
+                      words.length ? h('span', { className: 'yxh-hb-case-hit' }, `${t('hbHitLabel')}: ${words.join(' / ')}`) : null,
+                      h('span', { className: 'yxh-hb-case-time' }, `${t('hbCollectedAt')} ${hbTime(note.retrievedAt)}`))),
+                  h('td', { className: 'yxh-hb-cell-score' },
+                    h('span', { className: 'yxh-hb-score-num' }, hbScore(note.score)),
+                    h('span', { className: 'yxh-hb-score-label' }, tf(t, 'hbScoreWindowLabel', { window: t(HB_WINDOW_LABEL_KEYS[f.window] || 'hbWindow90d') })),
+                    scoreNumber === null || !Number.isFinite(scoreNumber) ? null
+                      : h('span', { className: 'yxh-hb-score-bar' },
+                        h('span', { className: 'yxh-hb-score-fill', style: { width: `${Math.max(0, Math.min(100, scoreNumber))}%` } }))),
+                  h('td', { className: 'yxh-hb-cell-num' }, hbCount(note.collectCount)),
+                  h('td', { className: 'yxh-hb-cell-num' }, hbCount(note.likeCount)),
+                  h('td', { className: 'yxh-hb-cell-num' }, hbCount(note.commentCount)),
+                  h('td', { className: 'yxh-hb-cell-num' }, hbCount(note.shareCount)),
+                  h('td', { className: 'yxh-hb-cell-num yxh-hb-cell-total' }, hbCount(note.interactionTotal)),
+                  h('td', null,
+                    h('span', { className: 'yxh-hb-cell-author' }, hbText(note.authorName)),
+                    h('span', { className: 'yxh-hb-cell-date' }, hbTime(note.publishTime))),
+                  h('td', null,
+                    tagNames.length || words.length
+                      ? h('div', { className: 'yxh-hb-chips' },
+                        tagNames.map((name, index) => h('span', { key: `tag-${index}-${name}`, className: 'yxh-hb-chip yxh-hb-chip-tag' }, name)),
+                        words.map((word, index) => h('span', { key: `word-${index}-${word}`, className: 'yxh-hb-chip' }, word)))
+                      : '—'),
+                  h('td', null, note.duplicateGroupId ? `${t('hbDupGroupShort')} ${String(note.duplicateGroupId).slice(0, 8)}` : t('hbMainRecord')),
+                  h('td', null,
+                    h('button', { type: 'button', className: 'yxh-hb-mini', onClick: event => { event.stopPropagation(); hub.openNote(note.noteId) } },
+                      t('hbColViewDetail'))))
+              })),
             !data?.notes?.length && !state.loading
-              ? h('tfoot', null, h('tr', null, h('td', { colSpan: 7, className: 'yxh-hb-empty' }, t('hbNoCases'))))
+              ? h('tfoot', null, h('tr', null, h('td', { colSpan: 11, className: 'yxh-hb-empty' }, t('hbNoCases'))))
               : null)),
         h(Pager, { meta, page, onPage: p => hub.setPage('board', p), t }))
     }
@@ -665,7 +803,7 @@ window.__ModuleLoader__.load({
                 h('td', null, hbText(row.keyword)),
                 h('td', null, row.category === 'product' ? t('hbCategoryProduct') : row.category === 'scene' ? t('hbCategoryScene') : hbText(row.category)),
                 h('td', null, h('span', { className: `yxh-hb-badge ${row.status === 'active' ? 'yxh-hb-badge-ok' : 'yxh-hb-badge-muted'}` }, row.status === 'active' ? t('hbStatusActive') : t('hbStatusDisabled'))),
-                h('td', null, hbText(row.source)),
+                h('td', null, hbEnumText(t, HB_SOURCE_KEYS, row.source)),
                 h('td', null,
                   h('button', { type: 'button', className: 'yxh-hb-mini', disabled: disabled || !row.keywordId, onClick: () => hub.askConfirm(
                     tf(t, row.status === 'active' ? 'hbConfirmDisableKeyword' : 'hbConfirmEnableKeyword', { keyword: row.keyword }),
@@ -709,7 +847,7 @@ window.__ModuleLoader__.load({
                 h('td', null, row.category === 'product' ? t('hbCategoryProduct') : row.category === 'scene' ? t('hbCategoryScene') : hbText(row.category)),
                 h('td', null, hbScore(row.score)),
                 h('td', { className: 'yxh-hb-cell-reason' }, hbText(row.reason)),
-                h('td', null, hbText(row.status))))),
+                h('td', null, hbEnumText(t, HB_CANDIDATE_STATUS_KEYS, row.status))))),
               !(candData?.candidates || []).length && !state.loading ? h('tfoot', null, h('tr', null, h('td', { colSpan: 6, className: 'yxh-hb-empty' }, t('hbNoCandidates')))) : null)),
           h(Pager, { meta: candMeta, page: state.pages.candidates, onPage: p => hub.setPage('candidates', p), t })))
     }
@@ -775,7 +913,7 @@ window.__ModuleLoader__.load({
                   h('button', { type: 'button', className: 'yxh-hb-mini', disabled,
                     onClick: () => hub.askConfirm(tf(t, 'hbConfirmMergeProposal', { label: row.proposedLabel, target: mergeTarget || '—' }),
                       () => hub.labelReview({ action: 'merge', proposalId: row.proposalId, targetLabelId: mergeTarget || undefined })) }, t('hbMerge')))
-                  : h('span', { className: 'yxh-hb-badge yxh-hb-badge-muted' }, hbText(row.status)))))),
+                  : h('span', { className: 'yxh-hb-badge yxh-hb-badge-muted' }, hbEnumText(t, HB_PROPOSAL_STATUS_KEYS, row.status)))))),
               !proposals.length && !state.loading ? h('tfoot', null, h('tr', null, h('td', { colSpan: 5, className: 'yxh-hb-empty' }, t('hbNoProposals')))) : null)),
           pendingProposals.length
             ? h('div', { className: 'yxh-hb-editor' },
@@ -835,79 +973,44 @@ window.__ModuleLoader__.load({
           h('button', { type: 'button', className: 'yxh-hb-mini', disabled, onClick: onClose }, t('hbCancelEdit'))))
     }
 
-    // 数值/布尔/cron 配置行；编辑写入 settingsDirty，保存走确认弹窗（本地 diff 文案）。
+    // 采集与规则页（2026-10-13 只读化裁决）：执行链路的采集/预算/口径全部读服务端
+    // 部署 TOML（tools config/modules/xhs_operation.toml），DB settings 仅
+    // scheduleEnabled（定时调度开关）真实生效；其余可编辑项一律移除，页面只读展示
+    // 生效口径，不再提供修改入口（避免「改了不生效」的误导）。
     function RulesPage({ state, hub, t }) {
       const settings = state.settings
-      const dirty = state.settingsDirty
       const disabled = state.loading || state.pending > 0
-      const current = field => (field in dirty ? dirty[field] : settings?.[field])
-
-      // 数值域对齐 tools 侧 xhs_hotboard_setting 的 CheckConstraint（review MINOR-4）：
-      // comment_top_n/comment_max_per_note/comment_max_calls_per_day 均 >=1；
-      // min_interaction_total 仅约束 >=0，上限是防误输的前端护栏。
-      const numberFields = [
-        { field: 'publishWindowDays', label: t('hbSetPublishWindowDays'), min: 1, max: 365 },
-        { field: 'perKeywordLimit', label: t('hbSetPerKeywordLimit'), min: 1, max: 20 },
-        { field: 'commentTopN', label: t('hbSetCommentTopN'), min: 1, max: 200 },
-        { field: 'commentMaxPerNote', label: t('hbSetCommentMaxPerNote'), min: 1, max: 100 },
-        { field: 'minInteractionTotal', label: t('hbSetMinInteraction'), min: 0, max: 1000000 },
-        { field: 'dedupHammingThreshold', label: t('hbSetDedupThreshold'), min: 0, max: 10 },
-        { field: 'minValidSample', label: t('hbSetMinValidSample'), min: 2, max: 1000 },
-        { field: 'searchMaxCallsPerDay', label: t('hbSetSearchBudget'), min: 1, max: 10000 },
-        { field: 'commentMaxCallsPerDay', label: t('hbSetCommentBudget'), min: 1, max: 10000 },
-        { field: 'detailMaxCallsPerRun', label: t('hbSetDetailBudget'), min: 0, max: 10000 },
-      ]
-      const boolFields = [
-        { field: 'scheduleEnabled', label: t('hbSetScheduleEnabled') },
-        { field: 'manualIncrementEnabled', label: t('hbSetManualIncrement') },
-        { field: 'commentSampleEnabled', label: t('hbSetCommentSample') },
-        { field: 'manualCommentDefaultEnabled', label: t('hbSetManualCommentDefault') },
-      ]
-
-      const save = () => {
-        const changes = Object.keys(dirty).map(field => ({ field, from: settings?.[field], to: dirty[field] }))
-        hub.askConfirm(tf(t, 'hbConfirmSettings', { count: changes.length }), () => { hub.settingsUpdate() })
-      }
       const startRun = () => hub.askConfirm(t('hbConfirmRunStart'), () => { hub.runStart() })
-
+      const scheduleEnabled = settings?.scheduleEnabled === true
       return h('div', { className: 'yxh-hb-rules' },
         h('section', { className: 'yxh-hb-panel' },
           h('h2', { className: 'yxh-hb-panel-title' }, t('hbPanelCollect')),
-          h('p', { className: 'yxh-hb-hint' }, settings?.manualIncrementEnabled === false ? t('hbManualDisabledHint') : t('hbManualHint')),
+          h('p', { className: 'yxh-hb-hint' }, t('hbManualHint')),
           h('div', { className: 'yxh-hb-row-actions' },
-            h('button', { type: 'button', className: 'yxh-hb-action', disabled: disabled || settings?.manualIncrementEnabled === false, onClick: startRun }, t('hbStartIncrement')),
+            h('button', { type: 'button', className: 'yxh-hb-action', disabled, onClick: startRun }, t('hbStartIncrement')),
             h('button', { type: 'button', className: 'yxh-hb-mini', disabled: state.pending > 0, onClick: () => hub.openRun(null) }, t('hbRunHistory')))),
         h('section', { className: 'yxh-hb-panel' },
           h('h2', { className: 'yxh-hb-panel-title' }, t('hbPanelSettings')),
-          settings ? h('div', { className: 'yxh-hb-settings' },
-            h('div', { className: 'yxh-hb-settings-grid' },
-              numberFields.map(item => h('label', { key: item.field, className: 'yxh-hb-filter' },
-                h('span', null, item.label),
-                h('input', { className: 'yxh-hb-input', type: 'number', min: item.min, max: item.max, value: current(item.field) ?? '', disabled,
-                  onChange: e => hub.setSettingsField(item.field, e.target.value === '' ? '' : Number(e.target.value)) })))),
-            h('div', { className: 'yxh-hb-settings-grid' },
-              boolFields.map(item => h('label', { key: item.field, className: 'yxh-hb-check' },
-                h('input', { type: 'checkbox', checked: current(item.field) === true, disabled,
-                  onChange: e => hub.setSettingsField(item.field, e.target.checked) }),
-                h('span', null, item.label))),
-              h('label', { className: 'yxh-hb-filter' },
-                h('span', null, t('hbSetFullScheduleCron')),
-                h('input', { className: 'yxh-hb-input', value: current('fullScheduleCron') ?? '', disabled,
-                  onChange: e => hub.setSettingsField('fullScheduleCron', e.target.value) }))))
-          : h('p', { className: 'yxh-hb-empty' }, t('hbLoading')),
-          Object.keys(dirty).length
-            ? h('div', { className: 'yxh-hb-dirty' },
-              h('div', { className: 'yxh-hb-dirty-list' }, Object.keys(dirty).map(field =>
-                h('div', { key: field }, `${field}: ${hbText(settings?.[field])} → ${hbText(dirty[field])}`))),
-              h('div', { className: 'yxh-hb-row-actions' },
-                h('button', { type: 'button', className: 'yxh-hb-action', disabled, onClick: save }, t('hbSaveSettings')),
-                h('button', { type: 'button', className: 'yxh-hb-mini', disabled, onClick: () => hub.resetSettingsDirty() }, t('hbCancelEdit'))))
-            : null,
+          h('p', { className: 'yxh-hb-hint' }, t('hbSettingsReadonlyHint')),
+          settings ? h('div', { className: 'yxh-hb-settings-readonly' },
+            h('div', { className: 'yxh-hb-setting-row' },
+              h('span', { className: 'yxh-hb-setting-label' }, t('hbSetScheduleEnabled')),
+              h('span', { className: `yxh-hb-badge ${scheduleEnabled ? 'yxh-hb-badge-ok' : 'yxh-hb-badge-muted'}` },
+                scheduleEnabled ? t('hbScheduleOn') : t('hbScheduleOff'))),
+            settings?.fullScheduleCron
+              ? h('div', { className: 'yxh-hb-setting-row' },
+                h('span', { className: 'yxh-hb-setting-label' }, t('hbKpiNextRun')),
+                h('span', { className: 'yxh-hb-setting-value' },
+                  scheduleEnabled ? hotboardScheduleText(settings.fullScheduleCron, t) : '—'))
+              : null)
+            : h('p', { className: 'yxh-hb-empty' }, t('hbLoading')),
           settings?.ruleVersion ? h('p', { className: 'yxh-hb-hint' }, `${t('hbRuleVersion')} · ${hbText(settings.ruleVersion)}`) : null))
     }
 
-    // 案例详情抽屉：图片（失败占位）+ 指标 + 当前标签纠错 + 相似笔记 + 高频词。
-    // 图片轮播灯箱：←/→ 切换、Esc/遮罩/关闭按钮关闭；键盘监听随 overlay 存续挂载。
+    // 图片轮播灯箱：←/→ 键盘切换；左右两侧仅放切换按钮（不放关闭，2026-10-13 用户
+    // 裁决），关闭走「点空白遮罩 / Esc」。旧版 close 按钮因 CSS 优先级被垂直居中
+    // 规则压到 next 按钮正上方，点「下一张」实际点到关闭——本次连同样式规则一起
+    // 重写（按钮外观/定位收敛到独立类，不再有共享的 `.yxh-hb-lightbox button`）。
     function ImageLightbox({ urls, initialIndex, onClose, t }) {
       const [index, setIndex] = React.useState(initialIndex)
       React.useEffect(() => {
@@ -920,15 +1023,75 @@ window.__ModuleLoader__.load({
         return () => document.removeEventListener('keydown', onKey)
       }, [urls.length, onClose])
       if (!urls.length) return null
+      const step = delta => setIndex(prev => (prev + delta + urls.length) % urls.length)
       return h('div', { className: 'yxh-hb-lightbox', role: 'dialog', 'aria-modal': true, 'aria-label': t('hbLightbox'),
         onClick: event => { if (event.target === event.currentTarget) onClose() } },
         h('span', { className: 'yxh-hb-lightbox-counter' }, `${index + 1} / ${urls.length}`),
-        h('button', { type: 'button', className: 'yxh-hb-lightbox-prev', 'aria-label': t('hbPrevImage'),
-          onClick: () => setIndex(prev => (prev - 1 + urls.length) % urls.length) }, '‹'),
+        urls.length > 1 ? h('button', { type: 'button', className: 'yxh-hb-lightbox-nav yxh-hb-lightbox-prev', 'aria-label': t('hbPrevImage'),
+          onClick: () => step(-1) }, '‹') : null,
         h('img', { className: 'yxh-hb-lightbox-img', src: urls[index], alt: '' }),
-        h('button', { type: 'button', className: 'yxh-hb-lightbox-next', 'aria-label': t('hbNextImage'),
-          onClick: () => setIndex(prev => (prev + 1) % urls.length) }, '›'),
-        h('button', { type: 'button', className: 'yxh-hb-lightbox-close', 'aria-label': t('hbCloseDrawer'), onClick: onClose }, '×'))
+        urls.length > 1 ? h('button', { type: 'button', className: 'yxh-hb-lightbox-nav yxh-hb-lightbox-next', 'aria-label': t('hbNextImage'),
+          onClick: () => step(1) }, '›') : null,
+        h('span', { className: 'yxh-hb-lightbox-hint' }, t('hbLightboxCloseHint')))
+    }
+
+    // 正文富文本展示（2026-10-13 用户裁决）：按行渲染保留换行，话题（#xx# 封闭式
+    // 含「[话题]#」形态、行内 #词 开放式）高亮为品牌色；采集文本不可信，只做
+    // React 元素切分、绝不 dangerouslySetInnerHTML。
+    const HB_TOPIC_RE = /#[^#\n]{1,64}#/g
+    const HB_TOPIC_OPEN_RE = /(^|\s)(#[^\s#]{1,64})/g
+
+    function renderBodyLine(line, keyPrefix) {
+      const nodes = []
+      let last = 0
+      let match
+      HB_TOPIC_RE.lastIndex = 0
+      while ((match = HB_TOPIC_RE.exec(line)) !== null) {
+        if (match.index > last) nodes.push(...renderPlainWithOpenTopics(line.slice(last, match.index), nodes.length, keyPrefix))
+        nodes.push(h('span', { key: `${keyPrefix}-topic-${nodes.length}`, className: 'yxh-hb-topic' }, match[0]))
+        last = match.index + match[0].length
+      }
+      if (last < line.length) nodes.push(...renderPlainWithOpenTopics(line.slice(last), nodes.length, keyPrefix))
+      if (!nodes.length) nodes.push(h('span', { key: `${keyPrefix}-text-0` }, line))
+      return nodes
+    }
+
+    function renderPlainWithOpenTopics(text, offset, keyPrefix) {
+      const nodes = []
+      let last = 0
+      let match
+      HB_TOPIC_OPEN_RE.lastIndex = 0
+      while ((match = HB_TOPIC_OPEN_RE.exec(text)) !== null) {
+        const lead = match[1] || ''
+        const start = match.index + lead.length
+        if (start > last) nodes.push(h('span', { key: `${keyPrefix}-t-${offset}-${nodes.length}` }, text.slice(last, start)))
+        nodes.push(h('span', { key: `${keyPrefix}-topic-o-${offset}-${nodes.length}`, className: 'yxh-hb-topic' }, match[2]))
+        last = start + match[2].length
+      }
+      if (last < text.length) nodes.push(h('span', { key: `${keyPrefix}-t-${offset}-${nodes.length}` }, text.slice(last)))
+      return nodes
+    }
+
+    function renderNoteBody(body) {
+      const lines = String(body).split('\n')
+      return lines.map((line, index) => h('p', {
+        key: `line-${index}`,
+        className: line ? 'yxh-hb-body-line' : 'yxh-hb-body-line yxh-hb-body-line-empty',
+      }, line ? renderBodyLine(line, `l${index}`) : ' '))
+    }
+
+    // 详情分区卡片（2026-10-13 样式裁决：分区成卡、留白与层级对齐宿主其他插件页）。
+    function DrawerSection({ title, children }) {
+      return h('section', { className: 'yxh-hb-section' },
+        h('h4', { className: 'yxh-hb-section-title' }, title),
+        children)
+    }
+
+    // 指标格（label 上 / value 下，数值等宽）。
+    function MetricCell({ label, value }) {
+      return h('div', { className: 'yxh-hb-metric' },
+        h('span', { className: 'yxh-hb-metric-label' }, label),
+        h('span', { className: 'yxh-hb-metric-value' }, value))
     }
 
     function NoteDrawer({ state, hub, t }) {
@@ -950,6 +1113,8 @@ window.__ModuleLoader__.load({
       const currentStyle = (data?.currentTags || []).find(tag => tag.tagType === 'style')
       const currentColor = (data?.currentTags || []).find(tag => tag.tagType === 'color')
       const imageUrls = [data?.images?.coverUrl, ...(data?.images?.imageUrls || [])].filter(Boolean)
+      const similarNotes = data?.similarNotes || []
+      const wordStats = data?.wordStats || []
 
       return h('div', { className: 'yxh-hb-drawer-overlay', role: 'dialog', 'aria-modal': true, 'aria-label': t('hbNoteDetail'), onClick: event => { if (event.target === event.currentTarget) hub.closeNote() } },
         h('aside', { className: 'yxh-hb-drawer' },
@@ -959,61 +1124,68 @@ window.__ModuleLoader__.load({
           drawer.loading ? h('p', { className: 'yxh-hb-empty' }, t('hbLoading')) : null,
           drawer.error ? h('p', { className: 'yxh-hb-error' }, t('hbLoadFailed')) : null,
           data ? h('div', { className: 'yxh-hb-drawer-body' },
-            h('h3', null, hbText(note?.title)),
-            h('p', { className: 'yxh-hb-hint' }, `${hbText(note?.authorName)} · ${note?.noteType === 'video' ? t('hbTypeVideo') : t('hbTypeImage')} · ${hbTime(note?.publishTime)}`),
-            imageUrls.length
-              ? h('div', { className: 'yxh-hb-images' }, imageUrls.map((url, index) => broken.has(url)
-                ? h('div', { key: url, className: 'yxh-hb-image yxh-hb-image-broken' }, t('hbImageBroken'))
-                : h('img', { key: url, className: 'yxh-hb-image', src: url, alt: '', loading: 'lazy',
-                  title: t('hbLightbox'), style: { cursor: 'zoom-in' },
-                  onClick: () => setLightboxIndex(index), onError: () => markBroken(url) })))
-              : h('p', { className: 'yxh-hb-hint' }, t('hbNoImages')),
-            note?.link
-              ? h('p', { className: 'yxh-hb-hint' },
-                h('a', { className: 'yxh-hb-link', href: note.link, target: '_blank', rel: 'noreferrer noopener' }, t('hbOpenNote')))
-              : null,
-            h('h4', null, t('hbMetrics')),
-            h('div', { className: 'yxh-hb-metrics' },
-              h('span', null, `${t('statLikes')} ${hbCount(metrics?.likeCount)}`),
-              h('span', null, `${t('statCollects')} ${hbCount(metrics?.collectCount)}`),
-              h('span', null, `${t('statComments')} ${hbCount(metrics?.commentCount)}`),
-              h('span', null, `${t('statShares')} ${hbCount(metrics?.shareCount)}`),
-              h('span', null, `${t('hbColInteraction')} ${hbCount(metrics?.interactionTotal)}`),
-              h('span', null, `${t('hbScore7d')} ${hbScore(metrics?.score7d)}`),
-              h('span', null, `${t('hbScore30d')} ${hbScore(metrics?.score30d)}`),
-              h('span', null, `${t('hbScore90d')} ${hbScore(metrics?.score90d)}`)),
-            h('h4', null, t('hbCurrentTags')),
-            h('div', { className: 'yxh-hb-tagedit' },
-              h(Select, { label: t('hbStyle'), value: currentStyle?.labelCode || '', disabled: state.pending > 0,
-                onChange: code => code && hub.askConfirm(tf(t, 'hbConfirmTagUpdate', { tag: styleOptions.find(item => item.code === code)?.name || code }),
-                  () => hub.noteTagUpdate(note.noteId, 'style', code)),
-                options: [{ value: '', label: currentStyle?.labelName || t('hbUntagged') }, ...styleOptions.map(item => ({ value: item.code, label: item.name }))] }),
-              h(Select, { label: t('hbColor'), value: currentColor?.labelCode || '', disabled: state.pending > 0,
-                onChange: code => code && hub.askConfirm(tf(t, 'hbConfirmTagUpdate', { tag: colorOptions.find(item => item.code === code)?.name || code }),
-                  () => hub.noteTagUpdate(note.noteId, 'color', code)),
-                options: [{ value: '', label: currentColor?.labelName || t('hbUntagged') }, ...colorOptions.map(item => ({ value: item.code, label: item.name }))] })),
-            note?.body ? h('h4', null, t('hbNoteBody')) : null,
-            note?.body ? h('p', { className: 'yxh-hb-note-body' }, hbText(note.body)) : null,
-            h('h4', null, t('hbSimilarNotes')),
-            (data?.similarNotes || []).length
-              ? h('ul', { className: 'yxh-hb-similar' }, data.similarNotes.map(item => h('li', { key: item.noteId }, hbText(item.title))))
-              : h('p', { className: 'yxh-hb-hint' }, '—'),
-            h('h4', null, t('hbWordStats')),
-            (data?.wordStats || []).length
-              ? h('div', { className: 'yxh-hb-words' }, data.wordStats.map(item => h('span', { key: `${item.wordType}:${item.word}`, className: 'yxh-hb-tag' }, `${item.word} ×${hbCount(item.frequency)}`)))
-              : h('p', { className: 'yxh-hb-hint' }, '—')) : null),
+            h('div', { className: 'yxh-hb-note-head' },
+              h('h3', null, hbText(note?.title)),
+              h('p', { className: 'yxh-hb-hint' }, `${hbText(note?.authorName)} · ${note?.noteType === 'video' ? t('hbTypeVideo') : t('hbTypeImage')} · ${hbTime(note?.publishTime)}`),
+              note?.link
+                ? h('a', { className: 'yxh-hb-external', href: note.link, target: '_blank', rel: 'noreferrer noopener' },
+                  h('span', null, t('hbOpenNote')),
+                  h('span', { className: 'yxh-hb-external-icon', 'aria-hidden': true }, '↗'))
+                : null),
+            h(DrawerSection, { title: t('hbNoteImages') },
+              imageUrls.length
+                ? h('div', { className: 'yxh-hb-images' }, imageUrls.map((url, index) => broken.has(url)
+                  ? h('div', { key: url, className: 'yxh-hb-image yxh-hb-image-broken' }, t('hbImageBroken'))
+                  : h('img', { key: url, className: 'yxh-hb-image', src: url, alt: '', loading: 'lazy',
+                    title: t('hbLightbox'), style: { cursor: 'zoom-in' },
+                    onClick: () => setLightboxIndex(index), onError: () => markBroken(url) })))
+                : h('p', { className: 'yxh-hb-hint' }, t('hbNoImages'))),
+            h(DrawerSection, { title: t('hbMetrics') },
+              h('div', { className: 'yxh-hb-metric-grid' },
+                h(MetricCell, { label: t('statLikes'), value: hbCount(metrics?.likeCount) }),
+                h(MetricCell, { label: t('statCollects'), value: hbCount(metrics?.collectCount) }),
+                h(MetricCell, { label: t('statComments'), value: hbCount(metrics?.commentCount) }),
+                h(MetricCell, { label: t('statShares'), value: hbCount(metrics?.shareCount) }),
+                h(MetricCell, { label: t('hbColInteraction'), value: hbCount(metrics?.interactionTotal) }),
+                h(MetricCell, { label: t('hbScore7d'), value: hbScore(metrics?.score7d) }),
+                h(MetricCell, { label: t('hbScore30d'), value: hbScore(metrics?.score30d) }),
+                h(MetricCell, { label: t('hbScore90d'), value: hbScore(metrics?.score90d) }))),
+            h(DrawerSection, { title: t('hbCurrentTags') },
+              h('div', { className: 'yxh-hb-tagedit' },
+                h(Select, { label: t('hbStyle'), value: currentStyle?.labelCode || '', disabled: state.pending > 0,
+                  onChange: code => code && hub.askConfirm(tf(t, 'hbConfirmTagUpdate', { tag: styleOptions.find(item => item.code === code)?.name || code }),
+                    () => hub.noteTagUpdate(note.noteId, 'style', code)),
+                  options: [{ value: '', label: currentStyle?.labelName || t('hbUntagged') }, ...styleOptions.map(item => ({ value: item.code, label: item.name }))] }),
+                h(Select, { label: t('hbColor'), value: currentColor?.labelCode || '', disabled: state.pending > 0,
+                  onChange: code => code && hub.askConfirm(tf(t, 'hbConfirmTagUpdate', { tag: colorOptions.find(item => item.code === code)?.name || code }),
+                    () => hub.noteTagUpdate(note.noteId, 'color', code)),
+                  options: [{ value: '', label: currentColor?.labelName || t('hbUntagged') }, ...colorOptions.map(item => ({ value: item.code, label: item.name }))] }))),
+            note?.body ? h(DrawerSection, { title: t('hbNoteBody') },
+              h('div', { className: 'yxh-hb-note-body' }, renderNoteBody(note.body))) : null,
+            h(DrawerSection, { title: t('hbSimilarNotes') },
+              similarNotes.length
+                ? h('ul', { className: 'yxh-hb-similar' }, similarNotes.map(item => h('li', { key: item.noteId },
+                  item.coverUrl ? h('img', { className: 'yxh-hb-similar-thumb', src: item.coverUrl, alt: '', loading: 'lazy' }) : null,
+                  h('span', { className: 'yxh-hb-similar-title' }, hbText(item.title)))))
+                : h('p', { className: 'yxh-hb-hint' }, '—')),
+            h(DrawerSection, { title: t('hbWordStats') },
+              wordStats.length
+                ? h('div', { className: 'yxh-hb-words' }, wordStats.map(item => h('span', { key: `${item.wordType}:${item.word}`, className: 'yxh-hb-tag' }, `${item.word} ×${hbCount(item.frequency)}`)))
+                : h('p', { className: 'yxh-hb-hint' }, '—'))) : null),
           lightboxIndex !== null && imageUrls.length
             ? h(ImageLightbox, { urls: imageUrls, initialIndex: Math.min(lightboxIndex, imageUrls.length - 1), onClose: () => setLightboxIndex(null), t })
             : null)
     }
 
-    // Run 详情抽屉：run 负载 + 关键词执行明细 + 失败关键词。
+    // Run 详情抽屉：概要卡 + 关键词执行明细 + 失败关键词；枚举/错误码全部中文
+    // （2026-10-13 用户裁决：详情不出现 full/success 等英文枚举）。
     function RunDrawer({ state, hub, t }) {
       const drawer = state.runDrawer
       if (!drawer) return null
       const run = drawer.data?.run || null
       const rows = drawer.data?.keywordRuns || []
       const failed = drawer.data?.failedKeywords || []
+      const runStatus = run?.status
       return h('div', { className: 'yxh-hb-drawer-overlay', role: 'dialog', 'aria-modal': true, 'aria-label': t('hbRunDetail'), onClick: event => { if (event.target === event.currentTarget) hub.closeRun() } },
         h('aside', { className: 'yxh-hb-drawer' },
           h('header', { className: 'yxh-hb-drawer-head' },
@@ -1022,37 +1194,40 @@ window.__ModuleLoader__.load({
           drawer.loading ? h('p', { className: 'yxh-hb-empty' }, t('hbLoading')) : null,
           drawer.error ? h('p', { className: 'yxh-hb-error' }, t('hbLoadFailed')) : null,
           drawer.data ? h('div', { className: 'yxh-hb-drawer-body' },
-            h('div', { className: 'yxh-hb-metrics' },
-              h('span', null, `${t('hbRunStatus')} · ${hbText(run?.status)}`),
-              h('span', null, `${t('hbRunType')} · ${hbText(run?.runType)}`),
-              h('span', null, `${t('hbRunStarted')} ${hbTime(run?.startedAt)}`),
-              h('span', null, `${t('hbRunFinished')} ${hbTime(run?.finishedAt)}`),
-              h('span', null, `${t('hbRemainingBudget')} ${hbCount(drawer.data.remainingSearchBudget)}`),
-              run?.errorCode ? h('span', { className: 'yxh-hb-error' }, `${t('hbRunError')} · ${hbText(run.errorCode)}`) : null),
-            h('div', { className: 'yxh-hb-metrics' },
-              h('span', null, `${t('hbRunKeywords')} ${hbCount(run?.activeKeywordCount)}`),
-              h('span', null, `${t('hbRunSuccess')} ${hbCount(run?.successKeywordCount)}`),
-              h('span', null, `${t('hbRunFailedKeywords')} ${hbCount(run?.failedKeywordCount)}`),
-              h('span', null, `${t('hbRunNoResult')} ${hbCount(run?.noResultKeywordCount)}`),
-              h('span', null, `${t('hbRunCollected')} ${hbCount(run?.collectedNoteCount)}`),
-              h('span', null, `${t('hbRunQualified')} ${hbCount(run?.qualifiedNoteCount)}`),
-              h('span', null, `${t('hbRunDuplicates')} ${hbCount(run?.duplicateNoteCount)}`),
-              h('span', null, `${t('hbKpiLowQuality')} ${hbCount(run?.lowQualityNoteCount)}`),
-              h('span', null, `${t('hbRunAiTagged')} ${hbCount(run?.aiTaggedCount)}`),
-              h('span', null, `${t('hbRunAiPending')} ${hbCount(run?.aiPendingCount)}`)),
-            failed.length ? h('h4', null, t('hbPanelFailedKeywords')) : null,
-            failed.length ? h('ul', { className: 'yxh-hb-similar' }, failed.map(item =>
-              h('li', { key: item.keyword }, `${item.keyword} · ${hbText(item.errorCode)}`))) : null,
-            h('h4', null, t('hbPanelKeywordRuns')),
-            h('div', { className: 'yxh-hb-table-wrap' },
-              h('table', { className: 'yxh-hb-table compact' },
-                h('thead', null, h('tr', null, [t('hbColKeyword'), t('hbStatus'), t('hbRunCollected'), t('hbRunQualified'), t('hbColActions')].map(label => h('th', { key: label }, label)))),
-                h('tbody', null, rows.map(row => h('tr', { key: row.keyword },
-                  h('td', null, hbText(row.keyword)),
-                  h('td', null, h('span', { className: `yxh-hb-badge ${row.status === 'success' ? 'yxh-hb-badge-ok' : row.status === 'failed' ? 'yxh-hb-badge-expired' : 'yxh-hb-badge-muted'}` }, hbText(row.status))),
-                  h('td', null, hbCount(row.collectedCount)),
-                  h('td', null, hbCount(row.qualifiedCount)),
-                  h('td', null, row.errorCode ? hbText(row.errorCode) : '—'))))))) : null))
+            h('div', { className: 'yxh-hb-run-summary' },
+              h('div', { className: 'yxh-hb-run-badges' },
+                h('span', { className: hbRunStatusBadgeClass(runStatus) }, hbEnumText(t, HB_RUN_STATUS_KEYS, runStatus)),
+                h('span', { className: 'yxh-hb-badge yxh-hb-badge-muted' }, hbEnumText(t, HB_RUN_TYPE_KEYS, run?.runType))),
+              h('div', { className: 'yxh-hb-metric-grid yxh-hb-metric-grid-3' },
+                h(MetricCell, { label: t('hbRunStarted'), value: hbTime(run?.startedAt) }),
+                h(MetricCell, { label: t('hbRunFinished'), value: hbTime(run?.finishedAt) }),
+                h(MetricCell, { label: t('hbRemainingBudget'), value: hbCount(drawer.data.remainingSearchBudget) })),
+              run?.errorCode ? h('p', { className: 'yxh-hb-error' }, `${t('hbRunError')} · ${hbRunErrorText(t, run.errorCode)}`) : null),
+            h(DrawerSection, { title: t('hbRunCounters') },
+              h('div', { className: 'yxh-hb-metric-grid' },
+                h(MetricCell, { label: t('hbRunKeywords'), value: hbCount(run?.activeKeywordCount) }),
+                h(MetricCell, { label: t('hbRunSuccess'), value: hbCount(run?.successKeywordCount) }),
+                h(MetricCell, { label: t('hbRunFailedKeywords'), value: hbCount(run?.failedKeywordCount) }),
+                h(MetricCell, { label: t('hbRunNoResult'), value: hbCount(run?.noResultKeywordCount) }),
+                h(MetricCell, { label: t('hbRunCollected'), value: hbCount(run?.collectedNoteCount) }),
+                h(MetricCell, { label: t('hbRunQualified'), value: hbCount(run?.qualifiedNoteCount) }),
+                h(MetricCell, { label: t('hbRunDuplicates'), value: hbCount(run?.duplicateNoteCount) }),
+                h(MetricCell, { label: t('hbKpiLowQuality'), value: hbCount(run?.lowQualityNoteCount) }),
+                h(MetricCell, { label: t('hbRunAiTagged'), value: hbCount(run?.aiTaggedCount) }),
+                h(MetricCell, { label: t('hbRunAiPending'), value: hbCount(run?.aiPendingCount) }))),
+            failed.length ? h(DrawerSection, { title: t('hbPanelFailedKeywords') },
+              h('ul', { className: 'yxh-hb-similar' }, failed.map(item =>
+                h('li', { key: item.keyword }, `${item.keyword} · ${hbRunErrorText(t, item.errorCode)}`)))) : null,
+            h(DrawerSection, { title: t('hbPanelKeywordRuns') },
+              h('div', { className: 'yxh-hb-table-wrap' },
+                h('table', { className: 'yxh-hb-table compact' },
+                  h('thead', null, h('tr', null, [t('hbColKeyword'), t('hbStatus'), t('hbRunCollected'), t('hbRunQualified'), t('hbColActions')].map(label => h('th', { key: label }, label)))),
+                  h('tbody', null, rows.map(row => h('tr', { key: row.keyword },
+                    h('td', null, hbText(row.keyword)),
+                    h('td', null, h('span', { className: `yxh-hb-badge ${row.status === 'success' ? 'yxh-hb-badge-ok' : row.status === 'failed' ? 'yxh-hb-badge-expired' : 'yxh-hb-badge-muted'}` }, hbEnumText(t, HB_KEYWORD_RUN_STATUS_KEYS, row.status))),
+                    h('td', null, hbCount(row.collectedCount)),
+                    h('td', null, hbCount(row.qualifiedCount)),
+                    h('td', null, hbRunErrorText(t, row.errorCode))))))))) : null))
     }
 
     function ConfirmDialog({ state, hub, t }) {
@@ -1095,7 +1270,7 @@ window.__ModuleLoader__.load({
 
     // 样式：前缀 yxh-hb-；全部使用宿主 DSW token 变量（--dsw-alias-*），不复制静态
     // 模板中的颜色兜底值（实施文档 §13.3）。
-    const hotboardCss = '.yxh-hb{display:grid;align-content:start;gap:0;max-width:1440px;margin:0 auto;width:100%;min-height:0;overflow:auto;padding:20px 32px 40px}.yxh-hb .yxh-tabs{border-bottom:1px solid var(--dsw-alias-border-l1)}.yxh-hb-count{margin-left:6px;padding:0 7px;border-radius:999px;background:var(--dsw-alias-brand-primary);color:var(--dsw-alias-label-primary-foreground);font-size:11px;font-weight:600;line-height:18px;display:inline-block}.yxh-hb-notice{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:10px 0 0;padding:10px 14px;border-radius:6px;font-size:13px}.yxh-hb-notice-ok{border:1px solid color-mix(in srgb,var(--dsw-alias-state-success-primary,#2f855a) 40%,transparent);background:color-mix(in srgb,var(--dsw-alias-state-success-primary,#2f855a) 10%,transparent)}.yxh-hb-notice-error{border:1px solid color-mix(in srgb,var(--dsw-alias-state-error-primary) 40%,transparent);background:color-mix(in srgb,var(--dsw-alias-state-error-primary) 10%,transparent);color:color-mix(in srgb,var(--dsw-alias-state-error-primary) 55%,var(--dsw-alias-label-primary))}.yxh-hb-notice-close{border:0;background:transparent;color:inherit;font-size:15px;line-height:1;cursor:pointer}.yxh-hb-page-error{display:flex;align-items:center;gap:12px;margin:10px 0 0;padding:10px 14px;border:1px solid color-mix(in srgb,var(--dsw-alias-state-error-primary) 40%,transparent);border-radius:6px;background:color-mix(in srgb,var(--dsw-alias-state-error-primary) 8%,transparent);font-size:13px}.yxh-hb-runbar{display:flex;flex-wrap:wrap;align-items:center;gap:14px;margin-top:12px;padding:10px 14px;border:1px solid var(--dsw-alias-border-l1);border-radius:8px;background:var(--dsw-alias-bg-layer-1);font-size:13px;color:var(--dsw-alias-label-secondary)}.yxh-hb-runbar-active{border-color:color-mix(in srgb,var(--dsw-alias-brand-primary) 40%,transparent);background:color-mix(in srgb,var(--dsw-alias-brand-primary) 6%,transparent)}.yxh-hb-runbar .yxh-spinner{width:14px;height:14px;border-width:2px}.yxh-hb-runbar-status{font-weight:650;color:var(--dsw-alias-label-primary)}.yxh-hb-link{border:0;background:transparent;color:var(--dsw-alias-brand-primary);font:inherit;font-size:13px;cursor:pointer;padding:0}.yxh-hb-link:hover{text-decoration:underline}.yxh-hb-filters{display:flex;flex-wrap:wrap;gap:12px;align-items:center;margin:12px 0}.yxh-hb-filter{display:grid;gap:4px;font-size:12px;color:var(--dsw-alias-label-secondary)}.yxh-hb-filters .yxh-hb-filter{display:flex;align-items:center;gap:8px}.yxh-hb-filters .yxh-hb-filter select{min-width:120px}.yxh-hb-filters .yxh-hb-check{padding-bottom:0}.yxh-hb-editor .yxh-hb-filter{display:flex;align-items:center;gap:8px}.yxh-hb-editor .yxh-hb-filter select{min-width:120px}.yxh-hb-editor-card .yxh-hb-filter{display:grid;gap:4px}.yxh-hb-editor-card .yxh-hb-filter select{min-width:0}.yxh-hb-filter select,.yxh-hb-input{min-height:34px;padding:0 10px;border:1px solid var(--dsw-alias-border-l1);border-radius:6px;background:var(--dsw-alias-bg-layer-1);color:inherit;font:inherit;font-size:13px}.yxh-hb-filter select:disabled,.yxh-hb-input:disabled{opacity:.55}.yxh-hb-check{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--dsw-alias-label-primary);cursor:pointer;padding-bottom:8px}.yxh-hb-check input{width:15px;height:15px;accent-color:var(--dsw-alias-brand-primary);cursor:pointer}.yxh-hb-check input:disabled{cursor:default}.yxh-hb-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:12px}.yxh-hb-kpi{display:grid;gap:4px;padding:12px;border:1px solid var(--dsw-alias-border-l1);border-radius:8px;background:var(--dsw-alias-bg-layer-2)}.yxh-hb-kpi-label{color:var(--dsw-alias-label-secondary);font-size:12px}.yxh-hb-kpi-value{font-size:20px;line-height:1.25;font-weight:650;font-variant-numeric:tabular-nums}.yxh-hb-table-wrap{overflow:auto;border:1px solid var(--dsw-alias-border-l1);border-radius:8px;background:var(--dsw-alias-bg-layer-1)}.yxh-hb-table{width:100%;border-collapse:collapse;font-size:13px}.yxh-hb-table th,.yxh-hb-table td{padding:9px 12px;text-align:left;border-bottom:1px solid var(--dsw-alias-border-l1);white-space:nowrap}.yxh-hb-table td{white-space:normal;word-break:break-word}.yxh-hb-table thead th{position:sticky;top:0;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-secondary);font-weight:600}.yxh-hb-table tbody tr:last-child td{border-bottom:0}.yxh-hb-row{cursor:pointer}.yxh-hb-row:hover{background:var(--dsw-alias-bg-layer-2)}.yxh-hb-cell-title{max-width:340px;font-weight:600}.yxh-hb-cell-reason{max-width:260px;color:var(--dsw-alias-label-secondary)}.yxh-hb-empty{margin:0;padding:18px;text-align:center;color:var(--dsw-alias-label-secondary);font-size:13px}.yxh-hb-pager{display:flex;align-items:center;justify-content:flex-end;gap:12px;margin-top:10px;font-size:13px;color:var(--dsw-alias-label-secondary)}.yxh-hb-pager button{min-height:30px;padding:0 12px;border:1px solid var(--dsw-alias-border-l1);border-radius:6px;background:var(--dsw-alias-bg-layer-1);color:inherit;font:inherit;font-size:12px;cursor:pointer}.yxh-hb-pager button:disabled{opacity:.45;cursor:default}.yxh-hb-panel{display:grid;gap:10px;margin-top:22px}.yxh-hb-panel-title{margin:0;font-size:17px;line-height:1.35;font-weight:650}.yxh-hb-badge{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:600}.yxh-hb-badge-ok{background:color-mix(in srgb,var(--dsw-alias-state-success-primary,#2f855a) 16%,transparent);color:var(--dsw-alias-state-success-primary,#2f855a)}.yxh-hb-badge-muted{background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-secondary)}.yxh-hb-badge-expired{background:color-mix(in srgb,var(--dsw-alias-state-error-primary) 14%,transparent);color:color-mix(in srgb,var(--dsw-alias-state-error-primary) 60%,var(--dsw-alias-label-primary))}.yxh-hb-mini{flex:none;min-height:28px;padding:0 10px;border:1px solid var(--dsw-alias-border-l1);border-radius:6px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);font:inherit;font-size:12px;cursor:pointer}.yxh-hb-mini:hover{background:var(--dsw-alias-bg-layer-2)}.yxh-hb-mini:disabled{opacity:.45;cursor:default}.yxh-hb-mini-danger{color:color-mix(in srgb,var(--dsw-alias-state-error-primary) 60%,var(--dsw-alias-label-primary))}.yxh-hb-action{min-height:34px;padding:0 16px;border:0;border-radius:6px;background:var(--dsw-alias-brand-primary);color:var(--dsw-alias-label-primary-foreground);font:inherit;font-size:13px;font-weight:600;cursor:pointer}.yxh-hb-action:disabled{opacity:.45;cursor:default}.yxh-hb-row-actions{display:flex;flex-wrap:wrap;gap:6px;align-items:center}.yxh-hb-bulk{display:flex;align-items:center;gap:10px;margin:8px 0;font-size:13px;color:var(--dsw-alias-label-secondary)}.yxh-hb-editor{display:flex;flex-wrap:wrap;gap:10px;align-items:end;margin:10px 0}.yxh-hb-editor-card{display:grid;grid-template-columns:160px 1fr;gap:10px;padding:14px;border:1px solid var(--dsw-alias-border-l1);border-radius:8px;background:var(--dsw-alias-bg-layer-1);align-items:center}.yxh-hb-editor-card .yxh-hb-row-actions{grid-column:1/-1}.yxh-hb-editor .yxh-hb-input{min-width:220px}.yxh-hb-hint-row,.yxh-hb-hint{margin:0;color:var(--dsw-alias-label-secondary);font-size:12px}.yxh-hb-mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}.yxh-hb-settings{display:grid;gap:14px}.yxh-hb-settings-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}.yxh-hb-dirty{display:grid;gap:10px;padding:12px;border:1px solid color-mix(in srgb,var(--dsw-alias-brand-primary) 40%,transparent);border-radius:8px;background:color-mix(in srgb,var(--dsw-alias-brand-primary) 6%,transparent);font-size:13px}.yxh-hb-dirty-list{display:grid;gap:4px;font-variant-numeric:tabular-nums}.yxh-hb-drawer-overlay{position:fixed;inset:0;z-index:540;display:flex;justify-content:flex-end;background:color-mix(in srgb,var(--dsw-alias-bg-base) 55%,transparent)}.yxh-hb-drawer{width:min(640px,92vw);height:100%;overflow:auto;padding:20px 24px 36px;border-left:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-1);display:grid;gap:14px;align-content:start}.yxh-hb-drawer-head{display:flex;align-items:center;justify-content:space-between;gap:12px}.yxh-hb-drawer-head h2{margin:0;font-size:17px;font-weight:650}.yxh-hb-drawer h3{margin:0;font-size:15px;line-height:1.4}.yxh-hb-drawer h4{margin:6px 0 0;font-size:13px;color:var(--dsw-alias-label-secondary);font-weight:650}.yxh-hb-images{display:flex;flex-wrap:wrap;gap:8px}.yxh-hb-image{width:96px;height:96px;object-fit:cover;border-radius:6px;border:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-2)}.yxh-hb-image-broken{display:grid;place-items:center;padding:6px;text-align:center;color:var(--dsw-alias-label-secondary);font-size:11px}.yxh-hb-metrics{display:flex;flex-wrap:wrap;gap:8px 16px;font-size:13px;color:var(--dsw-alias-label-secondary);font-variant-numeric:tabular-nums}.yxh-hb-error{margin:0;color:color-mix(in srgb,var(--dsw-alias-state-error-primary) 55%,var(--dsw-alias-label-primary));font-size:13px}.yxh-hb-tagedit{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.yxh-hb-note-body{margin:0;font-size:13px;line-height:1.6;white-space:pre-wrap;word-break:break-word}.yxh-hb-similar{margin:0;padding-left:18px;display:grid;gap:4px;font-size:13px}.yxh-hb-words{display:flex;flex-wrap:wrap;gap:6px}.yxh-hb-tag{padding:2px 8px;border-radius:4px;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-secondary);font-size:12px}.yxh-hb-confirm-overlay{position:fixed;inset:0;z-index:560;display:grid;place-items:center;background:color-mix(in srgb,var(--dsw-alias-bg-base) 45%,transparent)}.yxh-hb-confirm{width:min(420px,calc(100vw - 32px));padding:24px;border:1px solid var(--dsw-alias-border-l1);border-radius:8px;background:var(--dsw-alias-bg-layer-1);box-shadow:0 12px 40px rgba(0,0,0,.18)}.yxh-hb-confirm-title{margin:0 0 20px;font-size:14px;line-height:1.6}.yxh-hb-confirm-actions{display:flex;justify-content:flex-end;gap:12px}.yxh-hb-lightbox{position:fixed;inset:0;z-index:900;display:flex;align-items:center;justify-content:center;background:color-mix(in srgb,var(--dsw-alias-bg-base) 18%,#000)}.yxh-hb-lightbox-img{max-width:min(86vw,1100px);max-height:82vh;object-fit:contain;border-radius:8px;box-shadow:0 12px 48px rgba(0,0,0,.5)}.yxh-hb-lightbox-counter{position:fixed;top:20px;left:50%;transform:translateX(-50%);color:#fff;font-size:13px;opacity:.85}.yxh-hb-lightbox button{position:fixed;top:50%;transform:translateY(-50%);width:44px;height:44px;border:0;border-radius:50%;background:rgba(255,255,255,.14);color:#fff;font-size:20px;line-height:1;cursor:pointer}.yxh-hb-lightbox button:hover{background:rgba(255,255,255,.26)}.yxh-hb-lightbox-prev{left:24px}.yxh-hb-lightbox-next{right:24px}.yxh-hb-lightbox-close{top:18px;right:24px;transform:none}@media(max-width:900px){.yxh-hb{padding:16px 16px 40px}.yxh-hb-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.yxh-hb-settings-grid{grid-template-columns:1fr}.yxh-hb-tagedit{grid-template-columns:1fr}.yxh-hb-editor-card{grid-template-columns:1fr}}'
+    const hotboardCss = '.yxh-hb{display:grid;align-content:start;gap:0;max-width:1440px;margin:0 auto;width:100%;min-height:0;overflow:auto;padding:20px 32px 40px}.yxh-hb .yxh-tabs{border-bottom:1px solid var(--dsw-alias-border-l1)}.yxh-hb-count{margin-left:6px;padding:0 7px;border-radius:999px;background:var(--dsw-alias-brand-primary);color:var(--dsw-alias-label-primary-foreground);font-size:11px;font-weight:600;line-height:18px;display:inline-block}.yxh-hb-notice{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:10px 0 0;padding:10px 14px;border-radius:6px;font-size:13px}.yxh-hb-notice-ok{border:1px solid color-mix(in srgb,var(--dsw-alias-state-success-primary,#2f855a) 40%,transparent);background:color-mix(in srgb,var(--dsw-alias-state-success-primary,#2f855a) 10%,transparent)}.yxh-hb-notice-error{border:1px solid color-mix(in srgb,var(--dsw-alias-state-error-primary) 40%,transparent);background:color-mix(in srgb,var(--dsw-alias-state-error-primary) 10%,transparent);color:color-mix(in srgb,var(--dsw-alias-state-error-primary) 55%,var(--dsw-alias-label-primary))}.yxh-hb-notice-close{border:0;background:transparent;color:inherit;font-size:15px;line-height:1;cursor:pointer}.yxh-hb-page-error{display:flex;align-items:center;gap:12px;margin:10px 0 0;padding:10px 14px;border:1px solid color-mix(in srgb,var(--dsw-alias-state-error-primary) 40%,transparent);border-radius:6px;background:color-mix(in srgb,var(--dsw-alias-state-error-primary) 8%,transparent);font-size:13px}.yxh-hb-runbar{display:flex;flex-wrap:wrap;align-items:center;gap:14px;margin-top:12px;padding:10px 14px;border:1px solid var(--dsw-alias-border-l1);border-radius:8px;background:var(--dsw-alias-bg-layer-1);font-size:13px;color:var(--dsw-alias-label-secondary)}.yxh-hb-runbar-active{border-color:color-mix(in srgb,var(--dsw-alias-brand-primary) 40%,transparent);background:color-mix(in srgb,var(--dsw-alias-brand-primary) 6%,transparent)}.yxh-hb-runbar .yxh-spinner{width:14px;height:14px;border-width:2px}.yxh-hb-runbar-status{font-weight:650;color:var(--dsw-alias-label-primary)}.yxh-hb-link{border:0;background:transparent;color:var(--dsw-alias-brand-primary);font:inherit;font-size:13px;cursor:pointer;padding:0}.yxh-hb-link:hover{text-decoration:underline}.yxh-hb-filters{display:flex;flex-wrap:wrap;gap:12px;align-items:center;margin:12px 0}.yxh-hb-filter{display:grid;gap:4px;font-size:12px;color:var(--dsw-alias-label-secondary)}.yxh-hb-filters .yxh-hb-filter{display:flex;align-items:center;gap:8px}.yxh-hb-filters .yxh-hb-filter select{min-width:120px}.yxh-hb-filters .yxh-hb-check{padding-bottom:0}.yxh-hb-editor .yxh-hb-filter{display:flex;align-items:center;gap:8px}.yxh-hb-editor .yxh-hb-filter select{min-width:120px}.yxh-hb-editor-card .yxh-hb-filter{display:grid;gap:4px}.yxh-hb-editor-card .yxh-hb-filter select{min-width:0}.yxh-hb-filter select,.yxh-hb-input{min-height:34px;padding:0 10px;border:1px solid var(--dsw-alias-border-l1);border-radius:6px;background:var(--dsw-alias-bg-layer-1);color:inherit;font:inherit;font-size:13px}.yxh-hb-filter select:disabled,.yxh-hb-input:disabled{opacity:.55}.yxh-hb-check{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--dsw-alias-label-primary);cursor:pointer;padding-bottom:8px}.yxh-hb-check input{width:15px;height:15px;accent-color:var(--dsw-alias-brand-primary);cursor:pointer}.yxh-hb-check input:disabled{cursor:default}.yxh-hb-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:12px}.yxh-hb-kpi{display:grid;gap:4px;padding:12px;border:1px solid var(--dsw-alias-border-l1);border-radius:8px;background:var(--dsw-alias-bg-layer-2)}.yxh-hb-kpi-label{color:var(--dsw-alias-label-secondary);font-size:12px}.yxh-hb-kpi-value{font-size:20px;line-height:1.25;font-weight:650;font-variant-numeric:tabular-nums}.yxh-hb-kpi-sub{color:color-mix(in srgb,var(--dsw-alias-label-tertiary) 75%,var(--dsw-alias-label-secondary));font-size:11px}.yxh-hb-table-wrap{overflow:auto;border:1px solid var(--dsw-alias-border-l1);border-radius:8px;background:var(--dsw-alias-bg-layer-1)}.yxh-hb-table{width:100%;border-collapse:collapse;font-size:13px}.yxh-hb-table th,.yxh-hb-table td{padding:9px 12px;text-align:left;border-bottom:1px solid var(--dsw-alias-border-l1);white-space:nowrap}.yxh-hb-table td{white-space:normal;word-break:break-word}.yxh-hb-table thead th{position:sticky;top:0;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-secondary);font-weight:600}.yxh-hb-table tbody tr:last-child td{border-bottom:0}.yxh-hb-row{cursor:pointer}.yxh-hb-row:hover{background:var(--dsw-alias-bg-layer-2)}.yxh-hb-cell-reason{max-width:260px;color:var(--dsw-alias-label-secondary)}.yxh-hb-cell-case{display:flex;gap:10px;align-items:center;min-width:280px;max-width:420px}.yxh-hb-cell-case>span:first-child{flex:none}.yxh-hb-case-main{display:grid;gap:3px;min-width:0}.yxh-hb-case-title{font-weight:600;color:var(--dsw-alias-label-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.yxh-hb-case-hit{color:var(--dsw-alias-label-secondary);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.yxh-hb-case-time{color:color-mix(in srgb,var(--dsw-alias-label-tertiary) 75%,var(--dsw-alias-label-secondary));font-size:11px}.yxh-hb-thumb{position:relative;flex:none;width:56px;height:56px;border-radius:6px;overflow:hidden;border:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-2)}.yxh-hb-thumb img{width:100%;height:100%;object-fit:cover;display:block}.yxh-hb-thumb-empty{display:grid;place-items:center}.yxh-hb-thumb-fallback{color:var(--dsw-alias-label-tertiary);font-size:11px}.yxh-hb-thumb-badge{position:absolute;top:2px;left:2px;padding:0 4px;border-radius:3px;background:color-mix(in srgb,var(--dsw-alias-bg-base) 78%,transparent);color:var(--dsw-alias-label-primary);font-size:10px;line-height:16px}.yxh-hb-cell-score{display:grid;gap:3px;justify-items:start;min-width:110px}.yxh-hb-score-num{font-size:16px;font-weight:650;font-variant-numeric:tabular-nums}.yxh-hb-score-label{color:var(--dsw-alias-label-secondary);font-size:11px}.yxh-hb-score-bar{width:72px;height:4px;border-radius:2px;background:var(--dsw-alias-bg-layer-2);overflow:hidden}.yxh-hb-score-fill{display:block;height:100%;border-radius:2px;background:var(--dsw-alias-brand-primary)}.yxh-hb-cell-num{text-align:right;font-variant-numeric:tabular-nums}.yxh-hb-cell-total{font-weight:650}.yxh-hb-cell-author{display:block}.yxh-hb-cell-date{display:block;color:var(--dsw-alias-label-secondary);font-size:12px}.yxh-hb-chips{display:flex;flex-wrap:wrap;gap:4px;max-width:220px}.yxh-hb-chip{padding:1px 8px;border-radius:4px;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-secondary);font-size:11px;white-space:nowrap}.yxh-hb-chip-tag{background:color-mix(in srgb,var(--dsw-alias-brand-primary) 12%,transparent);color:var(--dsw-alias-brand-primary)}.yxh-hb-chip-row{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:-4px 0 10px}.yxh-hb-chip-filter{display:inline-flex;align-items:center;gap:4px;padding:3px 4px 3px 10px;border:1px solid color-mix(in srgb,var(--dsw-alias-brand-primary) 35%,transparent);border-radius:999px;background:color-mix(in srgb,var(--dsw-alias-brand-primary) 8%,transparent);color:var(--dsw-alias-brand-primary);font-size:12px}.yxh-hb-chip-filter button{display:grid;width:16px;height:16px;place-items:center;border:0;border-radius:50%;background:transparent;color:inherit;font-size:12px;line-height:1;cursor:pointer}.yxh-hb-chip-filter button:hover{background:color-mix(in srgb,var(--dsw-alias-brand-primary) 18%,transparent)}.yxh-hb-input-narrow{width:90px}.yxh-hb-empty{margin:0;padding:18px;text-align:center;color:var(--dsw-alias-label-secondary);font-size:13px}.yxh-hb-pager{display:flex;align-items:center;justify-content:flex-end;gap:12px;margin-top:10px;font-size:13px;color:var(--dsw-alias-label-secondary)}.yxh-hb-pager button{min-height:30px;padding:0 12px;border:1px solid var(--dsw-alias-border-l1);border-radius:6px;background:var(--dsw-alias-bg-layer-1);color:inherit;font:inherit;font-size:12px;cursor:pointer}.yxh-hb-pager button:disabled{opacity:.45;cursor:default}.yxh-hb-panel{display:grid;gap:10px;margin-top:22px}.yxh-hb-panel-title{margin:0;font-size:17px;line-height:1.35;font-weight:650}.yxh-hb-badge{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:600}.yxh-hb-badge-ok{background:color-mix(in srgb,var(--dsw-alias-state-success-primary,#2f855a) 16%,transparent);color:var(--dsw-alias-state-success-primary,#2f855a)}.yxh-hb-badge-muted{background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-secondary)}.yxh-hb-badge-expired{background:color-mix(in srgb,var(--dsw-alias-state-error-primary) 14%,transparent);color:color-mix(in srgb,var(--dsw-alias-state-error-primary) 60%,var(--dsw-alias-label-primary))}.yxh-hb-badge-info{background:color-mix(in srgb,var(--dsw-alias-brand-primary) 14%,transparent);color:var(--dsw-alias-brand-primary)}.yxh-hb-badge-warn{background:color-mix(in srgb,var(--dsw-alias-state-warn-primary,#b7791f) 16%,transparent);color:color-mix(in srgb,var(--dsw-alias-state-warn-primary,#b7791f) 70%,var(--dsw-alias-label-primary))}.yxh-hb-mini{flex:none;min-height:28px;padding:0 10px;border:1px solid var(--dsw-alias-border-l1);border-radius:6px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);font:inherit;font-size:12px;cursor:pointer}.yxh-hb-mini:hover{background:var(--dsw-alias-bg-layer-2)}.yxh-hb-mini:disabled{opacity:.45;cursor:default}.yxh-hb-mini-danger{color:color-mix(in srgb,var(--dsw-alias-state-error-primary) 60%,var(--dsw-alias-label-primary))}.yxh-hb-action{min-height:34px;padding:0 16px;border:0;border-radius:6px;background:var(--dsw-alias-brand-primary);color:var(--dsw-alias-label-primary-foreground);font:inherit;font-size:13px;font-weight:600;cursor:pointer}.yxh-hb-action:disabled{opacity:.45;cursor:default}.yxh-hb-row-actions{display:flex;flex-wrap:wrap;gap:6px;align-items:center}.yxh-hb-bulk{display:flex;align-items:center;gap:10px;margin:8px 0;font-size:13px;color:var(--dsw-alias-label-secondary)}.yxh-hb-editor{display:flex;flex-wrap:wrap;gap:10px;align-items:end;margin:10px 0}.yxh-hb-editor-card{display:grid;grid-template-columns:160px 1fr;gap:10px;padding:14px;border:1px solid var(--dsw-alias-border-l1);border-radius:8px;background:var(--dsw-alias-bg-layer-1);align-items:center}.yxh-hb-editor-card .yxh-hb-row-actions{grid-column:1/-1}.yxh-hb-editor .yxh-hb-input{min-width:220px}.yxh-hb-hint-row,.yxh-hb-hint{margin:0;color:var(--dsw-alias-label-secondary);font-size:12px}.yxh-hb-mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}.yxh-hb-drawer-overlay{position:fixed;inset:0;z-index:540;display:flex;justify-content:flex-end;background:color-mix(in srgb,var(--dsw-alias-bg-base) 55%,transparent)}.yxh-hb-drawer{width:min(640px,92vw);height:100%;overflow:auto;padding:20px 24px 36px;border-left:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-1);display:grid;gap:14px;align-content:start}.yxh-hb-drawer-head{display:flex;align-items:center;justify-content:space-between;gap:12px}.yxh-hb-drawer-head h2{margin:0;font-size:17px;font-weight:650}.yxh-hb-drawer h3{margin:0;font-size:15px;line-height:1.4}.yxh-hb-drawer h4{margin:6px 0 0;font-size:13px;color:var(--dsw-alias-label-secondary);font-weight:650}.yxh-hb-drawer-body{display:grid;gap:12px;align-content:start;padding-top:2px}.yxh-hb-section{display:grid;gap:8px;padding:14px;border:1px solid var(--dsw-alias-border-l1);border-radius:10px;background:var(--dsw-alias-bg-layer-2)}.yxh-hb-section-title{margin:0;font-size:12px;font-weight:650;letter-spacing:.02em;color:var(--dsw-alias-label-secondary)}.yxh-hb-note-head{display:grid;gap:6px}.yxh-hb-note-head h3{margin:0;font-size:16px;line-height:1.5;font-weight:650}.yxh-hb-external{display:inline-flex;align-items:center;gap:6px;justify-self:start;margin-top:2px;padding:7px 14px;border-radius:6px;background:color-mix(in srgb,var(--dsw-alias-brand-primary) 12%,transparent);border:1px solid color-mix(in srgb,var(--dsw-alias-brand-primary) 40%,transparent);color:var(--dsw-alias-brand-primary);font-size:13px;font-weight:600;text-decoration:none}.yxh-hb-external:hover{background:color-mix(in srgb,var(--dsw-alias-brand-primary) 20%,transparent);text-decoration:none}.yxh-hb-external-icon{font-size:14px;line-height:1}.yxh-hb-metric-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}.yxh-hb-metric-grid-3{grid-template-columns:repeat(3,minmax(0,1fr))}.yxh-hb-metric{display:grid;gap:2px;padding:8px 10px;border-radius:8px;background:var(--dsw-alias-bg-layer-1)}.yxh-hb-metric-label{color:var(--dsw-alias-label-secondary);font-size:11px}.yxh-hb-metric-value{font-size:14px;font-weight:650;font-variant-numeric:tabular-nums;word-break:break-all}.yxh-hb-run-summary{display:grid;gap:10px;padding:14px;border:1px solid var(--dsw-alias-border-l1);border-radius:10px;background:var(--dsw-alias-bg-layer-2)}.yxh-hb-run-badges{display:flex;flex-wrap:wrap;gap:6px}.yxh-hb-settings-readonly{display:grid;gap:0;padding:4px 14px;border:1px solid var(--dsw-alias-border-l1);border-radius:10px;background:var(--dsw-alias-bg-layer-2)}.yxh-hb-setting-row{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px;padding:10px 0;border-bottom:1px dashed var(--dsw-alias-border-l1);font-size:13px}.yxh-hb-setting-row:last-child{border-bottom:0}.yxh-hb-setting-label{color:var(--dsw-alias-label-secondary)}.yxh-hb-setting-value{display:flex;align-items:center;gap:6px;font-weight:650;color:var(--dsw-alias-label-primary);font-variant-numeric:tabular-nums}.yxh-hb-table.compact th,.yxh-hb-table.compact td{padding:6px 10px;font-size:12px}.yxh-hb-images{display:flex;flex-wrap:wrap;gap:8px}.yxh-hb-image{width:96px;height:96px;object-fit:cover;border-radius:6px;border:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-2)}.yxh-hb-image-broken{display:grid;place-items:center;padding:6px;text-align:center;color:var(--dsw-alias-label-secondary);font-size:11px}.yxh-hb-error{margin:0;color:color-mix(in srgb,var(--dsw-alias-state-error-primary) 55%,var(--dsw-alias-label-primary));font-size:13px}.yxh-hb-tagedit{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.yxh-hb-note-body{margin:0;display:grid;gap:6px;font-size:13px;line-height:1.75;word-break:break-word}.yxh-hb-body-line{margin:0}.yxh-hb-body-line-empty{height:8px}.yxh-hb-topic{color:var(--dsw-alias-brand-primary);font-weight:600}.yxh-hb-similar{margin:0;padding:0;list-style:none;display:grid;gap:8px;font-size:13px}.yxh-hb-similar li{display:flex;align-items:center;gap:8px;min-width:0}.yxh-hb-similar-thumb{flex:none;width:40px;height:40px;border-radius:6px;object-fit:cover;border:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-2)}.yxh-hb-similar-title{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.yxh-hb-words{display:flex;flex-wrap:wrap;gap:6px}.yxh-hb-tag{padding:2px 8px;border-radius:4px;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-secondary);font-size:12px}.yxh-hb-confirm-overlay{position:fixed;inset:0;z-index:560;display:grid;place-items:center;background:color-mix(in srgb,var(--dsw-alias-bg-base) 45%,transparent)}.yxh-hb-confirm{width:min(420px,calc(100vw - 32px));padding:24px;border:1px solid var(--dsw-alias-border-l1);border-radius:8px;background:var(--dsw-alias-bg-layer-1);box-shadow:0 12px 40px rgba(0,0,0,.18)}.yxh-hb-confirm-title{margin:0 0 20px;font-size:14px;line-height:1.6}.yxh-hb-confirm-actions{display:flex;justify-content:flex-end;gap:12px}.yxh-hb-lightbox{position:fixed;inset:0;z-index:900;display:flex;align-items:center;justify-content:center;background:color-mix(in srgb,var(--dsw-alias-bg-base) 18%,#000)}.yxh-hb-lightbox-img{max-width:min(86vw,1100px);max-height:82vh;object-fit:contain;border-radius:8px;box-shadow:0 12px 48px rgba(0,0,0,.5)}.yxh-hb-lightbox-counter{position:fixed;top:20px;left:50%;transform:translateX(-50%);color:#fff;font-size:13px;opacity:.85;pointer-events:none}.yxh-hb-lightbox-nav{position:fixed;top:50%;transform:translateY(-50%);display:grid;place-items:center;width:44px;height:44px;border:0;border-radius:50%;background:rgba(255,255,255,.14);color:#fff;font-size:20px;line-height:1;cursor:pointer}.yxh-hb-lightbox-nav:hover{background:rgba(255,255,255,.26)}.yxh-hb-lightbox-prev{left:24px}.yxh-hb-lightbox-next{right:24px}.yxh-hb-lightbox-hint{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);color:#fff;font-size:12px;opacity:.65;pointer-events:none}@media(max-width:900px){.yxh-hb{padding:16px 16px 40px}.yxh-hb-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.yxh-hb-tagedit{grid-template-columns:1fr}.yxh-hb-editor-card{grid-template-columns:1fr}}'
 
     // 车衣爆款看板（RQ-2026-003 DEV-06）：状态机与页面组件在 hotboard-ui.js，
     // 构建时内联进同一工厂作用域（本 import 行由 scripts/build.mjs 剥离）。
@@ -1188,15 +1363,24 @@ window.__ModuleLoader__.load({
         hbSort: '排序', hbSortScore: '热度分', hbSortPublishTime: '发布时间', hbSortCollect: '收藏', hbSortLike: '点赞', hbSortComment: '评论', hbSortShare: '分享',
         hbOnlyMain: '仅主案例', hbOnlyTagged: '仅已打标',
         hbKpiCases: '当前筛选下案例数', hbKpiCoverage: '本轮采集覆盖率', hbKpiAiTagged: 'AI 标记完成率', hbKpiDuplicates: '重复素材组数',
-        hbKpiLowQuality: '低质过滤数', hbKpiFailedKeywords: '失败关键词数', hbKpiLastCollected: '最近采集时间', hbKpiNextRun: '下次采集时间', hbScheduleDisabled: '定时已停用',
+        hbKpiLowQuality: '低质过滤数', hbKpiFailedKeywords: '失败关键词数', hbKpiLastCollected: '最近采集时间', hbKpiNextRun: '自动全量调度', hbScheduleOn: '已启用', hbScheduleOff: '已停用',
+        hbKpiCasesHint: '服务端分页 · 第 {page} / {pages} 页', hbKpiCoverageHint: '本轮覆盖的启用关键词比例', hbKpiAiTaggedHint: '已打标案例 / 可打标案例', hbKpiDuplicatesHint: '主记录之外的重复素材组', hbKpiLowQualityHint: '互动不足或指标缺失', hbKpiFailedKeywordsHint: '本轮执行失败的关键词',
         hbSchedDaily: '每天', hbSchedWeekly: '每周', hbDowNames: ['日', '一', '二', '三', '四', '五', '六'],
         hbSchedPeriods: ['凌晨', '上午', '中午', '下午', '晚上'],
-        hbColTitle: '标题', hbColAuthor: '作者', hbColType: '类型', hbColPublishTime: '发布时间', hbColScore: '热度分', hbColInteraction: '互动量', hbColTags: '标签',
+        hbColInteraction: '互动总量',
+        hbColCase: '案例', hbColComposite: '综合分', hbColCollects: '收藏', hbColLikes: '点赞', hbColCommentsCount: '评论', hbColShares: '转发', hbColAuthorPublish: '作者·发布', hbColTagsWords: '标签与热词', hbColDupGroup: '重复组', hbColViewDetail: '查看详情',
+        hbHitLabel: '命中', hbCollectedAt: '采集于', hbMainRecord: '主记录', hbDupGroupShort: '组',
+        hbScoreWindowLabel: '{window}评分', hbScoreMin: '评分下限', hbScoreMinPlaceholder: '0-100', hbClearFilters: '清空全部筛选',
         hbTypeVideo: '视频', hbTypeImage: '图文', hbNoCases: '当前筛选下暂无案例', hbPrev: '上一页', hbNext: '下一页', hbTotal: '共',
-        hbRunIdle: '当前没有进行中的采集 Run', hbRunHistory: '运行历史', hbRunStatus: 'Run 状态', hbRunStarted: '开始', hbRunFinished: '结束',
+        hbRunIdle: '当前没有进行中的采集 Run', hbRunHistory: '运行历史', hbRunStarted: '开始', hbRunFinished: '结束',
         hbRemainingBudget: '剩余搜索额度', hbRunCollected: '采集', hbRunQualified: '入选', hbRunFailedKeywords: '失败词', hbRunDetail: 'Run 详情',
-        hbRunType: '类型', hbRunError: '错误码', hbRunKeywords: '启用词', hbRunSuccess: '成功词', hbRunNoResult: '无结果词', hbRunDuplicates: '去重',
-        hbRunAiTagged: 'AI 已标记', hbRunAiPending: 'AI 待标记',
+        hbRunError: '错误', hbRunKeywords: '启用词', hbRunSuccess: '成功词', hbRunNoResult: '无结果词', hbRunDuplicates: '去重',
+        hbRunAiTagged: 'AI 已标记', hbRunAiPending: 'AI 待标记', hbRunCounters: '执行计数',
+        hbRunStatusQueued: '排队中', hbRunStatusCollecting: '采集中', hbRunStatusDeduplicating: '去重中', hbRunStatusScoring: '评分中', hbRunStatusTagging: '打标中',
+        hbRunStatusCompleted: '已完成', hbRunStatusPartial: '部分完成', hbRunStatusFailed: '失败', hbRunStatusCancelled: '已取消',
+        hbRunTypeFull: '全量', hbRunTypeIncremental: '增量',
+        hbRunErrDetailBudget: '详情额度耗尽', hbRunErrDetailDeadline: '详情时间窗截止', hbRunErrCommentBudget: '评论额度耗尽', hbRunErrSoftDeadline: '软截止时间到', hbRunErrScoreFailed: '评分更新失败',
+        hbKwRunPending: '待执行', hbKwRunSuccess: '成功', hbKwRunFailed: '失败', hbKwRunEmpty: '无结果', hbKwRunSkippedBudget: '额度跳过', hbKwRunSkippedActive: '进行中跳过',
         hbPanelKeywords: '正式关键词管理', hbPanelCandidates: 'AI 扩词候选审核', hbPanelProposals: 'AI 候选标签审核', hbPanelLabels: '正式标签库',
         hbPanelCollect: '采集操作', hbPanelSettings: '当前生效配置', hbPanelFailedKeywords: '失败关键词明细', hbPanelKeywordRuns: 'Run 内关键词执行明细',
         hbCategory: '类目', hbCategoryProduct: '产品词', hbCategoryScene: '场景词', hbStatus: '状态', hbSource: '来源',
@@ -1218,14 +1402,11 @@ window.__ModuleLoader__.load({
         hbConfirmEnableLabel: '确认重新启用标签「{label}」？', hbConfirmUpdateLabel: '确认保存标签「{label}」的修改？', hbConfirmCreateLabel: '确认新增标签「{label}」？',
         hbCodePlaceholder: '编码（如 jingjisa）', hbNamePlaceholder: '名称（如 竞技风）', hbDefinitionPlaceholder: '判定说明（可选）', hbCancelEdit: '取消',
         hbStartIncrement: '手动增量采集', hbManualHint: '手动增量会按当前启用关键词发起一轮采集，受每日搜索额度限制；进行中会显示在 Run 状态条。',
-        hbManualDisabledHint: '当前配置已关闭手动增量采集。', hbConfirmRunStart: '确认发起一轮手动增量采集？将受每日搜索额度限制。',
-        hbSetPublishWindowDays: '发布时间窗（天）', hbSetPerKeywordLimit: '单词采集上限', hbSetCommentTopN: '评论 Top N', hbSetCommentMaxPerNote: '单篇评论上限',
-        hbSetMinInteraction: '最低互动量', hbSetDedupThreshold: '去重汉明阈值', hbSetMinValidSample: '热度分最小样本', hbSetSearchBudget: '每日搜索额度',
-        hbSetCommentBudget: '每日评论额度', hbSetDetailBudget: '单 Run 详情额度', hbSetScheduleEnabled: '定时采集', hbSetManualIncrement: '手动增量',
-        hbSetCommentSample: '评论采样', hbSetManualCommentDefault: '手动采集默认含评论', hbSetFullScheduleCron: '全量调度 cron',
-        hbConfirmSettings: '确认保存 {count} 项配置修改？', hbSaveSettings: '保存配置', hbRuleVersion: '规则版本',
-        hbNoteDetail: '案例详情', hbCloseDrawer: '关闭', hbNoImages: '暂无图片', hbImageBroken: '图片加载失败', hbMetrics: '数据指标',
-        hbOpenNote: '打开原始笔记', hbLightbox: '图片轮播', hbPrevImage: '上一张', hbNextImage: '下一张',
+        hbConfirmRunStart: '确认发起一轮手动增量采集？将受每日搜索额度限制。',
+        hbSetScheduleEnabled: '定时采集', hbSettingsReadonlyHint: '采集与评分口径由服务端部署配置统一下发，页面只读展示；如需调整阈值或额度，请联系管理员修改部署配置。',
+        hbRuleVersion: '规则版本',
+        hbNoteDetail: '案例详情', hbCloseDrawer: '关闭', hbNoImages: '暂无图片', hbImageBroken: '图片加载失败', hbMetrics: '数据指标', hbNoteImages: '笔记图片',
+        hbOpenNote: '在小红书打开原始笔记', hbLightbox: '图片轮播', hbPrevImage: '上一张', hbNextImage: '下一张', hbLightboxCloseHint: '点击空白处或按 Esc 关闭',
         hbCurrentTags: '当前标签（选择即纠错）', hbUntagged: '未打标', hbConfirmTagUpdate: '确认把该案例的风格/色系标签改为「{tag}」？',
         hbNoteBody: '正文', hbSimilarNotes: '相似笔记', hbWordStats: '高频词', hbScore7d: '7 天分', hbScore30d: '30 天分', hbScore90d: '90 天分',
         // 宿主错误码经 HB_ERROR_KEYS 映射后的受控文案（review MAJOR-4）；不透出原始错误码。
@@ -1236,7 +1417,7 @@ window.__ModuleLoader__.load({
         hbCandidatesPartial: '批量裁决完成：{failed}/{total} 条失败，其余已生效',
         // 写操作成功提示（runWrite successKey，review 复验 MAJOR-A：此前整组漏注册，
         // 提示条会显示裸键名；hbRunStartDone 刻意区别于状态条时间标签 hbRunStarted）。
-        hbTagUpdated: '标签已更新', hbKeywordSaved: '关键词已保存', hbSettingsSaved: '配置已保存',
+        hbTagUpdated: '标签已更新', hbKeywordSaved: '关键词已保存',
         hbRunStartDone: '增量采集已发起，进度见 Run 状态条', hbCandidatesReviewed: '候选裁决完成', hbLabelReviewed: '标签提案已裁决', hbLabelSaved: '标签已保存',
         hbCreateLabel: '新增标签', hbDateFrom: '扩词开始日期', hbDateTo: '扩词结束日期',
       },
@@ -1310,15 +1491,24 @@ window.__ModuleLoader__.load({
         hbSort: 'Sort', hbSortScore: 'Score', hbSortPublishTime: 'Publish time', hbSortCollect: 'Collects', hbSortLike: 'Likes', hbSortComment: 'Comments', hbSortShare: 'Shares',
         hbOnlyMain: 'Main cases only', hbOnlyTagged: 'Tagged only',
         hbKpiCases: 'Cases in filter', hbKpiCoverage: 'Run coverage', hbKpiAiTagged: 'AI tagged', hbKpiDuplicates: 'Duplicate groups',
-        hbKpiLowQuality: 'Low quality', hbKpiFailedKeywords: 'Failed keywords', hbKpiLastCollected: 'Last collected', hbKpiNextRun: 'Next run', hbScheduleDisabled: 'Schedule off',
+        hbKpiLowQuality: 'Low quality', hbKpiFailedKeywords: 'Failed keywords', hbKpiLastCollected: 'Last collected', hbKpiNextRun: 'Auto full-run schedule', hbScheduleOn: 'Enabled', hbScheduleOff: 'Disabled',
+        hbKpiCasesHint: 'Server-side paging · page {page} / {pages}', hbKpiCoverageHint: 'Share of enabled keywords covered this run', hbKpiAiTaggedHint: 'AI-tagged / taggable cases', hbKpiDuplicatesHint: 'Duplicate groups beyond main records', hbKpiLowQualityHint: 'Low interaction or missing metrics', hbKpiFailedKeywordsHint: 'Keywords that failed this run',
         hbSchedDaily: 'Every day', hbSchedWeekly: 'Every ', hbDowNames: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'],
         hbSchedPeriods: ['', '', '', '', ''],
-        hbColTitle: 'Title', hbColAuthor: 'Author', hbColType: 'Type', hbColPublishTime: 'Published', hbColScore: 'Score', hbColInteraction: 'Interactions', hbColTags: 'Tags',
+        hbColInteraction: 'Total interactions',
+        hbColCase: 'Case', hbColComposite: 'Composite score', hbColCollects: 'Collects', hbColLikes: 'Likes', hbColCommentsCount: 'Comments', hbColShares: 'Shares', hbColAuthorPublish: 'Author · Published', hbColTagsWords: 'Tags & words', hbColDupGroup: 'Dup group', hbColViewDetail: 'View detail',
+        hbHitLabel: 'Hit', hbCollectedAt: 'Collected', hbMainRecord: 'Main record', hbDupGroupShort: 'Group',
+        hbScoreWindowLabel: '{window} score', hbScoreMin: 'Min score', hbScoreMinPlaceholder: '0-100', hbClearFilters: 'Clear all filters',
         hbTypeVideo: 'Video', hbTypeImage: 'Image', hbNoCases: 'No cases match the current filter', hbPrev: 'Prev', hbNext: 'Next', hbTotal: 'Total',
-        hbRunIdle: 'No collection run in progress', hbRunHistory: 'Run history', hbRunStatus: 'Run status', hbRunStarted: 'Started', hbRunFinished: 'Finished',
+        hbRunIdle: 'No collection run in progress', hbRunHistory: 'Run history', hbRunStarted: 'Started', hbRunFinished: 'Finished',
         hbRemainingBudget: 'Search budget left', hbRunCollected: 'Collected', hbRunQualified: 'Qualified', hbRunFailedKeywords: 'Failed words', hbRunDetail: 'Run detail',
-        hbRunType: 'Type', hbRunError: 'Error code', hbRunKeywords: 'Keywords', hbRunSuccess: 'Succeeded', hbRunNoResult: 'No result', hbRunDuplicates: 'Deduped',
-        hbRunAiTagged: 'AI tagged', hbRunAiPending: 'AI pending',
+        hbRunError: 'Error', hbRunKeywords: 'Keywords', hbRunSuccess: 'Succeeded', hbRunNoResult: 'No result', hbRunDuplicates: 'Deduped',
+        hbRunAiTagged: 'AI tagged', hbRunAiPending: 'AI pending', hbRunCounters: 'Run counters',
+        hbRunStatusQueued: 'Queued', hbRunStatusCollecting: 'Collecting', hbRunStatusDeduplicating: 'Deduplicating', hbRunStatusScoring: 'Scoring', hbRunStatusTagging: 'Tagging',
+        hbRunStatusCompleted: 'Completed', hbRunStatusPartial: 'Partial', hbRunStatusFailed: 'Failed', hbRunStatusCancelled: 'Cancelled',
+        hbRunTypeFull: 'Full', hbRunTypeIncremental: 'Incremental',
+        hbRunErrDetailBudget: 'Detail budget exhausted', hbRunErrDetailDeadline: 'Detail deadline reached', hbRunErrCommentBudget: 'Comment budget exhausted', hbRunErrSoftDeadline: 'Soft deadline reached', hbRunErrScoreFailed: 'Score update failed',
+        hbKwRunPending: 'Pending', hbKwRunSuccess: 'Success', hbKwRunFailed: 'Failed', hbKwRunEmpty: 'No result', hbKwRunSkippedBudget: 'Skipped (budget)', hbKwRunSkippedActive: 'Skipped (active run)',
         hbPanelKeywords: 'Keywords', hbPanelCandidates: 'AI expansion review', hbPanelProposals: 'AI label proposals', hbPanelLabels: 'Label library',
         hbPanelCollect: 'Collection', hbPanelSettings: 'Current settings', hbPanelFailedKeywords: 'Failed keywords', hbPanelKeywordRuns: 'Keyword runs',
         hbCategory: 'Category', hbCategoryProduct: 'Product', hbCategoryScene: 'Scene', hbStatus: 'Status', hbSource: 'Source',
@@ -1340,14 +1530,11 @@ window.__ModuleLoader__.load({
         hbConfirmEnableLabel: 'Re-enable label “{label}”?', hbConfirmUpdateLabel: 'Save edits to label “{label}”?', hbConfirmCreateLabel: 'Create label “{label}”?',
         hbCodePlaceholder: 'Code (e.g. jingjisa)', hbNamePlaceholder: 'Name', hbDefinitionPlaceholder: 'Definition (optional)', hbCancelEdit: 'Cancel',
         hbStartIncrement: 'Start incremental run', hbManualHint: 'Starts one incremental run over the active keywords, bounded by the daily search budget; progress shows in the run bar.',
-        hbManualDisabledHint: 'Manual incremental runs are disabled in settings.', hbConfirmRunStart: 'Start one manual incremental run? It is bounded by the daily search budget.',
-        hbSetPublishWindowDays: 'Publish window (days)', hbSetPerKeywordLimit: 'Per-keyword limit', hbSetCommentTopN: 'Comments top N', hbSetCommentMaxPerNote: 'Comments per note',
-        hbSetMinInteraction: 'Min interactions', hbSetDedupThreshold: 'Dedup hamming', hbSetMinValidSample: 'Min valid sample', hbSetSearchBudget: 'Daily search budget',
-        hbSetCommentBudget: 'Daily comment budget', hbSetDetailBudget: 'Per-run detail budget', hbSetScheduleEnabled: 'Scheduled run', hbSetManualIncrement: 'Manual incremental',
-        hbSetCommentSample: 'Comment sampling', hbSetManualCommentDefault: 'Manual runs include comments', hbSetFullScheduleCron: 'Full-schedule cron',
-        hbConfirmSettings: 'Save {count} setting change(s)?', hbSaveSettings: 'Save settings', hbRuleVersion: 'Rule version',
-        hbNoteDetail: 'Case detail', hbCloseDrawer: 'Close', hbNoImages: 'No images', hbImageBroken: 'Image failed to load', hbMetrics: 'Metrics',
-        hbOpenNote: 'Open original note', hbLightbox: 'Image carousel', hbPrevImage: 'Previous image', hbNextImage: 'Next image',
+        hbConfirmRunStart: 'Start one manual incremental run? It is bounded by the daily search budget.',
+        hbSetScheduleEnabled: 'Scheduled run', hbSettingsReadonlyHint: 'Collection and scoring knobs come from the server deployment config and are shown read-only here; ask an administrator to adjust thresholds or budgets.',
+        hbRuleVersion: 'Rule version',
+        hbNoteDetail: 'Case detail', hbCloseDrawer: 'Close', hbNoImages: 'No images', hbImageBroken: 'Image failed to load', hbMetrics: 'Metrics', hbNoteImages: 'Note images',
+        hbOpenNote: 'Open on Xiaohongshu', hbLightbox: 'Image carousel', hbPrevImage: 'Previous image', hbNextImage: 'Next image', hbLightboxCloseHint: 'Click the backdrop or press Esc to close',
         hbCurrentTags: 'Current tags (pick to correct)', hbUntagged: 'Untagged', hbConfirmTagUpdate: 'Change this case’s style/color tag to “{tag}”?',
         hbNoteBody: 'Body', hbSimilarNotes: 'Similar notes', hbWordStats: 'Frequent words', hbScore7d: '7d score', hbScore30d: '30d score', hbScore90d: '90d score',
         // Controlled copy for host error codes mapped via HB_ERROR_KEYS; raw codes never surface.
@@ -1358,7 +1545,7 @@ window.__ModuleLoader__.load({
         hbCandidatesPartial: 'Review finished: {failed}/{total} failed, the rest applied',
         // Success copy for runWrite successKeys (review MAJOR-A: the whole group was
         // missing so notices showed raw keys; hbRunStartDone ≠ run-bar label hbRunStarted).
-        hbTagUpdated: 'Tags updated', hbKeywordSaved: 'Keyword saved', hbSettingsSaved: 'Settings saved',
+        hbTagUpdated: 'Tags updated', hbKeywordSaved: 'Keyword saved',
         hbRunStartDone: 'Incremental run started — see the run bar', hbCandidatesReviewed: 'Candidates reviewed', hbLabelReviewed: 'Label proposals reviewed', hbLabelSaved: 'Label saved',
         hbCreateLabel: 'Add label', hbDateFrom: 'Candidates from', hbDateTo: 'Candidates to',
       },
