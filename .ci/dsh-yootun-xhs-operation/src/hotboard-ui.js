@@ -544,6 +544,15 @@ function createHotboardHub({ post, intervalMs = RUN_POLL_INTERVAL_MS, schedule =
     }, { successKey: 'hbLabelSaved', reload: 'labels' })
   }
 
+  // 人工过滤（单向，2026-10-14）：列表与 KPI 不再计入该笔记，无取消入口。
+  function noteExclude(noteId) {
+    return runWrite(async () => {
+      const res = await call({ action: 'hotboard.noteExclude', noteId, confirm: true, idempotencyKey: hbIdempotencyKey() }).catch(hotboardError)
+      if (res.status !== 'ready') hotboardError(res)
+      return null
+    }, { successKey: 'hbNoteExcluded', reload: 'board' })
+  }
+
   // --- 确认弹窗（所有写操作先确认） ---
 
   function askConfirm(message, action) {
@@ -565,7 +574,7 @@ function createHotboardHub({ post, intervalMs = RUN_POLL_INTERVAL_MS, schedule =
     subscribe, get, init, stop, refresh,
     setSub, setFilter, resetFilters, setPage,
     openNote, closeNote, openRun, closeRun,
-    noteTagUpdate, keywordSave, runStart, candidateReview, labelReview, labelSave,
+    noteTagUpdate, noteExclude, keywordSave, runStart, candidateReview, labelReview, labelSave,
     askConfirm, resolveConfirm, dismissConfirm, dismissNotice,
   }
 }
@@ -754,8 +763,14 @@ function BoardPage({ state, hub, t }) {
                   : '—'),
               h('td', { role: 'cell', 'data-label': t('hbColDupGroup') }, note.duplicateGroupId ? `${t('hbDupGroupShort')} ${String(note.duplicateGroupId).slice(0, 8)}` : t('hbMainRecord')),
               h('td', { role: 'cell', 'data-label': t('hbColActions') },
-                h('button', { type: 'button', className: 'yxh-hb-mini', onClick: event => { event.stopPropagation(); hub.openNote(note.noteId) } },
-                  t('hbColViewDetail'))))
+                h('span', { className: 'yxh-hb-cell-flex' },
+                  h('button', { type: 'button', className: 'yxh-hb-mini', onClick: event => { event.stopPropagation(); hub.openNote(note.noteId) } },
+                    t('hbColViewDetail')),
+                  h('button', { type: 'button', className: 'yxh-hb-mini', onClick: event => {
+                    event.stopPropagation()
+                    hub.askConfirm(tf(t, 'hbConfirmExcludeNote', { title: note.title || note.noteId }),
+                      () => { hub.noteExclude(note.noteId) })
+                  } }, t('hbNoteExclude')))))
           })),
         !data?.notes?.length && !state.loading
           ? h('tfoot', null, h('tr', null, h('td', { colSpan: 11, className: 'yxh-hb-empty' }, t('hbNoCases'))))

@@ -602,6 +602,7 @@ const HOTBOARD_ACTIONS = {
   'hotboard.overview': { tool: 'xhs_operation_hotboard_overview' },
   'hotboard.noteDetail': { tool: 'xhs_operation_hotboard_note_detail' },
   'hotboard.noteTagUpdate': { tool: 'xhs_operation_hotboard_note_tag_update', write: true, target: 'note_tag', op: 'note_tag_update' },
+  'hotboard.noteExclude': { tool: 'xhs_operation_hotboard_note_exclude', write: true, target: 'note', op: 'note_exclude' },
   'hotboard.keywords': { tool: 'xhs_operation_hotboard_keywords_list' },
   'hotboard.keywordSave': { tool: 'xhs_operation_hotboard_keyword_save', write: true, target: 'keyword', op: 'keyword_save' },
   'hotboard.settings': { tool: 'xhs_operation_hotboard_settings_get' },
@@ -733,6 +734,12 @@ function hotboardArgs(action, body) {
       const labelCode = cleanString(body.labelCode, 64)
       if (!labelCode) return null
       args.labelCode = labelCode
+      return args
+    }
+    case 'hotboard.noteExclude': {
+      const noteId = cleanString(body.noteId, 128)
+      if (!noteId) return null
+      args.noteId = noteId
       return args
     }
     case 'hotboard.keywords': {

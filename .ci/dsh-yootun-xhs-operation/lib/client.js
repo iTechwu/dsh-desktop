@@ -547,6 +547,15 @@ window.__ModuleLoader__.load({
         }, { successKey: 'hbLabelSaved', reload: 'labels' })
       }
 
+      // 人工过滤（单向，2026-10-14）：列表与 KPI 不再计入该笔记，无取消入口。
+      function noteExclude(noteId) {
+        return runWrite(async () => {
+          const res = await call({ action: 'hotboard.noteExclude', noteId, confirm: true, idempotencyKey: hbIdempotencyKey() }).catch(hotboardError)
+          if (res.status !== 'ready') hotboardError(res)
+          return null
+        }, { successKey: 'hbNoteExcluded', reload: 'board' })
+      }
+
       // --- 确认弹窗（所有写操作先确认） ---
 
       function askConfirm(message, action) {
@@ -568,7 +577,7 @@ window.__ModuleLoader__.load({
         subscribe, get, init, stop, refresh,
         setSub, setFilter, resetFilters, setPage,
         openNote, closeNote, openRun, closeRun,
-        noteTagUpdate, keywordSave, runStart, candidateReview, labelReview, labelSave,
+        noteTagUpdate, noteExclude, keywordSave, runStart, candidateReview, labelReview, labelSave,
         askConfirm, resolveConfirm, dismissConfirm, dismissNotice,
       }
     }
@@ -757,8 +766,14 @@ window.__ModuleLoader__.load({
                       : '—'),
                   h('td', { role: 'cell', 'data-label': t('hbColDupGroup') }, note.duplicateGroupId ? `${t('hbDupGroupShort')} ${String(note.duplicateGroupId).slice(0, 8)}` : t('hbMainRecord')),
                   h('td', { role: 'cell', 'data-label': t('hbColActions') },
-                    h('button', { type: 'button', className: 'yxh-hb-mini', onClick: event => { event.stopPropagation(); hub.openNote(note.noteId) } },
-                      t('hbColViewDetail'))))
+                    h('span', { className: 'yxh-hb-cell-flex' },
+                      h('button', { type: 'button', className: 'yxh-hb-mini', onClick: event => { event.stopPropagation(); hub.openNote(note.noteId) } },
+                        t('hbColViewDetail')),
+                      h('button', { type: 'button', className: 'yxh-hb-mini', onClick: event => {
+                        event.stopPropagation()
+                        hub.askConfirm(tf(t, 'hbConfirmExcludeNote', { title: note.title || note.noteId }),
+                          () => { hub.noteExclude(note.noteId) })
+                      } }, t('hbNoteExclude')))))
               })),
             !data?.notes?.length && !state.loading
               ? h('tfoot', null, h('tr', null, h('td', { colSpan: 11, className: 'yxh-hb-empty' }, t('hbNoCases'))))
@@ -1415,6 +1430,7 @@ window.__ModuleLoader__.load({
         hbNoteDetail: '案例详情', hbCloseDrawer: '关闭', hbNoImages: '暂无图片', hbImageBroken: '图片加载失败', hbMetrics: '数据指标', hbNoteImages: '笔记图片',
         hbOpenNote: '在小红书打开原始笔记', hbLightbox: '图片轮播', hbPrevImage: '上一张', hbNextImage: '下一张', hbLightboxCloseHint: '点击空白处或按 Esc 关闭',
         hbCurrentTags: '当前标签（选择即纠错）', hbUntagged: '未打标', hbConfirmTagUpdate: '确认把该案例的风格/色系标签改为「{tag}」？',
+        hbNoteExclude: '过滤', hbConfirmExcludeNote: '确认过滤笔记「{title}」？过滤后列表与统计不再计入该笔记，且不可恢复。', hbNoteExcluded: '笔记已过滤，列表与统计不再计入',
         hbNoteBody: '正文', hbSimilarNotes: '相似笔记', hbWordStats: '高频词', hbScore7d: '7 天分', hbScore30d: '30 天分', hbScore90d: '90 天分',
         // 宿主错误码经 HB_ERROR_KEYS 映射后的受控文案（review MAJOR-4）；不透出原始错误码。
         hbErrInvalidArgument: '参数不合法，请检查输入后重试', hbErrNotFound: '目标不存在或已被删除', hbErrActiveRunExists: '已有采集 Run 进行中，请等待完成',
@@ -1543,6 +1559,7 @@ window.__ModuleLoader__.load({
         hbNoteDetail: 'Case detail', hbCloseDrawer: 'Close', hbNoImages: 'No images', hbImageBroken: 'Image failed to load', hbMetrics: 'Metrics', hbNoteImages: 'Note images',
         hbOpenNote: 'Open on Xiaohongshu', hbLightbox: 'Image carousel', hbPrevImage: 'Previous image', hbNextImage: 'Next image', hbLightboxCloseHint: 'Click the backdrop or press Esc to close',
         hbCurrentTags: 'Current tags (pick to correct)', hbUntagged: 'Untagged', hbConfirmTagUpdate: 'Change this case’s style/color tag to “{tag}”?',
+        hbNoteExclude: 'Exclude', hbConfirmExcludeNote: 'Exclude this note “{title}”? It will be removed from the case list and KPI counts. This cannot be undone.', hbNoteExcluded: 'Note excluded from the list and KPI counts',
         hbNoteBody: 'Body', hbSimilarNotes: 'Similar notes', hbWordStats: 'Frequent words', hbScore7d: '7d score', hbScore30d: '30d score', hbScore90d: '90d score',
         // Controlled copy for host error codes mapped via HB_ERROR_KEYS; raw codes never surface.
         hbErrInvalidArgument: 'Invalid input — check your entries and retry', hbErrNotFound: 'Target not found or removed', hbErrActiveRunExists: 'A collection run is already active — wait for it to finish',

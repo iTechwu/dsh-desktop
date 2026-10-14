@@ -119,6 +119,16 @@ test('init loads board, settings and todo badges; write requests carry confirm a
   assert.equal(runCall.confirm, true)
   assert.equal(typeof runCall.idempotencyKey, 'string')
   assert.ok(runCall.idempotencyKey.length >= 8)
+  // 人工过滤（2026-10-14「过滤」按钮，单向）：确认后发 noteExclude，请求形态
+  // 与其他写操作一致（confirm + 幂等键）。
+  hub.askConfirm('确认过滤？', () => { hub.noteExclude('n-1') })
+  hub.resolveConfirm()
+  await flush()
+  const excludeCall = calls.find(call => call.action === 'hotboard.noteExclude')
+  assert.ok(excludeCall, '确认后应发出 noteExclude 请求')
+  assert.equal(excludeCall.noteId, 'n-1')
+  assert.equal(excludeCall.confirm, true)
+  assert.equal(typeof excludeCall.idempotencyKey, 'string')
 })
 
 test('sub-page switches keep filter drafts and page numbers; setFilter resets its own page', async () => {
@@ -426,6 +436,7 @@ test('built client factory renders the overlay and hotboard pages with real Reac
     assert.ok(output.includes('hbColComposite'), '第二列应为综合分列')
     assert.ok(output.includes('hbColActions'), '末列列头应为「操作」')
     assert.ok(output.includes('hbColViewDetail'), '操作列应渲染「查看详情」按钮')
+    assert.ok(output.includes('hbNoteExclude'), '操作列应渲染「过滤」按钮')
     assert.ok(output.includes('hbMainRecord'), '重复组列应区分主记录')
     assert.ok(!output.includes('yxh-hb-runbar'), '看板页顶部不应再挂 Run 状态条')
     // 窄容器重排（对齐抖音账号总览表）：主表带 yxh-hb-table-board 限定类，
