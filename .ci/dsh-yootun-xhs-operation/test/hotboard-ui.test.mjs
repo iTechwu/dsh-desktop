@@ -353,9 +353,9 @@ test('built client factory renders the overlay and hotboard pages with real Reac
     const sandboxModule = { exports: {} }
     const sandboxRequire = name => (name === 'react' ? React : {})
     new Function('require', 'module', 'exports', 'window', 'document',
-      `${source}\nmodule.exports.HotboardPage = HotboardPage\nmodule.exports.hotboardCss = hotboardCss`,
+      `${source}\nmodule.exports.HotboardPage = HotboardPage\nmodule.exports.hotboardCss = hotboardCss\nmodule.exports.ImageLightbox = ImageLightbox`,
     )(sandboxRequire, sandboxModule, sandboxModule.exports, {}, {})
-    const { HotboardPage } = sandboxModule.exports
+    const { HotboardPage, ImageLightbox } = sandboxModule.exports
     assert.equal(typeof HotboardPage, 'function')
 
     const notes = [
@@ -527,4 +527,55 @@ test('hotboardScheduleText 把周调度 cron 转成中文描述', async () => {
   assert.equal(hotboardScheduleText('15 19 * * 0', t), '每周日 晚上 19:15')
   assert.equal(hotboardScheduleText('5 13 * 5 1', t), '5 13 * 5 1') // 日/月非 * 兜底原表达式
   assert.equal(hotboardScheduleText('*/5 * * * *', t), '*/5 * * * *') // 分钟非具体值兜底
+})
+
+// --- 灯箱右键下载（2026-10-14 用户需求） ---
+
+test('downloadImage 成功路径转 blob 触发 a[download]，CORS/HTTP 失败降级新窗口', async () => {
+  const downloadImage = await loadHotboardFn('downloadImage')
+  const realUrl = globalThis.URL
+  const realFetch = globalThis.fetch
+  const realDocument = globalThis.document
+  const realWindow = globalThis.window
+  const realSetTimeout = globalThis.setTimeout
+  try {
+    const clicks = []
+    const opened = []
+    const anchor = {
+      href: '', download: '',
+      click: () => clicks.push(anchor.download),
+      remove: () => {},
+    }
+    globalThis.document = { createElement: () => anchor, body: { appendChild() {} } }
+    globalThis.window = { open: (...args) => opened.push(args) }
+    globalThis.URL = { createObjectURL: () => 'blob:mock', revokeObjectURL: () => {} }
+    globalThis.setTimeout = () => 0
+    globalThis.fetch = async () => ({ ok: true, blob: async () => ({ type: 'image/webp' }) })
+    await downloadImage('https://cdn.example.com/a.webp', 1)
+    assert.deepEqual(clicks, ['xhs-image-2.webp'], '成功路径应触发一次下载且扩展名取自 blob.type')
+    assert.deepEqual(opened, [])
+
+    clicks.length = 0
+    globalThis.fetch = async () => ({ ok: false, status: 403 })
+    await downloadImage('https://cdn.example.com/b', 0)
+    assert.deepEqual(clicks, [], 'HTTP 失败不应触发下载')
+    assert.deepEqual(opened, [['https://cdn.example.com/b', '_blank', 'noopener']], 'HTTP 失败应降级新窗口打开原图')
+
+    opened.length = 0
+    globalThis.fetch = async () => { throw new TypeError('Failed to fetch') }
+    await downloadImage('https://cdn.example.com/c', 0)
+    assert.deepEqual(opened, [['https://cdn.example.com/c', '_blank', 'noopener']], 'CORS/网络异常应降级新窗口打开原图')
+  } finally {
+    globalThis.URL = realUrl
+    globalThis.fetch = realFetch
+    globalThis.document = realDocument
+    globalThis.window = realWindow
+    globalThis.setTimeout = realSetTimeout
+  }
+})
+
+test('灯箱 img 接线右键下载（contextmenu 拦截 + downloadImage）', async () => {
+  const src = await readFile(new URL('../src/hotboard-ui.js', import.meta.url), 'utf8')
+  assert.match(src, /onContextMenu: event => \{ event\.preventDefault\(\); downloadImage\(urls\[index\], index\) \}/, '灯箱大图应拦截右键并触发下载')
+  assert.match(src, /credentials: 'omit'/, '下载 fetch 不带凭据（跨域 CDN 图）')
 })

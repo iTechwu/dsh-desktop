@@ -1021,6 +1021,37 @@ function RulesPage({ state, hub, t }) {
       settings?.ruleVersion ? h('p', { className: 'yxh-hb-hint' }, `${t('hbRuleVersion')} · ${hbText(settings.ruleVersion)}`) : null))
 }
 
+// 灯箱图片右键下载（2026-10-14 用户需求）：浏览器侧直接下载——fetch 转 blob 后
+// 用同源 objectURL 触发 a[download]；小红书 CDN 不带 CORS 头时 fetch 失败，降级
+// 新窗口打开原图（webview 拦截导航则静默，不打断灯箱）。已知约束：宿主若在
+// 捕获阶段吞掉 contextmenu、或 webview 未处理 will-download，右键下载无效，
+// 均需真机验证；不引入 toast（灯箱组件无提示通道）。
+const HB_IMAGE_EXT_BY_TYPE = { 'image/jpeg': '.jpg', 'image/png': '.png', 'image/webp': '.webp', 'image/gif': '.gif' }
+
+async function downloadImage(url, index) {
+  const fallback = () => { try { window.open(url, '_blank', 'noopener') } catch { /* webview 禁导航：静默 */ } }
+  let objectUrl = null
+  try {
+    const response = await fetch(url, { mode: 'cors', credentials: 'omit' })
+    if (!response.ok) return fallback()
+    const blob = await response.blob()
+    // MIME 可能带参数（image/webp; charset=...），先剥参数再查扩展名表。
+    const ext = HB_IMAGE_EXT_BY_TYPE[String(blob.type || '').split(';')[0].trim()] || '.jpg'
+    objectUrl = URL.createObjectURL(blob)
+    const anchor = document.createElement('a')
+    anchor.href = objectUrl
+    anchor.download = `xhs-image-${index + 1}${ext}`
+    document.body.appendChild(anchor)
+    anchor.click()
+    anchor.remove()
+    setTimeout(() => URL.revokeObjectURL(objectUrl), 10000)
+  } catch {
+    // click 等抛错时回收已创建的 objectURL，避免单次泄漏。
+    if (objectUrl) URL.revokeObjectURL(objectUrl)
+    fallback()
+  }
+}
+
 // 图片轮播灯箱：←/→ 键盘切换；左右两侧仅放切换按钮（不放关闭，2026-10-13 用户
 // 裁决），关闭走「点空白遮罩 / Esc」。旧版 close 按钮因 CSS 优先级被垂直居中
 // 规则压到 next 按钮正上方，点「下一张」实际点到关闭——本次连同样式规则一起
@@ -1048,7 +1079,8 @@ function ImageLightbox({ urls, initialIndex, onClose, t }) {
     h('span', { className: 'yxh-hb-lightbox-counter' }, `${index + 1} / ${urls.length}`),
     urls.length > 1 ? h('button', { type: 'button', className: 'yxh-hb-lightbox-nav yxh-hb-lightbox-prev', 'aria-label': t('hbPrevImage'),
       onClick: event => { event.stopPropagation(); step(-1) } }, '‹') : null,
-    h('img', { className: 'yxh-hb-lightbox-img', src: urls[index], alt: '' }),
+    h('img', { className: 'yxh-hb-lightbox-img', src: urls[index], alt: '',
+      onContextMenu: event => { event.preventDefault(); downloadImage(urls[index], index) } }),
     urls.length > 1 ? h('button', { type: 'button', className: 'yxh-hb-lightbox-nav yxh-hb-lightbox-next', 'aria-label': t('hbNextImage'),
       onClick: event => { event.stopPropagation(); step(1) } }, '›') : null,
     h('span', { className: 'yxh-hb-lightbox-hint' }, t('hbLightboxCloseHint')))
