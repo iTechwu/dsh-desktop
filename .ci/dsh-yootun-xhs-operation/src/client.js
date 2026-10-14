@@ -144,9 +144,9 @@ const copy = {
     hbErrProviderFailed: '模型服务暂不可用，请稍后重试', hbErrInternal: '服务内部错误，请稍后重试', hbErrConfirmation: '缺少操作确认，请重新提交', hbErrValidation: '输入校验未通过，请检查后重试',
     hbCandidatesPartial: '批量裁决完成：{failed}/{total} 条失败，其余已生效',
     // 写操作成功提示（runWrite successKey，review 复验 MAJOR-A：此前整组漏注册，
-    // 提示条会显示裸键名；hbRunStartDone 刻意区别于状态条时间标签 hbRunStarted）。
+    // 提示条会显示裸键名；hbRunStarted 现为 Run 详情抽屉「开始」标签，勿混淆）。
     hbTagUpdated: '标签已更新', hbKeywordSaved: '关键词已保存',
-    hbRunStartDone: '增量采集已发起，进度见 Run 状态条', hbCandidatesReviewed: '候选裁决完成', hbLabelReviewed: '标签提案已裁决', hbLabelSaved: '标签已保存',
+    hbRunStartDone: '增量采集已发起，进度见「运行历史」抽屉', hbCandidatesReviewed: '候选裁决完成', hbLabelReviewed: '标签提案已裁决', hbLabelSaved: '标签已保存',
     hbCreateLabel: '新增标签', hbDateFrom: '扩词开始日期', hbDateTo: '扩词结束日期',
   },
   en: {
@@ -273,9 +273,10 @@ const copy = {
     hbErrProviderFailed: 'Model service is unavailable — retry later', hbErrInternal: 'Internal server error — retry later', hbErrConfirmation: 'Missing confirmation — submit again', hbErrValidation: 'Validation failed — check your input',
     hbCandidatesPartial: 'Review finished: {failed}/{total} failed, the rest applied',
     // Success copy for runWrite successKeys (review MAJOR-A: the whole group was
-    // missing so notices showed raw keys; hbRunStartDone ≠ run-bar label hbRunStarted).
+    // missing so notices showed raw keys; hbRunStarted is now the run-drawer
+    // "Started" label, not a run-bar label).
     hbTagUpdated: 'Tags updated', hbKeywordSaved: 'Keyword saved',
-    hbRunStartDone: 'Incremental run started — see the run bar', hbCandidatesReviewed: 'Candidates reviewed', hbLabelReviewed: 'Label proposals reviewed', hbLabelSaved: 'Label saved',
+    hbRunStartDone: 'Incremental run started — see the run history drawer', hbCandidatesReviewed: 'Candidates reviewed', hbLabelReviewed: 'Label proposals reviewed', hbLabelSaved: 'Label saved',
     hbCreateLabel: 'Add label', hbDateFrom: 'Candidates from', hbDateTo: 'Candidates to',
   },
 }
