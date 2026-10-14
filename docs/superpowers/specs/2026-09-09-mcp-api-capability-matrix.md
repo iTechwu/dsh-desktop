@@ -82,7 +82,7 @@
 | `tools-viral-video` | `/mcp/tools/viral-video` | 60s | tools |
 | `tools-browser-intelligence` | `/mcp/tools/browser-intelligence` | 60s | tools |
 | `tools-tos-upload` | `/mcp/tools/tos-upload` | 60s | tools |
-| `tools-xhs-operation` | `/mcp/tools/xhs-operation` | 60s | tools |
+| `tools-xhs` | `/mcp/tools/xhs-operation` | 60s | tools |
 | `tools-douyin-operation` | `/mcp/tools/douyin-operation` | 60s | tools |
 
 所有 server 都使用 streamable HTTP 和同一个托管凭据引用；启动失败不阻断 Desktop 壳层，重连从 500ms 指数退避到 30s、最多 10 次。凭据或启用插件集合变化时，Host 销毁旧 client 后按当前 generation 重建；任何传输错误都不得序列化 Authorization 请求元数据。

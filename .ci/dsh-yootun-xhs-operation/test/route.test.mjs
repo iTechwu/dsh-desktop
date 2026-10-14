@@ -3,10 +3,10 @@ import test from 'node:test'
 import { apply } from '../index.js'
 
 const SCHEMAS = [
-  { name: 'mcp__tools-xhs-operation__xhs_operation_task_create' },
-  { name: 'mcp__tools-xhs-operation__xhs_operation_task_get' },
-  { name: 'mcp__tools-xhs-operation__xhs_operation_result_get' },
-  { name: 'mcp__tools-xhs-operation__xhs_operation_task_cancel' },
+  { name: 'mcp__tools-xhs__xhs_operation_task_create' },
+  { name: 'mcp__tools-xhs__xhs_operation_task_get' },
+  { name: 'mcp__tools-xhs__xhs_operation_result_get' },
+  { name: 'mcp__tools-xhs__xhs_operation_task_cancel' },
 ]
 
 function makeCtx(execute, schemas = SCHEMAS, auditEvents = [], overrides = {}) {
@@ -43,7 +43,7 @@ test('create maps images mode to xhs_operation_task_create with idempotency and 
   assert.equal(result.body.status, 'created')
   assert.equal(result.body.taskId, 'xhst-1')
   assert.equal(calls.length, 1)
-  assert.equal(calls[0].name, 'mcp__tools-xhs-operation__xhs_operation_task_create')
+  assert.equal(calls[0].name, 'mcp__tools-xhs__xhs_operation_task_create')
   assert.ok(calls[0].signal instanceof AbortSignal)
   const args = calls[0].arguments
   assert.equal(args.mediaType, 'images')
@@ -119,7 +119,7 @@ test('status delegates to task_get and projects the safe task view', async () =>
   assert.equal(result.body.taskStatus, 'running')
   assert.equal(result.body.currentStep, 'copywriting')
   assert.deepEqual(result.body.steps, [{ step: 'probe', status: 'succeeded' }, { step: 'copywriting', status: 'running' }])
-  assert.equal(calls[0].name, 'mcp__tools-xhs-operation__xhs_operation_task_get')
+  assert.equal(calls[0].name, 'mcp__tools-xhs__xhs_operation_task_get')
   assert.equal(calls[0].arguments.taskId, 'xhst-1')
 })
 
@@ -158,7 +158,7 @@ test('result delegates to result_get and projects only display fields', async ()
   assert.equal(result.status, 200)
   assert.equal(result.body.status, 'ready')
   assert.equal(result.body.taskStatus, 'succeeded')
-  assert.equal(calls[0].name, 'mcp__tools-xhs-operation__xhs_operation_result_get')
+  assert.equal(calls[0].name, 'mcp__tools-xhs__xhs_operation_result_get')
   assert.equal(result.body.versions.length, 3)
   assert.equal(result.body.versions[0].version, 'A')
   assert.equal(result.body.versions[0].body, '**正文**A')
@@ -245,7 +245,7 @@ test('cancel delegates to task_cancel with confirm and idempotency', async () =>
   assert.equal(result.status, 200)
   assert.equal(result.body.status, 'ready')
   assert.equal(result.body.taskStatus, 'cancel_requested')
-  assert.equal(calls[0].name, 'mcp__tools-xhs-operation__xhs_operation_task_cancel')
+  assert.equal(calls[0].name, 'mcp__tools-xhs__xhs_operation_task_cancel')
   assert.equal(calls[0].arguments.taskId, 'xhst-cancel-1')
   assert.equal(calls[0].arguments.confirm, true)
   assert.equal(typeof calls[0].arguments.idempotencyKey, 'string')

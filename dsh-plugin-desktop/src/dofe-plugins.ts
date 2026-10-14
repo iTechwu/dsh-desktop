@@ -36,7 +36,9 @@ export const DOFE_PLUGIN_CATALOG = [
       'tools-platform', 'tools-supply-chain', 'tools-talent-discovery', 'tools-lead-discovery',
       'tools-lead-monitor', 'tools-hotspot-discovery', 'tools-custom-car-monitoring',
       'tools-viral-video', 'tools-browser-intelligence', 'tools-tos-upload',
-      'tools-xhs-operation', 'tools-douyin-operation',
+      // xhs 域用短 serverName（须与 dofe-managed ROUTES 一致）：`tools-xhs-operation`
+      // 前缀下最长工具名拼公开名超 64 字符被截断+hash，插件按原名匹配失败。
+      'tools-xhs', 'tools-douyin-operation',
     ],
     builtIn: false,
   },

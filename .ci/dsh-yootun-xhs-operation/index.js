@@ -1,5 +1,5 @@
 // 小红书仿写 host endpoint：浏览器页面只访问本地同源路由，Host 通过 ctx.tools 调用
-// dofe-managed 统一创建的 tools-xhs-operation MCP Client（xhs_operation_task_create /
+// dofe-managed 统一创建的 tools-xhs MCP Client（xhs_operation_task_create /
 // task_get / result_get），并把 MCP 信封投影为安全结果。页面不读取 MODELS_API_KEY、
 // 不直连公网 MCP，也不接收凭据、内部地址或原始传输错误（docs/0904/xhs §6.1）。
 // RQ-2026-002（docs/0928/xhs）：create 新增 direction / videoUnderstanding / versionCount=1，

@@ -5,8 +5,10 @@ import { BRAND_VARIANT } from '../src/generated-product-identity.ts'
 
 // The first three created clients before the simulated 4th route failure;
 // yootun leads with its exclusive GEO plugins, sensteed with shared routes.
+// sensteed 的第 3 个 enabled route 是 dofe-managed 里单列的 xhs 域（serverName
+// tools-xhs，排在 tools map 展开之前）。
 const BRAND_LEADING_SERVER_NAMES = BRAND_VARIANT === 'sensteed'
-  ? ['openmontage', 'media', 'tools-platform']
+  ? ['openmontage', 'media', 'tools-xhs']
   : ['geoflow', 'georank', 'openmontage']
 
 function createHarness(settings: DofeAccessSettings, failAt = Number.POSITIVE_INFINITY) {

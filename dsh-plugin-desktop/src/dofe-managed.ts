@@ -44,9 +44,15 @@ const ROUTES: readonly ManagedMcpRoute[] = [
   // Models 媒体直连生成：create 是普通 API 调用（60s），轮询由 Agent 显式调用
   // get_generation_task，不持有长连接等待生成完成。
   { plugin: 'media', serverName: 'media', path: 'media', timeoutMs: 60_000 },
+  // xhs 域用短 serverName 单列：harness 公开工具名为 `mcp__<serverName>__<工具名>` 且上限
+  // 64 字符，超长截断+hash。xhs 域最长工具 xhs_operation_hotboard_candidate_review 拼
+  // `tools-xhs-operation` 前缀后 65 字符被截断成 `..._ca_<hash>`，插件按原始工具名子串
+  // 匹配永远失败（候选「接受」unavailable 的根因）。tools-xhs 下全名 55 字符干净注册，
+  // 且保持 mcp__tools-* 统一引导；MCP 端点仍由 path 定位（tools/xhs-operation），不受影响。
+  { plugin: 'tools' as const, serverName: 'tools-xhs', path: 'tools/xhs-operation', timeoutMs: 60_000 },
   ...[
     'platform', 'supply-chain', 'talent-discovery', 'lead-discovery', 'lead-monitor',
-    'hotspot-discovery', 'custom-car-monitoring', 'viral-video', 'browser-intelligence', 'tos-upload', 'xhs-operation',
+    'hotspot-discovery', 'custom-car-monitoring', 'viral-video', 'browser-intelligence', 'tos-upload',
     'douyin-operation',
   ].map(path => ({ plugin: 'tools' as const, serverName: `tools-${path}`, path: `tools/${path}`, timeoutMs: 60_000 })),
 ]
