@@ -1252,6 +1252,47 @@ test('trendLayout：windowDays=7 弹框窗口、刻度随窗口推导、越界�
   assert.equal(fallback.fromDay, '2026-08-19')
 })
 
+// 1026 真实数据 E2E 抓到的缺口：回填行的 captured_at 是本次采集时刻（与当天行
+// 同一瞬间），snapshotTrendPoints 必须优先用服务端透出的语义日 day 聚合。
+test('snapshotTrendPoints：语义日 day 优先聚合，无 day 回退 captured_at +8h 推日', async () => {
+  const source = await readFile(new URL('../src/client.js', import.meta.url), 'utf8')
+  const match = source.match(/function snapshotTrendPoints\(snapshots\) \{[\s\S]*?\n\}/u)
+  assert.ok(match, 'snapshotTrendPoints 函数体可提取')
+  const sandbox = { Map, Date, Number, String, Array, Object }
+  vm.createContext(sandbox)
+  const snapshotTrendPoints = vm.runInContext(`(${match[0]})`, sandbox)
+
+  // 回填场景（真实 E2E 形态）：captured_at 全部同一瞬间，day 各归其位。
+  const captured = '2026-10-16T18:17:54+08:00'
+  const backfilled = snapshotTrendPoints([
+    { day: '2026-10-16', captured_at: captured, play_count: 9699 },
+    { day: '2026-10-09', captured_at: captured, play_count: 9557 },
+    { day: '2026-10-15', captured_at: captured, play_count: 9698 },
+  ])
+  assert.deepEqual(Array.from(backfilled.points.map(point => point.day)),
+    ['2026-10-09', '2026-10-15', '2026-10-16'], '按语义日升序，不挤到 captured_at 当天')
+  assert.deepEqual(Array.from(backfilled.points.map(point => point.value)), [9557, 9698, 9699])
+  assert.equal(backfilled.lastCapturedDay, '2026-10-16', '窗口锚点 = 最大语义日')
+
+  // 旧服务端无 day：回退 captured_at +8h 推日（UTC+8 的 10-16 晚 → 10-16）。
+  const legacy = snapshotTrendPoints([
+    { captured_at: '2026-10-16T18:17:54+08:00', play_count: 9699 },
+    { captured_at: '2026-10-15T10:00:00+08:00', play_count: 9698 },
+  ])
+  assert.deepEqual(Array.from(legacy.points.map(point => point.day)), ['2026-10-15', '2026-10-16'])
+
+  // 缺 play_count / captured_at 非法的行剔除；空输入空输出。
+  const filtered = snapshotTrendPoints([
+    { day: '2026-10-09', captured_at: 'bad', play_count: 1 },
+    { day: '2026-10-10', captured_at: '2026-10-10T10:00:00+08:00', play_count: null },
+    { day: '2026-10-11', captured_at: '2026-10-11T10:00:00+08:00', play_count: 3 },
+  ])
+  assert.deepEqual(Array.from(filtered.points.map(point => point.day)), ['2026-10-11'])
+  // 沙箱函数返回的是沙箱 realm 的数组，只能按长度/元素断言，不能 deepEqual 本 realm 的 []。
+  assert.equal(snapshotTrendPoints(null).points.length, 0)
+  assert.equal(snapshotTrendPoints(null).lastCapturedDay, null)
+})
+
 // review P2-2（2026-09-18）：y 轴 min/max 格式化同文时退千分位完整数字的分支
 // 此前零覆盖；另加 Rules of Hooks 守卫——useMeasuredWidth 必须在 AnalysisPage
 // 任何早退 return 之前调用（errorReason 早退渲染的 hook 调用数与完整渲染一致）。

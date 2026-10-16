@@ -695,8 +695,10 @@ function WorkCover({ coverUrl, durationText, size = 'small', t }) {
     durationText && !(!safeSrc || failed) ? h('span', { className: 'ydo-work-cover-duration' }, durationText) : null)
 }
 
-// 快照序列 → 弹框播放趋势 points（上海自然日 + 当日 play_count）与窗口锚点。
-// captured_at ISO → +8h 取 UTC 日期（与 ui-format.formatDateTime 同一固定偏移法）。
+// 快照序列 → 弹框播放趋势 points（语义日 + 当日 play_count）与窗口锚点。
+// 1026 方案：优先用服务端透出的 day（回填行的 captured_at 是本次采集时刻，
+// 从它推日会把历史日全归到当天）；旧服务端无 day 时回退 captured_at +8h 推日
+// （与 ui-format.formatDateTime 同一固定偏移法，仅当天采集行时两口径等价）。
 // 窗口与边界处理交给 trendLayout（弹框 7 天窗口），这里不截断。
 function snapshotTrendPoints(snapshots) {
   const byDay = new Map()
@@ -705,11 +707,16 @@ function snapshotTrendPoints(snapshots) {
       || snapshot.play_count === undefined) continue
     const ms = Date.parse(snapshot.captured_at)
     if (!Number.isFinite(ms)) continue
-    const shifted = new Date(ms + 8 * 60 * 60 * 1000)
     const pad = n => String(n).padStart(2, '0')
-    const day = `${shifted.getUTCFullYear()}-${pad(shifted.getUTCMonth() + 1)}-${pad(shifted.getUTCDate())}`
+    let day = typeof snapshot.day === 'string' && /^\d{4}-\d{2}-\d{2}$/u.test(snapshot.day)
+      ? snapshot.day
+      : null
+    if (day === null) {
+      const shifted = new Date(ms + 8 * 60 * 60 * 1000)
+      day = `${shifted.getUTCFullYear()}-${pad(shifted.getUTCMonth() + 1)}-${pad(shifted.getUTCDate())}`
+    }
     // 同日多次采集：按 captured_at 取最大者（日收盘语义；不依赖上游升序契约）。
-    const capturedMs = Date.parse(snapshot.captured_at)
+    const capturedMs = ms
     const existing = byDay.get(day)
     if (existing === undefined || capturedMs >= existing._capturedMs) {
       byDay.set(day, { value: Number(snapshot.play_count), _capturedMs: capturedMs })
