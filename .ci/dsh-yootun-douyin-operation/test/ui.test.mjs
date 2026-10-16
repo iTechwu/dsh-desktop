@@ -32,11 +32,14 @@ import {
   trafficSourceLabel,
 } from '../src/ui-format.js'
 
-test('trend count only renders finite positive values through the shared count formatter', async () => {
+test('1015 弹框：播放趋势折线替代「共 N 个趋势点」文字行（UI 规格 §5.4）', async () => {
   const source = await readFile(new URL('../src/client.js', import.meta.url), 'utf8')
-  assert.match(source, /Number\.isFinite\(Number\(trend\.total\)\) && Number\(trend\.total\) > 0/u)
-  assert.match(source, /replace\('\{count\}', formatCount\(trend\.total\)\)/u)
-  assert.doesNotMatch(source, /replace\('\{count\}', String\(trend\.total\)\)/u)
+  // 旧文字行不再渲染；弹框经 snapshotTrendPoints → trendLayout → TrendChart 画折线。
+  assert.doesNotMatch(source, /replace\('\{count\}', formatCount\(trend\.total\)\)/u)
+  assert.match(source, /snapshotTrendPoints/u)
+  assert.match(source, /h\(TrendChart, \{ layout, t, axisValueText/u)
+  // 无趋势数据 → 「暂无趋势」hint（替代原 trendCount 行）。
+  assert.match(source, /t\('noTrend'\)/u)
 })
 
 // ---------------------------------------------------------------------------
@@ -48,14 +51,23 @@ const SELECT_UI_IMPORT = /^import \{ FilterSelect \} from '\.\/select-ui\.js'\n/
 function FilterSelect() { return null }
 
 async function evalUiModule(url, sandbox, reactStub) {
+  // trend-chart 以真实 ESM 模块被 analysis-ui import（非内联），其延迟 react 获取
+  // 在 ESM 下走 globalThis.__YDO_REACT（模块内 typeof require 探测）。
+  globalThis.__YDO_REACT = reactStub || { createElement: () => null }
   let source = await readFile(url, 'utf8')
   if (!UI_FORMAT_IMPORT.test(source)) throw new Error('test: ui-format import not found')
-  source = source.replace(UI_FORMAT_IMPORT, '').replace(SELECT_UI_IMPORT, '').replace(/^export /gm, '')
+  source = source.replace(UI_FORMAT_IMPORT, '').replace(SELECT_UI_IMPORT, '')
+  // 1015 阶段 3：trend-chart 共享模块同样剥离 import 并注入真实实现（内联后同作用域）。
+  source = source.replace(/\nimport \{[^}]*\} from '\.\/trend-chart\.js'/u, '').replace(/^export /gm, '')
   // ui-format 全部导出注入真实实现（构建内联后同作用域，标识符直接可见）。
   const uiFormatModule = await import(new URL('../src/ui-format.js', import.meta.url).href)
+  const trendChartModule = await import(new URL('../src/trend-chart.js', import.meta.url).href)
   const context = {
     console,
     ...uiFormatModule,
+    TrendChart: trendChartModule.TrendChart,
+    trendLayout: trendChartModule.trendLayout,
+    useMeasuredWidth: trendChartModule.useMeasuredWidth,
     require: name => {
       if (name === 'react') return reactStub || { createElement: () => null }
       if (name === '@deepseek-ai/dsh-client-ui-primitives') return { IconDownloadOutline16: () => null }
@@ -77,7 +89,7 @@ async function evalUiModule(url, sandbox, reactStub) {
 
 const labels = {
   colTitle: '作品名称', colUrl: '作品链接', colPlay: '播放量', colCollect: '收藏量',
-  colLike: '点赞量', colComment: '评论量', colBounce2s: '2s跳出率', colCompletion5s: '5s完播率',
+  colLike: '点赞量', colComment: '评论量', colBounce2s: '2s跳出率', colCompletion5s: '5s完播率', colFansGain: '吸粉量',
   colCompletion: '完播率', colDuration: '平均播放时长', colProportion: '平均播放占比',
   genderMale: '男', genderFemale: '女', genderOther: '其他', gapFieldOther: '其他指标',
   progressCurve: '进度分析',
@@ -93,21 +105,24 @@ const labels = {
 }
 const t = key => ({ ...labels, seconds: '秒', not_exposed: '本次接口未提供', below_min_view: '播放量低于抖音最小观看门槛', request_failed: '本次请求失败，请稍后重试', other: '本次未取到', progressCollect: '采集进度', progressIngest: '入库进度', runRunning: '采集中', gapNotExposed: '本次接口未提供', gapBelowMinView: '播放量低于抖音最小观看门槛', gapRequestFailed: '本次请求失败，请稍后重试', gapNoData: '该作品暂无此数据', gapOther: '本次未取到' }[key] || key)
 
-test('表格列序与指标文案严格符合契约（2s跳出率 / 5s完播率 / 完播率 / 平均播放时长 / 平均播放占比），粉丝数不进表', () => {
+test('表格列序与指标文案严格符合契约（2s跳出率 / 5s完播率 / 完播率 / 吸粉量 / 平均播放时长 / 平均播放占比），账号粉丝数不进表', () => {
   assert.deepEqual(
     COLUMNS.map(column => t(column.label)),
-    ['作品名称', '作品链接', '播放量', '收藏量', '点赞量', '评论量', '2s跳出率', '5s完播率', '完播率', '平均播放时长', '平均播放占比'],
+    ['作品名称', '作品链接', '播放量', '收藏量', '点赞量', '评论量', '2s跳出率', '5s完播率', '完播率', '吸粉量', '平均播放时长', '平均播放占比'],
   )
-  assert.ok(COLUMNS.every(column => !column.key.includes('fan')), '粉丝数是账号级指标，只在账号卡展示（§5.3）')
+  // 1015 方案：fans_gain_count 是**作品级**吸粉量（1015 UI 规格 §4.1），与账号级
+  // fanCount 严格区分——账号粉丝数仍在账号卡展示，不按行重复（§5.3）。
+  assert.ok(COLUMNS.every(column => column.key !== 'fanCount'), '账号粉丝数不进表（§5.3）')
   assert.deepEqual(COLUMNS.slice(0, 2).map(column => column.sticky), [0, 220], '前两列固定')
   assert.equal(COLUMNS[6].key, 'bounce_rate_2s_pct')
   assert.equal(COLUMNS[7].key, 'completion_rate_5s_pct')
   assert.equal(COLUMNS[8].key, 'completion_rate_pct')
+  assert.equal(COLUMNS[9].key, 'fans_gain_count')
 })
 
 test('tableTemplate 单一来源生成列轨道：表头与每行共用，sticky 列偏移等于前序宽度之和', () => {
   const template = tableTemplate()
-  assert.equal(template, '220px 200px 100px 100px 100px 100px 104px 104px 96px 120px 110px')
+  assert.equal(template, '220px 200px 100px 100px 100px 100px 104px 104px 96px 88px 120px 110px')
   const sticky = COLUMNS.filter(column => column.sticky !== undefined)
   for (const column of sticky) {
     const offset = COLUMNS.slice(0, COLUMNS.indexOf(column)).reduce((sum, item) => sum + (item.width || 100), 0)
@@ -117,15 +132,15 @@ test('tableTemplate 单一来源生成列轨道：表头与每行共用，sticky
   assert.equal(tableTemplate([{ width: 80 }, { key: 'x' }]), '80px 100px')
 })
 
-test('排序元数据：恰好 9 个数值列可排序，名称/链接不可排序', () => {
+test('排序元数据：恰好 10 个数值列可排序，名称/链接不可排序', () => {
   const sortable = COLUMNS.filter(column => column.sortable === true)
-  assert.equal(sortable.length, 9, '契约：包含且仅包含 9 个可排序列')
+  assert.equal(sortable.length, 10, '契约：包含且仅包含 10 个可排序列（1015 +吸粉量）')
   assert.deepEqual(
     COLUMNS.filter(column => column.sortable !== true).map(column => column.key),
     ['title', 'url'],
     '作品名称和作品链接不提供排序（§6.2）',
   )
-  assert.ok(sortable.every(column => ['count', 'pct', 'seconds'].includes(column.kind)))
+  assert.ok(sortable.every(column => ['count', 'pct', 'delta', 'seconds'].includes(column.kind)))
 })
 
 test('nextSortState 三态循环：default→desc→asc→default，点其他字段直接 desc，入参不可变', () => {
@@ -380,7 +395,7 @@ test('构建产物 lib/client.js 可加载，且内联了展示逻辑', async ()
   assert.deepEqual(moduleExports.COLUMNS || [], [], 'COLUMNS 为模块内部细节，不对外导出')
 })
 
-test('构建产物渲染作品表格：11 列文案正确、NULL 显示 —、前两列固定、列轨道内联共享', async () => {
+test('构建产物渲染作品表格：12 列文案正确（1015 +吸粉量）、NULL 显示 —、前两列固定、列轨道内联共享', async () => {
   const { moduleExports, t } = await loadBundle()
   const opened = []
   const work = {
@@ -412,28 +427,29 @@ test('构建产物渲染作品表格：11 列文案正确、NULL 显示 —、�
   const cells = flat.filter(node => node.props && node.props.role === 'cell')
   const headers = flat.filter(node => node.props && node.props.role === 'columnheader')
   const rows = flat.filter(node => node.props && node.props.role === 'row' && node.props.className === 'ydo-table-row')
-  assert.equal(headers.length, 11, '表格 11 列')
-  // 名称/链接不可排序：纯文本表头；其余 9 列渲染排序按钮，默认态带「取消排序」标签与弱化箭头。
+  assert.equal(headers.length, 12, '表格 12 列（1015 +吸粉量）')
+  // 名称/链接不可排序：纯文本表头；其余 10 列渲染排序按钮，默认态带「取消排序」标签与弱化箭头。
   assert.deepEqual(headers.slice(0, 2).map(textOf), ['作品名称', '作品链接'])
   assert.deepEqual(headers.slice(2).map(node => findSortButton(node).props['aria-label']), [
     '播放量：取消排序', '收藏量：取消排序', '点赞量：取消排序', '评论量：取消排序',
-    '2s跳出率：取消排序', '5s完播率：取消排序', '完播率：取消排序', '平均播放时长：取消排序', '平均播放占比：取消排序',
+    '2s跳出率：取消排序', '5s完播率：取消排序', '完播率：取消排序', '吸粉量：取消排序', '平均播放时长：取消排序', '平均播放占比：取消排序',
   ])
-  assert.deepEqual(headers.slice(2).map(node => node.props['aria-sort']), Array(9).fill('none'))
-  const firstRow = cells.slice(0, 11)
+  assert.deepEqual(headers.slice(2).map(node => node.props['aria-sort']), Array(10).fill('none'))
+  const firstRow = cells.slice(0, 12)
   assert.equal(textOf(firstRow[0]), '示例作品')
   assert.equal(textOf(firstRow[2]), '1.1万')
   assert.equal(textOf(firstRow[6]), '31.73%')
   assert.equal(textOf(firstRow[7]), '40.17%')
   assert.equal(textOf(firstRow[8]), EMPTY, '本次未暴露的完播率显示 —')
-  assert.equal(textOf(firstRow[9]), '13.46秒')
-  assert.equal(textOf(firstRow[10]), '17.61%')
+  assert.equal(textOf(firstRow[9]), EMPTY, '本次未采集的吸粉量显示 —（1015 新列）')
+  assert.equal(textOf(firstRow[10]), '13.46秒')
+  assert.equal(textOf(firstRow[11]), '17.61%')
   assert.ok(firstRow[0].props.className.includes('ydo-cell-sticky'))
   assert.ok(firstRow[1].props.className.includes('ydo-cell-sticky'))
   assert.equal(firstRow[0].props.style.left, '0px')
   assert.equal(firstRow[1].props.style.left, '220px')
   // 列轨道模板内联到表头与每行，单一来源是 COLUMNS（§11.2.3 修复滚动末端断线）。
-  const expectedTemplate = '220px 200px 100px 100px 100px 100px 104px 104px 96px 120px 110px'
+  const expectedTemplate = '220px 200px 100px 100px 100px 100px 104px 104px 96px 88px 120px 110px'
   const headNode = flat.find(node => node.props && node.props.className === 'ydo-table-head')
   assert.equal(headNode.props.style.gridTemplateColumns, expectedTemplate, '表头内联列轨道')
   assert.equal(rows[0].props.style.gridTemplateColumns, expectedTemplate, '数据行内联同一列轨道')
@@ -476,7 +492,13 @@ test('构建产物渲染详情子页面：性别圆环/年龄/流量来源/进�
   assert.ok(!joined.includes('drag_back_curve'), '不暴露 drag_back_curve 内部字段名')
   assert.ok(joined.includes('男 92.66%'), '性别图例中文化（male→男）')
   assert.ok(joined.includes('女 7.34%'), '性别图例中文化（female→女）')
-  assert.ok(joined.includes('该作品已采集 3 次'), '采集次数是作品级语义（非“历史采集”）')
+  // 1015 UI 规格 §5.4：旧「该作品已采集 N 次」文字行由播放趋势折线取代。
+  assert.ok(!joined.includes('该作品已采集'), '旧趋势文字行不再渲染')
+  assert.ok(joined.includes('核心指标') && joined.includes('播放量趋势'), '弹框分组标题（§5.1）')
+  assert.ok(joined.includes('流量与留存') && joined.includes('受众画像') && joined.includes('搜索词与热词'), '弹框归组标题齐备')
+  // trend.total=3 但无 snapshots → 「暂无趋势」hint；核心指标 8 卡渲染（真实值/缺失 —）。
+  assert.ok(joined.includes('暂无趋势'), '无快照时显示暂无趋势')
+  assert.ok(joined.includes('吸粉量'), '核心指标含吸粉量卡')
   assert.ok(joined.includes('发布时间 2026-09-08 17:00'), 'publish_time 显示为发布时间（Asia/Shanghai）')
   assert.ok(joined.includes('最近采集 暂无记录'), '接口未返回 latest_collected_at 时显示暂无记录')
   assert.ok(!joined.includes('上次采集'), '账号级“上次采集”不得伪装成作品级时间')
@@ -563,23 +585,23 @@ test('构建产物详情未知来源/年龄兜底与时间语义：不漏原始 
   assert.ok(badText.includes('最近采集 暂无记录'), '非法 latest_collected_at 显示暂无记录')
 })
 
-test('构建产物详情采集次数守卫：total 缺失/非有限/≤0 时不渲染该行（运行时）', async () => {
+test('构建产物详情趋势守卫：无快照/空快照不渲染折线，「暂无趋势」hint（1015 运行时）', async () => {
   const { moduleExports } = await loadBundle()
   const detail = { work: { title: '守卫' }, audience: {} }
+  const textOf = node => node.children.map(child => (child && typeof child === 'object' ? textOf(child) : child === null || child === undefined ? '' : String(child))).join('')
+  const collectText = tree => collectFlat(renderNode(tree)).filter(node => node.props && node.props.role !== 'columnheader').map(textOf).join('|')
   for (const trend of [null, undefined, {}, { total: 0 }, { total: -3 }, { total: 'x' }, { total: Number.NaN }]) {
-    const text = collectFlat(renderNode(moduleExports.WorkDetailModal({ accountId: 'acc-1', workId: 'w1', detail, trend, loading: false, onClose: () => {}, t: tRender })))
-      .flatMap(node => {
-        const children = Array.isArray(node.children) ? node.children : [node.children]
-        return children.filter(child => typeof child === 'string').map(String)
-      }).join('|')
+    const text = collectText(moduleExports.WorkDetailModal({ accountId: 'acc-1', workId: 'w1', detail, trend, loading: false, onClose: () => {}, t: tRender }))
     assert.ok(!text.includes('该作品已采集'), `trend=${JSON.stringify(trend) ?? String(trend)} 不得渲染采集次数提示`)
+    assert.ok(text.includes('暂无趋势'), `trend=${JSON.stringify(trend) ?? String(trend)} 显示暂无趋势`)
   }
-  const okText = collectFlat(renderNode(moduleExports.WorkDetailModal({ accountId: 'acc-1', workId: 'w1', detail, trend: { total: 2 }, loading: false, onClose: () => {}, t: tRender })))
-    .flatMap(node => {
-      const children = Array.isArray(node.children) ? node.children : [node.children]
-      return children.filter(child => typeof child === 'string').map(String)
-    }).join('|')
-  assert.ok(okText.includes('该作品已采集 2 次'), '合法 total 正常渲染')
+  // 合法快照（上海自然日 + 播放数）→ 渲染趋势 SVG（共享 TrendChart）。
+  const withSnapshots = detail && { work: detail.work, audience: {} }
+  const okNodes = collectFlat(renderNode(moduleExports.WorkDetailModal({
+    accountId: 'acc-1', workId: 'w1', detail: withSnapshots, loading: false, onClose: () => {}, t: tRender,
+    trend: { total: 2, snapshots: [{ captured_at: '2026-10-10T06:00:00.000Z', play_count: 100 }, { captured_at: '2026-10-11T06:00:00.000Z', play_count: 180 }] },
+  })))
+  assert.ok(okNodes.some(node => node.props && String(node.props.className || '').includes('ydo-an-trend-svg')), '快照存在 → 渲染趋势 SVG')
 })
 
 test('构建产物渲染链接单元格：白名单内为锚点并隔离冒泡，白名单外为纯文本', async () => {
@@ -619,6 +641,18 @@ const renderLabels = {
   trendCount: '该作品已采集 {count} 次', collectAll: '采集本账号全部', tabVideos: '视频数据',
   data: '数据展示区', accounts: '账号管理', title: '抖音运营', subtitle: '', open: '抖音运营',
   sortDefault: '取消排序', sortDesc: '倒序', sortAsc: '顺序',
+  // 1015 UI 升级新词条（与 src/client.js 中文文案保持一致）
+  kpiNetFans: '净增粉丝', kpiCompletion5s: '5秒完播率', kpiPlayWeighted: '按播放加权',
+  colWindowNetFans: '近窗口净增', colWindowPlay: '近窗口播放',
+  colWindowNetFansDynamic: '{range}净增', colWindowPlayDynamic: '{range}播放',
+  fansTotal: '总粉丝量', fansNew: '吸粉量', fansCancel: '脱粉量',
+  fansReturn: '回访粉丝', fansHomeView: '主页访问', fansSummaryTitle: '粉丝数据',
+  metric_net_fans: '净增粉丝', fansGainTotal: '吸粉量', colFansGain: '吸粉量',
+  secCoreMetrics: '核心指标', secPlayTrend: '播放量趋势',
+  secTrafficRetention: '流量与留存', secAudience: '受众画像', secWords: '搜索词与热词',
+  coverFallback: '封面', completionRate: '完播率', bounceRate2s: '2秒跳出率',
+  noTrend: '暂无趋势', noCollectGap: '无采集', counterRevised: '平台修正',
+  trendTitle: '数据趋势', trendSingleHint: '暂无足够趋势数据（窗口内仅 1 个采集点）',
 }
 const tRender = key => renderLabels[key] || key
 
@@ -1283,7 +1317,13 @@ test('分析页源契约：返回总览保留筛选、观众与流量开放（�
   assert.match(overviewUiSource, /hotLabelText\(work\.labels, t\)/u, 'HotWorkRow 走 hotLabelText 映射')
   assert.match(analysisSource, /t\('exportAnalysis'\)/u, '"导出账号分析报告"只在分析页局部工具栏')
   assert.match(analysisSource, /暂无趋势/u)
-  assert.match(analysisSource, /counterRevised/u)
+  // 1015 阶段 3：趋势绘制抽取到共享模块 trend-chart.js（弹框复用）；
+  // 分析页源码经 trend-chart import 引用共享 TrendChart，绘制细节（counterRevised
+  // 角标、gap 虚线）随模块走。
+  assert.match(analysisSource, /import \{[^}]*TrendChart[^}]*\} from '\.\/trend-chart\.js'/u)
+  const trendChartSource = await readFile(new URL('../src/trend-chart.js', import.meta.url), 'utf8')
+  assert.match(trendChartSource, /counterRevised/u)
+  assert.match(trendChartSource, /ydo-an-seg-dashed/u)
   // UI 优化方案（2026-09-16）§5：页面不显示规则版本、参与样本与底部数据质量说明。
   assert.doesNotMatch(analysisSource, /t\('ruleVersion'\)/u)
   assert.doesNotMatch(analysisSource, /ruleSampleSize/u, '规则提醒不再携带样本量')
@@ -1782,7 +1822,7 @@ test('分析页行为：账号标题、内容指标三段结构、观众与流�
   })
   const metricSelect = hLog.find(node => node.type === FilterSelect)
   assert.equal(metricSelect.props.value, 'play', '分析页沿用自绘筛选器')
-  assert.equal(metricSelect.props.options.length, 6, '趋势指标选项保持完整')
+  assert.equal(metricSelect.props.options.length, 7, '趋势指标选项保持完整（1015 +net_fans）')
   // 先展开 stub 未执行的函数组件（Kpi/AudienceBlock/AudienceBarList），让观众条形
   // 等嵌套内容进入 hLog，再做全量文本/块级断言（展开产生的节点同样入 hLog）。
   for (let index = 0; index < hLog.length; index += 1) {
@@ -1851,10 +1891,19 @@ test('分析页行为：账号标题、内容指标三段结构、观众与流�
   assert.equal(hotDataRow.children[0].props.className, 'ydo-ov-rankcell', '首列是排名（窄列居中）')
   assert.ok(hotDataRow.children[1].props.className.includes('ydo-ov-hot-title'), '第二列是视频标题（宽轨）')
   assert.ok(pageText.includes('账号内 Top 2%') && pageText.includes('播放量为账号中位数 322 倍'), '爆款依据分行渲染')
-  // 内容指标固定 8 项；真实的 0 保持 0，缺失显式「数据不足」（验收建议 5）。
+  // 内容指标固定 9 项（1015 +吸粉量行）；真实的 0 保持 0，缺失显式「数据不足」（验收建议 5）。
   const contentMetricRows = vm.runInContext('contentMetricRows', sandbox)
   const zeroRows = contentMetricRows({ interaction: { likeCount: { ratePct: 0, coveragePct: 100 } }, kpi: {} }, t)
-  assert.equal(zeroRows.length, 8, '内容指标固定 8 项')
+  assert.equal(zeroRows.length, 9, '内容指标固定 9 项（1015 +吸粉量）')
+  // 吸粉量行：无 fansSummary → — + 数据不足（缺口，不造 0）；有值 → delta 文本。
+  const fansGainRow = zeroRows.find(row => row.key === 'fansGainTotal')
+  assert.equal(fansGainRow.value, '—')
+  assert.equal(fansGainRow.note, t('dataInsufficient'))
+  const withFans = contentMetricRows({ interaction: {}, kpi: {}, fansSummary: { newFansCount: 12 } }, t)
+  // 有值时渲染着色 span（正数绿，deltaText tone）。
+  const fansGainValue = withFans.find(row => row.key === 'fansGainTotal').value
+  assert.equal(fansGainValue.props.className, 'ydo-delta ydo-delta-up')
+  assert.deepEqual(fansGainValue.children, ['+12'])
   const likeRow = zeroRows.find(row => row.key === 'likeCount')
   assert.equal(likeRow.value, '0.0%', '真实的 0 保持 0，不当作缺失')
   assert.equal(likeRow.note, null, '覆盖率 100% 不渲染第三段状态（v2 §5.2）')
@@ -2205,7 +2254,7 @@ test('v2 源码样式契约：窄列轨道、分布配色、抽屉尺寸与关�
   // 爆款两表窄列 124px 发布时间 / 84px 播放量 / 76px 互动率。
   assert.match(source, /\.ydo-ov-table\{[^}]*overflow-x:hidden/u)
   assert.match(source, /\.ydo-ov-tr\{[^}]*box-sizing:border-box/u)
-  assert.match(source, /\.ydo-ov-tr-rank\{grid-template-columns:48px minmax\(90px,\.8fr\) repeat\(6,minmax\(72px,\.35fr\)\)\}/u)
+  assert.match(source, /\.ydo-ov-tr-rank\{grid-template-columns:48px minmax\(90px,\.8fr\) 88px 96px repeat\(6,minmax\(72px,\.35fr\)\)\}/u, '1015 排行轨道 +2 列（净增/播放）')
   assert.match(source, /\.ydo-ov-tr-hot\{[^}]*124px 84px 76px/u)
   assert.match(source, /\.ydo-ov-tr-hot-rank\{[^}]*124px 84px 76px/u)
   // §4.3：前三名固定语义色（1 橙 / 2 蓝 / 3 紫）。
@@ -2274,7 +2323,10 @@ test('v2 源码样式契约：窄列轨道、分布配色、抽屉尺寸与关�
   // ResizeObserver 实测容器宽驱动（轴文字/点线恢复 1:1 尺寸）。
   assert.match(source, /\.ydo-an-trend-svg\{display:block;width:100%;height:168px/u)
   const analysisSource = await readFile(new URL('../src/analysis-ui.js', import.meta.url), 'utf8')
-  assert.match(analysisSource, /typeof ResizeObserver === 'undefined'/u)
+  // 1015 阶段 3：useMeasuredWidth 实现共享到 trend-chart.js（弹框同用），分析页 import 引用。
+  assert.match(analysisSource, /useMeasuredWidth/u)
+  const trendChartHookSource = await readFile(new URL('../src/trend-chart.js', import.meta.url), 'utf8')
+  assert.match(trendChartHookSource, /typeof ResizeObserver === 'undefined'/u)
   assert.match(analysisSource, /trendLayout\(trend\?\.points \|\| \[\], \{ width: trendWidth, now: trendNow \}\)/u)
   assert.match(source, /\.ydo-an-audience\{display:grid;grid-template-columns:repeat\(2,minmax\(0,1fr\)\);gap:12px\}/u)
   const mediaStart = source.indexOf('@media(max-width:720px)')
@@ -2302,10 +2354,10 @@ test('v2 源码样式契约：窄列轨道、分布配色、抽屉尺寸与关�
   const analysisUiSource = await readFile(new URL('../src/analysis-ui.js', import.meta.url), 'utf8')
   assert.match(overviewSource, /t\('rankingScopeHint'\)[\s\S]{0,80}\.replace\('\{total\}'/u,
     '截断标注用 {total}/{shown} 占位组合（二审 P1-2）')
-  assert.equal((overviewSource.match(/'data-label': t\(/gu) || []).length, 14,
-    '总览两张表 14 个数据单元格都携带 data-label（排行 8 + 爆款 6）')
-  assert.equal((analysisUiSource.match(/'data-label': t\(/gu) || []).length, 6,
-    '分析页爆款表 6 个数据单元格都携带 data-label')
+  assert.equal((overviewSource.match(/'data-label': t\(/gu) || []).length, 16,
+    '总览两张表 16 个数据单元格都携带 data-label（排行 10 + 爆款 6，1015 排行 +2 列）')
+  assert.equal((analysisUiSource.match(/'data-label': t\(/gu) || []).length, 7,
+    '分析页爆款表 7 个数据单元格都携带 data-label（1015 +吸粉列）')
 })
 
 // ---------------------------------------------------------------------------
@@ -2435,7 +2487,7 @@ test('AI 表现分析模块：无记录折叠、有结果展开、位置在爆�
   assert.ok(!text.includes('AI 分析账号表现'), '未分析时不出现 aiStartButton 长文案')
   // 内容指标卡片化（需求 1）：固定 8 项渲染为 ydo-an-metric-card 网格卡片
   const metricCards = hLog.filter(node => node.props && node.props.className === 'ydo-an-metric-card')
-  assert.ok(metricCards.length === 8, '内容指标固定 8 张卡片')
+  assert.ok(metricCards.length === 9, '内容指标固定 9 张卡片（1015 +吸粉量）')
   assert.ok(text.includes('综合互动率') && text.includes('数据不足'), '指标缺失时显式「数据不足」')
 
   // 1b) 首次失败（无保留结果）：按钮保持 aiStartButton 长文案（阶段 2 review P2 补覆盖）

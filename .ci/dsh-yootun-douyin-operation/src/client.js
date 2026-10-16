@@ -6,7 +6,7 @@
 // - 本次未取到的字段显示 `—`（dataGap），**不用历史值冒充当前值**；
 // - 双击行打开子页面（性别/年龄/地域/城市级/流量来源/进度/搜索词/热词）。
 
-import { COLUMNS, DEFAULT_SORT_STATE, EMPTY, accountState, batchProgress, batchReasonKey, batchSummary, formatAgeBucket, formatCell, formatCount, formatDateTime, formatPercent, gapFieldLabel, gapReasonText, genderColor, genderLabel, hasGap, nextSortState, progressStatus, progressStatusText, progressText, safeAvatarSrc, safeWorkUrl, sortWorks, tableTemplate, trafficSourceLabel } from './ui-format.js'
+import { COLUMNS, DEFAULT_SORT_STATE, EMPTY, accountState, batchProgress, batchReasonKey, batchSummary, deltaText, formatAgeBucket, formatCell, formatCount, formatDateTime, formatDuration, formatPercent, gapFieldLabel, gapReasonText, genderColor, genderLabel, hasGap, nextSortState, progressStatus, progressStatusText, progressText, safeAvatarSrc, safeWorkUrl, sortWorks, tableTemplate, trafficSourceLabel } from './ui-format.js'
 import { ERROR_REASON_COPY, OverviewPage, buildOverviewFilters, defaultCustomRange, overviewRangeLabel } from './overview-ui.js'
 import { ANALYSIS_ERROR_REASON_COPY, AnalysisPage, TREND_METRICS } from './analysis-ui.js'
 import {
@@ -20,6 +20,7 @@ import {
   breakdownStatusTone,
   filterBreakdownHistory,
 } from './breakdown.js'
+import { TrendChart, trendLayout, useMeasuredWidth } from './trend-chart.js'
 
 const React = require('react')
 const { createElement: h, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } = React
@@ -275,6 +276,17 @@ const copy = {
     bdErrorCandidateNotFound: '原视频记录不存在，请重新发起拆解', bdErrorInvalidInput: '请求参数不合法，请检查后重试',
     bdErrorNeedsInput: '该视频缺少必要信息，暂不支持拆解', bdErrorRetryable: '拆解暂时失败（可能是视频过长或服务繁忙），请稍后重新改写',
     bdErrorFailed: '拆解失败，请重新发起', bdErrorArchiveFailed: '视频下载或归档失败，请确认链接后重试',
+    // 抖音运营 1015 方案 UI 升级：账号日度指标 / 封面 / 吸粉量 / 弹框分组
+    kpiNetFans: '净增粉丝', kpiCompletion5s: '5秒完播率', kpiPlayWeighted: '按播放加权',
+    colWindowNetFans: '近窗口净增', colWindowPlay: '近窗口播放',
+    colWindowNetFansDynamic: '{range}净增', colWindowPlayDynamic: '{range}播放',
+    fansTotal: '总粉丝量', fansNew: '吸粉量', fansCancel: '脱粉量',
+    fansReturn: '回访粉丝', fansHomeView: '主页访问', fansSummaryTitle: '粉丝数据',
+    metric_net_fans: '净增粉丝', fansGainTotal: '吸粉量', colFansGain: '吸粉量',
+    secCoreMetrics: '核心指标', secPlayTrend: '播放量趋势',
+    secTrafficRetention: '流量与留存', secAudience: '受众画像', secWords: '搜索词与热词',
+    coverFallback: '封面',
+    completionRate: '完播率', bounceRate2s: '2秒跳出率',
   },
   en: {
     open: 'Douyin ops', title: 'Douyin ops', subtitle: 'Scan to sign in to a Douyin creator account, collect and review work metrics',
@@ -468,6 +480,17 @@ const copy = {
     bdErrorCandidateNotFound: 'The original video record is missing — start the breakdown again', bdErrorInvalidInput: 'Invalid request — check the input and retry',
     bdErrorNeedsInput: 'This video lacks required information and cannot be broken down', bdErrorRetryable: 'Breakdown failed temporarily (video may be too long or the service busy) — retry later',
     bdErrorFailed: 'Breakdown failed — start again', bdErrorArchiveFailed: 'Video download or archive failed — check the link and retry',
+      // 1015 UI upgrade: daily account metrics / cover / fan gain / modal grouping
+    kpiNetFans: 'Net fans', kpiCompletion5s: '5s completion', kpiPlayWeighted: 'play-weighted',
+    colWindowNetFans: 'Net fans (window)', colWindowPlay: 'Plays (window)',
+    colWindowNetFansDynamic: 'Net fans ({range})', colWindowPlayDynamic: 'Plays ({range})',
+    fansTotal: 'Total fans', fansNew: 'New fans', fansCancel: 'Unfollows',
+    fansReturn: 'Returning fans', fansHomeView: 'Profile visits', fansSummaryTitle: 'Fans',
+    metric_net_fans: 'Net fans', fansGainTotal: 'Fan gain', colFansGain: 'Fan gain',
+    secCoreMetrics: 'Core metrics', secPlayTrend: 'Play trend',
+    secTrafficRetention: 'Traffic & retention', secAudience: 'Audience', secWords: 'Keywords & hotwords',
+    coverFallback: 'Cover',
+    completionRate: 'Completion', bounceRate2s: '2s bounce',
   },
 }
 
@@ -651,24 +674,111 @@ function GenderDonut({ rows, t }) {
         h('span', null, `${genderLabel(row.key, t)} ${formatPercent(row.pct)}`)))))
 }
 
+// 作品封面（1015 UI 规格 §4.2）：64×40 缩略图 + 右下角时长角标；加载失败/缺失 →
+// 占位块（浅灰底 + 居中「封面」小字），不隐藏作品行。coverUrl 为 null 不发请求。
+// size='large'（弹框头部 112×70）复用同一结构。URL 只接受 http(s)（safeAvatarSrc 同款防御）。
+function WorkCover({ coverUrl, durationText, size = 'small', t }) {
+  const [failed, setFailed] = useState(false)
+  const safeSrc = safeAvatarSrc(coverUrl)
+  const boxClass = `ydo-work-cover${size === 'large' ? ' ydo-work-cover-large' : ''}${!safeSrc || failed ? ' ydo-work-cover-fallback' : ''}`
+  return h('span', { className: boxClass },
+    safeSrc && !failed
+      ? h('img', {
+        className: 'ydo-work-cover-img',
+        src: safeSrc,
+        alt: '',
+        loading: 'lazy',
+        referrerPolicy: 'no-referrer',
+        onError: () => setFailed(true),
+      })
+      : h('span', { className: 'ydo-work-cover-fallback-text', 'aria-hidden': true }, t('coverFallback')),
+    durationText && !(!safeSrc || failed) ? h('span', { className: 'ydo-work-cover-duration' }, durationText) : null)
+}
+
+// 快照序列 → 弹框播放趋势 points（上海自然日 + 当日 play_count）。
+// captured_at ISO → +8h 取 UTC 日期（与 ui-format.formatDateTime 同一固定偏移法）。
+// 窗口与边界处理交给 trendLayout 现有逻辑（30 天固定窗口 + clamp），这里不截断。
+function snapshotTrendPoints(snapshots) {
+  const byDay = new Map()
+  for (const snapshot of Array.isArray(snapshots) ? snapshots : []) {
+    if (!snapshot || typeof snapshot.captured_at !== 'string' || snapshot.play_count === null
+      || snapshot.play_count === undefined) continue
+    const ms = Date.parse(snapshot.captured_at)
+    if (!Number.isFinite(ms)) continue
+    const shifted = new Date(ms + 8 * 60 * 60 * 1000)
+    const pad = n => String(n).padStart(2, '0')
+    const day = `${shifted.getUTCFullYear()}-${pad(shifted.getUTCMonth() + 1)}-${pad(shifted.getUTCDate())}`
+    // 同日多次采集：按 captured_at 取最大者（日收盘语义；不依赖上游升序契约）。
+    const capturedMs = Date.parse(snapshot.captured_at)
+    const existing = byDay.get(day)
+    if (existing === undefined || capturedMs >= existing._capturedMs) {
+      byDay.set(day, { value: Number(snapshot.play_count), _capturedMs: capturedMs })
+    }
+  }
+  return [...byDay.entries()]
+    .map(([day, entry]) => ({ day, value: entry.value }))
+    .sort((a, b) => (a.day < b.day ? -1 : a.day > b.day ? 1 : 0))
+}
+
 function WorkDetailModal({ accountId, workId, detail, trend, loading, onClose, t }) {
+  // 1015 UI 规格 §5.4：弹框趋势与分析页同一实测宽逻辑（ResizeObserver 驱动
+  // viewBox），数据齐全时左右撑满（仅 6px 点半径安全边距）。hook 顶部无条件调用。
+  const [trendWrapRef, trendWidth] = useMeasuredWidth(960)
   const work = detail && detail.work ? detail.work : null
   const audience = detail && detail.audience ? detail.audience : null
   const gaps = work && work.data_gap ? Object.entries(work.data_gap) : []
   const hotwords = detail && Array.isArray(detail.hotwords) ? detail.hotwords : []
   // 发布时间与作品级最近采集严格分离（二次优化 §5.6.3）：publish_time 只显示为发布
   // 时间；latest_collected_at 只有接口实际返回且通过格式化校验才显示，缺失/非法时
-  // 显示「暂无记录」，绝不回退 publish_time，也不把账号级 lastCollectedAt 伪装成
-  // 作品级时间。时间格式统一走 formatDateTime（Asia/Shanghai，非法值显示 —）。
+  // 显示「暂无记录」，绝不回退 publish_time。时间格式统一走 formatDateTime。
   const publishText = formatDateTime(work && work.publish_time)
   const latestText = formatDateTime(work && work.latest_collected_at)
+  // 1015 UI 规格 §5.2：头部封面 + 时长角标（duration_s 秒 → formatDuration 毫秒口径）。
+  const durationMs = work && work.duration_s !== null && work.duration_s !== undefined
+    ? Number(work.duration_s) * 1000
+    : null
+  const durationText = formatDuration(durationMs)
+  // 1015 UI 规格 §5.3：核心指标 8 卡（现表已有/新列，纯展示层零新增请求）。
+  // 吸粉量卡正负着色（§1.2）：正绿/负红/缺失 —（deltaText tone）。
+  const fansGainDelta = deltaText(work && work.fans_gain_count)
+  const coreMetrics = [
+    [t('colPlay'), countText(work && work.play_count)],
+    [t('colLike'), countText(work && work.like_count)],
+    [t('colComment'), countText(work && work.comment_count)],
+    [t('colShare'), countText(work && work.share_count)],
+    [t('colCollect'), countText(work && work.collect_count)],
+    [t('completionRate'), formatPercent(work && work.completion_rate_pct)],
+    [t('bounceRate2s'), formatPercent(work && work.bounce_rate_2s_pct)],
+    [t('colFansGain'), h('span', { className: `ydo-delta ydo-delta-${fansGainDelta.tone}` }, fansGainDelta.text)],
+  ]
+  // 1015 UI 规格 §5.4：播放趋势折线（替代「共 N 个趋势点」文字行）。
+  const trendPoints = snapshotTrendPoints(trend && trend.snapshots)
+  const trendRendered = (() => {
+    try {
+      const layout = trendLayout(trendPoints, { width: trendWidth })
+      if (!layout.renderable) return h('p', { className: 'ydo-hint', role: 'status' }, t('noTrend'))
+      const chart = h(TrendChart, { layout, t, axisValueText, fallbackText: value => countText(value) })
+      // 测宽容器：callback ref 供 ResizeObserver 读取实际内容宽度。
+      if (layout.single) {
+        return h('div', { ref: trendWrapRef },
+          h('p', { className: 'ydo-hint', role: 'status' }, t('trendSingleHint')), chart)
+      }
+      return h('div', { ref: trendWrapRef }, chart)
+    } catch {
+      return h('p', { className: 'ydo-hint', role: 'status' }, t('noTrend'))
+    }
+  })()
+
   return h('div', { className: 'ydo-modal-overlay', role: 'dialog', 'aria-modal': true, 'aria-label': t('detail') },
     h('div', { className: 'ydo-modal' },
-      h('header', { className: 'ydo-modal-head' },
-        h('div', null,
-          h('h3', null, (work && work.title) || workId),
+      // ① 头部（改造）：封面 112×70 + 标题两行截断 + meta 两行 + 关闭。
+      h('header', { className: 'ydo-modal-head ydo-modal-head-cover' },
+        h(WorkCover, { coverUrl: work && work.cover_url, durationText, size: 'large', t }),
+        h('div', { className: 'ydo-modal-head-text' },
+          h('h3', { className: 'ydo-modal-title' }, (work && work.title) || workId),
           h('p', { className: 'ydo-modal-meta' },
             `${t('publishTime')} ${publishText}`,
+            durationText ? ` · ${durationText}` : '',
             work && work.visibility === 'not_in_list' ? ` · ${t('privateBadge')}` : null),
           h('p', { className: 'ydo-modal-meta' }, `${t('latestCollected')} ${latestText === EMPTY ? t('noRecord') : latestText}`)),
         h(Tooltip, { label: t('close') },
@@ -676,29 +786,59 @@ function WorkDetailModal({ accountId, workId, detail, trend, loading, onClose, t
       loading
         ? h('div', { className: 'ydo-state', role: 'status' }, h('span', { className: 'ydo-spinner' }), h('p', null, t('collecting')))
         : h('div', { className: 'ydo-modal-body' },
-          h('section', { className: 'ydo-panel' }, h('h4', null, t('gender')), h(GenderDonut, { rows: convertDistribution(audience && audience.gender), t })),
-          h('section', { className: 'ydo-panel' }, h('h4', null, t('age')), h(BarList, { rows: convertAge(audience && audience.age, t), label: t('age'), t, variant: 'distribution' })),
-          h('section', { className: 'ydo-panel' }, h('h4', null, t('trafficSource')), h(BarList, { rows: convertSource(work && work.traffic_source, t), label: t('trafficSource'), t, variant: 'distribution' })),
-          h('section', { className: 'ydo-panel' }, h('h4', null, t('progressCurve')),
-            // 进度分析是观看行为分析（§7.2）：有点位画图，无数据/未暴露/请求失败各自给中文空态，不渲染空图例。
-            progressStatus(work && work.progress_analysis, work) === 'ok'
-              ? h(BarList, { rows: convertProgress(work && work.progress_analysis, t), label: t('progressCurve'), t })
-              : h('p', { className: 'ydo-hint', role: 'status' }, progressStatusText(progressStatus(work && work.progress_analysis, work), t))),
-          h('section', { className: 'ydo-panel' }, h('h4', null, t('province')), h(BarList, { rows: convertDistribution(audience && audience.province), label: t('province'), t, variant: 'distribution' })),
-          h('section', { className: 'ydo-panel' }, h('h4', null, t('cityLevel')), h(BarList, { rows: convertDistribution(audience && audience.city_level), label: t('cityLevel'), t, variant: 'distribution' })),
-          h('section', { className: 'ydo-panel' }, h('h4', null, t('searchKeywords')),
-            // 搜索词只显示关键词文本（UI 优化方案 v2 §6.1）：接口的 percent 继续入库
-            // 与导出，客户端详情不读取也不拼接百分比。
-            h('div', { className: 'ydo-tags' },
-              ...(work && Array.isArray(work.search_keywords) && work.search_keywords.length
-                ? work.search_keywords.map(item => h('span', { className: 'ydo-tag', key: item.keyword }, item.keyword))
-                : [h('span', { className: 'ydo-hint', key: 'none' }, t('noSearch'))]))),
-          h('section', { className: 'ydo-panel' }, h('h4', null, t('hotwords')),
-            h('div', { className: 'ydo-tags' },
-              ...(hotwords.length
-                ? hotwords.map(item => h('span', { className: 'ydo-tag', key: item.word }, item.word))
-                : [h('span', { className: 'ydo-hint', key: 'none' }, t('noHotword'))]))),
-          // 缺口卡片条件展示（§7.3）：无缺口不渲染，减少视觉噪音；有缺口列出中文字段名与中文原因。
+          // ② 核心指标区（新增 8 卡，ydo-an-metrics 网格两行 ×4）。
+          h('section', { className: 'ydo-panel ydo-modal-panel-full' },
+            h('h4', { className: 'ydo-modal-sec-title' }, t('secCoreMetrics')),
+            h('div', { className: 'ydo-an-metrics ydo-modal-core-metrics', role: 'list' },
+              ...coreMetrics.map(([label, value]) => h('div', { key: label, className: 'ydo-an-metric-card', role: 'listitem' },
+                h('span', { className: 'ydo-an-metric-label' }, label),
+                h('strong', { className: 'ydo-an-metric-value' }, value))))),
+          // ③ 播放量趋势（新增折线，替代文字计数行）。
+          h('section', { className: 'ydo-panel ydo-modal-panel-full' },
+            h('h4', { className: 'ydo-modal-sec-title' }, t('secPlayTrend')),
+            trendRendered),
+          // ④⑤⑥ 八个现有面板按组重排（组件与数据转换零改动，只移位置）。
+          // 组标题独立于 panel 卡（ydo-modal-sec-title 直接作区块标题），组内面板
+          // 两列/auto-fit 并排——组标题不占卡、panel 不嵌 panel（三种组同一结构）。
+          h('h4', { className: 'ydo-modal-sec-title' }, t('secTrafficRetention')),
+          h('div', { className: 'ydo-modal-grid-2' },
+            h('section', { className: 'ydo-panel' },
+              h('h4', null, t('trafficSource')),
+              h(BarList, { rows: convertSource(work && work.traffic_source, t), label: t('trafficSource'), t, variant: 'distribution' })),
+            h('section', { className: 'ydo-panel' },
+              h('h4', null, t('progressCurve')),
+              progressStatus(work && work.progress_analysis, work) === 'ok'
+                ? h(BarList, { rows: convertProgress(work && work.progress_analysis, t), label: t('progressCurve'), t })
+                : h('p', { className: 'ydo-hint', role: 'status' }, progressStatusText(progressStatus(work && work.progress_analysis, work), t)))),
+          h('h4', { className: 'ydo-modal-sec-title' }, t('secAudience')),
+          h('div', { className: 'ydo-modal-grid-audience' },
+            h('section', { className: 'ydo-panel' },
+              h('h4', null, t('gender')),
+              h(GenderDonut, { rows: convertDistribution(audience && audience.gender), t })),
+            h('section', { className: 'ydo-panel' },
+              h('h4', null, t('age')),
+              h(BarList, { rows: convertAge(audience && audience.age, t), label: t('age'), t, variant: 'distribution' })),
+            h('section', { className: 'ydo-panel' },
+              h('h4', null, t('province')),
+              h(BarList, { rows: convertDistribution(audience && audience.province), label: t('province'), t, variant: 'distribution' })),
+            h('section', { className: 'ydo-panel' },
+              h('h4', null, t('cityLevel')),
+              h(BarList, { rows: convertDistribution(audience && audience.city_level), label: t('cityLevel'), t, variant: 'distribution' }))),
+          h('h4', { className: 'ydo-modal-sec-title' }, t('secWords')),
+          h('div', { className: 'ydo-modal-grid-2' },
+            h('section', { className: 'ydo-panel' },
+              h('h4', null, t('searchKeywords')),
+              h('div', { className: 'ydo-tags' },
+                ...(work && Array.isArray(work.search_keywords) && work.search_keywords.length
+                  ? work.search_keywords.map(item => h('span', { className: 'ydo-tag', key: item.keyword }, item.keyword))
+                  : [h('span', { className: 'ydo-hint', key: 'none' }, t('noSearch'))]))),
+            h('section', { className: 'ydo-panel' },
+              h('h4', null, t('hotwords')),
+              h('div', { className: 'ydo-tags' },
+                ...(hotwords.length
+                  ? hotwords.map(item => h('span', { className: 'ydo-tag', key: item.word }, item.word))
+                  : [h('span', { className: 'ydo-hint', key: 'none' }, t('noHotword'))])))),
+          // ⑦ 数据缺口（保留条件渲染，位置最末）。
           gaps.length
             ? h('section', { className: 'ydo-panel ydo-panel-gap' },
               h('h4', null, t('gapTitle')),
@@ -708,13 +848,9 @@ function WorkDetailModal({ accountId, workId, detail, trend, loading, onClose, t
                   return h('li', { key: field, className: failed ? 'ydo-gap-failed' : undefined },
                     `${gapFieldLabel(field, t)} · ${gapReasonText(info && info.reason, t)}`)
                 })))
-            : null,
-          trend && Number.isFinite(Number(trend.total)) && Number(trend.total) > 0
-            ? h('p', { className: 'ydo-hint' }, t('trendCount').replace('{count}', formatCount(trend.total)))
             : null)),
   )
 }
-
 function convertDistribution(rows) {
   if (!Array.isArray(rows)) return []
   return rows.map(row => ({ key: row.key, pct: row.pct }))
@@ -794,6 +930,21 @@ function WorkTable({ works, sort = DEFAULT_SORT_STATE, onSortChange, onOpen, t }
   ...COLUMNS.map(column => {
     // 链接先过域名白名单（§9.2）：非 http(s)/非 www.douyin.com 一律按普通文本展示。
     const linkHref = column.kind === 'link' ? safeWorkUrl(work[column.key]) : null
+    // 1015 UI 规格 §4.2：作品列首格封面（缩略图 + 时长角标）；失败/缺失占位，不发坏请求。
+    if (column.key === 'title') {
+      const cell = cellProps(column)
+      return h('div', { ...cell, className: `${cell.className} ydo-cell-work` },
+        h(WorkCover, {
+          coverUrl: work.cover_url,
+          durationText: work.duration_s !== null && work.duration_s !== undefined
+            ? formatDuration(Number(work.duration_s) * 1000)
+            : null,
+          t,
+        }),
+        h('span', { className: 'ydo-cell-work-title', title: String(work.title || '') }, work.title || EMPTY))
+    }
+    // delta 列正负着色（1015 §1.2）：span 承载色类，文本仍是 deltaText 输出。
+    const delta = column.kind === 'delta' ? deltaText(work[column.key]) : null
     return h('div', {
       ...cellProps(column),
       title: column.kind === 'text' || column.kind === 'link' ? String(work[column.key] || '') : undefined,
@@ -809,7 +960,9 @@ function WorkTable({ works, sort = DEFAULT_SORT_STATE, onSortChange, onOpen, t }
         onDoubleClick: event => event.stopPropagation(),
         onKeyDown: event => event.stopPropagation(),
       }, work[column.key])
-      : formatCell(work[column.key], column.kind, t))
+      : delta
+        ? h('span', { className: `ydo-delta ydo-delta-${delta.tone}` }, delta.text)
+        : formatCell(work[column.key], column.kind, t))
   })))
   return h('div', { className: 'ydo-table-wrap' },
     h('div', { className: 'ydo-table', role: 'table', 'aria-label': t('data') }, header, ...body))
@@ -1840,7 +1993,15 @@ function Overlay({ t }) {
       ])
       if (detailResult.status === 'ready') setDetail(detailResult)
       else setError(detailResult.reason || 'refresh_failed')
-      if (trendResult && trendResult.status === 'ready') setTrend({ total: trendResult.total })
+      // 1015 UI 规格 §5.4：弹框播放量趋势折线画日度快照序列（上海自然日）。
+      // 默认 30 天窗口与上下边界处理全部沿用现有 trendLayout（clamp 到窗口边界，
+      // 不自行截断丢弃旧点），与账号分析页同一套逻辑。
+      if (trendResult && trendResult.status === 'ready') {
+        setTrend({
+          total: trendResult.total,
+          snapshots: Array.isArray(trendResult.snapshots) ? trendResult.snapshots : [],
+        })
+      }
     } catch {
       setError('refresh_failed')
     }
@@ -2196,14 +2357,14 @@ function Overlay({ t }) {
 
 const css = `.ydo-button{display:flex;width:36px;height:36px;align-items:center;justify-content:center;gap:8px;border:0;border-radius:6px;background:transparent;color:var(--dsw-alias-label-secondary);cursor:pointer}.ydo-button:hover{background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary)}.ydo-wide{width:100%;height:34px;justify-content:flex-start;padding:0 10px}.ydo-wide span{font-size:var(--dsh-content-font-size-secondary,13px)}.ydo-overlay{position:fixed;inset:0;z-index:520;background:var(--dsw-alias-bg-base);color:var(--dsw-alias-label-primary)}.ydo-shell{display:grid;grid-template-rows:auto auto 1fr;width:100%;height:100%;overflow:hidden}.ydo-header{display:flex;min-height:72px;align-items:center;justify-content:space-between;gap:24px;padding:16px 24px;border-bottom:1px solid var(--dsw-alias-border-l1)}.ydo-header h1{margin:0;font-size:var(--dsw-font-l-20-font-size,20px);line-height:1.25}.ydo-header p{margin:6px 0 0;color:var(--dsw-alias-label-secondary);font-size:var(--dsh-content-font-size-secondary,13px)}.ydo-header-buttons button{display:grid;width:36px;height:36px;place-items:center;border:1px solid var(--dsw-alias-border-l1);border-radius:6px;background:var(--dsw-alias-bg-layer-1);color:inherit;cursor:pointer}.ydo-tabs{display:flex;gap:4px;padding:0 24px;border-bottom:1px solid var(--dsw-alias-border-l1)}.ydo-tabs button{height:44px;padding:0 18px;border:0;border-bottom:3px solid transparent;background:transparent;color:var(--dsw-alias-label-secondary);font:inherit;font-size:var(--dsh-content-font-size,14px);font-weight:650;cursor:pointer}.ydo-tabs button:hover{color:var(--dsw-alias-label-primary)}/* Tab 激活态（UI 优化方案 §3.1）：只有当前 Tab 有底部指示线，非当前 Tab 不显示下划线。 */
 .ydo-tabs button[aria-current]{border-bottom-color:var(--dsw-alias-brand-primary);color:var(--dsw-alias-label-primary)}.ydo-body{display:grid;grid-template-columns:280px 1fr;min-height:0;overflow:hidden}.ydo-body-full{grid-template-columns:1fr}.ydo-accounts{display:grid;align-content:start;gap:12px;padding:24px 20px;border-right:1px solid var(--dsw-alias-border-l1);overflow:auto}.ydo-panel-title{margin:0;font-size:var(--dsw-font-base-16-font-size,16px)}.ydo-account-list{display:grid;gap:10px}.ydo-card{border:1px solid var(--dsw-alias-border-l1);border-radius:8px;background:var(--dsw-alias-bg-layer-1);overflow:hidden}.ydo-card-active{border-color:var(--dsw-alias-brand-primary)}.ydo-card-main{display:flex;align-items:center;gap:10px;width:100%;padding:12px;border:0;background:transparent;color:inherit;text-align:left;cursor:pointer}.ydo-card-text{display:grid;gap:2px;min-width:0;flex:1}.ydo-avatar{width:36px;height:36px;border-radius:8px;object-fit:cover;flex:none;background:var(--dsw-alias-bg-layer-2)}.ydo-avatar-fallback{display:grid;place-items:center;color:var(--dsw-alias-label-secondary);font-size:var(--dsh-content-font-size,14px);font-weight:600}.ydo-card-name{min-width:0;font-size:var(--dsh-content-font-size,14px);font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.ydo-card-meta{color:var(--dsw-alias-label-secondary);font-size:var(--dsh-content-font-size-secondary,13px)}.ydo-card-actions{display:flex;justify-content:space-between;gap:8px;padding:0 12px 10px}.ydo-status{padding:2px 8px;border-radius:4px;background:var(--dsw-alias-bg-layer-2);font-size:var(--dsh-content-font-size-secondary,13px);flex:none}.ydo-status-ok{color:color-mix(in srgb,var(--dsw-alias-state-success-primary,#1a7f37) 50%,var(--dsw-alias-label-primary))}.ydo-status-expired{color:color-mix(in srgb,var(--dsw-alias-state-error-primary) 50%,var(--dsw-alias-label-primary))}.ydo-link{border:0;background:transparent;color:var(--dsw-alias-label-secondary);font:inherit;font-size:var(--dsh-content-font-size-secondary,13px);cursor:pointer;padding:0}.ydo-link:hover{color:var(--dsw-alias-label-primary)}.ydo-link-danger:hover{color:color-mix(in srgb,var(--dsw-alias-state-error-primary) 50%,var(--dsw-alias-label-primary))}.ydo-link:disabled{opacity:.5;cursor:default}.ydo-primary{min-height:40px;padding:0 16px;border:0;border-radius:6px;background:var(--dsw-alias-brand-primary);color:var(--dsw-alias-label-primary-foreground);font:inherit;font-size:var(--dsh-content-font-size,14px);font-weight:600;cursor:pointer}.ydo-primary:disabled{opacity:.45;cursor:default}.ydo-secondary{min-height:36px;padding:0 16px;border:1px solid var(--dsw-alias-border-l1);border-radius:6px;background:var(--dsw-alias-bg-layer-1);color:inherit;font:inherit;cursor:pointer}.ydo-secondary:disabled{opacity:.45;cursor:default}.ydo-export{display:inline-flex;align-items:center;gap:6px;white-space:nowrap}/* 导出按钮文案不换行、导出中只换加载态文字不改布局（v2 §4.1）。 */.ydo-right{display:grid;grid-template-rows:auto auto auto 1fr;min-height:0;overflow:hidden;padding:20px 24px 24px;gap:12px}.ydo-toolbar{display:flex;align-items:center;gap:12px;flex-wrap:wrap}.ydo-progress{display:flex;align-items:center;gap:8px;color:var(--dsw-alias-label-secondary);font-size:var(--dsh-content-font-size-secondary,13px)}.ydo-table-wrap{overflow:auto;min-height:0;border:1px solid var(--dsw-alias-border-l1);border-radius:8px}/* 列轨道由 tableTemplate(COLUMNS) 内联到表头与每行，这里不再写死一份（§11.2.3）。 */
-.ydo-table{width:max-content;min-width:100%}.ydo-table-head,.ydo-table-row{display:grid;align-items:center}.ydo-table-head{position:sticky;top:0;z-index:3;background:var(--dsw-alias-bg-layer-2);border-bottom:1px solid var(--dsw-alias-border-l1)}.ydo-sort{display:flex;width:100%;align-items:center;gap:4px;min-width:0;padding:0;border:0;background:transparent;color:inherit;font:inherit;text-align:left;cursor:pointer}.ydo-sort-text{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.ydo-sort-arrow{flex:none;min-width:12px;color:var(--dsw-alias-label-secondary)}.ydo-sort-active{color:var(--dsw-alias-label-primary)}.ydo-sort-active .ydo-sort-arrow{color:var(--dsw-alias-brand-primary)}.ydo-cell{padding:8px 10px;font-size:var(--dsh-content-font-size-secondary,13px);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.ydo-cell-count,.ydo-cell-pct,.ydo-cell-seconds{text-align:right;font-variant-numeric:tabular-nums}.ydo-cell-sticky{position:sticky;z-index:2;border-right:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-1)}.ydo-table-head .ydo-cell-sticky{z-index:4;background:var(--dsw-alias-bg-layer-2)}.ydo-table-row{cursor:default;border-bottom:1px solid var(--dsw-alias-border-l1)}.ydo-table-row:hover .ydo-cell{background:var(--dsw-alias-bg-layer-2)}.ydo-table-row:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:-2px}.ydo-cell a{color:var(--dsw-alias-brand-primary);text-decoration:none}.ydo-cell a:hover{text-decoration:underline}.ydo-state{display:grid;min-height:200px;place-items:center;align-content:center;gap:10px;color:var(--dsw-alias-label-secondary);font-size:var(--dsh-content-font-size,14px);text-align:center}.ydo-state p{margin:0;max-width:640px;line-height:1.6}.ydo-state-title{color:var(--dsw-alias-label-primary);font-size:var(--dsw-font-base-16-font-size,16px);font-weight:600}.ydo-state-error .ydo-state-title{color:color-mix(in srgb,var(--dsw-alias-state-error-primary) 50%,var(--dsw-alias-label-primary))}.ydo-hint{margin:0;color:var(--dsw-alias-label-secondary);font-size:var(--dsh-content-font-size-secondary,13px);line-height:1.5}.ydo-error{margin:0;color:color-mix(in srgb,var(--dsw-alias-state-error-primary) 50%,var(--dsw-alias-label-primary));font-size:var(--dsh-content-font-size-secondary,13px)}.ydo-warn{margin:0;color:color-mix(in srgb,var(--dsw-alias-state-warn-primary,#d29922) 50%,var(--dsw-alias-label-primary));font-size:var(--dsh-content-font-size-secondary,13px)}.ydo-ok{margin:0;color:color-mix(in srgb,var(--dsw-alias-state-success-primary,#1a7f37) 50%,var(--dsw-alias-label-primary));font-size:var(--dsh-content-font-size-secondary,13px)}.ydo-spinner{width:16px;height:16px;border:2px solid var(--dsw-alias-border-l2);border-top-color:var(--dsw-alias-brand-primary);border-radius:50%;animation:ydo-spin .8s linear infinite}@keyframes ydo-spin{to{transform:rotate(360deg)}}.ydo-modal-overlay{position:fixed;inset:0;z-index:540;display:grid;place-items:center;background:color-mix(in srgb,var(--dsw-alias-bg-base) 60%,transparent)}.ydo-modal{width:min(1080px,calc(100vw - 48px));max-height:calc(100vh - 64px);display:grid;grid-template-rows:auto 1fr;border:1px solid var(--dsw-alias-border-l1);border-radius:8px;background:var(--dsw-alias-bg-layer-1);box-shadow:0 16px 48px rgba(0,0,0,.24);overflow:hidden}.ydo-modal-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;padding:16px 20px;border-bottom:1px solid var(--dsw-alias-border-l1)}.ydo-modal-head h3{margin:0;font-size:var(--dsw-font-base-16-font-size,16px)}.ydo-modal-meta{margin:4px 0 0;color:var(--dsw-alias-label-secondary);font-size:var(--dsh-content-font-size-secondary,13px)}.ydo-modal-body{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px;padding:20px;overflow:auto}.ydo-panel{padding:14px;border:1px solid var(--dsw-alias-border-l1);border-radius:8px;background:var(--dsw-alias-bg-base)}.ydo-panel h4{margin:0 0 10px;font-size:var(--dsh-content-font-size,14px)}.ydo-panel-gap{border-color:var(--dsw-alias-state-warn-primary,#d29922)}.ydo-gap-list{margin:0;padding-left:18px;display:grid;gap:4px;color:var(--dsw-alias-label-secondary);font-size:var(--dsh-content-font-size-secondary,13px)}.ydo-gap-list code{font-size:var(--dsh-content-font-size-secondary,13px);color:var(--dsw-alias-label-primary)}.ydo-gap-list .ydo-gap-failed{color:color-mix(in srgb,var(--dsw-alias-state-error-primary) 60%,var(--dsw-alias-label-primary))}.ydo-bars{margin:0;padding:0;list-style:none;display:grid;gap:6px}.ydo-bars li{display:grid;grid-template-columns:72px 1fr 56px;align-items:center;gap:8px;font-size:var(--dsh-content-font-size-secondary,13px)}.ydo-bar-label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.ydo-bar-track{display:block;height:6px;border-radius:3px;background:var(--dsw-alias-bg-layer-2);overflow:hidden}.ydo-bar-fill{display:block;height:100%;border-radius:3px;background:var(--dsw-alias-brand-primary)}.ydo-bar-value{text-align:right;font-variant-numeric:tabular-nums;color:var(--dsw-alias-label-secondary)}.ydo-donut-wrap{display:flex;align-items:center;gap:16px}.ydo-donut{position:relative;width:96px;height:96px;border-radius:50%;flex:none}.ydo-donut-hole{position:absolute;inset:22px;border-radius:50%;background:var(--dsw-alias-bg-base)}.ydo-legend{margin:0;padding:0;list-style:none;display:grid;gap:6px;font-size:var(--dsh-content-font-size-secondary,13px)}.ydo-legend li{display:flex;align-items:center;gap:6px}.ydo-legend-dot{width:10px;height:10px;border-radius:50%;flex:none;background:var(--dsw-alias-brand-primary)}.ydo-tags{display:flex;flex-wrap:wrap;gap:6px}.ydo-tag{padding:3px 8px;border-radius:4px;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-secondary);font-size:var(--dsh-content-font-size-secondary,13px)}.ydo-confirm-overlay{position:fixed;inset:0;z-index:560;display:grid;place-items:center;background:color-mix(in srgb,var(--dsw-alias-bg-base) 45%,transparent)}.ydo-confirm{width:min(420px,calc(100vw - 32px));padding:24px;border:1px solid var(--dsw-alias-border-l1);border-radius:8px;background:var(--dsw-alias-bg-layer-1);box-shadow:0 12px 40px rgba(0,0,0,.18)}.ydo-confirm-title{margin:0 0 20px;font-size:var(--dsw-font-base-16-font-size,15px);line-height:1.6}.ydo-confirm-actions{display:flex;justify-content:flex-end;gap:12px}.ydo-confirm-primary{min-height:36px;padding:0 18px;border:0;border-radius:6px;background:var(--dsw-alias-brand-primary);color:var(--dsw-alias-label-primary-foreground);font:inherit;font-weight:600;cursor:pointer}.ydo-confirm-secondary{min-height:36px;padding:0 18px;border:1px solid var(--dsw-alias-border-l1);border-radius:6px;background:var(--dsw-alias-bg-layer-1);color:inherit;font:inherit;cursor:pointer}.ydo-delete-retry{display:grid;gap:8px;justify-items:start;padding:10px 12px;border:1px solid var(--dsw-alias-state-error-primary);border-radius:8px;background:var(--dsw-alias-bg-layer-1)}.ydo-delete-retry .ydo-secondary{min-height:32px}/* 一键采集全部（批量方案 §4.5）：flex-basis:100% 在 wrap 工具栏内独占一行，不改 ydo-right 的 grid 行结构。 */
+.ydo-table{width:max-content;min-width:100%}.ydo-table-head,.ydo-table-row{display:grid;align-items:center}.ydo-table-head{position:sticky;top:0;z-index:3;background:var(--dsw-alias-bg-layer-2);border-bottom:1px solid var(--dsw-alias-border-l1)}.ydo-sort{display:flex;width:100%;align-items:center;gap:4px;min-width:0;padding:0;border:0;background:transparent;color:inherit;font:inherit;text-align:left;cursor:pointer}.ydo-sort-text{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.ydo-sort-arrow{flex:none;min-width:12px;color:var(--dsw-alias-label-secondary)}.ydo-sort-active{color:var(--dsw-alias-label-primary)}.ydo-sort-active .ydo-sort-arrow{color:var(--dsw-alias-brand-primary)}.ydo-cell{padding:8px 10px;font-size:var(--dsh-content-font-size-secondary,13px);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.ydo-cell-count,.ydo-cell-pct,.ydo-cell-seconds{text-align:right;font-variant-numeric:tabular-nums}.ydo-cell-sticky{position:sticky;z-index:2;border-right:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-1)}.ydo-table-head .ydo-cell-sticky{z-index:4;background:var(--dsw-alias-bg-layer-2)}.ydo-table-row{cursor:default;border-bottom:1px solid var(--dsw-alias-border-l1)}.ydo-table-row:hover .ydo-cell{background:var(--dsw-alias-bg-layer-2)}.ydo-table-row:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:-2px}.ydo-cell a{color:var(--dsw-alias-brand-primary);text-decoration:none}.ydo-cell a:hover{text-decoration:underline}.ydo-state{display:grid;min-height:200px;place-items:center;align-content:center;gap:10px;color:var(--dsw-alias-label-secondary);font-size:var(--dsh-content-font-size,14px);text-align:center}.ydo-state p{margin:0;max-width:640px;line-height:1.6}.ydo-state-title{color:var(--dsw-alias-label-primary);font-size:var(--dsw-font-base-16-font-size,16px);font-weight:600}.ydo-state-error .ydo-state-title{color:color-mix(in srgb,var(--dsw-alias-state-error-primary) 50%,var(--dsw-alias-label-primary))}.ydo-hint{margin:0;color:var(--dsw-alias-label-secondary);font-size:var(--dsh-content-font-size-secondary,13px);line-height:1.5}.ydo-error{margin:0;color:color-mix(in srgb,var(--dsw-alias-state-error-primary) 50%,var(--dsw-alias-label-primary));font-size:var(--dsh-content-font-size-secondary,13px)}.ydo-warn{margin:0;color:color-mix(in srgb,var(--dsw-alias-state-warn-primary,#d29922) 50%,var(--dsw-alias-label-primary));font-size:var(--dsh-content-font-size-secondary,13px)}.ydo-ok{margin:0;color:color-mix(in srgb,var(--dsw-alias-state-success-primary,#1a7f37) 50%,var(--dsw-alias-label-primary));font-size:var(--dsh-content-font-size-secondary,13px)}.ydo-spinner{width:16px;height:16px;border:2px solid var(--dsw-alias-border-l2);border-top-color:var(--dsw-alias-brand-primary);border-radius:50%;animation:ydo-spin .8s linear infinite}@keyframes ydo-spin{to{transform:rotate(360deg)}}.ydo-modal-overlay{position:fixed;inset:0;z-index:540;display:grid;place-items:center;background:color-mix(in srgb,var(--dsw-alias-bg-base) 60%,transparent)}.ydo-modal{width:min(1080px,calc(100vw - 48px));max-height:calc(100vh - 64px);display:grid;grid-template-rows:auto 1fr;border:1px solid var(--dsw-alias-border-l1);border-radius:8px;background:var(--dsw-alias-bg-layer-1);box-shadow:0 16px 48px rgba(0,0,0,.24);overflow:hidden}.ydo-modal-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;padding:16px 20px;border-bottom:1px solid var(--dsw-alias-border-l1)}.ydo-modal-head h3{margin:0;font-size:var(--dsw-font-base-16-font-size,16px)}.ydo-modal-meta{margin:4px 0 0;color:var(--dsw-alias-label-secondary);font-size:var(--dsh-content-font-size-secondary,13px)}.ydo-modal-body{display:grid;grid-auto-rows:min-content;gap:16px;padding:20px;overflow:auto}/* 1015 弹框分组：body 单列纵向流（组内并排由 ydo-modal-grid-2/grid-audience 承担），替代旧 auto-fit 平铺。 */.ydo-panel{padding:14px;border:1px solid var(--dsw-alias-border-l1);border-radius:8px;background:var(--dsw-alias-bg-base)}.ydo-panel h4{margin:0 0 10px;font-size:var(--dsh-content-font-size,14px)}.ydo-panel-gap{border-color:var(--dsw-alias-state-warn-primary,#d29922)}.ydo-gap-list{margin:0;padding-left:18px;display:grid;gap:4px;color:var(--dsw-alias-label-secondary);font-size:var(--dsh-content-font-size-secondary,13px)}.ydo-gap-list code{font-size:var(--dsh-content-font-size-secondary,13px);color:var(--dsw-alias-label-primary)}.ydo-gap-list .ydo-gap-failed{color:color-mix(in srgb,var(--dsw-alias-state-error-primary) 60%,var(--dsw-alias-label-primary))}.ydo-bars{margin:0;padding:0;list-style:none;display:grid;gap:6px}.ydo-bars li{display:grid;grid-template-columns:72px 1fr 56px;align-items:center;gap:8px;font-size:var(--dsh-content-font-size-secondary,13px)}.ydo-bar-label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.ydo-bar-track{display:block;height:6px;border-radius:3px;background:var(--dsw-alias-bg-layer-2);overflow:hidden}.ydo-bar-fill{display:block;height:100%;border-radius:3px;background:var(--dsw-alias-brand-primary)}.ydo-bar-value{text-align:right;font-variant-numeric:tabular-nums;color:var(--dsw-alias-label-secondary)}.ydo-donut-wrap{display:flex;align-items:center;gap:16px}.ydo-donut{position:relative;width:96px;height:96px;border-radius:50%;flex:none}.ydo-donut-hole{position:absolute;inset:22px;border-radius:50%;background:var(--dsw-alias-bg-base)}.ydo-legend{margin:0;padding:0;list-style:none;display:grid;gap:6px;font-size:var(--dsh-content-font-size-secondary,13px)}.ydo-legend li{display:flex;align-items:center;gap:6px}.ydo-legend-dot{width:10px;height:10px;border-radius:50%;flex:none;background:var(--dsw-alias-brand-primary)}.ydo-tags{display:flex;flex-wrap:wrap;gap:6px}.ydo-tag{padding:3px 8px;border-radius:4px;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-secondary);font-size:var(--dsh-content-font-size-secondary,13px)}.ydo-confirm-overlay{position:fixed;inset:0;z-index:560;display:grid;place-items:center;background:color-mix(in srgb,var(--dsw-alias-bg-base) 45%,transparent)}.ydo-confirm{width:min(420px,calc(100vw - 32px));padding:24px;border:1px solid var(--dsw-alias-border-l1);border-radius:8px;background:var(--dsw-alias-bg-layer-1);box-shadow:0 12px 40px rgba(0,0,0,.18)}.ydo-confirm-title{margin:0 0 20px;font-size:var(--dsw-font-base-16-font-size,15px);line-height:1.6}.ydo-confirm-actions{display:flex;justify-content:flex-end;gap:12px}.ydo-confirm-primary{min-height:36px;padding:0 18px;border:0;border-radius:6px;background:var(--dsw-alias-brand-primary);color:var(--dsw-alias-label-primary-foreground);font:inherit;font-weight:600;cursor:pointer}.ydo-confirm-secondary{min-height:36px;padding:0 18px;border:1px solid var(--dsw-alias-border-l1);border-radius:6px;background:var(--dsw-alias-bg-layer-1);color:inherit;font:inherit;cursor:pointer}.ydo-delete-retry{display:grid;gap:8px;justify-items:start;padding:10px 12px;border:1px solid var(--dsw-alias-state-error-primary);border-radius:8px;background:var(--dsw-alias-bg-layer-1)}.ydo-delete-retry .ydo-secondary{min-height:32px}/* 一键采集全部（批量方案 §4.5）：flex-basis:100% 在 wrap 工具栏内独占一行，不改 ydo-right 的 grid 行结构。 */
 .ydo-batch-panel{flex-basis:100%;display:grid;gap:4px;padding:10px 12px;border:1px solid var(--dsw-alias-border-l1);border-radius:8px;background:var(--dsw-alias-bg-layer-1)}.ydo-batch-panel p{margin:0}.ydo-batch-detail{display:grid;gap:2px;padding-top:4px;border-top:1px solid var(--dsw-alias-border-l1)}.ydo-batch-item{display:flex;justify-content:space-between;gap:12px;font-size:var(--dsh-content-font-size-secondary,13px)}.ydo-batch-item-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.ydo-batch-item-reason{flex:none;color:var(--dsw-alias-label-secondary)}/* 二次优化（§5.2）色彩变量定义在 overlay 作用域，不引入全局污染：性别男=淡蓝/女=柔和红；四类分布（年龄/流量来源/地域/城市级别）条形图淡绿填充，进度分析不受影响。 */
 .ydo-overlay{--ydo-gender-male:#91C5EB;--ydo-gender-female:#E88989;--ydo-distribution-fill:#A6D9B0;--ydo-distribution-fill-hover:#8FC99B}.ydo-bars-distribution .ydo-bar-fill{background:var(--ydo-distribution-fill,#A6D9B0)}.ydo-bars-distribution .ydo-bar-fill:hover{background:var(--ydo-distribution-fill-hover,#8FC99B)}.ydo-ov-page{display:grid;gap:12px;align-content:start;overflow:auto;min-height:0}/* 工具栏（UI 优化方案 v2 §4.1）：grid 两列 minmax(0,1fr) auto——筛选项在左列内部换行，操作区固定行尾。 */
 .ydo-ov-toolbar{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:12px}.ydo-ov-filters{display:flex;align-items:center;gap:12px;flex-wrap:wrap;min-width:0}/* 筛选控件带可见说明文字、高度统一 36px；取消浏览器黑 outline，仅 :focus-visible 显品牌色外环（v2 §4.1/§7）。 */
 .ydo-filter-option:hover{background:var(--dsw-alias-bg-layer-2)}.ydo-ov-filter{display:inline-flex;align-items:center;gap:6px;color:var(--dsw-alias-label-secondary);font-size:var(--dsh-content-font-size-secondary,13px);white-space:nowrap}/* 自定义日期范围（2026-09-21 需求）：与筛选下拉同规格（36px/边框/圆角）；color-scheme 跟随宿主主题，日历图标明暗自适应。 */
 .ydo-custom-range{display:inline-flex;align-items:center;gap:6px;white-space:nowrap}.ydo-custom-range-dash{color:var(--dsw-alias-label-secondary)}.ydo-date-input{height:36px;padding:0 8px;border:1px solid var(--dsw-alias-border-l1);border-radius:6px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);font:inherit;font-size:var(--dsh-content-font-size-secondary,13px);color-scheme:light dark}.ydo-date-input:focus{outline:0}.ydo-date-input:focus-visible{border-color:#3B82F6;box-shadow:0 0 0 2px color-mix(in srgb,#3B82F6 28%,transparent)}.ydo-filter-select{display:inline-flex;position:relative;min-width:0}.ydo-filter-trigger{display:flex;align-items:center;justify-content:space-between;gap:10px;height:36px;min-width:90px;max-width:220px;padding:0 10px;border:1px solid var(--dsw-alias-border-l1);border-radius:6px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);font:inherit;font-size:var(--dsh-content-font-size-secondary,13px);cursor:pointer}.ydo-filter-trigger:focus{outline:0}.ydo-filter-trigger:focus-visible{border-color:#3B82F6;box-shadow:0 0 0 2px color-mix(in srgb,#3B82F6 28%,transparent)}.ydo-filter-trigger:disabled{opacity:.55;cursor:default}.ydo-filter-value{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.ydo-filter-chevron{width:6px;height:6px;flex:none;margin:-4px 2px 0 0;border-right:1.5px solid currentColor;border-bottom:1.5px solid currentColor;transform:rotate(45deg)}.ydo-filter-menu{position:fixed;z-index:560;box-sizing:border-box;overflow-y:auto;padding:4px;border:1px solid var(--dsw-alias-border-l1);border-radius:6px;background:var(--dsw-alias-bg-layer-1);box-shadow:0 8px 24px rgba(0,0,0,.16)}.ydo-filter-option{display:flex;align-items:center;box-sizing:border-box;height:36px;padding:0 10px;border-radius:4px;color:var(--dsw-alias-label-primary);cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.ydo-filter-option-active{background:var(--dsw-alias-bg-layer-2)}.ydo-filter-option[aria-selected=true]{color:var(--dsw-alias-brand-primary);font-weight:600}.ydo-filter-option[aria-disabled=true]{opacity:.5;cursor:default}.ydo-ov-actions{display:flex;align-items:center;gap:8px;margin-left:auto}.ydo-ov-loading{display:flex;align-items:center;gap:8px;color:var(--dsw-alias-label-secondary);font-size:var(--dsh-content-font-size-secondary,13px)}.ydo-ov-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px}.ydo-ov-kpi-label{color:var(--dsw-alias-label-secondary);font-size:var(--dsh-content-font-size-secondary,13px)}.ydo-ov-kpi{display:grid;gap:4px;padding:14px;border:1px solid var(--dsw-alias-border-l1);border-radius:8px;background:var(--dsw-alias-bg-layer-1)}.ydo-ov-kpi-value{font-size:20px;font-weight:650}.ydo-ov-kpi-hint{color:var(--dsw-alias-label-secondary);font-size:12px}.ydo-ov-panel{padding:14px;border:1px solid var(--dsw-alias-border-l1);border-radius:8px;background:var(--dsw-alias-bg-layer-1);container-type:inline-size;container-name:ydo-panel}/* 面板即容器：窄屏表格重排按面板实际宽度触发（容器查询），不受宿主侧栏/窗口差异影响（二审 P2）。 */.ydo-ov-panel h3{margin:0 0 10px;font-size:var(--dsh-content-font-size,14px)}.ydo-ov-panels{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px}.ydo-ov-table{display:grid;border:1px solid var(--dsw-alias-border-l1);border-radius:8px;overflow-x:hidden;overflow-y:auto;max-height:420px}/* 总览表格列轨道按表分组固定（v2 §3.3/§4.2/§4.4）：数值列窄定宽，长文本只由标题/依据列伸缩；表头与数据行共用同一模板；容器禁横向滚动，纵向超限只纵向滚。 */
-.ydo-ov-tr{display:grid;box-sizing:border-box;padding:8px 10px;align-items:center;gap:8px;font-size:var(--dsh-content-font-size-secondary,13px);border-bottom:1px solid var(--dsw-alias-border-l1);min-width:100%}.ydo-ov-tr-rank{grid-template-columns:48px minmax(90px,.8fr) repeat(6,minmax(72px,.35fr))}.ydo-ov-tr-hot{grid-template-columns:minmax(220px,2fr) minmax(110px,1fr) 124px 84px 76px minmax(220px,1.7fr)}/* 分析页爆款表列序不同（排名居首，方案 §5.5），用专属轨道避免排名落进宽轨（验收建议 1）；发布时间/播放量/互动率固定窄列（v2 §5.4）。 */
-.ydo-ov-tr-hot-rank{grid-template-columns:minmax(56px,.5fr) minmax(200px,2fr) 124px 84px 76px minmax(220px,1.7fr)}.ydo-ov-tr:last-child{border-bottom:0}.ydo-ov-head{background:var(--dsw-alias-bg-layer-2);font-weight:600}.ydo-ov-num{text-align:right;font-variant-numeric:tabular-nums}.ydo-ov-hot-basis-head{text-align:center;padding-inline:12px}.ydo-ov-rankcell{text-align:center;font-variant-numeric:tabular-nums}.ydo-ov-flag{margin-left:8px;padding:2px 6px;border-radius:4px;font-size:12px}.ydo-ov-flag-suspicious{background:var(--dsw-alias-bg-layer-2);color:color-mix(in srgb,var(--dsw-alias-state-warn-primary,#d29922) 70%,var(--dsw-alias-label-primary))}.ydo-ov-flag-expired{background:var(--dsw-alias-bg-layer-2);color:color-mix(in srgb,var(--dsw-alias-state-error-primary) 60%,var(--dsw-alias-label-primary))}/* 状态过旧用语义色（橙），正常数据颜色不变（UI 优化方案 §4.3/§7）。 */
+.ydo-ov-tr{display:grid;box-sizing:border-box;padding:8px 10px;align-items:center;gap:8px;font-size:var(--dsh-content-font-size-secondary,13px);border-bottom:1px solid var(--dsw-alias-border-l1);min-width:100%}.ydo-ov-tr-rank{grid-template-columns:48px minmax(90px,.8fr) 88px 96px repeat(6,minmax(72px,.35fr))}/* 1015：+近窗口净增/播放两列（§2.2） */.ydo-ov-tr-hot{grid-template-columns:minmax(220px,2fr) minmax(110px,1fr) 124px 84px 76px minmax(220px,1.7fr)}/* 分析页爆款表列序不同（排名居首，方案 §5.5），用专属轨道避免排名落进宽轨（验收建议 1）；发布时间/播放量/互动率固定窄列（v2 §5.4）。 */
+.ydo-ov-tr-hot-rank{grid-template-columns:minmax(56px,.5fr) minmax(200px,2fr) 124px 84px 76px 88px minmax(220px,1.7fr)}/* 1015：+吸粉量列（§3.4） */.ydo-ov-tr:last-child{border-bottom:0}.ydo-ov-head{background:var(--dsw-alias-bg-layer-2);font-weight:600}.ydo-ov-num{text-align:right;font-variant-numeric:tabular-nums}.ydo-ov-hot-basis-head{text-align:center;padding-inline:12px}.ydo-ov-rankcell{text-align:center;font-variant-numeric:tabular-nums}.ydo-ov-flag{margin-left:8px;padding:2px 6px;border-radius:4px;font-size:12px}.ydo-ov-flag-suspicious{background:var(--dsw-alias-bg-layer-2);color:color-mix(in srgb,var(--dsw-alias-state-warn-primary,#d29922) 70%,var(--dsw-alias-label-primary))}.ydo-ov-flag-expired{background:var(--dsw-alias-bg-layer-2);color:color-mix(in srgb,var(--dsw-alias-state-error-primary) 60%,var(--dsw-alias-label-primary))}/* 状态过旧用语义色（橙），正常数据颜色不变（UI 优化方案 §4.3/§7）。 */
 .ydo-ov-session-stale{color:color-mix(in srgb,var(--dsw-alias-state-warn-primary,#d29922) 70%,var(--dsw-alias-label-primary))}.ydo-ov-dist{margin:0;padding:0;list-style:none;display:grid;gap:6px}.ydo-ov-dist li{display:grid;grid-template-columns:20px minmax(96px,140px) 1fr 44px;align-items:center;gap:8px;font-size:var(--dsh-content-font-size-secondary,13px)}/* 爆款分布前三名固定语义色（v2 §4.3）：1 橙 / 2 蓝 / 3 紫，第 4 名起中性品牌色；名次同时用排名数字表达。 */
 .ydo-ov-dist-rank{text-align:center;font-variant-numeric:tabular-nums;color:var(--dsw-alias-label-secondary)}.ydo-ov-dist-top1 .ydo-bar-fill{background:#E8833A}.ydo-ov-dist-top1 .ydo-ov-dist-rank{color:#E8833A;font-weight:650}.ydo-ov-dist-top2 .ydo-bar-fill{background:#3B82F6}.ydo-ov-dist-top2 .ydo-ov-dist-rank{color:#3B82F6;font-weight:650}.ydo-ov-dist-top3 .ydo-bar-fill{background:#8B5CF6}.ydo-ov-dist-top3 .ydo-ov-dist-rank{color:#8B5CF6;font-weight:650}.ydo-ov-alerts{margin:0;padding-left:18px;display:grid;gap:6px;font-size:var(--dsh-content-font-size-secondary,13px);color:var(--dsw-alias-label-secondary)}.ydo-ov-drawer-overlay{position:fixed;inset:0;z-index:560;display:flex;justify-content:flex-end;background:color-mix(in srgb,var(--dsw-alias-bg-base) 45%,transparent)}/* 抽屉（UI 优化方案 v2 §6.2）：宽度 min(720px,72vw)、高度 min(860px,84vh) 且不低于视口 75%；纵向 flex——内容不足时操作按钮沉底，超出时随滚动区排布。 */
 .ydo-ov-drawer{width:min(720px,72vw);height:min(860px,84vh);min-height:75vh;display:flex;flex-direction:column;gap:12px;padding:20px;border-left:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-1);overflow:auto}.ydo-ov-drawer header{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}.ydo-ov-drawer h3{margin:0;font-size:var(--dsw-font-base-16-font-size,16px)}/* 关闭按钮 40×40、::after 外扩 2px 保证 ≥44px 点击区域（v2 §6.2）；焦点态同全局 :focus-visible 约定。 */
@@ -2225,7 +2386,7 @@ const css = `.ydo-button{display:flex;width:36px;height:36px;align-items:center;
 @container ydo-panel (min-width:640px){.ydo-an-axis-minor{display:block}}
 .ydo-an-gap-text{fill:var(--dsw-alias-label-tertiary,#737d8c);font-size:10px;text-anchor:middle}
 .ydo-an-revised-text{fill:var(--dsw-alias-state-warn-primary,#9a6700);font-size:10px;text-anchor:start}/* 内容指标（UI 优化方案 v2 §5.2）：指标名、主值、状态三段结构，指标卡两列标签布局、数值列对齐；观众与流量四块 2×2 网格（v2 §5.3）。 */
-.ydo-an-metrics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}.ydo-an-metric-card{display:flex;flex-direction:column;gap:6px;min-width:0;padding:12px 14px;border-radius:8px;background:var(--dsw-alias-bg-base)}.ydo-an-metric-head{display:flex;align-items:center;justify-content:space-between;gap:8px;min-width:0}.ydo-an-metric-label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--dsw-alias-label-secondary);font-size:12px}.ydo-an-metric-note{flex:none;padding:1px 8px;border-radius:999px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-secondary);font-size:11px}.ydo-an-metric-value{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:20px;line-height:1.2;font-weight:700;font-variant-numeric:tabular-nums}.ydo-an-audience{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.ydo-an-audience-block{display:grid;gap:8px;padding:10px;border:1px solid var(--dsw-alias-border-l1);border-radius:6px;background:var(--dsw-alias-bg-base)}.ydo-an-audience-block h4{margin:0;font-size:var(--dsh-content-font-size,14px)}@media(max-width:720px){.ydo-an-metrics{grid-template-columns:1fr}.ydo-an-audience{grid-template-columns:1fr}}/* 窄屏表格重排（二审 P2）：面板内容宽度不足以容纳固定列轨道（<940px）时，隐藏表头、行改「字段名 + 值」卡片，内容完整可读——不是仅隐藏横向溢出。字段名来自各单元格的 data-label；文本类单元格（账号名/标题/爆款依据）保持块流，避免多子节点被二维网格错误排位。 */
+.ydo-an-metrics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}.ydo-an-metric-card{display:flex;flex-direction:column;gap:6px;min-width:0;padding:12px 14px;border-radius:8px;background:var(--dsw-alias-bg-base)}.ydo-an-metric-head{display:flex;align-items:center;justify-content:space-between;gap:8px;min-width:0}.ydo-an-metric-label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--dsw-alias-label-secondary);font-size:12px}.ydo-an-metric-note{flex:none;padding:1px 8px;border-radius:999px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-secondary);font-size:11px}.ydo-an-metric-value{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:20px;line-height:1.2;font-weight:700;font-variant-numeric:tabular-nums}.ydo-an-audience{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.ydo-an-audience-block{display:grid;gap:8px;padding:10px;border:1px solid var(--dsw-alias-border-l1);border-radius:6px;background:var(--dsw-alias-bg-base)}.ydo-an-audience-block h4{margin:0;font-size:var(--dsh-content-font-size,14px)}@media(max-width:720px){.ydo-an-metrics{grid-template-columns:1fr}.ydo-an-audience{grid-template-columns:1fr}}.ydo-work-cover{position:relative;display:inline-flex;align-items:center;justify-content:center;flex:none;width:64px;height:40px;border-radius:5px;overflow:hidden;background:var(--dsw-alias-bg-layer-2)}.ydo-work-cover-large{width:112px;height:70px;border-radius:7px}.ydo-work-cover-img{width:100%;height:100%;object-fit:cover;display:block}.ydo-work-cover-fallback-text{color:var(--dsw-alias-label-secondary);font-size:11px}.ydo-work-cover-duration{position:absolute;right:2px;bottom:2px;padding:0 4px;border-radius:3px;background:rgba(0,0,0,.65);color:#fff;font-size:10px;line-height:16px;font-variant-numeric:tabular-nums;pointer-events:none}.ydo-cell-work{display:flex;align-items:center;gap:8px;min-width:0}.ydo-cell-work-title{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}.ydo-delta-up{color:var(--dsw-alias-state-success-primary)}.ydo-delta-down{color:var(--dsw-alias-state-error-primary)}.ydo-delta-flat{color:var(--dsw-alias-label-secondary)}.ydo-modal-sec-title{margin:0 0 10px;font-size:13.5px;font-weight:700;color:var(--dsw-alias-label-primary)}.ydo-modal-panel-full{padding-top:2px}.ydo-modal-head-cover{align-items:flex-start}.ydo-modal-head-text{min-width:0;flex:1;display:grid;gap:4px}.ydo-modal-title{margin:0;font-size:var(--dsw-font-base-16-font-size,16px);line-height:1.35;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}.ydo-modal-grid-2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.ydo-modal-grid-audience{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px}.ydo-modal-core-metrics{grid-template-columns:repeat(4,minmax(0,1fr))}@media(max-width:720px){.ydo-modal-grid-2,.ydo-modal-core-metrics{grid-template-columns:1fr}.ydo-modal-grid-audience{grid-template-columns:1fr}}/* 1015 弹框分组：核心指标 4 列、流量与留存/词组两列并排、受众画像 auto-fit。 *//* 窄屏表格重排（二审 P2）：面板内容宽度不足以容纳固定列轨道（<940px）时，隐藏表头、行改「字段名 + 值」卡片，内容完整可读——不是仅隐藏横向溢出。字段名来自各单元格的 data-label；文本类单元格（账号名/标题/爆款依据）保持块流，避免多子节点被二维网格错误排位。 */
 @container ydo-panel (max-width:940px){.ydo-ov-table{overflow:visible;max-height:none}.ydo-ov-tr.ydo-ov-head{display:none}.ydo-ov-tr{display:block;min-width:0;padding:10px 0}.ydo-ov-tr>[role=cell]{display:grid;grid-template-columns:minmax(76px,auto) 1fr;gap:2px 12px;align-items:baseline;padding:2px 0}.ydo-ov-tr>[role=cell]::before{content:attr(data-label);color:var(--dsw-alias-label-secondary);font-size:12px}.ydo-ov-tr>[role=cell].ydo-ov-num{text-align:right}.ydo-ov-tr>.ydo-ov-account-name,.ydo-ov-tr>.ydo-ov-hot-title,.ydo-ov-tr>.ydo-ov-basis{display:block}.ydo-ov-tr>.ydo-ov-account-name::before,.ydo-ov-tr>.ydo-ov-hot-title::before,.ydo-ov-tr>.ydo-ov-basis::before{display:block;margin-bottom:4px}}@media(max-width:1120px){.ydo-body{display:block;overflow:auto}.ydo-accounts{border-right:0;border-bottom:1px solid var(--dsw-alias-border-l1)}.ydo-right{overflow:visible}.ydo-table-wrap{max-height:60vh}}
 /* AI 账号表现分析·卡片折叠布局（0916 方案 §9；2026-09-17 验收稿）：
    左边框 3px 语义色区分类别（蓝=结论/红=风险/绿=建议/紫=规律/灰=诊断与限制），
@@ -2469,4 +2630,6 @@ function apply(ctx) {
   ctx.slots.inject('shell.overlay', () => ctx.slots.register({ name: 'shell.overlay', id: OVERLAY_ID, order: 43, inject: () => ({ t }) }, Overlay))
 }
 
-module.exports = { apply, inject: ['slots', 'locale'], downloadWorkbook, formatCell, formatCount, formatPercent, gapReasonText, hasGap, progressText, BatchPanel, WorkTable, WorkDetailModal }
+// 1015 验收：css/copy/页面组件导出供截图脚本（scripts/screenshot.mjs）SSR 渲染
+// 与样式内联使用；运行时行为零改动。
+module.exports = { apply, inject: ['slots', 'locale'], downloadWorkbook, formatCell, formatCount, formatPercent, gapReasonText, hasGap, progressText, BatchPanel, WorkTable, WorkDetailModal, OverviewPage, AnalysisPage, css, copy }

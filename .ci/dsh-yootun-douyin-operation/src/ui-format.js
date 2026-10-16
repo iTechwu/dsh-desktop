@@ -19,6 +19,8 @@ export const COLUMNS = [
   { key: 'bounce_rate_2s_pct', label: 'colBounce2s', kind: 'pct', width: 104, sortable: true },
   { key: 'completion_rate_5s_pct', label: 'colCompletion5s', kind: 'pct', width: 104, sortable: true },
   { key: 'completion_rate_pct', label: 'colCompletion', kind: 'pct', width: 96, sortable: true },
+  // 1015 方案：吸粉量（item/summarize.new_fans_count），正负着色的 delta 文本。
+  { key: 'fans_gain_count', label: 'colFansGain', kind: 'delta', width: 88, sortable: true },
   { key: 'avg_watch_duration_s', label: 'colDuration', kind: 'seconds', width: 120, sortable: true },
   { key: 'avg_view_proportion_pct', label: 'colProportion', kind: 'pct', width: 110, sortable: true },
 ]
@@ -96,11 +98,42 @@ export function formatCell(value, kind, t = key => key) {
   if (value === null || value === undefined || value === '') return EMPTY
   if (kind === 'count') return formatCount(value)
   if (kind === 'pct') return formatPercent(value)
+  if (kind === 'delta') return deltaText(value).text
   if (kind === 'seconds') {
     const text = trimNumber(value)
     return text === '' ? EMPTY : `${text}${t('seconds')}`
   }
   return String(value)
+}
+
+/**
+ * 时长（毫秒）→ mm:ss / h:mm:ss（1015 UI 规格 §1.2）。
+ * 39219 → '00:39'；3761000 → '1:02:41'。非有限数/负数/非整数毫秒返回 null（缺失 → —）。
+ */
+export function formatDuration(ms) {
+  const num = Number(ms)
+  if (!Number.isFinite(num) || num < 0) return null
+  const totalSeconds = Math.round(num / 1000)
+  const seconds = totalSeconds % 60
+  const minutes = Math.floor(totalSeconds / 60) % 60
+  const hours = Math.floor(totalSeconds / 3600)
+  const pad = n => String(n).padStart(2, '0')
+  return hours > 0 ? `${hours}:${pad(minutes)}:${pad(seconds)}` : `${pad(minutes)}:${pad(seconds)}`
+}
+
+/**
+ * 增量文本（1015 UI 规格 §1.2）：正数 `+N`（绿）、负数 `-N`（红）、0 与缺失 → `—`（中性）。
+ * 返回 { text, tone }（tone: 'up' | 'down' | 'flat'），渲染层据 tone 上色；
+ * 纯文本场景（表格单元格）只取 text。
+ */
+export function deltaText(value) {
+  const num = Number(value)
+  if (value === null || value === undefined || value === '' || !Number.isFinite(num)) {
+    return { text: EMPTY, tone: 'flat' }
+  }
+  if (num > 0) return { text: `+${formatCount(num)}`, tone: 'up' }
+  if (num < 0) return { text: formatCount(num), tone: 'down' }
+  return { text: EMPTY, tone: 'flat' }
 }
 
 export function gapReasonText(reason, t = key => key) {

@@ -16,6 +16,9 @@ import {
   decidePagination,
   dedupeWorks,
   isSessionExpiredPayload,
+  parseDashboard,
+  parseDashboardFans,
+  parseFansSummary,
   parseItemCompare,
   parseItemMget,
   parseJsonPreservingIds,
@@ -46,6 +49,12 @@ export const USER_INFO_PATH = '/web/api/media/user/info/'
 export const ITEM_MGET_PATH = '/web/api/creator/item/mget'
 export const ITEM_MGET_FIELDS = 'metrics,review,play_info,dou_plus,integrated_incentive,item_status,recommend_info'
 export const ITEM_SUMMARIZE_PATH = '/web/api/creator/data/item/summarize/'
+// 账号大盘与粉丝画像（1015 方案 §6.1）：固定 recent_days=30（实测 90 降级/拒绝），
+// 与现有 11 个接口同机制（页面上下文同源 fetch，自动 msToken/a_bogus 签名）。
+export const DASHBOARD_PATH = '/janus/douyin/creator/data/overview/dashboard'
+export const DASHBOARD_FANS_PATH = '/janus/douyin/creator/data/overview/dashboard/fans'
+export const FANS_SUMMARY_PATH = '/janus/douyin/creator/bff/data/fans/summary/v2'
+export const DASHBOARD_RECENT_DAYS = 30
 
 export const WORK_MANAGE_URL = 'https://creator.douyin.com/creator-micro/content/manage'
 export const WORK_DETAIL_URL = workId => `https://creator.douyin.com/creator-micro/work-management/work-detail/${workId}`
@@ -348,6 +357,76 @@ function firstPresent(...values) {
 }
 
 /**
+ * 账号大盘三连采集（1015 方案 §6.1）：dashboard / dashboard/fans / fans/summary/v2。
+ *
+ * 三个请求**各自独立 try**：任一失败只记 gap，不抛出、不阻断作品入库与 run 结算
+ * （失败隔离，§6.3）。唯一例外是会话失效（HTTP 200 + `status_code: 8`）：三个接口
+ * 共用同一登录态，任一判定过期都立即抛 `SessionInvalidError` 走既有过期链路。
+ *
+ * @returns {Promise<{dashboardRows: object[], dashboardFansRows: object[], fansProfile: object|null,
+ *   gaps: Array<{source: string, reason: string}>}>}
+ */
+export async function collectDashboard(page, { recentDays = DASHBOARD_RECENT_DAYS } = {}) {
+  const gaps = []
+  const note = (source, reason) => gaps.push({ source, reason })
+
+  const load = async (source, url) => {
+    const result = await fetchJson(page, url)
+    if (!result.ok) {
+      note(source, result.status ? `http_${result.status}` : 'request_failed')
+      return null
+    }
+    if (isSessionExpiredPayload(result.json)) {
+      throw new SessionInvalidError(toInt(result.json.status_code))
+    }
+    return result.json
+  }
+
+  let dashboardRows = []
+  let dashboardFansRows = []
+  let fansProfile = null
+
+  try {
+    const json = await load('dashboard', `${DASHBOARD_PATH}?recent_days=${recentDays}`)
+    dashboardRows = json ? parseDashboard(json) : []
+    // 响应到达但零指标行（如 status_code=5 拒绝/降级空 metrics）：显式记缺口，
+    // 不静默吞掉（缺口说明不变量）。
+    if (json && dashboardRows.length === 0) note('dashboard', 'not_exposed')
+  } catch (error) {
+    if (error instanceof SessionInvalidError) throw error
+    note('dashboard', safeParseReason(error))
+  }
+
+  try {
+    const json = await load('dashboard_fans', `${DASHBOARD_FANS_PATH}?recent_days=${recentDays}`)
+    dashboardFansRows = json ? parseDashboardFans(json) : []
+    if (json && dashboardFansRows.length === 0) note('dashboard_fans', 'not_exposed')
+  } catch (error) {
+    if (error instanceof SessionInvalidError) throw error
+    note('dashboard_fans', safeParseReason(error))
+  }
+
+  try {
+    const json = await load('fans_summary', FANS_SUMMARY_PATH)
+    if (json) {
+      fansProfile = parseFansSummary(json)
+      if (!fansProfile) note('fans_summary', 'not_exposed')
+    }
+  } catch (error) {
+    if (error instanceof SessionInvalidError) throw error
+    note('fans_summary', safeParseReason(error))
+  }
+
+  return { dashboardRows, dashboardFansRows, fansProfile, gaps }
+}
+
+function safeParseReason(error) {
+  if (error && typeof error.code === 'string') return error.code
+  if (error && typeof error.name === 'string') return error.name.slice(0, 64)
+  return 'parse_failed'
+}
+
+/**
  * 采集账号全部作品（列表 + 逐作品分析），产出可直接入库的载荷。
  *
  * @returns {Promise<{works: object[], listComplete: boolean, expectedWorkCount: number,
@@ -463,6 +542,24 @@ export async function collectAccountWorks(page, {
     }
   }
 
+  // 账号大盘三连（1015 方案 §6.1/§6.3）：作品链路完成后在**同一页面上下文**顺带
+  // 采集。失败隔离——三请求各自记 gap、绝不阻断作品载荷与 run 结算；唯一例外是
+  // 会话失效（status_code=8）：上抛并挂已完成的详情载荷，走既有过期收尾链路。
+  let dashboard = { dashboardRows: [], dashboardFansRows: [], fansProfile: null, gaps: [] }
+  try {
+    dashboard = await collectDashboard(page)
+  } catch (error) {
+    if (error instanceof SessionInvalidError) {
+      error.partialCollected = {
+        works: payloads,
+        listComplete: list.listComplete,
+        expectedWorkCount: list.works.length,
+      }
+      throw error
+    }
+    dashboard.gaps.push({ source: 'dashboard', reason: safeReason(error) })
+  }
+
   return {
     works: payloads,
     failures,
@@ -471,6 +568,7 @@ export async function collectAccountWorks(page, {
     listReason: list.reason,
     expectedWorkCount: list.works.length,
     profile,
+    dashboard,
   }
 }
 

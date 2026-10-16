@@ -1,0 +1,29 @@
+{
+ "_note": "部分指标缺失形态（低门槛账号/灰度）：metrics 只返回子集。解析规则：缺哪个 metric 该组缺省，绝不造 0。",
+ "status_code": 0,
+ "status_msg": "",
+ "metrics": [
+  {
+   "english_metric_name": "play_cnt",
+   "metric_name": "播放量",
+   "metric_value": 1200,
+   "trends": [
+    {
+     "date_time": "20261001",
+     "value": 1200
+    }
+   ]
+  },
+  {
+   "english_metric_name": "total_fans_cnt",
+   "metric_name": "粉丝",
+   "metric_value": 100,
+   "trends": [
+    {
+     "date_time": "20261001",
+     "value": 100
+    }
+   ]
+  }
+ ]
+}

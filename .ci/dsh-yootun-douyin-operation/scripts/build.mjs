@@ -8,6 +8,9 @@ const uiFormatImport = /^import \{[\s\S]*?\} from '\.\/ui-format\.js'\n/m
 const overviewUiImport = /^import \{[\s\S]*?\} from '\.\/overview-ui\.js'\n/m
 const analysisUiImport = /^import \{[\s\S]*?\} from '\.\/analysis-ui\.js'\n/m
 const breakdownUiImport = /^import \{[\s\S]*?\} from '\.\/breakdown\.js'\n/m
+// 1015 阶段 3：trend-chart 共享模块（作品详情弹框与 analysis-ui 复用同一趋势绘制），
+// 与 ui-format 同法内联（先于引用它的 analysis-ui / client.js）。
+const trendChartImport = /^import \{[^}]*\} from '\.\/trend-chart\.js'\n/m
 const selectUiImport = /^import \{ FilterSelect \} from '\.\/select-ui\.js'\n/m
 
 let source = await readFile(new URL('src/client.js', root), 'utf8')
@@ -19,6 +22,8 @@ if (!analysisUiImport.test(source)) throw new Error('build: analysis-ui import n
 source = source.replace(analysisUiImport, '')
 if (!breakdownUiImport.test(source)) throw new Error('build: breakdown import not found in client.js')
 source = source.replace(breakdownUiImport, '')
+if (!trendChartImport.test(source)) throw new Error('build: trend-chart import not found in client.js')
+source = source.replace(trendChartImport, '')
 const strip = text => text.replace(/^export (?=(function|const|let))/gm, '').trimEnd()
 // overview-ui / analysis-ui / breakdown 对 ui-format 纯函数（basisLines/formatDateTime 等）
 // 的 import 同样剥离：ui-format 先内联，内联后同一工厂作用域，标识符直接可见。
@@ -52,7 +57,8 @@ const overviewUi = strip(
 // analysis-ui 的 React 获取是惰性 let（不与 client.js 的 const React 冲突），原样内联。
 const analysisUi = strip(
   stripUiPrimitivesRequire(
-    stripUiFormatImport(await readFile(new URL('src/analysis-ui.js', root), 'utf8'), 'analysis-ui.js').replace(selectUiImport, ''),
+    stripUiFormatImport(await readFile(new URL('src/analysis-ui.js', root), 'utf8'), 'analysis-ui.js').replace(selectUiImport, '')
+      .replace(trendChartImport, ''),
   ),
 )
 // breakdown 与 overview-ui 同法（顶部 const React + 解构 h，hooks 走 React.xxx）。
@@ -64,7 +70,8 @@ const breakdownUi = strip(
     ),
   ),
 )
-const body = [uiFormat, selectUi, overviewUi, analysisUi, breakdownUi, source.trimEnd()].join('\n\n')
+const trendChart = strip(await readFile(new URL('src/trend-chart.js', root), 'utf8'))
+const body = [uiFormat, selectUi, trendChart, overviewUi, analysisUi, breakdownUi, source.trimEnd()].join('\n\n')
 
 await mkdir(new URL('lib/', root), { recursive: true })
 await writeFile(new URL('lib/client.js', root), ['window.__ModuleLoader__.load({', '  id: "@dofe/dsh-yootun-douyin-operation",', '  factory: (require) => {', '    var module = { exports: {} };', '    var exports = module.exports;', body.split('\n').map(line => line === '' ? '' : `    ${line}`).join('\n'), '    return module.exports;', '  },', '});', ''].join('\n'))

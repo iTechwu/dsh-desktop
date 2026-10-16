@@ -208,6 +208,9 @@ function firstPresent(...values) {
  * 映射（README §7.2）：`aweme_id→work_id`、`desc→title`、`create_time→publish_time`、
  * `statistics.*→counts`、`video.duration(ms)→duration_s`、`video.cover.url_list[0]→cover_url`、
  * `status.is_private→isPrivate（private 作品以 dataGap 标记，见 collector 注释）`。
+ *
+ * 封面候选（1015 方案 §2.4）：页面 Web 模式响应键是**大写 `Cover`**（实测，2026-10-15），
+ * `video.cover` 与其同 uri；候选顺序 video.cover → Cover → cover。
  */
 export function normalizeWork(raw) {
   if (!raw || typeof raw !== 'object') return null
@@ -230,7 +233,7 @@ export function normalizeWork(raw) {
     share_count: toInt(firstPresent(stats.share_count, stats.shareCount)),
     danmaku_count: toInt(firstPresent(stats.danmaku_count, stats.danmakuCount)),
     duration_s: durationMs === null ? null : round2(durationMs / 1000),
-    cover_url: firstUrl(firstPresent(video.cover, raw.cover)),
+    cover_url: firstUrl(firstPresent(video.cover, raw.Cover, raw.cover)),
     is_private: status.is_private === true || status.isPrivate === true,
   }
 }
@@ -500,10 +503,12 @@ export function parseItemMget(json) {
 }
 
 /**
- * 作品总览 `item/summarize`：提取创作者后台展示的完播率。
+ * 作品总览 `item/summarize`：提取创作者后台展示的完播率与吸粉量（1015 方案 §2.5）。
  *
- * `summarize_data.play_finish_ratio` 是 0..1 比例。按 workId 建索引，避免批量
- * 响应或多次拦截时把其他作品的值错配到当前作品。
+ * `summarize_data.play_finish_ratio` 是 0..1 比例；`new_fans_count` 是吸粉量（int ≥0，
+ * 与内容管理页展示值精确对应，零新增接口调用）。完播率与吸粉量**独立判缺**：
+ * 任一存在即建行，缺失方记 null（由调用方按列记 not_exposed），绝不因一个字段
+ * 缺失而丢掉另一个。按 workId 建索引，避免批量响应或多次拦截时错配作品。
  */
 export function parseItemSummarize(json) {
   const payload = json && typeof json === 'object' ? json : {}
@@ -514,8 +519,12 @@ export function parseItemSummarize(json) {
     const id = firstPresent(item.aweme_id, item.item_id, item.id)
     const summary = item.summarize_data || {}
     const completionRate = pct(summary.play_finish_ratio)
-    if (id === null || completionRate === null) continue
-    rows.set(String(id), { completion_rate_pct: completionRate })
+    const fansGainCount = toInt(summary.new_fans_count)
+    if (id === null || (completionRate === null && fansGainCount === null)) continue
+    rows.set(String(id), {
+      completion_rate_pct: completionRate,
+      fans_gain_count: fansGainCount === null || fansGainCount < 0 ? null : fansGainCount,
+    })
   }
   return rows
 }
@@ -585,6 +594,9 @@ export function buildWorkPayload({ work, performance, compare, source, portrait,
     title: from(work.title, 'title'),
     url: from(work.url, 'url'),
     publish_time: from(work.publish_time, 'publish_time'),
+    // 1015 方案：封面（CDN 签名 URL）与吸粉量（item/summarize.new_fans_count）。
+    cover_url: from(work.cover_url, 'cover_url'),
+    fans_gain_count: from(firstNonNull(summaryRow && summaryRow.fans_gain_count), 'fans_gain_count'),
     play_count: from(firstNonNull(cmp && cmp.play_count, mgetRow && mgetRow.play_count, perf.play_count, work.play_count), 'play_count'),
     like_count: from(work.like_count, 'like_count'),
     comment_count: from(work.comment_count, 'comment_count'),
@@ -617,4 +629,172 @@ export function buildWorkPayload({ work, performance, compare, source, portrait,
 function firstNonNull(...values) {
   for (const value of values) if (value !== null && value !== undefined) return value
   return null
+}
+
+// ---------------------------------------------------------------------------
+// 账号大盘 / 粉丝画像解析（1015 方案 §2.1-§2.3/§6.2，2026-10-15 实测契约）。
+// ---------------------------------------------------------------------------
+
+/**
+ * dashboard 指标名 → canonical 列名 + 换算语义。
+ *
+ * 三个比率指标（0..1）入库前 ×100；计数列存**日度增量原值**（创作者中心大盘
+ * 语义，净增粉丝可为负）；avg_view_second 单位秒不换算。缺失 metric 整组缺省
+ * （低门槛账号部分指标缺失是常态，缺哪组哪组缺省，绝不造 0）。
+ */
+export const DASHBOARD_RATIO_METRICS = new Set([
+  'cover_click_ratio',
+  'completion_rate_5s',
+  'bounce_rate_2s',
+])
+
+const DASHBOARD_COLUMN_BY_METRIC = {
+  play_cnt: 'play_cnt',
+  digg_cnt: 'digg_cnt',
+  share_count: 'share_cnt',
+  comment_cnt: 'comment_cnt',
+  net_fans_cnt: 'net_fans_cnt',
+  cancel_fans_cnt: 'cancel_fans_cnt',
+  cover_click_ratio: 'cover_click_ratio_pct',
+  homepage_view_cnt: 'homepage_view_cnt',
+  publish_cnt: 'publish_cnt',
+  completion_rate_5s: 'completion_rate_5s_pct',
+  bounce_rate_2s: 'bounce_rate_2s_pct',
+  avg_view_second: 'avg_view_second',
+  total_fans_cnt: 'total_fans_cnt',
+  // dashboard/fans 补充指标（同构响应）
+  new_fans_cnt: 'new_fans_cnt',
+  home_view_fans_cnt: 'home_view_fans_cnt',
+}
+
+/** `"20261008"` → `"2026-10-08"`；非法日期（含 2 月 30 日这类 roll-over）返回 null。
+ *
+ * round-trip 校验：`Date.parse('2026-02-30T00:00:00Z')` 是 roll-over 而非 NaN，
+ * 必须回读比对。畸形日期若透传，服务端 pydantic 在**整个 payload schema 校验层**
+ * 失败（VALIDATION_ERROR 确定性不重试），≤30 天回填整批全丢。
+ */
+export function dashboardDay(value) {
+  const text = typeof value === 'string' ? value : String(value ?? '')
+  const match = /^(\d{4})(\d{2})(\d{2})$/.exec(text)
+  if (!match) return null
+  const [, year, month, day] = match
+  const timestamp = Date.parse(`${year}-${month}-${day}T00:00:00Z`)
+  if (Number.isNaN(timestamp)) return null
+  const roundTrip = new Date(timestamp)
+  const dayNumber = Number(day)
+  if (
+    roundTrip.getUTCFullYear() !== Number(year)
+    || roundTrip.getUTCMonth() + 1 !== Number(month)
+    || roundTrip.getUTCDate() !== dayNumber
+  ) return null
+  return `${year}-${month}-${day}`
+}
+
+/** 安全整数边界：超出 2**53 的"数字"在 float64 下精度不可信，一律列缺省
+ * （服务端 64 位上界由 pydantic 检查；插件侧用 JS 可信精度守卫）。 */
+const DASHBOARD_SAFE_INT_MAX = Number.MAX_SAFE_INTEGER
+
+/**
+ * 非比率指标值守卫：计数列 ge=0（net_fans_cnt 可负但限 64 位）、avg_view_second
+ * 非负秒。畸形值（负数/超界/非有限）返回 undefined（列缺省，同"缺 metric 整组
+ * 缺省"语义），绝不透传——否则服务端整 payload 校验失败，回填整批丢失。
+ */
+export function dashboardMetricValue(english, value) {
+  const num = toNumber(value)
+  if (num === null) return undefined
+  if (english === 'avg_view_second') {
+    const seconds = round2(num)
+    return seconds === null ? undefined : seconds
+  }
+  const integer = toInt(num)
+  if (integer === null) return undefined
+  if (integer > DASHBOARD_SAFE_INT_MAX || integer < -DASHBOARD_SAFE_INT_MAX) return undefined
+  if (english === 'net_fans_cnt') return integer
+  return integer < 0 ? undefined : integer
+}
+
+/**
+ * dashboard / dashboard/fans 共同实现（响应同构）：`metrics[].trends[]` → 按日合并行。
+ *
+ * 返回 `[{day: 'YYYY-MM-DD', play_cnt: ..., ...}]`（canonical 列名，camel 直投
+ * 服务端 DouyinAccountDailyItem 的 populate_by_name）。缺失 metric 整组缺省；
+ * 比率 0..1 → ×100（2 位小数）；`change_rate`/`douyin_value` 等冗余字段丢弃；
+ * 会话失效（status_code=8）抛 SessionInvalidError 走既有过期链路。
+ */
+export function parseDashboardMetrics(json) {
+  const payload = json && typeof json === 'object' ? json : {}
+  if (isSessionExpiredPayload(payload)) throw new SessionInvalidError(toInt(payload.status_code))
+  const metrics = Array.isArray(payload.metrics) ? payload.metrics : []
+  const byDay = new Map()
+  for (const metric of metrics) {
+    if (!metric || typeof metric !== 'object') continue
+    const english = typeof metric.english_metric_name === 'string' ? metric.english_metric_name : null
+    const column = english ? DASHBOARD_COLUMN_BY_METRIC[english] : null
+    if (!column) continue
+    const ratio = DASHBOARD_RATIO_METRICS.has(english)
+    const trends = Array.isArray(metric.trends) ? metric.trends : []
+    for (const point of trends) {
+      if (!point || typeof point !== 'object') continue
+      const day = dashboardDay(point.date_time)
+      if (day === null) continue
+      // 比率 0..1 → ×100（pct 自带定义域守卫）；计数/秒数走独立值域守卫。
+      // 畸形值 → undefined（列缺省），绝不透传（服务端整 payload 校验会拒批）。
+      const value = ratio
+        ? pct(point.value)
+        : dashboardMetricValue(english, point.value)
+      if (value === null || value === undefined) continue
+      const row = byDay.get(day) || { day }
+      // 同日同指标重复（响应异常）：保留先出现的值，不覆盖（确定性优先）。
+      if (row[column] === undefined) row[column] = value
+      byDay.set(day, row)
+    }
+  }
+  return [...byDay.values()].sort((a, b) => (a.day < b.day ? -1 : a.day > b.day ? 1 : 0))
+}
+
+/** 账号大盘 `overview/dashboard?recent_days=N` → 按日行（13 指标）。 */
+export function parseDashboard(json) {
+  return parseDashboardMetrics(json)
+}
+
+/** 粉丝趋势 `overview/dashboard/fans?recent_days=N` → 按日行（6 粉丝指标）。 */
+export function parseDashboardFans(json) {
+  return parseDashboardMetrics(json)
+}
+
+/**
+ * 账号粉丝画像 `bff/data/fans/summary/v2` → 六类分布快照（snake 键，直投服务端
+ * DouyinFansProfilePayload 的 strict 子块契约）。
+ *
+ * **隐私边界（钉死）**：`contribution_billboard_7` / `interaction_billboard_7/30`
+ * 是用户榜单（含第三方用户昵称/sec_uid/头像/互动分）——不读取、不透传、不入库，
+ * 本函数物理上不触碰这些键。`fans_portrait.from_label`（涨粉来源）与趋势字段
+ * （与 dashboard/fans 重复）本轮不采。
+ */
+export function parseFansSummary(json) {
+  const payload = json && typeof json === 'object' ? json : {}
+  if (isSessionExpiredPayload(payload)) throw new SessionInvalidError(toInt(payload.status_code))
+  const distribution = key => {
+    const list = Array.isArray(payload[key]) ? payload[key] : []
+    const rows = []
+    for (const item of list) {
+      if (!item || typeof item !== 'object') continue
+      const label = firstPresent(item.label, item.name)
+      const count = toInt(item.count)
+      if (label === null || label === '' || count === null || count < 0) continue
+      rows.push({ label: clampText(label, 128), count })
+    }
+    // 服务端 schema 每类分布 max_length=64：异常超限截断而不是让整批 daily 校验拒绝。
+    return rows.length ? rows.slice(0, 64) : null
+  }
+  const result = {
+    active_levels: distribution('active_levels'),
+    active_time_range: distribution('active_time_range'),
+    age_distribution: distribution('age_distribution'),
+    city_distribution: distribution('city_distribution'),
+    device_distribution: distribution('device_brand_distribution'),
+    interest_distribution: distribution('fans_interest_distribution'),
+  }
+  const hasAny = Object.values(result).some(value => value !== null)
+  return hasAny ? result : null
 }

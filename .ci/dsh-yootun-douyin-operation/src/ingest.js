@@ -20,6 +20,7 @@ import { randomUUID } from 'node:crypto'
 
 import { getAccount, updateAccount } from './state.js'
 import {
+  dailyIdempotencyKey,
   heartbeatIdempotencyKey,
   ingestIdempotencyKey,
   listMetaIdempotencyKey,
@@ -220,6 +221,39 @@ export function createIngestClient({
     }
   }
 
+  /**
+   * 账号日度指标入库（1015 方案 §5.1/§6.3）：作品批次完成后投递 dashboard/fans
+   * 日度数据。幂等键 `douyin:daily:{runId}`——一次 run 一次日度投递，重试安全
+   * （服务端 MCPMutationRecord 收据重放）。空 daily 不调用（无从入库即无副作用）。
+   */
+  async function ingestDaily(dailyRows, { fansProfile = null } = {}) {
+    if (!runId) throw new Error('run_not_started')
+    if (!Array.isArray(dailyRows) || dailyRows.length === 0) {
+      return { replayed: false, dailyAccepted: 0, skipped: 'no_daily_rows' }
+    }
+    const payload = {
+      runId,
+      accountId,
+      daily: dailyRows,
+      idempotencyKey: dailyIdempotencyKey(runId),
+    }
+    // 子块 strict 契约（snake 键）；fansProfile 整体缺失（接口失败）就不带字段，
+    // 服务端只记 run 诊断，不影响 daily 行。
+    if (fansProfile && typeof fansProfile === 'object') payload.fansProfile = fansProfile
+    const result = await withRetry(
+      () => callTool('douyin_collect_ingest_daily', payload),
+      { label: 'ingest_daily' },
+    )
+    emit({
+      phase: 'daily_ingested',
+      dailyAccepted: Number(result && result.dailyAccepted) || 0,
+      dailyFailed: Number(result && result.dailyFailed) || 0,
+      fansProfileWritten: Boolean(result && result.fansProfileWritten),
+      replayed: Boolean(result && result.replayed),
+    })
+    return result
+  }
+
   /** 结束运行；服务端按账本结算终态（客户端状态仅供参考）。 */
   async function finish({ clientStatus = 'completed', clientCounts = null } = {}) {
     if (!runId) throw new Error('run_not_started')
@@ -288,6 +322,7 @@ export function createIngestClient({
     startRun,
     publishListMeta,
     ingestAll,
+    ingestDaily,
     heartbeat,
     finish,
     cancel,
@@ -300,7 +335,11 @@ export function createIngestClient({
 /**
  * 一次完整采集的入库编排：run_start → set_list_meta → 分批 → run_finish。
  *
- * @param {{ works: object[], listComplete: boolean, expectedWorkCount?: number }} collected
+ * 1015 方案 §6.3：作品批次完成后投递账号日度数据（dashboard），失败只记
+ * `dashboard_gap` 事件，绝不改变 run 结算（失败隔离，结算不依赖 daily）。
+ *
+ * @param {{ works: object[], listComplete: boolean, expectedWorkCount?: number,
+ *   dashboard?: { dashboardRows: object[], dashboardFansRows: object[], fansProfile: object|null } }} collected
  * @returns {Promise<{ runId: string, ingest: object, finish: object|null, error: string|null }>}
  */
 export async function ingestCollectedWorks({
@@ -310,6 +349,7 @@ export async function ingestCollectedWorks({
   expectedWorkCount = works.length,
   newAttempt = true,
   onProgress = null,
+  dashboard = null,
 }) {
   // 事件统一由 client 发出：把编排层的回调挂到 client 上，避免两套事件源。
   if (onProgress && typeof client.setProgress === 'function') client.setProgress(onProgress)
@@ -326,6 +366,24 @@ export async function ingestCollectedWorks({
   const ingest = works.length
     ? await client.ingestAll(works, { observedCount: expectedWorkCount })
     : { runId, batches: [], succeededWorkIds: [], failedWorkIds: [] }
+  // 日度入库（1015 §6.3）：在作品批次之后、结算之前尽力而为；任何失败只 emit
+  // dashboard_gap，不改变 clientStatus 与 run 终态。fansProfile 必须随 daily 行
+  // 一起投递（服务端 daily[] min_length=1 不收空数组）——当日无 daily 行时画像
+  // 无法单独入库，显式记缺口（正常采集次日随 daily 补上）。
+  const dailyRows = mergeDashboardRows(dashboard)
+  let dailyAccepted = null
+  if (dailyRows.length && typeof client.ingestDaily === 'function') {
+    try {
+      const dailyResult = await client.ingestDaily(dailyRows, { fansProfile: dashboard && dashboard.fansProfile })
+      dailyAccepted = Number(dailyResult && dailyResult.dailyAccepted) || null
+    } catch (error) {
+      emit({ phase: 'dashboard_gap', reason: safeCode(error) })
+    }
+  } else if (dashboard && ((Array.isArray(dashboard.gaps) && dashboard.gaps.length) || dashboard.fansProfile)) {
+    const reasons = Array.isArray(dashboard.gaps) ? dashboard.gaps.map(gap => gap.reason) : []
+    if (dashboard.fansProfile) reasons.push('fans_profile_without_daily')
+    emit({ phase: 'dashboard_gap', reason: reasons.join(',') })
+  }
   const clientStatus = resolveClientStatus({ listComplete, expected: expectedWorkCount, ingest })
   const finish = await client.finish({
     clientStatus,
@@ -335,7 +393,31 @@ export async function ingestCollectedWorks({
       failedWorkCount: ingest.failedWorkIds.length,
     },
   })
-  return { runId, ingest, finish, error: null }
+  return { runId, ingest, finish, dailyAccepted, error: null }
+}
+
+/**
+ * 合并 dashboard 与 dashboard/fans 的按日行（1015 §6.3）：同日**浅合并**，
+ * daily 主表指标优先（后合并的一方不覆盖已有列）。
+ */
+export function mergeDashboardRows(dashboard) {
+  if (!dashboard || typeof dashboard !== 'object') return []
+  const rows = new Map()
+  const push = list => {
+    for (const row of Array.isArray(list) ? list : []) {
+      if (!row || typeof row !== 'object' || typeof row.day !== 'string') continue
+      const existing = rows.get(row.day) || { day: row.day }
+      for (const [key, value] of Object.entries(row)) {
+        // 已有列（含主表指标）不被粉丝表同名列覆盖；空字符串按缺失处理。
+        if (key === 'day' || value === undefined || value === null || value === '') continue
+        if (existing[key] === undefined) existing[key] = value
+      }
+      rows.set(row.day, existing)
+    }
+  }
+  push(dashboard.dashboardRows)
+  push(dashboard.dashboardFansRows)
+  return [...rows.values()].sort((a, b) => (a.day < b.day ? -1 : a.day > b.day ? 1 : 0))
 }
 
 /** 客户端上报状态仅作参考：服务端以账本重算，冲突时以服务端为准。 */

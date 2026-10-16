@@ -15,7 +15,7 @@
 // 可见说明文字、操作按钮靠右、表格列轨道按表分组固定、爆款依据纵向分行、
 // 页面不展示规则版本/数据来源/参与样本数（字段仍由接口返回供导出与诊断）。
 
-import { basisLines, formatDateTime } from './ui-format.js'
+import { basisLines, deltaText, formatDateTime } from './ui-format.js'
 import { FilterSelect } from './select-ui.js'
 
 const React = require('react')
@@ -114,6 +114,13 @@ function AccountRow({ account, rank, onOpenAccount, t }) {
         ? h('span', { className: 'ydo-ov-flag ydo-ov-flag-suspicious' }, t('suspiciousEmptyCollect'))
         : null),
     h('span', { className: 'ydo-ov-num', role: 'cell', 'data-label': t('fanCount') }, countText(account.fanCount)),
+    // 1015 UI 规格 §2.2：+近窗口净增（负值红）/近窗口播放；daily 未采集 → —。
+    h('span', { className: 'ydo-ov-num', role: 'cell', 'data-label': t('colWindowNetFans') },
+      (() => {
+        const delta = deltaText(account.windowNetFansCount)
+        return h('span', { className: `ydo-delta ydo-delta-${delta.tone}` }, delta.text)
+      })()),
+    h('span', { className: 'ydo-ov-num', role: 'cell', 'data-label': t('colWindowPlay') }, countText(account.windowPlayCount)),
     h('span', { className: 'ydo-ov-num', role: 'cell', 'data-label': t('workCount') }, countText(account.workCount)),
     h('span', { className: 'ydo-ov-num', role: 'cell', 'data-label': t('colMedianPlay') }, countText(account.medianPlayCount)),
     h('span', { className: 'ydo-ov-num', role: 'cell', 'data-label': t('kpiHotWorks') }, countText(account.hotWorkCount)),
@@ -297,6 +304,9 @@ export function OverviewPage({
   }
   // KPI 作品数带明确范围文案（UI 优化方案 v2 §3.2/§4.2）：近 N 天 / 自定义日期区间。
   const rangeLabel = overviewRangeLabel(filters, t)
+  // 1015 UI 规格 §2.2：排行新列 label 随窗口筛选动态拼接（近7日净增/近30日播放/自定义区间）。
+  const windowNetFansLabel = t('colWindowNetFansDynamic').replace('{range}', rangeLabel)
+  const windowPlayLabel = t('colWindowPlayDynamic').replace('{range}', rangeLabel)
 
   return h('div', { className: 'ydo-ov-page' },
     // 工具栏（UI 优化方案 v2 §4.1）：grid 两列（minmax(0,1fr) auto），筛选项在左列
@@ -399,6 +409,18 @@ export function OverviewPage({
         h(KpiCard, { label: t('kpiAccounts'), value: countText(summary.accountCount) }),
         h(KpiCard, { label: t('kpiWorks'), value: countText(summary.workCount), hint: rangeLabel }),
         h(KpiCard, { label: t('kpiTotalPlay'), value: countText(summary.totalPlayCount), hint: t('kpiCurrentCumulative') }),
+        // 1015 UI 规格 §2.1：+净增粉丝、+5秒完播率（按播放加权）。
+        // daily 未采集 → 字段 null → 整卡不渲染（§1.3：不渲染空卡、不造 0）。
+        summary.netFansCount === null || summary.netFansCount === undefined ? null : h(KpiCard, {
+          label: t('kpiNetFans'),
+          value: countText(summary.netFansCount),
+          hint: rangeLabel,
+        }),
+        summary.completionRate5sPct === null || summary.completionRate5sPct === undefined ? null : h(KpiCard, {
+          label: t('kpiCompletion5s'),
+          value: pctText(summary.completionRate5sPct),
+          hint: t('kpiPlayWeighted'),
+        }),
         h(KpiCard, {
           label: t('kpiHotWorks'),
           value: countText(summary.hotWorkCount),
@@ -426,6 +448,8 @@ export function OverviewPage({
           h('span', { className: 'ydo-ov-rankcell', role: 'columnheader' }, t('rankCol')),
           h('span', { role: 'columnheader' }, t('colAccount')),
           h('span', { className: 'ydo-ov-num', role: 'columnheader' }, t('fanCount')),
+          h('span', { className: 'ydo-ov-num', role: 'columnheader' }, windowNetFansLabel),
+          h('span', { className: 'ydo-ov-num', role: 'columnheader' }, windowPlayLabel),
           h('span', { className: 'ydo-ov-num', role: 'columnheader' }, t('workCount')),
           h('span', { className: 'ydo-ov-num', role: 'columnheader' }, t('colMedianPlay')),
           h('span', { className: 'ydo-ov-num', role: 'columnheader' }, t('kpiHotWorks')),

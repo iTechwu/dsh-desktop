@@ -1,0 +1,37 @@
+{
+ "_note": "MCP douyin_work_get / work_list 新增字段形态：coverUrl（当前值表新列）与 fansGainCount（item/summarize 吸粉量入库后透出）。缺失为 null，UI 显示「—」。",
+ "work": {
+  "workId": "7696000000000000001",
+  "title": "示例作品",
+  "publishTime": "2026-10-13T09:59:00Z",
+  "playCount": 7000,
+  "likeCount": 100,
+  "commentCount": 0,
+  "shareCount": 80,
+  "collectCount": 150,
+  "completionRatePct": 12.09,
+  "bounceRate2sPct": 27.09,
+  "coverUrl": "https://p-sign.douyinpic.com/example~tplv.webp",
+  "fansGainCount": 9,
+  "trafficSource": [
+   {
+    "sourceKey": "recommend",
+    "sharePct": 62.0
+   }
+  ]
+ },
+ "audience": {
+  "gender": [
+   {
+    "key": "male",
+    "pct": 61.0
+   }
+  ]
+ },
+ "hotwords": [
+  {
+   "word": "示例词",
+   "rank": 1
+  }
+ ]
+}

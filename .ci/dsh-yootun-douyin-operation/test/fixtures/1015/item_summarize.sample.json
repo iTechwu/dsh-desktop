@@ -1,0 +1,47 @@
+{
+ "_note": "脱敏样例：结构与字段名实测真实，数值为占位。summarize_data.new_fans_count 即吸粉量（本次新增解析）；play_finish_ratio 现有解析已覆盖。",
+ "extra": {
+  "now": 1792051543000
+ },
+ "item_list": [
+  {
+   "aweme_id": "7696000000000000001",
+   "Cover": {
+    "height": 720,
+    "uri": "tos-cn-i-dy/example-uri",
+    "url_list": [
+     "https://p-sign.douyinpic.com/example~tplv.webp"
+    ],
+    "width": 540
+   },
+   "create_time": 1791885578,
+   "duration": 39219,
+   "aweme_type": 4,
+   "statistics": {
+    "aweme_id": "7696000000000000001",
+    "play_count": 7000,
+    "digg_count": 100,
+    "comment_count": 0,
+    "share_count": 80,
+    "collect_count": 150,
+    "forward_count": 0
+   },
+   "status": {
+    "is_private": false
+   },
+   "summarize_data": {
+    "new_fans_count": 9,
+    "play_finish_ratio": 0.1209258384506377,
+    "play_avg_time": 12.78,
+    "home_page_view_count": 6,
+    "cover_click_ratio": 0.2,
+    "play_index": 10,
+    "interact_index": 6,
+    "fans_index": 10,
+    "is_watermark": false,
+    "filter_name": "",
+    "top_count_label": null
+   }
+  }
+ ]
+}

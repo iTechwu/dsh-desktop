@@ -223,6 +223,10 @@ export async function runAccountCollection({
       expectedWorkCount: collected.expectedWorkCount,
       newAttempt,
       onProgress,
+      // 1015 方案 §6.3：账号大盘三连结果（collectAccountWorks 已在页面关闭前
+      // 顺带采集）；采集阶段失败已收敛为 dashboard.gaps，入库阶段失败由编排层
+      // emit dashboard_gap——任何失败都不改变 ready 结算。
+      dashboard: collected.dashboard,
     })
     if (ingested.error) return { status: 'ingest_failed', reason: ingested.error, runId: ingested.runId }
     return {
@@ -237,6 +241,10 @@ export async function runAccountCollection({
       workFailures: collected.failures,
       pages: collected.pages.length,
       settlement: ingested.finish ? ingested.finish.settlement : null,
+      dashboard: {
+        dailyAccepted: Number(ingested.dailyAccepted) || null,
+        gaps: collected.dashboard && Array.isArray(collected.dashboard.gaps) ? collected.dashboard.gaps : [],
+      },
     }
   } catch (error) {
     return { status: 'ingest_failed', reason: safeReason(error), runId: client.runId }

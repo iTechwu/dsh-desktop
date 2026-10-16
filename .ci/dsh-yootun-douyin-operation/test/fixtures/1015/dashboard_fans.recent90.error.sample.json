@@ -1,0 +1,6 @@
+{
+ "_note": "实测形态（2026-10-15）：dashboard/fans 的 recent_days=90 直接返回 status_code=5，无 metrics。采集固定 recent_days=30。",
+ "status_code": 5,
+ "status_msg": "",
+ "metrics": []
+}

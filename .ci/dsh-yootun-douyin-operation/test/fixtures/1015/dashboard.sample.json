@@ -1,0 +1,826 @@
+{
+ "_note": "脱敏样例：结构与字段名实测真实，数值为占位。比率字段（cover_click_ratio/completion_rate_5s/bounce_rate_2s）为 0..1 原值，入库 ×100。",
+ "status_code": 0,
+ "status_msg": "",
+ "metrics": [
+  {
+   "english_metric_name": "play_cnt",
+   "metric_name": "播放量",
+   "metric_value": 12345,
+   "trends": [
+    {
+     "date_time": "20261001",
+     "value": 7407,
+     "change_rate": 0.1,
+     "douyin_value": 11110,
+     "xigua_value": 0,
+     "yumme_value": 1
+    },
+    {
+     "date_time": "20261002",
+     "value": 8641,
+     "change_rate": 0.1,
+     "douyin_value": 11110,
+     "xigua_value": 0,
+     "yumme_value": 1
+    },
+    {
+     "date_time": "20261003",
+     "value": 9876,
+     "change_rate": 0.1,
+     "douyin_value": 11110,
+     "xigua_value": 0,
+     "yumme_value": 1
+    },
+    {
+     "date_time": "20261004",
+     "value": 11110,
+     "change_rate": 0.1,
+     "douyin_value": 11110,
+     "xigua_value": 0,
+     "yumme_value": 1
+    },
+    {
+     "date_time": "20261005",
+     "value": 12345,
+     "change_rate": 0.1,
+     "douyin_value": 11110,
+     "xigua_value": 0,
+     "yumme_value": 1
+    },
+    {
+     "date_time": "20261006",
+     "value": 13579,
+     "change_rate": 0.1,
+     "douyin_value": 11110,
+     "xigua_value": 0,
+     "yumme_value": 1
+    },
+    {
+     "date_time": "20261007",
+     "value": 14814,
+     "change_rate": 0.1,
+     "douyin_value": 11110,
+     "xigua_value": 0,
+     "yumme_value": 1
+    }
+   ]
+  },
+  {
+   "english_metric_name": "digg_cnt",
+   "metric_name": "作品点赞",
+   "metric_value": 123,
+   "trends": [
+    {
+     "date_time": "20261001",
+     "value": 73,
+     "change_rate": 0.1,
+     "douyin_value": 110,
+     "xigua_value": 0,
+     "yumme_value": 1
+    },
+    {
+     "date_time": "20261002",
+     "value": 86,
+     "change_rate": 0.1,
+     "douyin_value": 110,
+     "xigua_value": 0,
+     "yumme_value": 1
+    },
+    {
+     "date_time": "20261003",
+     "value": 98,
+     "change_rate": 0.1,
+     "douyin_value": 110,
+     "xigua_value": 0,
+     "yumme_value": 1
+    },
+    {
+     "date_time": "20261004",
+     "value": 110,
+     "change_rate": 0.1,
+     "douyin_value": 110,
+     "xigua_value": 0,
+     "yumme_value": 1
+    },
+    {
+     "date_time": "20261005",
+     "value": 123,
+     "change_rate": 0.1,
+     "douyin_value": 110,
+     "xigua_value": 0,
+     "yumme_value": 1
+    },
+    {
+     "date_time": "20261006",
+     "value": 135,
+     "change_rate": 0.1,
+     "douyin_value": 110,
+     "xigua_value": 0,
+     "yumme_value": 1
+    },
+    {
+     "date_time": "20261007",
+     "value": 147,
+     "change_rate": 0.1,
+     "douyin_value": 110,
+     "xigua_value": 0,
+     "yumme_value": 1
+    }
+   ]
+  },
+  {
+   "english_metric_name": "share_count",
+   "metric_name": "作品分享",
+   "metric_value": 45,
+   "trends": [
+    {
+     "date_time": "20261001",
+     "value": 27,
+     "change_rate": 0.1,
+     "douyin_value": 40,
+     "xigua_value": 0,
+     "yumme_value": 1
+    },
+    {
+     "date_time": "20261002",
+     "value": 31,
+     "change_rate": 0.1,
+     "douyin_value": 40,
+     "xigua_value": 0,
+     "yumme_value": 1
+    },
+    {
+     "date_time": "20261003",
+     "value": 36,
+     "change_rate": 0.1,
+     "douyin_value": 40,
+     "xigua_value": 0,
+     "yumme_value": 1
+    },
+    {
+     "date_time": "20261004",
+     "value": 40,
+     "change_rate": 0.1,
+     "douyin_value": 40,
+     "xigua_value": 0,
+     "yumme_value": 1
+    },
+    {
+     "date_time": "20261005",
+     "value": 45,
+     "change_rate": 0.1,
+     "douyin_value": 40,
+     "xigua_value": 0,
+     "yumme_value": 1
+    },
+    {
+     "date_time": "20261006",
+     "value": 49,
+     "change_rate": 0.1,
+     "douyin_value": 40,
+     "xigua_value": 0,
+     "yumme_value": 1
+    },
+    {
+     "date_time": "20261007",
+     "value": 54,
+     "change_rate": 0.1,
+     "douyin_value": 40,
+     "xigua_value": 0,
+     "yumme_value": 1
+    }
+   ]
+  },
+  {
+   "english_metric_name": "comment_cnt",
+   "metric_name": "作品评论",
+   "metric_value": 6,
+   "trends": [
+    {
+     "date_time": "20261001",
+     "value": 3,
+     "change_rate": 0.1,
+     "douyin_value": 5,
+     "xigua_value": 0,
+     "yumme_value": 1
+    },
+    {
+     "date_time": "20261002",
+     "value": 4,
+     "change_rate": 0.1,
+     "douyin_value": 5,
+     "xigua_value": 0,
+     "yumme_value": 1
+    },
+    {
+     "date_time": "20261003",
+     "value": 4,
+     "change_rate": 0.1,
+     "douyin_value": 5,
+     "xigua_value": 0,
+     "yumme_value": 1
+    },
+    {
+     "date_time": "20261004",
+     "value": 5,
+     "change_rate": 0.1,
+     "douyin_value": 5,
+     "xigua_value": 0,
+     "yumme_value": 1
+    },
+    {
+     "date_time": "20261005",
+     "value": 6,
+     "change_rate": 0.1,
+     "douyin_value": 5,
+     "xigua_value": 0,
+     "yumme_value": 1
+    },
+    {
+     "date_time": "20261006",
+     "value": 6,
+     "change_rate": 0.1,
+     "douyin_value": 5,
+     "xigua_value": 0,
+     "yumme_value": 1
+    },
+    {
+     "date_time": "20261007",
+     "value": 7,
+     "change_rate": 0.1,
+     "douyin_value": 5,
+     "xigua_value": 0,
+     "yumme_value": 1
+    }
+   ]
+  },
+  {
+   "english_metric_name": "net_fans_cnt",
+   "metric_name": "净增粉丝",
+   "metric_value": 8,
+   "trends": [
+    {
+     "date_time": "20261001",
+     "value": 4,
+     "change_rate": 0.1,
+     "douyin_value": 7,
+     "xigua_value": 0,
+     "yumme_value": 1
+    },
+    {
+     "date_time": "20261002",
+     "value": 5,
+     "change_rate": 0.1,
+     "douyin_value": 7,
+     "xigua_value": 0,
+     "yumme_value": 1
+    },
+    {
+     "date_time": "20261003",
+     "value": 6,
+     "change_rate": 0.1,
+     "douyin_value": 7,
+     "xigua_value": 0,
+     "yumme_value": 1
+    },
+    {
+     "date_time": "20261004",
+     "value": 7,
+     "change_rate": 0.1,
+     "douyin_value": 7,
+     "xigua_value": 0,
+     "yumme_value": 1
+    },
+    {
+     "date_time": "20261005",
+     "value": 8,
+     "change_rate": 0.1,
+     "douyin_value": 7,
+     "xigua_value": 0,
+     "yumme_value": 1
+    },
+    {
+     "date_time": "20261006",
+     "value": 8,
+     "change_rate": 0.1,
+     "douyin_value": 7,
+     "xigua_value": 0,
+     "yumme_value": 1
+    },
+    {
+     "date_time": "20261007",
+     "value": 9,
+     "change_rate": 0.1,
+     "douyin_value": 7,
+     "xigua_value": 0,
+     "yumme_value": 1
+    }
+   ]
+  },
+  {
+   "english_metric_name": "cancel_fans_cnt",
+   "metric_name": "取关粉丝",
+   "metric_value": 2,
+   "trends": [
+    {
+     "date_time": "20261001",
+     "value": 1,
+     "change_rate": 0.1,
+     "douyin_value": 1,
+     "xigua_value": 0,
+     "yumme_value": 1
+    },
+    {
+     "date_time": "20261002",
+     "value": 1,
+     "change_rate": 0.1,
+     "douyin_value": 1,
+     "xigua_value": 0,
+     "yumme_value": 1
+    },
+    {
+     "date_time": "20261003",
+     "value": 1,
+     "change_rate": 0.1,
+     "douyin_value": 1,
+     "xigua_value": 0,
+     "yumme_value": 1
+    },
+    {
+     "date_time": "20261004",
+     "value": 1,
+     "change_rate": 0.1,
+     "douyin_value": 1,
+     "xigua_value": 0,
+     "yumme_value": 1
+    },
+    {
+     "date_time": "20261005",
+     "value": 2,
+     "change_rate": 0.1,
+     "douyin_value": 1,
+     "xigua_value": 0,
+     "yumme_value": 1
+    },
+    {
+     "date_time": "20261006",
+     "value": 2,
+     "change_rate": 0.1,
+     "douyin_value": 1,
+     "xigua_value": 0,
+     "yumme_value": 1
+    },
+    {
+     "date_time": "20261007",
+     "value": 2,
+     "change_rate": 0.1,
+     "douyin_value": 1,
+     "xigua_value": 0,
+     "yumme_value": 1
+    }
+   ]
+  },
+  {
+   "english_metric_name": "cover_click_ratio",
+   "metric_name": "封面点击率",
+   "metric_value": 0.05,
+   "trends": [
+    {
+     "date_time": "20261001",
+     "value": 0.03,
+     "change_rate": 0.1,
+     "douyin_value": 0,
+     "xigua_value": 0,
+     "yumme_value": 1
+    },
+    {
+     "date_time": "20261002",
+     "value": 0.035,
+     "change_rate": 0.1,
+     "douyin_value": 0,
+     "xigua_value": 0,
+     "yumme_value": 1
+    },
+    {
+     "date_time": "20261003",
+     "value": 0.04,
+     "change_rate": 0.1,
+     "douyin_value": 0,
+     "xigua_value": 0,
+     "yumme_value": 1
+    },
+    {
+     "date_time": "20261004",
+     "value": 0.045,
+     "change_rate": 0.1,
+     "douyin_value": 0,
+     "xigua_value": 0,
+     "yumme_value": 1
+    },
+    {
+     "date_time": "20261005",
+     "value": 0.05,
+     "change_rate": 0.1,
+     "douyin_value": 0,
+     "xigua_value": 0,
+     "yumme_value": 1
+    },
+    {
+     "date_time": "20261006",
+     "value": 0.055,
+     "change_rate": 0.1,
+     "douyin_value": 0,
+     "xigua_value": 0,
+     "yumme_value": 1
+    },
+    {
+     "date_time": "20261007",
+     "value": 0.06,
+     "change_rate": 0.1,
+     "douyin_value": 0,
+     "xigua_value": 0,
+     "yumme_value": 1
+    }
+   ]
+  },
+  {
+   "english_metric_name": "homepage_view_cnt",
+   "metric_name": "主页访问",
+   "metric_value": 78,
+   "trends": [
+    {
+     "date_time": "20261001",
+     "value": 46,
+     "change_rate": 0.1,
+     "douyin_value": 70,
+     "xigua_value": 0,
+     "yumme_value": 1
+    },
+    {
+     "date_time": "20261002",
+     "value": 54,
+     "change_rate": 0.1,
+     "douyin_value": 70,
+     "xigua_value": 0,
+     "yumme_value": 1
+    },
+    {
+     "date_time": "20261003",
+     "value": 62,
+     "change_rate": 0.1,
+     "douyin_value": 70,
+     "xigua_value": 0,
+     "yumme_value": 1
+    },
+    {
+     "date_time": "20261004",
+     "value": 70,
+     "change_rate": 0.1,
+     "douyin_value": 70,
+     "xigua_value": 0,
+     "yumme_value": 1
+    },
+    {
+     "date_time": "20261005",
+     "value": 78,
+     "change_rate": 0.1,
+     "douyin_value": 70,
+     "xigua_value": 0,
+     "yumme_value": 1
+    },
+    {
+     "date_time": "20261006",
+     "value": 85,
+     "change_rate": 0.1,
+     "douyin_value": 70,
+     "xigua_value": 0,
+     "yumme_value": 1
+    },
+    {
+     "date_time": "20261007",
+     "value": 93,
+     "change_rate": 0.1,
+     "douyin_value": 70,
+     "xigua_value": 0,
+     "yumme_value": 1
+    }
+   ]
+  },
+  {
+   "english_metric_name": "publish_cnt",
+   "metric_name": "投稿量",
+   "metric_value": 3,
+   "trends": [
+    {
+     "date_time": "20261001",
+     "value": 1,
+     "change_rate": 0.1,
+     "douyin_value": 2,
+     "xigua_value": 0,
+     "yumme_value": 1
+    },
+    {
+     "date_time": "20261002",
+     "value": 2,
+     "change_rate": 0.1,
+     "douyin_value": 2,
+     "xigua_value": 0,
+     "yumme_value": 1
+    },
+    {
+     "date_time": "20261003",
+     "value": 2,
+     "change_rate": 0.1,
+     "douyin_value": 2,
+     "xigua_value": 0,
+     "yumme_value": 1
+    },
+    {
+     "date_time": "20261004",
+     "value": 2,
+     "change_rate": 0.1,
+     "douyin_value": 2,
+     "xigua_value": 0,
+     "yumme_value": 1
+    },
+    {
+     "date_time": "20261005",
+     "value": 3,
+     "change_rate": 0.1,
+     "douyin_value": 2,
+     "xigua_value": 0,
+     "yumme_value": 1
+    },
+    {
+     "date_time": "20261006",
+     "value": 3,
+     "change_rate": 0.1,
+     "douyin_value": 2,
+     "xigua_value": 0,
+     "yumme_value": 1
+    },
+    {
+     "date_time": "20261007",
+     "value": 3,
+     "change_rate": 0.1,
+     "douyin_value": 2,
+     "xigua_value": 0,
+     "yumme_value": 1
+    }
+   ]
+  },
+  {
+   "english_metric_name": "completion_rate_5s",
+   "metric_name": "5秒完播率",
+   "metric_value": 0.6,
+   "trends": [
+    {
+     "date_time": "20261001",
+     "value": 0.36,
+     "change_rate": 0.1,
+     "douyin_value": 0,
+     "xigua_value": 0,
+     "yumme_value": 1
+    },
+    {
+     "date_time": "20261002",
+     "value": 0.42,
+     "change_rate": 0.1,
+     "douyin_value": 0,
+     "xigua_value": 0,
+     "yumme_value": 1
+    },
+    {
+     "date_time": "20261003",
+     "value": 0.48,
+     "change_rate": 0.1,
+     "douyin_value": 0,
+     "xigua_value": 0,
+     "yumme_value": 1
+    },
+    {
+     "date_time": "20261004",
+     "value": 0.54,
+     "change_rate": 0.1,
+     "douyin_value": 0,
+     "xigua_value": 0,
+     "yumme_value": 1
+    },
+    {
+     "date_time": "20261005",
+     "value": 0.6,
+     "change_rate": 0.1,
+     "douyin_value": 0,
+     "xigua_value": 0,
+     "yumme_value": 1
+    },
+    {
+     "date_time": "20261006",
+     "value": 0.66,
+     "change_rate": 0.1,
+     "douyin_value": 0,
+     "xigua_value": 0,
+     "yumme_value": 1
+    },
+    {
+     "date_time": "20261007",
+     "value": 0.72,
+     "change_rate": 0.1,
+     "douyin_value": 0,
+     "xigua_value": 0,
+     "yumme_value": 1
+    }
+   ]
+  },
+  {
+   "english_metric_name": "bounce_rate_2s",
+   "metric_name": "2秒跳出率",
+   "metric_value": 0.24,
+   "trends": [
+    {
+     "date_time": "20261001",
+     "value": 0.144,
+     "change_rate": 0.1,
+     "douyin_value": 0,
+     "xigua_value": 0,
+     "yumme_value": 1
+    },
+    {
+     "date_time": "20261002",
+     "value": 0.168,
+     "change_rate": 0.1,
+     "douyin_value": 0,
+     "xigua_value": 0,
+     "yumme_value": 1
+    },
+    {
+     "date_time": "20261003",
+     "value": 0.192,
+     "change_rate": 0.1,
+     "douyin_value": 0,
+     "xigua_value": 0,
+     "yumme_value": 1
+    },
+    {
+     "date_time": "20261004",
+     "value": 0.216,
+     "change_rate": 0.1,
+     "douyin_value": 0,
+     "xigua_value": 0,
+     "yumme_value": 1
+    },
+    {
+     "date_time": "20261005",
+     "value": 0.24,
+     "change_rate": 0.1,
+     "douyin_value": 0,
+     "xigua_value": 0,
+     "yumme_value": 1
+    },
+    {
+     "date_time": "20261006",
+     "value": 0.264,
+     "change_rate": 0.1,
+     "douyin_value": 0,
+     "xigua_value": 0,
+     "yumme_value": 1
+    },
+    {
+     "date_time": "20261007",
+     "value": 0.288,
+     "change_rate": 0.1,
+     "douyin_value": 0,
+     "xigua_value": 0,
+     "yumme_value": 1
+    }
+   ]
+  },
+  {
+   "english_metric_name": "avg_view_second",
+   "metric_name": "平均播放时长",
+   "metric_value": 12.3,
+   "trends": [
+    {
+     "date_time": "20261001",
+     "value": 7.38,
+     "change_rate": 0.1,
+     "douyin_value": 11,
+     "xigua_value": 0,
+     "yumme_value": 1
+    },
+    {
+     "date_time": "20261002",
+     "value": 8.61,
+     "change_rate": 0.1,
+     "douyin_value": 11,
+     "xigua_value": 0,
+     "yumme_value": 1
+    },
+    {
+     "date_time": "20261003",
+     "value": 9.84,
+     "change_rate": 0.1,
+     "douyin_value": 11,
+     "xigua_value": 0,
+     "yumme_value": 1
+    },
+    {
+     "date_time": "20261004",
+     "value": 11.07,
+     "change_rate": 0.1,
+     "douyin_value": 11,
+     "xigua_value": 0,
+     "yumme_value": 1
+    },
+    {
+     "date_time": "20261005",
+     "value": 12.3,
+     "change_rate": 0.1,
+     "douyin_value": 11,
+     "xigua_value": 0,
+     "yumme_value": 1
+    },
+    {
+     "date_time": "20261006",
+     "value": 13.53,
+     "change_rate": 0.1,
+     "douyin_value": 11,
+     "xigua_value": 0,
+     "yumme_value": 1
+    },
+    {
+     "date_time": "20261007",
+     "value": 14.76,
+     "change_rate": 0.1,
+     "douyin_value": 11,
+     "xigua_value": 0,
+     "yumme_value": 1
+    }
+   ]
+  },
+  {
+   "english_metric_name": "total_fans_cnt",
+   "metric_name": "粉丝",
+   "metric_value": 500,
+   "trends": [
+    {
+     "date_time": "20261001",
+     "value": 300,
+     "change_rate": 0.1,
+     "douyin_value": 450,
+     "xigua_value": 0,
+     "yumme_value": 1
+    },
+    {
+     "date_time": "20261002",
+     "value": 350,
+     "change_rate": 0.1,
+     "douyin_value": 450,
+     "xigua_value": 0,
+     "yumme_value": 1
+    },
+    {
+     "date_time": "20261003",
+     "value": 400,
+     "change_rate": 0.1,
+     "douyin_value": 450,
+     "xigua_value": 0,
+     "yumme_value": 1
+    },
+    {
+     "date_time": "20261004",
+     "value": 450,
+     "change_rate": 0.1,
+     "douyin_value": 450,
+     "xigua_value": 0,
+     "yumme_value": 1
+    },
+    {
+     "date_time": "20261005",
+     "value": 500,
+     "change_rate": 0.1,
+     "douyin_value": 450,
+     "xigua_value": 0,
+     "yumme_value": 1
+    },
+    {
+     "date_time": "20261006",
+     "value": 550,
+     "change_rate": 0.1,
+     "douyin_value": 450,
+     "xigua_value": 0,
+     "yumme_value": 1
+    },
+    {
+     "date_time": "20261007",
+     "value": 600,
+     "change_rate": 0.1,
+     "douyin_value": 450,
+     "xigua_value": 0,
+     "yumme_value": 1
+    }
+   ]
+  }
+ ]
+}

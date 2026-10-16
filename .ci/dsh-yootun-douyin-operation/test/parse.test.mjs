@@ -19,6 +19,12 @@ import {
   parseItemCompare,
   parseItemMget,
   parseItemPerformance,
+  dashboardDay,
+  dashboardMetricValue,
+  parseDashboardMetrics,
+  parseDashboard,
+  parseDashboardFans,
+  parseFansSummary,
   parseJsonPreservingIds,
   parseItemSummarize,
   parsePlaySource,
@@ -380,11 +386,31 @@ test('作品总览解析：summarize 完播率按作品 id 建索引', () => {
       { aweme_id: '444' },
     ],
   })
-  assert.deepEqual(rows.get('111'), { completion_rate_pct: 34.22 })
-  assert.deepEqual(rows.get('222'), { completion_rate_pct: 12.34 })
+  // 1015 方案 §2.5：完播率与吸粉量独立判缺——缺失方为 null（列级缺口），不丢行。
+  assert.deepEqual(rows.get('111'), { completion_rate_pct: 34.22, fans_gain_count: null })
+  assert.deepEqual(rows.get('222'), { completion_rate_pct: 12.34, fans_gain_count: null })
   assert.equal(rows.get('333'), undefined)
   assert.equal(rows.get('444'), undefined)
   assert.equal(parseItemSummarize({}).size, 0)
+})
+
+test('作品总览解析：summarize 吸粉量独立判缺（1015 方案 §2.5）', () => {
+  const rows = parseItemSummarize({
+    item_list: [
+      // 只有吸粉量（完播率缺失）：仍建行，完播率为 null。
+      { aweme_id: 'aaa', summarize_data: { new_fans_count: 9 } },
+      // 两者都有。
+      { aweme_id: 'bbb', summarize_data: { play_finish_ratio: 0.5, new_fans_count: 3 } },
+      // 负吸粉量视为异常响应 → null（记缺口），不透传负值。
+      { aweme_id: 'ccc', summarize_data: { new_fans_count: -2 } },
+      // 两者都缺 → 不建行。
+      { aweme_id: 'ddd', summarize_data: { home_page_view_count: 6 } },
+    ],
+  })
+  assert.deepEqual(rows.get('aaa'), { completion_rate_pct: null, fans_gain_count: 9 })
+  assert.deepEqual(rows.get('bbb'), { completion_rate_pct: 50, fans_gain_count: 3 })
+  assert.deepEqual(rows.get('ccc'), { completion_rate_pct: null, fans_gain_count: null })
+  assert.equal(rows.get('ddd'), undefined)
 })
 
 test('流量来源/画像：期望字段缺失时返回 null（缺口而不是空数据）', async () => {
@@ -554,4 +580,230 @@ test('buildWorkPayload：进度分析取到但为空 → no_data，未取到 →
   // 完全没取到（请求失败/未拦截）→ 仍是未暴露，不能与"确认无数据"混为一谈。
   const missing = buildWorkPayload({ ...base, progress: null })
   assert.equal(missing.dataGap.progress_analysis.reason, 'not_exposed')
+})
+
+// ---------------------------------------------------------------------------
+// 账号大盘 / 粉丝画像解析回归（1015 方案 §6.2；fixture：test/fixtures/1015/）
+// ---------------------------------------------------------------------------
+
+const FIXTURE_DIR_1015 = new URL('./fixtures/1015/', import.meta.url)
+const DOCS_FIXTURE_DIR_1015 = new URL('../../../docs/1015/douyin/fixtures/', import.meta.url)
+
+async function fixture1015(name) {
+  return JSON.parse(await readFile(new URL(name, FIXTURE_DIR_1015), 'utf8'))
+}
+
+test('1015 fixture 与 docs 契约样例一致（docs 可达时）', async () => {
+  if (!existsSync(DOCS_FIXTURE_DIR_1015)) return
+  const names = [
+    'dashboard.sample.json',
+    'dashboard.recent30.sample.json',
+    'dashboard.recent90.degraded.sample.json',
+    'dashboard.partial_metrics.sample.json',
+    'dashboard.session_code_8.sample.json',
+    'dashboard_fans.sample.json',
+    'dashboard_fans.recent90.error.sample.json',
+    'fans_summary.sample.json',
+    'item_summarize.sample.json',
+    'work_list.cover.sample.json',
+    'work_list.private_item.sample.json',
+    'mcp_account_overview.sample.json',
+    'mcp_work_detail.sample.json',
+  ]
+  for (const name of names) {
+    const [a, b] = await Promise.all([
+      readFile(new URL(name, FIXTURE_DIR_1015)),
+      readFile(new URL(name, DOCS_FIXTURE_DIR_1015)),
+    ])
+    assert.ok(a.equals(b), `1015 fixture 与 docs 样例不一致：${name}`)
+  }
+})
+
+test('parseDashboard：13 指标 × 日度 trends → 按日合并行（比率 ×100）', async () => {
+  const json = await fixture1015('dashboard.sample.json')
+  const rows = parseDashboard(json)
+  assert.ok(Array.isArray(rows) && rows.length >= 1)
+  const first = rows[0]
+  assert.equal(first.day, '2026-10-01')
+  assert.equal(first.play_cnt, 7407)
+  assert.equal(first.share_cnt, rows[0].share_cnt)
+  // 比率指标 ×100（fixture cover_click_ratio 为 0..1 原值占位）。
+  const ratioRow = rows.find(row => row.cover_click_ratio_pct !== undefined)
+  assert.ok(ratioRow, '比率列存在')
+  assert.ok(ratioRow.cover_click_ratio_pct > 0 && ratioRow.cover_click_ratio_pct <= 100)
+  // 同构校验：所有行都带 play_cnt；平均播放时长为秒（不 ×100）。
+  for (const row of rows) {
+    assert.equal(typeof row.play_cnt, 'number')
+    if (row.avg_view_second !== undefined) assert.ok(row.avg_view_second < 3600)
+  }
+})
+
+test('parseDashboard：回填窗口（recent30）与部分指标缺省', async () => {
+  const recent30 = await fixture1015('dashboard.recent30.sample.json')
+  const rows30 = parseDashboard(recent30)
+  // fixture 为占位形态（play_cnt 单指标 × 2 个日度点）：行数 = trends 点数，
+  // 语义验证"窗口内每日一行"而非 30 天满量。
+  assert.equal(rows30.length, 2)
+  assert.equal(rows30[0].day, '2026-09-15')
+  assert.ok(rows30.every(row => typeof row.play_cnt === 'number'))
+
+  const partial = await fixture1015('dashboard.partial_metrics.sample.json')
+  const rowsPartial = parseDashboard(partial)
+  assert.ok(rowsPartial.length >= 1)
+  // 缺失 metric 整组缺省：出现的行只含实际返回的指标列，绝不造 0。
+  for (const row of rowsPartial) {
+    for (const [key, value] of Object.entries(row)) {
+      if (key !== 'day') assert.notEqual(value, 0, `${key} 缺省不得伪造 0`)
+    }
+  }
+})
+
+test('parseDashboard：90 降级形态（仅 1 指标）与会话失效（status_code=8）', async () => {
+  const degraded = await fixture1015('dashboard.recent90.degraded.sample.json')
+  const rows = parseDashboard(degraded)
+  assert.ok(rows.length >= 1)
+  const keys = new Set(rows.flatMap(row => Object.keys(row).filter(key => key !== 'day')))
+  assert.ok(keys.size <= 2, `降级形态只有极少数指标：${[...keys].join(',')}`)
+
+  const expired = await fixture1015('dashboard.session_code_8.sample.json')
+  assert.throws(() => parseDashboard(expired), SessionInvalidError)
+})
+
+test('parseDashboardFans：6 粉丝指标与 status_code=5 拒绝（非会话失效）', async () => {
+  const fans = await fixture1015('dashboard_fans.sample.json')
+  const rows = parseDashboardFans(fans)
+  assert.ok(rows.length >= 1)
+  const names = new Set(rows.flatMap(row => Object.keys(row).filter(key => key !== 'day')))
+  for (const expected of ['net_fans_cnt', 'total_fans_cnt', 'new_fans_cnt', 'home_view_fans_cnt']) {
+    assert.ok(names.has(expected), `粉丝指标 ${expected} 应存在`)
+  }
+
+  // 90 天请求 status_code=5 拒绝：不是会话失效，解析为空行（由采集层记 gap）。
+  const rejected = await fixture1015('dashboard_fans.recent90.error.sample.json')
+  const rejectedRows = parseDashboardFans(rejected)
+  assert.ok(Array.isArray(rejectedRows))
+})
+
+test('parseFansSummary：六类分布 + 隐私榜单物理剔除', async () => {
+  const json = await fixture1015('fans_summary.sample.json')
+  const profile = parseFansSummary(json)
+  assert.ok(profile && typeof profile === 'object')
+  assert.deepEqual(profile.age_distribution?.[0], { label: '<23', count: 11 })
+  // 性别 label 英文原值透出（中文转换属 UI 层职责）。
+  assert.equal(profile.device_distribution === null || Array.isArray(profile.device_distribution), true)
+  const keys = Object.keys(profile)
+  assert.deepEqual(keys.sort(), [
+    'active_levels',
+    'active_time_range',
+    'age_distribution',
+    'city_distribution',
+    'device_distribution',
+    'interest_distribution',
+  ].sort())
+  // 隐私边界：输出物理上不含任何榜单/涨粉来源/趋势键。
+  const serialized = JSON.stringify(profile)
+  for (const forbidden of ['billboard', 'sec_uid', 'from_label', 'trend']) {
+    assert.ok(!serialized.includes(forbidden), `隐私边界：输出不得含 ${forbidden}`)
+  }
+})
+
+test('parseFansSummary：空画像返回 null（缺口而不是空对象）', () => {
+  assert.equal(parseFansSummary({ status_code: 0 }), null)
+  assert.equal(parseFansSummary({}), null)
+})
+
+test('normalizeWork：大写 Cover 键兼容（1015 §2.4 页面 Web 模式实测）', async () => {
+  const json = await fixture1015('work_list.cover.sample.json')
+  const data = json.data || json
+  const aweme = (data.aweme_list || data.items || [])[0]
+  const work = normalizeWork(aweme)
+  assert.equal(work.cover_url, 'https://p-sign.douyinpic.com/example~tplv.webp')
+  assert.equal(work.work_id, '7696000000000000001', '19 位 id 文本保护')
+  assert.equal(work.is_private, false)
+  // 私密作品样本：is_private=true 且计数缺失。
+  const priv = await fixture1015('work_list.private_item.sample.json')
+  const privData = priv.data || priv
+  const privAweme = (privData.aweme_list || privData.items || [])[0]
+  const privWork = normalizeWork(privAweme)
+  assert.equal(privWork.is_private, true)
+})
+
+test('buildWorkPayload：封面与吸粉量透传 + 缺失记 gap', () => {
+  const base = {
+    work_id: 'w1',
+    title: '示例',
+    url: 'https://www.douyin.com/video/w1',
+    publish_time: '2026-10-01T00:00:00.000Z',
+    cover_url: 'https://cdn.example/c.webp',
+    play_count: 100,
+  }
+  const summarize = new Map([['w1', { completion_rate_pct: 12.09, fans_gain_count: 9 }]])
+  const at = '2026-10-15T00:00:00.000Z'
+  const payload = buildWorkPayload({
+    work: base, performance: null, compare: null, source: null, portrait: null,
+    search: null, progress: null, mget: null, summarize, hotword: null, observedAt: at,
+  })
+  assert.equal(payload.cover_url, 'https://cdn.example/c.webp')
+  assert.equal(payload.fans_gain_count, 9)
+  const missing = buildWorkPayload({
+    work: { ...base, cover_url: null }, performance: null, compare: null, source: null,
+    portrait: null, search: null, progress: null, mget: null, summarize: null, hotword: null, observedAt: at,
+  })
+  assert.equal(missing.cover_url, null)
+  assert.equal(missing.fans_gain_count, null)
+  assert.equal(missing.dataGap.cover_url.reason, 'not_exposed')
+  assert.equal(missing.dataGap.fans_gain_count.reason, 'not_exposed')
+})
+
+test('dashboardDay：round-trip 校验拒绝 roll-over 日期（1015 review P1）', () => {
+  assert.equal(dashboardDay('20261008'), '2026-10-08')
+  assert.equal(dashboardDay('20260230'), null, '2 月 30 日是 roll-over 不是 NaN')
+  assert.equal(dashboardDay('20261301'), null, '13 月')
+  assert.equal(dashboardDay('20260431'), null, '4 月 31 日')
+  assert.equal(dashboardDay('2026-10-08'), null, '非紧凑格式')
+  assert.equal(dashboardDay(''), null)
+  assert.equal(dashboardDay(null), null)
+})
+
+test('dashboardMetricValue：计数列值域守卫（畸形值列缺省，不透传拒批）', () => {
+  // 计数列 ge=0：负值 → undefined。
+  assert.equal(dashboardMetricValue('play_cnt', -5), undefined)
+  assert.equal(dashboardMetricValue('play_cnt', 0), 0, '0 是真实值')
+  assert.equal(dashboardMetricValue('play_cnt', 83443), 83443)
+  // net_fans_cnt 可负但限 64 位。
+  assert.equal(dashboardMetricValue('net_fans_cnt', -3), -3)
+  assert.equal(dashboardMetricValue('net_fans_cnt', -(2 ** 64)), undefined, '超安全整数下界')
+  // 超安全整数上界（float64 精度不可信）/ 非有限 / 缺失 → undefined。
+  assert.equal(dashboardMetricValue('play_cnt', Number.MAX_SAFE_INTEGER + 2), undefined)
+  assert.equal(dashboardMetricValue('play_cnt', 'abc'), undefined)
+  assert.equal(dashboardMetricValue('play_cnt', null), undefined)
+  // avg_view_second 非负秒（2 位小数）。
+  assert.equal(dashboardMetricValue('avg_view_second', 12.7879), 12.79)
+  assert.equal(dashboardMetricValue('avg_view_second', -1), undefined)
+})
+
+test('parseDashboardMetrics：畸形行剔除不拒批（值域守卫集成）', () => {
+  const json = {
+    status_code: 0,
+    metrics: [
+      {
+        english_metric_name: 'play_cnt',
+        trends: [
+          { date_time: '20261008', value: 100 },
+          { date_time: '20261009', value: -50 },
+          { date_time: '20260230', value: 200 },
+          { date_time: '20261010', value: Number.MAX_SAFE_INTEGER + 2 },
+        ],
+      },
+    ],
+  }
+  const rows = parseDashboardMetrics(json)
+  assert.deepEqual(rows, [{ day: '2026-10-08', play_cnt: 100 }], '畸形日期/负值/超界行级剔除，其余照常入库')
+})
+
+test('parseFansSummary：分布条目截断至服务端上限 64', () => {
+  const city = Array.from({ length: 70 }, (_, index) => ({ label: `省${index}`, count: index + 1 }))
+  const profile = parseFansSummary({ status_code: 0, city_distribution: city })
+  assert.equal(profile.city_distribution.length, 64, '超限截断而不是整批被服务端 max_length 拒绝')
+  assert.deepEqual(profile.city_distribution[0], { label: '省0', count: 1 })
 })

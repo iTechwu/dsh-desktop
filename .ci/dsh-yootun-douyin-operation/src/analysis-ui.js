@@ -11,8 +11,9 @@
 // 本账号爆款视频固定六列表格、页面底部不显示数据质量与样本类辅助信息
 // （这些字段仍由接口返回并保留在导出报告中）。
 
-import { basisLines, formatDateTime, formatAgeBucket, genderLabel, trafficSourceLabel, trimNumber } from './ui-format.js'
+import { basisLines, deltaText, formatDateTime, formatAgeBucket, genderLabel, trafficSourceLabel, trimNumber } from './ui-format.js'
 import { FilterSelect } from './select-ui.js'
+import { TrendChart, trendLayout, useMeasuredWidth } from './trend-chart.js'
 
 // React 由 client.js 内联作用域提供（构建时剥离本模块的 require，与 overview-ui 同法）。
 let __react = null
@@ -50,6 +51,18 @@ function count(value) {
   return formatted === null ? '—' : formatted
 }
 
+// delta 着色 span（Kpi value 槽）：tone=up 绿 / down 红 / flat 中性。
+function deltaColored(delta) {
+  return h2('span', { className: `ydo-delta ydo-delta-${delta.tone}` }, delta.text)
+}
+
+// 脱粉量固定红色语义（正值计数=坏消息；负值/缺失按 deltaText 原语义）。
+function deltaRed(value) {
+  const delta = deltaText(value)
+  if (delta.tone === 'flat') return h2('span', { className: 'ydo-delta ydo-delta-flat' }, delta.text)
+  return h2('span', { className: 'ydo-delta ydo-delta-down' }, delta.text)
+}
+
 function labelText(labels, t) {
   if (!Array.isArray(labels) || !labels.length) return t('insufficientSample')
   // 未登记的标签收敛「其他标签」，原始 key 不进页面（验收 P2）；去重避免连续重复。
@@ -57,143 +70,13 @@ function labelText(labels, t) {
   return [...new Set(labels.map(label => known[label] || t('labelOther')))].join(' + ')
 }
 
-export const TREND_METRICS = ['play', 'like', 'comment', 'collect', 'share', 'fans']
+// 1015 方案 §5.4：+net_fans（仅 account_daily 日度净增原值，服务端分发）。
+export const TREND_METRICS = ['play', 'like', 'comment', 'collect', 'share', 'fans', 'net_fans']
 
-// ---------------------------------------------------------------------------
-// 趋势图展示几何（2026-09-17 优化：30 天固定窗口 + 自然日横轴 + min/max 纵轴）。
-//
-// - 时间范围固定最近 30 个自然日（fromDay=今天-29 ~ toDay=今天），与请求窗口一致；
-//   没有采集记录的日期不补 0，只作为缺口处理；
-// - 数据点横坐标按自然日位置计算 x=(day-fromDay)/(toDay-fromDay)，两次采集之间
-//   保留真实日期间隔，不按已有点压缩；elapsedSeconds 只用于 tooltip 与间隔说明；
-// - 纵轴取窗口内有效值 min/max 上下各 10% 边距，小幅变化可见；所有点同值时纵轴
-//   固定居中；yPct 保留小数不再取整。yPct 语义 = 值在 [yMin,yMax] 归一化位置的
-//   百分比（值越大 yPct 越大）；SVG 的 y 轴向下，渲染层用 (100-yPct) 折算成像素
-//   y，值大的点在视觉上方（用户反馈 2026-09-18：此前两层各反一次导致曲线整体
-//   上下颠倒，递增数据显示成递减）；
-// - 相邻采集日间隔 >1 天即为缺口：连线用虚线、缺口两端数据点保留，
-//   前后不补零、不伪造数据；单点只显示数据点并提示样本不足。
-// ---------------------------------------------------------------------------
-
-const TREND_WINDOW_DAYS = 30
-const TREND_AXIS_TICKS = [0, 7, 14, 21, 29]
-// 数据点与绘图区左右边缘的安全边距（用户反馈 2026-09-20 需求 2）：起止日的点
-// 半径 4px，不加边距会半个点被 viewBox 裁掉（当天收盘点贴右缘最明显）。
-const TREND_PAD_X = 6
-
-function localIsoDay(date) {
-  const pad = n => String(n).padStart(2, '0')
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
-}
-
-function addDaysIso(iso, days) {
-  const base = new Date(`${iso}T00:00:00Z`)
-  base.setUTCDate(base.getUTCDate() + days)
-  return localIsoDay(new Date(base.getTime() + base.getTimezoneOffset() * 60000))
-}
-
-export function trendLayout(points, { width = 600, now = null } = {}) {
-  const empty = { renderable: false, single: false, nodes: [], segments: [], axisLabels: [] }
-  const days = (Array.isArray(points) ? points : [])
-    .filter(point => point && typeof point.day === 'string' && Number.isFinite(Number(point.value)))
-    .map(point => ({ ...point, value: Number(point.value) }))
-    .sort((a, b) => (a.day < b.day ? -1 : a.day > b.day ? 1 : 0))
-  if (!days.length) return empty
-
-  // 30 天固定窗口（本地自然日；服务端对越界日期已 clamp，这里再做防御收敛）。
-  const todayIso = localIsoDay(now ? new Date(now) : new Date())
-  const fromDay = addDaysIso(todayIso, -(TREND_WINDOW_DAYS - 1))
-  const fromMs = Date.parse(`${fromDay}T00:00:00Z`)
-  const spanMs = (TREND_WINDOW_DAYS - 1) * 86400000
-  const clampDayMs = day => {
-    const ms = Date.parse(`${day}T00:00:00Z`)
-    if (Number.isNaN(ms)) return null
-    return Math.min(fromMs + spanMs, Math.max(fromMs, ms))
-  }
-
-  const nodes = []
-  for (const point of days) {
-    const clamped = clampDayMs(point.day)
-    if (clamped === null) continue
-    const prev = nodes[nodes.length - 1]
-    const gapDaysBefore = prev
-      ? Math.max(0, Math.round((clamped - prev._ms) / 86400000) - 1)
-      : 0
-    nodes.push({
-      day: point.day,
-      value: point.value,
-      elapsedSeconds: point.elapsedSeconds,
-      counterRevised: point.counterRevised === true,
-      gapDaysBefore,
-      x: Math.round((TREND_PAD_X + ((clamped - fromMs) / spanMs) * (width - TREND_PAD_X * 2)) * 100) / 100,
-      yPct: 0,
-      _ms: clamped,
-    })
-  }
-  if (!nodes.length) return empty
-
-  // 纵轴：窗口内有效值 min/max 上下各 10% 边距；同值固定居中；yPct 保留小数。
-  // yPct = 值的归一化位置百分比（值越大 yPct 越大）；SVG y 轴向下的翻转只在
-  // 渲染层 (100-yPct) 做一次，布局层不再预反——两层各反一次会把曲线画颠倒。
-  const values = nodes.map(node => node.value)
-  const rawMin = Math.min(...values)
-  const rawMax = Math.max(...values)
-  const sameValue = rawMin === rawMax
-  let yMin = rawMin
-  let yMax = rawMax
-  if (!sameValue) {
-    const pad = (rawMax - rawMin) * 0.1
-    yMin = rawMin - pad
-    yMax = rawMax + pad
-  }
-  for (const node of nodes) {
-    node.yPct = sameValue
-      ? 50
-      : Math.round(((node.value - yMin) / (yMax - yMin)) * 10000) / 100
-  }
-
-  // 分段：相邻采集日间隔 >1 天为缺口（虚线），否则实线；缺口两端数据点保留。
-  const segments = []
-  for (let index = 1; index < nodes.length; index += 1) {
-    const prev = nodes[index - 1]
-    const node = nodes[index]
-    segments.push({
-      x1: prev.x, y1: prev.yPct,
-      x2: node.x, y2: node.yPct,
-      dashed: node.gapDaysBefore > 0,
-      gapDaysBefore: node.gapDaysBefore,
-      prevX: prev.x, prevDay: prev.day,
-    })
-  }
-
-  // 横轴日期标签：固定 5 个刻度位（0/7/14/21/29 天处），窄屏由 CSS 隐藏偶数位。
-  const axisLabels = TREND_AXIS_TICKS.map((offset, index) => ({
-    day: addDaysIso(fromDay, offset),
-    x: Math.round((TREND_PAD_X + (offset / (TREND_WINDOW_DAYS - 1)) * (width - TREND_PAD_X * 2)) * 100) / 100,
-    pos: index === 0 ? 'start' : index === TREND_AXIS_TICKS.length - 1 ? 'end' : 'middle',
-    minor: index % 2 === 1,
-  }))
-
-  return {
-    renderable: true,
-    single: nodes.length === 1,
-    width,
-    nodes,
-    segments,
-    axisLabels,
-    yMax: rawMax,
-    yMin: rawMin,
-    sameValue,
-    fromDay,
-    toDay: todayIso,
-  }
-}
-
-// 注意联动：SVG viewBox 高与 client.js 中 `.ydo-an-trend-svg{height:168px}` 必须一致，
-// 单改一处会因 viewBox/CSS 比例失配导致图形变形（测试有字面值锁定）。
-const TREND_VIEW_HEIGHT = 168
-const TREND_PAD_TOP = 16
-const TREND_PAD_BOTTOM = 30
+// 趋势布局/SVG 绘制使用共享模块 trend-chart.js（1015 UI 规格 §5.4，作品详情弹框
+// 复用同一套 30 天固定窗口 + 边界 clamp + gap 断线逻辑）；内联后标识符同作用域
+// 直接可见（trendLayout/TrendChart 唯一声明，禁止在此模块再声明同名代理——同名
+// function 声明会按段序覆盖共享版，弹框的 Y 轴文本会因此抛错）。
 
 // y 轴标签专用格式化（需求 5a，2026-09-18）：≥1万固定保留 1 位小数万单位
 //（如 165.3万），<1万千分位。不走 formatWan 的「≥100万取整」口径——那会让
@@ -207,109 +90,12 @@ export function axisValueText(value) {
   return num.toLocaleString('en-US')
 }
 
-// 容器实测宽度（需求 5b，2026-09-18）：趋势 SVG 的 viewBox 用真实面板宽度，
-// 消除「固定 600 宽被 width:100% 拉伸 ~3 倍导致轴文字/点线过大」的根因；
-// ResizeObserver 跟随面板尺寸变化。沙箱/无 ResizeObserver 环境降级为默认宽。
-// callback ref 模式：hook 必须在 AnalysisPage 任何早退 return 之前调用（Rules of
-// Hooks），effect 依赖 [node, width]——node 入依赖才能感知「早退→完整渲染」后
-// 容器才真正挂载的时机，否则 observer 永远 attach 不上、宽停在校正值。
-function useMeasuredWidth(fallbackWidth = 600) {
-  const { useState, useEffect } = react()
-  const [node, setNode] = useState(null)
-  const [width, setWidth] = useState(fallbackWidth)
-  useEffect(() => {
-    if (!node || typeof ResizeObserver === 'undefined') return undefined
-    const observer = new ResizeObserver(entries => {
-      const entry = entries && entries[0]
-      const nextWidth = entry && entry.contentRect ? Math.round(entry.contentRect.width) : 0
-      // 忽略塌缩态（隐藏/折叠时的 0 宽）与同值，避免无效重渲。
-      if (nextWidth >= 200 && nextWidth !== width) setWidth(nextWidth)
-    })
-    observer.observe(node)
-    return () => observer.disconnect()
-  }, [node, width])
-  return [setNode, width]
-}
+// 容器实测宽度（需求 5b）共享自 trend-chart.js（1015 §5.4）；callback ref 模式与
+// Rules of Hooks 约束（hook 必须在 AnalysisPage 任何早退 return 之前调用）不变。
 
-// SVG 趋势图（2026-09-17 优化）：黑色折线 2px、缺口虚线、数据点 6px、
-// 低透明度面积填充、浅灰网格与坐标文字、日期标签固定 5 刻度位（窄屏隐藏偶数位）。
-function TrendChart({ layout, t }) {
-  const { width, nodes, segments, axisLabels, yMax, yMin } = layout
-  const plotHeight = TREND_VIEW_HEIGHT - TREND_PAD_TOP - TREND_PAD_BOTTOM
-  const yOf = node => TREND_PAD_TOP + ((100 - node.yPct) / 100) * plotHeight
-  const areaPoints = nodes.map(node => `${node.x},${yOf(node)}`).join(' ') +
-    ` ${nodes[nodes.length - 1].x},${TREND_PAD_TOP + plotHeight} ${nodes[0].x},${TREND_PAD_TOP + plotHeight}`
-  const gridYs = [TREND_PAD_TOP, TREND_PAD_TOP + plotHeight / 2, TREND_PAD_TOP + plotHeight]
-  // y 轴标签（需求 5a）：专用格式化保留 1 位小数万单位；min/max 格式化同文时
-  // 退千分位完整数字（不走 formatWan——其 ≥100万取整口径正是同文根因），
-  // 保证两端可区分。非有限数回退 —，超长截断兜底。
-  const axisFallback = value => {
-    const formatted = count(value)
-    return formatted === null ? '—' : (formatted.length > 12 ? `${formatted.slice(0, 12)}…` : formatted)
-  }
-  let yMaxText = axisValueText(yMax) || axisFallback(yMax)
-  let yMinText = axisValueText(yMin) || axisFallback(yMin)
-  if (yMaxText === yMinText) {
-    yMaxText = Math.round(Number(yMax)).toLocaleString('en-US')
-    yMinText = Math.round(Number(yMin)).toLocaleString('en-US')
-  }
+// SVG 趋势图即共享 TrendChart（trend-chart.js，1015 UI 规格 §5.4）：
+// axisValueText/fallbackText 由本模块注入（y 轴万单位口径同文保留）。
 
-  return h2('svg', {
-    className: 'ydo-an-trend-svg',
-    viewBox: `0 0 ${width} ${TREND_VIEW_HEIGHT}`,
-    role: 'img',
-    'aria-label': t('trendTitle'),
-  },
-  ...gridYs.map((gy, index) => h2('line', {
-    key: `grid-${index}`,
-    x1: 0, y1: gy, x2: width, y2: gy,
-    className: 'ydo-an-grid-line',
-  })),
-  h2('text', { x: 2, y: TREND_PAD_TOP + 8, className: 'ydo-an-axis-text' }, yMaxText),
-  h2('text', { x: 2, y: TREND_PAD_TOP + plotHeight - 2, className: 'ydo-an-axis-text' }, yMinText),
-
-  nodes.length > 1 ? h2('polygon', {
-    points: areaPoints,
-    className: 'ydo-an-trend-area',
-  }) : null,
-
-  ...segments.map((segment, index) => h2('line', {
-    key: `seg-${index}`,
-    x1: segment.x1, y1: TREND_PAD_TOP + ((100 - segment.y1) / 100) * plotHeight,
-    x2: segment.x2, y2: TREND_PAD_TOP + ((100 - segment.y2) / 100) * plotHeight,
-    className: segment.dashed ? 'ydo-an-seg ydo-an-seg-dashed' : 'ydo-an-seg',
-  })),
-
-  ...nodes.map((node, index) => h2('circle', {
-    key: `dot-${node.day}-${index}`,
-    cx: node.x, cy: yOf(node), r: 4,
-    className: 'ydo-an-dot-circle',
-  }, h2('title', null,
-    // 悬浮提示与 y 轴同口径（axisValueText，≥1万保留 1 位小数），
-    // 不走 count/formatWan 的「≥100万取整」口径，避免同图两种万单位文本。
-    `${node.day} ${axisValueText(node.value) || '—'}` +
-    (node.gapDaysBefore > 0 ? ` · ${t('noCollectGap')} ${node.gapDaysBefore}d` : '')))),
-
-  ...nodes.filter(node => node.gapDaysBefore > 0).map((node, index) => h2('text', {
-    key: `gap-${index}`,
-    x: Math.max(24, Math.min(width - 24, node.x - node.gapDaysBefore * (width / 29) / 2 + 12)),
-    y: TREND_PAD_TOP + plotHeight + 12,
-    className: 'ydo-an-gap-text',
-  }, `${t('noCollectGap')} ${node.gapDaysBefore}d`)),
-
-  ...nodes.filter(node => node.counterRevised).map((node, index) => h2('text', {
-    key: `revised-${index}`,
-    x: Math.min(width - 30, node.x + 6),
-    y: Math.max(10, yOf(node) - 9),
-    className: 'ydo-an-revised-text',
-  }, t('counterRevised'))),
-
-  ...axisLabels.map(label => h2('text', {
-    key: `axis-${label.day}`,
-    x: label.x, y: TREND_VIEW_HEIGHT - 8,
-    className: `ydo-an-axis-label ydo-an-axis-${label.pos}${label.minor ? ' ydo-an-axis-minor' : ''}`,
-  }, label.day.slice(5).replace('-', '/'))))
-}
 
 export function deriveAnalysisAlerts(analysis, t) {
   const alerts = []
@@ -416,6 +202,8 @@ const CONTENT_METRICS = [
   { key: 'commentCount', label: 'cmCommentRate' },
   { key: 'collectCount', label: 'cmCollectRate' },
   { key: 'shareCount', label: 'cmShareRate' },
+  // 1015 UI 规格 §3.3：吸粉量行（分析.fansSummary.newFansCount 窗口合计）。
+  { key: 'fansGainTotal', label: 'fansGainTotal', special: 'fansGain' },
   { key: 'completion5s', label: 'cmCompletion5s', section: 'completion' },
   { key: 'avgViewProportion', label: 'cmAvgViewShare', section: 'playback' },
   { key: 'avgWatchDuration', label: 'cmAvgWatchDuration', section: 'playback', kind: 'seconds' },
@@ -443,6 +231,18 @@ export function contentMetricRows(analysis, t) {
         label: t(metric.label),
         value: hasEngagement ? pct(kpi.engagementRatePct) : '—',
         note: hasEngagement ? null : t('dataInsufficient'),
+      }
+    }
+    if (metric.special === 'fansGain') {
+      // 吸粉量（1015 §3.3）：窗口合计来自 fansSummary；缺失 → — + 数据不足，
+      // 正数绿/零与缺失中性（deltaText 语义）。
+      const fansGain = analysis?.fansSummary?.newFansCount
+      const has = fansGain !== null && fansGain !== undefined
+      return {
+        key: metric.key,
+        label: t(metric.label),
+        value: has ? deltaColored(deltaText(fansGain)) : '—',
+        note: has ? null : t('dataInsufficient'),
       }
     }
     if (metric.section) {
@@ -473,6 +273,8 @@ export function contentMetricRows(analysis, t) {
 function hotWorksTable(analysis, onOpenWork, t) {
   const works = analysis?.hotWorks || []
   if (!works.length) return h2('p', { className: 'ydo-hint' }, t('noHotWorks'))
+  // 1015 UI 规格 §3.4：+吸粉量列（work.fansGainCount，deltaText；null → —），
+  // 轨道 ydo-ov-tr-hot-rank 由 CSS 同步加列（8 列 → 9 列语义不变，仅插一格）。
   return h2('div', { className: 'ydo-ov-table', role: 'table', 'aria-label': t('accountHotWorks') },
     h2('div', { className: 'ydo-ov-tr ydo-ov-tr-hot-rank ydo-ov-head', role: 'row' },
       h2('span', { className: 'ydo-ov-rankcell', role: 'columnheader' }, t('rankCol')),
@@ -480,6 +282,7 @@ function hotWorksTable(analysis, onOpenWork, t) {
       h2('span', { role: 'columnheader' }, t('publishTime')),
       h2('span', { className: 'ydo-ov-num', role: 'columnheader' }, t('colPlay')),
       h2('span', { className: 'ydo-ov-num', role: 'columnheader' }, t('engagement')),
+      h2('span', { className: 'ydo-ov-num', role: 'columnheader' }, t('colFansGain')),
       h2('span', { className: 'ydo-ov-hot-basis-head', role: 'columnheader' }, t('hotBasis'))),
     ...works.map((work, index) => {
       const lines = basisLines(work.basis)
@@ -495,6 +298,7 @@ function hotWorksTable(analysis, onOpenWork, t) {
         h2('span', { role: 'cell', 'data-label': t('publishTime') }, formatDateTime(work.publishTime)),
         h2('span', { className: 'ydo-ov-num', role: 'cell', 'data-label': t('colPlay') }, count(work.playCount)),
         h2('span', { className: 'ydo-ov-num', role: 'cell', 'data-label': t('engagement') }, pct(work.engagementRatePct)),
+        h2('span', { className: 'ydo-ov-num', role: 'cell', 'data-label': t('colFansGain') }, deltaColored(deltaText(work.fansGainCount))),
         h2('div', { className: 'ydo-ov-basis', role: 'cell', 'data-label': t('hotBasis'), title: work.basis || '' },
           ...(lines.length
             ? lines.map(line => h2('div', { key: line }, line))
@@ -902,6 +706,23 @@ export function AnalysisPage({
       h2(Kpi, { label: t('kpiHotWorks'), value: count(kpi.hotWorkCount) }),
       h2(Kpi, { label: t('hotRateCol'), value: pct(kpi.hotRatePct) })) : null,
 
+    // 粉丝数据卡（1015 UI 规格 §3.1）：插在趋势图上方，复用 KPI 网格与三段卡样式。
+    // fansSummary 整块缺失（旧服务端/未采集）→ 不渲染整卡区块；单值缺失 → —（不估算）。
+    account && analysis?.fansSummary
+      ? h2('section', { className: 'ydo-ov-panel' },
+        h2('div', { className: 'ydo-ov-toolbar' },
+          h2('h3', null, t('fansSummaryTitle')),
+          rangeLabel ? h2('span', { className: 'ydo-hint' }, rangeLabel) : null),
+        h2('div', { className: 'ydo-ov-kpis' },
+          h2(Kpi, { label: t('fansTotal'), value: count(analysis.fansSummary.totalFansCount) }),
+          // 吸粉/脱粉按 deltaText 语义着色（1015 §3.1）：吸粉正数绿；脱粉量是
+          // 正数计数的坏消息语义，固定红色（规格钉死「deltaText（红）」）。
+          h2(Kpi, { label: t('fansNew'), value: deltaColored(deltaText(analysis.fansSummary.newFansCount)) }),
+          h2(Kpi, { label: t('fansCancel'), value: deltaRed(analysis.fansSummary.cancelFansCount) }),
+          h2(Kpi, { label: t('fansReturn'), value: count(analysis.fansSummary.homeViewFansCount) }),
+          h2(Kpi, { label: t('fansHomeView'), value: count(analysis.fansSummary.homepageViewCount) })))
+      : null,
+
     account ? h2('section', { className: 'ydo-ov-panel' },
       h2('div', { className: 'ydo-ov-toolbar' },
         h2('h3', null, t('trendTitle')),
@@ -925,9 +746,9 @@ export function AnalysisPage({
           ? h2('p', { className: 'ydo-hint' },
             layout.single ? t('trendSingleHint') : t('noTrend'),
             layout.single && layout.nodes.length
-              ? h2(TrendChart, { layout, t })
+              ? h2(TrendChart, { layout, t, axisValueText, fallbackText: value => count(value) })
               : null)
-          : h2(TrendChart, { layout, t })))
+          : h2(TrendChart, { layout, t, axisValueText, fallbackText: value => count(value) })))
       : null,
 
     account ? h2('div', { className: 'ydo-ov-panels' },

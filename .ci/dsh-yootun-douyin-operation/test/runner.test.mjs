@@ -51,6 +51,13 @@ function fakeSession({ workCount = 3, avatar = null, listStatusCode = 0, profile
       if (url.includes('item_compare')) return reply({ status_code: 10001, item: {}, compare_item_ids: [] })
       if (url.includes('portrait')) return reply({ status_code: 0, gender: { ratio_list: [{ key: 'male', value: 0.9 }] } })
       if (url.includes('involved_vertical')) return reply({ primary_verticals: [] })
+      if (url.includes('overview/dashboard?')) {
+        return reply({ status_code: 0, metrics: [{ english_metric_name: 'play_cnt', trends: [{ date_time: '20261015', value: 1000 }] }] })
+      }
+      if (url.includes('overview/dashboard/fans')) {
+        return reply({ status_code: 0, metrics: [{ english_metric_name: 'net_fans_cnt', trends: [{ date_time: '20261015', value: 5 }] }] })
+      }
+      if (url.includes('fans/summary/v2')) return reply({ status_code: 0, active_levels: [{ label: '重度', count: 12 }] })
       return reply({ status_code: 0 })
     },
   }
@@ -918,4 +925,107 @@ test('批量控制器：批量任务内 collect.status 可见当前账号进度�
   assert.equal(progress.collect.progress.workId, 'w1', '批量中的当前账号进度经 collect.status 可查')
   release()
   await batch.wait()
+})
+
+// ---------------------------------------------------------------------------
+// 账号大盘三连（1015 方案 §6.3）：采集挂载、入库投递、失败隔离
+// ---------------------------------------------------------------------------
+
+test('采集成功时投递日度数据：douyin_collect_ingest_daily 带幂等键与 fansProfile', async () => {
+  await withRoot(async root => {
+    const calls = []
+    const result = await runAccountCollection({
+      accountId: 'acc-1',
+      root,
+      callTool: async (name, args) => {
+        calls.push({ name, args })
+        if (name === 'douyin_collect_run_start') return { run: { run_id: 'run-dash', last_heartbeat_seq: 0 }, reused: false }
+        if (name === 'douyin_collect_run_set_list_meta') return { run: { run_id: 'run-dash' } }
+        if (name === 'douyin_collect_ingest_batch') {
+          return { run: { run_id: 'run-dash' }, batch: { batch_no: args.batchNo, status: 'completed', succeeded_work_ids: args.works.map(w => w.work_id), failed_work_ids: [] }, replayed: false }
+        }
+        if (name === 'douyin_collect_run_finish') return { run: { run_id: 'run-dash', status: 'completed' }, settlement: {}, replayed: false }
+        if (name === 'douyin_collect_ingest_daily') return { dailyAccepted: args.daily.length, dailyFailed: 0, fansProfileWritten: true, replayed: false }
+        return {}
+      },
+      storageStatePath: await withSessionFile(root),
+      sessionFactory: async () => fakeSession({ workCount: 1 }),
+    })
+    assert.equal(result.status, 'ready')
+    const daily = calls.find(item => item.name === 'douyin_collect_ingest_daily')
+    assert.ok(daily, '采集成功后调用日度入库')
+    assert.ok(daily.args.idempotencyKey.startsWith(`douyin:daily:${daily.args.runId}`))
+    assert.ok(Array.isArray(daily.args.daily) && daily.args.daily.length >= 1)
+    assert.ok(daily.args.daily.every(row => typeof row.day === 'string'))
+    assert.equal(result.dashboard.dailyAccepted, daily.args.daily.length)
+    assert.deepEqual(result.dashboard.gaps, [])
+  })
+})
+
+test('日度入库失败不阻断采集：结果仍 ready 并 emit dashboard_gap', async () => {
+  await withRoot(async root => {
+    const events = []
+    const result = await runAccountCollection({
+      accountId: 'acc-1',
+      root,
+      callTool: async (name, args) => {
+        if (name === 'douyin_collect_run_start') return { run: { run_id: 'run-gap', last_heartbeat_seq: 0 }, reused: false }
+        if (name === 'douyin_collect_run_set_list_meta') return { run: { run_id: 'run-gap' } }
+        if (name === 'douyin_collect_ingest_batch') {
+          return { run: { run_id: 'run-gap' }, batch: { batch_no: args.batchNo, status: 'completed', succeeded_work_ids: args.works.map(w => w.work_id), failed_work_ids: [] }, replayed: false }
+        }
+        if (name === 'douyin_collect_run_finish') return { run: { run_id: 'run-gap', status: 'completed' }, settlement: {}, replayed: false }
+        if (name === 'douyin_collect_ingest_daily') throw new Error('douyin_operation_request_failed')
+        return {}
+      },
+      storageStatePath: await withSessionFile(root),
+      sessionFactory: async () => fakeSession({ workCount: 1 }),
+      onProgress: event => events.push(event),
+    })
+    assert.equal(result.status, 'ready', 'daily 失败不改变 ready 结算')
+    assert.ok(events.some(event => event.phase === 'dashboard_gap'))
+    assert.ok(result.finish || result.runStatus === 'completed')
+  })
+})
+
+test('会话在 dashboard 阶段过期：已采集作品照常入库并以失败收尾', async () => {
+  await withRoot(async root => {
+    const session = fakeSession({ workCount: 2, listStatusCode: 0, profileStatusCode: 0 })
+    const page = session.context && await session.context.newPage()
+    // 作品链路完成后让 dashboard 第一请求返回 status_code=8。
+    const originalEvaluate = page.evaluate.bind(page)
+    let dashboards = 0
+    page.evaluate = async (fn, arg) => {
+      const url = typeof arg === 'string' ? arg : arg && arg.url
+      if (url && url.includes('overview/dashboard?')) {
+        dashboards += 1
+        return { status: 200, text: JSON.stringify({ status_code: 8, status_msg: '示例：用户未登录' }) }
+      }
+      return originalEvaluate(fn, arg)
+    }
+    const calls = []
+    const result = await runAccountCollection({
+      accountId: 'acc-1',
+      root,
+      callTool: async (name, args) => {
+        calls.push({ name })
+        if (name === 'douyin_collect_run_start') return { run: { run_id: 'run-exp', last_heartbeat_seq: 0 }, reused: false }
+        if (name === 'douyin_collect_run_set_list_meta') return { run: { run_id: 'run-exp' } }
+        if (name === 'douyin_collect_ingest_batch') {
+          return { run: { run_id: 'run-exp' }, batch: { batch_no: args.batchNo, status: 'completed', succeeded_work_ids: args.works.map(w => w.work_id), failed_work_ids: [] }, replayed: false }
+        }
+        if (name === 'douyin_collect_run_finish') return { run: { run_id: 'run-exp', status: 'failed' }, settlement: {}, replayed: false }
+        if (name === 'douyin_session_status_report') return { session: { session_status: 'expired' } }
+        return {}
+      },
+      storageStatePath: await withSessionFile(root),
+      sessionFactory: async () => session,
+    })
+    assert.equal(result.status, 'session_expired')
+    assert.ok(dashboards >= 1)
+    // 已采集作品照常入库（过期收尾）+ run 以 failed 终态结算。
+    assert.ok(calls.some(item => item.name === 'douyin_collect_ingest_batch'))
+    assert.ok(calls.some(item => item.name === 'douyin_collect_run_finish'))
+    assert.ok(calls.some(item => item.name === 'douyin_session_status_report'))
+  })
 })

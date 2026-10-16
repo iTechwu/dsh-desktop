@@ -1,0 +1,5 @@
+{
+ "_note": "会话失效形态（与 work_list.status_code_8 同语义）：HTTP 200 + status_code=8。解析层必须复用 isSessionExpiredPayload 抛 SessionInvalidError，走既有过期链路。",
+ "status_code": 8,
+ "status_msg": "示例：用户未登录"
+}

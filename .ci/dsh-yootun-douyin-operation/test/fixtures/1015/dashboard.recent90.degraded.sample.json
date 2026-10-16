@@ -1,0 +1,22 @@
+{
+ "_note": "实测形态（2026-10-15）：recent_days=90 时降级为仅 1 个指标 × 约 35 天。采集固定用 recent_days=30，本样例仅用于防御性解析测试。",
+ "status_code": 0,
+ "status_msg": "",
+ "metrics": [
+  {
+   "english_metric_name": "play_cnt",
+   "metric_name": "播放量",
+   "metric_value": 420000,
+   "trends": [
+    {
+     "date_time": "20260910",
+     "value": 800
+    },
+    {
+     "date_time": "20261014",
+     "value": 4500
+    }
+   ]
+  }
+ ]
+}

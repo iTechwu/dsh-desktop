@@ -1,0 +1,22 @@
+{
+ "_note": "脱敏样例：recent_days=30 正常返回 30 天日度（回填场景）。结构与 7 天版一致，仅 trends 长度不同；此处示意首尾各 1 点。",
+ "status_code": 0,
+ "status_msg": "",
+ "metrics": [
+  {
+   "english_metric_name": "play_cnt",
+   "metric_name": "播放量",
+   "metric_value": 420000,
+   "trends": [
+    {
+     "date_time": "20260915",
+     "value": 1200
+    },
+    {
+     "date_time": "20261014",
+     "value": 4500
+    }
+   ]
+  }
+ ]
+}

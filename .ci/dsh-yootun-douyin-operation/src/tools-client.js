@@ -12,6 +12,8 @@ export const TOOL_NAMES = [
   'douyin_collect_run_set_list_meta',
   'douyin_collect_run_heartbeat',
   'douyin_collect_ingest_batch',
+  // 账号日度指标入库（1015 方案）：采集运行内投递 dashboard/fans 日度数据
+  'douyin_collect_ingest_daily',
   'douyin_collect_run_finish',
   'douyin_collect_run_cancel',
   'douyin_account_list',
@@ -308,6 +310,9 @@ export const runStartIdempotencyKey = runAttemptId => `douyin:run_start:${runAtt
 export const listMetaIdempotencyKey = runId => `douyin:list_meta:${runId}`
 export const heartbeatIdempotencyKey = (runId, seq) => `douyin:heartbeat:${runId}:${seq}`
 export const ingestIdempotencyKey = (runId, batchNo) => `douyin:ingest:${runId}:${batchNo}`
+// 日度入库键（1015 方案 §6.3）：一次 run 一次日度投递，键模板与服务端
+// constants.DAILY_KEY_PREFIX 校验一致（`douyin:daily:{runId}`，最坏 14+80=94 ≤128）。
+export const dailyIdempotencyKey = runId => `douyin:daily:${runId}`
 export const runFinishIdempotencyKey = runId => `douyin:run_finish:${runId}`
 export const runCancelIdempotencyKey = runId => `douyin:run_cancel:${runId}`
 // AI 分析受理键（0916 方案 §5.1）：每次点击受理生成全新 UUID（页面内不跨点击复用）。

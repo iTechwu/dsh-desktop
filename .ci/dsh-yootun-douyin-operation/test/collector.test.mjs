@@ -11,6 +11,7 @@ import {
   WORK_LIST_PATH,
   collectAccountProfile,
   collectAccountWorks,
+  collectDashboard,
   collectHotword,
   collectItemAnalysis,
   collectWorkDetail,
@@ -639,4 +640,123 @@ test('账号采集编排：翻页中途过期 → partialCollected 携带前几�
   assert.equal(thrown.partialCollected?.works?.length, 1)
   assert.ok(thrown.partialCollected.works[0].dataGap, '列表成果正规化为带缺口的入库载荷')
   assert.equal(thrown.partialCollected.expectedWorkCount, 1)
+})
+
+// ---------------------------------------------------------------------------
+// 账号大盘三连（1015 方案 §6.1）：独立失败不互相阻断、会话失效传播、gap 上报
+// ---------------------------------------------------------------------------
+
+const DASH_SAMPLE = {
+  status_code: 0,
+  metrics: [{ english_metric_name: 'play_cnt', trends: [{ date_time: '20261008', value: 83443 }] }],
+}
+const FANS_SAMPLE = {
+  status_code: 0,
+  metrics: [{ english_metric_name: 'net_fans_cnt', trends: [{ date_time: '20261008', value: -3 }] }],
+}
+const SUMMARY_SAMPLE = {
+  status_code: 0,
+  active_levels: [{ label: '重度', count: 12 }],
+}
+
+test('collectDashboard：三请求全部成功 → rows/profile 齐备且无 gap', async () => {
+  const page = fakePage({
+    jsonRoutes: {
+      'overview/dashboard?recent_days': DASH_SAMPLE,
+      'overview/dashboard/fans': FANS_SAMPLE,
+      'fans/summary/v2': SUMMARY_SAMPLE,
+    },
+  })
+  const result = await collectDashboard(page)
+  assert.equal(result.dashboardRows.length, 1)
+  assert.equal(result.dashboardRows[0].play_cnt, 83443)
+  assert.equal(result.dashboardFansRows[0].net_fans_cnt, -3)
+  assert.deepEqual(result.fansProfile.active_levels, [{ label: '重度', count: 12 }])
+  assert.deepEqual(result.gaps, [])
+})
+
+test('collectDashboard：任一请求失败只记 gap，不阻断其余两个', async () => {
+  const page = fakePage({
+    jsonRoutes: {
+      // dashboard 持续 500（failTimes 打桩）→ gap；
+      'overview/dashboard?recent_days': null,
+      'overview/dashboard/fans': FANS_SAMPLE,
+      'fans/summary/v2': null,
+    },
+  })
+  const result = await collectDashboard(page)
+  assert.deepEqual(result.dashboardRows, [])
+  assert.equal(result.dashboardFansRows.length, 1, 'fans 请求不受 dashboard 失败影响')
+  assert.equal(result.fansProfile, null)
+  const sources = result.gaps.map(gap => gap.source)
+  assert.deepEqual(sources.sort(), ['dashboard', 'fans_summary'])
+  for (const gap of result.gaps) {
+    assert.ok(typeof gap.reason === 'string' && gap.reason.length > 0)
+  }
+})
+
+test('collectDashboard：解析容错（metrics 非数组 → 空行，零指标不造 0）', async () => {
+  const page = fakePage({
+    jsonRoutes: {
+      'overview/dashboard?recent_days': { status_code: 0, metrics: 'not-an-array' },
+      'overview/dashboard/fans': FANS_SAMPLE,
+      'fans/summary/v2': SUMMARY_SAMPLE,
+    },
+  })
+  const result = await collectDashboard(page)
+  // 低门槛/异常形态解析为空行（缺 metric 整组缺省），不抛错、不造 0；
+  // 响应到达但零指标行 → 显式 not_exposed 缺口（不静默吞掉，缺口说明不变量）。
+  assert.deepEqual(result.dashboardRows, [])
+  assert.equal(result.dashboardFansRows.length, 1)
+  assert.deepEqual(result.gaps, [{ source: 'dashboard', reason: 'not_exposed' }])
+})
+
+test('collectDashboard：会话失效（status_code=8）立即抛 SessionInvalidError', async () => {
+  const expired = { status_code: 8, status_msg: '用户未登录' }
+  const page = fakePage({
+    jsonRoutes: {
+      'overview/dashboard?recent_days': expired,
+      'overview/dashboard/fans': FANS_SAMPLE,
+      'fans/summary/v2': SUMMARY_SAMPLE,
+    },
+  })
+  await assert.rejects(
+    () => collectDashboard(page),
+    error => error instanceof SessionInvalidError,
+  )
+  // 会话失效 fail-fast：后续两个请求不再发起（过期会话继续请求无意义）。
+  assert.ok(!page.calls.some(call => call.url.includes('dashboard/fans')))
+})
+
+test('collectAccountWorks：作品链路完成后挂 dashboard 结果（缺口收敛为 gaps）', async () => {
+  const { routes } = await pagedRoutes({ total: 1 })
+  const page = fakePage({
+    jsonRoutes: {
+      ...routes,
+      'item_analysis/involved_vertical': { primary_verticals: [] },
+      'item_analysis/item_performance': {},
+      'item_analysis/overview': {},
+      '/web/api/media/user/info/': { user: { sec_uid: 'acc-dash', nickname: '示例', follower_count: 500 } },
+      '/data/diagnose/item_compare': { status_code: 10001 },
+      '/data/item/play/source': { play_source: [] },
+      '/data/fans/item/portrait': {},
+      '/data/item_analysis/search/keyword': {},
+      '/janus/douyin/creator/bff/data/progress/analysis/v2': {},
+      '/web/api/creator/item/mget': ({ url }) => {
+        const ids = new URL(url, 'https://creator.douyin.com').searchParams.get('ids')
+        return { items: [{ id: ids, metrics: { danmaku_count: '3' } }] }
+      },
+      'wordCloud': { status_code: 0, word_cloud_list: [] },
+      'overview/dashboard?recent_days': DASH_SAMPLE,
+      'overview/dashboard/fans': FANS_SAMPLE,
+      'fans/summary/v2': SUMMARY_SAMPLE,
+    },
+  })
+  const collected = await collectAccountWorks(page, { intervalMs: 0 })
+  assert.equal(collected.works.length, 1)
+  assert.ok(collected.dashboard)
+  assert.equal(collected.dashboard.dashboardRows.length, 1)
+  assert.deepEqual(collected.dashboard.gaps, [])
+  // 作品载荷带封面（列表键）与吸粉量（summarize 未取到 → null + gap）。
+  assert.ok(collected.works[0].cover_url || collected.works[0].dataGap?.cover_url)
 })

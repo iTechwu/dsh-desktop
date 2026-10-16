@@ -1,0 +1,259 @@
+{
+ "_note": "脱敏样例：结构与字段名实测真实，数值为占位。recent_days=90 时本接口返回 status_code=5（见 dashboard_fans.recent90.error.sample.json）。",
+ "status_code": 0,
+ "status_msg": "",
+ "metrics": [
+  {
+   "english_metric_name": "net_fans_cnt",
+   "metric_name": "净增粉丝",
+   "metric_value": 8,
+   "trends": [
+    {
+     "date_time": "20261001",
+     "value": 7,
+     "change_rate": 0.1
+    },
+    {
+     "date_time": "20261002",
+     "value": 6,
+     "change_rate": 0.1
+    },
+    {
+     "date_time": "20261003",
+     "value": 5,
+     "change_rate": 0.1
+    },
+    {
+     "date_time": "20261004",
+     "value": 4,
+     "change_rate": 0.1
+    },
+    {
+     "date_time": "20261005",
+     "value": 3,
+     "change_rate": 0.1
+    },
+    {
+     "date_time": "20261006",
+     "value": 2,
+     "change_rate": 0.1
+    },
+    {
+     "date_time": "20261007",
+     "value": 1,
+     "change_rate": 0.1
+    }
+   ]
+  },
+  {
+   "english_metric_name": "cancel_fans_cnt",
+   "metric_name": "取关粉丝",
+   "metric_value": 2,
+   "trends": [
+    {
+     "date_time": "20261001",
+     "value": 1,
+     "change_rate": 0.1
+    },
+    {
+     "date_time": "20261002",
+     "value": 0,
+     "change_rate": 0.1
+    },
+    {
+     "date_time": "20261003",
+     "value": 0,
+     "change_rate": 0.1
+    },
+    {
+     "date_time": "20261004",
+     "value": 0,
+     "change_rate": 0.1
+    },
+    {
+     "date_time": "20261005",
+     "value": 0,
+     "change_rate": 0.1
+    },
+    {
+     "date_time": "20261006",
+     "value": 0,
+     "change_rate": 0.1
+    },
+    {
+     "date_time": "20261007",
+     "value": 0,
+     "change_rate": 0.1
+    }
+   ]
+  },
+  {
+   "english_metric_name": "home_view_fans_cnt",
+   "metric_name": "回访粉丝量",
+   "metric_value": 5,
+   "trends": [
+    {
+     "date_time": "20261001",
+     "value": 4,
+     "change_rate": 0.1
+    },
+    {
+     "date_time": "20261002",
+     "value": 3,
+     "change_rate": 0.1
+    },
+    {
+     "date_time": "20261003",
+     "value": 2,
+     "change_rate": 0.1
+    },
+    {
+     "date_time": "20261004",
+     "value": 1,
+     "change_rate": 0.1
+    },
+    {
+     "date_time": "20261005",
+     "value": 0,
+     "change_rate": 0.1
+    },
+    {
+     "date_time": "20261006",
+     "value": 0,
+     "change_rate": 0.1
+    },
+    {
+     "date_time": "20261007",
+     "value": 0,
+     "change_rate": 0.1
+    }
+   ]
+  },
+  {
+   "english_metric_name": "total_fans_cnt",
+   "metric_name": "粉丝",
+   "metric_value": 500,
+   "trends": [
+    {
+     "date_time": "20261001",
+     "value": 499,
+     "change_rate": 0.1
+    },
+    {
+     "date_time": "20261002",
+     "value": 498,
+     "change_rate": 0.1
+    },
+    {
+     "date_time": "20261003",
+     "value": 497,
+     "change_rate": 0.1
+    },
+    {
+     "date_time": "20261004",
+     "value": 496,
+     "change_rate": 0.1
+    },
+    {
+     "date_time": "20261005",
+     "value": 495,
+     "change_rate": 0.1
+    },
+    {
+     "date_time": "20261006",
+     "value": 494,
+     "change_rate": 0.1
+    },
+    {
+     "date_time": "20261007",
+     "value": 493,
+     "change_rate": 0.1
+    }
+   ]
+  },
+  {
+   "english_metric_name": "new_fans_cnt",
+   "metric_name": "新增粉丝量",
+   "metric_value": 10,
+   "trends": [
+    {
+     "date_time": "20261001",
+     "value": 9,
+     "change_rate": 0.1
+    },
+    {
+     "date_time": "20261002",
+     "value": 8,
+     "change_rate": 0.1
+    },
+    {
+     "date_time": "20261003",
+     "value": 7,
+     "change_rate": 0.1
+    },
+    {
+     "date_time": "20261004",
+     "value": 6,
+     "change_rate": 0.1
+    },
+    {
+     "date_time": "20261005",
+     "value": 5,
+     "change_rate": 0.1
+    },
+    {
+     "date_time": "20261006",
+     "value": 4,
+     "change_rate": 0.1
+    },
+    {
+     "date_time": "20261007",
+     "value": 3,
+     "change_rate": 0.1
+    }
+   ]
+  },
+  {
+   "english_metric_name": "homepage_view_cnt",
+   "metric_name": "主页访问",
+   "metric_value": 78,
+   "trends": [
+    {
+     "date_time": "20261001",
+     "value": 77,
+     "change_rate": 0.1
+    },
+    {
+     "date_time": "20261002",
+     "value": 76,
+     "change_rate": 0.1
+    },
+    {
+     "date_time": "20261003",
+     "value": 75,
+     "change_rate": 0.1
+    },
+    {
+     "date_time": "20261004",
+     "value": 74,
+     "change_rate": 0.1
+    },
+    {
+     "date_time": "20261005",
+     "value": 73,
+     "change_rate": 0.1
+    },
+    {
+     "date_time": "20261006",
+     "value": 72,
+     "change_rate": 0.1
+    },
+    {
+     "date_time": "20261007",
+     "value": 71,
+     "change_rate": 0.1
+    }
+   ]
+  }
+ ]
+}

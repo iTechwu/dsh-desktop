@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 
-import { createIngestClient, ingestCollectedWorks,resolveClientStatus } from '../src/ingest.js'
+import { createIngestClient, ingestCollectedWorks, mergeDashboardRows, resolveClientStatus } from '../src/ingest.js'
 import { getAccount } from '../src/state.js'
 
 async function withRoot(fn) {
@@ -395,4 +395,121 @@ test('resolveClientStatus：仅完整且成功数等于预期才上报 completed
   assert.equal(resolveClientStatus({ listComplete: false, expected: 2, ingest: { succeededWorkIds: ['a', 'b'] } }), 'partial')
   assert.equal(resolveClientStatus({ listComplete: true, expected: 3, ingest: { succeededWorkIds: ['a'] } }), 'partial')
   assert.equal(resolveClientStatus({ listComplete: true, expected: 2, ingest: { succeededWorkIds: [] } }), 'failed')
+})
+
+// ---------------------------------------------------------------------------
+// 日度入库（1015 方案 §5.1/§6.3）：幂等键、空行跳过、失败隔离、行合并
+// ---------------------------------------------------------------------------
+
+test('ingestDaily：幂等键模板 douyin:daily:{runId} 且载荷带 fansProfile', async () => {
+  await withRoot(async root => {
+    const seen = []
+    const client = createIngestClient({
+      callTool: async (name, args) => {
+        seen.push({ name, args })
+        if (name === 'douyin_collect_run_start') return { run: { run_id: 'run-daily', last_heartbeat_seq: 0 } }
+        if (name !== 'douyin_collect_ingest_daily') return {}
+        return { dailyAccepted: 2, dailyFailed: 0, fansProfileWritten: true, replayed: false }
+      },
+      accountId: 'acc-1',
+      root,
+      sleep: async () => {},
+    })
+    await client.startRun({ newAttempt: true })
+    const result = await client.ingestDaily(
+      [{ day: '2026-10-08', play_cnt: 100, net_fans_cnt: -3 }],
+      { fansProfile: { active_levels: [{ label: '重度', count: 12 }] } },
+    )
+    assert.equal(result.dailyAccepted, 2)
+    const call = seen.find(item => item.name === 'douyin_collect_ingest_daily')
+    assert.ok(call, '调用 douyin_collect_ingest_daily')
+    assert.ok(call.args.idempotencyKey.startsWith(`douyin:daily:${call.args.runId}`))
+    assert.deepEqual(call.args.daily, [{ day: '2026-10-08', play_cnt: 100, net_fans_cnt: -3 }])
+    assert.deepEqual(call.args.fansProfile, { active_levels: [{ label: '重度', count: 12 }] })
+  })
+})
+
+test('ingestDaily：空 daily 不调用（无行即无副作用）', async () => {
+  await withRoot(async root => {
+    const names = []
+    const client = createIngestClient({
+      callTool: async name => {
+        names.push(name)
+        return name === 'douyin_collect_run_start' ? { run: { run_id: 'run-empty', last_heartbeat_seq: 0 } } : {}
+      },
+      accountId: 'acc-1',
+      root,
+      sleep: async () => {},
+    })
+    await client.startRun({ newAttempt: true })
+    const result = await client.ingestDaily([])
+    assert.equal(result.skipped, 'no_daily_rows')
+    assert.ok(!names.includes('douyin_collect_ingest_daily'))
+  })
+})
+
+test('mergeDashboardRows：主表优先浅合并 + 按 day 排序', () => {
+  const merged = mergeDashboardRows({
+    dashboardRows: [{ day: '2026-10-08', play_cnt: 100 }],
+    dashboardFansRows: [
+      { day: '2026-10-08', net_fans_cnt: -3 },
+      { day: '2026-10-09', net_fans_cnt: 5 },
+    ],
+    fansProfile: null,
+    gaps: [],
+  })
+  assert.deepEqual(merged, [
+    { day: '2026-10-08', play_cnt: 100, net_fans_cnt: -3 },
+    { day: '2026-10-09', net_fans_cnt: 5 },
+  ])
+  assert.deepEqual(mergeDashboardRows(null), [])
+  assert.deepEqual(mergeDashboardRows({ dashboardRows: [], dashboardFansRows: [] }), [])
+})
+
+test('ingestCollectedWorks：daily 入库失败只 emit dashboard_gap，run 照常结算', async () => {
+  await withRoot(async root => {
+    const server = fakeServer()
+    let dailyCalls = 0
+    const client = makeClient(server, root)
+    client.ingestDaily = async () => { dailyCalls += 1; throw new Error('RUN_NOT_RUNNING') }
+    const events = []
+    const result = await ingestCollectedWorks({
+      client,
+      works: works(1),
+      listComplete: true,
+      newAttempt: true,
+      onProgress: event => events.push(event),
+      dashboard: {
+        dashboardRows: [{ day: '2026-10-08', play_cnt: 1 }],
+        dashboardFansRows: [],
+        fansProfile: null,
+        gaps: [],
+      },
+    })
+    assert.equal(result.error, null)
+    assert.equal(result.status, undefined)
+    assert.ok(result.finish, 'run 照常结算（dashboard 失败不阻断）')
+    assert.equal(dailyCalls, 1)
+    assert.ok(events.some(event => event.phase === 'dashboard_gap'))
+    assert.equal(events.find(event => event.phase === 'finished')?.status, 'completed')
+  })
+})
+
+test('ingestCollectedWorks：采集层 dashboard.gaps 收敛为 dashboard_gap 事件', async () => {
+  await withRoot(async root => {
+    const server = fakeServer()
+    const client = makeClient(server, root)
+    const events = []
+    await ingestCollectedWorks({
+      client,
+      works: [],
+      listComplete: true,
+      newAttempt: true,
+      onProgress: event => events.push(event),
+      dashboard: { dashboardRows: [], dashboardFansRows: [], fansProfile: null, gaps: [{ source: 'dashboard', reason: 'http_500' }] },
+    })
+    const gap = events.find(event => event.phase === 'dashboard_gap')
+    assert.ok(gap, '采集层 gap 转化为 dashboard_gap 事件')
+    assert.equal(gap.reason, 'http_500')
+  })
 })

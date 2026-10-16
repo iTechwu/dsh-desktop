@@ -1,0 +1,40 @@
+{
+ "_note": "私密作品形态：status.is_private=true，statistics 计数为 0 或缺失。UI 指标显示「—」（现有契约），封面可能仍存在。",
+ "data": {
+  "has_more": false,
+  "max_cursor": 0,
+  "total": 1,
+  "aweme_list": [
+   {
+    "aweme_id": "7696000000000000002",
+    "create_time": 1791885578,
+    "duration": 0,
+    "aweme_type": 2,
+    "desc": "",
+    "images": [
+     {
+      "uri": "example-img"
+     }
+    ],
+    "statistics": {
+     "play_count": 0,
+     "digg_count": 0,
+     "comment_count": 0,
+     "share_count": 0,
+     "collect_count": 0
+    },
+    "Cover": {
+     "uri": "tos-cn-i-dy/example-private",
+     "url_list": [
+      "https://p-sign.douyinpic.com/private~tplv.webp"
+     ]
+    },
+    "status": {
+     "is_private": true,
+     "self_see": true,
+     "private_status": 1
+    }
+   }
+  ]
+ }
+}

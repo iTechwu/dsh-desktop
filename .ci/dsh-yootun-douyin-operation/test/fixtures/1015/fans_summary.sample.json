@@ -1,0 +1,146 @@
+{
+ "_note": "脱敏样例：结构与字段名实测真实，数值为占位。contribution_billboard_7（铁粉榜）与 interaction_billboard_7/30（互动榜）含第三方用户隐私，按方案隐私边界不采集、样例中不出现。fans_data_trend_* 与 dashboard/fans 重复，不采。",
+ "BaseResp": {
+  "StatusCode": 0,
+  "StatusMessage": ""
+ },
+ "status_code": 0,
+ "status_msg": "",
+ "gender_distribution": [
+  {
+   "count": 46,
+   "label": "male"
+  },
+  {
+   "count": 54,
+   "label": "female"
+  }
+ ],
+ "age_distribution": [
+  {
+   "count": 11,
+   "label": "<23"
+  },
+  {
+   "count": 30,
+   "label": "24-30"
+  },
+  {
+   "count": 40,
+   "label": "31-40"
+  },
+  {
+   "count": 7,
+   "label": "41-50"
+  },
+  {
+   "count": 12,
+   "label": ">50"
+  }
+ ],
+ "city_distribution": [
+  {
+   "count": 25,
+   "label": "示例省A"
+  },
+  {
+   "count": 12,
+   "label": "示例省B"
+  },
+  {
+   "count": 5,
+   "label": "示例省C"
+  }
+ ],
+ "device_brand_distribution": [
+  {
+   "count": 26,
+   "label": "品牌甲"
+  },
+  {
+   "count": 16,
+   "label": "品牌乙"
+  },
+  {
+   "count": 12,
+   "label": "品牌丙"
+  }
+ ],
+ "fans_interest_distribution": [
+  {
+   "count": 17,
+   "label": "兴趣甲"
+  },
+  {
+   "count": 16,
+   "label": "兴趣乙"
+  },
+  {
+   "count": 8,
+   "label": "兴趣丙"
+  }
+ ],
+ "active_levels": [
+  {
+   "count": 11,
+   "label": "低活"
+  },
+  {
+   "count": 5,
+   "label": "轻度"
+  },
+  {
+   "count": 8,
+   "label": "中度"
+  },
+  {
+   "count": 76,
+   "label": "重度"
+  }
+ ],
+ "active_time_range": [
+  {
+   "count": 3,
+   "label": "20-21"
+  },
+  {
+   "count": 2,
+   "label": "19-20"
+  },
+  {
+   "count": 1,
+   "label": "21-22"
+  }
+ ],
+ "fans_portrait": {
+  "from_label": [
+   {
+    "count": 27,
+    "count_incr_rate": "-0.757",
+    "name": "视频推荐",
+    "type": 13
+   },
+   {
+    "count": 1,
+    "name": "视频详情页",
+    "type": 18
+   },
+   {
+    "count": 1,
+    "name": "我的主页",
+    "type": 19
+   },
+   {
+    "count": 2,
+    "name": "其他",
+    "type": 0
+   }
+  ]
+ },
+ "fans_cnt_sum": 100,
+ "follower_summary": {
+  "follower_count": 100
+ },
+ "fans_decreasing_analysis": [],
+ "fans_flow_contribution": null
+}

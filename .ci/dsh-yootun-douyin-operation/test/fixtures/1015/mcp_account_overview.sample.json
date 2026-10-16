@@ -1,0 +1,40 @@
+{
+ "_note": "MCP douyin_account_overview 新增字段形态（✚ 标记）：summary 加 netFansCount/completionRate5sPct；排行行加 windowNetFansCount/windowPlayCount。旧客户端可忽略新字段（向后兼容）。",
+ "summary": {
+  "accountCount": 2,
+  "workCount": 90,
+  "totalPlayCount": 250000,
+  "hotWorkCount": 12,
+  "netFansCount": 35,
+  "completionRate5sPct": 57.2
+ },
+ "accounts": [
+  {
+   "accountId": "example-1",
+   "nickname": "示例账号甲",
+   "fanCount": 500,
+   "workCount": 78,
+   "medianPlayCount": 12000,
+   "hotWorkCount": 9,
+   "hotRatePct": 11.5,
+   "engagementRatePct": 0.6,
+   "windowNetFansCount": 28,
+   "windowPlayCount": 220000
+  }
+ ],
+ "accountOptions": [
+  {
+   "accountId": "example-1",
+   "nickname": "示例账号甲",
+   "workCount": 78
+  }
+ ],
+ "accountTotal": 2,
+ "hotAccountDistribution": [
+  {
+   "accountId": "example-1",
+   "nickname": "示例账号甲",
+   "hotWorkCount": 9
+  }
+ ]
+}
