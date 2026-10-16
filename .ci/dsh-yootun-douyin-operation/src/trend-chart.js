@@ -20,7 +20,6 @@ function eh(...args) {
 }
 
 const TREND_WINDOW_DAYS = 30
-const TREND_AXIS_TICKS = [0, 7, 14, 21, 29]
 // 数据点与绘图区左右边缘的安全边距：起止日点半径 4px，不加边距会半个点被裁掉。
 export const TREND_PAD_X = 6
 // 注意联动：SVG viewBox 高与 `.ydo-an-trend-svg{height:168px}` 必须一致（字面值锁定）。
@@ -39,7 +38,7 @@ function addDaysIso(iso, days) {
   return localIsoDay(new Date(base.getTime() + base.getTimezoneOffset() * 60000))
 }
 
-export function trendLayout(points, { width = 600, now = null } = {}) {
+export function trendLayout(points, { width = 600, now = null, windowDays = TREND_WINDOW_DAYS } = {}) {
   const empty = { renderable: false, single: false, nodes: [], segments: [], axisLabels: [] }
   const days = (Array.isArray(points) ? points : [])
     .filter(point => point && typeof point.day === 'string' && Number.isFinite(Number(point.value)))
@@ -47,11 +46,13 @@ export function trendLayout(points, { width = 600, now = null } = {}) {
     .sort((a, b) => (a.day < b.day ? -1 : a.day > b.day ? 1 : 0))
   if (!days.length) return empty
 
-  // 30 天固定窗口（本地自然日；服务端对越界日期已 clamp，这里再做防御收敛）。
+  // 固定窗口（本地自然日；服务端对越界日期已 clamp，这里再做防御收敛）。
+  // 默认 30 天（账号/分析页）；详情弹框传 windowDays=7 与创作者中心后台一致（1026 方案）。
+  const windowDaysInt = Number.isInteger(windowDays) && windowDays >= 1 ? windowDays : TREND_WINDOW_DAYS
   const todayIso = localIsoDay(now ? new Date(now) : new Date())
-  const fromDay = addDaysIso(todayIso, -(TREND_WINDOW_DAYS - 1))
+  const fromDay = addDaysIso(todayIso, -(windowDaysInt - 1))
   const fromMs = Date.parse(`${fromDay}T00:00:00Z`)
-  const spanMs = (TREND_WINDOW_DAYS - 1) * 86400000
+  const spanMs = (windowDaysInt - 1) * 86400000
   const clampDayMs = day => {
     const ms = Date.parse(`${day}T00:00:00Z`)
     if (Number.isNaN(ms)) return null
@@ -112,12 +113,19 @@ export function trendLayout(points, { width = 600, now = null } = {}) {
     })
   }
 
-  const axisLabels = TREND_AXIS_TICKS.map((offset, index) => ({
-    day: addDaysIso(fromDay, offset),
-    x: Math.round((TREND_PAD_X + (offset / (TREND_WINDOW_DAYS - 1)) * (width - TREND_PAD_X * 2)) * 100) / 100,
-    pos: index === 0 ? 'start' : index === TREND_AXIS_TICKS.length - 1 ? 'end' : 'middle',
-    minor: index % 2 === 1,
-  }))
+  // 横轴刻度位随窗口推导（5 等分取整，offset = floor(i*(n-1)/4)）：n=30 时恰为
+  // 0/7/14/21/29（与旧固定常量逐位一致，30 天页无行为变化），n=7 时为 0/1/3/4/6。
+  // 分母同用窗口跨度——写死 30 天常量会让 7 天弹框的刻度日溢出窗口、x 错位。
+  const axisSpan = Math.max(1, windowDaysInt - 1)
+  const axisLabels = [0, 1, 2, 3, 4].map((quarter, index) => {
+    const offset = Math.floor((quarter * axisSpan) / 4)
+    return {
+      day: addDaysIso(fromDay, offset),
+      x: Math.round((TREND_PAD_X + (offset / axisSpan) * (width - TREND_PAD_X * 2)) * 100) / 100,
+      pos: index === 0 ? 'start' : index === 4 ? 'end' : 'middle',
+      minor: index % 2 === 1,
+    }
+  })
 
   return {
     renderable: true,

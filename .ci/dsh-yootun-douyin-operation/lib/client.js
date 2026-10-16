@@ -590,7 +590,6 @@ window.__ModuleLoader__.load({
     }
 
     const TREND_WINDOW_DAYS = 30
-    const TREND_AXIS_TICKS = [0, 7, 14, 21, 29]
     // 数据点与绘图区左右边缘的安全边距：起止日点半径 4px，不加边距会半个点被裁掉。
     const TREND_PAD_X = 6
     // 注意联动：SVG viewBox 高与 `.ydo-an-trend-svg{height:168px}` 必须一致（字面值锁定）。
@@ -609,7 +608,7 @@ window.__ModuleLoader__.load({
       return localIsoDay(new Date(base.getTime() + base.getTimezoneOffset() * 60000))
     }
 
-    function trendLayout(points, { width = 600, now = null } = {}) {
+    function trendLayout(points, { width = 600, now = null, windowDays = TREND_WINDOW_DAYS } = {}) {
       const empty = { renderable: false, single: false, nodes: [], segments: [], axisLabels: [] }
       const days = (Array.isArray(points) ? points : [])
         .filter(point => point && typeof point.day === 'string' && Number.isFinite(Number(point.value)))
@@ -617,11 +616,13 @@ window.__ModuleLoader__.load({
         .sort((a, b) => (a.day < b.day ? -1 : a.day > b.day ? 1 : 0))
       if (!days.length) return empty
 
-      // 30 天固定窗口（本地自然日；服务端对越界日期已 clamp，这里再做防御收敛）。
+      // 固定窗口（本地自然日；服务端对越界日期已 clamp，这里再做防御收敛）。
+      // 默认 30 天（账号/分析页）；详情弹框传 windowDays=7 与创作者中心后台一致（1026 方案）。
+      const windowDaysInt = Number.isInteger(windowDays) && windowDays >= 1 ? windowDays : TREND_WINDOW_DAYS
       const todayIso = localIsoDay(now ? new Date(now) : new Date())
-      const fromDay = addDaysIso(todayIso, -(TREND_WINDOW_DAYS - 1))
+      const fromDay = addDaysIso(todayIso, -(windowDaysInt - 1))
       const fromMs = Date.parse(`${fromDay}T00:00:00Z`)
-      const spanMs = (TREND_WINDOW_DAYS - 1) * 86400000
+      const spanMs = (windowDaysInt - 1) * 86400000
       const clampDayMs = day => {
         const ms = Date.parse(`${day}T00:00:00Z`)
         if (Number.isNaN(ms)) return null
@@ -682,12 +683,19 @@ window.__ModuleLoader__.load({
         })
       }
 
-      const axisLabels = TREND_AXIS_TICKS.map((offset, index) => ({
-        day: addDaysIso(fromDay, offset),
-        x: Math.round((TREND_PAD_X + (offset / (TREND_WINDOW_DAYS - 1)) * (width - TREND_PAD_X * 2)) * 100) / 100,
-        pos: index === 0 ? 'start' : index === TREND_AXIS_TICKS.length - 1 ? 'end' : 'middle',
-        minor: index % 2 === 1,
-      }))
+      // 横轴刻度位随窗口推导（5 等分取整，offset = floor(i*(n-1)/4)）：n=30 时恰为
+      // 0/7/14/21/29（与旧固定常量逐位一致，30 天页无行为变化），n=7 时为 0/1/3/4/6。
+      // 分母同用窗口跨度——写死 30 天常量会让 7 天弹框的刻度日溢出窗口、x 错位。
+      const axisSpan = Math.max(1, windowDaysInt - 1)
+      const axisLabels = [0, 1, 2, 3, 4].map((quarter, index) => {
+        const offset = Math.floor((quarter * axisSpan) / 4)
+        return {
+          day: addDaysIso(fromDay, offset),
+          x: Math.round((TREND_PAD_X + (offset / axisSpan) * (width - TREND_PAD_X * 2)) * 100) / 100,
+          pos: index === 0 ? 'start' : index === 4 ? 'end' : 'middle',
+          minor: index % 2 === 1,
+        }
+      })
 
       return {
         renderable: true,
@@ -3602,9 +3610,9 @@ window.__ModuleLoader__.load({
         durationText && !(!safeSrc || failed) ? h('span', { className: 'ydo-work-cover-duration' }, durationText) : null)
     }
 
-    // 快照序列 → 弹框播放趋势 points（上海自然日 + 当日 play_count）。
+    // 快照序列 → 弹框播放趋势 points（上海自然日 + 当日 play_count）与窗口锚点。
     // captured_at ISO → +8h 取 UTC 日期（与 ui-format.formatDateTime 同一固定偏移法）。
-    // 窗口与边界处理交给 trendLayout 现有逻辑（30 天固定窗口 + clamp），这里不截断。
+    // 窗口与边界处理交给 trendLayout（弹框 7 天窗口），这里不截断。
     function snapshotTrendPoints(snapshots) {
       const byDay = new Map()
       for (const snapshot of Array.isArray(snapshots) ? snapshots : []) {
@@ -3622,9 +3630,12 @@ window.__ModuleLoader__.load({
           byDay.set(day, { value: Number(snapshot.play_count), _capturedMs: capturedMs })
         }
       }
-      return [...byDay.entries()]
+      const points = [...byDay.entries()]
         .map(([day, entry]) => ({ day, value: entry.value }))
         .sort((a, b) => (a.day < b.day ? -1 : a.day > b.day ? 1 : 0))
+      // 窗口锚点 = 最后一次采集的上海自然日（排序后末位）：久未采集的作品窗口随
+      // 数据走，不锚真今天——否则 7 天窗口下全部点 clamp 到左缘、折线退化成重叠点。
+      return { points, lastCapturedDay: points.length ? points[points.length - 1].day : null }
     }
 
     function WorkDetailModal({ accountId, workId, detail, trend, loading, onClose, t }) {
@@ -3659,10 +3670,18 @@ window.__ModuleLoader__.load({
         [t('colFansGain'), h('span', { className: fansGainDelta.className }, fansGainDelta.text)],
       ]
       // 1015 UI 规格 §5.4：播放趋势折线（替代「共 N 个趋势点」文字行）。
-      const trendPoints = snapshotTrendPoints(trend && trend.snapshots)
+      const { points: trendPoints, lastCapturedDay } = snapshotTrendPoints(trend && trend.snapshots)
       const trendRendered = (() => {
         try {
-          const layout = trendLayout(trendPoints, { width: trendWidth })
+          // 1026 方案：详情弹框趋势窗口 7 天，与创作者中心后台单作品页一致；
+          // 账号/分析页趋势仍 30 天（windowDays 默认值，不传即维持）。
+          // now 锚到最后采集日（无时区后缀字符串按本地午夜解析，localIsoDay 恒
+          // 还原该日，与快照点的 +8h 上海日口径一致），不锚真今天。
+          const layout = trendLayout(trendPoints, {
+            width: trendWidth,
+            now: lastCapturedDay ? new Date(`${lastCapturedDay}T00:00:00`) : null,
+            windowDays: 7,
+          })
           if (!layout.renderable) return h('p', { className: 'ydo-hint', role: 'status' }, t('noTrend'))
           const chart = h(TrendChart, { layout, t, axisValueText, fallbackText: value => countText(value) })
           // 测宽容器：callback ref 供 ResizeObserver 读取实际内容宽度。

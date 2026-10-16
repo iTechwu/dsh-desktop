@@ -1218,6 +1218,40 @@ test('analysis-ui：趋势布局 30 天固定窗口、自然日定位、缺口�
   }
 })
 
+// 1026 方案：作品详情弹框 7 天窗口（与创作者中心后台一致）；账号/分析页不传 windowDays 仍 30 天。
+test('trendLayout：windowDays=7 弹框窗口、刻度随窗口推导、越界点 clamp', async () => {
+  const sandbox = await evalUiModule(new URL('../src/analysis-ui.js', import.meta.url), {})
+  const trendLayout = vm.runInContext('trendLayout', sandbox)
+  const opts = { now: '2026-09-17T12:00:00', windowDays: 7 }
+  const layout = trendLayout([
+    { day: '2026-09-15', value: 100 },
+    { day: '2026-09-17', value: 400 },
+  ], opts)
+  assert.equal(layout.renderable, true)
+  assert.equal(layout.fromDay, '2026-09-11', '窗口起点 = 今天 - 6')
+  assert.equal(layout.toDay, '2026-09-17')
+  // x = 6 + 偏移天数/6 * 588：9/15=4 天 → 398；9/17=6 天 → 594
+  assert.equal(layout.nodes[0].x, 398)
+  assert.equal(layout.nodes[1].x, 594)
+  // 刻度位随窗口推导（offset = floor(i*6/4) → 0/1/3/4/6）：旧实现写死 30 天常量，
+  // 7 天窗口的刻度日会溢出到窗口外、x 错位——这条就是回归锁。
+  assert.deepEqual(Array.from(layout.axisLabels.map(label => label.day)),
+    ['2026-09-11', '2026-09-12', '2026-09-14', '2026-09-15', '2026-09-17'])
+  assert.equal(layout.axisLabels[4].x, 594, '末刻度与窗口末日 x 对齐')
+  assert.ok(layout.axisLabels.every(label => label.x >= 6 && label.x <= 594), '全部刻度落在绘图区内')
+  // 窗口外的历史点 clamp 收敛到窗口起点，不产生越界坐标
+  const clamped = trendLayout([
+    { day: '2026-08-01', value: 100 },
+    { day: '2026-09-17', value: 400 },
+  ], opts)
+  assert.equal(clamped.nodes[0].x, 6)
+  // 非整数 windowDays 回落 30 天默认（防御，不抛错）
+  const fallback = trendLayout(
+    [{ day: '2026-09-17', value: 1 }],
+    { now: '2026-09-17T12:00:00', windowDays: '7' })
+  assert.equal(fallback.fromDay, '2026-08-19')
+})
+
 // review P2-2（2026-09-18）：y 轴 min/max 格式化同文时退千分位完整数字的分支
 // 此前零覆盖；另加 Rules of Hooks 守卫——useMeasuredWidth 必须在 AnalysisPage
 // 任何早退 return 之前调用（errorReason 早退渲染的 hook 调用数与完整渲染一致）。
@@ -2365,6 +2399,10 @@ test('v2 源码样式契约：窄列轨道、分布配色、抽屉尺寸与关�
   const trendChartHookSource = await readFile(new URL('../src/trend-chart.js', import.meta.url), 'utf8')
   assert.match(trendChartHookSource, /typeof ResizeObserver === 'undefined'/u)
   assert.match(analysisSource, /trendLayout\(trend\?\.points \|\| \[\], \{ width: trendWidth, now: trendNow \}\)/u)
+  // 1026 方案：详情弹框趋势固定 7 天窗口（与创作者中心后台一致）；分析页调用不含 windowDays。
+  // 窗口锚 now = 最后采集日（review P2-1）：久未采集的作品窗口随数据走，不退化成左缘重叠点。
+  assert.match(source, /trendLayout\(trendPoints, \{[\s\S]{0,160}windowDays: 7,\n\s*\}\)/u)
+  assert.match(source, /now: lastCapturedDay \? new Date\(`\$\{lastCapturedDay\}T00:00:00`\) : null/u)
   assert.match(source, /\.ydo-an-audience\{display:grid;grid-template-columns:repeat\(2,minmax\(0,1fr\)\);gap:12px\}/u)
   const mediaStart = source.indexOf('@media(max-width:720px)')
   assert.ok(mediaStart > -1, '存在窄屏断点')

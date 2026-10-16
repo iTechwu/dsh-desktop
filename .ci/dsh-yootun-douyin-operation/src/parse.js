@@ -564,7 +564,49 @@ export function parseWordCloud(json) {
  * `dataGap[field] = { reason, at }`；`reason` 取 `not_exposed`（接口未返回）或
  * 具体原因（如低播放 `below_min_view`、`request_failed`）。
  */
-export function buildWorkPayload({ work, performance, compare, source, portrait, search, progress, mget, summarize, hotword, observedAt }) {
+/**
+ * 单作品官方按日累计趋势（1026 方案）：metrics_trend 累计+按天响应解析。
+ *
+ * 响应 `{status_code, trend_map: {view_count: {'0': [{date_time, value}]}}}`：
+ * - 只取 `[0]` 组（`[1]/[3]` 为未证实口径分组，样本见
+ *   docs/1015/douyin/fixtures/metrics_trend/，README 含参数矩阵）；
+ * - `value` 是 6 位小数**字符串**（如 "9557.000000"），parseFloat 后须为非负有限值；
+ * - `date_time` 形如 'YYYY-MM-DD 00:00:00'，取前 10 位为 day（YYYY-MM-DD）；
+ * - day ≥ 上海今天的点**不在这里丢**：解析器保持纯函数，collector 统一 dropFuture
+ *   （与 dashboard 行同一口径）；
+ * - 会话失效（status_code=8）抛 SessionInvalidError；非零业务码/结构异常/零点位
+ *   → 返回 null（调用方记缺口，不阻塞作品其余字段）。
+ *
+ * @returns {Array<{day: string, playCount: number}>|null} 按 day 升序
+ */
+export function parseItemMetricsTrend(json) {
+  const payload = json && typeof json === 'object' ? json : {}
+  if (isSessionExpiredPayload(payload)) throw new SessionInvalidError(toInt(payload.status_code))
+  if (toInt(payload.status_code) !== 0) return null
+  const metric = payload.trend_map && typeof payload.trend_map === 'object' ? payload.trend_map.view_count : null
+  const points = metric && typeof metric === 'object' ? metric['0'] : null
+  if (!Array.isArray(points)) return null
+  const rows = []
+  for (const point of points) {
+    if (!point || typeof point !== 'object') continue
+    // 形状 + 语义双校验：2026-13-45 这类形状合规的非法日期会在服务端 pydantic
+    // date 反序列化时炸掉**整批**入库（单作品校验失败 = 整批 50 件被拒），
+    // 这里行级剔除（与 wordCloud 截断同一防御先例）。
+    const day = typeof point.date_time === 'string' && /^\d{4}-\d{2}-\d{2}/u.test(point.date_time)
+      && !Number.isNaN(Date.parse(`${point.date_time.slice(0, 10)}T00:00:00Z`))
+      ? point.date_time.slice(0, 10)
+      : null
+    if (day === null) continue
+    const value = Number.parseFloat(point.value)
+    if (!Number.isFinite(value) || value < 0) continue
+    rows.push({ day, playCount: Math.round(value) })
+  }
+  if (!rows.length) return null
+  // 官方按天固定最近 7 个已完成日；接口异常吐超限点位时截取最近 7 个，兜住服务端 max_length=7。
+  return rows.sort((a, b) => (a.day < b.day ? -1 : a.day > b.day ? 1 : 0)).slice(-7)
+}
+
+export function buildWorkPayload({ work, performance, compare, source, portrait, search, progress, mget, summarize, hotword, metricsTrend, metricsTrendGap, observedAt }) {
   const gaps = {}
   const mark = (field, reason) => { gaps[field] = { reason, at: observedAt } }
   const from = (value, field, reason = 'not_exposed') => {
@@ -588,6 +630,12 @@ export function buildWorkPayload({ work, performance, compare, source, portrait,
   // 单稿指标按 workId 取值：拦截到的批量响应里可能没有本条作品。
   const mgetRow = mget && typeof mget.get === 'function' ? mget.get(work.work_id) : null
   const summaryRow = summarize && typeof summarize.get === 'function' ? summarize.get(work.work_id) : null
+  // 1026 方案：官方按日累计回填点位（≤7 个已完成日）。取不到记缺口（可观测），
+  // 不影响其余字段；服务端只回填尚无快照行的历史日，绝不覆盖既有行。
+  const playTrendDaily = Array.isArray(metricsTrend) && metricsTrend.length
+    ? metricsTrend.map(point => ({ day: point.day, play_count: point.playCount }))
+    : null
+  if (!playTrendDaily) mark('play_trend_daily', metricsTrendGap || 'not_exposed')
 
   return {
     work_id: work.work_id,
@@ -620,6 +668,7 @@ export function buildWorkPayload({ work, performance, compare, source, portrait,
     hotword: hotword && hotword.status === 'ok'
       ? { source: 'tab', status: 'ok', words: hotword.words }
       : { source: 'tab', status: 'unavailable', words: [] },
+    play_trend_daily: playTrendDaily,
     dataGap: Object.keys(gaps).length ? gaps : null,
     // 私有作品不进入库（tools 的 visibility 由服务端结算）：仅作为设备端提示。
     is_private: work.is_private === true,

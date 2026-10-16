@@ -834,3 +834,91 @@ test('collectAccountWorks：作品链路完成后挂 dashboard 结果（缺口�
   // 作品载荷带封面（列表键）与吸粉量（summarize 未取到 → null + gap）。
   assert.ok(collected.works[0].cover_url || collected.works[0].dataGap?.cover_url)
 })
+
+// ---------------------------------------------------------------------------
+// 1026 方案：单作品按日累计播放趋势（metrics_trend 主动直取，不进页面拦截）
+// ---------------------------------------------------------------------------
+
+const TREND_ROUTE = '/data/item_analysis/metrics_trend'
+
+function trendSample({ extraGroups = true } = {}) {
+  const points = [
+    { date_time: '2026-10-08 00:00:00', value: '100.000000' },
+    { date_time: '2026-10-09 00:00:00', value: '200.000000' },
+  ]
+  return {
+    status_code: 0,
+    status_msg: 'success',
+    trend_map: {
+      view_count: {
+        // 真实接口 [0]/[1]/[3] 三组并存，口径必须只取 [0]（新增/累计混拿会错）
+        ...(extraGroups ? { '1': [{ date_time: '2026-10-08 00:00:00', value: '4.000000' }] } : {}),
+        '0': points,
+      },
+      subscribe_count: { '0': [{ date_time: '2026-10-08 00:00:00', value: '888.000000' }] },
+    },
+  }
+}
+
+async function detailPageWithTrend(jsonRoutes) {
+  return fakePage({
+    jsonRoutes: {
+      '/data/diagnose/item_compare': await fixture('item_compare.high.sample.json'),
+      '/data/item/play/source': await fixture('play_source.sample.json'),
+      '/data/fans/item/portrait': await fixture('portrait.sample.json'),
+      '/data/item_analysis/search/keyword': await fixture('search_keywords.sample.json'),
+      ...jsonRoutes,
+    },
+  })
+}
+
+test('单稿详情：metrics_trend 主动直取（累计/按天口径、只取 view_count[0]），请求参数锁定', async () => {
+  const page = await detailPageWithTrend({ [TREND_ROUTE]: trendSample() })
+  const detail = await collectWorkDetail(page, '7000000000000000001')
+  assert.deepEqual(detail.metricsTrend, [
+    { day: '2026-10-08', playCount: 100 },
+    { day: '2026-10-09', playCount: 200 },
+  ], '字符串 value 取整入库；subscribe_count 与 [1] 组不得串入')
+  assert.equal(detail.metricsTrendGap, null)
+  const call = page.calls.find(item => item.url?.includes(TREND_ROUTE))
+  assert.ok(call, '必须主动发起 metrics_trend 同源请求（页面自发的组合是新增/每小时，口径错误）')
+  const url = new URL(call.url, 'https://creator.douyin.com')
+  assert.equal(url.searchParams.get('item_id'), '7000000000000000001')
+  assert.equal(url.searchParams.get('trend_type'), '2', '累计口径（页面展示默认新增，不能拦）')
+  assert.equal(url.searchParams.get('time_unit'), '1', '按天口径')
+  assert.equal(url.searchParams.get('metrics'), 'view_count')
+  assert.equal(url.searchParams.get('metrics_group'), '0,1,3', 'metrics_group 必填，缺省 status_code=4')
+})
+
+test('单稿详情：metrics_trend 今天/未来占位点丢弃，全占位 → null + not_exposed（与 dashboard dropFuture 同口径）', async () => {
+  const today = shanghaiToday()
+  const tomorrow = shanghaiDayOffset(1)
+  const page = await detailPageWithTrend({
+    [TREND_ROUTE]: {
+      status_code: 0,
+      trend_map: { view_count: { '0': [
+        { date_time: `${today} 00:00:00`, value: '6330000.000000' },
+        { date_time: `${tomorrow} 00:00:00`, value: '9999999.000000' },
+      ] } },
+    },
+  })
+  const detail = await collectWorkDetail(page, '7000000000000000001')
+  assert.equal(detail.metricsTrend, null, '今日点≈累计量级占位（总览 bug 根因），绝不入库')
+  assert.equal(detail.metricsTrendGap, 'not_exposed')
+})
+
+test('单稿详情：metrics_trend 请求失败 → request_failed 缺口，不阻塞其余字段', async () => {
+  const page = await detailPageWithTrend({ [TREND_ROUTE]: null })
+  const detail = await collectWorkDetail(page, '7000000000000000001')
+  assert.equal(detail.metricsTrend, null)
+  assert.equal(detail.metricsTrendGap, 'request_failed')
+  assert.equal(detail.compare.lowPlay, false, '趋势失败不影响 compare 主链路')
+  assert.ok(detail.source.length, '其余字段照常返回')
+})
+
+test('单稿详情：metrics_trend status_code=8 → SessionInvalidError 传播（与其他端点同会话语义）', async () => {
+  const page = await detailPageWithTrend({
+    [TREND_ROUTE]: { status_code: 8, status_msg: '示例：用户未登录' },
+  })
+  await assert.rejects(() => collectWorkDetail(page, '7000000000000000001'), SessionInvalidError)
+})

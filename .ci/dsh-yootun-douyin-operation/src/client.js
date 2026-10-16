@@ -695,9 +695,9 @@ function WorkCover({ coverUrl, durationText, size = 'small', t }) {
     durationText && !(!safeSrc || failed) ? h('span', { className: 'ydo-work-cover-duration' }, durationText) : null)
 }
 
-// 快照序列 → 弹框播放趋势 points（上海自然日 + 当日 play_count）。
+// 快照序列 → 弹框播放趋势 points（上海自然日 + 当日 play_count）与窗口锚点。
 // captured_at ISO → +8h 取 UTC 日期（与 ui-format.formatDateTime 同一固定偏移法）。
-// 窗口与边界处理交给 trendLayout 现有逻辑（30 天固定窗口 + clamp），这里不截断。
+// 窗口与边界处理交给 trendLayout（弹框 7 天窗口），这里不截断。
 function snapshotTrendPoints(snapshots) {
   const byDay = new Map()
   for (const snapshot of Array.isArray(snapshots) ? snapshots : []) {
@@ -715,9 +715,12 @@ function snapshotTrendPoints(snapshots) {
       byDay.set(day, { value: Number(snapshot.play_count), _capturedMs: capturedMs })
     }
   }
-  return [...byDay.entries()]
+  const points = [...byDay.entries()]
     .map(([day, entry]) => ({ day, value: entry.value }))
     .sort((a, b) => (a.day < b.day ? -1 : a.day > b.day ? 1 : 0))
+  // 窗口锚点 = 最后一次采集的上海自然日（排序后末位）：久未采集的作品窗口随
+  // 数据走，不锚真今天——否则 7 天窗口下全部点 clamp 到左缘、折线退化成重叠点。
+  return { points, lastCapturedDay: points.length ? points[points.length - 1].day : null }
 }
 
 function WorkDetailModal({ accountId, workId, detail, trend, loading, onClose, t }) {
@@ -752,10 +755,18 @@ function WorkDetailModal({ accountId, workId, detail, trend, loading, onClose, t
     [t('colFansGain'), h('span', { className: fansGainDelta.className }, fansGainDelta.text)],
   ]
   // 1015 UI 规格 §5.4：播放趋势折线（替代「共 N 个趋势点」文字行）。
-  const trendPoints = snapshotTrendPoints(trend && trend.snapshots)
+  const { points: trendPoints, lastCapturedDay } = snapshotTrendPoints(trend && trend.snapshots)
   const trendRendered = (() => {
     try {
-      const layout = trendLayout(trendPoints, { width: trendWidth })
+      // 1026 方案：详情弹框趋势窗口 7 天，与创作者中心后台单作品页一致；
+      // 账号/分析页趋势仍 30 天（windowDays 默认值，不传即维持）。
+      // now 锚到最后采集日（无时区后缀字符串按本地午夜解析，localIsoDay 恒
+      // 还原该日，与快照点的 +8h 上海日口径一致），不锚真今天。
+      const layout = trendLayout(trendPoints, {
+        width: trendWidth,
+        now: lastCapturedDay ? new Date(`${lastCapturedDay}T00:00:00`) : null,
+        windowDays: 7,
+      })
       if (!layout.renderable) return h('p', { className: 'ydo-hint', role: 'status' }, t('noTrend'))
       const chart = h(TrendChart, { layout, t, axisValueText, fallbackText: value => countText(value) })
       // 测宽容器：callback ref 供 ResizeObserver 读取实际内容宽度。

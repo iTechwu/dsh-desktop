@@ -21,6 +21,7 @@ import {
   parseFansSummary,
   parseItemCompare,
   parseItemMget,
+  parseItemMetricsTrend,
   parseJsonPreservingIds,
   parseItemPerformance,
   parseItemSummarize,
@@ -48,6 +49,13 @@ export const USER_INFO_PATH = '/web/api/media/user/info/'
 // 单稿指标：详情页概览接口，补齐列表 `statistics` 未暴露的 `danmaku_count`。
 export const ITEM_MGET_PATH = '/web/api/creator/item/mget'
 export const ITEM_MGET_FIELDS = 'metrics,review,play_info,dou_plus,integrated_incentive,item_status,recommend_info'
+// 1026 方案：单作品官方按日累计趋势（trend_type=2 累计 / time_unit=1 天 /
+// metrics_group 必填，缺省 status_code=4）。主动直取，不进页面拦截（见 collectWorkDetail）。
+export const ITEM_METRICS_TREND_PATH = '/janus/douyin/creator/data/item_analysis/metrics_trend'
+
+// 上海"今天"（sv-SE 格式 = YYYY-MM-DD，字典序即时间序）。dashboard 行与
+// metrics_trend 点位的未来日统一按此口径丢弃（数据未出：后台每日 10 点更新前一日）。
+const shanghaiTodayIso = () => new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Shanghai' })
 export const ITEM_SUMMARIZE_PATH = '/web/api/creator/data/item/summarize/'
 // 账号大盘与粉丝画像（1015 方案 §6.1）：固定 recent_days=30（实测 90 降级/拒绝），
 // 与现有 11 个接口同机制（页面上下文同源 fetch，自动 msToken/a_bogus 签名）。
@@ -305,6 +313,36 @@ export async function collectWorkDetail(page, workId, { timeoutMs = 25_000, onTa
     // 拦截和页面内 fetch 都没拿到：这是通道失败，不是抖音声明低播放。
     compareParsed.gapReason = 'request_failed'
   }
+
+  // 1026 方案：官方按日累计（最近 7 个已完成日）**主动直取**，不进页面拦截——
+  // 详情页自己发的 metrics_trend 是"新增/每小时"等展示组合，拦截会拿到错误口径；
+  // 这里固定 trend_type=2（累计）+ time_unit=1（天）+ view_count（见
+  // docs/1015/douyin/fixtures/metrics_trend/README.md 参数矩阵）。失败只记缺口，
+  // 不阻塞作品其余字段；status_code=8 仍按会话失效传播。
+  let metricsTrend = null
+  let metricsTrendGap = null
+  try {
+    const trendUrl = `${ITEM_METRICS_TREND_PATH}?item_id=${workId}&trend_type=2&time_unit=1&metrics_group=0%2C1%2C3&metrics=view_count`
+    const trendResult = await fetchJson(page, trendUrl)
+    if (!trendResult.ok) {
+      metricsTrendGap = 'request_failed'
+    } else {
+      metricsTrend = parseItemMetricsTrend(trendResult.json)
+      if (metricsTrend === null) metricsTrendGap = 'not_exposed'
+    }
+  } catch (error) {
+    if (error instanceof SessionInvalidError) throw error
+    metricsTrendGap = 'request_failed'
+  }
+  // 上海今天及以后的点丢弃（数据未出/占位口径不可信），与 dashboard dropFuture 同口径。
+  if (metricsTrend) {
+    const todayIso = shanghaiTodayIso()
+    metricsTrend = metricsTrend.filter(point => point.day < todayIso)
+    if (!metricsTrend.length) {
+      metricsTrend = null
+      metricsTrendGap = 'not_exposed'
+    }
+  }
   return {
     endpointsSeen: Object.keys(endpoints).filter(key => captured[key]),
     compare: compareParsed,
@@ -314,6 +352,9 @@ export async function collectWorkDetail(page, workId, { timeoutMs = 25_000, onTa
     progress: captured.progress ? parseProgressAnalysis(captured.progress) : null,
     mget: captured.mget ? parseItemMget(captured.mget) : null,
     summarize: captured.summarize ? parseItemSummarize(captured.summarize) : null,
+    // 1026 方案：官方按日累计（≤7 个已完成日），空缺历史日由服务端只插不覆盖回填。
+    metricsTrend,
+    metricsTrendGap,
   }
 }
 
@@ -385,7 +426,7 @@ export async function collectDashboard(page, { recentDays = DASHBOARD_RECENT_DAY
   // 上海"今天"（数据未出：后台每日 10 点更新前一日数据）。今天及未来的 trends
   // 点是接口占位/异常大值（1015 真机 E2E：燃豚豚 10-16 点≈累计总量，被当作当日
   // 增量入库后趋势末点暴涨），必须在采集侧整行丢弃。
-  const todayIso = new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Shanghai' })
+  const todayIso = shanghaiTodayIso()
   const dropFuture = rows => rows.filter(row => row.day < todayIso)
 
   let dashboardRows = []
@@ -530,6 +571,8 @@ export async function collectAccountWorks(page, {
         mget: detail.mget,
         summarize: detail.summarize,
         hotword,
+        metricsTrend: detail.metricsTrend,
+        metricsTrendGap: detail.metricsTrendGap,
         observedAt,
       }))
     } catch (error) {

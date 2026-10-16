@@ -18,6 +18,7 @@ import {
   normalizeWork,
   parseItemCompare,
   parseItemMget,
+  parseItemMetricsTrend,
   parseItemPerformance,
   dashboardDay,
   dashboardMetricValue,
@@ -41,6 +42,8 @@ import {
 
 const FIXTURE_DIR = new URL('./fixtures/', import.meta.url)
 const DOCS_FIXTURE_DIR = new URL('../../../docs/0909/douyin/fixtures/', import.meta.url)
+// 1026 方案真机抓包（item_analysis/metrics_trend 按日累计契约）。
+const DOCS_TREND_FIXTURE_DIR = new URL('../../../docs/1015/douyin/fixtures/metrics_trend/', import.meta.url)
 
 async function fixture(name) {
   return JSON.parse(await readFile(new URL(name, FIXTURE_DIR), 'utf8'))
@@ -806,4 +809,108 @@ test('parseFansSummary：分布条目截断至服务端上限 64', () => {
   const profile = parseFansSummary({ status_code: 0, city_distribution: city })
   assert.equal(profile.city_distribution.length, 64, '超限截断而不是整批被服务端 max_length 拒绝')
   assert.deepEqual(profile.city_distribution[0], { label: '省0', count: 1 })
+})
+
+// ---------------------------------------------------------------------------
+// 1026 方案：单作品按日累计播放趋势（item_analysis/metrics_trend）
+// ---------------------------------------------------------------------------
+
+test('parseItemMetricsTrend：docs 真机 fixture——双指标只取 view_count[0] 组，7 点升序', async () => {
+  // 与「插件 fixture 与 docs 契约样例一致」同一守卫：.ci 快照无 docs 工作区时跳过。
+  if (!existsSync(DOCS_TREND_FIXTURE_DIR)) return
+  const json = JSON.parse(
+    await readFile(new URL('cumulative_daily_two_metrics.json', DOCS_TREND_FIXTURE_DIR), 'utf8'))
+  const rows = parseItemMetricsTrend(json)
+  assert.equal(rows.length, 7, '按天口径固定最近 7 个已完成日（不含当天）')
+  assert.deepEqual(rows[0], { day: '2026-10-09', playCount: 9557 })
+  assert.deepEqual(rows[6], { day: '2026-10-15', playCount: 9698 })
+  const days = rows.map(row => row.day)
+  assert.deepEqual([...days].sort(), days, '按 day 升序')
+})
+
+test('parseItemMetricsTrend：6 位小数字符串取整、畸形点行级剔除、结构缺失 null', () => {
+  const rows = parseItemMetricsTrend({
+    status_code: 0,
+    trend_map: {
+      view_count: {
+        '0': [
+          { date_time: '2026-10-09 00:00:00', value: '10.999999' },
+          { date_time: '2026-10-10T00:00:00', value: '20.000000' },
+          { date_time: '2026-10-11 00:00:00', value: '-1.000000' },
+          { date_time: '20261012', value: '30.000000' },
+          { date_time: '2026-10-13 00:00:00', value: 'abc' },
+          // 形状合规但语义非法：服务端 pydantic date 反序列化会炸掉整批入库，必须行级剔除
+          { date_time: '2026-13-45 00:00:00', value: '40.000000' },
+          null,
+        ],
+      },
+    },
+  })
+  assert.deepEqual(rows, [
+    { day: '2026-10-09', playCount: 11 },
+    { day: '2026-10-10', playCount: 20 },
+  ], '畸形点逐条剔除；T 分隔日期取前 10 位；字符串 value parseFloat 后取整')
+  assert.equal(
+    parseItemMetricsTrend({ status_code: 0, trend_map: { view_count: { '0': [{ date_time: 'x', value: 'y' }] } } }),
+    null, '全部点畸形 → null（上层记 not_exposed 缺口）')
+  assert.equal(parseItemMetricsTrend({ status_code: 0, trend_map: {} }), null, '缺 trend_map.view_count[0]')
+  assert.equal(parseItemMetricsTrend({ status_code: 4, status_msg: 'metrics_group 缺省' }), null, '业务非 0 不抛错')
+  assert.equal(parseItemMetricsTrend(null), null)
+})
+
+test('parseItemMetricsTrend：超限点位截取最近 7 个（兜住服务端 max_length=7，不整批被拒）', () => {
+  const points = Array.from({ length: 9 }, (_, index) => ({
+    date_time: `2026-10-0${index + 1} 00:00:00`,
+    value: `${(index + 1) * 10}.000000`,
+  }))
+  const rows = parseItemMetricsTrend({ status_code: 0, trend_map: { view_count: { '0': points } } })
+  assert.equal(rows.length, 7)
+  assert.deepEqual(rows[0], { day: '2026-10-03', playCount: 30 }, '丢最旧的 2 个，保留最近 7 个')
+  assert.deepEqual(rows[6], { day: '2026-10-09', playCount: 90 })
+})
+
+test('parseItemMetricsTrend：status_code=8 会话失效抛 SessionInvalidError（采集层重抛语义）', () => {
+  assert.throws(
+    () => parseItemMetricsTrend({ status_code: 8, status_msg: '示例：用户未登录' }),
+    SessionInvalidError)
+})
+
+test('buildWorkPayload：play_trend_daily 载荷（snake_case）与缺口原因透传（1026 方案）', async () => {
+  const listJson = await fixture('work_list.page1.sample.json')
+  const work = parseWorkListPage(listJson).works[0]
+  const compare = parseItemCompare(await fixture('item_compare.high.sample.json'))
+  const ok = buildWorkPayload({
+    work,
+    performance: null,
+    compare,
+    metricsTrend: [
+      { day: '2026-10-09', playCount: 9557 },
+      { day: '2026-10-10', playCount: 9600 },
+    ],
+    metricsTrendGap: null,
+    observedAt: '2026-10-16T00:00:00.000Z',
+  })
+  assert.deepEqual(ok.play_trend_daily, [
+    { day: '2026-10-09', play_count: 9557 },
+    { day: '2026-10-10', play_count: 9600 },
+  ], '字段名对齐服务端 DouyinPlayTrendPoint（day/play_count）')
+  assert.ok(!ok.dataGap || !ok.dataGap.play_trend_daily, '取到点位不记缺口')
+  const gap = buildWorkPayload({
+    work,
+    performance: null,
+    compare,
+    metricsTrend: null,
+    metricsTrendGap: 'request_failed',
+    observedAt: '2026-10-16T00:00:00.000Z',
+  })
+  assert.equal(gap.play_trend_daily, null)
+  assert.equal(gap.dataGap.play_trend_daily.reason, 'request_failed')
+  const legacy = buildWorkPayload({
+    work,
+    performance: null,
+    compare,
+    observedAt: '2026-10-16T00:00:00.000Z',
+  })
+  assert.equal(legacy.play_trend_daily, null)
+  assert.equal(legacy.dataGap.play_trend_daily.reason, 'not_exposed', '旧调用方未传参 → 兜底缺口标记，不抛错')
 })
