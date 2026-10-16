@@ -608,7 +608,7 @@ window.__ModuleLoader__.load({
       return localIsoDay(new Date(base.getTime() + base.getTimezoneOffset() * 60000))
     }
 
-    function trendLayout(points, { width = 600, now = null, windowDays = TREND_WINDOW_DAYS } = {}) {
+    function trendLayout(points, { width = 600, now = null, windowDays = TREND_WINDOW_DAYS, dropOutsideDays = false } = {}) {
       const empty = { renderable: false, single: false, nodes: [], segments: [], axisLabels: [] }
       const days = (Array.isArray(points) ? points : [])
         .filter(point => point && typeof point.day === 'string' && Number.isFinite(Number(point.value)))
@@ -623,9 +623,14 @@ window.__ModuleLoader__.load({
       const fromDay = addDaysIso(todayIso, -(windowDaysInt - 1))
       const fromMs = Date.parse(`${fromDay}T00:00:00Z`)
       const spanMs = (windowDaysInt - 1) * 86400000
+      // dropOutsideDays：窗口外的历史日直接丢弃，不 clamp 到窗口边缘——快照可能
+      // 早于窗口（作品此前已被采过多天），clamp 会让它们全叠在起点成一列点
+      // （真机 2026-10-16 截图）；弹框 7 天与账号分析页 30 天两处调用均已传 true，
+      // 默认 false 仅供测试直调与未来新调用方保持 clamp 原语义。
       const clampDayMs = day => {
         const ms = Date.parse(`${day}T00:00:00Z`)
         if (Number.isNaN(ms)) return null
+        if (dropOutsideDays && (ms < fromMs || ms > fromMs + spanMs)) return null
         return Math.min(fromMs + spanMs, Math.max(fromMs, ms))
       }
 
@@ -2025,7 +2030,13 @@ window.__ModuleLoader__.load({
         return h2('div', { className: 'ydo-state', role: 'status' }, h2('p', null, t('none')))
       }
       const kpi = analysis?.kpi || {}
-      const layout = trendLayout(trend?.points || [], { width: trendWidth, now: trendNow })
+      // 1026 真机（2026-10-16）统一切丢弃语义：daily 行超窗口（账号采集满 30 天后）
+      // 时，窗口外旧行 clamp 到左缘会叠成一列点——固定窗口只画窗口内的天。
+      const layout = trendLayout(trend?.points || [], {
+        width: trendWidth,
+        now: trendNow,
+        dropOutsideDays: true,
+      })
 
       return h2('div', { className: 'ydo-an-page' },
         h2('div', { className: 'ydo-an-toolbar' },
@@ -3684,10 +3695,13 @@ window.__ModuleLoader__.load({
           // 账号/分析页趋势仍 30 天（windowDays 默认值，不传即维持）。
           // now 锚到最后采集日（无时区后缀字符串按本地午夜解析，localIsoDay 恒
           // 还原该日，与快照点的 +8h 上海日口径一致），不锚真今天。
+          // dropOutsideDays：作品此前已采过的更早历史日直接丢弃——clamp 会让它们
+          // 全叠在窗口起点成一列点（真机 2026-10-16 截图）。
           const layout = trendLayout(trendPoints, {
             width: trendWidth,
             now: lastCapturedDay ? new Date(`${lastCapturedDay}T00:00:00`) : null,
             windowDays: 7,
+            dropOutsideDays: true,
           })
           if (!layout.renderable) return h('p', { className: 'ydo-hint', role: 'status' }, t('noTrend'))
           const chart = h(TrendChart, { layout, t, axisValueText, fallbackText: value => countText(value) })

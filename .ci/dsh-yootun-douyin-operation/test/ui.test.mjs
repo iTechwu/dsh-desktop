@@ -1141,6 +1141,19 @@ test('analysis-ui：趋势布局 30 天固定窗口、自然日定位、缺口�
   assert.equal(wide.nodes[1].x, 894)
   assert.equal(wide.width, 900)
 
+  // dropOutsideDays（2026-10-16 真机统一切丢弃语义）：账号采集满 30 天后，窗口外
+  // 旧行丢弃（旧行为 clamp 到左缘会叠成一列点）。
+  const baseMs = Date.parse('2026-08-15T00:00:00Z')
+  const thirtyFourDays = Array.from({ length: 34 }, (_, index) => ({
+    day: new Date(baseMs + index * 86400000).toISOString().slice(0, 10), // 08-15 .. 09-17
+    value: index + 1,
+  }))
+  const droppedOld = trendLayout(thirtyFourDays, { ...opts, dropOutsideDays: true })
+  assert.equal(droppedOld.renderable, true)
+  assert.equal(droppedOld.nodes.length, 30, '窗口 [08-19, 09-17] 外的 08-15..08-18 四天丢弃')
+  assert.equal(droppedOld.nodes[0].day, '2026-08-19')
+  assert.equal(droppedOld.nodes[29].day, '2026-09-17')
+
   // 需求 5a：y 轴专用格式化——≥1万固定 1 位小数万单位，<1万千分位，非有限数 null
   const axisValueText = vm.runInContext('axisValueText', sandbox)
   assert.equal(axisValueText(1651000), '165.1万')
@@ -1239,12 +1252,30 @@ test('trendLayout：windowDays=7 弹框窗口、刻度随窗口推导、越界�
     ['2026-09-11', '2026-09-12', '2026-09-14', '2026-09-15', '2026-09-17'])
   assert.equal(layout.axisLabels[4].x, 594, '末刻度与窗口末日 x 对齐')
   assert.ok(layout.axisLabels.every(label => label.x >= 6 && label.x <= 594), '全部刻度落在绘图区内')
-  // 窗口外的历史点 clamp 收敛到窗口起点，不产生越界坐标
+  // 窗口外的历史点 clamp 收敛到窗口起点，不产生越界坐标（默认行为，账号/分析页保持）
   const clamped = trendLayout([
     { day: '2026-08-01', value: 100 },
     { day: '2026-09-17', value: 400 },
   ], opts)
   assert.equal(clamped.nodes[0].x, 6)
+  // dropOutsideDays（弹框 1026）：窗口外的历史日丢弃，不再 clamp 成起点一列重叠点
+  // （真机 2026-10-16 截图：作品已有更早采集日，7 天窗口下全部叠在左缘）
+  const elevenDays = Array.from({ length: 11 }, (_, index) => ({
+    day: `2026-09-${String(7 + index).padStart(2, '0')}`, // 09-07 .. 09-17
+    value: (index + 1) * 10,
+  }))
+  const dropped = trendLayout(elevenDays, { ...opts, dropOutsideDays: true })
+  assert.deepEqual(Array.from(dropped.nodes.map(node => node.day)),
+    ['2026-09-11', '2026-09-12', '2026-09-13', '2026-09-14', '2026-09-15', '2026-09-16', '2026-09-17'],
+    '窗口 [09-11, 09-17] 外的 09-07..09-10 四天被丢弃')
+  assert.ok(dropped.nodes.every(node => node.x >= 6 && node.x <= 594), '保留点全部落在窗口内')
+  // 只剩一个窗口内点 → single 提示语义（与「暂无足够趋势数据」一致）
+  const lone = trendLayout([
+    { day: '2026-09-01', value: 100 },
+    { day: '2026-09-17', value: 400 },
+  ], { ...opts, dropOutsideDays: true })
+  assert.equal(lone.single, true)
+  assert.equal(lone.nodes.length, 1)
   // 非整数 windowDays 回落 30 天默认（防御，不抛错）
   const fallback = trendLayout(
     [{ day: '2026-09-17', value: 1 }],
@@ -1313,6 +1344,9 @@ test('analysis-ui：趋势 y 轴同文退避千分位 + hooks 在早退分支前
     trendMetric: 'play', trendErrorReason: null, loading: false, errorReason: null,
     exporting: false, onBack: () => {}, onMetricChange: () => {}, onExport: () => {},
     onOpenWork: () => {}, t,
+    // 固定窗口锚点（数据日期 09-10/09-17 按「今天=09-17」设计）：不锚真今天——
+    // dropOutsideDays 下窗口外点被丢弃，真实日期推进后该用例会自然失效。
+    trendNow: '2026-09-17T12:00:00',
     aiAnalysis: null, aiBusy: false, aiError: null, aiConfirming: false,
     onAiStart: () => {}, onAiRequestRerun: () => {}, onAiConfirmRerun: () => {}, onAiCancelConfirm: () => {},
   }
@@ -2439,10 +2473,11 @@ test('v2 源码样式契约：窄列轨道、分布配色、抽屉尺寸与关�
   assert.match(analysisSource, /useMeasuredWidth/u)
   const trendChartHookSource = await readFile(new URL('../src/trend-chart.js', import.meta.url), 'utf8')
   assert.match(trendChartHookSource, /typeof ResizeObserver === 'undefined'/u)
-  assert.match(analysisSource, /trendLayout\(trend\?\.points \|\| \[\], \{ width: trendWidth, now: trendNow \}\)/u)
+  assert.match(analysisSource, /trendLayout\(trend\?\.points \|\| \[\], \{[\s\S]{0,120}dropOutsideDays: true,\n\s*\}\)/u,
+    '分析页 30 天窗口同样丢弃窗口外旧行（2026-10-16 真机统一切丢弃语义）')
   // 1026 方案：详情弹框趋势固定 7 天窗口（与创作者中心后台一致）；分析页调用不含 windowDays。
   // 窗口锚 now = 最后采集日（review P2-1）：久未采集的作品窗口随数据走，不退化成左缘重叠点。
-  assert.match(source, /trendLayout\(trendPoints, \{[\s\S]{0,160}windowDays: 7,\n\s*\}\)/u)
+  assert.match(source, /trendLayout\(trendPoints, \{[\s\S]{0,200}windowDays: 7,\n\s*dropOutsideDays: true,\n\s*\}\)/u)
   assert.match(source, /now: lastCapturedDay \? new Date\(`\$\{lastCapturedDay\}T00:00:00`\) : null/u)
   assert.match(source, /\.ydo-an-audience\{display:grid;grid-template-columns:repeat\(2,minmax\(0,1fr\)\);gap:12px\}/u)
   const mediaStart = source.indexOf('@media(max-width:720px)')

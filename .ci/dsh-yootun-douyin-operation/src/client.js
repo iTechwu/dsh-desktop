@@ -769,10 +769,13 @@ function WorkDetailModal({ accountId, workId, detail, trend, loading, onClose, t
       // 账号/分析页趋势仍 30 天（windowDays 默认值，不传即维持）。
       // now 锚到最后采集日（无时区后缀字符串按本地午夜解析，localIsoDay 恒
       // 还原该日，与快照点的 +8h 上海日口径一致），不锚真今天。
+      // dropOutsideDays：作品此前已采过的更早历史日直接丢弃——clamp 会让它们
+      // 全叠在窗口起点成一列点（真机 2026-10-16 截图）。
       const layout = trendLayout(trendPoints, {
         width: trendWidth,
         now: lastCapturedDay ? new Date(`${lastCapturedDay}T00:00:00`) : null,
         windowDays: 7,
+        dropOutsideDays: true,
       })
       if (!layout.renderable) return h('p', { className: 'ydo-hint', role: 'status' }, t('noTrend'))
       const chart = h(TrendChart, { layout, t, axisValueText, fallbackText: value => countText(value) })

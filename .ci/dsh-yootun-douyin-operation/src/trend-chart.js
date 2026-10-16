@@ -38,7 +38,7 @@ function addDaysIso(iso, days) {
   return localIsoDay(new Date(base.getTime() + base.getTimezoneOffset() * 60000))
 }
 
-export function trendLayout(points, { width = 600, now = null, windowDays = TREND_WINDOW_DAYS } = {}) {
+export function trendLayout(points, { width = 600, now = null, windowDays = TREND_WINDOW_DAYS, dropOutsideDays = false } = {}) {
   const empty = { renderable: false, single: false, nodes: [], segments: [], axisLabels: [] }
   const days = (Array.isArray(points) ? points : [])
     .filter(point => point && typeof point.day === 'string' && Number.isFinite(Number(point.value)))
@@ -53,9 +53,14 @@ export function trendLayout(points, { width = 600, now = null, windowDays = TREN
   const fromDay = addDaysIso(todayIso, -(windowDaysInt - 1))
   const fromMs = Date.parse(`${fromDay}T00:00:00Z`)
   const spanMs = (windowDaysInt - 1) * 86400000
+  // dropOutsideDays：窗口外的历史日直接丢弃，不 clamp 到窗口边缘——快照可能
+  // 早于窗口（作品此前已被采过多天），clamp 会让它们全叠在起点成一列点
+  // （真机 2026-10-16 截图）；弹框 7 天与账号分析页 30 天两处调用均已传 true，
+  // 默认 false 仅供测试直调与未来新调用方保持 clamp 原语义。
   const clampDayMs = day => {
     const ms = Date.parse(`${day}T00:00:00Z`)
     if (Number.isNaN(ms)) return null
+    if (dropOutsideDays && (ms < fromMs || ms > fromMs + spanMs)) return null
     return Math.min(fromMs + spanMs, Math.max(fromMs, ms))
   }
 

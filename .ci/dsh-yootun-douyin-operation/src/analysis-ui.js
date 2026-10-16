@@ -663,7 +663,13 @@ export function AnalysisPage({
     return h2('div', { className: 'ydo-state', role: 'status' }, h2('p', null, t('none')))
   }
   const kpi = analysis?.kpi || {}
-  const layout = trendLayout(trend?.points || [], { width: trendWidth, now: trendNow })
+  // 1026 真机（2026-10-16）统一切丢弃语义：daily 行超窗口（账号采集满 30 天后）
+  // 时，窗口外旧行 clamp 到左缘会叠成一列点——固定窗口只画窗口内的天。
+  const layout = trendLayout(trend?.points || [], {
+    width: trendWidth,
+    now: trendNow,
+    dropOutsideDays: true,
+  })
 
   return h2('div', { className: 'ydo-an-page' },
     h2('div', { className: 'ydo-an-toolbar' },
