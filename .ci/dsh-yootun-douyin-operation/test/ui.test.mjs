@@ -11,6 +11,7 @@ import {
   accountState,
   basisLines,
   compareNullableNumbers,
+  fanDelta,
   formatAgeBucket,
   formatCell,
   formatCount,
@@ -1409,6 +1410,42 @@ test('Tab 激活态：只有当前 Tab 有底部指示线；左侧账号栏只�
   assert.match(css, /\.ydo-body-full\{grid-template-columns:1fr\}/u)
 })
 
+test('粉丝域着色 CSS（用户 2026-10-16 行情语义）：fan-up 红、fan-down 绿、flat 中性', async () => {
+  // 着色 span 的 className 在 fanDelta 输出侧已有断言；这里锁定 css 常量里的
+  // 三条规则真实存在（1026 真机验收教训：类名挂上但规则缺失时测试全绿、颜色不生效）。
+  const source = await readFile(new URL('../src/client.js', import.meta.url), 'utf8')
+  const css = source.match(/const css = `[\s\S]*`/u)[0]
+  const up = css.match(/\.ydo-delta-fan-up\{[^}]*\}/u)
+  const down = css.match(/\.ydo-delta-fan-down\{[^}]*\}/u)
+  const flat = css.match(/\.ydo-delta-fan-flat\{[^}]*\}/u)
+  assert.ok(up, '存在 .ydo-delta-fan-up 规则')
+  assert.ok(down, '存在 .ydo-delta-fan-down 规则')
+  assert.ok(flat, '存在 .ydo-delta-fan-flat 规则')
+  // 有意反转（红涨绿跌）：up=红（error）、down=绿（success），勿当笔误改回。
+  assert.match(up[0], /var\(--dsw-alias-state-error-primary\)/u)
+  assert.match(down[0], /var\(--dsw-alias-state-success-primary\)/u)
+  assert.match(flat[0], /var\(--dsw-alias-label-secondary\)/u)
+})
+
+test('fanDelta 符号与着色（用户 2026-10-16）：net 正红+N/负绿-N、cancel 脱粉恒 -N 绿、0 与缺失 —', () => {
+  // 净增/吸粉（net）：正数 +N 红、负数（掉粉）-N 绿。
+  assert.deepEqual(fanDelta(12, 'net'), { text: '+12', className: 'ydo-delta-fan-up' })
+  assert.deepEqual(fanDelta(-8, 'net'), { text: '-8', className: 'ydo-delta-fan-down' })
+  // 脱粉（cancel）：正数计数的减少语义，恒 -N 绿（问题 1：+54 必须 → -54）。
+  assert.deepEqual(fanDelta(54, 'cancel'), { text: '-54', className: 'ydo-delta-fan-down' })
+  // 0 与缺失一律中性 —。
+  assert.deepEqual(fanDelta(0, 'net'), { text: '—', className: 'ydo-delta-fan-flat' })
+  assert.deepEqual(fanDelta(null, 'cancel'), { text: '—', className: 'ydo-delta-fan-flat' })
+  assert.deepEqual(fanDelta('', 'net'), { text: '—', className: 'ydo-delta-fan-flat' })
+})
+
+test('总览爆款列表点击作品直连单作品详情弹框（真机 1026：不再经爆款抽屉）', async () => {
+  const source = await readFile(new URL('../src/client.js', import.meta.url), 'utf8')
+  // 总览 onOpenWork 用行内所属账号跨账号查询详情；setHotDrawerWork 不再是总览入口。
+  assert.match(source, /onOpenWork: work => openDetail\(work\.workId, work\.accountId\)/u)
+  assert.doesNotMatch(source, /onOpenWork: work => setHotDrawerWork\(work\)/u)
+})
+
 test('总览工具栏：单选账号下拉（默认全部账号）、日期/排序带可见说明、刷新不随 loading 禁用', async () => {
   const hLog = []
   const reactStub = {
@@ -1902,7 +1939,7 @@ test('分析页行为：账号标题、内容指标三段结构、观众与流�
   const withFans = contentMetricRows({ interaction: {}, kpi: {}, fansSummary: { newFansCount: 12 } }, t)
   // 有值时渲染着色 span（正数绿，deltaText tone）。
   const fansGainValue = withFans.find(row => row.key === 'fansGainTotal').value
-  assert.equal(fansGainValue.props.className, 'ydo-delta ydo-delta-up')
+  assert.equal(fansGainValue.props.className, 'ydo-delta-fan-up')
   assert.deepEqual(fansGainValue.children, ['+12'])
   const likeRow = zeroRows.find(row => row.key === 'likeCount')
   assert.equal(likeRow.value, '0.0%', '真实的 0 保持 0，不当作缺失')

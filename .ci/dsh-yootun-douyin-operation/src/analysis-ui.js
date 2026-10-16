@@ -11,7 +11,7 @@
 // 本账号爆款视频固定六列表格、页面底部不显示数据质量与样本类辅助信息
 // （这些字段仍由接口返回并保留在导出报告中）。
 
-import { basisLines, deltaText, formatDateTime, formatAgeBucket, genderLabel, trafficSourceLabel, trimNumber } from './ui-format.js'
+import { basisLines, formatDateTime, formatAgeBucket, genderLabel, trafficSourceLabel, trimNumber } from './ui-format.js'
 import { FilterSelect } from './select-ui.js'
 import { TrendChart, trendLayout, useMeasuredWidth } from './trend-chart.js'
 
@@ -51,16 +51,10 @@ function count(value) {
   return formatted === null ? '—' : formatted
 }
 
-// delta 着色 span（Kpi value 槽）：tone=up 绿 / down 红 / flat 中性。
-function deltaColored(delta) {
-  return h2('span', { className: `ydo-delta ydo-delta-${delta.tone}` }, delta.text)
-}
-
-// 脱粉量固定红色语义（正值计数=坏消息；负值/缺失按 deltaText 原语义）。
-function deltaRed(value) {
-  const delta = deltaText(value)
-  if (delta.tone === 'flat') return h2('span', { className: 'ydo-delta ydo-delta-flat' }, delta.text)
-  return h2('span', { className: 'ydo-delta ydo-delta-down' }, delta.text)
+// 粉丝域增量着色 span（用户规定 2026-10-16）：净增/吸粉红+N、掉粉绿-N、0/缺失 —。
+function fanDeltaSpan(value, mode = 'net') {
+  const delta = fanDelta(value, mode)
+  return h2('span', { className: delta.className }, delta.text)
 }
 
 function labelText(labels, t) {
@@ -235,13 +229,13 @@ export function contentMetricRows(analysis, t) {
     }
     if (metric.special === 'fansGain') {
       // 吸粉量（1015 §3.3）：窗口合计来自 fansSummary；缺失 → — + 数据不足，
-      // 正数绿/零与缺失中性（deltaText 语义）。
+      // 着色按用户规定 2026-10-16（红涨绿跌）：正数红+N、负数绿-N、0 与缺失 —。
       const fansGain = analysis?.fansSummary?.newFansCount
       const has = fansGain !== null && fansGain !== undefined
       return {
         key: metric.key,
         label: t(metric.label),
-        value: has ? deltaColored(deltaText(fansGain)) : '—',
+        value: has ? fanDeltaSpan(fansGain) : '—',
         note: has ? null : t('dataInsufficient'),
       }
     }
@@ -273,7 +267,7 @@ export function contentMetricRows(analysis, t) {
 function hotWorksTable(analysis, onOpenWork, t) {
   const works = analysis?.hotWorks || []
   if (!works.length) return h2('p', { className: 'ydo-hint' }, t('noHotWorks'))
-  // 1015 UI 规格 §3.4：+吸粉量列（work.fansGainCount，deltaText；null → —），
+  // 1015 UI 规格 §3.4：+吸粉量列（work.fansGainCount，fanDelta；null → —），
   // 轨道 ydo-ov-tr-hot-rank 由 CSS 同步加列（8 列 → 9 列语义不变，仅插一格）。
   return h2('div', { className: 'ydo-ov-table', role: 'table', 'aria-label': t('accountHotWorks') },
     h2('div', { className: 'ydo-ov-tr ydo-ov-tr-hot-rank ydo-ov-head', role: 'row' },
@@ -298,7 +292,7 @@ function hotWorksTable(analysis, onOpenWork, t) {
         h2('span', { role: 'cell', 'data-label': t('publishTime') }, formatDateTime(work.publishTime)),
         h2('span', { className: 'ydo-ov-num', role: 'cell', 'data-label': t('colPlay') }, count(work.playCount)),
         h2('span', { className: 'ydo-ov-num', role: 'cell', 'data-label': t('engagement') }, pct(work.engagementRatePct)),
-        h2('span', { className: 'ydo-ov-num', role: 'cell', 'data-label': t('colFansGain') }, deltaColored(deltaText(work.fansGainCount))),
+        h2('span', { className: 'ydo-ov-num', role: 'cell', 'data-label': t('colFansGain') }, fanDeltaSpan(work.fansGainCount)),
         h2('div', { className: 'ydo-ov-basis', role: 'cell', 'data-label': t('hotBasis'), title: work.basis || '' },
           ...(lines.length
             ? lines.map(line => h2('div', { key: line }, line))
@@ -715,10 +709,10 @@ export function AnalysisPage({
           rangeLabel ? h2('span', { className: 'ydo-hint' }, rangeLabel) : null),
         h2('div', { className: 'ydo-ov-kpis' },
           h2(Kpi, { label: t('fansTotal'), value: count(analysis.fansSummary.totalFansCount) }),
-          // 吸粉/脱粉按 deltaText 语义着色（1015 §3.1）：吸粉正数绿；脱粉量是
-          // 正数计数的坏消息语义，固定红色（规格钉死「deltaText（红）」）。
-          h2(Kpi, { label: t('fansNew'), value: deltaColored(deltaText(analysis.fansSummary.newFansCount)) }),
-          h2(Kpi, { label: t('fansCancel'), value: deltaRed(analysis.fansSummary.cancelFansCount) }),
+          // 吸粉/脱粉按用户规定 2026-10-16 着色（1015 §3.1 覆盖）：吸粉正数红+N；
+          // 脱粉是减少语义，恒以 -N 绿色展示（cancel 模式），0 与缺失 —。
+          h2(Kpi, { label: t('fansNew'), value: fanDeltaSpan(analysis.fansSummary.newFansCount) }),
+          h2(Kpi, { label: t('fansCancel'), value: fanDeltaSpan(analysis.fansSummary.cancelFansCount, 'cancel') }),
           h2(Kpi, { label: t('fansReturn'), value: count(analysis.fansSummary.homeViewFansCount) }),
           h2(Kpi, { label: t('fansHomeView'), value: count(analysis.fansSummary.homepageViewCount) })))
       : null,

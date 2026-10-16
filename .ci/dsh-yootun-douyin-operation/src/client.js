@@ -6,7 +6,7 @@
 // - 本次未取到的字段显示 `—`（dataGap），**不用历史值冒充当前值**；
 // - 双击行打开子页面（性别/年龄/地域/城市级/流量来源/进度/搜索词/热词）。
 
-import { COLUMNS, DEFAULT_SORT_STATE, EMPTY, accountState, batchProgress, batchReasonKey, batchSummary, deltaText, formatAgeBucket, formatCell, formatCount, formatDateTime, formatDuration, formatPercent, gapFieldLabel, gapReasonText, genderColor, genderLabel, hasGap, nextSortState, progressStatus, progressStatusText, progressText, safeAvatarSrc, safeWorkUrl, sortWorks, tableTemplate, trafficSourceLabel } from './ui-format.js'
+import { COLUMNS, DEFAULT_SORT_STATE, EMPTY, accountState, batchProgress, batchReasonKey, batchSummary, formatAgeBucket, formatCell, formatCount, formatDateTime, formatDuration, formatPercent, gapFieldLabel, gapReasonText, genderColor, genderLabel, hasGap, nextSortState, progressStatus, progressStatusText, progressText, safeAvatarSrc, safeWorkUrl, sortWorks, tableTemplate, trafficSourceLabel } from './ui-format.js'
 import { ERROR_REASON_COPY, OverviewPage, buildOverviewFilters, defaultCustomRange, overviewRangeLabel } from './overview-ui.js'
 import { ANALYSIS_ERROR_REASON_COPY, AnalysisPage, TREND_METRICS } from './analysis-ui.js'
 import {
@@ -739,8 +739,8 @@ function WorkDetailModal({ accountId, workId, detail, trend, loading, onClose, t
     : null
   const durationText = formatDuration(durationMs)
   // 1015 UI 规格 §5.3：核心指标 8 卡（现表已有/新列，纯展示层零新增请求）。
-  // 吸粉量卡正负着色（§1.2）：正绿/负红/缺失 —（deltaText tone）。
-  const fansGainDelta = deltaText(work && work.fans_gain_count)
+  // 吸粉量卡按用户规定（2026-10-16）：与净增粉丝一致，红+N、负值绿-N、0/缺失 —。
+  const fansGainDelta = fanDelta(work && work.fans_gain_count, 'net')
   const coreMetrics = [
     [t('colPlay'), countText(work && work.play_count)],
     [t('colLike'), countText(work && work.like_count)],
@@ -749,7 +749,7 @@ function WorkDetailModal({ accountId, workId, detail, trend, loading, onClose, t
     [t('colCollect'), countText(work && work.collect_count)],
     [t('completionRate'), formatPercent(work && work.completion_rate_pct)],
     [t('bounceRate2s'), formatPercent(work && work.bounce_rate_2s_pct)],
-    [t('colFansGain'), h('span', { className: `ydo-delta ydo-delta-${fansGainDelta.tone}` }, fansGainDelta.text)],
+    [t('colFansGain'), h('span', { className: fansGainDelta.className }, fansGainDelta.text)],
   ]
   // 1015 UI 规格 §5.4：播放趋势折线（替代「共 N 个趋势点」文字行）。
   const trendPoints = snapshotTrendPoints(trend && trend.snapshots)
@@ -943,8 +943,8 @@ function WorkTable({ works, sort = DEFAULT_SORT_STATE, onSortChange, onOpen, t }
         }),
         h('span', { className: 'ydo-cell-work-title', title: String(work.title || '') }, work.title || EMPTY))
     }
-    // delta 列正负着色（1015 §1.2）：span 承载色类，文本仍是 deltaText 输出。
-    const delta = column.kind === 'delta' ? deltaText(work[column.key]) : null
+    // 吸粉列着色（用户规定 2026-10-16）：净增/吸粉统一红+N、负值绿-N。
+    const delta = column.kind === 'delta' ? fanDelta(work[column.key], 'net') : null
     return h('div', {
       ...cellProps(column),
       title: column.kind === 'text' || column.kind === 'link' ? String(work[column.key] || '') : undefined,
@@ -961,7 +961,7 @@ function WorkTable({ works, sort = DEFAULT_SORT_STATE, onSortChange, onOpen, t }
         onKeyDown: event => event.stopPropagation(),
       }, work[column.key])
       : delta
-        ? h('span', { className: `ydo-delta ydo-delta-${delta.tone}` }, delta.text)
+        ? h('span', { className: delta.className }, delta.text)
         : formatCell(work[column.key], column.kind, t))
   })))
   return h('div', { className: 'ydo-table-wrap' },
@@ -2190,7 +2190,10 @@ function Overlay({ t }) {
               onFilterChange: changeOverviewFilters,
               onRefresh: () => loadOverview().catch(() => setOverviewError('douyin_operation_request_failed')),
               onExport: exportOverview,
-              onOpenWork: work => setHotDrawerWork(work),
+              // 1015 验收（用户 2026-10-16）：总览爆款列表点击作品统一弹单作品
+              // 详情页（与 Tab2/分析页一致），跨账号用行内所属账号查询详情；
+              // 爆款抽屉（WorkDrawerHost）不再是入口（组件保留）。
+              onOpenWork: work => openDetail(work.workId, work.accountId),
               // 账号行下钻：阶段 2 打开单账号分析页；阶段 1 先切到视频数据 Tab 并选中该账号。
               // 账号行下钻：打开单账号分析页并携带当前筛选（方案 §15.2）。
               onOpenAccount: accountId => {
@@ -2386,7 +2389,7 @@ const css = `.ydo-button{display:flex;width:36px;height:36px;align-items:center;
 @container ydo-panel (min-width:640px){.ydo-an-axis-minor{display:block}}
 .ydo-an-gap-text{fill:var(--dsw-alias-label-tertiary,#737d8c);font-size:10px;text-anchor:middle}
 .ydo-an-revised-text{fill:var(--dsw-alias-state-warn-primary,#9a6700);font-size:10px;text-anchor:start}/* 内容指标（UI 优化方案 v2 §5.2）：指标名、主值、状态三段结构，指标卡两列标签布局、数值列对齐；观众与流量四块 2×2 网格（v2 §5.3）。 */
-.ydo-an-metrics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}.ydo-an-metric-card{display:flex;flex-direction:column;gap:6px;min-width:0;padding:12px 14px;border-radius:8px;background:var(--dsw-alias-bg-base)}.ydo-an-metric-head{display:flex;align-items:center;justify-content:space-between;gap:8px;min-width:0}.ydo-an-metric-label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--dsw-alias-label-secondary);font-size:12px}.ydo-an-metric-note{flex:none;padding:1px 8px;border-radius:999px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-secondary);font-size:11px}.ydo-an-metric-value{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:20px;line-height:1.2;font-weight:700;font-variant-numeric:tabular-nums}.ydo-an-audience{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.ydo-an-audience-block{display:grid;gap:8px;padding:10px;border:1px solid var(--dsw-alias-border-l1);border-radius:6px;background:var(--dsw-alias-bg-base)}.ydo-an-audience-block h4{margin:0;font-size:var(--dsh-content-font-size,14px)}@media(max-width:720px){.ydo-an-metrics{grid-template-columns:1fr}.ydo-an-audience{grid-template-columns:1fr}}.ydo-work-cover{position:relative;display:inline-flex;align-items:center;justify-content:center;flex:none;width:64px;height:40px;border-radius:5px;overflow:hidden;background:var(--dsw-alias-bg-layer-2)}.ydo-work-cover-large{width:112px;height:70px;border-radius:7px}.ydo-work-cover-img{width:100%;height:100%;object-fit:cover;display:block}.ydo-work-cover-fallback-text{color:var(--dsw-alias-label-secondary);font-size:11px}.ydo-work-cover-duration{position:absolute;right:2px;bottom:2px;padding:0 4px;border-radius:3px;background:rgba(0,0,0,.65);color:#fff;font-size:10px;line-height:16px;font-variant-numeric:tabular-nums;pointer-events:none}.ydo-cell-work{display:flex;align-items:center;gap:8px;min-width:0}.ydo-cell-work-title{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}.ydo-delta-up{color:var(--dsw-alias-state-success-primary)}.ydo-delta-down{color:var(--dsw-alias-state-error-primary)}.ydo-delta-flat{color:var(--dsw-alias-label-secondary)}.ydo-modal-sec-title{margin:0 0 10px;font-size:13.5px;font-weight:700;color:var(--dsw-alias-label-primary)}.ydo-modal-panel-full{padding-top:2px}.ydo-modal-head-cover{align-items:flex-start}.ydo-modal-head-text{min-width:0;flex:1;display:grid;gap:4px}.ydo-modal-title{margin:0;font-size:var(--dsw-font-base-16-font-size,16px);line-height:1.35;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}.ydo-modal-grid-2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.ydo-modal-grid-audience{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px}.ydo-modal-core-metrics{grid-template-columns:repeat(4,minmax(0,1fr))}@media(max-width:720px){.ydo-modal-grid-2,.ydo-modal-core-metrics{grid-template-columns:1fr}.ydo-modal-grid-audience{grid-template-columns:1fr}}/* 1015 弹框分组：核心指标 4 列、流量与留存/词组两列并排、受众画像 auto-fit。 *//* 窄屏表格重排（二审 P2）：面板内容宽度不足以容纳固定列轨道（<940px）时，隐藏表头、行改「字段名 + 值」卡片，内容完整可读——不是仅隐藏横向溢出。字段名来自各单元格的 data-label；文本类单元格（账号名/标题/爆款依据）保持块流，避免多子节点被二维网格错误排位。 */
+.ydo-an-metrics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}.ydo-an-metric-card{display:flex;flex-direction:column;gap:6px;min-width:0;padding:12px 14px;border-radius:8px;background:var(--dsw-alias-bg-base)}.ydo-an-metric-head{display:flex;align-items:center;justify-content:space-between;gap:8px;min-width:0}.ydo-an-metric-label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--dsw-alias-label-secondary);font-size:12px}.ydo-an-metric-note{flex:none;padding:1px 8px;border-radius:999px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-secondary);font-size:11px}.ydo-an-metric-value{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:20px;line-height:1.2;font-weight:700;font-variant-numeric:tabular-nums}.ydo-an-audience{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.ydo-an-audience-block{display:grid;gap:8px;padding:10px;border:1px solid var(--dsw-alias-border-l1);border-radius:6px;background:var(--dsw-alias-bg-base)}.ydo-an-audience-block h4{margin:0;font-size:var(--dsh-content-font-size,14px)}@media(max-width:720px){.ydo-an-metrics{grid-template-columns:1fr}.ydo-an-audience{grid-template-columns:1fr}}.ydo-work-cover{position:relative;display:inline-flex;align-items:center;justify-content:center;flex:none;width:64px;height:40px;border-radius:5px;overflow:hidden;background:var(--dsw-alias-bg-layer-2)}.ydo-work-cover-large{width:112px;height:70px;border-radius:7px}.ydo-work-cover-img{width:100%;height:100%;object-fit:cover;display:block}.ydo-work-cover-fallback-text{color:var(--dsw-alias-label-secondary);font-size:11px}.ydo-work-cover-duration{position:absolute;right:2px;bottom:2px;padding:0 4px;border-radius:3px;background:rgba(0,0,0,.65);color:#fff;font-size:10px;line-height:16px;font-variant-numeric:tabular-nums;pointer-events:none}.ydo-cell-work{display:flex;align-items:center;gap:8px;min-width:0}.ydo-cell-work-title{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}.ydo-delta-up{color:var(--dsw-alias-state-success-primary)}.ydo-delta-down{color:var(--dsw-alias-state-error-primary)}.ydo-delta-flat{color:var(--dsw-alias-label-secondary)}/* 粉丝域着色（用户 2026-10-16，行情语义：红涨绿跌）：净增/吸粉正数红、掉粉绿。fan-up 挂红色、fan-down 挂绿色是有意反转，非常规 up=绿，勿当笔误改回。 */.ydo-delta-fan-up{color:var(--dsw-alias-state-error-primary)}.ydo-delta-fan-down{color:var(--dsw-alias-state-success-primary)}.ydo-delta-fan-flat{color:var(--dsw-alias-label-secondary)}.ydo-modal-sec-title{margin:0 0 10px;font-size:13.5px;font-weight:700;color:var(--dsw-alias-label-primary)}.ydo-modal-panel-full{padding-top:2px}.ydo-modal-head-cover{align-items:flex-start}.ydo-modal-head-text{min-width:0;flex:1;display:grid;gap:4px}.ydo-modal-title{margin:0;font-size:var(--dsw-font-base-16-font-size,16px);line-height:1.35;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}.ydo-modal-grid-2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.ydo-modal-grid-audience{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px}.ydo-modal-core-metrics{grid-template-columns:repeat(4,minmax(0,1fr))}@media(max-width:720px){.ydo-modal-grid-2,.ydo-modal-core-metrics{grid-template-columns:1fr}.ydo-modal-grid-audience{grid-template-columns:1fr}}/* 1015 弹框分组：核心指标 4 列、流量与留存/词组两列并排、受众画像 auto-fit。 *//* 窄屏表格重排（二审 P2）：面板内容宽度不足以容纳固定列轨道（<940px）时，隐藏表头、行改「字段名 + 值」卡片，内容完整可读——不是仅隐藏横向溢出。字段名来自各单元格的 data-label；文本类单元格（账号名/标题/爆款依据）保持块流，避免多子节点被二维网格错误排位。 */
 @container ydo-panel (max-width:940px){.ydo-ov-table{overflow:visible;max-height:none}.ydo-ov-tr.ydo-ov-head{display:none}.ydo-ov-tr{display:block;min-width:0;padding:10px 0}.ydo-ov-tr>[role=cell]{display:grid;grid-template-columns:minmax(76px,auto) 1fr;gap:2px 12px;align-items:baseline;padding:2px 0}.ydo-ov-tr>[role=cell]::before{content:attr(data-label);color:var(--dsw-alias-label-secondary);font-size:12px}.ydo-ov-tr>[role=cell].ydo-ov-num{text-align:right}.ydo-ov-tr>.ydo-ov-account-name,.ydo-ov-tr>.ydo-ov-hot-title,.ydo-ov-tr>.ydo-ov-basis{display:block}.ydo-ov-tr>.ydo-ov-account-name::before,.ydo-ov-tr>.ydo-ov-hot-title::before,.ydo-ov-tr>.ydo-ov-basis::before{display:block;margin-bottom:4px}}@media(max-width:1120px){.ydo-body{display:block;overflow:auto}.ydo-accounts{border-right:0;border-bottom:1px solid var(--dsw-alias-border-l1)}.ydo-right{overflow:visible}.ydo-table-wrap{max-height:60vh}}
 /* AI 账号表现分析·卡片折叠布局（0916 方案 §9；2026-09-17 验收稿）：
    左边框 3px 语义色区分类别（蓝=结论/红=风险/绿=建议/紫=规律/灰=诊断与限制），

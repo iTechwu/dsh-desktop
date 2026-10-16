@@ -675,6 +675,80 @@ test('collectDashboard：三请求全部成功 → rows/profile 齐备且无 gap
   assert.deepEqual(result.gaps, [])
 })
 
+// 上海"今天"（数据未出：后台每日 10 点更新前一日数据）。与 collector.dropFuture
+// 同一口径（sv-SE 格式 = YYYY-MM-DD），mock 与断言共用同一计算值避免跨日漂移。
+const shanghaiToday = () => new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Shanghai' })
+const shanghaiDayOffset = offset => new Date(Date.now() + offset * 86400000).toLocaleDateString('sv-SE', { timeZone: 'Asia/Shanghai' })
+const compactDay = day => day.replaceAll('-', '')
+
+test('collectDashboard：今天/未来的 trends 占位行整行丢弃，历史行保留（真机 1026：今日点≈累计值被当作当日增量）', async () => {
+  const yesterday = shanghaiDayOffset(-1)
+  const today = shanghaiToday()
+  const page = fakePage({
+    jsonRoutes: {
+      'overview/dashboard?recent_days': {
+        status_code: 0,
+        metrics: [{ english_metric_name: 'play_cnt', trends: [
+          { date_time: compactDay(yesterday), value: 83443 },
+          { date_time: compactDay(today), value: 6330000 },
+          { date_time: compactDay(shanghaiDayOffset(1)), value: 9999999 },
+        ] }],
+      },
+      'overview/dashboard/fans': {
+        status_code: 0,
+        metrics: [{ english_metric_name: 'net_fans_cnt', trends: [{ date_time: compactDay(yesterday), value: -3 }] }],
+      },
+      'fans/summary/v2': SUMMARY_SAMPLE,
+    },
+  })
+  const result = await collectDashboard(page)
+  assert.equal(result.dashboardRows.length, 1, '今天/未来行不进入 daily 载荷')
+  assert.equal(result.dashboardRows[0].day, yesterday)
+  assert.equal(result.dashboardRows[0].play_cnt, 83443)
+  assert.equal(result.dashboardFansRows[0].net_fans_cnt, -3)
+  assert.deepEqual(result.gaps, [], '仍有历史行留存时不因丢弃记缺口')
+})
+
+test('collectDashboard：响应只有今天/未来行 → 全部丢弃后按 not_exposed 记缺口（不静默吞）', async () => {
+  const page = fakePage({
+    jsonRoutes: {
+      'overview/dashboard?recent_days': {
+        status_code: 0,
+        metrics: [{ english_metric_name: 'play_cnt', trends: [{ date_time: compactDay(shanghaiToday()), value: 6330000 }] }],
+      },
+      'overview/dashboard/fans': {
+        status_code: 0,
+        metrics: [{ english_metric_name: 'net_fans_cnt', trends: [{ date_time: compactDay(shanghaiDayOffset(-1)), value: -3 }] }],
+      },
+      'fans/summary/v2': SUMMARY_SAMPLE,
+    },
+  })
+  const result = await collectDashboard(page)
+  assert.deepEqual(result.dashboardRows, [])
+  assert.equal(result.dashboardFansRows.length, 1, 'fans 链路不受 dashboard 丢弃影响')
+  assert.deepEqual(result.gaps, [{ source: 'dashboard', reason: 'not_exposed' }])
+})
+
+test('collectDashboard：dashboard_fans 只剩今天/未来行 → 同样整行丢弃并记缺口（对称防御）', async () => {
+  const page = fakePage({
+    jsonRoutes: {
+      'overview/dashboard?recent_days': DASH_SAMPLE,
+      'overview/dashboard/fans': {
+        status_code: 0,
+        metrics: [{ english_metric_name: 'net_fans_cnt', trends: [
+          { date_time: compactDay(shanghaiToday()), value: 99999 },
+          { date_time: compactDay(shanghaiDayOffset(1)), value: 88888 },
+        ] }],
+      },
+      'fans/summary/v2': SUMMARY_SAMPLE,
+    },
+  })
+  const result = await collectDashboard(page)
+  assert.equal(result.dashboardRows.length, 1, 'dashboard 历史行不受影响')
+  assert.deepEqual(result.dashboardFansRows, [], 'fans 的今天/未来行同样丢弃')
+  assert.deepEqual(result.gaps, [{ source: 'dashboard_fans', reason: 'not_exposed' }])
+})
+
 test('collectDashboard：任一请求失败只记 gap，不阻断其余两个', async () => {
   const page = fakePage({
     jsonRoutes: {

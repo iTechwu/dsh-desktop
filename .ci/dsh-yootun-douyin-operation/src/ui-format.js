@@ -122,6 +122,28 @@ export function formatDuration(ms) {
 }
 
 /**
+ * 粉丝域增量统一展示（用户规定 2026-10-16，覆盖 1015 §1.2 的常规语义）：
+ * - mode='net'（净增粉丝/吸粉量）：正数 `+N` **红**、负数（掉粉）`-N` **绿**；
+ * - mode='cancel'（脱粉量）：正数（脱粉人数=减少语义）`-N` **绿**；
+ * - 0 与缺失一律 `—`（中性）。
+ * 返回 { text, className }，渲染层直接挂 class。
+ */
+export function fanDelta(value, mode = 'net') {
+  const num = Number(value)
+  if (value === null || value === undefined || value === '' || !Number.isFinite(num) || num === 0) {
+    return { text: EMPTY, className: 'ydo-delta-fan-flat' }
+  }
+  const magnitude = formatCount(Math.abs(num))
+  if (mode === 'cancel') {
+    // 脱粉人数恒正：负号形式 + 绿色。
+    return { text: `-${magnitude}`, className: 'ydo-delta-fan-down' }
+  }
+  return num > 0
+    ? { text: `+${magnitude}`, className: 'ydo-delta-fan-up' }
+    : { text: `-${magnitude}`, className: 'ydo-delta-fan-down' }
+}
+
+/**
  * 增量文本（1015 UI 规格 §1.2）：正数 `+N`（绿）、负数 `-N`（红）、0 与缺失 → `—`（中性）。
  * 返回 { text, tone }（tone: 'up' | 'down' | 'flat'），渲染层据 tone 上色；
  * 纯文本场景（表格单元格）只取 text。

@@ -15,7 +15,7 @@
 // 可见说明文字、操作按钮靠右、表格列轨道按表分组固定、爆款依据纵向分行、
 // 页面不展示规则版本/数据来源/参与样本数（字段仍由接口返回供导出与诊断）。
 
-import { basisLines, deltaText, formatDateTime } from './ui-format.js'
+import { basisLines, fanDelta, formatDateTime } from './ui-format.js'
 import { FilterSelect } from './select-ui.js'
 
 const React = require('react')
@@ -114,11 +114,12 @@ function AccountRow({ account, rank, onOpenAccount, t }) {
         ? h('span', { className: 'ydo-ov-flag ydo-ov-flag-suspicious' }, t('suspiciousEmptyCollect'))
         : null),
     h('span', { className: 'ydo-ov-num', role: 'cell', 'data-label': t('fanCount') }, countText(account.fanCount)),
-    // 1015 UI 规格 §2.2：+近窗口净增（负值红）/近窗口播放；daily 未采集 → —。
+    // 1015 UI 规格 §2.2：+近窗口净增/近窗口播放；净增着色按用户规定 2026-10-16
+    // （净增红+N、掉粉绿-N）；daily 未采集 → —。
     h('span', { className: 'ydo-ov-num', role: 'cell', 'data-label': t('colWindowNetFans') },
       (() => {
-        const delta = deltaText(account.windowNetFansCount)
-        return h('span', { className: `ydo-delta ydo-delta-${delta.tone}` }, delta.text)
+        const delta = fanDelta(account.windowNetFansCount, 'net')
+        return h('span', { className: delta.className }, delta.text)
       })()),
     h('span', { className: 'ydo-ov-num', role: 'cell', 'data-label': t('colWindowPlay') }, countText(account.windowPlayCount)),
     h('span', { className: 'ydo-ov-num', role: 'cell', 'data-label': t('workCount') }, countText(account.workCount)),
@@ -413,7 +414,11 @@ export function OverviewPage({
         // daily 未采集 → 字段 null → 整卡不渲染（§1.3：不渲染空卡、不造 0）。
         summary.netFansCount === null || summary.netFansCount === undefined ? null : h(KpiCard, {
           label: t('kpiNetFans'),
-          value: countText(summary.netFansCount),
+          // 净增粉丝着色（用户规定 2026-10-16）：红+N、掉粉绿-N、0/缺失 —。
+          value: (() => {
+            const delta = fanDelta(summary.netFansCount, 'net')
+            return h('span', { className: delta.className }, delta.text)
+          })(),
           hint: rangeLabel,
         }),
         summary.completionRate5sPct === null || summary.completionRate5sPct === undefined ? null : h(KpiCard, {

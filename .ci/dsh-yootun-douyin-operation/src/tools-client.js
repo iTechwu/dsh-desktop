@@ -108,6 +108,8 @@ const ALLOWED_ERROR_CODES = new Set([
   // OneAPI 解析失败/预算耗尽：下载按钮独立提示，不影响拆解归档链路。
   'PROVIDER_ERROR',
   'ONEAPI_BUDGET_EXHAUSTED',
+  // 日度入库（1015）：day 落在未来（数据未出）被服务端拒绝——客户端采集侧已过滤，此为兜底
+  'DAILY_DAY_IN_FUTURE',
 ])
 
 export class ToolsUnavailableError extends Error {

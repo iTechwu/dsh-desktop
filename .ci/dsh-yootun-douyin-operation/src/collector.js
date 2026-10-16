@@ -382,13 +382,19 @@ export async function collectDashboard(page, { recentDays = DASHBOARD_RECENT_DAY
     return result.json
   }
 
+  // 上海"今天"（数据未出：后台每日 10 点更新前一日数据）。今天及未来的 trends
+  // 点是接口占位/异常大值（1015 真机 E2E：燃豚豚 10-16 点≈累计总量，被当作当日
+  // 增量入库后趋势末点暴涨），必须在采集侧整行丢弃。
+  const todayIso = new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Shanghai' })
+  const dropFuture = rows => rows.filter(row => row.day < todayIso)
+
   let dashboardRows = []
   let dashboardFansRows = []
   let fansProfile = null
 
   try {
     const json = await load('dashboard', `${DASHBOARD_PATH}?recent_days=${recentDays}`)
-    dashboardRows = json ? parseDashboard(json) : []
+    dashboardRows = json ? dropFuture(parseDashboard(json)) : []
     // 响应到达但零指标行（如 status_code=5 拒绝/降级空 metrics）：显式记缺口，
     // 不静默吞掉（缺口说明不变量）。
     if (json && dashboardRows.length === 0) note('dashboard', 'not_exposed')
@@ -399,7 +405,7 @@ export async function collectDashboard(page, { recentDays = DASHBOARD_RECENT_DAY
 
   try {
     const json = await load('dashboard_fans', `${DASHBOARD_FANS_PATH}?recent_days=${recentDays}`)
-    dashboardFansRows = json ? parseDashboardFans(json) : []
+    dashboardFansRows = json ? dropFuture(parseDashboardFans(json)) : []
     if (json && dashboardFansRows.length === 0) note('dashboard_fans', 'not_exposed')
   } catch (error) {
     if (error instanceof SessionInvalidError) throw error
