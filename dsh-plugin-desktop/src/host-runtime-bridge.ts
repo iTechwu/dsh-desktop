@@ -4,7 +4,7 @@ import { HostRpc } from './host-rpc.ts'
 import { parseDesktopPlatformLoginRequest } from './platform-login.ts'
 
 export type RuntimeSnapshot = Pick<DesktopRuntime, 'platform' | 'windowsBuild' | 'locale'> & {
-  updates: Omit<DesktopUpdateAdapter, 'request' | 'confirmDownload' | 'showManualCheckResult' | 'downloadAndOpen' | 'notify'>
+  updates: Omit<DesktopUpdateAdapter, 'request' | 'confirmDownload' | 'showManualCheckResult' | 'downloadAndOpen' | 'installDownloaded' | 'notify'>
 }
 export function runtimeSnapshot(runtime: DesktopRuntime): RuntimeSnapshot {
   const { isPackaged, canDownload, currentVersion, releaseChannel, statePath, installationId } = runtime.updates
@@ -25,7 +25,7 @@ export function createHostRuntime(rpc: HostRpc, snapshot: RuntimeSnapshot): Desk
   const shellSpecs = new Map<string, DesktopShellSpec>()
   let shellId: string | undefined
   const send = <T = void>(method: string, args: unknown[] = [], signal?: AbortSignal): Promise<T> => {
-    const interactive = ['update:confirmDownload', 'update:showManualCheckResult', 'update:downloadAndOpen',
+    const interactive = ['update:confirmDownload', 'update:showManualCheckResult', 'update:downloadAndOpen', 'update:installDownloaded',
       'native:pickDirectory', 'native:pickFile', 'native:exportDiagnostics', 'native:confirmRestart'].includes(method)
     const task = rpc.call<T>(method, args, signal, interactive ? 0 : undefined)
     calls.add(task)
@@ -61,9 +61,22 @@ export function createHostRuntime(rpc: HostRpc, snapshot: RuntimeSnapshot): Desk
       confirmDownload: (version, channel) => send('update:confirmDownload', [version, channel]),
       showManualCheckResult: result => send('update:showManualCheckResult', [result]),
       // 进度回调（onProgress）跨 IPC 不透传：桥接模式下托盘在 Host 侧由
-      // lifecycle 自身的 downloading 状态驱动，百分比留待主界面化时扩展协议。
-      downloadAndOpen: (version, signal, channel, installerSha256) =>
-        send('update:downloadAndOpen', [version, channel, installerSha256], signal),
+      // lifecycle 的快照需要百分比；Native 侧以 500ms 节流回传进度事件。
+      downloadAndOpen: (version, signal, channel, installerSha256, onProgress, silent) => {
+        if (onProgress === undefined) {
+          return send('update:downloadAndOpen', [version, channel, installerSha256, silent === true], signal)
+        }
+        const progress = callbacks({
+          progress: (received: number, total: number | undefined) => onProgress(received, total),
+        })
+        return send(
+          'update:downloadAndOpen',
+          [version, channel, installerSha256, silent === true, progress.id],
+          signal,
+        ).finally(() => { progress.release() })
+      },
+      installDownloaded: (version, expectedSha256) =>
+        send<'exit' | 'manual'>('update:installDownloaded', [version, expectedSha256]),
       notify: notification => { void send('update:notify', [notification]) },
     },
     schedule(spec) {
@@ -224,8 +237,21 @@ export function bindNativeRuntime(rpc: HostRpc, runtime: DesktopRuntime): () => 
   })
   handle('update:confirmDownload', ([version, channel]) => runtime.updates.confirmDownload(version, channel))
   handle('update:showManualCheckResult', ([result]) => runtime.updates.showManualCheckResult(result))
-  handle('update:downloadAndOpen', ([version, channel, installerSha256], signal) =>
-    runtime.updates.downloadAndOpen(version, signal, channel, installerSha256))
+  handle('update:downloadAndOpen', ([version, channel, installerSha256, silent, progressCallback], signal) => {
+    let lastReportedAt = 0
+    const onProgress = typeof progressCallback === 'string'
+      ? (received: number, total: number | undefined) => {
+          // The writer emits per-chunk events; bridge them at tray-refresh cadence.
+          const now = Date.now()
+          if (now - lastReportedAt < 500) return
+          lastReportedAt = now
+          report(callback(`${progressCallback}:progress`, [received, total]))
+        }
+      : undefined
+    return runtime.updates.downloadAndOpen(version, signal, channel, installerSha256, onProgress, silent === true)
+  })
+  handle('update:installDownloaded', ([version, expectedSha256]) =>
+    runtime.updates.installDownloaded(version, expectedSha256))
   handle('update:notify', ([value]) => runtime.updates.notify(value))
   return async () => {
     trays.forEach(tray => tray.dispose()); trays.clear()

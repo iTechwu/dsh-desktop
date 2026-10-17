@@ -474,6 +474,74 @@ export async function handleDesktopUpdateCheckRequest(
   }
 }
 
+/** Serve the renderer-facing update snapshot from an exact same-origin GET. */
+export async function handleDesktopUpdateStateRequest(
+  req: IncomingMessage,
+  res: ServerResponse,
+  expectedOrigin: string,
+  getState: () => object,
+  reportError: (operation: string, cause: unknown) => void = () => {},
+): Promise<void> {
+  if (req.method !== 'GET') return finishJson(res, 405, error('method not allowed'), 'GET')
+  if (!isSameOriginLoopbackRequest(req, expectedOrigin, false)) {
+    return finishJson(res, 403, error('forbidden'))
+  }
+  try {
+    finishJson(res, 200, getState())
+  } catch (cause) {
+    reportError('read the update state', cause)
+    finishJson(res, 500, error('update state could not be read'))
+  }
+}
+
+/** Start the badge-driven silent download from an exact empty request. */
+export async function handleDesktopUpdateDownloadRequest(
+  req: IncomingMessage,
+  res: ServerResponse,
+  expectedOrigin: string,
+  downloadNow: () => Promise<void>,
+  reportError: (operation: string, cause: unknown) => void = () => {},
+): Promise<void> {
+  if (req.method !== 'POST') return finishJson(res, 405, error('method not allowed'), 'POST')
+  if (!isSameOriginLoopbackRequest(req, expectedOrigin, true)) {
+    return finishJson(res, 403, error('forbidden'))
+  }
+  const value = await parsePostBody(req, res)
+  if (value === INVALID_BODY) return
+  if (!isEmptyRequest(value)) return finishJson(res, 400, error('invalid update download request'))
+  try {
+    await downloadNow()
+    finishJson(res, 200, { accepted: true })
+  } catch (cause) {
+    reportError('start the update download', cause)
+    finishJson(res, 500, error('update download could not be started'))
+  }
+}
+
+/** Install the downloaded update from an exact empty request. */
+export async function handleDesktopUpdateInstallRequest(
+  req: IncomingMessage,
+  res: ServerResponse,
+  expectedOrigin: string,
+  installNow: () => Promise<void>,
+  reportError: (operation: string, cause: unknown) => void = () => {},
+): Promise<void> {
+  if (req.method !== 'POST') return finishJson(res, 405, error('method not allowed'), 'POST')
+  if (!isSameOriginLoopbackRequest(req, expectedOrigin, true)) {
+    return finishJson(res, 403, error('forbidden'))
+  }
+  const value = await parsePostBody(req, res)
+  if (value === INVALID_BODY) return
+  if (!isEmptyRequest(value)) return finishJson(res, 400, error('invalid update install request'))
+  try {
+    await installNow()
+    finishJson(res, 200, { accepted: true })
+  } catch (cause) {
+    reportError('install the downloaded update', cause)
+    finishJson(res, 500, error('update could not be installed'))
+  }
+}
+
 /** Export diagnostics from an exact empty same-origin request. */
 export async function handleDesktopDiagnosticsExportRequest(
   req: IncomingMessage,

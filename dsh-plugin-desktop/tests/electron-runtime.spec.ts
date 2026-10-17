@@ -16,6 +16,7 @@ const updater = vi.hoisted(() => ({
   download: vi.fn(),
   filename: vi.fn(),
   pending: vi.fn(),
+  pendingInstallable: vi.fn(),
   record: vi.fn(),
   resolve: vi.fn(),
 }))
@@ -68,6 +69,7 @@ vi.mock('../src/update-download.ts', () => ({
   desktopUpdateFilename: updater.filename,
   downloadDesktopUpdate: updater.download,
   pendingDesktopUpdateArtifact: updater.pending,
+  pendingInstallableDesktopUpdate: updater.pendingInstallable,
   recordDesktopUpdateArtifact: updater.record,
   resolveDesktopUpdateArtifact: updater.resolve,
 }))
@@ -375,6 +377,8 @@ describe('Electron desktop runtime', () => {
     ))
     updater.pending.mockReset()
     updater.pending.mockResolvedValue(undefined)
+    updater.pendingInstallable.mockReset()
+    updater.pendingInstallable.mockResolvedValue(undefined)
     updater.record.mockReset()
     updater.record.mockResolvedValue(undefined)
     updater.resolve.mockReset()
@@ -2625,6 +2629,138 @@ describe('Electron desktop runtime', () => {
     expect(activeWindow?.focus).toHaveBeenCalledTimes(2)
 
     await release()
+  })
+
+  it('installs the recorded silent-download artifact and restarts on Windows', async () => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
+    updater.pendingInstallable.mockResolvedValueOnce({
+      platform: 'win32',
+      version: '2.1.0',
+      path: 'C:\\Updates\\Yootun-Agent-2.1.0-windows.exe',
+    })
+    const requestQuit = vi.fn()
+    const { ElectronDesktopRuntime } = await import('../src/electron-runtime.ts')
+    const runtime = new ElectronDesktopRuntime(async () => {})
+    runtime.schedule({ ...spec, requestQuit })
+
+    const pending = runtime.updates.installDownloaded('2.1.0')
+    await vi.waitFor(() => { expect(childProcess.spawn).toHaveBeenCalledOnce() })
+    expect(childProcess.spawn).toHaveBeenCalledWith(
+      'C:\\Updates\\Yootun-Agent-2.1.0-windows.exe',
+      ['--updated', '--force-run'],
+      {
+        detached: true,
+        stdio: 'ignore',
+        shell: false,
+        windowsHide: false,
+      },
+    )
+    childProcess.emit('spawn')
+    expect(await pending).toBe('exit')
+
+    expect(childProcess.child.unref).toHaveBeenCalledOnce()
+    expect(requestQuit).toHaveBeenCalledWith(0)
+  })
+
+  it('opens the recorded disk image on macOS without exiting', async () => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('darwin')
+    updater.pendingInstallable.mockResolvedValueOnce({
+      platform: 'darwin',
+      version: '2.1.0',
+      path: '/tmp/Yootun-Agent-2.1.0-mac.dmg',
+    })
+    const requestQuit = vi.fn()
+    const { ElectronDesktopRuntime } = await import('../src/electron-runtime.ts')
+    const runtime = new ElectronDesktopRuntime(async () => {})
+    runtime.schedule({ ...spec, requestQuit })
+
+    expect(await runtime.updates.installDownloaded('2.1.0')).toBe('manual')
+
+    expect(electron.shell.openPath).toHaveBeenCalledWith('/tmp/Yootun-Agent-2.1.0-mac.dmg')
+    expect(requestQuit).not.toHaveBeenCalled()
+  })
+
+  it('re-verifies the recheck digest before handing over the artifact', async () => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
+    updater.pendingInstallable.mockResolvedValueOnce({
+      platform: 'win32',
+      version: '2.1.0',
+      path: 'C:\\Updates\\Yootun-Agent-2.1.0-windows.exe',
+    })
+    const requestQuit = vi.fn()
+    const { ElectronDesktopRuntime } = await import('../src/electron-runtime.ts')
+    const runtime = new ElectronDesktopRuntime(async () => {})
+    runtime.schedule({ ...spec, requestQuit })
+
+    const pending = runtime.updates.installDownloaded('2.1.0', { win32: 'a'.repeat(64) })
+    await vi.waitFor(() => { expect(childProcess.spawn).toHaveBeenCalledOnce() })
+    expect(updater.pendingInstallable).toHaveBeenCalledWith(
+      '/tmp/sensteed-agent-user-data',
+      'win32',
+      'a'.repeat(64),
+    )
+    childProcess.emit('spawn')
+    await pending
+  })
+
+  it('downloads silently to Downloads without any native dialog', async () => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
+    updater.download.mockResolvedValueOnce('C:\\Users\\test\\Downloads\\Yootun-Agent-2.1.0-windows.exe')
+    const { ElectronDesktopRuntime } = await import('../src/electron-runtime.ts')
+    const runtime = new ElectronDesktopRuntime(async () => {})
+
+    await runtime.updates.downloadAndOpen('2.1.0', new AbortController().signal, undefined, undefined, undefined, true)
+
+    expect(electron.dialog.showSaveDialog).not.toHaveBeenCalled()
+    expect(electron.dialog.showMessageBox).not.toHaveBeenCalled()
+    expect(childProcess.spawn).not.toHaveBeenCalled()
+    expect(updater.download).toHaveBeenCalledWith(expect.objectContaining({
+      platform: 'win32',
+      version: '2.1.0',
+      destinationPath: join('/tmp/Downloads', 'Yootun-Agent-2.1.0-windows.exe'),
+      signal: expect.any(AbortSignal),
+    }))
+    expect(updater.record).toHaveBeenCalledWith('/tmp/sensteed-agent-user-data', {
+      platform: 'win32',
+      version: '2.1.0',
+      path: 'C:\\Users\\test\\Downloads\\Yootun-Agent-2.1.0-windows.exe',
+    })
+  })
+
+  it('fails a silent download when the artifact record cannot be stored', async () => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
+    updater.download.mockResolvedValueOnce('C:\\Users\\test\\Downloads\\Yootun-Agent-2.1.0-windows.exe')
+    updater.record.mockRejectedValueOnce(new Error('read-only user data'))
+    const { ElectronDesktopRuntime } = await import('../src/electron-runtime.ts')
+    const runtime = new ElectronDesktopRuntime(async () => {})
+
+    await expect(runtime.updates.downloadAndOpen('2.1.0', new AbortController().signal, undefined, undefined, undefined, true))
+      .rejects.toThrow('read-only user data')
+  })
+
+  it('rejects the install when no recorded artifact matches the version', async () => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
+    const { ElectronDesktopRuntime } = await import('../src/electron-runtime.ts')
+    const runtime = new ElectronDesktopRuntime(async () => {})
+
+    await expect(runtime.updates.installDownloaded('2.1.0'))
+      .rejects.toThrow('no downloaded update artifact for 2.1.0')
+    expect(childProcess.spawn).not.toHaveBeenCalled()
+  })
+
+  it('rejects a version-mismatched artifact without launching the installer', async () => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
+    updater.pendingInstallable.mockResolvedValueOnce({
+      platform: 'win32',
+      version: '2.2.0',
+      path: 'C:\\Updates\\Yootun-Agent-2.2.0-windows.exe',
+    })
+    const { ElectronDesktopRuntime } = await import('../src/electron-runtime.ts')
+    const runtime = new ElectronDesktopRuntime(async () => {})
+
+    await expect(runtime.updates.installDownloaded('2.1.0'))
+      .rejects.toThrow('no downloaded update artifact for 2.1.0')
+    expect(childProcess.spawn).not.toHaveBeenCalled()
   })
 
   it('starts the downloaded Windows installer visibly before requesting orderly exit', async () => {

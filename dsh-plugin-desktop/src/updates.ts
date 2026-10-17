@@ -1,11 +1,22 @@
 /** Cordis Host plugin for scheduled and interactive Yootun-Agent updates. */
 
+import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type {} from '@deepseek-ai/dsh-client-connection'
 import type {} from '@deepseek-ai/dsh-host-webserver'
-import { DESKTOP_UPDATE_CHECK_PATH } from './desktop-settings-contract.ts'
-import { handleDesktopUpdateCheckRequest } from './desktop-settings-route.ts'
+import {
+  DESKTOP_UPDATE_CHECK_PATH,
+  DESKTOP_UPDATE_DOWNLOAD_PATH,
+  DESKTOP_UPDATE_INSTALL_PATH,
+  DESKTOP_UPDATE_STATE_PATH,
+} from './desktop-settings-contract.ts'
+import {
+  handleDesktopUpdateCheckRequest,
+  handleDesktopUpdateDownloadRequest,
+  handleDesktopUpdateInstallRequest,
+  handleDesktopUpdateStateRequest,
+} from './desktop-settings-route.ts'
 import type {} from './runtime.ts'
 import { startDesktopUpdateLifecycle } from './update-lifecycle.ts'
 
@@ -51,31 +62,57 @@ export function apply(ctx: Context, config: Config): void {
       registerTrayItem: item => ctx.desktopRuntime.registerTrayItem(item),
     })
     const rendererOrigin = `http://127.0.0.1:${String(ctx.webServer.port)}`
-    const unregister = ctx.webServer.register({
-      kind: 'exact',
-      path: DESKTOP_UPDATE_CHECK_PATH,
-      handler: (req, res) => {
-        const rejection = ctx.connection.requestRejection(req)
-        if (rejection !== undefined) {
-          res.writeHead(rejection)
-          res.end(rejection === 401 ? 'unauthorized' : 'forbidden')
-          return
-        }
-        return handleDesktopUpdateCheckRequest(
-          req,
-          res,
-          rendererOrigin,
-          () => lifecycle.checkNow(),
-          (operation, cause) => {
-            ctx.logger.error(
-              `dsh-plugin-desktop: failed to ${operation}: ${cause instanceof Error ? cause.message : String(cause)}`,
-            )
-          },
-        )
-      },
-    })
+    const reportError = (operation: string, cause: unknown): void => {
+      ctx.logger.error(
+        `dsh-plugin-desktop: failed to ${operation}: ${cause instanceof Error ? cause.message : String(cause)}`,
+      )
+    }
+    const unregisters: (() => void)[] = []
+    const guarded = (path: string, handler: (req: IncomingMessage, res: ServerResponse) => void | Promise<void>): void => {
+      unregisters.push(ctx.webServer.register({
+        kind: 'exact',
+        path,
+        handler: (req, res) => {
+          const rejection = ctx.connection.requestRejection(req)
+          if (rejection !== undefined) {
+            res.writeHead(rejection)
+            res.end(rejection === 401 ? 'unauthorized' : 'forbidden')
+            return
+          }
+          return handler(req, res)
+        },
+      }))
+    }
+    guarded(DESKTOP_UPDATE_CHECK_PATH, (req, res) => handleDesktopUpdateCheckRequest(
+      req,
+      res,
+      rendererOrigin,
+      () => lifecycle.checkNow(),
+      reportError,
+    ))
+    guarded(DESKTOP_UPDATE_STATE_PATH, (req, res) => handleDesktopUpdateStateRequest(
+      req,
+      res,
+      rendererOrigin,
+      () => lifecycle.getState(),
+      reportError,
+    ))
+    guarded(DESKTOP_UPDATE_DOWNLOAD_PATH, (req, res) => handleDesktopUpdateDownloadRequest(
+      req,
+      res,
+      rendererOrigin,
+      () => lifecycle.downloadNow(),
+      reportError,
+    ))
+    guarded(DESKTOP_UPDATE_INSTALL_PATH, (req, res) => handleDesktopUpdateInstallRequest(
+      req,
+      res,
+      rendererOrigin,
+      () => lifecycle.installNow(),
+      reportError,
+    ))
     return async () => {
-      unregister()
+      for (const unregister of unregisters.splice(0)) unregister()
       await lifecycle.dispose()
     }
   }, 'dsh-plugin-desktop: update polling, confirmation, and installer handoff')

@@ -37,6 +37,15 @@ export const DESKTOP_DEVELOPER_TOOLS_TOGGLE_PATH = '/api/desktop/developer/devto
 /** Run the generation-owned manual update check. */
 export const DESKTOP_UPDATE_CHECK_PATH = '/api/desktop/updates/check'
 
+/** Read the renderer-facing update badge snapshot. */
+export const DESKTOP_UPDATE_STATE_PATH = '/api/desktop/updates/state'
+
+/** Start the badge-driven silent update download. */
+export const DESKTOP_UPDATE_DOWNLOAD_PATH = '/api/desktop/updates/download'
+
+/** Install the downloaded update and restart through the platform installer. */
+export const DESKTOP_UPDATE_INSTALL_PATH = '/api/desktop/updates/install'
+
 /** Export one local diagnostic archive through the launcher-owned flow. */
 export const DESKTOP_DIAGNOSTICS_EXPORT_PATH = '/api/desktop/diagnostics/export'
 

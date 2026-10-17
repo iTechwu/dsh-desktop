@@ -56,6 +56,7 @@ import {
 import {
   desktopUpdateFilename,
   downloadDesktopUpdate,
+  pendingInstallableDesktopUpdate,
   pendingDesktopUpdateArtifact,
   recordDesktopUpdateArtifact,
   resolveDesktopUpdateArtifact,
@@ -205,7 +206,8 @@ export class ElectronDesktopRuntime implements DesktopRuntime {
       request: (url, init) => net.fetch(url, init),
       confirmDownload: (version, channel) => this.confirmUpdateDownload(version, channel),
       showManualCheckResult: result => this.showManualUpdateCheckResult(result),
-      downloadAndOpen: (version, signal, channel, installerSha256, onProgress) => this.downloadAndOpenUpdate(version, signal, channel, installerSha256, onProgress),
+      downloadAndOpen: (version, signal, channel, installerSha256, onProgress, silent) => this.downloadAndOpenUpdate(version, signal, channel, installerSha256, onProgress, silent),
+      installDownloaded: (version, expectedSha256) => this.installDownloadedUpdate(version, expectedSha256),
       notify: notification => { this.showNotification(notification) },
     }
   }
@@ -959,13 +961,16 @@ export class ElectronDesktopRuntime implements DesktopRuntime {
     channel: DesktopReleaseChannel = 'stable',
     installerSha256?: Readonly<Partial<Record<'win32' | 'darwin', string>>>,
     onProgress?: (received: number, total: number | undefined) => void,
+    silent: boolean = false,
   ): Promise<void> {
     const copy = desktopNativeCopy(this.currentLocale)
     const platform = this.platformStrategy.updateDownloadPlatform
     if (platform === undefined) {
       throw new Error(`dsh-plugin-desktop: updates are unavailable on ${this.platform}`)
     }
-    const destinationPath = await this.chooseUpdateDestination(version, channel)
+    const destinationPath = silent
+      ? join(app.getPath('downloads'), desktopUpdateFilename(platform, version, channel))
+      : await this.chooseUpdateDestination(version, channel)
     if (destinationPath === undefined) return
     signal.throwIfAborted()
     const artifactPath = await downloadDesktopUpdate({
@@ -983,8 +988,17 @@ export class ElectronDesktopRuntime implements DesktopRuntime {
     try {
       await recordDesktopUpdateArtifact(app.getPath('userData'), artifact)
     } catch (cause) {
+      if (silent) {
+        // The sidebar install action depends on the recorded artifact; a silent
+        // download without its record must not present a fake ready state.
+        throw cause
+      }
       this.logError(`dsh-plugin-desktop: failed to remember update installer for cleanup: ${cause instanceof Error ? cause.message : String(cause)}`)
     }
+
+    // Silent downloads stop after recording the artifact: the sidebar badge
+    // owns prompts and the later install action.
+    if (silent) return
 
     if (platform === 'darwin') {
       const openError = await shell.openPath(artifactPath)
@@ -1020,6 +1034,38 @@ export class ElectronDesktopRuntime implements DesktopRuntime {
     await this.launchWindowsUpdateInstaller(artifactPath)
     this.quitting = true
     spec.requestQuit(0)
+  }
+
+  /** Install the recorded silent-download artifact for one target version. */
+  private async installDownloadedUpdate(
+    version: string,
+    expectedSha256?: Readonly<Partial<Record<'win32' | 'darwin', string>>>,
+  ): Promise<'exit' | 'manual'> {
+    const platform = this.platformStrategy.updateDownloadPlatform
+    if (platform === undefined) {
+      throw new Error(`dsh-plugin-desktop: updates are unavailable on ${this.platform}`)
+    }
+    const artifact = await pendingInstallableDesktopUpdate(
+      app.getPath('userData'),
+      platform,
+      expectedSha256?.[platform],
+    )
+    if (artifact === undefined || artifact.version !== version) {
+      throw new Error(`dsh-plugin-desktop: no downloaded update artifact for ${version}`)
+    }
+
+    if (platform === 'darwin') {
+      const openError = await shell.openPath(artifact.path)
+      if (openError !== '') throw new Error(`dsh-plugin-desktop: failed to open update disk image: ${openError}`)
+      return 'manual'
+    }
+
+    const spec = this.scheduled
+    if (spec === undefined) throw new Error('dsh-plugin-desktop: no active shell can exit for update installation')
+    await this.launchWindowsUpdateInstaller(artifact.path)
+    this.quitting = true
+    spec.requestQuit(0)
+    return 'exit'
   }
 
   private async chooseUpdateDestination(

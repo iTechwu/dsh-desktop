@@ -304,6 +304,7 @@ export async function pendingDesktopUpdateArtifact(
 export async function pendingInstallableDesktopUpdate(
   userDataPath: string,
   platform: DesktopDownloadPlatform,
+  expectedSha256?: string,
 ): Promise<DesktopUpdateArtifact | undefined> {
   validatedPlatform(platform)
   const statePath = artifactStatePath(validatedUserDataPath(userDataPath))
@@ -319,6 +320,7 @@ export async function pendingInstallableDesktopUpdate(
   if (stat === undefined || !stat.isFile()) return undefined
   try {
     await validateArtifact(record.path, platform)
+    if (expectedSha256 !== undefined) await assertInstallerDigest(record.path, expectedSha256)
   } catch (cause) {
     if (isAbortFailure(cause)) throw cause
     return undefined

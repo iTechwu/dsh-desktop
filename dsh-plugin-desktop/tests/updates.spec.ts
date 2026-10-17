@@ -19,6 +19,58 @@ import {
   type UpdateCheckResult,
 } from '../src/update-checker.ts'
 import { apply, Config, inject, type Config as UpdateConfig } from '../src/updates.ts'
+import {
+  DESKTOP_UPDATE_CHECK_PATH,
+  DESKTOP_UPDATE_DOWNLOAD_PATH,
+  DESKTOP_UPDATE_INSTALL_PATH,
+  DESKTOP_UPDATE_STATE_PATH,
+} from '../src/desktop-settings-contract.ts'
+
+function routeFor(harness: Harness, path: string): WebRoute {
+  const route = harness.routes.find(candidate => candidate.path === path)
+  if (route === undefined) throw new Error(`Update route ${path} was not registered.`)
+  return route
+}
+
+async function readUpdateState(harness: Harness): Promise<Record<string, unknown>> {
+  const req = {
+    method: 'GET',
+    headers: {
+      host: '127.0.0.1:43120',
+      referer: 'http://127.0.0.1:43120/',
+      'sec-fetch-site': 'same-origin',
+    },
+    socket: { remoteAddress: '127.0.0.1' },
+  } as unknown as IncomingMessage
+  let body = ''
+  const res = {
+    statusCode: 200,
+    setHeader: vi.fn(),
+    end: vi.fn((value?: string) => { body = value ?? '' }),
+  } as unknown as ServerResponse
+  await routeFor(harness, DESKTOP_UPDATE_STATE_PATH).handler(req, res)
+  return JSON.parse(body) as Record<string, unknown>
+}
+
+async function postEmptyUpdateCommand(harness: Harness, path: string, bodyText = '{}'): Promise<ServerResponse> {
+  const req = {
+    method: 'POST',
+    headers: {
+      host: '127.0.0.1:43120',
+      origin: 'http://127.0.0.1:43120',
+      'content-type': 'application/json',
+    },
+    socket: { remoteAddress: '127.0.0.1' },
+    async * [Symbol.asyncIterator]() { yield Buffer.from(bodyText) },
+  } as unknown as IncomingMessage
+  const res = {
+    statusCode: 200,
+    setHeader: vi.fn(),
+    end: vi.fn(),
+  } as unknown as ServerResponse
+  await routeFor(harness, path).handler(req, res)
+  return res
+}
 
 const testConfig: UpdateConfig = {
   enabled: true,
@@ -40,12 +92,13 @@ interface Harness {
   readonly confirmDownload: ReturnType<typeof vi.fn>
   readonly showManualCheckResult: ReturnType<typeof vi.fn>
   readonly downloadAndOpen: ReturnType<typeof vi.fn>
+  readonly installDownloaded: ReturnType<typeof vi.fn>
   readonly refresh: ReturnType<typeof vi.fn>
   readonly registrationDispose: ReturnType<typeof vi.fn>
   readonly requestRejection: ReturnType<typeof vi.fn<(
     request: ConnectionTrustRequest,
   ) => ConnectionRequestRejection>>
-  readonly route: WebRoute
+  readonly routes: readonly WebRoute[]
   dispose(): Promise<void>
 }
 
@@ -63,7 +116,13 @@ async function createHarness(options: {
     signal: AbortSignal,
     channel?: 'stable' | 'beta',
     installerSha256?: Readonly<Partial<Record<'win32' | 'darwin', string>>>,
+    onProgress?: (received: number, total: number | undefined) => void,
+    silent?: boolean,
   ) => Promise<void>
+  readonly installDownloaded?: (
+    version: string,
+    expectedSha256?: Readonly<Partial<Record<'win32' | 'darwin', string>>>,
+  ) => Promise<'exit' | 'manual'>
   readonly notify?: (notification: DesktopNotification) => void
   readonly locale?: DesktopRuntime['locale']
   readonly state?: string
@@ -81,12 +140,13 @@ async function createHarness(options: {
   const confirmDownload = vi.fn(options.confirmDownload ?? (async () => false))
   const showManualCheckResult = vi.fn(options.showManualCheckResult ?? (async () => {}))
   const downloadAndOpen = vi.fn(options.downloadAndOpen ?? (async () => {}))
+  const installDownloaded = vi.fn(options.installDownloaded ?? (async () => {}))
   const requestRejection = vi.fn<(
     request: ConnectionTrustRequest,
   ) => ConnectionRequestRejection>(() => undefined)
   let tray: DesktopTrayItem | undefined
   const trays: DesktopTrayItem[] = []
-  let route: WebRoute | undefined
+  const routes: WebRoute[] = []
   let disposer: (() => void | Promise<void>) | undefined
   const runtime = {
     locale: options.locale ?? 'en',
@@ -100,6 +160,7 @@ async function createHarness(options: {
       confirmDownload,
       showManualCheckResult,
       downloadAndOpen,
+      installDownloaded,
       notify: options.notify ?? ((notification: DesktopNotification) => { notifications.push(notification) }),
     },
     registerTrayItem: (item: DesktopTrayItem) => {
@@ -113,7 +174,7 @@ async function createHarness(options: {
     webServer: {
       port: 43120,
       register: (registered: WebRoute) => {
-        route = registered
+        routes.push(registered)
         return () => {}
       },
     },
@@ -127,7 +188,7 @@ async function createHarness(options: {
 
   apply(ctx, options.config ?? testConfig)
   if (tray === undefined) throw new Error('Update tray item was not registered.')
-  if (route === undefined) throw new Error('Update route was not registered.')
+  if (routes.length !== 4) throw new Error('Update routes were not registered.')
   return {
     statePath,
     tray,
@@ -137,10 +198,11 @@ async function createHarness(options: {
     confirmDownload,
     showManualCheckResult,
     downloadAndOpen,
+    installDownloaded,
     refresh,
     registrationDispose,
     requestRejection,
-    route,
+    routes,
     dispose: async () => { await disposer?.() },
   }
 }
@@ -176,6 +238,7 @@ describe('desktop update Host plugin', () => {
       'stable',
       undefined,
       expect.any(Function),
+      false,
     )
     const channels = request.mock.calls.map(([, init]) => new Headers(init.headers).get(DESKTOP_RELEASE_CHANNEL_HEADER))
     expect(channels).toContain('beta')
@@ -210,7 +273,7 @@ describe('desktop update Host plugin', () => {
     const end = vi.fn()
     const res = { writeHead, end } as unknown as ServerResponse
 
-    await harness.route.handler(req, res)
+    await routeFor(harness, DESKTOP_UPDATE_CHECK_PATH).handler(req, res)
 
     expect(harness.requestRejection).toHaveBeenCalledWith(req)
     expect(writeHead).toHaveBeenCalledWith(status)
@@ -240,7 +303,7 @@ describe('desktop update Host plugin', () => {
       end: vi.fn((value?: string) => { body = value ?? '' }),
     } as unknown as ServerResponse
 
-    await harness.route.handler(req, res)
+    await routeFor(harness, DESKTOP_UPDATE_CHECK_PATH).handler(req, res)
 
     expect(harness.requestRejection).toHaveBeenCalledWith(req)
     expect(request).toHaveBeenCalledOnce()
@@ -251,6 +314,42 @@ describe('desktop update Host plugin', () => {
     })
     expect(res.statusCode).toBe(200)
     expect(JSON.parse(body)).toEqual({ accepted: true })
+    await harness.dispose()
+  })
+
+  it('guards the update badge endpoints', async () => {
+    const harness = await createHarness({ packaged: false })
+
+    // The state endpoint is read-only and rejects command methods.
+    const wrongMethod = await postEmptyUpdateCommand(harness, DESKTOP_UPDATE_STATE_PATH)
+    expect(wrongMethod.statusCode).toBe(405)
+
+    // Command endpoints accept the exact empty request only.
+    const richBody = await postEmptyUpdateCommand(harness, DESKTOP_UPDATE_DOWNLOAD_PATH, '{"x":1}')
+    expect(richBody.statusCode).toBe(400)
+    const richInstallBody = await postEmptyUpdateCommand(harness, DESKTOP_UPDATE_INSTALL_PATH, '{"x":1}')
+    expect(richInstallBody.statusCode).toBe(400)
+
+    // The state endpoint serves the loopback renderer origin only.
+    const req = {
+      method: 'GET',
+      headers: {
+        host: '127.0.0.1:43120',
+        referer: 'http://127.0.0.1:43120/',
+        'sec-fetch-site': 'same-origin',
+      },
+      socket: { remoteAddress: '192.168.1.8' },
+    } as unknown as IncomingMessage
+    let body = ''
+    const res = {
+      statusCode: 200,
+      setHeader: vi.fn(),
+      end: vi.fn((value?: string) => { body = value ?? '' }),
+    } as unknown as ServerResponse
+    await routeFor(harness, DESKTOP_UPDATE_STATE_PATH).handler(req, res)
+    expect(res.statusCode).toBe(403)
+    expect(body).toContain('forbidden')
+
     await harness.dispose()
   })
 
@@ -322,34 +421,213 @@ describe('desktop update Host plugin', () => {
     expect(harness.warnings).toEqual([])
   })
 
-  it('downloads and opens only after confirmation', async () => {
+  it('downloads silently only after the badge action and reports the ready phase', async () => {
     vi.useFakeTimers()
     let resolveDownload!: () => void
     const download = new Promise<void>(resolve => { resolveDownload = resolve })
     const harness = await createHarness({
       packaged: false,
       request: async () => versionResponse('2.1.0'),
-      confirmDownload: async () => true,
       downloadAndOpen: async () => download,
     })
 
-    const pending = harness.tray.invoke()
+    const check = harness.tray.invoke()
+    await check
+    expect(harness.downloadAndOpen).not.toHaveBeenCalled()
+    expect(harness.confirmDownload).not.toHaveBeenCalled()
+    expect(await readUpdateState(harness)).toEqual({ phase: 'available', version: '2.1.0' })
+
+    const command = postEmptyUpdateCommand(harness, DESKTOP_UPDATE_DOWNLOAD_PATH)
     await vi.waitFor(() => { expect(harness.downloadAndOpen).toHaveBeenCalledOnce() })
-    const [version, signal] = harness.downloadAndOpen.mock.calls[0] as [string, AbortSignal]
-    expect(version).toBe('2.1.0')
-    expect(signal).toBeInstanceOf(AbortSignal)
-    expect(signal.aborted).toBe(false)
+    const call = harness.downloadAndOpen.mock.calls[0] as unknown as [
+      string,
+      AbortSignal,
+      unknown,
+      unknown,
+      unknown,
+      boolean,
+    ]
+    expect(call[0]).toBe('2.1.0')
+    expect(call[1]).toBeInstanceOf(AbortSignal)
+    expect(call[1].aborted).toBe(false)
+    expect(call[5]).toBe(true)
+    expect(harness.confirmDownload).not.toHaveBeenCalled()
+    expect(await readUpdateState(harness)).toEqual({ phase: 'downloading', version: '2.1.0' })
     expect(harness.tray.label()).toBe('Downloading Yootun-Agent 2.1.0…')
     expect(harness.notifications).toEqual([])
 
     resolveDownload()
-    await pending
+    await command
     await vi.waitFor(() => { expect(harness.tray.label()).toBe('Yootun-Agent 2.1.0 Available') })
+    expect(await readUpdateState(harness)).toEqual({ phase: 'ready', version: '2.1.0' })
     expect(harness.notifications).toEqual([])
-    expect(harness.tray.label()).toBe('Yootun-Agent 2.1.0 Available')
+    expect(harness.warnings).toEqual([])
   })
 
-  it('passes the rechecked installer digests to the download adapter', async () => {
+  it('reports download progress through the state endpoint', async () => {
+    vi.useFakeTimers()
+    let reportProgress!: (received: number, total: number | undefined) => void
+    const harness = await createHarness({
+      packaged: false,
+      request: async () => versionResponse('2.1.0'),
+      downloadAndOpen: async (_version, _signal, _channel, _digests, onProgress) => {
+        reportProgress = onProgress as (received: number, total: number | undefined) => void
+        return new Promise<void>(() => {})
+      },
+    })
+
+    await harness.tray.invoke()
+    void postEmptyUpdateCommand(harness, DESKTOP_UPDATE_DOWNLOAD_PATH)
+    await vi.waitFor(() => { expect(harness.downloadAndOpen).toHaveBeenCalledOnce() })
+    reportProgress(256, 1024)
+    expect(await readUpdateState(harness)).toEqual({
+      phase: 'downloading',
+      version: '2.1.0',
+      received: 256,
+      total: 1024,
+    })
+  })
+
+  it('starts and confirms the platform install only from the badge flow', async () => {
+    vi.useFakeTimers()
+    let resolveDownload!: () => void
+    const download = new Promise<void>(resolve => { resolveDownload = resolve })
+    const harness = await createHarness({
+      packaged: false,
+      request: async () => versionResponse('2.1.0'),
+      downloadAndOpen: async () => download,
+      installDownloaded: async () => 'exit',
+    })
+
+    // Before any update exists both badge commands are accepted no-ops.
+    await postEmptyUpdateCommand(harness, DESKTOP_UPDATE_INSTALL_PATH)
+    expect(harness.installDownloaded).not.toHaveBeenCalled()
+
+    await harness.tray.invoke()
+    void postEmptyUpdateCommand(harness, DESKTOP_UPDATE_DOWNLOAD_PATH)
+    await vi.waitFor(() => { expect(harness.downloadAndOpen).toHaveBeenCalledOnce() })
+    resolveDownload()
+    await vi.waitFor(async () => {
+      expect(await readUpdateState(harness)).toEqual({ phase: 'ready', version: '2.1.0' })
+    })
+
+    await postEmptyUpdateCommand(harness, DESKTOP_UPDATE_INSTALL_PATH)
+    expect(harness.installDownloaded).toHaveBeenCalledOnce()
+    expect(harness.installDownloaded).toHaveBeenCalledWith('2.1.0', undefined)
+    expect(await readUpdateState(harness)).toEqual({ phase: 'restarting', version: '2.1.0' })
+  })
+
+  it('hands the rechecked digests to the install action', async () => {
+    vi.useFakeTimers()
+    let resolveDownload!: () => void
+    const download = new Promise<void>(resolve => { resolveDownload = resolve })
+    const harness = await createHarness({
+      packaged: false,
+      request: async () => Response.json({
+        version: '2.1.0',
+        sha256: { windows: 'c'.repeat(64), mac: 'd'.repeat(64) },
+      }),
+      downloadAndOpen: async () => download,
+      installDownloaded: async () => 'exit',
+    })
+
+    await harness.tray.invoke()
+    void postEmptyUpdateCommand(harness, DESKTOP_UPDATE_DOWNLOAD_PATH)
+    await vi.waitFor(() => { expect(harness.downloadAndOpen).toHaveBeenCalledOnce() })
+    resolveDownload()
+    await vi.waitFor(async () => {
+      expect(await readUpdateState(harness)).toEqual({ phase: 'ready', version: '2.1.0' })
+    })
+
+    await postEmptyUpdateCommand(harness, DESKTOP_UPDATE_INSTALL_PATH)
+    expect(harness.installDownloaded).toHaveBeenCalledWith('2.1.0', {
+      win32: 'c'.repeat(64),
+      darwin: 'd'.repeat(64),
+    })
+  })
+
+  it('returns to the ready phase after macOS opens the disk image', async () => {
+    vi.useFakeTimers()
+    let resolveDownload!: () => void
+    const download = new Promise<void>(resolve => { resolveDownload = resolve })
+    const harness = await createHarness({
+      packaged: false,
+      request: async () => versionResponse('2.1.0'),
+      downloadAndOpen: async () => download,
+      installDownloaded: async () => 'manual',
+    })
+
+    await harness.tray.invoke()
+    void postEmptyUpdateCommand(harness, DESKTOP_UPDATE_DOWNLOAD_PATH)
+    await vi.waitFor(() => { expect(harness.downloadAndOpen).toHaveBeenCalledOnce() })
+    resolveDownload()
+    await vi.waitFor(async () => {
+      expect(await readUpdateState(harness)).toEqual({ phase: 'ready', version: '2.1.0' })
+    })
+
+    await postEmptyUpdateCommand(harness, DESKTOP_UPDATE_INSTALL_PATH)
+    await vi.waitFor(async () => {
+      expect(await readUpdateState(harness)).toEqual({ phase: 'ready', version: '2.1.0' })
+    })
+    expect(harness.installDownloaded).toHaveBeenCalledOnce()
+  })
+
+  it('falls back to the ready phase when the install fails', async () => {
+    vi.useFakeTimers()
+    let resolveDownload!: () => void
+    const download = new Promise<void>(resolve => { resolveDownload = resolve })
+    const harness = await createHarness({
+      packaged: false,
+      request: async () => versionResponse('2.1.0'),
+      downloadAndOpen: async () => download,
+      installDownloaded: async () => { throw new Error('installer failed to spawn') },
+    })
+
+    await harness.tray.invoke()
+    void postEmptyUpdateCommand(harness, DESKTOP_UPDATE_DOWNLOAD_PATH)
+    await vi.waitFor(() => { expect(harness.downloadAndOpen).toHaveBeenCalledOnce() })
+    resolveDownload()
+    await vi.waitFor(async () => {
+      expect(await readUpdateState(harness)).toEqual({ phase: 'ready', version: '2.1.0' })
+    })
+
+    await postEmptyUpdateCommand(harness, DESKTOP_UPDATE_INSTALL_PATH)
+    await vi.waitFor(async () => {
+      expect(await readUpdateState(harness)).toEqual({
+        phase: 'ready',
+        version: '2.1.0',
+        installFailed: true,
+      })
+    })
+    expect(harness.warnings).toEqual([])
+  })
+
+  it('exposes a failed silent download with the retry affordance', async () => {
+    vi.useFakeTimers()
+    let rejectDownload!: (cause: Error) => void
+    const download = new Promise<void>((_resolve, reject) => { rejectDownload = reject })
+    const harness = await createHarness({
+      packaged: false,
+      request: async () => versionResponse('2.1.0'),
+      downloadAndOpen: async () => download,
+    })
+
+    await harness.tray.invoke()
+    const command = postEmptyUpdateCommand(harness, DESKTOP_UPDATE_DOWNLOAD_PATH)
+    await vi.waitFor(() => { expect(harness.downloadAndOpen).toHaveBeenCalledOnce() })
+    rejectDownload(new Error('offline'))
+    await command
+
+    expect(await readUpdateState(harness)).toEqual({
+      phase: 'available',
+      version: '2.1.0',
+      downloadFailed: true,
+    })
+    expect(harness.tray.label()).toBe('Yootun-Agent 2.1.0 Available')
+    expect(harness.warnings).toEqual([])
+  })
+
+  it('passes the rechecked installer digests to the silent download adapter', async () => {
     vi.useFakeTimers()
     const harness = await createHarness({
       packaged: false,
@@ -357,20 +635,23 @@ describe('desktop update Host plugin', () => {
         version: '2.1.0',
         sha256: { windows: 'c'.repeat(64), mac: 'd'.repeat(64) },
       }),
-      confirmDownload: async () => true,
     })
 
-    const pending = harness.tray.invoke()
+    await harness.tray.invoke()
+    const command = postEmptyUpdateCommand(harness, DESKTOP_UPDATE_DOWNLOAD_PATH)
     await vi.waitFor(() => { expect(harness.downloadAndOpen).toHaveBeenCalledOnce() })
-    const [version, , , installerSha256] = harness.downloadAndOpen.mock.calls[0] as [
+    const [version, , , installerSha256, , silent] = harness.downloadAndOpen.mock.calls[0] as unknown as [
       string,
       AbortSignal,
       unknown,
       Readonly<Partial<Record<'win32' | 'darwin', string>>> | undefined,
+      unknown,
+      boolean,
     ]
     expect(version).toBe('2.1.0')
     expect(installerSha256).toEqual({ win32: 'c'.repeat(64), darwin: 'd'.repeat(64) })
-    await pending
+    expect(silent).toBe(true)
+    await command
   })
 
   it('uses the digest from the recheck, not the first check', async () => {
@@ -382,13 +663,13 @@ describe('desktop update Host plugin', () => {
         call += 1
         return Response.json({ version: '2.1.0', sha256: { mac: call === 1 ? 'c'.repeat(64) : 'd'.repeat(64) } })
       },
-      confirmDownload: async () => true,
     })
 
-    const pending = harness.tray.invoke()
+    await harness.tray.invoke()
+    const command = postEmptyUpdateCommand(harness, DESKTOP_UPDATE_DOWNLOAD_PATH)
     await vi.waitFor(() => { expect(harness.downloadAndOpen).toHaveBeenCalledOnce() })
     expect(harness.downloadAndOpen.mock.calls[0]?.[3]).toEqual({ darwin: 'd'.repeat(64) })
-    await pending
+    await command
   })
 
   it('omits the digest argument when the service publishes none', async () => {
@@ -396,54 +677,78 @@ describe('desktop update Host plugin', () => {
     const harness = await createHarness({
       packaged: false,
       request: async () => versionResponse('2.1.0'),
-      confirmDownload: async () => true,
     })
 
-    const pending = harness.tray.invoke()
+    await harness.tray.invoke()
+    const command = postEmptyUpdateCommand(harness, DESKTOP_UPDATE_DOWNLOAD_PATH)
     await vi.waitFor(() => { expect(harness.downloadAndOpen).toHaveBeenCalledOnce() })
     const digestArgument = harness.downloadAndOpen.mock.calls[0]?.[3]
     expect(digestArgument).toBeUndefined()
-    await pending
+    await command
   })
 
-  it('treats a manual available-version selection as a fresh confirmation', async () => {
-    const confirmDownload = vi.fn()
-      .mockResolvedValueOnce(false)
-      .mockResolvedValueOnce(true)
+  it('shares the badge download action when a manual check repeats on the same release', async () => {
     const harness = await createHarness({
       packaged: false,
       request: async () => versionResponse('2.1.0'),
-      confirmDownload,
     })
 
     await harness.tray.invoke()
-    expect(confirmDownload).toHaveBeenCalledOnce()
+    expect(harness.confirmDownload).not.toHaveBeenCalled()
     expect(harness.downloadAndOpen).not.toHaveBeenCalled()
     expect(harness.tray.label()).toBe('Yootun-Agent 2.1.0 Available')
 
-    await harness.tray.invoke()
-    expect(confirmDownload).toHaveBeenCalledTimes(2)
-    expect(harness.downloadAndOpen).toHaveBeenCalledOnce()
+    const second = harness.tray.invoke()
+    await vi.waitFor(() => { expect(harness.downloadAndOpen).toHaveBeenCalledOnce() })
+    await second
+    expect(harness.confirmDownload).not.toHaveBeenCalled()
     expect(harness.showManualCheckResult).not.toHaveBeenCalled()
+    expect(harness.downloadAndOpen.mock.calls[0]?.[5]).toBe(true)
   })
 
-  it('rechecks the version after confirmation and skips a rotated download', async () => {
+  it('invalidates a stale ready artifact when the release rotates', async () => {
+    vi.useFakeTimers()
+    let releaseVersion = '2.1.0'
+    let resolveDownload!: () => void
+    const download = new Promise<void>(resolve => { resolveDownload = resolve })
+    const harness = await createHarness({
+      packaged: false,
+      request: async () => versionResponse(releaseVersion),
+      downloadAndOpen: async () => download,
+      installDownloaded: async () => 'exit',
+    })
+
+    await harness.tray.invoke()
+    void postEmptyUpdateCommand(harness, DESKTOP_UPDATE_DOWNLOAD_PATH)
+    await vi.waitFor(() => { expect(harness.downloadAndOpen).toHaveBeenCalledOnce() })
+    resolveDownload()
+    await vi.waitFor(async () => {
+      expect(await readUpdateState(harness)).toEqual({ phase: 'ready', version: '2.1.0' })
+    })
+
+    releaseVersion = '2.2.0'
+    await harness.tray.invoke()
+    expect(await readUpdateState(harness)).toEqual({ phase: 'available', version: '2.2.0' })
+  })
+
+  it('rechecks the version after the badge action and skips a rotated download', async () => {
     const request = vi.fn()
       .mockResolvedValueOnce(versionResponse('2.1.0'))
       .mockResolvedValueOnce(versionResponse('2.2.0'))
     const harness = await createHarness({
       packaged: false,
       request,
-      confirmDownload: async () => true,
     })
 
     await harness.tray.invoke()
+    await postEmptyUpdateCommand(harness, DESKTOP_UPDATE_DOWNLOAD_PATH)
 
     expect(request).toHaveBeenCalledTimes(2)
-    expect(harness.confirmDownload).toHaveBeenCalledWith('2.1.0')
+    expect(harness.confirmDownload).not.toHaveBeenCalled()
     expect(harness.downloadAndOpen).not.toHaveBeenCalled()
     expect(harness.showManualCheckResult).not.toHaveBeenCalled()
     expect(harness.tray.label()).toBe('Yootun-Agent 2.2.0 Available')
+    expect(await readUpdateState(harness)).toEqual({ phase: 'available', version: '2.2.0' })
   })
 
   it.each([
@@ -561,13 +866,15 @@ describe('desktop update Host plugin', () => {
     const harness = await createHarness({
       packaged: false,
       request: async () => versionResponse('2.1.0'),
-      confirmDownload: async () => true,
       downloadAndOpen: async () => download,
     })
 
-    const first = harness.tray.invoke()
+    await harness.tray.invoke()
+    const first = postEmptyUpdateCommand(harness, DESKTOP_UPDATE_DOWNLOAD_PATH)
     await vi.waitFor(() => { expect(harness.downloadAndOpen).toHaveBeenCalledOnce() })
-    const second = harness.tray.invoke()
+    const second = postEmptyUpdateCommand(harness, DESKTOP_UPDATE_DOWNLOAD_PATH)
+    // Let the second command reach the shared pending download before failing it.
+    await new Promise(resolve => { setTimeout(resolve, 0) })
     expect(harness.downloadAndOpen).toHaveBeenCalledOnce()
     rejectDownload(new Error('offline'))
     await Promise.all([first, second])
@@ -575,6 +882,11 @@ describe('desktop update Host plugin', () => {
     expect(harness.downloadAndOpen).toHaveBeenCalledOnce()
     expect(harness.notifications).toEqual([])
     expect(harness.warnings).toEqual([])
+    expect(await readUpdateState(harness)).toEqual({
+      phase: 'available',
+      version: '2.1.0',
+      downloadFailed: true,
+    })
     expect(harness.tray.label()).toBe('Yootun-Agent 2.1.0 Available')
   })
 
@@ -601,7 +913,6 @@ describe('desktop update Host plugin', () => {
     const downloading = await createHarness({
       packaged: false,
       request: async () => versionResponse('2.1.0'),
-      confirmDownload: async () => true,
       downloadAndOpen: async (_version, signal) => new Promise<void>((_resolve, reject) => {
         downloadSignal = signal
         signal.addEventListener('abort', () => {
@@ -609,7 +920,8 @@ describe('desktop update Host plugin', () => {
         }, { once: true })
       }),
     })
-    const pendingDownload = downloading.tray.invoke()
+    await downloading.tray.invoke()
+    const pendingDownload = postEmptyUpdateCommand(downloading, DESKTOP_UPDATE_DOWNLOAD_PATH)
     await vi.waitFor(() => { expect(downloadSignal).toBeDefined() })
     await downloading.dispose()
     await pendingDownload

@@ -40,7 +40,29 @@ export interface DesktopUpdateLifecycleOptions {
 export interface DesktopUpdateLifecycle {
   /** Run the same interactive update flow exposed by the native tray. */
   checkNow(): Promise<void>
+  /** Return the renderer-facing snapshot consumed by the sidebar update badge. */
+  getState(): DesktopUpdateSnapshot
+  /** Start a silent download for the currently available version. */
+  downloadNow(): Promise<void>
+  /** Install the downloaded update and hand control to the platform installer. */
+  installNow(): Promise<void>
   dispose(): Promise<void>
+}
+
+/** Renderer-facing snapshot for one update lifecycle phase. */
+export type DesktopUpdateSnapshot = {
+  /** Current lifecycle phase driving the sidebar update badge. */
+  readonly phase: 'idle' | 'available' | 'downloading' | 'ready' | 'restarting'
+  /** Target version whenever one is known. */
+  readonly version?: string
+  /** Download progress in bytes. */
+  readonly received?: number
+  /** Download total in bytes when the server declared one. */
+  readonly total?: number
+  /** Whether the last silent download attempt for this version failed. */
+  readonly downloadFailed?: boolean
+  /** Whether the last install attempt for the ready version failed. */
+  readonly installFailed?: boolean
 }
 
 interface UpdateStateV3 {
@@ -68,7 +90,12 @@ class DesktopUpdateLifecycleOwner implements DesktopUpdateLifecycle {
   private checking = false
   private availableVersion: string | undefined
   private downloadingVersion: string | undefined
+  private readyVersion: string | undefined
+  private restarting = false
+  private downloadFailedVersion: string | undefined
+  private installFailedVersion: string | undefined
   private downloadProgress: { received: number; total: number | undefined } | undefined
+  private pendingInstallDigests: Readonly<Partial<Record<'win32' | 'darwin', string>>> | undefined
   private lastProgressRefreshAt = 0
   private state: UpdateStateV3 = EMPTY_STATE
   private pollTimer: ReturnType<typeof setTimeout> | undefined
@@ -223,6 +250,12 @@ class DesktopUpdateLifecycleOwner implements DesktopUpdateLifecycle {
     this.availableVersion = result.status === 'update-available' && this.options.adapter.canDownload
       ? result.latestVersion
       : undefined
+    // A rotated release invalidates any earlier ready artifact: the sidebar
+    // must follow the newest downloadable target, not a stale download.
+    if (this.availableVersion !== undefined && this.readyVersion !== this.availableVersion) {
+      this.readyVersion = undefined
+      this.pendingInstallDigests = undefined
+    }
     this.registration.refresh()
     return this.availableVersion
   }
@@ -231,18 +264,20 @@ class DesktopUpdateLifecycleOwner implements DesktopUpdateLifecycle {
     version: string,
     channel: DesktopReleaseChannel = this.options.adapter.releaseChannel ?? 'stable',
     allowDowngrade: boolean = false,
+    silent: boolean = false,
   ): Promise<void> {
     if (this.downloadTask !== undefined) return this.downloadTask
     const task = (async () => {
-      let confirmed: boolean
-      try {
-        confirmed = this.options.adapter.releaseChannel === undefined && channel === 'stable'
-          ? await this.options.adapter.confirmDownload(version)
-          : await this.options.adapter.confirmDownload(version, channel)
-      } catch {
-        return
+      if (!silent) {
+        try {
+          const confirmed = this.options.adapter.releaseChannel === undefined && channel === 'stable'
+            ? await this.options.adapter.confirmDownload(version)
+            : await this.options.adapter.confirmDownload(version, channel)
+          if (!confirmed || this.disposed) return
+        } catch {
+          return
+        }
       }
-      if (!confirmed || this.disposed) return
 
       const confirmedResult = await this.startCheck(channel, allowDowngrade)
       const confirmedVersion = confirmedResult?.status === 'update-available'
@@ -257,6 +292,7 @@ class DesktopUpdateLifecycleOwner implements DesktopUpdateLifecycle {
       this.downloadingVersion = version
       this.downloadProgress = undefined
       this.lastProgressRefreshAt = 0
+      if (silent) this.downloadFailedVersion = undefined
       this.registration.refresh()
       try {
         // An omitted digest must not surface as a trailing undefined argument:
@@ -271,6 +307,7 @@ class DesktopUpdateLifecycleOwner implements DesktopUpdateLifecycle {
           this.lastProgressRefreshAt = now
           this.registration.refresh()
         }
+        const confirmedSilentDigests = silent ? confirmedDigests : undefined
         if (this.options.adapter.releaseChannel === undefined && channel === 'stable') {
           await this.options.adapter.downloadAndOpen(
             version,
@@ -278,6 +315,7 @@ class DesktopUpdateLifecycleOwner implements DesktopUpdateLifecycle {
             undefined,
             confirmedDigests === undefined ? undefined : confirmedDigests,
             onProgress,
+            silent,
           )
         } else {
           await this.options.adapter.downloadAndOpen(
@@ -286,10 +324,15 @@ class DesktopUpdateLifecycleOwner implements DesktopUpdateLifecycle {
             channel,
             confirmedDigests === undefined ? undefined : confirmedDigests,
             onProgress,
+            silent,
           )
         }
+        if (silent && !this.disposed) this.readyVersion = version
+        if (silent) this.pendingInstallDigests = confirmedSilentDigests
       } catch {
-        // Network, filesystem, and installer-opening failures are deliberately silent.
+        // Network, filesystem, and installer-opening failures stay silent; the
+        // silent path only records the failure for the sidebar retry affordance.
+        if (silent && !this.disposed) this.downloadFailedVersion = version
       } finally {
         if (this.downloadController === controller) this.downloadController = undefined
         this.downloadingVersion = undefined
@@ -304,24 +347,84 @@ class DesktopUpdateLifecycleOwner implements DesktopUpdateLifecycle {
     return task
   }
 
-  private async offerDownload(version: string): Promise<void> {
-    if (this.disposed || !this.options.adapter.canDownload) return
-    await this.startDownload(version)
+  /** Expose one consistent snapshot; ready and restarting outrank earlier phases. */
+  getState(): DesktopUpdateSnapshot {
+    if (this.restarting && this.readyVersion !== undefined) {
+      return { phase: 'restarting', version: this.readyVersion }
+    }
+    if (this.readyVersion !== undefined) {
+      return {
+        phase: 'ready',
+        version: this.readyVersion,
+        ...(this.installFailedVersion === this.readyVersion ? { installFailed: true } : {}),
+      }
+    }
+    if (this.downloadingVersion !== undefined) {
+      const progress = this.downloadProgress
+      return {
+        phase: 'downloading',
+        version: this.downloadingVersion,
+        ...(progress === undefined ? {} : {
+          received: progress.received,
+          ...(progress.total === undefined ? {} : { total: progress.total }),
+        }),
+      }
+    }
+    if (this.availableVersion !== undefined) {
+      return {
+        phase: 'available',
+        version: this.availableVersion,
+        ...(this.downloadFailedVersion === this.availableVersion ? { downloadFailed: true } : {}),
+      }
+    }
+    return { phase: 'idle' }
+  }
+
+  /** Start the badge-driven silent download for the available version. */
+  downloadNow(): Promise<void> {
+    const version = this.availableVersion
+    if (version === undefined || this.disposed || !this.options.adapter.canDownload) {
+      return Promise.resolve()
+    }
+    return this.startDownload(version, this.options.adapter.releaseChannel ?? 'stable', false, true)
+  }
+
+  /** Install the downloaded update; failures fall back to the ready phase. */
+  installNow(): Promise<void> {
+    const version = this.readyVersion
+    if (version === undefined || this.restarting || this.disposed) return Promise.resolve()
+    this.restarting = true
+    this.installFailedVersion = undefined
+    this.registration.refresh()
+    return Promise.resolve(this.options.adapter.installDownloaded(version, this.pendingInstallDigests))
+      .then(result => {
+        // Windows hands off to the installer and exits; macOS opens the disk
+        // image for manual install, so the badge returns to its ready state.
+        if (!this.disposed && result === 'manual') this.restarting = false
+      })
+      .catch(() => {
+        if (!this.disposed) {
+          this.restarting = false
+          this.installFailedVersion = version
+        }
+      })
+      .finally(() => {
+        if (!this.disposed) this.registration.refresh()
+      })
   }
 
   private runManualCheck(): Promise<void> {
     this.manualTask ??= (async () => {
       if (this.availableVersion !== undefined) {
-        await this.offerDownload(this.availableVersion)
+        // The tray shares the badge action: a repeated check on a known
+        // release starts the same silent download.
+        await this.downloadNow()
         return
       }
       const result = await this.startCheck()
       if (this.disposed) return
-      const version = this.observeResult(result)
-      if (version !== undefined) {
-        await this.offerDownload(version)
-        return
-      }
+      this.observeResult(result)
+      if (this.availableVersion !== undefined) return
       await this.options.adapter.showManualCheckResult(result)
     })().catch(() => undefined).finally(() => {
       this.manualTask = undefined

@@ -191,6 +191,7 @@ function createHarness(
       confirmDownload: async () => false,
       showManualCheckResult: async () => {},
       downloadAndOpen: async () => {},
+      installDownloaded: async () => 'exit',
       notify: () => {},
     },
     schedule: (spec) => {

@@ -122,7 +122,9 @@ export interface DesktopUpdateAdapter {
   /**
    * Download and hand one confirmed update to the platform installer. The
    * optional per-platform digests come from the recheck that confirmed the
-   * version; the adapter applies the one matching its download platform.
+   * version; the adapter applies the one matching its download platform. In
+   * silent mode the adapter only downloads and records the artifact: the
+   * sidebar badge drives prompts and the later install action.
    */
   downloadAndOpen(
     version: string,
@@ -130,7 +132,18 @@ export interface DesktopUpdateAdapter {
     channel?: DesktopReleaseChannel,
     installerSha256?: Readonly<Partial<Record<'win32' | 'darwin', string>>>,
     onProgress?: (received: number, total: number | undefined) => void,
+    silent?: boolean,
   ): Promise<void>
+  /**
+   * Hand one downloaded update to the platform installer. Windows launches the
+   * NSIS installer and quits (`exit`); macOS opens the disk image for manual
+   * install (`manual`). The optional per-platform digests from the download
+   * recheck are re-verified before the artifact is handed over.
+   */
+  installDownloaded(
+    version: string,
+    expectedSha256?: Readonly<Partial<Record<'win32' | 'darwin', string>>>,
+  ): Promise<'exit' | 'manual'>
   /** Present a native status notification without blocking the Host tree. */
   notify(notification: DesktopNotification): void
 }

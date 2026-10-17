@@ -138,3 +138,50 @@ it('bridges the restricted native file chooser to Host plugins without the RPC d
     expect(pickFile).toHaveBeenLastCalledWith({})
   } finally { await release(); parent.close(); child.close(); port1.close(); port2.close() }
 })
+
+it('bridges the silent update download, progress callbacks, and install handoff', async () => {
+  const { port1, port2 } = new MessageChannel()
+  const makeRpc = (port: typeof port1) => new HostRpc({
+    send: value => port.postMessage(value),
+    listen: receive => { port.on('message', receive); return () => { port.off('message', receive) } },
+  })
+  const parent = makeRpc(port1)
+  const child = makeRpc(port2)
+  let reportProgress!: (received: number, total: number | undefined) => void
+  let releaseDownload!: () => void
+  const downloadGate = new Promise<void>(resolve => { releaseDownload = resolve })
+  const downloadAndOpen = vi.fn(async (
+    _version: string,
+    _signal: AbortSignal,
+    _channel: 'stable' | 'beta' | 'next' | undefined,
+    _digests: unknown,
+    onProgress?: (received: number, total: number | undefined) => void,
+    silent?: boolean,
+  ) => {
+    expect(silent).toBe(true)
+    reportProgress = onProgress as (received: number, total: number | undefined) => void
+    await downloadGate
+  })
+  const installDownloaded = vi.fn(async () => 'exit' as const)
+  const native = {
+    platform: 'win32', locale: 'zh',
+    updates: { isPackaged: true, canDownload: true, currentVersion: '2.0.0', statePath: '/tmp/update', request: vi.fn(async () => new Response('{}')), downloadAndOpen, installDownloaded },
+  } as unknown as DesktopRuntime
+  const release = bindNativeRuntime(parent, native)
+  try {
+    const runtime = createHostRuntime(child, runtimeSnapshot(native))
+    const progress = vi.fn()
+    const downloading = runtime.updates.downloadAndOpen(
+      '2.1.0', new AbortController().signal, undefined, undefined, progress, true,
+    )
+    await vi.waitFor(() => { expect(reportProgress).toBeDefined() })
+    reportProgress(512, 2048)
+    await vi.waitFor(() => { expect(progress).toHaveBeenCalledWith(512, 2048) })
+    releaseDownload()
+    await downloading
+    expect(downloadAndOpen).toHaveBeenCalledOnce()
+
+    await expect(runtime.updates.installDownloaded('2.1.0', { win32: 'a'.repeat(64) })).resolves.toBe('exit')
+    expect(installDownloaded).toHaveBeenCalledWith('2.1.0', { win32: 'a'.repeat(64) })
+  } finally { await release(); parent.close(); child.close(); port1.close(); port2.close() }
+})
