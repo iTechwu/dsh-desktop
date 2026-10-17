@@ -4,7 +4,10 @@ import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import { DesktopSettingsSection, type DesktopNotificationSettings, type DesktopShellSettings } from './DesktopSettingsSection.tsx'
 import { DesktopTerminalSettingsAction } from './DesktopTerminalSettingsAction.tsx'
+import { DesktopUpdateBadge } from './DesktopUpdateBadge.tsx'
 import { createDesktopSettingsApi } from './desktop-settings-api.ts'
+import { createDesktopUpdateApi } from './desktop-update-api.ts'
+import { installDesktopUpdateBadgeStyles } from './desktop-update-badge-styles.ts'
 import { en, zh, type DesktopSettingsLocaleKey } from './desktop-settings-locales.ts'
 import { installDesktopSettingsStyles } from './desktop-settings-styles.ts'
 import type { DesktopClientEnvironment } from './environment.ts'
@@ -75,6 +78,7 @@ export function applyDesktopSettings(
     DESKTOP_NOTIFICATIONS_SETTINGS_NAMESPACE,
   )
   const api = createDesktopSettingsApi()
+  const updateApi = createDesktopUpdateApi()
   const t = ctx.locale.bind(DESKTOP_SETTINGS_LOCALE_NAMESPACE)
   const setMode = async (mode: DesktopShellSettings['mode']): Promise<void> => {
     await persistDesktopModeSelection(desktopSettings, mode)
@@ -87,6 +91,10 @@ export function applyDesktopSettings(
   ctx.effect(
     () => installDesktopSettingsStyles(),
     'dsh-plugin-desktop: settings styles',
+  )
+  ctx.effect(
+    () => installDesktopUpdateBadgeStyles(),
+    'dsh-plugin-desktop: update badge styles',
   )
   ctx.slots.inject('settings.section', () => ctx.slots.register({
     name: 'settings.section',
@@ -115,6 +123,16 @@ export function applyDesktopSettings(
     locale: DESKTOP_SETTINGS_LOCALE_NAMESPACE,
     inject: () => ({ api }),
   }, DesktopTerminalSettingsAction))
+  // The Host owns the update lifecycle: an idle snapshot renders nothing, so
+  // the badge only appears when a release is actually available.
+  ctx.slots.inject('sidebar.footer.action', () => ctx.slots.register({
+    name: 'sidebar.footer.action',
+    id: 'desktop-update-badge',
+    order: 20,
+    label: () => t('updateBadgeAvailable'),
+    locale: DESKTOP_SETTINGS_LOCALE_NAMESPACE,
+    inject: () => ({ api: updateApi }),
+  }, DesktopUpdateBadge))
 
   return Object.freeze({
     api,

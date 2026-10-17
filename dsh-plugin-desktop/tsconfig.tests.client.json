@@ -12,6 +12,7 @@
     "tests/client-directory-picker.spec.ts",
     "tests/client-deepseek-search-settings.spec.ts",
     "tests/client-dofe-access-gate.spec.ts",
+    "tests/client-desktop-update-badge.spec.ts",
     "tests/client-desktop-settings.spec.ts",
     "tests/client-desktop-update-settings.spec.ts",
     "tests/client-environment.spec.ts",

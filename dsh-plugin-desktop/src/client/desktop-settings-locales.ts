@@ -140,6 +140,12 @@ export const zh = {
   turnFailure: '本轮任务失败',
   jobCompletion: '后台任务完成',
   jobFailure: '后台任务失败',
+  updateBadgeAvailable: '新版本',
+  updateBadgeVersion: '新版本：{version}',
+  updateBadgeReady: '新版本 {version} 已就绪',
+  updateBadgeDownloadFailed: '下载失败，点击重试',
+  updateBadgeInstallFailed: '安装失败，点击重试',
+  updateBadgeRestarting: '正在准备重启…',
 } as const
 
 export type DesktopSettingsLocaleKey = keyof typeof zh
@@ -282,4 +288,10 @@ export const en: Record<DesktopSettingsLocaleKey, string> = {
   turnFailure: 'Current turn failed',
   jobCompletion: 'Background job completed',
   jobFailure: 'Background job failed',
+  updateBadgeAvailable: 'New version',
+  updateBadgeVersion: 'New version: {version}',
+  updateBadgeReady: 'Version {version} is ready',
+  updateBadgeDownloadFailed: 'Download failed. Click to retry',
+  updateBadgeInstallFailed: 'Install failed. Click to retry',
+  updateBadgeRestarting: 'Preparing to restart…',
 }
