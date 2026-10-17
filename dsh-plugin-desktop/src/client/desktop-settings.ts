@@ -131,7 +131,7 @@ export function applyDesktopSettings(
     order: 20,
     label: () => t('updateBadgeAvailable'),
     locale: DESKTOP_SETTINGS_LOCALE_NAMESPACE,
-    inject: () => ({ api: updateApi }),
+    inject: () => ({ api: updateApi, platform: environment.platform }),
   }, DesktopUpdateBadge))
 
   return Object.freeze({

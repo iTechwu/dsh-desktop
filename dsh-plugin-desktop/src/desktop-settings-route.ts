@@ -510,7 +510,12 @@ export async function handleDesktopUpdateDownloadRequest(
   if (value === INVALID_BODY) return
   if (!isEmptyRequest(value)) return finishJson(res, 400, error('invalid update download request'))
   try {
-    await downloadNow()
+    // The lifecycle owns re-entry protection and failure tracking; the badge
+    // follows progress through the state endpoint, so the command only needs
+    // to start the work and answer promptly.
+    void downloadNow().catch(cause => {
+      reportError('start the update download', cause)
+    })
     finishJson(res, 200, { accepted: true })
   } catch (cause) {
     reportError('start the update download', cause)

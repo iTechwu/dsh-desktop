@@ -146,6 +146,13 @@ export const zh = {
   updateBadgeDownloadFailed: '下载失败，点击重试',
   updateBadgeInstallFailed: '安装失败，点击重试',
   updateBadgeRestarting: '正在准备重启…',
+  updateModalReadyTitle: '新版本 {version} 已准备就绪',
+  updateModalCloseNotice: '更新期间应用将暂时关闭，完成后会自动打开。',
+  updateModalPatienceNotice: '更新可能需要一些时间，请耐心等待，期间请勿重复启动应用。',
+  updateModalInstallRestart: '安装并重启',
+  updateModalOpenImage: '打开安装镜像',
+  updateModalInstallFailed: '安装未能启动，请重试。',
+  updateModalClose: '关闭',
 } as const
 
 export type DesktopSettingsLocaleKey = keyof typeof zh
@@ -294,4 +301,11 @@ export const en: Record<DesktopSettingsLocaleKey, string> = {
   updateBadgeDownloadFailed: 'Download failed. Click to retry',
   updateBadgeInstallFailed: 'Install failed. Click to retry',
   updateBadgeRestarting: 'Preparing to restart…',
+  updateModalReadyTitle: 'Version {version} is ready to install',
+  updateModalCloseNotice: 'The app will close during the update and reopen automatically when it finishes.',
+  updateModalPatienceNotice: 'The update may take a while. Please wait, and do not launch the app again while it is running.',
+  updateModalInstallRestart: 'Install and restart',
+  updateModalOpenImage: 'Open disk image',
+  updateModalInstallFailed: 'The installer could not start. Please try again.',
+  updateModalClose: 'Close',
 }

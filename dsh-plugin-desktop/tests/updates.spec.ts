@@ -52,7 +52,8 @@ async function readUpdateState(harness: Harness): Promise<Record<string, unknown
   return JSON.parse(body) as Record<string, unknown>
 }
 
-async function postEmptyUpdateCommand(harness: Harness, path: string, bodyText = '{}'): Promise<ServerResponse> {
+async function postEmptyUpdateCommand(harness: Harness, path: string, bodyText = '{}'): Promise<ServerResponse & { body: string }> {
+  let responseBody = ''
   const req = {
     method: 'POST',
     headers: {
@@ -66,10 +67,10 @@ async function postEmptyUpdateCommand(harness: Harness, path: string, bodyText =
   const res = {
     statusCode: 200,
     setHeader: vi.fn(),
-    end: vi.fn(),
+    end: vi.fn((value?: string) => { responseBody = value ?? '' }),
   } as unknown as ServerResponse
   await routeFor(harness, path).handler(req, res)
-  return res
+  return Object.assign(res, { body: responseBody })
 }
 
 const testConfig: UpdateConfig = {
@@ -78,6 +79,9 @@ const testConfig: UpdateConfig = {
   intervalMs: 1000,
   requestTimeoutMs: 1000,
 }
+
+/** Legacy brand label asserted through the localized tray copy. */
+const PRODUCT = 'Yootun-Agent'
 
 function versionResponse(version: unknown): Response {
   return Response.json({ version })
@@ -397,13 +401,13 @@ describe('desktop update Host plugin', () => {
     await vi.advanceTimersByTimeAsync(testConfig.initialDelayMs)
     await vi.waitFor(() => {
       expect(harness.notifications).toEqual([{
-        title: 'Yootun-Agent Update Available',
-        body: 'Version 2.1.0 is ready to download. Open Yootun-Agent to continue.',
+        title: `${PRODUCT} Update Available`,
+        body: `Version 2.1.0 is ready to download. Open ${PRODUCT} to continue.`,
       }])
     })
     expect(harness.confirmDownload).not.toHaveBeenCalled()
     expect(harness.downloadAndOpen).not.toHaveBeenCalled()
-    expect(harness.tray.label()).toBe('Yootun-Agent 2.1.0 Available')
+    expect(harness.tray.label()).toBe(`${PRODUCT} 2.1.0 Available`)
     await vi.waitFor(async () => {
       expect(JSON.parse(await readFile(harness.statePath, 'utf8'))).toEqual({
         version: 3,
@@ -437,7 +441,9 @@ describe('desktop update Host plugin', () => {
     expect(harness.confirmDownload).not.toHaveBeenCalled()
     expect(await readUpdateState(harness)).toEqual({ phase: 'available', version: '2.1.0' })
 
-    const command = postEmptyUpdateCommand(harness, DESKTOP_UPDATE_DOWNLOAD_PATH)
+    // The command answers as soon as the lifecycle accepts the work.
+    const command = await postEmptyUpdateCommand(harness, DESKTOP_UPDATE_DOWNLOAD_PATH)
+    expect(JSON.parse(command.body)).toEqual({ accepted: true })
     await vi.waitFor(() => { expect(harness.downloadAndOpen).toHaveBeenCalledOnce() })
     const call = harness.downloadAndOpen.mock.calls[0] as unknown as [
       string,
@@ -453,12 +459,11 @@ describe('desktop update Host plugin', () => {
     expect(call[5]).toBe(true)
     expect(harness.confirmDownload).not.toHaveBeenCalled()
     expect(await readUpdateState(harness)).toEqual({ phase: 'downloading', version: '2.1.0' })
-    expect(harness.tray.label()).toBe('Downloading Yootun-Agent 2.1.0…')
+    expect(harness.tray.label()).toBe(`Downloading ${PRODUCT} 2.1.0…`)
     expect(harness.notifications).toEqual([])
 
     resolveDownload()
-    await command
-    await vi.waitFor(() => { expect(harness.tray.label()).toBe('Yootun-Agent 2.1.0 Available') })
+    await vi.waitFor(() => { expect(harness.tray.label()).toBe(`${PRODUCT} 2.1.0 Available`) })
     expect(await readUpdateState(harness)).toEqual({ phase: 'ready', version: '2.1.0' })
     expect(harness.notifications).toEqual([])
     expect(harness.warnings).toEqual([])
@@ -613,18 +618,42 @@ describe('desktop update Host plugin', () => {
     })
 
     await harness.tray.invoke()
-    const command = postEmptyUpdateCommand(harness, DESKTOP_UPDATE_DOWNLOAD_PATH)
+    await postEmptyUpdateCommand(harness, DESKTOP_UPDATE_DOWNLOAD_PATH)
     await vi.waitFor(() => { expect(harness.downloadAndOpen).toHaveBeenCalledOnce() })
     rejectDownload(new Error('offline'))
-    await command
 
-    expect(await readUpdateState(harness)).toEqual({
-      phase: 'available',
-      version: '2.1.0',
-      downloadFailed: true,
+    await vi.waitFor(async () => {
+      expect(await readUpdateState(harness)).toEqual({
+        phase: 'available',
+        version: '2.1.0',
+        downloadFailed: true,
+      })
     })
-    expect(harness.tray.label()).toBe('Yootun-Agent 2.1.0 Available')
+    expect(harness.tray.label()).toBe(`${PRODUCT} 2.1.0 Available`)
     expect(harness.warnings).toEqual([])
+  })
+
+  it('keeps the retry affordance when the silent recheck fails', async () => {
+    const request = vi.fn()
+      .mockResolvedValueOnce(versionResponse('2.1.0'))
+      .mockRejectedValueOnce(new TypeError('offline'))
+    const harness = await createHarness({
+      packaged: false,
+      request,
+    })
+
+    await harness.tray.invoke()
+    await postEmptyUpdateCommand(harness, DESKTOP_UPDATE_DOWNLOAD_PATH)
+    await vi.waitFor(async () => {
+      expect(await readUpdateState(harness)).toEqual({
+        phase: 'available',
+        version: '2.1.0',
+        downloadFailed: true,
+      })
+    })
+    expect(harness.confirmDownload).not.toHaveBeenCalled()
+    expect(harness.downloadAndOpen).not.toHaveBeenCalled()
+    expect(harness.tray.label()).toBe(`${PRODUCT} 2.1.0 Available`)
   })
 
   it('passes the rechecked installer digests to the silent download adapter', async () => {
@@ -639,6 +668,7 @@ describe('desktop update Host plugin', () => {
 
     await harness.tray.invoke()
     const command = postEmptyUpdateCommand(harness, DESKTOP_UPDATE_DOWNLOAD_PATH)
+    await command
     await vi.waitFor(() => { expect(harness.downloadAndOpen).toHaveBeenCalledOnce() })
     const [version, , , installerSha256, , silent] = harness.downloadAndOpen.mock.calls[0] as unknown as [
       string,
@@ -667,9 +697,9 @@ describe('desktop update Host plugin', () => {
 
     await harness.tray.invoke()
     const command = postEmptyUpdateCommand(harness, DESKTOP_UPDATE_DOWNLOAD_PATH)
+    await command
     await vi.waitFor(() => { expect(harness.downloadAndOpen).toHaveBeenCalledOnce() })
     expect(harness.downloadAndOpen.mock.calls[0]?.[3]).toEqual({ darwin: 'd'.repeat(64) })
-    await command
   })
 
   it('omits the digest argument when the service publishes none', async () => {
@@ -681,10 +711,10 @@ describe('desktop update Host plugin', () => {
 
     await harness.tray.invoke()
     const command = postEmptyUpdateCommand(harness, DESKTOP_UPDATE_DOWNLOAD_PATH)
+    await command
     await vi.waitFor(() => { expect(harness.downloadAndOpen).toHaveBeenCalledOnce() })
     const digestArgument = harness.downloadAndOpen.mock.calls[0]?.[3]
     expect(digestArgument).toBeUndefined()
-    await command
   })
 
   it('shares the badge download action when a manual check repeats on the same release', async () => {
@@ -696,7 +726,7 @@ describe('desktop update Host plugin', () => {
     await harness.tray.invoke()
     expect(harness.confirmDownload).not.toHaveBeenCalled()
     expect(harness.downloadAndOpen).not.toHaveBeenCalled()
-    expect(harness.tray.label()).toBe('Yootun-Agent 2.1.0 Available')
+    expect(harness.tray.label()).toBe(`${PRODUCT} 2.1.0 Available`)
 
     const second = harness.tray.invoke()
     await vi.waitFor(() => { expect(harness.downloadAndOpen).toHaveBeenCalledOnce() })
@@ -742,12 +772,14 @@ describe('desktop update Host plugin', () => {
 
     await harness.tray.invoke()
     await postEmptyUpdateCommand(harness, DESKTOP_UPDATE_DOWNLOAD_PATH)
+    await vi.waitFor(() => { expect(request).toHaveBeenCalledTimes(2) })
+    await vi.waitFor(() => { expect(harness.tray.label()).toBe(`${PRODUCT} 2.2.0 Available`) })
 
     expect(request).toHaveBeenCalledTimes(2)
     expect(harness.confirmDownload).not.toHaveBeenCalled()
     expect(harness.downloadAndOpen).not.toHaveBeenCalled()
     expect(harness.showManualCheckResult).not.toHaveBeenCalled()
-    expect(harness.tray.label()).toBe('Yootun-Agent 2.2.0 Available')
+    expect(harness.tray.label()).toBe(`${PRODUCT} 2.2.0 Available`)
     expect(await readUpdateState(harness)).toEqual({ phase: 'available', version: '2.2.0' })
   })
 
@@ -837,7 +869,7 @@ describe('desktop update Host plugin', () => {
 
     expect(harness.notifications).toEqual([])
     expect(harness.confirmDownload).not.toHaveBeenCalled()
-    expect(harness.tray.label()).toBe('Yootun-Agent 2.1.0 Available')
+    expect(harness.tray.label()).toBe(`${PRODUCT} 2.1.0 Available`)
   })
 
   it('does not prompt on a platform without a fixed download entry', async () => {
@@ -882,12 +914,14 @@ describe('desktop update Host plugin', () => {
     expect(harness.downloadAndOpen).toHaveBeenCalledOnce()
     expect(harness.notifications).toEqual([])
     expect(harness.warnings).toEqual([])
-    expect(await readUpdateState(harness)).toEqual({
-      phase: 'available',
-      version: '2.1.0',
-      downloadFailed: true,
+    await vi.waitFor(async () => {
+      expect(await readUpdateState(harness)).toEqual({
+        phase: 'available',
+        version: '2.1.0',
+        downloadFailed: true,
+      })
     })
-    expect(harness.tray.label()).toBe('Yootun-Agent 2.1.0 Available')
+    expect(harness.tray.label()).toBe(`${PRODUCT} 2.1.0 Available`)
   })
 
   it('aborts checks and downloads and removes the tray item on effect disposal', async () => {
@@ -923,6 +957,7 @@ describe('desktop update Host plugin', () => {
     await downloading.tray.invoke()
     const pendingDownload = postEmptyUpdateCommand(downloading, DESKTOP_UPDATE_DOWNLOAD_PATH)
     await vi.waitFor(() => { expect(downloadSignal).toBeDefined() })
+    await pendingDownload
     await downloading.dispose()
     await pendingDownload
     expect(downloadSignal?.aborted).toBe(true)

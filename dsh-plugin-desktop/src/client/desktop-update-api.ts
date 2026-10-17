@@ -22,7 +22,7 @@ export type DesktopUpdateSnapshot = {
 
 /** Same-origin operations consumed by the update badge component. */
 export interface DesktopUpdateApi {
-  readUpdateState(): Promise<DesktopUpdateSnapshot>
+  readUpdateState(signal?: AbortSignal | undefined): Promise<DesktopUpdateSnapshot>
   startUpdateDownload(): Promise<void>
   installUpdateNow(): Promise<void>
 }
@@ -86,12 +86,13 @@ export function createDesktopUpdateApi(fetcher: FetchLike = globalThis.fetch.bin
     body: JSON.stringify({}),
   })
   return Object.freeze({
-    async readUpdateState() {
+    async readUpdateState(signal?: AbortSignal | undefined) {
+      const timeout = AbortSignal.timeout(DESKTOP_REQUEST_TIMEOUT_MS)
       const response = await fetcher(DESKTOP_UPDATE_STATE_PATH, {
         method: 'GET',
         credentials: 'same-origin',
         redirect: 'error',
-        signal: AbortSignal.timeout(DESKTOP_REQUEST_TIMEOUT_MS),
+        signal: signal === undefined ? timeout : AbortSignal.any([signal, timeout]),
         cache: 'no-store',
         headers: { Accept: 'application/json' },
       })

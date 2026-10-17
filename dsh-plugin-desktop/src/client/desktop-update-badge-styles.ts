@@ -45,7 +45,46 @@ const CSS = `
 @keyframes dshDesktopUpdateBadgeSpin {
   to { transform: rotate(360deg); }
 }
-`
+.dshDesktopUpdateModalHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.dshDesktopUpdateModalHeader h3,
+.sensteedAgentSettingsDialog.dshDesktopUpdateModal h3 {
+  margin: 0;
+  color: var(--dsw-alias-label-primary);
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+.dshDesktopUpdateModalHeader h3 { flex: 1; min-width: 0; }
+.dshDesktopUpdateModalClose {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 16px;
+  line-height: 24px;
+  cursor: pointer;
+}
+.dshDesktopUpdateModalClose:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+.dshDesktopUpdateModalClose:focus-visible {
+  outline: 2px solid var(--dsw-alias-brand-primary);
+  outline-offset: 1px;
+}
+.sensteedAgentSettingsDialog.dshDesktopUpdateModal .dshDesktopUpdateModalError {
+  color: var(--dsw-alias-state-error-primary);
+}
+ `
 
 /** Install the badge sheet once; tolerate headless Client boot. */
 export function installDesktopUpdateBadgeStyles(): () => void {

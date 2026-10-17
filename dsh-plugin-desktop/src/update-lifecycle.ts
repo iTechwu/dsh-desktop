@@ -284,7 +284,16 @@ class DesktopUpdateLifecycleOwner implements DesktopUpdateLifecycle {
         ? confirmedResult.latestVersion
         : undefined
       const confirmedDigests = confirmedResult?.installerSha256
-      if (channel === (this.options.adapter.releaseChannel ?? 'stable')) this.observeResult(confirmedResult)
+      if (channel === (this.options.adapter.releaseChannel ?? 'stable')) {
+        if (confirmedResult === null && silent) {
+          // A failed silent recheck must keep the retry entry point alive:
+          // observeResult(null) would clear the known available version and
+          // strand the user without a badge to click.
+          if (!this.disposed) this.downloadFailedVersion = version
+        } else {
+          this.observeResult(confirmedResult)
+        }
+      }
       if (confirmedVersion !== version || this.disposed) return
 
       const controller = new AbortController()
