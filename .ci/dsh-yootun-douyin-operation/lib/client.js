@@ -648,6 +648,9 @@ window.__ModuleLoader__.load({
           elapsedSeconds: point.elapsedSeconds,
           counterRevised: point.counterRevised === true,
           gapDaysBefore,
+          // 缺口起点（前一点）x：gapDaysBefore>0 时必有 prev，标签定位直接用它，
+          // 不再按窗口宽估算每格像素（gap 标签 7 天弹框偏位修复 2026-10-17）。
+          gapStartX: prev ? prev.x : null,
           x: Math.round((TREND_PAD_X + ((clamped - fromMs) / spanMs) * (width - TREND_PAD_X * 2)) * 100) / 100,
           yPct: 0,
           _ms: clamped,
@@ -798,7 +801,9 @@ window.__ModuleLoader__.load({
 
       ...nodes.filter(node => node.gapDaysBefore > 0).map((node, index) => eh('text', {
         key: `gap-${index}`,
-        x: Math.max(24, Math.min(width - 24, node.x - node.gapDaysBefore * (width / 29) / 2 + 12)),
+        // x = 缺口起点（前一点）真实坐标 + 12px：旧公式按 width/29 估算每格宽，
+        // 只对 30 天窗口成立，7 天弹框下标签偏位；真实前一点坐标适配任意窗口。
+        x: Math.max(24, Math.min(width - 24, node.gapStartX + 12)),
         y: TREND_PAD_TOP + plotHeight + 12,
         className: 'ydo-an-gap-text',
       }, `${t('noCollectGap')} ${node.gapDaysBefore}d`)),

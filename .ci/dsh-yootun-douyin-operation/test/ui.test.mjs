@@ -1229,6 +1229,11 @@ test('analysis-ui：趋势布局 30 天固定窗口、自然日定位、缺口�
         `值大的点 cy 更小（${dots[i].day}=${va} cy=${dots[i].cy} vs ${dots[j].day}=${vb} cy=${dots[j].cy}）`)
     }
   }
+  // 缺口标签 x = 缺口起点（前一点）真实坐标 + 12px（2026-10-17 修复）：旧公式按
+  // width/29 估算每格宽只对 30 天窗口成立。此用例 gap 在 09-05（前一点 09-02 x=289.86）。
+  const gapTexts = hLog.filter(entry => entry.props && entry.props.className === 'ydo-an-gap-text')
+  assert.equal(gapTexts.length, 1, '缺口标签渲染一条')
+  assert.equal(gapTexts[0].props.x, 301.86, '缺口标签 x 用缺口起点真实坐标，不按窗口宽估算')
 })
 
 // 1026 方案：作品详情弹框 7 天窗口（与创作者中心后台一致）；账号/分析页不传 windowDays 仍 30 天。
@@ -1246,6 +1251,10 @@ test('trendLayout：windowDays=7 弹框窗口、刻度随窗口推导、越界�
   // x = 6 + 偏移天数/6 * 588：9/15=4 天 → 398；9/17=6 天 → 594
   assert.equal(layout.nodes[0].x, 398)
   assert.equal(layout.nodes[1].x, 594)
+  // gapStartX（2026-10-17 修复）：缺口标签定位用缺口起点（前一点）真实 x，替代
+  // 写死 width/29 的窗口宽估算——7 天弹框下旧公式标签偏位；09-17 的 gap 前一点是 09-15。
+  assert.equal(layout.nodes[0].gapStartX, null)
+  assert.equal(layout.nodes[1].gapStartX, 398)
   // 刻度位随窗口推导（offset = floor(i*6/4) → 0/1/3/4/6）：旧实现写死 30 天常量，
   // 7 天窗口的刻度日会溢出到窗口外、x 错位——这条就是回归锁。
   assert.deepEqual(Array.from(layout.axisLabels.map(label => label.day)),

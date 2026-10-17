@@ -54,15 +54,43 @@ async function evaluateJson(pageOrContext, url) {
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms))
 
-/** 轮询上下文 Cookie，直到出现登录态 Cookie 或超时。 */
-export async function waitForSessionCookie(context, { timeoutMs = LOGIN_TIMEOUT_MS, intervalMs = COOKIE_POLL_INTERVAL_MS, now = () => Date.now() } = {}) {
+/**
+ * 轮询上下文 Cookie，直到出现**有效**登录态或超时。
+ *
+ * verify 未提供：命中 `sessionid`/`sessionid_ss` 即视为登录（旧行为，测试与
+ * 纯 Cookie 等待场景用）。
+ * verify 提供（登录流程必须传入）：Cookie 命中只说明「有 Cookie」——旧 Profile
+ * 可能残留已失效的会话 Cookie（真机实证 2026-10-17：弹窗秒回成功但资料读不到，
+ * 账号被永久挂到 pending- 占位 ID），必须探活 user/info 真正读出账号资料才算
+ * 登录；探活失败继续轮询，等用户扫码换新 Cookie 或创作者中心 SPA 就绪，探活
+ * 重试用较长的 verifyIntervalMs 降频（成功路径零额外请求）。探活得到的资料随
+ * 结果带出，登录流程无需再读一次。
+ */
+export async function waitForSessionCookie(context, {
+  timeoutMs = LOGIN_TIMEOUT_MS,
+  intervalMs = COOKIE_POLL_INTERVAL_MS,
+  verifyIntervalMs = Math.max(2500, COOKIE_POLL_INTERVAL_MS),
+  verify = null,
+  now = () => Date.now(),
+} = {}) {
   const deadline = now() + timeoutMs
   for (;;) {
     const cookies = await context.cookies()
     const hit = cookies.find(item => SESSION_COOKIE_NAMES.includes(item.name) && item.value)
-    if (hit) return { loggedIn: true, cookieName: hit.name }
+    if (hit) {
+      if (!verify) return { loggedIn: true, cookieName: hit.name }
+      let profile = null
+      try {
+        profile = await verify()
+      } catch {
+        profile = null
+      }
+      // 探活失败不返回：会话可能已失效（等扫码换新 Cookie）或 SPA 未就绪，
+      // 继续轮询直到超时。
+      if (profile && profile.accountId) return { loggedIn: true, cookieName: hit.name, profile }
+    }
     if (now() >= deadline) return { loggedIn: false, cookieName: null }
-    await sleep(intervalMs)
+    await sleep(hit && verify ? verifyIntervalMs : intervalMs)
   }
 }
 
@@ -124,6 +152,8 @@ export async function loginWithQrCode({
   chromium = null,
   platform,
   timeoutMs = LOGIN_TIMEOUT_MS,
+  intervalMs,
+  verifyIntervalMs,
   chromeFactory = launchChrome,
   onPage = null,
 } = {}) {
@@ -136,14 +166,21 @@ export async function loginWithQrCode({
     const page = context.pages()[0] || (await context.newPage())
     if (onPage) await onPage(page)
     await page.goto(CREATOR_ORIGIN, { waitUntil: 'domcontentloaded', timeout: 60_000 })
-    const waited = await waitForSessionCookie(context, { timeoutMs })
+    // 登录等待必须探活：Cookie 命中≠会话有效（旧 Profile 死 Cookie 会秒假成功），
+    // 探活读出账号资料才算登录，资料随 waited.profile 带出免二次请求。
+    const waited = await waitForSessionCookie(context, {
+      timeoutMs,
+      intervalMs,
+      verifyIntervalMs,
+      verify: () => readAccountProfile(page),
+    })
     if (!waited.loggedIn) {
       // 超时必须关闭有头窗口，否则窗口与进程会滞留（用户看不到任何提示）。
       await context.close().catch(() => {})
       return { status: 'timeout' }
     }
 
-    const profile = await readAccountProfileWithRetry(page)
+    const profile = waited.profile || (await readAccountProfileWithRetry(page))
     const resolvedId = profile && profile.accountId ? profile.accountId : tempId
     // 先存登录态（此时上下文仍打开），再关窗、再迁移 Profile 目录到正式账号 ID。
     await saveStorageState(resolvedId, context, root)

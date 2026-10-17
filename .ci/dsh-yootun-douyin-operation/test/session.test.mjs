@@ -68,6 +68,66 @@ test('轮询等待登录态 Cookie，超时返回未登录', async () => {
   assert.equal(timeout.cookieName, null)
 })
 
+test('waitForSessionCookie：verify 探活通过才算登录，账号资料随结果带出', async () => {
+  let verifyCalls = 0
+  const context = { cookies: async () => [{ name: 'sessionid', value: 'some-value' }] }
+  const hit = await waitForSessionCookie(context, {
+    timeoutMs: 60_000,
+    intervalMs: 1,
+    verifyIntervalMs: 1,
+    verify: () => {
+      verifyCalls += 1
+      // 前两次读不到资料（旧 Cookie 已失效 / 创作者中心 SPA 未就绪），第三次读到
+      return verifyCalls < 3 ? null : { accountId: 'acc-1', nickname: '示例账号' }
+    },
+  })
+  assert.equal(hit.loggedIn, true)
+  assert.equal(hit.cookieName, 'sessionid')
+  assert.equal(verifyCalls, 3)
+  assert.equal(hit.profile.accountId, 'acc-1')
+})
+
+test('waitForSessionCookie：旧 Cookie 探活持续失败 → 超时未登录（死 Cookie 不再假成功）', async () => {
+  let verifyCalls = 0
+  const context = { cookies: async () => [{ name: 'sessionid', value: 'dead-cookie' }] }
+  let clock = 0
+  const timeout = await waitForSessionCookie(context, {
+    timeoutMs: 10,
+    intervalMs: 1,
+    verifyIntervalMs: 1,
+    now: () => (clock += 5),
+    verify: () => {
+      verifyCalls += 1
+      return null
+    },
+  })
+  assert.equal(timeout.loggedIn, false)
+  assert.equal(timeout.cookieName, null)
+  assert.ok(verifyCalls >= 2, `探活持续重试而非一次定生死（实际 ${verifyCalls} 次）`)
+})
+
+test('扫码登录：旧 Profile 死 Cookie 探活不过 → timeout 且不落 storage_state（真机 2026-10-17 回归锁）', async () => {
+  await withRoot(async root => {
+    let saved = false
+    const chromeFactory = async () => {
+      const context = fakeCookieContext([{ name: 'sessionid', value: 'dead-cookie' }], {
+        onState: async () => {
+          saved = true
+        },
+      })
+      const page = {
+        goto: async () => {},
+        // 死会话形态：HTTP 200 但读不出账号主体（真机实证 2026-10-17）
+        evaluate: async () => ({ status: 200, json: {} }),
+      }
+      return { context: { ...context, pages: () => [page], newPage: async () => page, close: async () => {} } }
+    }
+    const result = await loginWithQrCode({ root, chromeFactory, timeoutMs: 20, intervalMs: 1, verifyIntervalMs: 1 })
+    assert.equal(result.status, 'timeout')
+    assert.equal(saved, false, '假成功路径不会保存 storage_state')
+  })
+})
+
 test('从页面同源 fetch 读取账号资料（昵称/粉丝数/账号标识）', async () => {
   const page = {
     evaluate: async () => ({
