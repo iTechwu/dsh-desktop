@@ -96,7 +96,6 @@ class DesktopUpdateLifecycleOwner implements DesktopUpdateLifecycle {
   private installFailedVersion: string | undefined
   private downloadProgress: { received: number; total: number | undefined } | undefined
   private pendingInstallDigests: Readonly<Partial<Record<'win32' | 'darwin', string>>> | undefined
-  private lastProgressRefreshAt = 0
   private state: UpdateStateV3 = EMPTY_STATE
   private pollTimer: ReturnType<typeof setTimeout> | undefined
   private requestTimer: ReturnType<typeof setTimeout> | undefined
@@ -300,7 +299,6 @@ class DesktopUpdateLifecycleOwner implements DesktopUpdateLifecycle {
       this.downloadController = controller
       this.downloadingVersion = version
       this.downloadProgress = undefined
-      this.lastProgressRefreshAt = 0
       if (silent) this.downloadFailedVersion = undefined
       this.registration.refresh()
       try {
@@ -309,12 +307,10 @@ class DesktopUpdateLifecycleOwner implements DesktopUpdateLifecycle {
         // 位置参数显式占位：installerSha256 固定第 4 位、onProgress 固定第 5 位，
         // 避免 spread 空数组时后续参数顶位错档。
         const onProgress = (received: number, total: number | undefined): void => {
+          // Progress feeds the renderer snapshot only. Rebuilding the tray menu
+          // while Windows shows it crashes the process, so the tray label keeps
+          // its download-start wording until the phase actually changes.
           this.downloadProgress = { received, total }
-          const now = Date.now()
-          // Menu rebuilds are not free: throttle progress refreshes to twice a second.
-          if (now - this.lastProgressRefreshAt < 500) return
-          this.lastProgressRefreshAt = now
-          this.registration.refresh()
         }
         const confirmedSilentDigests = silent ? confirmedDigests : undefined
         if (this.options.adapter.releaseChannel === undefined && channel === 'stable') {
@@ -346,7 +342,6 @@ class DesktopUpdateLifecycleOwner implements DesktopUpdateLifecycle {
         if (this.downloadController === controller) this.downloadController = undefined
         this.downloadingVersion = undefined
         this.downloadProgress = undefined
-        this.lastProgressRefreshAt = 0
         this.registration.refresh()
       }
     })().finally(() => {

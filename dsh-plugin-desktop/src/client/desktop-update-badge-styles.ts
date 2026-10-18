@@ -7,7 +7,7 @@ const STYLE_ID = 'sensteed-agent-update-badge-styles'
 
 const CSS = `
 .dshDesktopUpdateBadgeHost { flex: none; }
-.footArea > div:has(> [aria-haspopup="dialog"]) {
+div:has(> [aria-haspopup="dialog"]) {
   display: flex;
   align-items: center;
   gap: 8px;

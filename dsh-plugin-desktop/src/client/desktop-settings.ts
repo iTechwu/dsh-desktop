@@ -106,7 +106,9 @@ export function applyDesktopSettings(
     let host: HTMLDivElement | undefined
     const mount = (): void => {
       if (root !== undefined && host !== undefined && host.isConnected) return
-      const settingsButton = document.querySelector<HTMLElement>('.footArea [aria-haspopup="dialog"]')
+      // Upstream sidebar chrome uses CSS Modules hashes, so anchor on the
+      // stable Settings trigger attribute (the page's only dialog opener).
+      const settingsButton = document.querySelector<HTMLElement>('[aria-haspopup="dialog"]')
       if (settingsButton === null || settingsButton.parentElement === null) return
       host = document.createElement('div')
       host.className = 'dshDesktopUpdateBadgeHost'
