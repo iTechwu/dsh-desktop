@@ -197,11 +197,62 @@ export function DesktopUpdateModal({
   const dismiss = (): void => {
     if (!busy) onClose()
   }
+  // Inline the structural styles: page-level rules must never be able to
+  // knock the fixed fullscreen layer out of the viewport again.
+  const backdropStyle = {
+    position: 'fixed',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    zIndex: 2147483002,
+    display: 'grid',
+    placeItems: 'center',
+    padding: '24px',
+    background: 'rgba(0, 0, 0, 0.55)',
+  } as const
+  const dialogStyle = {
+    width: 'min(440px, 100%)',
+    boxSizing: 'border-box',
+    padding: '20px',
+    border: '1px solid var(--dsw-alias-border-l1, transparent)',
+    borderRadius: '8px',
+    background: 'var(--dsw-alias-bg-layer-1, #ffffff)',
+    boxShadow: '0 24px 64px rgba(0, 0, 0, 0.38)',
+    color: 'var(--dsw-alias-label-primary, #1f2329)',
+    outline: 'none',
+  } as const
+  const headerStyle = {
+    display: 'flex',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: '12px',
+  } as const
+  const titleStyle = {
+    margin: 0,
+    flex: 1,
+    minWidth: 0,
+    color: 'inherit',
+    fontSize: '16px',
+    fontWeight: 600,
+    lineHeight: 1.4,
+  } as const
+  const paragraphStyle = {
+    margin: '12px 0 0',
+    color: 'var(--dsw-alias-label-secondary, #5f6672)',
+    fontSize: '13px',
+    lineHeight: 1.65,
+  } as const
+  const errorStyle = {
+    ...paragraphStyle,
+    color: 'var(--dsw-alias-state-error-primary, #d54941)',
+  } as const
   // Portal beside the document root: sidebar containers establish clipping
   // and positioning contexts that would squeeze a fixed fullscreen dialog.
   return createPortal(
     <div
       className="sensteedAgentSettingsDialogBackdrop"
+      style={backdropStyle}
       role="presentation"
       onClick={dismiss}
     >
@@ -209,13 +260,14 @@ export function DesktopUpdateModal({
         className="sensteedAgentSettingsDialog dshDesktopUpdateModal"
         ref={dialogRef}
         tabIndex={-1}
-        role="alertdialog"
-        aria-modal="true"
-        aria-labelledby="dsh-desktop-update-modal-title"
-        onClick={event => event.stopPropagation()}
+      role="alertdialog"
+      aria-modal="true"
+      aria-labelledby="dsh-desktop-update-modal-title"
+      style={dialogStyle}
+      onClick={event => event.stopPropagation()}
       >
-        <div className="dshDesktopUpdateModalHeader">
-          <h3 id="dsh-desktop-update-modal-title">
+        <div className="dshDesktopUpdateModalHeader" style={headerStyle}>
+          <h3 id="dsh-desktop-update-modal-title" style={titleStyle}>
             {renderTemplate(t('updateModalReadyTitle'), { version })}
           </h3>
           <button
@@ -227,10 +279,10 @@ export function DesktopUpdateModal({
             ×
           </button>
         </div>
-        <p>{t('updateModalCloseNotice')}</p>
-        <p>{t('updateModalPatienceNotice')}</p>
+        <p style={paragraphStyle}>{t('updateModalCloseNotice')}</p>
+        <p style={paragraphStyle}>{t('updateModalPatienceNotice')}</p>
         {installFailed && (
-          <p className="dshDesktopUpdateModalError" role="alert">{t('updateModalInstallFailed')}</p>
+          <p style={errorStyle} role="alert">{t('updateModalInstallFailed')}</p>
         )}
         <div className="sensteedAgentSettingsDialogActions">
           <Button variant="primary" disabled={busy} onClick={onInstall}>
