@@ -51,10 +51,11 @@ describe('desktop client environment', () => {
     } as unknown as ClientContext
     try {
       apply(ctx)
-      // The sidebar update badge is page-owned UI (not chrome), so it stays in
-      // the compatibility client slot tree beside the settings entries.
+      // The update dialog portals from the document root and the indicator
+      // beside Settings belongs to the upstream settings shell, so the
+      // compatibility client slot tree stays free of update registrations.
       expect(inject.mock.calls.map(([name]) => name))
-        .toEqual(['sidebar.brand.mark', 'settings.section', 'settings.action', 'sidebar.footer.action'])
+        .toEqual(['sidebar.brand.mark', 'settings.section', 'settings.action'])
       expect(effect.mock.calls.map(([, label]) => label)).not.toContain('desktop: independent compatibility frame styles')
     } finally {
       vi.unstubAllGlobals()

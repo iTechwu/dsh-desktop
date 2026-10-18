@@ -1,13 +1,15 @@
 /** Official Settings Slot registration for Desktop-owned preferences. */
 
+import { createElement } from 'react'
+import { createRoot } from 'react-dom/client'
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import { DesktopSettingsSection, type DesktopNotificationSettings, type DesktopShellSettings } from './DesktopSettingsSection.tsx'
 import { DesktopTerminalSettingsAction } from './DesktopTerminalSettingsAction.tsx'
-import { DesktopUpdateBadge } from './DesktopUpdateBadge.tsx'
+import { DesktopUpdateDialogHost } from './DesktopUpdateDialog.tsx'
 import { createDesktopSettingsApi } from './desktop-settings-api.ts'
 import { createDesktopUpdateApi } from './desktop-update-api.ts'
-import { installDesktopUpdateBadgeStyles } from './desktop-update-badge-styles.ts'
+import { installDesktopUpdateDialogStyles } from './desktop-update-dialog-styles.ts'
 import { en, zh, type DesktopSettingsLocaleKey } from './desktop-settings-locales.ts'
 import { installDesktopSettingsStyles } from './desktop-settings-styles.ts'
 import type { DesktopClientEnvironment } from './environment.ts'
@@ -93,8 +95,8 @@ export function applyDesktopSettings(
     'dsh-plugin-desktop: settings styles',
   )
   ctx.effect(
-    () => installDesktopUpdateBadgeStyles(),
-    'dsh-plugin-desktop: update badge styles',
+    () => installDesktopUpdateDialogStyles(),
+    'dsh-plugin-desktop: update dialog styles',
   )
   ctx.slots.inject('settings.section', () => ctx.slots.register({
     name: 'settings.section',
@@ -123,16 +125,23 @@ export function applyDesktopSettings(
     locale: DESKTOP_SETTINGS_LOCALE_NAMESPACE,
     inject: () => ({ api }),
   }, DesktopTerminalSettingsAction))
-  // The Host owns the update lifecycle: an idle snapshot renders nothing, so
-  // the badge only appears when a release is actually available.
-  ctx.slots.inject('sidebar.footer.action', () => ctx.slots.register({
-    name: 'sidebar.footer.action',
-    id: 'desktop-update-badge',
-    order: 20,
-    label: () => t('updateBadgeAvailable'),
-    locale: DESKTOP_SETTINGS_LOCALE_NAMESPACE,
-    inject: () => ({ api: updateApi, platform: environment.platform }),
-  }, DesktopUpdateBadge))
+  // The ready-state confirm dialog portals to the document root: the upstream
+  // indicator beside Settings owns the badge presentation, and this host only
+  // renders while the Host lifecycle reports a recorded, ready artifact.
+  ctx.effect(() => {
+    if (typeof document === 'undefined') return () => {}
+    const host = document.createElement('div')
+    document.body.append(host)
+    const root = createRoot(host)
+    root.render(createElement(DesktopUpdateDialogHost, {
+      api: updateApi,
+      platform: environment.platform,
+      t,
+    }))
+    return () => {
+      void Promise.resolve(root.unmount()).then(() => { host.remove() })
+    }
+  }, 'dsh-plugin-desktop: update dialog host')
 
   return Object.freeze({
     api,
