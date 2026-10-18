@@ -1,15 +1,15 @@
 /** Official Settings Slot registration for Desktop-owned preferences. */
 
-import { createElement } from 'react'
-import { createRoot } from 'react-dom/client'
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import { DesktopSettingsSection, type DesktopNotificationSettings, type DesktopShellSettings } from './DesktopSettingsSection.tsx'
 import { DesktopTerminalSettingsAction } from './DesktopTerminalSettingsAction.tsx'
-import { DesktopUpdateDialogHost } from './DesktopUpdateDialog.tsx'
+import { DesktopUpdateBadge } from './DesktopUpdateBadge.tsx'
+import { createElement } from 'react'
+import { createRoot } from 'react-dom/client'
 import { createDesktopSettingsApi } from './desktop-settings-api.ts'
 import { createDesktopUpdateApi } from './desktop-update-api.ts'
-import { installDesktopUpdateDialogStyles } from './desktop-update-dialog-styles.ts'
+import { installDesktopUpdateBadgeStyles } from './desktop-update-badge-styles.ts'
 import { en, zh, type DesktopSettingsLocaleKey } from './desktop-settings-locales.ts'
 import { installDesktopSettingsStyles } from './desktop-settings-styles.ts'
 import type { DesktopClientEnvironment } from './environment.ts'
@@ -95,9 +95,41 @@ export function applyDesktopSettings(
     'dsh-plugin-desktop: settings styles',
   )
   ctx.effect(
-    () => installDesktopUpdateDialogStyles(),
-    'dsh-plugin-desktop: update dialog styles',
+    () => installDesktopUpdateBadgeStyles(),
+    'dsh-plugin-desktop: update badge styles',
   )
+  // The update pill renders beside the Settings control: the badge root is
+  // appended to the settings row once the upstream sidebar mounts it.
+  ctx.effect(() => {
+    if (typeof document === 'undefined') return () => {}
+    let root: ReturnType<typeof createRoot> | undefined
+    let host: HTMLDivElement | undefined
+    const mount = (): void => {
+      if (root !== undefined && host !== undefined && host.isConnected) return
+      const settingsButton = document.querySelector<HTMLElement>('.footArea [aria-haspopup="dialog"]')
+      if (settingsButton === null || settingsButton.parentElement === null) return
+      host = document.createElement('div')
+      host.className = 'dshDesktopUpdateBadgeHost'
+      settingsButton.parentElement.append(host)
+      root = createRoot(host)
+      root.render(createElement(DesktopUpdateBadge, {
+        api: updateApi,
+        platform: environment.platform,
+        t,
+      }))
+    }
+    const observer = new MutationObserver(mount)
+    observer.observe(document.body, { childList: true, subtree: true })
+    mount()
+    return () => {
+      observer.disconnect()
+      const disposeHost = host
+      const disposeRoot = root
+      host = undefined
+      root = undefined
+      void Promise.resolve(disposeRoot?.unmount()).then(() => { disposeHost?.remove() })
+    }
+  }, 'dsh-plugin-desktop: sidebar update pill')
   ctx.slots.inject('settings.section', () => ctx.slots.register({
     name: 'settings.section',
     // 0.1.7 ui-settings-general owns a `desktop` section (update story under
@@ -125,23 +157,6 @@ export function applyDesktopSettings(
     locale: DESKTOP_SETTINGS_LOCALE_NAMESPACE,
     inject: () => ({ api }),
   }, DesktopTerminalSettingsAction))
-  // The ready-state confirm dialog portals to the document root: the upstream
-  // indicator beside Settings owns the badge presentation, and this host only
-  // renders while the Host lifecycle reports a recorded, ready artifact.
-  ctx.effect(() => {
-    if (typeof document === 'undefined') return () => {}
-    const host = document.createElement('div')
-    document.body.append(host)
-    const root = createRoot(host)
-    root.render(createElement(DesktopUpdateDialogHost, {
-      api: updateApi,
-      platform: environment.platform,
-      t,
-    }))
-    return () => {
-      void Promise.resolve(root.unmount()).then(() => { host.remove() })
-    }
-  }, 'dsh-plugin-desktop: update dialog host')
 
   return Object.freeze({
     api,
