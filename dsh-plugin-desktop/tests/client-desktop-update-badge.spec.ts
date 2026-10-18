@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   DesktopUpdateBadge,
   DesktopUpdateBadgeView,
+  DesktopUpdateModal,
   DESKTOP_UPDATE_BADGE_ACTIVE_INTERVAL_MS,
   DESKTOP_UPDATE_BADGE_IDLE_INTERVAL_MS,
 } from '../src/client/DesktopUpdateBadge.tsx'
@@ -166,6 +167,32 @@ describe('desktop update badge view', () => {
     expect(button.textContent).toContain(zh.updateBadgeRestarting)
     expect(button.querySelector('.dshDesktopUpdateBadgeSpinner')).not.toBeNull()
     expect(button.getAttribute('data-phase')).toBe('restarting')
+  })
+})
+
+describe('desktop update modal focus trap', () => {
+  it('traps Tab inside the dialog and wraps at both ends', async () => {
+    await mount(createElement(DesktopUpdateModal, {
+      version: '2.1.0', platform: 'win32', installFailed: false, busy: false,
+      onInstall: () => {}, onClose: () => {}, t,
+    }))
+    const closeButton = document.querySelector<HTMLButtonElement>('.dshDesktopUpdateModalClose')!
+    const installButton = Array.from(document.querySelectorAll<HTMLButtonElement>('button'))
+      .find(candidate => candidate.textContent === zh.updateModalInstallRestart)!
+
+    // Tab from the last control wraps back to the first.
+    installButton.focus()
+    await act(async () => {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab' }))
+    })
+    expect(document.activeElement).toBe(closeButton)
+
+    // Shift+Tab from the first control wraps to the last.
+    closeButton.focus()
+    await act(async () => {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', shiftKey: true }))
+    })
+    expect(document.activeElement).toBe(installButton)
   })
 })
 

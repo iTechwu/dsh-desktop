@@ -189,7 +189,30 @@ export function DesktopUpdateModal({
   useEffect(() => {
     const onKey = (event: KeyboardEvent): void => {
       // Escape mirrors the backdrop dismissal; a busy handoff stays modal.
-      if (event.key === 'Escape' && !busy) onClose()
+      if (event.key === 'Escape') {
+        if (!busy) onClose()
+        return
+      }
+      if (event.key === 'Tab') {
+        // Modal focus trap: Tab cannot leave the dialog while it is open.
+        const focusables = dialogRef.current?.querySelectorAll<HTMLElement>('button:not([disabled])')
+        if (focusables === undefined || focusables.length === 0) {
+          event.preventDefault()
+          return
+        }
+        const first = focusables[0]!
+        const last = focusables[focusables.length - 1]!
+        const inside = dialogRef.current?.contains(document.activeElement) === true
+        if (!inside || (!event.shiftKey && document.activeElement === last)) {
+          event.preventDefault()
+          first.focus()
+          return
+        }
+        if (event.shiftKey && document.activeElement === first) {
+          event.preventDefault()
+          last.focus()
+        }
+      }
     }
     document.addEventListener('keydown', onKey)
     return () => { document.removeEventListener('keydown', onKey) }
