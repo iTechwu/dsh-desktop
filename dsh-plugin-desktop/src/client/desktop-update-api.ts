@@ -99,6 +99,7 @@ export function createDesktopUpdateApi(fetcher: FetchLike = globalThis.fetch.bin
       return parseDesktopUpdateSnapshot(await readJson(response))
     },
     async startUpdateDownload() {
+      // The endpoint answers as soon as the lifecycle accepts the download.
       const response = await post(DESKTOP_UPDATE_DOWNLOAD_PATH)
       await readJson(response)
     },
