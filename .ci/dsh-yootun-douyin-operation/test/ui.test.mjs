@@ -43,6 +43,27 @@ test('1015 弹框：播放趋势折线替代「共 N 个趋势点」文字行（
   assert.match(source, /t\('noTrend'\)/u)
 })
 
+// SWR 会话缓存（2026-10-19 方案 A）：切账号先渲染缓存秒开、后台刷新无感覆盖；
+// works 补齐 0914 验收 P1 同款序列号守卫（快速切账号旧响应丢弃）；每次调用带
+// 耗时诊断埋点（真机 devtools 可读，用于判定慢是否在网关链路）。
+test('视频 Tab 切账号：works SWR 缓存 + 序列号守卫 + 耗时埋点（方案 A）', async () => {
+  const source = await readFile(new URL('../src/client.js', import.meta.url), 'utf8')
+  // 缓存命中先渲染（秒开）再发请求
+  assert.match(source, /const cached = worksCacheRef\.current\.get\(accountId\)\n    if \(cached\) setWorks\(cached\)/u)
+  // 序列号守卫：过期响应不写 state、不写缓存、不计耗时
+  assert.match(source, /if \(requestId !== worksRequestRef\.current\) return/u)
+  // 成功路径先写缓存再渲染
+  assert.match(source, /worksCacheRef\.current\.set\(accountId, next\)/u)
+  // 失败路径：无缓存才落整页错误，有缓存静默保留旧数据（SWR 语义）
+  assert.match(source, /else if \(!cached\) \{[\s\S]{0,80}无缓存才落整页错误/u)
+  // 传输异常路径（网络断/超时/非 2xx 抛错）同语义：有缓存吞掉不报错，无缓存继续抛
+  assert.match(source, /catch \(e\)[\s\S]{0,200}if \(!cached\) throw e/u)
+  // 诊断埋点
+  assert.match(source, /console\.info\(`\[yootun-douyin\] works\.list \$\{accountId\} \$\{Date\.now\(\) - startedAt\}ms`\)/u)
+  // 删除账号清理缓存
+  assert.match(source, /worksCacheRef\.current\.delete\(accountId\)/u)
+})
+
 // ---------------------------------------------------------------------------
 // 源码级模块加载辅助：vm 沙箱按构建脚本同法剥离 ESM import/export 后求值，
 // ui-format 纯函数（basisLines/formatDateTime 等）注入真实实现（内联后同作用域）。

@@ -1182,6 +1182,13 @@ function Overlay({ t }) {
   // 本次会话最近一次发起拆解所选规则：workflowStart 同步失败 payload 不带规则
   // id，失败态一键强制重试时以此为回退，保证重试输入与失败记录一致。
   const bdLastRuleRef = useRef(null)
+  // 会话内作品列表缓存（SWR，2026-10-19 方案 A）：切回已看过的账号先渲染缓存
+  // 秒开、后台刷新无感覆盖；每次 works.list 响应都写入。账号删除即清缓存；
+  // 残留条目（删除后同 id 重登由刷新覆盖）无害，overlay 卸载随组件丢弃。
+  const worksCacheRef = useRef(new Map())
+  // works 请求序列号（补齐 0914 验收 P1 同款守卫）：快速切账号时旧响应的数据
+  // 与错误一律丢弃——此前 works 无守卫，A→B 快切时 A 的慢响应会覆盖 B 的列表。
+  const worksRequestRef = useRef(0)
 
   const current = useMemo(() => accounts.find(item => item.accountId === selected) || null, [accounts, selected])
 
@@ -1193,9 +1200,34 @@ function Overlay({ t }) {
   const onSortChange = useCallback(columnKey => setSort(currentSort => nextSortState(currentSort, columnKey)), [])
 
   const loadWorks = useCallback(async accountId => {
-    const result = await post({ action: 'works.list', accountId })
-    if (result.status === 'ready') setWorks(result.works || [])
-    else setError(result.reason || 'refresh_failed')
+    // SWR（2026-10-19 方案 A）：命中缓存先渲染（秒开），随后后台刷新覆盖。
+    const cached = worksCacheRef.current.get(accountId)
+    if (cached) setWorks(cached)
+    const requestId = ++worksRequestRef.current
+    const startedAt = Date.now()
+    try {
+      const result = await post({ action: 'works.list', accountId })
+      if (requestId !== worksRequestRef.current) return
+      if (result.status === 'ready') {
+        const next = result.works || []
+        worksCacheRef.current.set(accountId, next)
+        setWorks(next)
+      } else if (!cached) {
+        // 无缓存才落整页错误；有缓存保留旧数据（SWR：刷新失败不打断浏览）。
+        setError(result.reason || 'refresh_failed')
+      }
+    } catch (e) {
+      // 传输异常（网络断/30s 超时/网关非 2xx，post 是 throw 而非返回 status）
+      // 与业务失败同语义：无缓存继续抛给调用方落错误，有缓存静默保留旧数据。
+      if (requestId !== worksRequestRef.current) return
+      if (!cached) throw e
+    } finally {
+      if (requestId === worksRequestRef.current) {
+        // 诊断埋点（方案 A）：真机 devtools 控制台可读单次调用耗时——服务端查询
+        // 本地实测 2-66ms，若此处仍是秒级则慢在网关链路（FRP/鉴权），另行动。
+        console.info(`[yootun-douyin] works.list ${accountId} ${Date.now() - startedAt}ms`)
+      }
+    }
   }, [])
 
   const refresh = useCallback(async () => {
@@ -1333,6 +1365,7 @@ function Overlay({ t }) {
         return
       }
       if (selected === accountId) { setSelected(null); setWorks([]) }
+      worksCacheRef.current.delete(accountId)
       await refresh()
       setDeleteState(DELETE_LIFECYCLE.idle)
       setDeleteTarget(null)
