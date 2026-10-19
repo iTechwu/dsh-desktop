@@ -529,6 +529,43 @@ test('hotboardScheduleText 把周调度 cron 转成中文描述', async () => {
   assert.equal(hotboardScheduleText('*/5 * * * *', t), '*/5 * * * *') // 分钟非具体值兜底
 })
 
+// 标签编辑器回归（真机：新增时维度下拉选「色系」被弹回「风格」；字段无标签、
+// 输入框全宽拉伸且名称焦点框压到相邻字段）。SSR 断言锁结构：新增模式维度
+// 受控可选、四字段带可见标签；编辑模式维度锁定且不渲染编码（服务端同约束）。
+test('LabelEditor 新增模式维度可选且四字段带标签；编辑模式维度锁定且隐藏编码', async () => {
+  const React = await import('react')
+  const { renderToString } = await import('react-dom/server')
+  // LabelEditor 运行时引用 HotReact.useState，顶部 require 两行必须保留，
+  // 由 require 注入真 React（与 loadHotboardFn 剥纯函数写法不同）。
+  const src = (await readFile(new URL('../src/hotboard-ui.js', import.meta.url), 'utf8'))
+    .replace(/^export /gm, '')
+  const module = { exports: {} }
+  const require = name => {
+    if (name === 'react') return React
+    throw new Error(`unexpected require: ${name}`)
+  }
+  new Function('require', 'module', 'exports', `${src}\nmodule.exports.LabelEditor = LabelEditor`)(require, module, module.exports)
+  const { LabelEditor } = module.exports
+  const hub = { askConfirm(_msg, run) { run() }, labelSave: async () => true }
+  const base = { hub, t: key => key, disabled: false, labels: [], onClose: () => {} }
+
+  const createHtml = renderToString(React.createElement(LabelEditor, { ...base, editor: { labelId: null, tagType: 'style', code: '', name: '', definition: '' } }))
+  assert.ok(createHtml.includes('hbTagType') && createHtml.includes('hbColCode')
+    && createHtml.includes('hbFieldName') && createHtml.includes('hbFieldDefinition'),
+  '新增模式应渲染维度/编码/名称/判定说明四个可见字段标签')
+  assert.ok(!/<select[^>]*disabled/.test(createHtml), '新增模式维度 select 不应锁定（受控可切换）')
+  // SSR 断不了 onChange 行为，退而在源码文本层锁住接线：select 必须接 setTagType，
+  // 改回空函数（真机「选色系弹回风格」的精确形态）时此处必红（review MINOR-1）。
+  assert.ok(/onChange: setTagType/.test(src), '维度 select 必须接 setTagType，不得为空函数')
+  assert.equal((createHtml.match(/<input /g) || []).length, 3, '新增模式应渲染编码/名称/判定说明三个输入框')
+  assert.ok(createHtml.includes('yxh-hb-input-code'), '编码输入框应带限宽类')
+
+  const editHtml = renderToString(React.createElement(LabelEditor, { ...base, editor: { labelId: 'l-1', tagType: 'color', code: 'black', name: '黑色', definition: '' } }))
+  assert.ok(/<select[^>]*disabled/.test(editHtml), '编辑模式维度 select 应锁定（服务端约束不改 tagType）')
+  assert.equal((editHtml.match(/<input /g) || []).length, 2, '编辑模式只应渲染名称/判定说明两个输入框')
+  assert.ok(!editHtml.includes('yxh-hb-input-code'), '编辑模式不应渲染编码输入框')
+})
+
 // --- 灯箱右键下载（2026-10-14 用户需求） ---
 
 test('downloadImage 成功路径转 blob 触发 a[download]，CORS/HTTP 失败降级新窗口', async () => {
