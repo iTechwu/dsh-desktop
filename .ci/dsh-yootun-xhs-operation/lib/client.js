@@ -938,20 +938,23 @@ window.__ModuleLoader__.load({
             h(Select, { label: t('hbTagType'), value: f.tagType, disabled, onChange: v => hub.setFilter('labels', 'tagType', v), options: [{ value: '', label: t('hbAll') }, { value: 'style', label: t('hbStyleType') }, { value: 'color', label: t('hbColorType') }] }),
             h(Select, { label: t('hbStatus'), value: f.status, disabled, onChange: v => hub.setFilter('labels', 'status', v), options: [{ value: '', label: t('hbAll') }, { value: 'active', label: t('hbStatusActive') }, { value: 'retired', label: t('hbStatusRetired') }] }),
             h('button', { type: 'button', className: 'yxh-hb-action', disabled,
-              onClick: () => setEditor({ labelId: null, tagType: 'style', code: '', name: '', definition: '' }) }, t('hbCreateLabel'))),
+              onClick: () => setEditor({ labelId: null, tagType: 'style', code: '', name: '', aliases: [], definition: '' }) }, t('hbCreateLabel'))),
           // key 按 labelId 区分：新增↔编辑（或换行编辑）切换时重挂载重置内部 state，
           // 防止受控 state 残留上一表单的 tagType/name/code（review MINOR-2）。
           editor ? h(LabelEditor, { key: editor.labelId || 'new', hub, t, disabled, editor, labels, onClose: () => setEditor(null) }) : null,
           h('div', { className: 'yxh-hb-table-wrap' },
             h('table', { className: 'yxh-hb-table compact' },
-              h('thead', null, h('tr', null, [t('hbColLabel'), t('hbColCode'), t('hbTagType'), t('hbStatus'), t('hbColActions')].map(label => h('th', { key: label }, label)))),
+              h('thead', null, h('tr', null, [t('hbColLabel'), t('hbColCode'), t('hbColAliases'), t('hbTagType'), t('hbStatus'), t('hbColActions')].map(label => h('th', { key: label }, label)))),
               h('tbody', null, labels.map(row => h('tr', { key: row.labelId },
                 h('td', null, hbText(row.name)),
                 h('td', { className: 'yxh-hb-mono' }, hbText(row.code)),
+                h('td', null, row.aliases?.length
+                  ? h('div', { className: 'yxh-hb-chips' }, row.aliases.map(alias => h('span', { className: 'yxh-hb-chip', key: alias }, alias)))
+                  : '—'),
                 h('td', null, row.tagType === 'style' ? t('hbStyleType') : t('hbColorType')),
                 h('td', null, h('span', { className: `yxh-hb-badge ${row.status === 'active' ? 'yxh-hb-badge-ok' : 'yxh-hb-badge-muted'}` }, row.status === 'active' ? t('hbStatusActive') : t('hbStatusRetired'))),
                 h('td', null, h('div', { className: 'yxh-hb-row-actions' },
-                  h('button', { type: 'button', className: 'yxh-hb-mini', disabled, onClick: () => setEditor({ labelId: row.labelId, tagType: row.tagType, code: row.code, name: row.name, definition: row.definition || '' }) }, t('hbEdit')),
+                  h('button', { type: 'button', className: 'yxh-hb-mini', disabled, onClick: () => setEditor({ labelId: row.labelId, tagType: row.tagType, code: row.code, name: row.name, aliases: row.aliases || [], definition: row.definition || '' }) }, t('hbEdit')),
                   row.status === 'active'
                     ? h('button', { type: 'button', className: 'yxh-hb-mini yxh-hb-mini-secondary', disabled,
                       onClick: () => hub.askConfirm(tf(t, 'hbConfirmRetireLabel', { label: row.name }),
@@ -959,21 +962,25 @@ window.__ModuleLoader__.load({
                     : h('button', { type: 'button', className: 'yxh-hb-mini yxh-hb-mini-primary', disabled,
                       onClick: () => hub.askConfirm(tf(t, 'hbConfirmEnableLabel', { label: row.name }),
                         () => hub.labelReview({ action: 'enable', labelId: row.labelId })) }, t('hbEnable'))))))),
-              !labels.length && !state.loading ? h('tfoot', null, h('tr', null, h('td', { colSpan: 5, className: 'yxh-hb-empty' }, t('hbNoLabels')))) : null)),
+              !labels.length && !state.loading ? h('tfoot', null, h('tr', null, h('td', { colSpan: 6, className: 'yxh-hb-empty' }, t('hbNoLabels')))) : null)),
           h(Pager, { meta, page: state.pages.labels, onPage: p => hub.setPage('labels', p), t })))
     }
 
     // 标签新增/编辑表单：新增带 code/tagType（维度可切换，受控 state）；编辑不改
     // code/tagType（服务端同约束，维度锁定）。字段带可见标签（label 上、控件下），
     // 输入宽度按字段语义收窄（yxh-hb-input-code），不再全宽拉伸。
+    // 别名（可选）：逗号/顿号分隔多个，保存整组替换（清空=清空别名，服务端
+    // _clean_alias_list 清洗后空组落 NULL）；AI 标记与提案合并都消费该字段。
     function LabelEditor({ hub, t, disabled, editor, labels, onClose }) {
       const isEdit = Boolean(editor.labelId)
       const [tagType, setTagType] = React.useState(editor.tagType || 'style')
       const [name, setName] = React.useState(editor.name || '')
       const [code, setCode] = React.useState(editor.code || '')
+      const [aliases, setAliases] = React.useState((editor.aliases || []).join('，'))
       const [definition, setDefinition] = React.useState(editor.definition || '')
+      const parseAliases = () => aliases.split(/[,，、]/).map(item => item.trim()).filter(Boolean)
       const submit = () => {
-        const payload = { labelId: editor.labelId, name: name.trim(), definition: definition.trim() || undefined }
+        const payload = { labelId: editor.labelId, name: name.trim(), aliases: parseAliases(), definition: definition.trim() || undefined }
         if (!isEdit) { payload.tagType = tagType; payload.code = code.trim() }
         hub.askConfirm(tf(t, isEdit ? 'hbConfirmUpdateLabel' : 'hbConfirmCreateLabel', { label: name.trim() }), () => {
           // runWrite 返回 Promise：写成异步续体，仅真失败（false）保留弹窗。
@@ -988,6 +995,9 @@ window.__ModuleLoader__.load({
         h('label', { className: 'yxh-hb-filter' },
           h('span', null, t('hbFieldName')),
           h('input', { className: 'yxh-hb-input', value: name, placeholder: t('hbNamePlaceholder'), maxLength: 128, disabled, onChange: e => setName(e.target.value) })),
+        h('label', { className: 'yxh-hb-filter' },
+          h('span', null, t('hbColAliases')),
+          h('input', { className: 'yxh-hb-input', value: aliases, placeholder: t('hbAliasesPlaceholder'), maxLength: 512, disabled, onChange: e => setAliases(e.target.value) })),
         h('label', { className: 'yxh-hb-filter' },
           h('span', null, t('hbFieldDefinition')),
           h('input', { className: 'yxh-hb-input', value: definition, placeholder: t('hbDefinitionPlaceholder'), maxLength: 2000, disabled, onChange: e => setDefinition(e.target.value) })),
@@ -1458,7 +1468,7 @@ window.__ModuleLoader__.load({
         hbConfirmDisableKeyword: '确认停用关键词「{keyword}」？停用后不再参与采集。', hbConfirmEnableKeyword: '确认启用关键词「{keyword}」？',
         hbConfirmAcceptCandidates: '确认接受选中的 {count} 个扩词候选为正式关键词？', hbConfirmRejectCandidates: '确认拒绝选中的 {count} 个扩词候选？',
         hbProposalStatus: '提案状态', hbProposalAuto: '自动激活', hbProposalMerged: '已合并',
-        hbColLabel: '标签', hbColCode: '编码', hbTagType: '维度', hbColConfidence: '置信度', hbColEvidence: '证据数',
+        hbColLabel: '标签', hbColCode: '编码', hbColAliases: '别名', hbTagType: '维度', hbColConfidence: '置信度', hbColEvidence: '证据数',
         hbStyleType: '风格', hbColorType: '色系', hbNoProposals: '暂无标签提案', hbNoLabels: '暂无标签',
         hbMergeHint: '合并需先在下方选择目标标签；未选择时「合并入现有标签」按钮不会生效。',
         hbMergeTarget: '合并目标标签', hbMergeTargetNone: '请选择目标标签',
@@ -1466,7 +1476,7 @@ window.__ModuleLoader__.load({
         hbConfirmMergeProposal: '确认把标签提案「{label}」合并进「{target}」？', hbConfirmRetireLabel: '确认退役标签「{label}」？已分类笔记保留原标签。',
         hbConfirmEnableLabel: '确认重新启用标签「{label}」？', hbConfirmUpdateLabel: '确认保存标签「{label}」的修改？', hbConfirmCreateLabel: '确认新增标签「{label}」？',
         hbCodePlaceholder: '编码（如 jingjisa）', hbNamePlaceholder: '名称（如 竞技风）', hbDefinitionPlaceholder: '判定说明（可选）', hbCancelEdit: '取消',
-        hbFieldName: '名称', hbFieldDefinition: '判定说明',
+        hbFieldName: '名称', hbFieldDefinition: '判定说明', hbAliasesPlaceholder: '别名（可选，多个用逗号分隔）',
         hbStartIncrement: '手动增量采集', hbManualHint: '手动增量会按当前启用关键词发起一轮采集，受每日搜索额度限制；进行中可在「运行历史」抽屉查看进度。',
         hbConfirmRunStart: '确认发起一轮手动增量采集？将受每日搜索额度限制。',
         hbSetScheduleEnabled: '定时采集', hbSetPublishWindowDays: '发布时间窗（天）', hbSetPerKeywordLimit: '单词采集上限', hbSetCommentTopN: '评论 Top N', hbSetCommentMaxPerNote: '单篇评论上限', hbSetMinInteraction: '最低互动量', hbSetDedupThreshold: '去重汉明阈值', hbSetMinValidSample: '热度分最小样本', hbSetSearchBudget: '每日搜索额度', hbSetCommentBudget: '每日评论额度', hbSetDetailBudget: '单 Run 详情额度', hbSettingsReadonlyHint: '采集与评分口径由服务端部署配置统一下发，页面只读展示；如需调整阈值或额度，请联系管理员修改部署配置。',
@@ -1588,7 +1598,7 @@ window.__ModuleLoader__.load({
         hbConfirmDisableKeyword: 'Disable keyword “{keyword}”? It will no longer be collected.', hbConfirmEnableKeyword: 'Enable keyword “{keyword}”?',
         hbConfirmAcceptCandidates: 'Accept {count} selected expansion candidates as keywords?', hbConfirmRejectCandidates: 'Reject {count} selected candidates?',
         hbProposalStatus: 'Proposal', hbProposalAuto: 'Auto-activated', hbProposalMerged: 'Merged',
-        hbColLabel: 'Label', hbColCode: 'Code', hbTagType: 'Dimension', hbColConfidence: 'Confidence', hbColEvidence: 'Evidence',
+        hbColLabel: 'Label', hbColCode: 'Code', hbColAliases: 'Aliases', hbTagType: 'Dimension', hbColConfidence: 'Confidence', hbColEvidence: 'Evidence',
         hbStyleType: 'Style', hbColorType: 'Color', hbNoProposals: 'No proposals', hbNoLabels: 'No labels',
         hbMergeHint: 'Pick a target label below first; merge does nothing without one.',
         hbMergeTarget: 'Merge target', hbMergeTargetNone: 'Pick a target label',
@@ -1596,7 +1606,7 @@ window.__ModuleLoader__.load({
         hbConfirmMergeProposal: 'Merge proposal “{label}” into “{target}”?', hbConfirmRetireLabel: 'Retire label “{label}”? Existing tags are kept.',
         hbConfirmEnableLabel: 'Re-enable label “{label}”?', hbConfirmUpdateLabel: 'Save edits to label “{label}”?', hbConfirmCreateLabel: 'Create label “{label}”?',
         hbCodePlaceholder: 'Code (e.g. jingjisa)', hbNamePlaceholder: 'Name', hbDefinitionPlaceholder: 'Definition (optional)', hbCancelEdit: 'Cancel',
-        hbFieldName: 'Name', hbFieldDefinition: 'Definition',
+        hbFieldName: 'Name', hbFieldDefinition: 'Definition', hbAliasesPlaceholder: 'Aliases (optional, comma-separated)',
         hbStartIncrement: 'Start incremental run', hbManualHint: 'Starts one incremental run over the active keywords, bounded by the daily search budget; track progress in the run history drawer.',
         hbConfirmRunStart: 'Start one manual incremental run? It is bounded by the daily search budget.',
         hbSetScheduleEnabled: 'Scheduled run', hbSetPublishWindowDays: 'Publish window (days)', hbSetPerKeywordLimit: 'Per-keyword limit', hbSetCommentTopN: 'Comments top N', hbSetCommentMaxPerNote: 'Comments per note', hbSetMinInteraction: 'Min interactions', hbSetDedupThreshold: 'Dedup hamming', hbSetMinValidSample: 'Min valid sample', hbSetSearchBudget: 'Daily search budget', hbSetCommentBudget: 'Daily comment budget', hbSetDetailBudget: 'Per-run detail budget', hbSettingsReadonlyHint: 'Collection and scoring knobs come from the server deployment config and are shown read-only here; ask an administrator to adjust thresholds or budgets.',

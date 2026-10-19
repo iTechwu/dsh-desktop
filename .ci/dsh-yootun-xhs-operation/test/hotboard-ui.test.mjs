@@ -386,10 +386,13 @@ test('built client factory renders the overlay and hotboard pages with real Reac
           return {
             status: 'ready',
             data: {
-              labels: [{ labelId: 'l-1', code: 's-1', name: '简约', tagType: 'style', status: 'active', definition: '' }],
+              labels: [
+                { labelId: 'l-1', code: 's-1', name: '简约', tagType: 'style', status: 'active', aliases: ['极简', '性冷淡风'], definition: '' },
+                { labelId: 'l-2', code: 'c-1', name: '黑色', tagType: 'color', status: 'retired', definition: '' },
+              ],
               proposals: [{ proposalId: 'p-1', proposedLabel: '运动风', tagType: 'style', confidence: 0.8, evidenceNoteCount: 4, status: 'pending' }],
             },
-            meta: { page: 1, pageSize: 20, total: 1 },
+            meta: { page: 1, pageSize: 20, total: 2 },
           }
         case 'hotboard.settings':
           // 只读化后的生效字段投影（含阈值只读行字段）。
@@ -478,7 +481,14 @@ test('built client factory renders the overlay and hotboard pages with real Reac
     render()
     hub.setSub('tags')
     await flush()
-    render()
+    output = render()
+    // 标签页：正式标签库表格 6 列（编码后插「别名」列），别名 chips 展示、
+    // 无别名显示「—」（2026-10-19 用户确认的展示形态）。
+    assert.ok(output.includes('hbColAliases'), '标签表应渲染「别名」列头')
+    assert.ok(output.includes('yxh-hb-chips'), '有别名的行应以 chips 展示别名')
+    assert.ok(output.includes('极简') && output.includes('性冷淡风'), '别名文本应进渲染树')
+    assert.ok(output.includes('yxh-hb-chip"') || output.includes('yxh-hb-chip '), '别名 chip 应带限定类')
+    assert.ok(output.includes('>—</td>'), '无别名的行应显示「—」')
     hub.setSub('rules')
     await flush()
     output = render()
@@ -532,7 +542,7 @@ test('hotboardScheduleText 把周调度 cron 转成中文描述', async () => {
 // 标签编辑器回归（真机：新增时维度下拉选「色系」被弹回「风格」；字段无标签、
 // 输入框全宽拉伸且名称焦点框压到相邻字段）。SSR 断言锁结构：新增模式维度
 // 受控可选、四字段带可见标签；编辑模式维度锁定且不渲染编码（服务端同约束）。
-test('LabelEditor 新增模式维度可选且四字段带标签；编辑模式维度锁定且隐藏编码', async () => {
+test('LabelEditor 新增模式维度可选且五字段带标签；编辑模式维度锁定且隐藏编码', async () => {
   const React = await import('react')
   const { renderToString } = await import('react-dom/server')
   // LabelEditor 运行时引用 HotReact.useState，顶部 require 两行必须保留，
@@ -549,21 +559,24 @@ test('LabelEditor 新增模式维度可选且四字段带标签；编辑模式�
   const hub = { askConfirm(_msg, run) { run() }, labelSave: async () => true }
   const base = { hub, t: key => key, disabled: false, labels: [], onClose: () => {} }
 
-  const createHtml = renderToString(React.createElement(LabelEditor, { ...base, editor: { labelId: null, tagType: 'style', code: '', name: '', definition: '' } }))
+  const createHtml = renderToString(React.createElement(LabelEditor, { ...base, editor: { labelId: null, tagType: 'style', code: '', name: '', aliases: [], definition: '' } }))
   assert.ok(createHtml.includes('hbTagType') && createHtml.includes('hbColCode')
-    && createHtml.includes('hbFieldName') && createHtml.includes('hbFieldDefinition'),
-  '新增模式应渲染维度/编码/名称/判定说明四个可见字段标签')
+    && createHtml.includes('hbFieldName') && createHtml.includes('hbColAliases') && createHtml.includes('hbFieldDefinition'),
+  '新增模式应渲染维度/编码/名称/别名/判定说明五个可见字段标签')
+  assert.ok(createHtml.includes('hbAliasesPlaceholder'), '别名输入框应带逗号分隔提示文案')
   assert.ok(!/<select[^>]*disabled/.test(createHtml), '新增模式维度 select 不应锁定（受控可切换）')
   // SSR 断不了 onChange 行为，退而在源码文本层锁住接线：select 必须接 setTagType，
   // 改回空函数（真机「选色系弹回风格」的精确形态）时此处必红（review MINOR-1）。
   assert.ok(/onChange: setTagType/.test(src), '维度 select 必须接 setTagType，不得为空函数')
-  assert.equal((createHtml.match(/<input /g) || []).length, 3, '新增模式应渲染编码/名称/判定说明三个输入框')
+  assert.equal((createHtml.match(/<input /g) || []).length, 4, '新增模式应渲染编码/名称/别名/判定说明四个输入框')
   assert.ok(createHtml.includes('yxh-hb-input-code'), '编码输入框应带限宽类')
 
-  const editHtml = renderToString(React.createElement(LabelEditor, { ...base, editor: { labelId: 'l-1', tagType: 'color', code: 'black', name: '黑色', definition: '' } }))
+  const editHtml = renderToString(React.createElement(LabelEditor, { ...base, editor: { labelId: 'l-1', tagType: 'color', code: 'black', name: '黑色', aliases: ['钢琴黑', '哑光黑'], definition: '' } }))
   assert.ok(/<select[^>]*disabled/.test(editHtml), '编辑模式维度 select 应锁定（服务端约束不改 tagType）')
-  assert.equal((editHtml.match(/<input /g) || []).length, 2, '编辑模式只应渲染名称/判定说明两个输入框')
+  assert.equal((editHtml.match(/<input /g) || []).length, 3, '编辑模式应渲染名称/别名/判定说明三个输入框')
   assert.ok(!editHtml.includes('yxh-hb-input-code'), '编辑模式不应渲染编码输入框')
+  // 别名回填：数组以中文逗号 join 进输入框（与 placeholder 提示的分隔方式一致）。
+  assert.ok(editHtml.includes('value="钢琴黑，哑光黑"'), '编辑模式别名应以逗号分隔回填输入框')
 })
 
 // --- 灯箱右键下载（2026-10-14 用户需求） ---

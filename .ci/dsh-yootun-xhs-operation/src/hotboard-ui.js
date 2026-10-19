@@ -935,20 +935,23 @@ function TagsPage({ state, hub, t }) {
         h(Select, { label: t('hbTagType'), value: f.tagType, disabled, onChange: v => hub.setFilter('labels', 'tagType', v), options: [{ value: '', label: t('hbAll') }, { value: 'style', label: t('hbStyleType') }, { value: 'color', label: t('hbColorType') }] }),
         h(Select, { label: t('hbStatus'), value: f.status, disabled, onChange: v => hub.setFilter('labels', 'status', v), options: [{ value: '', label: t('hbAll') }, { value: 'active', label: t('hbStatusActive') }, { value: 'retired', label: t('hbStatusRetired') }] }),
         h('button', { type: 'button', className: 'yxh-hb-action', disabled,
-          onClick: () => setEditor({ labelId: null, tagType: 'style', code: '', name: '', definition: '' }) }, t('hbCreateLabel'))),
+          onClick: () => setEditor({ labelId: null, tagType: 'style', code: '', name: '', aliases: [], definition: '' }) }, t('hbCreateLabel'))),
       // key 按 labelId 区分：新增↔编辑（或换行编辑）切换时重挂载重置内部 state，
       // 防止受控 state 残留上一表单的 tagType/name/code（review MINOR-2）。
       editor ? h(LabelEditor, { key: editor.labelId || 'new', hub, t, disabled, editor, labels, onClose: () => setEditor(null) }) : null,
       h('div', { className: 'yxh-hb-table-wrap' },
         h('table', { className: 'yxh-hb-table compact' },
-          h('thead', null, h('tr', null, [t('hbColLabel'), t('hbColCode'), t('hbTagType'), t('hbStatus'), t('hbColActions')].map(label => h('th', { key: label }, label)))),
+          h('thead', null, h('tr', null, [t('hbColLabel'), t('hbColCode'), t('hbColAliases'), t('hbTagType'), t('hbStatus'), t('hbColActions')].map(label => h('th', { key: label }, label)))),
           h('tbody', null, labels.map(row => h('tr', { key: row.labelId },
             h('td', null, hbText(row.name)),
             h('td', { className: 'yxh-hb-mono' }, hbText(row.code)),
+            h('td', null, row.aliases?.length
+              ? h('div', { className: 'yxh-hb-chips' }, row.aliases.map(alias => h('span', { className: 'yxh-hb-chip', key: alias }, alias)))
+              : '—'),
             h('td', null, row.tagType === 'style' ? t('hbStyleType') : t('hbColorType')),
             h('td', null, h('span', { className: `yxh-hb-badge ${row.status === 'active' ? 'yxh-hb-badge-ok' : 'yxh-hb-badge-muted'}` }, row.status === 'active' ? t('hbStatusActive') : t('hbStatusRetired'))),
             h('td', null, h('div', { className: 'yxh-hb-row-actions' },
-              h('button', { type: 'button', className: 'yxh-hb-mini', disabled, onClick: () => setEditor({ labelId: row.labelId, tagType: row.tagType, code: row.code, name: row.name, definition: row.definition || '' }) }, t('hbEdit')),
+              h('button', { type: 'button', className: 'yxh-hb-mini', disabled, onClick: () => setEditor({ labelId: row.labelId, tagType: row.tagType, code: row.code, name: row.name, aliases: row.aliases || [], definition: row.definition || '' }) }, t('hbEdit')),
               row.status === 'active'
                 ? h('button', { type: 'button', className: 'yxh-hb-mini yxh-hb-mini-secondary', disabled,
                   onClick: () => hub.askConfirm(tf(t, 'hbConfirmRetireLabel', { label: row.name }),
@@ -956,21 +959,25 @@ function TagsPage({ state, hub, t }) {
                 : h('button', { type: 'button', className: 'yxh-hb-mini yxh-hb-mini-primary', disabled,
                   onClick: () => hub.askConfirm(tf(t, 'hbConfirmEnableLabel', { label: row.name }),
                     () => hub.labelReview({ action: 'enable', labelId: row.labelId })) }, t('hbEnable'))))))),
-          !labels.length && !state.loading ? h('tfoot', null, h('tr', null, h('td', { colSpan: 5, className: 'yxh-hb-empty' }, t('hbNoLabels')))) : null)),
+          !labels.length && !state.loading ? h('tfoot', null, h('tr', null, h('td', { colSpan: 6, className: 'yxh-hb-empty' }, t('hbNoLabels')))) : null)),
       h(Pager, { meta, page: state.pages.labels, onPage: p => hub.setPage('labels', p), t })))
 }
 
 // 标签新增/编辑表单：新增带 code/tagType（维度可切换，受控 state）；编辑不改
 // code/tagType（服务端同约束，维度锁定）。字段带可见标签（label 上、控件下），
 // 输入宽度按字段语义收窄（yxh-hb-input-code），不再全宽拉伸。
+// 别名（可选）：逗号/顿号分隔多个，保存整组替换（清空=清空别名，服务端
+// _clean_alias_list 清洗后空组落 NULL）；AI 标记与提案合并都消费该字段。
 function LabelEditor({ hub, t, disabled, editor, labels, onClose }) {
   const isEdit = Boolean(editor.labelId)
   const [tagType, setTagType] = HotReact.useState(editor.tagType || 'style')
   const [name, setName] = HotReact.useState(editor.name || '')
   const [code, setCode] = HotReact.useState(editor.code || '')
+  const [aliases, setAliases] = HotReact.useState((editor.aliases || []).join('，'))
   const [definition, setDefinition] = HotReact.useState(editor.definition || '')
+  const parseAliases = () => aliases.split(/[,，、]/).map(item => item.trim()).filter(Boolean)
   const submit = () => {
-    const payload = { labelId: editor.labelId, name: name.trim(), definition: definition.trim() || undefined }
+    const payload = { labelId: editor.labelId, name: name.trim(), aliases: parseAliases(), definition: definition.trim() || undefined }
     if (!isEdit) { payload.tagType = tagType; payload.code = code.trim() }
     hub.askConfirm(tf(t, isEdit ? 'hbConfirmUpdateLabel' : 'hbConfirmCreateLabel', { label: name.trim() }), () => {
       // runWrite 返回 Promise：写成异步续体，仅真失败（false）保留弹窗。
@@ -985,6 +992,9 @@ function LabelEditor({ hub, t, disabled, editor, labels, onClose }) {
     h('label', { className: 'yxh-hb-filter' },
       h('span', null, t('hbFieldName')),
       h('input', { className: 'yxh-hb-input', value: name, placeholder: t('hbNamePlaceholder'), maxLength: 128, disabled, onChange: e => setName(e.target.value) })),
+    h('label', { className: 'yxh-hb-filter' },
+      h('span', null, t('hbColAliases')),
+      h('input', { className: 'yxh-hb-input', value: aliases, placeholder: t('hbAliasesPlaceholder'), maxLength: 512, disabled, onChange: e => setAliases(e.target.value) })),
     h('label', { className: 'yxh-hb-filter' },
       h('span', null, t('hbFieldDefinition')),
       h('input', { className: 'yxh-hb-input', value: definition, placeholder: t('hbDefinitionPlaceholder'), maxLength: 2000, disabled, onChange: e => setDefinition(e.target.value) })),
