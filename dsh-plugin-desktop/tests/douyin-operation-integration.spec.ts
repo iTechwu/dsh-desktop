@@ -78,7 +78,9 @@ describe('Douyin operation Desktop integration', () => {
     expect(matrix).toContain('/api/desktop/yootun/douyin-operation')
     expect(matrix).toContain('| `tools-douyin-operation` | `/mcp/tools/douyin-operation` | 60s | tools |')
     expect(matrix).toMatch(/douyin-operation.*awaiting_confirmation、confirmed_pending_adapter、cleanup_failed/u)
-    expect(matrix).toContain('`viral_video_douyin_download_url`')
+    expect(matrix).toContain('`viral_video_douyin_download_url_start`')
+    expect(matrix).toContain('`viral_video_douyin_download_url_get`')
+    expect(matrix).not.toContain('`viral_video_douyin_download_url`')
 
     const client = read(join(snapshotRoot, 'src/client.js'))
     expect(client).toContain("const PATH = '/api/desktop/yootun/douyin-operation'")

@@ -37,7 +37,8 @@ export const TOOL_NAMES = [
   // 故事板与分析状态查询、仿写规则清单（纯配置只读）、拆解详情导出（只读）。
   'viral_video_archive_submit',
   'viral_video_async_submit_get',
-  'viral_video_douyin_download_url',
+  'viral_video_douyin_download_url_start',
+  'viral_video_douyin_download_url_get',
   'viral_video_workflow_start',
   'viral_video_workflow_get',
   'viral_video_storyboards_list',
@@ -108,6 +109,13 @@ const ALLOWED_ERROR_CODES = new Set([
   // OneAPI 解析失败/预算耗尽：下载按钮独立提示，不影响拆解归档链路。
   'PROVIDER_ERROR',
   'ONEAPI_BUDGET_EXHAUSTED',
+  // 同步 TOS 稳定下载任务：任务受理/轮询和源视频、上传、签名分别收敛稳定码。
+  'DOWNLOAD_JOB_NOT_FOUND',
+  'DOWNLOAD_JOB_TIMEOUT',
+  'DOWNLOAD_JOB_NOT_CLAIMABLE',
+  'DOUYIN_VIDEO_DOWNLOAD_FAILED',
+  'DOUYIN_TOS_UPLOAD_FAILED',
+  'TOS_PRESIGN_FAILED',
   // 日度入库（1015）：day 落在未来（数据未出）被服务端拒绝——客户端采集侧已过滤，此为兜底
   'DAILY_DAY_IN_FUTURE',
 ])
@@ -327,6 +335,8 @@ export const aiAnalysisIdempotencyKey = requestUuid => `douyin:ai_analysis:${req
 // 同键重放返回同一 run 回执，不重复下载；工作流同键同输入走自然键 resume。
 export const viralVideoArchiveIdempotencyKey = requestUuid => `douyin:vv_archive:${requestUuid}`
 export const viralVideoWorkflowIdempotencyKey = requestUuid => `douyin:vv_workflow:${requestUuid}`
+// 异步稳定下载受理键：每次点击独立 UUID；同键重放由 viral_video_runs 摘要兜底。
+export const viralVideoDownloadIdempotencyKey = requestUuid => `douyin:vv_download:${requestUuid}`
 // 账号保存/删除的键带**时间戳**而不是固定值，这是刻意为之：
 // - `account_save` 是 upsert，昵称/粉丝数会变；固定键会让第二次保存命中历史回执、
 //   把新资料吞掉；`account_remove` 是一次性单向清理，账号删除后可能被重新登录创建，

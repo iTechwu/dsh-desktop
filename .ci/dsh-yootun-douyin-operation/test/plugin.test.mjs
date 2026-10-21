@@ -1219,37 +1219,61 @@ test('breakdown.archiveStatus：runId 必填，稳定码透传', async () => {
   assert.equal(response.payload.reason, 'ASYNC_RUN_NOT_FOUND')
 })
 
-test('breakdown.downloadUrl：非空校验并透传 tools 只读直链', async () => {
+test('breakdown.downloadStart/get：非空校验并透传异步稳定下载工具', async () => {
   const calls = []
   const { ctx, registered } = createContext({
-    tools: [{ name: 'mcp__tools-douyin-operation__viral_video_douyin_download_url' }],
+    tools: [
+      { name: 'mcp__tools-douyin-operation__viral_video_douyin_download_url_start' },
+      { name: 'mcp__tools-douyin-operation__viral_video_douyin_download_url_get' },
+    ],
     execute: async ({ arguments: args }) => {
       calls.push(args)
-      return {
-        structuredContent: {
-          downloadUrl: 'https://cdn.example.com/download.mp4',
-          fallbackPlayUrl: 'https://cdn.example.com/play.mp4',
-          awemeId: '73456789012',
-          title: '测试视频',
-        },
+      if (args.jobId) {
+        return {
+          structuredContent: {
+            jobId: 'mcp-vv-download-abc',
+            status: 'ready',
+            downloadUrl: 'https://tos.example.com/video.mp4',
+            title: '测试视频',
+          },
+        }
       }
+      return { structuredContent: { jobId: 'mcp-vv-download-abc', status: 'queued' } }
     },
   })
   apply(ctx, { root: '/tmp/unused', browserStatus: async () => ({ chromeAvailable: true, driverAvailable: true, platform: 'linux' }) })
   const dispatch = registered[0].handler
 
-  const missing = await call(dispatch, { action: 'breakdown.downloadUrl', shareUrl: '   ' })
-  assert.equal(missing.payload.status, 'error')
-  assert.equal(missing.payload.reason, 'share_url_required')
+  const missingUrl = await call(dispatch, { action: 'breakdown.downloadStart', idempotencyKey: 'douyin:vv_download:u1' })
+  const missingKey = await call(dispatch, { action: 'breakdown.downloadStart', shareUrl: 'https://v.douyin.com/abc/' })
+  assert.equal(missingUrl.payload.reason, 'share_url_required')
+  assert.equal(missingKey.payload.reason, 'INVALID_IDEMPOTENCY_KEY')
+  const invalidKey = await call(dispatch, {
+    action: 'breakdown.downloadStart',
+    shareUrl: 'https://v.douyin.com/abc/',
+    idempotencyKey: 'not-a-download-key',
+  })
+  assert.equal(invalidKey.payload.reason, 'INVALID_IDEMPOTENCY_KEY')
   assert.equal(calls.length, 0)
 
-  const response = await call(dispatch, { action: 'breakdown.downloadUrl', shareUrl: 'https://v.douyin.com/abc/' })
-  assert.equal(response.payload.status, 'ready')
-  assert.equal(response.payload.download.downloadUrl, 'https://cdn.example.com/download.mp4')
-  assert.equal(response.payload.download.awemeId, '73456789012')
-  assert.deepEqual(calls, [{
+  const started = await call(dispatch, {
+    action: 'breakdown.downloadStart',
+    shareUrl: 'https://v.douyin.com/abc/',
+    idempotencyKey: 'douyin:vv_download:u1',
+  })
+  assert.equal(started.payload.status, 'ready')
+  assert.equal(started.payload.download.status, 'queued')
+  assert.deepEqual(calls[0], {
     douyinVideoUrl: 'https://v.douyin.com/abc/',
-  }])
+    idempotencyKey: 'douyin:vv_download:u1',
+  })
+
+  const missingJob = await call(dispatch, { action: 'breakdown.downloadStatus', jobId: ' ' })
+  assert.equal(missingJob.payload.reason, 'job_id_required')
+  const ready = await call(dispatch, { action: 'breakdown.downloadStatus', jobId: 'mcp-vv-download-abc' })
+  assert.equal(ready.payload.status, 'ready')
+  assert.equal(ready.payload.download.downloadUrl, 'https://tos.example.com/video.mp4')
+  assert.deepEqual(calls[1], { jobId: 'mcp-vv-download-abc' })
 })
 
 test('breakdown.workflowStart：candidateId/幂等键校验，rewriteRuleId 可选透传', async () => {

@@ -160,7 +160,8 @@ test('爆款拆解：viral_video 工具全部进入 TOOL_NAMES 白名单', async
   for (const name of [
     'viral_video_archive_submit',
     'viral_video_async_submit_get',
-    'viral_video_douyin_download_url',
+    'viral_video_douyin_download_url_start',
+    'viral_video_douyin_download_url_get',
     'viral_video_workflow_start',
     'viral_video_workflow_get',
     'viral_video_storyboards_list',
@@ -185,10 +186,16 @@ test('爆款拆解：新增稳定码进入白名单，未登记码仍收敛为�
 })
 
 test('爆款拆解：受理键模板与 0916 分析键同风格，每次点击独立 UUID', async () => {
-  const { viralVideoArchiveIdempotencyKey, viralVideoWorkflowIdempotencyKey } = await import('../src/tools-client.js')
+  const {
+    viralVideoArchiveIdempotencyKey,
+    viralVideoDownloadIdempotencyKey,
+    viralVideoWorkflowIdempotencyKey,
+  } = await import('../src/tools-client.js')
   assert.equal(viralVideoArchiveIdempotencyKey('uuid-a'), 'douyin:vv_archive:uuid-a')
   assert.equal(viralVideoWorkflowIdempotencyKey('uuid-b'), 'douyin:vv_workflow:uuid-b')
+  assert.equal(viralVideoDownloadIdempotencyKey('uuid-d'), 'douyin:vv_download:uuid-d')
   // 长度上限校验：最长 UUID（36 字符）+ 前缀远小于服务端 1–128 约束
   const longest = viralVideoArchiveIdempotencyKey('u'.repeat(36))
   assert.ok(longest.length <= 128)
+  assert.ok(viralVideoDownloadIdempotencyKey('u'.repeat(36)).length <= 128)
 })

@@ -872,7 +872,9 @@ test('client.js 接线：Tab 顺序、body-full、Esc 链、轮询守卫、弹�
   assert.match(clientSource, /onConfirm: confirmBdRewrite/u)
   // 即时下载链路：独立 action、独立状态与 overlay 级弹窗。
   assert.match(clientSource, /const downloadBdVideo = useCallback\(async shareUrl => \{/u)
-  assert.match(clientSource, /action: 'breakdown\.downloadUrl', shareUrl \}/u)
+  assert.match(clientSource, /action: 'breakdown\.downloadStart',/u)
+  assert.match(clientSource, /action: 'breakdown\.downloadStatus',/u)
+  assert.match(clientSource, /BD_DOWNLOAD_POLL_MAX_ATTEMPTS/u)
   assert.match(clientSource, /bdDownloadResult\n?\s*\? h\(BreakdownDownloadModal/u)
   assert.match(clientSource, /onDownload: downloadBdVideo/u)
   // 明细请求序列号守卫：快速切换历史行时旧响应丢弃。
@@ -896,6 +898,62 @@ test('client.js 强制重试接线：force 仅显式透传、规则回退链、�
   assert.match(clientSource, /startBdWorkflow\(candidateId, ruleId, \{ force: true \}\)/u)
   // 详情页接线：仅在确有候选 id 时提供强制重试入口（无 id 传 null 不渲染按钮）。
   assert.match(clientSource, /onForceRetry: bdDetailWorkflow\?\.candidateId \? forceRetryBdWorkflow : null/u)
+})
+
+test('downloadBdVideo 行为回归：start 响应进入轮询，start 失败不轮询', async () => {
+  const clientSource = await readFile(new URL('../src/client.js', import.meta.url), 'utf8')
+  const match = clientSource.match(
+    /const downloadBdVideo = useCallback\((async shareUrl => \{[\s\S]*?\}), \[bdDownloading\]\)/u,
+  )
+  assert.ok(match, 'downloadBdVideo callback 可提取')
+
+  const makeCallback = (posts, startResponse) => {
+    const state = { downloading: [], error: [], result: [] }
+    const context = {
+      bdDownloading: false,
+      setBdDownloading: value => state.downloading.push(value),
+      setBdDownloadError: value => state.error.push(value),
+      setBdDownloadResult: value => state.result.push(value),
+      bdDownloadErrorKey: code => code || 'bdDownloadFailed',
+      bdDownloadIdempotencyKey: () => 'douyin:vv_download:test',
+      BD_DOWNLOAD_POLL_MAX_ATTEMPTS: 3,
+      BD_DOWNLOAD_POLL_INTERVAL_MS: 0,
+      waitForDownloadPoll: () => Promise.resolve(),
+      safeErrorCode: error => String(error),
+      post: async body => {
+        posts.push(body)
+        return body.action === 'breakdown.downloadStart'
+          ? startResponse
+          : { status: 'ready', download: { status: 'ready', downloadUrl: 'https://tos.example/video.mp4' } }
+      },
+    }
+    vm.createContext(context)
+    const factory = vm.runInContext(`bdDownloading => (${match[1]})`, context)
+    return { callback: factory(false), state }
+  }
+
+  const readyPosts = []
+  const ready = makeCallback(readyPosts, {
+    status: 'ready',
+    download: { jobId: 'job-1', status: 'queued' },
+  })
+  await ready.callback('https://v.douyin.com/abc/')
+  assert.deepEqual(readyPosts.map(item => item.action), [
+    'breakdown.downloadStart',
+    'breakdown.downloadStatus',
+  ])
+  assert.deepEqual(ready.state.downloading, [true, false])
+  assert.equal(ready.state.result.at(-1).downloadUrl, 'https://tos.example/video.mp4')
+  assert.deepEqual(ready.state.error.filter(Boolean), [])
+
+  const failedPosts = []
+  const failed = makeCallback(failedPosts, {
+    status: 'error',
+    reason: 'PROVIDER_ERROR',
+  })
+  await failed.callback('https://v.douyin.com/abc/')
+  assert.equal(failedPosts.length, 1)
+  assert.deepEqual(failed.state.error.filter(Boolean), ['PROVIDER_ERROR'])
 })
 
 test('构建产物内联 breakdown 模块且可加载', async () => {

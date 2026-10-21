@@ -2976,12 +2976,17 @@ window.__ModuleLoader__.load({
     // viralVideo*IdempotencyKey 模板一致；每次点击生成全新 UUID，页面内不跨点击复用。
     const bdArchiveIdempotencyKey = () => `douyin:vv_archive:${newAiAnalysisRequestUuid()}`
     const bdWorkflowIdempotencyKey = () => `douyin:vv_workflow:${newAiAnalysisRequestUuid()}`
+    // 稳定下载受理键与 index/tools-client 模板保持一致；每次点击独立，避免跨点击重放。
+    const bdDownloadIdempotencyKey = () => `douyin:vv_download:${newAiAnalysisRequestUuid()}`
     // 归档轮询固定 3s；workflow 轮询优先后端 retryAfterSeconds（缺失退回 5s），
     // 实际间隔 = max(5s, retryAfterSeconds)。
     const BD_ARCHIVE_POLL_INTERVAL_MS = 3000
     const BD_WORKFLOW_POLL_INTERVAL_MS = 5000
     // workflow 轮询连续失败上限：25s（5 次 × 5s 间隔）内持续不可用即终止轮询。
     const BD_WORKFLOW_POLL_MAX_FAILURES = 5
+    // 稳定下载轮询：上限对齐服务端 990s 软时限，避免后端仍在转存而前端提前放弃。
+    const BD_DOWNLOAD_POLL_INTERVAL_MS = 5000
+    const BD_DOWNLOAD_POLL_MAX_ATTEMPTS = 210
     // 拆解记录默认每页 10 条；「加载更多」逐页 +10，200 与宿主 handler clamp 上限一致。
     const BD_HISTORY_PAGE_SIZE = 10
     const BD_HISTORY_LIMIT_MAX = 200
@@ -2991,6 +2996,13 @@ window.__ModuleLoader__.load({
       DOUYIN_DOWNLOAD_URL_MISSING: 'bdDownloadMissing',
       PROVIDER_ERROR: 'bdDownloadRetryable',
       ONEAPI_BUDGET_EXHAUSTED: 'bdDownloadBudget',
+      DOUYIN_VIDEO_DOWNLOAD_FAILED: 'bdDownloadSourceFailed',
+      DOUYIN_TOS_UPLOAD_FAILED: 'bdDownloadUploadFailed',
+      TOS_PRESIGN_FAILED: 'bdDownloadPresignFailed',
+      DOWNLOAD_JOB_NOT_FOUND: 'bdDownloadNotFound',
+      DOWNLOAD_JOB_TIMEOUT: 'bdDownloadFailed',
+      ASYNC_RUN_DEADLINE_EXCEEDED: 'bdDownloadFailed',
+      IDEMPOTENCY_CONFLICT: 'bdDownloadFailed',
     })
 
     const bdDownloadErrorKey = code => BD_DOWNLOAD_ERROR_COPY[code] || 'bdDownloadFailed'
@@ -3162,12 +3174,14 @@ window.__ModuleLoader__.load({
         bdNewTitle: '发起拆解',
         bdShareLabel: '抖音分享链接', bdSharePlaceholder: '粘贴抖音视频分享链接，如 https://v.douyin.com/xxxx/',
         bdStartButton: '开始拆解', bdSubmitting: '提交中…',
-        bdDownloadButton: '抖音视频下载', bdDownloading: '解析中…',
-        bdDownloadRequired: '请先输入抖音分享链接', bdDownloadFailed: '下载链接解析失败，请重试',
-        bdDownloadMissing: '未获取到可下载直链，请稍后重试', bdDownloadRetryable: '解析服务暂时不可用，请重试',
+        bdDownloadButton: '抖音视频下载', bdDownloading: '准备视频中…',
+        bdDownloadRequired: '请先输入抖音分享链接', bdDownloadFailed: '视频下载准备失败，请重试',
+        bdDownloadMissing: '未获取到可下载视频，请稍后重试', bdDownloadRetryable: '下载服务暂时不可用，请重试',
         bdDownloadBudget: '今日解析额度已用完，请明天再试',
-        bdDownloadTitle: '抖音视频下载', bdDownloadAction: '打开下载链接', bdDownloadFallback: '备用播放链接',
-        bdDownloadHint: '链接为临时直链，打开后可在播放器菜单点击「下载」；失效时请重新解析。',
+        bdDownloadSourceFailed: '原视频下载失败，请稍后重试', bdDownloadUploadFailed: '视频转存失败，请稍后重试',
+        bdDownloadPresignFailed: '下载链接生成失败，请重试', bdDownloadNotFound: '下载任务不存在，请重新下载',
+        bdDownloadTitle: '抖音视频下载', bdDownloadAction: '保存视频',
+        bdDownloadHint: '视频已转存为稳定下载链接，点击即可保存；链接默认 1 小时内有效，过期请重新生成。',
         bdArchivePending: '正在下载并归档视频，通常需要十几秒…',
         bdRulesLabel: '仿写规则', bdRulesOptional: '（可选，单选；不选择则按默认方式仿写）',
         bdRulesHint: '规则由服务端统一配置，一次仿写只应用一条主方向规则；提交后按所选规则生成仿写分镜与拍摄脚本。',
@@ -3365,12 +3379,14 @@ window.__ModuleLoader__.load({
         bdNewTitle: 'Start a breakdown',
         bdShareLabel: 'Douyin share link', bdSharePlaceholder: 'Paste a Douyin video share link, e.g. https://v.douyin.com/xxxx/',
         bdStartButton: 'Start breakdown', bdSubmitting: 'Submitting…',
-        bdDownloadButton: 'Download Douyin video', bdDownloading: 'Resolving…',
-        bdDownloadRequired: 'Enter a Douyin share link first', bdDownloadFailed: 'Failed to resolve the download link. Try again.',
-        bdDownloadMissing: 'No downloadable direct URL was returned. Try again later.', bdDownloadRetryable: 'The resolver is temporarily unavailable. Try again.',
+        bdDownloadButton: 'Download Douyin video', bdDownloading: 'Preparing video…',
+        bdDownloadRequired: 'Enter a Douyin share link first', bdDownloadFailed: 'Could not prepare the video download. Try again.',
+        bdDownloadMissing: 'No downloadable video was returned. Try again later.', bdDownloadRetryable: 'The download service is temporarily unavailable. Try again.',
         bdDownloadBudget: 'The daily resolver budget is used up. Try again tomorrow.',
-        bdDownloadTitle: 'Download Douyin video', bdDownloadAction: 'Open download link', bdDownloadFallback: 'Fallback play URL',
-        bdDownloadHint: 'This is a temporary direct URL. Use “Download” in the player menu after opening; resolve again if it expires.',
+        bdDownloadSourceFailed: 'The original video could not be downloaded. Try again later.', bdDownloadUploadFailed: 'The video could not be archived. Try again later.',
+        bdDownloadPresignFailed: 'Could not generate the download URL. Try again.', bdDownloadNotFound: 'The download job was not found. Start a new download.',
+        bdDownloadTitle: 'Download Douyin video', bdDownloadAction: 'Save video',
+        bdDownloadHint: 'The video was archived to a stable download link. Click to save it; the link defaults to 1 hour and can be regenerated after expiry.',
         bdArchivePending: 'Downloading and archiving the video, usually takes a while…',
         bdRulesLabel: 'Rewrite rules', bdRulesOptional: ' (optional, pick one; leave empty for the default rewrite)',
         bdRulesHint: 'Rules are configured server-side; one rewrite applies a single primary rule. The storyboard and shot script are generated with the selected rule.',
@@ -3475,6 +3491,10 @@ window.__ModuleLoader__.load({
       if (!response.ok) throw new Error('request_failed')
       return response.json()
     }
+
+    const waitForDownloadPoll = milliseconds => new Promise(resolve => {
+      setTimeout(resolve, milliseconds)
+    })
 
     // 把宿主返回的 base64 工作簿转成 Blob 触发浏览器下载（§10.1）。
     // 只消费响应里的文件名/MIME/内容；下载动作不触碰列表状态，排序与滚动位置保持不变。
@@ -4846,25 +4866,54 @@ window.__ModuleLoader__.load({
         }
       }, [bdErrorKey, bdSubmitting, loadBdHistory, startBdWorkflow, stopPolling])
 
-      // 抖音视频即时下载：调用 tools 只读工具拿 OneAPI 临时直链并弹窗展示。
-      // 不带幂等键：每次点击都是一次新鲜解析，避免把过期 URL 当作“成功结果”重放。
+      // 抖音视频稳定下载：start 受理后轮询 get；服务端完成下载和 TOS 转存后
+      // 每次查询都会重新签名，前端不需要把单个 HTTP 请求挂到大视频转存结束。
       const downloadBdVideo = useCallback(async shareUrl => {
         if (bdDownloading) return
         setBdDownloading(true)
         setBdDownloadError(null)
         setBdDownloadResult(null)
         try {
-          const result = await post({ action: 'breakdown.downloadUrl', shareUrl })
-          if (result.status !== 'ready') {
-            setBdDownloadError(bdDownloadErrorKey(result.reason))
+          const startResult = await post({
+            action: 'breakdown.downloadStart',
+            shareUrl,
+            idempotencyKey: bdDownloadIdempotencyKey(),
+          })
+          if (startResult.status !== 'ready') {
+            setBdDownloadError(bdDownloadErrorKey(startResult.reason))
             return
           }
-          const download = result.download || null
-          if (!download?.downloadUrl) {
-            setBdDownloadError('bdDownloadMissing')
+          const started = startResult.download || {}
+          const jobId = started.jobId
+          if (!jobId) {
+            setBdDownloadError('bdDownloadFailed')
             return
           }
-          setBdDownloadResult(download)
+          for (let attempt = 0; attempt < BD_DOWNLOAD_POLL_MAX_ATTEMPTS; attempt += 1) {
+            await waitForDownloadPoll(BD_DOWNLOAD_POLL_INTERVAL_MS)
+            const statusResult = await post({
+              action: 'breakdown.downloadStatus',
+              jobId,
+            })
+            if (statusResult.status !== 'ready') {
+              setBdDownloadError(bdDownloadErrorKey(statusResult.reason))
+              return
+            }
+            const download = statusResult.download || {}
+            if (download.status === 'ready') {
+              if (!download.downloadUrl) {
+                setBdDownloadError('bdDownloadMissing')
+                return
+              }
+              setBdDownloadResult(download)
+              return
+            }
+            if (download.status === 'failed') {
+              setBdDownloadError(bdDownloadErrorKey(download.errorCode))
+              return
+            }
+          }
+          setBdDownloadError('bdDownloadFailed')
         } catch (error) {
           setBdDownloadError(bdDownloadErrorKey(safeErrorCode(error)))
         } finally {

@@ -22,6 +22,7 @@ import {
   callTool,
   safeErrorCode,
   sessionIdempotencyKey,
+  viralVideoDownloadIdempotencyKey,
 } from './src/tools-client.js'
 
 export const PATH = '/api/desktop/yootun/douyin-operation'
@@ -126,8 +127,10 @@ export function apply(ctx, overrides = {}) {
               return send(res, 200, await handleBreakdownArchiveStart(deps, toolCtx, body))
             case 'breakdown.archiveStatus':
               return send(res, 200, await handleBreakdownArchiveStatus(deps, toolCtx, body))
-            case 'breakdown.downloadUrl':
-              return send(res, 200, await handleBreakdownDownloadUrl(deps, toolCtx, body))
+            case 'breakdown.downloadStart':
+              return send(res, 200, await handleBreakdownDownloadStart(deps, toolCtx, body))
+            case 'breakdown.downloadStatus':
+              return send(res, 200, await handleBreakdownDownloadStatus(deps, toolCtx, body))
             case 'breakdown.workflowStart':
               return send(res, 200, await handleBreakdownWorkflowStart(deps, toolCtx, body))
             case 'breakdown.workflowStatus':
@@ -750,6 +753,7 @@ async function handleAiAnalysisGet(deps, ctx, body) {
 
 const BREAKDOWN_ARCHIVE_KEY_PATTERN = /^douyin:vv_archive:.+$/
 const BREAKDOWN_WORKFLOW_KEY_PATTERN = /^douyin:vv_workflow:.+$/
+const BREAKDOWN_DOWNLOAD_KEY_PATTERN = /^douyin:vv_download:.+$/
 
 function projectWorkflowItem(item) {
   if (!item || typeof item !== 'object') return item
@@ -795,15 +799,24 @@ async function handleBreakdownArchiveStatus(deps, ctx, body) {
   return { status: 'ready', archive: payload }
 }
 
-// 抖音视频即时下载（2026-10-09 需求）：分享链接 → tools 只读解析 OneAPI 临时直链。
-// 与 archiveStart 完全解耦：不受理拆解任务、不下载/上传 TOS、不写 viral_video 表；
-// 直链短时效，由前端弹窗即时展示给用户点击。
-async function handleBreakdownDownloadUrl(deps, ctx, body) {
+async function handleBreakdownDownloadStart(deps, ctx, body) {
   const shareUrl = cleanString(body.shareUrl, 2048)
   if (!shareUrl) return { status: 'error', reason: 'share_url_required' }
-  const payload = await callTool(ctx, 'viral_video_douyin_download_url', {
+  const idempotencyKey = cleanString(body.idempotencyKey, 128)
+  if (!BREAKDOWN_DOWNLOAD_KEY_PATTERN.test(idempotencyKey)) {
+    return { status: 'error', reason: 'INVALID_IDEMPOTENCY_KEY' }
+  }
+  const payload = await callTool(ctx, 'viral_video_douyin_download_url_start', {
     douyinVideoUrl: shareUrl,
+    idempotencyKey,
   })
+  return { status: 'ready', download: payload }
+}
+
+async function handleBreakdownDownloadStatus(deps, ctx, body) {
+  const jobId = cleanString(body.jobId, MAX_ID)
+  if (!jobId) return { status: 'error', reason: 'job_id_required' }
+  const payload = await callTool(ctx, 'viral_video_douyin_download_url_get', { jobId })
   return { status: 'ready', download: payload }
 }
 
