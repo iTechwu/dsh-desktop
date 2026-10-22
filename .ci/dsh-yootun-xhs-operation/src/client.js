@@ -142,7 +142,7 @@ const copy = {
     hbErrInvalidArgument: '参数不合法，请检查输入后重试', hbErrNotFound: '目标不存在或已被删除', hbErrActiveRunExists: '已有采集 Run 进行中，请等待完成',
     hbErrBudgetExhausted: '当日采集额度已用尽，请明日再试', hbErrKeywordEmpty: '没有启用中的关键词，请先在「关键词与扩词」里启用', hbErrKeywordConflict: '关键词已存在或冲突',
     hbErrEvidenceInsufficient: '标签证据不足，无法完成 AI 标记', hbErrLabelConflict: '标签编码或名称冲突', hbErrAiSchemaInvalid: 'AI 返回格式异常，已按失败处理',
-    hbErrProviderFailed: '模型服务暂不可用，请稍后重试', hbErrInternal: '服务内部错误，请稍后重试', hbErrConfirmation: '缺少操作确认，请重新提交', hbErrValidation: '输入校验未通过，请检查后重试',
+    hbErrProviderFailed: '模型服务暂不可用，请稍后重试', hbErrSettingTomlManaged: '该配置已由部署 TOML 统一管理，请通过配置发布渠道修改', hbErrInternal: '服务内部错误，请稍后重试', hbErrConfirmation: '缺少操作确认，请重新提交', hbErrValidation: '输入校验未通过，请检查后重试',
     hbCandidatesPartial: '批量裁决完成：{failed}/{total} 条失败，其余已生效',
     // 写操作成功提示（runWrite successKey，review 复验 MAJOR-A：此前整组漏注册，
     // 提示条会显示裸键名；hbRunStarted 现为 Run 详情抽屉「开始」标签，勿混淆）。
@@ -272,7 +272,7 @@ const copy = {
     hbErrInvalidArgument: 'Invalid input — check your entries and retry', hbErrNotFound: 'Target not found or removed', hbErrActiveRunExists: 'A collection run is already active — wait for it to finish',
     hbErrBudgetExhausted: 'Daily collection budget is exhausted — try again tomorrow', hbErrKeywordEmpty: 'No enabled keywords — enable some under Keywords first', hbErrKeywordConflict: 'Keyword already exists or conflicts',
     hbErrEvidenceInsufficient: 'Insufficient label evidence for AI tagging', hbErrLabelConflict: 'Label code or name conflicts', hbErrAiSchemaInvalid: 'AI returned an unexpected format — treated as failed',
-    hbErrProviderFailed: 'Model service is unavailable — retry later', hbErrInternal: 'Internal server error — retry later', hbErrConfirmation: 'Missing confirmation — submit again', hbErrValidation: 'Validation failed — check your input',
+    hbErrProviderFailed: 'Model service is unavailable — retry later', hbErrSettingTomlManaged: 'This setting is managed by deployment TOML; update it through the configuration release channel', hbErrInternal: 'Internal server error — retry later', hbErrConfirmation: 'Missing confirmation — submit again', hbErrValidation: 'Validation failed — check your input',
     hbCandidatesPartial: 'Review finished: {failed}/{total} failed, the rest applied',
     // Success copy for runWrite successKeys (review MAJOR-A: the whole group was
     // missing so notices showed raw keys; hbRunStarted is now the run-drawer

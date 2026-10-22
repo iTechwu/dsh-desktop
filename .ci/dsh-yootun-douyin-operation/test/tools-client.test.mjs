@@ -3,6 +3,7 @@
 // 历史缺陷：只检查 content 文本路径，structuredContent.error 被当成功返回，
 // ACCOUNT_NOT_FOUND 因此静默丢失，空 run 被持久化成 runId: null 的脏状态。
 import assert from 'node:assert/strict'
+import { readFile } from 'node:fs/promises'
 import { test } from 'node:test'
 
 import { ToolsCallError, extractJsonEnvelope, parseToolResult, safeErrorCode, sessionIdempotencyKey, toWireArgs } from '../src/tools-client.js'
@@ -164,12 +165,36 @@ test('爆款拆解：viral_video 工具全部进入 TOOL_NAMES 白名单', async
     'viral_video_douyin_download_url_get',
     'viral_video_workflow_start',
     'viral_video_workflow_get',
+    'viral_video_candidates_list',
     'viral_video_storyboards_list',
     'viral_video_analysis_status_get',
     'viral_video_rewrite_rules_list',
   ]) {
     assert.ok(TOOL_NAMES.includes(name), `missing ${name}`)
   }
+})
+
+test('爆款拆解：实际 callTool 调用与 TOOL_NAMES 白名单一致（防漂移）', async () => {
+  // 静态扫描宿主与采集入口的全部 callTool 字面量调用：任何新增工具只要实际
+  // 发起调用就必须登记 TOOL_NAMES（白名单外会被 parseToolResult 之外的宿主
+  // 校验拒绝），防止再次出现漏登记。
+  const { TOOL_NAMES } = await import('../src/tools-client.js')
+  const sources = await Promise.all([
+    readFile(new URL('../index.js', import.meta.url), 'utf8'),
+    readFile(new URL('../src/ingest.js', import.meta.url), 'utf8'),
+  ])
+  // 覆盖两种形态：callTool(ctx, 'name', ...) 与 callTool('name', ...)；
+  // 变量形态（callTool(ctx, name, ...)）不是字面量调用，自然跳过。
+  const called = new Set(
+    sources
+      .flatMap(source => [...source.matchAll(/callTool\((?:ctx\s*,\s*)?'([a-z_0-9]+)'/g)].map(match => match[1])),
+  )
+  assert.ok(called.size >= 30, `提取到 ${called.size} 个调用，低于预期说明扫描器失效`)
+  const unregistered = [...called].filter(name => !TOOL_NAMES.includes(name))
+  assert.deepEqual(unregistered, [], `实际调用但未登记 TOOL_NAMES: ${unregistered.join(', ')}`)
+  // 本次修复点：breakdown.detail 引用的候选公开指标查询必须两边都在。
+  assert.ok(called.has('viral_video_candidates_list'), '实际调用中必须存在 viral_video_candidates_list')
+  assert.ok(TOOL_NAMES.includes('viral_video_candidates_list'), 'TOOL_NAMES 必须收录 viral_video_candidates_list')
 })
 
 test('爆款拆解：新增稳定码进入白名单，未登记码仍收敛为兜底码', async () => {

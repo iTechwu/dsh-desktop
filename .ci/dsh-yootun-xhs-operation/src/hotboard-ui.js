@@ -101,6 +101,7 @@ const HB_ERROR_KEYS = {
   XHS_HOTBOARD_LABEL_CONFLICT: 'hbErrLabelConflict',
   XHS_HOTBOARD_AI_SCHEMA_INVALID: 'hbErrAiSchemaInvalid',
   XHS_HOTBOARD_PROVIDER_FAILED: 'hbErrProviderFailed',
+  XHS_HOTBOARD_SETTING_TOML_MANAGED: 'hbErrSettingTomlManaged',
   XHS_HOTBOARD_INTERNAL_ERROR: 'hbErrInternal',
   CONFIRMATION_REQUIRED: 'hbErrConfirmation',
   VALIDATION_ERROR: 'hbErrValidation',

@@ -723,3 +723,33 @@ test('publish.start returns PROFILE_BUSY while a login is running (mutex matrix)
 
 // 发布降级后素材契约移除（用户在发布页手动上传），SSRF 素材校验用例随之删除；
 // SSRF 防护职责已不存在于发布路径（宿主不再触碰任何素材 URL）。
+
+test('hotboard.settingsUpdate surfaces whitelisted XHS_HOTBOARD_SETTING_TOML_MANAGED as-is', async () => {
+  const calls = []
+  const auditEvents = []
+  const execute = async value => {
+    calls.push(value)
+    // 服务端 TOML 托管拒绝：稳定错误码在信封 error.code 中返回。
+    return { structuredContent: { error: { code: 'XHS_HOTBOARD_SETTING_TOML_MANAGED' } } }
+  }
+  const schemas = [...SCHEMAS, { name: 'mcp__tools-xhs__xhs_operation_hotboard_settings_update' }]
+  const { route } = makeCtx(execute, schemas, auditEvents)
+  const result = await invoke(route, {
+    action: 'hotboard.settingsUpdate',
+    confirm: true,
+    idempotencyKey: 'k-setting-managed',
+    settings: { scheduleEnabled: true },
+  })
+  assert.equal(result.status, 200)
+  // 白名单内稳定码原样透出，不收敛为 XHS_HOTBOARD_INTERNAL_ERROR。
+  assert.equal(result.body.status, 'error')
+  assert.equal(result.body.reason, 'XHS_HOTBOARD_SETTING_TOML_MANAGED')
+  assert.equal(calls.length, 1)
+  assert.equal(calls[0].name, 'mcp__tools-xhs__xhs_operation_hotboard_settings_update')
+  assert.deepEqual(calls[0].arguments.settings, { scheduleEnabled: true })
+  // 审计落 failed；errorCode 只含稳定码（小写化），不透出服务端内部 message。
+  assert.equal(auditEvents.length, 1)
+  assert.equal(auditEvents[0].outcome, 'failed')
+  assert.equal(auditEvents[0].errorCode, 'xhs_hotboard_setting_toml_managed')
+  assert.ok(!JSON.stringify(auditEvents[0]).includes('TOML 统一管理'))
+})

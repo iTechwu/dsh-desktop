@@ -274,6 +274,20 @@ test('every hotboard copy key used by the UI is registered in copy.zh and copy.e
   assert.deepEqual(missing, [], `copy.zh / copy.en 缺少注册的 key: ${missing.join(', ')}`)
 })
 
+test('XHS_HOTBOARD_SETTING_TOML_MANAGED maps to a registered bilingual copy key', async () => {
+  // 服务端 TOML 托管拒绝码（XHS_HOTBOARD_SETTING_TOML_MANAGED）必须端到端透出：
+  // 宿主白名单 → UI HB_ERROR_KEYS 映射 → copy.zh / copy.en 文案；未知错误仍回退
+  // hbWriteFailed 兜底。
+  const ui = await readFile(new URL('../src/hotboard-ui.js', import.meta.url), 'utf8')
+  const client = await readFile(new URL('../src/client.js', import.meta.url), 'utf8')
+  assert.match(ui, /XHS_HOTBOARD_SETTING_TOML_MANAGED: 'hbErrSettingTomlManaged'/)
+  assert.ok((client.match(/hbErrSettingTomlManaged:/g) || []).length >= 2, 'copy.zh 与 copy.en 均需注册 hbErrSettingTomlManaged')
+  assert.match(client, /hbErrSettingTomlManaged: '该配置已由部署 TOML 统一管理，请通过配置发布渠道修改'/)
+  assert.match(client, /hbErrSettingTomlManaged: 'This setting is managed by deployment TOML; update it through the configuration release channel'/)
+  // 未知错误码回退不变。
+  assert.match(ui, /HB_ERROR_KEYS\[reason\] \|\| 'hbWriteFailed'/)
+})
+
 test('write with a non-ready envelope (tool unavailable) fails closed instead of reporting success', async () => {
   // 回归（review 复验 MINOR-B）：宿主在 MCP 工具未部署时返回
   // { status:'unavailable' }；写 executor 此前只判 'error'，会误弹成功提示。

@@ -34,13 +34,15 @@ export const TOOL_NAMES = [
   'douyin_account_ai_analysis_start',
   'douyin_account_ai_analysis_get',
   // 爆款拆解（0922 方案）：直链归档受理/轮询、仿写工作流受理/轮询、
-  // 故事板与分析状态查询、仿写规则清单（纯配置只读）、拆解详情导出（只读）。
+  // 故事板与分析状态查询、仿写规则清单（纯配置只读）、拆解详情导出（只读）、
+  // 候选公开指标查询（breakdown.detail 引用只读候选列表）。
   'viral_video_archive_submit',
   'viral_video_async_submit_get',
   'viral_video_douyin_download_url_start',
   'viral_video_douyin_download_url_get',
   'viral_video_workflow_start',
   'viral_video_workflow_get',
+  'viral_video_candidates_list',
   'viral_video_storyboards_list',
   'viral_video_analysis_status_get',
   'viral_video_rewrite_rules_list',
