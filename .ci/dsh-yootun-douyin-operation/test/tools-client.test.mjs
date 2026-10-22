@@ -3,7 +3,7 @@
 // 历史缺陷：只检查 content 文本路径，structuredContent.error 被当成功返回，
 // ACCOUNT_NOT_FOUND 因此静默丢失，空 run 被持久化成 runId: null 的脏状态。
 import assert from 'node:assert/strict'
-import { readFile } from 'node:fs/promises'
+import { readFile, readdir } from 'node:fs/promises'
 import { test } from 'node:test'
 
 import { ToolsCallError, extractJsonEnvelope, parseToolResult, safeErrorCode, sessionIdempotencyKey, toWireArgs } from '../src/tools-client.js'
@@ -175,26 +175,34 @@ test('爆款拆解：viral_video 工具全部进入 TOOL_NAMES 白名单', async
 })
 
 test('爆款拆解：实际 callTool 调用与 TOOL_NAMES 白名单一致（防漂移）', async () => {
-  // 静态扫描宿主与采集入口的全部 callTool 字面量调用：任何新增工具只要实际
-  // 发起调用就必须登记 TOOL_NAMES（白名单外会被 parseToolResult 之外的宿主
-  // 校验拒绝），防止再次出现漏登记。
+  // 静态扫描宿主入口与 src 下全部运行时 JS 的 callTool 字符串字面量调用，
+  // 与 TOOL_NAMES 做**双向一致**断言：任何新增工具只要实际发起调用就必须登记，
+  // 反过来登记清单里也不允许出现无人调用的死条目，防止漏登记静默漂移。
+  // 已知限制：本扫描只覆盖字符串字面量调用；变量形式
+  // callTool(ctx, name, ...)（如 index.js 注入采集器的回调包装）不属于
+  // 字面量，不在本断言覆盖范围内，注释与断言不得声称覆盖变量调用。
   const { TOOL_NAMES } = await import('../src/tools-client.js')
+  const EXCLUDED_DIRS = ['test', 'lib', 'node_modules', 'scripts']
+  const srcEntries = (await readdir(new URL('../src', import.meta.url), { recursive: true }))
+    .filter(name => name.endsWith('.js'))
+    .filter(name => !EXCLUDED_DIRS.some(dir => name === dir || name.startsWith(`${dir}/`)))
   const sources = await Promise.all([
     readFile(new URL('../index.js', import.meta.url), 'utf8'),
-    readFile(new URL('../src/ingest.js', import.meta.url), 'utf8'),
+    ...srcEntries.map(name => readFile(new URL(`../src/${name}`, import.meta.url), 'utf8')),
   ])
-  // 覆盖两种形态：callTool(ctx, 'name', ...) 与 callTool('name', ...)；
-  // 变量形态（callTool(ctx, name, ...)）不是字面量调用，自然跳过。
-  const called = new Set(
+  // 覆盖两种字面量形态：callTool(ctx, 'name', ...) 与 callTool('name', ...)。
+  const called = [...new Set(
     sources
       .flatMap(source => [...source.matchAll(/callTool\((?:ctx\s*,\s*)?'([a-z_0-9]+)'/g)].map(match => match[1])),
+  )].sort()
+  assert.ok(called.length >= 30, `提取到 ${called.length} 个调用，低于预期说明扫描器失效`)
+  assert.deepEqual(
+    called,
+    [...TOOL_NAMES].sort(),
+    '实际 callTool 字面量调用与 TOOL_NAMES 必须双向一致',
   )
-  assert.ok(called.size >= 30, `提取到 ${called.size} 个调用，低于预期说明扫描器失效`)
-  const unregistered = [...called].filter(name => !TOOL_NAMES.includes(name))
-  assert.deepEqual(unregistered, [], `实际调用但未登记 TOOL_NAMES: ${unregistered.join(', ')}`)
-  // 本次修复点：breakdown.detail 引用的候选公开指标查询必须两边都在。
-  assert.ok(called.has('viral_video_candidates_list'), '实际调用中必须存在 viral_video_candidates_list')
-  assert.ok(TOOL_NAMES.includes('viral_video_candidates_list'), 'TOOL_NAMES 必须收录 viral_video_candidates_list')
+  // 本次修复点：breakdown.detail 引用的候选公开指标查询必须在清单内。
+  assert.ok(called.includes('viral_video_candidates_list'))
 })
 
 test('爆款拆解：新增稳定码进入白名单，未登记码仍收敛为兜底码', async () => {
