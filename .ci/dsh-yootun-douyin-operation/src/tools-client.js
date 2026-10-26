@@ -33,6 +33,10 @@ export const TOOL_NAMES = [
   // AI 账号表现分析（0916 方案）：start 写（幂等键）、get 只读轮询
   'douyin_account_ai_analysis_start',
   'douyin_account_ai_analysis_get',
+  // AI 报表（RQ-2026-006 §4.7）：list/get 只读；regenerate 写（幂等键，受控异步模型调用）
+  'douyin_report_list',
+  'douyin_report_get',
+  'douyin_report_regenerate',
   // 爆款拆解（0922 方案）：直链归档受理/轮询、仿写工作流受理/轮询、
   // 故事板与分析状态查询、仿写规则清单（纯配置只读）、拆解详情导出（只读）、
   // 候选公开指标查询（breakdown.detail 引用只读候选列表）。
@@ -92,6 +96,23 @@ const ALLOWED_ERROR_CODES = new Set([
   'AI_ANALYSIS_MODEL_CONFIG_MISSING',
   'AI_ANALYSIS_PROMPT_INVALID',
   'IDEMPOTENCY_CONFLICT',
+  // AI 报表（RQ-2026-006 §4.8）稳定码：13 个后端稳定码与前端 REPORT_ERROR_REASON_COPY
+  // 字典一一对应（同键不同参数冲突/参数非法/游标非法沿用上方通用白名单码）。
+  'REPORT_NOT_FOUND',
+  'REPORT_DISABLED',
+  'REPORT_INSUFFICIENT_DATA',
+  'REPORT_MODEL_FAILED',
+  'REPORT_SCHEMA_INVALID',
+  'REPORT_TIMEOUT',
+  'REPORT_TRUNCATED',
+  'REPORT_INPUT_TOO_LARGE',
+  'REPORT_PAYLOAD_TOO_LARGE',
+  'REPORT_ENQUEUE_FAILED',
+  'REPORT_MODEL_CONFIG_MISSING',
+  'REPORT_LEASE_EXPIRED',
+  // 提示词文件缺失/无版本的 fail-closed 码（阶段 B review 补登，对齐 0916
+  // AI_ANALYSIS_PROMPT_INVALID 在白名单与字典的登记）。
+  'REPORT_PROMPT_INVALID',
   // 爆款拆解（0922 方案）稳定码：写工具缺幂等键、异步 Run 不存在、
   // 仿写规则 id 不存在或已下线（与 tools 侧 mcp/domains/common.py 的
   // ValueError 哨兵映射一一对应；确认/幂等冲突等通用码沿用上方白名单）。
@@ -331,6 +352,11 @@ export const runCancelIdempotencyKey = runId => `douyin:run_cancel:${runId}`
 // 不双跑/双计费由服务端兜底：同账号 running 互斥（部分唯一索引）+ 成功收据重放 +
 // 结果缓存；键不嵌账号（服务端以 request.accountId 绑定并做 stable_request_hash 冲突校验）。
 export const aiAnalysisIdempotencyKey = requestUuid => `douyin:ai_analysis:${requestUuid}`
+// AI 报表重新生成键（RQ-2026-006 §4.4）：douyin:report_regenerate:{reportId}:{attemptUuid}。
+// attemptUuid 由宿主生成、同一次点击重试复用同一 UUID；服务端只做结构校验，键内
+// reportId 与参数 reportId 不一致统一收敛 IDEMPOTENCY_CONFLICT（stable_request_hash）。
+export const reportRegenerateIdempotencyKey = (reportId, attemptUuid) =>
+  `douyin:report_regenerate:${reportId}:${attemptUuid}`
 // 爆款拆解受理键（0922 方案）：每次点击生成全新 UUID，页面内不跨点击复用。
 // 服务端 viral_video 域对键只做 1–128 长度约束、无模板校验；前缀沿用 douyin 域
 // 风格标识来源。归档 runId 由服务端从键摘要派生（mcp-vv-archive-{sha256[:24]}），

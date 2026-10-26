@@ -20,6 +20,16 @@ import {
   breakdownStatusTone,
   filterBreakdownHistory,
 } from './breakdown.js'
+import {
+  ReportDetailView,
+  ReportListView,
+  REPORT_CSS_TEXT,
+  downloadReportHtml,
+  formatPeriodFileStem,
+  printReport,
+  reportErrorCopy,
+  serializeReportHtml,
+} from './report-ui.js'
 import { TrendChart, trendLayout, useMeasuredWidth } from './trend-chart.js'
 
 const React = require('react')
@@ -240,6 +250,7 @@ const copy = {
     aiDigestLimits: '{n} 项',
     // 爆款拆解 Tab（0922 方案 §4.1；0923 视觉对齐预览稿 breakdown-tab-preview.html）
     tabBreakdown: '爆款拆解',
+    tabReport: 'AI 报表',
     bdNewTitle: '发起拆解',
     bdShareLabel: '抖音分享链接', bdSharePlaceholder: '粘贴抖音视频分享链接，如 https://v.douyin.com/xxxx/',
     bdStartButton: '开始拆解', bdSubmitting: '提交中…',
@@ -445,6 +456,7 @@ const copy = {
     aiDigestLimits: '{n}',
     // Viral breakdown tab (0922 plan §4.1; 0923 visual alignment with breakdown-tab-preview.html)
     tabBreakdown: 'Viral breakdown',
+    tabReport: 'AI reports',
     bdNewTitle: 'Start a breakdown',
     bdShareLabel: 'Douyin share link', bdSharePlaceholder: 'Paste a Douyin video share link, e.g. https://v.douyin.com/xxxx/',
     bdStartButton: 'Start breakdown', bdSubmitting: 'Submitting…',
@@ -1309,6 +1321,7 @@ function Overlay({ t }) {
     stopPolling(aiPollRef)
     stopPolling(bdArchivePollRef)
     stopPolling(bdWorkflowPollRef)
+    stopPolling(reportPollRef)
   }, [stopPolling])
 
   const beginLogin = useCallback(async accountId => {
@@ -1717,6 +1730,207 @@ function Overlay({ t }) {
     setAiConfirming(false)
     startAiAnalysis(analysisAccountId)
   }, [analysisAccountId, startAiAnalysis])
+
+  // ---------------------------------------------------------------------------
+  // AI 报表（RQ-2026-006 §5.2/§5.3）：两级导航 + 类型 seg + 详情轮询 + regenerate
+  // + 导出。列表数据在返回时保留（不重新请求）；详情 pending/running 每 5s 轮询、
+  // 终态/离开停止；列表页不轮询。
+  // ---------------------------------------------------------------------------
+
+  const reportPollRef = useRef(null)
+  const reportSectionRef = useRef(null)
+  // regenerate 幂等键 attemptUuid：同一次点击重试复用同一 UUID；成功/失败后清空，
+  // 下一次点击生成新 UUID（§5.3；randomUUID 需 secure context，统一降级封装）。
+  const reportAttemptRef = useRef(null)
+  const reportCursorRef = useRef(null)
+  const [reportType, setReportType] = useState('daily')
+  const [reportList, setReportList] = useState({ items: [], loading: false, error: null })
+  const [reportHasMore, setReportHasMore] = useState(false)
+  const [reportDetail, setReportDetail] = useState({
+    reportId: null, report: null, loading: false, error: null, regenerating: false,
+  })
+  const [reportVersions, setReportVersions] = useState([])
+  const [reportActionError, setReportActionError] = useState(null)
+
+  const stopReportPolling = useCallback(() => stopPolling(reportPollRef), [stopPolling])
+
+  const loadReports = useCallback(async ({ more = false } = {}) => {
+    setReportList(prev => ({ ...prev, loading: true, error: more ? prev.error : null }))
+    try {
+      const result = await post({
+        action: 'report.list', reportType, limit: 20,
+        ...(more && reportCursorRef.current ? { cursor: reportCursorRef.current } : {}),
+      })
+      if (result.status !== 'ready') {
+        setReportList(prev => ({ ...prev, loading: false, error: result.reason || 'douyin_operation_request_failed' }))
+        return
+      }
+      const items = Array.isArray(result.data?.items) ? result.data.items : []
+      reportCursorRef.current = result.data?.nextCursor || null
+      setReportHasMore(Boolean(result.data?.nextCursor))
+      setReportList(prev => ({
+        items: more ? [...prev.items, ...items] : items,
+        loading: false,
+        error: null,
+      }))
+    } catch {
+      setReportList(prev => ({ ...prev, loading: false, error: 'douyin_operation_request_failed' }))
+    }
+  }, [reportType])
+
+  // seg 切换重新请求 report.list（§5.2）；详情页不随类型变化。
+  const changeReportType = useCallback(type => {
+    if (type === reportType) return
+    reportCursorRef.current = null
+    setReportType(type)
+  }, [reportType])
+  const reportTypeRef = useRef(reportType)
+  reportTypeRef.current = reportType
+  useEffect(() => {
+    if (tab !== 'report') return
+    reportCursorRef.current = null
+    loadReports().catch(() => {})
+    // 仅在 Tab 进入 / 类型变化时拉列表（列表页不轮询，§5.2）。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, reportType])
+
+  const openReport = useCallback(async reportId => {
+    if (!reportId) return
+    stopReportPolling()
+    setReportActionError(null)
+    setReportDetail({ reportId, report: null, loading: true, error: null, regenerating: false })
+    const fetchDetail = async ({ silent = false } = {}) => {
+      try {
+        const result = await post({ action: 'report.get', reportId })
+        if (result.status !== 'ready') {
+          if (!silent) {
+            setReportDetail(prev => ({ ...prev, loading: false, error: result.reason || 'douyin_operation_request_failed' }))
+          }
+          return null
+        }
+        const report = result.data?.report || null
+        setReportDetail(prev => ({ ...prev, report, loading: false, error: null }))
+        return report
+      } catch {
+        if (!silent) {
+          setReportDetail(prev => ({ ...prev, loading: false, error: 'douyin_operation_request_failed' }))
+        }
+        return null
+      }
+    }
+    const loadVersions = async () => {
+      try {
+        const current = reportDetailRef.current.report
+        if (!current) return
+        const versionsResult = await post({
+          action: 'report.list', reportType: current.reportType,
+          periodStart: current.periodStart, allVersions: true, limit: 50,
+        })
+        if (versionsResult.status === 'ready') {
+          setReportVersions(Array.isArray(versionsResult.data?.items) ? versionsResult.data.items : [])
+        }
+      } catch {
+        setReportVersions([])
+      }
+    }
+    const report = await fetchDetail()
+    if (!report) return
+    if (report.status === 'pending' || report.status === 'running') {
+      stopPolling(reportPollRef)
+      let failures = 0
+      reportPollRef.current = setInterval(() => {
+        fetchDetail({ silent: true }).then(latest => {
+          if (!latest) {
+            failures += 1
+            if (failures >= 5) {
+              stopReportPolling()
+              setReportDetail(prev => ({ ...prev, error: 'douyin_operation_request_failed' }))
+            }
+            return
+          }
+          failures = 0
+          if (latest.status !== 'pending' && latest.status !== 'running') {
+            stopReportPolling()
+            loadVersions().catch(() => {})
+          }
+        }).catch(() => {})
+      }, 5000)
+    }
+    loadVersions().catch(() => {})
+  }, [stopPolling, stopReportPolling])
+
+  // 详情当前值引用（轮询回调 / 版本历史读取，不进依赖数组）。
+  const reportDetailRef = useRef(reportDetail)
+  reportDetailRef.current = reportDetail
+
+  // 返回列表：保留原列表数据，不重新请求（§5.2）。
+  const backToReportList = useCallback(() => {
+    stopReportPolling()
+    setReportDetail({ reportId: null, report: null, loading: false, error: null, regenerating: false })
+    setReportVersions([])
+    setReportActionError(null)
+  }, [stopReportPolling])
+
+  // 历史版本切换：report.get 该版本（只读切换，§5.4 VersionSelect）。
+  const changeReportVersion = useCallback(reportId => {
+    if (reportId && reportId !== reportDetailRef.current.reportId) {
+      openReport(reportId).catch(() => {})
+    }
+  }, [openReport])
+
+  // 重新生成（§5.7）：二次确认 → 幂等受理 → detail 切到新版本并轮询；
+  // reused=true 是 ok 响应（已有生成任务进行中），同样切过去轮询，不是错误分支。
+  const regenerateReport = useCallback(async () => {
+    const current = reportDetailRef.current.report
+    const reportId = current?.reportId || reportDetailRef.current.reportId
+    if (!reportId) return
+    const nextVersion = (Number(current?.version) || 0) + 1
+    if (typeof window !== 'undefined' && typeof window.confirm === 'function') {
+      const confirmed = window.confirm(`将基于当前已回补数据追加新版本 v${nextVersion}，旧版本保留。继续？`)
+      if (!confirmed) return
+    }
+    setReportActionError(null)
+    setReportDetail(prev => ({ ...prev, regenerating: true }))
+    if (!reportAttemptRef.current) {
+      reportAttemptRef.current = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+        ? crypto.randomUUID()
+        : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
+    }
+    try {
+      const result = await post({
+        action: 'report.regenerate', reportId,
+        idempotencyKey: reportRegenerateIdempotencyKey(reportId, reportAttemptRef.current),
+      })
+      if (result.status !== 'ready') {
+        // 失败：错误条展示稳定码中文文案，保留当前内容（§5.7）。
+        setReportDetail(prev => ({ ...prev, regenerating: false }))
+        setReportActionError(result.reason || 'douyin_operation_request_failed')
+        return
+      }
+      // 受理成功：本次点击结束，下一次点击换新 UUID。
+      reportAttemptRef.current = null
+      setReportDetail(prev => ({ ...prev, regenerating: false }))
+      const data = result.data || {}
+      if (data.reused === true) setReportActionError(null)
+      await openReport(data.reportId || reportId)
+    } catch {
+      setReportDetail(prev => ({ ...prev, regenerating: false }))
+      setReportActionError('douyin_operation_request_failed')
+    }
+  }, [openReport])
+
+  // 导出 HTML（§5.6）：序列化详情渲染容器为自包含单文件（内联 fallback token +
+  // 报表作用域 CSS；无外部资源、无 .no-print 操作栏）。
+  const exportReportHtml = useCallback(() => {
+    const container = reportSectionRef.current?.querySelector('.ydo-report-render')
+    if (!container) return
+    const period = reportDetailRef.current.report?.resultJson?.data?.period
+    const html = serializeReportHtml(container, REPORT_CSS_TEXT)
+    downloadReportHtml(html, `${formatPeriodFileStem(period)}.html`)
+  }, [])
+
+  // 导出 PDF：window.print（@media print 隐藏 .no-print，系统另存 PDF）。
+  const exportReportPdf = useCallback(() => { printReport() }, [])
 
   // ---------------------------------------------------------------------------
   // 爆款拆解（0922 方案 §4.2/§5）：归档受理 → 3s 轮询 → 自动 workflow 受理 →
@@ -2229,10 +2443,15 @@ function Overlay({ t }) {
           // 进入拆解 Tab 同样收起 AI 弹框（跨 Tab 不残留弹层）；拆解轮询不随
           // Tab 切换停止——服务端任务继续推进，切回 Tab 仍能看到最新进度。
           onClick: () => { setTab('breakdown'); setAiModalOpen(false) },
-        }, t('tabBreakdown'))),
+        }, t('tabBreakdown')),
+        h('button', {
+          type: 'button', 'aria-current': tab === 'report' || undefined,
+          // 进入报表 Tab 收起 AI 弹框（跨 Tab 不残留弹层）；离开 Tab 停详情轮询。
+          onClick: () => { setTab('report'); setAiModalOpen(false) },
+        }, t('tabReport'))),
       // 左侧账号管理栏只在「视频数据」Tab 显示（UI 优化方案 §3.1）；
       // 账号总览/单账号分析与爆款拆解使用完整宽度内容区（ydo-body-full 单列）。
-      h('div', { className: `ydo-body${tab === 'overview' || tab === 'breakdown' ? ' ydo-body-full' : ''}` },
+      h('div', { className: `ydo-body${tab === 'overview' || tab === 'breakdown' || tab === 'report' ? ' ydo-body-full' : ''}` },
         tab === 'videos' ? left : null,
         tab === 'overview' && analysisAccountId
           ? h('section', { className: 'ydo-right', 'aria-label': t('accountHotWorks') },
@@ -2383,6 +2602,38 @@ function Overlay({ t }) {
                   onStatusFilterChange: setBdStatusFilter,
                   t,
                 })))
+          : tab === 'report'
+          ? h('section', { className: 'ydo-right ydo-report-page', 'aria-label': t('tabReport'), ref: reportSectionRef },
+            reportActionError
+              ? h('p', { className: 'ydo-report-error', role: 'alert' }, reportErrorCopy(reportActionError))
+              : null,
+            reportDetail.reportId
+              ? h(ReportDetailView, {
+                report: reportDetail.report,
+                loading: reportDetail.loading,
+                errorReason: reportDetail.error,
+                regenerating: reportDetail.regenerating,
+                versions: reportVersions,
+                actions: {
+                  onBack: backToReportList,
+                  onVersionChange: changeReportVersion,
+                  onRegenerate: regenerateReport,
+                  onExportHtml: exportReportHtml,
+                  onExportPdf: exportReportPdf,
+                },
+              })
+              : h(ReportListView, {
+                items: reportList.items,
+                loading: reportList.loading,
+                errorReason: reportList.error,
+                reportType,
+                actions: {
+                  onTypeChange: changeReportType,
+                  onRefresh: () => loadReports().catch(() => {}),
+                  onLoadMore: reportHasMore ? () => loadReports({ more: true }).catch(() => {}) : null,
+                  onOpen: reportId => { openReport(reportId).catch(() => {}) },
+                },
+              }))
           : h('section', { className: 'ydo-right', 'aria-label': t('data') },
           h('div', { className: 'ydo-toolbar' },
             h('button', {
@@ -2726,7 +2977,7 @@ const css = `.ydo-button{display:flex;width:36px;height:36px;align-items:center;
 .ydo-bd-download-link{display:flex;min-height:40px;align-items:center;justify-content:center;gap:8px;border-radius:6px;background:var(--dsw-alias-brand-primary);color:var(--dsw-alias-label-primary-foreground);font:inherit;font-size:var(--dsh-content-font-size,14px);font-weight:600;text-decoration:none;cursor:pointer}
 .ydo-bd-download-link:hover{text-decoration:none;filter:opacity(.92)}
 .ydo-bd-download-fallback{display:inline-block;margin-top:10px;color:var(--dsw-alias-brand-primary);font-size:var(--dsh-content-font-size-secondary,13px);text-decoration:underline;text-underline-offset:2px}
-`;
+${REPORT_CSS_TEXT}`;
 function apply(ctx) {
   ctx.effect(() => ctx.locale.register(NS, copy), 'dofe-yootun-douyin-operation: dictionaries')
   ctx.effect(() => { window.addEventListener(OVERLAY_EVENT, closeOtherOverlay); return () => window.removeEventListener(OVERLAY_EVENT, closeOtherOverlay) }, 'dofe-yootun-douyin-operation: exclusive-overlay')
@@ -2738,4 +2989,4 @@ function apply(ctx) {
 
 // 1015 验收：css/copy/页面组件导出供截图脚本（scripts/screenshot.mjs）SSR 渲染
 // 与样式内联使用；运行时行为零改动。
-module.exports = { apply, inject: ['slots', 'locale'], downloadWorkbook, formatCell, formatCount, formatPercent, gapReasonText, hasGap, progressText, BatchPanel, WorkTable, WorkDetailModal, OverviewPage, AnalysisPage, css, copy }
+module.exports = { apply, inject: ['slots', 'locale'], downloadWorkbook, formatCell, formatCount, formatPercent, gapReasonText, hasGap, progressText, BatchPanel, WorkTable, WorkDetailModal, OverviewPage, AnalysisPage, ReportListView, ReportDetailView, css, copy }

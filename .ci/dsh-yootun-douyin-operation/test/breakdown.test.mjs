@@ -839,7 +839,7 @@ test('client.js 接线：Tab 顺序、body-full、Esc 链、轮询守卫、弹�
   assert.ok(clientSource.indexOf("t('tabOverview')") < clientSource.indexOf("t('tabVideos')"))
   assert.ok(clientSource.indexOf("t('tabVideos')") < clientSource.indexOf("t('tabBreakdown')"), '爆款拆解是第三个 Tab')
   // 拆解 Tab 与总览共用单列完整宽度内容区。
-  assert.match(clientSource, /tab === 'overview' \|\| tab === 'breakdown' \? ' ydo-body-full'/u)
+  assert.match(clientSource, /tab === 'overview' \|\| tab === 'breakdown' \|\| tab === 'report' \? ' ydo-body-full'/u)
   // Esc 链：下载弹窗与改写弹框都在 AI 弹框之后、overlay 之前。
   assert.ok(
     clientSource.indexOf("else if (aiModalOpen) setAiModalOpen(false)") < clientSource.indexOf("else if (bdRewriteOpen) setBdRewriteOpen(false)")

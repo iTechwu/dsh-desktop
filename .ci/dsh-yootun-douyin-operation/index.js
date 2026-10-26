@@ -141,6 +141,12 @@ export function apply(ctx, overrides = {}) {
               return send(res, 200, await handleBreakdownExport(deps, toolCtx, body))
             case 'breakdown.history':
               return send(res, 200, await handleBreakdownHistory(deps, toolCtx, body))
+            case 'report.list':
+              return send(res, 200, await handleReportList(deps, toolCtx, body))
+            case 'report.get':
+              return send(res, 200, await handleReportGet(deps, toolCtx, body))
+            case 'report.regenerate':
+              return send(res, 200, await handleReportRegenerate(deps, toolCtx, body))
             default:
               return send(res, 400, { status: 'error', reason: 'unknown_action' })
           }
@@ -1069,6 +1075,62 @@ async function reportSessionStatus(ctx, deps, accountId, state) {
 function cleanString(value, max) {
   if (value === null || value === undefined) return ''
   return String(value).trim().slice(0, max)
+}
+
+// ---------------------------------------------------------------------------
+// AI 报表（RQ-2026-006 §5.3）：list/get 只读；regenerate 写（幂等键必需，键由
+// 页面生成并经模板前缀校验）。响应统一 {status:'ready'|'error', ...}——错误只回
+// 稳定码（callTool 白名单收敛），不透传传输错误或原始报文。
+// ---------------------------------------------------------------------------
+
+const REPORT_REGENERATE_KEY_PATTERN = /^douyin:report_regenerate:.+:.+$/
+
+async function handleReportList(deps, ctx, body) {
+  const args = {}
+  const reportType = cleanString(body.reportType, 8)
+  if (reportType) {
+    if (reportType !== 'daily' && reportType !== 'weekly') {
+      return { status: 'error', reason: 'VALIDATION_ERROR' }
+    }
+    args.reportType = reportType
+  }
+  const periodStart = cleanString(body.periodStart, 10)
+  if (periodStart) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(periodStart)) {
+      return { status: 'error', reason: 'VALIDATION_ERROR' }
+    }
+    args.periodStart = periodStart
+  }
+  const status = cleanString(body.status, 16)
+  if (status) args.status = status
+  const limit = Number(body.limit)
+  if (Number.isFinite(limit)) args.limit = Math.min(Math.max(Math.trunc(limit), 1), 100)
+  const cursor = cleanString(body.cursor, 512)
+  if (cursor) args.cursor = cursor
+  if (body.allVersions === true) args.allVersions = true
+  const payload = await callTool(ctx, 'douyin_report_list', args)
+  return { status: 'ready', data: payload }
+}
+
+async function handleReportGet(deps, ctx, body) {
+  const reportId = cleanString(body.reportId, MAX_ID)
+  if (!reportId) return { status: 'error', reason: 'VALIDATION_ERROR' }
+  const payload = await callTool(ctx, 'douyin_report_get', { reportId })
+  return { status: 'ready', data: payload }
+}
+
+async function handleReportRegenerate(deps, ctx, body) {
+  const reportId = cleanString(body.reportId, MAX_ID)
+  if (!reportId) return { status: 'error', reason: 'VALIDATION_ERROR' }
+  const idempotencyKey = cleanString(body.idempotencyKey, 128)
+  if (!idempotencyKey) return { status: 'error', reason: 'idempotency_key_required' }
+  // 键模板与 tools 服务端 common.require_report_regenerate_idempotency_key 的
+  // 结构校验一致：douyin:report_regenerate:{reportId}:{attemptUuid}（两段非空）。
+  if (!REPORT_REGENERATE_KEY_PATTERN.test(idempotencyKey)) {
+    return { status: 'error', reason: 'INVALID_IDEMPOTENCY_KEY' }
+  }
+  const payload = await callTool(ctx, 'douyin_report_regenerate', { reportId, idempotencyKey })
+  return { status: 'ready', data: payload }
 }
 
 async function readBody(req) {

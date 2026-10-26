@@ -8,6 +8,8 @@ const uiFormatImport = /^import \{[\s\S]*?\} from '\.\/ui-format\.js'\n/m
 const overviewUiImport = /^import \{[\s\S]*?\} from '\.\/overview-ui\.js'\n/m
 const analysisUiImport = /^import \{[\s\S]*?\} from '\.\/analysis-ui\.js'\n/m
 const breakdownUiImport = /^import \{[\s\S]*?\} from '\.\/breakdown\.js'\n/m
+// RQ-2026-006：report-ui（AI 报表 Tab）同法内联（先于引用它的 client.js）。
+const reportUiImport = /^import \{[\s\S]*?\} from '\.\/report-ui\.js'\n/m
 // 1015 阶段 3：trend-chart 共享模块（作品详情弹框与 analysis-ui 复用同一趋势绘制），
 // 与 ui-format 同法内联（先于引用它的 analysis-ui / client.js）。
 const trendChartImport = /^import \{[^}]*\} from '\.\/trend-chart\.js'\n/m
@@ -22,6 +24,8 @@ if (!analysisUiImport.test(source)) throw new Error('build: analysis-ui import n
 source = source.replace(analysisUiImport, '')
 if (!breakdownUiImport.test(source)) throw new Error('build: breakdown import not found in client.js')
 source = source.replace(breakdownUiImport, '')
+if (!reportUiImport.test(source)) throw new Error('build: report-ui import not found in client.js')
+source = source.replace(reportUiImport, '')
 if (!trendChartImport.test(source)) throw new Error('build: trend-chart import not found in client.js')
 source = source.replace(trendChartImport, '')
 const strip = text => text.replace(/^export (?=(function|const|let))/gm, '').trimEnd()
@@ -71,7 +75,16 @@ const breakdownUi = strip(
   ),
 )
 const trendChart = strip(await readFile(new URL('src/trend-chart.js', root), 'utf8'))
-const body = [uiFormat, selectUi, trendChart, overviewUi, analysisUi, breakdownUi, source.trimEnd()].join('\n\n')
+// report-ui 与 overview-ui 同法（顶部 const React + 解构 h；无 ui-format 依赖——
+// 报表的格式化函数自包含在 report-ui.js，避免与 ui-format 同名导出混淆）。
+const reportUi = strip(
+  stripUiPrimitivesRequire(
+    stripOverviewStyleReact(
+      await readFile(new URL('src/report-ui.js', root), 'utf8'),
+    ),
+  ),
+)
+const body = [uiFormat, selectUi, trendChart, overviewUi, analysisUi, breakdownUi, reportUi, source.trimEnd()].join('\n\n')
 
 await mkdir(new URL('lib/', root), { recursive: true })
 await writeFile(new URL('lib/client.js', root), ['window.__ModuleLoader__.load({', '  id: "@dofe/dsh-yootun-douyin-operation",', '  factory: (require) => {', '    var module = { exports: {} };', '    var exports = module.exports;', body.split('\n').map(line => line === '' ? '' : `    ${line}`).join('\n'), '    return module.exports;', '  },', '});', ''].join('\n'))

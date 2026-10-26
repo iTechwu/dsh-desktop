@@ -1544,7 +1544,7 @@ test('Tab 激活态：只有当前 Tab 有底部指示线；左侧账号栏只�
   assert.ok(source.indexOf("'aria-current': tab === 'overview' || undefined") < source.indexOf("'aria-current': tab === 'videos' || undefined"))
   // 左侧账号管理栏只在视频数据 Tab 渲染；总览/单账号分析与爆款拆解（0922）占满整行。
   assert.match(source, /tab === 'videos' \? left : null/u)
-  assert.match(source, /className: `ydo-body\$\{tab === 'overview' \|\| tab === 'breakdown' \? ' ydo-body-full' : ''\}`/u)
+  assert.match(source, /className: `ydo-body\$\{tab === 'overview' \|\| tab === 'breakdown' \|\| tab === 'report' \? ' ydo-body-full' : ''\}`/u)
   const css = source.match(/const css = `[\s\S]*`/u)[0]
   assert.match(css, /\.ydo-body-full\{grid-template-columns:1fr\}/u)
 })
