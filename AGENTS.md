@@ -2,6 +2,16 @@
 
 This repository owns the desktop product around an unmodified DeepSeek Harness checkout.
 
+## Plugin snapshot sync (docker-helm source of truth)
+
+`.ci/<plugin>/` snapshots are materialized from the docker-helm sibling
+(`../docker-helm.dofe.ai/plugins/<plugin>`, see `scripts/prepare-dofe-ui.mjs`)
+and are the only plugin source for the desktop CI build. After pulling plugin
+changes from docker-helm, re-run the materialization (or `cp -r` excluding
+`node_modules`) and commit the snapshot in the same change — a stale snapshot
+ships a desktop client without the feature. Verify with
+`diff -r --exclude=node_modules ../docker-helm.dofe.ai/plugins/<plugin> .ci/<plugin>`.
+
 ## Workflow contract
 
 - After every modification to this repository, commit the change (每次修改之后进行 commit). Keep each change in a small, reviewable commit.
