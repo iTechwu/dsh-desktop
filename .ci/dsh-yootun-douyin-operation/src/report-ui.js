@@ -284,10 +284,8 @@ function hideChartTip() {
   if (reportChartTipNode) reportChartTipNode.style.display = 'none'
 }
 
-// 右轴（净粉）刻度：范围上下沿 + 中线三档；线点 circle 悬停显示日期与净粉数值。
-  const rightTicks = lineBound
-    ? [lineBound.max, (lineBound.max + lineBound.min) / 2, lineBound.min]
-    : []
+  // 净粉数值只在线点悬停 tooltip 展示（demo UI 口径）。不画常驻右轴刻度：
+  // 真机实测常驻「净粉 xx」会被误读成悬停值（2026-10-27 用户反馈）。
   const lineDots = linePoints
     .map((point, index) => {
       if (!point) return null
@@ -318,6 +316,10 @@ function hideChartTip() {
         notes.map(([label, text]) => metaLine(label, text)))]
       : []),
     h('svg', { viewBox: `0 0 ${CHART_W} ${CHART_H}`, className: 'ydo-report-chart-svg', role: 'img' },
+      // 柱体蓝渐变（与验证页 demo UI 的 gBar 同色标）。
+      h('defs', null, h('linearGradient', { id: 'ydo-report-bar-gradient', x1: '0', y1: '0', x2: '0', y2: '1' },
+        h('stop', { offset: '0', 'stop-color': '#7aa5ff' }),
+        h('stop', { offset: '1', 'stop-color': '#c8d9ff' }))),
       gridLines.map(ratio => {
         const y = CHART_PAD.top + plotH - plotH * ratio
         const label = formatChartAxisLabel(maxBar * ratio)
@@ -332,13 +334,6 @@ function hideChartTip() {
           }, label),
         ]
       }),
-      rightTicks.map((value, index) => h('text', {
-        key: `right-${index}`,
-        x: CHART_W - 4,
-        y: (CHART_PAD.top + plotH - ((Number(value) - lineBound.min) / (lineBound.max - lineBound.min)) * plotH + 4).toFixed(1),
-        textAnchor: 'end',
-        className: 'ydo-report-chart-text',
-      }, `净粉 ${reportCountText(Math.round(Number(value) * 10) / 10)}`)),
       shape.bars.map((value, index) => {
         const height = value === null || value === undefined ? 0 : (Number(value) / maxBar) * plotH
         const x = CHART_PAD.left + slot * index + (slot - barWidth) / 2
@@ -821,6 +816,10 @@ export const REPORT_CSS_TEXT = `
 .ydo-report-error-text{color:var(--dsw-alias-status-red,#d83931);font-size:12px}
 .ydo-report-error{color:var(--dsw-alias-status-red,#d83931);font-size:13px}
 .ydo-report-empty-line{color:var(--dsw-alias-label-secondary,#646a73);font-size:13px}
+/* 报表页滚动容器：复用的 .ydo-right 是 overflow:hidden 的 grid（为作品 Tab 的四行结构设计），
+   报表详情（头部+KPI+图表+明细+作品卡）远超一屏，必须自带纵向滚动，否则真机下半页不可达
+   （2026-10-27 用户反馈）。display:block 覆盖 grid 行模板，内容自然流式排布。 */
+.ydo-report-page{display:block;overflow:auto}
 .ydo-report-toolbar{display:flex;align-items:center;gap:12px;padding-bottom:12px;flex-wrap:wrap}
 .ydo-report-toolbar-actions{margin-left:auto;display:flex;align-items:center;gap:8px}
 .ydo-report-busy{color:var(--dsw-alias-label-secondary,#646a73);font-size:12px}
@@ -838,9 +837,13 @@ export const REPORT_CSS_TEXT = `
 .ydo-report-kpi{border:1px solid var(--dsw-alias-border-secondary,#dee0e3);border-radius:8px;padding:12px;background:var(--dsw-alias-bg-primary,#fff)}
 .ydo-report-kpi-label{color:var(--dsw-alias-label-secondary,#646a73);font-size:12px}
 .ydo-report-kpi-value{margin-top:4px;font-size:20px;font-weight:650;font-variant-numeric:tabular-nums}
+/* 环比方向色（2026-10-26 用户定稿：涨红跌绿，不随 goodDirection 反转）。
+   固定色值与验证页 demo UI（--ydo-danger/--ydo-up）一致：桌面宿主主题的
+   --dsw-alias-* 变量是黑色系品牌色，走变量会把涨跌渲染成黑灰（真机实测）。
+   注意：此处是 CSS 文本，注释必须用块注释，// 会让解析器连同下一条规则一起丢弃。 */
 .ydo-report-kpi-change{margin-left:8px;font-size:12px;font-weight:400}
-.ydo-report-kpi-change-good{color:var(--dsw-alias-status-green,#2ea121)}
-.ydo-report-kpi-change-bad{color:var(--dsw-alias-status-red,#d83931)}
+.ydo-report-kpi-change-up{color:#d64545}
+.ydo-report-kpi-change-down{color:#1a7f37}
 .ydo-report-kpi-change-flat{color:var(--dsw-alias-label-secondary,#646a73)}
 .ydo-report-kpi-note{margin-top:4px;color:var(--dsw-alias-label-secondary,#646a73);font-size:11px}
 .ydo-report-section-title{margin:0 0 8px;font-size:14px}
@@ -850,11 +853,15 @@ export const REPORT_CSS_TEXT = `
 .ydo-report-chart-notes .ydo-report-meta-k{background:var(--dsw-alias-bg-layer-2,#eceef1);color:var(--dsw-alias-label-secondary,#646a73)}
 .ydo-report-chart-grid{stroke:var(--dsw-alias-border-secondary,#dee0e3);stroke-width:1}
 .ydo-report-chart-text{fill:var(--dsw-alias-label-secondary,#646a73);font-size:11px}
-.ydo-report-chart-bar{fill:url(#ydo-report-bar-gradient);fill:var(--dsw-alias-brand-primary,#3370ff);opacity:.45}
-.ydo-report-chart-bar-last{opacity:1}
+/* 图表色（2026-10-27 用户定稿）：柱 = 蓝渐变（SVG 内 defs #ydo-report-bar-gradient），
+   最新一期 = 实色深蓝 #2f6bff，净粉线/点 = 橙黄 #de7802（用户明确不要绿色，保留原橙黄）。
+   不用宿主 --dsw-alias-brand-primary：桌面主题品牌色是黑色系，
+   真机实测柱体被渲染成黑/灰。 */
+.ydo-report-chart-bar{fill:url(#ydo-report-bar-gradient);opacity:.45}
+.ydo-report-chart-bar-last{fill:#2f6bff;opacity:1}
 .ydo-report-chart-bar-gap{opacity:.15}
-.ydo-report-chart-line{stroke:var(--dsw-alias-status-orange,#de7802);stroke-width:2}
-.ydo-report-chart-dot{fill:var(--dsw-alias-status-orange,#de7802)}
+.ydo-report-chart-line{stroke:#de7802;stroke-width:2}
+.ydo-report-chart-dot{fill:#de7802}
 .ydo-report-chart-tip{position:fixed;z-index:999;display:none;padding:6px 10px;border-radius:6px;background:var(--dsw-alias-label-primary,#1f2329);color:var(--dsw-alias-label-primary-foreground,#fff);font-size:12px;line-height:1.5;pointer-events:none;white-space:nowrap;box-shadow:0 4px 12px rgba(0,0,0,.18)}
 .ydo-report-chart-empty{margin-top:8px;color:var(--dsw-alias-label-secondary,#646a73);font-size:12px}
 .ydo-report-table-wrap{overflow-x:auto;border:1px solid var(--dsw-alias-border-secondary,#dee0e3);border-radius:8px;background:var(--dsw-alias-bg-primary,#fff)}
@@ -876,7 +883,7 @@ export const REPORT_CSS_TEXT = `
 .ydo-report-work-metrics dd{margin:0;font-size:14px;font-weight:650;font-variant-numeric:tabular-nums}
 .ydo-report-work-secondary{display:flex;flex-wrap:wrap;gap:8px;color:var(--dsw-alias-label-secondary,#646a73);font-size:11px}
 .ydo-report-work-progress{margin-top:8px;height:6px;border-radius:999px;background:var(--dsw-alias-bg-layer-2,#f5f6f7);overflow:hidden}
-.ydo-report-work-progress-bar{height:100%;border-radius:999px;background:var(--dsw-alias-brand-primary,#3370ff)}
+.ydo-report-work-progress-bar{height:100%;border-radius:999px;background:#3370ff}
 .ydo-report-anomalies{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:8px}
 .ydo-report-anomaly{border-radius:8px;padding:10px 12px;font-size:13px}
 .ydo-report-anomaly strong{margin-right:8px}
