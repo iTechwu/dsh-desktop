@@ -22,6 +22,10 @@ if (location.protocol === 'dsh-app:' && location.hostname === 'app') {
     state: () => ipcRenderer.invoke(IPC.state),
     browserLinks: () => ipcRenderer.invoke(IPC.browserLinks),
     command: (command: unknown) => ipcRenderer.invoke(IPC.command, command),
+    // In-app report PDF export; the main process renders the self-contained HTML
+    // off-screen and writes the file (no Chromium print preview).
+    exportReportPdf: (payload: { html: string; filename: string }) =>
+      ipcRenderer.invoke(IPC.reportExportPdf, payload),
   })
   // dsh 0.1.7 implements the native Sidebar browser itself and reads its transport from this
   // carrier; without `browser` the official plugin silently falls back to the sandboxed iframe.

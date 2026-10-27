@@ -28,6 +28,7 @@ import { createNativePermissions, installMediaPermissions } from './electron-per
 import { readDataDirectory, validateDataDirectory } from './data-directory.ts'
 import { maskSecrets } from './mask-secrets.ts'
 import { DesktopBrowserGuests } from './browser-guests.ts'
+import { exportReportPdf } from './report-pdf.ts'
 import { PlatformLoginWindow } from './platform-login-window.ts'
 import { NextUpdates } from './updates.ts'
 import { NextUpdateInstaller } from './update-installer.ts'
@@ -685,6 +686,13 @@ async function main(): Promise<void> {
     return browserGuests.release(event.sender, lease)
   })
   ipcMain.handle(IPC.permissionQuery, (event, permission: unknown) => { assertDesktopSender(event); return permissions.query(permission) })
+  // In-app report PDF export (see report-pdf.ts): skips Chromium print preview, whose
+  // close leaves the WebContents blank in the packaged app.
+  ipcMain.handle(IPC.reportExportPdf, async (event, payload: unknown) => {
+    assertSender(event, mainWindow, APP_URL)
+    const parent = BrowserWindow.fromWebContents(event.sender) ?? mainWindow
+    return exportReportPdf(parent, payload)
+  })
   const permissionGesture = async (event: IpcMainInvokeEvent): Promise<void> => {
     assertDesktopSender(event)
     if (!event.sender.isFocused() || !await event.sender.executeJavaScript('navigator.userActivation.isActive')) {

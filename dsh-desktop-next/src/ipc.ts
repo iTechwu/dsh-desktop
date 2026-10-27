@@ -3,6 +3,7 @@ export const IPC = {
   state: 'dsh-next:state', command: 'dsh-next:command',
   settingsOpen: 'dsh-next:settings-open', settingsTake: 'dsh-next:settings-take',
   browserLinks: 'dsh-next:browser-links',
+  reportExportPdf: 'dsh-next:report-export-pdf',
   browserAcquire: 'dsh-next:browser-acquire', browserRelease: 'dsh-next:browser-release',
   browserOpenRequested: 'dsh-next:browser-open-requested',
   permissionQuery: 'dsh-next:permission-query', permissionRequest: 'dsh-next:permission-request', permissionSettings: 'dsh-next:permission-settings',
