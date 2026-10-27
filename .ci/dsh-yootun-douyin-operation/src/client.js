@@ -562,6 +562,13 @@ const ERROR_COPY = Object.freeze({
   export_failed: 'exportFailed',
 })
 
+// AI 报表重新生成幂等键(RQ-2026-006 §4.4/§5.7):douyin:report_regenerate:{reportId}:{attemptUuid}。
+// 模板必须与 tools 侧 src/tools-client.js 的 reportRegenerateIdempotencyKey 完全一致,
+// report-ui.test.mjs 有源码契约断言防漂移。不直接 import tools-client.js——那是设备端
+// 采集链路模块,不在 lib 构建拼接白名单内(2026-10-27 真机 ReferenceError 教训)。
+const reportRegenerateIdempotencyKey = (reportId, attemptUuid) =>
+  `douyin:report_regenerate:${reportId}:${attemptUuid}`
+
 async function post(body) {
   const response = await fetch(PATH, {
     method: 'POST',
@@ -1922,7 +1929,10 @@ function Overlay({ t }) {
       const data = result.data || {}
       if (data.reused === true) setReportActionError(null)
       await openReport(data.reportId || reportId)
-    } catch {
+    } catch (error) {
+      // 不静默吞错:ReferenceError 之类的实现缺陷也走这里,无痕会让「请求根本没发出」
+      // 误判为服务端失败(2026-10-27 真机 idempotencyKey 未导入教训)。
+      console.warn('[dofe-yootun-douyin-operation] report.regenerate failed', { reportId, error })
       setReportDetail(prev => ({ ...prev, regenerating: false }))
       setReportActionError('douyin_operation_request_failed')
     }

@@ -3119,7 +3119,10 @@ window.__ModuleLoader__.load({
     // ReportTrendChart（§5.5 SVG 算法：客户端只画不算）
     // ---------------------------------------------------------------------------
 
-    const CHART_W = 960
+    /* 宽度取详情页 SVG 实际容器宽:1180(页宽) - 48(section 左右 padding) - 24(figure 左右
+       padding) - 2(figure 边框) = 1106。与容器 1:1 时 width:100% 不产生等比缩放,
+       消除 960 视口下 preserveAspectRatio meet 的两侧留白(2026-10-27 用户要求填满)。 */
+    const CHART_W = 1106
     const CHART_H = 240
     const CHART_PAD = { top: 16, right: 16, bottom: 28, left: 56 }
 
@@ -4414,6 +4417,13 @@ window.__ModuleLoader__.load({
       export_too_large: 'exportTooLarge',
       export_failed: 'exportFailed',
     })
+
+    // AI 报表重新生成幂等键(RQ-2026-006 §4.4/§5.7):douyin:report_regenerate:{reportId}:{attemptUuid}。
+    // 模板必须与 tools 侧 src/tools-client.js 的 reportRegenerateIdempotencyKey 完全一致,
+    // report-ui.test.mjs 有源码契约断言防漂移。不直接 import tools-client.js——那是设备端
+    // 采集链路模块,不在 lib 构建拼接白名单内(2026-10-27 真机 ReferenceError 教训)。
+    const reportRegenerateIdempotencyKey = (reportId, attemptUuid) =>
+      `douyin:report_regenerate:${reportId}:${attemptUuid}`
 
     async function post(body) {
       const response = await fetch(PATH, {
@@ -5775,7 +5785,10 @@ window.__ModuleLoader__.load({
           const data = result.data || {}
           if (data.reused === true) setReportActionError(null)
           await openReport(data.reportId || reportId)
-        } catch {
+        } catch (error) {
+          // 不静默吞错:ReferenceError 之类的实现缺陷也走这里,无痕会让「请求根本没发出」
+          // 误判为服务端失败(2026-10-27 真机 idempotencyKey 未导入教训)。
+          console.warn('[dofe-yootun-douyin-operation] report.regenerate failed', { reportId, error })
           setReportDetail(prev => ({ ...prev, regenerating: false }))
           setReportActionError('douyin_operation_request_failed')
         }

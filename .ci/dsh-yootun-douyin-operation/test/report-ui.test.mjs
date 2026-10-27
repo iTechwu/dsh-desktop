@@ -97,6 +97,18 @@ test('TF-01 TOOL_NAMES 含 3 个报表工具且错误码白名单含 13 个 REPO
   assert.ok(toolsClient.includes('douyin:report_regenerate:'))
 })
 
+test('TF-01b client.js 重新生成幂等键为本地定义且与 tools-client 模板一致(不 import tools-client)', async () => {
+  const client = await readFile(new URL('../src/client.js', import.meta.url), 'utf8')
+  const toolsClient = await readFile(new URL('../src/tools-client.js', import.meta.url), 'utf8')
+  // client.js 不允许 import tools-client.js:那是设备端采集链路模块,不在 lib 构建
+  // 拼接白名单内,import 会在构建产物里留下未定义标识符(2026-10-27 真机 ReferenceError)。
+  assert.ok(!client.includes("from './tools-client.js'"), 'client.js must not import tools-client.js')
+  // 本地定义与服务端键模板一致(变量名对齐 tools-client.js:358)。
+  const template = 'douyin:report_regenerate:${reportId}:${attemptUuid}'
+  assert.ok(client.includes(template), 'client.js local idempotency key template')
+  assert.ok(toolsClient.includes(template), 'tools-client.js key template')
+})
+
 test('TF-02 index.js 登记 report.list/get/regenerate action 且键模板校验两段结构', async () => {
   const index = await readFile(new URL('../index.js', import.meta.url), 'utf8')
   for (const action of ['report.list', 'report.get', 'report.regenerate']) {

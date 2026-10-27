@@ -175,7 +175,10 @@ export function ReportKpiCard({ metric, reportType }) {
 // ReportTrendChart（§5.5 SVG 算法：客户端只画不算）
 // ---------------------------------------------------------------------------
 
-const CHART_W = 960
+/* 宽度取详情页 SVG 实际容器宽:1180(页宽) - 48(section 左右 padding) - 24(figure 左右
+   padding) - 2(figure 边框) = 1106。与容器 1:1 时 width:100% 不产生等比缩放,
+   消除 960 视口下 preserveAspectRatio meet 的两侧留白(2026-10-27 用户要求填满)。 */
+const CHART_W = 1106
 const CHART_H = 240
 const CHART_PAD = { top: 16, right: 16, bottom: 28, left: 56 }
 
