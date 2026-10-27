@@ -161,13 +161,13 @@ export function ReportKpiCard({ metric, reportType }) {
     : reportCountText(metric.prevValue)
   return h('div', { className: 'ydo-report-kpi' },
     h('div', { className: 'ydo-report-kpi-label' }, metric.label || metric.key),
-    h('div', { className: 'ydo-report-kpi-value' },
-      value,
-      change !== null
-        ? h('span', { className: `ydo-report-kpi-change ydo-report-kpi-change-${changeKind}` },
-          `${base} ${change}${prev !== null ? ` · 上期 ${prev}` : ''}`)
-        : h('span', { className: 'ydo-report-kpi-change ydo-report-kpi-change-flat' },
-          `${base} 无对比基准`)),
+    h('div', { className: 'ydo-report-kpi-value' }, value),
+    // 环比 delta 独立成块放在数值下方（demo UI 口径），不内联跟随数值（真机反馈太挤）。
+    change !== null
+      ? h('div', { className: `ydo-report-kpi-change ydo-report-kpi-change-${changeKind}` },
+        `${base} ${change}${prev !== null ? ` · 上期 ${prev}` : ''}`)
+      : h('div', { className: 'ydo-report-kpi-change ydo-report-kpi-change-flat' },
+        `${base} 无对比基准`),
     metric.note ? h('div', { className: 'ydo-report-kpi-note' }, metric.note) : null)
 }
 
@@ -841,7 +841,7 @@ export const REPORT_CSS_TEXT = `
    固定色值与验证页 demo UI（--ydo-danger/--ydo-up）一致：桌面宿主主题的
    --dsw-alias-* 变量是黑色系品牌色，走变量会把涨跌渲染成黑灰（真机实测）。
    注意：此处是 CSS 文本，注释必须用块注释，// 会让解析器连同下一条规则一起丢弃。 */
-.ydo-report-kpi-change{margin-left:8px;font-size:12px;font-weight:400}
+.ydo-report-kpi-change{margin-top:6px;font-size:12px;font-weight:650}
 .ydo-report-kpi-change-up{color:#d64545}
 .ydo-report-kpi-change-down{color:#1a7f37}
 .ydo-report-kpi-change-flat{color:var(--dsw-alias-label-secondary,#646a73)}
