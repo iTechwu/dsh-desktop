@@ -861,7 +861,9 @@ export const REPORT_CSS_TEXT = `
 /* 区块标题:蓝色竖杆 + 15px,与验证页 demo UI 的 .ydo-section h2 一致。 */
 .ydo-report-section-title{margin:0 0 10px;padding-left:10px;border-left:3px solid #3370ff;font-size:15px}
 .ydo-report-chart{margin:0;border:1px solid var(--dsw-alias-border-secondary,#dee0e3);border-radius:8px;padding:12px;background:var(--dsw-alias-bg-primary,#fff)}
-.ydo-report-chart-svg{width:100%;height:auto;display:block}
+/* 趋势图高度锁定 240px(验证页口径):height:auto 会随容器变宽等比放大整图(1180 容器下约 1.2 倍),
+   视觉过大不协调;锁定后窄容器仍等比缩小自适应,宽容器保持原生大小不再放大。 */
+.ydo-report-chart-svg{width:100%;height:240px;display:block}
 .ydo-report-chart-notes{display:grid;gap:2px;margin-bottom:8px;font-size:12px}
 .ydo-report-chart-notes .ydo-report-meta-k{background:#eceef1;color:#646a73}
 .ydo-report-chart-grid{stroke:var(--dsw-alias-border-secondary,#dee0e3);stroke-width:1}
