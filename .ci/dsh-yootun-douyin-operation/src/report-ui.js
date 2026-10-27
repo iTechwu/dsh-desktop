@@ -844,20 +844,20 @@ export function printReport() {
 
 export const REPORT_CSS_TEXT = `
 .ydo-report-list-toolbar{display:flex;align-items:center;gap:12px;padding:0 0 12px}
-.ydo-report-seg{display:inline-flex;border:1px solid var(--dsw-alias-border-secondary,#dee0e3);border-radius:6px;overflow:hidden}
-.ydo-report-seg-item{height:32px;padding:0 16px;border:0;background:var(--dsw-alias-bg-primary,#fff);color:var(--dsw-alias-label-secondary,#646a73);font:inherit;font-size:13px;cursor:pointer}
+.ydo-report-seg{display:inline-flex;border:1px solid var(--dsw-alias-border-l1,#e0e3e8);border-radius:6px;overflow:hidden}
+.ydo-report-seg-item{height:32px;padding:0 16px;border:0;background:#fff;color:var(--dsw-alias-label-secondary,#646a73);font:inherit;font-size:13px;cursor:pointer}
 .ydo-report-seg-item.is-active{background:#3370ff;color:#fff}
-.ydo-report-action{height:32px;padding:0 14px;border:1px solid var(--dsw-alias-border-secondary,#dee0e3);border-radius:6px;background:var(--dsw-alias-bg-primary,#fff);color:var(--dsw-alias-label-primary,#1f2329);font:inherit;font-size:13px;cursor:pointer}
+.ydo-report-action{height:32px;padding:0 14px;border:1px solid var(--dsw-alias-border-l1,#e0e3e8);border-radius:6px;background:#fff;color:var(--dsw-alias-label-primary,#1f2329);font:inherit;font-size:13px;cursor:pointer}
 .ydo-report-action:disabled{opacity:.5;cursor:not-allowed}
 .ydo-report-more{margin:12px auto 0;display:block}
 .ydo-report-pill{display:inline-block;padding:2px 10px;border-radius:999px;font-size:12px;line-height:18px}
-.ydo-report-pill-ok{background:var(--dsw-alias-status-green,#2ea121);color:#fff}
-.ydo-report-pill-warn{background:var(--dsw-alias-status-orange,#de7802);color:#fff}
-.ydo-report-pill-err{background:var(--dsw-alias-status-red,#d83931);color:#fff}
+.ydo-report-pill-ok{background:#2ea121;color:#fff}
+.ydo-report-pill-warn{background:#de7802;color:#fff}
+.ydo-report-pill-err{background:#d83931;color:#fff}
 .ydo-report-pill-busy,.ydo-report-pill-muted{background:var(--dsw-alias-bg-layer-2,#f5f6f7);color:var(--dsw-alias-label-secondary,#646a73)}
 .ydo-report-note{color:var(--dsw-alias-label-secondary,#646a73);font-size:12px;max-width:280px}
-.ydo-report-error-text{color:var(--dsw-alias-status-red,#d83931);font-size:12px}
-.ydo-report-error{color:var(--dsw-alias-status-red,#d83931);font-size:13px}
+.ydo-report-error-text{color:#d83931;font-size:12px}
+.ydo-report-error{color:#d83931;font-size:13px}
 .ydo-report-empty-line{color:var(--dsw-alias-label-secondary,#646a73);font-size:13px}
 /* 报表页滚动容器：复用的 .ydo-right 是 overflow:hidden 的 grid（为作品 Tab 的四行结构设计），
    报表详情（头部+KPI+图表+明细+作品卡）远超一屏，必须自带纵向滚动，否则真机下半页不可达
@@ -870,17 +870,17 @@ export const REPORT_CSS_TEXT = `
 .ydo-report-toolbar-actions{margin-left:auto;display:flex;align-items:center;gap:8px}
 .ydo-report-busy{color:var(--dsw-alias-label-secondary,#646a73);font-size:12px}
 .ydo-report-version{display:inline-flex;align-items:center;gap:6px;font-size:13px;color:var(--dsw-alias-label-secondary,#646a73)}
-.ydo-report-version select{height:30px;border:1px solid var(--dsw-alias-border-secondary,#dee0e3);border-radius:6px;background:var(--dsw-alias-bg-primary,#fff);color:var(--dsw-alias-label-primary,#1f2329);font:inherit}
+.ydo-report-version select{height:30px;border:1px solid #dee0e3;border-radius:6px;background:#fff;color:var(--dsw-alias-label-primary,#1f2329);font:inherit}
 .ydo-report-body{display:flex;flex-direction:column;gap:20px}
-.ydo-report-header{border:1px solid var(--dsw-alias-border-secondary,#dee0e3);border-radius:8px;padding:16px;background:var(--dsw-alias-bg-primary,#fff)}
+.ydo-report-header{border:1px solid var(--dsw-alias-border-l1,#e0e3e8);border-radius:8px;padding:16px;background:var(--dsw-alias-bg-layer-1,#fff)}
 .ydo-report-title{margin:0 0 6px;font-size:18px}
 .ydo-report-meta{margin:0 0 8px;color:var(--dsw-alias-label-secondary,#646a73);font-size:12px;line-height:2.05}
 .ydo-report-meta-line{min-width:0}
 .ydo-report-meta-k{display:inline-block;margin-right:8px;padding:1px 8px;border-radius:4px;background:#eaf1ff;color:#3370ff;font-size:11px;font-weight:600}
 .ydo-report-quality{display:flex;gap:16px;flex-wrap:wrap;font-size:12px;color:var(--dsw-alias-label-primary,#1f2329)}
-.ydo-report-quality-missing{color:var(--dsw-alias-status-orange,#de7802)}
+.ydo-report-quality-missing{color:#de7802}
 .ydo-report-kpi-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
-.ydo-report-kpi{border:1px solid var(--dsw-alias-border-secondary,#dee0e3);border-radius:8px;padding:12px;background:var(--dsw-alias-bg-primary,#fff)}
+.ydo-report-kpi{border:1px solid var(--dsw-alias-border-l1,#e0e3e8);border-radius:8px;padding:12px;background:var(--dsw-alias-bg-layer-1,#fff)}
 .ydo-report-kpi-label{color:var(--dsw-alias-label-secondary,#646a73);font-size:12px}
 .ydo-report-kpi-value{margin-top:4px;font-size:20px;font-weight:650;font-variant-numeric:tabular-nums}
 /* 环比方向色（2026-10-26 用户定稿：涨红跌绿，不随 goodDirection 反转）。
@@ -894,13 +894,13 @@ export const REPORT_CSS_TEXT = `
 .ydo-report-kpi-note{margin-top:4px;color:var(--dsw-alias-label-secondary,#646a73);font-size:11px}
 /* 区块标题:蓝色竖杆 + 15px,与验证页 demo UI 的 .ydo-section h2 一致。 */
 .ydo-report-section-title{margin:0 0 10px;padding-left:10px;border-left:3px solid #3370ff;font-size:15px}
-.ydo-report-chart{margin:0;border:1px solid var(--dsw-alias-border-secondary,#dee0e3);border-radius:8px;padding:12px;background:var(--dsw-alias-bg-primary,#fff)}
+.ydo-report-chart{margin:0;border:1px solid var(--dsw-alias-border-l1,#e0e3e8);border-radius:8px;padding:12px;background:var(--dsw-alias-bg-layer-1,#fff)}
 /* 趋势图高度锁定 240px(验证页口径):height:auto 会随容器变宽等比放大整图(1180 容器下约 1.2 倍),
    视觉过大不协调;锁定后窄容器仍等比缩小自适应,宽容器保持原生大小不再放大。 */
 .ydo-report-chart-svg{width:100%;height:240px;display:block}
 .ydo-report-chart-notes{display:grid;gap:2px;margin-bottom:8px;font-size:12px}
 .ydo-report-chart-notes .ydo-report-meta-k{background:#eceef1;color:#646a73}
-.ydo-report-chart-grid{stroke:var(--dsw-alias-border-secondary,#dee0e3);stroke-width:1}
+.ydo-report-chart-grid{stroke:var(--dsw-alias-border-l1,#e0e3e8);stroke-width:1}
 .ydo-report-chart-text{fill:var(--dsw-alias-label-secondary,#646a73);font-size:11px}
 /* 图表色（2026-10-27 用户定稿）：柱 = 蓝渐变（SVG 内 defs #ydo-report-bar-gradient），
    最新一期 = 实色深蓝 #2f6bff，净粉线/点 = 橙黄 #de7802（用户明确不要绿色，保留原橙黄）。
@@ -913,22 +913,22 @@ export const REPORT_CSS_TEXT = `
 .ydo-report-chart-dot{fill:#de7802}
 .ydo-report-chart-tip{position:fixed;z-index:999;display:none;padding:6px 10px;border-radius:6px;background:var(--dsw-alias-label-primary,#1f2329);color:var(--dsw-alias-label-primary-foreground,#fff);font-size:12px;line-height:1.5;pointer-events:none;white-space:nowrap;box-shadow:0 4px 12px rgba(0,0,0,.18)}
 .ydo-report-chart-empty{margin-top:8px;color:var(--dsw-alias-label-secondary,#646a73);font-size:12px}
-.ydo-report-table-wrap{overflow-x:auto;border:1px solid var(--dsw-alias-border-secondary,#dee0e3);border-radius:8px;background:var(--dsw-alias-bg-primary,#fff)}
+.ydo-report-table-wrap{overflow-x:auto;border:1px solid var(--dsw-alias-border-l1,#e0e3e8);border-radius:8px;background:var(--dsw-alias-bg-layer-1,#fff)}
 .ydo-report-table{width:100%;border-collapse:collapse;font-size:13px;min-width:720px}
 .ydo-report-table th{position:sticky;top:0;background:var(--dsw-alias-bg-layer-2,#f5f6f7);color:var(--dsw-alias-label-secondary,#646a73);font-weight:650;text-align:left;padding:8px 12px;white-space:nowrap}
-.ydo-report-table td{padding:8px 12px;border-top:1px solid var(--dsw-alias-border-secondary,#dee0e3);font-variant-numeric:tabular-nums;min-width:0}
+.ydo-report-table td{padding:8px 12px;border-top:1px solid var(--dsw-alias-border-l1,#e0e3e8);font-variant-numeric:tabular-nums;min-width:0}
 .ydo-report-cell-main{font-weight:650}
-.ydo-report-pos{color:var(--dsw-alias-state-success-primary,#1a7f37);font-weight:650}
+.ydo-report-pos{color:#2ea121;font-weight:650}
 .ydo-report-neg{color:var(--dsw-alias-state-error-primary,#d03a3a);font-weight:650}
-.ydo-report-mark{display:inline-block;margin-left:6px;padding:1px 6px;border-radius:999px;background:var(--dsw-alias-status-orange,#de7802);color:#fff;font-size:11px;font-weight:400}
+.ydo-report-mark{display:inline-block;margin-left:6px;padding:1px 6px;border-radius:999px;background:#de7802;color:#fff;font-size:11px;font-weight:400}
 /* auto-fit:卡片数不足一行时折叠空轨道、现有卡片拉伸填满整行(demo UI 口径,
    auto-fill 会保留空轨道导致卡片挤在左侧、右侧大片留白,真机反馈 UX 差)。 */
 .ydo-report-works{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px}
-.ydo-report-work-card{border:1px solid var(--dsw-alias-border-secondary,#dee0e3);border-radius:8px;padding:12px;background:var(--dsw-alias-bg-primary,#fff)}
+.ydo-report-work-card{border:1px solid var(--dsw-alias-border-l1,#e0e3e8);border-radius:8px;padding:12px;background:var(--dsw-alias-bg-layer-1,#fff)}
 .ydo-report-work-head{display:flex;align-items:center;gap:8px}
 .ydo-report-work-head strong{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px}
 .ydo-report-work-account{color:var(--dsw-alias-label-secondary,#646a73);font-size:11px}
-.ydo-report-pill-hot{background:var(--dsw-alias-status-red,#d83931);color:#fff;border-radius:999px;padding:1px 8px;font-size:11px}
+.ydo-report-pill-hot{background:#d83931;color:#fff;border-radius:999px;padding:1px 8px;font-size:11px}
 .ydo-report-work-metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:4px;margin:10px 0 6px}
 .ydo-report-work-metrics dt{color:var(--dsw-alias-label-secondary,#646a73);font-size:11px}
 .ydo-report-work-metrics dd{margin:0;font-size:14px;font-weight:650;font-variant-numeric:tabular-nums}
@@ -938,8 +938,8 @@ export const REPORT_CSS_TEXT = `
 .ydo-report-anomalies{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:8px}
 .ydo-report-anomaly{border-radius:8px;padding:10px 12px;font-size:13px}
 .ydo-report-anomaly strong{margin-right:8px}
-.ydo-report-anomaly-gap{background:color-mix(in srgb,var(--dsw-alias-status-orange,#de7802) 12%,transparent);color:var(--dsw-alias-status-orange,#de7802)}
-.ydo-report-anomaly-business{background:color-mix(in srgb,var(--dsw-alias-status-red,#d83931) 10%,transparent);color:var(--dsw-alias-status-red,#d83931)}
+.ydo-report-anomaly-gap{background:color-mix(in srgb,#de7802 12%,transparent);color:#de7802}
+.ydo-report-anomaly-business{background:color-mix(in srgb,#d83931 10%,transparent);color:#d83931}
 .ydo-report-ai-summary{margin:0 0 10px;font-size:13px;font-weight:650}
 /* AI 洞察三列(demo UI 口径):列去边框白底,条目按类型着色——
    事实淡绿 #f0f7f1 / 推断淡蓝 #eaf1ff / 建议淡橙 #fff7ed;标题 700 与正文分级突出内容。 */
@@ -967,10 +967,10 @@ export const REPORT_CSS_TEXT = `
 .ydo-report-ai-more-item b{display:block;margin-bottom:2px}
 .ydo-report-ai-more-item p{margin:2px 0 0;line-height:1.6;color:var(--dsw-alias-label-primary,#1f2329)}
 .ydo-report-badge{border-radius:999px;padding:1px 6px;font-size:10px;font-weight:400}
-.ydo-report-badge-high{background:var(--dsw-alias-status-red,#d83931);color:#fff}
-.ydo-report-badge-medium{background:var(--dsw-alias-status-orange,#de7802);color:#fff}
+.ydo-report-badge-high{background:#d83931;color:#fff}
+.ydo-report-badge-medium{background:#de7802;color:#fff}
 .ydo-report-badge-low{background:var(--dsw-alias-bg-layer-2,#f5f6f7);color:var(--dsw-alias-label-secondary,#646a73)}
-.ydo-report-insufficient{border:1px dashed var(--dsw-alias-border-secondary,#dee0e3);border-radius:8px;padding:32px;text-align:center;background:var(--dsw-alias-bg-primary,#fff)}
+.ydo-report-insufficient{border:1px dashed #dee0e3;border-radius:8px;padding:32px;text-align:center;background:#fff}
 .ydo-report-insufficient-icon{font-size:28px;margin:0 0 8px}
 .ydo-report-signal-list{margin:12px 0;padding:0;list-style:none;color:var(--dsw-alias-label-secondary,#646a73);font-size:12px}
 @media print{.no-print{display:none!important}.ydo-report-kpi,.ydo-report-work-card,.ydo-report-insight-col,.ydo-report-chart{break-inside:avoid}.ydo-report-table-wrap{min-width:0;overflow:visible}.ydo-report-ai-more>summary{display:none!important}}

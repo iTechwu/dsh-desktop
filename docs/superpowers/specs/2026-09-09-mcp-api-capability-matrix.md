@@ -38,6 +38,8 @@
 
 抖音账号 AI 分析补充入口：`douyin_account_ai_analysis_start`、`douyin_account_ai_analysis_get`。前者创建受控分析任务，后者只读查询进度和结果；Models 调用、异步队列与费用归因由 Tools 服务负责，桌面不持有服务端委托凭据。
 
+抖音 AI 报表入口（RQ-2026-006）：`douyin_report_list`、`douyin_report_get`、`douyin_report_regenerate`。前两者只读（报表列表与详情，`result_json` 由客户端模板渲染），后者为幂等写操作（携带 `douyin:report_regenerate:` 前缀幂等键重新生成报表，同步受理、异步由 Tools 专属队列执行）；定时生成与模型费用归因由 Tools 服务负责，桌面不持有服务端委托凭据。
+
 上表描述需要满足的能力与体验契约，不代表每个入口都已完成同等范围的浏览器验证。当前 Plugin Console 的直接证据来自 `dsh-plugin-desktop/tests/browser/plugin-console-modal.browser.mjs`：
 
 - 已覆盖自定义主题、官方浅色/深色主题，以及 320、390、768、1024、1440px 布局；管理按钮不得遮挡正文，软件源名称、主源标记和长地址必须可读。
@@ -95,7 +97,7 @@
 | Desktop CI | `ci_validate`、`ci_run` | 默认读取 `.dsh/ci.yml`；validate 不执行命令，run 严格按步骤顺序执行并按 continueOnError/stopOnFirstFailure 停止 |
 | 本地招聘工作台 | `yootun_recruiter` | 只保存岗位和脱敏候选人分析；publish_jd、send_message、write_feedback 只创建待确认动作，工具不能自行确认或外发 |
 | 业务只读投影 | `yootun_content_overview`、`yootun_daily_report`、`yootun_dashboard_overview`、`yootun_dashboard_series`、`yootun_finops_usage`、`yootun_finops_series`、`yootun_lead_discovery`、`yootun_lead_discovery_candidates`、`yootun_recruiter_overview`、`yootun_retrofit_search`、`yootun_sales_overview`、`yootun_sales_intent_search`、`yootun_supply_watch_overview` | 与对应界面使用同一安全投影和来源状态；overview/series/list 工具可并发，参数枚举和查询长度在 Host 校验 |
-| 抖音爆款拆解 | `viral_video_archive_submit`、`viral_video_async_submit_get`、`viral_video_workflow_start`、`viral_video_workflow_get`、`viral_video_storyboards_list`、`viral_video_analysis_status_get`、`viral_video_rewrite_rules_list`、`viral_video_storyboard_export`、`viral_video_douyin_download_url_start`、`viral_video_douyin_download_url_get` | 直链归档与仿写工作流是幂等写操作，必须携带用户确认、渲染层生成且符合宿主前缀规则的幂等键；下载 start 也是幂等写操作，携带 `douyin:vv_download:` 前缀键并异步完成服务端下载、TOS 转存与签名；get 只读轮询，ready 时按 `objectKey` 重新签名。轮询、故事板、分析状态、规则列表与拆解详情导出只读，失败只回传稳定错误码，不透传上游响应或登录凭据 |
+| 抖音爆款拆解 | `viral_video_archive_submit`、`viral_video_async_submit_get`、`viral_video_workflow_start`、`viral_video_workflow_get`、`viral_video_storyboards_list`、`viral_video_analysis_status_get`、`viral_video_rewrite_rules_list`、`viral_video_storyboard_export`、`viral_video_candidates_list`、`viral_video_douyin_download_url_start`、`viral_video_douyin_download_url_get` | 直链归档与仿写工作流是幂等写操作，必须携带用户确认、渲染层生成且符合宿主前缀规则的幂等键；下载 start 也是幂等写操作，携带 `douyin:vv_download:` 前缀键并异步完成服务端下载、TOS 转存与签名；get 只读轮询，ready 时按 `objectKey` 重新签名。轮询、故事板、分析状态、规则列表与拆解详情导出只读，失败只回传稳定错误码，不透传上游响应或登录凭据 |
 | Knowledge 安全封装 | `knowledge_search`、`knowledge_recall`、`knowledge_remember`、`knowledge_confirm_memory`、`knowledge_forget`、`knowledge_session_checkpoint`、`knowledge_promote`、`knowledge_capabilities`、`knowledge_overview`、`knowledge_graph`、`knowledge_ingest_file`、`knowledge_loadout`、`knowledge_context_pack`、`knowledge_explain_trace`、`knowledge_entity_assertions`、`knowledge_relation_assertions`、`knowledge_entity_merges`、`knowledge_provenance_lineage` | 所有输入先按 bounded schema 校验，再注入托管凭据；空间由服务端 ACL 解析。写入、确认、遗忘与晋升遵守显式确认和审计规则，不允许绕过封装直连 Knowledge MCP |
 | 媒体与交付 | `media_upload`、`present` | media_upload 只能由用户原生选取文件，调用方不能提交本地路径；present 只声明 Session 已有的常规文件，不复制内容 |
 
