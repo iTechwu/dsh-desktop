@@ -830,8 +830,11 @@ export const REPORT_CSS_TEXT = `
 .ydo-report-empty-line{color:var(--dsw-alias-label-secondary,#646a73);font-size:13px}
 /* 报表页滚动容器：复用的 .ydo-right 是 overflow:hidden 的 grid（为作品 Tab 的四行结构设计），
    报表详情（头部+KPI+图表+明细+作品卡）远超一屏，必须自带纵向滚动，否则真机下半页不可达
-   （2026-10-27 用户反馈）。display:block 覆盖 grid 行模板，内容自然流式排布。 */
-.ydo-report-page{display:block;overflow:auto;max-width:1180px;margin:0 auto}
+   （2026-10-27 用户反馈）。display:block 覆盖 grid 行模板，内容自然流式排布。
+   宽度固定 1180px：插件面板在宿主里随内容收缩，仅 max-width 会让列表页在有数据/
+   空态两种内容宽度下面板收缩量不同、整体居中位移（2026-10-27 用户反馈日/周切换
+   样式漂移），固定宽后三种状态（列表/空态/详情）宽度与位置恒定；窄窗口 max-width 兜底。 */
+.ydo-report-page{display:block;overflow:auto;width:1180px;max-width:100%;margin:0 auto}
 .ydo-report-toolbar{display:flex;align-items:center;gap:12px;padding-bottom:12px;flex-wrap:wrap}
 .ydo-report-toolbar-actions{margin-left:auto;display:flex;align-items:center;gap:8px}
 .ydo-report-busy{color:var(--dsw-alias-label-secondary,#646a73);font-size:12px}

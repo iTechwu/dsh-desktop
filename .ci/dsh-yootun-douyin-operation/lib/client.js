@@ -3774,8 +3774,11 @@ window.__ModuleLoader__.load({
     .ydo-report-empty-line{color:var(--dsw-alias-label-secondary,#646a73);font-size:13px}
     /* 报表页滚动容器：复用的 .ydo-right 是 overflow:hidden 的 grid（为作品 Tab 的四行结构设计），
        报表详情（头部+KPI+图表+明细+作品卡）远超一屏，必须自带纵向滚动，否则真机下半页不可达
-       （2026-10-27 用户反馈）。display:block 覆盖 grid 行模板，内容自然流式排布。 */
-    .ydo-report-page{display:block;overflow:auto;max-width:1180px;margin:0 auto}
+       （2026-10-27 用户反馈）。display:block 覆盖 grid 行模板，内容自然流式排布。
+       宽度固定 1180px：插件面板在宿主里随内容收缩，仅 max-width 会让列表页在有数据/
+       空态两种内容宽度下面板收缩量不同、整体居中位移（2026-10-27 用户反馈日/周切换
+       样式漂移），固定宽后三种状态（列表/空态/详情）宽度与位置恒定；窄窗口 max-width 兜底。 */
+    .ydo-report-page{display:block;overflow:auto;width:1180px;max-width:100%;margin:0 auto}
     .ydo-report-toolbar{display:flex;align-items:center;gap:12px;padding-bottom:12px;flex-wrap:wrap}
     .ydo-report-toolbar-actions{margin-left:auto;display:flex;align-items:center;gap:8px}
     .ydo-report-busy{color:var(--dsw-alias-label-secondary,#646a73);font-size:12px}
@@ -3961,6 +3964,7 @@ window.__ModuleLoader__.load({
         retry: '重新检测', selectAccount: '请选择账号', emptyAccounts: '添加账号后开始采集', addAccountHint: '添加账号后开始分析',
         deleteAccount: '删除账号', deleteConfirm: '确认删除该账号？将清除本机登录状态与远端作品数据，账号记录会保留为墓碑。',
         confirmYes: '确认删除', confirmNo: '取消', deleteBlocked: '删除失败，请重试',
+        reportRegenConfirm: '将基于当前已回补数据追加新版本 v{version}，旧版本保留。是否继续？', reportRegenConfirmYes: '继续生成',
         deletePending: '正在删除…', deleteRetry: '重试删除', deleteFailed: '删除失败',
         runActive: '该账号正在采集中，请先结束采集再删除',
         fanCount: '粉丝', collectAll: '采集本账号全部', refresh: '刷新', collecting: '采集中',
@@ -4177,6 +4181,7 @@ window.__ModuleLoader__.load({
         retry: 'Check again', selectAccount: 'Select an account', emptyAccounts: 'Add an account to start collecting', addAccountHint: 'Add an account to start analyzing',
         deleteAccount: 'Remove account', deleteConfirm: 'Remove this account? Local sign-in state and remote work data are cleared; the account record stays as a tombstone.',
         confirmYes: 'Remove', confirmNo: 'Cancel', deleteBlocked: 'Remove failed, retry',
+        reportRegenConfirm: 'Append a new version v{version} from the current backfilled data; the old version is kept. Continue?', reportRegenConfirmYes: 'Regenerate',
         deletePending: 'Removing…', deleteRetry: 'Retry removal', deleteFailed: 'Removal failed',
         runActive: 'This account is still collecting — finish or cancel the run first',
         fanCount: 'Followers', collectAll: 'Collect all works', refresh: 'Refresh', collecting: 'Collecting',
@@ -5601,6 +5606,9 @@ window.__ModuleLoader__.load({
       })
       const [reportVersions, setReportVersions] = useState([])
       const [reportActionError, setReportActionError] = useState(null)
+      // 重新生成二次确认弹层：null 关闭，数字为待确认的新版本号（插件内 ydo-confirm 弹层，
+      // 不用 window.confirm——宿主 WebView 会渲染成系统原生对话框，与应用风格割裂）。
+      const [reportRegenVersion, setReportRegenVersion] = useState(null)
 
       const stopReportPolling = useCallback(() => stopPolling(reportPollRef), [stopPolling])
 
@@ -5728,17 +5736,21 @@ window.__ModuleLoader__.load({
         }
       }, [openReport])
 
-      // 重新生成（§5.7）：二次确认 → 幂等受理 → detail 切到新版本并轮询；
-      // reused=true 是 ok 响应（已有生成任务进行中），同样切过去轮询，不是错误分支。
-      const regenerateReport = useCallback(async () => {
+      // 重新生成（§5.7）：点击先弹插件内确认弹层（ydo-confirm 同款，与删除/AI 分析确认一致，
+      // 不用 window.confirm——宿主 WebView 渲染成系统原生对话框）→ 确认后幂等受理 →
+      // detail 切到新版本并轮询；reused=true 是 ok 响应（已有生成任务进行中），
+      // 同样切过去轮询，不是错误分支。
+      const regenerateReport = useCallback(() => {
         const current = reportDetailRef.current.report
         const reportId = current?.reportId || reportDetailRef.current.reportId
         if (!reportId) return
         const nextVersion = (Number(current?.version) || 0) + 1
-        if (typeof window !== 'undefined' && typeof window.confirm === 'function') {
-          const confirmed = window.confirm(`将基于当前已回补数据追加新版本 v${nextVersion}，旧版本保留。继续？`)
-          if (!confirmed) return
-        }
+        setReportRegenVersion(nextVersion)
+      }, [])
+
+      const doRegenerateReport = useCallback(async reportId => {
+        if (!reportId) return
+        setReportRegenVersion(null)
         setReportActionError(null)
         setReportDetail(prev => ({ ...prev, regenerating: true }))
         if (!reportAttemptRef.current) {
@@ -6558,6 +6570,28 @@ window.__ModuleLoader__.load({
                 h('button', {
                   type: 'button', className: 'ydo-confirm-secondary', disabled: busy,
                   onClick: () => { setConfirming(null); setDeleteState(DELETE_LIFECYCLE.idle) },
+                }, t('confirmNo')))))
+          : null,
+        // 重新生成二次确认（§5.7）：插件内 ydo-confirm 弹层（同删除/AI 分析确认样式），
+        // 替换 window.confirm 的系统原生对话框（2026-10-27 真机反馈样式割裂）。
+        reportRegenVersion !== null
+          ? h('div', {
+            className: 'ydo-confirm-overlay', role: 'dialog', 'aria-modal': true,
+            'aria-label': t('reportRegenConfirm').replace('{version}', String(reportRegenVersion)),
+          },
+            h('div', { className: 'ydo-confirm' },
+              h('p', { className: 'ydo-confirm-title' }, t('reportRegenConfirm').replace('{version}', String(reportRegenVersion))),
+              h('div', { className: 'ydo-confirm-actions' },
+                h('button', {
+                  type: 'button', className: 'ydo-confirm-primary', disabled: reportDetail.regenerating,
+                  onClick: () => {
+                    const current = reportDetailRef.current.report
+                    doRegenerateReport(current?.reportId || reportDetailRef.current.reportId)
+                  },
+                }, t('reportRegenConfirmYes')),
+                h('button', {
+                  type: 'button', className: 'ydo-confirm-secondary', disabled: reportDetail.regenerating,
+                  onClick: () => setReportRegenVersion(null),
                 }, t('confirmNo')))))
           : null)
     }

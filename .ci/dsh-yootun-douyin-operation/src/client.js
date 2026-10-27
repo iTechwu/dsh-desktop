@@ -111,6 +111,7 @@ const copy = {
     retry: '重新检测', selectAccount: '请选择账号', emptyAccounts: '添加账号后开始采集', addAccountHint: '添加账号后开始分析',
     deleteAccount: '删除账号', deleteConfirm: '确认删除该账号？将清除本机登录状态与远端作品数据，账号记录会保留为墓碑。',
     confirmYes: '确认删除', confirmNo: '取消', deleteBlocked: '删除失败，请重试',
+    reportRegenConfirm: '将基于当前已回补数据追加新版本 v{version}，旧版本保留。是否继续？', reportRegenConfirmYes: '继续生成',
     deletePending: '正在删除…', deleteRetry: '重试删除', deleteFailed: '删除失败',
     runActive: '该账号正在采集中，请先结束采集再删除',
     fanCount: '粉丝', collectAll: '采集本账号全部', refresh: '刷新', collecting: '采集中',
@@ -327,6 +328,7 @@ const copy = {
     retry: 'Check again', selectAccount: 'Select an account', emptyAccounts: 'Add an account to start collecting', addAccountHint: 'Add an account to start analyzing',
     deleteAccount: 'Remove account', deleteConfirm: 'Remove this account? Local sign-in state and remote work data are cleared; the account record stays as a tombstone.',
     confirmYes: 'Remove', confirmNo: 'Cancel', deleteBlocked: 'Remove failed, retry',
+    reportRegenConfirm: 'Append a new version v{version} from the current backfilled data; the old version is kept. Continue?', reportRegenConfirmYes: 'Regenerate',
     deletePending: 'Removing…', deleteRetry: 'Retry removal', deleteFailed: 'Removal failed',
     runActive: 'This account is still collecting — finish or cancel the run first',
     fanCount: 'Followers', collectAll: 'Collect all works', refresh: 'Refresh', collecting: 'Collecting',
@@ -1751,6 +1753,9 @@ function Overlay({ t }) {
   })
   const [reportVersions, setReportVersions] = useState([])
   const [reportActionError, setReportActionError] = useState(null)
+  // 重新生成二次确认弹层：null 关闭，数字为待确认的新版本号（插件内 ydo-confirm 弹层，
+  // 不用 window.confirm——宿主 WebView 会渲染成系统原生对话框，与应用风格割裂）。
+  const [reportRegenVersion, setReportRegenVersion] = useState(null)
 
   const stopReportPolling = useCallback(() => stopPolling(reportPollRef), [stopPolling])
 
@@ -1878,17 +1883,21 @@ function Overlay({ t }) {
     }
   }, [openReport])
 
-  // 重新生成（§5.7）：二次确认 → 幂等受理 → detail 切到新版本并轮询；
-  // reused=true 是 ok 响应（已有生成任务进行中），同样切过去轮询，不是错误分支。
-  const regenerateReport = useCallback(async () => {
+  // 重新生成（§5.7）：点击先弹插件内确认弹层（ydo-confirm 同款，与删除/AI 分析确认一致，
+  // 不用 window.confirm——宿主 WebView 渲染成系统原生对话框）→ 确认后幂等受理 →
+  // detail 切到新版本并轮询；reused=true 是 ok 响应（已有生成任务进行中），
+  // 同样切过去轮询，不是错误分支。
+  const regenerateReport = useCallback(() => {
     const current = reportDetailRef.current.report
     const reportId = current?.reportId || reportDetailRef.current.reportId
     if (!reportId) return
     const nextVersion = (Number(current?.version) || 0) + 1
-    if (typeof window !== 'undefined' && typeof window.confirm === 'function') {
-      const confirmed = window.confirm(`将基于当前已回补数据追加新版本 v${nextVersion}，旧版本保留。继续？`)
-      if (!confirmed) return
-    }
+    setReportRegenVersion(nextVersion)
+  }, [])
+
+  const doRegenerateReport = useCallback(async reportId => {
+    if (!reportId) return
+    setReportRegenVersion(null)
     setReportActionError(null)
     setReportDetail(prev => ({ ...prev, regenerating: true }))
     if (!reportAttemptRef.current) {
@@ -2708,6 +2717,28 @@ function Overlay({ t }) {
             h('button', {
               type: 'button', className: 'ydo-confirm-secondary', disabled: busy,
               onClick: () => { setConfirming(null); setDeleteState(DELETE_LIFECYCLE.idle) },
+            }, t('confirmNo')))))
+      : null,
+    // 重新生成二次确认（§5.7）：插件内 ydo-confirm 弹层（同删除/AI 分析确认样式），
+    // 替换 window.confirm 的系统原生对话框（2026-10-27 真机反馈样式割裂）。
+    reportRegenVersion !== null
+      ? h('div', {
+        className: 'ydo-confirm-overlay', role: 'dialog', 'aria-modal': true,
+        'aria-label': t('reportRegenConfirm').replace('{version}', String(reportRegenVersion)),
+      },
+        h('div', { className: 'ydo-confirm' },
+          h('p', { className: 'ydo-confirm-title' }, t('reportRegenConfirm').replace('{version}', String(reportRegenVersion))),
+          h('div', { className: 'ydo-confirm-actions' },
+            h('button', {
+              type: 'button', className: 'ydo-confirm-primary', disabled: reportDetail.regenerating,
+              onClick: () => {
+                const current = reportDetailRef.current.report
+                doRegenerateReport(current?.reportId || reportDetailRef.current.reportId)
+              },
+            }, t('reportRegenConfirmYes')),
+            h('button', {
+              type: 'button', className: 'ydo-confirm-secondary', disabled: reportDetail.regenerating,
+              onClick: () => setReportRegenVersion(null),
             }, t('confirmNo')))))
       : null)
 }
