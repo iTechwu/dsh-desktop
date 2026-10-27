@@ -748,7 +748,15 @@ export function ReportDetailView({ report, loading, errorReason, regenerating, v
       : report.resultJson
         ? h('div', { className: 'ydo-report-render' },
           schemaVersion.includes('weekly') ? h(WeeklyTemplate, { report }) : h(DailyTemplate, { report }))
-        : h('p', { className: 'ydo-report-empty-line' }, '暂无报表内容'),
+        : busy
+        // 生成等待卡(2026-10-27 真机反馈:等待期只有「暂无报表内容」小字像卡死):
+        // 复用页面状态区 ydo-state 体系(spinner + 标题 + 预期管理文案),与
+        // 工具栏「生成中…」小字互补;完成后由 5s 轮询自动替换为报表内容。
+          ? h('div', { className: 'ydo-state ydo-report-waiting', role: 'status' },
+            h('span', { className: 'ydo-spinner', 'aria-hidden': 'true' }),
+            h('p', { className: 'ydo-state-title' }, 'AI 正在生成本期报表'),
+            h('p', { className: 'ydo-hint' }, '通常需要 1~2 分钟,生成完成后本页自动刷新;期间可在版本下拉中查看历史版本。'))
+          : h('p', { className: 'ydo-report-empty-line' }, '暂无报表内容'),
     status === 'failed' && report.errorCode
       ? h('p', { className: 'ydo-report-error', role: 'alert' }, reportErrorCopy(report.errorCode))
       : null)

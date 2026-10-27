@@ -370,6 +370,27 @@ test('TF-15 insufficient 空态：图标 + 四信号检查 + 重新生成入口'
   assert.ok(text.includes('重新生成'))
 })
 
+test('TF-16 生成等待卡:pending/running 无 resultJson 渲染 spinner 提示卡而非「暂无报表内容」', () => {
+  // 生成中(busy):居中等待卡(spinner + 标题 + 预期文案),替代裸「暂无报表内容」。
+  const waiting = ReportDetailView({
+    report: { status: 'running', errorCode: null, resultJson: null },
+    loading: false, errorReason: null, regenerating: false, versions: [], actions: {},
+  })
+  const text = treeText(waiting)
+  assert.ok(text.includes('AI 正在生成本期报表'))
+  assert.ok(text.includes('通常需要 1~2 分钟'))
+  assert.ok(text.includes('自动刷新'))
+  assert.ok(!text.includes('暂无报表内容'))
+  const hasSpinner = findAll(waiting, node => String(node.props?.className || '').split(/\s+/).includes('ydo-spinner'))
+  assert.equal(hasSpinner.length, 1)
+  // 终态无内容仍保留「暂无报表内容」(真正的内容缺失,不是等待)。
+  const empty = ReportDetailView({
+    report: { status: 'succeeded', errorCode: null, resultJson: null },
+    loading: false, errorReason: null, regenerating: false, versions: [], actions: {},
+  })
+  assert.ok(treeText(empty).includes('暂无报表内容'))
+})
+
 // ---------------------------------------------------------------------------
 // TF-13 导出 HTML / TF-14 错误文案字典
 // ---------------------------------------------------------------------------
