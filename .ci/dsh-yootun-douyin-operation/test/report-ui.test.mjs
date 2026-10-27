@@ -391,6 +391,16 @@ test('TF-16 生成等待卡:pending/running 无 resultJson 渲染 spinner 提示
   assert.ok(treeText(empty).includes('暂无报表内容'))
 })
 
+test('TF-17 导出 PDF:dsh 桌面走宿主 printToPDF 桥,非桥环境兜底系统打印', async () => {
+  const client = await readFile(new URL('../src/client.js', import.meta.url), 'utf8')
+  // 桥优先:window.desktopNext.exportReportPdf(宿主主进程落盘,绕开打印预览白屏)。
+  assert.ok(client.includes('bridge.exportReportPdf'), 'dsh bridge call')
+  assert.ok(client.includes("reason !== 'cancelled'"), 'user cancel is silent')
+  // 非桥环境兜底 window.print;失败回横幅用稳定码 export_failed(不透传原始错误)。
+  assert.ok(client.includes('printReport()'), 'window.print fallback')
+  assert.ok(client.includes("setReportActionError('export_failed')"), 'stable error code')
+})
+
 // ---------------------------------------------------------------------------
 // TF-13 导出 HTML / TF-14 错误文案字典
 // ---------------------------------------------------------------------------

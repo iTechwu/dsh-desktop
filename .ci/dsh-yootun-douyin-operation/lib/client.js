@@ -5812,8 +5812,30 @@ window.__ModuleLoader__.load({
         downloadReportHtml(html, `${formatPeriodFileStem(period)}.html`)
       }, [])
 
-      // 导出 PDF：window.print（@media print 隐藏 .no-print，系统另存 PDF）。
-      const exportReportPdf = useCallback(() => { printReport() }, [])
+      // 导出 PDF（§5.6）：dsh 桌面端走宿主主进程 printToPDF 直接落盘（保存对话框即反馈），
+      // 与导出 HTML 同源序列化,内容一致;不走 window.print——Electron 打印预览关闭后
+      // WebContents 白屏（2026-10-27 真机）。非 dsh 宿主（浏览器/开发）兜底系统打印。
+      const exportReportPdf = useCallback(async () => {
+        const container = reportSectionRef.current?.querySelector('.ydo-report-render')
+        if (!container) return
+        const period = reportDetailRef.current.report?.resultJson?.data?.period
+        const bridge = typeof window !== 'undefined' ? window.desktopNext : null
+        if (bridge && typeof bridge.exportReportPdf === 'function') {
+          try {
+            const result = await bridge.exportReportPdf({
+              html: serializeReportHtml(container, REPORT_CSS_TEXT),
+              filename: `${formatPeriodFileStem(period)}.pdf`,
+            })
+            if (result && result.ok === false && result.reason !== 'cancelled') {
+              setReportActionError('export_failed')
+            }
+          } catch {
+            setReportActionError('export_failed')
+          }
+          return
+        }
+        printReport()
+      }, [])
 
       // ---------------------------------------------------------------------------
       // 爆款拆解（0922 方案 §4.2/§5）：归档受理 → 3s 轮询 → 自动 workflow 受理 →
