@@ -211,9 +211,15 @@ test('TF-08 AI 三分区：列/徽标/evidence 灰字/limitations 追加事实�
       limitations: ['2 个账号会话过期'],
     },
   })
-  const cols = findAll(grid, node => node.props?.className === 'ydo-report-insight-col')
+  const cols = findAll(grid, node => String(node.props?.className || '').split(/\s+/).includes('ydo-report-insight-col'))
   assert.equal(cols.length, 3)
+  // 列类型类与序号列头(2026-10-27 对齐 demo UI:①②③ + 类型底色)
+  const colTypes = cols.map(node => String(node.props.className))
+  assert.ok(colTypes.some(c => c.includes('ydo-report-insight-col-fact')))
+  assert.ok(colTypes.some(c => c.includes('ydo-report-insight-col-infer')))
+  assert.ok(colTypes.some(c => c.includes('ydo-report-insight-col-advice')))
   const text = treeText(grid)
+  assert.ok(text.includes('① 事实') && text.includes('② 推断') && text.includes('③ 建议'))
   assert.ok(text.includes('事实') && text.includes('推断') && text.includes('建议'))
   assert.ok(text.includes('高置信') && text.includes('高优先'))
   assert.ok(text.includes('依据：播放 500'))

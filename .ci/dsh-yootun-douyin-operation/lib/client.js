@@ -3204,12 +3204,24 @@ window.__ModuleLoader__.load({
     // 配置,改用即时跟随鼠标的浮层(pointer-events:none,不遮挡命中圆)。
     let reportChartTipNode = null
 
+    // 真机显示修复（2026-10-27 用户反馈悬停不出浮层）：插件可能运行在宿主 Shadow DOM 内,
+    // 浮层若挂 document.body 就落在 shadow 之外、拿不到注入样式表,整套样式失效不显示。
+    // 因此挂载点用 evt.target.getRootNode()（ShadowRoot 或 document）,且关键样式全部内联,
+    // 不依赖 CSS 类命中。
+    const REPORT_TIP_STYLE = 'position:fixed;z-index:9999;display:block;padding:6px 10px;border-radius:6px;'
+      + 'background:#1f2329;color:#fff;font-size:12px;line-height:1.5;pointer-events:none;'
+      + 'white-space:nowrap;box-shadow:0 4px 12px rgba(0,0,0,.18)'
+
     function showChartTip(evt, text) {
-      if (typeof document === 'undefined') return
-      if (!reportChartTipNode) {
+      if (typeof document === 'undefined' || !evt || !evt.target) return
+      if (!reportChartTipNode || !reportChartTipNode.isConnected) {
         reportChartTipNode = document.createElement('div')
         reportChartTipNode.className = 'ydo-report-chart-tip'
-        document.body.appendChild(reportChartTipNode)
+        reportChartTipNode.style.cssText = REPORT_TIP_STYLE
+        const root = typeof evt.target.getRootNode === 'function' ? evt.target.getRootNode() : null
+        const host = root && root.nodeType === 11 ? root : (document.body || root)
+        if (!host || typeof host.appendChild !== 'function') return
+        host.appendChild(reportChartTipNode)
       }
       reportChartTipNode.textContent = text
       reportChartTipNode.style.display = 'block'
@@ -3249,7 +3261,7 @@ window.__ModuleLoader__.load({
               key: `dot-${index}`, cx: point.x.toFixed(1), cy: point.y.toFixed(1), r: 3.5,
               className: 'ydo-report-chart-dot',
               ...events,
-            }),
+            }, h('title', null, label)),
           ]
         })
       const lastBarIndex = shape.bars.length - 1
@@ -3354,26 +3366,26 @@ window.__ModuleLoader__.load({
         h('h3', { className: 'ydo-report-section-title' }, 'AI 洞察'),
         ai.summary ? h('p', { className: 'ydo-report-ai-summary' }, ai.summary) : null,
         h('div', { className: 'ydo-report-insight-grid' },
-          h('section', { className: 'ydo-report-insight-col' },
-            h('h4', null, '事实'),
+          h('section', { className: 'ydo-report-insight-col ydo-report-insight-col-fact' },
+            h('h4', null, '① 事实（来自数据）'),
             facts.map((item, index) => h('article', { key: `fact-${index}`, className: 'ydo-report-insight-item' },
               h('h5', null, item.title || ''),
               h('p', null, item.detail || ''),
               item.evidence ? h('p', { className: 'ydo-report-insight-evidence' }, `依据：${item.evidence}`) : null),
             ),
-            limitations.map((text, index) => h('p', {
-              key: `limit-${index}`, className: 'ydo-report-insight-evidence',
-            }, text))),
-          h('section', { className: 'ydo-report-insight-col' },
-            h('h4', null, '推断'),
+            limitations.map((text, index) => h('article', {
+              key: `limit-${index}`, className: 'ydo-report-insight-item',
+            }, h('p', { className: 'ydo-report-insight-evidence' }, text)))),
+          h('section', { className: 'ydo-report-insight-col ydo-report-insight-col-infer' },
+            h('h4', null, '② 推断（谨慎解释）'),
             inferences.map((item, index) => h('article', { key: `inf-${index}`, className: 'ydo-report-insight-item' },
               h('h5', null, item.title || '',
                 h('span', { className: `ydo-report-badge ydo-report-badge-${item.confidence || 'low'}` },
                   item.confidence === 'high' ? '高置信' : item.confidence === 'medium' ? '中置信' : '低置信')),
               h('p', null, item.detail || ''),
               item.evidence ? h('p', { className: 'ydo-report-insight-evidence' }, `依据：${item.evidence}`) : null))),
-          h('section', { className: 'ydo-report-insight-col' },
-            h('h4', null, '建议'),
+          h('section', { className: 'ydo-report-insight-col ydo-report-insight-col-advice' },
+            h('h4', null, '③ 建议（可执行）'),
             recommendations.map((item, index) => h('article', { key: `rec-${index}`, className: 'ydo-report-insight-item' },
               h('h5', null, item.title || '',
                 h('span', { className: `ydo-report-badge ydo-report-badge-${item.priority || 'low'}` },
@@ -3747,7 +3759,7 @@ window.__ModuleLoader__.load({
     .ydo-report-list-toolbar{display:flex;align-items:center;gap:12px;padding:0 0 12px}
     .ydo-report-seg{display:inline-flex;border:1px solid var(--dsw-alias-border-secondary,#dee0e3);border-radius:6px;overflow:hidden}
     .ydo-report-seg-item{height:32px;padding:0 16px;border:0;background:var(--dsw-alias-bg-primary,#fff);color:var(--dsw-alias-label-secondary,#646a73);font:inherit;font-size:13px;cursor:pointer}
-    .ydo-report-seg-item.is-active{background:var(--dsw-alias-brand-primary,#3370ff);color:#fff}
+    .ydo-report-seg-item.is-active{background:#3370ff;color:#fff}
     .ydo-report-action{height:32px;padding:0 14px;border:1px solid var(--dsw-alias-border-secondary,#dee0e3);border-radius:6px;background:var(--dsw-alias-bg-primary,#fff);color:var(--dsw-alias-label-primary,#1f2329);font:inherit;font-size:13px;cursor:pointer}
     .ydo-report-action:disabled{opacity:.5;cursor:not-allowed}
     .ydo-report-more{margin:12px auto 0;display:block}
@@ -3763,7 +3775,7 @@ window.__ModuleLoader__.load({
     /* 报表页滚动容器：复用的 .ydo-right 是 overflow:hidden 的 grid（为作品 Tab 的四行结构设计），
        报表详情（头部+KPI+图表+明细+作品卡）远超一屏，必须自带纵向滚动，否则真机下半页不可达
        （2026-10-27 用户反馈）。display:block 覆盖 grid 行模板，内容自然流式排布。 */
-    .ydo-report-page{display:block;overflow:auto}
+    .ydo-report-page{display:block;overflow:auto;max-width:1180px;margin:0 auto}
     .ydo-report-toolbar{display:flex;align-items:center;gap:12px;padding-bottom:12px;flex-wrap:wrap}
     .ydo-report-toolbar-actions{margin-left:auto;display:flex;align-items:center;gap:8px}
     .ydo-report-busy{color:var(--dsw-alias-label-secondary,#646a73);font-size:12px}
@@ -3774,7 +3786,7 @@ window.__ModuleLoader__.load({
     .ydo-report-title{margin:0 0 6px;font-size:18px}
     .ydo-report-meta{margin:0 0 8px;color:var(--dsw-alias-label-secondary,#646a73);font-size:12px;line-height:2.05}
     .ydo-report-meta-line{min-width:0}
-    .ydo-report-meta-k{display:inline-block;margin-right:8px;padding:1px 8px;border-radius:4px;background:var(--ydo-brand-weak,#eaf1ff);color:var(--dsw-alias-brand-primary,#3370ff);font-size:11px;font-weight:600}
+    .ydo-report-meta-k{display:inline-block;margin-right:8px;padding:1px 8px;border-radius:4px;background:#eaf1ff;color:#3370ff;font-size:11px;font-weight:600}
     .ydo-report-quality{display:flex;gap:16px;flex-wrap:wrap;font-size:12px;color:var(--dsw-alias-label-primary,#1f2329)}
     .ydo-report-quality-missing{color:var(--dsw-alias-status-orange,#de7802)}
     .ydo-report-kpi-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
@@ -3790,11 +3802,12 @@ window.__ModuleLoader__.load({
     .ydo-report-kpi-change-down{color:#1a7f37}
     .ydo-report-kpi-change-flat{color:var(--dsw-alias-label-secondary,#646a73)}
     .ydo-report-kpi-note{margin-top:4px;color:var(--dsw-alias-label-secondary,#646a73);font-size:11px}
-    .ydo-report-section-title{margin:0 0 8px;font-size:14px}
+    /* 区块标题:蓝色竖杆 + 15px,与验证页 demo UI 的 .ydo-section h2 一致。 */
+    .ydo-report-section-title{margin:0 0 10px;padding-left:10px;border-left:3px solid #3370ff;font-size:15px}
     .ydo-report-chart{margin:0;border:1px solid var(--dsw-alias-border-secondary,#dee0e3);border-radius:8px;padding:12px;background:var(--dsw-alias-bg-primary,#fff)}
     .ydo-report-chart-svg{width:100%;height:auto;display:block}
     .ydo-report-chart-notes{display:grid;gap:2px;margin-bottom:8px;font-size:12px}
-    .ydo-report-chart-notes .ydo-report-meta-k{background:var(--dsw-alias-bg-layer-2,#eceef1);color:var(--dsw-alias-label-secondary,#646a73)}
+    .ydo-report-chart-notes .ydo-report-meta-k{background:#eceef1;color:#646a73}
     .ydo-report-chart-grid{stroke:var(--dsw-alias-border-secondary,#dee0e3);stroke-width:1}
     .ydo-report-chart-text{fill:var(--dsw-alias-label-secondary,#646a73);font-size:11px}
     /* 图表色（2026-10-27 用户定稿）：柱 = 蓝渐变（SVG 内 defs #ydo-report-bar-gradient），
@@ -3816,7 +3829,9 @@ window.__ModuleLoader__.load({
     .ydo-report-pos{color:var(--dsw-alias-state-success-primary,#1a7f37);font-weight:650}
     .ydo-report-neg{color:var(--dsw-alias-state-error-primary,#d03a3a);font-weight:650}
     .ydo-report-mark{display:inline-block;margin-left:6px;padding:1px 6px;border-radius:999px;background:var(--dsw-alias-status-orange,#de7802);color:#fff;font-size:11px;font-weight:400}
-    .ydo-report-works{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px}
+    /* auto-fit:卡片数不足一行时折叠空轨道、现有卡片拉伸填满整行(demo UI 口径,
+       auto-fill 会保留空轨道导致卡片挤在左侧、右侧大片留白,真机反馈 UX 差)。 */
+    .ydo-report-works{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px}
     .ydo-report-work-card{border:1px solid var(--dsw-alias-border-secondary,#dee0e3);border-radius:8px;padding:12px;background:var(--dsw-alias-bg-primary,#fff)}
     .ydo-report-work-head{display:flex;align-items:center;gap:8px}
     .ydo-report-work-head strong{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px}
@@ -3834,14 +3849,18 @@ window.__ModuleLoader__.load({
     .ydo-report-anomaly-gap{background:color-mix(in srgb,var(--dsw-alias-status-orange,#de7802) 12%,transparent);color:var(--dsw-alias-status-orange,#de7802)}
     .ydo-report-anomaly-business{background:color-mix(in srgb,var(--dsw-alias-status-red,#d83931) 10%,transparent);color:var(--dsw-alias-status-red,#d83931)}
     .ydo-report-ai-summary{margin:0 0 10px;font-size:13px;font-weight:650}
-    .ydo-report-insight-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
-    .ydo-report-insight-col{border:1px solid var(--dsw-alias-border-secondary,#dee0e3);border-radius:8px;padding:12px;background:var(--dsw-alias-bg-primary,#fff);min-width:0}
-    .ydo-report-insight-col h4{margin:0 0 8px;font-size:13px}
-    .ydo-report-insight-item{border-top:1px solid var(--dsw-alias-border-secondary,#dee0e3);padding:8px 0}
-    .ydo-report-insight-item:first-of-type{border-top:0}
-    .ydo-report-insight-item h5{margin:0;font-size:12px;display:flex;align-items:center;gap:6px}
-    .ydo-report-insight-item p{margin:4px 0 0;font-size:12px;line-height:1.6}
-    .ydo-report-insight-evidence{color:var(--dsw-alias-label-secondary,#646a73);font-size:11px;margin:4px 0 0}
+    /* AI 洞察三列(demo UI 口径):列去边框白底,条目按类型着色——
+       事实淡绿 #f0f7f1 / 推断淡蓝 #eaf1ff / 建议淡橙 #fff7ed;标题 700 与正文分级突出内容。 */
+    .ydo-report-insight-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
+    .ydo-report-insight-col{display:grid;gap:10px;align-content:start;min-width:0}
+    .ydo-report-insight-col h4{margin:0;font-size:13px;color:#646a73}
+    .ydo-report-insight-item{padding:12px;border-radius:8px;font-size:13px;line-height:1.7}
+    .ydo-report-insight-col-fact .ydo-report-insight-item{background:#f0f7f1}
+    .ydo-report-insight-col-infer .ydo-report-insight-item{background:#eaf1ff}
+    .ydo-report-insight-col-advice .ydo-report-insight-item{background:#fff7ed}
+    .ydo-report-insight-item h5{margin:0 0 4px;font-size:13px;font-weight:700;color:#1f2329;display:flex;align-items:center;gap:6px}
+    .ydo-report-insight-item p{margin:0;font-size:13px;line-height:1.7;color:#1f2329}
+    .ydo-report-insight-evidence{display:block;color:#646a73;font-size:11px;margin:6px 0 0;line-height:1.6}
     .ydo-report-badge{border-radius:999px;padding:1px 6px;font-size:10px;font-weight:400}
     .ydo-report-badge-high{background:var(--dsw-alias-status-red,#d83931);color:#fff}
     .ydo-report-badge-medium{background:var(--dsw-alias-status-orange,#de7802);color:#fff}
