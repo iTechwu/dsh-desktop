@@ -497,9 +497,9 @@ export function AccountTable({ accounts }) {
           const value = row.metrics ? row.metrics[key] : null
           const missing = row.eachAvailable === false || value === null || value === undefined
           // TF-05：缺采账号指标列 —*（— 加星标注缺失口径，区别于真实 0）。
-          // 净增粉丝列对齐 demo pos/neg 口径：正值绿、负值红、0/缺失无色。
+          // 净增粉丝列对齐 2026-10-26 涨红跌绿定稿：正值红、负值绿、0/缺失无色。
           if (key === 'netFans' && !missing && value !== 0) {
-            return h('td', { key, className: value > 0 ? 'ydo-report-pos' : 'ydo-report-neg' },
+            return h('td', { key, className: value > 0 ? 'ydo-report-up' : 'ydo-report-down' },
               `${value > 0 ? '+' : '−'}${reportCountText(Math.abs(Number(value)))}`)
           }
           return h('td', { key }, missing ? '—*' : reportCountText(value))
@@ -918,8 +918,9 @@ export const REPORT_CSS_TEXT = `
 .ydo-report-table th{position:sticky;top:0;background:var(--dsw-alias-bg-layer-2,#f5f6f7);color:var(--dsw-alias-label-secondary,#646a73);font-weight:650;text-align:left;padding:8px 12px;white-space:nowrap}
 .ydo-report-table td{padding:8px 12px;border-top:1px solid var(--dsw-alias-border-l1,#e0e3e8);font-variant-numeric:tabular-nums;min-width:0}
 .ydo-report-cell-main{font-weight:650}
-.ydo-report-pos{color:#2ea121;font-weight:650}
-.ydo-report-neg{color:var(--dsw-alias-state-error-primary,#d03a3a);font-weight:650}
+/* 2026-10-26 涨红跌绿定稿（与 KPI 卡 change-up/down 同色，固定色值不随主题） */
+.ydo-report-up{color:#d64545;font-weight:650}
+.ydo-report-down{color:#1a7f37;font-weight:650}
 .ydo-report-mark{display:inline-block;margin-left:6px;padding:1px 6px;border-radius:999px;background:#de7802;color:#fff;font-size:11px;font-weight:400}
 /* auto-fit:卡片数不足一行时折叠空轨道、现有卡片拉伸填满整行(demo UI 口径,
    auto-fill 会保留空轨道导致卡片挤在左侧、右侧大片留白,真机反馈 UX 差)。 */

@@ -409,7 +409,10 @@ export function OverviewPage({
       ? h('div', { className: 'ydo-ov-kpis' },
         h(KpiCard, { label: t('kpiAccounts'), value: countText(summary.accountCount) }),
         h(KpiCard, { label: t('kpiWorks'), value: countText(summary.workCount), hint: rangeLabel }),
-        h(KpiCard, { label: t('kpiTotalPlay'), value: countText(summary.totalPlayCount), hint: t('kpiCurrentCumulative') }),
+        // 2026-10-27 口径：播放增量=全账号窗口日度求和（与排行列、AI 日报一致）；
+        // daily 全缺 → null → 整卡不渲染（对齐净增粉丝卡）。
+        summary.totalPlayCount === null || summary.totalPlayCount === undefined ? null : h(KpiCard, {
+          label: t('kpiTotalPlay'), value: countText(summary.totalPlayCount), hint: rangeLabel }),
         // 1015 UI 规格 §2.1：+净增粉丝、+5秒完播率（按播放加权）。
         // daily 未采集 → 字段 null → 整卡不渲染（§1.3：不渲染空卡、不造 0）。
         summary.netFansCount === null || summary.netFansCount === undefined ? null : h(KpiCard, {

@@ -1228,7 +1228,10 @@ window.__ModuleLoader__.load({
           ? h('div', { className: 'ydo-ov-kpis' },
             h(KpiCard, { label: t('kpiAccounts'), value: countText(summary.accountCount) }),
             h(KpiCard, { label: t('kpiWorks'), value: countText(summary.workCount), hint: rangeLabel }),
-            h(KpiCard, { label: t('kpiTotalPlay'), value: countText(summary.totalPlayCount), hint: t('kpiCurrentCumulative') }),
+            // 2026-10-27 口径：播放增量=全账号窗口日度求和（与排行列、AI 日报一致）；
+            // daily 全缺 → null → 整卡不渲染（对齐净增粉丝卡）。
+            summary.totalPlayCount === null || summary.totalPlayCount === undefined ? null : h(KpiCard, {
+              label: t('kpiTotalPlay'), value: countText(summary.totalPlayCount), hint: rangeLabel }),
             // 1015 UI 规格 §2.1：+净增粉丝、+5秒完播率（按播放加权）。
             // daily 未采集 → 字段 null → 整卡不渲染（§1.3：不渲染空卡、不造 0）。
             summary.netFansCount === null || summary.netFansCount === undefined ? null : h(KpiCard, {
@@ -3441,9 +3444,9 @@ window.__ModuleLoader__.load({
               const value = row.metrics ? row.metrics[key] : null
               const missing = row.eachAvailable === false || value === null || value === undefined
               // TF-05：缺采账号指标列 —*（— 加星标注缺失口径，区别于真实 0）。
-              // 净增粉丝列对齐 demo pos/neg 口径：正值绿、负值红、0/缺失无色。
+              // 净增粉丝列对齐 2026-10-26 涨红跌绿定稿：正值红、负值绿、0/缺失无色。
               if (key === 'netFans' && !missing && value !== 0) {
-                return h('td', { key, className: value > 0 ? 'ydo-report-pos' : 'ydo-report-neg' },
+                return h('td', { key, className: value > 0 ? 'ydo-report-up' : 'ydo-report-down' },
                   `${value > 0 ? '+' : '−'}${reportCountText(Math.abs(Number(value)))}`)
               }
               return h('td', { key }, missing ? '—*' : reportCountText(value))
@@ -3862,8 +3865,9 @@ window.__ModuleLoader__.load({
     .ydo-report-table th{position:sticky;top:0;background:var(--dsw-alias-bg-layer-2,#f5f6f7);color:var(--dsw-alias-label-secondary,#646a73);font-weight:650;text-align:left;padding:8px 12px;white-space:nowrap}
     .ydo-report-table td{padding:8px 12px;border-top:1px solid var(--dsw-alias-border-l1,#e0e3e8);font-variant-numeric:tabular-nums;min-width:0}
     .ydo-report-cell-main{font-weight:650}
-    .ydo-report-pos{color:#2ea121;font-weight:650}
-    .ydo-report-neg{color:var(--dsw-alias-state-error-primary,#d03a3a);font-weight:650}
+    /* 2026-10-26 涨红跌绿定稿（与 KPI 卡 change-up/down 同色，固定色值不随主题） */
+    .ydo-report-up{color:#d64545;font-weight:650}
+    .ydo-report-down{color:#1a7f37;font-weight:650}
     .ydo-report-mark{display:inline-block;margin-left:6px;padding:1px 6px;border-radius:999px;background:#de7802;color:#fff;font-size:11px;font-weight:400}
     /* auto-fit:卡片数不足一行时折叠空轨道、现有卡片拉伸填满整行(demo UI 口径,
        auto-fill 会保留空轨道导致卡片挤在左侧、右侧大片留白,真机反馈 UX 差)。 */
@@ -4072,8 +4076,8 @@ window.__ModuleLoader__.load({
         customRangeEmpty: '当前发布时间范围内暂无作品，可调整开始/截止日期后重新查询',
         sort_hot_count: '按爆款数排序', sort_hot_rate: '按爆款率排序', sort_median_play: '按中位播放排序',
         sort_total_play: '按总播放排序', sort_engagement_rate: '按互动率排序',
-        kpiAccounts: '管理账号', kpiWorks: '作品总数', kpiTotalPlay: '累计播放量',
-        kpiHotWorks: '爆款视频', kpiCurrentCumulative: '当前累计值',
+        kpiAccounts: '管理账号', kpiWorks: '作品总数', kpiTotalPlay: '播放增量',
+        kpiHotWorks: '爆款视频',
         accountRanking: '账号表现排行', rankCol: '排名', colMedianPlay: '中位播放',
         hotRateCol: '爆款率', hotOwnerAccount: '所属账号',
         hotDistribution: '爆款账号分布', overviewAlerts: '运营提醒', noAlerts: '暂无提醒',
@@ -4285,8 +4289,8 @@ window.__ModuleLoader__.load({
         customRangeEmpty: 'No works in the selected publish range; adjust the start/end dates and query again',
         sort_hot_count: 'By hot works', sort_hot_rate: 'By hot rate', sort_median_play: 'By median plays',
         sort_total_play: 'By total plays', sort_engagement_rate: 'By engagement',
-        kpiAccounts: 'Accounts', kpiWorks: 'Works', kpiTotalPlay: 'Total plays',
-        kpiHotWorks: 'Hot works', kpiCurrentCumulative: 'cumulative',
+        kpiAccounts: 'Accounts', kpiWorks: 'Works', kpiTotalPlay: 'Plays',
+        kpiHotWorks: 'Hot works',
         accountRanking: 'Account ranking', rankCol: 'Rank', colMedianPlay: 'Median plays',
         hotRateCol: 'Hot rate', hotOwnerAccount: 'Account',
         hotDistribution: 'Hot works by account', overviewAlerts: 'Alerts', noAlerts: 'No alerts',
