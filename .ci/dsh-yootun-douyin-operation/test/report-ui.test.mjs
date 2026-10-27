@@ -241,6 +241,34 @@ test('TF-08 AI 三分区：列/徽标/evidence 灰字/limitations 追加事实�
   assert.ok(!treeText(grid).includes('confidence'))
 })
 
+test('TF-08b AI 洞察紧凑速读（方案 A+B）：行内标题+徽标、detail/evidence 折叠、导出强制展开', () => {
+  const grid = InsightGrid({
+    ai: {
+      summary: '整体平稳。',
+      facts: [{ title: '事实', detail: '播放 500', evidence: '播放 500' }],
+      inferences: [{ title: '推断', detail: '缺口', evidence: '播放回落', confidence: 'high' }],
+      recommendations: [{ title: '建议', detail: '补采', priority: 'high' }],
+      limitations: ['2 个账号会话过期'],
+    },
+  })
+  // 行内仅标题+徽标：行级文本不含 detail 长文
+  const lines = findAll(grid, node => node.props?.className === 'ydo-report-insight-line')
+  assert.equal(lines.length, 3)
+  const lineText = lines.map(node => treeText(node)).join('|')
+  assert.ok(lineText.includes('事实') && lineText.includes('推断') && lineText.includes('建议'))
+  assert.ok(!lineText.includes('播放 500') && !lineText.includes('缺口') && !lineText.includes('补采'))
+  // 折叠区：3 个"展开完整依据" + 事实列 1 个"数据覆盖说明"；默认收起（无 open）
+  const details = findAll(grid, node => node.type === 'details')
+  assert.equal(details.length, 4)
+  assert.ok(details.every(node => node.props?.open === undefined))
+  const summaries = findAll(grid, node => node.type === 'summary')
+  assert.equal(summaries.filter(node => treeText(node).includes('展开完整依据')).length, 3)
+  // detail/evidence 在折叠区 more-item 中保留（人工复核用）
+  const moreItems = findAll(grid, node => node.props?.className === 'ydo-report-ai-more-item')
+  assert.equal(moreItems.length, 3)
+  assert.ok(treeText(grid).includes('播放 500'))
+})
+
 // ---------------------------------------------------------------------------
 // TF-07 TrendChart（含退化规则）
 // ---------------------------------------------------------------------------

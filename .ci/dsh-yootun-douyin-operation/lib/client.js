@@ -3365,35 +3365,49 @@ window.__ModuleLoader__.load({
       const inferences = Array.isArray(ai.inferences) ? ai.inferences : []
       const recommendations = Array.isArray(ai.recommendations) ? ai.recommendations : []
       const limitations = Array.isArray(ai.limitations) ? ai.limitations : []
+      // 紧凑速读形态（2026-10-27 方案 A+B）：行内只展示标题+徽标；detail/evidence
+      // 收进 <details> 折叠区（人工复核用，导出 PDF/HTML 由宿主序列化前强制展开）。
+      const moreBlock = entries => h('details', { className: 'ydo-report-ai-more' },
+        h('summary', null, '展开完整依据'),
+        entries.map((item, index) => h('div', { key: `more-${index}`, className: 'ydo-report-ai-more-item' },
+          h('b', null, item.title || ''),
+          h('p', null, item.detail || ''),
+          item.evidence ? h('p', { className: 'ydo-report-insight-evidence' }, `依据：${item.evidence}`) : null)))
+      const line = (prefix, item, index) => h('li', { key: `${prefix}-${index}`, className: 'ydo-report-insight-line' },
+        h('span', { className: 'ydo-report-insight-title' }, item.title || ''),
+        prefix === 'infer'
+          ? h('span', { className: `ydo-report-badge ydo-report-badge-${item.confidence || 'low'}` },
+            item.confidence === 'high' ? '高置信' : item.confidence === 'medium' ? '中置信' : '低置信')
+          : prefix === 'advice'
+            ? h('span', { className: `ydo-report-badge ydo-report-badge-${item.priority || 'low'}` },
+              item.priority === 'high' ? '高优先' : item.priority === 'medium' ? '中优先' : '低优先')
+            : null)
       return h('div', { className: 'ydo-report-insights' },
         h('h3', { className: 'ydo-report-section-title' }, 'AI 洞察'),
         ai.summary ? h('p', { className: 'ydo-report-ai-summary' }, ai.summary) : null,
         h('div', { className: 'ydo-report-insight-grid' },
           h('section', { className: 'ydo-report-insight-col ydo-report-insight-col-fact' },
-            h('h4', null, '① 事实（来自数据）'),
-            facts.map((item, index) => h('article', { key: `fact-${index}`, className: 'ydo-report-insight-item' },
-              h('h5', null, item.title || ''),
-              h('p', null, item.detail || ''),
-              item.evidence ? h('p', { className: 'ydo-report-insight-evidence' }, `依据：${item.evidence}`) : null),
-            ),
-            limitations.map((text, index) => h('article', {
-              key: `limit-${index}`, className: 'ydo-report-insight-item',
-            }, h('p', { className: 'ydo-report-insight-evidence' }, text)))),
+            h('h4', null, '① 事实 · 来自数据'),
+            h('ul', { className: 'ydo-report-insight-list' },
+              facts.map((item, index) => line('fact', item, index))),
+            moreBlock(facts),
+            limitations.length
+              ? h('details', { className: 'ydo-report-ai-more' },
+                h('summary', null, '数据覆盖说明'),
+                limitations.map((text, index) => h('p', {
+                  key: `limit-${index}`, className: 'ydo-report-insight-evidence',
+                }, text)))
+              : null),
           h('section', { className: 'ydo-report-insight-col ydo-report-insight-col-infer' },
-            h('h4', null, '② 推断（谨慎解释）'),
-            inferences.map((item, index) => h('article', { key: `inf-${index}`, className: 'ydo-report-insight-item' },
-              h('h5', null, item.title || '',
-                h('span', { className: `ydo-report-badge ydo-report-badge-${item.confidence || 'low'}` },
-                  item.confidence === 'high' ? '高置信' : item.confidence === 'medium' ? '中置信' : '低置信')),
-              h('p', null, item.detail || ''),
-              item.evidence ? h('p', { className: 'ydo-report-insight-evidence' }, `依据：${item.evidence}`) : null))),
+            h('h4', null, '② 推断 · 谨慎解释'),
+            h('ul', { className: 'ydo-report-insight-list' },
+              inferences.map((item, index) => line('infer', item, index))),
+            moreBlock(inferences)),
           h('section', { className: 'ydo-report-insight-col ydo-report-insight-col-advice' },
-            h('h4', null, '③ 建议（可执行）'),
-            recommendations.map((item, index) => h('article', { key: `rec-${index}`, className: 'ydo-report-insight-item' },
-              h('h5', null, item.title || '',
-                h('span', { className: `ydo-report-badge ydo-report-badge-${item.priority || 'low'}` },
-                  item.priority === 'high' ? '高优先' : item.priority === 'medium' ? '中优先' : '低优先')),
-              h('p', null, item.detail || ''))))))
+            h('h4', null, '③ 建议 · 可执行'),
+            h('ul', { className: 'ydo-report-insight-list' },
+              recommendations.map((item, index) => line('advice', item, index))),
+            moreBlock(recommendations))))
     }
 
     const ACCOUNT_COLUMNS = [
@@ -3725,7 +3739,13 @@ window.__ModuleLoader__.load({
      */
     function serializeReportHtml(container, cssText) {
       if (!container) return ''
-      const body = container.outerHTML
+      // 导出含完整依据：序列化副本强制展开全部 <details>（不影响页面折叠状态）。
+      // 测试环境的假 container 无 DOM 方法：按能力降级，仅真实 DOM 走克隆展开。
+      const clone = typeof container.cloneNode === 'function' ? container.cloneNode(true) : container
+      if (typeof clone.querySelectorAll === 'function') {
+        clone.querySelectorAll('details').forEach(node => node.setAttribute('open', ''))
+      }
+      const body = clone.outerHTML
       return [
         '<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8">',
         `<title>${formatPeriodTitleFromContainer(container)}</title>`,
@@ -3877,6 +3897,16 @@ window.__ModuleLoader__.load({
     .ydo-report-insight-item h5{margin:0 0 4px;font-size:13px;font-weight:700;color:#1f2329;display:flex;align-items:center;gap:6px}
     .ydo-report-insight-item p{margin:0;font-size:13px;line-height:1.7;color:#1f2329}
     .ydo-report-insight-evidence{display:block;color:#646a73;font-size:11px;margin:6px 0 0;line-height:1.6}
+    /* 紧凑速读形态(2026-10-27 方案 A+B):行内标题+徽标,detail/evidence 收进 <details> 折叠区 */
+    .ydo-report-insight-list{margin:0;padding:0;list-style:none;display:grid;gap:8px}
+    .ydo-report-insight-line{display:flex;align-items:flex-start;gap:6px;font-size:13px;line-height:1.6}
+    .ydo-report-insight-title{font-weight:650;color:var(--dsw-alias-label-primary,#1f2329)}
+    .ydo-report-insight-line .ydo-report-badge{flex:none;margin-left:auto}
+    .ydo-report-ai-more{margin-top:10px;border-top:1px dashed var(--dsw-alias-border-l1,#e0e3e8);padding-top:8px;font-size:12px}
+    .ydo-report-ai-more summary{cursor:pointer;color:var(--dsw-alias-label-secondary,#646a73);user-select:none}
+    .ydo-report-ai-more-item{margin:10px 0 0;padding:8px 10px;border-radius:6px;background:var(--dsw-alias-bg-layer-2,#f2f3f5)}
+    .ydo-report-ai-more-item b{display:block;margin-bottom:2px}
+    .ydo-report-ai-more-item p{margin:2px 0 0;line-height:1.6;color:var(--dsw-alias-label-primary,#1f2329)}
     .ydo-report-badge{border-radius:999px;padding:1px 6px;font-size:10px;font-weight:400}
     .ydo-report-badge-high{background:var(--dsw-alias-status-red,#d83931);color:#fff}
     .ydo-report-badge-medium{background:var(--dsw-alias-status-orange,#de7802);color:#fff}
@@ -3884,7 +3914,7 @@ window.__ModuleLoader__.load({
     .ydo-report-insufficient{border:1px dashed var(--dsw-alias-border-secondary,#dee0e3);border-radius:8px;padding:32px;text-align:center;background:var(--dsw-alias-bg-primary,#fff)}
     .ydo-report-insufficient-icon{font-size:28px;margin:0 0 8px}
     .ydo-report-signal-list{margin:12px 0;padding:0;list-style:none;color:var(--dsw-alias-label-secondary,#646a73);font-size:12px}
-    @media print{.no-print{display:none!important}.ydo-report-kpi,.ydo-report-work-card,.ydo-report-insight-col,.ydo-report-chart{break-inside:avoid}.ydo-report-table-wrap{min-width:0;overflow:visible}}
+    @media print{.no-print{display:none!important}.ydo-report-kpi,.ydo-report-work-card,.ydo-report-insight-col,.ydo-report-chart{break-inside:avoid}.ydo-report-table-wrap{min-width:0;overflow:visible}.ydo-report-ai-more>summary{display:none!important}}
     `
 
     // 抖音运营客户端：左下角菜单入口 + 整页 overlay（左侧账号管理区 + 右侧作品数据区）。
