@@ -21,7 +21,7 @@ const { createElement: h } = React
 export const REPORT_ERROR_REASON_COPY = {
   REPORT_NOT_FOUND: '报表不存在或已被清理',
   REPORT_DISABLED: 'AI 报表功能当前未启用',
-  REPORT_INSUFFICIENT_DATA: '数据不足：周期内所有账号均无数据，请先完成采集',
+  REPORT_INSUFFICIENT_DATA: '数据不足：该周期核心指标缺失或无数据，请先完成采集后重新生成',
   REPORT_MODEL_FAILED: 'AI 生成失败，请稍后重试；已保留当前版本',
   REPORT_SCHEMA_INVALID: 'AI 输出校验失败，已自动重试仍失败，请稍后再试',
   REPORT_TIMEOUT: 'AI 生成超时，请稍后重试',
@@ -43,8 +43,11 @@ export function reportErrorCopy(reason) {
 }
 
 // 状态 pill（TF-10：ok/warn/err/运行中）；失败行 note 用中文文案，不出现原始英文码。
-export function reportStatusPill(status) {
-  if (status === 'succeeded') return { kind: 'ok', label: '已生成' }
+export function reportStatusPill(status, coreAvailable) {
+  if (status === 'succeeded')
+    return coreAvailable === false
+      ? { kind: 'warn', label: '数据不全' }
+      : { kind: 'ok', label: '已生成' }
   if (status === 'failed') return { kind: 'err', label: '生成失败' }
   if (status === 'insufficient') return { kind: 'warn', label: '数据不足' }
   if (status === 'pending' || status === 'running') return { kind: 'busy', label: '生成中' }
@@ -549,7 +552,7 @@ export function VersionSelect({ versions, currentId, onChange }) {
       onChange: event => onChange && onChange(event.target.value),
     },
     rows.map(item => h('option', { key: item.reportId, value: item.reportId },
-      `v${item.version} · ${item.status === 'succeeded' ? '已生成' : item.status === 'failed' ? '失败' : item.status === 'insufficient' ? '数据不足' : '生成中'}${item.isCurrent ? '（当前）' : ''}`))))
+      `v${item.version} · ${item.status === 'succeeded' ? (item.coreAvailable === false ? '数据不全' : '已生成') : item.status === 'failed' ? '失败' : item.status === 'insufficient' ? '数据不足' : '生成中'}${item.isCurrent ? '（当前）' : ''}`))))
 }
 
 // ---------------------------------------------------------------------------
@@ -598,9 +601,14 @@ function InsufficientState({ report, actions }) {
     ['fansProfileRows', '粉丝画像行'],
     ['periodWorks', '周期内发布作品'],
   ]
+  const dailyMissing = coverage.insufficientReason === 'daily_missing'
+    || (Number(signals.dailyRows) === 0 && (Number(signals.workSnapshotRows) > 0 || Number(signals.periodWorks) > 0))
+  const headline = dailyMissing
+    ? '该周期核心日度指标缺失（采集未覆盖到当天日度数据），暂无法生成指标正文。'
+    : '周期内所有账号均无数据，请先完成采集后再重新生成。'
   return h('div', { className: 'ydo-report-insufficient' },
     h('p', { className: 'ydo-report-insufficient-icon', role: 'img', 'aria-label': '数据不足' }, '⚠'),
-    h('p', null, '周期内所有账号均无数据，请先完成采集后再重新生成。'),
+    h('p', null, headline),
     h('ul', { className: 'ydo-report-signal-list' },
       signalLabels.map(([key, label]) => h('li', { key },
         `${label}：${Number(signals[key]) === 0 ? '0' : Number(signals[key]) || '—'} 行/条`))),
@@ -708,7 +716,7 @@ export function ReportListView({ items, loading, errorReason, reportType, action
           h('thead', null, h('tr', null,
             ['周期', '状态', '版本', '覆盖账号', '生成时间', '说明', ''].map((label, index) => h('th', { key: `${label}-${index}` }, label)))),
           h('tbody', null, rows.map(item => {
-            const pill = reportStatusPill(item.status)
+            const pill = reportStatusPill(item.status, item.coreAvailable)
             return h('tr', { key: item.reportId },
               h('td', { className: 'ydo-report-cell-main' }, formatPeriodTitle({ type: item.reportType, start: item.periodStart, end: item.periodEnd })),
               h('td', null, h('span', { className: `ydo-report-pill ydo-report-pill-${pill.kind}` }, pill.label)),
