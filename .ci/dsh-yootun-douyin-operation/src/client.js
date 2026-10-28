@@ -30,6 +30,7 @@ import {
   reportErrorCopy,
   serializeReportHtml,
 } from './report-ui.js'
+import { MATERIAL_CSS_TEXT, MaterialPage } from './material-ui.js'
 import { TrendChart, trendLayout, useMeasuredWidth } from './trend-chart.js'
 
 const React = require('react')
@@ -57,6 +58,24 @@ const bdArchiveIdempotencyKey = () => `douyin:vv_archive:${newAiAnalysisRequestU
 const bdWorkflowIdempotencyKey = () => `douyin:vv_workflow:${newAiAnalysisRequestUuid()}`
 // 稳定下载受理键与 index/tools-client 模板保持一致；每次点击独立，避免跨点击重放。
 const bdDownloadIdempotencyKey = () => `douyin:vv_download:${newAiAnalysisRequestUuid()}`
+// 爆款素材看板受理键（RQ-2026-008 §6.2）：与 index.js MATERIAL_*_KEY_PATTERN、
+// tools-client.js viralVideo*IdempotencyKey 模板一致；每次点击生成全新 UUID，
+// 键不嵌种子/批次信息（种子编辑与采集受理各自独立键族）。
+const vvSeedSearchIdempotencyKey = () => `douyin:vv_seed_search:${newAiAnalysisRequestUuid()}`
+const vvKeywordUpsertIdempotencyKey = () => `douyin:vv_keyword_upsert:${newAiAnalysisRequestUuid()}`
+const vvAccountUpsertIdempotencyKey = () => `douyin:vv_account_upsert:${newAiAnalysisRequestUuid()}`
+const MATERIAL_BOARD_PAGE_SIZE = 20
+const MATERIAL_RUNS_PAGE_LIMIT = 50
+// 采集受理轮询固定 3s（受理响应 nextAction=poll_status 后启动；隐藏页签暂停）。
+const MATERIAL_POLL_INTERVAL_MS = 3000
+// 看板发布时间窗（demo publishedWindow 同款：7d/30d/90d/all → publishedFrom/To）。
+const materialPublishedWindow = range => {
+  if (range === 'all') return {}
+  const days = range === '7d' ? 7 : range === '90d' ? 90 : 30
+  const to = new Date()
+  const from = new Date(to.getTime() - days * 86400000)
+  return { publishedFrom: from.toISOString().slice(0, 10), publishedTo: to.toISOString().slice(0, 10) }
+}
 // 归档轮询固定 3s；workflow 轮询优先后端 retryAfterSeconds（缺失退回 5s），
 // 实际间隔 = max(5s, retryAfterSeconds)。
 const BD_ARCHIVE_POLL_INTERVAL_MS = 3000
@@ -252,6 +271,7 @@ const copy = {
     // 爆款拆解 Tab（0922 方案 §4.1；0923 视觉对齐预览稿 breakdown-tab-preview.html）
     tabBreakdown: '爆款拆解',
     tabReport: 'AI 报表',
+    tabMaterial: '素材看板',
     bdNewTitle: '发起拆解',
     bdShareLabel: '抖音分享链接', bdSharePlaceholder: '粘贴抖音视频分享链接，如 https://v.douyin.com/xxxx/',
     bdStartButton: '开始拆解', bdSubmitting: '提交中…',
@@ -459,6 +479,7 @@ const copy = {
     // Viral breakdown tab (0922 plan §4.1; 0923 visual alignment with breakdown-tab-preview.html)
     tabBreakdown: 'Viral breakdown',
     tabReport: 'AI reports',
+    tabMaterial: 'Materials',
     bdNewTitle: 'Start a breakdown',
     bdShareLabel: 'Douyin share link', bdSharePlaceholder: 'Paste a Douyin video share link, e.g. https://v.douyin.com/xxxx/',
     bdStartButton: 'Start breakdown', bdSubmitting: 'Submitting…',
@@ -1197,6 +1218,14 @@ function Overlay({ t }) {
   const [bdDetailLoading, setBdDetailLoading] = useState(false)
   const [bdDetailError, setBdDetailError] = useState(null)
   const [bdRewriteOpen, setBdRewriteOpen] = useState(false)
+  // 素材看板（RQ-2026-008）5 个弹层状态前置声明：Esc 生命周期 effect 在下方
+  // 引用它们，依赖数组渲染期求值，声明必须先于该 effect（TDZ 防护，4d377a3 教训）。
+  const [materialReason, setMaterialReason] = useState(null)
+  const [materialSeedModal, setMaterialSeedModal] = useState(null)
+  const [materialCollectOpen, setMaterialCollectOpen] = useState(false)
+  const [materialFailure, setMaterialFailure] = useState(null)
+  // 启用/禁用种子二次确认：{mode,row}（插件内 ydo-confirm 弹层，同删除账号样式）。
+  const [materialToggleConfirm, setMaterialToggleConfirm] = useState(null)
   const [bdRewriting, setBdRewriting] = useState(false)
   // 详情页导出过渡态：只读下载，导出中禁点防重复下载（与既有导出同法）；
   // 失败文案独立于明细错误（bdDetailError），避免已成功记录被整页错误态覆盖。
@@ -1302,9 +1331,10 @@ function Overlay({ t }) {
   useEffect(() => {
     if (!visible) return undefined
     // 统一的生命周期契约：Esc 先关子页面（作品详情 → 爆款抽屉 → AI 分析弹框 →
-    // 重新改写弹框），再关 overlay；关闭后焦点回到触发按钮。hotDrawerWork/
-    // aiModalOpen/bdRewriteOpen 必须在依赖里，否则闭包捕获旧值、Esc 会跳过弹层
-    // 直接关掉整个 overlay（审查修复补充）。
+    // 重新改写弹框 → 下载结果 → 素材确认弹层 → 素材弹窗/采集/失败明细 → 素材
+    // 评分理由抽屉），再关 overlay；评分理由抽屉的焦点返回由其独立 effect 处理
+    // （§6.4）。弹层状态必须在依赖里，否则闭包捕获旧值、Esc 会跳过弹层直接
+    // 关掉整个 overlay（审查修复补充；素材弹层曾漏接入致 Esc 穿透关页）。
     const onKey = event => {
       if (event.key === 'Escape') {
         if (detailWorkId) setDetailWorkId(null)
@@ -1312,13 +1342,18 @@ function Overlay({ t }) {
         else if (aiModalOpen) setAiModalOpen(false)
         else if (bdRewriteOpen) setBdRewriteOpen(false)
         else if (bdDownloadResult) setBdDownloadResult(null)
+        else if (materialToggleConfirm) setMaterialToggleConfirm(null)
+        else if (materialSeedModal) { setMaterialSeedModal(null); setMaterialSeedError(null) }
+        else if (materialCollectOpen) { setMaterialCollectOpen(false); setMaterialCollectError(null) }
+        else if (materialFailure) setMaterialFailure(null)
+        else if (materialReason) setMaterialReason(null)
         else closeOverlay()
       }
     }
     document.addEventListener('keydown', onKey)
     shellRef.current?.focus?.()
     return () => document.removeEventListener('keydown', onKey)
-  }, [visible, detailWorkId, hotDrawerWork, aiModalOpen, bdRewriteOpen, bdDownloadResult])
+  }, [visible, detailWorkId, hotDrawerWork, aiModalOpen, bdRewriteOpen, bdDownloadResult, materialToggleConfirm, materialSeedModal, materialCollectOpen, materialFailure, materialReason])
 
   const stopPolling = useCallback(ref => {
     if (ref.current) { clearInterval(ref.current); ref.current = null }
@@ -1331,6 +1366,8 @@ function Overlay({ t }) {
     stopPolling(bdArchivePollRef)
     stopPolling(bdWorkflowPollRef)
     stopPolling(reportPollRef)
+    stopPolling(materialPollRef)
+    if (materialDebounceRef.current) clearTimeout(materialDebounceRef.current)
   }, [stopPolling])
 
   const beginLogin = useCallback(async accountId => {
@@ -1764,6 +1801,50 @@ function Overlay({ t }) {
   // 不用 window.confirm——宿主 WebView 会渲染成系统原生对话框，与应用风格割裂）。
   const [reportRegenVersion, setReportRegenVersion] = useState(null)
 
+  // ---------------------------------------------------------------------------
+  // 爆款素材看板（RQ-2026-008 §6.4）：board/seeds/runs/facets 独立加载互不阻塞、
+  // 独立降级；filters 是 UI 状态，materialQueryRef 始终同步维护最新查询条件
+  // （loadMaterialBoard 只读 ref，避免 setState 后闭包读到旧值）。
+  // ---------------------------------------------------------------------------
+  const [materialBoard, setMaterialBoard] = useState({
+    rows: [], total: null, offset: 0, limit: MATERIAL_BOARD_PAGE_SIZE,
+    loading: false, errorReason: null, loaded: false,
+  })
+  // KPI「候选素材」素材域累计口径：单独轻量请求（limit=1），与筛选条件解耦。
+  const [materialBoardTotal, setMaterialBoardTotal] = useState(null)
+  const [materialFacets, setMaterialFacets] = useState([])
+  const [materialFilters, setMaterialFilters] = useState({
+    q: '', minLevel: '', sourceKind: '', publishedRange: '30d', tag: '', sortBy: 'hot', offset: 0,
+  })
+  const [materialSeeds, setMaterialSeeds] = useState({ data: null, loading: false, errorReason: null })
+  const [materialRuns, setMaterialRuns] = useState({ rows: [], loading: false, errorReason: null })
+  // 进行中采集任务（受理/轮询投影归一为 {runId, status, startedAt}）。
+  const [materialActiveRun, setMaterialActiveRun] = useState(null)
+  const [materialCollectError, setMaterialCollectError] = useState(null)
+  const [materialSavingSeed, setMaterialSavingSeed] = useState(false)
+  const [materialSeedError, setMaterialSeedError] = useState(null)
+  const [materialCollecting, setMaterialCollecting] = useState(false)
+  // 「查看看板」批次过滤：runId（服务端候选命中交集语义）；筛选变化即失效。
+  const [materialRunFilter, setMaterialRunFilter] = useState(null)
+  // 评分理由抽屉焦点管理（§6.4）：打开时记录触发按钮，关闭（Esc / × / 遮罩）
+  // 后焦点返回。触发元素经 document.activeElement 捕获，不进 React 状态。
+  const materialReasonTriggerRef = useRef(null)
+  useEffect(() => {
+    if (materialReason) {
+      materialReasonTriggerRef.current = typeof document !== 'undefined' ? document.activeElement : null
+      return undefined
+    }
+    const trigger = materialReasonTriggerRef.current
+    materialReasonTriggerRef.current = null
+    if (trigger && typeof trigger.focus === 'function') trigger.focus()
+    return undefined
+  }, [materialReason])
+  const materialPollRef = useRef(null)
+  const materialSeqRef = useRef(0)
+  const materialDebounceRef = useRef(null)
+  const materialQueryRef = useRef(materialFilters)
+  const materialRunFilterRef = useRef(null)
+
   const stopReportPolling = useCallback(() => stopPolling(reportPollRef), [stopPolling])
 
   const loadReports = useCallback(async ({ more = false } = {}) => {
@@ -1972,6 +2053,371 @@ function Overlay({ t }) {
     }
     printReport()
   }, [])
+
+  // ---------------------------------------------------------------------------
+  // 爆款素材看板（RQ-2026-008 开发文档 §6.4）：看板/种子/采集记录三子页数据独立
+  // 加载、独立降级；采集受理后轮询 material.collect.status（3s，隐藏页签暂停，
+  // 连续 5 次失败停止）。受理响应字段 status（受理态）、轮询响应字段 runStatus
+  // （run 投影），归一为 {runId, status, startedAt} 入 activeRun。KPI「候选素材」
+  // 是素材域累计口径（单独 limit=1 轻量请求），与筛选条件解耦（与 tools 验证页
+  // 同口径）。loadMaterialBoard 只读 materialQueryRef（changeMaterialFilters 先写
+  // ref 再 setState），避免 setState 后闭包读到旧筛选。
+  // ---------------------------------------------------------------------------
+
+  const stopMaterialPolling = useCallback(() => stopPolling(materialPollRef), [stopPolling])
+
+  const loadMaterialBoardTotal = useCallback(async () => {
+    try {
+      const result = await post({ action: 'material.videos.list', scope: 'material', limit: 1 })
+      if (result.status === 'ready' && typeof result.data?.total === 'number') {
+        setMaterialBoardTotal(result.data.total)
+      } else {
+        setMaterialBoardTotal(null)
+      }
+    } catch {
+      // KPI 累计独立降级：失败回退「—」，不阻塞看板与批次数据。
+      setMaterialBoardTotal(null)
+    }
+  }, [])
+
+  const loadMaterialFacets = useCallback(async () => {
+    try {
+      const result = await post({ action: 'material.facets' })
+      if (result.status === 'ready' && Array.isArray(result.tags)) setMaterialFacets(result.tags)
+    } catch {
+      // 标签 facets 降级为空：筛选条只剩「全部标签」，不影响其余筛选。
+    }
+  }, [])
+
+  const loadMaterialBoard = useCallback(async ({ offset, runId } = {}) => {
+    const query = materialQueryRef.current
+    const seq = ++materialSeqRef.current
+    setMaterialBoard(prev => ({ ...prev, loading: true, errorReason: null }))
+    try {
+      const filterRunId = typeof runId === 'string' && runId ? runId : materialRunFilterRef.current
+      const result = await post({
+        action: 'material.videos.list',
+        scope: 'material',
+        sortBy: query.sortBy,
+        limit: MATERIAL_BOARD_PAGE_SIZE,
+        offset: typeof offset === 'number' ? offset : query.offset,
+        // 「查看看板」批次过滤（demo query.runId 同款）：服务端候选命中交集语义。
+        ...(filterRunId ? { runId: filterRunId } : {}),
+        ...(query.q.trim() ? { q: query.q.trim() } : {}),
+        ...(query.minLevel ? { minLevel: query.minLevel } : {}),
+        ...(query.tag ? { tag: query.tag } : {}),
+        ...materialPublishedWindow(query.publishedRange),
+      })
+      if (seq !== materialSeqRef.current) return
+      if (result.status !== 'ready') {
+        setMaterialBoard(prev => ({ ...prev, loading: false, errorReason: result.reason || 'douyin_operation_request_failed' }))
+        return
+      }
+      let rows = Array.isArray(result.data?.candidates) ? result.data.candidates : []
+      // 来源类型过滤是页面语义（服务端投影无此维度），客户端过滤（demo 同款）；
+      // total 仍取服务端口径，分页按钮按服务端 total 计算。
+      const kind = query.sourceKind
+      if (kind) {
+        rows = rows.filter(row => {
+          const matches = Array.isArray(row.sourceMatches) ? row.sourceMatches : []
+          const byKeyword = matches.some(match => match && match.keyword)
+          const byAccount = matches.some(match => match && match.accountSeedId)
+          return kind === 'both' ? byKeyword && byAccount : kind === 'keyword' ? byKeyword : byAccount
+        })
+      }
+      setMaterialBoard(prev => ({
+        ...prev,
+        rows,
+        total: typeof result.data?.total === 'number' ? result.data.total : rows.length,
+        offset: typeof offset === 'number' ? offset : query.offset,
+        loading: false,
+        loaded: true,
+      }))
+    } catch {
+      if (seq !== materialSeqRef.current) return
+      setMaterialBoard(prev => ({ ...prev, loading: false, errorReason: 'douyin_operation_request_failed' }))
+    }
+  }, [])
+
+  const loadMaterialSeeds = useCallback(async ({ silent = false } = {}) => {
+    setMaterialSeeds(prev => ({ ...prev, loading: true, errorReason: silent ? prev.errorReason : null }))
+    try {
+      const result = await post({ action: 'material.seeds.list' })
+      if (result.status !== 'ready') {
+        setMaterialSeeds(prev => ({ ...prev, loading: false, errorReason: result.reason || 'douyin_operation_request_failed' }))
+        return null
+      }
+      const data = result.data || null
+      setMaterialSeeds({ data, loading: false, errorReason: null })
+      return data
+    } catch {
+      setMaterialSeeds(prev => ({ ...prev, loading: false, errorReason: 'douyin_operation_request_failed' }))
+      return null
+    }
+  }, [])
+
+  const loadMaterialRuns = useCallback(async ({ silent = false } = {}) => {
+    setMaterialRuns(prev => ({ ...prev, loading: true, errorReason: silent ? prev.errorReason : null }))
+    try {
+      const result = await post({ action: 'material.runs.list', limit: MATERIAL_RUNS_PAGE_LIMIT })
+      if (result.status !== 'ready') {
+        setMaterialRuns(prev => ({ ...prev, loading: false, errorReason: result.reason || 'douyin_operation_request_failed' }))
+        return []
+      }
+      const rows = Array.isArray(result.data?.runs) ? result.data.runs : []
+      setMaterialRuns({ rows, loading: false, errorReason: null })
+      // 返回行供调用方判断恢复轮询（Tab 进入 / 手动刷新）；run 投影 runStatus ∈
+      // queued/running 时任务在途。
+      return rows
+    } catch {
+      setMaterialRuns(prev => ({ ...prev, loading: false, errorReason: 'douyin_operation_request_failed' }))
+      return []
+    }
+  }, [])
+
+  const pollMaterialOnce = useCallback(async runId => {
+    try {
+      const result = await post({ action: 'material.collect.status', runId })
+      if (result.status !== 'ready') return null
+      return result.data || null
+    } catch {
+      return null
+    }
+  }, [])
+
+  const startMaterialPolling = useCallback(runId => {
+    stopMaterialPolling()
+    if (!runId) return
+    let failures = 0
+    materialPollRef.current = setInterval(() => {
+      // 隐藏页签暂停轮询（§6.4）：恢复可见后下一 tick 自动继续。
+      if (typeof document !== 'undefined' && document.hidden) return
+      pollMaterialOnce(runId).then(latest => {
+        if (!latest) {
+          failures += 1
+          if (failures >= 5) {
+            stopMaterialPolling()
+            setMaterialActiveRun(null)
+            setMaterialRuns(prev => ({ ...prev, errorReason: 'douyin_operation_request_failed' }))
+          }
+          return
+        }
+        failures = 0
+        setMaterialActiveRun({ runId: latest.runId, status: latest.runStatus, startedAt: latest.startedAt })
+        // nextAction=poll_status 表示仍在途；终态刷新批次记录、看板与 KPI 累计。
+        if (latest.nextAction !== 'poll_status') {
+          stopMaterialPolling()
+          setMaterialActiveRun(null)
+          loadMaterialRuns({ silent: true }).catch(() => {})
+          loadMaterialBoard().catch(() => {})
+          loadMaterialBoardTotal().catch(() => {})
+        }
+      }).catch(() => {})
+    }, MATERIAL_POLL_INTERVAL_MS)
+  }, [loadMaterialBoard, loadMaterialBoardTotal, loadMaterialRuns, pollMaterialOnce, stopMaterialPolling])
+
+  // 从批次行恢复轮询（Tab 进入 / 手动刷新共用）：最新行在途即恢复。
+  const resumeMaterialPollingFromRows = useCallback(rows => {
+    const latest = rows && rows[0]
+    if (latest && (latest.runStatus === 'queued' || latest.runStatus === 'running')) {
+      setMaterialActiveRun({ runId: latest.runId, status: latest.runStatus, startedAt: latest.startedAt })
+      startMaterialPolling(latest.runId)
+    }
+  }, [startMaterialPolling])
+
+  const changeMaterialFilters = useCallback(patch => {
+    const prev = materialQueryRef.current
+    const next = { ...prev, ...patch, offset: 0 }
+    materialQueryRef.current = next
+    setMaterialFilters(next)
+    // 手动改筛选时「查看看板」的批次过滤失效（demo query.runId=null 同款）。
+    materialRunFilterRef.current = null
+    setMaterialRunFilter(null)
+    if (materialDebounceRef.current) clearTimeout(materialDebounceRef.current)
+    // 仅搜索词实际变化走 300ms 防抖（§6.4 契约）；FilterBar 的 patch 恒含全量
+    // filters 快照，判断 q 值是否变化而不是键是否存在（审查 P1 修复：原
+    // `'q' in patch` 恒真，档位/来源/时间窗/标签/排序全部被错误防抖）。
+    if (patch.q !== undefined && patch.q !== prev.q) {
+      materialDebounceRef.current = setTimeout(() => { loadMaterialBoard({ offset: 0 }).catch(() => {}) }, 300)
+    } else {
+      loadMaterialBoard({ offset: 0 }).catch(() => {})
+    }
+  }, [loadMaterialBoard])
+
+  const changeMaterialBoardPage = useCallback(offset => {
+    const next = { ...materialQueryRef.current, offset }
+    materialQueryRef.current = next
+    setMaterialFilters(next)
+    loadMaterialBoard({ offset }).catch(() => {})
+  }, [loadMaterialBoard])
+
+  const refreshMaterialBoard = useCallback(() => {
+    loadMaterialBoard().catch(() => {})
+    loadMaterialBoardTotal().catch(() => {})
+    loadMaterialFacets().catch(() => {})
+  }, [loadMaterialBoard, loadMaterialBoardTotal, loadMaterialFacets])
+
+  const refreshMaterialRuns = useCallback(() => {
+    loadMaterialRuns().then(resumeMaterialPollingFromRows).catch(() => {})
+  }, [loadMaterialRuns, resumeMaterialPollingFromRows])
+
+  const viewMaterialRunBoard = useCallback(runId => {
+    if (!runId) return
+    materialRunFilterRef.current = runId
+    setMaterialRunFilter(runId)
+    loadMaterialBoard({ offset: 0, runId }).catch(() => {})
+  }, [loadMaterialBoard])
+
+  const clearMaterialRunFilter = useCallback(() => {
+    materialRunFilterRef.current = null
+    setMaterialRunFilter(null)
+    loadMaterialBoard({ offset: 0 }).catch(() => {})
+  }, [loadMaterialBoard])
+
+  const openMaterialSeedModal = useCallback((mode, row) => {
+    setMaterialSeedError(null)
+    setMaterialSeedModal({ mode, row })
+  }, [])
+
+  const saveMaterialSeed = useCallback(async payload => {
+    if (!materialSeedModal) return
+    const { mode } = materialSeedModal
+    setMaterialSavingSeed(true)
+    setMaterialSeedError(null)
+    try {
+      const isKeyword = mode === 'keyword'
+      // 批量合同的单条形态：dailyLimit/maxVideos 为 null 不传（服务端保留原值）。
+      const entry = isKeyword
+        ? {
+          keyword: payload.keyword,
+          priority: payload.priority,
+          status: payload.status,
+          ...(payload.dailyLimit !== null ? { dailyLimit: payload.dailyLimit } : {}),
+        }
+        : {
+          displayName: payload.displayName,
+          inputForm: payload.inputForm,
+          inputValue: payload.inputValue,
+          priority: payload.priority,
+          status: payload.status,
+          ...(payload.maxVideos !== null ? { maxVideos: payload.maxVideos } : {}),
+        }
+      const result = await post({
+        action: isKeyword ? 'material.keyword.upsert' : 'material.account.upsert',
+        [isKeyword ? 'keywords' : 'accounts']: [entry],
+        confirm: true,
+        idempotencyKey: isKeyword ? vvKeywordUpsertIdempotencyKey() : vvAccountUpsertIdempotencyKey(),
+      })
+      if (result.status !== 'ready') {
+        setMaterialSeedError(result.reason || 'douyin_operation_request_failed')
+        return
+      }
+      setMaterialSeedModal(null)
+      loadMaterialSeeds({ silent: true }).catch(() => {})
+    } catch {
+      setMaterialSeedError('douyin_operation_request_failed')
+    } finally {
+      setMaterialSavingSeed(false)
+    }
+  }, [loadMaterialSeeds, materialSeedModal])
+
+  // 启用/禁用只带身份键 + status（keyword / inputForm+inputValue），其余字段由
+  // 服务端保留原值；确认弹层用插件内 ydo-confirm（同删除账号/报表重新生成样式）。
+  const requestMaterialToggle = useCallback((mode, row) => {
+    setMaterialToggleConfirm({ mode, row })
+  }, [])
+
+  const confirmMaterialToggle = useCallback(async () => {
+    const pending = materialToggleConfirm
+    setMaterialToggleConfirm(null)
+    if (!pending) return
+    const { mode, row } = pending
+    const nextStatus = row.status === 'active' ? 'disabled' : 'active'
+    const isKeyword = mode === 'keyword'
+    const entry = isKeyword
+      ? { keyword: row.keyword, status: nextStatus }
+      : { inputForm: row.inputForm, inputValue: row.inputValue, status: nextStatus }
+    try {
+      const result = await post({
+        action: isKeyword ? 'material.keyword.upsert' : 'material.account.upsert',
+        [isKeyword ? 'keywords' : 'accounts']: [entry],
+        confirm: true,
+        idempotencyKey: isKeyword ? vvKeywordUpsertIdempotencyKey() : vvAccountUpsertIdempotencyKey(),
+      })
+      if (result.status !== 'ready') {
+        setMaterialSeeds(prev => ({ ...prev, errorReason: result.reason || 'douyin_operation_request_failed' }))
+        return
+      }
+      loadMaterialSeeds({ silent: true }).catch(() => {})
+    } catch {
+      setMaterialSeeds(prev => ({ ...prev, errorReason: 'douyin_operation_request_failed' }))
+    }
+  }, [loadMaterialSeeds, materialToggleConfirm])
+
+  const openMaterialCollect = useCallback(() => {
+    setMaterialCollectError(null)
+    setMaterialCollectOpen(true)
+    // 弹窗展示启用种子规模：种子未加载过时补一次（独立降级源）。
+    if (!materialSeeds.data && !materialSeeds.loading) loadMaterialSeeds().catch(() => {})
+  }, [loadMaterialSeeds, materialSeeds.data, materialSeeds.loading])
+
+  const confirmMaterialCollect = useCallback(async params => {
+    setMaterialCollecting(true)
+    setMaterialCollectError(null)
+    try {
+      const result = await post({
+        action: 'material.collect.start',
+        idempotencyKey: vvSeedSearchIdempotencyKey(),
+        ...(params.keywordLimit ? { keywordLimit: params.keywordLimit } : {}),
+        ...(params.accountLimit ? { accountLimit: params.accountLimit } : {}),
+        candidateMinLevel: params.candidateMinLevel,
+      })
+      if (result.status !== 'ready') {
+        setMaterialCollectError(result.reason || 'douyin_operation_request_failed')
+        // ACTIVE_RUN_EXISTS（§6.4）：冲突时绑定现有 run 继续轮询——tools 冲突
+        // 响应不带 runId，经 run 历史刷新 + resume 机制恢复在途 run（弹窗保持
+        // 打开并显示冲突文案，用户可关闭后查看进行中横幅）。
+        if (result.reason === 'VIRAL_VIDEO_ACTIVE_RUN_EXISTS') {
+          loadMaterialRuns({ silent: true }).then(resumeMaterialPollingFromRows).catch(() => {})
+        }
+        return
+      }
+      setMaterialCollectOpen(false)
+      // 受理响应 {runId,status,nextAction,summary}：立即进入轮询（受理态 queued）。
+      const runId = result.data && result.data.runId
+      setMaterialActiveRun({
+        runId: runId || null,
+        status: (result.data && result.data.status) || 'queued',
+        startedAt: null,
+      })
+      if (runId) startMaterialPolling(runId)
+      loadMaterialRuns({ silent: true }).catch(() => {})
+    } catch {
+      setMaterialCollectError('douyin_operation_request_failed')
+    } finally {
+      setMaterialCollecting(false)
+    }
+  }, [loadMaterialRuns, resumeMaterialPollingFromRows, startMaterialPolling])
+
+  // 进入素材看板 Tab：三子页数据一次预取（各自独立降级），在途 run 恢复轮询；
+  // 离开 Tab 停轮询（任务在服务端继续推进，切回 Tab 拉最新数据并恢复轮询）。
+  // 页面恢复可见立即刷新（§6.4）：interval 的 hidden 守卫要等下一 tick，
+  // visibilitychange 对在途 run 先行刷新批次记录并恢复轮询。
+  useEffect(() => {
+    if (tab !== 'material') return
+    loadMaterialRuns().then(resumeMaterialPollingFromRows).catch(() => {})
+    loadMaterialBoard().catch(() => {})
+    loadMaterialBoardTotal().catch(() => {})
+    loadMaterialFacets().catch(() => {})
+    loadMaterialSeeds().catch(() => {})
+    const onVisibility = () => {
+      if (typeof document === 'undefined' || document.hidden) return
+      loadMaterialRuns({ silent: true }).then(resumeMaterialPollingFromRows).catch(() => {})
+    }
+    document.addEventListener('visibilitychange', onVisibility)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    return () => { document.removeEventListener('visibilitychange', onVisibility); stopMaterialPolling() }
+  }, [tab])
 
   // ---------------------------------------------------------------------------
   // 爆款拆解（0922 方案 §4.2/§5）：归档受理 → 3s 轮询 → 自动 workflow 受理 →
@@ -2489,10 +2935,15 @@ function Overlay({ t }) {
           type: 'button', 'aria-current': tab === 'report' || undefined,
           // 进入报表 Tab 收起 AI 弹框（跨 Tab 不残留弹层）；离开 Tab 停详情轮询。
           onClick: () => { setTab('report'); setAiModalOpen(false) },
-        }, t('tabReport'))),
+        }, t('tabReport')),
+        h('button', {
+          type: 'button', 'aria-current': tab === 'material' || undefined,
+          // 进入素材看板 Tab 收起 AI 弹框（跨 Tab 不残留弹层）；离开 Tab 停采集轮询。
+          onClick: () => { setTab('material'); setAiModalOpen(false) },
+        }, t('tabMaterial'))),
       // 左侧账号管理栏只在「视频数据」Tab 显示（UI 优化方案 §3.1）；
       // 账号总览/单账号分析与爆款拆解使用完整宽度内容区（ydo-body-full 单列）。
-      h('div', { className: `ydo-body${tab === 'overview' || tab === 'breakdown' || tab === 'report' ? ' ydo-body-full' : ''}` },
+      h('div', { className: `ydo-body${tab === 'overview' || tab === 'breakdown' || tab === 'report' || tab === 'material' ? ' ydo-body-full' : ''}` },
         tab === 'videos' ? left : null,
         tab === 'overview' && analysisAccountId
           ? h('section', { className: 'ydo-right', 'aria-label': t('accountHotWorks') },
@@ -2675,6 +3126,46 @@ function Overlay({ t }) {
                   onOpen: reportId => { openReport(reportId).catch(() => {}) },
                 },
               }))
+          : tab === 'material'
+          ? h('section', { className: 'ydo-right', 'aria-label': t('tabMaterial') },
+            h(MaterialPage, {
+              board: materialBoard,
+              kpi: { total: materialBoardTotal, latest: materialRuns.rows[0] || null },
+              facets: materialFacets,
+              filters: materialFilters,
+              seedAccounts: materialSeeds.data && Array.isArray(materialSeeds.data.accounts) ? materialSeeds.data.accounts : [],
+              seeds: materialSeeds,
+              runs: materialRuns,
+              activeRun: materialActiveRun,
+              collecting: materialCollecting,
+              reason: materialReason,
+              seedModal: materialSeedModal,
+              collectOpen: materialCollectOpen,
+              collectError: materialCollectError,
+              failure: materialFailure,
+              savingSeed: materialSavingSeed,
+              seedError: materialSeedError,
+              runFilter: materialRunFilter,
+              actions: {
+                onFilterChange: changeMaterialFilters,
+                onRefreshBoard: refreshMaterialBoard,
+                onBoardPage: changeMaterialBoardPage,
+                onOpenReason: setMaterialReason,
+                onCloseReason: () => setMaterialReason(null),
+                onOpenSeedModal: openMaterialSeedModal,
+                onCloseSeedModal: () => { setMaterialSeedModal(null); setMaterialSeedError(null) },
+                onSaveSeed: saveMaterialSeed,
+                onToggleSeed: requestMaterialToggle,
+                onOpenCollect: openMaterialCollect,
+                onCloseCollect: () => { setMaterialCollectOpen(false); setMaterialCollectError(null) },
+                onCollectConfirm: confirmMaterialCollect,
+                onOpenFailure: setMaterialFailure,
+                onCloseFailure: () => setMaterialFailure(null),
+                onRefreshRuns: refreshMaterialRuns,
+                onViewRunBoard: viewMaterialRunBoard,
+                onClearRunFilter: clearMaterialRunFilter,
+              },
+            }))
           : h('section', { className: 'ydo-right', 'aria-label': t('data') },
           h('div', { className: 'ydo-toolbar' },
             h('button', {
@@ -2771,6 +3262,29 @@ function Overlay({ t }) {
             h('button', {
               type: 'button', className: 'ydo-confirm-secondary', disabled: reportDetail.regenerating,
               onClick: () => setReportRegenVersion(null),
+            }, t('confirmNo')))))
+      : null,
+    // 种子启用/禁用二次确认（RQ-2026-008 §6.4）：只带身份键 + 目标状态提交，
+    // 其余字段服务端保留原值；插件内 ydo-confirm 弹层（同删除账号样式）。
+    materialToggleConfirm
+      ? h('div', {
+        className: 'ydo-confirm-overlay', role: 'dialog', 'aria-modal': true,
+        'aria-label': t('confirmYes'),
+      },
+        h('div', { className: 'ydo-confirm' },
+          h('p', { className: 'ydo-confirm-title' },
+            materialToggleConfirm.row.status === 'active'
+              ? (materialToggleConfirm.mode === 'keyword'
+                ? '确认禁用该关键词？禁用后不再参与后续采集。'
+                : '确认禁用该对标账号？禁用后不再参与后续采集。')
+              : (materialToggleConfirm.mode === 'keyword'
+                ? '确认启用该关键词？下次采集将按优先级参与。'
+                : '确认启用该对标账号？下次采集将参与。')),
+          h('div', { className: 'ydo-confirm-actions' },
+            h('button', { type: 'button', className: 'ydo-confirm-primary', onClick: confirmMaterialToggle }, t('confirmYes')),
+            h('button', {
+              type: 'button', className: 'ydo-confirm-secondary',
+              onClick: () => setMaterialToggleConfirm(null),
             }, t('confirmNo')))))
       : null)
 }
@@ -3040,7 +3554,7 @@ const css = `.ydo-button{display:flex;width:36px;height:36px;align-items:center;
 .ydo-bd-download-link{display:flex;min-height:40px;align-items:center;justify-content:center;gap:8px;border-radius:6px;background:var(--dsw-alias-brand-primary);color:var(--dsw-alias-label-primary-foreground);font:inherit;font-size:var(--dsh-content-font-size,14px);font-weight:600;text-decoration:none;cursor:pointer}
 .ydo-bd-download-link:hover{text-decoration:none;filter:opacity(.92)}
 .ydo-bd-download-fallback{display:inline-block;margin-top:10px;color:var(--dsw-alias-brand-primary);font-size:var(--dsh-content-font-size-secondary,13px);text-decoration:underline;text-underline-offset:2px}
-${REPORT_CSS_TEXT}`;
+${REPORT_CSS_TEXT}${MATERIAL_CSS_TEXT}`;
 function apply(ctx) {
   ctx.effect(() => ctx.locale.register(NS, copy), 'dofe-yootun-douyin-operation: dictionaries')
   ctx.effect(() => { window.addEventListener(OVERLAY_EVENT, closeOtherOverlay); return () => window.removeEventListener(OVERLAY_EVENT, closeOtherOverlay) }, 'dofe-yootun-douyin-operation: exclusive-overlay')
@@ -3051,5 +3565,5 @@ function apply(ctx) {
 }
 
 // 1015 验收：css/copy/页面组件导出供截图脚本（scripts/screenshot.mjs）SSR 渲染
-// 与样式内联使用；运行时行为零改动。
-module.exports = { apply, inject: ['slots', 'locale'], downloadWorkbook, formatCell, formatCount, formatPercent, gapReasonText, hasGap, progressText, BatchPanel, WorkTable, WorkDetailModal, OverviewPage, AnalysisPage, ReportListView, ReportDetailView, css, copy }
+// 与样式内联使用；运行时行为零改动。1025 追加素材看板组件（screenshot-material.mjs）。
+module.exports = { apply, inject: ['slots', 'locale'], downloadWorkbook, formatCell, formatCount, formatPercent, gapReasonText, hasGap, progressText, BatchPanel, WorkTable, WorkDetailModal, OverviewPage, AnalysisPage, ReportListView, ReportDetailView, css, copy, MaterialPage, MaterialKpiCards, MaterialFilterBar, MaterialBoardTable, MaterialReasonDrawer, MaterialKeywordsTable, MaterialAccountsTable, MaterialSeedModal, MaterialRunsTable, MaterialCollectModal, MaterialFailureModal }

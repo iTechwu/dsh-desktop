@@ -1547,3 +1547,282 @@ test('breakdown.*：宿主未注册 viral_video 工具时收敛为 DOUYIN_TOOL_U
     assert.equal(response.payload.reason, 'DOUYIN_TOOL_UNAVAILABLE', action)
   }
 })
+
+// ---------------------------------------------------------------------------
+// 爆款素材看板（RQ-2026-008 §6.2）：9 个 Host action 一一映射 viral_video MCP
+// 工具。宿主校验（幂等键模板/confirm/枚举/pattern/clamp）与 tools-client 白名单
+// 由 tools-client.test.mjs 与 material-ui.test.mjs 覆盖；本组验证 action 分发的
+// 参数形状与拒绝路径。
+// ---------------------------------------------------------------------------
+
+test('material.seeds.list：只读透传，无参数', async () => {
+  const calls = []
+  const { ctx, registered } = createContext({
+    tools: [{ name: 'mcp__tools-douyin-operation__viral_video_seeds_list' }],
+    execute: async ({ arguments: args }) => {
+      calls.push(args)
+      return { structuredContent: { keywordSeeds: 0, accountSeeds: 0, keywords: [], accounts: [] } }
+    },
+  })
+  apply(ctx, { root: '/tmp/unused', browserStatus: async () => ({ chromeAvailable: true, driverAvailable: true, platform: 'linux' }) })
+  const response = await call(registered[0].handler, { action: 'material.seeds.list' })
+  assert.equal(response.payload.status, 'ready')
+  assert.deepEqual(calls, [{}])
+})
+
+test('material.keyword.upsert：幂等键/confirm/条目校验，成功形状为单条批量', async () => {
+  const calls = []
+  const { ctx, registered } = createContext({
+    tools: [{ name: 'mcp__tools-douyin-operation__viral_video_keyword_seeds_upsert' }],
+    execute: async ({ arguments: args }) => {
+      calls.push(args)
+      return { structuredContent: { ok: true, seedType: 'keywords', inputRows: 1, persistence: { created: 1, updated: 0 } } }
+    },
+  })
+  apply(ctx, { root: '/tmp/unused', browserStatus: async () => ({ chromeAvailable: true, driverAvailable: true, platform: 'linux' }) })
+  const dispatch = registered[0].handler
+
+  const missingKey = await call(dispatch, { action: 'material.keyword.upsert', keywords: [{ keyword: '词' }], confirm: true })
+  assert.equal(missingKey.payload.reason, 'idempotency_key_required')
+  const badKey = await call(dispatch, {
+    action: 'material.keyword.upsert', keywords: [{ keyword: '词' }],
+    confirm: true, idempotencyKey: 'douyin:vv_workflow:u1',
+  })
+  assert.equal(badKey.payload.reason, 'INVALID_IDEMPOTENCY_KEY')
+  const noConfirm = await call(dispatch, {
+    action: 'material.keyword.upsert', keywords: [{ keyword: '词' }], idempotencyKey: 'douyin:vv_keyword_upsert:u1',
+  })
+  assert.equal(noConfirm.payload.reason, 'CONFIRMATION_REQUIRED')
+  const emptyRows = await call(dispatch, {
+    action: 'material.keyword.upsert', keywords: [], confirm: true, idempotencyKey: 'douyin:vv_keyword_upsert:u1',
+  })
+  assert.equal(emptyRows.payload.reason, 'VALIDATION_ERROR')
+  const badPriority = await call(dispatch, {
+    action: 'material.keyword.upsert', keywords: [{ keyword: '词', priority: 'P9' }],
+    confirm: true, idempotencyKey: 'douyin:vv_keyword_upsert:u1',
+  })
+  assert.equal(badPriority.payload.reason, 'VALIDATION_ERROR')
+  const zeroLimit = await call(dispatch, {
+    action: 'material.keyword.upsert', keywords: [{ keyword: '词', dailyLimit: 0 }],
+    confirm: true, idempotencyKey: 'douyin:vv_keyword_upsert:u1',
+  })
+  assert.equal(zeroLimit.payload.reason, 'VALIDATION_ERROR')
+  assert.equal(calls.length, 0, '所有拒绝路径都不发起 tools 调用')
+
+  const saved = await call(dispatch, {
+    action: 'material.keyword.upsert',
+    keywords: [{ keyword: '增程车', priority: 'P2', status: 'active', dailyLimit: 5 }],
+    confirm: true, idempotencyKey: 'douyin:vv_keyword_upsert:u1',
+  })
+  assert.equal(saved.payload.status, 'ready')
+  assert.deepEqual(calls[0], {
+    keywords: [{ keyword: '增程车', priority: 'P2', status: 'active', dailyLimit: 5 }],
+    confirm: true, idempotencyKey: 'douyin:vv_keyword_upsert:u1',
+  })
+
+  // dailyLimit 不传：条目不带该键（服务端保留原值语义）
+  await call(dispatch, {
+    action: 'material.keyword.upsert',
+    keywords: [{ keyword: '增程车', priority: 'P2', status: 'active' }],
+    confirm: true, idempotencyKey: 'douyin:vv_keyword_upsert:u2',
+  })
+  assert.deepEqual(calls[1].keywords[0], { keyword: '增程车', priority: 'P2', status: 'active' })
+})
+
+test('material.account.upsert：inputForm 白名单与抖音域主页校验', async () => {
+  const calls = []
+  const { ctx, registered } = createContext({
+    tools: [{ name: 'mcp__tools-douyin-operation__viral_video_account_seeds_upsert' }],
+    execute: async ({ arguments: args }) => {
+      calls.push(args)
+      return { structuredContent: { ok: true, seedType: 'accounts', inputRows: 1, persistence: { created: 1, updated: 0 } } }
+    },
+  })
+  apply(ctx, { root: '/tmp/unused', browserStatus: async () => ({ chromeAvailable: true, driverAvailable: true, platform: 'linux' }) })
+  const dispatch = registered[0].handler
+
+  const badForm = await call(dispatch, {
+    action: 'material.account.upsert',
+    accounts: [{ inputForm: 'weibo_id', inputValue: 'x' }],
+    confirm: true, idempotencyKey: 'douyin:vv_account_upsert:u1',
+  })
+  assert.equal(badForm.payload.reason, 'VALIDATION_ERROR')
+  const offDomain = await call(dispatch, {
+    action: 'material.account.upsert',
+    accounts: [{ inputForm: 'homepage_url', inputValue: 'https://example.com/user/x' }],
+    confirm: true, idempotencyKey: 'douyin:vv_account_upsert:u1',
+  })
+  assert.equal(offDomain.payload.reason, 'INVALID_HOMEPAGE_URL')
+  const insecure = await call(dispatch, {
+    action: 'material.account.upsert',
+    accounts: [{ inputForm: 'homepage_url', inputValue: 'http://www.douyin.com/user/x' }],
+    confirm: true, idempotencyKey: 'douyin:vv_account_upsert:u1',
+  })
+  assert.equal(insecure.payload.reason, 'INVALID_HOMEPAGE_URL')
+  assert.equal(calls.length, 0)
+
+  const saved = await call(dispatch, {
+    action: 'material.account.upsert',
+    accounts: [{
+      displayName: '示例账号甲', inputForm: 'homepage_url',
+      inputValue: 'https://www.douyin.com/user/MS4wLjAB', priority: 'P1', status: 'active', maxVideos: 10,
+    }],
+    confirm: true, idempotencyKey: 'douyin:vv_account_upsert:u2',
+  })
+  assert.equal(saved.payload.status, 'ready')
+  assert.deepEqual(calls[0].accounts[0], {
+    displayName: '示例账号甲', inputForm: 'homepage_url',
+    inputValue: 'https://www.douyin.com/user/MS4wLjAB', priority: 'P1', status: 'active', maxVideos: 10,
+  })
+})
+
+test('material.collect.start：受理键模板/limit clamp/档位与优先级枚举', async () => {
+  const calls = []
+  const { ctx, registered } = createContext({
+    tools: [{ name: 'mcp__tools-douyin-operation__viral_video_seed_search_submit' }],
+    execute: async ({ arguments: args }) => {
+      calls.push(args)
+      return { structuredContent: { runId: 'vv-mat-r1', status: 'queued', nextAction: 'poll_status', summary: {} } }
+    },
+  })
+  apply(ctx, { root: '/tmp/unused', browserStatus: async () => ({ chromeAvailable: true, driverAvailable: true, platform: 'linux' }) })
+  const dispatch = registered[0].handler
+
+  const badKey = await call(dispatch, { action: 'material.collect.start', idempotencyKey: 'douyin:ai_analysis:u1' })
+  assert.equal(badKey.payload.reason, 'INVALID_IDEMPOTENCY_KEY')
+  const zeroLimit = await call(dispatch, {
+    action: 'material.collect.start', idempotencyKey: 'douyin:vv_seed_search:u1', keywordLimit: 0,
+  })
+  assert.equal(zeroLimit.payload.reason, 'VALIDATION_ERROR')
+  const badLevel = await call(dispatch, {
+    action: 'material.collect.start', idempotencyKey: 'douyin:vv_seed_search:u1', candidateMinLevel: 'X',
+  })
+  assert.equal(badLevel.payload.reason, 'VALIDATION_ERROR')
+  const badPriority = await call(dispatch, {
+    action: 'material.collect.start', idempotencyKey: 'douyin:vv_seed_search:u1', priorities: ['P9'],
+  })
+  assert.equal(badPriority.payload.reason, 'VALIDATION_ERROR')
+  assert.equal(calls.length, 0)
+
+  // 全参数受理：candidateMinLevel 小写归一为大写；priorities 透传
+  const started = await call(dispatch, {
+    action: 'material.collect.start',
+    idempotencyKey: 'douyin:vv_seed_search:u2',
+    keywordLimit: 10, accountLimit: 5, priorities: ['P1', 'P2'], candidateMinLevel: 'b',
+  })
+  assert.equal(started.payload.status, 'ready')
+  assert.deepEqual(calls[0], {
+    idempotencyKey: 'douyin:vv_seed_search:u2',
+    keywordLimit: 10, accountLimit: 5, priorities: ['P1', 'P2'], candidateMinLevel: 'B',
+  })
+
+  // 最简受理：只带幂等键，其余由服务端 [material] 配置补齐
+  await call(dispatch, { action: 'material.collect.start', idempotencyKey: 'douyin:vv_seed_search:u3' })
+  assert.deepEqual(calls[1], { idempotencyKey: 'douyin:vv_seed_search:u3' })
+})
+
+test('material.collect.status：runId 透传 viral_video_async_submit_get', async () => {
+  const calls = []
+  const { ctx, registered } = createContext({
+    tools: [{ name: 'mcp__tools-douyin-operation__viral_video_async_submit_get' }],
+    execute: async ({ arguments: args }) => {
+      calls.push(args)
+      return { structuredContent: { runId: 'vv-mat-r1', runStatus: 'running', nextAction: 'poll_status' } }
+    },
+  })
+  apply(ctx, { root: '/tmp/unused', browserStatus: async () => ({ chromeAvailable: true, driverAvailable: true, platform: 'linux' }) })
+  const dispatch = registered[0].handler
+
+  const missing = await call(dispatch, { action: 'material.collect.status', runId: ' ' })
+  assert.equal(missing.payload.reason, 'VALIDATION_ERROR')
+  const ok = await call(dispatch, { action: 'material.collect.status', runId: 'vv-mat-r1' })
+  assert.equal(ok.payload.status, 'ready')
+  assert.equal(ok.payload.data.runStatus, 'running')
+  assert.deepEqual(calls, [{ runId: 'vv-mat-r1' }])
+})
+
+test('material.videos.list：白名单/pattern/枚举校验与全参数透传', async () => {
+  const calls = []
+  const { ctx, registered } = createContext({
+    tools: [{ name: 'mcp__tools-douyin-operation__viral_video_candidates_list' }],
+    execute: async ({ arguments: args }) => {
+      calls.push(args)
+      return { structuredContent: { candidates: [], total: 0, offset: 0, limit: 200 } }
+    },
+  })
+  apply(ctx, { root: '/tmp/unused', browserStatus: async () => ({ chromeAvailable: true, driverAvailable: true, platform: 'linux' }) })
+  const dispatch = registered[0].handler
+
+  // 空体默认形状：sortBy=hot、limit=200 恒传，scope 由页面声明
+  const empty = await call(dispatch, { action: 'material.videos.list' })
+  assert.equal(empty.payload.status, 'ready')
+  assert.deepEqual(calls[0], { sortBy: 'hot', limit: 200 })
+
+  const badSort = await call(dispatch, { action: 'material.videos.list', sortBy: 'likes' })
+  assert.equal(badSort.payload.reason, 'INVALID_SORT')
+  const badScope = await call(dispatch, { action: 'material.videos.list', scope: 'all' })
+  assert.equal(badScope.payload.reason, 'VALIDATION_ERROR')
+  const badDate = await call(dispatch, { action: 'material.videos.list', publishedFrom: '2026/10/01' })
+  assert.equal(badDate.payload.reason, 'VALIDATION_ERROR')
+  const badLevel = await call(dispatch, { action: 'material.videos.list', minLevel: 'X' })
+  assert.equal(badLevel.payload.reason, 'VALIDATION_ERROR')
+  // limit 越界：宿主 clamp 收敛回默认（与既有 handler 宽容语义一致），不拒绝
+  const overLimit = await call(dispatch, { action: 'material.videos.list', limit: 2000 })
+  assert.equal(overLimit.payload.status, 'ready')
+  assert.equal(calls[1].limit, 200)
+  assert.equal(calls.length, 2, '显式枚举/pattern 拒绝路径不发起调用；limit 越界回退为合法请求')
+
+  // 全参数透传：minLevel 小写归一、数值 clamp、pattern 合法值放行
+  const full = await call(dispatch, {
+    action: 'material.videos.list', scope: 'material', taskId: 't1', runId: 'r1',
+    minLevel: 'a', sourceType: 'keyword_search', candidateId: 'cand-1', awemeId: '7123',
+    storyboardStatus: 'succeeded', sortBy: 'play_count', offset: 40, limit: 50,
+    q: '增程', sourceKeyword: '增程车', accountSeedId: 'as-1',
+    publishedFrom: '2026-10-01', publishedTo: '2026-10-28', tag: '自驾',
+  })
+  assert.equal(full.payload.status, 'ready')
+  assert.deepEqual(calls[2], {
+    scope: 'material', taskId: 't1', runId: 'r1', minLevel: 'A', sourceType: 'keyword_search',
+    candidateId: 'cand-1', awemeId: '7123', storyboardStatus: 'succeeded',
+    sortBy: 'play_count', offset: 40, limit: 50, q: '增程',
+    sourceKeyword: '增程车', accountSeedId: 'as-1',
+    publishedFrom: '2026-10-01', publishedTo: '2026-10-28', tag: '自驾',
+  })
+})
+
+test('material.dashboard / material.runs.list / material.facets：只读透传与投影', async () => {
+  const calls = []
+  const { ctx, registered } = createContext({
+    tools: [
+      { name: 'mcp__tools-douyin-operation__viral_video_dashboard_get' },
+      { name: 'mcp__tools-douyin-operation__viral_video_runs_list' },
+    ],
+    execute: async ({ name, arguments: args }) => {
+      calls.push({ name, args })
+      if (name.endsWith('viral_video_runs_list')) {
+        return { structuredContent: { runs: [{ runId: 'r1', runStatus: 'completed' }], count: 1, total: 1 } }
+      }
+      return { structuredContent: { candidates: { total: 3 }, materialFacets: { tags: [{ tag: '自驾', count: 2 }] } } }
+    },
+  })
+  apply(ctx, { root: '/tmp/unused', browserStatus: async () => ({ chromeAvailable: true, driverAvailable: true, platform: 'linux' }) })
+  const dispatch = registered[0].handler
+
+  // dashboard：taskId 可选
+  const dashboard = await call(dispatch, { action: 'material.dashboard', taskId: 't-1' })
+  assert.equal(dashboard.payload.status, 'ready')
+  assert.deepEqual(calls[0], { name: 'mcp__tools-douyin-operation__viral_video_dashboard_get', args: { taskId: 't-1' } })
+
+  // runs.list：默认 limit=20；越界 clamp 收敛回默认（同 videos.list 语义）
+  const runs = await call(dispatch, { action: 'material.runs.list' })
+  assert.equal(runs.payload.status, 'ready')
+  assert.deepEqual(calls[1].args, { limit: 20 })
+  const overRuns = await call(dispatch, { action: 'material.runs.list', limit: 1000 })
+  assert.equal(overRuns.payload.status, 'ready')
+  assert.deepEqual(calls[2].args, { limit: 20 })
+
+  // facets：materialFacets.tags 投影；缺失投影回空 tags
+  const facets = await call(dispatch, { action: 'material.facets' })
+  assert.equal(facets.payload.status, 'ready')
+  assert.deepEqual(facets.payload.tags, [{ tag: '自驾', count: 2 }])
+})

@@ -10,6 +10,8 @@ const analysisUiImport = /^import \{[\s\S]*?\} from '\.\/analysis-ui\.js'\n/m
 const breakdownUiImport = /^import \{[\s\S]*?\} from '\.\/breakdown\.js'\n/m
 // RQ-2026-006：report-ui（AI 报表 Tab）同法内联（先于引用它的 client.js）。
 const reportUiImport = /^import \{[\s\S]*?\} from '\.\/report-ui\.js'\n/m
+// RQ-2026-008：material-ui（素材看板 Tab）同法内联（先于引用它的 client.js）。
+const materialUiImport = /^import \{[\s\S]*?\} from '\.\/material-ui\.js'\n/m
 // 1015 阶段 3：trend-chart 共享模块（作品详情弹框与 analysis-ui 复用同一趋势绘制），
 // 与 ui-format 同法内联（先于引用它的 analysis-ui / client.js）。
 const trendChartImport = /^import \{[^}]*\} from '\.\/trend-chart\.js'\n/m
@@ -26,6 +28,8 @@ if (!breakdownUiImport.test(source)) throw new Error('build: breakdown import no
 source = source.replace(breakdownUiImport, '')
 if (!reportUiImport.test(source)) throw new Error('build: report-ui import not found in client.js')
 source = source.replace(reportUiImport, '')
+if (!materialUiImport.test(source)) throw new Error('build: material-ui import not found in client.js')
+source = source.replace(materialUiImport, '')
 if (!trendChartImport.test(source)) throw new Error('build: trend-chart import not found in client.js')
 source = source.replace(trendChartImport, '')
 const strip = text => text.replace(/^export (?=(function|const|let))/gm, '').trimEnd()
@@ -84,7 +88,16 @@ const reportUi = strip(
     ),
   ),
 )
-const body = [uiFormat, selectUi, trendChart, overviewUi, analysisUi, breakdownUi, reportUi, source.trimEnd()].join('\n\n')
+// material-ui 与 report-ui 同法（顶部 const React + 解构 h；hooks 走 React.xxx；
+// 无 ui-format 依赖——素材看板的格式化函数自包含，避免同名导出混淆）。
+const materialUi = strip(
+  stripUiPrimitivesRequire(
+    stripOverviewStyleReact(
+      await readFile(new URL('src/material-ui.js', root), 'utf8'),
+    ),
+  ),
+)
+const body = [uiFormat, selectUi, trendChart, overviewUi, analysisUi, breakdownUi, reportUi, materialUi, source.trimEnd()].join('\n\n')
 
 await mkdir(new URL('lib/', root), { recursive: true })
 await writeFile(new URL('lib/client.js', root), ['window.__ModuleLoader__.load({', '  id: "@dofe/dsh-yootun-douyin-operation",', '  factory: (require) => {', '    var module = { exports: {} };', '    var exports = module.exports;', body.split('\n').map(line => line === '' ? '' : `    ${line}`).join('\n'), '    return module.exports;', '  },', '});', ''].join('\n'))

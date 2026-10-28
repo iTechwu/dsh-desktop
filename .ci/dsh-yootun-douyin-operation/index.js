@@ -147,6 +147,24 @@ export function apply(ctx, overrides = {}) {
               return send(res, 200, await handleReportGet(deps, toolCtx, body))
             case 'report.regenerate':
               return send(res, 200, await handleReportRegenerate(deps, toolCtx, body))
+            case 'material.seeds.list':
+              return send(res, 200, await handleMaterialSeedsList(deps, toolCtx))
+            case 'material.keyword.upsert':
+              return send(res, 200, await handleMaterialKeywordUpsert(deps, toolCtx, body))
+            case 'material.account.upsert':
+              return send(res, 200, await handleMaterialAccountUpsert(deps, toolCtx, body))
+            case 'material.collect.start':
+              return send(res, 200, await handleMaterialCollectStart(deps, toolCtx, body))
+            case 'material.collect.status':
+              return send(res, 200, await handleMaterialCollectStatus(deps, toolCtx, body))
+            case 'material.videos.list':
+              return send(res, 200, await handleMaterialVideosList(deps, toolCtx, body))
+            case 'material.dashboard':
+              return send(res, 200, await handleMaterialDashboard(deps, toolCtx, body))
+            case 'material.runs.list':
+              return send(res, 200, await handleMaterialRunsList(deps, toolCtx, body))
+            case 'material.facets':
+              return send(res, 200, await handleMaterialFacets(deps, toolCtx))
             default:
               return send(res, 400, { status: 'error', reason: 'unknown_action' })
           }
@@ -1131,6 +1149,277 @@ async function handleReportRegenerate(deps, ctx, body) {
   }
   const payload = await callTool(ctx, 'douyin_report_regenerate', { reportId, idempotencyKey })
   return { status: 'ready', data: payload }
+}
+
+// ---------------------------------------------------------------------------
+// 爆款素材看板（RQ-2026-008 开发文档 §6.2）：9 个 Host action 一一映射
+// viral_video MCP 工具，页面与 MCP 客户端走到的业务逻辑完全一致。
+// Host 要求（§6.2）：cleanString 限字段、clampInt 限分页与数值、只透传声明
+// 字段、写操作必须有幂等键（模板前缀校验）、错误只回稳定 reason。
+// seed-search 是幂等受理（合同无 confirm，三类受理拒绝零副作用可同键重试）；
+// keyword/account upsert 必须显式 confirm=true + 幂等键（页面已弹确认）。
+// ---------------------------------------------------------------------------
+
+const MATERIAL_SEED_SEARCH_KEY_PATTERN = /^douyin:vv_seed_search:.+$/
+const MATERIAL_KEYWORD_KEY_PATTERN = /^douyin:vv_keyword_upsert:.+$/
+const MATERIAL_ACCOUNT_KEY_PATTERN = /^douyin:vv_account_upsert:.+$/
+
+const MATERIAL_SORT_FIELDS = new Set([
+  'hot', 'latest', 'published_at', 'play_count', 'like_count',
+  'comment_count', 'share_count', 'collect_count', 'interaction_rate',
+])
+const MATERIAL_STORYBOARD_STATUSES = new Set(['succeeded', 'running', 'failed'])
+const MATERIAL_MIN_LEVELS = new Set(['S', 'A', 'B', 'C'])
+const MATERIAL_PRIORITIES = new Set(['P1', 'P2', 'P3', 'P4', 'P5'])
+const MATERIAL_INPUT_FORMS = new Set(['douyin_id', 'homepage_url', 'sec_user_id'])
+
+// 主页链接前置校验（§6.4）：必须 HTTPS 且 host 在抖音域白名单内；
+// 服务端 upsert 仍会二次校验，这里只挡明显的站外/非安全输入。
+function isDouyinHomepageUrl(value) {
+  try {
+    const url = new URL(value)
+    if (url.protocol !== 'https:') return false
+    const host = url.hostname.toLowerCase()
+    return host === 'douyin.com' || host.endsWith('.douyin.com')
+  } catch {
+    return false
+  }
+}
+
+async function handleMaterialSeedsList(deps, ctx) {
+  const payload = await callTool(ctx, 'viral_video_seeds_list', {})
+  return { status: 'ready', data: payload }
+}
+
+async function handleMaterialKeywordUpsert(deps, ctx, body) {
+  const idempotencyKey = cleanString(body.idempotencyKey, 128)
+  if (!idempotencyKey) return { status: 'error', reason: 'idempotency_key_required' }
+  if (!MATERIAL_KEYWORD_KEY_PATTERN.test(idempotencyKey)) {
+    return { status: 'error', reason: 'INVALID_IDEMPOTENCY_KEY' }
+  }
+  if (body.confirm !== true) return { status: 'error', reason: 'CONFIRMATION_REQUIRED' }
+  const rows = Array.isArray(body.keywords) ? body.keywords.slice(0, 1000) : []
+  if (!rows.length) return { status: 'error', reason: 'VALIDATION_ERROR' }
+  const keywords = []
+  for (const row of rows) {
+    if (!row || typeof row !== 'object') return { status: 'error', reason: 'VALIDATION_ERROR' }
+    const keyword = cleanString(row.keyword, 512)
+    if (!keyword) return { status: 'error', reason: 'VALIDATION_ERROR' }
+    const item = { keyword }
+    // category 是内部维护标记（§6.4：弹窗不展示）——编辑时服务端保留原值，
+    // 新增不传（服务端写 other）；仅当调用方显式带回时透传。
+    const category = cleanString(row.category, 64)
+    if (category) item.category = category
+    const priority = cleanString(row.priority, 8)
+    if (priority) {
+      if (!MATERIAL_PRIORITIES.has(priority)) return { status: 'error', reason: 'VALIDATION_ERROR' }
+      item.priority = priority
+    }
+    const status = cleanString(row.status, 16)
+    if (status) {
+      if (status !== 'active' && status !== 'disabled') return { status: 'error', reason: 'VALIDATION_ERROR' }
+      item.status = status
+    }
+    // dailyLimit/searchCount 未传保持 undefined（toWireArgs 剔除）→ 服务端按 null 处理
+    if (row.dailyLimit !== undefined && row.dailyLimit !== null) {
+      const dailyLimit = clampInt(row.dailyLimit, 1, 1000000, null)
+      if (dailyLimit === null) return { status: 'error', reason: 'VALIDATION_ERROR' }
+      item.dailyLimit = dailyLimit
+    }
+    if (row.searchCount !== undefined && row.searchCount !== null) {
+      const searchCount = clampInt(row.searchCount, 1, 100, null)
+      if (searchCount === null) return { status: 'error', reason: 'VALIDATION_ERROR' }
+      item.searchCount = searchCount
+    }
+    keywords.push(item)
+  }
+  const payload = await callTool(ctx, 'viral_video_keyword_seeds_upsert', {
+    keywords, confirm: true, idempotencyKey,
+  })
+  return { status: 'ready', data: payload }
+}
+
+async function handleMaterialAccountUpsert(deps, ctx, body) {
+  const idempotencyKey = cleanString(body.idempotencyKey, 128)
+  if (!idempotencyKey) return { status: 'error', reason: 'idempotency_key_required' }
+  if (!MATERIAL_ACCOUNT_KEY_PATTERN.test(idempotencyKey)) {
+    return { status: 'error', reason: 'INVALID_IDEMPOTENCY_KEY' }
+  }
+  if (body.confirm !== true) return { status: 'error', reason: 'CONFIRMATION_REQUIRED' }
+  const rows = Array.isArray(body.accounts) ? body.accounts.slice(0, 1000) : []
+  if (!rows.length) return { status: 'error', reason: 'VALIDATION_ERROR' }
+  const accounts = []
+  for (const row of rows) {
+    if (!row || typeof row !== 'object') return { status: 'error', reason: 'VALIDATION_ERROR' }
+    const inputForm = cleanString(row.inputForm, 32)
+    if (!MATERIAL_INPUT_FORMS.has(inputForm)) return { status: 'error', reason: 'VALIDATION_ERROR' }
+    const inputValue = cleanString(row.inputValue, 512)
+    if (!inputValue) return { status: 'error', reason: 'VALIDATION_ERROR' }
+    if (inputForm === 'homepage_url' && !isDouyinHomepageUrl(inputValue)) {
+      return { status: 'error', reason: 'INVALID_HOMEPAGE_URL' }
+    }
+    const item = { inputForm, inputValue }
+    const displayName = cleanString(row.displayName, 256)
+    if (displayName) item.displayName = displayName
+    const priority = cleanString(row.priority, 8)
+    if (priority) {
+      if (!MATERIAL_PRIORITIES.has(priority)) return { status: 'error', reason: 'VALIDATION_ERROR' }
+      item.priority = priority
+    }
+    const status = cleanString(row.status, 16)
+    if (status) {
+      if (status !== 'active' && status !== 'disabled') return { status: 'error', reason: 'VALIDATION_ERROR' }
+      item.status = status
+    }
+    if (row.maxVideos !== undefined && row.maxVideos !== null) {
+      const maxVideos = clampInt(row.maxVideos, 1, 100, null)
+      if (maxVideos === null) return { status: 'error', reason: 'VALIDATION_ERROR' }
+      item.maxVideos = maxVideos
+    }
+    accounts.push(item)
+  }
+  const payload = await callTool(ctx, 'viral_video_account_seeds_upsert', {
+    accounts, confirm: true, idempotencyKey,
+  })
+  return { status: 'ready', data: payload }
+}
+
+async function handleMaterialCollectStart(deps, ctx, body) {
+  const idempotencyKey = cleanString(body.idempotencyKey, 128)
+  if (!idempotencyKey) return { status: 'error', reason: 'idempotency_key_required' }
+  if (!MATERIAL_SEED_SEARCH_KEY_PATTERN.test(idempotencyKey)) {
+    return { status: 'error', reason: 'INVALID_IDEMPOTENCY_KEY' }
+  }
+  const args = { idempotencyKey }
+  if (body.keywordLimit !== undefined && body.keywordLimit !== null) {
+    const keywordLimit = clampInt(body.keywordLimit, 1, 500, null)
+    if (keywordLimit === null) return { status: 'error', reason: 'VALIDATION_ERROR' }
+    args.keywordLimit = keywordLimit
+  }
+  if (body.accountLimit !== undefined && body.accountLimit !== null) {
+    const accountLimit = clampInt(body.accountLimit, 1, 500, null)
+    if (accountLimit === null) return { status: 'error', reason: 'VALIDATION_ERROR' }
+    args.accountLimit = accountLimit
+  }
+  if (Array.isArray(body.priorities) && body.priorities.length) {
+    const priorities = body.priorities.slice(0, 10).map(item => cleanString(item, 8)).filter(Boolean)
+    for (const priority of priorities) {
+      if (!MATERIAL_PRIORITIES.has(priority)) return { status: 'error', reason: 'VALIDATION_ERROR' }
+    }
+    if (priorities.length) args.priorities = priorities
+  }
+  if (body.candidateMinLevel !== undefined && body.candidateMinLevel !== null) {
+    const candidateMinLevel = cleanString(body.candidateMinLevel, 8)
+    if (!MATERIAL_MIN_LEVELS.has(candidateLevelUpper(candidateMinLevel))) {
+      return { status: 'error', reason: 'VALIDATION_ERROR' }
+    }
+    args.candidateMinLevel = candidateLevelUpper(candidateMinLevel)
+  }
+  const payload = await callTool(ctx, 'viral_video_seed_search_submit', args)
+  return { status: 'ready', data: payload }
+}
+
+function candidateLevelUpper(value) {
+  return String(value).trim().toUpperCase()
+}
+
+async function handleMaterialCollectStatus(deps, ctx, body) {
+  const runId = cleanString(body.runId, MAX_ID)
+  if (!runId) return { status: 'error', reason: 'VALIDATION_ERROR' }
+  const payload = await callTool(ctx, 'viral_video_async_submit_get', { runId })
+  return { status: 'ready', data: payload }
+}
+
+async function handleMaterialVideosList(deps, ctx, body) {
+  // 全参数白名单透传：显式约束（Literal/pattern）宿主先挡，数值 clamp 收敛；
+  // 候选列表固定素材域语义由调用方 scope='material' 声明（§6.4）。
+  const args = {}
+  const taskId = cleanString(body.taskId, 128)
+  if (taskId) args.taskId = taskId
+  const runId = cleanString(body.runId, 128)
+  if (runId) args.runId = runId
+  const minLevel = cleanString(body.minLevel, 8).toUpperCase()
+  if (minLevel) {
+    if (!MATERIAL_MIN_LEVELS.has(minLevel)) return { status: 'error', reason: 'VALIDATION_ERROR' }
+    args.minLevel = minLevel
+  }
+  const sourceType = cleanString(body.sourceType, 64)
+  if (sourceType) args.sourceType = sourceType
+  const candidateId = cleanString(body.candidateId, 128)
+  if (candidateId) args.candidateId = candidateId
+  const awemeId = cleanString(body.awemeId, 64)
+  if (awemeId) args.awemeId = awemeId
+  const storyboardStatus = cleanString(body.storyboardStatus, 16)
+  if (storyboardStatus) {
+    if (!MATERIAL_STORYBOARD_STATUSES.has(storyboardStatus)) {
+      return { status: 'error', reason: 'VALIDATION_ERROR' }
+    }
+    args.storyboardStatus = storyboardStatus
+  }
+  const sortBy = cleanString(body.sortBy, 32) || 'hot'
+  if (!MATERIAL_SORT_FIELDS.has(sortBy)) return { status: 'error', reason: 'INVALID_SORT' }
+  args.sortBy = sortBy
+  if (body.offset !== undefined && body.offset !== null) {
+    const offset = clampInt(body.offset, 0, 1000000, null)
+    if (offset === null) return { status: 'error', reason: 'VALIDATION_ERROR' }
+    args.offset = offset
+  }
+  // limit 越界按 clamp 收敛回默认（v1.8 口径 ⑤，与既有 handler 宽容语义一致）。
+  const limit = clampInt(body.limit, 1, 1000, 200)
+  args.limit = limit
+  const q = cleanString(body.q, 128)
+  if (q) args.q = q
+  const sourceKeyword = cleanString(body.sourceKeyword, 256)
+  if (sourceKeyword) args.sourceKeyword = sourceKeyword
+  const accountSeedId = cleanString(body.accountSeedId, 128)
+  if (accountSeedId) args.accountSeedId = accountSeedId
+  const publishedFrom = cleanString(body.publishedFrom, 10)
+  if (publishedFrom) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(publishedFrom)) return { status: 'error', reason: 'VALIDATION_ERROR' }
+    args.publishedFrom = publishedFrom
+  }
+  const publishedTo = cleanString(body.publishedTo, 10)
+  if (publishedTo) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(publishedTo)) return { status: 'error', reason: 'VALIDATION_ERROR' }
+    args.publishedTo = publishedTo
+  }
+  const tag = cleanString(body.tag, 64)
+  if (tag) args.tag = tag
+  if (body.scope !== undefined && body.scope !== null) {
+    if (body.scope !== 'material') return { status: 'error', reason: 'VALIDATION_ERROR' }
+    args.scope = body.scope
+  }
+  const payload = await callTool(ctx, 'viral_video_candidates_list', args)
+  return { status: 'ready', data: payload }
+}
+
+async function handleMaterialDashboard(deps, ctx, body) {
+  const args = {}
+  const taskId = cleanString(body.taskId, 128)
+  if (taskId) args.taskId = taskId
+  const payload = await callTool(ctx, 'viral_video_dashboard_get', args)
+  return { status: 'ready', data: payload }
+}
+
+async function handleMaterialRunsList(deps, ctx, body) {
+  const args = {}
+  if (body.offset !== undefined && body.offset !== null) {
+    const offset = clampInt(body.offset, 0, 1000000, null)
+    if (offset === null) return { status: 'error', reason: 'VALIDATION_ERROR' }
+    args.offset = offset
+  }
+  const limit = clampInt(body.limit, 1, 100, 20)
+  args.limit = limit
+  const payload = await callTool(ctx, 'viral_video_runs_list', args)
+  return { status: 'ready', data: payload }
+}
+
+async function handleMaterialFacets(deps, ctx) {
+  // 标签 facets 复用 dashboard 投影（§6.2 material.facets）：materialFacets
+  // 天然限定素材域，不随 task_id 收窄；缺失投影返回空 tags（页面只剩「全部」项）。
+  const payload = await callTool(ctx, 'viral_video_dashboard_get', {})
+  const tags = Array.isArray(payload?.materialFacets?.tags) ? payload.materialFacets.tags : []
+  return { status: 'ready', tags }
 }
 
 async function readBody(req) {

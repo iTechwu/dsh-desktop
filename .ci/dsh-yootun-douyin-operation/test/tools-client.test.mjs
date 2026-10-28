@@ -232,3 +232,45 @@ test('爆款拆解：受理键模板与 0916 分析键同风格，每次点击�
   assert.ok(longest.length <= 128)
   assert.ok(viralVideoDownloadIdempotencyKey('u'.repeat(36)).length <= 128)
 })
+
+test('素材看板（RQ-2026-008）：6 个 viral_video 工具进入 TOOL_NAMES 白名单', async () => {
+  const { TOOL_NAMES } = await import('../src/tools-client.js')
+  for (const name of [
+    'viral_video_seeds_list',
+    'viral_video_keyword_seeds_upsert',
+    'viral_video_account_seeds_upsert',
+    'viral_video_seed_search_submit',
+    'viral_video_dashboard_get',
+    'viral_video_runs_list',
+  ]) {
+    assert.ok(TOOL_NAMES.includes(name), `missing ${name}`)
+  }
+})
+
+test('素材看板（RQ-2026-008）：4 个新稳定码进入错误码白名单', async () => {
+  for (const code of [
+    'VIRAL_VIDEO_NO_ACTIVE_SEEDS',
+    'VIRAL_VIDEO_ACTIVE_RUN_EXISTS',
+    'VIRAL_VIDEO_SEED_LIMIT_INVALID',
+    'VIRAL_VIDEO_SEARCH_DISPATCH_FAILED',
+  ]) {
+    assert.equal(safeErrorCode(code), code)
+  }
+  // 白名单外的素材域内部码仍收敛兜底（不透传原文）
+  assert.equal(safeErrorCode('SOME_MATERIAL_INTERNAL_CODE'), 'douyin_operation_request_failed')
+})
+
+test('素材看板（RQ-2026-008）：3 个受理键模板与 index.js 校验一致', async () => {
+  const {
+    viralVideoSeedSearchIdempotencyKey,
+    viralVideoKeywordUpsertIdempotencyKey,
+    viralVideoAccountUpsertIdempotencyKey,
+  } = await import('../src/tools-client.js')
+  assert.equal(viralVideoSeedSearchIdempotencyKey('uuid-a'), 'douyin:vv_seed_search:uuid-a')
+  assert.equal(viralVideoKeywordUpsertIdempotencyKey('uuid-b'), 'douyin:vv_keyword_upsert:uuid-b')
+  assert.equal(viralVideoAccountUpsertIdempotencyKey('uuid-c'), 'douyin:vv_account_upsert:uuid-c')
+  // 最长 UUID + 前缀仍在服务端 1–128 约束内
+  assert.ok(viralVideoSeedSearchIdempotencyKey('u'.repeat(36)).length <= 128)
+  assert.ok(viralVideoKeywordUpsertIdempotencyKey('u'.repeat(36)).length <= 128)
+  assert.ok(viralVideoAccountUpsertIdempotencyKey('u'.repeat(36)).length <= 128)
+})

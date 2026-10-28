@@ -51,6 +51,15 @@ export const TOOL_NAMES = [
   'viral_video_analysis_status_get',
   'viral_video_rewrite_rules_list',
   'viral_video_storyboard_export',
+  // 爆款素材看板（RQ-2026-008 阶段 4）：seed 池读写、手动采集受理/轮询、
+  // 候选全参数查询、业务总览（含 materialFacets 标签聚合）、material run 历史。
+  // viral_video_async_submit_get / viral_video_candidates_list 沿用上方拆解登记。
+  'viral_video_seeds_list',
+  'viral_video_keyword_seeds_upsert',
+  'viral_video_account_seeds_upsert',
+  'viral_video_seed_search_submit',
+  'viral_video_dashboard_get',
+  'viral_video_runs_list',
 ]
 
 const ALLOWED_ERROR_CODES = new Set([
@@ -141,6 +150,13 @@ const ALLOWED_ERROR_CODES = new Set([
   'TOS_PRESIGN_FAILED',
   // 日度入库（1015）：day 落在未来（数据未出）被服务端拒绝——客户端采集侧已过滤，此为兜底
   'DAILY_DAY_IN_FUTURE',
+  // 爆款素材看板（RQ-2026-008 §6.3）稳定码：受理拒绝三类（空池/单飞互斥/参数越界）
+  // 与异步派发失败。三类受理拒绝是零副作用确定性失败（服务端删收据可同键重试），
+  // 页面据此给出「补种子 / 已有任务进行中 / 修正参数」的受控文案。
+  'VIRAL_VIDEO_NO_ACTIVE_SEEDS',
+  'VIRAL_VIDEO_ACTIVE_RUN_EXISTS',
+  'VIRAL_VIDEO_SEED_LIMIT_INVALID',
+  'VIRAL_VIDEO_SEARCH_DISPATCH_FAILED',
 ])
 
 export class ToolsUnavailableError extends Error {
@@ -363,6 +379,12 @@ export const reportRegenerateIdempotencyKey = (reportId, attemptUuid) =>
 // 同键重放返回同一 run 回执，不重复下载；工作流同键同输入走自然键 resume。
 export const viralVideoArchiveIdempotencyKey = requestUuid => `douyin:vv_archive:${requestUuid}`
 export const viralVideoWorkflowIdempotencyKey = requestUuid => `douyin:vv_workflow:${requestUuid}`
+// 爆款素材看板受理键（RQ-2026-008 §6.3）：每次点击生成全新 UUID，页面内不跨点击
+// 复用；服务端对键只做 1–128 长度约束、无模板校验，前缀标识来源便于审计。
+// seed-search 三类受理拒绝（空池/互斥/越界）零副作用可同键重试，收据不烧键。
+export const viralVideoSeedSearchIdempotencyKey = requestUuid => `douyin:vv_seed_search:${requestUuid}`
+export const viralVideoKeywordUpsertIdempotencyKey = requestUuid => `douyin:vv_keyword_upsert:${requestUuid}`
+export const viralVideoAccountUpsertIdempotencyKey = requestUuid => `douyin:vv_account_upsert:${requestUuid}`
 // 异步稳定下载受理键：每次点击独立 UUID；同键重放由 viral_video_runs 摘要兜底。
 export const viralVideoDownloadIdempotencyKey = requestUuid => `douyin:vv_download:${requestUuid}`
 // 账号保存/删除的键带**时间戳**而不是固定值，这是刻意为之：
