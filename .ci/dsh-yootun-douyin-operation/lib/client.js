@@ -3984,6 +3984,14 @@ window.__ModuleLoader__.load({
     const DASH = '—'
 
     const matNum = value => (typeof value === 'number' && Number.isFinite(value) ? value.toLocaleString('zh-CN') : DASH)
+    // 评分规则版本的中文展示（客户端只读映射，未知版本回退原文）。
+    const hotVersionLabel = version => (version === 'hot-v1'
+      ? '热度评分规则 v1'
+      : version === 'hot-v1-potential' ? '热度评分规则 v1（含潜力作品）' : version ? String(version) : DASH)
+    // 计数列万化：≥1万 显示「x.x万」（与 tools 验证页口径一致）。
+    const matNumWan = value => (typeof value === 'number' && Number.isFinite(value)
+      ? value >= 10000 ? `${(value / 10000).toFixed(1)}万` : value.toLocaleString('zh-CN')
+      : DASH)
     const matText = value => (value === null || value === undefined || value === '' ? DASH : String(value))
     // interactionRate 为 0–1 比率（服务端热度评分口径），展示层统一 ×100 两位小数。
     const matRate = value => (typeof value === 'number' && Number.isFinite(value) ? `${(value * 100).toFixed(2)}%` : DASH)
@@ -4059,6 +4067,8 @@ window.__ModuleLoader__.load({
     .ydo-mat-table td{padding:10px 12px;border-bottom:1px solid var(--dsw-alias-border-l2,#f0f1f3);vertical-align:top}
     .ydo-mat-table tr:last-child td{border-bottom:0}
     .ydo-mat-table td.num,.ydo-mat-table th.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+    .ydo-mat-seed-input{margin:0;overflow:hidden;overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+    .ydo-mat-ellipsis{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
     .ydo-mat-cover{width:56px;height:72px;object-fit:cover;border-radius:8px;display:block}
     .ydo-mat-cover-placeholder{width:56px;height:72px;display:grid;place-items:center;border-radius:8px;background:var(--dsw-alias-bg-layer-2,#f5f6f7);color:var(--dsw-alias-label-secondary,#646a73)}
     .ydo-mat-video-title{margin:0;font-weight:650;line-height:1.45;max-width:260px}
@@ -4123,8 +4133,7 @@ window.__ModuleLoader__.load({
       const levels = latest && latest.hotLevelSummary && typeof latest.hotLevelSummary === 'object'
         ? latest.hotLevelSummary
         : {}
-      const s = typeof levels.S === 'number' ? levels.S : null
-      const a = typeof levels.A === 'number' ? levels.A : null
+      const sa = ['S', 'A', 'B', 'C'].map(key => (typeof levels[key] === 'number' ? levels[key] : null))
       const statusLabel = latest ? (RUN_STATUS_META[latest.runStatus] || [latest.runStatus])[0] : null
       return h('div', { className: 'ydo-mat-kpis' },
         h('div', { className: 'ydo-mat-kpi' },
@@ -4132,8 +4141,8 @@ window.__ModuleLoader__.load({
           h('p', { className: 'ydo-mat-kpi-value' }, matNum(kpi ? kpi.total : null)),
           h('p', { className: 'ydo-mat-kpi-foot' }, '素材域累计')),
         h('div', { className: 'ydo-mat-kpi' },
-          h('p', { className: 'ydo-mat-kpi-label' }, 'S / A 档候选'),
-          h('p', { className: 'ydo-mat-kpi-value' }, s === null && a === null ? DASH : `${s ?? 0} / ${a ?? 0}`),
+          h('p', { className: 'ydo-mat-kpi-label' }, 'S/A/B/C 档候选'),
+          h('p', { className: 'ydo-mat-kpi-value' }, sa.every(v => v === null) ? DASH : sa.map(v => v ?? 0).join(' / ')),
           h('p', { className: 'ydo-mat-kpi-foot' }, latest ? '最新批次分布' : '暂无批次')),
         h('div', { className: 'ydo-mat-kpi' },
           h('p', { className: 'ydo-mat-kpi-label' }, '本轮新增入库'),
@@ -4230,16 +4239,17 @@ window.__ModuleLoader__.load({
             ? tags.map((tag, index) => h('span', { key: `${tag}:${index}`, className: 'ydo-mat-tag' }, String(tag)))
             : h('span', { className: 'ydo-mat-tag ydo-mat-tag-miss' }, '标签未返回'))),
         h('td', null,
-          h('span', { className: 'ydo-mat-score' }, matNum(row.hotScore)),
-          row.hotLevel ? h('span', { className: `ydo-mat-level ${LEVEL_CLASS[row.hotLevel] || 'ydo-mat-level-c'}` }, String(row.hotLevel)) : null,
-          h('div', { className: 'ydo-mat-mini' }, `${matText(row.scoreRuleVersion)} · ${Array.isArray(row.scoreReasons) ? row.scoreReasons.length : 0} 项理由`)),
-        h('td', { className: 'num' }, matNum(row.playCount)),
-        h('td', { className: 'num' }, matNum(row.likeCount)),
-        h('td', { className: 'num' }, matNum(row.commentCount)),
-        h('td', { className: 'num' }, matNum(row.collectCount)),
-        h('td', { className: 'num' }, matNum(row.shareCount)),
+          h('span', { className: 'ydo-mat-score' }, row.hotLevel
+            ? `${matNum(row.hotScore)} /`
+            : matNum(row.hotScore)),
+          row.hotLevel ? h('span', { className: `ydo-mat-level ${LEVEL_CLASS[row.hotLevel] || 'ydo-mat-level-c'}` }, String(row.hotLevel)) : null),
+        h('td', { className: 'num' }, matNumWan(row.playCount)),
+        h('td', { className: 'num' }, matNumWan(row.likeCount)),
+        h('td', { className: 'num' }, matNumWan(row.commentCount)),
+        h('td', { className: 'num' }, matNumWan(row.collectCount)),
+        h('td', { className: 'num' }, matNumWan(row.shareCount)),
         h('td', { className: 'num' }, matRate(row.interactionRate)),
-        h('td', null, typeof row.publishedAt === 'string' && row.publishedAt ? row.publishedAt.slice(0, 10) : DASH),
+        h('td', { style: { whiteSpace: 'nowrap' } }, typeof row.publishedAt === 'string' && row.publishedAt ? row.publishedAt.slice(0, 10) : DASH),
         h('td', null, h('div', { className: 'ydo-mat-source' }, sourceLines.length ? sourceLines : h('span', { className: 'ydo-mat-mini' }, DASH))),
         h('td', null, h('div', { className: 'ydo-mat-actions' },
           h('button', { type: 'button', className: 'ydo-mat-primary', onClick: () => onOpenReason(row) }, '评分理由'))))
@@ -4294,7 +4304,7 @@ window.__ModuleLoader__.load({
           h('p', { className: 'ydo-mat-hint' }, matText(row.title)),
           h('div', { className: 'ydo-mat-failure-grid' },
             h('b', null, '热度评分'), h('span', null, `${matNum(row.hotScore)}（${matText(row.hotLevel)} 档）`),
-            h('b', null, '规则版本'), h('span', null, matText(row.scoreRuleVersion)),
+            h('b', null, '规则版本'), h('span', null, hotVersionLabel(row.scoreRuleVersion)),
             h('b', null, '发布日期'), h('span', null, typeof row.publishedAt === 'string' && row.publishedAt ? row.publishedAt.slice(0, 10) : DASH),
             h('b', null, '视频链接'), h('span', null, matText(row.shareUrl))),
           h('h3', null, `命中理由（${reasons.length}）`),
@@ -4350,7 +4360,7 @@ window.__ModuleLoader__.load({
           h('table', { className: 'ydo-mat-table' },
             h('thead', null,
               h('tr', null,
-                h('th', null, '账号输入'), h('th', null, '显示名'), h('th', null, '输入类型'),
+                h('th', null, '显示名'), h('th', null, '账号输入'), h('th', null, '输入类型'),
                 h('th', null, '解析状态'), h('th', null, '状态'),
                 h('th', null, '最近采集'), h('th', null, '操作'))),
             h('tbody', null, list.length
@@ -4360,8 +4370,8 @@ window.__ModuleLoader__.load({
                   ? `最近解析失败：${row.lastResolutionError.reason || '未知原因'}`
                   : undefined,
               },
-              h('td', null, matText(row.inputValue)),
-              h('td', null, matText(row.displayName)),
+              h('td', { className: 'ydo-mat-ellipsis', title: row.displayName || undefined }, matText(row.displayName)),
+              h('td', null, h('p', { className: 'ydo-mat-seed-input', title: row.inputValue || undefined }, matText(row.inputValue))),
               h('td', null, matText(INPUT_FORM_LABEL[row.inputForm] || row.inputForm)),
               h('td', null, row.resolved
                 ? h('span', { className: 'ydo-mat-status ydo-mat-status-success' }, '已解析')
@@ -4428,9 +4438,9 @@ window.__ModuleLoader__.load({
                     h('select', { value: inputForm, disabled: busy || editing, onChange: event => setInputForm(event.target.value) },
                       ...Object.entries(INPUT_FORM_LABEL).map(([value, label]) => h('option', { value }, label))))),
                 h('label', { className: 'ydo-mat-field', key: 'account-row-2' },
-                  h('span', null, inputForm === 'homepage_url' ? '主页链接（https://douyin.com/…）' : '账号输入（必填）'),
+                  h('span', null, editing ? '账号输入（编辑时锁定；改文本等于新增另一条）' : inputForm === 'homepage_url' ? '主页链接（https://douyin.com/…）' : '账号输入（必填）'),
                   h('input', {
-                    type: 'text', value: inputValue, disabled: busy,
+                    type: 'text', value: inputValue, disabled: busy || editing,
                     placeholder: inputForm === 'homepage_url' ? 'https://www.douyin.com/user/…' : inputForm === 'sec_user_id' ? 'MS4wLjABAAAA…' : '抖音号',
                     onChange: event => setInputValue(event.target.value),
                   })),

@@ -208,10 +208,13 @@ test('MaterialBoardTable：候选行渲染真实投影，缺失指标渲染「�
   })
   const text = treeText(tree)
   assert.match(text, /增程车横评/)
-  assert.match(text, /88\.5/)
+  // 评分/档位「分数 / 档位」形式
+  assert.match(text, /88\.5 \//)
   assert.match(text, /88/)
   assert.match(text, /标签未返回/)
-  assert.match(text, /123,456/)
+  // 计数列万化口径：123456 → 「12.3万」
+  assert.match(text, /12\.3万/)
+  assert.doesNotMatch(text, /123,456/)
   assert.match(text, /12\.34%/)
   assert.match(text, /2026-10-20/)
   assert.match(text, /关键词：增程车/)
@@ -220,8 +223,8 @@ test('MaterialBoardTable：候选行渲染真实投影，缺失指标渲染「�
   assert.match(text, /共 1 条 · 第 1 \/ 1 页/)
   // NULL 指标：收藏缺失渲染「—」而不是 0
   assert.match(text, /—/)
-  // S 档徽标：评分文本与档位文本同格相邻（fake 树下 BoardRow 经 treeText 展开）
-  assert.match(text, /88\.5S/)
+  // S 档徽标：「分数 / 档位」形式（fake 树下 treeText 丢弃 span 边界空格，故斜杠后空格可选）
+  assert.match(text, /88\.5 \/ ?S/)
 })
 
 test('MaterialBoardTable：空态引导与加载中文案互斥', () => {
@@ -255,7 +258,8 @@ test('MaterialReasonDrawer：评分理由逐条列表，空理由给明确提示
   assert.match(text, /命中理由（2）/)
   assert.match(text, /理由一/)
   assert.match(text, /理由二/)
-  assert.match(text, /hot-v1-potential/)
+  // 规则版本中文展示口径
+  assert.match(text, /热度评分规则 v1（含潜力作品）/)
   const empty = treeText(MaterialReasonDrawer({
     row: { title: 'x', scoreReasons: [] }, onClose: () => {},
   }))
@@ -309,9 +313,10 @@ test('MaterialAccountsTable：解析状态徽标与解析失败提示', () => {
   assert.match(text, /抖音号/)
   assert.match(text, /主页链接/)
   assert.match(text, /2026-10-27 20:00/)
-  const failedRow = allNodes(tree).filter(node => node.props.title)
-  assert.equal(failedRow.length, 1)
-  assert.match(failedRow[0].props.title, /profile_not_found/)
+  // 显示名/账号输入 td 自带全文 title（两行省略提示）；行级解析失败 title 唯一
+  const failedRowTitle = allNodes(tree).map(node => node.props && node.props.title)
+    .filter(title => typeof title === 'string' && title.includes('profile_not_found'))
+  assert.equal(failedRowTitle.length, 1)
 })
 
 // ===========================================================================

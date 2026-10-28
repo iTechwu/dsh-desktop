@@ -133,8 +133,9 @@ const accountsFixture = [
     createdAt: null, updatedAt: '2026-10-28T10:05:00+08:00',
   },
   {
-    accountSeedId: 'as-2', platform: 'douyin', displayName: '示例账号乙',
-    inputForm: 'homepage_url', inputValue: 'https://www.douyin.com/user/example-b',
+    accountSeedId: 'as-2', platform: 'douyin', displayName: '长口令示例账号乙',
+    inputForm: 'homepage_url',
+    inputValue: '长按复制此条消息，打开抖音搜索，查看TA的更多作品。 https://v.douyin.com/example-short-link/',
     resolved: false, verificationStatus: 'pending', status: 'active', maxVideos: 10,
     lastContentFetchedAt: null, lastResolutionError: null,
     createdAt: null, updatedAt: null,
