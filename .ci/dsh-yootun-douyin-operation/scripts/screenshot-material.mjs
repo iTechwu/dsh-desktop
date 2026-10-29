@@ -3,7 +3,7 @@
 // 用法：node scripts/screenshot-material.mjs [输出目录]
 //（默认 docs/1025/douyin/screenshots，与验收文档同目录）。
 // 机制与 scripts/screenshot.mjs（1015 先例）一致：Node 侧用 react-dom/server 把
-// 素材看板各区块（整页看板 / 种子管理 / 采集记录 / 评分理由抽屉 / 种子弹窗 /
+// 素材看板各区块（整页看板 / 关键词管理 / 对标账号 / 采集记录 / 评分理由抽屉 / 种子弹窗 /
 // 采集弹窗 / 失败明细）SSR 成静态 HTML（内联插件真实 CSS + DSW 变量兜底 +
 // 真实中文文案），Playwright 系统 Chrome 无头截图。
 //
@@ -26,6 +26,11 @@ const pluginPath = new URL('../lib/client.js', import.meta.url)
 
 // DSW 设计变量兜底（浅色主题近似值）：插件 CSS 全部经 var() 引用宿主主题，
 // 截图页不在 DSH 宿主内，必须提供一套完整可读的变量值（1015 先例同款）。
+const DSW_SHARED_BASE_CSS = `*{box-sizing:border-box}
+body{margin:0;font-family:'Noto Sans CJK SC','Source Han Sans SC','Microsoft YaHei',sans-serif}
+.screenshot-block{padding:24px;border-bottom:16px solid}
+.screenshot-title{margin:0 0 4px;font-size:18px;font-weight:700}
+.screenshot-sub{margin:0 0 16px;font-size:13px}`
 const DSW_FALLBACK_CSS = `:root{
   --dsw-alias-bg-base:#ffffff;--dsw-alias-bg-layer-1:#f6f7f9;--dsw-alias-bg-layer-2:#eceef1;
   --dsw-alias-border-l1:#e0e3e8;--dsw-alias-border-l2:#d4d8de;
@@ -37,11 +42,29 @@ const DSW_FALLBACK_CSS = `:root{
   --dsw-font-l-20-font-size:20px;--dsw-font-base-16-font-size:16px;
   --dsh-content-font-size:14px;--dsh-content-font-size-secondary:13px;
 }
-*{box-sizing:border-box}
-body{margin:0;font-family:'Noto Sans CJK SC','Source Han Sans SC','Microsoft YaHei',sans-serif;background:#fff;color:#1f2329}
-.screenshot-block{padding:24px;border-bottom:16px solid #d4d8de}
-.screenshot-title{margin:0 0 4px;font-size:18px;font-weight:700}
-.screenshot-sub{margin:0 0 16px;color:#646a73;font-size:13px}
+${DSW_SHARED_BASE_CSS}
+body{background:#fff;color:#1f2329}
+.screenshot-block{border-bottom-color:#d4d8de}
+.screenshot-sub{color:#646a73}
+`
+// 深色主题兜底（2026-10-29 真机验收）：取宿主 dark 主题真实值
+// （dsh-plugin-desktop native-ui shared/theme.css .dark 段的 oklch 近似 hex），
+// 用于深色可读性回归截图（*-dark.png）——重点验证页签选中态/主按钮/徽标。
+const DSW_DARK_FALLBACK_CSS = `:root{
+  --dsw-alias-bg-base:#232323;--dsw-alias-bg-layer-1:#343434;--dsw-alias-bg-layer-2:#454545;
+  --dsw-alias-border-l1:rgba(255,255,255,.1);--dsw-alias-border-l2:rgba(255,255,255,.1);
+  --dsw-alias-label-primary:#fafafa;--dsw-alias-label-secondary:#b4b4b4;
+  --dsw-alias-label-primary-foreground:#343434;--dsw-alias-brand-primary:#e9e9e9;
+  --dsw-alias-interactive-bg-hover:rgba(255,255,255,.08);
+  --dsw-alias-state-success-primary:#4ade80;--dsw-alias-state-error-primary:#e0524a;
+  --dsw-alias-state-warn-primary:#d29922;
+  --dsw-font-l-20-font-size:20px;--dsw-font-base-16-font-size:16px;
+  --dsh-content-font-size:14px;--dsh-content-font-size-secondary:13px;
+}
+${DSW_SHARED_BASE_CSS}
+body{background:#232323;color:#fafafa}
+.screenshot-block{border-bottom-color:#0c0c0c}
+.screenshot-sub{color:#b4b4b4}
 `
 
 // ---------------------------------------------------------------------------
@@ -201,7 +224,7 @@ const reasonRowFixture = {
 }
 
 const actionsFixture = {
-  onFilterChange: noop, onRefreshBoard: noop, onOpenReason: noop, onBoardPage: noop,
+  onFilterChange: noop, onOpenReason: noop, onBoardPage: noop,
   onOpenSeedModal: noop, onToggleSeed: noop, onSaveSeed: noop, onCloseSeedModal: noop,
   onOpenCollect: noop, onCollectConfirm: noop, onCloseCollect: noop,
   onViewRunBoard: noop, onOpenFailure: noop, onCloseFailure: noop,
@@ -215,10 +238,11 @@ const actionsFixture = {
 function buildBlocks(plugin) {
   const blocks = []
 
-  // 整页看板（board section：筛选条 + 批次过滤横幅 + KPI 5 卡 + 候选表 + 分页；
-  // 2026-10-29 布局拍板：筛选上、KPI 下）
+  // 整页看板（board section：四子页签 + 筛选条 + 批次过滤横幅 + KPI 5 卡 +
+  // 候选表 + 分页；2026-10-29 布局拍板：筛选上、KPI 下；真机验收定稿：下划线
+  // 子页签 + 筛选条无按钮）
   blocks.push(h('div', { className: 'screenshot-block', id: 'mat-board' },
-    h('h2', { className: 'screenshot-title' }, 'Tab5 素材看板 · 整页（筛选条 + 批次过滤 + KPI 5 卡 + 候选表）'),
+    h('h2', { className: 'screenshot-title' }, 'Tab3 素材看板 · 整页（子页签 + 筛选条 + 批次过滤 + KPI 5 卡 + 候选表）'),
     h('p', { className: 'screenshot-sub' }, 'RQ-2026-008 阶段 4：候选素材=素材域累计；S/A 等四卡=最新批次投影（缺桶=0）；「—」为未返回缺口；命中来源=关键词/对标账号/双源'),
     h(plugin.MaterialPage, {
       board: {
@@ -244,16 +268,19 @@ function buildBlocks(plugin) {
       actions: actionsFixture,
     })))
 
-  // 种子管理（关键词表 + 对标账号表）
-  blocks.push(h('div', { className: 'screenshot-block', id: 'mat-seeds' },
-    h('h2', { className: 'screenshot-title' }, 'Tab5 素材看板 · 种子管理（关键词表 + 对标账号表）'),
+  // 关键词管理 / 对标账号（2026-10-29 真机验收定稿：两个独立子页，对齐静态页）
+  blocks.push(h('div', { className: 'screenshot-block', id: 'mat-keywords' },
+    h('h2', { className: 'screenshot-title' }, 'Tab3 素材看板 · 关键词管理'),
+    h('p', { className: 'screenshot-sub' }, '子页签形态：素材看板 / 关键词管理 / 对标账号 / 采集记录（下划线式，对齐主 Tab）；采集按优先级 P1→P5 依次消耗启用关键词'),
+    h(plugin.MaterialKeywordsTable, { rows: keywordsFixture, onAdd: noop, onEdit: noop, onToggle: noop })))
+  blocks.push(h('div', { className: 'screenshot-block', id: 'mat-accounts' },
+    h('h2', { className: 'screenshot-title' }, 'Tab3 素材看板 · 对标账号'),
     h('p', { className: 'screenshot-sub' }, '账号解析状态徽标：已解析 / 未解析 / 解析失败（title 提示最近解析失败原因）；操作=新增 / 编辑 / 禁用·启用（均有确认弹窗）'),
-    h(plugin.MaterialKeywordsTable, { rows: keywordsFixture, onAdd: noop, onEdit: noop, onToggle: noop }),
     h(plugin.MaterialAccountsTable, { rows: accountsFixture, onAdd: noop, onEdit: noop, onToggle: noop })))
 
   // 采集记录（run 历史 + 进行中横幅；runsTotal 审查 P2-9 全量计数截断提示）
   blocks.push(h('div', { className: 'screenshot-block', id: 'mat-runs' },
-    h('h2', { className: 'screenshot-title' }, 'Tab5 素材看板 · 采集记录（run 历史 + 进行中横幅 + 立即采集）'),
+    h('h2', { className: 'screenshot-title' }, 'Tab3 素材看板 · 采集记录（run 历史 + 进行中横幅 + 立即采集）'),
     h('p', { className: 'screenshot-sub' }, '同一时刻只允许一个手动采集；标题展示服务端全量计数、行数不足追加截断提示；failed 且零候选隐藏「查看看板」（materialCandidateCount 判定）'),
     h(plugin.MaterialRunsTable, {
       runs: runsFixture, runsTotal: 57,
@@ -356,18 +383,14 @@ async function main() {
     return stubs[name]
   })
 
-  const pageHtml = body => `<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><style>${DSW_FALLBACK_CSS}${plugin.css}</style></head><body>${body}</body></html>`
+  // 双主题（2026-10-29 真机验收）：light 无后缀（既有文件名，验收文档引用不变）、
+  // dark 加 -dark 后缀——深色可读性回归截图。
+  const pageHtml = (body, dark) => `<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><style>${dark ? DSW_DARK_FALLBACK_CSS : DSW_FALLBACK_CSS}${plugin.css}</style></head><body>${body}</body></html>`
 
   const mainBlocks = buildBlocks(plugin)
-  const mainHtml = pageHtml(mainBlocks.map(renderNode).join(''))
   const overlays = buildOverlays(plugin)
-  const overlayHtml = new Map(overlays.map(item => [item.id, pageHtml(renderNode(item.node))]))
 
   await mkdir(outDir, { recursive: true })
-  const previewPath = path.join(outDir, 'material-preview.html')
-  // SSR 嵌套缩进会产出尾随空白（审查 P3-3）：落盘前统一剥除，避免 diff 噪声。
-  await writeFile(previewPath, (mainHtml + [...overlayHtml.values()].join('')).replace(/[ \t]+$/gm, ''))
-  console.log(`preview html: ${previewPath}`)
 
   const driver = await loadPlaywrightDriver()
   const chromePath = await resolveSystemChrome({ platform: process.platform })
@@ -386,25 +409,38 @@ async function main() {
       body: '<svg xmlns="http://www.w3.org/2000/svg" width="320" height="200"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#4a7fd4"/><stop offset="1" stop-color="#7ba7e8"/></linearGradient></defs><rect width="320" height="200" fill="url(#g)"/><text x="160" y="112" font-size="30" fill="rgba(255,255,255,.92)" text-anchor="middle" font-family="sans-serif">示例封面</text></svg>',
     }))
 
-    await page.setContent(mainHtml, { waitUntil: 'networkidle' })
-    await page.evaluate(() => (document.fonts ? document.fonts.ready : null))
-    for (const [name, selector] of [
-      ['material-board', '#mat-board'],
-      ['material-seeds', '#mat-seeds'],
-      ['material-runs', '#mat-runs'],
-    ]) {
-      const file = path.join(outDir, `${name}.png`)
-      await page.locator(selector).screenshot({ path: file })
-      console.log(`saved: ${file}`)
-    }
+    for (const dark of [false, true]) {
+      const suffix = dark ? '-dark' : ''
+      const mainHtml = pageHtml(mainBlocks.map(renderNode).join(''), dark)
+      const overlayHtml = new Map(overlays.map(item => [item.id, pageHtml(renderNode(item.node), dark)]))
 
-    // 抽屉 / 弹窗（fixed 定位）逐个独立文档渲染。
-    for (const item of overlays) {
-      await page.setContent(overlayHtml.get(item.id), { waitUntil: 'networkidle' })
+      // 预览 HTML 同步双主题（dark 后缀命名，便于浏览器内对照）。
+      const previewPath = path.join(outDir, `material-preview${suffix}.html`)
+      // SSR 嵌套缩进会产出尾随空白（审查 P3-3）：落盘前统一剥除，避免 diff 噪声。
+      await writeFile(previewPath, (mainHtml + [...overlayHtml.values()].join('')).replace(/[ \t]+$/gm, ''))
+      console.log(`preview html: ${previewPath}`)
+
+      await page.setContent(mainHtml, { waitUntil: 'networkidle' })
       await page.evaluate(() => (document.fonts ? document.fonts.ready : null))
-      const file = path.join(outDir, `${item.id}.png`)
-      await page.screenshot({ path: file, fullPage: true })
-      console.log(`saved: ${file}`)
+      for (const [name, selector] of [
+        ['material-board', '#mat-board'],
+        ['material-keywords', '#mat-keywords'],
+        ['material-accounts', '#mat-accounts'],
+        ['material-runs', '#mat-runs'],
+      ]) {
+        const file = path.join(outDir, `${name}${suffix}.png`)
+        await page.locator(selector).screenshot({ path: file })
+        console.log(`saved: ${file}`)
+      }
+
+      // 抽屉 / 弹窗（fixed 定位）逐个独立文档渲染。
+      for (const item of overlays) {
+        await page.setContent(overlayHtml.get(item.id), { waitUntil: 'networkidle' })
+        await page.evaluate(() => (document.fonts ? document.fonts.ready : null))
+        const file = path.join(outDir, `${item.id}${suffix}.png`)
+        await page.screenshot({ path: file, fullPage: true })
+        console.log(`saved: ${file}`)
+      }
     }
   } finally {
     await browser.close()

@@ -107,7 +107,14 @@ test('built client factory renders the overlay with real React without throwing'
     const pageHtml = renderToString(React.createElement(plugin.MaterialPage, {
       board: { rows: [], total: 0, offset: 0, limit: 20, loading: false, errorReason: null, loaded: true },
       kpi: null, facets: null, filters: {}, seedAccounts: [],
-      seeds: null, runs: null, activeRun: null, collecting: false,
+      seeds: {
+        data: {
+          keywords: [{ seedId: 'ks-1', keyword: '增程车', status: 'active' }, { seedId: 'ks-2', keyword: '露营', status: 'active' }],
+          accounts: [{ accountSeedId: 'as-1', displayName: '账号A', status: 'active' }],
+        },
+        loading: false, errorReason: null,
+      },
+      runs: null, activeRun: null, collecting: false,
       reason: null, seedModal: null, collectOpen: false, collectError: null, failure: null,
       savingSeed: false, seedError: null, runFilter: 'batch-x', actions: {},
     }))
@@ -117,6 +124,20 @@ test('built client factory renders the overlay with real React without throwing'
     assert.ok(filterIdx > -1 && runFilterIdx > -1 && kpiIdx > -1, '看板区三类区块均应渲染')
     assert.ok(filterIdx < runFilterIdx, '批次过滤横幅应紧随筛选条')
     assert.ok(runFilterIdx < kpiIdx, '筛选区必须位于 KPI 区上方（拍板布局，文档 §6.4 结构图同口径）')
+    // 子页签定稿（2026-10-29 真机验收）：四子页下划线式、置于页头下方；
+    // 关键词管理与对标账号是两个独立子页（对齐 UI 模板/静态测试页），
+    // 计数徽标在种子数据加载后展示。
+    for (const marker of ['>素材看板</button>', '>关键词管理<span', '>对标账号<span', '>采集记录</button>']) {
+      assert.ok(pageHtml.includes(marker), `缺少子页签 ${marker}`)
+    }
+    const tabsIdx = pageHtml.indexOf('ydo-mat-tabs')
+    assert.ok(tabsIdx > -1 && tabsIdx < filterIdx, '子页签导航应在内容区（筛选条）之前')
+    assert.ok(!pageHtml.includes('ydo-mat-seg'), '旧分段控件应已移除')
+    assert.ok(pageHtml.includes('>关键词管理<span class="ydo-mat-tab-count">2</span>'), '关键词页签计数应为 2')
+    assert.ok(pageHtml.includes('>对标账号<span class="ydo-mat-tab-count">1</span>'), '对标账号页签计数应为 1')
+    // 成功态下默认 board 页不应渲染任何错误条（keywords/accounts 的 seeds 错误条
+    // 由条件渲染隔离在各自子页，接线断言见 material-ui.test.mjs）。
+    assert.ok(!pageHtml.includes('ydo-mat-error'), '成功态看板页不应出现错误条')
   } finally {
     delete globalThis.__renderSmokeModule
     delete globalThis.window

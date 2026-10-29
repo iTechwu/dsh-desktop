@@ -2257,11 +2257,8 @@ function Overlay({ t }) {
     loadMaterialBoard({ offset }).catch(() => {})
   }, [loadMaterialBoard])
 
-  const refreshMaterialBoard = useCallback(() => {
-    loadMaterialBoard().catch(() => {})
-    loadMaterialBoardTotal().catch(() => {})
-    loadMaterialFacets().catch(() => {})
-  }, [loadMaterialBoard, loadMaterialBoardTotal, loadMaterialFacets])
+  // 注：筛选条已定稿为「变化即查、无刷新按钮」（2026-10-29 真机验收），手动
+  // 刷新入口随之移除；轮询终态与 Tab 预取各自直调 load* 系列，无其他消费者。
 
   const refreshMaterialRuns = useCallback(() => {
     loadMaterialRuns().then(resumeMaterialPollingFromRows).catch(() => {})
@@ -2412,7 +2409,7 @@ function Overlay({ t }) {
     }
   }, [loadMaterialRuns, resumeMaterialPollingFromRows, startMaterialPolling])
 
-  // 进入素材看板 Tab：三子页数据一次预取（各自独立降级），在途 run 恢复轮询；
+  // 进入素材看板 Tab：四子页数据一次预取（各自独立降级），在途 run 恢复轮询；
   // 离开 Tab 停轮询（任务在服务端继续推进，切回 Tab 拉最新数据并恢复轮询）。
   // 页面恢复可见立即刷新（§6.4）：interval 的 hidden 守卫要等下一 tick，
   // visibilitychange 对在途 run 先行刷新批次记录并恢复轮询。
@@ -2941,6 +2938,12 @@ function Overlay({ t }) {
           onClick: () => { setTab('videos'); setAiModalOpen(false) },
         }, t('tabVideos')),
         h('button', {
+          type: 'button', 'aria-current': tab === 'material' || undefined,
+          // 进入素材看板 Tab 收起 AI 弹框（跨 Tab 不残留弹层）；离开 Tab 停采集轮询。
+          // 页签顺序（2026-10-29 真机验收定稿）：素材看板置于爆款拆解之前。
+          onClick: () => { setTab('material'); setAiModalOpen(false) },
+        }, t('tabMaterial')),
+        h('button', {
           type: 'button', 'aria-current': tab === 'breakdown' || undefined,
           // 进入拆解 Tab 同样收起 AI 弹框（跨 Tab 不残留弹层）；拆解轮询不随
           // Tab 切换停止——服务端任务继续推进，切回 Tab 仍能看到最新进度。
@@ -2950,12 +2953,7 @@ function Overlay({ t }) {
           type: 'button', 'aria-current': tab === 'report' || undefined,
           // 进入报表 Tab 收起 AI 弹框（跨 Tab 不残留弹层）；离开 Tab 停详情轮询。
           onClick: () => { setTab('report'); setAiModalOpen(false) },
-        }, t('tabReport')),
-        h('button', {
-          type: 'button', 'aria-current': tab === 'material' || undefined,
-          // 进入素材看板 Tab 收起 AI 弹框（跨 Tab 不残留弹层）；离开 Tab 停采集轮询。
-          onClick: () => { setTab('material'); setAiModalOpen(false) },
-        }, t('tabMaterial'))),
+        }, t('tabReport'))),
       // 左侧账号管理栏只在「视频数据」Tab 显示（UI 优化方案 §3.1）；
       // 账号总览/单账号分析与爆款拆解使用完整宽度内容区（ydo-body-full 单列）。
       h('div', { className: `ydo-body${tab === 'overview' || tab === 'breakdown' || tab === 'report' || tab === 'material' ? ' ydo-body-full' : ''}` },
@@ -3163,7 +3161,6 @@ function Overlay({ t }) {
               runFilter: materialRunFilter,
               actions: {
                 onFilterChange: changeMaterialFilters,
-                onRefreshBoard: refreshMaterialBoard,
                 onBoardPage: changeMaterialBoardPage,
                 onOpenReason: setMaterialReason,
                 onCloseReason: () => setMaterialReason(null),

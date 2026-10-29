@@ -1,6 +1,7 @@
-// 爆款素材看板 UI 模块（RQ-2026-008 开发文档 §6：素材看板/种子管理/采集记录三子页
-// + 评分理由抽屉 + 种子/采集/失败明细弹层）。UI 基准为 tools 验证页
-// src/tools_dofe/static/viral_video_material.html（demo 模板），数据全部来自宿主
+// 爆款素材看板 UI 模块（RQ-2026-008 开发文档 §6：素材看板/关键词管理/对标账号/
+// 采集记录四子页 + 评分理由抽屉 + 种子/采集/失败明细弹层）。UI 基准为 tools 验证页
+// src/tools_dofe/static/viral_video_material.html（demo 模板）与车衣爆款看板
+// （xhs hotboard-ui）页签形态，数据全部来自宿主
 // action 投影，本模块只做展示与本地格式化，不计算任何口径；NULL/未采集一律渲染
 // 「—」，绝不冒充 0（interactionRate 是 0–1 比率，展示层统一 ×100 两位小数）。
 //
@@ -107,22 +108,36 @@ const seedAccountName = (seedAccounts, accountSeedId) => {
 
 export const MATERIAL_CSS_TEXT = `
 .ydo-mat-page{display:flex;flex-direction:column;gap:14px;min-width:0}
-.ydo-mat-seg{display:inline-flex;gap:2px;padding:2px;border:1px solid var(--dsw-alias-border-l1,#dee0e3);border-radius:8px;background:var(--dsw-alias-bg-layer-1,#fff);width:fit-content}
-.ydo-mat-seg button{height:30px;padding:0 14px;border:0;border-radius:6px;background:transparent;color:var(--dsw-alias-label-secondary,#646a73);font:inherit;font-size:12px;cursor:pointer}
-/* 交互品牌色（分段选中/主按钮/链接）保持宿主品牌变量灰黑口径（2026-10-29
-   用户定稿：不跟报表的蓝色），深浅主题由宿主变量体系适配。 */
-.ydo-mat-seg button[aria-current]{background:var(--dsw-alias-brand-primary,#0f1115);color:#fff;font-weight:650}
+/* 子页导航（2026-10-29 真机验收定稿）：对齐主 Tab（ydo-tabs）与车衣爆款看板
+   （yxh-tabs）的下划线式页签形态，四子页：素材看板/关键词管理/对标账号/采集记录。
+   选中态为透明底 + 品牌色指示线 + 主文字色，深浅主题由宿主变量自适应。 */
+.ydo-mat-tabs{display:flex;gap:4px;border-bottom:1px solid var(--dsw-alias-border-l1,#dee0e3)}
+.ydo-mat-tabs button{height:40px;padding:0 16px;border:0;border-bottom:3px solid transparent;background:transparent;color:var(--dsw-alias-label-secondary,#646a73);font:inherit;font-size:13px;font-weight:650;cursor:pointer}
+.ydo-mat-tabs button:hover{color:var(--dsw-alias-label-primary,#1f2329)}
+.ydo-mat-tabs button[aria-current]{border-bottom-color:var(--dsw-alias-brand-primary,#0f1115);color:var(--dsw-alias-label-primary,#1f2329)}
+.ydo-mat-tab-count{margin-left:6px;padding:1px 7px;border-radius:999px;background:var(--dsw-alias-bg-layer-2,#f5f6f7);color:var(--dsw-alias-label-secondary,#646a73);font-size:11px;font-weight:600}
 .ydo-mat-head{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
 .ydo-mat-title{margin:0;font-size:15px;font-weight:650}
 .ydo-mat-sub{margin:2px 0 0;color:var(--dsw-alias-label-secondary,#646a73);font-size:12px}
-/* 按钮（§6.5）：primary 深色 40px / secondary 浅色 36px / link 30px */
-.ydo-mat-primary{display:inline-flex;height:40px;align-items:center;gap:6px;padding:0 16px;border:0;border-radius:8px;background:var(--dsw-alias-brand-primary,#0f1115);color:#fff;font:inherit;font-size:13px;font-weight:650;cursor:pointer}
+/* 按钮（§6.5）：primary 深色 40px / secondary 浅色 36px / link 30px。
+   primary 字色用宿主「品牌色底前景」变量（同 ydo-primary 口径）——硬编码 #fff
+   在深色主题下会随 brand-primary 翻转成白底白字（真机验收缺陷）。 */
+.ydo-mat-primary{display:inline-flex;height:40px;align-items:center;gap:6px;padding:0 16px;border:0;border-radius:8px;background:var(--dsw-alias-brand-primary,#0f1115);color:var(--dsw-alias-label-primary-foreground,#fff);font:inherit;font-size:13px;font-weight:650;cursor:pointer}
 .ydo-mat-primary:disabled{opacity:.45;cursor:not-allowed}
 .ydo-mat-secondary{display:inline-flex;height:36px;align-items:center;gap:6px;padding:0 14px;border:1px solid var(--dsw-alias-border-l1,#dee0e3);border-radius:8px;background:var(--dsw-alias-bg-layer-1,#fff);color:var(--dsw-alias-label-primary,#1f2329);font:inherit;font-size:13px;cursor:pointer}
 .ydo-mat-secondary:disabled{opacity:.45;cursor:not-allowed}
 .ydo-mat-link{height:30px;padding:0 4px;border:0;background:transparent;color:var(--dsw-alias-brand-primary,#0f1115);font:inherit;font-size:12px;cursor:pointer}
 .ydo-mat-link:disabled{opacity:.45;cursor:not-allowed}
-.ydo-mat-danger{color:#d83931}
+/* 行操作迷你按钮（2026-10-29 真机验收定稿）：对齐车衣爆款看板标签管理的
+   yxh-hb-mini 三款——描边款（编辑）/灰底款（禁用）/实底款（启用）。 */
+.ydo-mat-mini{flex:none;min-height:28px;padding:0 10px;border:1px solid var(--dsw-alias-border-l1,#dee0e3);border-radius:6px;background:var(--dsw-alias-bg-layer-1,#fff);color:var(--dsw-alias-label-primary,#1f2329);font:inherit;font-size:12px;cursor:pointer}
+.ydo-mat-mini:hover{background:var(--dsw-alias-bg-layer-2,#f5f6f7)}
+.ydo-mat-mini:disabled{opacity:.45;cursor:default}
+.ydo-mat-mini-secondary{border-color:var(--dsw-alias-border-l2,#f0f1f3);background:var(--dsw-alias-border-l2,#f0f1f3);color:var(--dsw-alias-label-primary,#1f2329)}
+.ydo-mat-mini-secondary:hover{background:color-mix(in srgb,var(--dsw-alias-border-l2,#f0f1f3) 85%,var(--dsw-alias-label-primary,#1f2329))}
+.ydo-mat-mini-primary{border-color:var(--dsw-alias-label-primary,#1f2329);background:var(--dsw-alias-label-primary,#1f2329);color:var(--dsw-alias-bg-base,#fff)}
+.ydo-mat-mini-primary:hover{background:color-mix(in srgb,var(--dsw-alias-label-primary,#1f2329) 82%,var(--dsw-alias-bg-base,#fff))}
+.ydo-mat-danger{color:var(--dsw-alias-state-error-primary,#d83931)}
 /* KPI 五卡（demo 口径：素材域累计 + 最新批次投影） */
 .ydo-mat-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
 .ydo-mat-kpi{border:1px solid var(--dsw-alias-border-l1,#dee0e3);border-radius:10px;padding:12px 14px;background:var(--dsw-alias-bg-layer-1,#fff)}
@@ -147,7 +162,7 @@ export const MATERIAL_CSS_TEXT = `
 .ydo-mat-video-title{margin:0;font-weight:650;line-height:1.45;max-width:260px}
 .ydo-mat-tags{display:flex;gap:4px;flex-wrap:wrap;margin-top:6px}
 .ydo-mat-tag{padding:1px 8px;border-radius:999px;background:var(--dsw-alias-bg-layer-2,#f5f6f7);color:var(--dsw-alias-label-secondary,#646a73);font-size:11px}
-.ydo-mat-tag-miss{color:#de7802}
+.ydo-mat-tag-miss{color:var(--dsw-alias-state-warn-primary,#de7802)}
 .ydo-mat-score{font-weight:700;font-size:15px}
 .ydo-mat-level{display:inline-block;margin-left:6px;padding:1px 7px;border-radius:6px;font-size:11px;font-weight:700;color:#fff}
 .ydo-mat-level-s{background:#d83931}
@@ -166,13 +181,13 @@ export const MATERIAL_CSS_TEXT = `
 .ydo-mat-status-error{background:#d83931;color:#fff}
 .ydo-mat-status-muted{background:var(--dsw-alias-bg-layer-2,#f5f6f7);color:var(--dsw-alias-label-secondary,#646a73)}
 /* 进行中横幅 / 分页 / 空态：底色用 color-mix 透明混合（报表 anomaly 同款），
-   深色主题下呈暗橙块而非亮色块。 */
-.ydo-mat-active{display:flex;align-items:center;gap:10px;padding:10px 14px;border:1px dashed #de7802;border-radius:10px;background:color-mix(in srgb,#de7802 12%,transparent);font-size:13px}
-.ydo-mat-spinner{width:14px;height:14px;border:2px solid #de7802;border-top-color:transparent;border-radius:50%;animation:ydo-mat-spin 1s linear infinite;flex:none}
+   语义色走宿主状态变量（深浅主题自适应），深色下呈暗色块而非亮色块。 */
+.ydo-mat-active{display:flex;align-items:center;gap:10px;padding:10px 14px;border:1px dashed var(--dsw-alias-state-warn-primary,#de7802);border-radius:10px;background:color-mix(in srgb,var(--dsw-alias-state-warn-primary,#de7802) 12%,transparent);font-size:13px}
+.ydo-mat-spinner{width:14px;height:14px;border:2px solid var(--dsw-alias-state-warn-primary,#de7802);border-top-color:transparent;border-radius:50%;animation:ydo-mat-spin 1s linear infinite;flex:none}
 @keyframes ydo-mat-spin{to{transform:rotate(360deg)}}
 .ydo-mat-meta{display:flex;align-items:center;justify-content:space-between;gap:10px;color:var(--dsw-alias-label-secondary,#646a73);font-size:12px}
 .ydo-mat-empty{padding:32px;text-align:center;color:var(--dsw-alias-label-secondary,#646a73);font-size:13px}
-.ydo-mat-error{margin:0;padding:10px 14px;border:1px solid color-mix(in srgb,#d83931 35%,transparent);border-radius:10px;background:color-mix(in srgb,#d83931 10%,transparent);color:#d83931;font-size:13px}
+.ydo-mat-error{margin:0;padding:10px 14px;border:1px solid color-mix(in srgb,var(--dsw-alias-state-error-primary,#d83931) 35%,transparent);border-radius:10px;background:color-mix(in srgb,var(--dsw-alias-state-error-primary,#d83931) 10%,transparent);color:color-mix(in srgb,var(--dsw-alias-state-error-primary,#d83931) 55%,var(--dsw-alias-label-primary,#1f2329));font-size:13px}
 /* 抽屉（评分理由） */
 .ydo-mat-drawer-overlay{position:fixed;inset:0;z-index:560;background:rgba(15,17,21,.4)}
 .ydo-mat-drawer{position:fixed;top:0;right:0;bottom:0;z-index:561;width:min(420px,92vw);display:flex;flex-direction:column;gap:12px;padding:20px;background:var(--dsw-alias-bg-layer-1,#fff);box-shadow:-8px 0 24px rgba(15,17,21,.16);overflow:auto}
@@ -261,7 +276,9 @@ const SORT_OPTIONS = [
   ['interaction_rate', '互动率'],
 ]
 
-export function MaterialFilterBar({ filters, facets, onChange, onRefresh, loading }) {
+// 筛选条（demo data-filter 同款）：变化即查、无任何按钮（2026-10-29 真机验收
+// 定稿去掉「刷新」——q 由 client.js 防抖，其余选项即选即查）。
+export function MaterialFilterBar({ filters, facets, onChange }) {
   const tags = Array.isArray(facets) ? facets : []
   const patch = (key, value) => onChange({ ...filters, [key]: value, offset: 0 })
   return h('div', { className: 'ydo-mat-filters' },
@@ -280,8 +297,7 @@ export function MaterialFilterBar({ filters, facets, onChange, onRefresh, loadin
       h('option', { value: '' }, '全部标签'),
       ...tags.map(item => h('option', { value: item.tag }, `${item.tag}（${item.count}）`))),
     h('select', { value: filters.sortBy, 'aria-label': '排序', onChange: event => patch('sortBy', event.target.value) },
-      ...SORT_OPTIONS.map(([value, label]) => h('option', { value }, label))),
-    h('button', { type: 'button', className: 'ydo-mat-secondary', disabled: loading, onClick: onRefresh }, '刷新'))
+      ...SORT_OPTIONS.map(([value, label]) => h('option', { value }, label))))
 }
 
 // ---------------------------------------------------------------------------
@@ -475,8 +491,13 @@ export function MaterialKeywordsTable({ rows, onAdd, onEdit, onToggle }) {
             h('td', { className: 'num' }, matNum(row.searchCount)),
             h('td', null, matDateTime(row.updatedAt)),
             h('td', null, h('div', { className: 'ydo-mat-actions' },
-              h('button', { type: 'button', className: 'ydo-mat-secondary', onClick: () => onEdit(row) }, '编辑'),
-              h('button', { type: 'button', className: 'ydo-mat-link', onClick: () => onToggle(row) }, row.status === 'active' ? '禁用' : '启用')))))
+              h('button', { type: 'button', className: 'ydo-mat-mini', onClick: () => onEdit(row) }, '编辑'),
+              h('button', {
+                type: 'button',
+                // 行操作按钮口径对齐车衣看板标签管理：禁用=灰底款、启用=实底款。
+                className: `ydo-mat-mini${row.status === 'active' ? ' ydo-mat-mini-secondary' : ' ydo-mat-mini-primary'}`,
+                onClick: () => onToggle(row),
+              }, row.status === 'active' ? '禁用' : '启用')))))
           : h('tr', null, h('td', { colSpan: 6 }, h('p', { className: 'ydo-mat-empty' }, '暂无关键词种子；点右上「新增关键词」添加。')))))),
     h('p', { className: 'ydo-mat-hint' }, '分类由服务端维护（页面不展示、不修改）；编辑只更新上述字段，未填写的上限保持服务端原值。'))
 }
@@ -512,8 +533,12 @@ export function MaterialAccountsTable({ rows, onAdd, onEdit, onToggle }) {
           h('td', null, h('span', { className: `ydo-mat-status ${row.status === 'active' ? 'ydo-mat-status-success' : 'ydo-mat-status-muted'}` }, row.status === 'active' ? '启用' : '禁用')),
           h('td', null, matDateTime(row.lastContentFetchedAt)),
           h('td', null, h('div', { className: 'ydo-mat-actions' },
-            h('button', { type: 'button', className: 'ydo-mat-secondary', onClick: () => onEdit(row) }, '编辑'),
-            h('button', { type: 'button', className: 'ydo-mat-link', onClick: () => onToggle(row) }, row.status === 'active' ? '禁用' : '启用')))))
+            h('button', { type: 'button', className: 'ydo-mat-mini', onClick: () => onEdit(row) }, '编辑'),
+            h('button', {
+              type: 'button',
+              className: `ydo-mat-mini${row.status === 'active' ? ' ydo-mat-mini-secondary' : ' ydo-mat-mini-primary'}`,
+              onClick: () => onToggle(row),
+            }, row.status === 'active' ? '禁用' : '启用')))))
           : h('tr', null, h('td', { colSpan: 7 }, h('p', { className: 'ydo-mat-empty' }, '暂无对标账号种子；点右上「新增对标账号」添加。')))))))}
 
 
@@ -768,8 +793,10 @@ export function MaterialFailureModal({ run, onClose }) {
 }
 
 // ---------------------------------------------------------------------------
-// 顶层页面：三子页 seg（看板/种子管理/采集记录）+ 弹层组装。
-// section 是纯 UI 切换（local state）；数据与动作全部由 client.js 注入。
+// 顶层页面：四子页下划线页签（看板/关键词管理/对标账号/采集记录）+ 弹层组装。
+// 2026-10-29 真机验收定稿：页签对齐主 Tab（ydo-tabs）/车衣看板（yxh-tabs）的
+// 下划线形态、置于页头下方通栏；关键词与对标账号拆为两个独立子页（对齐 UI 模板
+// 与静态测试页）。section 是纯 UI 切换（local state）；数据与动作由 client.js 注入。
 // ---------------------------------------------------------------------------
 
 export function MaterialPage({
@@ -782,22 +809,26 @@ export function MaterialPage({
     setSection(next)
     if (actions.onSectionChange) actions.onSectionChange(next)
   }
+  const keywordRows = seeds && seeds.data && Array.isArray(seeds.data.keywords) ? seeds.data.keywords : null
+  const accountRows = seeds && seeds.data && Array.isArray(seeds.data.accounts) ? seeds.data.accounts : null
   return h('div', { className: 'ydo-mat-page' },
     h('div', { className: 'ydo-mat-head' },
       h('div', null,
         h('h2', { className: 'ydo-mat-title' }, '爆款素材看板'),
-        h('p', { className: 'ydo-mat-sub' }, '关键词与对标账号双源采集的爆款素材候选池；评分口径由服务端统一配置（候选只读展示）。')),
-      h('div', { className: 'ydo-mat-seg', role: 'tablist', 'aria-label': '素材看板子页' },
-        h('button', { type: 'button', 'aria-current': section === 'board' || undefined, onClick: () => changeSection('board') }, '素材看板'),
-        h('button', { type: 'button', 'aria-current': section === 'seeds' || undefined, onClick: () => changeSection('seeds') }, '种子管理'),
-        h('button', { type: 'button', 'aria-current': section === 'runs' || undefined, onClick: () => changeSection('runs') }, '采集记录'))),
+        h('p', { className: 'ydo-mat-sub' }, '关键词与对标账号双源采集的爆款素材候选池；评分口径由服务端统一配置（候选只读展示）。'))),
+    h('nav', { className: 'ydo-mat-tabs', role: 'tablist', 'aria-label': '素材看板子页' },
+      h('button', { type: 'button', 'aria-current': section === 'board' || undefined, onClick: () => changeSection('board') }, '素材看板'),
+      h('button', { type: 'button', 'aria-current': section === 'keywords' || undefined, onClick: () => changeSection('keywords') },
+        '关键词管理', keywordRows ? h('span', { className: 'ydo-mat-tab-count' }, String(keywordRows.length)) : null),
+      h('button', { type: 'button', 'aria-current': section === 'accounts' || undefined, onClick: () => changeSection('accounts') },
+        '对标账号', accountRows ? h('span', { className: 'ydo-mat-tab-count' }, String(accountRows.length)) : null),
+      h('button', { type: 'button', 'aria-current': section === 'runs' || undefined, onClick: () => changeSection('runs') }, '采集记录')),
     section === 'board'
       ? [
         // 布局定稿（2026-10-29 用户拍板）：筛选区置顶（二级页签下、KPI 上），
         // 批次过滤横幅是筛选态的延伸提示，紧随筛选条、KPI 之前。
         h(MaterialFilterBar, {
-          key: 'filters', filters, facets, loading: board && board.loading,
-          onChange: actions.onFilterChange, onRefresh: actions.onRefreshBoard,
+          key: 'filters', filters, facets, onChange: actions.onFilterChange,
         }),
         runFilter
           ? h('div', { key: 'run-filter', className: 'ydo-mat-active', role: 'status' },
@@ -810,17 +841,24 @@ export function MaterialPage({
         }),
       ]
       : null,
-    section === 'seeds'
+    section === 'keywords'
       ? [
         seeds && seeds.errorReason ? h('p', { key: 'seed-error', className: 'ydo-mat-error', role: 'alert' }, materialErrorCopy(seeds.errorReason)) : null,
         h(MaterialKeywordsTable, {
-          key: 'keywords', rows: seeds && seeds.data ? seeds.data.keywords : [],
+          key: 'keywords', rows: keywordRows || [],
           onAdd: () => actions.onOpenSeedModal('keyword', null),
           onEdit: row => actions.onOpenSeedModal('keyword', row),
           onToggle: row => actions.onToggleSeed('keyword', row),
         }),
+      ]
+      : null,
+    section === 'accounts'
+      ? [
+        // seeds 是关键词+对标账号单请求，errorReason 共享：两个子页都要显式提示，
+        // 避免把加载失败伪装成「暂无数据」。
+        seeds && seeds.errorReason ? h('p', { key: 'seed-error', className: 'ydo-mat-error', role: 'alert' }, materialErrorCopy(seeds.errorReason)) : null,
         h(MaterialAccountsTable, {
-          key: 'accounts', rows: seeds && seeds.data ? seeds.data.accounts : [],
+          key: 'accounts', rows: accountRows || [],
           onAdd: () => actions.onOpenSeedModal('account', null),
           onEdit: row => actions.onOpenSeedModal('account', row),
           onToggle: row => actions.onToggleSeed('account', row),

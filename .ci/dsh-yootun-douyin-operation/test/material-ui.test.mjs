@@ -156,13 +156,15 @@ test('MaterialKpiCards：素材域累计与最新批次投影，全缺失渲染�
 // 筛选条与候选看板表
 // ===========================================================================
 
-test('MaterialFilterBar：档位/来源/时间窗/排序选项齐全，标签 facets 注入', () => {
+test('MaterialFilterBar：档位/来源/时间窗/排序选项齐全，标签 facets 注入，无按钮（变化即查）', () => {
   const filters = { q: '增程', minLevel: '', sourceKind: '', publishedRange: '30d', tag: '', sortBy: 'hot' }
   const bar = MaterialFilterBar({
     filters,
     facets: [{ tag: '自驾', count: 4 }, { tag: '露营', count: 2 }],
-    onChange: () => {}, onRefresh: () => {}, loading: false,
+    onChange: () => {},
   })
+  // 2026-10-29 真机验收定稿：筛选条去掉「刷新」按钮，选择条件即查询。
+  assert.equal(allNodes(bar).filter(node => node.type === 'button').length, 0)
   const options = collectOptionValues(bar)
   // 档位（全部 + S/A/B/C）
   for (const value of ['', 'S', 'A', 'B', 'C']) assert.ok(options.includes(value), `missing level ${value}`)
@@ -646,25 +648,50 @@ test('MATERIAL_CSS_TEXT：核心类与按钮规格齐备', () => {
   assert.match(MATERIAL_CSS_TEXT, /\.ydo-mat-secondary\{[^}]*height:36px/u)
   assert.match(MATERIAL_CSS_TEXT, /\.ydo-mat-link\{[^}]*height:30px/u)
   // 深色可读性定稿（2026-10-29 用户拍板：只做可读性适配，设计语言不动）——
-  // 交互色（分段选中/主按钮/链接）保持宿主品牌变量灰黑不跟报表蓝；
+  // 交互色（页签选中/主按钮/链接）保持宿主品牌变量灰黑不跟报表蓝；
   // 状态徽标实色底白字（淡底深字在深色背景是刺眼亮块）；
   // 横幅/错误条 color-mix 透明混合（浅色观感不变、深色呈暗色块）。
-  assert.match(MATERIAL_CSS_TEXT, /\.ydo-mat-seg button\[aria-current\]\{background:var\(--dsw-alias-brand-primary,#0f1115\)/u)
+  // 真机验收补订（2026-10-29）：子页签改下划线式（对齐主 Tab ydo-tabs 形态），
+  // primary 字色用宿主「品牌色底前景」变量——硬编码 #fff 深色下白底白字。
+  assert.match(MATERIAL_CSS_TEXT, /\.ydo-mat-tabs button\[aria-current\]\{border-bottom-color:var\(--dsw-alias-brand-primary,#0f1115\);color:var\(--dsw-alias-label-primary,#1f2329\)\}/u)
   assert.match(MATERIAL_CSS_TEXT, /\.ydo-mat-primary\{[^}]*background:var\(--dsw-alias-brand-primary,#0f1115\)/u)
+  assert.match(MATERIAL_CSS_TEXT, /\.ydo-mat-primary\{[^}]*color:var\(--dsw-alias-label-primary-foreground,#fff\)/u)
   assert.match(MATERIAL_CSS_TEXT, /\.ydo-mat-link\{[^}]*color:var\(--dsw-alias-brand-primary,#0f1115\)/u)
   assert.doesNotMatch(MATERIAL_CSS_TEXT, /background:#3370ff/u)
+  assert.doesNotMatch(MATERIAL_CSS_TEXT, /\.ydo-mat-seg/u)
+  // 行操作迷你按钮（2026-10-29 真机验收定稿）：对齐车衣看板标签管理三款
+  // 描边款（编辑）/灰底款（禁用）/实底款（启用），深浅主题全变量自适应。
+  assert.match(MATERIAL_CSS_TEXT, /\.ydo-mat-mini\{[^}]*border:1px solid var\(--dsw-alias-border-l1,#dee0e3\)/u)
+  assert.match(MATERIAL_CSS_TEXT, /\.ydo-mat-mini-secondary\{[^}]*background:var\(--dsw-alias-border-l2,#f0f1f3\)/u)
+  assert.match(MATERIAL_CSS_TEXT, /\.ydo-mat-mini-primary\{[^}]*color:var\(--dsw-alias-bg-base,#fff\)/u)
   assert.match(MATERIAL_CSS_TEXT, /\.ydo-mat-status-success\{background:#2ea121;color:#fff\}/u)
   assert.match(MATERIAL_CSS_TEXT, /\.ydo-mat-status-error\{background:#d83931;color:#fff\}/u)
-  assert.match(MATERIAL_CSS_TEXT, /\.ydo-mat-active\{[^}]*background:color-mix\(in srgb,#de7802 12%,transparent\)/u)
-  assert.match(MATERIAL_CSS_TEXT, /\.ydo-mat-error\{[^}]*background:color-mix\(in srgb,#d83931 10%,transparent\)/u)
+  assert.match(MATERIAL_CSS_TEXT, /\.ydo-mat-active\{[^}]*background:color-mix\(in srgb,var\(--dsw-alias-state-warn-primary,#de7802\) 12%,transparent\)/u)
+  assert.match(MATERIAL_CSS_TEXT, /\.ydo-mat-error\{[^}]*background:color-mix\(in srgb,var\(--dsw-alias-state-error-primary,#d83931\) 10%,transparent\)/u)
+})
+
+test('MaterialPage：seeds 错误条在关键词与对标账号两个子页均渲染', () => {
+  // seeds 是关键词+对标账号单请求，errorReason 共享；拆分后两个分支都要显式
+  // 提示，避免把加载失败伪装成「暂无数据」（review P2-1）。
+  const errorBar = "seeds && seeds.errorReason ? h('p', { key: 'seed-error', className: 'ydo-mat-error', role: 'alert' }, materialErrorCopy(seeds.errorReason)) : null"
+  assert.equal(materialSource.split(errorBar).length - 1, 2, '错误条应恰好出现两次')
+  // 锚定渲染分支（`? [`）而非 nav 里的 aria-current 判断，避免 slice 范围错位。
+  const keywordIdx = materialSource.indexOf("section === 'keywords'\n      ? [")
+  const accountIdx = materialSource.indexOf("section === 'accounts'\n      ? [")
+  assert.ok(keywordIdx > -1 && accountIdx > -1, 'keywords/accounts 两分支应存在')
+  assert.ok(materialSource.slice(keywordIdx, accountIdx).includes(errorBar), 'keywords 分支应渲染 seeds 错误条')
+  assert.ok(materialSource.slice(accountIdx).includes(errorBar), 'accounts 分支应渲染 seeds 错误条')
 })
 
 test('client.js 接线：Tab/i18n/全宽 body/轮询守卫/幂等键模板', () => {
   // i18n：中英 tabMaterial
   assert.ok(clientSource.includes("tabMaterial: '素材看板'"))
   assert.ok(clientSource.includes("tabMaterial: 'Materials'"))
-  // Tab nav 第 5 个按钮
+  // Tab nav：素材看板页签存在，且顺序在爆款拆解之前（2026-10-29 真机验收定稿）
   assert.match(clientSource, /'aria-current': tab === 'material' \|\| undefined/u)
+  assert.ok(
+    clientSource.indexOf("'aria-current': tab === 'material'") < clientSource.indexOf("'aria-current': tab === 'breakdown'"),
+    '素材看板页签应排在爆款拆解之前')
   // 素材 Tab 使用全宽内容区
   assert.match(clientSource, /tab === 'overview' \|\| tab === 'breakdown' \|\| tab === 'report' \|\| tab === 'material' \? ' ydo-body-full'/u)
   // 采集轮询：隐藏页签暂停（§6.4）
