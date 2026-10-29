@@ -2106,6 +2106,9 @@ function Overlay({ t }) {
         ...(query.q.trim() ? { q: query.q.trim() } : {}),
         ...(query.minLevel ? { minLevel: query.minLevel } : {}),
         ...(query.tag ? { tag: query.tag } : {}),
+        // 来源类型筛选已下沉服务端（审查 P1-1）：total 与分页随过滤口径返回，
+        // 不再对当前页做本地过滤（旧实现会过滤当前页但保留未过滤 total）。
+        ...(query.sourceKind ? { sourceKind: query.sourceKind } : {}),
         ...materialPublishedWindow(query.publishedRange),
       })
       if (seq !== materialSeqRef.current) return
@@ -2113,18 +2116,7 @@ function Overlay({ t }) {
         setMaterialBoard(prev => ({ ...prev, loading: false, errorReason: result.reason || 'douyin_operation_request_failed' }))
         return
       }
-      let rows = Array.isArray(result.data?.candidates) ? result.data.candidates : []
-      // 来源类型过滤是页面语义（服务端投影无此维度），客户端过滤（demo 同款）；
-      // total 仍取服务端口径，分页按钮按服务端 total 计算。
-      const kind = query.sourceKind
-      if (kind) {
-        rows = rows.filter(row => {
-          const matches = Array.isArray(row.sourceMatches) ? row.sourceMatches : []
-          const byKeyword = matches.some(match => match && match.keyword)
-          const byAccount = matches.some(match => match && match.accountSeedId)
-          return kind === 'both' ? byKeyword && byAccount : kind === 'keyword' ? byKeyword : byAccount
-        })
-      }
+      const rows = Array.isArray(result.data?.candidates) ? result.data.candidates : []
       setMaterialBoard(prev => ({
         ...prev,
         rows,
@@ -2286,7 +2278,8 @@ function Overlay({ t }) {
     setMaterialSeedError(null)
     try {
       const isKeyword = mode === 'keyword'
-      // 批量合同的单条形态：dailyLimit/maxVideos 为 null 不传（服务端保留原值）。
+      // 批量合同的单条形态：dailyLimit/maxVideos 为 null 不传——服务端按显式提交
+      // 字段更新（P0-1 修复），未提交字段保留原值、显式 null 清除（上限回默认）。
       const entry = isKeyword
         ? {
           keyword: payload.keyword,
@@ -2321,8 +2314,10 @@ function Overlay({ t }) {
     }
   }, [loadMaterialSeeds, materialSeedModal])
 
-  // 启用/禁用只带身份键 + status（keyword / inputForm+inputValue），其余字段由
-  // 服务端保留原值；确认弹层用插件内 ydo-confirm（同删除账号/报表重新生成样式）。
+  // 启用/禁用只带身份键 + status（keyword / inputForm+inputValue）；服务端按
+  // 显式提交字段更新（P0-1 修复），priority/dailyLimit/searchCount/displayName/
+  // maxVideos 等未提交字段保留原值，不再被默认值覆盖。
+  // 确认弹层用插件内 ydo-confirm（同删除账号/报表重新生成样式）。
   const requestMaterialToggle = useCallback((mode, row) => {
     setMaterialToggleConfirm({ mode, row })
   }, [])

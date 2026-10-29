@@ -1172,9 +1172,12 @@ const MATERIAL_STORYBOARD_STATUSES = new Set(['succeeded', 'running', 'failed'])
 const MATERIAL_MIN_LEVELS = new Set(['S', 'A', 'B', 'C'])
 const MATERIAL_PRIORITIES = new Set(['P1', 'P2', 'P3', 'P4', 'P5'])
 const MATERIAL_INPUT_FORMS = new Set(['douyin_id', 'homepage_url', 'sec_user_id'])
+// 来源类型筛选枚举（审查 P1-1 下沉）：与服务端 _CANDIDATE_SOURCE_KINDS 对齐。
+const MATERIAL_SOURCE_KINDS = new Set(['keyword', 'account', 'both'])
 
-// 主页链接前置校验（§6.4）：必须 HTTPS 且 host 在抖音域白名单内；
-// 服务端 upsert 仍会二次校验，这里只挡明显的站外/非安全输入。
+// 主页链接前置校验（§6.4）：必须 HTTPS 且 host 在抖音域白名单内。
+// 注意：当前仅插件 Host 做该白名单校验，服务端 seed 契约尚未收紧（审查 P2-6，
+// 独立任务）；此处只挡插件 UI 入口的明显站外/非安全输入。
 function isDouyinHomepageUrl(value) {
   try {
     const url = new URL(value)
@@ -1388,6 +1391,13 @@ async function handleMaterialVideosList(deps, ctx, body) {
   if (body.scope !== undefined && body.scope !== null) {
     if (body.scope !== 'material') return { status: 'error', reason: 'VALIDATION_ERROR' }
     args.scope = body.scope
+  }
+  // 来源类型筛选（审查 P1-1 下沉）：服务端过滤 + 一致 total，宿主白名单透传。
+  if (body.sourceKind !== undefined && body.sourceKind !== null && body.sourceKind !== '') {
+    if (!MATERIAL_SOURCE_KINDS.has(body.sourceKind)) {
+      return { status: 'error', reason: 'VALIDATION_ERROR' }
+    }
+    args.sourceKind = body.sourceKind
   }
   const payload = await callTool(ctx, 'viral_video_candidates_list', args)
   return { status: 'ready', data: payload }

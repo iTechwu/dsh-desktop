@@ -1766,18 +1766,21 @@ test('material.videos.list：白名单/pattern/枚举校验与全参数透传', 
   assert.equal(badDate.payload.reason, 'VALIDATION_ERROR')
   const badLevel = await call(dispatch, { action: 'material.videos.list', minLevel: 'X' })
   assert.equal(badLevel.payload.reason, 'VALIDATION_ERROR')
+  // 来源筛选（审查 P1-1 下沉）：宿主白名单拒绝非法值，合法值透传服务端过滤
+  const badSourceKind = await call(dispatch, { action: 'material.videos.list', sourceKind: 'media' })
+  assert.equal(badSourceKind.payload.reason, 'VALIDATION_ERROR')
   // limit 越界：宿主 clamp 收敛回默认（与既有 handler 宽容语义一致），不拒绝
   const overLimit = await call(dispatch, { action: 'material.videos.list', limit: 2000 })
   assert.equal(overLimit.payload.status, 'ready')
   assert.equal(calls[1].limit, 200)
-  assert.equal(calls.length, 2, '显式枚举/pattern 拒绝路径不发起调用；limit 越界回退为合法请求')
+  assert.equal(calls.length, 2, '显式枚举/pattern/sourceKind 拒绝路径不发起调用；limit 越界回退为合法请求')
 
   // 全参数透传：minLevel 小写归一、数值 clamp、pattern 合法值放行
   const full = await call(dispatch, {
     action: 'material.videos.list', scope: 'material', taskId: 't1', runId: 'r1',
     minLevel: 'a', sourceType: 'keyword_search', candidateId: 'cand-1', awemeId: '7123',
     storyboardStatus: 'succeeded', sortBy: 'play_count', offset: 40, limit: 50,
-    q: '增程', sourceKeyword: '增程车', accountSeedId: 'as-1',
+    q: '增程', sourceKeyword: '增程车', accountSeedId: 'as-1', sourceKind: 'both',
     publishedFrom: '2026-10-01', publishedTo: '2026-10-28', tag: '自驾',
   })
   assert.equal(full.payload.status, 'ready')
@@ -1785,7 +1788,7 @@ test('material.videos.list：白名单/pattern/枚举校验与全参数透传', 
     scope: 'material', taskId: 't1', runId: 'r1', minLevel: 'A', sourceType: 'keyword_search',
     candidateId: 'cand-1', awemeId: '7123', storyboardStatus: 'succeeded',
     sortBy: 'play_count', offset: 40, limit: 50, q: '增程',
-    sourceKeyword: '增程车', accountSeedId: 'as-1',
+    sourceKeyword: '增程车', accountSeedId: 'as-1', sourceKind: 'both',
     publishedFrom: '2026-10-01', publishedTo: '2026-10-28', tag: '自驾',
   })
 })

@@ -3985,9 +3985,12 @@ window.__ModuleLoader__.load({
 
     const matNum = value => (typeof value === 'number' && Number.isFinite(value) ? value.toLocaleString('zh-CN') : DASH)
     // 评分规则版本的中文展示（客户端只读映射，未知版本回退原文）。
+    // 空版本 = 存量历史候选（审查 P1-4：不回写规则版本，明确标注而非显示「—」）。
     const hotVersionLabel = version => (version === 'hot-v1'
       ? '热度评分规则 v1'
-      : version === 'hot-v1-potential' ? '热度评分规则 v1（含潜力作品）' : version ? String(version) : DASH)
+      : version === 'hot-v1-potential'
+        ? '热度评分规则 v1（含潜力作品）'
+        : version ? String(version) : '历史候选（旧规则入池）')
     // 计数列万化：≥1万 显示「x.x万」（与 tools 验证页口径一致）。
     const matNumWan = value => (typeof value === 'number' && Number.isFinite(value)
       ? value >= 10000 ? `${(value / 10000).toFixed(1)}万` : value.toLocaleString('zh-CN')
@@ -4510,8 +4513,17 @@ window.__ModuleLoader__.load({
                 const levels = row.hotLevelSummary && Object.keys(row.hotLevelSummary).length
                   ? ['S', 'A', 'B', 'C'].map(level => `${level} ${matNum(row.hotLevelSummary[level])}`).join(' · ')
                   : null
-                const hasFailures = (Array.isArray(row.failedKeywords) && row.failedKeywords.length)
+                const failedSeeds = (Array.isArray(row.failedKeywords) && row.failedKeywords.length)
                   || (Array.isArray(row.failedAccounts) && row.failedAccounts.length)
+                // 审查 P1-2：失败明细按钮按 run 状态/计数判定——run 级失败（Worker
+                // 执行前失败、deadline 等）没有 seed 明细也必须可诊断；「查看看板」
+                // 在 failed 且无候选时隐藏（该批次没有可看内容）。
+                const runFailed = row.runStatus === 'failed' || row.runStatus === 'partial_failed'
+                const showFailureDetail = runFailed
+                  || (typeof row.failedJobs === 'number' && row.failedJobs > 0)
+                  || Boolean(failedSeeds)
+                const failedNoCandidates = row.runStatus === 'failed'
+                  && typeof row.candidatesInserted === 'number' && row.candidatesInserted === 0
                 return h('tr', { key: row.runId },
                   h('td', null, materialStatusPill(row.runStatus)),
                   h('td', null, matDateTime(row.startedAt)),
@@ -4526,8 +4538,10 @@ window.__ModuleLoader__.load({
                     : DASH),
                   h('td', null, levels || DASH),
                   h('td', null, h('div', { className: 'ydo-mat-actions' },
-                    h('button', { type: 'button', className: 'ydo-mat-link', onClick: () => onViewBoard(row.runId) }, '查看看板'),
-                    hasFailures
+                    failedNoCandidates
+                      ? null
+                      : h('button', { type: 'button', className: 'ydo-mat-link', onClick: () => onViewBoard(row.runId) }, '查看看板'),
+                    showFailureDetail
                       ? h('button', { type: 'button', className: 'ydo-mat-link ydo-mat-danger', onClick: () => onOpenFailure(row) }, '失败明细')
                       : null)))
               })
@@ -4587,6 +4601,9 @@ window.__ModuleLoader__.load({
       const failedKeywords = Array.isArray(run.failedKeywords) ? run.failedKeywords : []
       const failedAccounts = Array.isArray(run.failedAccounts) ? run.failedAccounts : []
       const failedTotal = failedKeywords.length + failedAccounts.length
+      // 审查 P1-2：run 级失败（无 seed 明细）也要可诊断——投影 runError 透出
+      // 已登记的 code/message（服务端脱敏，不含 Provider 原文与异常栈）。
+      const runError = run.runError && typeof run.runError === 'object' ? run.runError : null
       return h('div', { className: 'ydo-mat-modal-overlay', onClick: event => { if (event.target === event.currentTarget) onClose() } },
         h('div', { className: 'ydo-mat-modal', role: 'dialog', 'aria-modal': true, 'aria-label': '失败明细' },
           h('div', { className: 'ydo-mat-modal-head' },
@@ -4597,7 +4614,10 @@ window.__ModuleLoader__.load({
             h('b', null, '状态'), h('span', null, materialStatusPill(run.runStatus)),
             h('b', null, '开始时间'), h('span', null, matDateTime(run.startedAt)),
             h('b', null, '耗时'), h('span', null, matDuration(run.durationSeconds)),
-            h('b', null, '失败数量'), h('span', null, String(failedTotal))),
+            h('b', null, '失败数量'), h('span', null, String(failedTotal)),
+            ...(runError
+              ? [h('b', null, '失败原因'), h('span', { className: 'ydo-mat-error' }, `${matText(runError.code)}：${matText(runError.message)}`)]
+              : [])),
           failedKeywords.length || failedAccounts.length
             ? h('div', { className: 'ydo-mat-table-wrap' },
               h('table', { className: 'ydo-mat-table' },
@@ -4605,7 +4625,9 @@ window.__ModuleLoader__.load({
                 h('tbody', null,
                   h('tr', null, h('td', null, `失败关键词（${failedKeywords.length}）`), h('td', null, failedKeywords.join('、') || '—')),
                   h('tr', null, h('td', null, `失败账号（${failedAccounts.length}）`), h('td', null, failedAccounts.join('、') || '—')))))
-            : h('p', { className: 'ydo-mat-hint' }, '该批次没有失败明细。'),
+            : runError
+              ? h('p', { className: 'ydo-mat-hint' }, '该批次在任务执行层面失败，没有种子级失败明细；原因见上方「失败原因」。')
+              : h('p', { className: 'ydo-mat-hint' }, '该批次没有失败明细。'),
           h('div', { className: 'ydo-mat-modal-actions' },
             h('button', { type: 'button', className: 'ydo-mat-secondary', onClick: onClose }, '关闭'))))
     }
@@ -6778,6 +6800,9 @@ window.__ModuleLoader__.load({
             ...(query.q.trim() ? { q: query.q.trim() } : {}),
             ...(query.minLevel ? { minLevel: query.minLevel } : {}),
             ...(query.tag ? { tag: query.tag } : {}),
+            // 来源类型筛选已下沉服务端（审查 P1-1）：total 与分页随过滤口径返回，
+            // 不再对当前页做本地过滤（旧实现会过滤当前页但保留未过滤 total）。
+            ...(query.sourceKind ? { sourceKind: query.sourceKind } : {}),
             ...materialPublishedWindow(query.publishedRange),
           })
           if (seq !== materialSeqRef.current) return
@@ -6785,18 +6810,7 @@ window.__ModuleLoader__.load({
             setMaterialBoard(prev => ({ ...prev, loading: false, errorReason: result.reason || 'douyin_operation_request_failed' }))
             return
           }
-          let rows = Array.isArray(result.data?.candidates) ? result.data.candidates : []
-          // 来源类型过滤是页面语义（服务端投影无此维度），客户端过滤（demo 同款）；
-          // total 仍取服务端口径，分页按钮按服务端 total 计算。
-          const kind = query.sourceKind
-          if (kind) {
-            rows = rows.filter(row => {
-              const matches = Array.isArray(row.sourceMatches) ? row.sourceMatches : []
-              const byKeyword = matches.some(match => match && match.keyword)
-              const byAccount = matches.some(match => match && match.accountSeedId)
-              return kind === 'both' ? byKeyword && byAccount : kind === 'keyword' ? byKeyword : byAccount
-            })
-          }
+          const rows = Array.isArray(result.data?.candidates) ? result.data.candidates : []
           setMaterialBoard(prev => ({
             ...prev,
             rows,
@@ -6958,7 +6972,8 @@ window.__ModuleLoader__.load({
         setMaterialSeedError(null)
         try {
           const isKeyword = mode === 'keyword'
-          // 批量合同的单条形态：dailyLimit/maxVideos 为 null 不传（服务端保留原值）。
+          // 批量合同的单条形态：dailyLimit/maxVideos 为 null 不传——服务端按显式提交
+          // 字段更新（P0-1 修复），未提交字段保留原值、显式 null 清除（上限回默认）。
           const entry = isKeyword
             ? {
               keyword: payload.keyword,
@@ -6993,8 +7008,10 @@ window.__ModuleLoader__.load({
         }
       }, [loadMaterialSeeds, materialSeedModal])
 
-      // 启用/禁用只带身份键 + status（keyword / inputForm+inputValue），其余字段由
-      // 服务端保留原值；确认弹层用插件内 ydo-confirm（同删除账号/报表重新生成样式）。
+      // 启用/禁用只带身份键 + status（keyword / inputForm+inputValue）；服务端按
+      // 显式提交字段更新（P0-1 修复），priority/dailyLimit/searchCount/displayName/
+      // maxVideos 等未提交字段保留原值，不再被默认值覆盖。
+      // 确认弹层用插件内 ydo-confirm（同删除账号/报表重新生成样式）。
       const requestMaterialToggle = useCallback((mode, row) => {
         setMaterialToggleConfirm({ mode, row })
       }, [])

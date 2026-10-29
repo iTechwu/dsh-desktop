@@ -389,6 +389,80 @@ test('MaterialFailureModal：失败关键词/账号两列渲染，空明细给�
   assert.match(empty, /没有失败明细/)
 })
 
+test('MaterialRunsTable：失败明细按钮三条件，failed 无候选隐藏查看看板', () => {
+  const rows = [
+    // run 级失败且零候选：「失败明细」必须可诊断，「查看看板」隐藏（无可看内容）
+    {
+      runId: 'vv-mat-f1', runStatus: 'failed', startedAt: '2026-10-28T10:00:00+08:00',
+      finishedAt: '2026-10-28T10:01:00+08:00', durationSeconds: 60,
+      succeededJobs: 0, failedJobs: 2, failedKeywords: [], failedAccounts: [],
+      candidatesInserted: 0, hotLevelSummary: {},
+    },
+    // 部分失败：两按钮齐全
+    {
+      runId: 'vv-mat-f2', runStatus: 'partial_failed', startedAt: '2026-10-28T11:00:00+08:00',
+      finishedAt: '2026-10-28T11:03:00+08:00', durationSeconds: 180,
+      succeededJobs: 8, failedJobs: 1, failedKeywords: ['冷门词'], failedAccounts: [],
+      candidatesInserted: 6, hotLevelSummary: { A: 2 },
+    },
+    // 成功且无失败：无「失败明细」，只有「查看看板」
+    {
+      runId: 'vv-mat-f3', runStatus: 'completed', startedAt: '2026-10-28T12:00:00+08:00',
+      finishedAt: '2026-10-28T12:04:00+08:00', durationSeconds: 240,
+      succeededJobs: 10, failedJobs: 0, failedKeywords: [], failedAccounts: [],
+      candidatesInserted: 12, hotLevelSummary: { S: 1 },
+    },
+  ]
+  const tree = MaterialRunsTable({
+    runs: rows, activeRun: null, collecting: false, errorReason: null,
+    onStartCollect: () => {}, onViewBoard: () => {}, onOpenFailure: () => {}, onRefresh: () => {},
+  })
+  const rowsById = new Map()
+  for (const node of allNodes(tree)) {
+    if (node.type === 'tr' && node.props && typeof node.props.key === 'string') {
+      rowsById.set(node.props.key, treeText(node))
+    }
+  }
+  const f1 = rowsById.get('vv-mat-f1')
+  const f2 = rowsById.get('vv-mat-f2')
+  const f3 = rowsById.get('vv-mat-f3')
+  assert.ok(f1 && f2 && f3, '三个 run 行都应渲染')
+  assert.match(f1, /失败明细/)
+  assert.doesNotMatch(f1, /查看看板/, 'failed 且零候选必须隐藏「查看看板」')
+  assert.match(f2, /失败明细/)
+  assert.match(f2, /查看看板/)
+  assert.doesNotMatch(f3, /失败明细/)
+  assert.match(f3, /查看看板/)
+})
+
+test('MaterialFailureModal：runError 透出失败原因，failed 无种子级明细给任务层提示', () => {
+  const text = treeText(MaterialFailureModal({
+    run: {
+      runId: 'vv-mat-f1', runStatus: 'failed',
+      runError: { code: 'MATERIAL_RUN_FAILED', message: '采集执行失败，请重新提交。' },
+      failedKeywords: [], failedAccounts: [],
+    },
+    onClose: () => {},
+  }))
+  assert.match(text, /失败原因/)
+  assert.match(text, /MATERIAL_RUN_FAILED：采集执行失败，请重新提交。/)
+  assert.match(text, /该批次在任务执行层面失败，没有种子级失败明细/)
+  // 成功/正常 run 不出现失败原因行
+  const plain = treeText(MaterialFailureModal({
+    run: { runId: 'r2', failedKeywords: [], failedAccounts: [] }, onClose: () => {},
+  }))
+  assert.doesNotMatch(plain, /失败原因/)
+})
+
+test('MaterialReasonDrawer：无规则版本的存量候选标注「历史候选」', () => {
+  const text = treeText(MaterialReasonDrawer({
+    row: { title: '旧规则候选', scoreRuleVersion: '', scoreReasons: ['播放增速 300%'] },
+    onClose: () => {},
+  }))
+  assert.match(text, /历史候选（旧规则入池）/)
+  assert.doesNotMatch(text, /热度评分规则/)
+})
+
 // ===========================================================================
 // 样式与宿主接线源码契约（渲染冒烟由 render-smoke.test.mjs 兜底）
 // ===========================================================================
@@ -425,6 +499,9 @@ test('client.js 接线：Tab/i18n/全宽 body/轮询守卫/幂等键模板', () 
   assert.match(clientSource, /douyin:vv_account_upsert:\$\{newAiAnalysisRequestUuid\(\)\}/u)
   // 看板请求固定素材域语义
   assert.match(clientSource, /action: 'material\.videos\.list',\s*\n\s*scope: 'material'/u)
+  // 来源筛选下沉服务端（审查 P1-1）：请求透传 sourceKind，无本地过滤段
+  assert.match(clientSource, /\.\.\.\(query\.sourceKind \? \{ sourceKind: query\.sourceKind \} : \{\}\)/u)
+  assert.doesNotMatch(clientSource, /row\.sourceKind === filter\.sourceKind/u)
 })
 
 test('MaterialSeedModal：modal={mode,row} 展开透传到 SeedModal 顶层（截图验收回归）', () => {
