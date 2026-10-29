@@ -4545,7 +4545,9 @@ window.__ModuleLoader__.load({
         activeRun
           ? h('div', { className: 'ydo-mat-active', role: 'status' },
             h('span', { className: 'ydo-mat-spinner', 'aria-hidden': true }),
-            h('span', null, `采集任务进行中：${materialStatusPill(activeRun.status)} ${matDateTime(activeRun.startedAt)} · 完成后自动刷新看板`),
+            // 状态徽标是 React 元素，不能嵌进模板字符串（会渲染成 [object Object]），
+            // 作为独立子节点拼接（截图验收 2026-10-29 发现）。
+            h('span', null, '采集任务进行中：', materialStatusPill(activeRun.status), ` ${matDateTime(activeRun.startedAt)} · 完成后自动刷新看板`),
             activeRun.runId ? h('button', { type: 'button', className: 'ydo-mat-link', onClick: () => onViewBoard(activeRun.runId) }, '查看本批候选') : null)
           : null,
         errorReason ? h('p', { className: 'ydo-mat-error', role: 'alert' }, materialErrorCopy(errorReason)) : null,

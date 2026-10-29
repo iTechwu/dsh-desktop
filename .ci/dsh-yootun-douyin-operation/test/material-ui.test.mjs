@@ -370,6 +370,9 @@ test('MaterialRunsTable：activeRun 横幅渲染，立即采集禁用', () => {
   const text = treeText(tree)
   assert.match(text, /采集任务进行中/)
   assert.match(text, /查看本批候选/)
+  // 状态徽标是 React 元素：禁止嵌入模板字符串渲染成 [object Object]（截图验收 2026-10-29 回归）
+  assert.doesNotMatch(text, /\[object Object\]/)
+  assert.match(text, /进行中/)
   // 立即采集按钮 disabled：activeRun 非空
   const disabled = allNodes(tree).filter(node => node.props.disabled === true)
   assert.ok(disabled.some(node => treeText(node).includes('立即采集')), 'activeRun 非空时立即采集必须禁用')

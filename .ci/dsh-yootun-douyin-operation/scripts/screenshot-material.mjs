@@ -174,12 +174,13 @@ const runsFixture = [
     finishedAt: '2026-10-26T10:01:30+08:00', durationSeconds: 90,
     keywordCount: 6, accountCount: 1, plannedJobs: 7, selectedJobs: 0,
     succeededJobs: 0, failedJobs: 7, failedKeywords: ['关键词甲（示例）', '关键词乙（示例）'], failedAccounts: ['示例账号丙'],
-    discovered: 0, newVideos: 0, candidatesInserted: 0,
+    discovered: 0, newVideos: 0, candidatesInserted: 0, materialCandidateCount: 0,
     promotedCandidates: 0, duplicatesSkipped: 0,
     hotLevelSummary: {},
   },
 ]
 
+// 审查批 4：评分理由抽屉结构化对照（scoreReasonDetails，tools 投影实时生成）。
 const reasonRowFixture = {
   title: '增程车冬季续航横评（示例）', hotScore: 88.5, hotLevel: 'S',
   scoreRuleVersion: 'hot-v1-potential', publishedAt: '2026-10-20 19:00',
@@ -188,6 +189,14 @@ const reasonRowFixture = {
     '播放增速 320%（近 7 天播放相对前窗口）',
     '完播率 41.7%，高于同类阈值',
     '互动率 12.34%，进入候选池 top10%',
+  ],
+  scoreReasonDetails: [
+    { name: '点赞', observed: 8000, threshold: 5000, points: 10, hit: true },
+    { name: '评论', observed: 620, threshold: 500, points: 8, hit: true },
+    { name: '转发', observed: 310, threshold: 500, points: 0, hit: false },
+    { name: '收藏', observed: 1540, threshold: 1000, points: 10, hit: true },
+    { name: '播放', observed: 123456, threshold: 100000, points: 15, hit: true },
+    { name: '互动率', observed: 0.1234, threshold: 0.08, points: 15, hit: true },
   ],
 }
 
@@ -241,12 +250,12 @@ function buildBlocks(plugin) {
     h(plugin.MaterialKeywordsTable, { rows: keywordsFixture, onAdd: noop, onEdit: noop, onToggle: noop }),
     h(plugin.MaterialAccountsTable, { rows: accountsFixture, onAdd: noop, onEdit: noop, onToggle: noop })))
 
-  // 采集记录（run 历史 + 进行中横幅）
+  // 采集记录（run 历史 + 进行中横幅；runsTotal 审查 P2-9 全量计数截断提示）
   blocks.push(h('div', { className: 'screenshot-block', id: 'mat-runs' },
     h('h2', { className: 'screenshot-title' }, 'Tab5 素材看板 · 采集记录（run 历史 + 进行中横幅 + 立即采集）'),
-    h('p', { className: 'screenshot-sub' }, '同一时刻只允许一个手动采集；进行中横幅自动轮询（3 秒，页面隐藏暂停）；partial_failed 显示失败明细 + 查看看板，零失败只显示查看看板'),
+    h('p', { className: 'screenshot-sub' }, '同一时刻只允许一个手动采集；标题展示服务端全量计数、行数不足追加截断提示；failed 且零候选隐藏「查看看板」（materialCandidateCount 判定）'),
     h(plugin.MaterialRunsTable, {
-      runs: runsFixture,
+      runs: runsFixture, runsTotal: 57,
       activeRun: { runId: 'vv-mat-r9', status: 'running', startedAt: '2026-10-28T11:00:00+08:00' },
       collecting: false, errorReason: null,
       onStartCollect: noop, onViewBoard: noop, onOpenFailure: noop, onRefresh: noop,
@@ -260,16 +269,16 @@ function buildOverlays(plugin) {
   return [
     {
       id: 'mat-reason-drawer', title: '评分理由抽屉（右侧固定，Esc 关闭、列表行位置不变）',
-      sub: '摘要卡：总分 / 档位 / 评分版本（hot-v1-potential）；加分项逐条列表；互动率口径卡',
+      sub: '摘要卡：总分 / 档位 / 评分版本；评分明细表（scoreReasonDetails 结构化对照：命中 +N分 / 未命中还差 X / 缺失未采集，互动率口径行）；加分项文字列表兜底',
       node: h(plugin.MaterialReasonDrawer, { row: reasonRowFixture, onClose: noop }),
     },
     {
       id: 'mat-seed-modal-keyword', title: '种子弹窗 · 编辑关键词（关键词编辑锁定；category 页面不维护）',
-      sub: '字段：关键词（锁定）/ 优先级 P1-P5 / 状态 / 每日搜索上限（可选）；confirm + 幂等键门禁',
+      sub: '字段：关键词（锁定）/ 优先级 P1-P5 / 状态；日上限与单轮搜索数不设输入（审查 P2-7 拍板：dailyLimit 不参与调度，前端不展示不提交）；confirm + 幂等键门禁',
       node: h(plugin.MaterialSeedModal, {
         modal: {
           mode: 'keyword',
-          row: { keyword: '增程车', priority: 'P1', status: 'active', dailyLimit: 5 },
+          row: { keyword: '增程车', priority: 'P1', status: 'active', searchCount: 12 },
         },
         busy: false, errorReason: null, onConfirm: noop, onClose: noop,
       }),
@@ -355,7 +364,8 @@ async function main() {
 
   await mkdir(outDir, { recursive: true })
   const previewPath = path.join(outDir, 'material-preview.html')
-  await writeFile(previewPath, mainHtml + [...overlayHtml.values()].join(''))
+  // SSR 嵌套缩进会产出尾随空白（审查 P3-3）：落盘前统一剥除，避免 diff 噪声。
+  await writeFile(previewPath, (mainHtml + [...overlayHtml.values()].join('')).replace(/[ \t]+$/gm, ''))
   console.log(`preview html: ${previewPath}`)
 
   const driver = await loadPlaywrightDriver()
