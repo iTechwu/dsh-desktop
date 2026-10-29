@@ -79,6 +79,7 @@ function boardRowsFixture() {
       candidateId: 'cand-1', awemeId: '7123', title: '增程车冬季续航横评（示例）',
       hotScore: 88.5, hotLevel: 'S', scoreRuleVersion: 'hot-v1-potential',
       scoreReasons: ['播放增速 320%', '完播率高于阈值'],
+      shareUrl: 'https://v.douyin.com/example-1/',
       playCount: 123456, likeCount: 8000, commentCount: 620, shareCount: 310,
       collectCount: 1540, interactionRate: 0.1234,
       publishedAt: '2026-10-20T19:00:00+08:00',
@@ -92,6 +93,7 @@ function boardRowsFixture() {
       candidateId: 'cand-2', awemeId: '7124', title: '新手司机上路避坑指南（示例）',
       hotScore: 76, hotLevel: 'B', scoreRuleVersion: 'hot-v1-potential',
       scoreReasons: ['互动率高于阈值'],
+      shareUrl: 'https://v.douyin.com/example-2/',
       playCount: 45210, likeCount: 1200, commentCount: null, shareCount: null,
       collectCount: null, interactionRate: 0.0521,
       publishedAt: '2026-10-22T12:30:00+08:00',
@@ -228,7 +230,7 @@ const actionsFixture = {
   onOpenSeedModal: noop, onToggleSeed: noop, onSaveSeed: noop, onCloseSeedModal: noop,
   onOpenCollect: noop, onCollectConfirm: noop, onCloseCollect: noop,
   onViewRunBoard: noop, onOpenFailure: noop, onCloseFailure: noop,
-  onRefreshRuns: noop, onCloseReason: noop, onClearRunFilter: noop, onSectionChange: noop,
+  onRefreshRuns: noop, onCloseReason: noop,
 }
 
 // ---------------------------------------------------------------------------
@@ -238,12 +240,12 @@ const actionsFixture = {
 function buildBlocks(plugin) {
   const blocks = []
 
-  // 整页看板（board section：四子页签 + 筛选条 + 批次过滤横幅 + KPI 5 卡 +
-  // 候选表 + 分页；2026-10-29 布局拍板：筛选上、KPI 下；真机验收定稿：下划线
-  // 子页签 + 筛选条无按钮）
+  // 整页看板（board section：四子页签 + 筛选条 + KPI 5 卡 + 候选表 + 分页；
+  // 2026-10-29 布局拍板：筛选上、KPI 下；第二轮真机验收：批次过滤横幅移除、
+  // section 由宿主受控注入）
   blocks.push(h('div', { className: 'screenshot-block', id: 'mat-board' },
-    h('h2', { className: 'screenshot-title' }, 'Tab3 素材看板 · 整页（子页签 + 筛选条 + 批次过滤 + KPI 5 卡 + 候选表）'),
-    h('p', { className: 'screenshot-sub' }, 'RQ-2026-008 阶段 4：候选素材=素材域累计；S/A 等四卡=最新批次投影（缺桶=0）；「—」为未返回缺口；命中来源=关键词/对标账号/双源'),
+    h('h2', { className: 'screenshot-title' }, 'Tab3 素材看板 · 整页（子页签 + 筛选条 + KPI 5 卡 + 候选表）'),
+    h('p', { className: 'screenshot-sub' }, 'RQ-2026-008 阶段 4：候选素材=素材域累计；S/A 等四卡=最新批次投影（缺桶=0）；「—」为未返回缺口；命中来源=关键词/对标账号/双源；视频标题=作品页链接按钮'),
     h(plugin.MaterialPage, {
       board: {
         rows: boardRowsFixture(), total: 42, offset: 0, limit: 20,
@@ -264,30 +266,67 @@ function buildBlocks(plugin) {
       activeRun: null, collecting: false, reason: null, seedModal: null,
       collectOpen: false, collectError: null, failure: null,
       savingSeed: false, seedError: null,
-      runFilter: 'vv-mat-r1',
+      section: 'board', onSectionChange: noop,
       actions: actionsFixture,
     })))
 
-  // 关键词管理 / 对标账号（2026-10-29 真机验收定稿：两个独立子页，对齐静态页）
+  // 关键词管理 / 对标账号（2026-10-29 真机验收定稿：两个独立子页，对齐静态页；
+  // 第二轮真机验收：区块标题删除、副标题定稿）
   blocks.push(h('div', { className: 'screenshot-block', id: 'mat-keywords' },
     h('h2', { className: 'screenshot-title' }, 'Tab3 素材看板 · 关键词管理'),
-    h('p', { className: 'screenshot-sub' }, '子页签形态：素材看板 / 关键词管理 / 对标账号 / 采集记录（下划线式，对齐主 Tab）；采集按优先级 P1→P5 依次消耗启用关键词'),
+    h('p', { className: 'screenshot-sub' }, '子页签形态：素材看板 / 关键词管理 / 对标账号 / 采集记录（下划线式，对齐主 Tab）；禁用后不参与下一轮手动采集；历史 run 仍可追溯'),
     h(plugin.MaterialKeywordsTable, { rows: keywordsFixture, onAdd: noop, onEdit: noop, onToggle: noop })))
   blocks.push(h('div', { className: 'screenshot-block', id: 'mat-accounts' },
     h('h2', { className: 'screenshot-title' }, 'Tab3 素材看板 · 对标账号'),
-    h('p', { className: 'screenshot-sub' }, '账号解析状态徽标：已解析 / 未解析 / 解析失败（title 提示最近解析失败原因）；操作=新增 / 编辑 / 禁用·启用（均有确认弹窗）'),
+    h('p', { className: 'screenshot-sub' }, '支持抖音号、主页链接或 sec_user_id；解析失败不阻断其他账号（解析状态徽标：已解析 / 未解析 / 解析失败）'),
     h(plugin.MaterialAccountsTable, { rows: accountsFixture, onAdd: noop, onEdit: noop, onToggle: noop })))
 
-  // 采集记录（run 历史 + 进行中横幅；runsTotal 审查 P2-9 全量计数截断提示）
+  // 采集记录（run 历史 + 进行中横幅；第二轮真机验收：标题删除、查看看板跨子页跳转）
   blocks.push(h('div', { className: 'screenshot-block', id: 'mat-runs' },
     h('h2', { className: 'screenshot-title' }, 'Tab3 素材看板 · 采集记录（run 历史 + 进行中横幅 + 立即采集）'),
-    h('p', { className: 'screenshot-sub' }, '同一时刻只允许一个手动采集；标题展示服务端全量计数、行数不足追加截断提示；failed 且零候选隐藏「查看看板」（materialCandidateCount 判定）'),
+    h('p', { className: 'screenshot-sub' }, '采集执行状态、进度和失败明细统一在采集记录中维护；failed 且零候选隐藏「查看看板」（materialCandidateCount 判定）'),
     h(plugin.MaterialRunsTable, {
-      runs: runsFixture, runsTotal: 57,
+      runs: runsFixture,
       activeRun: { runId: 'vv-mat-r9', status: 'running', startedAt: '2026-10-28T11:00:00+08:00' },
       collecting: false, errorReason: null,
       onStartCollect: noop, onViewBoard: noop, onOpenFailure: noop, onRefresh: noop,
     })))
+
+  // 滚动回归（第二轮真机验收问题 5）：宿主真实容器 .ydo-right 内整页渲染，
+  // 容器高度受限时 .ydo-mat-page 必须自身可上下滚动（截图后另有运行时断言）。
+  const scrollRows = []
+  for (let i = 0; i < 10; i += 1) {
+    for (const row of boardRowsFixture()) {
+      scrollRows.push({ ...row, candidateId: `${row.candidateId}-${i}` })
+    }
+  }
+  blocks.push(h('div', { className: 'screenshot-block', id: 'mat-board-scroll' },
+    h('h2', { className: 'screenshot-title' }, 'Tab3 素材看板 · 滚动回归（宿主 .ydo-right 容器内整页，容器限高）'),
+    h('p', { className: 'screenshot-sub' }, '.ydo-mat-page 跨 ydo-right 全部 grid 行并自身滚动（grid-row:1/-1 + overflow:auto），底部候选表可达'),
+    h('div', { className: 'ydo-right', style: { height: '720px', border: '1px dashed var(--dsw-alias-border-l2,#d4d8de)' } },
+      h(plugin.MaterialPage, {
+        board: {
+          rows: scrollRows, total: scrollRows.length, offset: 0, limit: 20,
+          loading: false, errorReason: null, loaded: true,
+        },
+        kpi: kpiFixture,
+        facets: facetsFixture,
+        filters: { q: '', minLevel: '', sourceKind: '', publishedRange: '30d', tag: '', sortBy: 'hot', offset: 0 },
+        seedAccounts: [{ accountSeedId: 'as-1', displayName: '示例账号甲' }],
+        seeds: {
+          data: {
+            keywords: keywordsFixture, accounts: accountsFixture,
+            keywordByStatus: { active: 2, disabled: 1 }, accountByStatus: { active: 2, disabled: 1 },
+          },
+          loading: false, errorReason: null,
+        },
+        runs: { rows: [], loading: false, errorReason: null },
+        activeRun: null, collecting: false, reason: null, seedModal: null,
+        collectOpen: false, collectError: null, failure: null,
+        savingSeed: false, seedError: null,
+        section: 'board', onSectionChange: noop,
+        actions: actionsFixture,
+      }))))
 
   return blocks
 }
@@ -320,11 +359,27 @@ function buildOverlays(plugin) {
       }),
     },
     {
-      id: 'mat-collect-modal', title: '确认采集弹窗（启用种子计数 + 深度 / 上限 / 档位）',
-      sub: '关键词与对标账号任一类非空即可采集；候选档位下限默认 C；confirm + 幂等键门禁',
+      id: 'mat-collect-modal', title: '确认手动采集弹窗（纯确认式，对齐静态测试页）',
+      sub: '启用关键词 / 启用对标账号 / 预计任务数三格只读统计；无输入字段（数量上限与候选档位由服务端配置维护）；confirm + 幂等键门禁',
       node: h(plugin.MaterialCollectModal, {
         open: true, activeKeywords: 2, activeAccounts: 2,
         busy: false, errorReason: null, onConfirm: noop, onClose: noop,
+      }),
+    },
+    {
+      id: 'mat-toggle-confirm-enable', title: '关键词启停二次确认 · 启用（字面「确认/取消」按钮）',
+      sub: '真机验收问题 3 现场回归：旧版误用 i18n confirmYes 渲染「确认删除」；现字面「确认/取消」，aria-label=确认操作',
+      node: h(plugin.MaterialConfirmDialog, {
+        confirm: { mode: 'keyword', row: { keyword: '新手上路', status: 'disabled' } },
+        onConfirm: noop, onCancel: noop,
+      }),
+    },
+    {
+      id: 'mat-toggle-confirm-disable', title: '对标账号启停二次确认 · 禁用',
+      sub: '禁用后不再参与后续采集；历史 run 仍可追溯（同删除账号弹框观感，样式复用 ydo-confirm-*）',
+      node: h(plugin.MaterialConfirmDialog, {
+        confirm: { mode: 'account', row: { displayName: '示例账号甲', status: 'active' } },
+        onConfirm: noop, onCancel: noop,
       }),
     },
     {
@@ -427,11 +482,25 @@ async function main() {
         ['material-keywords', '#mat-keywords'],
         ['material-accounts', '#mat-accounts'],
         ['material-runs', '#mat-runs'],
+        ['material-board-scroll', '#mat-board-scroll'],
       ]) {
         const file = path.join(outDir, `${name}${suffix}.png`)
         await page.locator(selector).screenshot({ path: file })
         console.log(`saved: ${file}`)
       }
+
+      // 滚动运行时断言（真机验收问题 5 回归）：.ydo-mat-page 必须比容器内容矮、
+      // 且 scrollTop 可滚到底（否则底部列表不可达）。
+      const scrollInfo = await page.evaluate(() => {
+        const el = document.querySelector('#mat-board-scroll .ydo-mat-page')
+        if (!el) throw new Error('滚动回归块 #mat-board-scroll .ydo-mat-page 未找到（块 id 或类名失配）')
+        el.scrollTop = 99999
+        return { scrollHeight: el.scrollHeight, clientHeight: el.clientHeight, scrollTopAfter: el.scrollTop }
+      })
+      if (!(scrollInfo.scrollHeight > scrollInfo.clientHeight && scrollInfo.scrollTopAfter > 0)) {
+        throw new Error(`素材页不可滚动（问题 5 回归失败）: ${JSON.stringify(scrollInfo)}`)
+      }
+      console.log(`scroll check ok: ${JSON.stringify(scrollInfo)}`)
 
       // 抽屉 / 弹窗（fixed 定位）逐个独立文档渲染。
       for (const item of overlays) {

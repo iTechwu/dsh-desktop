@@ -30,7 +30,7 @@ import {
   reportErrorCopy,
   serializeReportHtml,
 } from './report-ui.js'
-import { MATERIAL_CSS_TEXT, MaterialPage } from './material-ui.js'
+import { MATERIAL_CSS_TEXT, MaterialConfirmDialog, MaterialPage } from './material-ui.js'
 import { TrendChart, trendLayout, useMeasuredWidth } from './trend-chart.js'
 
 const React = require('react')
@@ -1823,15 +1823,16 @@ function Overlay({ t }) {
     q: '', minLevel: '', sourceKind: '', publishedRange: '30d', tag: '', sortBy: 'hot', offset: 0,
   })
   const [materialSeeds, setMaterialSeeds] = useState({ data: null, loading: false, errorReason: null })
-  const [materialRuns, setMaterialRuns] = useState({ rows: [], total: null, loading: false, errorReason: null })
+  const [materialRuns, setMaterialRuns] = useState({ rows: [], loading: false, errorReason: null })
   // 进行中采集任务（受理/轮询投影归一为 {runId, status, startedAt}）。
   const [materialActiveRun, setMaterialActiveRun] = useState(null)
   const [materialCollectError, setMaterialCollectError] = useState(null)
   const [materialSavingSeed, setMaterialSavingSeed] = useState(false)
   const [materialSeedError, setMaterialSeedError] = useState(null)
   const [materialCollecting, setMaterialCollecting] = useState(false)
-  // 「查看看板」批次过滤：runId（服务端候选命中交集语义）；筛选变化即失效。
-  const [materialRunFilter, setMaterialRunFilter] = useState(null)
+  // 素材看板子页（看板/关键词/账号/采集记录）受控提升到 client：采集记录的
+  // 「查看看板」要跨子页跳转，内部 state 无法做到（真机验收问题 4）。
+  const [materialSection, setMaterialSection] = useState('board')
   // 评分理由抽屉焦点管理（§6.4）：打开时记录触发按钮，关闭（Esc / × / 遮罩）
   // 后焦点返回。触发元素经 document.activeElement 捕获，不进 React 状态。
   const materialReasonTriggerRef = useRef(null)
@@ -1849,7 +1850,6 @@ function Overlay({ t }) {
   const materialSeqRef = useRef(0)
   const materialDebounceRef = useRef(null)
   const materialQueryRef = useRef(materialFilters)
-  const materialRunFilterRef = useRef(null)
 
   const stopReportPolling = useCallback(() => stopPolling(reportPollRef), [stopPolling])
 
@@ -2095,20 +2095,19 @@ function Overlay({ t }) {
     }
   }, [])
 
-  const loadMaterialBoard = useCallback(async ({ offset, runId } = {}) => {
+  const loadMaterialBoard = useCallback(async ({ offset } = {}) => {
     const query = materialQueryRef.current
     const seq = ++materialSeqRef.current
     setMaterialBoard(prev => ({ ...prev, loading: true, errorReason: null }))
     try {
-      const filterRunId = typeof runId === 'string' && runId ? runId : materialRunFilterRef.current
       const result = await post({
         action: 'material.videos.list',
         scope: 'material',
         sortBy: query.sortBy,
         limit: MATERIAL_BOARD_PAGE_SIZE,
         offset: typeof offset === 'number' ? offset : query.offset,
-        // 「查看看板」批次过滤（demo query.runId 同款）：服务端候选命中交集语义。
-        ...(filterRunId ? { runId: filterRunId } : {}),
+        // 批次过滤（runId 参数）已按真机验收问题 5 移除：看板按时间窗聚合展示，
+        // 采集完成后「查看看板」回到全部候选，批次明细只留在采集记录页。
         ...(query.q.trim() ? { q: query.q.trim() } : {}),
         ...(query.minLevel ? { minLevel: query.minLevel } : {}),
         ...(query.tag ? { tag: query.tag } : {}),
@@ -2163,9 +2162,8 @@ function Overlay({ t }) {
         return []
       }
       const rows = Array.isArray(result.data?.runs) ? result.data.runs : []
-      // 审查 P2-9：total 来自服务端全量计数（分页前的总量），行数不足时标题展示「显示最近 N 条」。
-      const total = typeof result.data?.total === 'number' ? result.data.total : rows.length
-      setMaterialRuns({ rows, total, loading: false, errorReason: null })
+      // 服务端 total 当前无展示位（runsTotal 随子页标题删除），不透传进 state
+      setMaterialRuns({ rows, loading: false, errorReason: null })
       // 返回行供调用方判断恢复轮询（Tab 进入 / 手动刷新）；run 投影 runStatus ∈
       // queued/running 时任务在途。
       return rows
@@ -2236,9 +2234,6 @@ function Overlay({ t }) {
     const next = { ...prev, ...patch, offset: 0 }
     materialQueryRef.current = next
     setMaterialFilters(next)
-    // 手动改筛选时「查看看板」的批次过滤失效（demo query.runId=null 同款）。
-    materialRunFilterRef.current = null
-    setMaterialRunFilter(null)
     if (materialDebounceRef.current) clearTimeout(materialDebounceRef.current)
     // 仅搜索词实际变化走 300ms 防抖（§6.4 契约）；FilterBar 的 patch 恒含全量
     // filters 快照，判断 q 值是否变化而不是键是否存在（审查 P1 修复：原
@@ -2264,16 +2259,10 @@ function Overlay({ t }) {
     loadMaterialRuns().then(resumeMaterialPollingFromRows).catch(() => {})
   }, [loadMaterialRuns, resumeMaterialPollingFromRows])
 
-  const viewMaterialRunBoard = useCallback(runId => {
-    if (!runId) return
-    materialRunFilterRef.current = runId
-    setMaterialRunFilter(runId)
-    loadMaterialBoard({ offset: 0, runId }).catch(() => {})
-  }, [loadMaterialBoard])
-
-  const clearMaterialRunFilter = useCallback(() => {
-    materialRunFilterRef.current = null
-    setMaterialRunFilter(null)
+  // 采集记录「查看看板」：切回看板子页并刷新全部候选（批次过滤已移除，
+  // 真机验收问题 4 的跳转修复就在这一步——section 受控提升后才能跨子页）。
+  const viewMaterialRunBoard = useCallback(() => {
+    setMaterialSection('board')
     loadMaterialBoard({ offset: 0 }).catch(() => {})
   }, [loadMaterialBoard])
 
@@ -2367,16 +2356,15 @@ function Overlay({ t }) {
     if (!materialSeeds.data && !materialSeeds.loading) loadMaterialSeeds().catch(() => {})
   }, [loadMaterialSeeds, materialSeeds.data, materialSeeds.loading])
 
-  const confirmMaterialCollect = useCallback(async params => {
+  // 确认式采集弹窗（静态页同款）无参数：数量上限/最低档位由服务端配置统一
+  // 维护，插件不再透出与下发（真机验收问题 4「两端不一致」修复）。
+  const confirmMaterialCollect = useCallback(async () => {
     setMaterialCollecting(true)
     setMaterialCollectError(null)
     try {
       const result = await post({
         action: 'material.collect.start',
         idempotencyKey: vvSeedSearchIdempotencyKey(),
-        ...(params.keywordLimit ? { keywordLimit: params.keywordLimit } : {}),
-        ...(params.accountLimit ? { accountLimit: params.accountLimit } : {}),
-        candidateMinLevel: params.candidateMinLevel,
       })
       // 终审 P2-4 竞态防护：请求在途时 overlay 已关闭则丢弃晚到响应——
       // 不报错、不绑定 activeRun、不重启轮询（受理已落库，重开面板经
@@ -2416,7 +2404,12 @@ function Overlay({ t }) {
   useEffect(() => {
     // 审查 P2-4：overlay 关闭（visible=false）时不再预取/续轮询，关闭即停止
     // material 轮询；重开 overlay 由本 effect 重新触发预取与恢复。
-    if (!visible || tab !== 'material') return
+    if (!visible || tab !== 'material') {
+      // 子页 section 受控提升后需在离开 Tab 时复位回「看板」（保持旧内部
+      // state 随组件卸载重置的行为，避免下次进入落在上次停留的子页）。
+      setMaterialSection('board')
+      return
+    }
     loadMaterialRuns().then(resumeMaterialPollingFromRows).catch(() => {})
     loadMaterialBoard().catch(() => {})
     loadMaterialBoardTotal().catch(() => {})
@@ -3158,7 +3151,8 @@ function Overlay({ t }) {
               failure: materialFailure,
               savingSeed: materialSavingSeed,
               seedError: materialSeedError,
-              runFilter: materialRunFilter,
+              section: materialSection,
+              onSectionChange: setMaterialSection,
               actions: {
                 onFilterChange: changeMaterialFilters,
                 onBoardPage: changeMaterialBoardPage,
@@ -3175,7 +3169,6 @@ function Overlay({ t }) {
                 onCloseFailure: () => setMaterialFailure(null),
                 onRefreshRuns: refreshMaterialRuns,
                 onViewRunBoard: viewMaterialRunBoard,
-                onClearRunFilter: clearMaterialRunFilter,
               },
             }))
           : h('section', { className: 'ydo-right', 'aria-label': t('data') },
@@ -3277,27 +3270,14 @@ function Overlay({ t }) {
             }, t('confirmNo')))))
       : null,
     // 种子启用/禁用二次确认（RQ-2026-008 §6.4）：只带身份键 + 目标状态提交，
-    // 其余字段服务端保留原值；插件内 ydo-confirm 弹层（同删除账号样式）。
+    // 其余字段服务端保留原值；文案与按钮在 MaterialConfirmDialog（真机验收
+    // 问题 3 后提取为导出组件，供截图验收直接覆盖）。
     materialToggleConfirm
-      ? h('div', {
-        className: 'ydo-confirm-overlay', role: 'dialog', 'aria-modal': true,
-        'aria-label': t('confirmYes'),
-      },
-        h('div', { className: 'ydo-confirm' },
-          h('p', { className: 'ydo-confirm-title' },
-            materialToggleConfirm.row.status === 'active'
-              ? (materialToggleConfirm.mode === 'keyword'
-                ? '确认禁用该关键词？禁用后不再参与后续采集。'
-                : '确认禁用该对标账号？禁用后不再参与后续采集。')
-              : (materialToggleConfirm.mode === 'keyword'
-                ? '确认启用该关键词？下次采集将按优先级参与。'
-                : '确认启用该对标账号？下次采集将参与。')),
-          h('div', { className: 'ydo-confirm-actions' },
-            h('button', { type: 'button', className: 'ydo-confirm-primary', onClick: confirmMaterialToggle }, t('confirmYes')),
-            h('button', {
-              type: 'button', className: 'ydo-confirm-secondary',
-              onClick: () => setMaterialToggleConfirm(null),
-            }, t('confirmNo')))))
+      ? h(MaterialConfirmDialog, {
+        confirm: materialToggleConfirm,
+        onConfirm: confirmMaterialToggle,
+        onCancel: () => setMaterialToggleConfirm(null),
+      })
       : null)
 }
 
@@ -3578,4 +3558,4 @@ function apply(ctx) {
 
 // 1015 验收：css/copy/页面组件导出供截图脚本（scripts/screenshot.mjs）SSR 渲染
 // 与样式内联使用；运行时行为零改动。1025 追加素材看板组件（screenshot-material.mjs）。
-module.exports = { apply, inject: ['slots', 'locale'], downloadWorkbook, formatCell, formatCount, formatPercent, gapReasonText, hasGap, progressText, BatchPanel, WorkTable, WorkDetailModal, OverviewPage, AnalysisPage, ReportListView, ReportDetailView, css, copy, MaterialPage, MaterialKpiCards, MaterialFilterBar, MaterialBoardTable, MaterialReasonDrawer, MaterialKeywordsTable, MaterialAccountsTable, MaterialSeedModal, MaterialRunsTable, MaterialCollectModal, MaterialFailureModal }
+module.exports = { apply, inject: ['slots', 'locale'], downloadWorkbook, formatCell, formatCount, formatPercent, gapReasonText, hasGap, progressText, BatchPanel, WorkTable, WorkDetailModal, OverviewPage, AnalysisPage, ReportListView, ReportDetailView, css, copy, MaterialPage, MaterialKpiCards, MaterialFilterBar, MaterialBoardTable, MaterialReasonDrawer, MaterialKeywordsTable, MaterialAccountsTable, MaterialSeedModal, MaterialRunsTable, MaterialCollectModal, MaterialConfirmDialog, MaterialFailureModal }

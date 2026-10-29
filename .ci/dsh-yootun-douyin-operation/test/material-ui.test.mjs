@@ -2,8 +2,10 @@
 //
 // 渲染方式与 report-ui.test.mjs 同法：剥离 export 后在 vm 上下文求值，
 // createElement 返回普通对象树，再递归断言（展示组件均为无 hooks 纯函数；
-// MaterialPage/SeedModal/CollectModal 含 React.useState，真实渲染由
-// render-smoke.test.mjs 兜底，此处只做宿主接线源码契约断言）。
+// SeedModal 含 React.useState，真实渲染由
+// render-smoke.test.mjs 兜底，此处只做宿主接线源码契约断言；
+// CollectModal/MaterialConfirmDialog/MaterialPage（section 受控提升后）
+// 均为无 hooks 纯函数，可直接求值断言）。
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { test } from 'node:test'
@@ -36,10 +38,13 @@ const {
   MaterialRunsTable,
   MaterialFailureModal,
   MaterialSeedModal,
+  MaterialCollectModal,
+  MaterialConfirmDialog,
 } = vm.runInContext(
   '({ MATERIAL_ERROR_REASON_COPY, MATERIAL_CSS_TEXT, materialErrorCopy, materialStatusPill, '
   + 'MaterialKpiCards, MaterialFilterBar, MaterialBoardTable, MaterialReasonDrawer, '
-  + 'MaterialKeywordsTable, MaterialAccountsTable, MaterialRunsTable, MaterialFailureModal, MaterialSeedModal })',
+  + 'MaterialKeywordsTable, MaterialAccountsTable, MaterialRunsTable, MaterialFailureModal, MaterialSeedModal, '
+  + 'MaterialCollectModal, MaterialConfirmDialog })',
   context,
 )
 
@@ -283,6 +288,129 @@ test('MaterialBoardTable：封面 onError 降级为真实 DOM 占位块（终审
   assert.equal(calls.length, 0)
 })
 
+// 展开表格内层行组件（fake createElement 不执行函数组件，同封面测试手法）。
+const expandRows = tree => {
+  const rowTrees = []
+  ;(function walk(node) {
+    if (!node || typeof node !== 'object') return
+    if (Array.isArray(node)) return node.forEach(walk)
+    if (typeof node.type === 'function') rowTrees.push(node.type({ ...(node.props || {}) }))
+    if (node.children) walk(node.children)
+  })(tree)
+  return rowTrees
+}
+
+test('MaterialBoardTable：视频标题带 shareUrl 渲染为打开链接按钮，来源列用独立占位类（真机验收问题 2/6）', () => {
+  const board = {
+    rows: [{
+      candidateId: 'cand-1', awemeId: '7123', title: '增程车横评',
+      hotScore: 88, hotLevel: 'S', scoreRuleVersion: 'hot-v1-potential', scoreReasons: [],
+      shareUrl: 'https://v.douyin.com/abc/',
+      sourceMatches: [],
+    }],
+    total: 1, offset: 0, limit: 20, loading: false, errorReason: null, loaded: true,
+  }
+  const tree = MaterialBoardTable({ board, seedAccounts: [], onOpenReason: () => {}, onPage: () => {} })
+  const rowTrees = expandRows(tree)
+  assert.ok(rowTrees.length > 0, '行组件应可展开')
+  const allRowNodes = rowTrees.flatMap(rowTree => allNodes(rowTree))
+  // 标题是 button（点击经宿主 window.open → 系统浏览器），不是纯文本/裸链接
+  const titleButtons = allRowNodes.filter(node =>
+    node.type === 'button' && node.props.className === 'ydo-mat-video-title')
+  assert.equal(titleButtons.length, 1, '带 shareUrl 的标题应渲染为链接按钮')
+  assert.equal(titleButtons[0].props.title, '在浏览器中打开作品页')
+  assert.equal(typeof titleButtons[0].props.onClick, 'function')
+  // 来源列占位/标签用独立 ydo-mat-source-tag，不得复用行按钮基类 ydo-mat-mini
+  // （旧实现同名类后置覆盖按钮字色——真机验收问题 2 的启用按钮变灰根因）
+  const miniSpans = allRowNodes.filter(node =>
+    node.type === 'span' && String(node.props.className || '') === 'ydo-mat-mini')
+  assert.equal(miniSpans.length, 0, '来源列不得使用 ydo-mat-mini 类名')
+  // 无 shareUrl 回退纯文本标题
+  const plainNodes = expandRows(MaterialBoardTable({
+    board: { ...board, rows: [{ ...board.rows[0], shareUrl: null }] },
+    seedAccounts: [], onOpenReason: () => {}, onPage: () => {},
+  })).flatMap(rowTree => allNodes(rowTree))
+  assert.equal(
+    plainNodes.filter(node => node.type === 'button' && node.props.className === 'ydo-mat-video-title').length,
+    0, '无 shareUrl 时标题不应是按钮')
+})
+
+test('MaterialReasonDrawer：视频链接行用作品标题按钮打开（真机验收问题 6）', () => {
+  const drawer = MaterialReasonDrawer({
+    row: {
+      title: '测试视频', hotScore: 90, hotLevel: 'S', scoreRuleVersion: 'hot-v1-potential',
+      shareUrl: 'https://v.douyin.com/abc/', scoreReasons: ['理由一'],
+    },
+    onClose: () => {},
+  })
+  const linkButtons = allNodes(drawer).filter(node =>
+    node.type === 'button' && String(node.props.className || '').includes('ydo-mat-link'))
+  assert.equal(linkButtons.length, 1, '视频链接行应是单个标题按钮')
+  assert.equal(typeof linkButtons[0].props.onClick, 'function')
+  // 高度覆盖走修饰类而非内联 style（review P3：保持 MATERIAL_CSS_TEXT 可断言）
+  assert.ok(
+    String(linkButtons[0].props.className || '').includes('ydo-mat-link-wrap'),
+    '抽屉视频链接按钮应带 ydo-mat-link-wrap 修饰类',
+  )
+  // 按钮文本是作品标题，不是裸 URL
+  assert.equal(treeText(linkButtons[0]), '测试视频')
+  // 无 shareUrl 渲染「—」
+  const plain = treeText(MaterialReasonDrawer({
+    row: { title: 'x', scoreReasons: [] }, onClose: () => {},
+  }))
+  assert.match(plain, /视频链接/)
+})
+
+test('MaterialCollectModal：纯确认式（静态页同款），无输入字段，确认无参回调（真机验收问题 4）', () => {
+  const opened = MaterialCollectModal({
+    open: true, activeKeywords: 3, activeAccounts: 2,
+    busy: false, errorReason: null, onConfirm: () => {}, onClose: () => {},
+  })
+  const text = treeText(opened)
+  assert.match(text, /确认手动采集/)
+  assert.match(text, /将读取当前启用的关键词和对标账号，并创建异步采集任务。/)
+  // 三格只读 meta：启用关键词/启用对标账号/预计任务数（3+2=5）
+  assert.match(text, /启用关键词/)
+  assert.match(text, /启用对标账号/)
+  assert.match(text, /预计任务数/)
+  assert.match(text, /5/)
+  // 警告文案与静态页一致
+  assert.match(text, /手动采集会调用外部数据服务。单个 seed 失败不会中断本轮其他任务；不会自动触发下载、归档或爆款拆解。/)
+  // 旧弹框三输入（数量上限×2/最低档位）已删——插件不透出采集参数
+  assert.doesNotMatch(text, /数量上限/)
+  assert.doesNotMatch(text, /最低档位/)
+  assert.doesNotMatch(text, /按优先级 P1→P5/)
+  // 确认按钮无参回调
+  let confirmArgs
+  const confirmTree = MaterialCollectModal({
+    open: true, activeKeywords: 1, activeAccounts: 1,
+    busy: false, errorReason: null, onConfirm: (...args) => { confirmArgs = args }, onClose: () => {},
+  })
+  // fake 树外层是 CollectModal 函数节点：先展开一层再找按钮
+  const confirmInner = confirmTree.type({ ...confirmTree.props })
+  const confirmButton = allNodes(confirmInner).find(node =>
+    node.type === 'button' && node.props.className === 'ydo-mat-primary')
+  assert.ok(confirmButton, '确认采集按钮应存在')
+  confirmButton.props.onClick()
+  assert.ok(Array.isArray(confirmArgs) && confirmArgs.length === 0, '确认回调必须无参调用')
+  // 种子未加载：三格显示「—」而非 0（不造数）
+  const pending = treeText(MaterialCollectModal({
+    open: true, activeKeywords: null, activeAccounts: null,
+    busy: false, errorReason: null, onConfirm: () => {}, onClose: () => {},
+  }))
+  assert.match(pending, /—/)
+  assert.doesNotMatch(pending, /预计任务数0/)
+  // 关闭态短路
+  assert.equal(MaterialCollectModal({ open: false }), null)
+})
+
+test('MaterialAccountsTable：副标题定稿文案（真机验收问题 7）', () => {
+  const text = treeText(MaterialAccountsTable({ rows: [], onAdd: () => {}, onEdit: () => {}, onToggle: () => {} }))
+  assert.match(text, /支持抖音号、主页链接或 sec_user_id；解析失败不阻断其他账号。/)
+  assert.doesNotMatch(text, /三种输入/)
+  assert.doesNotMatch(text, /解析由服务端异步完成/)
+})
+
 test('MaterialBoardTable：空态引导与加载中文案互斥', () => {
   const loaded = treeText(MaterialBoardTable({
     board: { rows: [], total: 0, offset: 0, limit: 20, loading: false, errorReason: null, loaded: true },
@@ -334,7 +462,11 @@ test('MaterialKeywordsTable：行渲染 + 启用/禁用与空态', () => {
   }]
   const tree = MaterialKeywordsTable({ rows, onAdd: () => {}, onEdit: () => {}, onToggle: () => {} })
   const text = treeText(tree)
-  assert.match(text, /关键词种子（1）/)
+  // 区块标题「关键词种子（N）」已删（与子页签重复，真机验收问题 1）；
+  // 副标题改为采集口径说明。
+  assert.doesNotMatch(text, /关键词种子（/)
+  assert.match(text, /禁用后不参与下一轮手动采集；历史 run 仍可追溯。/)
+  assert.doesNotMatch(text, /分类由服务端维护/)
   assert.match(text, /增程车/)
   assert.match(text, /启用/)
   assert.match(text, /P2/)
@@ -425,7 +557,9 @@ test('MaterialRunsTable：activeRun 横幅渲染，立即采集禁用', () => {
   })
   const text = treeText(tree)
   assert.match(text, /采集任务进行中/)
-  assert.match(text, /查看本批候选/)
+  // 真机验收问题 4：「查看本批候选」→「查看看板」（批次过滤已移除）
+  assert.match(text, /查看看板/)
+  assert.doesNotMatch(text, /查看本批候选/)
   // 状态徽标是 React 元素：禁止嵌入模板字符串渲染成 [object Object]（截图验收 2026-10-29 回归）
   assert.doesNotMatch(text, /\[object Object\]/)
   assert.match(text, /进行中/)
@@ -527,23 +661,21 @@ test('MaterialKeywordsTable：日上限列不渲染、单轮搜索列头（审�
   assert.doesNotMatch(text, /累计搜索/)
 })
 
-test('MaterialRunsTable：runsTotal 标题展示全量计数与截断提示（审查 P2-9）', () => {
+test('MaterialRunsTable：区块标题删除、副标题定稿文案（真机验收问题 1/4）', () => {
   const rows = [
     { runId: 'vv-mat-t1', runStatus: 'completed', startedAt: '2026-10-28T10:00:00+08:00', hotLevelSummary: {} },
     { runId: 'vv-mat-t2', runStatus: 'completed', startedAt: '2026-10-28T09:00:00+08:00', hotLevelSummary: {} },
   ]
-  const handlers = {
-    activeRun: null, collecting: false, errorReason: null,
+  const text = treeText(MaterialRunsTable({
+    runs: rows, activeRun: null, collecting: false, errorReason: null,
     onStartCollect: () => {}, onViewBoard: () => {}, onOpenFailure: () => {}, onRefresh: () => {},
-  }
-  const truncated = treeText(MaterialRunsTable({ runs: rows, runsTotal: 50, ...handlers }))
-  assert.match(truncated, /采集记录（50 · 显示最近 2 条）/)
-  // 未传 runsTotal（旧宿主/直接渲染）与 total==rows.length 均不出现截断提示
-  const fallback = treeText(MaterialRunsTable({ runs: rows, ...handlers }))
-  assert.match(fallback, /采集记录（2）/)
-  assert.doesNotMatch(fallback, /显示最近/)
-  const full = treeText(MaterialRunsTable({ runs: rows, runsTotal: 2, ...handlers }))
-  assert.doesNotMatch(full, /显示最近/)
+  }))
+  // 标题「采集记录（N）」与子页签重复，删除；旧 P2-9 截断提示随之移除
+  assert.doesNotMatch(text, /采集记录（/)
+  assert.doesNotMatch(text, /显示最近/)
+  assert.doesNotMatch(text, /手动采集按启用种子派发 Worker 搜索/)
+  // 用户定稿文案（问题 4）
+  assert.match(text, /采集执行状态、进度和失败明细统一在采集记录中维护。/)
 })
 
 test('MaterialRunsTable：materialCandidateCount 判定查看看板，缺失回退 candidatesInserted（复审 P1-2 配套）', () => {
@@ -647,6 +779,7 @@ test('MATERIAL_CSS_TEXT：核心类与按钮规格齐备', () => {
   assert.match(MATERIAL_CSS_TEXT, /\.ydo-mat-primary\{[^}]*height:40px/u)
   assert.match(MATERIAL_CSS_TEXT, /\.ydo-mat-secondary\{[^}]*height:36px/u)
   assert.match(MATERIAL_CSS_TEXT, /\.ydo-mat-link\{[^}]*height:30px/u)
+  assert.match(MATERIAL_CSS_TEXT, /\.ydo-mat-link-wrap\{height:auto\}/u)
   // 深色可读性定稿（2026-10-29 用户拍板：只做可读性适配，设计语言不动）——
   // 交互色（页签选中/主按钮/链接）保持宿主品牌变量灰黑不跟报表蓝；
   // 状态徽标实色底白字（淡底深字在深色背景是刺眼亮块）；
@@ -668,6 +801,24 @@ test('MATERIAL_CSS_TEXT：核心类与按钮规格齐备', () => {
   assert.match(MATERIAL_CSS_TEXT, /\.ydo-mat-status-error\{background:#d83931;color:#fff\}/u)
   assert.match(MATERIAL_CSS_TEXT, /\.ydo-mat-active\{[^}]*background:color-mix\(in srgb,var\(--dsw-alias-state-warn-primary,#de7802\) 12%,transparent\)/u)
   assert.match(MATERIAL_CSS_TEXT, /\.ydo-mat-error\{[^}]*background:color-mix\(in srgb,var\(--dsw-alias-state-error-primary,#d83931\) 10%,transparent\)/u)
+  // 真机验收问题 2 回归锁：来源列占位样式不得复用行按钮基类 ydo-mat-mini
+  // （旧实现同名类后置覆盖按钮字色，启用按钮变灰）。占位走独立 ydo-mat-source-tag，
+  // 且 .ydo-mat-mini 本体不再有 color-only 覆盖形态。
+  assert.match(MATERIAL_CSS_TEXT, /\.ydo-mat-source-tag\{color:var\(--dsw-alias-label-secondary,#646a73\);font-size:11px\}/u)
+  assert.doesNotMatch(MATERIAL_CSS_TEXT, /\.ydo-mat-mini\{color:var/u)
+  // 真机验收问题 5 回归锁：素材页占满 ydo-right 全部 grid 行并自身滚动
+  // （grid 模板 4 行 auto/auto/auto/1fr，页面是唯一内容 item，不跨行会被
+  // auto 行撑开裁切、页面无法上下滚动）。
+  assert.match(MATERIAL_CSS_TEXT, /\.ydo-mat-page\{[^}]*grid-row:1\/-1/u)
+  assert.match(MATERIAL_CSS_TEXT, /\.ydo-mat-page\{[^}]*overflow:auto/u)
+  // 真机验收问题 6：评分抽屉对照表 max-content 标签列 + 值列可断行
+  // （auto 列被长 URL 的 min-content 压缩、逐字竖排变形）。
+  assert.match(MATERIAL_CSS_TEXT, /\.ydo-mat-failure-grid\{display:grid;grid-template-columns:max-content 1fr/u)
+  assert.match(MATERIAL_CSS_TEXT, /\.ydo-mat-failure-grid span\{min-width:0;overflow-wrap:anywhere\}/u)
+  // 真机验收问题 6：视频标题按钮化（点击系统浏览器打开）+ 采集确认 meta 格
+  assert.match(MATERIAL_CSS_TEXT, /button\.ydo-mat-video-title\{border:0;padding:0;background:transparent/u)
+  assert.match(MATERIAL_CSS_TEXT, /\.ydo-mat-meta-grid\{display:grid;grid-template-columns:repeat\(2,minmax\(0,1fr\)\);gap:10px\}/u)
+  assert.match(MATERIAL_CSS_TEXT, /\.ydo-mat-meta-cell\{padding:10px;border:1px solid var\(--dsw-alias-border-l1,#dee0e3\)/u)
 })
 
 test('MaterialPage：seeds 错误条在关键词与对标账号两个子页均渲染', () => {
@@ -708,15 +859,63 @@ test('client.js 接线：Tab/i18n/全宽 body/轮询守卫/幂等键模板', () 
   assert.match(clientSource, /\.\.\.\(query\.sourceKind \? \{ sourceKind: query\.sourceKind \} : \{\}\)/u)
   assert.doesNotMatch(clientSource, /row\.sourceKind === filter\.sourceKind/u)
   // overlay 关闭守卫（审查 P2-4）：material 加载 effect 不在关闭态预取/续轮询
-  assert.match(clientSource, /if \(!visible \|\| tab !== 'material'\) return/u)
+  // （真机验收问题 4 后 section 受控提升，离开 Tab 复位子页，早退分支带块）
+  assert.match(clientSource, /if \(!visible \|\| tab !== 'material'\) \{/u)
+  assert.match(clientSource, /setMaterialSection\('board'\)/u)
   // 终审 P2-4 竞态防护：overlay 关闭后晚到响应不得恢复轮询/受理落位
   assert.match(clientSource, /if \(!materialVisibleRef\.current\) return/u, 'resume guard')
   assert.doesNotMatch(clientSource, /resumeMaterialPollingFromRows = useCallback\(rows => \{\n    const latest/u, 'resume 必须先过 visibleRef 守卫')
   // 轮询终态同步刷新 seeds/facets（审查 P2-2）
   assert.match(clientSource, /loadMaterialSeeds\(\{ silent: true \}\)\.catch\(\(\) => \{\}\)/u)
   assert.match(clientSource, /loadMaterialFacets\(\)\.catch\(\(\) => \{\}\)/u)
-  // runs 全量 total 投影进 UI 状态（审查 P2-9）
-  assert.match(materialSource, /runsTotal: runs && runs\.total/u)
+  // 真机验收问题 4：MaterialPage section 受控（跨子页跳转「查看看板」）；
+  // 批次过滤（runFilter/runId 参数）整套移除，不再回归。
+  assert.match(clientSource, /section: materialSection,/u)
+  assert.match(clientSource, /onSectionChange: setMaterialSection,/u)
+  assert.match(clientSource, /const viewMaterialRunBoard = useCallback\(\(\) => \{/u)
+  assert.doesNotMatch(clientSource, /materialRunFilter/u)
+  assert.doesNotMatch(clientSource, /runId: filterRunId/u)
+  // 真机验收问题 3：启停确认弹框提取为导出组件（截图可覆盖），宿主只接线；
+  // 字面「确认/取消」断言落在 materialSource（见 MaterialConfirmDialog 组件测试）
+  assert.doesNotMatch(clientSource, /'aria-label': t\('confirmYes'\)/u)
+  assert.match(clientSource, /h\(MaterialConfirmDialog, \{\s*\n\s*confirm: materialToggleConfirm,/u)
+  // 真机验收问题 4：采集确认无参数（上限/档位由服务端配置维护）
+  assert.match(clientSource, /const confirmMaterialCollect = useCallback\(async \(\) => \{/u)
+  assert.doesNotMatch(clientSource, /keywordLimit/u)
+  assert.doesNotMatch(clientSource, /candidateMinLevel/u)
+})
+
+test('MaterialConfirmDialog：字面确认/取消按钮与四分支文案（真机验收问题 3）', () => {
+  // 启用关键词（问题 3 现场：旧版误用 confirmYes 渲染「确认删除」）
+  const enable = MaterialConfirmDialog({
+    confirm: { mode: 'keyword', row: { keyword: '新手上路', status: 'disabled' } },
+    onConfirm: () => {}, onCancel: () => {},
+  })
+  const enableText = treeText(enable)
+  assert.match(enableText, /确认启用该关键词？下次采集将按优先级参与。/)
+  assert.doesNotMatch(enableText, /确认删除/)
+  const buttons = allNodes(enable).filter(node => node.type === 'button')
+  assert.equal(buttons.length, 2)
+  assert.equal(treeText(buttons.find(node => node.props.className === 'ydo-confirm-primary')), '确认')
+  assert.equal(treeText(buttons.find(node => node.props.className === 'ydo-confirm-secondary')), '取消')
+  // 禁用对标账号分支
+  const disableAccount = treeText(MaterialConfirmDialog({
+    confirm: { mode: 'account', row: { displayName: '示例账号甲', status: 'active' } },
+    onConfirm: () => {}, onCancel: () => {},
+  }))
+  assert.match(disableAccount, /确认禁用该对标账号？禁用后不再参与后续采集。/)
+  // 禁用关键词分支
+  assert.match(treeText(MaterialConfirmDialog({
+    confirm: { mode: 'keyword', row: { keyword: 'x', status: 'active' } },
+    onConfirm: () => {}, onCancel: () => {},
+  })), /确认禁用该关键词？禁用后不再参与后续采集。/)
+  // 启用对标账号分支
+  assert.match(treeText(MaterialConfirmDialog({
+    confirm: { mode: 'account', row: { displayName: 'x', status: 'disabled' } },
+    onConfirm: () => {}, onCancel: () => {},
+  })), /确认启用该对标账号？下次采集将参与。/)
+  // null 短路
+  assert.equal(MaterialConfirmDialog({ confirm: null }), null)
 })
 
 test('MaterialSeedModal：modal={mode,row} 展开透传到 SeedModal 顶层（截图验收回归）', () => {

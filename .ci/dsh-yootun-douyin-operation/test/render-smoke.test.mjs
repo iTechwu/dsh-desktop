@@ -104,6 +104,7 @@ test('built client factory renders the overlay with real React without throwing'
 
     // MaterialPage 看板区 DOM 顺序断言（2026-10-29 布局拍板：筛选置顶、KPI 在下，
     // 终审 P3-①）。真实 renderToString 后按标记文本首次出现位置比较。
+    // 批次过滤横幅已按真机验收问题 5 移除（2026-10-29 第二轮），不再断言。
     const pageHtml = renderToString(React.createElement(plugin.MaterialPage, {
       board: { rows: [], total: 0, offset: 0, limit: 20, loading: false, errorReason: null, loaded: true },
       kpi: null, facets: null, filters: {}, seedAccounts: [],
@@ -116,14 +117,13 @@ test('built client factory renders the overlay with real React without throwing'
       },
       runs: null, activeRun: null, collecting: false,
       reason: null, seedModal: null, collectOpen: false, collectError: null, failure: null,
-      savingSeed: false, seedError: null, runFilter: 'batch-x', actions: {},
+      savingSeed: false, seedError: null, section: 'board', onSectionChange: () => {}, actions: {},
     }))
     const filterIdx = pageHtml.indexOf('搜索标题 / 作者 / 关键词')
-    const runFilterIdx = pageHtml.indexOf('按批次过滤')
     const kpiIdx = pageHtml.indexOf('候选素材')
-    assert.ok(filterIdx > -1 && runFilterIdx > -1 && kpiIdx > -1, '看板区三类区块均应渲染')
-    assert.ok(filterIdx < runFilterIdx, '批次过滤横幅应紧随筛选条')
-    assert.ok(runFilterIdx < kpiIdx, '筛选区必须位于 KPI 区上方（拍板布局，文档 §6.4 结构图同口径）')
+    assert.ok(filterIdx > -1 && kpiIdx > -1, '看板区两类区块均应渲染')
+    assert.ok(filterIdx < kpiIdx, '筛选区必须位于 KPI 区上方（拍板布局，文档 §6.4 结构图同口径）')
+    assert.ok(!pageHtml.includes('按批次过滤'), '批次过滤横幅应已移除（真机验收问题 5）')
     // 子页签定稿（2026-10-29 真机验收）：四子页下划线式、置于页头下方；
     // 关键词管理与对标账号是两个独立子页（对齐 UI 模板/静态测试页），
     // 计数徽标在种子数据加载后展示。

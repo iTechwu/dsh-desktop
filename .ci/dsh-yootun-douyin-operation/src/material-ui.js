@@ -102,12 +102,23 @@ const seedAccountName = (seedAccounts, accountSeedId) => {
   return (row && row.displayName) || accountSeedId
 }
 
+// 外链打开（2026-10-29 真机验收定稿：作品标题带链接，不在页面展示原始 URL）。
+// window.open 走宿主 setWindowOpenHandler → shell.openExternal（系统浏览器），
+// 与车衣爆款看板灯箱下载降级同口径；webview 禁导航时静默。
+const openExternalUrl = url => {
+  try { window.open(url, '_blank', 'noopener') } catch { /* 宿主禁导航：静默 */ }
+}
+
 // ---------------------------------------------------------------------------
 // 样式（与 report-ui 的 REPORT_CSS_TEXT 同形态；前缀 ydo-mat- 避免与既有类冲突）
 // ---------------------------------------------------------------------------
 
 export const MATERIAL_CSS_TEXT = `
-.ydo-mat-page{display:flex;flex-direction:column;gap:14px;min-width:0}
+/* 页面容器在 ydo-right（grid 行模板 auto auto auto 1fr）内跨全部行：
+   素材页是唯一子元素，跨行后高度受容器约束，内容超出走自身滚动
+   （真机验收缺陷：无此规则时内容被 ydo-right 的 overflow:hidden 裁掉，
+   页面无法上下滚动）。 */
+.ydo-mat-page{display:flex;flex-direction:column;gap:14px;min-width:0;grid-row:1/-1;min-height:0;overflow:auto}
 /* 子页导航（2026-10-29 真机验收定稿）：对齐主 Tab（ydo-tabs）与车衣爆款看板
    （yxh-tabs）的下划线式页签形态，四子页：素材看板/关键词管理/对标账号/采集记录。
    选中态为透明底 + 品牌色指示线 + 主文字色，深浅主题由宿主变量自适应。 */
@@ -127,6 +138,7 @@ export const MATERIAL_CSS_TEXT = `
 .ydo-mat-secondary{display:inline-flex;height:36px;align-items:center;gap:6px;padding:0 14px;border:1px solid var(--dsw-alias-border-l1,#dee0e3);border-radius:8px;background:var(--dsw-alias-bg-layer-1,#fff);color:var(--dsw-alias-label-primary,#1f2329);font:inherit;font-size:13px;cursor:pointer}
 .ydo-mat-secondary:disabled{opacity:.45;cursor:not-allowed}
 .ydo-mat-link{height:30px;padding:0 4px;border:0;background:transparent;color:var(--dsw-alias-brand-primary,#0f1115);font:inherit;font-size:12px;cursor:pointer}
+.ydo-mat-link-wrap{height:auto}
 .ydo-mat-link:disabled{opacity:.45;cursor:not-allowed}
 /* 行操作迷你按钮（2026-10-29 真机验收定稿）：对齐车衣爆款看板标签管理的
    yxh-hb-mini 三款——描边款（编辑）/灰底款（禁用）/实底款（启用）。 */
@@ -159,7 +171,12 @@ export const MATERIAL_CSS_TEXT = `
 .ydo-mat-ellipsis{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ydo-mat-cover{width:56px;height:72px;object-fit:cover;border-radius:8px;display:block}
 .ydo-mat-cover-placeholder{width:56px;height:72px;display:grid;place-items:center;border-radius:8px;background:var(--dsw-alias-bg-layer-2,#f5f6f7);color:var(--dsw-alias-label-secondary,#646a73)}
+/* 视频列标题带链接（2026-10-29 真机验收）：无链接时仍是纯文本；有 shareUrl
+   时整行可点，行为同评分抽屉的「视频链接」——window.open 走宿主 windowOpen
+   handler 转系统浏览器。 */
 .ydo-mat-video-title{margin:0;font-weight:650;line-height:1.45;max-width:260px}
+button.ydo-mat-video-title{border:0;padding:0;background:transparent;color:inherit;font:inherit;text-align:left;cursor:pointer}
+button.ydo-mat-video-title:hover{color:var(--dsw-alias-brand-primary,#0f1115);text-decoration:underline}
 .ydo-mat-tags{display:flex;gap:4px;flex-wrap:wrap;margin-top:6px}
 .ydo-mat-tag{padding:1px 8px;border-radius:999px;background:var(--dsw-alias-bg-layer-2,#f5f6f7);color:var(--dsw-alias-label-secondary,#646a73);font-size:11px}
 .ydo-mat-tag-miss{color:var(--dsw-alias-state-warn-primary,#de7802)}
@@ -169,7 +186,10 @@ export const MATERIAL_CSS_TEXT = `
 .ydo-mat-level-a{background:#de7802}
 .ydo-mat-level-b{background:#2f66d0}
 .ydo-mat-level-c{background:#8f959e}
-.ydo-mat-mini{color:var(--dsw-alias-label-secondary,#646a73);font-size:11px}
+/* 来源列小徽标（对标账号名 / DASH 占位）：不得复用 ydo-mat-mini 类名——
+   那是行操作按钮基类，此处同名后置规则会把实底按钮字色覆盖成灰
+   （真机验收缺陷：启用按钮黑底灰字、hover 浅灰底灰字近乎隐形）。 */
+.ydo-mat-source-tag{color:var(--dsw-alias-label-secondary,#646a73);font-size:11px}
 .ydo-mat-source{display:flex;flex-direction:column;gap:2px;font-size:12px}
 .ydo-mat-actions{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
 .ydo-mat-actions-col{display:flex;flex-direction:column;gap:4px;align-items:flex-start}
@@ -198,6 +218,12 @@ export const MATERIAL_CSS_TEXT = `
 /* 弹层（种子/采集/失败明细） */
 .ydo-mat-modal-overlay{position:fixed;inset:0;z-index:570;display:grid;place-items:center;background:rgba(15,17,21,.4)}
 .ydo-mat-modal{width:min(480px,92vw);max-height:86vh;overflow:auto;display:flex;flex-direction:column;gap:14px;padding:20px;border-radius:12px;background:var(--dsw-alias-bg-layer-1,#fff);box-shadow:0 12px 32px rgba(15,17,21,.2)}
+/* 采集确认弹框的只读统计（2026-10-29 真机验收定稿：对齐静态测试页 vv-meta）——
+   取代旧的「数量上限/晋升档位」输入字段。 */
+.ydo-mat-meta-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.ydo-mat-meta-cell{padding:10px;border:1px solid var(--dsw-alias-border-l1,#dee0e3);border-radius:8px;background:var(--dsw-alias-bg-layer-1,#fff)}
+.ydo-mat-meta-cell span{display:block;color:var(--dsw-alias-label-secondary,#646a73);font-size:11px}
+.ydo-mat-meta-cell strong{display:block;margin-top:5px;font-size:15px}
 .ydo-mat-modal h3{margin:0;font-size:15px}
 .ydo-mat-modal-head{display:flex;align-items:center;justify-content:space-between;gap:10px}
 .ydo-mat-modal-close{width:32px;height:32px;border:0;border-radius:6px;background:transparent;color:var(--dsw-alias-label-secondary,#646a73);font-size:18px;line-height:1;cursor:pointer}
@@ -207,8 +233,12 @@ export const MATERIAL_CSS_TEXT = `
 .ydo-mat-field>span{color:var(--dsw-alias-label-secondary,#646a73);font-size:12px}
 .ydo-mat-form-row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .ydo-mat-modal-actions{display:flex;justify-content:flex-end;gap:10px}
-.ydo-mat-failure-grid{display:grid;grid-template-columns:auto 1fr;gap:6px 14px;font-size:13px;line-height:1.6}
+/* 标签列用 max-content——auto 列会被 1fr 列里的长 URL 压缩到逐字竖排
+   （真机验收缺陷：评分理由抽屉上半部分标签列变形）；值列 min-width:0
+   + anywhere 断行保证超长 shareUrl 不再挤压邻列。 */
+.ydo-mat-failure-grid{display:grid;grid-template-columns:max-content 1fr;gap:6px 14px;font-size:13px;line-height:1.6}
 .ydo-mat-failure-grid b{color:var(--dsw-alias-label-secondary,#646a73);font-weight:600}
+.ydo-mat-failure-grid span{min-width:0;overflow-wrap:anywhere}
 .ydo-mat-hint{margin:0;color:var(--dsw-alias-label-secondary,#646a73);font-size:12px;line-height:1.6}
 @media (max-width:900px){.ydo-mat-form-row{grid-template-columns:1fr}}
 `
@@ -317,7 +347,7 @@ function BoardRow({ row, seedAccounts, onOpenReason }) {
     }
     if (match.accountSeedId && !seen.has(`a:${match.accountSeedId}`)) {
       seen.add(`a:${match.accountSeedId}`)
-      sourceLines.push(h('span', { key: `a:${match.accountSeedId}`, className: 'ydo-mat-mini' }, `对标账号：${seedAccountName(seedAccounts, match.accountSeedId)}`))
+      sourceLines.push(h('span', { key: `a:${match.accountSeedId}`, className: 'ydo-mat-source-tag' }, `对标账号：${seedAccountName(seedAccounts, match.accountSeedId)}`))
     }
   }
   return h('tr', null,
@@ -340,7 +370,14 @@ function BoardRow({ row, seedAccounts, onOpenReason }) {
       })
       : h('div', { className: 'ydo-mat-cover-placeholder' }, DASH)),
     h('td', null,
-      h('p', { className: 'ydo-mat-video-title' }, matText(row.title)),
+      // 视频列标题带链接（2026-10-29 真机验收）：点击经系统浏览器打开作品页，
+      // 页面不展示原始 URL；shareUrl 缺失时退化为纯文本。
+      row.shareUrl
+        ? h('button', {
+          type: 'button', className: 'ydo-mat-video-title',
+          title: '在浏览器中打开作品页', onClick: () => openExternalUrl(row.shareUrl),
+        }, matText(row.title))
+        : h('p', { className: 'ydo-mat-video-title' }, matText(row.title)),
       h('div', { className: 'ydo-mat-tags' }, tags
         ? tags.map((tag, index) => h('span', { key: `${tag}:${index}`, className: 'ydo-mat-tag' }, String(tag)))
         : h('span', { className: 'ydo-mat-tag ydo-mat-tag-miss' }, '标签未返回'))),
@@ -356,7 +393,7 @@ function BoardRow({ row, seedAccounts, onOpenReason }) {
     h('td', { className: 'num' }, matNumWan(row.shareCount)),
     h('td', { className: 'num' }, matRate(row.interactionRate)),
     h('td', { style: { whiteSpace: 'nowrap' } }, typeof row.publishedAt === 'string' && row.publishedAt ? row.publishedAt.slice(0, 10) : DASH),
-    h('td', null, h('div', { className: 'ydo-mat-source' }, sourceLines.length ? sourceLines : h('span', { className: 'ydo-mat-mini' }, DASH))),
+    h('td', null, h('div', { className: 'ydo-mat-source' }, sourceLines.length ? sourceLines : h('span', { className: 'ydo-mat-source-tag' }, DASH))),
     h('td', null, h('div', { className: 'ydo-mat-actions' },
       h('button', { type: 'button', className: 'ydo-mat-primary', onClick: () => onOpenReason(row) }, '评分理由'))))
 }
@@ -417,7 +454,14 @@ export function MaterialReasonDrawer({ row, onClose }) {
         h('b', null, '热度评分'), h('span', null, `${matNum(row.hotScore)}（${matText(row.hotLevel)} 档）`),
         h('b', null, '规则版本'), h('span', null, hotVersionLabel(row.scoreRuleVersion)),
         h('b', null, '发布日期'), h('span', null, typeof row.publishedAt === 'string' && row.publishedAt ? row.publishedAt.slice(0, 10) : DASH),
-        h('b', null, '视频链接'), h('span', null, matText(row.shareUrl))),
+        // 视频链接行展示作品标题并带超链（2026-10-29 真机验收定稿）：
+        // 不再铺原始长 URL（那也是压垮标签列布局的元凶）。
+        h('b', null, '视频链接'), h('span', null, row.shareUrl
+          ? h('button', {
+            type: 'button', className: 'ydo-mat-link ydo-mat-link-wrap',
+            title: '在浏览器中打开作品页', onClick: () => openExternalUrl(row.shareUrl),
+          }, matText(row.title))
+          : DASH)),
       details.length
         ? [
           h('h3', { key: 'details-title' }, '评分明细（当前规则对照）'),
@@ -471,10 +515,10 @@ export function MaterialReasonDrawer({ row, onClose }) {
 export function MaterialKeywordsTable({ rows, onAdd, onEdit, onToggle }) {
   const list = Array.isArray(rows) ? rows : []
   return h('section', { 'aria-label': '关键词种子' },
+    // 区块标题已删（2026-10-29 真机验收：「关键词种子（N）」与子页签「关键词管理 N」
+    // 重复），左侧只留一行说明、右侧保留操作按钮。
     h('div', { className: 'ydo-mat-head' },
-      h('div', null,
-        h('h3', { className: 'ydo-mat-title' }, `关键词种子（${matNum(list.length)}）`),
-        h('p', { className: 'ydo-mat-sub' }, '采集记录页「立即采集」按优先级 P1→P5 依次消耗启用中的关键词。')),
+      h('p', { className: 'ydo-mat-sub' }, '禁用后不参与下一轮手动采集；历史 run 仍可追溯。'),
       h('button', { type: 'button', className: 'ydo-mat-primary', onClick: onAdd }, '新增关键词')),
     h('div', { className: 'ydo-mat-table-wrap' },
       h('table', { className: 'ydo-mat-table' },
@@ -499,16 +543,15 @@ export function MaterialKeywordsTable({ rows, onAdd, onEdit, onToggle }) {
                 onClick: () => onToggle(row),
               }, row.status === 'active' ? '禁用' : '启用')))))
           : h('tr', null, h('td', { colSpan: 6 }, h('p', { className: 'ydo-mat-empty' }, '暂无关键词种子；点右上「新增关键词」添加。')))))),
-    h('p', { className: 'ydo-mat-hint' }, '分类由服务端维护（页面不展示、不修改）；编辑只更新上述字段，未填写的上限保持服务端原值。'))
+    )
 }
 
 export function MaterialAccountsTable({ rows, onAdd, onEdit, onToggle }) {
   const list = Array.isArray(rows) ? rows : []
   return h('section', { 'aria-label': '对标账号种子' },
+    // 区块标题已删（与子页签「对标账号 N」重复，同关键词管理口径）。
     h('div', { className: 'ydo-mat-head' },
-      h('div', null,
-        h('h3', { className: 'ydo-mat-title' }, `对标账号种子（${matNum(list.length)}）`),
-        h('p', { className: 'ydo-mat-sub' }, '支持抖音号 / 主页链接 / sec_user_id 三种输入；解析由服务端异步完成。')),
+      h('p', { className: 'ydo-mat-sub' }, '支持抖音号、主页链接或 sec_user_id；解析失败不阻断其他账号。'),
       h('button', { type: 'button', className: 'ydo-mat-primary', onClick: onAdd }, '新增对标账号')),
     h('div', { className: 'ydo-mat-table-wrap' },
       h('table', { className: 'ydo-mat-table' },
@@ -633,15 +676,13 @@ export const MaterialSeedModal = props => (props.modal
 // 采集记录（run 表 + 进行中横幅 + 立即采集；demo renderRuns 口径）
 // ---------------------------------------------------------------------------
 
-export function MaterialRunsTable({ runs, runsTotal, activeRun, collecting, errorReason, onStartCollect, onViewBoard, onOpenFailure, onRefresh }) {
+export function MaterialRunsTable({ runs, activeRun, collecting, errorReason, onStartCollect, onViewBoard, onOpenFailure, onRefresh }) {
   const list = Array.isArray(runs) ? runs : []
-  // 审查 P2-9：标题按服务端 total（分页窗口外也可见），缺失回退当前列表长度
-  const total = typeof runsTotal === 'number' ? runsTotal : list.length
   return h('section', { 'aria-label': '采集记录' },
+    // 区块标题已删（与子页签「采集记录」重复，同关键词管理口径，真机验收
+    // 问题 1）；runsTotal 计数随之失去展示位，一并移除（避免死代码）。
     h('div', { className: 'ydo-mat-head' },
-      h('div', null,
-        h('h3', { className: 'ydo-mat-title' }, `采集记录（${matNum(total)}${list.length < total ? ` · 显示最近 ${list.length} 条` : ''}）`),
-        h('p', { className: 'ydo-mat-sub' }, '手动采集按启用种子派发 Worker 搜索；同一时间只允许一个采集任务。')),
+      h('p', { className: 'ydo-mat-sub' }, '采集执行状态、进度和失败明细统一在采集记录中维护。'),
       h('div', { className: 'ydo-mat-actions' },
         h('button', { type: 'button', className: 'ydo-mat-secondary', disabled: collecting, onClick: onRefresh }, '刷新'),
         h('button', { type: 'button', className: 'ydo-mat-primary', disabled: collecting || Boolean(activeRun), 'aria-busy': collecting, onClick: onStartCollect },
@@ -652,7 +693,7 @@ export function MaterialRunsTable({ runs, runsTotal, activeRun, collecting, erro
         // 状态徽标是 React 元素，不能嵌进模板字符串（会渲染成 [object Object]），
         // 作为独立子节点拼接（截图验收 2026-10-29 发现）。
         h('span', null, '采集任务进行中：', materialStatusPill(activeRun.status), ` ${matDateTime(activeRun.startedAt)} · 完成后自动刷新看板`),
-        activeRun.runId ? h('button', { type: 'button', className: 'ydo-mat-link', onClick: () => onViewBoard(activeRun.runId) }, '查看本批候选') : null)
+        activeRun.runId ? h('button', { type: 'button', className: 'ydo-mat-link', onClick: () => onViewBoard() }, '查看看板') : null)
       : null,
     errorReason ? h('p', { className: 'ydo-mat-error', role: 'alert' }, materialErrorCopy(errorReason)) : null,
     h('div', { className: 'ydo-mat-table-wrap' },
@@ -709,45 +750,30 @@ export function MaterialRunsTable({ runs, runsTotal, activeRun, collecting, erro
 }
 
 // ---------------------------------------------------------------------------
-// 采集参数弹窗（demo collect-modal 口径：展示启用种子规模 + 数量上限 + 最低档位）
+// 采集确认弹窗（对齐静态测试页 collect-modal 口径：纯确认式，无输入字段——
+// 数量上限/最低档位等采集参数一律由服务端配置维护，插件不透出、不下发，
+// 2026-10-29 真机验收「两端不一致」修复）。
 // ---------------------------------------------------------------------------
 
 function CollectModal({ activeKeywords, activeAccounts, busy, errorReason, onConfirm, onClose }) {
-  const [keywordLimit, setKeywordLimit] = React.useState('')
-  const [accountLimit, setAccountLimit] = React.useState('')
-  const [candidateMinLevel, setCandidateMinLevel] = React.useState('B')
-  const submit = () => {
-    if (busy) return
-    const keywordNumber = Number(keywordLimit)
-    const accountNumber = Number(accountLimit)
-    onConfirm({
-      keywordLimit: keywordLimit.trim() && Number.isFinite(keywordNumber) && keywordNumber > 0 ? keywordNumber : null,
-      accountLimit: accountLimit.trim() && Number.isFinite(accountNumber) && accountNumber > 0 ? accountNumber : null,
-      candidateMinLevel,
-    })
-  }
+  const expectedTasks = activeKeywords == null || activeAccounts == null
+    ? null
+    : matNum(activeKeywords + activeAccounts)
   return h('div', { className: 'ydo-mat-modal-overlay', onClick: event => { if (event.target === event.currentTarget && !busy) onClose() } },
-    h('div', { className: 'ydo-mat-modal', role: 'dialog', 'aria-modal': true, 'aria-label': '发起素材采集' },
-      h('h3', null, '发起素材采集'),
+    h('div', { className: 'ydo-mat-modal', role: 'dialog', 'aria-modal': true, 'aria-label': '确认手动采集' },
+      h('h3', null, '确认手动采集'),
+      h('p', { className: 'ydo-mat-hint' }, '将读取当前启用的关键词和对标账号，并创建异步采集任务。'),
+      h('div', { className: 'ydo-mat-meta-grid' },
+        h('div', { className: 'ydo-mat-meta-cell' }, h('span', null, '启用关键词'), h('strong', null, matNum(activeKeywords))),
+        h('div', { className: 'ydo-mat-meta-cell' }, h('span', null, '启用对标账号'), h('strong', null, matNum(activeAccounts))),
+        h('div', { className: 'ydo-mat-meta-cell' }, h('span', null, '预计任务数'), h('strong', null, expectedTasks))),
       h('p', { className: 'ydo-mat-hint' },
-        `当前启用种子：关键词 ${matNum(activeKeywords)} 个 · 对标账号 ${matNum(activeAccounts)} 个。`
-        + '任务按优先级 P1→P5 消耗启用种子；同一时间只允许一个采集任务。'),
-      h('div', { className: 'ydo-mat-form' },
-        h('div', { className: 'ydo-mat-form-row' },
-          h('label', { className: 'ydo-mat-field' },
-            h('span', null, '关键词数量上限（可选，默认全部启用关键词）'),
-            h('input', { type: 'number', min: 1, value: keywordLimit, disabled: busy, onChange: event => setKeywordLimit(event.target.value) })),
-          h('label', { className: 'ydo-mat-field' },
-            h('span', null, '账号数量上限（可选，默认全部启用账号）'),
-            h('input', { type: 'number', min: 1, value: accountLimit, disabled: busy, onChange: event => setAccountLimit(event.target.value) }))),
-        h('label', { className: 'ydo-mat-field' },
-          h('span', null, '候选晋升最低档位'),
-          h('select', { value: candidateMinLevel, disabled: busy, onChange: event => setCandidateMinLevel(event.target.value) },
-            ...['S', 'A', 'B', 'C'].map(value => h('option', { value }, `${value} 档`))))),
+        '手动采集会调用外部数据服务。单个 seed 失败不会中断本轮其他任务；不会自动触发下载、归档或爆款拆解。'),
       errorReason ? h('p', { className: 'ydo-mat-error', role: 'alert' }, materialErrorCopy(errorReason)) : null,
       h('div', { className: 'ydo-mat-modal-actions' },
         h('button', { type: 'button', className: 'ydo-mat-secondary', disabled: busy, onClick: onClose }, '取消'),
-        h('button', { type: 'button', className: 'ydo-mat-primary', disabled: busy, 'aria-busy': busy, onClick: submit }, busy ? '提交中…' : '确认采集'))))
+        h('button', { type: 'button', className: 'ydo-mat-primary', disabled: busy, 'aria-busy': busy, onClick: () => { if (!busy) onConfirm() } },
+          busy ? '提交中…' : '确认采集'))))
 }
 
 export const MaterialCollectModal = props => (props.open ? h(CollectModal, props) : null)
@@ -796,19 +822,44 @@ export function MaterialFailureModal({ run, onClose }) {
 // 顶层页面：四子页下划线页签（看板/关键词管理/对标账号/采集记录）+ 弹层组装。
 // 2026-10-29 真机验收定稿：页签对齐主 Tab（ydo-tabs）/车衣看板（yxh-tabs）的
 // 下划线形态、置于页头下方通栏；关键词与对标账号拆为两个独立子页（对齐 UI 模板
-// 与静态测试页）。section 是纯 UI 切换（local state）；数据与动作由 client.js 注入。
+// 与静态测试页）。section 由 client.js 受控注入——采集记录「查看看板」需要跨
+// 子页跳转，内部 state 拿不到跨层切换（真机验收问题 4）；数据与动作由 client.js 注入。
+// ---------------------------------------------------------------------------
+// 种子启停二次确认（宿主 overlay 交互层组件，2026-10-29 第二轮真机验收从
+// client.js 内联片段提取为导出组件）：文案分支只依赖 confirm {mode,status}；
+// 按钮字面「确认/取消」——i18n 的 confirmYes 是删除账号弹框专用「确认删除」，
+// 误用会在启用按钮上弹出「确认删除」（真机验收问题 3）。样式复用宿主侧
+// ydo-confirm-* 类（与删除账号弹框同观感）。
+// ---------------------------------------------------------------------------
+
+export function MaterialConfirmDialog({ confirm, onConfirm, onCancel }) {
+  if (!confirm) return null
+  const isKeyword = confirm.mode === 'keyword'
+  const title = confirm.row.status === 'active'
+    ? (isKeyword
+      ? '确认禁用该关键词？禁用后不再参与后续采集。'
+      : '确认禁用该对标账号？禁用后不再参与后续采集。')
+    : (isKeyword
+      ? '确认启用该关键词？下次采集将按优先级参与。'
+      : '确认启用该对标账号？下次采集将参与。')
+  return h('div', {
+    className: 'ydo-confirm-overlay', role: 'dialog', 'aria-modal': true,
+    'aria-label': '确认操作',
+  },
+    h('div', { className: 'ydo-confirm' },
+      h('p', { className: 'ydo-confirm-title' }, title),
+      h('div', { className: 'ydo-confirm-actions' },
+        h('button', { type: 'button', className: 'ydo-confirm-primary', onClick: onConfirm }, '确认'),
+        h('button', { type: 'button', className: 'ydo-confirm-secondary', onClick: onCancel }, '取消'))))
+}
+
 // ---------------------------------------------------------------------------
 
 export function MaterialPage({
   board, kpi, facets, filters, seedAccounts, seeds, runs, activeRun, collecting,
   reason, seedModal, collectOpen, collectError, failure, savingSeed, seedError,
-  runFilter, actions,
+  section, onSectionChange, actions,
 }) {
-  const [section, setSection] = React.useState('board')
-  const changeSection = next => {
-    setSection(next)
-    if (actions.onSectionChange) actions.onSectionChange(next)
-  }
   const keywordRows = seeds && seeds.data && Array.isArray(seeds.data.keywords) ? seeds.data.keywords : null
   const accountRows = seeds && seeds.data && Array.isArray(seeds.data.accounts) ? seeds.data.accounts : null
   return h('div', { className: 'ydo-mat-page' },
@@ -817,24 +868,20 @@ export function MaterialPage({
         h('h2', { className: 'ydo-mat-title' }, '爆款素材看板'),
         h('p', { className: 'ydo-mat-sub' }, '关键词与对标账号双源采集的爆款素材候选池；评分口径由服务端统一配置（候选只读展示）。'))),
     h('nav', { className: 'ydo-mat-tabs', role: 'tablist', 'aria-label': '素材看板子页' },
-      h('button', { type: 'button', 'aria-current': section === 'board' || undefined, onClick: () => changeSection('board') }, '素材看板'),
-      h('button', { type: 'button', 'aria-current': section === 'keywords' || undefined, onClick: () => changeSection('keywords') },
+      h('button', { type: 'button', 'aria-current': section === 'board' || undefined, onClick: () => onSectionChange('board') }, '素材看板'),
+      h('button', { type: 'button', 'aria-current': section === 'keywords' || undefined, onClick: () => onSectionChange('keywords') },
         '关键词管理', keywordRows ? h('span', { className: 'ydo-mat-tab-count' }, String(keywordRows.length)) : null),
-      h('button', { type: 'button', 'aria-current': section === 'accounts' || undefined, onClick: () => changeSection('accounts') },
+      h('button', { type: 'button', 'aria-current': section === 'accounts' || undefined, onClick: () => onSectionChange('accounts') },
         '对标账号', accountRows ? h('span', { className: 'ydo-mat-tab-count' }, String(accountRows.length)) : null),
-      h('button', { type: 'button', 'aria-current': section === 'runs' || undefined, onClick: () => changeSection('runs') }, '采集记录')),
+      h('button', { type: 'button', 'aria-current': section === 'runs' || undefined, onClick: () => onSectionChange('runs') }, '采集记录')),
     section === 'board'
       ? [
-        // 布局定稿（2026-10-29 用户拍板）：筛选区置顶（二级页签下、KPI 上），
-        // 批次过滤横幅是筛选态的延伸提示，紧随筛选条、KPI 之前。
+        // 布局定稿（2026-10-29 用户拍板）：筛选区置顶（二级页签下、KPI 上）。
+        // 采集完成后经「查看看板」跳回本页看全部候选（批次过滤横幅已按真机
+        // 验收问题 5 移除——不协调，且看板本就按时间窗聚合，不锁单批次）。
         h(MaterialFilterBar, {
           key: 'filters', filters, facets, onChange: actions.onFilterChange,
         }),
-        runFilter
-          ? h('div', { key: 'run-filter', className: 'ydo-mat-active', role: 'status' },
-            h('span', null, `按批次过滤：${runFilter}（看板只显示该批次命中的候选）`),
-            h('button', { type: 'button', className: 'ydo-mat-link', onClick: actions.onClearRunFilter }, '清除过滤'))
-          : null,
         h(MaterialKpiCards, { key: 'kpi', kpi }),
         h(MaterialBoardTable, {
           key: 'board', board, seedAccounts, onOpenReason: actions.onOpenReason, onPage: actions.onBoardPage,
@@ -867,7 +914,7 @@ export function MaterialPage({
       : null,
     section === 'runs'
       ? h(MaterialRunsTable, {
-        runs: runs && runs.rows, runsTotal: runs && runs.total, activeRun, collecting, errorReason: runs && runs.errorReason,
+        runs: runs && runs.rows, activeRun, collecting, errorReason: runs && runs.errorReason,
         onStartCollect: actions.onOpenCollect, onViewBoard: actions.onViewRunBoard,
         onOpenFailure: actions.onOpenFailure, onRefresh: actions.onRefreshRuns,
       })
