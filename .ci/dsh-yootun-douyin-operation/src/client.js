@@ -1817,7 +1817,7 @@ function Overlay({ t }) {
     q: '', minLevel: '', sourceKind: '', publishedRange: '30d', tag: '', sortBy: 'hot', offset: 0,
   })
   const [materialSeeds, setMaterialSeeds] = useState({ data: null, loading: false, errorReason: null })
-  const [materialRuns, setMaterialRuns] = useState({ rows: [], loading: false, errorReason: null })
+  const [materialRuns, setMaterialRuns] = useState({ rows: [], total: null, loading: false, errorReason: null })
   // 进行中采集任务（受理/轮询投影归一为 {runId, status, startedAt}）。
   const [materialActiveRun, setMaterialActiveRun] = useState(null)
   const [materialCollectError, setMaterialCollectError] = useState(null)
@@ -2157,7 +2157,9 @@ function Overlay({ t }) {
         return []
       }
       const rows = Array.isArray(result.data?.runs) ? result.data.runs : []
-      setMaterialRuns({ rows, loading: false, errorReason: null })
+      // 审查 P2-9：total 来自服务端全量计数（分页前的总量），行数不足时标题展示「显示最近 N 条」。
+      const total = typeof result.data?.total === 'number' ? result.data.total : rows.length
+      setMaterialRuns({ rows, total, loading: false, errorReason: null })
       // 返回行供调用方判断恢复轮询（Tab 进入 / 手动刷新）；run 投影 runStatus ∈
       // queued/running 时任务在途。
       return rows
@@ -2203,10 +2205,13 @@ function Overlay({ t }) {
           loadMaterialRuns({ silent: true }).catch(() => {})
           loadMaterialBoard().catch(() => {})
           loadMaterialBoardTotal().catch(() => {})
+          // 审查 P2-2：终态同步刷新 seeds（解析状态/解析形态推进）与 facets（新标签），免手动刷新。
+          loadMaterialSeeds({ silent: true }).catch(() => {})
+          loadMaterialFacets().catch(() => {})
         }
       }).catch(() => {})
     }, MATERIAL_POLL_INTERVAL_MS)
-  }, [loadMaterialBoard, loadMaterialBoardTotal, loadMaterialRuns, pollMaterialOnce, stopMaterialPolling])
+  }, [loadMaterialBoard, loadMaterialBoardTotal, loadMaterialFacets, loadMaterialRuns, loadMaterialSeeds, pollMaterialOnce, stopMaterialPolling])
 
   // 从批次行恢复轮询（Tab 进入 / 手动刷新共用）：最新行在途即恢复。
   const resumeMaterialPollingFromRows = useCallback(rows => {
@@ -2278,14 +2283,14 @@ function Overlay({ t }) {
     setMaterialSeedError(null)
     try {
       const isKeyword = mode === 'keyword'
-      // 批量合同的单条形态：dailyLimit/maxVideos 为 null 不传——服务端按显式提交
-      // 字段更新（P0-1 修复），未提交字段保留原值、显式 null 清除（上限回默认）。
+      // 批量合同的单条形态：maxVideos 为 null 不传——服务端按显式提交字段更新
+      // （P0-1 修复），未提交字段保留原值、显式 null 清除（上限回默认）。
+      // dailyLimit 不参与调度，前端不展示不提交（审查 P2-7 拍板）。
       const entry = isKeyword
         ? {
           keyword: payload.keyword,
           priority: payload.priority,
           status: payload.status,
-          ...(payload.dailyLimit !== null ? { dailyLimit: payload.dailyLimit } : {}),
         }
         : {
           displayName: payload.displayName,
@@ -2399,7 +2404,9 @@ function Overlay({ t }) {
   // 页面恢复可见立即刷新（§6.4）：interval 的 hidden 守卫要等下一 tick，
   // visibilitychange 对在途 run 先行刷新批次记录并恢复轮询。
   useEffect(() => {
-    if (tab !== 'material') return
+    // 审查 P2-4：overlay 关闭（visible=false）时不再预取/续轮询，关闭即停止
+    // material 轮询；重开 overlay 由本 effect 重新触发预取与恢复。
+    if (!visible || tab !== 'material') return
     loadMaterialRuns().then(resumeMaterialPollingFromRows).catch(() => {})
     loadMaterialBoard().catch(() => {})
     loadMaterialBoardTotal().catch(() => {})
@@ -2412,7 +2419,7 @@ function Overlay({ t }) {
     document.addEventListener('visibilitychange', onVisibility)
     // eslint-disable-next-line react-hooks/exhaustive-deps
     return () => { document.removeEventListener('visibilitychange', onVisibility); stopMaterialPolling() }
-  }, [tab])
+  }, [tab, visible])
 
   // ---------------------------------------------------------------------------
   // 爆款拆解（0922 方案 §4.2/§5）：归档受理 → 3s 轮询 → 自动 workflow 受理 →

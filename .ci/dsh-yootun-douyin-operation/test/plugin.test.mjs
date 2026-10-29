@@ -1606,8 +1606,11 @@ test('material.keyword.upsert：幂等键/confirm/条目校验，成功形状为
     action: 'material.keyword.upsert', keywords: [{ keyword: '词', dailyLimit: 0 }],
     confirm: true, idempotencyKey: 'douyin:vv_keyword_upsert:u1',
   })
-  assert.equal(zeroLimit.payload.reason, 'VALIDATION_ERROR')
-  assert.equal(calls.length, 0, '所有拒绝路径都不发起 tools 调用')
+  // 审查 P2-7 拍板：dailyLimit 不参与调度，Host 不再校验/透传——显式提交
+  // dailyLimit:0 也不再是拒绝路径，条目静默剔除该键。
+  assert.equal(zeroLimit.payload.status, 'ready')
+  assert.equal(calls.length, 1, '拒绝路径不发起 tools 调用；dailyLimit 条目正常受理')
+  assert.deepEqual(calls[0].keywords[0], { keyword: '词' })
 
   const saved = await call(dispatch, {
     action: 'material.keyword.upsert',
@@ -1615,8 +1618,9 @@ test('material.keyword.upsert：幂等键/confirm/条目校验，成功形状为
     confirm: true, idempotencyKey: 'douyin:vv_keyword_upsert:u1',
   })
   assert.equal(saved.payload.status, 'ready')
-  assert.deepEqual(calls[0], {
-    keywords: [{ keyword: '增程车', priority: 'P2', status: 'active', dailyLimit: 5 }],
+  // dailyLimit:5 显式提交同样被剔除（P2-7），不透传 tools
+  assert.deepEqual(calls[1], {
+    keywords: [{ keyword: '增程车', priority: 'P2', status: 'active' }],
     confirm: true, idempotencyKey: 'douyin:vv_keyword_upsert:u1',
   })
 
@@ -1626,7 +1630,7 @@ test('material.keyword.upsert：幂等键/confirm/条目校验，成功形状为
     keywords: [{ keyword: '增程车', priority: 'P2', status: 'active' }],
     confirm: true, idempotencyKey: 'douyin:vv_keyword_upsert:u2',
   })
-  assert.deepEqual(calls[1].keywords[0], { keyword: '增程车', priority: 'P2', status: 'active' })
+  assert.deepEqual(calls[2].keywords[0], { keyword: '增程车', priority: 'P2', status: 'active' })
 })
 
 test('material.account.upsert：inputForm 白名单与抖音域主页校验', async () => {
@@ -1793,7 +1797,7 @@ test('material.videos.list：白名单/pattern/枚举校验与全参数透传', 
   })
 })
 
-test('material.dashboard / material.runs.list / material.facets：只读透传与投影', async () => {
+test('material.runs.list / material.facets：只读透传与投影（dashboard action 已删，审查 P2-5）', async () => {
   const calls = []
   const { ctx, registered } = createContext({
     tools: [
@@ -1811,18 +1815,18 @@ test('material.dashboard / material.runs.list / material.facets：只读透传�
   apply(ctx, { root: '/tmp/unused', browserStatus: async () => ({ chromeAvailable: true, driverAvailable: true, platform: 'linux' }) })
   const dispatch = registered[0].handler
 
-  // dashboard：taskId 可选
+  // dashboard action 已移除（P2-5）：走 unknown_action 400 分支
   const dashboard = await call(dispatch, { action: 'material.dashboard', taskId: 't-1' })
-  assert.equal(dashboard.payload.status, 'ready')
-  assert.deepEqual(calls[0], { name: 'mcp__tools-douyin-operation__viral_video_dashboard_get', args: { taskId: 't-1' } })
+  assert.equal(dashboard.payload.status, 'error')
+  assert.equal(dashboard.payload.reason, 'unknown_action')
 
   // runs.list：默认 limit=20；越界 clamp 收敛回默认（同 videos.list 语义）
   const runs = await call(dispatch, { action: 'material.runs.list' })
   assert.equal(runs.payload.status, 'ready')
-  assert.deepEqual(calls[1].args, { limit: 20 })
+  assert.deepEqual(calls[0].args, { limit: 20 })
   const overRuns = await call(dispatch, { action: 'material.runs.list', limit: 1000 })
   assert.equal(overRuns.payload.status, 'ready')
-  assert.deepEqual(calls[2].args, { limit: 20 })
+  assert.deepEqual(calls[1].args, { limit: 20 })
 
   // facets：materialFacets.tags 投影；缺失投影回空 tags
   const facets = await call(dispatch, { action: 'material.facets' })

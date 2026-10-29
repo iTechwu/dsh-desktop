@@ -159,8 +159,6 @@ export function apply(ctx, overrides = {}) {
               return send(res, 200, await handleMaterialCollectStatus(deps, toolCtx, body))
             case 'material.videos.list':
               return send(res, 200, await handleMaterialVideosList(deps, toolCtx, body))
-            case 'material.dashboard':
-              return send(res, 200, await handleMaterialDashboard(deps, toolCtx, body))
             case 'material.runs.list':
               return send(res, 200, await handleMaterialRunsList(deps, toolCtx, body))
             case 'material.facets':
@@ -1223,12 +1221,8 @@ async function handleMaterialKeywordUpsert(deps, ctx, body) {
       if (status !== 'active' && status !== 'disabled') return { status: 'error', reason: 'VALIDATION_ERROR' }
       item.status = status
     }
-    // dailyLimit/searchCount 未传保持 undefined（toWireArgs 剔除）→ 服务端按 null 处理
-    if (row.dailyLimit !== undefined && row.dailyLimit !== null) {
-      const dailyLimit = clampInt(row.dailyLimit, 1, 1000000, null)
-      if (dailyLimit === null) return { status: 'error', reason: 'VALIDATION_ERROR' }
-      item.dailyLimit = dailyLimit
-    }
+    // searchCount 未传保持 undefined（toWireArgs 剔除）→ 服务端按显式提交语义处理；
+    // dailyLimit 不参与调度（审查 P2-7 拍板），Host 不再透传（显式提交不生效语义一致）
     if (row.searchCount !== undefined && row.searchCount !== null) {
       const searchCount = clampInt(row.searchCount, 1, 100, null)
       if (searchCount === null) return { status: 'error', reason: 'VALIDATION_ERROR' }
@@ -1403,13 +1397,8 @@ async function handleMaterialVideosList(deps, ctx, body) {
   return { status: 'ready', data: payload }
 }
 
-async function handleMaterialDashboard(deps, ctx, body) {
-  const args = {}
-  const taskId = cleanString(body.taskId, 128)
-  if (taskId) args.taskId = taskId
-  const payload = await callTool(ctx, 'viral_video_dashboard_get', args)
-  return { status: 'ready', data: payload }
-}
+// 审查 P2-5：material.dashboard Host 透传已移除——插件全部走 board/total/facets
+// 三个窄投影（viral_video_material_board / _total / facets），无整卡 dashboard 消费方。
 
 async function handleMaterialRunsList(deps, ctx, body) {
   const args = {}

@@ -4194,7 +4194,7 @@ window.__ModuleLoader__.load({
       const patch = (key, value) => onChange({ ...filters, [key]: value, offset: 0 })
       return h('div', { className: 'ydo-mat-filters' },
         h('input', {
-          type: 'text', value: filters.q, placeholder: '搜索标题 / 关键词',
+          type: 'text', value: filters.q, placeholder: '搜索标题 / 作者 / 关键词',
           'aria-label': '搜索素材', onChange: event => patch('q', event.target.value),
         }),
         h('select', { value: filters.minLevel, 'aria-label': '最低档位', onChange: event => patch('minLevel', event.target.value) },
@@ -4234,7 +4234,15 @@ window.__ModuleLoader__.load({
       }
       return h('tr', null,
         h('td', null, row.coverUrl
-          ? h('img', { className: 'ydo-mat-cover', src: row.coverUrl, alt: '封面', loading: 'lazy', referrerPolicy: 'no-referrer' })
+          // 审查 P3-1：封面加载失败降级为占位块（与 tools 验证页 onerror 形态一致），
+          // 真机网络受限时不再渲染破图。
+          ? h('img', {
+            className: 'ydo-mat-cover', src: row.coverUrl, alt: '封面', loading: 'lazy', referrerPolicy: 'no-referrer',
+            onError: event => {
+              const td = event.currentTarget.parentElement
+              if (td) event.currentTarget.replaceWith(h('div', { className: 'ydo-mat-cover-placeholder' }, DASH))
+            },
+          })
           : h('div', { className: 'ydo-mat-cover-placeholder' }, DASH)),
         h('td', null,
           h('p', { className: 'ydo-mat-video-title' }, matText(row.title)),
@@ -4299,6 +4307,11 @@ window.__ModuleLoader__.load({
     function MaterialReasonDrawer({ row, onClose }) {
       if (!row) return null
       const reasons = Array.isArray(row.scoreReasons) ? row.scoreReasons : []
+      // 审查 P2-1（拍板③「在现有卡片基础上优化」）：服务端实时生成的结构化对照
+      // {name, observed, threshold, points, hit}——命中项展示实际档位与加分，未命中
+      // 项明确展示「还差多少」；旧服务端/旧数据缺该投影时不渲染此区块，scoreReasons
+      // 文字列表保留兜底。存档评分以行上 hotScore/scoreReasons（入库时规则）为准。
+      const details = Array.isArray(row.scoreReasonDetails) ? row.scoreReasonDetails : []
       return h('div', null,
         h('div', { className: 'ydo-mat-drawer-overlay', onClick: onClose }),
         h('aside', { className: 'ydo-mat-drawer', role: 'dialog', 'aria-modal': true, 'aria-label': '评分理由' },
@@ -4310,6 +4323,45 @@ window.__ModuleLoader__.load({
             h('b', null, '规则版本'), h('span', null, hotVersionLabel(row.scoreRuleVersion)),
             h('b', null, '发布日期'), h('span', null, typeof row.publishedAt === 'string' && row.publishedAt ? row.publishedAt.slice(0, 10) : DASH),
             h('b', null, '视频链接'), h('span', null, matText(row.shareUrl))),
+          details.length
+            ? [
+              h('h3', { key: 'details-title' }, '评分明细（当前规则对照）'),
+              h('div', { key: 'details-table', className: 'ydo-mat-table-wrap' },
+                h('table', { className: 'ydo-mat-table' },
+                  h('thead', null,
+                    h('tr', null,
+                      h('th', null, '维度'), h('th', { className: 'num' }, '观测值'),
+                      h('th', { className: 'num' }, '加分阈值'), h('th', null, '得分'))),
+                  h('tbody', null, details.map((detail, index) => {
+                    const isRate = detail.name === '互动率'
+                    const observedText = typeof detail.observed === 'number' && Number.isFinite(detail.observed)
+                      ? (isRate ? matRate(detail.observed) : matNumWan(detail.observed))
+                      : DASH
+                    const thresholdText = typeof detail.threshold === 'number' && Number.isFinite(detail.threshold)
+                      ? (isRate ? `${Math.round(detail.threshold * 100)}%` : matNumWan(detail.threshold))
+                      : DASH
+                    let scorePill
+                    if (detail.hit && typeof detail.points === 'number' && detail.points > 0) {
+                      scorePill = h('span', { className: 'ydo-mat-status ydo-mat-status-success' }, `+${detail.points}分`)
+                    } else if (typeof detail.observed !== 'number' || !Number.isFinite(detail.observed)) {
+                      scorePill = h('span', { className: 'ydo-mat-status ydo-mat-status-muted' }, '未采集')
+                    } else if (typeof detail.threshold === 'number' && Number.isFinite(detail.threshold)) {
+                      const gap = detail.threshold - detail.observed
+                      const gapText = isRate ? `${(gap * 100).toFixed(1)}%` : matNumWan(gap)
+                      scorePill = h('span', { className: 'ydo-mat-status ydo-mat-status-muted' }, `还差 ${gapText}`)
+                    } else {
+                      scorePill = h('span', { className: 'ydo-mat-status ydo-mat-status-muted' }, '0分')
+                    }
+                    return h('tr', { key: `${detail.name}:${index}` },
+                      h('td', null, matText(detail.name)),
+                      h('td', { className: 'num' }, observedText),
+                      h('td', { className: 'num' }, thresholdText),
+                      h('td', null, scorePill))
+                  })))),
+              h('p', { key: 'details-hint', className: 'ydo-mat-hint' },
+                '互动率=（赞+评+转）/播放；明细按当前规则实时对照，存档评分以入库时规则版本为准。'),
+            ]
+            : null,
           h('h3', null, `命中理由（${reasons.length}）`),
           reasons.length
             ? h('ul', { className: 'ydo-mat-reason-list' },
@@ -4334,20 +4386,19 @@ window.__ModuleLoader__.load({
             h('thead', null,
               h('tr', null,
                 h('th', null, '关键词'), h('th', null, '状态'), h('th', null, '优先级'),
-                h('th', { className: 'num' }, '日上限'), h('th', { className: 'num' }, '累计搜索'),
+                h('th', { className: 'num' }, '单轮搜索'),
                 h('th', null, '最近更新'), h('th', null, '操作'))),
             h('tbody', null, list.length
               ? list.map(row => h('tr', { key: row.seedId },
                 h('td', null, matText(row.keyword)),
                 h('td', null, h('span', { className: `ydo-mat-status ${row.status === 'active' ? 'ydo-mat-status-success' : 'ydo-mat-status-muted'}` }, row.status === 'active' ? '启用' : '禁用')),
                 h('td', null, matText(row.priority)),
-                h('td', { className: 'num' }, matNum(row.dailyLimit)),
                 h('td', { className: 'num' }, matNum(row.searchCount)),
                 h('td', null, matDateTime(row.updatedAt)),
                 h('td', null, h('div', { className: 'ydo-mat-actions' },
                   h('button', { type: 'button', className: 'ydo-mat-secondary', onClick: () => onEdit(row) }, '编辑'),
                   h('button', { type: 'button', className: 'ydo-mat-link', onClick: () => onToggle(row) }, row.status === 'active' ? '禁用' : '启用')))))
-              : h('tr', null, h('td', { colSpan: 7 }, h('p', { className: 'ydo-mat-empty' }, '暂无关键词种子；点右上「新增关键词」添加。')))))),
+              : h('tr', null, h('td', { colSpan: 6 }, h('p', { className: 'ydo-mat-empty' }, '暂无关键词种子；点右上「新增关键词」添加。')))))),
         h('p', { className: 'ydo-mat-hint' }, '分类由服务端维护（页面不展示、不修改）；编辑只更新上述字段，未填写的上限保持服务端原值。'))
     }
 
@@ -4402,15 +4453,13 @@ window.__ModuleLoader__.load({
       const [inputValue, setInputValue] = React.useState(row ? row.inputValue || '' : '')
       const [priority, setPriority] = React.useState(row && row.priority ? row.priority : 'P1')
       const [status, setStatus] = React.useState(row && row.status ? row.status : 'active')
-      const [dailyLimit, setDailyLimit] = React.useState(row && row.dailyLimit !== null && row.dailyLimit !== undefined ? String(row.dailyLimit) : '')
+      // 日上限（dailyLimit）为历史保留字段，不参与调度，前端不展示不提交（审查 P2-7 拍板）
       const [maxVideos, setMaxVideos] = React.useState(row && row.maxVideos !== null && row.maxVideos !== undefined ? String(row.maxVideos) : '')
       const submit = () => {
         if (busy) return
         const payload = { priority, status }
         if (isKeyword) {
           payload.keyword = keyword.trim()
-          const limit = Number(dailyLimit)
-          payload.dailyLimit = dailyLimit.trim() && Number.isFinite(limit) && limit > 0 ? limit : null
         } else {
           payload.displayName = displayName.trim()
           payload.inputForm = inputForm
@@ -4459,9 +4508,7 @@ window.__ModuleLoader__.load({
                   h('option', { value: 'active' }, '启用'),
                   h('option', { value: 'disabled' }, '禁用')))),
             isKeyword
-              ? h('label', { className: 'ydo-mat-field' },
-                h('span', null, '每日搜索上限（可选，留空保持服务端原值）'),
-                h('input', { type: 'number', min: 1, value: dailyLimit, disabled: busy, onChange: event => setDailyLimit(event.target.value) }))
+              ? null
               : h('label', { className: 'ydo-mat-field' },
                 h('span', null, '每次采集作品数上限（可选，留空保持服务端原值）'),
                 h('input', { type: 'number', min: 1, value: maxVideos, disabled: busy, onChange: event => setMaxVideos(event.target.value) }))),
@@ -4482,12 +4529,14 @@ window.__ModuleLoader__.load({
     // 采集记录（run 表 + 进行中横幅 + 立即采集；demo renderRuns 口径）
     // ---------------------------------------------------------------------------
 
-    function MaterialRunsTable({ runs, activeRun, collecting, errorReason, onStartCollect, onViewBoard, onOpenFailure, onRefresh }) {
+    function MaterialRunsTable({ runs, runsTotal, activeRun, collecting, errorReason, onStartCollect, onViewBoard, onOpenFailure, onRefresh }) {
       const list = Array.isArray(runs) ? runs : []
+      // 审查 P2-9：标题按服务端 total（分页窗口外也可见），缺失回退当前列表长度
+      const total = typeof runsTotal === 'number' ? runsTotal : list.length
       return h('section', { 'aria-label': '采集记录' },
         h('div', { className: 'ydo-mat-head' },
           h('div', null,
-            h('h3', { className: 'ydo-mat-title' }, `采集记录（${matNum(list.length)}）`),
+            h('h3', { className: 'ydo-mat-title' }, `采集记录（${matNum(total)}${list.length < total ? ` · 显示最近 ${list.length} 条` : ''}）`),
             h('p', { className: 'ydo-mat-sub' }, '手动采集按启用种子派发 Worker 搜索；同一时间只允许一个采集任务。')),
           h('div', { className: 'ydo-mat-actions' },
             h('button', { type: 'button', className: 'ydo-mat-secondary', disabled: collecting, onClick: onRefresh }, '刷新'),
@@ -4522,8 +4571,13 @@ window.__ModuleLoader__.load({
                 const showFailureDetail = runFailed
                   || (typeof row.failedJobs === 'number' && row.failedJobs > 0)
                   || Boolean(failedSeeds)
-                const failedNoCandidates = row.runStatus === 'failed'
-                  && typeof row.candidatesInserted === 'number' && row.candidatesInserted === 0
+                // 「查看看板」隐藏判定用服务端 materialCandidateCount（复审残留）：
+                // candidatesInserted=0 不代表无可看候选（命中既有候选只追加标记不新增
+                // 行）；字段缺失时回退 candidatesInserted（旧响应兼容）。
+                const seenCandidateCount = typeof row.materialCandidateCount === 'number'
+                  ? row.materialCandidateCount
+                  : (typeof row.candidatesInserted === 'number' ? row.candidatesInserted : null)
+                const failedNoCandidates = runFailed && seenCandidateCount === 0
                 return h('tr', { key: row.runId },
                   h('td', null, materialStatusPill(row.runStatus)),
                   h('td', null, matDateTime(row.startedAt)),
@@ -4692,7 +4746,7 @@ window.__ModuleLoader__.load({
           : null,
         section === 'runs'
           ? h(MaterialRunsTable, {
-            runs: runs && runs.rows, activeRun, collecting, errorReason: runs && runs.errorReason,
+            runs: runs && runs.rows, runsTotal: runs && runs.total, activeRun, collecting, errorReason: runs && runs.errorReason,
             onStartCollect: actions.onOpenCollect, onViewBoard: actions.onViewRunBoard,
             onOpenFailure: actions.onOpenFailure, onRefresh: actions.onRefreshRuns,
           })
@@ -6511,7 +6565,7 @@ window.__ModuleLoader__.load({
         q: '', minLevel: '', sourceKind: '', publishedRange: '30d', tag: '', sortBy: 'hot', offset: 0,
       })
       const [materialSeeds, setMaterialSeeds] = useState({ data: null, loading: false, errorReason: null })
-      const [materialRuns, setMaterialRuns] = useState({ rows: [], loading: false, errorReason: null })
+      const [materialRuns, setMaterialRuns] = useState({ rows: [], total: null, loading: false, errorReason: null })
       // 进行中采集任务（受理/轮询投影归一为 {runId, status, startedAt}）。
       const [materialActiveRun, setMaterialActiveRun] = useState(null)
       const [materialCollectError, setMaterialCollectError] = useState(null)
@@ -6851,7 +6905,9 @@ window.__ModuleLoader__.load({
             return []
           }
           const rows = Array.isArray(result.data?.runs) ? result.data.runs : []
-          setMaterialRuns({ rows, loading: false, errorReason: null })
+          // 审查 P2-9：total 来自服务端全量计数（分页前的总量），行数不足时标题展示「显示最近 N 条」。
+          const total = typeof result.data?.total === 'number' ? result.data.total : rows.length
+          setMaterialRuns({ rows, total, loading: false, errorReason: null })
           // 返回行供调用方判断恢复轮询（Tab 进入 / 手动刷新）；run 投影 runStatus ∈
           // queued/running 时任务在途。
           return rows
@@ -6897,10 +6953,13 @@ window.__ModuleLoader__.load({
               loadMaterialRuns({ silent: true }).catch(() => {})
               loadMaterialBoard().catch(() => {})
               loadMaterialBoardTotal().catch(() => {})
+              // 审查 P2-2：终态同步刷新 seeds（解析状态/解析形态推进）与 facets（新标签），免手动刷新。
+              loadMaterialSeeds({ silent: true }).catch(() => {})
+              loadMaterialFacets().catch(() => {})
             }
           }).catch(() => {})
         }, MATERIAL_POLL_INTERVAL_MS)
-      }, [loadMaterialBoard, loadMaterialBoardTotal, loadMaterialRuns, pollMaterialOnce, stopMaterialPolling])
+      }, [loadMaterialBoard, loadMaterialBoardTotal, loadMaterialFacets, loadMaterialRuns, loadMaterialSeeds, pollMaterialOnce, stopMaterialPolling])
 
       // 从批次行恢复轮询（Tab 进入 / 手动刷新共用）：最新行在途即恢复。
       const resumeMaterialPollingFromRows = useCallback(rows => {
@@ -6972,14 +7031,14 @@ window.__ModuleLoader__.load({
         setMaterialSeedError(null)
         try {
           const isKeyword = mode === 'keyword'
-          // 批量合同的单条形态：dailyLimit/maxVideos 为 null 不传——服务端按显式提交
-          // 字段更新（P0-1 修复），未提交字段保留原值、显式 null 清除（上限回默认）。
+          // 批量合同的单条形态：maxVideos 为 null 不传——服务端按显式提交字段更新
+          // （P0-1 修复），未提交字段保留原值、显式 null 清除（上限回默认）。
+          // dailyLimit 不参与调度，前端不展示不提交（审查 P2-7 拍板）。
           const entry = isKeyword
             ? {
               keyword: payload.keyword,
               priority: payload.priority,
               status: payload.status,
-              ...(payload.dailyLimit !== null ? { dailyLimit: payload.dailyLimit } : {}),
             }
             : {
               displayName: payload.displayName,
@@ -7093,7 +7152,9 @@ window.__ModuleLoader__.load({
       // 页面恢复可见立即刷新（§6.4）：interval 的 hidden 守卫要等下一 tick，
       // visibilitychange 对在途 run 先行刷新批次记录并恢复轮询。
       useEffect(() => {
-        if (tab !== 'material') return
+        // 审查 P2-4：overlay 关闭（visible=false）时不再预取/续轮询，关闭即停止
+        // material 轮询；重开 overlay 由本 effect 重新触发预取与恢复。
+        if (!visible || tab !== 'material') return
         loadMaterialRuns().then(resumeMaterialPollingFromRows).catch(() => {})
         loadMaterialBoard().catch(() => {})
         loadMaterialBoardTotal().catch(() => {})
@@ -7106,7 +7167,7 @@ window.__ModuleLoader__.load({
         document.addEventListener('visibilitychange', onVisibility)
         // eslint-disable-next-line react-hooks/exhaustive-deps
         return () => { document.removeEventListener('visibilitychange', onVisibility); stopMaterialPolling() }
-      }, [tab])
+      }, [tab, visible])
 
       // ---------------------------------------------------------------------------
       // 爆款拆解（0922 方案 §4.2/§5）：归档受理 → 3s 轮询 → 自动 workflow 受理 →

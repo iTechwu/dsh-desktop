@@ -454,6 +454,113 @@ test('MaterialFailureModal：runError 透出失败原因，failed 无种子级�
   assert.doesNotMatch(plain, /失败原因/)
 })
 
+test('MaterialKeywordsTable：日上限列不渲染、单轮搜索列头（审查 P2-7 + 列头拍板）', () => {
+  const rows = [{
+    seedId: 'ks-1', keyword: '增程车', category: 'other', priority: 'P2',
+    status: 'active', dailyLimit: 5, searchCount: 12,
+    lastReviewedAt: null, createdAt: null, updatedAt: '2026-10-28T09:30:00+08:00',
+  }]
+  const text = treeText(MaterialKeywordsTable({ rows, onAdd: () => {}, onEdit: () => {}, onToggle: () => {} }))
+  // P2-7 拍板：dailyLimit 不参与调度，前端不展示——即使行数据带该字段也不渲染
+  assert.doesNotMatch(text, /日上限/)
+  // 拍板⑥：列头「累计搜索」→「单轮搜索」
+  assert.match(text, /单轮搜索/)
+  assert.doesNotMatch(text, /累计搜索/)
+})
+
+test('MaterialRunsTable：runsTotal 标题展示全量计数与截断提示（审查 P2-9）', () => {
+  const rows = [
+    { runId: 'vv-mat-t1', runStatus: 'completed', startedAt: '2026-10-28T10:00:00+08:00', hotLevelSummary: {} },
+    { runId: 'vv-mat-t2', runStatus: 'completed', startedAt: '2026-10-28T09:00:00+08:00', hotLevelSummary: {} },
+  ]
+  const handlers = {
+    activeRun: null, collecting: false, errorReason: null,
+    onStartCollect: () => {}, onViewBoard: () => {}, onOpenFailure: () => {}, onRefresh: () => {},
+  }
+  const truncated = treeText(MaterialRunsTable({ runs: rows, runsTotal: 50, ...handlers }))
+  assert.match(truncated, /采集记录（50 · 显示最近 2 条）/)
+  // 未传 runsTotal（旧宿主/直接渲染）与 total==rows.length 均不出现截断提示
+  const fallback = treeText(MaterialRunsTable({ runs: rows, ...handlers }))
+  assert.match(fallback, /采集记录（2）/)
+  assert.doesNotMatch(fallback, /显示最近/)
+  const full = treeText(MaterialRunsTable({ runs: rows, runsTotal: 2, ...handlers }))
+  assert.doesNotMatch(full, /显示最近/)
+})
+
+test('MaterialRunsTable：materialCandidateCount 判定查看看板，缺失回退 candidatesInserted（复审 P1-2 配套）', () => {
+  const rows = [
+    // 派生 failed 且命中候选为 0：隐藏「查看看板」（candidatesInserted 缺失也不误显示）
+    {
+      runId: 'vv-mat-c1', runStatus: 'failed', startedAt: '2026-10-28T10:00:00+08:00',
+      candidatesInserted: null, materialCandidateCount: 0, hotLevelSummary: {},
+    },
+    // materialCandidateCount>0：显示
+    {
+      runId: 'vv-mat-c2', runStatus: 'failed', startedAt: '2026-10-28T10:10:00+08:00',
+      candidatesInserted: null, materialCandidateCount: 3, hotLevelSummary: {},
+    },
+    // 旧服务端无 materialCandidateCount：回退 candidatesInserted=0 → 隐藏
+    {
+      runId: 'vv-mat-c3', runStatus: 'failed', startedAt: '2026-10-28T10:20:00+08:00',
+      candidatesInserted: 0, hotLevelSummary: {},
+    },
+    // 回退 candidatesInserted>0 → 显示
+    {
+      runId: 'vv-mat-c4', runStatus: 'failed', startedAt: '2026-10-28T10:30:00+08:00',
+      candidatesInserted: 7, hotLevelSummary: {},
+    },
+  ]
+  const tree = MaterialRunsTable({
+    runs: rows, activeRun: null, collecting: false, errorReason: null,
+    onStartCollect: () => {}, onViewBoard: () => {}, onOpenFailure: () => {}, onRefresh: () => {},
+  })
+  const rowsById = new Map()
+  for (const node of allNodes(tree)) {
+    if (node.type === 'tr' && node.props && typeof node.props.key === 'string') {
+      rowsById.set(node.props.key, treeText(node))
+    }
+  }
+  const c1 = rowsById.get('vv-mat-c1')
+  const c2 = rowsById.get('vv-mat-c2')
+  const c3 = rowsById.get('vv-mat-c3')
+  const c4 = rowsById.get('vv-mat-c4')
+  assert.ok(c1 && c2 && c3 && c4, '四个 run 行都应渲染')
+  assert.doesNotMatch(c1, /查看看板/)
+  assert.match(c2, /查看看板/)
+  assert.doesNotMatch(c3, /查看看板/, '无 materialCandidateCount 时回退 candidatesInserted=0 隐藏')
+  assert.match(c4, /查看看板/)
+})
+
+test('MaterialReasonDrawer：scoreReasonDetails 结构化对照卡（审查 P2-1 拍板③）', () => {
+  const drawer = MaterialReasonDrawer({
+    row: {
+      title: '测试视频', hotScore: 91, hotLevel: 'S', scoreRuleVersion: 'hot-v1-potential',
+      scoreReasons: ['点赞 ≥ 1万'],
+      scoreReasonDetails: [
+        { name: '点赞', observed: 12000, threshold: 10000, points: 10, hit: true },
+        { name: '评论', observed: 120, threshold: 500, points: 0, hit: false },
+        { name: '播放', observed: null, threshold: 500000, points: 0, hit: false },
+        { name: '互动率', observed: 0.05, threshold: 0.08, points: 0, hit: false },
+      ],
+    },
+    onClose: () => {},
+  })
+  const text = treeText(drawer)
+  assert.match(text, /评分明细（当前规则对照）/)
+  assert.match(text, /1\.2万/) // 点赞观测值万化
+  assert.match(text, /\+10分/) // 命中加分徽标
+  assert.match(text, /还差 380/) // 评论未命中：500-120
+  assert.match(text, /未采集/) // 播放观测值缺失
+  assert.match(text, /5\.00%/) // 互动率观测值 ×100 两位小数
+  assert.match(text, /还差 3\.0%/) // 互动率未命中：8%-5%
+  assert.match(text, /互动率=（赞\+评\+转）\/播放/)
+  assert.match(text, /存档评分以入库时规则版本为准/)
+  assert.match(text, /命中理由（1）/) // scoreReasons 文字列表保留兜底
+  // 旧服务端缺投影：不渲染明细区块
+  const plain = treeText(MaterialReasonDrawer({ row: { title: 'x', scoreReasons: [] }, onClose: () => {} }))
+  assert.doesNotMatch(plain, /评分明细（当前规则对照）/)
+})
+
 test('MaterialReasonDrawer：无规则版本的存量候选标注「历史候选」', () => {
   const text = treeText(MaterialReasonDrawer({
     row: { title: '旧规则候选', scoreRuleVersion: '', scoreReasons: ['播放增速 300%'] },
@@ -502,6 +609,13 @@ test('client.js 接线：Tab/i18n/全宽 body/轮询守卫/幂等键模板', () 
   // 来源筛选下沉服务端（审查 P1-1）：请求透传 sourceKind，无本地过滤段
   assert.match(clientSource, /\.\.\.\(query\.sourceKind \? \{ sourceKind: query\.sourceKind \} : \{\}\)/u)
   assert.doesNotMatch(clientSource, /row\.sourceKind === filter\.sourceKind/u)
+  // overlay 关闭守卫（审查 P2-4）：material 加载 effect 不在关闭态预取/续轮询
+  assert.match(clientSource, /if \(!visible \|\| tab !== 'material'\) return/u)
+  // 轮询终态同步刷新 seeds/facets（审查 P2-2）
+  assert.match(clientSource, /loadMaterialSeeds\(\{ silent: true \}\)\.catch\(\(\) => \{\}\)/u)
+  assert.match(clientSource, /loadMaterialFacets\(\)\.catch\(\(\) => \{\}\)/u)
+  // runs 全量 total 投影进 UI 状态（审查 P2-9）
+  assert.match(materialSource, /runsTotal: runs && runs\.total/u)
 })
 
 test('MaterialSeedModal：modal={mode,row} 展开透传到 SeedModal 顶层（截图验收回归）', () => {
@@ -522,21 +636,24 @@ test('MaterialSeedModal：modal={mode,row} 展开透传到 SeedModal 顶层（�
   assert.equal(MaterialSeedModal({ modal: null, busy: false }), null)
 })
 
-test('index.js 接线：9 个 material action 分发与抖音域白名单', () => {
+test('index.js 接线：8 个 material action 分发与抖音域白名单（dashboard 已删，审查 P2-5）', () => {
   for (const action of [
     'material.seeds.list', 'material.keyword.upsert', 'material.account.upsert',
     'material.collect.start', 'material.collect.status', 'material.videos.list',
-    'material.dashboard', 'material.runs.list', 'material.facets',
+    'material.runs.list', 'material.facets',
   ]) {
     assert.ok(indexSource.includes(`case '${action}'`), `missing case ${action}`)
   }
   for (const handler of [
     'handleMaterialSeedsList', 'handleMaterialKeywordUpsert', 'handleMaterialAccountUpsert',
     'handleMaterialCollectStart', 'handleMaterialCollectStatus', 'handleMaterialVideosList',
-    'handleMaterialDashboard', 'handleMaterialRunsList', 'handleMaterialFacets',
+    'handleMaterialRunsList', 'handleMaterialFacets',
   ]) {
     assert.match(indexSource, new RegExp(`async function ${handler}\\(`, 'u'))
   }
+  // dashboard action/handler 均已移除
+  assert.ok(!indexSource.includes("'material.dashboard'"), 'material.dashboard action should be removed')
+  assert.ok(!indexSource.includes('handleMaterialDashboard'), 'handleMaterialDashboard should be removed')
   // 主页链接：HTTPS + 抖音域白名单（防站外输入直达服务端）
   assert.match(indexSource, /host === 'douyin\.com' \|\| host\.endsWith\('\.douyin\.com'\)/u)
 })
