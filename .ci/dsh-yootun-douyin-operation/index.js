@@ -1204,8 +1204,10 @@ async function handleMaterialKeywordUpsert(deps, ctx, body) {
   const keywords = []
   for (const row of rows) {
     if (!row || typeof row !== 'object') return { status: 'error', reason: 'VALIDATION_ERROR' }
+    // 终审 P2-3：与 tools 契约同限（keyword≤128）——超长直接拒绝而非静默截断
+    // （截断会造成「提交词」与「入库词」不一致）。
     const keyword = cleanString(row.keyword, 512)
-    if (!keyword) return { status: 'error', reason: 'VALIDATION_ERROR' }
+    if (!keyword || keyword.length > 128) return { status: 'error', reason: 'VALIDATION_ERROR' }
     const item = { keyword }
     // category 是内部维护标记（§6.4：弹窗不展示）——编辑时服务端保留原值，
     // 新增不传（服务端写 other）；仅当调用方显式带回时透传。

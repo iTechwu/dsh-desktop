@@ -853,9 +853,9 @@ export function printReport() {
 export const REPORT_CSS_TEXT = `
 .ydo-report-list-toolbar{display:flex;align-items:center;gap:12px;padding:0 0 12px}
 .ydo-report-seg{display:inline-flex;border:1px solid var(--dsw-alias-border-l1,#e0e3e8);border-radius:6px;overflow:hidden}
-.ydo-report-seg-item{height:32px;padding:0 16px;border:0;background:#fff;color:var(--dsw-alias-label-secondary,#646a73);font:inherit;font-size:13px;cursor:pointer}
+.ydo-report-seg-item{height:32px;padding:0 16px;border:0;background:var(--dsw-alias-bg-layer-1,#fff);color:var(--dsw-alias-label-primary,#1f2329);font:inherit;font-size:13px;cursor:pointer}
 .ydo-report-seg-item.is-active{background:#3370ff;color:#fff}
-.ydo-report-action{height:32px;padding:0 14px;border:1px solid var(--dsw-alias-border-l1,#e0e3e8);border-radius:6px;background:#fff;color:var(--dsw-alias-label-primary,#1f2329);font:inherit;font-size:13px;cursor:pointer}
+.ydo-report-action{height:32px;padding:0 14px;border:1px solid var(--dsw-alias-border-l1,#e0e3e8);border-radius:6px;background:var(--dsw-alias-bg-layer-1,#fff);color:var(--dsw-alias-label-primary,#1f2329);font:inherit;font-size:13px;cursor:pointer}
 .ydo-report-action:disabled{opacity:.5;cursor:not-allowed}
 .ydo-report-more{margin:12px auto 0;display:block}
 .ydo-report-pill{display:inline-block;padding:2px 10px;border-radius:999px;font-size:12px;line-height:18px}
@@ -878,7 +878,7 @@ export const REPORT_CSS_TEXT = `
 .ydo-report-toolbar-actions{margin-left:auto;display:flex;align-items:center;gap:8px}
 .ydo-report-busy{color:var(--dsw-alias-label-secondary,#646a73);font-size:12px}
 .ydo-report-version{display:inline-flex;align-items:center;gap:6px;font-size:13px;color:var(--dsw-alias-label-secondary,#646a73)}
-.ydo-report-version select{height:30px;border:1px solid #dee0e3;border-radius:6px;background:#fff;color:var(--dsw-alias-label-primary,#1f2329);font:inherit}
+.ydo-report-version select{height:30px;border:1px solid var(--dsw-alias-border-l1,#e0e3e8);border-radius:6px;background:var(--dsw-alias-bg-layer-1,#fff);color:var(--dsw-alias-label-primary,#1f2329);font:inherit}
 .ydo-report-body{display:flex;flex-direction:column;gap:20px}
 .ydo-report-header{border:1px solid var(--dsw-alias-border-l1,#e0e3e8);border-radius:8px;padding:16px;background:var(--dsw-alias-bg-layer-1,#fff)}
 .ydo-report-title{margin:0 0 6px;font-size:18px}
@@ -954,25 +954,25 @@ export const REPORT_CSS_TEXT = `
    事实淡绿 #f0f7f1 / 推断淡蓝 #eaf1ff / 建议淡橙 #fff7ed;标题 700 与正文分级突出内容。 */
 .ydo-report-insight-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
 .ydo-report-insight-col{display:grid;gap:10px;align-content:start;min-width:0;padding:12px;border-radius:8px}
-.ydo-report-insight-col-fact{background:#f0f7f1}
-.ydo-report-insight-col-infer{background:#eaf1ff}
-.ydo-report-insight-col-advice{background:#fff7ed}
-.ydo-report-insight-col h4{margin:0;font-size:13px;color:#646a73}
+.ydo-report-insight-col-fact{background:color-mix(in srgb,var(--dsw-alias-state-success-primary,#1a7f37) 10%,transparent)}
+.ydo-report-insight-col-infer{background:color-mix(in srgb,var(--dsw-alias-brand-primary,#3370ff) 10%,transparent)}
+.ydo-report-insight-col-advice{background:color-mix(in srgb,var(--dsw-alias-state-warn-primary,#de7802) 10%,transparent)}
+.ydo-report-insight-col h4{margin:0;font-size:13px;color:var(--dsw-alias-label-secondary,#646a73)}
 .ydo-report-insight-item{padding:12px;border-radius:8px;font-size:13px;line-height:1.7}
 .ydo-report-insight-col-fact .ydo-report-insight-item{background:#f0f7f1}
 .ydo-report-insight-col-infer .ydo-report-insight-item{background:#eaf1ff}
 .ydo-report-insight-col-advice .ydo-report-insight-item{background:#fff7ed}
 .ydo-report-insight-item h5{margin:0 0 4px;font-size:13px;font-weight:700;color:#1f2329;display:flex;align-items:center;gap:6px}
 .ydo-report-insight-item p{margin:0;font-size:13px;line-height:1.7;color:#1f2329}
-.ydo-report-insight-evidence{display:block;color:#646a73;font-size:11px;margin:6px 0 0;line-height:1.6}
+.ydo-report-insight-evidence{display:block;color:var(--dsw-alias-label-secondary,#646a73);font-size:11px;margin:6px 0 0;line-height:1.6}
 /* 紧凑速读形态(2026-10-27 方案 A+B):行内标题+徽标,detail/evidence 收进 <details> 折叠区 */
 .ydo-report-insight-list{margin:0;padding:0;list-style:none;display:grid;gap:8px}
 .ydo-report-insight-line{display:flex;align-items:flex-start;gap:6px;font-size:13px;line-height:1.6}
 .ydo-report-insight-title{font-weight:650;color:var(--dsw-alias-label-primary,#1f2329)}
 .ydo-report-insight-line .ydo-report-badge{flex:none;margin-left:auto}
-.ydo-report-ai-more{margin-top:10px;border-top:1px dashed rgba(31,35,41,.18);padding-top:8px;font-size:12px}
+.ydo-report-ai-more{margin-top:10px;border-top:1px dashed color-mix(in srgb,var(--dsw-alias-label-secondary,#646a73) 40%,transparent);padding-top:8px;font-size:12px}
 .ydo-report-ai-more summary{cursor:pointer;color:var(--dsw-alias-label-secondary,#646a73);user-select:none}
-.ydo-report-ai-more-item{margin:10px 0 0;padding:8px 10px;border-radius:6px;background:rgba(255,255,255,.65)}
+.ydo-report-ai-more-item{margin:10px 0 0;padding:8px 10px;border-radius:6px;background:var(--dsw-alias-bg-layer-2,#f2f3f5)}
 .ydo-report-ai-more-item b{display:block;margin-bottom:2px}
 .ydo-report-ai-more-item p{margin:2px 0 0;line-height:1.6;color:var(--dsw-alias-label-primary,#1f2329)}
 .ydo-report-badge{border-radius:999px;padding:1px 6px;font-size:10px;font-weight:400}

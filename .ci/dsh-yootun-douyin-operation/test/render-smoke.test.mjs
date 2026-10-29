@@ -101,6 +101,22 @@ test('built client factory renders the overlay with real React without throwing'
       },
       batchCollect: null, accounts, t: key => key,
     }))
+
+    // MaterialPage 看板区 DOM 顺序断言（2026-10-29 布局拍板：筛选置顶、KPI 在下，
+    // 终审 P3-①）。真实 renderToString 后按标记文本首次出现位置比较。
+    const pageHtml = renderToString(React.createElement(plugin.MaterialPage, {
+      board: { rows: [], total: 0, offset: 0, limit: 20, loading: false, errorReason: null, loaded: true },
+      kpi: null, facets: null, filters: {}, seedAccounts: [],
+      seeds: null, runs: null, activeRun: null, collecting: false,
+      reason: null, seedModal: null, collectOpen: false, collectError: null, failure: null,
+      savingSeed: false, seedError: null, runFilter: 'batch-x', actions: {},
+    }))
+    const filterIdx = pageHtml.indexOf('搜索标题 / 作者 / 关键词')
+    const runFilterIdx = pageHtml.indexOf('按批次过滤')
+    const kpiIdx = pageHtml.indexOf('候选素材')
+    assert.ok(filterIdx > -1 && runFilterIdx > -1 && kpiIdx > -1, '看板区三类区块均应渲染')
+    assert.ok(filterIdx < runFilterIdx, '批次过滤横幅应紧随筛选条')
+    assert.ok(runFilterIdx < kpiIdx, '筛选区必须位于 KPI 区上方（拍板布局，文档 §6.4 结构图同口径）')
   } finally {
     delete globalThis.__renderSmokeModule
     delete globalThis.window

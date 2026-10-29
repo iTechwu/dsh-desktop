@@ -1631,6 +1631,20 @@ test('material.keyword.upsert：幂等键/confirm/条目校验，成功形状为
     confirm: true, idempotencyKey: 'douyin:vv_keyword_upsert:u2',
   })
   assert.deepEqual(calls[2].keywords[0], { keyword: '增程车', priority: 'P2', status: 'active' })
+
+  // 终审 P2-3：关键词超长拒绝（与 tools 契约同限 128），129 字不再静默截断
+  const tooLongKeyword = await call(dispatch, {
+    action: 'material.keyword.upsert', keywords: [{ keyword: '增'.repeat(129) }],
+    confirm: true, idempotencyKey: 'douyin:vv_keyword_upsert:u3',
+  })
+  assert.equal(tooLongKeyword.payload.reason, 'VALIDATION_ERROR')
+  assert.equal(calls.length, 3, '拒绝路径不发起 tools 调用')
+  // 边界 128 字合法受理
+  await call(dispatch, {
+    action: 'material.keyword.upsert', keywords: [{ keyword: '增'.repeat(128) }],
+    confirm: true, idempotencyKey: 'douyin:vv_keyword_upsert:u4',
+  })
+  assert.equal(calls[3].keywords[0].keyword, '增'.repeat(128))
 })
 
 test('material.account.upsert：inputForm 白名单与抖音域主页校验', async () => {

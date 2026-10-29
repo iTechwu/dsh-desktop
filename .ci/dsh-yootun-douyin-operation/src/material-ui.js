@@ -109,6 +109,8 @@ export const MATERIAL_CSS_TEXT = `
 .ydo-mat-page{display:flex;flex-direction:column;gap:14px;min-width:0}
 .ydo-mat-seg{display:inline-flex;gap:2px;padding:2px;border:1px solid var(--dsw-alias-border-l1,#dee0e3);border-radius:8px;background:var(--dsw-alias-bg-layer-1,#fff);width:fit-content}
 .ydo-mat-seg button{height:30px;padding:0 14px;border:0;border-radius:6px;background:transparent;color:var(--dsw-alias-label-secondary,#646a73);font:inherit;font-size:12px;cursor:pointer}
+/* 交互品牌色（分段选中/主按钮/链接）保持宿主品牌变量灰黑口径（2026-10-29
+   用户定稿：不跟报表的蓝色），深浅主题由宿主变量体系适配。 */
 .ydo-mat-seg button[aria-current]{background:var(--dsw-alias-brand-primary,#0f1115);color:#fff;font-weight:650}
 .ydo-mat-head{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
 .ydo-mat-title{margin:0;font-size:15px;font-weight:650}
@@ -156,19 +158,21 @@ export const MATERIAL_CSS_TEXT = `
 .ydo-mat-source{display:flex;flex-direction:column;gap:2px;font-size:12px}
 .ydo-mat-actions{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
 .ydo-mat-actions-col{display:flex;flex-direction:column;gap:4px;align-items:flex-start}
-/* 状态徽标 */
+/* 状态徽标：实色底白字（报表 pill-ok/warn/err 同款口径），深浅主题通用——
+   旧淡底深字固定色在深色背景下是刺眼亮块。 */
 .ydo-mat-status{display:inline-block;padding:2px 10px;border-radius:999px;font-size:11px;white-space:nowrap}
-.ydo-mat-status-success{background:#e5f3ea;color:#157347}
-.ydo-mat-status-partial{background:#fdf1e2;color:#b45805}
-.ydo-mat-status-error{background:#fce8e6;color:#c5221f}
+.ydo-mat-status-success{background:#2ea121;color:#fff}
+.ydo-mat-status-partial{background:#de7802;color:#fff}
+.ydo-mat-status-error{background:#d83931;color:#fff}
 .ydo-mat-status-muted{background:var(--dsw-alias-bg-layer-2,#f5f6f7);color:var(--dsw-alias-label-secondary,#646a73)}
-/* 进行中横幅 / 分页 / 空态 */
-.ydo-mat-active{display:flex;align-items:center;gap:10px;padding:10px 14px;border:1px dashed #de7802;border-radius:10px;background:#fdf8ef;font-size:13px}
+/* 进行中横幅 / 分页 / 空态：底色用 color-mix 透明混合（报表 anomaly 同款），
+   深色主题下呈暗橙块而非亮色块。 */
+.ydo-mat-active{display:flex;align-items:center;gap:10px;padding:10px 14px;border:1px dashed #de7802;border-radius:10px;background:color-mix(in srgb,#de7802 12%,transparent);font-size:13px}
 .ydo-mat-spinner{width:14px;height:14px;border:2px solid #de7802;border-top-color:transparent;border-radius:50%;animation:ydo-mat-spin 1s linear infinite;flex:none}
 @keyframes ydo-mat-spin{to{transform:rotate(360deg)}}
 .ydo-mat-meta{display:flex;align-items:center;justify-content:space-between;gap:10px;color:var(--dsw-alias-label-secondary,#646a73);font-size:12px}
 .ydo-mat-empty{padding:32px;text-align:center;color:var(--dsw-alias-label-secondary,#646a73);font-size:13px}
-.ydo-mat-error{margin:0;padding:10px 14px;border:1px solid #f3c8c5;border-radius:10px;background:#fce8e6;color:#c5221f;font-size:13px}
+.ydo-mat-error{margin:0;padding:10px 14px;border:1px solid color-mix(in srgb,#d83931 35%,transparent);border-radius:10px;background:color-mix(in srgb,#d83931 10%,transparent);color:#d83931;font-size:13px}
 /* 抽屉（评分理由） */
 .ydo-mat-drawer-overlay{position:fixed;inset:0;z-index:560;background:rgba(15,17,21,.4)}
 .ydo-mat-drawer{position:fixed;top:0;right:0;bottom:0;z-index:561;width:min(420px,92vw);display:flex;flex-direction:column;gap:12px;padding:20px;background:var(--dsw-alias-bg-layer-1,#fff);box-shadow:-8px 0 24px rgba(15,17,21,.16);overflow:auto}
@@ -302,13 +306,20 @@ function BoardRow({ row, seedAccounts, onOpenReason }) {
   }
   return h('tr', null,
     h('td', null, row.coverUrl
-      // 审查 P3-1：封面加载失败降级为占位块（与 tools 验证页 onerror 形态一致），
-      // 真机网络受限时不再渲染破图。
+      // 审查 P3-1 + 终审 P2-1：封面加载失败降级为占位块。onError 里只能用
+      // 真实 DOM（ownerDocument.createElement）——h() 产物是 React 元素对象，
+      // replaceWith(React element) 会抛 TypeError。组件保持无 hooks 纯函数。
       ? h('img', {
         className: 'ydo-mat-cover', src: row.coverUrl, alt: '封面', loading: 'lazy', referrerPolicy: 'no-referrer',
         onError: event => {
-          const td = event.currentTarget.parentElement
-          if (td) event.currentTarget.replaceWith(h('div', { className: 'ydo-mat-cover-placeholder' }, DASH))
+          const img = event.currentTarget
+          const doc = img.ownerDocument
+          const parent = img.parentElement
+          if (!doc || !parent) return
+          const placeholder = doc.createElement('div')
+          placeholder.className = 'ydo-mat-cover-placeholder'
+          placeholder.textContent = DASH
+          img.replaceWith(placeholder)
         },
       })
       : h('div', { className: 'ydo-mat-cover-placeholder' }, DASH)),
@@ -427,7 +438,7 @@ export function MaterialReasonDrawer({ row, onClose }) {
                   h('td', null, scorePill))
               })))),
           h('p', { key: 'details-hint', className: 'ydo-mat-hint' },
-            '互动率=（赞+评+转）/播放；明细按当前规则实时对照，存档评分以入库时规则版本为准。'),
+            '互动率=（赞+评+转+藏）/播放；明细按当前规则实时对照，存档评分以入库时规则版本为准。'),
         ]
         : null,
       h('h3', null, `命中理由（${reasons.length}）`),
@@ -543,9 +554,9 @@ function SeedModal({ mode, row, busy, errorReason, onConfirm, onClose }) {
       h('div', { className: 'ydo-mat-form' },
         isKeyword
           ? h('label', { className: 'ydo-mat-field' },
-            h('span', null, editing ? '关键词（编辑时锁定；改文本等于新增另一条）' : '关键词（必填）'),
+            h('span', null, editing ? '关键词（编辑时锁定；改文本等于新增另一条）' : '关键词（必填，最长 128 字）'),
             h('input', {
-              type: 'text', value: keyword, placeholder: '如 增程车对比', disabled: busy || editing,
+              type: 'text', value: keyword, placeholder: '如 增程车对比', disabled: busy || editing, maxLength: 128,
               onChange: event => setKeyword(event.target.value),
             }))
           : [
@@ -782,16 +793,18 @@ export function MaterialPage({
         h('button', { type: 'button', 'aria-current': section === 'runs' || undefined, onClick: () => changeSection('runs') }, '采集记录'))),
     section === 'board'
       ? [
-        h(MaterialKpiCards, { key: 'kpi', kpi }),
+        // 布局定稿（2026-10-29 用户拍板）：筛选区置顶（二级页签下、KPI 上），
+        // 批次过滤横幅是筛选态的延伸提示，紧随筛选条、KPI 之前。
+        h(MaterialFilterBar, {
+          key: 'filters', filters, facets, loading: board && board.loading,
+          onChange: actions.onFilterChange, onRefresh: actions.onRefreshBoard,
+        }),
         runFilter
           ? h('div', { key: 'run-filter', className: 'ydo-mat-active', role: 'status' },
             h('span', null, `按批次过滤：${runFilter}（看板只显示该批次命中的候选）`),
             h('button', { type: 'button', className: 'ydo-mat-link', onClick: actions.onClearRunFilter }, '清除过滤'))
           : null,
-        h(MaterialFilterBar, {
-          key: 'filters', filters, facets, loading: board && board.loading,
-          onChange: actions.onFilterChange, onRefresh: actions.onRefreshBoard,
-        }),
+        h(MaterialKpiCards, { key: 'kpi', kpi }),
         h(MaterialBoardTable, {
           key: 'board', board, seedAccounts, onOpenReason: actions.onOpenReason, onPage: actions.onBoardPage,
         }),

@@ -3800,9 +3800,9 @@ window.__ModuleLoader__.load({
     const REPORT_CSS_TEXT = `
     .ydo-report-list-toolbar{display:flex;align-items:center;gap:12px;padding:0 0 12px}
     .ydo-report-seg{display:inline-flex;border:1px solid var(--dsw-alias-border-l1,#e0e3e8);border-radius:6px;overflow:hidden}
-    .ydo-report-seg-item{height:32px;padding:0 16px;border:0;background:#fff;color:var(--dsw-alias-label-secondary,#646a73);font:inherit;font-size:13px;cursor:pointer}
+    .ydo-report-seg-item{height:32px;padding:0 16px;border:0;background:var(--dsw-alias-bg-layer-1,#fff);color:var(--dsw-alias-label-primary,#1f2329);font:inherit;font-size:13px;cursor:pointer}
     .ydo-report-seg-item.is-active{background:#3370ff;color:#fff}
-    .ydo-report-action{height:32px;padding:0 14px;border:1px solid var(--dsw-alias-border-l1,#e0e3e8);border-radius:6px;background:#fff;color:var(--dsw-alias-label-primary,#1f2329);font:inherit;font-size:13px;cursor:pointer}
+    .ydo-report-action{height:32px;padding:0 14px;border:1px solid var(--dsw-alias-border-l1,#e0e3e8);border-radius:6px;background:var(--dsw-alias-bg-layer-1,#fff);color:var(--dsw-alias-label-primary,#1f2329);font:inherit;font-size:13px;cursor:pointer}
     .ydo-report-action:disabled{opacity:.5;cursor:not-allowed}
     .ydo-report-more{margin:12px auto 0;display:block}
     .ydo-report-pill{display:inline-block;padding:2px 10px;border-radius:999px;font-size:12px;line-height:18px}
@@ -3825,7 +3825,7 @@ window.__ModuleLoader__.load({
     .ydo-report-toolbar-actions{margin-left:auto;display:flex;align-items:center;gap:8px}
     .ydo-report-busy{color:var(--dsw-alias-label-secondary,#646a73);font-size:12px}
     .ydo-report-version{display:inline-flex;align-items:center;gap:6px;font-size:13px;color:var(--dsw-alias-label-secondary,#646a73)}
-    .ydo-report-version select{height:30px;border:1px solid #dee0e3;border-radius:6px;background:#fff;color:var(--dsw-alias-label-primary,#1f2329);font:inherit}
+    .ydo-report-version select{height:30px;border:1px solid var(--dsw-alias-border-l1,#e0e3e8);border-radius:6px;background:var(--dsw-alias-bg-layer-1,#fff);color:var(--dsw-alias-label-primary,#1f2329);font:inherit}
     .ydo-report-body{display:flex;flex-direction:column;gap:20px}
     .ydo-report-header{border:1px solid var(--dsw-alias-border-l1,#e0e3e8);border-radius:8px;padding:16px;background:var(--dsw-alias-bg-layer-1,#fff)}
     .ydo-report-title{margin:0 0 6px;font-size:18px}
@@ -3901,25 +3901,25 @@ window.__ModuleLoader__.load({
        事实淡绿 #f0f7f1 / 推断淡蓝 #eaf1ff / 建议淡橙 #fff7ed;标题 700 与正文分级突出内容。 */
     .ydo-report-insight-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
     .ydo-report-insight-col{display:grid;gap:10px;align-content:start;min-width:0;padding:12px;border-radius:8px}
-    .ydo-report-insight-col-fact{background:#f0f7f1}
-    .ydo-report-insight-col-infer{background:#eaf1ff}
-    .ydo-report-insight-col-advice{background:#fff7ed}
-    .ydo-report-insight-col h4{margin:0;font-size:13px;color:#646a73}
+    .ydo-report-insight-col-fact{background:color-mix(in srgb,var(--dsw-alias-state-success-primary,#1a7f37) 10%,transparent)}
+    .ydo-report-insight-col-infer{background:color-mix(in srgb,var(--dsw-alias-brand-primary,#3370ff) 10%,transparent)}
+    .ydo-report-insight-col-advice{background:color-mix(in srgb,var(--dsw-alias-state-warn-primary,#de7802) 10%,transparent)}
+    .ydo-report-insight-col h4{margin:0;font-size:13px;color:var(--dsw-alias-label-secondary,#646a73)}
     .ydo-report-insight-item{padding:12px;border-radius:8px;font-size:13px;line-height:1.7}
     .ydo-report-insight-col-fact .ydo-report-insight-item{background:#f0f7f1}
     .ydo-report-insight-col-infer .ydo-report-insight-item{background:#eaf1ff}
     .ydo-report-insight-col-advice .ydo-report-insight-item{background:#fff7ed}
     .ydo-report-insight-item h5{margin:0 0 4px;font-size:13px;font-weight:700;color:#1f2329;display:flex;align-items:center;gap:6px}
     .ydo-report-insight-item p{margin:0;font-size:13px;line-height:1.7;color:#1f2329}
-    .ydo-report-insight-evidence{display:block;color:#646a73;font-size:11px;margin:6px 0 0;line-height:1.6}
+    .ydo-report-insight-evidence{display:block;color:var(--dsw-alias-label-secondary,#646a73);font-size:11px;margin:6px 0 0;line-height:1.6}
     /* 紧凑速读形态(2026-10-27 方案 A+B):行内标题+徽标,detail/evidence 收进 <details> 折叠区 */
     .ydo-report-insight-list{margin:0;padding:0;list-style:none;display:grid;gap:8px}
     .ydo-report-insight-line{display:flex;align-items:flex-start;gap:6px;font-size:13px;line-height:1.6}
     .ydo-report-insight-title{font-weight:650;color:var(--dsw-alias-label-primary,#1f2329)}
     .ydo-report-insight-line .ydo-report-badge{flex:none;margin-left:auto}
-    .ydo-report-ai-more{margin-top:10px;border-top:1px dashed rgba(31,35,41,.18);padding-top:8px;font-size:12px}
+    .ydo-report-ai-more{margin-top:10px;border-top:1px dashed color-mix(in srgb,var(--dsw-alias-label-secondary,#646a73) 40%,transparent);padding-top:8px;font-size:12px}
     .ydo-report-ai-more summary{cursor:pointer;color:var(--dsw-alias-label-secondary,#646a73);user-select:none}
-    .ydo-report-ai-more-item{margin:10px 0 0;padding:8px 10px;border-radius:6px;background:rgba(255,255,255,.65)}
+    .ydo-report-ai-more-item{margin:10px 0 0;padding:8px 10px;border-radius:6px;background:var(--dsw-alias-bg-layer-2,#f2f3f5)}
     .ydo-report-ai-more-item b{display:block;margin-bottom:2px}
     .ydo-report-ai-more-item p{margin:2px 0 0;line-height:1.6;color:var(--dsw-alias-label-primary,#1f2329)}
     .ydo-report-badge{border-radius:999px;padding:1px 6px;font-size:10px;font-weight:400}
@@ -4041,6 +4041,8 @@ window.__ModuleLoader__.load({
     .ydo-mat-page{display:flex;flex-direction:column;gap:14px;min-width:0}
     .ydo-mat-seg{display:inline-flex;gap:2px;padding:2px;border:1px solid var(--dsw-alias-border-l1,#dee0e3);border-radius:8px;background:var(--dsw-alias-bg-layer-1,#fff);width:fit-content}
     .ydo-mat-seg button{height:30px;padding:0 14px;border:0;border-radius:6px;background:transparent;color:var(--dsw-alias-label-secondary,#646a73);font:inherit;font-size:12px;cursor:pointer}
+    /* 交互品牌色（分段选中/主按钮/链接）保持宿主品牌变量灰黑口径（2026-10-29
+       用户定稿：不跟报表的蓝色），深浅主题由宿主变量体系适配。 */
     .ydo-mat-seg button[aria-current]{background:var(--dsw-alias-brand-primary,#0f1115);color:#fff;font-weight:650}
     .ydo-mat-head{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
     .ydo-mat-title{margin:0;font-size:15px;font-weight:650}
@@ -4088,19 +4090,21 @@ window.__ModuleLoader__.load({
     .ydo-mat-source{display:flex;flex-direction:column;gap:2px;font-size:12px}
     .ydo-mat-actions{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
     .ydo-mat-actions-col{display:flex;flex-direction:column;gap:4px;align-items:flex-start}
-    /* 状态徽标 */
+    /* 状态徽标：实色底白字（报表 pill-ok/warn/err 同款口径），深浅主题通用——
+       旧淡底深字固定色在深色背景下是刺眼亮块。 */
     .ydo-mat-status{display:inline-block;padding:2px 10px;border-radius:999px;font-size:11px;white-space:nowrap}
-    .ydo-mat-status-success{background:#e5f3ea;color:#157347}
-    .ydo-mat-status-partial{background:#fdf1e2;color:#b45805}
-    .ydo-mat-status-error{background:#fce8e6;color:#c5221f}
+    .ydo-mat-status-success{background:#2ea121;color:#fff}
+    .ydo-mat-status-partial{background:#de7802;color:#fff}
+    .ydo-mat-status-error{background:#d83931;color:#fff}
     .ydo-mat-status-muted{background:var(--dsw-alias-bg-layer-2,#f5f6f7);color:var(--dsw-alias-label-secondary,#646a73)}
-    /* 进行中横幅 / 分页 / 空态 */
-    .ydo-mat-active{display:flex;align-items:center;gap:10px;padding:10px 14px;border:1px dashed #de7802;border-radius:10px;background:#fdf8ef;font-size:13px}
+    /* 进行中横幅 / 分页 / 空态：底色用 color-mix 透明混合（报表 anomaly 同款），
+       深色主题下呈暗橙块而非亮色块。 */
+    .ydo-mat-active{display:flex;align-items:center;gap:10px;padding:10px 14px;border:1px dashed #de7802;border-radius:10px;background:color-mix(in srgb,#de7802 12%,transparent);font-size:13px}
     .ydo-mat-spinner{width:14px;height:14px;border:2px solid #de7802;border-top-color:transparent;border-radius:50%;animation:ydo-mat-spin 1s linear infinite;flex:none}
     @keyframes ydo-mat-spin{to{transform:rotate(360deg)}}
     .ydo-mat-meta{display:flex;align-items:center;justify-content:space-between;gap:10px;color:var(--dsw-alias-label-secondary,#646a73);font-size:12px}
     .ydo-mat-empty{padding:32px;text-align:center;color:var(--dsw-alias-label-secondary,#646a73);font-size:13px}
-    .ydo-mat-error{margin:0;padding:10px 14px;border:1px solid #f3c8c5;border-radius:10px;background:#fce8e6;color:#c5221f;font-size:13px}
+    .ydo-mat-error{margin:0;padding:10px 14px;border:1px solid color-mix(in srgb,#d83931 35%,transparent);border-radius:10px;background:color-mix(in srgb,#d83931 10%,transparent);color:#d83931;font-size:13px}
     /* 抽屉（评分理由） */
     .ydo-mat-drawer-overlay{position:fixed;inset:0;z-index:560;background:rgba(15,17,21,.4)}
     .ydo-mat-drawer{position:fixed;top:0;right:0;bottom:0;z-index:561;width:min(420px,92vw);display:flex;flex-direction:column;gap:12px;padding:20px;background:var(--dsw-alias-bg-layer-1,#fff);box-shadow:-8px 0 24px rgba(15,17,21,.16);overflow:auto}
@@ -4234,13 +4238,20 @@ window.__ModuleLoader__.load({
       }
       return h('tr', null,
         h('td', null, row.coverUrl
-          // 审查 P3-1：封面加载失败降级为占位块（与 tools 验证页 onerror 形态一致），
-          // 真机网络受限时不再渲染破图。
+          // 审查 P3-1 + 终审 P2-1：封面加载失败降级为占位块。onError 里只能用
+          // 真实 DOM（ownerDocument.createElement）——h() 产物是 React 元素对象，
+          // replaceWith(React element) 会抛 TypeError。组件保持无 hooks 纯函数。
           ? h('img', {
             className: 'ydo-mat-cover', src: row.coverUrl, alt: '封面', loading: 'lazy', referrerPolicy: 'no-referrer',
             onError: event => {
-              const td = event.currentTarget.parentElement
-              if (td) event.currentTarget.replaceWith(h('div', { className: 'ydo-mat-cover-placeholder' }, DASH))
+              const img = event.currentTarget
+              const doc = img.ownerDocument
+              const parent = img.parentElement
+              if (!doc || !parent) return
+              const placeholder = doc.createElement('div')
+              placeholder.className = 'ydo-mat-cover-placeholder'
+              placeholder.textContent = DASH
+              img.replaceWith(placeholder)
             },
           })
           : h('div', { className: 'ydo-mat-cover-placeholder' }, DASH)),
@@ -4359,7 +4370,7 @@ window.__ModuleLoader__.load({
                       h('td', null, scorePill))
                   })))),
               h('p', { key: 'details-hint', className: 'ydo-mat-hint' },
-                '互动率=（赞+评+转）/播放；明细按当前规则实时对照，存档评分以入库时规则版本为准。'),
+                '互动率=（赞+评+转+藏）/播放；明细按当前规则实时对照，存档评分以入库时规则版本为准。'),
             ]
             : null,
           h('h3', null, `命中理由（${reasons.length}）`),
@@ -4475,9 +4486,9 @@ window.__ModuleLoader__.load({
           h('div', { className: 'ydo-mat-form' },
             isKeyword
               ? h('label', { className: 'ydo-mat-field' },
-                h('span', null, editing ? '关键词（编辑时锁定；改文本等于新增另一条）' : '关键词（必填）'),
+                h('span', null, editing ? '关键词（编辑时锁定；改文本等于新增另一条）' : '关键词（必填，最长 128 字）'),
                 h('input', {
-                  type: 'text', value: keyword, placeholder: '如 增程车对比', disabled: busy || editing,
+                  type: 'text', value: keyword, placeholder: '如 增程车对比', disabled: busy || editing, maxLength: 128,
                   onChange: event => setKeyword(event.target.value),
                 }))
               : [
@@ -4714,16 +4725,18 @@ window.__ModuleLoader__.load({
             h('button', { type: 'button', 'aria-current': section === 'runs' || undefined, onClick: () => changeSection('runs') }, '采集记录'))),
         section === 'board'
           ? [
-            h(MaterialKpiCards, { key: 'kpi', kpi }),
+            // 布局定稿（2026-10-29 用户拍板）：筛选区置顶（二级页签下、KPI 上），
+            // 批次过滤横幅是筛选态的延伸提示，紧随筛选条、KPI 之前。
+            h(MaterialFilterBar, {
+              key: 'filters', filters, facets, loading: board && board.loading,
+              onChange: actions.onFilterChange, onRefresh: actions.onRefreshBoard,
+            }),
             runFilter
               ? h('div', { key: 'run-filter', className: 'ydo-mat-active', role: 'status' },
                 h('span', null, `按批次过滤：${runFilter}（看板只显示该批次命中的候选）`),
                 h('button', { type: 'button', className: 'ydo-mat-link', onClick: actions.onClearRunFilter }, '清除过滤'))
               : null,
-            h(MaterialFilterBar, {
-              key: 'filters', filters, facets, loading: board && board.loading,
-              onChange: actions.onFilterChange, onRefresh: actions.onRefreshBoard,
-            }),
+            h(MaterialKpiCards, { key: 'kpi', kpi }),
             h(MaterialBoardTable, {
               key: 'board', board, seedAccounts, onOpenReason: actions.onOpenReason, onPage: actions.onBoardPage,
             }),
@@ -5866,6 +5879,12 @@ window.__ModuleLoader__.load({
 
     function Overlay({ t }) {
       const visible = useSyncExternalStore(subscribeOpen, snapshotOpen, snapshotOpen)
+      // 终审 P2-4：异步响应竞态防护——collect 受理等在途请求的响应晚到时 overlay
+      // 可能已关闭，凭 visible 快照丢弃响应（不重启轮询、不设横幅）；重开面板由
+      // material 加载 effect 重新预取并恢复轮询。渲染期同步写 ref 与既有 ref 用法
+      // 一致（事件回调读取时即为最新值）。
+      const materialVisibleRef = useRef(visible)
+      materialVisibleRef.current = visible
       const shellRef = useRef(null)
       const [browser, setBrowser] = useState(null)
       const [accounts, setAccounts] = useState([])
@@ -6964,7 +6983,10 @@ window.__ModuleLoader__.load({
       }, [loadMaterialBoard, loadMaterialBoardTotal, loadMaterialFacets, loadMaterialRuns, loadMaterialSeeds, pollMaterialOnce, stopMaterialPolling])
 
       // 从批次行恢复轮询（Tab 进入 / 手动刷新共用）：最新行在途即恢复。
+      // overlay 已关闭时丢弃恢复（终审 P2-4 竞态防护）：在途 run 的晚到响应
+      // （如 ACTIVE_RUN_EXISTS 冲突刷新）不得重启轮询；重开面板自动恢复。
       const resumeMaterialPollingFromRows = useCallback(rows => {
+        if (!materialVisibleRef.current) return
         const latest = rows && rows[0]
         if (latest && (latest.runStatus === 'queued' || latest.runStatus === 'running')) {
           setMaterialActiveRun({ runId: latest.runId, status: latest.runStatus, startedAt: latest.startedAt })
@@ -7122,6 +7144,10 @@ window.__ModuleLoader__.load({
             ...(params.accountLimit ? { accountLimit: params.accountLimit } : {}),
             candidateMinLevel: params.candidateMinLevel,
           })
+          // 终审 P2-4 竞态防护：请求在途时 overlay 已关闭则丢弃晚到响应——
+          // 不报错、不绑定 activeRun、不重启轮询（受理已落库，重开面板经
+          // resume 机制恢复）；finally 仍复位 collecting。
+          if (!materialVisibleRef.current) return
           if (result.status !== 'ready') {
             setMaterialCollectError(result.reason || 'douyin_operation_request_failed')
             // ACTIVE_RUN_EXISTS（§6.4）：冲突时绑定现有 run 继续轮询——tools 冲突

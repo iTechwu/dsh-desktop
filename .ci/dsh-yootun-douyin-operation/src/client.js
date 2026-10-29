@@ -1116,6 +1116,12 @@ function BatchPanel({ batch, batchCollect, accounts, t }) {
 
 function Overlay({ t }) {
   const visible = useSyncExternalStore(subscribeOpen, snapshotOpen, snapshotOpen)
+  // 终审 P2-4：异步响应竞态防护——collect 受理等在途请求的响应晚到时 overlay
+  // 可能已关闭，凭 visible 快照丢弃响应（不重启轮询、不设横幅）；重开面板由
+  // material 加载 effect 重新预取并恢复轮询。渲染期同步写 ref 与既有 ref 用法
+  // 一致（事件回调读取时即为最新值）。
+  const materialVisibleRef = useRef(visible)
+  materialVisibleRef.current = visible
   const shellRef = useRef(null)
   const [browser, setBrowser] = useState(null)
   const [accounts, setAccounts] = useState([])
@@ -2214,7 +2220,10 @@ function Overlay({ t }) {
   }, [loadMaterialBoard, loadMaterialBoardTotal, loadMaterialFacets, loadMaterialRuns, loadMaterialSeeds, pollMaterialOnce, stopMaterialPolling])
 
   // 从批次行恢复轮询（Tab 进入 / 手动刷新共用）：最新行在途即恢复。
+  // overlay 已关闭时丢弃恢复（终审 P2-4 竞态防护）：在途 run 的晚到响应
+  // （如 ACTIVE_RUN_EXISTS 冲突刷新）不得重启轮询；重开面板自动恢复。
   const resumeMaterialPollingFromRows = useCallback(rows => {
+    if (!materialVisibleRef.current) return
     const latest = rows && rows[0]
     if (latest && (latest.runStatus === 'queued' || latest.runStatus === 'running')) {
       setMaterialActiveRun({ runId: latest.runId, status: latest.runStatus, startedAt: latest.startedAt })
@@ -2372,6 +2381,10 @@ function Overlay({ t }) {
         ...(params.accountLimit ? { accountLimit: params.accountLimit } : {}),
         candidateMinLevel: params.candidateMinLevel,
       })
+      // 终审 P2-4 竞态防护：请求在途时 overlay 已关闭则丢弃晚到响应——
+      // 不报错、不绑定 activeRun、不重启轮询（受理已落库，重开面板经
+      // resume 机制恢复）；finally 仍复位 collecting。
+      if (!materialVisibleRef.current) return
       if (result.status !== 'ready') {
         setMaterialCollectError(result.reason || 'douyin_operation_request_failed')
         // ACTIVE_RUN_EXISTS（§6.4）：冲突时绑定现有 run 继续轮询——tools 冲突

@@ -227,6 +227,60 @@ test('MaterialBoardTable：候选行渲染真实投影，缺失指标渲染「�
   assert.match(text, /88\.5 \/ ?S/)
 })
 
+test('MaterialBoardTable：封面 onError 降级为真实 DOM 占位块（终审 P2-1）', () => {
+  // 回归锁定：onError 里必须用 ownerDocument.createElement 创建真实 DOM——
+  // replaceWith(React element) 会抛 TypeError（元素对象不是 Node）。
+  const board = {
+    rows: [{
+      candidateId: 'cand-1', awemeId: '7123', title: '封面加载失败行',
+      hotScore: 66, hotLevel: null, scoreRuleVersion: 'hot-v1-potential', scoreReasons: [],
+      playCount: 1000, likeCount: 10, commentCount: 1, shareCount: 0, collectCount: 2,
+      interactionRate: 0.013, publishedAt: null, tags: null, coverUrl: 'https://img.example/broken.jpg',
+      sourceMatches: [],
+    }],
+    total: 1, offset: 0, limit: 20, loading: false, errorReason: null, loaded: true,
+  }
+  const tree = MaterialBoardTable({ board, seedAccounts: [], onOpenReason: () => {}, onPage: () => {} })
+  // fake createElement 不展开 BoardRow：先手动展开一层行组件再查找
+  const rowNodes = []
+  ;(function walk(node) {
+    if (!node || typeof node !== 'object') return
+    if (Array.isArray(node)) return node.forEach(walk)
+    if (typeof node.type === 'function') rowNodes.push(node)
+    if (node.children) walk(node.children)
+  })(tree)
+  const imgs = rowNodes.flatMap(node => findAll(node.type({ ...(node.props || {}) }), 'ydo-mat-cover'))
+  assert.equal(imgs.length, 1)
+  const img = imgs[0]
+  assert.equal(img.props.src, 'https://img.example/broken.jpg')
+  assert.equal(typeof img.props.onError, 'function')
+  // stub DOM：replaceWith 记录入参，createElement 产可辨识的普通对象
+  const calls = []
+  const docStub = { createElement: tag => ({ tagName: tag, className: '', textContent: '' }) }
+  const replacedWith = []
+  const event = {
+    currentTarget: {
+      ownerDocument: docStub,
+      parentElement: {},
+      replaceWith: node => { replacedWith.push(node) },
+    },
+  }
+  img.props.onError(event)
+  assert.equal(replacedWith.length, 1)
+  const placeholder = replacedWith[0]
+  // 占位块是真实 DOM 形状的普通对象，不是 React 元素（无 type/props）
+  assert.equal(placeholder.className, 'ydo-mat-cover-placeholder')
+  assert.equal(placeholder.textContent, '—')
+  assert.equal(placeholder.tagName, 'div')
+  assert.equal(placeholder.type, undefined)
+  assert.equal(placeholder.props, undefined)
+  // ownerDocument/parentElement 缺失时静默返回，不抛错、不替换
+  assert.doesNotThrow(() => img.props.onError({
+    currentTarget: { ownerDocument: null, parentElement: null, replaceWith: node => calls.push(node) },
+  }))
+  assert.equal(calls.length, 0)
+})
+
 test('MaterialBoardTable：空态引导与加载中文案互斥', () => {
   const loaded = treeText(MaterialBoardTable({
     board: { rows: [], total: 0, offset: 0, limit: 20, loading: false, errorReason: null, loaded: true },
@@ -543,7 +597,7 @@ test('MaterialReasonDrawer：scoreReasonDetails 结构化对照卡（审查 P2-1
         { name: '点赞', observed: 12000, threshold: 10000, points: 10, hit: true },
         { name: '评论', observed: 120, threshold: 500, points: 0, hit: false },
         { name: '播放', observed: null, threshold: 500000, points: 0, hit: false },
-        { name: '互动率', observed: 0.05, threshold: 0.08, points: 0, hit: false },
+        { name: '互动率', observed: 0.03, threshold: 0.04, points: 0, hit: false },
       ],
     },
     onClose: () => {},
@@ -554,9 +608,11 @@ test('MaterialReasonDrawer：scoreReasonDetails 结构化对照卡（审查 P2-1
   assert.match(text, /\+10分/) // 命中加分徽标
   assert.match(text, /还差 380/) // 评论未命中：500-120
   assert.match(text, /未采集/) // 播放观测值缺失
-  assert.match(text, /5\.00%/) // 互动率观测值 ×100 两位小数
-  assert.match(text, /还差 3\.0%/) // 互动率未命中：8%-5%
-  assert.match(text, /互动率=（赞\+评\+转）\/播放/)
+  assert.match(text, /3\.00%/) // 互动率观测值 ×100 两位小数
+  // 终审 P2-2：未命中对照最低加分档 4%（服务端投影），不是 8%
+  assert.match(text, /4%/)
+  assert.match(text, /还差 1\.0%/) // 互动率未命中：4%-3%
+  assert.match(text, /互动率=（赞\+评\+转\+藏）\/播放/)
   assert.match(text, /存档评分以入库时规则版本为准/)
   assert.match(text, /命中理由（1）/) // scoreReasons 文字列表保留兜底
   // 旧服务端缺投影：不渲染明细区块
@@ -589,6 +645,18 @@ test('MATERIAL_CSS_TEXT：核心类与按钮规格齐备', () => {
   assert.match(MATERIAL_CSS_TEXT, /\.ydo-mat-primary\{[^}]*height:40px/u)
   assert.match(MATERIAL_CSS_TEXT, /\.ydo-mat-secondary\{[^}]*height:36px/u)
   assert.match(MATERIAL_CSS_TEXT, /\.ydo-mat-link\{[^}]*height:30px/u)
+  // 深色可读性定稿（2026-10-29 用户拍板：只做可读性适配，设计语言不动）——
+  // 交互色（分段选中/主按钮/链接）保持宿主品牌变量灰黑不跟报表蓝；
+  // 状态徽标实色底白字（淡底深字在深色背景是刺眼亮块）；
+  // 横幅/错误条 color-mix 透明混合（浅色观感不变、深色呈暗色块）。
+  assert.match(MATERIAL_CSS_TEXT, /\.ydo-mat-seg button\[aria-current\]\{background:var\(--dsw-alias-brand-primary,#0f1115\)/u)
+  assert.match(MATERIAL_CSS_TEXT, /\.ydo-mat-primary\{[^}]*background:var\(--dsw-alias-brand-primary,#0f1115\)/u)
+  assert.match(MATERIAL_CSS_TEXT, /\.ydo-mat-link\{[^}]*color:var\(--dsw-alias-brand-primary,#0f1115\)/u)
+  assert.doesNotMatch(MATERIAL_CSS_TEXT, /background:#3370ff/u)
+  assert.match(MATERIAL_CSS_TEXT, /\.ydo-mat-status-success\{background:#2ea121;color:#fff\}/u)
+  assert.match(MATERIAL_CSS_TEXT, /\.ydo-mat-status-error\{background:#d83931;color:#fff\}/u)
+  assert.match(MATERIAL_CSS_TEXT, /\.ydo-mat-active\{[^}]*background:color-mix\(in srgb,#de7802 12%,transparent\)/u)
+  assert.match(MATERIAL_CSS_TEXT, /\.ydo-mat-error\{[^}]*background:color-mix\(in srgb,#d83931 10%,transparent\)/u)
 })
 
 test('client.js 接线：Tab/i18n/全宽 body/轮询守卫/幂等键模板', () => {
@@ -614,6 +682,9 @@ test('client.js 接线：Tab/i18n/全宽 body/轮询守卫/幂等键模板', () 
   assert.doesNotMatch(clientSource, /row\.sourceKind === filter\.sourceKind/u)
   // overlay 关闭守卫（审查 P2-4）：material 加载 effect 不在关闭态预取/续轮询
   assert.match(clientSource, /if \(!visible \|\| tab !== 'material'\) return/u)
+  // 终审 P2-4 竞态防护：overlay 关闭后晚到响应不得恢复轮询/受理落位
+  assert.match(clientSource, /if \(!materialVisibleRef\.current\) return/u, 'resume guard')
+  assert.doesNotMatch(clientSource, /resumeMaterialPollingFromRows = useCallback\(rows => \{\n    const latest/u, 'resume 必须先过 visibleRef 守卫')
   // 轮询终态同步刷新 seeds/facets（审查 P2-2）
   assert.match(clientSource, /loadMaterialSeeds\(\{ silent: true \}\)\.catch\(\(\) => \{\}\)/u)
   assert.match(clientSource, /loadMaterialFacets\(\)\.catch\(\(\) => \{\}\)/u)

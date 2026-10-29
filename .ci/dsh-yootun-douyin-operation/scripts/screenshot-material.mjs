@@ -215,9 +215,10 @@ const actionsFixture = {
 function buildBlocks(plugin) {
   const blocks = []
 
-  // 整页看板（board section：KPI 5 卡 + 批次过滤横幅 + 筛选条 + 候选表 + 分页）
+  // 整页看板（board section：筛选条 + 批次过滤横幅 + KPI 5 卡 + 候选表 + 分页；
+  // 2026-10-29 布局拍板：筛选上、KPI 下）
   blocks.push(h('div', { className: 'screenshot-block', id: 'mat-board' },
-    h('h2', { className: 'screenshot-title' }, 'Tab5 素材看板 · 整页（KPI 5 卡 + 批次过滤 + 筛选条 + 候选表）'),
+    h('h2', { className: 'screenshot-title' }, 'Tab5 素材看板 · 整页（筛选条 + 批次过滤 + KPI 5 卡 + 候选表）'),
     h('p', { className: 'screenshot-sub' }, 'RQ-2026-008 阶段 4：候选素材=素材域累计；S/A 等四卡=最新批次投影（缺桶=0）；「—」为未返回缺口；命中来源=关键词/对标账号/双源'),
     h(plugin.MaterialPage, {
       board: {
