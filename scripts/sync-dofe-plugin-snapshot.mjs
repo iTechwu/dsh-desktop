@@ -41,13 +41,45 @@ async function collect(dir, base = dir) {
   return files
 }
 
+async function diffResourceDirectory(source, snapshot) {
+  const problems = []
+  for (const file of await collect(snapshot)) {
+    const relative = file.slice(snapshot.length + 1)
+    const sourceFile = join(source, relative)
+    if (!existsSync(sourceFile)) {
+      problems.push(`snapshot-only file: ${relative}`)
+      continue
+    }
+    const sourceText = await readFile(sourceFile)
+    const snapshotText = await readFile(file)
+    if (!sourceText.equals(snapshotText)) {
+      problems.push(`content differs: ${relative}`)
+    }
+  }
+  for (const file of await collect(source)) {
+    const relative = file.slice(source.length + 1)
+    if (!existsSync(join(snapshot, relative))) {
+      problems.push(`source-only file: ${relative}`)
+    }
+  }
+  return problems
+}
+
 async function diffSnapshot(name) {
   const source = resolve(root, `../docker-helm.dofe.ai/plugins/${name}`)
   const snapshot = snapshotPath(name)
-  if (!existsSync(join(source, 'package.json'))) {
+  const sourceIsPackage = existsSync(join(source, 'package.json'))
+  const snapshotIsPackage = existsSync(join(snapshot, 'package.json'))
+  if (!sourceIsPackage && !snapshotIsPackage) {
+    // Resource-only directories (for example `brand`) are not plugin packages.
+    // They still have to match the source byte for byte, but they must not be
+    // reported as a broken plugin snapshot.
+    return diffResourceDirectory(source, snapshot)
+  }
+  if (!sourceIsPackage) {
     return [`source package.json missing at ${source}`]
   }
-  if (!existsSync(join(snapshot, 'package.json'))) {
+  if (!snapshotIsPackage) {
     return [`snapshot package.json missing at ${snapshot} (run with --write)`]
   }
   const problems = []

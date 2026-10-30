@@ -10,7 +10,21 @@ and are the only plugin source for the desktop CI build. After pulling plugin
 changes from docker-helm, re-run the materialization (or `cp -r` excluding
 `node_modules`) and commit the snapshot in the same change — a stale snapshot
 ships a desktop client without the feature. Verify with
-`diff -r --exclude=node_modules ../docker-helm.dofe.ai/plugins/<plugin> .ci/<plugin>`.
+`diff -r --exclude=node_modules ../docker-helm.dofe.ai/plugins/<plugin> .ci/<plugin>`,
+then run `corepack pnpm check:contract` (see below) before committing the snapshot.
+
+## Contract gates before push
+
+`corepack pnpm check:contract` runs the dependency-free contract checks that
+otherwise only fail once the commit is on GitHub: the plugin UX contract audit
+(every host tool, MCP server and local route must be registered in
+`docs/superpowers/specs/2026-09-09-mcp-api-capability-matrix.md`) and the
+`.ci/<plugin>` snapshot consistency check against the docker-helm source. Run it
+before every push; it needs no install and finishes in seconds.
+
+The capability matrix is a product contract, not prose: registering a new host
+Agent tool, plugin local route or managed MCP server is part of the change that
+introduces it, and a matrix-only edit still triggers the full product gate.
 
 ## Workflow contract
 

@@ -102,6 +102,13 @@ jobs:
           node scripts/upstream-workspace-link.mjs
           node scripts/prepare-dofe-ui.mjs
           node scripts/build-dofe-ui.mjs
+      # Contract drift must fail before the expensive dependency install and
+      # build stages, not minutes later inside `pnpm check`. This audit only
+      # reads tracked sources and the sibling Harness checkout, so it needs no
+      # installed dependencies.
+      - name: Client plugin UX contract audit
+        if: needs.changes.outputs.product == 'true'
+        run: node scripts/plugin-ux-audit.mjs
       - name: Resolve pnpm store path
         if: needs.changes.outputs.product == 'true'
         id: pnpm-store
@@ -132,7 +139,7 @@ jobs:
   # updates, window options, pwsh sandbox, volume diagnostics, and packaging.
   # The package gate runs once; both artifacts reuse its build output.
   desktop-windows:
-    needs: changes
+    needs: [changes, check]
     if: needs.changes.outputs.product == 'true'
     runs-on: windows-2022
     timeout-minutes: 60
@@ -210,7 +217,7 @@ jobs:
   # Linux x64 distribution artifacts: unsigned AppImage and Debian package
   # built on a stock ubuntu runner, mirroring the Windows packaging job.
   desktop-linux:
-    needs: changes
+    needs: [changes, check]
     if: needs.changes.outputs.product == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 60
@@ -243,7 +250,7 @@ jobs:
         run: yarn workspace ${{ matrix.workspace }} dist:linux
 
   desktop-macos:
-    needs: changes
+    needs: [changes, check]
     if: needs.changes.outputs.product == 'true'
     runs-on: macos-latest
     timeout-minutes: 60
