@@ -271,7 +271,7 @@ const copy = {
     // 爆款拆解 Tab（0922 方案 §4.1；0923 视觉对齐预览稿 breakdown-tab-preview.html）
     tabBreakdown: '爆款拆解',
     tabReport: 'AI 报表',
-    tabMaterial: '素材看板',
+    tabMaterial: '爆款素材看板',
     bdNewTitle: '发起拆解',
     bdShareLabel: '抖音分享链接', bdSharePlaceholder: '粘贴抖音视频分享链接，如 https://v.douyin.com/xxxx/',
     bdStartButton: '开始拆解', bdSubmitting: '提交中…',
@@ -479,7 +479,7 @@ const copy = {
     // Viral breakdown tab (0922 plan §4.1; 0923 visual alignment with breakdown-tab-preview.html)
     tabBreakdown: 'Viral breakdown',
     tabReport: 'AI reports',
-    tabMaterial: 'Materials',
+    tabMaterial: 'Hot Materials',
     bdNewTitle: 'Start a breakdown',
     bdShareLabel: 'Douyin share link', bdSharePlaceholder: 'Paste a Douyin video share link, e.g. https://v.douyin.com/xxxx/',
     bdStartButton: 'Start breakdown', bdSubmitting: 'Submitting…',
@@ -1816,8 +1816,6 @@ function Overlay({ t }) {
     rows: [], total: null, offset: 0, limit: MATERIAL_BOARD_PAGE_SIZE,
     loading: false, errorReason: null, loaded: false,
   })
-  // KPI「候选素材」素材域累计口径：单独轻量请求（limit=1），与筛选条件解耦。
-  const [materialBoardTotal, setMaterialBoardTotal] = useState(null)
   const [materialFacets, setMaterialFacets] = useState([])
   const [materialFilters, setMaterialFilters] = useState({
     q: '', minLevel: '', sourceKind: '', publishedRange: '30d', tag: '', sortBy: 'hot', offset: 0,
@@ -2065,26 +2063,13 @@ function Overlay({ t }) {
   // 加载、独立降级；采集受理后轮询 material.collect.status（3s，隐藏页签暂停，
   // 连续 5 次失败停止）。受理响应字段 status（受理态）、轮询响应字段 runStatus
   // （run 投影），归一为 {runId, status, startedAt} 入 activeRun。KPI「候选素材」
-  // 是素材域累计口径（单独 limit=1 轻量请求），与筛选条件解耦（与 tools 验证页
-  // 同口径）。loadMaterialBoard 只读 materialQueryRef（changeMaterialFilters 先写
+  // 与筛选条件绑定（2026-10-30 真机验收拍板，对齐车衣素材看板）：直接取看板
+  // 响应 total，筛选变化随看板重查重新绑定；其余四卡是最新批次投影，与筛选
+  // 无关。loadMaterialBoard 只读 materialQueryRef（changeMaterialFilters 先写
   // ref 再 setState），避免 setState 后闭包读到旧筛选。
   // ---------------------------------------------------------------------------
 
   const stopMaterialPolling = useCallback(() => stopPolling(materialPollRef), [stopPolling])
-
-  const loadMaterialBoardTotal = useCallback(async () => {
-    try {
-      const result = await post({ action: 'material.videos.list', scope: 'material', limit: 1 })
-      if (result.status === 'ready' && typeof result.data?.total === 'number') {
-        setMaterialBoardTotal(result.data.total)
-      } else {
-        setMaterialBoardTotal(null)
-      }
-    } catch {
-      // KPI 累计独立降级：失败回退「—」，不阻塞看板与批次数据。
-      setMaterialBoardTotal(null)
-    }
-  }, [])
 
   const loadMaterialFacets = useCallback(async () => {
     try {
@@ -2118,7 +2103,9 @@ function Overlay({ t }) {
       })
       if (seq !== materialSeqRef.current) return
       if (result.status !== 'ready') {
-        setMaterialBoard(prev => ({ ...prev, loading: false, errorReason: result.reason || 'douyin_operation_request_failed' }))
+        // 失败时 total 一并置空：KPI「候选素材」与分页「共 — 条」随看板降级，
+        // 不得沿用上一次筛选口径的旧 total（review 发现）。
+        setMaterialBoard(prev => ({ ...prev, loading: false, total: null, errorReason: result.reason || 'douyin_operation_request_failed' }))
         return
       }
       const rows = Array.isArray(result.data?.candidates) ? result.data.candidates : []
@@ -2132,7 +2119,7 @@ function Overlay({ t }) {
       }))
     } catch {
       if (seq !== materialSeqRef.current) return
-      setMaterialBoard(prev => ({ ...prev, loading: false, errorReason: 'douyin_operation_request_failed' }))
+      setMaterialBoard(prev => ({ ...prev, loading: false, total: null, errorReason: 'douyin_operation_request_failed' }))
     }
   }, [])
 
@@ -2202,20 +2189,19 @@ function Overlay({ t }) {
         }
         failures = 0
         setMaterialActiveRun({ runId: latest.runId, status: latest.runStatus, startedAt: latest.startedAt })
-        // nextAction=poll_status 表示仍在途；终态刷新批次记录、看板与 KPI 累计。
+        // nextAction=poll_status 表示仍在途；终态刷新批次记录与看板（KPI 随 total 同步）。
         if (latest.nextAction !== 'poll_status') {
           stopMaterialPolling()
           setMaterialActiveRun(null)
           loadMaterialRuns({ silent: true }).catch(() => {})
           loadMaterialBoard().catch(() => {})
-          loadMaterialBoardTotal().catch(() => {})
           // 审查 P2-2：终态同步刷新 seeds（解析状态/解析形态推进）与 facets（新标签），免手动刷新。
           loadMaterialSeeds({ silent: true }).catch(() => {})
           loadMaterialFacets().catch(() => {})
         }
       }).catch(() => {})
     }, MATERIAL_POLL_INTERVAL_MS)
-  }, [loadMaterialBoard, loadMaterialBoardTotal, loadMaterialFacets, loadMaterialRuns, loadMaterialSeeds, pollMaterialOnce, stopMaterialPolling])
+  }, [loadMaterialBoard, loadMaterialFacets, loadMaterialRuns, loadMaterialSeeds, pollMaterialOnce, stopMaterialPolling])
 
   // 从批次行恢复轮询（Tab 进入 / 手动刷新共用）：最新行在途即恢复。
   // overlay 已关闭时丢弃恢复（终审 P2-4 竞态防护）：在途 run 的晚到响应
@@ -2412,7 +2398,6 @@ function Overlay({ t }) {
     }
     loadMaterialRuns().then(resumeMaterialPollingFromRows).catch(() => {})
     loadMaterialBoard().catch(() => {})
-    loadMaterialBoardTotal().catch(() => {})
     loadMaterialFacets().catch(() => {})
     loadMaterialSeeds().catch(() => {})
     const onVisibility = () => {
@@ -3136,7 +3121,9 @@ function Overlay({ t }) {
           ? h('section', { className: 'ydo-right', 'aria-label': t('tabMaterial') },
             h(MaterialPage, {
               board: materialBoard,
-              kpi: { total: materialBoardTotal, latest: materialRuns.rows[0] || null },
+              // KPI total 只透传数值：rows.length 仅是分页展示兜底，
+              // 不进 KPI（响应缺 total 时 KPI 显示「—」而非当页行数，review 发现）。
+              kpi: { total: typeof materialBoard.total === 'number' ? materialBoard.total : null, latest: materialRuns.rows[0] || null },
               facets: materialFacets,
               filters: materialFilters,
               seedAccounts: materialSeeds.data && Array.isArray(materialSeeds.data.accounts) ? materialSeeds.data.accounts : [],

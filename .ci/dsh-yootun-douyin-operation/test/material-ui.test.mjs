@@ -135,7 +135,7 @@ test('materialStatusPill：终态/在途/未知状态映射', () => {
   assert.match(unknown.props.className, /ydo-mat-status-muted/u)
 })
 
-test('MaterialKpiCards：素材域累计与最新批次投影，全缺失渲染「—」', () => {
+test('MaterialKpiCards：候选素材按当前筛选绑定与最新批次投影，全缺失渲染「—」', () => {
   // 全缺失：total/latest 均缺 → 数值卡「—」、脚注「暂无批次/最新批次」
   const empty = treeText(MaterialKpiCards({ kpi: { total: null, latest: null } }))
   assert.match(empty, /候选素材/)
@@ -150,6 +150,10 @@ test('MaterialKpiCards：素材域累计与最新批次投影，全缺失渲染�
   }
   const filled = treeText(MaterialKpiCards({ kpi: { total: 42, latest } }))
   assert.match(filled, /42/)
+  // 第三轮真机验收（2026-10-30）：候选素材 KPI 脚注改「按当前筛选」——数值与
+  // 看板筛选绑定，随筛选重新绑定（对齐车衣素材看板），不再是素材域累计。
+  assert.match(filled, /按当前筛选/)
+  assert.ok(!filled.includes('素材域累计'), '累计口径脚注应已移除')
   assert.match(filled, /0 \/ 3/)
   assert.match(filled, /最新批次分布/)
   assert.match(filled, /发现 30 · 入库 28/)
@@ -779,7 +783,6 @@ test('MATERIAL_CSS_TEXT：核心类与按钮规格齐备', () => {
   assert.match(MATERIAL_CSS_TEXT, /\.ydo-mat-primary\{[^}]*height:40px/u)
   assert.match(MATERIAL_CSS_TEXT, /\.ydo-mat-secondary\{[^}]*height:36px/u)
   assert.match(MATERIAL_CSS_TEXT, /\.ydo-mat-link\{[^}]*height:30px/u)
-  assert.match(MATERIAL_CSS_TEXT, /\.ydo-mat-link-wrap\{height:auto\}/u)
   // 深色可读性定稿（2026-10-29 用户拍板：只做可读性适配，设计语言不动）——
   // 交互色（页签选中/主按钮/链接）保持宿主品牌变量灰黑不跟报表蓝；
   // 状态徽标实色底白字（淡底深字在深色背景是刺眼亮块）；
@@ -804,13 +807,31 @@ test('MATERIAL_CSS_TEXT：核心类与按钮规格齐备', () => {
   // 真机验收问题 2 回归锁：来源列占位样式不得复用行按钮基类 ydo-mat-mini
   // （旧实现同名类后置覆盖按钮字色，启用按钮变灰）。占位走独立 ydo-mat-source-tag，
   // 且 .ydo-mat-mini 本体不再有 color-only 覆盖形态。
-  assert.match(MATERIAL_CSS_TEXT, /\.ydo-mat-source-tag\{color:var\(--dsw-alias-label-secondary,#646a73\);font-size:11px\}/u)
+  assert.match(MATERIAL_CSS_TEXT, /\.ydo-mat-source-tag\{display:block;color:var\(--dsw-alias-label-secondary,#646a73\);font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis\}/u)
   assert.doesNotMatch(MATERIAL_CSS_TEXT, /\.ydo-mat-mini\{color:var/u)
   // 真机验收问题 5 回归锁：素材页占满 ydo-right 全部 grid 行并自身滚动
   // （grid 模板 4 行 auto/auto/auto/1fr，页面是唯一内容 item，不跨行会被
   // auto 行撑开裁切、页面无法上下滚动）。
   assert.match(MATERIAL_CSS_TEXT, /\.ydo-mat-page\{[^}]*grid-row:1\/-1/u)
   assert.match(MATERIAL_CSS_TEXT, /\.ydo-mat-page\{[^}]*overflow:auto/u)
+  // 真机验收第三轮（2026-10-30）：页面宽度与滚动控制对齐车衣素材看板
+  // （.yxh-hb 同款 max-width:1440px + margin:0 auto）。
+  assert.match(MATERIAL_CSS_TEXT, /\.ydo-mat-page\{[^}]*max-width:1440px;margin:0 auto;width:100%/u)
+  // 第三轮：列表各列单行不换行——nowrap 与封面列 80px 定宽只作用看板候选表
+  // （.ydo-mat-board-table；.ydo-mat-table 另被五张表共用，全局 nowrap 会压垮
+  // 失败明细长串与账号输入列 line-clamp，review 发现）；视频标题/标签/来源行
+  // 各自单行化。
+  assert.match(MATERIAL_CSS_TEXT, /\.ydo-mat-board-table td\{white-space:nowrap\}/u)
+  assert.match(MATERIAL_CSS_TEXT, /\.ydo-mat-board-table th:first-child,\.ydo-mat-board-table td:first-child\{width:80px\}/u)
+  assert.ok(!MATERIAL_CSS_TEXT.includes('.ydo-mat-table td{padding:10px 12px;border-bottom:1px solid var(--dsw-alias-border-l2,#f0f1f3);vertical-align:top;white-space:nowrap}'), '共用基类 td 不得再带全局 nowrap（压垮失败明细/账号输入列）')
+  assert.match(MATERIAL_CSS_TEXT, /\.ydo-mat-video-title\{margin:0;font-weight:650;max-width:420px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis\}/u)
+  assert.match(MATERIAL_CSS_TEXT, /button\.ydo-mat-video-title\{[^}]*font-weight:650/u)
+  assert.match(MATERIAL_CSS_TEXT, /\.ydo-mat-tags\{display:flex;gap:4px;flex-wrap:nowrap;overflow:hidden;margin-top:6px\}/u)
+  // 第三轮：标签 chip 对齐车衣素材看板（.yxh-hb-tag：2px 8px / 4px 圆角 / 12px，变量深色适配）
+  assert.match(MATERIAL_CSS_TEXT, /\.ydo-mat-tag\{padding:2px 8px;border-radius:4px;background:var\(--dsw-alias-bg-layer-2,#f5f6f7\);color:var\(--dsw-alias-label-secondary,#646a73\);font-size:12px\}/u)
+  // 第三轮：标题链接保持粗体（button font:inherit 会冲掉基类 650，须显式回设）；
+  // 抽屉视频链接同粗体。
+  assert.match(MATERIAL_CSS_TEXT, /\.ydo-mat-link-wrap\{height:auto;font-weight:650\}/u)
   // 真机验收问题 6：评分抽屉对照表 max-content 标签列 + 值列可断行
   // （auto 列被长 URL 的 min-content 压缩、逐字竖排变形）。
   assert.match(MATERIAL_CSS_TEXT, /\.ydo-mat-failure-grid\{display:grid;grid-template-columns:max-content 1fr/u)
@@ -835,9 +856,9 @@ test('MaterialPage：seeds 错误条在关键词与对标账号两个子页均�
 })
 
 test('client.js 接线：Tab/i18n/全宽 body/轮询守卫/幂等键模板', () => {
-  // i18n：中英 tabMaterial
-  assert.ok(clientSource.includes("tabMaterial: '素材看板'"))
-  assert.ok(clientSource.includes("tabMaterial: 'Materials'"))
+  // i18n：中英 tabMaterial（2026-10-30 拍板：主 Tab 改「爆款素材看板」）
+  assert.ok(clientSource.includes("tabMaterial: '爆款素材看板'"))
+  assert.ok(clientSource.includes("tabMaterial: 'Hot Materials'"))
   // Tab nav：素材看板页签存在，且顺序在爆款拆解之前（2026-10-29 真机验收定稿）
   assert.match(clientSource, /'aria-current': tab === 'material' \|\| undefined/u)
   assert.ok(

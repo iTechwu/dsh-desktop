@@ -1548,7 +1548,7 @@ test('Tab 激活态：只有当前 Tab 有底部指示线；左侧账号栏只�
   assert.match(source, /className: `ydo-body\$\{tab === 'overview' \|\| tab === 'breakdown' \|\| tab === 'report' \|\| tab === 'material' \? ' ydo-body-full' : ''\}`/u)
   // 素材看板 Tab（RQ-2026-008）：第 5 个 nav 按钮 + i18n 双语
   assert.match(source, /'aria-current': tab === 'material' \|\| undefined/u)
-  assert.match(source, /tabMaterial: '素材看板'/u)
+  assert.match(source, /tabMaterial: '爆款素材看板'/u)
   const css = source.match(/const css = `[\s\S]*`/u)[0]
   assert.match(css, /\.ydo-body-full\{grid-template-columns:1fr\}/u)
 })

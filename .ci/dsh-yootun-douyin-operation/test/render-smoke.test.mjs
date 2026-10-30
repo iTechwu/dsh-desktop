@@ -124,6 +124,9 @@ test('built client factory renders the overlay with real React without throwing'
     assert.ok(filterIdx > -1 && kpiIdx > -1, '看板区两类区块均应渲染')
     assert.ok(filterIdx < kpiIdx, '筛选区必须位于 KPI 区上方（拍板布局，文档 §6.4 结构图同口径）')
     assert.ok(!pageHtml.includes('按批次过滤'), '批次过滤横幅应已移除（真机验收问题 5）')
+    // 第三轮真机验收（2026-10-30）：看板子页区块大标题与副标题删除（与主 Tab 重复）
+    assert.ok(!pageHtml.includes('候选只读展示'), '看板子页区块标题/副标题应已移除')
+    assert.ok(!pageHtml.includes('ydo-mat-head'), '旧标题区块容器应已移除')
     // 子页签定稿（2026-10-29 真机验收）：四子页下划线式、置于页头下方；
     // 关键词管理与对标账号是两个独立子页（对齐 UI 模板/静态测试页），
     // 计数徽标在种子数据加载后展示。

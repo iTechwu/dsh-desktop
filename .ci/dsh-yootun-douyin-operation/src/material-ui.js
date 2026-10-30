@@ -118,7 +118,7 @@ export const MATERIAL_CSS_TEXT = `
    素材页是唯一子元素，跨行后高度受容器约束，内容超出走自身滚动
    （真机验收缺陷：无此规则时内容被 ydo-right 的 overflow:hidden 裁掉，
    页面无法上下滚动）。 */
-.ydo-mat-page{display:flex;flex-direction:column;gap:14px;min-width:0;grid-row:1/-1;min-height:0;overflow:auto}
+.ydo-mat-page{display:flex;flex-direction:column;gap:14px;min-width:0;grid-row:1/-1;min-height:0;overflow:auto;max-width:1440px;margin:0 auto;width:100%}
 /* 子页导航（2026-10-29 真机验收定稿）：对齐主 Tab（ydo-tabs）与车衣爆款看板
    （yxh-tabs）的下划线式页签形态，四子页：素材看板/关键词管理/对标账号/采集记录。
    选中态为透明底 + 品牌色指示线 + 主文字色，深浅主题由宿主变量自适应。 */
@@ -128,7 +128,6 @@ export const MATERIAL_CSS_TEXT = `
 .ydo-mat-tabs button[aria-current]{border-bottom-color:var(--dsw-alias-brand-primary,#0f1115);color:var(--dsw-alias-label-primary,#1f2329)}
 .ydo-mat-tab-count{margin-left:6px;padding:1px 7px;border-radius:999px;background:var(--dsw-alias-bg-layer-2,#f5f6f7);color:var(--dsw-alias-label-secondary,#646a73);font-size:11px;font-weight:600}
 .ydo-mat-head{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
-.ydo-mat-title{margin:0;font-size:15px;font-weight:650}
 .ydo-mat-sub{margin:2px 0 0;color:var(--dsw-alias-label-secondary,#646a73);font-size:12px}
 /* 按钮（§6.5）：primary 深色 40px / secondary 浅色 36px / link 30px。
    primary 字色用宿主「品牌色底前景」变量（同 ydo-primary 口径）——硬编码 #fff
@@ -138,7 +137,7 @@ export const MATERIAL_CSS_TEXT = `
 .ydo-mat-secondary{display:inline-flex;height:36px;align-items:center;gap:6px;padding:0 14px;border:1px solid var(--dsw-alias-border-l1,#dee0e3);border-radius:8px;background:var(--dsw-alias-bg-layer-1,#fff);color:var(--dsw-alias-label-primary,#1f2329);font:inherit;font-size:13px;cursor:pointer}
 .ydo-mat-secondary:disabled{opacity:.45;cursor:not-allowed}
 .ydo-mat-link{height:30px;padding:0 4px;border:0;background:transparent;color:var(--dsw-alias-brand-primary,#0f1115);font:inherit;font-size:12px;cursor:pointer}
-.ydo-mat-link-wrap{height:auto}
+.ydo-mat-link-wrap{height:auto;font-weight:650}
 .ydo-mat-link:disabled{opacity:.45;cursor:not-allowed}
 /* 行操作迷你按钮（2026-10-29 真机验收定稿）：对齐车衣爆款看板标签管理的
    yxh-hb-mini 三款——描边款（编辑）/灰底款（禁用）/实底款（启用）。 */
@@ -150,7 +149,7 @@ export const MATERIAL_CSS_TEXT = `
 .ydo-mat-mini-primary{border-color:var(--dsw-alias-label-primary,#1f2329);background:var(--dsw-alias-label-primary,#1f2329);color:var(--dsw-alias-bg-base,#fff)}
 .ydo-mat-mini-primary:hover{background:color-mix(in srgb,var(--dsw-alias-label-primary,#1f2329) 82%,var(--dsw-alias-bg-base,#fff))}
 .ydo-mat-danger{color:var(--dsw-alias-state-error-primary,#d83931)}
-/* KPI 五卡（demo 口径：素材域累计 + 最新批次投影） */
+/* KPI 五卡（demo 口径：候选素材按当前筛选绑定 + 最新批次投影） */
 .ydo-mat-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
 .ydo-mat-kpi{border:1px solid var(--dsw-alias-border-l1,#dee0e3);border-radius:10px;padding:12px 14px;background:var(--dsw-alias-bg-layer-1,#fff)}
 .ydo-mat-kpi-label{margin:0;color:var(--dsw-alias-label-secondary,#646a73);font-size:12px}
@@ -165,6 +164,12 @@ export const MATERIAL_CSS_TEXT = `
 .ydo-mat-table{width:100%;border-collapse:collapse;font-size:13px}
 .ydo-mat-table th{text-align:left;padding:10px 12px;border-bottom:1px solid var(--dsw-alias-border-l1,#dee0e3);color:var(--dsw-alias-label-secondary,#646a73);font-size:12px;font-weight:600;white-space:nowrap;background:var(--dsw-alias-bg-layer-2,#f5f6f7)}
 .ydo-mat-table td{padding:10px 12px;border-bottom:1px solid var(--dsw-alias-border-l2,#f0f1f3);vertical-align:top}
+/* 各列单行不换行（2026-10-30 真机验收）：封面列定宽贴合图片，右侧不留空隙。 */
+/* 单行化与封面定宽只作用于看板候选表（第三轮拍板「各列不换行」）——
+   .ydo-mat-table 还被评分明细/关键词/对标账号/采集记录/失败明细五张表共用，
+   全局 nowrap 会压垮失败明细长串与账号输入列的 line-clamp（review 发现）。 */
+.ydo-mat-board-table td{white-space:nowrap}
+.ydo-mat-board-table th:first-child,.ydo-mat-board-table td:first-child{width:80px}
 .ydo-mat-table tr:last-child td{border-bottom:0}
 .ydo-mat-table td.num,.ydo-mat-table th.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
 .ydo-mat-seed-input{margin:0;overflow:hidden;overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
@@ -174,11 +179,11 @@ export const MATERIAL_CSS_TEXT = `
 /* 视频列标题带链接（2026-10-29 真机验收）：无链接时仍是纯文本；有 shareUrl
    时整行可点，行为同评分抽屉的「视频链接」——window.open 走宿主 windowOpen
    handler 转系统浏览器。 */
-.ydo-mat-video-title{margin:0;font-weight:650;line-height:1.45;max-width:260px}
-button.ydo-mat-video-title{border:0;padding:0;background:transparent;color:inherit;font:inherit;text-align:left;cursor:pointer}
+.ydo-mat-video-title{margin:0;font-weight:650;max-width:420px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+button.ydo-mat-video-title{border:0;padding:0;background:transparent;color:inherit;font:inherit;font-weight:650;text-align:left;cursor:pointer}
 button.ydo-mat-video-title:hover{color:var(--dsw-alias-brand-primary,#0f1115);text-decoration:underline}
-.ydo-mat-tags{display:flex;gap:4px;flex-wrap:wrap;margin-top:6px}
-.ydo-mat-tag{padding:1px 8px;border-radius:999px;background:var(--dsw-alias-bg-layer-2,#f5f6f7);color:var(--dsw-alias-label-secondary,#646a73);font-size:11px}
+.ydo-mat-tags{display:flex;gap:4px;flex-wrap:nowrap;overflow:hidden;margin-top:6px}
+.ydo-mat-tag{padding:2px 8px;border-radius:4px;background:var(--dsw-alias-bg-layer-2,#f5f6f7);color:var(--dsw-alias-label-secondary,#646a73);font-size:12px}
 .ydo-mat-tag-miss{color:var(--dsw-alias-state-warn-primary,#de7802)}
 .ydo-mat-score{font-weight:700;font-size:15px}
 .ydo-mat-level{display:inline-block;margin-left:6px;padding:1px 7px;border-radius:6px;font-size:11px;font-weight:700;color:#fff}
@@ -189,7 +194,7 @@ button.ydo-mat-video-title:hover{color:var(--dsw-alias-brand-primary,#0f1115);te
 /* 来源列小徽标（对标账号名 / DASH 占位）：不得复用 ydo-mat-mini 类名——
    那是行操作按钮基类，此处同名后置规则会把实底按钮字色覆盖成灰
    （真机验收缺陷：启用按钮黑底灰字、hover 浅灰底灰字近乎隐形）。 */
-.ydo-mat-source-tag{color:var(--dsw-alias-label-secondary,#646a73);font-size:11px}
+.ydo-mat-source-tag{display:block;color:var(--dsw-alias-label-secondary,#646a73);font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .ydo-mat-source{display:flex;flex-direction:column;gap:2px;font-size:12px}
 .ydo-mat-actions{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
 .ydo-mat-actions-col{display:flex;flex-direction:column;gap:4px;align-items:flex-start}
@@ -244,11 +249,13 @@ button.ydo-mat-video-title:hover{color:var(--dsw-alias-brand-primary,#0f1115);te
 `
 
 // ---------------------------------------------------------------------------
-// KPI 五卡（demo renderKpis 口径）：素材域累计 + 最新批次投影
+// KPI 五卡（demo renderKpis 口径）：候选素材按当前筛选绑定 + 最新批次投影
 // ---------------------------------------------------------------------------
 
 export function MaterialKpiCards({ kpi }) {
-  // kpi = { total: number|null, latest: run 投影|null }（client.js 组装）
+  // kpi = { total: number|null, latest: run 投影|null }（client.js 组装）。
+  // total 为当前筛选下的候选总数（2026-10-30 真机验收拍板，对齐车衣素材看板
+  // 的「筛选后 KPI 重新绑定」口径），随看板重查更新；筛选失败时随看板显示「—」。
   const latest = kpi && kpi.latest
   const levels = latest && latest.hotLevelSummary && typeof latest.hotLevelSummary === 'object'
     ? latest.hotLevelSummary
@@ -259,7 +266,7 @@ export function MaterialKpiCards({ kpi }) {
     h('div', { className: 'ydo-mat-kpi' },
       h('p', { className: 'ydo-mat-kpi-label' }, '候选素材'),
       h('p', { className: 'ydo-mat-kpi-value' }, matNum(kpi ? kpi.total : null)),
-      h('p', { className: 'ydo-mat-kpi-foot' }, '素材域累计')),
+      h('p', { className: 'ydo-mat-kpi-foot' }, '按当前筛选')),
     h('div', { className: 'ydo-mat-kpi' },
       h('p', { className: 'ydo-mat-kpi-label' }, 'S/A/B/C 档候选'),
       h('p', { className: 'ydo-mat-kpi-value' }, sa.every(v => v === null) ? DASH : sa.map(v => v ?? 0).join(' / ')),
@@ -343,7 +350,7 @@ function BoardRow({ row, seedAccounts, onOpenReason }) {
     if (!match) continue
     if (match.keyword && !seen.has(`k:${match.keyword}`)) {
       seen.add(`k:${match.keyword}`)
-      sourceLines.push(h('span', { key: `k:${match.keyword}` }, `关键词：${match.keyword}`))
+      sourceLines.push(h('span', { key: `k:${match.keyword}`, className: 'ydo-mat-source-tag' }, `关键词：${match.keyword}`))
     }
     if (match.accountSeedId && !seen.has(`a:${match.accountSeedId}`)) {
       seen.add(`a:${match.accountSeedId}`)
@@ -392,7 +399,7 @@ function BoardRow({ row, seedAccounts, onOpenReason }) {
     h('td', { className: 'num' }, matNumWan(row.collectCount)),
     h('td', { className: 'num' }, matNumWan(row.shareCount)),
     h('td', { className: 'num' }, matRate(row.interactionRate)),
-    h('td', { style: { whiteSpace: 'nowrap' } }, typeof row.publishedAt === 'string' && row.publishedAt ? row.publishedAt.slice(0, 10) : DASH),
+    h('td', null, typeof row.publishedAt === 'string' && row.publishedAt ? row.publishedAt.slice(0, 10) : DASH),
     h('td', null, h('div', { className: 'ydo-mat-source' }, sourceLines.length ? sourceLines : h('span', { className: 'ydo-mat-source-tag' }, DASH))),
     h('td', null, h('div', { className: 'ydo-mat-actions' },
       h('button', { type: 'button', className: 'ydo-mat-primary', onClick: () => onOpenReason(row) }, '评分理由'))))
@@ -410,7 +417,7 @@ export function MaterialBoardTable({ board, seedAccounts, onOpenReason, onPage }
       ? h('p', { className: 'ydo-mat-error', role: 'alert' }, materialErrorCopy(board.errorReason))
       : null,
     h('div', { className: 'ydo-mat-table-wrap' },
-      h('table', { className: 'ydo-mat-table' },
+      h('table', { className: 'ydo-mat-table ydo-mat-board-table' },
         h('thead', null,
           h('tr', null,
             h('th', null, '封面'), h('th', null, '视频'), h('th', null, '热度评分'),
@@ -863,10 +870,7 @@ export function MaterialPage({
   const keywordRows = seeds && seeds.data && Array.isArray(seeds.data.keywords) ? seeds.data.keywords : null
   const accountRows = seeds && seeds.data && Array.isArray(seeds.data.accounts) ? seeds.data.accounts : null
   return h('div', { className: 'ydo-mat-page' },
-    h('div', { className: 'ydo-mat-head' },
-      h('div', null,
-        h('h2', { className: 'ydo-mat-title' }, '爆款素材看板'),
-        h('p', { className: 'ydo-mat-sub' }, '关键词与对标账号双源采集的爆款素材候选池；评分口径由服务端统一配置（候选只读展示）。'))),
+    // 区块大标题与副标题已按 2026-10-30 真机验收拍板删除（与主 Tab「爆款素材看板」重复）。
     h('nav', { className: 'ydo-mat-tabs', role: 'tablist', 'aria-label': '素材看板子页' },
       h('button', { type: 'button', 'aria-current': section === 'board' || undefined, onClick: () => onSectionChange('board') }, '素材看板'),
       h('button', { type: 'button', 'aria-current': section === 'keywords' || undefined, onClick: () => onSectionChange('keywords') },

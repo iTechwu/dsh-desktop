@@ -245,7 +245,7 @@ function buildBlocks(plugin) {
   // section 由宿主受控注入）
   blocks.push(h('div', { className: 'screenshot-block', id: 'mat-board' },
     h('h2', { className: 'screenshot-title' }, 'Tab3 素材看板 · 整页（子页签 + 筛选条 + KPI 5 卡 + 候选表）'),
-    h('p', { className: 'screenshot-sub' }, 'RQ-2026-008 阶段 4：候选素材=素材域累计；S/A 等四卡=最新批次投影（缺桶=0）；「—」为未返回缺口；命中来源=关键词/对标账号/双源；视频标题=作品页链接按钮'),
+    h('p', { className: 'screenshot-sub' }, 'RQ-2026-008 阶段 4：候选素材=按当前筛选（2026-10-30 拍板，对齐车衣看板）；S/A 等四卡=最新批次投影（缺桶=0）；「—」为未返回缺口；命中来源=关键词/对标账号/双源；视频标题=作品页链接按钮'),
     h(plugin.MaterialPage, {
       board: {
         rows: boardRowsFixture(), total: 42, offset: 0, limit: 20,
