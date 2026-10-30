@@ -2103,23 +2103,31 @@ function Overlay({ t }) {
       })
       if (seq !== materialSeqRef.current) return
       if (result.status !== 'ready') {
-        // 失败时 total 一并置空：KPI「候选素材」与分页「共 — 条」随看板降级，
-        // 不得沿用上一次筛选口径的旧 total（review 发现）。
-        setMaterialBoard(prev => ({ ...prev, loading: false, total: null, errorReason: result.reason || 'douyin_operation_request_failed' }))
+        // 失败时 total/levelSummary 一并置空：KPI「候选素材」「S/A/B/C 档候选」
+        // 与分页「共 — 条」随看板降级，不得沿用上一次筛选口径的旧值（review 发现）。
+        setMaterialBoard(prev => ({ ...prev, loading: false, total: null, levelSummary: null, errorReason: result.reason || 'douyin_operation_request_failed' }))
         return
       }
       const rows = Array.isArray(result.data?.candidates) ? result.data.candidates : []
+      // hotLevelSummary 是服务端按同一筛选条件聚合的 S/A/B/C 分布（2026-10-30
+      // 拍板：档位 KPI 与筛选绑定）；旧版服务端无该键 → null，KPI 回退批次投影。
+      // 数组同判非对象（typeof [] === 'object'），防异常形态漏进档位卡。
+      const hs = result.data?.hotLevelSummary
+      const levelSummary = hs && typeof hs === 'object' && !Array.isArray(hs)
+        ? hs
+        : null
       setMaterialBoard(prev => ({
         ...prev,
         rows,
         total: typeof result.data?.total === 'number' ? result.data.total : rows.length,
+        levelSummary,
         offset: typeof offset === 'number' ? offset : query.offset,
         loading: false,
         loaded: true,
       }))
     } catch {
       if (seq !== materialSeqRef.current) return
-      setMaterialBoard(prev => ({ ...prev, loading: false, total: null, errorReason: 'douyin_operation_request_failed' }))
+      setMaterialBoard(prev => ({ ...prev, loading: false, total: null, levelSummary: null, errorReason: 'douyin_operation_request_failed' }))
     }
   }, [])
 
@@ -3123,7 +3131,12 @@ function Overlay({ t }) {
               board: materialBoard,
               // KPI total 只透传数值：rows.length 仅是分页展示兜底，
               // 不进 KPI（响应缺 total 时 KPI 显示「—」而非当页行数，review 发现）。
-              kpi: { total: typeof materialBoard.total === 'number' ? materialBoard.total : null, latest: materialRuns.rows[0] || null },
+              // levelSummary 为筛选口径 S/A/B/C 分布，组件内缺失回退批次投影。
+              kpi: {
+                total: typeof materialBoard.total === 'number' ? materialBoard.total : null,
+                hotLevelSummary: materialBoard.levelSummary || null,
+                latest: materialRuns.rows[0] || null,
+              },
               facets: materialFacets,
               filters: materialFilters,
               seedAccounts: materialSeeds.data && Array.isArray(materialSeeds.data.accounts) ? materialSeeds.data.accounts : [],

@@ -170,12 +170,15 @@ export const MATERIAL_CSS_TEXT = `
    全局 nowrap 会压垮失败明细长串与账号输入列的 line-clamp（review 发现）。 */
 .ydo-mat-board-table td{white-space:nowrap}
 .ydo-mat-board-table th:first-child,.ydo-mat-board-table td:first-child{width:80px}
+.ydo-mat-board-table td:first-child{padding:0}
 .ydo-mat-table tr:last-child td{border-bottom:0}
 .ydo-mat-table td.num,.ydo-mat-table th.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
 .ydo-mat-seed-input{margin:0;overflow:hidden;overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
 .ydo-mat-ellipsis{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.ydo-mat-cover{width:56px;height:72px;object-fit:cover;border-radius:8px;display:block}
-.ydo-mat-cover-placeholder{width:56px;height:72px;display:grid;place-items:center;border-radius:8px;background:var(--dsw-alias-bg-layer-2,#f5f6f7);color:var(--dsw-alias-label-secondary,#646a73)}
+/* 封面填满当前列（2026-10-30 真机反馈）：首列定宽 80px 且去单元格内边距，
+   图片/占位块 80×80 顶格，右侧不再留缝。 */
+.ydo-mat-cover{width:80px;height:80px;object-fit:cover;border-radius:8px;display:block}
+.ydo-mat-cover-placeholder{width:80px;height:80px;display:grid;place-items:center;border-radius:8px;background:var(--dsw-alias-bg-layer-2,#f5f6f7);color:var(--dsw-alias-label-secondary,#646a73)}
 /* 视频列标题带链接（2026-10-29 真机验收）：无链接时仍是纯文本；有 shareUrl
    时整行可点，行为同评分抽屉的「视频链接」——window.open 走宿主 windowOpen
    handler 转系统浏览器。 */
@@ -183,7 +186,11 @@ export const MATERIAL_CSS_TEXT = `
 button.ydo-mat-video-title{border:0;padding:0;background:transparent;color:inherit;font:inherit;font-weight:650;text-align:left;cursor:pointer}
 button.ydo-mat-video-title:hover{color:var(--dsw-alias-brand-primary,#0f1115);text-decoration:underline}
 .ydo-mat-tags{display:flex;gap:4px;flex-wrap:nowrap;overflow:hidden;margin-top:6px}
-.ydo-mat-tag{padding:2px 8px;border-radius:4px;background:var(--dsw-alias-bg-layer-2,#f5f6f7);color:var(--dsw-alias-label-secondary,#646a73);font-size:12px}
+/* chip 底色不能用 bg-layer-2：宿主浅色主题 layer-1/2/3 恒纯白（harness
+   design-platform.css，2026-10-30 真机反馈「标签没有浅灰底」根因），白底
+   chip 不可见。改用文字色 12% 混页面底色：浅色呈浅灰、深色呈深灰微亮，
+   双主题可辨且不刺眼（同 status/横幅 color-mix 口径）。 */
+.ydo-mat-tag{padding:2px 8px;border-radius:4px;background:color-mix(in srgb,var(--dsw-alias-label-secondary,#646a73) 12%,var(--dsw-alias-bg-base,#fff));color:var(--dsw-alias-label-secondary,#646a73);font-size:12px}
 .ydo-mat-tag-miss{color:var(--dsw-alias-state-warn-primary,#de7802)}
 .ydo-mat-score{font-weight:700;font-size:15px}
 .ydo-mat-level{display:inline-block;margin-left:6px;padding:1px 7px;border-radius:6px;font-size:11px;font-weight:700;color:#fff}
@@ -253,14 +260,25 @@ button.ydo-mat-video-title:hover{color:var(--dsw-alias-brand-primary,#0f1115);te
 // ---------------------------------------------------------------------------
 
 export function MaterialKpiCards({ kpi }) {
-  // kpi = { total: number|null, latest: run 投影|null }（client.js 组装）。
-  // total 为当前筛选下的候选总数（2026-10-30 真机验收拍板，对齐车衣素材看板
-  // 的「筛选后 KPI 重新绑定」口径），随看板重查更新；筛选失败时随看板显示「—」。
+  // kpi = { total: number|null, hotLevelSummary: object|null, latest: run 投影|null }
+  // （client.js 组装）。total 与 hotLevelSummary 均为当前筛选口径（2026-10-30
+  // 真机验收拍板，对齐车衣素材看板「筛选后 KPI 重新绑定」）：看板响应携带
+  // hotLevelSummary（同 where 聚合）时档位卡随筛选重查更新，无命中显示
+  // 0/0/0/0；响应缺该键（旧版服务端）回退最新批次投影。筛选失败时随看板
+  // 显示「—」。
   const latest = kpi && kpi.latest
-  const levels = latest && latest.hotLevelSummary && typeof latest.hotLevelSummary === 'object'
+  const filteredLevels = kpi && kpi.hotLevelSummary && typeof kpi.hotLevelSummary === 'object'
+    ? kpi.hotLevelSummary
+    : null
+  const batchLevels = latest && latest.hotLevelSummary && typeof latest.hotLevelSummary === 'object'
     ? latest.hotLevelSummary
     : {}
+  const levels = filteredLevels || batchLevels
   const sa = ['S', 'A', 'B', 'C'].map(key => (typeof levels[key] === 'number' ? levels[key] : null))
+  const saText = filteredLevels
+    ? sa.map(v => v ?? 0).join(' / ')
+    : (sa.every(v => v === null) ? DASH : sa.map(v => v ?? 0).join(' / '))
+  const saFoot = filteredLevels ? '按当前筛选' : (latest ? '最新批次分布' : '暂无批次')
   const statusLabel = latest ? (RUN_STATUS_META[latest.runStatus] || [latest.runStatus])[0] : null
   return h('div', { className: 'ydo-mat-kpis' },
     h('div', { className: 'ydo-mat-kpi' },
@@ -269,8 +287,8 @@ export function MaterialKpiCards({ kpi }) {
       h('p', { className: 'ydo-mat-kpi-foot' }, '按当前筛选')),
     h('div', { className: 'ydo-mat-kpi' },
       h('p', { className: 'ydo-mat-kpi-label' }, 'S/A/B/C 档候选'),
-      h('p', { className: 'ydo-mat-kpi-value' }, sa.every(v => v === null) ? DASH : sa.map(v => v ?? 0).join(' / ')),
-      h('p', { className: 'ydo-mat-kpi-foot' }, latest ? '最新批次分布' : '暂无批次')),
+      h('p', { className: 'ydo-mat-kpi-value' }, saText),
+      h('p', { className: 'ydo-mat-kpi-foot' }, saFoot)),
     h('div', { className: 'ydo-mat-kpi' },
       h('p', { className: 'ydo-mat-kpi-label' }, '本轮新增入库'),
       h('p', { className: 'ydo-mat-kpi-value' }, latest ? matNum(latest.newVideos) : DASH),

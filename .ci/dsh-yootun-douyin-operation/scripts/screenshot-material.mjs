@@ -24,15 +24,18 @@ const h = (type, props, ...children) => React_.createElement(type, props ?? null
 
 const pluginPath = new URL('../lib/client.js', import.meta.url)
 
-// DSW 设计变量兜底（浅色主题近似值）：插件 CSS 全部经 var() 引用宿主主题，
-// 截图页不在 DSH 宿主内，必须提供一套完整可读的变量值（1015 先例同款）。
+// DSW 设计变量兜底：插件 CSS 全部经 var() 引用宿主主题，截图页不在 DSH 宿主
+// 内，必须提供一套完整可读的变量值（1015 先例同款）。取值对齐 harness
+// ui-theme design-platform.css 浅色 body 段真实值（2026-10-30 修正：浅色
+// bg-layer-1/2/3 恒纯白——旧近似灰 #f6f7f9/#eceef1 曾让「chip 白底不可见」
+// 的真机缺陷在截图里失真为「有灰底」）。
 const DSW_SHARED_BASE_CSS = `*{box-sizing:border-box}
 body{margin:0;font-family:'Noto Sans CJK SC','Source Han Sans SC','Microsoft YaHei',sans-serif}
 .screenshot-block{padding:24px;border-bottom:16px solid}
 .screenshot-title{margin:0 0 4px;font-size:18px;font-weight:700}
 .screenshot-sub{margin:0 0 16px;font-size:13px}`
 const DSW_FALLBACK_CSS = `:root{
-  --dsw-alias-bg-base:#ffffff;--dsw-alias-bg-layer-1:#f6f7f9;--dsw-alias-bg-layer-2:#eceef1;
+  --dsw-alias-bg-base:#ffffff;--dsw-alias-bg-layer-1:#ffffff;--dsw-alias-bg-layer-2:#ffffff;
   --dsw-alias-border-l1:#e0e3e8;--dsw-alias-border-l2:#d4d8de;
   --dsw-alias-label-primary:#1f2329;--dsw-alias-label-secondary:#646a73;
   --dsw-alias-label-primary-foreground:#ffffff;--dsw-alias-brand-primary:#0f1115;
@@ -47,11 +50,11 @@ body{background:#fff;color:#1f2329}
 .screenshot-block{border-bottom-color:#d4d8de}
 .screenshot-sub{color:#646a73}
 `
-// 深色主题兜底（2026-10-29 真机验收）：取宿主 dark 主题真实值
-// （dsh-plugin-desktop native-ui shared/theme.css .dark 段的 oklch 近似 hex），
+// 深色主题兜底（2026-10-29 真机验收；2026-10-30 对齐 harness design-platform.css
+// dark 段真实值：bg-base=bluish-950、layer-1=bluish-875、layer-2=bluish-850），
 // 用于深色可读性回归截图（*-dark.png）——重点验证页签选中态/主按钮/徽标。
 const DSW_DARK_FALLBACK_CSS = `:root{
-  --dsw-alias-bg-base:#232323;--dsw-alias-bg-layer-1:#343434;--dsw-alias-bg-layer-2:#454545;
+  --dsw-alias-bg-base:#151517;--dsw-alias-bg-layer-1:#232324;--dsw-alias-bg-layer-2:#2c2c2e;
   --dsw-alias-border-l1:rgba(255,255,255,.1);--dsw-alias-border-l2:rgba(255,255,255,.1);
   --dsw-alias-label-primary:#fafafa;--dsw-alias-label-secondary:#b4b4b4;
   --dsw-alias-label-primary-foreground:#343434;--dsw-alias-brand-primary:#e9e9e9;
@@ -117,6 +120,9 @@ function boardRowsFixture() {
 
 const kpiFixture = {
   total: 42,
+  // 服务端 material scope 恒带 hotLevelSummary（与 total 同一 where 口径），
+  // S/A/B/C 卡走「按当前筛选」主形态（2026-10-30 第四轮拍板）。
+  hotLevelSummary: { S: 1, B: 2, C: 5 },
   latest: {
     runStatus: 'completed', startedAt: '2026-10-28T10:30:00+08:00',
     hotLevelSummary: { A: 3, B: 5 },
@@ -245,7 +251,7 @@ function buildBlocks(plugin) {
   // section 由宿主受控注入）
   blocks.push(h('div', { className: 'screenshot-block', id: 'mat-board' },
     h('h2', { className: 'screenshot-title' }, 'Tab3 素材看板 · 整页（子页签 + 筛选条 + KPI 5 卡 + 候选表）'),
-    h('p', { className: 'screenshot-sub' }, 'RQ-2026-008 阶段 4：候选素材=按当前筛选（2026-10-30 拍板，对齐车衣看板）；S/A 等四卡=最新批次投影（缺桶=0）；「—」为未返回缺口；命中来源=关键词/对标账号/双源；视频标题=作品页链接按钮'),
+    h('p', { className: 'screenshot-sub' }, 'RQ-2026-008 阶段 4：候选素材与 S/A/B/C 档候选=按当前筛选（2026-10-30 拍板，对齐车衣看板，旧服务端回退最新批次投影）；「—」为未返回缺口；命中来源=关键词/对标账号/双源；视频标题=作品页链接按钮'),
     h(plugin.MaterialPage, {
       board: {
         rows: boardRowsFixture(), total: 42, offset: 0, limit: 20,

@@ -159,6 +159,31 @@ test('MaterialKpiCards：候选素材按当前筛选绑定与最新批次投影�
   assert.match(filled, /发现 30 · 入库 28/)
   assert.match(filled, /去重跳过 2/)
   assert.match(filled, /手动采集 · 已完成/)
+  // 同日追加拍板：S/A/B/C 档候选与筛选绑定——服务端 hotLevelSummary（同 where
+  // 聚合）存在时优先消费，缺桶补 0（无命中 = 0/0/0/0），脚注「按当前筛选」。
+  const filtered = treeText(MaterialKpiCards({
+    kpi: { total: 7, hotLevelSummary: { B: 2, C: 5 }, latest },
+  }))
+  assert.match(filtered, /0 \/ 0 \/ 2 \/ 5/)
+  assert.match(filtered, /按当前筛选/)
+  assert.ok(!filtered.includes('最新批次分布'), '筛选口径存在时档位卡不得回退批次脚注')
+  // 空分布（筛选无命中）→ 0/0/0/0，不显示「—」
+  const emptyHit = treeText(MaterialKpiCards({
+    kpi: { total: 0, hotLevelSummary: {}, latest },
+  }))
+  assert.match(emptyHit, /0 \/ 0 \/ 0 \/ 0/)
+  // 筛选口径存在 + latest 缺失（run 历史加载失败等）→ 档位卡仍走筛选口径，
+  // 不因 latest 缺失回退或显示「—」（第四轮 review P3-4 覆盖盲区）
+  const noLatest = treeText(MaterialKpiCards({
+    kpi: { total: 7, hotLevelSummary: { B: 2, C: 5 }, latest: null },
+  }))
+  assert.match(noLatest, /0 \/ 0 \/ 2 \/ 5/)
+  assert.match(noLatest, /按当前筛选/)
+  assert.ok(!noLatest.includes('暂无批次'), '档位卡不因 latest 缺失走暂无批次')
+  // 服务端无 hotLevelSummary（旧版兼容）→ 回退批次投影与脚注
+  const fallback = treeText(MaterialKpiCards({ kpi: { total: 42, hotLevelSummary: null, latest } }))
+  assert.match(fallback, /0 \/ 3/)
+  assert.match(fallback, /最新批次分布/)
 })
 
 // ===========================================================================
@@ -823,12 +848,20 @@ test('MATERIAL_CSS_TEXT：核心类与按钮规格齐备', () => {
   // 各自单行化。
   assert.match(MATERIAL_CSS_TEXT, /\.ydo-mat-board-table td\{white-space:nowrap\}/u)
   assert.match(MATERIAL_CSS_TEXT, /\.ydo-mat-board-table th:first-child,\.ydo-mat-board-table td:first-child\{width:80px\}/u)
+  // 同日追加（2026-10-30 真机反馈「封面右侧仍有空隙」）：首列去单元格内边距、
+  // 图片/占位块 80×80 顶格，列内无留缝。
+  assert.match(MATERIAL_CSS_TEXT, /\.ydo-mat-board-table td:first-child\{padding:0\}/u)
+  assert.match(MATERIAL_CSS_TEXT, /\.ydo-mat-cover\{width:80px;height:80px;object-fit:cover/u)
+  assert.match(MATERIAL_CSS_TEXT, /\.ydo-mat-cover-placeholder\{width:80px;height:80px/u)
   assert.ok(!MATERIAL_CSS_TEXT.includes('.ydo-mat-table td{padding:10px 12px;border-bottom:1px solid var(--dsw-alias-border-l2,#f0f1f3);vertical-align:top;white-space:nowrap}'), '共用基类 td 不得再带全局 nowrap（压垮失败明细/账号输入列）')
   assert.match(MATERIAL_CSS_TEXT, /\.ydo-mat-video-title\{margin:0;font-weight:650;max-width:420px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis\}/u)
   assert.match(MATERIAL_CSS_TEXT, /button\.ydo-mat-video-title\{[^}]*font-weight:650/u)
   assert.match(MATERIAL_CSS_TEXT, /\.ydo-mat-tags\{display:flex;gap:4px;flex-wrap:nowrap;overflow:hidden;margin-top:6px\}/u)
   // 第三轮：标签 chip 对齐车衣素材看板（.yxh-hb-tag：2px 8px / 4px 圆角 / 12px，变量深色适配）
-  assert.match(MATERIAL_CSS_TEXT, /\.ydo-mat-tag\{padding:2px 8px;border-radius:4px;background:var\(--dsw-alias-bg-layer-2,#f5f6f7\);color:var\(--dsw-alias-label-secondary,#646a73\);font-size:12px\}/u)
+  // chip 底色禁用 bg-layer-2（宿主浅色 layer-1/2/3 恒纯白，白底不可见——
+  // 2026-10-30 真机反馈根因）：锁定 color-mix 文字色 12% 混页面底色。
+  assert.match(MATERIAL_CSS_TEXT, /\.ydo-mat-tag\{padding:2px 8px;border-radius:4px;background:color-mix\(in srgb,var\(--dsw-alias-label-secondary,#646a73\) 12%,var\(--dsw-alias-bg-base,#fff\)\);color:var\(--dsw-alias-label-secondary,#646a73\);font-size:12px\}/u)
+  assert.ok(!/\.ydo-mat-tag\{[^}]*bg-layer-2/u.test(MATERIAL_CSS_TEXT), 'chip 底色不得再用 bg-layer-2（浅色恒白）')
   // 第三轮：标题链接保持粗体（button font:inherit 会冲掉基类 650，须显式回设）；
   // 抽屉视频链接同粗体。
   assert.match(MATERIAL_CSS_TEXT, /\.ydo-mat-link-wrap\{height:auto;font-weight:650\}/u)
