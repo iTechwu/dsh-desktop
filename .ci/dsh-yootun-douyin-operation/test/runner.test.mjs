@@ -20,7 +20,7 @@ async function withRoot(fn) {
 
 // 伪造页面：works 条作品 + 空热词 + 画像，供采集编排跑通全链路。
 // listStatusCode / profileStatusCode ≠ 0 时对应接口返回 HTTP 200 + 该业务码（8 = 会话失效）。
-function fakeSession({ workCount = 3, avatar = null, listStatusCode = 0, profileStatusCode = 0 } = {}) {
+function fakeSession({ workCount = 3, avatar = null, listStatusCode = 0, profileStatusCode = 0, profileAccountId = 'acc-1' } = {}) {
   const list = Array.from({ length: workCount }, (_, index) => ({
     aweme_id: `70000000000000000${index}`,
     desc: `作品 ${index}`,
@@ -43,7 +43,7 @@ function fakeSession({ workCount = 3, avatar = null, listStatusCode = 0, profile
       if (url.includes('wordCloud')) return reply({ status_code: 0, word_cloud_list: [] })
       if (url.includes('user/info')) {
         if (profileStatusCode !== 0) return reply({ status_code: profileStatusCode, status_msg: '示例：用户未登录' })
-        const user = { sec_uid: 'acc-1', nickname: '示例账号', follower_count: 290 }
+        const user = { sec_uid: profileAccountId, nickname: '示例账号', follower_count: 290 }
         if (avatar !== null) user.avatar_uri = avatar
         return reply({ user })
       }
@@ -115,6 +115,132 @@ test('采集成功：列表完整 + 分批入库 + 服务端结算', async () =>
     assert.equal(result.succeededWorkCount, 3)
     assert.ok(calls.some(call => call.name === 'douyin_collect_run_finish'))
     assert.ok(events.includes('session_open'))
+  })
+})
+
+test('采集成功：远端 expired 会话被恢复为 ok，并先对齐远端 seq 下限', async () => {
+  await withRoot(async root => {
+    await updateAccount('acc-1', { sessionStatus: 'expired', sessionSeq: 2 }, root)
+    const reports = []
+    const result = await runAccountCollection({
+      accountId: 'acc-1',
+      root,
+      callTool: async (name, args) => {
+        if (name === 'douyin_account_list') {
+          return { accounts: [{ account_id: 'acc-1', session_status: 'expired', session_seq: 9 }] }
+        }
+        if (name === 'douyin_session_status_report') {
+          reports.push({ name, args })
+          return { applied: true, reason: null }
+        }
+        if (name === 'douyin_collect_run_start') return { run: { run_id: 'run-1', last_heartbeat_seq: 0 }, reused: false }
+        if (name === 'douyin_collect_run_set_list_meta') return { run: { run_id: 'run-1' } }
+        if (name === 'douyin_collect_ingest_batch') {
+          return { run: { run_id: 'run-1' }, batch: { batch_no: args.batchNo, status: 'completed', succeeded_work_ids: args.works.map(w => w.work_id), failed_work_ids: [] }, replayed: false }
+        }
+        if (name === 'douyin_collect_run_finish') return { run: { run_id: 'run-1', status: 'completed' }, settlement: { succeeded_work_count: 1 }, replayed: false }
+        return {}
+      },
+      storageStatePath: await withSessionFile(root),
+      sessionFactory: async () => fakeSession({ workCount: 1 }),
+    })
+    assert.equal(result.status, 'ready')
+    assert.equal(reports.length, 1)
+    const args = reports[0].args
+    assert.equal(args.accountId, 'acc-1')
+    assert.equal(args.sessionStatus, 'ok')
+    assert.equal(args.sessionSeq, 10)
+    assert.equal(args.sessionRef, 'vault://douyin/acc-1')
+    assert.equal(args.idempotencyKey, 'douyin:session:acc-1:10')
+    const record = await getAccount('acc-1', root)
+    assert.equal(record.sessionStatus, 'ok')
+    assert.equal(record.sessionSeq, 10)
+  })
+})
+
+test('采集成功：profile 账号不一致时不恢复目标账号会话', async () => {
+  await withRoot(async root => {
+    await updateAccount('acc-1', { sessionStatus: 'expired', sessionSeq: 2 }, root)
+    const names = []
+    const result = await runAccountCollection({
+      accountId: 'acc-1',
+      root,
+      callTool: async name => {
+        names.push(name)
+        if (name === 'douyin_collect_run_start') return { run: { run_id: 'run-1', last_heartbeat_seq: 0 }, reused: false }
+        if (name === 'douyin_collect_run_set_list_meta') return { run: { run_id: 'run-1' } }
+        if (name === 'douyin_collect_ingest_batch') return { run: { run_id: 'run-1' }, batch: { batch_no: 1, status: 'completed', succeeded_work_ids: ['w1'], failed_work_ids: [] }, replayed: false }
+        if (name === 'douyin_collect_run_finish') return { run: { run_id: 'run-1', status: 'completed' }, settlement: {}, replayed: false }
+        return {}
+      },
+      storageStatePath: await withSessionFile(root),
+      sessionFactory: async () => fakeSession({ workCount: 1, profileAccountId: 'acc-2' }),
+    })
+    assert.equal(result.status, 'ready')
+    assert.equal(names.includes('douyin_session_status_report'), false)
+    const record = await getAccount('acc-1', root)
+    assert.equal(record.sessionStatus, 'expired')
+    assert.equal(record.sessionSeq, 2)
+  })
+})
+
+test('采集成功：远端已是 ok 时只同步本地 seq，不重复上报', async () => {
+  await withRoot(async root => {
+    await updateAccount('acc-1', { sessionStatus: 'expired', sessionSeq: 2 }, root)
+    const reports = []
+    const result = await runAccountCollection({
+      accountId: 'acc-1',
+      root,
+      callTool: async (name, args) => {
+        if (name === 'douyin_account_list') {
+          return { accounts: [{ account_id: 'acc-1', session_status: 'ok', session_seq: 9 }] }
+        }
+        if (name === 'douyin_session_status_report') reports.push({ name, args })
+        if (name === 'douyin_collect_run_start') return { run: { run_id: 'run-1', last_heartbeat_seq: 0 }, reused: false }
+        if (name === 'douyin_collect_run_set_list_meta') return { run: { run_id: 'run-1' } }
+        if (name === 'douyin_collect_ingest_batch') {
+          return { run: { run_id: 'run-1' }, batch: { batch_no: args.batchNo, status: 'completed', succeeded_work_ids: args.works.map(w => w.work_id), failed_work_ids: [] }, replayed: false }
+        }
+        if (name === 'douyin_collect_run_finish') return { run: { run_id: 'run-1', status: 'completed' }, settlement: {}, replayed: false }
+        return {}
+      },
+      storageStatePath: await withSessionFile(root),
+      sessionFactory: async () => fakeSession({ workCount: 1 }),
+    })
+    assert.equal(result.status, 'ready')
+    assert.equal(reports.length, 0)
+    const record = await getAccount('acc-1', root)
+    assert.equal(record.sessionStatus, 'ok')
+    assert.equal(record.sessionSeq, 9, '远端已 ok 时对齐下限，但不消耗新 seq')
+  })
+})
+
+test('采集成功：服务端拒绝 ok 上报时不误报已恢复', async () => {
+  await withRoot(async root => {
+    const events = []
+    const result = await runAccountCollection({
+      accountId: 'acc-1',
+      root,
+      callTool: async (name, args) => {
+        if (name === 'douyin_account_list') {
+          return { accounts: [{ account_id: 'acc-1', session_status: 'expired', session_seq: 9 }] }
+        }
+        if (name === 'douyin_session_status_report') return { applied: false, reason: 'stale_report' }
+        if (name === 'douyin_collect_run_start') return { run: { run_id: 'run-1', last_heartbeat_seq: 0 }, reused: false }
+        if (name === 'douyin_collect_run_set_list_meta') return { run: { run_id: 'run-1' } }
+        if (name === 'douyin_collect_ingest_batch') {
+          return { run: { run_id: 'run-1' }, batch: { batch_no: args.batchNo, status: 'completed', succeeded_work_ids: args.works.map(w => w.work_id), failed_work_ids: [] }, replayed: false }
+        }
+        if (name === 'douyin_collect_run_finish') return { run: { run_id: 'run-1', status: 'completed' }, settlement: {}, replayed: false }
+        return {}
+      },
+      storageStatePath: await withSessionFile(root),
+      sessionFactory: async () => fakeSession({ workCount: 1 }),
+      onProgress: event => events.push(event),
+    })
+    assert.equal(result.status, 'ready')
+    assert.ok(events.some(event => event.phase === 'session_ok_report_rejected' && event.reason === 'stale_report'))
+    assert.ok(!events.some(event => event.phase === 'session_ok_reported'))
   })
 })
 

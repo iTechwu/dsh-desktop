@@ -14,7 +14,7 @@ import { collectAccountWorks } from './collector.js'
 import { createIngestClient, ingestCollectedWorks } from './ingest.js'
 import { SessionInvalidError } from './parse.js'
 import { getAccount, hasStorageState, paths, stateRoot, updateAccount } from './state.js'
-import { markSessionExpired } from './session.js'
+import { markSessionExpired, markSessionOk } from './session.js'
 import { accountSaveIdempotencyKey, sessionIdempotencyKey } from './tools-client.js'
 
 export const DEFAULT_MAX_PAGES = 1000
@@ -193,6 +193,11 @@ export async function runAccountCollection({
   // 补传标准化后的头像字符串（只发非空字符串，不发对象/Cookie）。本地写入失败、
   // 远端同步失败都只记诊断事件，绝不改变作品采集与入库结果。
   // 兜底 catch：默认实现内部全捕获，注入实现若抛异常同样不得跳过作品入库。
+  // 采集链路未命中 SessionInvalidError，且目标账号 profile 读取成功：这是远端会话
+  // 有效的强证据。多设备场景下另一台客户端可能此前把账号置为 expired；这里尽力
+  // 把状态拉回 ok，但任何上报失败都不改变采集与入库结果。
+  await reportSessionOkAfterCollect({ accountId, callTool, collected, root, emit })
+
   const avatarOutcome = await saveAvatar({ accountId, profile: collected.profile, root })
     .catch(() => ({ updated: false, reason: 'avatar_save_failed' }))
   if (avatarOutcome.updated) {
@@ -334,6 +339,83 @@ export async function finishExpiredSession({ accountId, callTool, client, collec
     failedWorkCount,
     sessionReported,
     sessionReportError,
+  }
+}
+
+/**
+ * 采集成功后的会话恢复上报（best-effort）。
+ *
+ * 身份门槛：仅当采集页面读到的 profile 与目标 accountId 一致才上报，避免本地
+ * storage_state 指向异常账号时把错误状态写到目标账号。远端账号行用于对齐
+ * sessionSeq 下限；若远端状态已经是 ok，则不再消耗新 seq。
+ */
+async function reportSessionOkAfterCollect({ accountId, callTool, collected, root, emit }) {
+  const profile = collected && typeof collected.profile === 'object' ? collected.profile : null
+  if (!profile || profile.accountId !== accountId) {
+    return { reported: false, skipped: true, reason: 'profile_unverified' }
+  }
+
+  let remoteAccount = null
+  try {
+    const payload = await callTool('douyin_account_list', { accountId })
+    remoteAccount = Array.isArray(payload?.accounts)
+      ? payload.accounts.find(item => item?.account_id === accountId) || null
+      : null
+  } catch (error) {
+    const reason = safeReason(error)
+    emit({ phase: 'session_ok_report_failed', error: reason })
+    return { reported: false, reason }
+  }
+  if (!remoteAccount) {
+    emit({ phase: 'session_ok_report_skipped', reason: 'remote_account_unavailable' })
+    return { reported: false, skipped: true, reason: 'remote_account_unavailable' }
+  }
+  if (remoteAccount.session_status === 'ok') {
+    // 远端已是 ok 时不消耗新 seq，但本机仍要对齐远端下限；否则本机后续上报可能
+    // 携带落后 seq，被服务端按 stale_report 拒绝。远端状态同时作为本机 ok 证据。
+    try {
+      const remoteSeq = Number(remoteAccount.session_seq || 0)
+      const current = await getAccount(accountId, root)
+      const localSeq = Number(current?.sessionSeq || 0)
+      await updateAccount(accountId, {
+        sessionStatus: 'ok',
+        sessionCheckedAt: new Date().toISOString(),
+        sessionSeq: Number.isFinite(remoteSeq) && remoteSeq > localSeq ? remoteSeq : localSeq,
+        vaultRef: paths(root).vaultRef(accountId),
+      }, root)
+      return { reported: false, skipped: true, reason: 'already_ok' }
+    } catch (error) {
+      const reason = safeReason(error)
+      emit({ phase: 'session_ok_report_failed', error: reason })
+      return { reported: false, reason }
+    }
+  }
+
+  try {
+    const state = await markSessionOk({
+      accountId,
+      root,
+      floorSessionSeq: Number(remoteAccount.session_seq || 0),
+    })
+    const response = await callTool('douyin_session_status_report', {
+      accountId,
+      sessionStatus: state.sessionStatus,
+      sessionSeq: state.sessionSeq,
+      checkedAt: state.checkedAt,
+      sessionRef: state.vaultRef,
+      idempotencyKey: sessionIdempotencyKey(accountId, state.sessionSeq),
+    })
+    if (response?.applied === false) {
+      const reason = response.reason === 'stale_report' ? 'stale_report' : 'session_report_rejected'
+      emit({ phase: 'session_ok_report_rejected', reason })
+      return { reported: false, reason }
+    }
+    emit({ phase: 'session_ok_reported' })
+    return { reported: true, skipped: false, reason: null }
+  } catch (error) {
+    const reason = safeReason(error)
+    emit({ phase: 'session_ok_report_failed', error: reason })
+    return { reported: false, reason }
   }
 }
 

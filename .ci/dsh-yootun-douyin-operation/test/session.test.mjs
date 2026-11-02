@@ -7,6 +7,7 @@ import { test } from 'node:test'
 import { ChromeMissingError } from '../src/chrome.js'
 import {
   markSessionExpired,
+  markSessionOk,
   PENDING_ACCOUNT_PREFIX,
   SESSION_COOKIE_NAMES,
   isPendingAccountId,
@@ -269,6 +270,26 @@ test('markSessionExpired：采集链路直接置 expired 并保持 sessionSeq �
     const second = await markSessionExpired({ accountId: 'acc-1', root })
     assert.equal(second.sessionSeq, 4)
     assert.ok(second.checkedAt >= first.checkedAt)
+  })
+})
+
+test('markSessionOk：采集链路恢复 ok 并先对齐远端 sessionSeq 下限', async () => {
+  await withRoot(async root => {
+    // 另一台设备可能已把远端 seq 推到 9；本机本地 seq 只有 2。
+    await updateAccount('acc-1', { sessionStatus: 'expired', sessionSeq: 2 }, root)
+    const state = await markSessionOk({ accountId: 'acc-1', root, floorSessionSeq: 9 })
+    assert.equal(state.sessionStatus, 'ok')
+    assert.equal(state.sessionSeq, 10, '先对齐远端 9，再分配下一个单调序号')
+    assert.equal(state.reason, 'collect_success')
+    assert.equal(state.checkedAt, state.account.sessionCheckedAt)
+    assert.equal(state.vaultRef, 'vault://douyin/acc-1')
+    const record = await getAccount('acc-1', root)
+    assert.equal(record.sessionStatus, 'ok')
+    assert.equal(record.sessionSeq, 10)
+
+    // 本地 seq 已领先远端时，远端值不能把序号回退。
+    const next = await markSessionOk({ accountId: 'acc-1', root, floorSessionSeq: 3 })
+    assert.equal(next.sessionSeq, 11)
   })
 })
 

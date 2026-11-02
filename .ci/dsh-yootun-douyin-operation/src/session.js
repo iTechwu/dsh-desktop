@@ -366,6 +366,43 @@ export async function markSessionExpired({ accountId, root = stateRoot(), reason
   }
 }
 
+/**
+ * 采集链路的会话恢复（多设备状态修复）：目标账号 profile 读取成功且采集链路
+ * 未命中 SessionInvalidError 时，设备端把会话状态拉回 `ok` 并取下一个单调 sessionSeq。
+ *
+ * `floorSessionSeq` 来自 tools 当前账号行：另一台设备可能已把 seq 推高（例如上报过
+ * expired），本机本地 seq 落后时必须先对齐远端下限再 +1，否则 ok 会被服务端当作
+ * 旧上报拒绝，继续残留 expired。
+ */
+export async function markSessionOk({
+  accountId,
+  root = stateRoot(),
+  floorSessionSeq = 0,
+  reason = 'collect_success',
+} = {}) {
+  const checkedAt = new Date().toISOString()
+  const current = await getAccount(accountId, root)
+  const floor = Number(floorSessionSeq)
+  if (Number.isFinite(floor) && floor > Number(current?.sessionSeq || 0)) {
+    await updateAccount(accountId, { sessionSeq: floor }, root)
+  }
+  const seq = await nextSessionSeq(accountId, root)
+  const record = await updateAccount(accountId, {
+    sessionStatus: 'ok',
+    sessionCheckedAt: checkedAt,
+    sessionSeq: seq,
+    vaultRef: paths(root).vaultRef(accountId),
+  }, root)
+  return {
+    sessionStatus: 'ok',
+    sessionSeq: seq,
+    checkedAt,
+    vaultRef: paths(root).vaultRef(accountId),
+    reason,
+    account: record,
+  }
+}
+
 /** 删除流程第 1 步：清除设备端 Profile 与 storage_state（成功后才允许请求远端删除）。 */
 export async function removeLocalAccount({ accountId, root = stateRoot() } = {}) {
   const record = await getAccount(accountId, root)
