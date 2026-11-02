@@ -7,7 +7,7 @@
 // - 双击行打开子页面（性别/年龄/地域/城市级/流量来源/进度/搜索词/热词）。
 
 import { COLUMNS, DEFAULT_SORT_STATE, EMPTY, accountState, batchProgress, batchReasonKey, batchSummary, formatAgeBucket, formatCell, formatCount, formatDateTime, formatDuration, formatPercent, gapFieldLabel, gapReasonText, genderColor, genderLabel, hasGap, nextSortState, progressStatus, progressStatusText, progressText, safeAvatarSrc, safeWorkUrl, sortWorks, tableTemplate, trafficSourceLabel } from './ui-format.js'
-import { ERROR_REASON_COPY, OverviewPage, buildOverviewFilters, defaultCustomRange, overviewRangeLabel } from './overview-ui.js'
+import { ERROR_REASON_COPY, OverviewPage, buildAccountCatalog, buildOwnerOptions, buildOverviewFilters, defaultCustomRange, overviewRangeLabel } from './overview-ui.js'
 import { ANALYSIS_ERROR_REASON_COPY, AnalysisPage, TREND_METRICS } from './analysis-ui.js'
 import {
   BD_EXPORT_ERROR_COPY,
@@ -64,6 +64,12 @@ const bdDownloadIdempotencyKey = () => `douyin:vv_download:${newAiAnalysisReques
 const vvSeedSearchIdempotencyKey = () => `douyin:vv_seed_search:${newAiAnalysisRequestUuid()}`
 const vvKeywordUpsertIdempotencyKey = () => `douyin:vv_keyword_upsert:${newAiAnalysisRequestUuid()}`
 const vvAccountUpsertIdempotencyKey = () => `douyin:vv_account_upsert:${newAiAnalysisRequestUuid()}`
+// 负责人与投流受理键（RQ-2026-009 §5.2）：与 index.js OWNER_SET/PROMOTION_SAVE
+// 的 KEY_PATTERN、tools 服务端 common.require_*_idempotency_key 模板一致；每次
+// 点击生成全新 UUID，键不嵌账号/作品（服务端以 request 参数绑定）。不直接 import
+// tools-client.js——不在 lib 构建拼接白名单内（同 reportRegenerateIdempotencyKey 先例）。
+const accountOwnerSetIdempotencyKey = () => `douyin:account_owner_set:${newAiAnalysisRequestUuid()}`
+const workPromotionSaveIdempotencyKey = () => `douyin:work_promotion_save:${newAiAnalysisRequestUuid()}`
 const MATERIAL_BOARD_PAGE_SIZE = 20
 const MATERIAL_RUNS_PAGE_LIMIT = 50
 // 采集受理轮询固定 3s（受理响应 nextAction=poll_status 后启动；隐藏页签暂停）。
@@ -188,6 +194,8 @@ const copy = {
     alertSessionExpired: '会话已过期，请重新扫码', alertSuspiciousEmpty: '可疑空采集，请检测会话',
     alertStaleCollect: '最近 7 天没有成功的采集，数据可能过旧',
     overviewAccountFilter: '账号：', overviewWindow: '发布时间：', overviewSort: '排序：',
+    // 负责人筛选（RQ-2026-009 §6.5）：候选「全部」恒为首项；排行列与 data-label 同键。
+    overviewOwnerFilter: '账号负责人：', ownerFilterAll: '全部', colOwner: '账号负责人',
     allAccounts: '全部账号', colAccount: '账号', colVideo: '视频',
     window_7d: '近7天', window_30d: '近30天', window_90d: '近90天', window_custom: '自定义',
     customRangeStart: '开始日期', customRangeEnd: '截止日期',
@@ -234,6 +242,29 @@ const copy = {
     // UI 优化方案 v2（2026-09-16）：账号目录一致性、作品数范围口径、加权说明。
     accountCatalogSyncing: '账号列表与统计正在同步', accountCatalogUnavailable: '账号列表暂不可用',
     noWorks: '暂无可统计作品', workCountAllTime: '全部时间作品数',
+    // 负责人维护（RQ-2026-009 §6.2/§6.3）：工具栏入口 + 弹框。
+    accountOwnerLabel: '账号负责人：', ownerNotSet: '未设置', ownerAdd: '新增', ownerEdit: '编辑',
+    ownerModalTitle: '维护账号负责人', ownerModalAccount: '账号名称', ownerModalOwner: '账号负责人',
+    ownerRequired: '请输入账号负责人',
+    ownerNameInvalid: '账号负责人最长 128 字',
+    ownerSaved: '已保存', ownerSaveFailed: '保存失败，请稍后重试',
+    cancel: '取消', save: '保存', saving: '保存中…',
+    // 投流数据（RQ-2026-009 §6.8/§6.9）：详情入口 + 卡片 + 弹框。
+    promotionBadge: '已投流', promotionEntryAdd: '添加投流数据', promotionEntryUpdate: '更新投流数据',
+    secPromotion: '投流数据',
+    promoPlay: '投流播放量', promoCost: '消耗金额', promoFans: '粉丝量', promoHours: '实际投放时长',
+    hoursUnit: '小时',
+    promotionModalTitle: '维护投流数据',
+    promotionFieldPlay: '投流播放量', promotionFieldCost: '消耗金额（元）',
+    promotionFieldFans: '粉丝量', promotionFieldHours: '实际投放时长（小时）',
+    promotionPlayRequired: '请输入投流播放量', promotionCostRequired: '请输入消耗金额',
+    promotionFansRequired: '请输入粉丝量', promotionHoursRequired: '请输入实际投放时长',
+    promotionPlayInvalid: '投流播放量须为不小于 0 的整数', promotionCostInvalid: '消耗金额须为不小于 0 的数值，最多两位小数',
+    promotionFansInvalid: '粉丝量须为不小于 0 的整数', promotionHoursInvalid: '实际投放时长须大于 0，最多两位小数',
+    // stale-add（AC-R5-010）：新增撞已有记录不静默覆盖，中文提示固定口径。
+    promotionAlreadyExists: '该作品已存在投流数据，请刷新后检查并更新',
+    promotionNotFound: '投流记录已不存在，请刷新后重试',
+    promotionSaved: '已保存', promotionSaveFailed: '保存失败，请稍后重试',
     // 二审（2026-09-16）：排行受 top_n 截断属正常展示语义，明确区分完整账号数与展示数。
     rankingScopeHint: '共 {total} 个账号 · 排行展示 {shown} 个',
     // AI 账号表现分析（0916 方案 §9）
@@ -402,6 +433,7 @@ const copy = {
     alertSessionExpired: 'Session expired — scan again', alertSuspiciousEmpty: 'Suspicious empty collect — check the session',
     alertStaleCollect: 'No successful collection in the last 7 days; data may be stale',
     overviewAccountFilter: 'Accounts:', overviewWindow: 'Publish window:', overviewSort: 'Sort:',
+    overviewOwnerFilter: 'Account owner:', ownerFilterAll: 'All', colOwner: 'Account owner',
     allAccounts: 'All accounts', colAccount: 'Account', colVideo: 'Video',
     window_7d: 'Last 7 days', window_30d: 'Last 30 days', window_90d: 'Last 90 days', window_custom: 'Custom',
     customRangeStart: 'Start date', customRangeEnd: 'End date',
@@ -444,6 +476,27 @@ const copy = {
     labelOther: 'Other label', alertRuleOther: 'Other rule alert',
     accountCatalogSyncing: 'Account list and stats are syncing', accountCatalogUnavailable: 'Account list unavailable',
     noWorks: 'No statistically usable works', workCountAllTime: 'All-time works',
+    // Owner maintenance (RQ-2026-009 §6.2/§6.3) and promotion (§6.8/§6.9).
+    accountOwnerLabel: 'Account owner: ', ownerNotSet: 'Not set', ownerAdd: 'Add', ownerEdit: 'Edit',
+    ownerModalTitle: 'Maintain account owner', ownerModalAccount: 'Account name', ownerModalOwner: 'Account owner',
+    ownerRequired: 'Enter the account owner',
+    ownerNameInvalid: 'Account owner is limited to 128 characters',
+    ownerSaved: 'Saved', ownerSaveFailed: 'Save failed, retry later',
+    cancel: 'Cancel', save: 'Save', saving: 'Saving…',
+    promotionBadge: 'Promoted', promotionEntryAdd: 'Add promotion data', promotionEntryUpdate: 'Update promotion data',
+    secPromotion: 'Promotion data',
+    promoPlay: 'Promotion plays', promoCost: 'Cost', promoFans: 'Fans gained', promoHours: 'Actual duration',
+    hoursUnit: 'h',
+    promotionModalTitle: 'Maintain promotion data',
+    promotionFieldPlay: 'Promotion plays', promotionFieldCost: 'Cost (CNY)',
+    promotionFieldFans: 'Fans gained', promotionFieldHours: 'Actual duration (hours)',
+    promotionPlayRequired: 'Enter promotion plays', promotionCostRequired: 'Enter the cost',
+    promotionFansRequired: 'Enter fans gained', promotionHoursRequired: 'Enter the actual duration',
+    promotionPlayInvalid: 'Promotion plays must be an integer ≥ 0', promotionCostInvalid: 'Cost must be ≥ 0 with at most two decimal places',
+    promotionFansInvalid: 'Fans gained must be an integer ≥ 0', promotionHoursInvalid: 'Duration must be > 0 with at most two decimal places',
+    promotionAlreadyExists: 'This work already has promotion data — refresh and update it',
+    promotionNotFound: 'The promotion record no longer exists — refresh and retry',
+    promotionSaved: 'Saved', promotionSaveFailed: 'Save failed, retry later',
     rankingScopeHint: '{total} accounts in total · ranking shows {shown}',
     // AI performance analysis (0916 plan §9)
     aiTitle: 'AI performance analysis',
@@ -792,7 +845,7 @@ function snapshotTrendPoints(snapshots) {
   return { points, lastCapturedDay: points.length ? points[points.length - 1].day : null }
 }
 
-function WorkDetailModal({ accountId, workId, detail, trend, loading, onClose, t }) {
+function WorkDetailModal({ accountId, workId, detail, trend, loading, onClose, onOpenPromotion, t }) {
   // 1015 UI 规格 §5.4：弹框趋势与分析页同一实测宽逻辑（ResizeObserver 驱动
   // viewBox），数据齐全时左右撑满（仅 6px 点半径安全边距）。hook 顶部无条件调用。
   const [trendWrapRef, trendWidth] = useMeasuredWidth(960)
@@ -823,6 +876,35 @@ function WorkDetailModal({ accountId, workId, detail, trend, loading, onClose, t
     [t('bounceRate2s'), formatPercent(work && work.bounce_rate_2s_pct)],
     [t('colFansGain'), h('span', { className: fansGainDelta.className }, fansGainDelta.text)],
   ]
+  // 投流数据（RQ-2026-009 §6.8）：work.get 的 promotion 投影（camelCase）。已投流
+  // 四项必填，缺失按 —（防御）；金额 ¥0.00 两位、小时两位带单位、计数千分位。
+  const promotion = detail && detail.promotion ? detail.promotion : null
+  const promotionMoneyText = value => {
+    const num = Number(value)
+    return Number.isFinite(num) ? `¥${num.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',')}` : '—'
+  }
+  const promotionHoursText = value => {
+    const num = Number(value)
+    return Number.isFinite(num) ? `${num.toFixed(2)}${t('hoursUnit')}` : '—'
+  }
+  const promotionMetrics = promotion ? [
+    [t('promoPlay'), countText(promotion.playCount)],
+    [t('promoCost'), promotionMoneyText(promotion.costAmount)],
+    [t('promoFans'), countText(promotion.fansCount)],
+    [t('promoHours'), promotionHoursText(promotion.durationHours)],
+  ] : []
+  // 投流入口（§6.8.1）：头部时间文本右侧操作区——已投流 = 标签 + 更新；未投流 =
+  // 只显示添加。打开弹框时带上预填数据（更新预填服务端字符串值，§6.9）。
+  const openPromotionModal = () => onOpenPromotion && onOpenPromotion({
+    accountId,
+    workId,
+    workTitle: (work && work.title) || workId,
+    recordId: promotion ? String(promotion.id) : null,
+    playCount: promotion ? String(promotion.playCount) : '',
+    costAmount: promotion ? String(promotion.costAmount) : '',
+    fansCount: promotion ? String(promotion.fansCount) : '',
+    durationHours: promotion ? String(promotion.durationHours) : '',
+  })
   // 1015 UI 规格 §5.4：播放趋势折线（替代「共 N 个趋势点」文字行）。
   const { points: trendPoints, lastCapturedDay } = snapshotTrendPoints(trend && trend.snapshots)
   const trendRendered = (() => {
@@ -863,7 +945,16 @@ function WorkDetailModal({ accountId, workId, detail, trend, loading, onClose, t
             `${t('publishTime')} ${publishText}`,
             durationText ? ` · ${durationText}` : '',
             work && work.visibility === 'not_in_list' ? ` · ${t('privateBadge')}` : null),
-          h('p', { className: 'ydo-modal-meta' }, `${t('latestCollected')} ${latestText === EMPTY ? t('noRecord') : latestText}`)),
+          h('p', { className: 'ydo-modal-meta' }, `${t('latestCollected')} ${latestText === EMPTY ? t('noRecord') : latestText}`),
+          // 投流操作区（RQ-2026-009 §6.8.1）：头部时间文本右侧；已投流标签复用既有
+          // ydo-tag（无新增样式类），未投流只渲染添加按钮，不渲染投流卡片。
+          h('div', null,
+            promotion ? h('span', { className: 'ydo-tag' }, t('promotionBadge')) : null,
+            h('button', {
+              type: 'button',
+              className: 'ydo-secondary',
+              onClick: openPromotionModal,
+            }, promotion ? t('promotionEntryUpdate') : t('promotionEntryAdd')))),
         h(Tooltip, { label: t('close') },
           h('button', { type: 'button', 'aria-label': t('close'), onClick: onClose }, h(IconCloseOutlineRegular, { size: 16 })))),
       loading
@@ -876,6 +967,14 @@ function WorkDetailModal({ accountId, workId, detail, trend, loading, onClose, t
               ...coreMetrics.map(([label, value]) => h('div', { key: label, className: 'ydo-an-metric-card', role: 'listitem' },
                 h('span', { className: 'ydo-an-metric-label' }, label),
                 h('strong', { className: 'ydo-an-metric-value' }, value))))),
+          // ②' 投流数据区（RQ-2026-009 §6.8）：只在已投流时渲染；卡片顺序固定
+          // 核心指标 → 投流数据 → 播放量趋势，四卡复用核心指标同款网格。
+          promotion ? h('section', { className: 'ydo-panel ydo-modal-panel-full' },
+            h('h4', { className: 'ydo-modal-sec-title' }, t('secPromotion')),
+            h('div', { className: 'ydo-an-metrics ydo-modal-core-metrics', role: 'list' },
+              ...promotionMetrics.map(([label, value]) => h('div', { key: label, className: 'ydo-an-metric-card', role: 'listitem' },
+                h('span', { className: 'ydo-an-metric-label' }, label),
+                h('strong', { className: 'ydo-an-metric-value' }, value))))) : null,
           // ③ 播放量趋势（新增折线，替代文字计数行）。
           h('section', { className: 'ydo-panel ydo-modal-panel-full' },
             h('h4', { className: 'ydo-modal-sec-title' }, t('secPlayTrend')),
@@ -934,6 +1033,175 @@ function WorkDetailModal({ accountId, workId, detail, trend, loading, onClose, t
             : null)),
   )
 }
+
+// ---------------------------------------------------------------------------
+// 负责人与投流弹框（RQ-2026-009 §6.3/§6.9）：复用素材域 ydo-mat-* 弹框类（全局
+// 注入，零新增样式）；saving 由 client 持有（Esc/遮罩守卫「保存中不关闭」），
+// 表单值与错误是组件局部 state。打开时焦点进首个输入，卸载（保存成功/取消/Esc）
+// 后焦点返回触发按钮（§6.3.3）。错误经映射表收敛为已登记文案键，不透传原始码。
+// ---------------------------------------------------------------------------
+
+const OWNER_ERROR_COPY = Object.freeze({
+  OWNER_NAME_REQUIRED: 'ownerRequired',
+  OWNER_NAME_INVALID: 'ownerNameInvalid',
+  ACCOUNT_NOT_FOUND: 'accountNotOnCloud',
+  INVALID_IDEMPOTENCY_KEY: 'ownerSaveFailed',
+  IDEMPOTENCY_CONFLICT: 'ownerSaveFailed',
+})
+
+function OwnerModal({ modal, saving, t, onConfirm, onClose }) {
+  const [ownerName, setOwnerName] = useState(modal.ownerName || '')
+  const [errorReason, setErrorReason] = useState(null)
+  const inputRef = useRef(null)
+  // 焦点管理（§6.3.3）：先捕获触发按钮再 focus 负责人输入——顺序反了会把输入框
+  // 自己当成 trigger，卸载时 focus 已卸载节点，焦点落到 body。
+  useEffect(() => {
+    const trigger = document.activeElement
+    inputRef.current?.focus?.()
+    return () => { if (trigger && typeof trigger.focus === 'function') trigger.focus() }
+  }, [])
+  const submit = async () => {
+    if (saving) return
+    // 保存前再次 trim；空值显示「请输入账号负责人」（§6.2.5）。
+    const trimmed = ownerName.trim()
+    if (!trimmed) { setErrorReason('OWNER_NAME_REQUIRED'); return }
+    const result = await onConfirm({ accountId: modal.accountId, ownerName: trimmed })
+    if (!result || !result.ok) setErrorReason(result ? result.reason : 'owner_save_failed')
+  }
+  return h('div', {
+    className: 'ydo-mat-modal-overlay',
+    onClick: event => { if (event.target === event.currentTarget && !saving) onClose() },
+  },
+  h('div', { className: 'ydo-mat-modal', role: 'dialog', 'aria-modal': true, 'aria-labelledby': 'ydo-owner-modal-title' },
+    h('h3', { id: 'ydo-owner-modal-title' }, t('ownerModalTitle')),
+    h('div', { className: 'ydo-mat-form' },
+      h('div', { className: 'ydo-mat-field' },
+        h('span', null, t('ownerModalAccount')),
+        h('input', { type: 'text', value: modal.accountName || '', readOnly: true })),
+      h('label', { className: 'ydo-mat-field' },
+        h('span', null, t('ownerModalOwner')),
+        h('input', {
+          ref: inputRef,
+          type: 'text',
+          maxLength: 128,
+          required: true,
+          disabled: saving,
+          value: ownerName,
+          onChange: event => { setOwnerName(event.target.value); setErrorReason(null) },
+          onKeyDown: event => { if (event.key === 'Enter') submit() },
+        }))),
+    errorReason
+      ? h('p', { className: 'ydo-mat-error', role: 'alert' }, t(OWNER_ERROR_COPY[errorReason] || 'ownerSaveFailed'))
+      : null,
+    h('div', { className: 'ydo-mat-modal-actions' },
+      h('button', { type: 'button', className: 'ydo-mat-secondary', disabled: saving, onClick: onClose }, t('cancel')),
+      h('button', {
+        type: 'button',
+        className: 'ydo-mat-primary',
+        disabled: saving,
+        'aria-busy': saving,
+        onClick: submit,
+      }, saving ? t('saving') : t('save')))))
+}
+
+// 非负金额/时长文本校验：整数或 1–2 位小数（与 Host PROMOTION_DECIMAL_PATTERN 同口径）。
+const PROMOTION_DECIMAL_PATTERN = /^\d+(\.\d{1,2})?$/
+
+// 逐项校验（§6.9.2）：必填缺失与非法分键；返回文案键或 null。随 module.exports
+// 暴露供测试直接断言（client.js 是 CommonJS 工厂，不能用 ESM export）。
+function validatePromotionForm(values) {
+  const play = String(values.playCount || '').trim()
+  if (!play) return 'promotionPlayRequired'
+  const playNum = Number(play)
+  if (!Number.isInteger(playNum) || playNum < 0) return 'promotionPlayInvalid'
+  const cost = String(values.costAmount || '').trim()
+  if (!cost) return 'promotionCostRequired'
+  if (!PROMOTION_DECIMAL_PATTERN.test(cost)) return 'promotionCostInvalid'
+  const fans = String(values.fansCount || '').trim()
+  if (!fans) return 'promotionFansRequired'
+  const fansNum = Number(fans)
+  if (!Number.isInteger(fansNum) || fansNum < 0) return 'promotionFansInvalid'
+  const hours = String(values.durationHours || '').trim()
+  if (!hours) return 'promotionHoursRequired'
+  if (!PROMOTION_DECIMAL_PATTERN.test(hours) || Number(hours) <= 0) return 'promotionHoursInvalid'
+  return null
+}
+
+const PROMOTION_ERROR_COPY = Object.freeze({
+  PROMOTION_ALREADY_EXISTS: 'promotionAlreadyExists',
+  PROMOTION_NOT_FOUND: 'promotionNotFound',
+  ACCOUNT_NOT_FOUND: 'accountNotOnCloud',
+  WORK_NOT_FOUND: 'workNotOnCloud',
+  PROMOTION_FIELD_REQUIRED: 'promotionSaveFailed',
+  PROMOTION_VALUE_INVALID: 'promotionSaveFailed',
+  INVALID_IDEMPOTENCY_KEY: 'promotionSaveFailed',
+  IDEMPOTENCY_CONFLICT: 'promotionSaveFailed',
+})
+
+function PromotionModal({ modal, saving, t, onConfirm, onClose }) {
+  // 更新时预填服务端字符串值（§6.9.1）；四个 number input 受控。
+  const [playCount, setPlayCount] = useState(modal.playCount || '')
+  const [costAmount, setCostAmount] = useState(modal.costAmount || '')
+  const [fansCount, setFansCount] = useState(modal.fansCount || '')
+  const [durationHours, setDurationHours] = useState(modal.durationHours || '')
+  const [errorReason, setErrorReason] = useState(null)
+  useEffect(() => {
+    const trigger = document.activeElement
+    return () => { if (trigger && typeof trigger.focus === 'function') trigger.focus() }
+  }, [])
+  const submit = async () => {
+    if (saving) return
+    const invalid = validatePromotionForm({ playCount, costAmount, fansCount, durationHours })
+    if (invalid) { setErrorReason(invalid); return }
+    // 金额/时长按字符串透传（服务端 Decimal round-trip，无精度漂移）；计数转整数。
+    const result = await onConfirm({
+      accountId: modal.accountId,
+      workId: modal.workId,
+      recordId: modal.recordId ? Number(modal.recordId) : null,
+      playCount: Number(playCount.trim()),
+      costAmount: costAmount.trim(),
+      fansCount: Number(fansCount.trim()),
+      durationHours: durationHours.trim(),
+    })
+    if (!result || !result.ok) setErrorReason(result ? result.reason : 'promotion_save_failed')
+  }
+  const numericField = (labelText, value, setter, attrs, key) => h('label', { className: 'ydo-mat-field', key },
+    h('span', null, labelText),
+    h('input', {
+      type: 'number',
+      value,
+      disabled: saving,
+      onChange: event => { setter(event.target.value); setErrorReason(null) },
+      ...attrs,
+    }))
+  return h('div', {
+    className: 'ydo-mat-modal-overlay',
+    onClick: event => { if (event.target === event.currentTarget && !saving) onClose() },
+  },
+  h('div', { className: 'ydo-mat-modal', role: 'dialog', 'aria-modal': true, 'aria-labelledby': 'ydo-promotion-modal-title' },
+    h('h3', { id: 'ydo-promotion-modal-title' }, t('promotionModalTitle')),
+    h('div', { className: 'ydo-mat-form' },
+      h('div', { className: 'ydo-mat-field' },
+        h('span', null, t('colVideo')),
+        h('input', { type: 'text', value: modal.workTitle || modal.workId || '', readOnly: true })),
+      numericField(t('promotionFieldPlay'), playCount, setPlayCount, { min: 0, step: 1, required: true }, 'play'),
+      numericField(t('promotionFieldCost'), costAmount, setCostAmount, { min: 0, step: 0.01, required: true }, 'cost'),
+      numericField(t('promotionFieldFans'), fansCount, setFansCount, { min: 0, step: 1, required: true }, 'fans'),
+      numericField(t('promotionFieldHours'), durationHours, setDurationHours, { min: 0.01, step: 0.01, required: true }, 'hours')),
+    errorReason
+      ? h('p', { className: 'ydo-mat-error', role: 'alert' }, t(PROMOTION_ERROR_COPY[errorReason] || 'promotionSaveFailed'))
+      : null,
+    h('div', { className: 'ydo-mat-modal-actions' },
+      h('button', { type: 'button', className: 'ydo-mat-secondary', disabled: saving, onClick: onClose }, t('cancel')),
+      h('button', {
+        type: 'button',
+        className: 'ydo-mat-primary',
+        disabled: saving,
+        'aria-busy': saving,
+        onClick: submit,
+      }, saving ? t('saving') : t('save')))))
+}
+
 function convertDistribution(rows) {
   if (!Array.isArray(rows)) return []
   return rows.map(row => ({ key: row.key, pct: row.pct }))
@@ -1157,7 +1425,7 @@ function Overlay({ t }) {
   // buildOverviewFilters 归一派生（自定义截止含当天 → 服务端排他终点 = 截止+1；
   // UI 优化方案 §4.1；验收建议 2——筛选不残留跨窗口的日期）。
   const [overviewFilters, setOverviewFilters] = useState(() => ({
-    window: '30d', sort: 'hot_count', accountIds: [], ...defaultCustomRange(),
+    window: '30d', sort: 'hot_count', accountIds: [], ownerName: '', ...defaultCustomRange(),
   }))
   // 请求序列号（验收 P1 竞态防护）：快速切换筛选/账号时只接受最新一次请求的结果，
   // 过期响应的数据、错误与 loading 复位一律丢弃。
@@ -1232,6 +1500,13 @@ function Overlay({ t }) {
   const [materialFailure, setMaterialFailure] = useState(null)
   // 启用/禁用种子二次确认：{mode,row}（插件内 ydo-confirm 弹层，同删除账号样式）。
   const [materialToggleConfirm, setMaterialToggleConfirm] = useState(null)
+  // 负责人与投流弹框（RQ-2026-009 §6.1）：ownerModal 从视频数据页工具栏打开，
+  // promotionModal 从作品详情头部打开（层级高于详情）。saving 由 client 持有——
+  // Esc/遮罩关闭守卫「保存中不关闭」（§6.3.2），组件内表单值仍是局部 state。
+  const [ownerModal, setOwnerModal] = useState(null)
+  const [ownerSaving, setOwnerSaving] = useState(false)
+  const [promotionModal, setPromotionModal] = useState(null)
+  const [promotionSaving, setPromotionSaving] = useState(false)
   const [bdRewriting, setBdRewriting] = useState(false)
   // 详情页导出过渡态：只读下载，导出中禁点防重复下载（与既有导出同法）；
   // 失败文案独立于明细错误（bdDetailError），避免已成功记录被整页错误态覆盖。
@@ -1343,7 +1618,10 @@ function Overlay({ t }) {
     // 关掉整个 overlay（审查修复补充；素材弹层曾漏接入致 Esc 穿透关页）。
     const onKey = event => {
       if (event.key === 'Escape') {
-        if (detailWorkId) setDetailWorkId(null)
+        // 负责人/投流弹框在最上层（负责人入口与作品详情打开）：保存中不关闭（§6.3.2）。
+        if (promotionModal) { if (!promotionSaving) setPromotionModal(null) }
+        else if (ownerModal) { if (!ownerSaving) setOwnerModal(null) }
+        else if (detailWorkId) setDetailWorkId(null)
         else if (hotDrawerWork) setHotDrawerWork(null)
         else if (aiModalOpen) setAiModalOpen(false)
         else if (bdRewriteOpen) setBdRewriteOpen(false)
@@ -1359,7 +1637,7 @@ function Overlay({ t }) {
     document.addEventListener('keydown', onKey)
     shellRef.current?.focus?.()
     return () => document.removeEventListener('keydown', onKey)
-  }, [visible, detailWorkId, hotDrawerWork, aiModalOpen, bdRewriteOpen, bdDownloadResult, materialToggleConfirm, materialSeedModal, materialCollectOpen, materialFailure, materialReason])
+  }, [visible, promotionModal, promotionSaving, ownerModal, ownerSaving, detailWorkId, hotDrawerWork, aiModalOpen, bdRewriteOpen, bdDownloadResult, materialToggleConfirm, materialSeedModal, materialCollectOpen, materialFailure, materialReason])
 
   const stopPolling = useCallback(ref => {
     if (ref.current) { clearInterval(ref.current); ref.current = null }
@@ -1630,6 +1908,59 @@ function Overlay({ t }) {
       && overviewFilters.customTo === filters.customTo
     setOverviewFilters(filters)
   }, [overviewFilters])
+
+  // 保存账号负责人（RQ-2026-009 §6.2/§6.5）：成功后更新本地账号投影、关闭弹框，
+  // 总览已加载时失效缓存重拉——手动发一次总览请求并用新目录校准筛选（负责人候选
+  // 不再包含原筛选值 → 重置「全部」；选中账号不在新目录 → 重置「全部账号」）。
+  // 重置发生时置 skip 标记让筛选 effect 跳过自动查询（数据已手动拉到），全程只发
+  // 一次总览请求（§6.5「只触发一次总览查询」）。手动拉取失败保留旧总览与筛选，
+  // 下次任何筛选/Tab 变更会自然重查。
+  const saveAccountOwner = useCallback(async ({ accountId, ownerName }) => {
+    setOwnerSaving(true)
+    try {
+      const result = await post({
+        action: 'account.owner.set', accountId, ownerName,
+        idempotencyKey: accountOwnerSetIdempotencyKey(),
+      })
+      if (result.status !== 'ready') return { ok: false, reason: result.reason || 'owner_save_failed' }
+      const savedName = result.data && result.data.ownerName
+      // 更新 accounts 当前账号 ownerName（§6.2 第 6 条）并关弹框；宿主投影是
+      // camelCase，服务端 canonical owner_name 已在 host 层转换。
+      setAccounts(list => list.map(item =>
+        item.accountId === accountId ? { ...item, ownerName: savedName || null } : item))
+      setOwnerModal(null)
+      // 保存后总览失效重拉（§6.2.7/§6.5）：负责人入口在视频页工具栏（tab 恒为
+      // 'videos'），总览已加载过就立即重拉并校准筛选——否则切回总览会用失效的
+      // ownerName 查询（空排行 + 残留筛选值）。skip 标记让切 tab 的查询 effect
+      // 跳过一次（本次已手动重拉，不再重复查询）。
+      if (overview) {
+        const refreshed = await post({ action: 'overview.get', ...buildOverviewFilters(overviewFilters) })
+        if (refreshed.status === 'ready' && refreshed.overview) {
+          const catalog = buildAccountCatalog(refreshed.overview)
+          const ownerValues = buildOwnerOptions(catalog, t).map(option => option.value)
+          const next = { ...overviewFilters }
+          if (next.ownerName && !ownerValues.includes(next.ownerName)) next.ownerName = ''
+          const picked = next.accountIds && next.accountIds[0]
+          if (picked && !catalog.some(item => item.id === picked)) next.accountIds = []
+          setOverview(refreshed.overview)
+          const filtersChanged = next.ownerName !== overviewFilters.ownerName
+            || (next.accountIds || []).length !== (overviewFilters.accountIds || []).length
+          if (filtersChanged) {
+            skipOverviewQueryRef.current = true
+            setOverviewFilters(next)
+          }
+        }
+      }
+      return { ok: true }
+    } catch {
+      return { ok: false, reason: 'owner_save_failed' }
+    } finally {
+      setOwnerSaving(false)
+    }
+  }, [overview, overviewFilters, t])
+
+  // 保存作品投流的回调 saveWorkPromotion 定义在 openDetail 之后（依赖它刷新详情；
+  // 前向引用 useCallback 依赖数组会在渲染期 TDZ ReferenceError——4d377a3 教训）。
 
   const loadAnalysis = useCallback(async (accountId, metric = trendMetric) => {
     if (!accountId) return
@@ -2809,6 +3140,28 @@ function Overlay({ t }) {
     }
   }, [selected])
 
+  // 保存作品投流（RQ-2026-009 §6.9）：成功后关弹框并刷新详情（重拉 work.get，
+  // promotion 投影随详情更新；核心指标口径不变，仅展示刷新）。数值/金额/时长校验
+  // 已在弹框组件完成，此处只透传组装好的字段（宿主/服务端再各自兜底）。
+  const saveWorkPromotion = useCallback(async payload => {
+    setPromotionSaving(true)
+    try {
+      const result = await post({
+        action: 'work.promotion.save',
+        ...payload,
+        idempotencyKey: workPromotionSaveIdempotencyKey(),
+      })
+      if (result.status !== 'ready') return { ok: false, reason: result.reason || 'promotion_save_failed' }
+      setPromotionModal(null)
+      if (promotionModal) await openDetail(promotionModal.workId, promotionModal.accountId)
+      return { ok: true }
+    } catch {
+      return { ok: false, reason: 'promotion_save_failed' }
+    } finally {
+      setPromotionSaving(false)
+    }
+  }, [promotionModal, openDetail])
+
   // 导出只读（§10.2/§11.2.8）：不改排序/选中/works 状态，导出中禁点防重复下载，
   // 失败只登记可读文案（按钮随即恢复，可重试）。
   const exportExcel = useCallback(async accountId => {
@@ -3199,6 +3552,20 @@ function Overlay({ t }) {
             // 视频数据明细是账号全量作品（不随总览时间窗裁剪）：标签明确写「全部时间
             // 作品数」，不与总览「近 30 天作品数」并列为同名指标（UI 优化方案 v2 §3.2）。
             works.length ? h('span', { className: 'ydo-hint' }, `${t('workCountAllTime')} ${works.length}`) : null,
+            // 负责人入口（RQ-2026-009 §6.2）：紧跟「全部时间作品数」后。未设置显示
+            // 「未设置 + 新增」，已设置显示「{负责人} + 编辑」；保存成功经
+            // saveAccountOwner 更新本地投影并按需刷新总览。
+            current ? h('span', { className: 'ydo-hint' }, `${t('accountOwnerLabel')}${current.ownerName || t('ownerNotSet')}`) : null,
+            current ? h('button', {
+              type: 'button',
+              className: 'ydo-secondary',
+              disabled: busy,
+              onClick: () => setOwnerModal({
+                accountId: current.accountId,
+                accountName: current.nickname || current.accountId,
+                ownerName: current.ownerName || '',
+              }),
+            }, current.ownerName ? t('ownerEdit') : t('ownerAdd')) : null,
             // 一键采集全部的进度/汇总面板：flex-basis:100% 独占 toolbar 换行，不改变
             // ydo-right 的 grid 行结构（auto auto auto 1fr 契约）。
             batch ? h(BatchPanel, { batch, batchCollect, accounts, t }) : null),
@@ -3212,6 +3579,22 @@ function Overlay({ t }) {
     detailWorkId ? h(WorkDetailModal, {
       accountId: selected, workId: detailWorkId, detail, trend, loading: !detail, t,
       onClose: () => { setDetailWorkId(null); setDetail(null); setTrend(null) },
+      // 投流入口（RQ-2026-009 §6.8）：promotion 数据在 detail 投影里，入口只管
+      // 打开弹框；保存成功由 saveWorkPromotion 重拉详情（组件拿到新 promotion）。
+      onOpenPromotion: modalData => setPromotionModal(modalData),
+    }) : null,
+    // 负责人维护弹框（RQ-2026-009 §6.3）：工具栏入口打开，client 持有 saving 供
+    // Esc/遮罩守卫「保存中不关闭」；错误码 → 中文文案在组件内映射。
+    ownerModal ? h(OwnerModal, {
+      modal: ownerModal, saving: ownerSaving, t,
+      onConfirm: saveAccountOwner,
+      onClose: () => setOwnerModal(null),
+    }) : null,
+    // 投流数据弹框（RQ-2026-009 §6.9）：详情入口打开；更新时预填服务端字符串值。
+    promotionModal ? h(PromotionModal, {
+      modal: promotionModal, saving: promotionSaving, t,
+      onConfirm: saveWorkPromotion,
+      onClose: () => setPromotionModal(null),
     }) : null,
     // 重新改写弹框（0922 方案 §4.1）：overlay 级渲染，接入统一 Esc 链（bdRewriteOpen）。
     bdRewriteOpen
@@ -3289,7 +3672,7 @@ const css = `.ydo-button{display:flex;width:36px;height:36px;align-items:center;
 .ydo-ov-toolbar{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:12px}.ydo-ov-filters{display:flex;align-items:center;gap:12px;flex-wrap:wrap;min-width:0}/* 筛选控件带可见说明文字、高度统一 36px；取消浏览器黑 outline，仅 :focus-visible 显品牌色外环（v2 §4.1/§7）。 */
 .ydo-filter-option:hover{background:var(--dsw-alias-bg-layer-2)}.ydo-ov-filter{display:inline-flex;align-items:center;gap:6px;color:var(--dsw-alias-label-secondary);font-size:var(--dsh-content-font-size-secondary,13px);white-space:nowrap}/* 自定义日期范围（2026-09-21 需求）：与筛选下拉同规格（36px/边框/圆角）；color-scheme 跟随宿主主题，日历图标明暗自适应。 */
 .ydo-custom-range{display:inline-flex;align-items:center;gap:6px;white-space:nowrap}.ydo-custom-range-dash{color:var(--dsw-alias-label-secondary)}.ydo-date-input{height:36px;padding:0 8px;border:1px solid var(--dsw-alias-border-l1);border-radius:6px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);font:inherit;font-size:var(--dsh-content-font-size-secondary,13px);color-scheme:light dark}.ydo-date-input:focus{outline:0}.ydo-date-input:focus-visible{border-color:#3B82F6;box-shadow:0 0 0 2px color-mix(in srgb,#3B82F6 28%,transparent)}.ydo-filter-select{display:inline-flex;position:relative;min-width:0}.ydo-filter-trigger{display:flex;align-items:center;justify-content:space-between;gap:10px;height:36px;min-width:90px;max-width:220px;padding:0 10px;border:1px solid var(--dsw-alias-border-l1);border-radius:6px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);font:inherit;font-size:var(--dsh-content-font-size-secondary,13px);cursor:pointer}.ydo-filter-trigger:focus{outline:0}.ydo-filter-trigger:focus-visible{border-color:#3B82F6;box-shadow:0 0 0 2px color-mix(in srgb,#3B82F6 28%,transparent)}.ydo-filter-trigger:disabled{opacity:.55;cursor:default}.ydo-filter-value{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.ydo-filter-chevron{width:6px;height:6px;flex:none;margin:-4px 2px 0 0;border-right:1.5px solid currentColor;border-bottom:1.5px solid currentColor;transform:rotate(45deg)}.ydo-filter-menu{position:fixed;z-index:560;box-sizing:border-box;overflow-y:auto;padding:4px;border:1px solid var(--dsw-alias-border-l1);border-radius:6px;background:var(--dsw-alias-bg-layer-1);box-shadow:0 8px 24px rgba(0,0,0,.16)}.ydo-filter-option{display:flex;align-items:center;box-sizing:border-box;height:36px;padding:0 10px;border-radius:4px;color:var(--dsw-alias-label-primary);cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.ydo-filter-option-active{background:var(--dsw-alias-bg-layer-2)}.ydo-filter-option[aria-selected=true]{color:var(--dsw-alias-brand-primary);font-weight:600}.ydo-filter-option[aria-disabled=true]{opacity:.5;cursor:default}.ydo-ov-actions{display:flex;align-items:center;gap:8px;margin-left:auto}.ydo-ov-loading{display:flex;align-items:center;gap:8px;color:var(--dsw-alias-label-secondary);font-size:var(--dsh-content-font-size-secondary,13px)}.ydo-ov-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px}.ydo-ov-kpi-label{color:var(--dsw-alias-label-secondary);font-size:var(--dsh-content-font-size-secondary,13px)}.ydo-ov-kpi{display:grid;gap:4px;padding:14px;border:1px solid var(--dsw-alias-border-l1);border-radius:8px;background:var(--dsw-alias-bg-layer-1)}.ydo-ov-kpi-value{font-size:20px;font-weight:650}.ydo-ov-kpi-hint{color:var(--dsw-alias-label-secondary);font-size:12px}.ydo-ov-panel{padding:14px;border:1px solid var(--dsw-alias-border-l1);border-radius:8px;background:var(--dsw-alias-bg-layer-1);container-type:inline-size;container-name:ydo-panel}/* 面板即容器：窄屏表格重排按面板实际宽度触发（容器查询），不受宿主侧栏/窗口差异影响（二审 P2）。 */.ydo-ov-panel h3{margin:0 0 10px;font-size:var(--dsh-content-font-size,14px)}.ydo-ov-panels{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px}.ydo-ov-table{display:grid;border:1px solid var(--dsw-alias-border-l1);border-radius:8px;overflow-x:hidden;overflow-y:auto;max-height:420px}/* 总览表格列轨道按表分组固定（v2 §3.3/§4.2/§4.4）：数值列窄定宽，长文本只由标题/依据列伸缩；表头与数据行共用同一模板；容器禁横向滚动，纵向超限只纵向滚。 */
-.ydo-ov-tr{display:grid;box-sizing:border-box;padding:8px 10px;align-items:center;gap:8px;font-size:var(--dsh-content-font-size-secondary,13px);border-bottom:1px solid var(--dsw-alias-border-l1);min-width:100%}.ydo-ov-tr-rank{grid-template-columns:48px minmax(90px,.8fr) 88px 96px repeat(6,minmax(72px,.35fr))}/* 1015：+近窗口净增/播放两列（§2.2） */.ydo-ov-tr-hot{grid-template-columns:minmax(220px,2fr) minmax(110px,1fr) 124px 84px 76px minmax(220px,1.7fr)}/* 分析页爆款表列序不同（排名居首，方案 §5.5），用专属轨道避免排名落进宽轨（验收建议 1）；发布时间/播放量/互动率固定窄列（v2 §5.4）。 */
+.ydo-ov-tr{display:grid;box-sizing:border-box;padding:8px 10px;align-items:center;gap:8px;font-size:var(--dsh-content-font-size-secondary,13px);border-bottom:1px solid var(--dsw-alias-border-l1);min-width:100%}.ydo-ov-tr-rank{grid-template-columns:48px minmax(90px,.8fr) minmax(110px,1fr) 88px 96px repeat(6,minmax(72px,.35fr))}/* RQ-2026-009：+账号负责人列（§6.4，唯一允许的样式 diff） */.ydo-ov-tr-hot{grid-template-columns:minmax(220px,2fr) minmax(110px,1fr) 124px 84px 76px minmax(220px,1.7fr)}/* 分析页爆款表列序不同（排名居首，方案 §5.5），用专属轨道避免排名落进宽轨（验收建议 1）；发布时间/播放量/互动率固定窄列（v2 §5.4）。 */
 .ydo-ov-tr-hot-rank{grid-template-columns:minmax(56px,.5fr) minmax(200px,2fr) 124px 84px 76px 88px minmax(220px,1.7fr)}/* 1015：+吸粉量列（§3.4） */.ydo-ov-tr:last-child{border-bottom:0}.ydo-ov-head{background:var(--dsw-alias-bg-layer-2);font-weight:600}.ydo-ov-num{text-align:right;font-variant-numeric:tabular-nums}.ydo-ov-hot-basis-head{text-align:center;padding-inline:12px}.ydo-ov-rankcell{text-align:center;font-variant-numeric:tabular-nums}.ydo-ov-flag{margin-left:8px;padding:2px 6px;border-radius:4px;font-size:12px}.ydo-ov-flag-suspicious{background:var(--dsw-alias-bg-layer-2);color:color-mix(in srgb,var(--dsw-alias-state-warn-primary,#d29922) 70%,var(--dsw-alias-label-primary))}.ydo-ov-flag-expired{background:var(--dsw-alias-bg-layer-2);color:color-mix(in srgb,var(--dsw-alias-state-error-primary) 60%,var(--dsw-alias-label-primary))}/* 状态过旧用语义色（橙），正常数据颜色不变（UI 优化方案 §4.3/§7）。 */
 .ydo-ov-session-stale{color:color-mix(in srgb,var(--dsw-alias-state-warn-primary,#d29922) 70%,var(--dsw-alias-label-primary))}.ydo-ov-dist{margin:0;padding:0;list-style:none;display:grid;gap:6px}.ydo-ov-dist li{display:grid;grid-template-columns:20px minmax(96px,140px) 1fr 44px;align-items:center;gap:8px;font-size:var(--dsh-content-font-size-secondary,13px)}/* 爆款分布前三名固定语义色（v2 §4.3）：1 橙 / 2 蓝 / 3 紫，第 4 名起中性品牌色；名次同时用排名数字表达。 */
 .ydo-ov-dist-rank{text-align:center;font-variant-numeric:tabular-nums;color:var(--dsw-alias-label-secondary)}.ydo-ov-dist-top1 .ydo-bar-fill{background:#E8833A}.ydo-ov-dist-top1 .ydo-ov-dist-rank{color:#E8833A;font-weight:650}.ydo-ov-dist-top2 .ydo-bar-fill{background:#3B82F6}.ydo-ov-dist-top2 .ydo-ov-dist-rank{color:#3B82F6;font-weight:650}.ydo-ov-dist-top3 .ydo-bar-fill{background:#8B5CF6}.ydo-ov-dist-top3 .ydo-ov-dist-rank{color:#8B5CF6;font-weight:650}.ydo-ov-alerts{margin:0;padding-left:18px;display:grid;gap:6px;font-size:var(--dsh-content-font-size-secondary,13px);color:var(--dsw-alias-label-secondary)}.ydo-ov-drawer-overlay{position:fixed;inset:0;z-index:560;display:flex;justify-content:flex-end;background:color-mix(in srgb,var(--dsw-alias-bg-base) 45%,transparent)}/* 抽屉（UI 优化方案 v2 §6.2）：宽度 min(720px,72vw)、高度 min(860px,84vh) 且不低于视口 75%；纵向 flex——内容不足时操作按钮沉底，超出时随滚动区排布。 */
@@ -3558,4 +3941,4 @@ function apply(ctx) {
 
 // 1015 验收：css/copy/页面组件导出供截图脚本（scripts/screenshot.mjs）SSR 渲染
 // 与样式内联使用；运行时行为零改动。1025 追加素材看板组件（screenshot-material.mjs）。
-module.exports = { apply, inject: ['slots', 'locale'], downloadWorkbook, formatCell, formatCount, formatPercent, gapReasonText, hasGap, progressText, BatchPanel, WorkTable, WorkDetailModal, OverviewPage, AnalysisPage, ReportListView, ReportDetailView, css, copy, MaterialPage, MaterialKpiCards, MaterialFilterBar, MaterialBoardTable, MaterialReasonDrawer, MaterialKeywordsTable, MaterialAccountsTable, MaterialSeedModal, MaterialRunsTable, MaterialCollectModal, MaterialConfirmDialog, MaterialFailureModal }
+module.exports = { apply, inject: ['slots', 'locale'], downloadWorkbook, formatCell, formatCount, formatPercent, gapReasonText, hasGap, progressText, validatePromotionForm, BatchPanel, WorkTable, WorkDetailModal, OverviewPage, AnalysisPage, ReportListView, ReportDetailView, css, copy, OwnerModal, PromotionModal, MaterialPage, MaterialKpiCards, MaterialFilterBar, MaterialBoardTable, MaterialReasonDrawer, MaterialKeywordsTable, MaterialAccountsTable, MaterialSeedModal, MaterialRunsTable, MaterialCollectModal, MaterialConfirmDialog, MaterialFailureModal }

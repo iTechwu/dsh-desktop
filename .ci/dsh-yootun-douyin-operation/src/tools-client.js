@@ -16,6 +16,9 @@ export const TOOL_NAMES = [
   'douyin_collect_ingest_daily',
   'douyin_collect_run_finish',
   'douyin_collect_run_cancel',
+  // 负责人与投流（RQ-2026-009）：同步写（幂等键），不调模型、不派生 Worker
+  'douyin_account_owner_set',
+  'douyin_work_promotion_save',
   'douyin_account_list',
   'douyin_work_list',
   'douyin_work_get',
@@ -157,6 +160,15 @@ const ALLOWED_ERROR_CODES = new Set([
   'VIRAL_VIDEO_ACTIVE_RUN_EXISTS',
   'VIRAL_VIDEO_SEED_LIMIT_INVALID',
   'VIRAL_VIDEO_SEARCH_DISPATCH_FAILED',
+  // 负责人与投流（RQ-2026-009 §4.6）稳定码：负责人必填/长度非法、
+  // 投流 stale-add fail-closed（客户端刷新后转显式更新）/recordId 不匹配、
+  // 必填缺失与数值非法（后者多在入参层拦截，白名单兜底收敛为中文提示）。
+  'OWNER_NAME_REQUIRED',
+  'OWNER_NAME_INVALID',
+  'PROMOTION_ALREADY_EXISTS',
+  'PROMOTION_NOT_FOUND',
+  'PROMOTION_FIELD_REQUIRED',
+  'PROMOTION_VALUE_INVALID',
 ])
 
 export class ToolsUnavailableError extends Error {
@@ -379,6 +391,13 @@ export const reportRegenerateIdempotencyKey = (reportId, attemptUuid) =>
 // 同键重放返回同一 run 回执，不重复下载；工作流同键同输入走自然键 resume。
 export const viralVideoArchiveIdempotencyKey = requestUuid => `douyin:vv_archive:${requestUuid}`
 export const viralVideoWorkflowIdempotencyKey = requestUuid => `douyin:vv_workflow:${requestUuid}`
+// 负责人设置键（RQ-2026-009 §5.2）：douyin:account_owner_set:{requestUuid}，与服务端
+// constants.OWNER_SET_KEY_PREFIX 模板校验一致；每次点击生成全新 UUID，不嵌账号
+// （键长最坏 24+36=60 ≤128），目标账号由服务端 stable_request_hash 绑定。
+export const accountOwnerSetIdempotencyKey = requestUuid => `douyin:account_owner_set:${requestUuid}`
+// 投流保存键（RQ-2026-009 §5.2）：douyin:work_promotion_save:{requestUuid}，每次点击
+// 生成全新 UUID；同键重放返回首次落库结果，stale-add 冲突由服务端 fail-closed 兜底。
+export const workPromotionSaveIdempotencyKey = requestUuid => `douyin:work_promotion_save:${requestUuid}`
 // 爆款素材看板受理键（RQ-2026-008 §6.3）：每次点击生成全新 UUID，页面内不跨点击
 // 复用；服务端对键只做 1–128 长度约束、无模板校验，前缀标识来源便于审计。
 // seed-search 三类受理拒绝（空池/互斥/越界）零副作用可同键重试，收据不烧键。

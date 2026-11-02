@@ -1504,7 +1504,7 @@ test('formatWan：万单位与千分位展示（构建内联后 analysis-ui 依�
 test('筛选流契约：UI 形态状态、请求时归一、筛选变更不重复请求（验收建议 2/3）', async () => {
   const source = await readFile(new URL('../src/client.js', import.meta.url), 'utf8')
   // 初始状态为 UI 形态（含 window 键），不带日期字段。
-  assert.match(source, /useState\(\(\) => \(\{\n    window: '30d', sort: 'hot_count', accountIds: \[\], \.\.\.defaultCustomRange\(\),\n  \}\)\)/u)
+  assert.match(source, /useState\(\(\) => \(\{\n    window: '30d', sort: 'hot_count', accountIds: \[\], ownerName: '', \.\.\.defaultCustomRange\(\),\n  \}\)\)/u)
   // overview.get / overview.export 请求前统一经 buildOverviewFilters 归一（「全部」不带日期）。
   assert.match(source, /action: 'overview\.get', \.\.\.buildOverviewFilters\(filters\)/u)
   assert.match(source, /action: 'overview\.export', \.\.\.buildOverviewFilters\(overviewFilters\)/u)
@@ -1631,7 +1631,8 @@ test('总览工具栏：单选账号下拉（默认全部账号）、日期/排�
   })
 
   const selects = hLog.filter(node => node.type === FilterSelect)
-  assert.equal(selects.length, 3, '工具栏共 3 个下拉：账号/发布时间/排序')
+  // RQ-2026-009 §6.5：排序后新增负责人下拉（第 4 个），详见 overview-owner-filter 测试。
+  assert.equal(selects.length, 4, '工具栏共 4 个下拉：账号/发布时间/排序/负责人')
   // 账号下拉：值 '' 表示全部账号，选项含 allAccounts + 每个账号。
   const accountSelect = selects[0]
   assert.equal(accountSelect.props.value, '', '默认选中全部账号（空 accountIds）')
@@ -2131,9 +2132,9 @@ test('v2 账号目录：accountOptions 驱动下拉、零作品标注、失同�
   })
   // vm 沙箱对象原型属于另一 realm，先展开成宿主对象再 deepStrictEqual。
   assert.deepEqual([...fromOptions].map(option => ({ ...option })), [
-    { id: 'a1', label: '燃豚豚', workCount: 19 },
-    { id: 'a2', label: 'a2', workCount: 0 },
-  ], 'accountOptions 去重、空昵称回退账号 ID，排行数据不进目录')
+    { id: 'a1', label: '燃豚豚', workCount: 19, ownerName: null },
+    { id: 'a2', label: 'a2', workCount: 0, ownerName: null },
+  ], 'accountOptions 去重、空昵称回退账号 ID，排行数据不进目录（RQ-2026-009 目录项带 ownerName）')
   assert.deepEqual([...buildAccountCatalog({})].map(option => ({ ...option })), [],
     '缺失 accountOptions → 空目录（禁用筛选），不回退设备账号')
   assert.deepEqual(
@@ -2430,11 +2431,11 @@ test('v2 爆款账号分布：服务端 hotAccountDistribution 驱动、保持�
 
 test('v2 源码样式契约：窄列轨道、分布配色、抽屉尺寸与关闭按钮、分析页布局、搜索词仅关键词', async () => {
   const source = await readFile(new URL('../src/client.js', import.meta.url), 'utf8')
-  // §3.3/§4.2/§4.4：总览容器禁横向滚动；排行 8 列固定轨道（48px 排名起，无会话列）；
-  // 爆款两表窄列 124px 发布时间 / 84px 播放量 / 76px 互动率。
+  // §3.3/§4.2/§4.4：总览容器禁横向滚动；排行 9 列固定轨道（48px 排名起，无会话列，
+  // RQ-2026-009 +账号负责人列）；爆款两表窄列 124px 发布时间 / 84px 播放量 / 76px 互动率。
   assert.match(source, /\.ydo-ov-table\{[^}]*overflow-x:hidden/u)
   assert.match(source, /\.ydo-ov-tr\{[^}]*box-sizing:border-box/u)
-  assert.match(source, /\.ydo-ov-tr-rank\{grid-template-columns:48px minmax\(90px,\.8fr\) 88px 96px repeat\(6,minmax\(72px,\.35fr\)\)\}/u, '1015 排行轨道 +2 列（净增/播放）')
+  assert.match(source, /\.ydo-ov-tr-rank\{grid-template-columns:48px minmax\(90px,\.8fr\) minmax\(110px,1fr\) 88px 96px repeat\(6,minmax\(72px,\.35fr\)\)\}/u, 'RQ-2026-009 排行轨道 +账号负责人列')
   assert.match(source, /\.ydo-ov-tr-hot\{[^}]*124px 84px 76px/u)
   assert.match(source, /\.ydo-ov-tr-hot-rank\{[^}]*124px 84px 76px/u)
   // §4.3：前三名固定语义色（1 橙 / 2 蓝 / 3 紫）。
@@ -2463,7 +2464,8 @@ test('v2 源码样式契约：窄列轨道、分布配色、抽屉尺寸与关�
   // 1025 追加素材 5 弹层（确认弹层 → 种子弹窗/采集/失败明细 → 评分理由抽屉）。
   assert.match(source, /else if \(aiModalOpen\) setAiModalOpen\(false\)/u)
   assert.match(source, /else if \(materialReason\) setMaterialReason\(null\)/u)
-  assert.match(source, /\[visible, detailWorkId, hotDrawerWork, aiModalOpen, bdRewriteOpen, bdDownloadResult, materialToggleConfirm, materialSeedModal, materialCollectOpen, materialFailure, materialReason\]/u)
+  // RQ-2026-009：负责人/投流弹框加入 Esc 链最上层，弹层状态全部进依赖数组。
+  assert.match(source, /\[visible, promotionModal, promotionSaving, ownerModal, ownerSaving, detailWorkId, hotDrawerWork, aiModalOpen, bdRewriteOpen, bdDownloadResult, materialToggleConfirm, materialSeedModal, materialCollectOpen, materialFailure, materialReason\]/u)
   // §5.2/§5.3：内容指标 3 列浅灰底圆角卡片（创作中心风格：标签小字在上、数值大字在下）、
   // 观众卡片两列；窄屏均退单列。
   assert.match(source, /\.ydo-an-metrics\{[^}]*grid-template-columns:repeat\(3,minmax\(0,1fr\)\)/u)
@@ -2541,8 +2543,8 @@ test('v2 源码样式契约：窄列轨道、分布配色、抽屉尺寸与关�
   const analysisUiSource = await readFile(new URL('../src/analysis-ui.js', import.meta.url), 'utf8')
   assert.match(overviewSource, /t\('rankingScopeHint'\)[\s\S]{0,80}\.replace\('\{total\}'/u,
     '截断标注用 {total}/{shown} 占位组合（二审 P1-2）')
-  assert.equal((overviewSource.match(/'data-label': t\(/gu) || []).length, 16,
-    '总览两张表 16 个数据单元格都携带 data-label（排行 10 + 爆款 6，1015 排行 +2 列）')
+  assert.equal((overviewSource.match(/'data-label': t\(/gu) || []).length, 17,
+    '总览两张表 17 个数据单元格都携带 data-label（排行 11 + 爆款 6，1015 排行 +2 列、RQ-2026-009 排行 +负责人列）')
   assert.equal((analysisUiSource.match(/'data-label': t\(/gu) || []).length, 7,
     '分析页爆款表 7 个数据单元格都携带 data-label（1015 +吸粉列）')
 })

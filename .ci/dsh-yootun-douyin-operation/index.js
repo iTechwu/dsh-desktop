@@ -147,6 +147,10 @@ export function apply(ctx, overrides = {}) {
               return send(res, 200, await handleReportGet(deps, toolCtx, body))
             case 'report.regenerate':
               return send(res, 200, await handleReportRegenerate(deps, toolCtx, body))
+            case 'account.owner.set':
+              return send(res, 200, await handleAccountOwnerSet(deps, toolCtx, body))
+            case 'work.promotion.save':
+              return send(res, 200, await handleWorkPromotionSave(deps, toolCtx, body))
             case 'material.seeds.list':
               return send(res, 200, await handleMaterialSeedsList(deps, toolCtx))
             case 'material.keyword.upsert':
@@ -229,23 +233,29 @@ function projectAccounts(localAccounts, remoteAccounts) {
       sessionStatus: item.sessionStatus || 'unknown',
       sessionCheckedAt: item.sessionCheckedAt || null,
       lastCollectedAt: null,
+      // 负责人只在服务端存真值（RQ-2026-009）：本地残留行恒 null，等远端合并补。
+      ownerName: null,
       deleteState: 'none',
       local: true,
     })
   }
   for (const item of remoteAccounts || []) {
-    const accountId = cleanString(item?.accountId, MAX_ID)
+    // tools account_list 是 canonical snake_case（serializers.account_payload 八字段：
+    // account_id/nickname/owner_name/avatar/fan_count/session_status/session_checked_at/
+    // last_collected_at/delete_state），宿主投影层统一转 camelCase；负责人未设置 → null。
+    const accountId = cleanString(item?.account_id, MAX_ID)
     if (!accountId) continue
     const existing = merged.get(accountId)
     merged.set(accountId, {
       accountId,
       nickname: existing?.nickname || cleanString(item.nickname, 256) || null,
       avatar: existing?.avatar ?? projectAvatar(item.avatar),
-      fanCount: existing?.fanCount ?? (Number.isFinite(Number(item.fanCount)) ? Number(item.fanCount) : null),
-      sessionStatus: existing?.sessionStatus || cleanString(item.sessionStatus, 16) || 'unknown',
-      sessionCheckedAt: existing?.sessionCheckedAt || item.sessionCheckedAt || null,
-      lastCollectedAt: item.lastCollectedAt || null,
-      deleteState: cleanString(item.deleteState, 24) || 'none',
+      fanCount: existing?.fanCount ?? (Number.isFinite(Number(item.fan_count)) ? Number(item.fan_count) : null),
+      sessionStatus: existing?.sessionStatus || cleanString(item.session_status, 16) || 'unknown',
+      sessionCheckedAt: existing?.sessionCheckedAt || item.session_checked_at || null,
+      lastCollectedAt: item.last_collected_at || null,
+      ownerName: existing?.ownerName ?? (cleanString(item.owner_name, 128) || null),
+      deleteState: cleanString(item.delete_state, 24) || 'none',
       local: Boolean(existing),
     })
   }
@@ -565,6 +575,10 @@ function projectOverviewArgs(body) {
   const publishTo = cleanString(body.publishTo, 10)
   if (publishFrom) args.publishFrom = publishFrom
   if (publishTo) args.publishTo = publishTo
+  // 负责人筛选（RQ-2026-009 §6.5）：与 accountIds 叠加过滤（交集语义）；空串 =
+  // 全部负责人，不透传。analysis/trend 不经此处（显式白名单），不受负责人影响。
+  const ownerName = cleanString(body.ownerName, 128)
+  if (ownerName) args.ownerName = ownerName
   if (body.sort !== undefined) args.sort = cleanString(body.sort, 32)
   if (body.topN !== undefined) {
     const topN = clampInt(body.topN, 1, 10000, 0)
@@ -591,6 +605,9 @@ async function handleOverviewGet(deps, ctx, body) {
 async function handleHotWorksList(deps, ctx, body) {
   const { args, error } = projectOverviewArgs(body)
   if (error) return { status: 'error', reason: 'overview_too_many_accounts' }
+  // douyin_hot_work_list 的 DTO 无 owner_name（extra=forbid，RQ-2026-009 P2-1）：
+  // 该工具不按负责人过滤，复用 projectOverviewArgs 时显式剔除。
+  delete args.ownerName
   const payload = await callTool(ctx, 'douyin_hot_work_list', args)
   return { status: 'ready', hotWorks: payload }
 }
@@ -1146,6 +1163,87 @@ async function handleReportRegenerate(deps, ctx, body) {
     return { status: 'error', reason: 'INVALID_IDEMPOTENCY_KEY' }
   }
   const payload = await callTool(ctx, 'douyin_report_regenerate', { reportId, idempotencyKey })
+  return { status: 'ready', data: payload }
+}
+
+// ---------------------------------------------------------------------------
+// 负责人与投流（RQ-2026-009 §5.1）：两个同步写 Host action，页面与 MCP 客户端
+// 走到同一 tools 工具。Host 不缓存负责人/投流数据；数值字段缺失与非法分开报
+// （PROMOTION_FIELD_REQUIRED / PROMOTION_VALUE_INVALID），金额与时长是十进制
+// 字符串（最多两位小数，与 tools DTO decimal_places=2 对齐），非法入参在 Host
+// 就地拒绝，不放行到服务端。
+// ---------------------------------------------------------------------------
+
+const OWNER_SET_KEY_PATTERN = /^douyin:account_owner_set:.+$/
+const PROMOTION_SAVE_KEY_PATTERN = /^douyin:work_promotion_save:.+$/
+// 非负金额/时长字符串：整数或 1–2 位小数（"3200"、"36.5"、"36.50" 合法）。
+const PROMOTION_DECIMAL_PATTERN = /^\d+(\.\d{1,2})?$/
+
+function requirePromotionCount(value) {
+  // 缺失（null/undefined/''）与非法分开：写操作的数值不接受 fallback 掩盖。
+  if (value === null || value === undefined || value === '') return { reason: 'PROMOTION_FIELD_REQUIRED' }
+  const num = Number(value)
+  if (!Number.isInteger(num) || num < 0 || num > Number.MAX_SAFE_INTEGER) {
+    return { reason: 'PROMOTION_VALUE_INVALID' }
+  }
+  return { value: num }
+}
+
+async function handleAccountOwnerSet(deps, ctx, body) {
+  const accountId = cleanString(body.accountId, MAX_ID)
+  if (!accountId) return { status: 'error', reason: 'account_id_required' }
+  const ownerName = cleanString(body.ownerName, 128)
+  // cleanString 已 strip：空/纯空白在此拒绝（服务端 DTO min_length=1 二次兜底）。
+  if (!ownerName) return { status: 'error', reason: 'OWNER_NAME_REQUIRED' }
+  const idempotencyKey = cleanString(body.idempotencyKey, 128)
+  if (!idempotencyKey) return { status: 'error', reason: 'idempotency_key_required' }
+  // 键模板与 tools 服务端 common.require_owner_set_idempotency_key 一致。
+  if (!OWNER_SET_KEY_PATTERN.test(idempotencyKey)) {
+    return { status: 'error', reason: 'INVALID_IDEMPOTENCY_KEY' }
+  }
+  const payload = await callTool(ctx, 'douyin_account_owner_set', { accountId, ownerName, idempotencyKey })
+  return { status: 'ready', data: payload }
+}
+
+async function handleWorkPromotionSave(deps, ctx, body) {
+  const accountId = cleanString(body.accountId, MAX_ID)
+  const workId = cleanString(body.workId, MAX_ID)
+  if (!accountId || !workId) return { status: 'error', reason: 'PROMOTION_FIELD_REQUIRED' }
+  const play = requirePromotionCount(body.playCount)
+  if (play.reason) return { status: 'error', reason: play.reason }
+  const fans = requirePromotionCount(body.fansCount)
+  if (fans.reason) return { status: 'error', reason: fans.reason }
+  const costAmount = cleanString(body.costAmount, 32)
+  if (!costAmount) return { status: 'error', reason: 'PROMOTION_FIELD_REQUIRED' }
+  const durationHours = cleanString(body.durationHours, 32)
+  if (!durationHours) return { status: 'error', reason: 'PROMOTION_FIELD_REQUIRED' }
+  if (!PROMOTION_DECIMAL_PATTERN.test(costAmount) || !PROMOTION_DECIMAL_PATTERN.test(durationHours)) {
+    return { status: 'error', reason: 'PROMOTION_VALUE_INVALID' }
+  }
+  // 时长必须为正（服务端 DTO gt=0）；金额允许 0。
+  if (Number(durationHours) <= 0) return { status: 'error', reason: 'PROMOTION_VALUE_INVALID' }
+  let recordId
+  if (body.recordId !== null && body.recordId !== undefined && body.recordId !== '') {
+    const id = Number(body.recordId)
+    if (!Number.isInteger(id) || id < 1) return { status: 'error', reason: 'PROMOTION_VALUE_INVALID' }
+    recordId = id
+  }
+  const idempotencyKey = cleanString(body.idempotencyKey, 128)
+  if (!idempotencyKey) return { status: 'error', reason: 'idempotency_key_required' }
+  // 键模板与 tools 服务端 common.require_promotion_save_idempotency_key 一致。
+  if (!PROMOTION_SAVE_KEY_PATTERN.test(idempotencyKey)) {
+    return { status: 'error', reason: 'INVALID_IDEMPOTENCY_KEY' }
+  }
+  const payload = await callTool(ctx, 'douyin_work_promotion_save', {
+    accountId,
+    workId,
+    playCount: play.value,
+    costAmount,
+    fansCount: fans.value,
+    durationHours,
+    idempotencyKey,
+    ...(recordId !== undefined ? { recordId } : {}),
+  })
   return { status: 'ready', data: payload }
 }
 

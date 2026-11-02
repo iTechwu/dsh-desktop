@@ -471,6 +471,8 @@ export function InsightGrid({ ai }) {
 
 const ACCOUNT_COLUMNS = [
   { key: 'nickname', label: '账号' },
+  // RQ-2026-009 §6.7：生成时快照的负责人列（日报/周报共用组件，随行数据展示）。
+  { key: 'ownerName', label: '账号负责人' },
   { key: 'fanCount', label: '现有粉丝' },
   { key: 'plays', label: '播放增量' },
   { key: 'netFans', label: '净增粉丝' },
@@ -495,6 +497,8 @@ export function AccountTable({ accounts }) {
           Array.isArray(row.marks) && row.marks.length
             ? row.marks.map(mark => h('span', { key: mark, className: 'ydo-report-mark' }, mark))
             : null),
+        // 快照列：只读行数据 ownerName（旧版本缺失 → -），绝不读当前账号动态替换。
+        h('td', null, row.ownerName || '-'),
         h('td', null, reportCountText(row.fanCount)),
         ...['plays', 'netFans', 'publishes', 'likes', 'comments', 'shares'].map(key => {
           const value = row.metrics ? row.metrics[key] : null

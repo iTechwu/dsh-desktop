@@ -59,10 +59,27 @@ export function buildAccountCatalog(overview) {
   for (const option of (overview && overview.accountOptions) || []) {
     const id = option && option.accountId
     if (id && !byId.has(id)) {
-      byId.set(id, { id, label: option.nickname || id, workCount: Number(option.workCount) || 0 })
+      // ownerName（RQ-2026-009 §6.5）：负责人筛选候选与账号下拉联动都基于完整目录。
+      byId.set(id, {
+        id,
+        label: option.nickname || id,
+        workCount: Number(option.workCount) || 0,
+        ownerName: typeof option.ownerName === 'string' ? option.ownerName : null,
+      })
     }
   }
   return [...byId.values()]
+}
+
+/**
+ * 负责人候选（RQ-2026-009 §6.5）：基于完整 accountOptions 的非空负责人去重文本，
+ * 中文 locale 排序；「全部」恒为首项。同名文本是同一个负责人（明确口径）。
+ */
+export function buildOwnerOptions(catalog, t) {
+  const names = [...new Set(
+    (catalog || []).map(item => item.ownerName && item.ownerName.trim()).filter(Boolean),
+  )].sort((a, b) => a.localeCompare(b, 'zh-Hans-CN'))
+  return [{ value: '', label: t('ownerFilterAll') }, ...names.map(name => ({ value: name, label: name }))]
 }
 
 // 运营提醒（阶段 1 范围，决策 9）：由 dataQuality 派生的结构性提醒——
@@ -113,6 +130,9 @@ function AccountRow({ account, rank, onOpenAccount, t }) {
       account.suspiciousEmptyCollect
         ? h('span', { className: 'ydo-ov-flag ydo-ov-flag-suspicious' }, t('suspiciousEmptyCollect'))
         : null),
+    // 负责人列（RQ-2026-009 §6.4）：纯展示，不阻断行点击下钻；空值显示 —。
+    // data-label 供窄容器（≤940px）块流重排显示字段名，桌面端不渲染，零新增样式。
+    h('span', { role: 'cell', 'data-label': t('colOwner') }, account.ownerName || '—'),
     h('span', { className: 'ydo-ov-num', role: 'cell', 'data-label': t('fanCount') }, countText(account.fanCount)),
     // 1015 UI 规格 §2.2：+近窗口净增/近窗口播放；净增着色按用户规定 2026-10-16
     // （净增红+N、掉粉绿-N）；daily 未采集 → —。
@@ -279,6 +299,12 @@ export function OverviewPage({
   // 「共 {total} · 展示 {shown}」文字明确区分（见排行工具栏）。
   const selected = filters.accountIds || []
   const catalog = buildAccountCatalog(overview)
+  // 负责人筛选（RQ-2026-009 §6.5）：候选基于完整目录（不受排行截断影响）；
+  // 账号下拉用按负责人裁剪后的 scoped 目录——ownerName='' 时等于完整目录。
+  const ownerOptions = buildOwnerOptions(catalog, t)
+  const scopedAccountCatalog = filters.ownerName
+    ? catalog.filter(item => item.ownerName && item.ownerName.trim() === filters.ownerName)
+    : catalog
   const rankRows = overview?.accounts || []
   const accountTotal = overview?.accountTotal
   // accountTotal 是服务端完整目录的契约字段；缺失/null 时不能假定完整，避免旧
@@ -327,9 +353,11 @@ export function OverviewPage({
               ...filters,
               accountIds: value ? [value] : [],
             }),
+            // 负责人筛选生效时账号下拉只列该负责人名下账号（§6.5 联动）；切换负责人
+            // 时原选中账号不在 scoped 目录则由 onChange 重置为「全部账号」。
             options: [
               { value: '', label: t('allAccounts') },
-              ...catalog.map(option => ({
+              ...scopedAccountCatalog.map(option => ({
                 value: option.id,
                 label: option.workCount === 0 ? `${option.label}（${t('noWorks')}）` : option.label,
               })),
@@ -375,6 +403,29 @@ export function OverviewPage({
             onChange: value => onFilterChange({ ...filters, sort: value }),
             options: ['hot_count', 'hot_rate', 'median_play', 'total_play', 'engagement_rate'].map(option =>
               ({ value: option, label: t(`sort_${option}`) })),
+          })),
+        // 负责人筛选（RQ-2026-009 §6.5）：排序后追加。候选来自完整目录去重文本；
+        // 目录不完整时复用 accountCatalogUnavailable 提示并禁用（同账号下拉口径）。
+        // 切换负责人时原选中账号不在 scoped 目录 → 重置为「全部账号」，且只触发
+        // 一次查询（onFilterChange 单次 setState）。
+        h('div', { className: 'ydo-ov-filter' },
+          h('span', null, t('overviewOwnerFilter')),
+          h(FilterSelect, {
+            label: t('overviewOwnerFilter'),
+            value: filters.ownerName || '',
+            disabled: !catalog.length || !catalogComplete,
+            onChange: value => onFilterChange({
+              ...filters,
+              ownerName: value,
+              // 联动（§6.5）：新负责人名下不含当前选中账号（或选了「全部」以外负责人
+              // 而账号属其他负责人）→ 重置为「全部账号」；单次 setState 只触发一次查询。
+              accountIds: selected[0]
+                && (!value || catalog.some(item =>
+                  item.id === selected[0] && item.ownerName && item.ownerName.trim() === value))
+                ? selected
+                : [],
+            }),
+            options: ownerOptions,
           }))),
       h('div', { className: 'ydo-ov-actions' },
         // 「刷新」执行当前条件的只读查询；筛选变更的自动查询走列表区加载态，
@@ -450,11 +501,13 @@ export function OverviewPage({
             .replace('{shown}', String(rankRows.length)))
           : null),
       h('div', { className: 'ydo-ov-table', role: 'table', 'aria-label': t('accountRanking') },
-        // 表头与数据行共用 ydo-ov-tr-rank 8 列轨道；计数/百分比列右对齐（v2 §4.2），
-        // 「会话状态」列已删除，会话异常只在账号名旁以语义标签出现。
+        // 表头与数据行共用 ydo-ov-tr-rank 9 列轨道（RQ-2026-009 +账号负责人）；
+        // 计数/百分比列右对齐（v2 §4.2），「会话状态」列已删除，会话异常只在账号名旁
+        // 以语义标签出现。
         h('div', { className: 'ydo-ov-tr ydo-ov-tr-rank ydo-ov-head', role: 'row' },
           h('span', { className: 'ydo-ov-rankcell', role: 'columnheader' }, t('rankCol')),
           h('span', { role: 'columnheader' }, t('colAccount')),
+          h('span', { role: 'columnheader' }, t('colOwner')),
           h('span', { className: 'ydo-ov-num', role: 'columnheader' }, t('fanCount')),
           h('span', { className: 'ydo-ov-num', role: 'columnheader' }, windowNetFansLabel),
           h('span', { className: 'ydo-ov-num', role: 'columnheader' }, windowPlayLabel),
@@ -530,8 +583,12 @@ export function defaultCustomRange(now = null) {
 }
 
 export function buildOverviewFilters({
-  window = '30d', sort = 'hot_count', accountIds = [], customFrom = null, customTo = null, now = null,
+  window = '30d', sort = 'hot_count', accountIds = [], ownerName = '', customFrom = null, customTo = null, now = null,
 } = {}) {
+  // 负责人筛选（RQ-2026-009 §6.5）：请求同时传 ownerName 与 accountIds（只选负责人
+  // 时 accountIds=[]）；'' = 全部负责人，不进请求。analysis/trend 虽复用本函数取
+  // 窗口，但宿主 handler 对它们做显式字段白名单，ownerName 不会泄漏到那些工具。
+  const owner = typeof ownerName === 'string' && ownerName ? { ownerName } : {}
   // 展示偏好（决策 15 允许本地保存）：时间 preset → 自然日窗口字符串。
   // 近 N 天 = [今天-(N-1), 明天)——服务端转 UTC 半开区间，排他终点取明天才能包含今天。
   // 自定义窗口 = [customFrom, customTo+1)：用户语义「截止日含当天」，排他终点 = 截止+1；
@@ -539,7 +596,7 @@ export function buildOverviewFilters({
   if (window === 'custom' && customFrom && customTo) {
     const [year, month, day] = customTo.split('-').map(Number)
     return {
-      sort, accountIds,
+      sort, accountIds, ...owner,
       publishFrom: customFrom,
       publishTo: _isoDay(new Date(year, month - 1, day + 1)),
     }
@@ -548,7 +605,7 @@ export function buildOverviewFilters({
   const base = now ? new Date(now) : new Date()
   const from = new Date(base.getFullYear(), base.getMonth(), base.getDate() - (days - 1))
   const to = new Date(base.getFullYear(), base.getMonth(), base.getDate() + 1)
-  return { sort, accountIds, publishFrom: _isoDay(from), publishTo: _isoDay(to) }
+  return { sort, accountIds, ...owner, publishFrom: _isoDay(from), publishTo: _isoDay(to) }
 }
 
 // 范围文案统一出口：KPI 作品数 hint 与单账号分析页共用（§3.2 口径标识同源）。

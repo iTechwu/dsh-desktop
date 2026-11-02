@@ -100,10 +100,12 @@ test('accounts.list 合并本地与远端，会话状态以本地为准', async 
     const { ctx, registered } = createContext({
       tools: [{ name: 'mcp__tools-douyin-operation__douyin_account_list' }],
       execute: async () => ({
+        // stub 形状必须与 tools serializers.account_payload 真实输出一致（canonical
+        // snake_case 八字段）——历史 stub 误用 camelCase 掩盖了远端行整体被丢弃的缺陷。
         structuredContent: {
           accounts: [
-            { accountId: 'acc-1', nickname: '远端名', sessionStatus: 'ok', sessionCheckedAt: 't1', lastCollectedAt: 't2', deleteState: 'none' },
-            { accountId: 'acc-2', nickname: '远端账号', fanCount: 5, sessionStatus: 'ok' },
+            { account_id: 'acc-1', nickname: '远端名', owner_name: '张三', avatar: null, fan_count: 100, has_session_ref: true, session_status: 'ok', session_seq: 9, session_checked_at: 't1', last_collected_at: 't2', delete_state: 'none' },
+            { account_id: 'acc-2', nickname: '远端账号', owner_name: null, avatar: null, fan_count: 5, has_session_ref: false, session_status: 'ok', session_seq: 1, session_checked_at: 't3', last_collected_at: 't4', delete_state: 'none' },
           ],
         },
       }),
@@ -111,14 +113,17 @@ test('accounts.list 合并本地与远端，会话状态以本地为准', async 
     apply(ctx, { root, browserStatus: async () => ({ chromeAvailable: true, driverAvailable: true, platform: 'linux' }) })
     const result = await call(registered[0].handler, { action: 'accounts.list' })
     assert.equal(result.payload.status, 'ready')
-    assert.equal(result.payload.accounts.length, 2)
+    assert.equal(result.payload.accounts.length, 2, 'snake_case 远端行不再被丢弃')
     const first = result.payload.accounts.find(item => item.accountId === 'acc-1')
     assert.equal(first.nickname, '本地名')
     assert.equal(first.sessionStatus, 'expired', '会话状态以设备端为准')
     assert.equal(first.local, true)
+    assert.equal(first.ownerName, '张三', '远端 owner_name 投影为 ownerName（RQ-2026-009 §6.2）')
+    assert.equal(first.lastCollectedAt, 't2')
     const second = result.payload.accounts.find(item => item.accountId === 'acc-2')
     assert.equal(second.local, false)
     assert.equal(second.fanCount, 5)
+    assert.equal(second.ownerName, null, '未设置负责人 → null')
   })
 })
 
@@ -308,9 +313,10 @@ test('projectAccounts 头像投影：仅 http(s) 绝对地址放行，本地优�
       d: { accountId: 'd', nickname: '本地坏头像', avatar: 'file:///etc/passwd' },
     },
     [
-      { accountId: 'a', avatar: 'https://p3.douyinpic.com/remote.jpeg' },
-      { accountId: 'b', avatar: 'http://p3.douyinpic.com/remote.jpeg' },
-      { accountId: 'c', avatar: 'https://p3.douyinpic.com/remote-safe.jpeg' },
+      // 远端行形状与 tools serializers.account_payload 一致（canonical snake_case）。
+      { account_id: 'a', avatar: 'https://p3.douyinpic.com/remote.jpeg' },
+      { account_id: 'b', avatar: 'http://p3.douyinpic.com/remote.jpeg' },
+      { account_id: 'c', avatar: 'https://p3.douyinpic.com/remote-safe.jpeg' },
     ],
   )
   const byId = Object.fromEntries(merged.map(item => [item.accountId, item]))
@@ -326,11 +332,11 @@ test('projectAccounts 头像投影：仅 http(s) 绝对地址放行，本地优�
   // tools 侧可能透出图集对象形态（{uri,url_list}）：宿主投影最后防线必须收敛为字符串。
   const gallery = projectAccounts(
     { f: { accountId: 'f' } },
-    [{ accountId: 'f', avatar: { uri: 'xyz', url_list: ['javascript:alert(1)', 'https://p3.douyinpic.com/gallery.jpeg'] } }],
+    [{ account_id: 'f', avatar: { uri: 'xyz', url_list: ['javascript:alert(1)', 'https://p3.douyinpic.com/gallery.jpeg'] } }],
   )
   assert.equal(gallery[0].avatar, 'https://p3.douyinpic.com/gallery.jpeg', '图集对象按 url_list 顺序取第一个合法 URL')
   assert.equal(
-    projectAccounts({ g: { accountId: 'g' } }, [{ accountId: 'g', avatar: { url_list: ['data:image/png;base64,AAAA'] } }])[0].avatar,
+    projectAccounts({ g: { accountId: 'g' } }, [{ account_id: 'g', avatar: { url_list: ['data:image/png;base64,AAAA'] } }])[0].avatar,
     null,
     '图集对象全非法候选时置 null，不透出对象',
   )

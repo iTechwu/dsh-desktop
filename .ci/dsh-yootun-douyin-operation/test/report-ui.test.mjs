@@ -175,7 +175,8 @@ test('TF-05 账号表无收藏列；eachAvailable=false 指标列 —*；marks �
   })
   const headers = findAll(table, node => node.type === 'th').map(node => treeText(node))
   // 2026-10-26 用户反馈:明细去掉「会话」列(会话过期以账号名角标呈现)
-  assert.deepEqual(headers, ['账号', '现有粉丝', '播放增量', '净增粉丝', '发布', '点赞', '评论', '分享'])
+  // RQ-2026-009 §6.7：nickname 后插入负责人快照列。
+  assert.deepEqual(headers, ['账号', '账号负责人', '现有粉丝', '播放增量', '净增粉丝', '发布', '点赞', '评论', '分享'])
   assert.ok(!headers.includes('收藏') && !headers.includes('会话'))
   const text = treeText(table)
   assert.ok(text.includes('—*'))

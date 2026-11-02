@@ -848,8 +848,9 @@ test('client.js 接线：Tab 顺序、body-full、Esc 链、轮询守卫、弹�
     && clientSource.indexOf("else if (bdDownloadResult) setBdDownloadResult(null)") < clientSource.indexOf('else closeOverlay()'),
     'Esc 优先级：作品详情 → 爆款抽屉 → AI 弹框 → 改写弹框 → 下载弹窗 → 素材弹层 → overlay',
   )
-  // Esc effect 依赖数组必须包含弹层开关（闭包旧值会让 Esc 跳层）；1025 追加素材 5 弹层。
-  assert.match(clientSource, /\}, \[visible, detailWorkId, hotDrawerWork, aiModalOpen, bdRewriteOpen, bdDownloadResult, materialToggleConfirm, materialSeedModal, materialCollectOpen, materialFailure, materialReason\]\)/u)
+  // Esc effect 依赖数组必须包含弹层开关（闭包旧值会让 Esc 跳层）；1025 追加素材 5 弹层，
+  // RQ-2026-009 追加投流/负责人弹框（链最上层）。
+  assert.match(clientSource, /\}, \[visible, promotionModal, promotionSaving, ownerModal, ownerSaving, detailWorkId, hotDrawerWork, aiModalOpen, bdRewriteOpen, bdDownloadResult, materialToggleConfirm, materialSeedModal, materialCollectOpen, materialFailure, materialReason\]\)/u)
   // 轮询与卸载清理：归档/workflow 轮询 ref 在组件卸载时停止。
   assert.match(clientSource, /stopPolling\(bdArchivePollRef\)\n\s*stopPolling\(bdWorkflowPollRef\)/u)
   // workflow 轮询锚点：workflowStart 回执顶层 workflowId，历史投影回退
