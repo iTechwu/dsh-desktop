@@ -4,10 +4,33 @@
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { test } from 'node:test'
+import vm from 'node:vm'
+import * as uiFormat from '../src/ui-format.js'
 
 const clientSource = await readFile(new URL('../src/client.js', import.meta.url), 'utf8')
+const overviewSource = await readFile(new URL('../src/overview-ui.js', import.meta.url), 'utf8')
 const indexSource = await readFile(new URL('../index.js', import.meta.url), 'utf8')
 const toolsClientSource = await readFile(new URL('../src/tools-client.js', import.meta.url), 'utf8')
+
+// vm 加载 overview-ui.js 纯函数（同 overview-owner-column.test.mjs evalOverviewModule 模式）：
+// 剥离 import/export 语句后以 CommonJS require stub 执行，导出挂 sandbox。
+async function evalOverviewModule() {
+  let source = await readFile(new URL('../src/overview-ui.js', import.meta.url), 'utf8')
+  source = source.replace(/^import [\s\S]*?$/gm, '').replace(/^export /gm, '')
+  const requireStub = spec => {
+    if (spec === 'react') return { createElement: () => null }
+    if (spec === '@deepseek-ai/dsh-client-ui-primitives') return { IconDownloadOutlineRegular: () => null }
+    return {}
+  }
+  const sandbox = vm.createContext({
+    require: requireStub,
+    FilterSelect: function FilterSelect() { return null },
+    console,
+    ...uiFormat,
+  })
+  vm.runInContext(source, sandbox)
+  return sandbox
+}
 
 test('工具栏负责人入口：位置在「全部时间作品数」后、状态切换（§6.2）', () => {
   // 入口紧跟全部时间作品数提示之后、批量进度面板之前（§6.2.1 摆放）。
@@ -48,11 +71,14 @@ test('保存负责人：本地投影更新 + 先校准后唯一一次查询 + �
   assert.match(clientSource, /setAccounts\(list => list\.map\(item =>\n        item\.accountId === accountId \? \{ \.\.\.item, ownerName: savedName \|\| null \} : item\)\)\n      setOwnerModal\(null\)/u)
   // P1-3：查询前先基于「旧目录 + 本次保存结果」校准 filters（不能先按旧筛选
   // 查询再校准——旧 ownerName 失效会拿到空排行）；重拉请求用校准后的 next。
-  assert.match(clientSource, /const catalog = buildAccountCatalog\(overview\)\n          \.map\(item => \(item\.id === accountId \? \{ \.\.\.item, ownerName: savedName \|\| null \} : item\)\)/u)
+  // 校准逻辑抽为 overview-ui.js 导出纯函数（二轮复审 P1-RES-01 行为级可测）。
+  assert.match(clientSource, /const next = calibrateOverviewFiltersAfterOwnerSave\(overview, overviewFilters, accountId, savedName, t\)/u)
+  assert.match(overviewSource, /export function calibrateOverviewFiltersAfterOwnerSave\(overview, overviewFilters, accountId, savedName, t\)/u)
   assert.match(clientSource, /const refreshed = await post\(\{ action: 'overview\.get', \.\.\.buildOverviewFilters\(next\) \}\)/u)
-  // ownerName 不在新候选 → 重置全部；选中账号不在新目录 → 重置全部账号。
-  assert.match(clientSource, /if \(next\.ownerName && !ownerValues\.includes\(next\.ownerName\)\) next\.ownerName = ''/u)
-  assert.match(clientSource, /if \(picked && !catalog\.some\(item => item\.id === picked\)\) next\.accountIds = \[\]/u)
+  // 校准三段：ownerName 不在新候选 → 重置全部；选中账号不在新目录或不再属于
+  // 当前负责人 → 重置全部账号。
+  assert.match(overviewSource, /if \(next\.ownerName && !ownerValues\.includes\(next\.ownerName\)\) next\.ownerName = ''/u)
+  assert.match(overviewSource, /if \(!pickedItem \|\| !inOwnerScope\) next\.accountIds = \[\]/u)
   // P2-1：手动重拉纳入 overviewRequestRef 序列号守卫（请求前后一致才落状态）。
   assert.match(clientSource, /const requestId = \+\+overviewRequestRef\.current\n        setOverviewLoading\(true\)/u)
   assert.match(clientSource, /if \(requestId === overviewRequestRef\.current\) \{\n            if \(refreshed\.status === 'ready'/u)
@@ -60,6 +86,47 @@ test('保存负责人：本地投影更新 + 先校准后唯一一次查询 + �
   // 让筛选 effect 自然重查自愈。
   assert.match(clientSource, /if \(requestId === overviewRequestRef\.current && filtersChanged\) \{\n          skipOverviewQueryRef\.current = refreshedOk\n          setOverviewFilters\(next\)\n        \}/u)
   assert.match(clientSource, /return \{ ok: true \}\n    \} catch \{\n      return \{ ok: false, reason: 'owner_save_failed' \}\n    \} finally \{\n      setOwnerSaving\(false\)/u)
+})
+
+test('P1-RES-01 行为级：负责人仍在但已选账号已不属其名下 → 清空账号选择', async () => {
+  const sandbox = await evalOverviewModule()
+  const calibrate = vm.runInContext('calibrateOverviewFiltersAfterOwnerSave', sandbox)
+  const buildOverviewFilters = vm.runInContext('buildOverviewFilters', sandbox)
+  const t = key => key
+  // 复审场景：张三名下 A、B，李四名下 C；筛选「张三 + 账号 A」，把 A 改到李四。
+  const overview = {
+    accountOptions: [
+      { accountId: 'A', nickname: '账号A', workCount: 3, ownerName: '张三' },
+      { accountId: 'B', nickname: '账号B', workCount: 2, ownerName: '张三' },
+      { accountId: 'C', nickname: '账号C', workCount: 1, ownerName: '李四' },
+    ],
+  }
+  const filters = { window: '7d', sort: 'hot_count', accountIds: ['A'], ownerName: '张三' }
+  const next = calibrate(overview, filters, 'A', '李四', t)
+  assert.equal(next.ownerName, '张三', '张三因账号 B 仍在候选 → 负责人筛选保留')
+  // vm realm 数组先展开成宿主数组再比较（原型不同的 deepStrictEqual 会失败）。
+  assert.deepEqual([...next.accountIds], [], '账号 A 已不属张三名下 → 清空账号选择（旧实现滞留 A）')
+  // 重拉请求按校准后 filters 构建：负责人=张三、不携带 accountIds（查张三名下全部，即 B）。
+  const built = buildOverviewFilters(next)
+  assert.equal(built.ownerName, '张三')
+  assert.deepEqual([...built.accountIds], [], '请求不再携带滞留的账号 A')
+  // 对照 1：负责人重置「全部」时已选账号仍属完整目录 → 保留（不做负责人范围检查）。
+  const resetOwner = calibrate(overview, { ...filters, ownerName: '李四', accountIds: ['C'] }, 'C', '王五', t)
+  assert.equal(resetOwner.ownerName, '', '李四改名王五 → 李四从候选消失，负责人重置「全部」')
+  assert.deepEqual([...resetOwner.accountIds], ['C'], '账号 C 仍在目录 → 保留已选账号')
+  // 对照 2：负责人不变、账号仍在范围内 → 双双保留（正常保存不受影响）。
+  const untouched = calibrate(overview, filters, 'B', '张三', t)
+  assert.equal(untouched.ownerName, '张三')
+  assert.deepEqual([...untouched.accountIds], ['A'], '保存 B 的负责人未改变 A 的归属 → 筛选原样保留')
+  // 对照 3：负责人候选 trim 口径一致——目录值带空白时仍按 trim 后匹配。
+  const trimmedCatalog = {
+    accountOptions: [
+      { accountId: 'A', nickname: '账号A', workCount: 3, ownerName: ' 张三 ' },
+      { accountId: 'B', nickname: '账号B', workCount: 2, ownerName: ' 张三 ' },
+    ],
+  }
+  const kept = calibrate(trimmedCatalog, { ...filters, accountIds: ['A'] }, 'B', '张三', t)
+  assert.deepEqual([...kept.accountIds], ['A'], '目录 ownerName 带空白 → trim 后与筛选值一致，账号保留')
 })
 
 test('Esc 链：负责人/投流弹框在最上层且保存中不关闭（§6.3.2）', () => {

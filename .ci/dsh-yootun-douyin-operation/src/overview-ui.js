@@ -82,6 +82,32 @@ export function buildOwnerOptions(catalog, t) {
   return [{ value: '', label: t('ownerFilterAll') }, ...names.map(name => ({ value: name, label: name }))]
 }
 
+/**
+ * 保存负责人后的筛选校准（RQ-2026-009 §6.5，审查 P1-3 + 二轮复审 P1-RES-01）：
+ * 基于「旧目录 + 本次保存结果」推导重拉前的 filters。三段校准——
+ * 1) 旧 ownerName 不再存在于负责人候选 → 重置「全部」；
+ * 2) 已选账号不在完整目录 → 重置「全部账号」；
+ * 3) 负责人筛选仍生效时，已选账号必须仍属于该负责人（trim 口径与候选一致，
+ *    与服务端 owner_name 精确匹配同法），否则清空账号选择——否则「负责人+账号」
+ *    恒空且账号下拉不含该账号，UI 显示与真实请求不一致。负责人已重置「全部」时
+ *    账号范围为完整目录，不做负责人范围检查。
+ */
+export function calibrateOverviewFiltersAfterOwnerSave(overview, overviewFilters, accountId, savedName, t) {
+  const catalog = buildAccountCatalog(overview)
+    .map(item => (item.id === accountId ? { ...item, ownerName: savedName || null } : item))
+  const ownerValues = buildOwnerOptions(catalog, t).map(option => option.value)
+  const next = { ...overviewFilters }
+  if (next.ownerName && !ownerValues.includes(next.ownerName)) next.ownerName = ''
+  const picked = next.accountIds && next.accountIds[0]
+  if (picked) {
+    const pickedItem = catalog.find(item => item.id === picked)
+    const inOwnerScope = !next.ownerName
+      || (pickedItem && pickedItem.ownerName && pickedItem.ownerName.trim() === next.ownerName)
+    if (!pickedItem || !inOwnerScope) next.accountIds = []
+  }
+  return next
+}
+
 // 运营提醒（阶段 1 范围，决策 9）：由 dataQuality 派生的结构性提醒——
 // 会话过期 / 可疑空采集 / 覆盖率缺口 / 最近采集过旧；内容类规则提醒属阶段 3。
 export function deriveOverviewAlerts(overview, t, { now = Date.now() } = {}) {

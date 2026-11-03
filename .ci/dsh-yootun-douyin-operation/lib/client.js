@@ -901,6 +901,32 @@ window.__ModuleLoader__.load({
       return [{ value: '', label: t('ownerFilterAll') }, ...names.map(name => ({ value: name, label: name }))]
     }
 
+    /**
+     * 保存负责人后的筛选校准（RQ-2026-009 §6.5，审查 P1-3 + 二轮复审 P1-RES-01）：
+     * 基于「旧目录 + 本次保存结果」推导重拉前的 filters。三段校准——
+     * 1) 旧 ownerName 不再存在于负责人候选 → 重置「全部」；
+     * 2) 已选账号不在完整目录 → 重置「全部账号」；
+     * 3) 负责人筛选仍生效时，已选账号必须仍属于该负责人（trim 口径与候选一致，
+     *    与服务端 owner_name 精确匹配同法），否则清空账号选择——否则「负责人+账号」
+     *    恒空且账号下拉不含该账号，UI 显示与真实请求不一致。负责人已重置「全部」时
+     *    账号范围为完整目录，不做负责人范围检查。
+     */
+    function calibrateOverviewFiltersAfterOwnerSave(overview, overviewFilters, accountId, savedName, t) {
+      const catalog = buildAccountCatalog(overview)
+        .map(item => (item.id === accountId ? { ...item, ownerName: savedName || null } : item))
+      const ownerValues = buildOwnerOptions(catalog, t).map(option => option.value)
+      const next = { ...overviewFilters }
+      if (next.ownerName && !ownerValues.includes(next.ownerName)) next.ownerName = ''
+      const picked = next.accountIds && next.accountIds[0]
+      if (picked) {
+        const pickedItem = catalog.find(item => item.id === picked)
+        const inOwnerScope = !next.ownerName
+          || (pickedItem && pickedItem.ownerName && pickedItem.ownerName.trim() === next.ownerName)
+        if (!pickedItem || !inOwnerScope) next.accountIds = []
+      }
+      return next
+    }
+
     // 运营提醒（阶段 1 范围，决策 9）：由 dataQuality 派生的结构性提醒——
     // 会话过期 / 可疑空采集 / 覆盖率缺口 / 最近采集过旧；内容类规则提醒属阶段 3。
     function deriveOverviewAlerts(overview, t, { now = Date.now() } = {}) {
@@ -6903,8 +6929,9 @@ window.__ModuleLoader__.load({
       // 保存账号负责人（RQ-2026-009 §6.2/§6.5）：成功后更新本地账号投影、关闭弹框，
       // 总览已加载时失效缓存重拉。审查三修（P1-3/P2-1/P2-6）：
       // P1-3——先基于「旧目录 + 本次保存结果」计算校准后的 filters（负责人候选不含
-      // 原筛选值 → 重置「全部」；选中账号不在目录 → 重置「全部账号」），再用新筛选
-      // 唯一一次查询；不能先按旧筛选查询再校准（旧 ownerName 失效时会拿到空排行）。
+      // 原筛选值 → 重置「全部」；选中账号不在目录或不再属于当前负责人 → 重置
+      // 「全部账号」，二轮复审 P1-RES-01），再用新筛选唯一一次查询；不能先按旧筛选
+      // 查询再校准（旧 ownerName 失效时会拿到空排行）。
       // P2-1——手动请求同样走 overviewRequestRef 序列号守卫与 loading 复位守卫，
       // 不与筛选/Tab 触发的查询互相覆盖。
       // P2-6——总览刷新失败不影响保存结果（保存已成功就返回 ok）：保留旧总览与校准
@@ -6927,13 +6954,10 @@ window.__ModuleLoader__.load({
           // 'videos'），总览已加载过就立即重拉——否则切回总览会用失效的 ownerName
           // 查询（空排行 + 残留筛选值）。查询失败只保留旧总览（P2-6），保存仍成功。
           if (overview) {
-            const catalog = buildAccountCatalog(overview)
-              .map(item => (item.id === accountId ? { ...item, ownerName: savedName || null } : item))
-            const ownerValues = buildOwnerOptions(catalog, t).map(option => option.value)
-            const next = { ...overviewFilters }
-            if (next.ownerName && !ownerValues.includes(next.ownerName)) next.ownerName = ''
-            const picked = next.accountIds && next.accountIds[0]
-            if (picked && !catalog.some(item => item.id === picked)) next.accountIds = []
+            // 校准抽为纯函数 calibrateOverviewFiltersAfterOwnerSave（overview-ui.js）：
+            // 负责人候选重置、账号目录重置、已选账号仍在负责人范围内三段校准
+            //（二轮复审 P1-RES-01），行为级测试直接覆盖。
+            const next = calibrateOverviewFiltersAfterOwnerSave(overview, overviewFilters, accountId, savedName, t)
             const filtersChanged = next.ownerName !== overviewFilters.ownerName
               || (next.accountIds || []).length !== (overviewFilters.accountIds || []).length
             const requestId = ++overviewRequestRef.current
