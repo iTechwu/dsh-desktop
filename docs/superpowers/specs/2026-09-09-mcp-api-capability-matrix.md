@@ -42,7 +42,7 @@
 
 爆款素材看板入口（RQ-2026-008）：`viral_video_seeds_list`、`viral_video_dashboard_get`、`viral_video_runs_list` 只读；`viral_video_keyword_seeds_upsert`、`viral_video_account_seeds_upsert`、`viral_video_seed_search_submit` 为幂等写操作，携带 `douyin:vv_keyword_upsert:`、`douyin:vv_account_upsert:`、`douyin:vv_seed_search:` 前缀幂等键；手动采集合成为用户显式触发的刷新动作，OneAPI 采集与计费由 Tools 服务负责，桌面不持有服务端凭据。
 
-抖音负责人与投流入口（RQ-2026-009）：`douyin_account_owner_set`、`douyin_work_promotion_save`，均为同步幂等写操作（`model=false`、`async=false`，普通 MCP 请求路径），分别携带 `douyin:account_owner_set:`、`douyin:work_promotion_save:` 前缀幂等键；前者维护 `douyin_accounts.owner_name`，后者维护作品投流表（stale add 由服务端以 `PROMOTION_ALREADY_EXISTS` 拒绝，客户端刷新后转更新）；DB 列名 canonical snake_case（`owner_name`/`cost_amount`），宿主插件投影为 camelCase；无 Models 调用与 Celery 队列，桌面不持有服务端凭据。
+抖音负责人与投流入口（RQ-2026-009）：`douyin_account_owner_set`、`douyin_work_promotion_save`，均为同步幂等写操作（`model=false`、`async=false`，普通 MCP 请求路径），分别携带 `douyin:account_owner_set:`、`douyin:work_promotion_save:` 前缀幂等键；前者维护 `douyin_account.owner_name`，后者维护作品投流表（stale add 由服务端以 `PROMOTION_ALREADY_EXISTS` 拒绝，客户端刷新后转更新）；DB 列名 canonical snake_case（`owner_name`/`cost_amount`），宿主插件投影为 camelCase；无 Models 调用与 Celery 队列，桌面不持有服务端凭据。
 
 上表描述需要满足的能力与体验契约，不代表每个入口都已完成同等范围的浏览器验证。当前 Plugin Console 的直接证据来自 `dsh-plugin-desktop/tests/browser/plugin-console-modal.browser.mjs`：
 

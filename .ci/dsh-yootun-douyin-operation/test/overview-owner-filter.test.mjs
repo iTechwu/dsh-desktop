@@ -182,3 +182,34 @@ test('OverviewPage：负责人下拉位置、值绑定、禁用态与账号下�
   const disabledOwner = hLog.filter(node => node.type === FilterSelectType)[3]
   assert.equal(disabledOwner.props.disabled, true, '目录不完整 → 负责人下拉禁用')
 })
+
+test('总览导出参数收敛（审查 P0-2）：sort/ownerName 不透传、负责人解析为 accountIds', async () => {
+  // exportOverview 的源码契约：douyin_overview_export DTO（extra=forbid）只接受
+  // accountIds/publishFrom/publishTo/ruleVersion——展示参数在客户端剥离，负责人
+  // 筛选基于完整目录解析为 accountIds（与已选账号取交集），宿主再兜底白名单。
+  const clientSource = await readFile(new URL('../src/client.js', import.meta.url), 'utf8')
+  const exportBody = clientSource.slice(
+    clientSource.indexOf('const exportOverview = useCallback'),
+    clientSource.indexOf('const changeOverviewFilters = useCallback'),
+  )
+  assert.match(exportBody, /const filters = buildOverviewFilters\(overviewFilters\)/u)
+  assert.match(exportBody, /delete filters\.sort\n      delete filters\.ownerName/u)
+  assert.match(exportBody, /const owned = buildAccountCatalog\(overview\)\n          \.filter\(item => typeof item\.ownerName === 'string' && item\.ownerName\.trim\(\) === ownerName\)\n          \.map\(item => item\.id\)/u)
+  assert.match(exportBody, /const merged = picked\.length \? owned\.filter\(id => picked\.includes\(id\)\) : owned/u)
+  // 负责人在目录下无账号（防御）→ 不发请求，绝不静默按「全部账号」扩大导出范围。
+  assert.match(exportBody, /if \(!merged\.length\) \{\n          setError\('exportFailed'\)\n          return\n        \}/u)
+  // 宿主 handleOverviewExport 按 schema 重建参数：projectOverviewArgs 的总览查询
+  // 白名单（含 sort/ownerName/topN 等）不能复用到 export。
+  const indexSource = await readFile(new URL('../index.js', import.meta.url), 'utf8')
+  const handlerBody = indexSource.slice(
+    indexSource.indexOf('async function handleOverviewExport'),
+    indexSource.indexOf('// 单账号分析与趋势'),
+  )
+  assert.ok(!/projectOverviewArgs\(body\)/.test(handlerBody), '导出不再复用总览查询白名单')
+  assert.match(handlerBody, /if \(ids\.length\) args\.accountIds = ids/u)
+  assert.match(handlerBody, /if \(publishFrom\) args\.publishFrom = publishFrom/u)
+  assert.match(handlerBody, /if \(ruleVersion\) args\.ruleVersion = ruleVersion/u)
+  for (const forbidden of ['args.sort', 'args.ownerName', 'args.topN', 'args.cursor', 'args.limit', 'args.hotType']) {
+    assert.ok(!handlerBody.includes(forbidden), `导出参数不含 ${forbidden}（schema 外字段会被 UnknownArgsGuard 拒绝）`)
+  }
+})

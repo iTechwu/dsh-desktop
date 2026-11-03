@@ -41,18 +41,25 @@ test('负责人弹框：结构与校验（§6.3）', () => {
   assert.match(clientSource, /if \(trigger && typeof trigger\.focus === 'function'\) trigger\.focus\(\)/u)
 })
 
-test('保存负责人：本地投影更新 + 总览失效重拉 + 筛选校准只发一次请求（§6.2/§6.5）', () => {
+test('保存负责人：本地投影更新 + 先校准后唯一一次查询 + 竞态守卫与错误隔离（§6.2/§6.5，审查 P1-3/P2-1/P2-6）', () => {
   // 幂等键由页面生成（模板与 tools 侧一致）。
   assert.match(clientSource, /action: 'account\.owner\.set', accountId, ownerName,\n        idempotencyKey: accountOwnerSetIdempotencyKey\(\),/u)
   // 成功后更新 accounts 当前账号 ownerName 并关弹框（§6.2.6）。
   assert.match(clientSource, /setAccounts\(list => list\.map\(item =>\n        item\.accountId === accountId \? \{ \.\.\.item, ownerName: savedName \|\| null \} : item\)\)\n      setOwnerModal\(null\)/u)
-  // 总览已加载过即重拉（负责人入口在视频页，tab 恒为 videos——不能以 tab 为条件，
-  // 否则校准分支恒不可达）；重置发生时置 skip 标记避免切 tab 后二次查询。
-  assert.match(clientSource, /if \(overview\) \{\n        const refreshed = await post\(\{ action: 'overview\.get'/u)
-  assert.match(clientSource, /skipOverviewQueryRef\.current = true\n            setOverviewFilters\(next\)/u)
+  // P1-3：查询前先基于「旧目录 + 本次保存结果」校准 filters（不能先按旧筛选
+  // 查询再校准——旧 ownerName 失效会拿到空排行）；重拉请求用校准后的 next。
+  assert.match(clientSource, /const catalog = buildAccountCatalog\(overview\)\n          \.map\(item => \(item\.id === accountId \? \{ \.\.\.item, ownerName: savedName \|\| null \} : item\)\)/u)
+  assert.match(clientSource, /const refreshed = await post\(\{ action: 'overview\.get', \.\.\.buildOverviewFilters\(next\) \}\)/u)
   // ownerName 不在新候选 → 重置全部；选中账号不在新目录 → 重置全部账号。
   assert.match(clientSource, /if \(next\.ownerName && !ownerValues\.includes\(next\.ownerName\)\) next\.ownerName = ''/u)
   assert.match(clientSource, /if \(picked && !catalog\.some\(item => item\.id === picked\)\) next\.accountIds = \[\]/u)
+  // P2-1：手动重拉纳入 overviewRequestRef 序列号守卫（请求前后一致才落状态）。
+  assert.match(clientSource, /const requestId = \+\+overviewRequestRef\.current\n        setOverviewLoading\(true\)/u)
+  assert.match(clientSource, /if \(requestId === overviewRequestRef\.current\) \{\n            if \(refreshed\.status === 'ready'/u)
+  // P2-6：刷新失败保留旧总览（保存仍返回 ok）；校准失败也应用、不置 skip，
+  // 让筛选 effect 自然重查自愈。
+  assert.match(clientSource, /if \(requestId === overviewRequestRef\.current && filtersChanged\) \{\n          skipOverviewQueryRef\.current = refreshedOk\n          setOverviewFilters\(next\)\n        \}/u)
+  assert.match(clientSource, /return \{ ok: true \}\n    \} catch \{\n      return \{ ok: false, reason: 'owner_save_failed' \}\n    \} finally \{\n      setOwnerSaving\(false\)/u)
 })
 
 test('Esc 链：负责人/投流弹框在最上层且保存中不关闭（§6.3.2）', () => {
@@ -65,7 +72,8 @@ test('宿主 action 契约：account.owner.set（§5.1）', () => {
   // 路由注册 + 入参清洗 + 键模板校验（与 tools 服务端 common 前缀一致）。
   assert.match(indexSource, /case 'account\.owner\.set':\n              return send\(res, 200, await handleAccountOwnerSet\(deps, toolCtx, body\)\)/u)
   assert.match(indexSource, /const OWNER_SET_KEY_PATTERN = \/\^douyin:account_owner_set:\.\+\$\//u)
-  assert.match(indexSource, /const ownerName = cleanString\(body\.ownerName, 128\)\n  \/\/ cleanString 已 strip：空\/纯空白在此拒绝（服务端 DTO min_length=1 二次兜底）。\n  if \(!ownerName\) return \{ status: 'error', reason: 'OWNER_NAME_REQUIRED' \}/u)
+  // P2-7：超长 trim 后 >128 显式 OWNER_NAME_INVALID（不 cleanString 静默截断）。
+  assert.match(indexSource, /if \(!trimmedOwnerName\) return \{ status: 'error', reason: 'OWNER_NAME_REQUIRED' \}\n  if \(trimmedOwnerName\.length > 128\) return \{ status: 'error', reason: 'OWNER_NAME_INVALID' \}/u)
   assert.match(indexSource, /if \(!OWNER_SET_KEY_PATTERN\.test\(idempotencyKey\)\) \{\n    return \{ status: 'error', reason: 'INVALID_IDEMPOTENCY_KEY' \}\n  \}/u)
   assert.match(indexSource, /callTool\(ctx, 'douyin_account_owner_set', \{ accountId, ownerName, idempotencyKey \}\)/u)
   // tools-client 登记幂等键生成器（模板单一登记点）。

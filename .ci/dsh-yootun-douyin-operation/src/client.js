@@ -254,15 +254,17 @@ const copy = {
     secPromotion: '投流数据',
     promoPlay: '投流播放量', promoCost: '消耗金额', promoFans: '粉丝量', promoHours: '实际投放时长',
     hoursUnit: '小时',
-    promotionModalTitle: '维护投流数据',
+    promotionModalTitle: '维护投流数据', promotionModalAccount: '所属账号',
     promotionFieldPlay: '投流播放量', promotionFieldCost: '消耗金额（元）',
     promotionFieldFans: '粉丝量', promotionFieldHours: '实际投放时长（小时）',
     promotionPlayRequired: '请输入投流播放量', promotionCostRequired: '请输入消耗金额',
     promotionFansRequired: '请输入粉丝量', promotionHoursRequired: '请输入实际投放时长',
     promotionPlayInvalid: '投流播放量须为不小于 0 的整数', promotionCostInvalid: '消耗金额须为不小于 0 的数值，最多两位小数',
     promotionFansInvalid: '粉丝量须为不小于 0 的整数', promotionHoursInvalid: '实际投放时长须大于 0，最多两位小数',
-    // stale-add（AC-R5-010）：新增撞已有记录不静默覆盖，中文提示固定口径。
+    // stale-add（AC-R5-010 / 审查 P1-2）：新增撞已有记录不静默覆盖；自动重拉成功
+    // 转为更新流程时给中性提示，重拉失败才回退原口径文案。
     promotionAlreadyExists: '该作品已存在投流数据，请刷新后检查并更新',
+    promotionStaleNotice: '该作品已存在投流数据，已载入最新记录，保存后将转为更新',
     promotionNotFound: '投流记录已不存在，请刷新后重试',
     promotionSaved: '已保存', promotionSaveFailed: '保存失败，请稍后重试',
     // 二审（2026-09-16）：排行受 top_n 截断属正常展示语义，明确区分完整账号数与展示数。
@@ -487,7 +489,7 @@ const copy = {
     secPromotion: 'Promotion data',
     promoPlay: 'Promotion plays', promoCost: 'Cost', promoFans: 'Fans gained', promoHours: 'Actual duration',
     hoursUnit: 'h',
-    promotionModalTitle: 'Maintain promotion data',
+    promotionModalTitle: 'Maintain promotion data', promotionModalAccount: 'Account',
     promotionFieldPlay: 'Promotion plays', promotionFieldCost: 'Cost (CNY)',
     promotionFieldFans: 'Fans gained', promotionFieldHours: 'Actual duration (hours)',
     promotionPlayRequired: 'Enter promotion plays', promotionCostRequired: 'Enter the cost',
@@ -495,6 +497,7 @@ const copy = {
     promotionPlayInvalid: 'Promotion plays must be an integer ≥ 0', promotionCostInvalid: 'Cost must be ≥ 0 with at most two decimal places',
     promotionFansInvalid: 'Fans gained must be an integer ≥ 0', promotionHoursInvalid: 'Duration must be > 0 with at most two decimal places',
     promotionAlreadyExists: 'This work already has promotion data — refresh and update it',
+    promotionStaleNotice: 'This work already has promotion data — the latest record is loaded; saving will update it',
     promotionNotFound: 'The promotion record no longer exists — refresh and retry',
     promotionSaved: 'Saved', promotionSaveFailed: 'Save failed, retry later',
     rankingScopeHint: '{total} accounts in total · ranking shows {shown}',
@@ -945,16 +948,18 @@ function WorkDetailModal({ accountId, workId, detail, trend, loading, onClose, o
             `${t('publishTime')} ${publishText}`,
             durationText ? ` · ${durationText}` : '',
             work && work.visibility === 'not_in_list' ? ` · ${t('privateBadge')}` : null),
-          h('p', { className: 'ydo-modal-meta' }, `${t('latestCollected')} ${latestText === EMPTY ? t('noRecord') : latestText}`),
-          // 投流操作区（RQ-2026-009 §6.8.1）：头部时间文本右侧；已投流标签复用既有
-          // ydo-tag（无新增样式类），未投流只渲染添加按钮，不渲染投流卡片。
-          h('div', null,
-            promotion ? h('span', { className: 'ydo-tag' }, t('promotionBadge')) : null,
-            h('button', {
-              type: 'button',
-              className: 'ydo-secondary',
-              onClick: openPromotionModal,
-            }, promotion ? t('promotionEntryUpdate') : t('promotionEntryAdd')))),
+          // 投流操作区（RQ-2026-009 §6.8.1 / 审查 P1-1）：与「最近采集」时间文本
+          // 同行右侧——复用既有 ydo-modal-grid-2 两列（720px 以下降单列），不新增
+          // 样式类；已投流标签复用 ydo-tag，未投流只渲染添加按钮。
+          h('div', { className: 'ydo-modal-grid-2' },
+            h('p', { className: 'ydo-modal-meta' }, `${t('latestCollected')} ${latestText === EMPTY ? t('noRecord') : latestText}`),
+            h('div', null,
+              promotion ? h('span', { className: 'ydo-tag' }, t('promotionBadge')) : null,
+              h('button', {
+                type: 'button',
+                className: 'ydo-secondary',
+                onClick: openPromotionModal,
+              }, promotion ? t('promotionEntryUpdate') : t('promotionEntryAdd'))))),
         h(Tooltip, { label: t('close') },
           h('button', { type: 'button', 'aria-label': t('close'), onClick: onClose }, h(IconCloseOutlineRegular, { size: 16 })))),
       loading
@@ -1106,6 +1111,10 @@ function OwnerModal({ modal, saving, t, onConfirm, onClose }) {
 
 // 非负金额/时长文本校验：整数或 1–2 位小数（与 Host PROMOTION_DECIMAL_PATTERN 同口径）。
 const PROMOTION_DECIMAL_PATTERN = /^\d+(\.\d{1,2})?$/
+// 量级上限（审查 P2-3）：与 DB 列 NUMERIC(14,2)/NUMERIC(8,2) 和 tools DTO le 一致
+//（金额整数 12 位、时长 6 位），三层（弹框/宿主/服务端）同一口径，超限在入口拒绝。
+const PROMOTION_COST_MAX = 999999999999.99
+const PROMOTION_HOURS_MAX = 999999.99
 
 // 逐项校验（§6.9.2）：必填缺失与非法分键；返回文案键或 null。随 module.exports
 // 暴露供测试直接断言（client.js 是 CommonJS 工厂，不能用 ESM export）。
@@ -1116,14 +1125,16 @@ function validatePromotionForm(values) {
   if (!Number.isInteger(playNum) || playNum < 0) return 'promotionPlayInvalid'
   const cost = String(values.costAmount || '').trim()
   if (!cost) return 'promotionCostRequired'
-  if (!PROMOTION_DECIMAL_PATTERN.test(cost)) return 'promotionCostInvalid'
+  if (!PROMOTION_DECIMAL_PATTERN.test(cost) || Number(cost) > PROMOTION_COST_MAX) return 'promotionCostInvalid'
   const fans = String(values.fansCount || '').trim()
   if (!fans) return 'promotionFansRequired'
   const fansNum = Number(fans)
   if (!Number.isInteger(fansNum) || fansNum < 0) return 'promotionFansInvalid'
   const hours = String(values.durationHours || '').trim()
   if (!hours) return 'promotionHoursRequired'
-  if (!PROMOTION_DECIMAL_PATTERN.test(hours) || Number(hours) <= 0) return 'promotionHoursInvalid'
+  if (!PROMOTION_DECIMAL_PATTERN.test(hours) || Number(hours) <= 0 || Number(hours) > PROMOTION_HOURS_MAX) {
+    return 'promotionHoursInvalid'
+  }
   return null
 }
 
@@ -1145,8 +1156,12 @@ function PromotionModal({ modal, saving, t, onConfirm, onClose }) {
   const [fansCount, setFansCount] = useState(modal.fansCount || '')
   const [durationHours, setDurationHours] = useState(modal.durationHours || '')
   const [errorReason, setErrorReason] = useState(null)
+  const firstInputRef = useRef(null)
+  // 焦点管理（审查 P3-3，对齐 OwnerModal §6.3.3）：先捕获触发按钮再 focus 第一个
+  // 可编辑输入（播放量）——顺序反了会把输入框自己当成 trigger，卸载时焦点落 body。
   useEffect(() => {
     const trigger = document.activeElement
+    firstInputRef.current?.focus?.()
     return () => { if (trigger && typeof trigger.focus === 'function') trigger.focus() }
   }, [])
   const submit = async () => {
@@ -1154,6 +1169,9 @@ function PromotionModal({ modal, saving, t, onConfirm, onClose }) {
     const invalid = validatePromotionForm({ playCount, costAmount, fansCount, durationHours })
     if (invalid) { setErrorReason(invalid); return }
     // 金额/时长按字符串透传（服务端 Decimal round-trip，无精度漂移）；计数转整数。
+    // stale-add 自动恢复（审查 P1-2）由 client 层完成：换入新 modal（带
+    // staleRecovered 标记）并随挂载 key 重挂载——提示渲染 modal.staleRecovered，
+    // 随数据走，不落在会被重挂载吞掉的组件 state 上。
     const result = await onConfirm({
       accountId: modal.accountId,
       workId: modal.workId,
@@ -1181,13 +1199,23 @@ function PromotionModal({ modal, saving, t, onConfirm, onClose }) {
   h('div', { className: 'ydo-mat-modal', role: 'dialog', 'aria-modal': true, 'aria-labelledby': 'ydo-promotion-modal-title' },
     h('h3', { id: 'ydo-promotion-modal-title' }, t('promotionModalTitle')),
     h('div', { className: 'ydo-mat-form' },
+      // 所属账号（审查 P1-1）：只读展示，跨账号下钻时明确写入目标，防误存他账号。
+      h('div', { className: 'ydo-mat-field' },
+        h('span', null, t('promotionModalAccount')),
+        h('input', { type: 'text', value: modal.accountName || modal.accountId || '', readOnly: true })),
       h('div', { className: 'ydo-mat-field' },
         h('span', null, t('colVideo')),
         h('input', { type: 'text', value: modal.workTitle || modal.workId || '', readOnly: true })),
-      numericField(t('promotionFieldPlay'), playCount, setPlayCount, { min: 0, step: 1, required: true }, 'play'),
+      numericField(t('promotionFieldPlay'), playCount, setPlayCount, { min: 0, step: 1, required: true, ref: firstInputRef }, 'play'),
       numericField(t('promotionFieldCost'), costAmount, setCostAmount, { min: 0, step: 0.01, required: true }, 'cost'),
       numericField(t('promotionFieldFans'), fansCount, setFansCount, { min: 0, step: 1, required: true }, 'fans'),
       numericField(t('promotionFieldHours'), durationHours, setDurationHours, { min: 0.01, step: 0.01, required: true }, 'hours')),
+    // stale-add 自动恢复提示（审查 P1-2 复验修复）：随 modal 数据走而非组件
+    // state——recordId 变化触发挂载 key 重挂载时，旧实例上的 setState 是 no-op，
+    // 只有数据驱动的提示才能在新实例上存活；role=status 与错误 alert 区分语义。
+    modal.staleRecovered
+      ? h('p', { className: 'ydo-mat-error', role: 'status' }, t('promotionStaleNotice'))
+      : null,
     errorReason
       ? h('p', { className: 'ydo-mat-error', role: 'alert' }, t(PROMOTION_ERROR_COPY[errorReason] || 'promotionSaveFailed'))
       : null,
@@ -1413,6 +1441,12 @@ function Overlay({ t }) {
   const batchFinalHandledRef = useRef(null)
   const [detail, setDetail] = useState(null)
   const [detailWorkId, setDetailWorkId] = useState(null)
+  // 详情弹框归属账号（审查 P0-1）：跨账号下钻时 openDetail 用 override 拉详情，
+  // 弹框内投流保存也必须写同一账号——不能回退 selected（那是列表选中账号）。
+  const [detailAccountId, setDetailAccountId] = useState(null)
+  // 详情请求序列号（审查 P2-2，与 overviewRequestRef 同法）：快速切换详情/投流
+  // 保存触发重拉时，旧响应一律丢弃，防串台覆盖。
+  const detailRequestRef = useRef(0)
   const [trend, setTrend] = useState(null)
   // 账号总览 Tab（0914 方案阶段 1）：Tab 状态、总览数据、筛选与抽屉。
   const [tab, setTab] = useState('overview')
@@ -1883,7 +1917,31 @@ function Overlay({ t }) {
   const exportOverview = useCallback(async () => {
     setOverviewExporting(true)
     try {
-      const result = await post({ action: 'overview.export', ...buildOverviewFilters(overviewFilters) })
+      // douyin_overview_export 的 DTO（extra=forbid）只接受 accountIds/publishFrom/
+      // publishTo/ruleVersion（审查 P0-2）：总览查询参数里的 sort/ownerName 不在
+      // schema 内，原样透传会被服务端 UnknownArgsGuard 以 -32602 拒绝。导出前剥
+      // 离展示参数；负责人筛选在客户端解析为 accountIds（基于完整 accountOptions
+      // 目录，与已选账号取交集——目录不受筛选裁剪，解析恒可用），宿主再做 schema
+      // 白名单兜底。
+      const filters = buildOverviewFilters(overviewFilters)
+      const ownerName = typeof filters.ownerName === 'string' ? filters.ownerName.trim() : ''
+      delete filters.sort
+      delete filters.ownerName
+      if (ownerName) {
+        const picked = filters.accountIds || []
+        const owned = buildAccountCatalog(overview)
+          .filter(item => typeof item.ownerName === 'string' && item.ownerName.trim() === ownerName)
+          .map(item => item.id)
+        const merged = picked.length ? owned.filter(id => picked.includes(id)) : owned
+        // 负责人在目录下无账号（防御分支：正常交互候选与目录同源）→ 不发请求、
+        // 按「全部账号」导出会静默扩大范围，宁可显式失败。
+        if (!merged.length) {
+          setError('exportFailed')
+          return
+        }
+        filters.accountIds = merged
+      }
+      const result = await post({ action: 'overview.export', ...filters })
       if (result.status !== 'ready') {
         setError(ERROR_REASON_COPY[result.reason] || 'exportFailed')
         return
@@ -1894,7 +1952,7 @@ function Overlay({ t }) {
     } finally {
       setOverviewExporting(false)
     }
-  }, [overviewFilters])
+  }, [overviewFilters, overview])
 
   const changeOverviewFilters = useCallback(filters => {
     // 筛选即查询（只读刷新，不触发任何采集）：setOverviewFilters 改变 loadOverview
@@ -1910,11 +1968,14 @@ function Overlay({ t }) {
   }, [overviewFilters])
 
   // 保存账号负责人（RQ-2026-009 §6.2/§6.5）：成功后更新本地账号投影、关闭弹框，
-  // 总览已加载时失效缓存重拉——手动发一次总览请求并用新目录校准筛选（负责人候选
-  // 不再包含原筛选值 → 重置「全部」；选中账号不在新目录 → 重置「全部账号」）。
-  // 重置发生时置 skip 标记让筛选 effect 跳过自动查询（数据已手动拉到），全程只发
-  // 一次总览请求（§6.5「只触发一次总览查询」）。手动拉取失败保留旧总览与筛选，
-  // 下次任何筛选/Tab 变更会自然重查。
+  // 总览已加载时失效缓存重拉。审查三修（P1-3/P2-1/P2-6）：
+  // P1-3——先基于「旧目录 + 本次保存结果」计算校准后的 filters（负责人候选不含
+  // 原筛选值 → 重置「全部」；选中账号不在目录 → 重置「全部账号」），再用新筛选
+  // 唯一一次查询；不能先按旧筛选查询再校准（旧 ownerName 失效时会拿到空排行）。
+  // P2-1——手动请求同样走 overviewRequestRef 序列号守卫与 loading 复位守卫，
+  // 不与筛选/Tab 触发的查询互相覆盖。
+  // P2-6——总览刷新失败不影响保存结果（保存已成功就返回 ok）：保留旧总览与校准
+  // 后的筛选，不置 skip 标记，让筛选 effect 因 filters 变化自然重查一次自愈。
   const saveAccountOwner = useCallback(async ({ accountId, ownerName }) => {
     setOwnerSaving(true)
     try {
@@ -1930,25 +1991,43 @@ function Overlay({ t }) {
         item.accountId === accountId ? { ...item, ownerName: savedName || null } : item))
       setOwnerModal(null)
       // 保存后总览失效重拉（§6.2.7/§6.5）：负责人入口在视频页工具栏（tab 恒为
-      // 'videos'），总览已加载过就立即重拉并校准筛选——否则切回总览会用失效的
-      // ownerName 查询（空排行 + 残留筛选值）。skip 标记让切 tab 的查询 effect
-      // 跳过一次（本次已手动重拉，不再重复查询）。
+      // 'videos'），总览已加载过就立即重拉——否则切回总览会用失效的 ownerName
+      // 查询（空排行 + 残留筛选值）。查询失败只保留旧总览（P2-6），保存仍成功。
       if (overview) {
-        const refreshed = await post({ action: 'overview.get', ...buildOverviewFilters(overviewFilters) })
-        if (refreshed.status === 'ready' && refreshed.overview) {
-          const catalog = buildAccountCatalog(refreshed.overview)
-          const ownerValues = buildOwnerOptions(catalog, t).map(option => option.value)
-          const next = { ...overviewFilters }
-          if (next.ownerName && !ownerValues.includes(next.ownerName)) next.ownerName = ''
-          const picked = next.accountIds && next.accountIds[0]
-          if (picked && !catalog.some(item => item.id === picked)) next.accountIds = []
-          setOverview(refreshed.overview)
-          const filtersChanged = next.ownerName !== overviewFilters.ownerName
-            || (next.accountIds || []).length !== (overviewFilters.accountIds || []).length
-          if (filtersChanged) {
-            skipOverviewQueryRef.current = true
-            setOverviewFilters(next)
+        const catalog = buildAccountCatalog(overview)
+          .map(item => (item.id === accountId ? { ...item, ownerName: savedName || null } : item))
+        const ownerValues = buildOwnerOptions(catalog, t).map(option => option.value)
+        const next = { ...overviewFilters }
+        if (next.ownerName && !ownerValues.includes(next.ownerName)) next.ownerName = ''
+        const picked = next.accountIds && next.accountIds[0]
+        if (picked && !catalog.some(item => item.id === picked)) next.accountIds = []
+        const filtersChanged = next.ownerName !== overviewFilters.ownerName
+          || (next.accountIds || []).length !== (overviewFilters.accountIds || []).length
+        const requestId = ++overviewRequestRef.current
+        setOverviewLoading(true)
+        let refreshedOk = false
+        try {
+          const refreshed = await post({ action: 'overview.get', ...buildOverviewFilters(next) })
+          if (requestId === overviewRequestRef.current) {
+            if (refreshed.status === 'ready' && refreshed.overview) {
+              setOverview(refreshed.overview)
+              refreshedOk = true
+            } else {
+              setOverviewError(refreshed.reason || 'douyin_operation_request_failed')
+            }
           }
+        } catch {
+          if (requestId === overviewRequestRef.current) setOverviewError('douyin_operation_request_failed')
+        } finally {
+          if (requestId === overviewRequestRef.current) setOverviewLoading(false)
+        }
+        // 校准始终应用（本地推导不依赖查询结果）；成功时数据已按新筛选拉到，
+        // skip 标记让切 tab 的查询 effect 跳过一次（§6.5「只触发一次总览查询」）；
+        // 失败时不置 skip——filters 变化让 effect 用校准后的筛选自动重查自愈
+        //（P2-6：旧总览保留，保存仍算成功）。
+        if (requestId === overviewRequestRef.current && filtersChanged) {
+          skipOverviewQueryRef.current = refreshedOk
+          setOverviewFilters(next)
         }
       }
       return { ok: true }
@@ -3116,7 +3195,9 @@ function Overlay({ t }) {
   const openDetail = useCallback(async (workId, accountIdOverride = null) => {
     // 跨账号爆款下钻用作品所属账号（审查 O4），默认仍是当前选中账号。
     const targetAccount = accountIdOverride || selected
+    const requestId = ++detailRequestRef.current
     setDetailWorkId(workId)
+    setDetailAccountId(targetAccount)
     setDetail(null)
     setTrend(null)
     try {
@@ -3124,6 +3205,8 @@ function Overlay({ t }) {
         post({ action: 'work.get', accountId: targetAccount, workId }),
         post({ action: 'work.trend', accountId: targetAccount, workId }).catch(() => null),
       ])
+      // 序列号守卫（审查 P2-2）：期间又打开了别的详情/发起新请求时丢弃旧响应。
+      if (requestId !== detailRequestRef.current) return
       if (detailResult.status === 'ready') setDetail(detailResult)
       else setError(detailResult.reason || 'refresh_failed')
       // 1015 UI 规格 §5.4：弹框播放量趋势折线画日度快照序列（上海自然日）。
@@ -3136,6 +3219,7 @@ function Overlay({ t }) {
         })
       }
     } catch {
+      if (requestId !== detailRequestRef.current) return
       setError('refresh_failed')
     }
   }, [selected])
@@ -3143,6 +3227,11 @@ function Overlay({ t }) {
   // 保存作品投流（RQ-2026-009 §6.9）：成功后关弹框并刷新详情（重拉 work.get，
   // promotion 投影随详情更新；核心指标口径不变，仅展示刷新）。数值/金额/时长校验
   // 已在弹框组件完成，此处只透传组装好的字段（宿主/服务端再各自兜底）。
+  // stale-add 自动恢复（审查 P1-2；复验修复提示丢失）：新增撞已有记录
+  //（PROMOTION_ALREADY_EXISTS）不再把错误抛给用户了事——自动重拉最新投流记录
+  // 回填弹框，并随新 modal 带上 staleRecovered 标记驱动中性提示（recordId 变化
+  // 让挂载 key 重挂载、预填 useState 生效；提示随数据走才能在重挂载后存活），
+  // 保存自然转为显式更新流程；重拉失败才回退原口径错误文案（手动刷新路径仍在）。
   const saveWorkPromotion = useCallback(async payload => {
     setPromotionSaving(true)
     try {
@@ -3151,7 +3240,28 @@ function Overlay({ t }) {
         ...payload,
         idempotencyKey: workPromotionSaveIdempotencyKey(),
       })
-      if (result.status !== 'ready') return { ok: false, reason: result.reason || 'promotion_save_failed' }
+      if (result.status !== 'ready') {
+        if (result.reason === 'PROMOTION_ALREADY_EXISTS' && promotionModal) {
+          const fresh = await post({
+            action: 'work.get', accountId: promotionModal.accountId, workId: promotionModal.workId,
+          }).catch(() => null)
+          const promotion = fresh && fresh.status === 'ready' && fresh.promotion ? fresh.promotion : null
+          if (promotion) {
+            await openDetail(promotionModal.workId, promotionModal.accountId)
+            setPromotionModal({
+              ...promotionModal,
+              recordId: String(promotion.id),
+              playCount: promotion.playCount === null || promotion.playCount === undefined ? '' : String(promotion.playCount),
+              costAmount: promotion.costAmount === null || promotion.costAmount === undefined ? '' : String(promotion.costAmount),
+              fansCount: promotion.fansCount === null || promotion.fansCount === undefined ? '' : String(promotion.fansCount),
+              durationHours: promotion.durationHours === null || promotion.durationHours === undefined ? '' : String(promotion.durationHours),
+              staleRecovered: true,
+            })
+            return { ok: true }
+          }
+        }
+        return { ok: false, reason: result.reason || 'promotion_save_failed' }
+      }
       setPromotionModal(null)
       if (promotionModal) await openDetail(promotionModal.workId, promotionModal.accountId)
       return { ok: true }
@@ -3577,11 +3687,17 @@ function Overlay({ t }) {
             : null,
           right))),
     detailWorkId ? h(WorkDetailModal, {
-      accountId: selected, workId: detailWorkId, detail, trend, loading: !detail, t,
-      onClose: () => { setDetailWorkId(null); setDetail(null); setTrend(null) },
+      // 详情归属账号（审查 P0-1）：openDetail 记录的真实账号（跨账号下钻 ≠ selected），
+      // 弹框内投流保存以它为准，防止写错账号。
+      accountId: detailAccountId, workId: detailWorkId, detail, trend, loading: !detail, t,
+      onClose: () => { setDetailWorkId(null); setDetail(null); setDetailAccountId(null); setTrend(null) },
       // 投流入口（RQ-2026-009 §6.8）：promotion 数据在 detail 投影里，入口只管
       // 打开弹框；保存成功由 saveWorkPromotion 重拉详情（组件拿到新 promotion）。
-      onOpenPromotion: modalData => setPromotionModal(modalData),
+      // accountName 从完整账号列表按详情账号取名（跨账号也不串名），弹框内只读展示。
+      onOpenPromotion: modalData => {
+        const owner = accounts.find(item => item.accountId === modalData.accountId)
+        setPromotionModal({ ...modalData, accountName: (owner && owner.nickname) || modalData.accountId })
+      },
     }) : null,
     // 负责人维护弹框（RQ-2026-009 §6.3）：工具栏入口打开，client 持有 saving 供
     // Esc/遮罩守卫「保存中不关闭」；错误码 → 中文文案在组件内映射。
@@ -3591,7 +3707,10 @@ function Overlay({ t }) {
       onClose: () => setOwnerModal(null),
     }) : null,
     // 投流数据弹框（RQ-2026-009 §6.9）：详情入口打开；更新时预填服务端字符串值。
+    // key 随 recordId 变化（审查 P1-2）：stale-add 自动恢复换入最新记录时强制
+    // 重挂载，预填 useState 才会取到新值（React 复用组件实例不会重置局部 state）。
     promotionModal ? h(PromotionModal, {
+      key: promotionModal.recordId ? `promotion-${promotionModal.recordId}` : 'promotion-new',
       modal: promotionModal, saving: promotionSaving, t,
       onConfirm: saveWorkPromotion,
       onClose: () => setPromotionModal(null),

@@ -625,8 +625,22 @@ function projectOverviewFileName(value) {
 }
 
 async function handleOverviewExport(deps, ctx, body) {
-  const { args, error } = projectOverviewArgs(body)
-  if (error) return { status: 'error', reason: 'overview_too_many_accounts' }
+  // douyin_overview_export 的 DTO（extra=forbid）只接受四个参数（审查 P0-2）：
+  // 与 projectOverviewArgs 的总览查询白名单不同——sort/ownerName/topN 等不在
+  // schema 内，透传会被服务端 UnknownArgsGuard 以 -32602 拒绝。此处按 schema
+  // 重建参数、多余字段安全丢弃（负责人筛选由客户端解析为 accountIds 后传入）。
+  const args = {}
+  if (Array.isArray(body.accountIds)) {
+    const ids = body.accountIds.map(item => cleanString(item, MAX_ID)).filter(Boolean)
+    if (ids.length > MAX_ACCOUNT_IDS) return { status: 'error', reason: 'overview_too_many_accounts' }
+    if (ids.length) args.accountIds = ids
+  }
+  const publishFrom = cleanString(body.publishFrom, 10)
+  const publishTo = cleanString(body.publishTo, 10)
+  if (publishFrom) args.publishFrom = publishFrom
+  if (publishTo) args.publishTo = publishTo
+  const ruleVersion = cleanString(body.ruleVersion, 32)
+  if (ruleVersion) args.ruleVersion = ruleVersion
   let payload
   try {
     payload = await callTool(ctx, 'douyin_overview_export', args)
@@ -1178,6 +1192,21 @@ const OWNER_SET_KEY_PATTERN = /^douyin:account_owner_set:.+$/
 const PROMOTION_SAVE_KEY_PATTERN = /^douyin:work_promotion_save:.+$/
 // 非负金额/时长字符串：整数或 1–2 位小数（"3200"、"36.5"、"36.50" 合法）。
 const PROMOTION_DECIMAL_PATTERN = /^\d+(\.\d{1,2})?$/
+// 量级上限（审查 P2-3）：与 DB 列 NUMERIC(14,2)/NUMERIC(8,2)、tools DTO le、
+// 弹框校验同一口径，超限在 Host 就地拒绝，不放行到服务端。
+const PROMOTION_COST_MAX = '999999999999.99'
+const PROMOTION_HOURS_MAX = '999999.99'
+
+/** 字符串数值 ≤ 上限（同为定点字符串，无浮点精度漂移）。 */
+function promotionDecimalWithin(value, max) {
+  const [intPart, decPart = ''] = value.split('.')
+  const [maxInt, maxDec = ''] = max.split('.')
+  if (intPart.length !== maxInt.length) return intPart.length < maxInt.length
+  if (intPart !== maxInt) return intPart < maxInt
+  // 整数部分与上限同值才需要比小数（不足位补零后逐位字符串比较）。
+  const fraction = (decPart + '0'.repeat(maxDec.length)).slice(0, maxDec.length)
+  return fraction <= maxDec
+}
 
 function requirePromotionCount(value) {
   // 缺失（null/undefined/''）与非法分开：写操作的数值不接受 fallback 掩盖。
@@ -1192,9 +1221,12 @@ function requirePromotionCount(value) {
 async function handleAccountOwnerSet(deps, ctx, body) {
   const accountId = cleanString(body.accountId, MAX_ID)
   if (!accountId) return { status: 'error', reason: 'account_id_required' }
+  // 超长显式拒绝（审查 P2-7）：与 tools 服务端口径一致（trim 后 ≤128），不能
+  // cleanString 静默截断——截断会把「张三丰…（129字）」存成另一个名字。
+  const trimmedOwnerName = typeof body.ownerName === 'string' ? body.ownerName.trim() : ''
+  if (!trimmedOwnerName) return { status: 'error', reason: 'OWNER_NAME_REQUIRED' }
+  if (trimmedOwnerName.length > 128) return { status: 'error', reason: 'OWNER_NAME_INVALID' }
   const ownerName = cleanString(body.ownerName, 128)
-  // cleanString 已 strip：空/纯空白在此拒绝（服务端 DTO min_length=1 二次兜底）。
-  if (!ownerName) return { status: 'error', reason: 'OWNER_NAME_REQUIRED' }
   const idempotencyKey = cleanString(body.idempotencyKey, 128)
   if (!idempotencyKey) return { status: 'error', reason: 'idempotency_key_required' }
   // 键模板与 tools 服务端 common.require_owner_set_idempotency_key 一致。
@@ -1222,6 +1254,11 @@ async function handleWorkPromotionSave(deps, ctx, body) {
   }
   // 时长必须为正（服务端 DTO gt=0）；金额允许 0。
   if (Number(durationHours) <= 0) return { status: 'error', reason: 'PROMOTION_VALUE_INVALID' }
+  // 量级上限（审查 P2-3）：超 DB 列精度上限直接拒绝，定点字符串比较不丢精度。
+  if (!promotionDecimalWithin(costAmount, PROMOTION_COST_MAX)
+    || !promotionDecimalWithin(durationHours, PROMOTION_HOURS_MAX)) {
+    return { status: 'error', reason: 'PROMOTION_VALUE_INVALID' }
+  }
   let recordId
   if (body.recordId !== null && body.recordId !== undefined && body.recordId !== '') {
     const id = Number(body.recordId)
@@ -1540,4 +1577,6 @@ function send(res, status, body) {
   res.end(JSON.stringify(body))
 }
 
-export { projectAccounts, projectLogin }
+// handler 导出仅侧行为级测试直接调用（P2-5）：注册仍在 apply() 的 action 分发
+// switch 内，导出不改变运行时路径。
+export { projectAccounts, projectLogin, handleAccountOwnerSet, handleWorkPromotionSave, handleOverviewExport }

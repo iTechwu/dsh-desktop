@@ -1505,9 +1505,10 @@ test('筛选流契约：UI 形态状态、请求时归一、筛选变更不重�
   const source = await readFile(new URL('../src/client.js', import.meta.url), 'utf8')
   // 初始状态为 UI 形态（含 window 键），不带日期字段。
   assert.match(source, /useState\(\(\) => \(\{\n    window: '30d', sort: 'hot_count', accountIds: \[\], ownerName: '', \.\.\.defaultCustomRange\(\),\n  \}\)\)/u)
-  // overview.get / overview.export 请求前统一经 buildOverviewFilters 归一（「全部」不带日期）。
+  // overview.get 请求前统一经 buildOverviewFilters 归一（「全部」不带日期）；
+  // overview.export 在归一后再剥离 schema 外参数（审查 P0-2，见 overview-owner-filter 测试）。
   assert.match(source, /action: 'overview\.get', \.\.\.buildOverviewFilters\(filters\)/u)
-  assert.match(source, /action: 'overview\.export', \.\.\.buildOverviewFilters\(overviewFilters\)/u)
+  assert.match(source, /const filters = buildOverviewFilters\(overviewFilters\)\n      const ownerName = typeof filters\.ownerName === 'string' \? filters\.ownerName\.trim\(\) : ''\n      delete filters\.sort\n      delete filters\.ownerName/u)
   // 分析页与其导出沿用总览窗口：从 UI 形态派生日期，而不是读状态里的旧字段。
   assert.match(source, /const \{ publishFrom, publishTo \} = buildOverviewFilters\(overviewFilters\)/u)
   // 筛选变更只 setOverviewFilters：查询由 loadOverview 身份变化触发一次，不显式重复调用。
