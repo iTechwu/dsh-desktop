@@ -45,7 +45,7 @@ test('AccountTable：负责人列在账号列后，表头与数据行同序（§
   assert.equal(firstRowCells[1], '张三', '负责人值渲染快照行数据')
 })
 
-test('快照语义：旧版本缺失 ownerName 显示 -；不读当前账号动态替换（§6.7）', async () => {
+test('快照语义：旧版本缺失 ownerName 显示 —（与总览列口径统一）；不读当前账号动态替换（§6.7）', async () => {
   const sandbox = await evalReportModule()
   const AccountTable = vm.runInContext('AccountTable', sandbox)
   const table = AccountTable({
@@ -53,9 +53,9 @@ test('快照语义：旧版本缺失 ownerName 显示 -；不读当前账号动�
   })
   const dataRow = collectCells(table, 'tr').filter(row => collectCells(row, 'td').length)[0]
   const cells = collectCells(dataRow, 'td').map(cellText)
-  assert.equal(cells[1], '-', '旧版本行缺 ownerName → -（不造值）')
+  assert.equal(cells[1], '—', '旧版本行缺 ownerName → —（不造值；2026-11-03 与总览列口径统一）')
   const source = await readFile(new URL('../src/report-ui.js', import.meta.url), 'utf8')
   // 快照列只读行数据，绝不出现从当前账号列表按 id 回查替换的写法。
-  assert.match(source, /h\('td', null, row\.ownerName \|\| '-'\)/u)
+  assert.match(source, /h\('td', null, row\.ownerName \|\| '—'\)/u)
   assert.doesNotMatch(source, /accounts\.find\(.*ownerName/u)
 })

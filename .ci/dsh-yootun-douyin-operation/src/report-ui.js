@@ -497,8 +497,8 @@ export function AccountTable({ accounts }) {
           Array.isArray(row.marks) && row.marks.length
             ? row.marks.map(mark => h('span', { key: mark, className: 'ydo-report-mark' }, mark))
             : null),
-        // 快照列：只读行数据 ownerName（旧版本缺失 → -），绝不读当前账号动态替换。
-        h('td', null, row.ownerName || '-'),
+        // 快照列：只读行数据 ownerName（旧版本缺失 → —，2026-11-03 与总览列口径统一），绝不读当前账号动态替换。
+        h('td', null, row.ownerName || '—'),
         h('td', null, reportCountText(row.fanCount)),
         ...['plays', 'netFans', 'publishes', 'likes', 'comments', 'shares'].map(key => {
           const value = row.metrics ? row.metrics[key] : null
