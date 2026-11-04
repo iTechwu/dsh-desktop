@@ -919,6 +919,18 @@ test('client.js 接线：Tab/i18n/全宽 body/轮询守卫/幂等键模板', () 
   // 终审 P2-4 竞态防护：overlay 关闭后晚到响应不得恢复轮询/受理落位
   assert.match(clientSource, /if \(!materialVisibleRef\.current\) return/u, 'resume guard')
   assert.doesNotMatch(clientSource, /resumeMaterialPollingFromRows = useCallback\(rows => \{\n    const latest/u, 'resume 必须先过 visibleRef 守卫')
+  // 观察期缺陷（2026-11-04）：resume 只恢复在途、不清残留 → run 终态后横幅
+  // 永久挂「进行中」。最新行终态（或无行）时必须清掉残留 activeRun。
+  const resumeBlock = clientSource.match(/const resumeMaterialPollingFromRows = useCallback\(rows => \{[\s\S]*?\n  \}, \[startMaterialPolling\]\)/u)
+  assert.ok(resumeBlock, 'resumeMaterialPollingFromRows 定义存在')
+  assert.match(resumeBlock[0], /else \{\s*\n\s*setMaterialActiveRun\(null\)\s*\n\s*\}/u, '最新行终态必须清残留横幅')
+  // 复审 P2-1：列表拉取失败（null）≠确认终态——resume 对 null 早退保留现状
+  // （含在途横幅），与轮询路径「5 连败才自清」同一容错口径。
+  assert.match(resumeBlock[0], /if \(rows == null\) return/u, '拉取失败不得误清在途横幅')
+  const loadRunsBlock = clientSource.match(/const loadMaterialRuns = useCallback\(async \(\{ silent = false \} = \{\}\) => \{[\s\S]*?\n  \}, \[\]\)/u)
+  assert.ok(loadRunsBlock, 'loadMaterialRuns 定义存在')
+  assert.match(loadRunsBlock[0], /return null/u, '失败路径必须返回 null（≠空列表）')
+  assert.doesNotMatch(loadRunsBlock[0], /return \[\]/u, '失败路径不得返回空数组误导 resume')
   // 轮询终态同步刷新 seeds/facets（审查 P2-2）
   assert.match(clientSource, /loadMaterialSeeds\(\{ silent: true \}\)\.catch\(\(\) => \{\}\)/u)
   assert.match(clientSource, /loadMaterialFacets\(\)\.catch\(\(\) => \{\}\)/u)

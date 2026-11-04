@@ -7521,7 +7521,10 @@ window.__ModuleLoader__.load({
           const result = await post({ action: 'material.runs.list', limit: MATERIAL_RUNS_PAGE_LIMIT })
           if (result.status !== 'ready') {
             setMaterialRuns(prev => ({ ...prev, loading: false, errorReason: result.reason || 'douyin_operation_request_failed' }))
-            return []
+            // 失败返回 null（≠空列表）：resume 据此区分「拉取失败（保留现状，含
+            // 在途横幅）」与「确认无在途/终态（清残留）」——失败路径返回 [] 会让
+            // resume 把一次网络失败误判成「无在途」，清掉在途横幅（复审 P2-1）。
+            return null
           }
           const rows = Array.isArray(result.data?.runs) ? result.data.runs : []
           // 服务端 total 当前无展示位（runsTotal 随子页标题删除），不透传进 state
@@ -7531,7 +7534,7 @@ window.__ModuleLoader__.load({
           return rows
         } catch {
           setMaterialRuns(prev => ({ ...prev, loading: false, errorReason: 'douyin_operation_request_failed' }))
-          return []
+          return null
         }
       }, [])
 
@@ -7581,12 +7584,21 @@ window.__ModuleLoader__.load({
       // 从批次行恢复轮询（Tab 进入 / 手动刷新共用）：最新行在途即恢复。
       // overlay 已关闭时丢弃恢复（终审 P2-4 竞态防护）：在途 run 的晚到响应
       // （如 ACTIVE_RUN_EXISTS 冲突刷新）不得重启轮询；重开面板自动恢复。
+      // 最新行已终态则清残留 activeRun（2026-11-04 观察期真机缺陷）：在途绑定后
+      // 切走 Tab / 关闭 overlay / 切后台，effect cleanup 停轮询但 activeRun 残留；
+      // 原实现只恢复在途、不清残留，横幅会永久挂「进行中」而列表已是终态。
+      // 服务端单飞互斥保证在途 run 若存在必为最新行，else 分支清空是安全的。
       const resumeMaterialPollingFromRows = useCallback(rows => {
         if (!materialVisibleRef.current) return
-        const latest = rows && rows[0]
+        // 拉取失败（null）不得当「确认终态/无在途」：保留现状（含残留横幅与在途
+        // 轮询），下次成功拉取再收敛——与轮询路径「5 连败才自清」同一容错口径。
+        if (rows == null) return
+        const latest = rows[0]
         if (latest && (latest.runStatus === 'queued' || latest.runStatus === 'running')) {
           setMaterialActiveRun({ runId: latest.runId, status: latest.runStatus, startedAt: latest.startedAt })
           startMaterialPolling(latest.runId)
+        } else {
+          setMaterialActiveRun(null)
         }
       }, [startMaterialPolling])
 
