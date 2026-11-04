@@ -4085,13 +4085,16 @@ const css = `.ydo-button{display:flex;width:36px;height:36px;align-items:center;
 .ydo-detail-promo-actions .ydo-primary{min-height:36px;padding:0 14px;font-size:var(--dsh-content-font-size-secondary,13px)}
 /* 已投流 pill：同 AI 报表「爆款」样式（ydo-report-pill-hot，红底白字圆角，2026-11-04）。 */
 .ydo-promo-pill{background:#d83931;color:#fff;border-radius:999px;padding:1px 8px;font-size:11px;flex:none}
-/* 已投流作品行突出（2026-11-04 用户确认方案）：淡红底 + 行首品牌红竖条；
-sticky 列（作品名称/作品链接两列）有独立背景需在 cell 级覆盖，hover 加深保持辨识；
-竖条只画行首第一格（:first-child），否则第二个 sticky 列（作品链接）左缘会出现
-用户指出的「名称列右侧竖线」。颜色与爆款 pill 同源。 */
-.ydo-table-row-promoted .ydo-cell{background:color-mix(in srgb,#d83931 6%,transparent)}
+/* 已投流作品行突出（2026-11-04 用户确认方案）：淡红底 + 行首品牌红竖条。
+背景放行级、全列透明透出行背景——作品表行是 align-items:center，各列高度=内容
+高度（名称列被封面撑高），cell 级背景会导致矮列上下留白不满（真机反馈）；
+行级背景铺满整行高度，列布局零改动。hover 加深同样走行级。竖条只画行首第一格
+（:first-child），否则第二个 sticky 列（作品链接）左缘会出现「名称列右侧竖线」。 */
+.ydo-table-row-promoted{background:color-mix(in srgb,#d83931 6%,transparent)}
+.ydo-table-row-promoted .ydo-cell{background:transparent}
+.ydo-table-row-promoted:hover .ydo-cell{background:transparent}
+.ydo-table-row-promoted:hover{background:color-mix(in srgb,#d83931 10%,transparent)}
 .ydo-table-row-promoted > .ydo-cell-sticky:first-child{box-shadow:inset 3px 0 0 #d83931}
-.ydo-table-row-promoted:hover .ydo-cell{background:color-mix(in srgb,#d83931 10%,transparent)}
 /* 总览爆款行 / 分析页爆款表（2026-11-04 同方案）：行级背景 + 左竖条（非 sticky 表格）。 */
 .ydo-ov-hot-row-promoted{background:color-mix(in srgb,#d83931 6%,transparent);box-shadow:inset 3px 0 0 #d83931}
 .ydo-ov-hot-title .ydo-promo-pill{margin-left:6px}
