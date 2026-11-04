@@ -2,9 +2,14 @@
 // 预填与提交契约、保存刷新、stale-add 提示。组件经 lib/client.js 工厂加载真实
 // 渲染（同 ui.test.mjs loadBundle 模式）；保存链路为源码契约断言。
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { test } from 'node:test'
 import vm from 'node:vm'
+
+// 投流列表突出断言用：总览/分析页模块源码（同步读，测试体内直调）。
+const readFileSyncOverview = () => readFileSync(new URL('../src/overview-ui.js', import.meta.url), 'utf8')
+const readFileSyncAnalysis = () => readFileSync(new URL('../src/analysis-ui.js', import.meta.url), 'utf8')
 
 async function loadBundle() {
   const source = await readFile(new URL('../lib/client.js', import.meta.url), 'utf8')
@@ -200,6 +205,9 @@ test('详情头部投流入口在「最近采集」下方，按钮黑底白字�
   assert.ok(entryAt > promoAt, '投流按钮在操作区内')
   const promoBlock = head.slice(promoAt, entryAt)
   assert.match(promoBlock, /className: 'ydo-primary'/u, '投流按钮黑底白字（ydo-primary）')
+  // 已投流标签用爆款同款 pill（红底白字圆角，2026-11-04 用户确认；文案仍为「已投流」）。
+  assert.match(promoBlock, /className: 'ydo-promo-pill' \}, t\('promotionBadge'\)/u)
+  assert.ok(!promoBlock.includes("className: 'ydo-tag'"), '不再使用灰底 ydo-tag')
   assert.ok(!head.slice(latestAt, promoAt).includes('ydo-modal-grid-2'), '不再用 grid-2 与时间同行')
   assert.match(clientSource, /\.ydo-detail-promo-actions\{display:flex;align-items:center;gap:8px;margin:0\}/u, '操作区 flex 样式')
   // 弹框所属账号只读字段（P1-1）+ 新文案键登记。
@@ -234,4 +242,21 @@ test('stale 恢复提示渲染级断言：modal.staleRecovered 直接可见（�
   const plain = PromotionModal({ modal: { ...modal, staleRecovered: undefined }, saving: false, t, onConfirm: () => {}, onClose: () => {} })
   const plainText = collectText(plain).join('')
   assert.ok(!plainText.includes(t('promotionStaleNotice')), '无 staleRecovered 标记不渲染提示')
+})
+
+test('投流作品列表突出（2026-11-04 用户确认方案）：works/总览爆款/分析页爆款三处', () => {
+  // ① 账号作品表：行挂 promoted 修饰类 + 名称列 pill。
+  assert.match(clientSource, /work\.promoted \? 'ydo-table-row ydo-table-row-promoted' : 'ydo-table-row'/u)
+  assert.match(clientSource, /work\.promoted \? h\('span', \{ className: 'ydo-promo-pill' \}, t\('promotionBadge'\)\) : null/u)
+  // 竖条只画行首第一格（:first-child），避免第二个 sticky 列（作品链接）左缘出现右竖线。
+  assert.match(clientSource, /\.ydo-table-row-promoted > \.ydo-cell-sticky:first-child\{box-shadow:inset 3px 0 0 #d83931\}/u)
+  // ② 总览爆款行 + ③ 分析页爆款表：同一修饰类与 pill（overview-ui/analysis-ui）。
+  const overviewSource = readFileSyncOverview()
+  assert.match(overviewSource, /ydo-ov-hot-row\$\{work\.promoted \? ' ydo-ov-hot-row-promoted' : ''\}/u)
+  assert.match(overviewSource, /work\.promoted \? h\('span', \{ className: 'ydo-promo-pill' \}, t\('promotionBadge'\)\) : null/u)
+  const analysisSource = readFileSyncAnalysis()
+  assert.match(analysisSource, /ydo-ov-tr-hot-rank\$\{work\.promoted \? ' ydo-ov-hot-row-promoted' : ''\}/u)
+  assert.match(analysisSource, /work\.promoted \? h2\('span', \{ className: 'ydo-promo-pill' \}, t\('promotionBadge'\)\) : null/u)
+  // 共享 CSS：账号作品表 cell 级覆盖 + 总览/分析行级背景，同一淡红底口径。
+  assert.match(clientSource, /\.ydo-ov-hot-row-promoted\{background:color-mix\(in srgb,#d83931 6%,transparent\);box-shadow:inset 3px 0 0 #d83931\}/u)
 })

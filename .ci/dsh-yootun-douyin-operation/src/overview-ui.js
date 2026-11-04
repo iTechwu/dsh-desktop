@@ -191,7 +191,7 @@ function HotWorkRow({ work, onOpenWork, t }) {
   const label = hotLabelText(work.labels, t)
   // 爆款依据按判定类别分行展示（UI 优化方案 §4.4），接口缺失时回退命中标签。
   const lines = basisLines(work.basis)
-  return h('div', { className: 'ydo-ov-tr ydo-ov-tr-hot ydo-ov-hot-row', role: 'row' },
+  return h('div', { className: `ydo-ov-tr ydo-ov-tr-hot ydo-ov-hot-row${work.promoted ? ' ydo-ov-hot-row-promoted' : ''}`, role: 'row' },
     h('div', { className: 'ydo-ov-hot-title', role: 'cell', 'data-label': t('colVideo') },
       h('button', {
         type: 'button',
@@ -199,7 +199,9 @@ function HotWorkRow({ work, onOpenWork, t }) {
         onClick: () => onOpenWork && onOpenWork(work),
         'data-work-id': work.workId,
         title: work.title || work.workId,
-      }, work.title || work.workId)),
+      }, work.title || work.workId),
+      // 已投流标识（RQ-2026-009，2026-11-04）：爆款同款红 pill，行淡红底 + 左竖条。
+      work.promoted ? h('span', { className: 'ydo-promo-pill' }, t('promotionBadge')) : null),
     h('span', { role: 'cell', 'data-label': t('hotOwnerAccount') }, work.accountNickname || '—'),
     // 发布时间统一走 ui-format 的上海时区格式化，非法/缺失显示 —（不用 String.slice）；
     // 文本列左对齐，与表头及方案 §7 的对齐约定一致（验收建议 6）。

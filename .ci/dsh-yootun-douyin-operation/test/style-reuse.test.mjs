@@ -20,6 +20,7 @@ const ALLOWED = new Set([
   'ydo-an-metric-label', 'ydo-an-metric-value', 'ydo-modal-sec-title',
   'ydo-panel', 'ydo-modal-panel-full', 'ydo-ov-filter',
   'ydo-hint-strong', 'ydo-side-head', 'ydo-detail-promo-actions',
+  'ydo-promo-pill',
 ])
 
 // 行级提取：只检查本轮新增/修改行（新增代码按整行插入），避免既有区块噪音。
@@ -58,6 +59,10 @@ test('CSS 不新增负责人/投流专属选择器；UI 优化通用类已登记
   for (const added of ['ydo-side-head', 'ydo-hint-strong', 'ydo-detail-promo-actions']) {
     assert.ok(clientSource.includes(`.${added}{`), `.${added} 在共享 CSS 中已定义`)
   }
+  // 已投流 pill 与爆款 pill 同款（红底白字写死色值是爆款样式语义，2026-11-04 用户确认）。
+  assert.ok(clientSource.includes('.ydo-promo-pill{'), '.ydo-promo-pill 在共享 CSS 中已定义')
+  const pillHot = clientSource.match(/\.ydo-promo-pill\{[^}]*\}/u)
+  assert.ok(pillHot && pillHot[0].includes('#d83931') && pillHot[0].includes('border-radius:999px'), '已投流 pill 与爆款样式同源（红底白字圆角）')
   // 既有弹框/指标卡类已在 CSS 定义（复用素材看板与指标卡样式，不依赖运行时新注入）。
   for (const reused of ['ydo-mat-modal-overlay', 'ydo-mat-field', 'ydo-mat-primary']) {
     assert.ok(materialSource.includes(`.${reused}`), `.${reused} 在素材看板既有 CSS 中已定义`)

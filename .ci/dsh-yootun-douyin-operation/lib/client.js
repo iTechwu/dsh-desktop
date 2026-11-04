@@ -1010,7 +1010,7 @@ window.__ModuleLoader__.load({
       const label = hotLabelText(work.labels, t)
       // 爆款依据按判定类别分行展示（UI 优化方案 §4.4），接口缺失时回退命中标签。
       const lines = basisLines(work.basis)
-      return h('div', { className: 'ydo-ov-tr ydo-ov-tr-hot ydo-ov-hot-row', role: 'row' },
+      return h('div', { className: `ydo-ov-tr ydo-ov-tr-hot ydo-ov-hot-row${work.promoted ? ' ydo-ov-hot-row-promoted' : ''}`, role: 'row' },
         h('div', { className: 'ydo-ov-hot-title', role: 'cell', 'data-label': t('colVideo') },
           h('button', {
             type: 'button',
@@ -1018,7 +1018,9 @@ window.__ModuleLoader__.load({
             onClick: () => onOpenWork && onOpenWork(work),
             'data-work-id': work.workId,
             title: work.title || work.workId,
-          }, work.title || work.workId)),
+          }, work.title || work.workId),
+          // 已投流标识（RQ-2026-009，2026-11-04）：爆款同款红 pill，行淡红底 + 左竖条。
+          work.promoted ? h('span', { className: 'ydo-promo-pill' }, t('promotionBadge')) : null),
         h('span', { role: 'cell', 'data-label': t('hotOwnerAccount') }, work.accountNickname || '—'),
         // 发布时间统一走 ui-format 的上海时区格式化，非法/缺失显示 —（不用 String.slice）；
         // 文本列左对齐，与表头及方案 §7 的对齐约定一致（验收建议 6）。
@@ -1738,7 +1740,7 @@ window.__ModuleLoader__.load({
           h2('span', { className: 'ydo-ov-hot-basis-head', role: 'columnheader' }, t('hotBasis'))),
         ...works.map((work, index) => {
           const lines = basisLines(work.basis)
-          return h2('div', { key: work.workId, className: 'ydo-ov-tr ydo-ov-tr-hot-rank', role: 'row' },
+          return h2('div', { key: work.workId, className: `ydo-ov-tr ydo-ov-tr-hot-rank${work.promoted ? ' ydo-ov-hot-row-promoted' : ''}`, role: 'row' },
             // data-label 供窄屏（面板容器查询）卡片重排显示字段名（二审 P2），桌面端不渲染。
             h2('span', { className: 'ydo-ov-rankcell', role: 'cell', 'data-label': t('rankCol') }, work.rank ?? index + 1),
             h2('div', { className: 'ydo-ov-hot-title', role: 'cell', 'data-label': t('colVideo') },
@@ -1746,7 +1748,9 @@ window.__ModuleLoader__.load({
                 type: 'button', className: 'ydo-ov-work-link',
                 onClick: () => onOpenWork && onOpenWork(work),
                 title: work.title || work.workId,
-              }, work.title || work.workId)),
+              }, work.title || work.workId),
+              // 已投流标识（RQ-2026-009，2026-11-04）：与总览/账号作品表同一突出方案。
+              work.promoted ? h2('span', { className: 'ydo-promo-pill' }, t('promotionBadge')) : null),
             h2('span', { role: 'cell', 'data-label': t('publishTime') }, formatDateTime(work.publishTime)),
             h2('span', { className: 'ydo-ov-num', role: 'cell', 'data-label': t('colPlay') }, count(work.playCount)),
             h2('span', { className: 'ydo-ov-num', role: 'cell', 'data-label': t('engagement') }, pct(work.engagementRatePct)),
@@ -5918,7 +5922,9 @@ window.__ModuleLoader__.load({
               // ydo-tag 与按钮同行，未投流只渲染添加按钮。
               h('p', { className: 'ydo-modal-meta' }, `${t('latestCollected')} ${latestText === EMPTY ? t('noRecord') : latestText}`),
               h('div', { className: 'ydo-detail-promo-actions' },
-                promotion ? h('span', { className: 'ydo-tag' }, t('promotionBadge')) : null,
+                // 已投流标签：样式同 AI 报表「爆款」pill（红底白字圆角，2026-11-04 用户确认），
+                // 文案仍为「已投流」。
+                promotion ? h('span', { className: 'ydo-promo-pill' }, t('promotionBadge')) : null,
                 h('button', {
                   type: 'button',
                   className: 'ydo-primary',
@@ -6263,7 +6269,8 @@ window.__ModuleLoader__.load({
       const body = sortWorks(works, sort).map(work => h('div', {
         key: work.work_id,
         role: 'row',
-        className: 'ydo-table-row',
+        // 已投流作品整行突出（2026-11-04 用户确认中的 demo 方案）：行挂 promoted 修饰类。
+        className: work.promoted ? 'ydo-table-row ydo-table-row-promoted' : 'ydo-table-row',
         style: template,
         tabIndex: 0,
         // React 的合法事件名是 onDoubleClick；onDblClick 会被忽略、导致双击无响应。
@@ -6284,7 +6291,9 @@ window.__ModuleLoader__.load({
                 : null,
               t,
             }),
-            h('span', { className: 'ydo-cell-work-title', title: String(work.title || '') }, work.title || EMPTY))
+            h('span', { className: 'ydo-cell-work-title', title: String(work.title || '') }, work.title || EMPTY),
+            // 已投流标识：爆款同款红底白字 pill（与详情弹框标签同款；2026-11-04）。
+            work.promoted ? h('span', { className: 'ydo-promo-pill' }, t('promotionBadge')) : null)
         }
         // 吸粉列着色（用户规定 2026-10-16）：净增/吸粉统一红+N、负值绿-N。
         const delta = column.kind === 'delta' ? fanDelta(work[column.key], 'net') : null
@@ -9037,6 +9046,18 @@ window.__ModuleLoader__.load({
     .ydo-hint-strong{margin:0;color:var(--dsw-alias-label-secondary);font-size:var(--dsh-content-font-size-secondary,13px);line-height:1.5;font-weight:600}
     .ydo-detail-promo-actions{display:flex;align-items:center;gap:8px;margin:0}
     .ydo-detail-promo-actions .ydo-primary{min-height:36px;padding:0 14px;font-size:var(--dsh-content-font-size-secondary,13px)}
+    /* 已投流 pill：同 AI 报表「爆款」样式（ydo-report-pill-hot，红底白字圆角，2026-11-04）。 */
+    .ydo-promo-pill{background:#d83931;color:#fff;border-radius:999px;padding:1px 8px;font-size:11px;flex:none}
+    /* 已投流作品行突出（2026-11-04 用户确认方案）：淡红底 + 行首品牌红竖条；
+    sticky 列（作品名称/作品链接两列）有独立背景需在 cell 级覆盖，hover 加深保持辨识；
+    竖条只画行首第一格（:first-child），否则第二个 sticky 列（作品链接）左缘会出现
+    用户指出的「名称列右侧竖线」。颜色与爆款 pill 同源。 */
+    .ydo-table-row-promoted .ydo-cell{background:color-mix(in srgb,#d83931 6%,transparent)}
+    .ydo-table-row-promoted > .ydo-cell-sticky:first-child{box-shadow:inset 3px 0 0 #d83931}
+    .ydo-table-row-promoted:hover .ydo-cell{background:color-mix(in srgb,#d83931 10%,transparent)}
+    /* 总览爆款行 / 分析页爆款表（2026-11-04 同方案）：行级背景 + 左竖条（非 sticky 表格）。 */
+    .ydo-ov-hot-row-promoted{background:color-mix(in srgb,#d83931 6%,transparent);box-shadow:inset 3px 0 0 #d83931}
+    .ydo-ov-hot-title .ydo-promo-pill{margin-left:6px}
     ${REPORT_CSS_TEXT}${MATERIAL_CSS_TEXT}`;
     function apply(ctx) {
       ctx.effect(() => ctx.locale.register(NS, copy), 'dofe-yootun-douyin-operation: dictionaries')

@@ -280,7 +280,7 @@ function hotWorksTable(analysis, onOpenWork, t) {
       h2('span', { className: 'ydo-ov-hot-basis-head', role: 'columnheader' }, t('hotBasis'))),
     ...works.map((work, index) => {
       const lines = basisLines(work.basis)
-      return h2('div', { key: work.workId, className: 'ydo-ov-tr ydo-ov-tr-hot-rank', role: 'row' },
+      return h2('div', { key: work.workId, className: `ydo-ov-tr ydo-ov-tr-hot-rank${work.promoted ? ' ydo-ov-hot-row-promoted' : ''}`, role: 'row' },
         // data-label 供窄屏（面板容器查询）卡片重排显示字段名（二审 P2），桌面端不渲染。
         h2('span', { className: 'ydo-ov-rankcell', role: 'cell', 'data-label': t('rankCol') }, work.rank ?? index + 1),
         h2('div', { className: 'ydo-ov-hot-title', role: 'cell', 'data-label': t('colVideo') },
@@ -288,7 +288,9 @@ function hotWorksTable(analysis, onOpenWork, t) {
             type: 'button', className: 'ydo-ov-work-link',
             onClick: () => onOpenWork && onOpenWork(work),
             title: work.title || work.workId,
-          }, work.title || work.workId)),
+          }, work.title || work.workId),
+          // 已投流标识（RQ-2026-009，2026-11-04）：与总览/账号作品表同一突出方案。
+          work.promoted ? h2('span', { className: 'ydo-promo-pill' }, t('promotionBadge')) : null),
         h2('span', { role: 'cell', 'data-label': t('publishTime') }, formatDateTime(work.publishTime)),
         h2('span', { className: 'ydo-ov-num', role: 'cell', 'data-label': t('colPlay') }, count(work.playCount)),
         h2('span', { className: 'ydo-ov-num', role: 'cell', 'data-label': t('engagement') }, pct(work.engagementRatePct)),

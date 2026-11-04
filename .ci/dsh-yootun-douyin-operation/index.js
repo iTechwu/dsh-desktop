@@ -245,6 +245,12 @@ function projectAccounts(localAccounts, remoteAccounts) {
     // last_collected_at/delete_state），宿主投影层统一转 camelCase；负责人未设置 → null。
     const accountId = cleanString(item?.account_id, MAX_ID)
     if (!accountId) continue
+    // 墓碑行不进列表（2026-11-04 真机删除残留 bug）：tools 账号删除是墓碑语义
+    // （remove_account 保留 account 行、delete_state=remote_deleted、session_status
+    // 置 unknown），list_accounts 不过滤墓碑，宿主若不过滤，已删账号会以「会话状态
+    // 未知 + 重新扫码」形态残留列表。设备端行已被 removeLocal 清理，正常删除后仅剩
+    // 此墓碑行，投影层过滤即闭环（真机复现：ikss 删除后仍显示）。
+    if (cleanString(item.delete_state, 24) === 'remote_deleted') continue
     const existing = merged.get(accountId)
     merged.set(accountId, {
       accountId,

@@ -296,6 +296,17 @@ test('projectAccounts 合并策略：设备端会话状态优先', () => {
   assert.equal(merged[0].sessionStatus, 'expired')
   assert.equal(merged[0].nickname, 'local')
   assert.equal(merged[0].local, true)
+  // 墓碑行不进列表（2026-11-04 删除残留 bug）：tools remove_account 保留 account 行
+  // 且 delete_state=remote_deleted、session_status 置 unknown，投影层必须过滤，否则
+  // 已删账号以「会话状态未知 + 重新扫码」残留。
+  const tombstoned = projectAccounts(
+    {},
+    [
+      { account_id: 'gone', delete_state: 'remote_deleted', session_status: 'unknown' },
+      { account_id: 'live', delete_state: 'none', session_status: 'ok' },
+    ],
+  )
+  assert.deepEqual(tombstoned.map(item => item.accountId), ['live'], 'remote_deleted 墓碑行被过滤')
   assert.deepEqual(projectLogin({ key: 'k', status: 'waiting', accountId: 'a', error: null }), {
     loginKey: 'k', status: 'waiting', accountId: 'a', error: null, saveError: null,
   })

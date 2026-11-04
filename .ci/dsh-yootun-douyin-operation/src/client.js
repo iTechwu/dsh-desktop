@@ -959,7 +959,9 @@ function WorkDetailModal({ accountId, workId, detail, trend, loading, onClose, o
           // ydo-tag 与按钮同行，未投流只渲染添加按钮。
           h('p', { className: 'ydo-modal-meta' }, `${t('latestCollected')} ${latestText === EMPTY ? t('noRecord') : latestText}`),
           h('div', { className: 'ydo-detail-promo-actions' },
-            promotion ? h('span', { className: 'ydo-tag' }, t('promotionBadge')) : null,
+            // 已投流标签：样式同 AI 报表「爆款」pill（红底白字圆角，2026-11-04 用户确认），
+            // 文案仍为「已投流」。
+            promotion ? h('span', { className: 'ydo-promo-pill' }, t('promotionBadge')) : null,
             h('button', {
               type: 'button',
               className: 'ydo-primary',
@@ -1304,7 +1306,8 @@ function WorkTable({ works, sort = DEFAULT_SORT_STATE, onSortChange, onOpen, t }
   const body = sortWorks(works, sort).map(work => h('div', {
     key: work.work_id,
     role: 'row',
-    className: 'ydo-table-row',
+    // 已投流作品整行突出（2026-11-04 用户确认中的 demo 方案）：行挂 promoted 修饰类。
+    className: work.promoted ? 'ydo-table-row ydo-table-row-promoted' : 'ydo-table-row',
     style: template,
     tabIndex: 0,
     // React 的合法事件名是 onDoubleClick；onDblClick 会被忽略、导致双击无响应。
@@ -1325,7 +1328,9 @@ function WorkTable({ works, sort = DEFAULT_SORT_STATE, onSortChange, onOpen, t }
             : null,
           t,
         }),
-        h('span', { className: 'ydo-cell-work-title', title: String(work.title || '') }, work.title || EMPTY))
+        h('span', { className: 'ydo-cell-work-title', title: String(work.title || '') }, work.title || EMPTY),
+        // 已投流标识：爆款同款红底白字 pill（与详情弹框标签同款；2026-11-04）。
+        work.promoted ? h('span', { className: 'ydo-promo-pill' }, t('promotionBadge')) : null)
     }
     // 吸粉列着色（用户规定 2026-10-16）：净增/吸粉统一红+N、负值绿-N。
     const delta = column.kind === 'delta' ? fanDelta(work[column.key], 'net') : null
@@ -4078,6 +4083,18 @@ const css = `.ydo-button{display:flex;width:36px;height:36px;align-items:center;
 .ydo-hint-strong{margin:0;color:var(--dsw-alias-label-secondary);font-size:var(--dsh-content-font-size-secondary,13px);line-height:1.5;font-weight:600}
 .ydo-detail-promo-actions{display:flex;align-items:center;gap:8px;margin:0}
 .ydo-detail-promo-actions .ydo-primary{min-height:36px;padding:0 14px;font-size:var(--dsh-content-font-size-secondary,13px)}
+/* 已投流 pill：同 AI 报表「爆款」样式（ydo-report-pill-hot，红底白字圆角，2026-11-04）。 */
+.ydo-promo-pill{background:#d83931;color:#fff;border-radius:999px;padding:1px 8px;font-size:11px;flex:none}
+/* 已投流作品行突出（2026-11-04 用户确认方案）：淡红底 + 行首品牌红竖条；
+sticky 列（作品名称/作品链接两列）有独立背景需在 cell 级覆盖，hover 加深保持辨识；
+竖条只画行首第一格（:first-child），否则第二个 sticky 列（作品链接）左缘会出现
+用户指出的「名称列右侧竖线」。颜色与爆款 pill 同源。 */
+.ydo-table-row-promoted .ydo-cell{background:color-mix(in srgb,#d83931 6%,transparent)}
+.ydo-table-row-promoted > .ydo-cell-sticky:first-child{box-shadow:inset 3px 0 0 #d83931}
+.ydo-table-row-promoted:hover .ydo-cell{background:color-mix(in srgb,#d83931 10%,transparent)}
+/* 总览爆款行 / 分析页爆款表（2026-11-04 同方案）：行级背景 + 左竖条（非 sticky 表格）。 */
+.ydo-ov-hot-row-promoted{background:color-mix(in srgb,#d83931 6%,transparent);box-shadow:inset 3px 0 0 #d83931}
+.ydo-ov-hot-title .ydo-promo-pill{margin-left:6px}
 ${REPORT_CSS_TEXT}${MATERIAL_CSS_TEXT}`;
 function apply(ctx) {
   ctx.effect(() => ctx.locale.register(NS, copy), 'dofe-yootun-douyin-operation: dictionaries')
