@@ -694,7 +694,7 @@ export function AnalysisPage({
       // 可行动状态仍经 renderHeadAlerts 以短标签呈现；作品数带统一时间范围。
       h2('h3', null, t('accountTitle').replace('{name}', account.nickname || account.accountId)),
       // 负责人（RQ-2026-009 §6.6）：只读展示，未设置时整行不渲染；复用 ydo-hint 文本。
-      account.ownerName ? h2('p', { className: 'ydo-hint' }, `${t('accountOwnerLabel')}${account.ownerName}`) : null,
+      account.ownerName ? h2('p', { className: 'ydo-hint-strong' }, `${t('accountOwnerLabel')}${account.ownerName}`) : null,
       h2('p', { className: 'ydo-hint' },
         `${t('fanCount')} ${count(account.fanCount)} · ${t('workCount')} ${count(analysis?.summary?.workCount)}`
         + (rangeLabel ? `（${rangeLabel}）` : '')

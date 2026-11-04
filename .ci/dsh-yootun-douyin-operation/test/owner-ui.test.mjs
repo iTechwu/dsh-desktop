@@ -32,19 +32,52 @@ async function evalOverviewModule() {
   return sandbox
 }
 
-test('工具栏负责人入口：位置在「全部时间作品数」后、状态切换（§6.2）', () => {
-  // 入口紧跟全部时间作品数提示之后、批量进度面板之前（§6.2.1 摆放）。
-  const worksHintAt = clientSource.indexOf("t('workCountAllTime')")
-  const entryAt = clientSource.indexOf("t('accountOwnerLabel')", worksHintAt + 1)
-  const batchAt = clientSource.indexOf('batch ? h(BatchPanel')
-  assert.ok(worksHintAt > 0, '存在全部时间作品数提示')
-  assert.ok(entryAt > worksHintAt, '负责人入口在「全部时间作品数」提示之后')
-  assert.ok(batchAt > entryAt, '负责人入口在批量进度面板之前')
+test('工具栏负责人入口：位置在「采集本账号全部」后、「刷新」前，文本加粗（§6.2，2026-11-04 UI 优化）', () => {
+  // 入口前移至工具栏「采集本账号全部」右侧（原一键采集全部位置——该入口已移入
+  // 左栏账号管理标题行），仍在「刷新」按钮之前。
+  const collectAt = clientSource.indexOf("t('collectAll')")
+  const entryAt = clientSource.indexOf("t('accountOwnerLabel')", collectAt + 1)
+  const refreshAt = clientSource.indexOf("t('refresh')", entryAt)
+  assert.ok(collectAt > 0, '存在采集本账号全部按钮')
+  assert.ok(entryAt > collectAt, '负责人入口在「采集本账号全部」之后')
+  assert.ok(refreshAt > entryAt, '负责人入口在「刷新」之前')
   // 未设置 → 「未设置 + 新增」；已设置 → 「{负责人} + 编辑」。
   assert.match(clientSource, /current\.ownerName \|\| t\('ownerNotSet'\)/u)
   assert.match(clientSource, /t\('ownerEdit'\) : t\('ownerAdd'\)/u)
-  // 文本 ydo-hint、按钮 ydo-secondary（既有类复用）。
-  assert.match(clientSource, /className: 'ydo-hint' \}, `\$\{t\('accountOwnerLabel'\)\}/u)
+  // 文本加粗（ydo-hint-strong，2026-11-04 UI 优化）、按钮 ydo-secondary（既有类复用）。
+  assert.match(clientSource, /className: 'ydo-hint-strong' \}, `\$\{t\('accountOwnerLabel'\)\}/u)
+  assert.ok(!clientSource.includes("t('batchCollectAll')"), '一键采集全部入口已撤出工具栏（文案键定义保留）')
+})
+
+test('一键采集入口移入左栏账号管理标题行：标题左 + 黑底白字按钮右（2026-11-04 UI 优化）', () => {
+  // side-head 容器内：标题在前、按钮在后；按钮沿用 ydo-primary（黑底白字，
+  // alias 主题变量深色自适应），文案用侧栏短版「采集全部」，运行中切「采集中」，
+  // 禁用条件与原工具栏按钮一致（含无可采集账号 title 提示）。
+  const headAt = clientSource.indexOf("className: 'ydo-side-head'")
+  assert.ok(headAt > 0, '存在 side-head 标题行容器')
+  const headBlock = clientSource.slice(headAt, headAt + 700)
+  assert.ok(headBlock.indexOf("t('accounts')") > -1, '标题行含账号管理标题')
+  assert.ok(headBlock.indexOf("t('batchCollectShort')") > headBlock.indexOf("t('accounts')"), '批量按钮在标题右侧')
+  assert.match(headBlock, /className: 'ydo-primary'/u, '批量按钮黑底白字（ydo-primary）')
+  assert.match(headBlock, /batchRunning \? t\('collecting'\) : t\('batchCollectShort'\)/u, '运行中切短文案「采集中」')
+  assert.match(headBlock, /!hasCollectableAccount,\n        title: !hasCollectableAccount \? t\('noEligibleAccount'\) : undefined,/u, '无可采集账号禁用并提示')
+  assert.match(clientSource, /\.ydo-side-head\{display:flex;align-items:center;justify-content:space-between;gap:8px\}/u, '标题行 flex 布局样式')
+})
+
+test('批量进度面板移入左栏：标题行下方、账号列表上方；过程文案同步「采集全部」口径（2026-11-04 UI 优化）', () => {
+  // 面板位置契约：BatchPanel 挂在 side-head 之后、账号列表（ydo-account-list）之前。
+  const headAt = clientSource.indexOf("className: 'ydo-side-head'")
+  const panelAt = clientSource.indexOf('batch ? h(BatchPanel')
+  const listAt = clientSource.indexOf("className: 'ydo-account-list'")
+  assert.ok(headAt > 0 && panelAt > headAt && listAt > panelAt, '面板在标题行之后、账号列表之前')
+  assert.ok(!clientSource.slice(clientSource.indexOf("className: 'ydo-toolbar'")).includes('h(BatchPanel'), '工具栏不再渲染批量面板')
+  // 过程/终态文案与入口「采集全部」同口径（batchCollecting 仅作面板兜底文本；
+  // 按钮运行中复用单账号的「采集中」短文案）。
+  assert.match(clientSource, /batchCollecting: '正在采集全部账号'/u)
+  assert.match(clientSource, /batchCompleted: '采集全部完成：成功 \{ok\} 个'/u)
+  assert.match(clientSource, /batchFailed: '采集全部未完成：成功 \{ok\} · 失败 \{bad\} · 跳过 \{skip\}'/u)
+  // 窄栏适配：面板卡片样式去除工具栏 flex-basis 契约，min-width:0 防明细溢出。
+  assert.match(clientSource, /ydo-batch-panel\{display:grid;gap:4px;padding:10px 12px;border:1px solid var\(--dsw-alias-border-l1\);border-radius:8px;background:var\(--dsw-alias-bg-layer-1\);min-width:0\}/u)
 })
 
 test('负责人弹框：结构与校验（§6.3）', () => {

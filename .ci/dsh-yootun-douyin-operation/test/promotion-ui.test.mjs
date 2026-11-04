@@ -188,15 +188,20 @@ test('详情归属账号与请求守卫（审查 P0-1/P2-2）', () => {
   assert.match(clientSource, /if \(requestId !== detailRequestRef\.current\) return\n      if \(detailResult\.status === 'ready'\) setDetail\(detailResult\)/u)
 })
 
-test('详情头部投流入口与「最近采集」同行（审查 P1-1，复用 ydo-modal-grid-2）', () => {
-  // head-text 内最近采集行改为 grid-2 两列：meta 左、投流操作区右，不新增样式类。
+test('详情头部投流入口在「最近采集」下方，按钮黑底白字（2026-11-04 UI 优化）', () => {
+  // head-text 内纵向排布：最近采集 meta 在上、投流操作区在下（不再与时间同行）；
+  // 按钮升级 ydo-primary 黑底白字（alias 主题变量深色自适应）。
   const head = clientSource.slice(clientSource.indexOf("h('div', { className: 'ydo-modal-head-text' }"))
-  const gridAt = head.indexOf("h('div', { className: 'ydo-modal-grid-2' }")
   const latestAt = head.indexOf("t('latestCollected')")
+  const promoAt = head.indexOf("className: 'ydo-detail-promo-actions'")
   const entryAt = head.indexOf('openPromotionModal')
-  assert.ok(gridAt > 0, '头部使用既有 ydo-modal-grid-2 容器')
-  assert.ok(latestAt > gridAt && entryAt > gridAt, '时间文本与投流入口同在 grid-2 内')
-  assert.ok(latestAt < entryAt, '投流入口在时间文本右侧')
+  assert.ok(latestAt > 0, '最近采集 meta 行存在')
+  assert.ok(promoAt > latestAt, '投流操作区在最近采集下方')
+  assert.ok(entryAt > promoAt, '投流按钮在操作区内')
+  const promoBlock = head.slice(promoAt, entryAt)
+  assert.match(promoBlock, /className: 'ydo-primary'/u, '投流按钮黑底白字（ydo-primary）')
+  assert.ok(!head.slice(latestAt, promoAt).includes('ydo-modal-grid-2'), '不再用 grid-2 与时间同行')
+  assert.match(clientSource, /\.ydo-detail-promo-actions\{display:flex;align-items:center;gap:8px;margin:0\}/u, '操作区 flex 样式')
   // 弹框所属账号只读字段（P1-1）+ 新文案键登记。
   assert.match(clientSource, /t\('promotionModalAccount'\)/u)
   assert.match(clientSource, /promotionModalAccount: '所属账号'/u)

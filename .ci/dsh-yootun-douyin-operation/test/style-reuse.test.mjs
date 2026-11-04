@@ -10,7 +10,8 @@ const overviewSource = await readFile(new URL('../src/overview-ui.js', import.me
 const analysisSource = await readFile(new URL('../src/analysis-ui.js', import.meta.url), 'utf8')
 const materialSource = await readFile(new URL('../src/material-ui.js', import.meta.url), 'utf8')
 
-// 本轮新代码允许复用的既有类（素材看板弹框 ydo-mat-* + 通用文本/按钮/指标卡 + 总览表）。
+// 本轮新代码允许复用的既有类（素材看板弹框 ydo-mat-* + 通用文本/按钮/指标卡 + 总览表
+// + 2026-11-04 UI 优化新增的通用类：加粗 hint / 侧栏标题行 / 详情投流操作区）。
 const ALLOWED = new Set([
   'ydo-mat-modal-overlay', 'ydo-mat-modal', 'ydo-mat-form', 'ydo-mat-field',
   'ydo-mat-error', 'ydo-mat-modal-actions', 'ydo-mat-secondary', 'ydo-mat-primary',
@@ -18,6 +19,7 @@ const ALLOWED = new Set([
   'ydo-an-metrics', 'ydo-modal-core-metrics', 'ydo-an-metric-card',
   'ydo-an-metric-label', 'ydo-an-metric-value', 'ydo-modal-sec-title',
   'ydo-panel', 'ydo-modal-panel-full', 'ydo-ov-filter',
+  'ydo-hint-strong', 'ydo-side-head', 'ydo-detail-promo-actions',
 ])
 
 // 行级提取：只检查本轮新增/修改行（新增代码按整行插入），避免既有区块噪音。
@@ -43,12 +45,18 @@ test('本轮新增行只复用既有类，无内联样式（§6.10）', () => {
   }
 })
 
-test('CSS 无本轮新增选择器：负责人/投流样式零新增，唯一 diff 是排行轨道列', () => {
+test('CSS 不新增负责人/投流专属选择器；UI 优化通用类已登记（§6.10 + 2026-11-04 UI 优化）', () => {
   const allCss = `${clientSource}${materialSource}`
-  // 不新增任何以本轮功能命名的样式选择器（弹框 aria id 如 ydo-owner-modal-title
-  // 不挂钩样式，不在禁止之列）。
+  // 不新增任何以负责人/投流功能命名的样式选择器（弹框 aria id 如
+  // ydo-owner-modal-title 不挂钩样式，不在禁止之列）；2026-11-04 UI 优化的
+  // ydo-side-head / ydo-hint-strong / ydo-detail-promo-actions 为通用布局类，
+  // 已登记 ALLOWED，不属此禁止范围。
   for (const banned of ['.ydo-owner', '.ydo-promotion', '.owner-modal', '.promotion-modal', '.ydo-ov-owner']) {
     assert.ok(!allCss.includes(banned), `CSS 不新增选择器 ${banned}`)
+  }
+  // UI 优化新类必须在共享样式表定义（复用主题变量，不写死颜色、深色自适应）。
+  for (const added of ['ydo-side-head', 'ydo-hint-strong', 'ydo-detail-promo-actions']) {
+    assert.ok(clientSource.includes(`.${added}{`), `.${added} 在共享 CSS 中已定义`)
   }
   // 既有弹框/指标卡类已在 CSS 定义（复用素材看板与指标卡样式，不依赖运行时新注入）。
   for (const reused of ['ydo-mat-modal-overlay', 'ydo-mat-field', 'ydo-mat-primary']) {

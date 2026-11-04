@@ -660,7 +660,7 @@ const renderLabels = {
   gapRequestFailed: '本次请求失败，请稍后重试', gapOther: '本次未取到',
   none: '暂无数据', noSearch: '暂无搜索词', noHotword: '暂无热词', seconds: '秒',
   lastCollected: '上次采集', privateBadge: '已设为私密', detail: '作品详情', close: '关闭',
-  trendCount: '该作品已采集 {count} 次', collectAll: '采集本账号全部', tabVideos: '视频数据',
+  trendCount: '该作品已采集 {count} 次', collectAll: '采集本账号全部', tabVideos: '账号作品',
   data: '数据展示区', accounts: '账号管理', title: '抖音运营', subtitle: '', open: '抖音运营',
   sortDefault: '取消排序', sortDesc: '倒序', sortAsc: '顺序',
   // 1015 UI 升级新词条（与 src/client.js 中文文案保持一致）
@@ -2957,8 +2957,11 @@ test('批量源码契约：一键按钮与互斥禁用、BatchPanel 导出、刷
   assert.match(source, /action: 'collectAll\.start'/u, '一键采集入口')
   assert.match(source, /action: 'collectAll\.status'/u, '批量状态轮询与页面重开恢复')
   assert.match(source, /batchRunning \|\| !sessionUsable/u, '批量运行中单账号采集按钮禁用（宿主 collect_busy 双保险）')
-  assert.match(source, /batchRunning \? t\('batchCollecting'\) : t\('batchCollectAll'\)/u, '批量运行中按钮切换文案')
+  // 2026-11-04 UI 优化：入口移入左栏标题行（collecting/batchCollectShort 切换），
+  // 过程/终态文案同步「采集全部」口径（batchCollecting 只作面板兜底文本）。
+  assert.match(source, /batchRunning \? t\('collecting'\) : t\('batchCollectShort'\)/u, '批量运行中按钮切换短文案')
+  assert.match(source, /batchCollecting: '正在采集全部账号'/u, '面板兜底文案与入口口径一致')
   assert.match(source, /function BatchPanel/u, '批量进度/汇总面板组件')
   assert.match(source, /result\.batch\.status === 'running'\) setBatch\(result\.batch\)/u, '页面重开只恢复运行中的批量')
-  assert.match(source, /\.ydo-batch-panel\{flex-basis:100%/u, '批量面板在 toolbar 内独占一行，不改 grid 行结构')
+  assert.match(source, /\.ydo-batch-panel\{display:grid;gap:4px/u, '批量面板窄栏卡片样式（左栏布局，不再依赖工具栏 flex-basis）')
 })

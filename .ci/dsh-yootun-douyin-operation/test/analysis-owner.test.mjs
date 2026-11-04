@@ -15,8 +15,10 @@ test('分析页标题下负责人行：有值渲染 ydo-hint、无值不渲染�
   const ownerAt = analysisSource.indexOf('account.ownerName ?')
   const fanHintAt = analysisSource.indexOf('`${t(\'fanCount\')} ${count(account.fanCount)}')
   assert.ok(titleAt > 0 && ownerAt > titleAt && fanHintAt > ownerAt, '负责人行紧跟标题、在粉丝 hint 前')
-  // 复用工具栏同款文案键 accountOwnerLabel 与 ydo-hint 类（不新增样式）。
-  assert.match(analysisSource, /account\.ownerName \? h2\('p', \{ className: 'ydo-hint' \}, `\$\{t\('accountOwnerLabel'\)\}\$\{account\.ownerName\}`\) : null/u)
+  // 复用工具栏同款文案键 accountOwnerLabel；2026-11-04 UI 优化改 ydo-hint-strong
+  //（加粗，样式仍集中在 client.js，不新增文件级样式）。
+  assert.match(analysisSource, /account\.ownerName \? h2\('p', \{ className: 'ydo-hint-strong' \}, `\$\{t\('accountOwnerLabel'\)\}\$\{account\.ownerName\}`\) : null/u)
+  assert.match(clientSource, /\.ydo-hint-strong\{[^}]*font-weight:600\}/u, '加粗样式登记于共享样式表')
 })
 
 test('account.analysis 请求与宿主 handler 均不携带 ownerName（§4.6 字段白名单）', () => {
