@@ -133,6 +133,7 @@ async function makeSession() {
   const portrait = await fixture(FIXTURE_DIR, 'portrait.sample.json')
   const search = await fixture(FIXTURE_DIR, 'search_keywords.sample.json')
   const progress = await fixture(FIXTURE_DIR, 'progress_analysis.sample.json')
+  const retention = await fixture(FIXTURE_DIR, 'retention_play.sample.json')
   const wordCloud = await fixture(FIXTURE_DIR, 'wordCloud.sample.json')
 
   let listCalls = 0
@@ -164,6 +165,7 @@ async function makeSession() {
       if (url.includes('/data/fans/item/portrait')) return replyJson(portrait)
       if (url.includes('/data/item_analysis/search/keyword')) return replyJson(search)
       if (url.includes('/bff/data/progress/analysis/v2')) return replyJson(progress)
+      if (url.includes('/realtime/analysis/data_center')) return replyJson(retention)
       if (url.includes('/web/api/creator/item/mget')) {
         const ids = new URL(url).searchParams.get('ids')
         return replyJson({ items: [{ id: ids, metrics: { danmaku_count: '3' } }] })
