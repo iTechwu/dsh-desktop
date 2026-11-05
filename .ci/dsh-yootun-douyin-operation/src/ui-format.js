@@ -174,7 +174,7 @@ const GAP_FIELD_LABELS = { progress_analysis: 'progressCurve', retention_trend: 
 const RT_NOT_READY_WINDOW_MS = 24 * 60 * 60 * 1000
 
 /**
- * 观看趋势状态判定（1104 方案 §2.3）：与 progressStatus 同构，语义为观看行为而非
+ * 观看趋势状态判定（1104 方案 §2.3）：语义为观看行为而非
  * 采集进度。请求失败（data_gap 记 request_failed）优先；字段在但两条曲线皆空 =
  * no_data（接口可达但作品无数据，发布 <24h 时 UI 呈现「未就绪」文案）；字段完全
  * 缺失 = not_exposed（功能上线前的历史行）。
@@ -183,7 +183,9 @@ export function retentionStatus(retention, work, fieldKey = 'retention_trend') {
   const gap = work && work.data_gap && work.data_gap[fieldKey]
   if (gap && gap.reason === 'request_failed') return 'request_failed'
   if (!retention || typeof retention !== 'object') return 'not_exposed'
-  const hasPoints = ['current', 'similar'].some(key => Array.isArray(retention[key]) && retention[key].length > 0)
+  // 图表主轴 = 当前作品曲线：current 为空（哪怕 similar 有数据）无法建立时间轴，
+  // 一律按 no_data 保留卡位（review P3 阻断项修复：similar-only 不进渲染分支）。
+  const hasPoints = Array.isArray(retention.current) && retention.current.length > 0
   return hasPoints ? 'ok' : 'no_data'
 }
 
@@ -230,26 +232,6 @@ export function genderColor(value) {
   return 'var(--dsw-alias-label-secondary)'
 }
 
-/**
- * 进度分析状态判定（§7.2）：它不是采集进度，而是观看行为分析。
- * - 请求失败（data_gap 记录 request_failed）优先；
- * - 没有任何点位：字段在但曲线为空 = no_data（接口可达但作品无数据），字段完全缺失 = not_exposed；
- * - 有点位 = ok。
- */
-export function progressStatus(progress, work, fieldKey = 'progress_analysis') {
-  const gap = work && work.data_gap && work.data_gap[fieldKey]
-  if (gap && gap.reason === 'request_failed') return 'request_failed'
-  if (!progress || typeof progress !== 'object') return 'not_exposed'
-  const hasPoints = ['drag_back_curve', 'drag_forward_curve'].some(key => Array.isArray(progress[key]) && progress[key].length > 0)
-  return hasPoints ? 'ok' : 'no_data'
-}
-
-export function progressStatusText(status, t = key => key) {
-  if (status === 'no_data') return t('progressNoData')
-  if (status === 'not_exposed') return t('progressNotExposed')
-  if (status === 'request_failed') return t('progressRequestFailed')
-  return ''
-}
 
 /**
  * 作品链接域名白名单（§9.2）：Desktop 宿主只有协议级兜底、没有域名白名单，

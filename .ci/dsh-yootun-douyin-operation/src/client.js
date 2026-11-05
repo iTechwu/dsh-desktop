@@ -31,7 +31,7 @@ import {
   serializeReportHtml,
 } from './report-ui.js'
 import { MATERIAL_CSS_TEXT, MaterialConfirmDialog, MaterialPage } from './material-ui.js'
-import { TREND_PAD_TOP, TREND_PAD_X, TREND_VIEW_HEIGHT, TrendChart, trendLayout, useMeasuredWidth } from './trend-chart.js'
+import { TREND_PAD_BOTTOM, TREND_PAD_TOP, TREND_PAD_X, TREND_VIEW_HEIGHT, TrendChart, trendLayout, useMeasuredWidth } from './trend-chart.js'
 
 const React = require('react')
 const { createElement: h, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } = React
@@ -148,7 +148,6 @@ const copy = {
     sortDefault: '取消排序', sortDesc: '倒序', sortAsc: '顺序',
     genderMale: '男', genderFemale: '女', genderOther: '其他', gapFieldOther: '其他指标',
     rtAriaLabel: '观看趋势：当前作品留存率自 {current} 降至末点，同类作品末点 {similar}，低谷区间 {valleys} 处',
-    progressNoData: '该作品暂无进度分析数据', progressNotExposed: '本次接口未提供进度分析数据', progressRequestFailed: '进度分析请求失败，请稍后重试',
     colLike: '点赞量', colComment: '评论量', colShare: '分享量', colBounce2s: '2s跳出率', colCompletion5s: '5s完播率',
     colCompletion: '完播率', colDuration: '平均播放时长', colProportion: '平均播放占比',
     detail: '作品详情', gender: '性别分布', age: '年龄分布', province: '地域分布', cityLevel: '城市级别',
@@ -401,7 +400,6 @@ const copy = {
     sortDefault: 'Unsorted', sortDesc: 'Descending', sortAsc: 'Ascending',
     genderMale: 'Male', genderFemale: 'Female', genderOther: 'Other', gapFieldOther: 'Other metrics',
     rtAriaLabel: 'Watch trend: this work retention from {current} to end, similar works end {similar}, {valleys} valley ranges',
-    progressNoData: 'No progress analysis data for this work', progressNotExposed: 'Progress analysis not provided this time', progressRequestFailed: 'Progress analysis request failed, please retry later',
     colLike: 'Likes', colComment: 'Comments', colShare: 'Shares', colBounce2s: '2s bounce', colCompletion5s: '5s completion',
     colCompletion: 'Completion', colDuration: 'Avg watch time', colProportion: 'Avg view share',
     detail: 'Work detail', gender: 'Gender', age: 'Age', province: 'Region', cityLevel: 'City tier',
@@ -1287,7 +1285,8 @@ function RetentionTrend({ retention, work, t }) {
   const valleys = Array.isArray(data.valleys) ? data.valleys : []
   const width = Math.max(320, rtWidth)
   const plotTop = TREND_PAD_TOP + 4
-  const plotBottom = TREND_VIEW_HEIGHT - TREND_PAD_TOP - 12
+  // 底部留白复用共享常量（review P3-7：规格对齐，轴文字画在 pad 区内）。
+  const plotBottom = TREND_VIEW_HEIGHT - TREND_PAD_BOTTOM - 2
   const plotHeight = plotBottom - plotTop
   const xOf = index => Math.round((TREND_PAD_X + (index / Math.max(1, current.length - 1)) * (width - TREND_PAD_X * 2)) * 100) / 100
   const yOf = value => {
@@ -1299,32 +1298,45 @@ function RetentionTrend({ retention, work, t }) {
     return match ? Number(match[1]) * 60 + Number(match[2]) : Number(key) || 0
   }
   const totalSeconds = Math.max(1, toSeconds(current[current.length - 1].key))
-  const xOfKey = key => Math.round((TREND_PAD_X + (Math.min(totalSeconds, toSeconds(key)) / totalSeconds) * (width - TREND_PAD_X * 2)) * 100) / 100
+  // 时间 key → x：秒值先 clamp 到 0..totalSeconds（review P2：负值/超尾不再越出绘图区）。
+  const xOfSeconds = seconds => {
+    const clamped = Math.min(totalSeconds, Math.max(0, seconds))
+    return Math.round((TREND_PAD_X + (clamped / totalSeconds) * (width - TREND_PAD_X * 2)) * 100) / 100
+  }
+  const xOfKey = key => xOfSeconds(toSeconds(key))
   const linePoints = current.map((point, index) => `${xOf(index)},${yOf(point.value)}`).join(' ')
-  const similarPoints = similar.map((point, index) => `${xOf(Math.min(index, current.length - 1))},${yOf(point.value)}`).join(' ')
+  // 同类曲线按自身时间 key 定位（review P2：按 current 索引 min-clamp 会把超长
+  // 点全部堆到端点成"伪曲线"）；key 无法解析的点位剔除，绝不错位投影。
+  const similarPoints = similar
+    .filter(point => /^(\d{1,2}):(\d{2})$/.test(String(point.key)))
+    .map(point => `${xOfKey(point.key)},${yOf(point.value)}`)
+    .join(' ')
   const areaPoints = `${linePoints} ${xOf(current.length - 1)},${plotBottom} ${xOf(0)},${plotBottom}`
   const gridYs = [100, 75, 50, 25].map(percent => yOf(percent))
   const valleyBands = valleys.map((valley, index) => eh('g', { key: `valley-${index}` },
     eh('rect', {
-      x: xOfKey(String(valley.start)), y: plotTop,
-      width: Math.max(2, xOfKey(String(valley.end)) - xOfKey(String(valley.start))),
+      x: xOfSeconds(valley.start), y: plotTop,
+      width: Math.max(2, xOfSeconds(valley.end) - xOfSeconds(valley.start)),
       height: plotBottom - plotTop,
       fill: 'color-mix(in srgb, var(--dsw-alias-state-error-primary) 12%, transparent)',
     }),
     eh('text', {
-      x: (xOfKey(String(valley.start)) + xOfKey(String(valley.end))) / 2,
+      x: (xOfSeconds(valley.start) + xOfSeconds(valley.end)) / 2,
       y: TREND_VIEW_HEIGHT - 12,
       className: 'ydo-an-axis-text',
       fill: 'color-mix(in srgb, var(--dsw-alias-state-error-primary) 60%, var(--dsw-alias-label-primary))',
     }, `${t('rtLegendValley')}${index + 1}`)))
   const xTickCount = 5
-  const xTicks = [0, 1, 2, 3, 4].map(quarter => {
-    const index = Math.min(current.length - 1, Math.round((quarter * (current.length - 1)) / (xTickCount - 1)))
+  // 单点曲线：只渲染一个端点刻度（review P3-6：5 个重复刻度是视觉噪声）。
+  const tickIndexes = current.length === 1
+    ? [0]
+    : [0, 1, 2, 3, 4].map(quarter => Math.round((quarter * (current.length - 1)) / (xTickCount - 1)))
+  const xTicks = tickIndexes.map((index, tickIndex) => {
     return eh('text', {
-      key: `x-${quarter}`,
+      key: `x-${tickIndex}`,
       x: xOf(index),
       y: TREND_VIEW_HEIGHT - 12,
-      className: `ydo-an-axis-label ydo-an-axis-${quarter === 0 ? 'start' : quarter === xTickCount - 1 ? 'end' : 'middle'}`,
+      className: `ydo-an-axis-label ydo-an-axis-${tickIndex === 0 ? 'start' : tickIndex === tickIndexes.length - 1 ? 'end' : 'middle'}`,
     }, current[index].key)
   })
   const yTicks = [100, 75, 50, 25].map((percent, index) => eh('text', {

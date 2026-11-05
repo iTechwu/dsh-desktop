@@ -23,8 +23,6 @@ import {
   genderLabel,
   hasGap,
   nextSortState,
-  progressStatus,
-  progressStatusText,
   progressText,
   retentionStatusKey,
   safeAvatarSrc,
@@ -126,7 +124,6 @@ const labels = {
   srcHomepageHot: '推荐(首页推荐)', srcHomepage: '个人主页', srcFamiliar: '朋友/熟人', srcFollow: '关注',
   srcSearch: '搜索', srcMessage: '私信/分享', srcNearby: '同城', srcKnownOther: '其他', sourceOther: '其他来源',
   dragBack: '拖回', dragForward: '拖前',
-  progressNoData: '该作品暂无进度分析数据', progressNotExposed: '本次接口未提供进度分析数据',
   progressRequestFailed: '进度分析请求失败，请稍后重试',
   seconds: '秒',
 }
@@ -318,22 +315,6 @@ test('时间统一按 Asia/Shanghai 展示「YYYY-MM-DD HH:mm」，非法/缺失
   for (const value of ['not-a-date', '2026-13-45T99:00:00Z', '', '   ', null, undefined, 1725776400000, new Date('2026-09-08T09:00:00Z')]) {
     assert.equal(formatDateTime(value), EMPTY, `非法/非字符串 ${String(value)} 显示 —`)
   }
-})
-
-test('进度分析状态判定：有点位=ok、空曲线=no_data、缺字段=not_exposed、请求失败优先', () => {
-  assert.equal(progressStatus({ drag_back_curve: [{ key: '1', value: 2 }], drag_forward_curve: [] }, {}), 'ok')
-  assert.equal(progressStatus({ drag_back_curve: [], drag_forward_curve: [] }, {}), 'no_data', '字段在但曲线为空=作品确实无数据')
-  assert.equal(progressStatus(null, {}), 'not_exposed', '字段完全缺失=本次接口未暴露')
-  assert.equal(progressStatus({ drag_back_curve: [] }, { data_gap: { progress_analysis: { reason: 'no_data' } } }), 'no_data')
-  assert.equal(
-    progressStatus({ drag_back_curve: [{ key: '1', value: 2 }] }, { data_gap: { progress_analysis: { reason: 'request_failed' } } }),
-    'request_failed',
-    '请求失败优先于点位展示',
-  )
-  assert.equal(progressStatusText('no_data', t), '该作品暂无进度分析数据')
-  assert.equal(progressStatusText('not_exposed', t), '本次接口未提供进度分析数据')
-  assert.equal(progressStatusText('request_failed', t), '进度分析请求失败，请稍后重试')
-  assert.equal(progressStatusText('ok', t), '')
 })
 
 test('缺口字段名中文化：列字段复用列文案，内部字段映射，未知收敛「其他指标」', () => {
@@ -3000,4 +2981,94 @@ test('观看趋势状态：not_ready（发布<24h）/no_data（≥24h 或无发�
   // 有点位 → ok（不进空态文案分支）
   const ok = retentionStatusKey({ current: [{ key: '00:00', value: 100 }] }, recentWork)
   assert.equal(ok.status, 'ok')
+})
+
+// 1104 方案：观看趋势图表结构断言 + 边界负例（review P3 全量修复回归）
+test('观看趋势图表结构：双系列/虚线/低谷带/图例/轴刻度，负向低谷 clamp，单点单刻度', async () => {
+  const { moduleExports } = await loadBundle()
+  const makeDetail = retention => ({
+    work: {
+      title: '观看趋势结构样例',
+      publish_time: '2026-09-08T09:00:00.000Z',
+      retention_trend: retention,
+    },
+    audience: {},
+  })
+  const svgOf = tree => collectFlat(tree).filter(node => node.props && node.props.className === 'ydo-an-trend-svg')
+
+  // 正常态：双 polyline（当前实线 + 同类虚线）、1 低谷带、图例 3 项、5 个 X 刻度
+  const normal = makeDetail({
+    current: [
+      { key: '00:00', value: 100 }, { key: '00:01', value: 50 },
+      { key: '00:02', value: 30 }, { key: '00:03', value: 20 },
+    ],
+    similar: [
+      { key: '00:00', value: 100 }, { key: '00:01', value: 60 },
+      { key: '00:02', value: 40 }, { key: '00:03', value: 25 },
+    ],
+    valleys: [{ start: 1, end: 2 }],
+  })
+  const svg = svgOf(renderNode(moduleExports.WorkDetailModal({ accountId: 'a', workId: 'w', detail: normal, trend: null, loading: false, onClose: () => {}, t: tRender })))
+  assert.equal(svg.length, 1, '观看趋势 SVG 存在')
+  const flatSvg = collectFlat(svg[0])
+  const solid = flatSvg.filter(node => node.props?.className === 'ydo-an-seg')
+  const dashed = flatSvg.filter(node => node.props?.className === 'ydo-an-seg ydo-an-seg-dashed')
+  const bands = flatSvg.filter(node => node.type === 'rect')
+  const legend = flatSvg.length >= 0
+  assert.equal(solid.length, 1, '当前作品实线一条')
+  assert.equal(dashed.length, 1, '同类作品虚线一条')
+  assert.equal(bands.length, 1, '低谷带一个')
+  const band = bands[0]
+  assert.ok(Number(band.props.x) >= 6, '低谷带不越出绘图区左缘（clamp 0..total）')
+  const legends = collectFlat(renderNode(moduleExports.WorkDetailModal({ accountId: 'a', workId: 'w', detail: normal, trend: null, loading: false, onClose: () => {}, t: tRender })))
+    .filter(node => node.props && node.props.className === 'ydo-rt-legend')
+  assert.equal(legends.length, 1, '图例渲染')
+  assert.equal(legend && legends.length, 1)
+  const xTicks = flatSvg.filter(node => typeof node.props?.className === 'string' && node.props.className.includes('ydo-an-axis-label'))
+  assert.equal(xTicks.length, 5, 'X 轴 5 刻度')
+
+  // 负向低谷：band clamp 在绘图区内、宽 ≥2，不产生负 x（R10）
+  const negative = makeDetail({
+    current: [{ key: '00:00', value: 100 }, { key: '00:05', value: 50 }],
+    similar: [],
+    valleys: [{ start: -20, end: -5 }],
+  })
+  const negSvg = svgOf(renderNode(moduleExports.WorkDetailModal({ accountId: 'a', workId: 'w', detail: negative, trend: null, loading: false, onClose: () => {}, t: tRender })))
+  const negBand = collectFlat(negSvg[0]).filter(node => node.type === 'rect')
+  assert.equal(negBand.length, 1)
+  assert.ok(Number(negBand[0].props.x) >= 6, '负向区间 x 不小于绘图区左缘')
+
+  // 单点曲线：只渲染 1 个 X 刻度（不产生 5 个重复刻度）
+  const single = makeDetail({ current: [{ key: '00:00', value: 100 }], similar: [], valleys: [] })
+  const singleSvg = svgOf(renderNode(moduleExports.WorkDetailModal({ accountId: 'a', workId: 'w', detail: single, trend: null, loading: false, onClose: () => {}, t: tRender })))
+  const singleTicks = collectFlat(singleSvg[0]).filter(node => typeof node.props?.className === 'string' && node.props.className.includes('ydo-an-axis-label'))
+  assert.equal(singleTicks.length, 1, '单点曲线只渲染一个端点刻度')
+
+  // similar-only（current=[]）：不得崩溃，按 no_data 保留卡位显空态文案（阻断项回归）
+  const similarOnly = makeDetail({ current: [], similar: [{ key: '00:00', value: 100 }] })
+  const similarOnlyText = collectFlat(renderNode(moduleExports.WorkDetailModal({ accountId: 'a', workId: 'w', detail: similarOnly, trend: null, loading: false, onClose: () => {}, t: tRender })))
+    .flatMap(node => {
+      const children = Array.isArray(node.children) ? node.children : [node.children]
+      return children.filter(child => typeof child === 'string').map(String)
+    }).join('|')
+  assert.ok(similarOnlyText.includes('该作品暂无观看趋势数据'), 'similar-only 按 no_data 保留卡位，不崩溃')
+
+  // 长度不一致：similar 超长点按自身 key 定位（不堆到端点成伪曲线）
+  const mismatch = makeDetail({
+    current: [{ key: '00:00', value: 100 }, { key: '00:02', value: 50 }],
+    similar: [
+      { key: '00:00', value: 100 }, { key: '00:01', value: 90 },
+      { key: '00:02', value: 80 }, { key: '00:03', value: 70 },
+    ],
+    valleys: [],
+  })
+  const mismatchSvg = svgOf(renderNode(moduleExports.WorkDetailModal({ accountId: 'a', workId: 'w', detail: mismatch, trend: null, loading: false, onClose: () => {}, t: tRender })))
+  const dashedPts = collectFlat(mismatchSvg[0]).filter(node => node.props?.className?.includes?.('ydo-an-seg-dashed'))
+  assert.equal(dashedPts.length, 1)
+  const similarXs = String(dashedPts[0].props.points).split(' ').map(pair => Number(pair.split(',')[0]))
+  assert.equal(similarXs.length, 4, 'similar 4 点全渲染')
+  // clamp 到 0..totalSeconds：末点（00:03 > 曲线末 00:02）收敛到右缘是预期
+  assert.deepEqual(similarXs, [6, 480, 954, 954])
+  const maxLineX = 960 - 6
+  assert.ok(similarXs.every(x => x >= 6 && x <= maxLineX), 'similar 点位全部落在绘图区内')
 })
