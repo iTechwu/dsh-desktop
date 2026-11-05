@@ -243,6 +243,21 @@ function buildDetailFixture() {
           ],
           valleys: [{ start: 2, end: 4 }, { start: 78, end: 80 }],
         },
+        retention_bounce: {
+          current: [
+            { key: '00:00', value: 33.49 }, { key: '00:02', value: 18.6 }, { key: '00:04', value: 12.4 },
+            { key: '00:08', value: 8.2 }, { key: '00:12', value: 5.1 }, { key: '00:20', value: 3.2 },
+            { key: '00:32', value: 2.1 }, { key: '00:48', value: 1.4 }, { key: '01:04', value: 0.9 },
+            { key: '01:24', value: 0.6 }, { key: '01:48', value: 0.4 }, { key: '02:12', value: 0.3 },
+          ],
+          similar: [
+            { key: '00:00', value: 28 }, { key: '00:02', value: 15 }, { key: '00:04', value: 10 },
+            { key: '00:08', value: 6.5 }, { key: '00:12', value: 4 }, { key: '00:20', value: 2.5 },
+            { key: '00:32', value: 1.6 }, { key: '00:48', value: 1.1 }, { key: '01:04', value: 0.7 },
+            { key: '01:24', value: 0.5 }, { key: '01:48', value: 0.3 }, { key: '02:12', value: 0.2 },
+          ],
+          valleys: [{ start: 2, end: 4 }, { start: 78, end: 80 }],
+        },
         search_keywords: [{ keyword: '公路养护', percent: 46.2 }, { keyword: '施工流程', percent: 31.8 }],
         data_gap: { completion_rate_pct: { reason: 'not_exposed' } },
       },
