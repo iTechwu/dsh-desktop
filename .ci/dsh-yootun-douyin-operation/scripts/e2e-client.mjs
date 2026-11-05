@@ -165,7 +165,11 @@ async function makeSession() {
       if (url.includes('/data/fans/item/portrait')) return replyJson(portrait)
       if (url.includes('/data/item_analysis/search/keyword')) return replyJson(search)
       if (url.includes('/bff/data/progress/analysis/v2')) return replyJson(progress)
-      if (url.includes('/realtime/analysis/data_center')) return replyJson(retention)
+      if (url.includes('/realtime/analysis/data_center')) {
+        // analysis_type=7 跳出：同接口换参数；e2e 用留存样例结构占位（数值含义不同不影响链路验证）
+        const type = new URL(url).searchParams.get('analysis_type')
+        return replyJson(type === '7' ? { ...retention, status_msg: 'bounce' } : retention)
+      }
       if (url.includes('/web/api/creator/item/mget')) {
         const ids = new URL(url).searchParams.get('ids')
         return replyJson({ items: [{ id: ids, metrics: { danmaku_count: '3' } }] })
