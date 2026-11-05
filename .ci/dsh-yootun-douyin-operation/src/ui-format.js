@@ -207,6 +207,23 @@ export function retentionStatusKey(retention, work, fieldKey = 'retention_trend'
   return { status, key: notReady ? 'rtNotReady' : 'rtNoData' }
 }
 
+/** 跳出分析状态判定：与留存同构（同一接口 analysis_type=7），字段名 retention_bounce。 */
+export function bounceStatus(retention, work, fieldKey = 'retention_bounce') {
+  return retentionStatus(retention, work, fieldKey)
+}
+
+/** 跳出分析空态文案键（同留存逻辑复用发布时间窗口；文案 key 前缀 rb）。 */
+export function bounceStatusKey(retention, work, fieldKey = 'retention_bounce') {
+  const gap = work && work.data_gap && work.data_gap[fieldKey]
+  if (gap && gap.reason === 'request_failed') return { status: 'request_failed', key: 'rbRequestFailed' }
+  if (!retention || typeof retention !== 'object') return { status: 'not_exposed', key: 'rbNotExposed' }
+  const hasPoints = Array.isArray(retention.current) && retention.current.length > 0
+  if (hasPoints) return { status: 'ok', key: null }
+  const publishedAt = Date.parse(work && work.publish_time)
+  const notReady = Number.isFinite(publishedAt) && Date.now() - publishedAt < RT_NOT_READY_WINDOW_MS
+  return { status: 'no_data', key: notReady ? 'rbNotReady' : 'rbNoData' }
+}
+
 /** 缺口字段名中文化：列字段复用 COLUMNS 文案，禁止把原始英文 code 展示给业务用户（§7.3）。 */
 export function gapFieldLabel(field, t = key => key) {
   const column = COLUMNS.find(item => item.key === field)

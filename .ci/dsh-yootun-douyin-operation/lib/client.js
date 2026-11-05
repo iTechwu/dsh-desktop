@@ -212,6 +212,23 @@ window.__ModuleLoader__.load({
       return { status, key: notReady ? 'rtNotReady' : 'rtNoData' }
     }
 
+    /** 跳出分析状态判定：与留存同构（同一接口 analysis_type=7），字段名 retention_bounce。 */
+    function bounceStatus(retention, work, fieldKey = 'retention_bounce') {
+      return retentionStatus(retention, work, fieldKey)
+    }
+
+    /** 跳出分析空态文案键（同留存逻辑复用发布时间窗口；文案 key 前缀 rb）。 */
+    function bounceStatusKey(retention, work, fieldKey = 'retention_bounce') {
+      const gap = work && work.data_gap && work.data_gap[fieldKey]
+      if (gap && gap.reason === 'request_failed') return { status: 'request_failed', key: 'rbRequestFailed' }
+      if (!retention || typeof retention !== 'object') return { status: 'not_exposed', key: 'rbNotExposed' }
+      const hasPoints = Array.isArray(retention.current) && retention.current.length > 0
+      if (hasPoints) return { status: 'ok', key: null }
+      const publishedAt = Date.parse(work && work.publish_time)
+      const notReady = Number.isFinite(publishedAt) && Date.now() - publishedAt < RT_NOT_READY_WINDOW_MS
+      return { status: 'no_data', key: notReady ? 'rbNotReady' : 'rbNoData' }
+    }
+
     /** 缺口字段名中文化：列字段复用 COLUMNS 文案，禁止把原始英文 code 展示给业务用户（§7.3）。 */
     function gapFieldLabel(field, t = key => key) {
       const column = COLUMNS.find(item => item.key === field)
@@ -5127,7 +5144,10 @@ window.__ModuleLoader__.load({
         colTitle: '作品名称', colUrl: '作品链接', colPlay: '播放量', colCollect: '收藏量',
         sortDefault: '取消排序', sortDesc: '倒序', sortAsc: '顺序',
         genderMale: '男', genderFemale: '女', genderOther: '其他', gapFieldOther: '其他指标',
+        rtTabRetention: '留存分析', rtTabBounce: '跳出分析',
+        rtBounceLabel: '跳出率', rtLegendBounce: '当前作品跳出率', rtLegendBounceSimilar: '同类作品跳出率',
         rtAriaLabel: '观看趋势：当前作品留存率自 {current} 降至末点，同类作品末点 {similar}，低谷区间 {valleys} 处',
+        rtBounceAriaLabel: '跳出分析：当前作品首秒跳出率 {current}，同类作品首秒 {similar}',
         colLike: '点赞量', colComment: '评论量', colShare: '分享量', colBounce2s: '2s跳出率', colCompletion5s: '5s完播率',
         colCompletion: '完播率', colDuration: '平均播放时长', colProportion: '平均播放占比',
         detail: '作品详情', gender: '性别分布', age: '年龄分布', province: '地域分布', cityLevel: '城市级别',
@@ -5380,6 +5400,9 @@ window.__ModuleLoader__.load({
         sortDefault: 'Unsorted', sortDesc: 'Descending', sortAsc: 'Ascending',
         genderMale: 'Male', genderFemale: 'Female', genderOther: 'Other', gapFieldOther: 'Other metrics',
         rtAriaLabel: 'Watch trend: this work retention from {current} to end, similar works end {similar}, {valleys} valley ranges',
+        rtTabRetention: 'Retention', rtTabBounce: 'Bounce',
+        rtBounceLabel: 'Bounce rate', rtLegendBounce: 'This work bounce', rtLegendBounceSimilar: 'Similar works bounce',
+        rtBounceAriaLabel: 'Bounce analysis: this work first-second bounce {current}, similar works {similar}',
         colLike: 'Likes', colComment: 'Comments', colShare: 'Shares', colBounce2s: '2s bounce', colCompletion5s: '5s completion',
         colCompletion: 'Completion', colDuration: 'Avg watch time', colProportion: 'Avg view share',
         detail: 'Work detail', gender: 'Gender', age: 'Age', province: 'Region', cityLevel: 'City tier',
@@ -6252,8 +6275,14 @@ window.__ModuleLoader__.load({
      */
     function RetentionTrend({ retention, work, t }) {
       const [rtWrapRef, rtWidth] = useMeasuredWidth(960)
+      // 视图切换（1104 V2，对齐创作者中心后台）：留存 analysis_type=1 / 跳出 analysis_type=7。
+      const [activeTab, setActiveTab] = useState('retention')
+      // 数据取自主表列：retention_trend（留存）+ retention_bounce（跳出）——结构相同，
+      // 数值含义不同（留存=还剩多少在看，跳出=该秒离开的比例）。
       const { status, key: statusKey } = retentionStatusKey(retention && retention.retention_trend ? retention.retention_trend : null, work)
+      const { status: bStatus, key: bStatusKey } = bounceStatusKey(retention && retention.retention_bounce ? retention.retention_bounce : null, work)
       if (status !== 'ok') {
+        // 留存整体缺失/失败时整卡空态（跳出依赖同一接口，无单独可用性）。
         const copy = { rtNoData: 'rtNoData', rtNotReady: 'rtNotReady', rtNotExposed: 'rtNotExposed', rtRequestFailed: 'rtRequestFailed' }
         const failed = status === 'request_failed'
         const className = failed ? 'ydo-error' : status === 'rtNotReady' || statusKey === 'rtNotReady' ? 'ydo-warn' : 'ydo-hint'
@@ -6263,6 +6292,21 @@ window.__ModuleLoader__.load({
       const current = Array.isArray(data.current) ? data.current : []
       const similar = Array.isArray(data.similar) ? data.similar : []
       const valleys = Array.isArray(data.valleys) ? data.valleys : []
+      // 跳出数据：可选。请求失败时切换按钮仍可用，但展示跳出的失败文案（独立状态）。
+      const bounceData = retention.retention_bounce
+      const bounceOk = bStatus === 'ok'
+      const isBounceTab = activeTab === 'bounce'
+      const bounceNotReady = bStatusKey === 'rbNotReady'
+      const showBounce = isBounceTab
+      if (showBounce && !bounceOk) {
+        const key = bStatusKey
+        const className = bStatus === 'request_failed' ? 'ydo-error' : key === 'rbNotReady' ? 'ydo-warn' : 'ydo-hint'
+        return h('div', null,
+          h('div', { className: 'ydo-rt-tabs' },
+            h('button', { type: 'button', className: 'ydo-rt-tab', onClick: () => setActiveTab('retention') }, t('rtTabRetention')),
+            h('button', { type: 'button', className: 'ydo-rt-tab ydo-rt-tab-active', onClick: () => setActiveTab('bounce') }, t('rtTabBounce'))),
+          h('p', { className, role: 'status' }, t(key)))
+      }
       const width = Math.max(320, rtWidth)
       const plotTop = TREND_PAD_TOP + 4
       // 底部留白复用共享常量（review P3-7：规格对齐，轴文字画在 pad 区内）。
@@ -6284,6 +6328,11 @@ window.__ModuleLoader__.load({
         return Math.round((TREND_PAD_X + (clamped / totalSeconds) * (width - TREND_PAD_X * 2)) * 100) / 100
       }
       const xOfKey = key => xOfSeconds(toSeconds(key))
+      // 跳出视图 y 映射：0..bounceMax 自适应（留存视图保持 100/75/50/25 固定轴）。
+      const bounceYOf = (value, max) => {
+        const clamped = Math.min(max, Math.max(0, Number(value)))
+        return Math.round((plotTop + (1 - (max ? clamped / max : 0)) * plotHeight) * 100) / 100
+      }
       const linePoints = current.map((point, index) => `${xOf(index)},${yOf(point.value)}`).join(' ')
       // 同类曲线按自身时间 key 定位（review P2：按 current 索引 min-clamp 会把超长
       // 点全部堆到端点成"伪曲线"）；key 无法解析的点位剔除，绝不错位投影。
@@ -6291,8 +6340,25 @@ window.__ModuleLoader__.load({
         .filter(point => /^(\d{1,2}):(\d{2})$/.test(String(point.key)))
         .map(point => `${xOfKey(point.key)},${yOf(point.value)}`)
         .join(' ')
-      const areaPoints = `${linePoints} ${xOf(current.length - 1)},${plotBottom} ${xOf(0)},${plotBottom}`
-      const gridYs = [100, 75, 50, 25].map(percent => yOf(percent))
+      // 跳出视图：纵轴改为跳出率原值域 0..max（自适应），实线=当前作品跳出率；
+      // 同类跳出率以虚线叠加（有则画）。留存视图保持 100/75/50/25 固定轴。
+      const bounceCurrent = isBounceTab && bounceOk && Array.isArray(bounceData.current) ? bounceData.current : []
+      const bounceSimilar = isBounceTab && bounceOk && Array.isArray(bounceData.similar) ? bounceData.similar : []
+      const bounceAll = [...bounceCurrent, ...bounceSimilar].map(point => Number(point.value)).filter(value => Number.isFinite(value))
+      const bounceMax = bounceAll.length ? Math.max(...bounceAll) : 0
+      const bounceLinePoints = bounceCurrent
+        .map((point, index) => `${xOf(index)},${bounceYOf(Number(point.value), bounceMax)}`)
+        .join(' ')
+      const bounceSimilarPoints = bounceSimilar
+        .filter(point => /^(\d{1,2}):(\d{2})$/.test(String(point.key)))
+        .map(point => `${xOfKey(point.key)},${bounceYOf(Number(point.value), bounceMax)}`)
+        .join(' ')
+      const areaPoints = isBounceTab
+        ? (bounceLinePoints ? `${bounceLinePoints} ${xOf(bounceCurrent.length - 1)},${plotBottom} ${xOf(0)},${plotBottom}` : '')
+        : `${linePoints} ${xOf(current.length - 1)},${plotBottom} ${xOf(0)},${plotBottom}`
+      const gridYs = isBounceTab
+        ? [bounceMax, bounceMax / 2, 0].map(value => bounceYOf(value))
+        : [100, 75, 50, 25].map(percent => yOf(percent))
       const valleyBands = valleys.map((valley, index) => eh('g', { key: `valley-${index}` },
         eh('rect', {
           x: xOfSeconds(valley.start), y: plotTop,
@@ -6319,23 +6385,47 @@ window.__ModuleLoader__.load({
           className: `ydo-an-axis-label ydo-an-axis-${tickIndex === 0 ? 'start' : tickIndex === tickIndexes.length - 1 ? 'end' : 'middle'}`,
         }, current[index].key)
       })
-      const yTicks = [100, 75, 50, 25].map((percent, index) => eh('text', {
-        key: `y-${percent}`,
+      const yTickValues = isBounceTab
+        ? [bounceMax, Math.round((bounceMax / 2) * 100) / 100, 0]
+        : [100, 75, 50, 25]
+      const yTicks = yTickValues.map((value, index) => eh('text', {
+        key: `y-${index}`,
         x: TREND_PAD_X + 2,
         y: gridYs[index] - 3,
         className: 'ydo-an-axis-text',
-      }, `${percent}%`))
-      const similarLine = similar.length
+      }, isBounceTab ? `${value}%` : `${value}%`))
+      const similarLine = !isBounceTab && similar.length
         ? eh('polyline', { points: similarPoints, fill: 'none', className: 'ydo-an-seg ydo-an-seg-dashed' })
+        : null
+      const bounceSimilarLine = isBounceTab && bounceSimilar.length
+        ? eh('polyline', { points: bounceSimilarPoints, fill: 'none', className: 'ydo-an-seg ydo-an-seg-dashed' })
+        : null
+      const bounceLine = isBounceTab && bounceCurrent.length
+        ? eh('polyline', { points: bounceLinePoints, fill: 'none', className: 'ydo-an-seg' })
         : null
       const last = current[current.length - 1]
       const first = current[0]
       const similarLast = similar.length ? similar[similar.length - 1].value : null
-      const ariaLabel = t('rtAriaLabel')
-        .replace('{current}', `${formatPercent(first.value)}→${formatPercent(last.value)}`)
-        .replace('{similar}', similarLast === null ? '—' : formatPercent(similarLast))
-        .replace('{valleys}', String(valleys.length))
+      const ariaLabel = isBounceTab
+        ? t('rtBounceAriaLabel')
+          .replace('{current}', bounceCurrent.length ? formatPercent(bounceCurrent[0].value) : '—')
+          .replace('{similar}', bounceSimilar.length ? formatPercent(bounceSimilar[0].value) : '—')
+        : t('rtAriaLabel')
+          .replace('{current}', `${formatPercent(first.value)}→${formatPercent(last.value)}`)
+          .replace('{similar}', similarLast === null ? '—' : formatPercent(similarLast))
+          .replace('{valleys}', String(valleys.length))
       return h('div', { ref: rtWrapRef },
+        h('div', { className: 'ydo-rt-tabs' },
+          h('button', {
+            type: 'button',
+            className: `ydo-rt-tab${activeTab === 'retention' ? ' ydo-rt-tab-active' : ''}`,
+            onClick: () => setActiveTab('retention'),
+          }, t('rtTabRetention')),
+          h('button', {
+            type: 'button',
+            className: `ydo-rt-tab${isBounceTab ? ' ydo-rt-tab-active' : ''}`,
+            onClick: () => setActiveTab('bounce'),
+          }, t('rtTabBounce'))),
         eh('svg', {
           className: 'ydo-an-trend-svg',
           viewBox: `0 0 ${width} ${TREND_VIEW_HEIGHT}`,
@@ -6344,15 +6434,25 @@ window.__ModuleLoader__.load({
         },
         ...gridYs.map((gy, index) => eh('line', { key: `grid-${index}`, x1: TREND_PAD_X, y1: gy, x2: width - TREND_PAD_X, y2: gy, className: 'ydo-an-grid-line' })),
         ...valleyBands,
-        current.length > 1 ? eh('polygon', { points: areaPoints, className: 'ydo-an-trend-area' }) : null,
+        current.length > 1 && !isBounceTab ? eh('polygon', { points: areaPoints, className: 'ydo-an-trend-area' }) : null,
         similarLine,
-        eh('polyline', { points: linePoints, fill: 'none', className: 'ydo-an-seg' }),
+        bounceSimilarLine,
+        bounceLine,
+        !isBounceTab ? eh('polyline', { points: linePoints, fill: 'none', className: 'ydo-an-seg' }) : bounceLine,
         ...xTicks,
         ...yTicks),
         h('ul', { className: 'ydo-rt-legend' },
-          h('li', null, h('span', { className: 'ydo-rt-swatch-current' }), t('rtLegendCurrent')),
-          h('li', null, h('span', { className: 'ydo-rt-swatch-similar' }), t('rtLegendSimilar')),
-          h('li', null, h('span', { className: 'ydo-rt-swatch-valley' }), t('rtLegendValley'))))
+          isBounceTab
+            ? [
+                h('li', { key: 'b1' }, h('span', { className: 'ydo-rt-swatch-current' }), t('rtLegendBounce')),
+                ...(bounceSimilarLine ? [h('li', { key: 'b2' }, h('span', { className: 'ydo-rt-swatch-similar' }), t('rtLegendBounceSimilar'))] : []),
+                h('li', { key: 'b3' }, h('span', { className: 'ydo-rt-swatch-valley' }), t('rtLegendValley')),
+              ]
+            : [
+                h('li', { key: 'r1' }, h('span', { className: 'ydo-rt-swatch-current' }), t('rtLegendCurrent')),
+                h('li', { key: 'r2' }, h('span', { className: 'ydo-rt-swatch-similar' }), t('rtLegendSimilar')),
+                h('li', { key: 'r3' }, h('span', { className: 'ydo-rt-swatch-valley' }), t('rtLegendValley')),
+              ]))
     }
 
     function WorkTable({ works, sort = DEFAULT_SORT_STATE, onSortChange, onOpen, t }) {

@@ -25,7 +25,7 @@ import {
   parseJsonPreservingIds,
   parseItemPerformance,
   parseItemSummarize,
-  parseRetentionTrend,
+  parseRealtimeTrend,
   parsePlaySource,
   parsePortrait,
   parseProgressAnalysis,
@@ -357,12 +357,28 @@ export async function collectWorkDetail(page, workId, { timeoutMs = 25_000, onTa
     if (!retentionResult.ok) {
       retentionGap = 'request_failed'
     } else {
-      retention = parseRetentionTrend(retentionResult.json)
+      retention = parseRealtimeTrend(retentionResult.json)
       if (retention === null) retentionGap = 'not_exposed'
     }
   } catch (error) {
     if (error instanceof SessionInvalidError) throw error
     retentionGap = 'request_failed'
+  }
+  // 跳出分析（analysis_type=7）：同接口同结构，仅切换类型值；失败语义与留存一致。
+  let bounce = null
+  let bounceGap = null
+  try {
+    const bounceUrl = `${RETENTION_PATH}?item_id=${workId}&analysis_type=7`
+    const bounceResult = await fetchJson(page, bounceUrl)
+    if (!bounceResult.ok) {
+      bounceGap = 'request_failed'
+    } else {
+      bounce = parseRealtimeTrend(bounceResult.json)
+      if (bounce === null) bounceGap = 'not_exposed'
+    }
+  } catch (error) {
+    if (error instanceof SessionInvalidError) throw error
+    bounceGap = 'request_failed'
   }
   return {
     endpointsSeen: Object.keys(endpoints).filter(key => captured[key]),
@@ -378,6 +394,8 @@ export async function collectWorkDetail(page, workId, { timeoutMs = 25_000, onTa
     metricsTrendGap,
     retention,
     retentionGap,
+    bounce,
+    bounceGap,
   }
 }
 
@@ -521,7 +539,7 @@ export async function collectAccountWorks(page, {
       error.partialCollected = {
         works: error.partialListWorks.map(work => buildWorkPayload({
           work, performance: null, compare: null, source: null, portrait: null,
-          search: null, progress: null, retention: null, retentionGap: null, mget: null, summarize: null, hotword: null, observedAt,
+          search: null, progress: null, retention: null, retentionGap: null, bounce: null, bounceGap: null, mget: null, summarize: null, hotword: null, observedAt,
         })),
         listComplete: false,
         expectedWorkCount: error.partialListWorks.length,
@@ -544,7 +562,7 @@ export async function collectAccountWorks(page, {
       error.partialCollected = {
         works: list.works.map(work => buildWorkPayload({
           work, performance: null, compare: null, source: null, portrait: null,
-          search: null, progress: null, retention: null, retentionGap: null, mget: null, summarize: null, hotword: null, observedAt,
+          search: null, progress: null, retention: null, retentionGap: null, bounce: null, bounceGap: null, mget: null, summarize: null, hotword: null, observedAt,
         })),
         listComplete: list.listComplete,
         expectedWorkCount: list.works.length,
@@ -564,7 +582,7 @@ export async function collectAccountWorks(page, {
       error.partialCollected = {
         works: list.works.map(work => buildWorkPayload({
           work, performance: null, compare: null, source: null, portrait: null,
-          search: null, progress: null, retention: null, retentionGap: null, mget: null, summarize: null, hotword: null, observedAt,
+          search: null, progress: null, retention: null, retentionGap: null, bounce: null, bounceGap: null, mget: null, summarize: null, hotword: null, observedAt,
         })),
         listComplete: list.listComplete,
         expectedWorkCount: list.works.length,
@@ -598,6 +616,8 @@ export async function collectAccountWorks(page, {
         metricsTrendGap: detail.metricsTrendGap,
         retention: detail.retention,
         retentionGap: detail.retentionGap,
+        bounce: detail.bounce,
+        bounceGap: detail.bounceGap,
         observedAt,
       }))
     } catch (error) {

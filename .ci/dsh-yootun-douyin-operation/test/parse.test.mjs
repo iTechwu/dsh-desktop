@@ -31,7 +31,7 @@ import {
   parsePlaySource,
   parsePortrait,
   parseProgressAnalysis,
-  parseRetentionTrend,
+  parseRealtimeTrend,
   parseSearchKeywords,
   parseWorkListPage,
   parseWordCloud,
@@ -349,7 +349,7 @@ test('进度分析解析：端点可达但作品无数据 → empty 标记（与
 
 test('观看趋势解析：analysis_trend 双曲线 ×100 存百分数，valley_list 字符串秒转整数', async () => {
   const json = await fixture('retention_play.sample.json')
-  const rt = parseRetentionTrend(json)
+  const rt = parseRealtimeTrend(json)
   assert.equal(rt.current[0].key, '00:00')
   assert.equal(rt.current[0].value, 100)
   assert.ok(rt.current.every(point => point.value >= 0 && point.value <= 100))
@@ -361,7 +361,7 @@ test('观看趋势解析：analysis_trend 双曲线 ×100 存百分数，valley_
 })
 
 test('观看趋势解析：非法点位剔除、越界 clamp、end<start 交换、空曲线 empty 标记', () => {
-  const rt = parseRetentionTrend({
+  const rt = parseRealtimeTrend({
     status_code: 0,
     analysis_trend: {
       current_item: [
@@ -389,20 +389,20 @@ test('观看趋势解析：非法点位剔除、越界 clamp、end<start 交换�
   assert.deepEqual(rt.valleys, [{ start: 78, end: 80 }, { start: 2, end: 4 }])
   assert.equal(rt.empty, false)
 
-  const empty = parseRetentionTrend({ status_code: 0, analysis_trend: { current_item: [], similar_author: [] }, valley_list: {} })
+  const empty = parseRealtimeTrend({ status_code: 0, analysis_trend: { current_item: [], similar_author: [] }, valley_list: {} })
   assert.deepEqual(empty.current, [])
   assert.deepEqual(empty.similar, [])
   assert.deepEqual(empty.valleys, [])
   assert.equal(empty.empty, true)
 
   // 无 analysis_trend 结构 → null（缺口 not_exposed）
-  assert.equal(parseRetentionTrend({ status_code: 0, status_msg: '' }), null)
+  assert.equal(parseRealtimeTrend({ status_code: 0, status_msg: '' }), null)
 })
 
 test('观看趋势解析：status_code=8 会话失效抛 SessionInvalidError；曲线上限 1800 截断', () => {
-  assert.throws(() => parseRetentionTrend({ status_code: 8, status_msg: '用户未登录' }), error => error instanceof SessionInvalidError)
+  assert.throws(() => parseRealtimeTrend({ status_code: 8, status_msg: '用户未登录' }), error => error instanceof SessionInvalidError)
   const many = Array.from({ length: 1900 }, (_, i) => ({ key: `${String(Math.floor(i / 60)).padStart(2, '0')}:${String(i % 60).padStart(2, '0')}`, value: 1 - i / 2000 }))
-  const rt = parseRetentionTrend({ status_code: 0, analysis_trend: { current_item: many, similar_author: [] } })
+  const rt = parseRealtimeTrend({ status_code: 0, analysis_trend: { current_item: many, similar_author: [] } })
   assert.equal(rt.current.length, 1800)
 })
 

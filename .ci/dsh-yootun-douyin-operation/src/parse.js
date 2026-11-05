@@ -469,7 +469,7 @@ export function parseProgressAnalysis(json) {
 }
 
 /**
- * 观看趋势 `realtime/analysis/data_center`（analysis_type=1 留存）解析。
+ * 观看趋势 `realtime/analysis/data_center` 解析（analysis_type=1 留存 / 7 跳出，结构相同）。
  *
  * 响应 `{status_code, analysis_trend: {current_item[], similar_author[]},
  * valley_list: {"1"|"2"|"3": [{start, end}]}}`：
@@ -485,7 +485,7 @@ export function parseProgressAnalysis(json) {
  *
  * @returns {{current: Array<{key: string, value: number}>, similar: Array<{key: string, value: number}>, valleys: Array<{start: number, end: number}>, empty: boolean}|null}
  */
-export function parseRetentionTrend(json) {
+export function parseRealtimeTrend(json) {
   const payload = json && typeof json === 'object' ? json : {}
   if (isSessionExpiredPayload(payload)) throw new SessionInvalidError(toInt(payload.status_code))
   const trend = payload.analysis_trend && typeof payload.analysis_trend === 'object' ? payload.analysis_trend : null
@@ -662,7 +662,7 @@ export function parseItemMetricsTrend(json) {
   return rows.sort((a, b) => (a.day < b.day ? -1 : a.day > b.day ? 1 : 0)).slice(-7)
 }
 
-export function buildWorkPayload({ work, performance, compare, source, portrait, search, progress, retention, retentionGap, mget, summarize, hotword, metricsTrend, metricsTrendGap, observedAt }) {
+export function buildWorkPayload({ work, performance, compare, source, portrait, search, progress, retention, bounce, retentionGap, bounceGap, mget, summarize, hotword, metricsTrend, metricsTrendGap, observedAt }) {
   const gaps = {}
   const mark = (field, reason) => { gaps[field] = { reason, at: observedAt } }
   const from = (value, field, reason = 'not_exposed') => {
@@ -692,6 +692,11 @@ export function buildWorkPayload({ work, performance, compare, source, portrait,
     : null
   const retentionGapReason = retentionGap || (retention ? 'no_data' : 'not_exposed')
   if (!retentionValue) mark('retention_trend', retentionGapReason)
+  const bounceValue = bounce && !bounce.empty && (bounce.current.length || bounce.similar.length)
+    ? { current: bounce.current, similar: bounce.similar, valleys: bounce.valleys }
+    : null
+  const bounceGapReason = bounceGap || (bounce ? 'no_data' : 'not_exposed')
+  if (!bounceValue) mark('retention_bounce', bounceGapReason)
   // 单稿指标按 workId 取值：拦截到的批量响应里可能没有本条作品。
   const mgetRow = mget && typeof mget.get === 'function' ? mget.get(work.work_id) : null
   const summaryRow = summarize && typeof summarize.get === 'function' ? summarize.get(work.work_id) : null
@@ -727,6 +732,7 @@ export function buildWorkPayload({ work, performance, compare, source, portrait,
     search_keywords: from(search, 'search_keywords'),
     progress_analysis: from(progressValue, 'progress_analysis', progress ? 'no_data' : 'not_exposed'),
     retention_trend: from(retentionValue, 'retention_trend', retentionGapReason),
+    retention_bounce: from(bounceValue, 'retention_bounce', bounceGapReason),
     engagement_rates: from(engagement, 'engagement_rates'),
     audience: portrait
       ? { gender: portrait.gender, age: portrait.age, province: portrait.province, city_level: portrait.city_level }
