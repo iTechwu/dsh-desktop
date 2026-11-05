@@ -922,3 +922,79 @@ test('单稿详情：metrics_trend status_code=8 → SessionInvalidError 传播�
   })
   await assert.rejects(() => collectWorkDetail(page, '7000000000000000001'), SessionInvalidError)
 })
+
+// 1104 方案：观看趋势留存曲线（realtime/analysis/data_center 主动直取，不进页面拦截）
+// ---------------------------------------------------------------------------
+
+const RETENTION_ROUTE = '/realtime/analysis/data_center'
+
+function retentionSample() {
+  return {
+    status_code: 0,
+    status_msg: '',
+    analysis_trend: {
+      current_item: [{ key: '00:00', value: 1 }, { key: '00:01', value: 0.5 }],
+      similar_author: [{ key: '00:00', value: 1 }, { key: '00:01', value: 0.6 }],
+    },
+    valley_list: { '1': [{ start: '2', end: '4' }] },
+  }
+}
+
+test('观看趋势：主动直取 URL 锁定（analysis_type=1），曲线 ×100 入 payload', async () => {
+  const page = await detailPageWithTrend({ [RETENTION_ROUTE]: retentionSample() })
+  const detail = await collectWorkDetail(page, '7000000000000000001')
+  assert.equal(detail.retentionGap, null)
+  assert.equal(detail.retention.empty, false)
+  assert.deepEqual(detail.retention.current, [{ key: '00:00', value: 100 }, { key: '00:01', value: 50 }])
+  const call = page.calls.find(item => item.url?.includes(RETENTION_ROUTE))
+  assert.ok(call, '必须主动发起 realtime/analysis 同源请求（详情页前端可能不触发）')
+  const url = new URL(call.url, 'https://creator.douyin.com')
+  assert.equal(url.searchParams.get('item_id'), '7000000000000000001')
+  assert.equal(url.searchParams.get('analysis_type'), '1')
+  const work = await import('../src/parse.js').then(m => m.buildWorkPayload({
+    work: { work_id: '7000000000000000001' },
+    performance: null, compare: null, source: null, portrait: null, search: null,
+    progress: null, retention: detail.retention, retentionGap: detail.retentionGap,
+    mget: null, summarize: null, hotword: null, observedAt: '2026-11-05T00:00:00.000Z',
+  }))
+  assert.deepEqual(work.retention_trend, {
+    current: detail.retention.current,
+    similar: detail.retention.similar,
+    valleys: detail.retention.valleys,
+  })
+  assert.ok(work.retention_trend && work.retention_trend.current.length === 2)
+})
+
+test('观看趋势：请求失败 → request_failed 缺口，不阻塞其余字段', async () => {
+  const page = await detailPageWithTrend({ [RETENTION_ROUTE]: null })
+  const detail = await collectWorkDetail(page, '7000000000000000001')
+  assert.equal(detail.retention, null)
+  assert.equal(detail.retentionGap, 'request_failed')
+  assert.equal(detail.compare.lowPlay, false, '观看趋势失败不影响 compare 主链路')
+  assert.ok(detail.source.length, '其余字段照常返回')
+})
+
+test('观看趋势：空曲线 → 解析 empty 标记（buildWorkPayload 记 no_data）', async () => {
+  const page = await detailPageWithTrend({
+    [RETENTION_ROUTE]: { status_code: 0, analysis_trend: { current_item: [], similar_author: [] }, valley_list: {} },
+  })
+  const detail = await collectWorkDetail(page, '7000000000000000001')
+  assert.equal(detail.retention.empty, true)
+  assert.equal(detail.retentionGap, null)
+  const { buildWorkPayload } = await import('../src/parse.js')
+  const work = buildWorkPayload({
+    work: { work_id: '7000000000000000001' },
+    performance: null, compare: null, source: null, portrait: null, search: null,
+    progress: null, retention: detail.retention, retentionGap: detail.retentionGap,
+    mget: null, summarize: null, hotword: null, observedAt: '2026-11-05T00:00:00.000Z',
+  })
+  assert.equal(work.retention_trend, null)
+  assert.equal(work.dataGap.retention_trend.reason, 'no_data')
+})
+
+test('观看趋势：status_code=8 → SessionInvalidError 传播（与其他端点同会话语义）', async () => {
+  const page = await detailPageWithTrend({
+    [RETENTION_ROUTE]: { status_code: 8, status_msg: '示例：用户未登录' },
+  })
+  await assert.rejects(() => collectWorkDetail(page, '7000000000000000001'), SessionInvalidError)
+})

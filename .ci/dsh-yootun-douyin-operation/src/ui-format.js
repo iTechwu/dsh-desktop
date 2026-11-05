@@ -167,8 +167,43 @@ export function gapReasonText(reason, t = key => key) {
   return t('gapOther')
 }
 
-/** 非列字段的缺口文案映射（progress_analysis 等内部字段），未知字段一律「其他指标」（§7.3）。 */
-const GAP_FIELD_LABELS = { progress_analysis: 'progressCurve' }
+/** 非列字段的缺口文案映射（progress_analysis/retention_trend 等内部字段），未知字段一律「其他指标」（§7.3）。 */
+const GAP_FIELD_LABELS = { progress_analysis: 'progressCurve', retention_trend: 'watchTrend' }
+
+/** 24 小时毫秒数：观看趋势「发布未满 24 小时，数据未就绪」判定窗口。 */
+const RT_NOT_READY_WINDOW_MS = 24 * 60 * 60 * 1000
+
+/**
+ * 观看趋势状态判定（1104 方案 §2.3）：与 progressStatus 同构，语义为观看行为而非
+ * 采集进度。请求失败（data_gap 记 request_failed）优先；字段在但两条曲线皆空 =
+ * no_data（接口可达但作品无数据，发布 <24h 时 UI 呈现「未就绪」文案）；字段完全
+ * 缺失 = not_exposed（功能上线前的历史行）。
+ */
+export function retentionStatus(retention, work, fieldKey = 'retention_trend') {
+  const gap = work && work.data_gap && work.data_gap[fieldKey]
+  if (gap && gap.reason === 'request_failed') return 'request_failed'
+  if (!retention || typeof retention !== 'object') return 'not_exposed'
+  const hasPoints = ['current', 'similar'].some(key => Array.isArray(retention[key]) && retention[key].length > 0)
+  return hasPoints ? 'ok' : 'no_data'
+}
+
+/**
+ * 空态文案选择（方案①：保留卡位显状态文案）：request_failed/not_exposed 独立
+ * 文案；no_data 再按发布时间细分「未就绪」（<24h）与「暂无数据」（≥24h）。
+ * publish_time 缺失/非法按「暂无数据」处理，绝不猜测。
+ */
+export function retentionStatusKey(retention, work, fieldKey = 'retention_trend') {
+  const status = retentionStatus(retention, work, fieldKey)
+  if (status !== 'no_data') {
+    const key = status === 'request_failed' ? 'rtRequestFailed'
+      : status === 'not_exposed' ? 'rtNotExposed'
+        : `rt${status.charAt(0).toUpperCase()}${status.slice(1)}`
+    return { status, key }
+  }
+  const publishedAt = Date.parse(work && work.publish_time)
+  const notReady = Number.isFinite(publishedAt) && Date.now() - publishedAt < RT_NOT_READY_WINDOW_MS
+  return { status, key: notReady ? 'rtNotReady' : 'rtNoData' }
+}
 
 /** 缺口字段名中文化：列字段复用 COLUMNS 文案，禁止把原始英文 code 展示给业务用户（§7.3）。 */
 export function gapFieldLabel(field, t = key => key) {

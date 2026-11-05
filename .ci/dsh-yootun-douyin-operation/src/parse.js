@@ -469,6 +469,62 @@ export function parseProgressAnalysis(json) {
 }
 
 /**
+ * 观看趋势 `realtime/analysis/data_center`（analysis_type=1 留存）解析。
+ *
+ * 响应 `{status_code, analysis_trend: {current_item[], similar_author[]},
+ * valley_list: {"1"|"2"|"3": [{start, end}]}}`：
+ * - `key` 为 "MM:SS" 字符串，步长随视频时长（实测 1s/2s），按字符串透传；
+ * - `value` 0..1 → ×100 存百分数（×100 后天然落 0..100）；原始 value 越界
+ *   0..1 视为脏数据行级剔除（不做静默改写）；
+ * - 每条曲线上限 1800 点（约 30 分钟 1s 步长），超限截断（纯防御）；
+ * - `valley_list` 的 `start`/`end` 是**字符串秒**，转非负整数，end<start 交换，
+ *   非法丢弃，上限 16 段；
+ * - `empty` 内部标记：两条曲线皆空（入库前剥离，与 progress 同法）；
+ * - 会话失效（status_code=8）抛 SessionInvalidError；顶层无 analysis_trend 结构
+ *   → null（调用方记缺口）。
+ *
+ * @returns {{current: Array<{key: string, value: number}>, similar: Array<{key: string, value: number}>, valleys: Array<{start: number, end: number}>, empty: boolean}|null}
+ */
+export function parseRetentionTrend(json) {
+  const payload = json && typeof json === 'object' ? json : {}
+  if (isSessionExpiredPayload(payload)) throw new SessionInvalidError(toInt(payload.status_code))
+  const trend = payload.analysis_trend && typeof payload.analysis_trend === 'object' ? payload.analysis_trend : null
+  if (!trend) return null
+  const points = raw => {
+    const rows = []
+    if (!Array.isArray(raw)) return rows
+    for (const item of raw) {
+      if (!item || typeof item !== 'object') continue
+      const key = typeof item.key === 'string' ? item.key.trim() : null
+      const value = Number(item.value)
+      if (!key || !Number.isFinite(value) || value < 0 || value > 1) continue
+      rows.push({ key: clampText(key, 32), value: Math.round(Math.min(100, Math.max(0, value * 100)) * 100) / 100 })
+      if (rows.length >= 1800) break
+    }
+    return rows
+  }
+  const current = points(trend.current_item)
+  const similar = points(trend.similar_author)
+  const valleys = []
+  const valleyList = payload.valley_list && typeof payload.valley_list === 'object' ? payload.valley_list : {}
+  for (const list of Object.values(valleyList)) {
+    if (!Array.isArray(list)) continue
+    for (const item of list) {
+      if (!item || typeof item !== 'object') continue
+      let start = toInt(item.start)
+      let end = toInt(item.end)
+      if (start === null || end === null || start < 0 || end < 0) continue
+      if (end < start) [start, end] = [end, start]
+      valleys.push({ start, end })
+      if (valleys.length >= 16) break
+    }
+    if (valleys.length >= 16) break
+  }
+  const empty = current.length === 0 && similar.length === 0
+  return { current, similar, valleys, empty }
+}
+
+/**
  * 单稿指标 `item/mget`：详情页概览自身调用的接口，补齐列表 `statistics` 未暴露的计数类指标。
  *
  * 取 canonical 契约已有的 `danmaku_count`，以及可作 `item_compare` 缺失时兜底的
@@ -606,7 +662,7 @@ export function parseItemMetricsTrend(json) {
   return rows.sort((a, b) => (a.day < b.day ? -1 : a.day > b.day ? 1 : 0)).slice(-7)
 }
 
-export function buildWorkPayload({ work, performance, compare, source, portrait, search, progress, mget, summarize, hotword, metricsTrend, metricsTrendGap, observedAt }) {
+export function buildWorkPayload({ work, performance, compare, source, portrait, search, progress, retention, retentionGap, mget, summarize, hotword, metricsTrend, metricsTrendGap, observedAt }) {
   const gaps = {}
   const mark = (field, reason) => { gaps[field] = { reason, at: observedAt } }
   const from = (value, field, reason = 'not_exposed') => {
@@ -627,6 +683,15 @@ export function buildWorkPayload({ work, performance, compare, source, portrait,
   const progressValue = progress && !progress.empty
     ? { drag_back_curve: progress.drag_back_curve, drag_forward_curve: progress.drag_forward_curve }
     : null
+  // 观看趋势（1104 方案）：与 progress_analysis 同构的三值语义——取到且两条曲线
+  // 任一非空才算有值；取到但全空 → no_data；没取到 → not_exposed；请求失败 →
+  // request_failed（retentionGap 由 collector 标注）。入库结构只保留 current/
+  // similar/valleys 三键（canonical 契约），不透传 analysis_trend 原始信封。
+  const retentionValue = retention && !retention.empty && (retention.current.length || retention.similar.length)
+    ? { current: retention.current, similar: retention.similar, valleys: retention.valleys }
+    : null
+  const retentionGapReason = retentionGap || (retention ? 'no_data' : 'not_exposed')
+  if (!retentionValue) mark('retention_trend', retentionGapReason)
   // 单稿指标按 workId 取值：拦截到的批量响应里可能没有本条作品。
   const mgetRow = mget && typeof mget.get === 'function' ? mget.get(work.work_id) : null
   const summaryRow = summarize && typeof summarize.get === 'function' ? summarize.get(work.work_id) : null
@@ -661,6 +726,7 @@ export function buildWorkPayload({ work, performance, compare, source, portrait,
     traffic_source: from(source, 'traffic_source'),
     search_keywords: from(search, 'search_keywords'),
     progress_analysis: from(progressValue, 'progress_analysis', progress ? 'no_data' : 'not_exposed'),
+    retention_trend: from(retentionValue, 'retention_trend', retentionGapReason),
     engagement_rates: from(engagement, 'engagement_rates'),
     audience: portrait
       ? { gender: portrait.gender, age: portrait.age, province: portrait.province, city_level: portrait.city_level }

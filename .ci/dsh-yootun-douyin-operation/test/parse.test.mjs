@@ -31,6 +31,7 @@ import {
   parsePlaySource,
   parsePortrait,
   parseProgressAnalysis,
+  parseRetentionTrend,
   parseSearchKeywords,
   parseWorkListPage,
   parseWordCloud,
@@ -344,6 +345,65 @@ test('进度分析解析：端点可达但作品无数据 → empty 标记（与
   assert.equal(progress.empty, true)
   // 有 video_data 帧就说明确实有进度数据，不能算空。
   assert.equal(parseProgressAnalysis({ jump_backward: [], jump_forward: [], video_data: { frames: [] } }).empty, false)
+})
+
+test('观看趋势解析：analysis_trend 双曲线 ×100 存百分数，valley_list 字符串秒转整数', async () => {
+  const json = await fixture('retention_play.sample.json')
+  const rt = parseRetentionTrend(json)
+  assert.equal(rt.current[0].key, '00:00')
+  assert.equal(rt.current[0].value, 100)
+  assert.ok(rt.current.every(point => point.value >= 0 && point.value <= 100))
+  assert.ok(rt.current.every((point, index) => index === 0 || point.value <= rt.current[index - 1].value))
+  assert.equal(rt.similar.length, rt.current.length)
+  assert.equal(rt.empty, false)
+  const total = Object.values(json.valley_list).flat()
+  assert.deepEqual(rt.valleys, total.map(item => ({ start: Number(item.start), end: Number(item.end) })))
+})
+
+test('观看趋势解析：非法点位剔除、越界 clamp、end<start 交换、空曲线 empty 标记', () => {
+  const rt = parseRetentionTrend({
+    status_code: 0,
+    analysis_trend: {
+      current_item: [
+        { key: '00:00', value: 1 },
+        { key: ' 00:01 ', value: 0.5 },
+        { key: '', value: 0.4 },
+        { key: '00:02', value: 1.2 },
+        { key: 3, value: 0.1 },
+        { key: '00:03' },
+        { key: '00:04', value: -0.2 },
+      ],
+      similar_author: [],
+    },
+    valley_list: { '1': [{ start: '78', end: '80' }], '2': [{ start: '4', end: '2' }, { start: 'x', end: '5' }] },
+  })
+  // 空串 key 剔除；非字符串 key 剔除；缺 value 剔除；value 越界（1.2 / -0.2）剔除；
+  // 前后空格 trim；首点 100。
+  assert.deepEqual(rt.current, [
+    { key: '00:00', value: 100 },
+    { key: '00:01', value: 50 },
+  ])
+  // value=1.2 越界剔除（契约：0..1 之外的 value 视为脏数据丢弃，不做静默改写）
+  assert.deepEqual(rt.similar, [])
+  // end<start 交换；非法 start 丢弃
+  assert.deepEqual(rt.valleys, [{ start: 78, end: 80 }, { start: 2, end: 4 }])
+  assert.equal(rt.empty, false)
+
+  const empty = parseRetentionTrend({ status_code: 0, analysis_trend: { current_item: [], similar_author: [] }, valley_list: {} })
+  assert.deepEqual(empty.current, [])
+  assert.deepEqual(empty.similar, [])
+  assert.deepEqual(empty.valleys, [])
+  assert.equal(empty.empty, true)
+
+  // 无 analysis_trend 结构 → null（缺口 not_exposed）
+  assert.equal(parseRetentionTrend({ status_code: 0, status_msg: '' }), null)
+})
+
+test('观看趋势解析：status_code=8 会话失效抛 SessionInvalidError；曲线上限 1800 截断', () => {
+  assert.throws(() => parseRetentionTrend({ status_code: 8, status_msg: '用户未登录' }), error => error instanceof SessionInvalidError)
+  const many = Array.from({ length: 1900 }, (_, i) => ({ key: `${String(Math.floor(i / 60)).padStart(2, '0')}:${String(i % 60).padStart(2, '0')}`, value: 1 - i / 2000 }))
+  const rt = parseRetentionTrend({ status_code: 0, analysis_trend: { current_item: many, similar_author: [] } })
+  assert.equal(rt.current.length, 1800)
 })
 
 test('单稿指标解析：按作品 id 建索引，字符串计数 → 整数', async () => {

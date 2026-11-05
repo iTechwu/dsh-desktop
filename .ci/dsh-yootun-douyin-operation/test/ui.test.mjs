@@ -26,6 +26,7 @@ import {
   progressStatus,
   progressStatusText,
   progressText,
+  retentionStatusKey,
   safeAvatarSrc,
   safeWorkUrl,
   sortWorks,
@@ -115,6 +116,10 @@ const labels = {
   colCompletion: '完播率', colDuration: '平均播放时长', colProportion: '平均播放占比',
   genderMale: '男', genderFemale: '女', genderOther: '其他', gapFieldOther: '其他指标',
   progressCurve: '进度分析',
+  watchTrend: '观看趋势', rtLegendCurrent: '当前作品', rtLegendSimilar: '同类作品', rtLegendValley: '低谷区间',
+  rtNoData: '该作品暂无观看趋势数据', rtNotReady: '发布未满 24 小时，数据未就绪',
+  rtNotExposed: '本次接口未提供观看趋势数据', rtRequestFailed: '观看趋势请求失败，请稍后重试',
+  rtAriaLabel: '观看趋势：当前作品留存率自 {current} 降至末点，同类作品末点 {similar}，低谷区间 {valleys} 处',
   publishTime: '发布时间', latestCollected: '最近采集', noRecord: '暂无记录',
   ageUnder18: '小于18岁', age18to23: '18-23岁', age24to30: '24-30岁', age31to40: '31-40岁',
   age41to50: '41-50岁', ageOver50: '大于50岁', ageOther: '其他年龄段',
@@ -502,7 +507,7 @@ test('构建产物渲染详情子页面：性别圆环/年龄/流量来源/进�
   }
   walk(renderNode(tree))
   const joined = text.join('|')
-  for (const label of ['性别分布', '年龄分布', '流量来源', '进度分析', '地域分布', '城市级别', '搜索词', '评论热词', '数据缺口']) {
+  for (const label of ['性别分布', '年龄分布', '流量来源', '观看趋势', '地域分布', '城市级别', '搜索词', '评论热词', '数据缺口']) {
     assert.ok(joined.includes(label), `详情子页面缺少「${label}」`)
   }
   assert.ok(joined.includes('路政'), '热词展示')
@@ -510,7 +515,7 @@ test('构建产物渲染详情子页面：性别圆环/年龄/流量来源/进�
   assert.ok(!joined.includes('12.5%'), '搜索词不显示百分比（v2 §6.1：percent 只入库与导出）')
   assert.ok(joined.includes('完播率 · 本次接口未提供'), '缺口条目为中文字段名+中文原因')
   assert.ok(!joined.includes('completion_rate_pct'), '缺口卡片禁止暴露原始英文 code')
-  assert.ok(joined.includes('拖回'), '进度曲线使用中文「拖回」标签')
+  assert.ok(joined.includes('观看趋势'), '进度分析卡已替换为观看趋势（1104 方案）')
   assert.ok(!joined.includes('drag_back_curve'), '不暴露 drag_back_curve 内部字段名')
   assert.ok(joined.includes('男 92.66%'), '性别图例中文化（male→男）')
   assert.ok(joined.includes('女 7.34%'), '性别图例中文化（female→女）')
@@ -569,6 +574,11 @@ test('构建产物详情未知来源/年龄兜底与时间语义：不漏原始 
         { source_key: 'follow', share_pct: 40 },
       ],
       progress_analysis: { drag_back_curve: [{ key: '1', value: 1 }], drag_forward_curve: [] },
+      retention_trend: {
+        current: [{ key: '00:00', value: 100 }, { key: '00:01', value: 50 }, { key: '00:02', value: 25 }],
+        similar: [{ key: '00:00', value: 100 }, { key: '00:01', value: 60 }, { key: '00:02', value: 30 }],
+        valleys: [{ start: 2, end: 4 }],
+      },
     },
     audience: {
       gender: [{ key: 'male', pct: 50 }],
@@ -596,7 +606,7 @@ test('构建产物详情未知来源/年龄兜底与时间语义：不漏原始 
   const distribution = bars.filter(node => node.props.className.includes('ydo-bars-distribution'))
   const plain = bars.filter(node => node.props.className === 'ydo-bars')
   assert.equal(distribution.length, 4, '年龄/流量来源/地域/城市级别 四类分布使用淡绿 variant')
-  assert.equal(plain.length, 1, '进度分析不使用 variant，保持原主题色')
+  assert.equal(plain.length, 0, '进度分析已移除；观看趋势为 SVG 不产生 ydo-bars')
   // latest_collected_at 非法时同样收敛为「暂无记录」，不显示 — 也不伪装。
   const badTime = { ...detail, work: { ...detail.work, latest_collected_at: 'garbage' } }
   const badText = collectFlat(renderNode(moduleExports.WorkDetailModal({ accountId: 'acc-1', workId: 'w1', detail: badTime, trend: null, loading: false, onClose: () => {}, t: tRender })))
@@ -2964,4 +2974,30 @@ test('批量源码契约：一键按钮与互斥禁用、BatchPanel 导出、刷
   assert.match(source, /function BatchPanel/u, '批量进度/汇总面板组件')
   assert.match(source, /result\.batch\.status === 'running'\) setBatch\(result\.batch\)/u, '页面重开只恢复运行中的批量')
   assert.match(source, /\.ydo-batch-panel\{display:grid;gap:4px/u, '批量面板窄栏卡片样式（左栏布局，不再依赖工具栏 flex-basis）')
+})
+
+// 1104 方案：观看趋势空态（方案①保留卡位）与未就绪窗口判定
+test('观看趋势状态：not_ready（发布<24h）/no_data（≥24h 或无发布时间）/not_exposed/request_failed', () => {
+  const empty = { current: [], similar: [] }
+  const now = Date.now()
+  const recentWork = { publish_time: new Date(now - 3 * 3600 * 1000).toISOString(), data_gap: null }
+  const oldWork = { publish_time: new Date(now - 48 * 3600 * 1000).toISOString(), data_gap: null }
+  const noPublishWork = { publish_time: null, data_gap: null }
+  const badPublishWork = { publish_time: 'not-a-date', data_gap: null }
+
+  // 空曲线 + 发布<24h → 未就绪文案
+  assert.deepEqual(retentionStatusKey(empty, recentWork), { status: 'no_data', key: 'rtNotReady' })
+  // 空曲线 + 发布≥24h → 暂无数据
+  assert.deepEqual(retentionStatusKey(empty, oldWork), { status: 'no_data', key: 'rtNoData' })
+  // publish_time 缺失/非法 → 按「暂无数据」处理，绝不猜测
+  assert.deepEqual(retentionStatusKey(empty, noPublishWork), { status: 'no_data', key: 'rtNoData' })
+  assert.deepEqual(retentionStatusKey(empty, badPublishWork), { status: 'no_data', key: 'rtNoData' })
+  // request_failed 优先于 no_data
+  const failedWork = { publish_time: new Date(now - 3 * 3600 * 1000).toISOString(), data_gap: { retention_trend: { reason: 'request_failed' } } }
+  assert.deepEqual(retentionStatusKey(null, failedWork), { status: 'request_failed', key: 'rtRequestFailed' })
+  // 字段缺失 → not_exposed
+  assert.deepEqual(retentionStatusKey(null, { publish_time: new Date(now).toISOString() }), { status: 'not_exposed', key: 'rtNotExposed' })
+  // 有点位 → ok（不进空态文案分支）
+  const ok = retentionStatusKey({ current: [{ key: '00:00', value: 100 }] }, recentWork)
+  assert.equal(ok.status, 'ok')
 })

@@ -172,8 +172,43 @@ window.__ModuleLoader__.load({
       return t('gapOther')
     }
 
-    /** 非列字段的缺口文案映射（progress_analysis 等内部字段），未知字段一律「其他指标」（§7.3）。 */
-    const GAP_FIELD_LABELS = { progress_analysis: 'progressCurve' }
+    /** 非列字段的缺口文案映射（progress_analysis/retention_trend 等内部字段），未知字段一律「其他指标」（§7.3）。 */
+    const GAP_FIELD_LABELS = { progress_analysis: 'progressCurve', retention_trend: 'watchTrend' }
+
+    /** 24 小时毫秒数：观看趋势「发布未满 24 小时，数据未就绪」判定窗口。 */
+    const RT_NOT_READY_WINDOW_MS = 24 * 60 * 60 * 1000
+
+    /**
+     * 观看趋势状态判定（1104 方案 §2.3）：与 progressStatus 同构，语义为观看行为而非
+     * 采集进度。请求失败（data_gap 记 request_failed）优先；字段在但两条曲线皆空 =
+     * no_data（接口可达但作品无数据，发布 <24h 时 UI 呈现「未就绪」文案）；字段完全
+     * 缺失 = not_exposed（功能上线前的历史行）。
+     */
+    function retentionStatus(retention, work, fieldKey = 'retention_trend') {
+      const gap = work && work.data_gap && work.data_gap[fieldKey]
+      if (gap && gap.reason === 'request_failed') return 'request_failed'
+      if (!retention || typeof retention !== 'object') return 'not_exposed'
+      const hasPoints = ['current', 'similar'].some(key => Array.isArray(retention[key]) && retention[key].length > 0)
+      return hasPoints ? 'ok' : 'no_data'
+    }
+
+    /**
+     * 空态文案选择（方案①：保留卡位显状态文案）：request_failed/not_exposed 独立
+     * 文案；no_data 再按发布时间细分「未就绪」（<24h）与「暂无数据」（≥24h）。
+     * publish_time 缺失/非法按「暂无数据」处理，绝不猜测。
+     */
+    function retentionStatusKey(retention, work, fieldKey = 'retention_trend') {
+      const status = retentionStatus(retention, work, fieldKey)
+      if (status !== 'no_data') {
+        const key = status === 'request_failed' ? 'rtRequestFailed'
+          : status === 'not_exposed' ? 'rtNotExposed'
+            : `rt${status.charAt(0).toUpperCase()}${status.slice(1)}`
+        return { status, key }
+      }
+      const publishedAt = Date.parse(work && work.publish_time)
+      const notReady = Number.isFinite(publishedAt) && Date.now() - publishedAt < RT_NOT_READY_WINDOW_MS
+      return { status, key: notReady ? 'rtNotReady' : 'rtNoData' }
+    }
 
     /** 缺口字段名中文化：列字段复用 COLUMNS 文案，禁止把原始英文 code 展示给业务用户（§7.3）。 */
     function gapFieldLabel(field, t = key => key) {
@@ -5110,11 +5145,15 @@ window.__ModuleLoader__.load({
         colTitle: '作品名称', colUrl: '作品链接', colPlay: '播放量', colCollect: '收藏量',
         sortDefault: '取消排序', sortDesc: '倒序', sortAsc: '顺序',
         genderMale: '男', genderFemale: '女', genderOther: '其他', gapFieldOther: '其他指标',
+        rtAriaLabel: '观看趋势：当前作品留存率自 {current} 降至末点，同类作品末点 {similar}，低谷区间 {valleys} 处',
         progressNoData: '该作品暂无进度分析数据', progressNotExposed: '本次接口未提供进度分析数据', progressRequestFailed: '进度分析请求失败，请稍后重试',
         colLike: '点赞量', colComment: '评论量', colShare: '分享量', colBounce2s: '2s跳出率', colCompletion5s: '5s完播率',
         colCompletion: '完播率', colDuration: '平均播放时长', colProportion: '平均播放占比',
         detail: '作品详情', gender: '性别分布', age: '年龄分布', province: '地域分布', cityLevel: '城市级别',
         trafficSource: '流量来源', progressCurve: '进度分析', searchKeywords: '搜索词', hotwords: '评论热词',
+        watchTrend: '观看趋势', rtLegendCurrent: '当前作品', rtLegendSimilar: '同类作品', rtLegendValley: '低谷区间',
+        rtNoData: '该作品暂无观看趋势数据', rtNotReady: '发布未满 24 小时，数据未就绪',
+        rtNotExposed: '本次接口未提供观看趋势数据', rtRequestFailed: '观看趋势请求失败，请稍后重试',
         dragBack: '拖回', dragForward: '拖前', engagement: '互动率',
         gapTitle: '数据缺口', gapNotExposed: '本次接口未提供', gapBelowMinView: '播放量低于抖音最小观看门槛',
         gapPastItemBelowMinCount: '历史作品数低于抖音统计门槛',
@@ -5359,11 +5398,15 @@ window.__ModuleLoader__.load({
         colTitle: 'Work', colUrl: 'Link', colPlay: 'Plays', colCollect: 'Favorites',
         sortDefault: 'Unsorted', sortDesc: 'Descending', sortAsc: 'Ascending',
         genderMale: 'Male', genderFemale: 'Female', genderOther: 'Other', gapFieldOther: 'Other metrics',
+        rtAriaLabel: 'Watch trend: this work retention from {current} to end, similar works end {similar}, {valleys} valley ranges',
         progressNoData: 'No progress analysis data for this work', progressNotExposed: 'Progress analysis not provided this time', progressRequestFailed: 'Progress analysis request failed, please retry later',
         colLike: 'Likes', colComment: 'Comments', colShare: 'Shares', colBounce2s: '2s bounce', colCompletion5s: '5s completion',
         colCompletion: 'Completion', colDuration: 'Avg watch time', colProportion: 'Avg view share',
         detail: 'Work detail', gender: 'Gender', age: 'Age', province: 'Region', cityLevel: 'City tier',
         trafficSource: 'Traffic source', progressCurve: 'Progress', searchKeywords: 'Search keywords', hotwords: 'Comment hotwords',
+        watchTrend: 'Watch trend', rtLegendCurrent: 'This work', rtLegendSimilar: 'Similar works', rtLegendValley: 'Valley ranges',
+        rtNoData: 'No watch-trend data for this work', rtNotReady: 'Published less than 24h ago; data not ready',
+        rtNotExposed: 'Watch trend not provided this time', rtRequestFailed: 'Watch trend request failed, please retry later',
         dragBack: 'Drag back', dragForward: 'Drag forward', engagement: 'Engagement',
         gapTitle: 'Data gaps', gapNotExposed: 'not returned by this call', gapBelowMinView: 'below Douyin minimum view threshold',
         gapPastItemBelowMinCount: 'below Douyin historical-work threshold',
@@ -5963,10 +6006,8 @@ window.__ModuleLoader__.load({
                   h('h4', null, t('trafficSource')),
                   h(BarList, { rows: convertSource(work && work.traffic_source, t), label: t('trafficSource'), t, variant: 'distribution' })),
                 h('section', { className: 'ydo-panel' },
-                  h('h4', null, t('progressCurve')),
-                  progressStatus(work && work.progress_analysis, work) === 'ok'
-                    ? h(BarList, { rows: convertProgress(work && work.progress_analysis, t), label: t('progressCurve'), t })
-                    : h('p', { className: 'ydo-hint', role: 'status' }, progressStatusText(progressStatus(work && work.progress_analysis, work), t)))),
+                  h('h4', null, t('watchTrend')),
+                  h(RetentionTrend, { retention: work, work, t }))),
               h('h4', { className: 'ydo-modal-sec-title' }, t('secAudience')),
               h('div', { className: 'ydo-modal-grid-audience' },
                 h('section', { className: 'ydo-panel' },
@@ -6219,15 +6260,105 @@ window.__ModuleLoader__.load({
       return rows.map(row => ({ key: trafficSourceLabel(row, t), sourceKey: row ? row.source_key : null, pct: row && row.share_pct }))
     }
 
-    function convertProgress(progress, t = key => key) {
-      if (!progress) return []
-      const back = Array.isArray(progress.drag_back_curve) ? progress.drag_back_curve : []
-      const forward = Array.isArray(progress.drag_forward_curve) ? progress.drag_forward_curve : []
-      // 中文业务标签「拖回/拖前」，绝不暴露 drag_back_curve 等内部字段名（§7.2）。
-      return [
-        ...back.slice(0, 12).map(point => ({ key: `${t('dragBack')} ${point.key}s`, value: point.value })),
-        ...forward.slice(0, 12).map(point => ({ key: `${t('dragForward')} ${point.key}s`, value: point.value })),
-      ]
+    /**
+     * 观看趋势（1104 方案 §2.3）：realtime/analysis 留存曲线双系列自绘 SVG。
+     *
+     * 样式全量复用现有 .ydo-an-trend-svg/.ydo-an-seg/.ydo-an-grid-line/.ydo-an-axis-*
+     * （与播放量趋势同一套），仅图例类 ydo-rt-legend 为新增；空态四态走方案①
+     * （保留卡位显状态文案，retentionStatusKey 选文案）。数据形状：
+     * retention_trend = { current[], similar[], valleys[] }，key "MM:SS" 字符串、
+     * value 0..100 百分数、valleys 秒区间；X 轴按曲线 key 序列等分取端点，
+     * Y 轴固定 100/75/50/25（留存语义恒定映射，不动态缩放）。
+     */
+    function RetentionTrend({ retention, work, t }) {
+      const [rtWrapRef, rtWidth] = useMeasuredWidth(960)
+      const { status, key: statusKey } = retentionStatusKey(retention && retention.retention_trend ? retention.retention_trend : null, work)
+      if (status !== 'ok') {
+        const copy = { rtNoData: 'rtNoData', rtNotReady: 'rtNotReady', rtNotExposed: 'rtNotExposed', rtRequestFailed: 'rtRequestFailed' }
+        const failed = status === 'request_failed'
+        const className = failed ? 'ydo-error' : status === 'rtNotReady' || statusKey === 'rtNotReady' ? 'ydo-warn' : 'ydo-hint'
+        return h('p', { className, role: 'status' }, t(copy[statusKey] || statusKey))
+      }
+      const data = retention.retention_trend
+      const current = Array.isArray(data.current) ? data.current : []
+      const similar = Array.isArray(data.similar) ? data.similar : []
+      const valleys = Array.isArray(data.valleys) ? data.valleys : []
+      const width = Math.max(320, rtWidth)
+      const plotTop = TREND_PAD_TOP + 4
+      const plotBottom = TREND_VIEW_HEIGHT - TREND_PAD_TOP - 12
+      const plotHeight = plotBottom - plotTop
+      const xOf = index => Math.round((TREND_PAD_X + (index / Math.max(1, current.length - 1)) * (width - TREND_PAD_X * 2)) * 100) / 100
+      const yOf = value => {
+        const clamped = Math.min(100, Math.max(0, Number(value)))
+        return Math.round((plotTop + (1 - clamped / 100) * plotHeight) * 100) / 100
+      }
+      const toSeconds = key => {
+        const match = /^(\d{1,2}):(\d{2})$/.exec(String(key))
+        return match ? Number(match[1]) * 60 + Number(match[2]) : Number(key) || 0
+      }
+      const totalSeconds = Math.max(1, toSeconds(current[current.length - 1].key))
+      const xOfKey = key => Math.round((TREND_PAD_X + (Math.min(totalSeconds, toSeconds(key)) / totalSeconds) * (width - TREND_PAD_X * 2)) * 100) / 100
+      const linePoints = current.map((point, index) => `${xOf(index)},${yOf(point.value)}`).join(' ')
+      const similarPoints = similar.map((point, index) => `${xOf(Math.min(index, current.length - 1))},${yOf(point.value)}`).join(' ')
+      const areaPoints = `${linePoints} ${xOf(current.length - 1)},${plotBottom} ${xOf(0)},${plotBottom}`
+      const gridYs = [100, 75, 50, 25].map(percent => yOf(percent))
+      const valleyBands = valleys.map((valley, index) => eh('g', { key: `valley-${index}` },
+        eh('rect', {
+          x: xOfKey(String(valley.start)), y: plotTop,
+          width: Math.max(2, xOfKey(String(valley.end)) - xOfKey(String(valley.start))),
+          height: plotBottom - plotTop,
+          fill: 'color-mix(in srgb, var(--dsw-alias-state-error-primary) 12%, transparent)',
+        }),
+        eh('text', {
+          x: (xOfKey(String(valley.start)) + xOfKey(String(valley.end))) / 2,
+          y: TREND_VIEW_HEIGHT - 12,
+          className: 'ydo-an-axis-text',
+          fill: 'color-mix(in srgb, var(--dsw-alias-state-error-primary) 60%, var(--dsw-alias-label-primary))',
+        }, `${t('rtLegendValley')}${index + 1}`)))
+      const xTickCount = 5
+      const xTicks = [0, 1, 2, 3, 4].map(quarter => {
+        const index = Math.min(current.length - 1, Math.round((quarter * (current.length - 1)) / (xTickCount - 1)))
+        return eh('text', {
+          key: `x-${quarter}`,
+          x: xOf(index),
+          y: TREND_VIEW_HEIGHT - 12,
+          className: `ydo-an-axis-label ydo-an-axis-${quarter === 0 ? 'start' : quarter === xTickCount - 1 ? 'end' : 'middle'}`,
+        }, current[index].key)
+      })
+      const yTicks = [100, 75, 50, 25].map((percent, index) => eh('text', {
+        key: `y-${percent}`,
+        x: TREND_PAD_X + 2,
+        y: gridYs[index] - 3,
+        className: 'ydo-an-axis-text',
+      }, `${percent}%`))
+      const similarLine = similar.length
+        ? eh('polyline', { points: similarPoints, fill: 'none', className: 'ydo-an-seg ydo-an-seg-dashed' })
+        : null
+      const last = current[current.length - 1]
+      const first = current[0]
+      const similarLast = similar.length ? similar[similar.length - 1].value : null
+      const ariaLabel = t('rtAriaLabel')
+        .replace('{current}', `${formatPercent(first.value)}→${formatPercent(last.value)}`)
+        .replace('{similar}', similarLast === null ? '—' : formatPercent(similarLast))
+        .replace('{valleys}', String(valleys.length))
+      return h('div', { ref: rtWrapRef },
+        eh('svg', {
+          className: 'ydo-an-trend-svg',
+          viewBox: `0 0 ${width} ${TREND_VIEW_HEIGHT}`,
+          role: 'img',
+          'aria-label': ariaLabel,
+        },
+        ...gridYs.map((gy, index) => eh('line', { key: `grid-${index}`, x1: TREND_PAD_X, y1: gy, x2: width - TREND_PAD_X, y2: gy, className: 'ydo-an-grid-line' })),
+        ...valleyBands,
+        current.length > 1 ? eh('polygon', { points: areaPoints, className: 'ydo-an-trend-area' }) : null,
+        similarLine,
+        eh('polyline', { points: linePoints, fill: 'none', className: 'ydo-an-seg' }),
+        ...xTicks,
+        ...yTicks),
+        h('ul', { className: 'ydo-rt-legend' },
+          h('li', null, h('span', { className: 'ydo-rt-swatch-current' }), t('rtLegendCurrent')),
+          h('li', null, h('span', { className: 'ydo-rt-swatch-similar' }), t('rtLegendSimilar')),
+          h('li', null, h('span', { className: 'ydo-rt-swatch-valley' }), t('rtLegendValley'))))
     }
 
     function WorkTable({ works, sort = DEFAULT_SORT_STATE, onSortChange, onOpen, t }) {
@@ -8804,6 +8935,7 @@ window.__ModuleLoader__.load({
     .ydo-an-axis-minor{display:none}
     @container ydo-panel (min-width:640px){.ydo-an-axis-minor{display:block}}
     .ydo-an-gap-text{fill:var(--dsw-alias-label-tertiary,#737d8c);font-size:10px;text-anchor:middle}
+    .ydo-rt-legend{display:flex;flex-wrap:wrap;gap:14px;margin:8px 0 0;padding:0;list-style:none;color:var(--dsw-alias-label-secondary);font-size:var(--dsh-content-font-size-secondary,13px)}.ydo-rt-legend li{display:flex;align-items:center;gap:6px}.ydo-rt-swatch-current{width:16px;height:0;border-top:2px solid var(--dsw-alias-label-primary)}.ydo-rt-swatch-similar{width:16px;height:0;border-top:2px dashed var(--dsw-alias-label-primary);opacity:.75}.ydo-rt-swatch-valley{width:12px;height:10px;border-radius:2px;background:color-mix(in srgb,var(--dsw-alias-state-error-primary) 12%,transparent);border:1px solid color-mix(in srgb,var(--dsw-alias-state-error-primary) 35%,transparent)}
     .ydo-an-revised-text{fill:var(--dsw-alias-state-warn-primary,#9a6700);font-size:10px;text-anchor:start}/* 内容指标（UI 优化方案 v2 §5.2）：指标名、主值、状态三段结构，指标卡两列标签布局、数值列对齐；观众与流量四块 2×2 网格（v2 §5.3）。 */
     .ydo-an-metrics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}.ydo-an-metric-card{display:flex;flex-direction:column;gap:6px;min-width:0;padding:12px 14px;border-radius:8px;background:var(--dsw-alias-bg-base)}.ydo-an-metric-head{display:flex;align-items:center;justify-content:space-between;gap:8px;min-width:0}.ydo-an-metric-label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--dsw-alias-label-secondary);font-size:12px}.ydo-an-metric-note{flex:none;padding:1px 8px;border-radius:999px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-secondary);font-size:11px}.ydo-an-metric-value{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:20px;line-height:1.2;font-weight:700;font-variant-numeric:tabular-nums}.ydo-an-audience{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.ydo-an-audience-block{display:grid;gap:8px;padding:10px;border:1px solid var(--dsw-alias-border-l1);border-radius:6px;background:var(--dsw-alias-bg-base)}.ydo-an-audience-block h4{margin:0;font-size:var(--dsh-content-font-size,14px)}@media(max-width:720px){.ydo-an-metrics{grid-template-columns:1fr}.ydo-an-audience{grid-template-columns:1fr}}.ydo-work-cover{position:relative;display:inline-flex;align-items:center;justify-content:center;flex:none;width:64px;height:40px;border-radius:5px;overflow:hidden;background:var(--dsw-alias-bg-layer-2)}.ydo-work-cover-large{width:112px;height:70px;border-radius:7px}.ydo-work-cover-img{width:100%;height:100%;object-fit:cover;display:block}.ydo-work-cover-fallback-text{color:var(--dsw-alias-label-secondary);font-size:11px}.ydo-work-cover-duration{position:absolute;right:2px;bottom:2px;padding:0 4px;border-radius:3px;background:rgba(0,0,0,.65);color:#fff;font-size:10px;line-height:16px;font-variant-numeric:tabular-nums;pointer-events:none}.ydo-cell-work{display:flex;align-items:center;gap:8px;min-width:0}.ydo-cell-work-title{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}.ydo-delta-up{color:var(--dsw-alias-state-success-primary)}.ydo-delta-down{color:var(--dsw-alias-state-error-primary)}.ydo-delta-flat{color:var(--dsw-alias-label-secondary)}/* 粉丝域着色（用户 2026-10-16，行情语义：红涨绿跌）：净增/吸粉正数红、掉粉绿。fan-up 挂红色、fan-down 挂绿色是有意反转，非常规 up=绿，勿当笔误改回。 */.ydo-delta-fan-up{color:var(--dsw-alias-state-error-primary)}.ydo-delta-fan-down{color:var(--dsw-alias-state-success-primary)}.ydo-delta-fan-flat{color:var(--dsw-alias-label-secondary)}.ydo-modal-sec-title{margin:0 0 10px;font-size:13.5px;font-weight:700;color:var(--dsw-alias-label-primary)}.ydo-modal-panel-full{padding-top:2px}.ydo-modal-head-cover{align-items:flex-start}.ydo-modal-head-text{min-width:0;flex:1;display:grid;gap:4px}.ydo-modal-title{margin:0;font-size:var(--dsw-font-base-16-font-size,16px);line-height:1.35;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}.ydo-modal-grid-2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.ydo-modal-grid-audience{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px}.ydo-modal-core-metrics{grid-template-columns:repeat(4,minmax(0,1fr))}@media(max-width:720px){.ydo-modal-grid-2,.ydo-modal-core-metrics{grid-template-columns:1fr}.ydo-modal-grid-audience{grid-template-columns:1fr}}/* 1015 弹框分组：核心指标 4 列、流量与留存/词组两列并排、受众画像 auto-fit。 *//* 窄屏表格重排（二审 P2）：面板内容宽度不足以容纳固定列轨道（<940px）时，隐藏表头、行改「字段名 + 值」卡片，内容完整可读——不是仅隐藏横向溢出。字段名来自各单元格的 data-label；文本类单元格（账号名/标题/爆款依据）保持块流，避免多子节点被二维网格错误排位。 */
     @container ydo-panel (max-width:940px){.ydo-ov-table{overflow:visible;max-height:none}.ydo-ov-tr.ydo-ov-head{display:none}.ydo-ov-tr{display:block;min-width:0;padding:10px 0}.ydo-ov-tr>[role=cell]{display:grid;grid-template-columns:minmax(76px,auto) 1fr;gap:2px 12px;align-items:baseline;padding:2px 0}.ydo-ov-tr>[role=cell]::before{content:attr(data-label);color:var(--dsw-alias-label-secondary);font-size:12px}.ydo-ov-tr>[role=cell].ydo-ov-num{text-align:right}.ydo-ov-tr>.ydo-ov-account-name,.ydo-ov-tr>.ydo-ov-hot-title,.ydo-ov-tr>.ydo-ov-basis{display:block}.ydo-ov-tr>.ydo-ov-account-name::before,.ydo-ov-tr>.ydo-ov-hot-title::before,.ydo-ov-tr>.ydo-ov-basis::before{display:block;margin-bottom:4px}}@media(max-width:1120px){.ydo-body{display:block;overflow:auto}.ydo-accounts{border-right:0;border-bottom:1px solid var(--dsw-alias-border-l1)}.ydo-right{overflow:visible}.ydo-table-wrap{max-height:60vh}}

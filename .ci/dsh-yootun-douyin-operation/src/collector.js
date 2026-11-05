@@ -25,6 +25,7 @@ import {
   parseJsonPreservingIds,
   parseItemPerformance,
   parseItemSummarize,
+  parseRetentionTrend,
   parsePlaySource,
   parsePortrait,
   parseProgressAnalysis,
@@ -52,6 +53,9 @@ export const ITEM_MGET_FIELDS = 'metrics,review,play_info,dou_plus,integrated_in
 // 1026 方案：单作品官方按日累计趋势（trend_type=2 累计 / time_unit=1 天 /
 // metrics_group 必填，缺省 status_code=4）。主动直取，不进页面拦截（见 collectWorkDetail）。
 export const ITEM_METRICS_TREND_PATH = '/janus/douyin/creator/data/item_analysis/metrics_trend'
+// 1104 方案：观看趋势留存曲线（analysis_type=1 Play）。详情页前端可能不触发该
+// 请求（A/B/版本差异），与 metrics_trend 同法主动直取；user_id 等参数实测可省略。
+export const RETENTION_PATH = '/janus/douyin/creator/data/realtime/analysis/data_center'
 
 // 上海"今天"（sv-SE 格式 = YYYY-MM-DD，字典序即时间序）。dashboard 行与
 // metrics_trend 点位的未来日统一按此口径丢弃（数据未出：后台每日 10 点更新前一日）。
@@ -343,6 +347,23 @@ export async function collectWorkDetail(page, workId, { timeoutMs = 25_000, onTa
       metricsTrendGap = 'not_exposed'
     }
   }
+  // 观看趋势直取（1104 方案）：失败只记 request_failed 缺口，不阻塞其余字段；
+  // status_code=8 仍按会话失效传播。解析空曲线 → parse 层 empty 标记（no_data）。
+  let retention = null
+  let retentionGap = null
+  try {
+    const retentionUrl = `${RETENTION_PATH}?item_id=${workId}&analysis_type=1`
+    const retentionResult = await fetchJson(page, retentionUrl)
+    if (!retentionResult.ok) {
+      retentionGap = 'request_failed'
+    } else {
+      retention = parseRetentionTrend(retentionResult.json)
+      if (retention === null) retentionGap = 'not_exposed'
+    }
+  } catch (error) {
+    if (error instanceof SessionInvalidError) throw error
+    retentionGap = 'request_failed'
+  }
   return {
     endpointsSeen: Object.keys(endpoints).filter(key => captured[key]),
     compare: compareParsed,
@@ -355,6 +376,8 @@ export async function collectWorkDetail(page, workId, { timeoutMs = 25_000, onTa
     // 1026 方案：官方按日累计（≤7 个已完成日），空缺历史日由服务端只插不覆盖回填。
     metricsTrend,
     metricsTrendGap,
+    retention,
+    retentionGap,
   }
 }
 
@@ -498,7 +521,7 @@ export async function collectAccountWorks(page, {
       error.partialCollected = {
         works: error.partialListWorks.map(work => buildWorkPayload({
           work, performance: null, compare: null, source: null, portrait: null,
-          search: null, progress: null, mget: null, summarize: null, hotword: null, observedAt,
+          search: null, progress: null, retention: null, retentionGap: null, mget: null, summarize: null, hotword: null, observedAt,
         })),
         listComplete: false,
         expectedWorkCount: error.partialListWorks.length,
@@ -521,7 +544,7 @@ export async function collectAccountWorks(page, {
       error.partialCollected = {
         works: list.works.map(work => buildWorkPayload({
           work, performance: null, compare: null, source: null, portrait: null,
-          search: null, progress: null, mget: null, summarize: null, hotword: null, observedAt,
+          search: null, progress: null, retention: null, retentionGap: null, mget: null, summarize: null, hotword: null, observedAt,
         })),
         listComplete: list.listComplete,
         expectedWorkCount: list.works.length,
@@ -541,7 +564,7 @@ export async function collectAccountWorks(page, {
       error.partialCollected = {
         works: list.works.map(work => buildWorkPayload({
           work, performance: null, compare: null, source: null, portrait: null,
-          search: null, progress: null, mget: null, summarize: null, hotword: null, observedAt,
+          search: null, progress: null, retention: null, retentionGap: null, mget: null, summarize: null, hotword: null, observedAt,
         })),
         listComplete: list.listComplete,
         expectedWorkCount: list.works.length,
@@ -573,6 +596,8 @@ export async function collectAccountWorks(page, {
         hotword,
         metricsTrend: detail.metricsTrend,
         metricsTrendGap: detail.metricsTrendGap,
+        retention: detail.retention,
+        retentionGap: detail.retentionGap,
         observedAt,
       }))
     } catch (error) {
