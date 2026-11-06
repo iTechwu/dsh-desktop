@@ -5491,6 +5491,8 @@ window.__ModuleLoader__.load({
       // succeeded 态：标签/采纳/备注全部可编辑；非 succeeded（failed/pending）态：
       // 仅备注可编辑（GENE_NOT_READY 口径，P3-4/T7.7——保存只带 manualNotes 零冲突）
       const editable = record.geneStatus === 'succeeded'
+      // 提取进行中（pending/running）：整区禁用（提取完成会覆盖标签与依据，并发编辑无意义）
+      const inProgress = record.geneStatus === 'pending' || record.geneStatus === 'running'
       const initialAdoption =
         record.adoptionStatus === 'adopted' || record.adoptionStatus === 'revised'
           ? record.adoptionStatus
@@ -5538,7 +5540,7 @@ window.__ModuleLoader__.load({
         setAddValue(prev => ({ ...prev, [dim]: '' }))
       }
       const save = () => {
-        if (saving) return
+        if (saving || inProgress) return
         if (!editable) {
           // 非 succeeded：只提交备注（不带 geneTags/adoptionStatus，服务端零冲突，T7.7）
           onSave(record.recordId, { manualNotes: notes })
@@ -5566,12 +5568,12 @@ window.__ModuleLoader__.load({
               h('div', { className: 'ydo-gene-facet-chips' },
                 labels.map(label => h('button', {
                   key: label, type: 'button', className: 'ydo-gene-chip is-selected',
-                  'data-h': dimHue(dim.id), disabled: !editable || busy,
+                  'data-h': dimHue(dim.id), disabled: !editable || busy || inProgress,
                   onClick: () => removeAt(dim.id, label),
                   title: editable && !busy ? '点击移除' : undefined,
                 }, label, editable ? h('span', { className: 'ydo-gene-chip-remove', 'aria-hidden': true }, '✕') : null)),
                 labels.length === 0 ? h('span', { className: 'ydo-mat-hint' }, '无标签') : null),
-              editable && !busy
+              editable && !busy && !inProgress
                 ? h('div', { className: 'ydo-gene-actions' },
                   h('input', {
                     className: 'ydo-gene-input', type: 'text', value: addValue[dim.id] || '',
@@ -5598,11 +5600,14 @@ window.__ModuleLoader__.load({
               h('button', {
                 key: value, type: 'button',
                 className: `ydo-report-seg-item${adoption === value ? ' is-active' : ''}`,
-                disabled: !editable || busy,
+                disabled: !editable || busy || inProgress,
                 onClick: () => setAdoption(value),
               }, label))),
           h('p', { className: 'ydo-mat-hint' },
             'AI 草稿 = 提取完成未经人工处理；已采纳 = 人工确认可直接使用；已修正 = 人工编辑过标签或备注。')),
+        inProgress
+          ? h('p', { className: 'ydo-mat-hint' }, '基因提取进行中，完成后即可修正与采纳；完成后页面自动刷新。')
+          : null,
         saveError ? h('p', { className: 'ydo-error', role: 'alert' }, geneErrorCopy(saveError)) : null,
         h('div', { className: 'ydo-gene-actions', style: { marginTop: 12 } },
           h('button', {
@@ -5978,7 +5983,7 @@ window.__ModuleLoader__.load({
         colTitle: '作品名称', colUrl: '作品链接', colPlay: '播放量', colCollect: '收藏量',
         sortDefault: '取消排序', sortDesc: '倒序', sortAsc: '顺序',
         genderMale: '男', genderFemale: '女', genderOther: '其他', gapFieldOther: '其他指标',
-        rtTabRetention: '留存分析', rtTabBounce: '跳出分析',
+        rtTabRetention: '留存分析', rtTabBounce: '跳出分析', rtHoverRetention: '留存', rtHoverBounce: '跳出率',
         rtBounceLabel: '跳出率', rtLegendBounce: '当前作品跳出率', rtLegendBounceSimilar: '同类作品跳出率',
         rtAriaLabel: '观看趋势：当前作品留存率自 {current} 降至末点，同类作品末点 {similar}，低谷区间 {valleys} 处',
         rtBounceAriaLabel: '跳出分析：当前作品首秒跳出率 {current}，同类作品首秒 {similar}',
@@ -5986,7 +5991,7 @@ window.__ModuleLoader__.load({
         colCompletion: '完播率', colDuration: '平均播放时长', colProportion: '平均播放占比',
         detail: '作品详情', gender: '性别分布', age: '年龄分布', province: '地域分布', cityLevel: '城市级别',
         trafficSource: '流量来源', progressCurve: '进度分析', searchKeywords: '搜索词', hotwords: '评论热词',
-        watchTrend: '观看趋势', rtLegendCurrent: '当前作品', rtLegendSimilar: '同类作品', rtLegendValley: '低谷区间',
+        watchTrend: '观看趋势', rtLegendCurrent: '当前作品', rtLegendSimilar: '同类作品', rtLegendValley: '低谷区间', rtValleyBadge: '低谷',
         rtNoData: '该作品暂无观看趋势数据', rtNotReady: '发布未满 24 小时，数据未就绪',
         rtNotExposed: '本次接口未提供观看趋势数据', rtRequestFailed: '观看趋势请求失败，请稍后重试',
         dragBack: '拖回', dragForward: '拖前', engagement: '互动率',
@@ -6236,14 +6241,14 @@ window.__ModuleLoader__.load({
         sortDefault: 'Unsorted', sortDesc: 'Descending', sortAsc: 'Ascending',
         genderMale: 'Male', genderFemale: 'Female', genderOther: 'Other', gapFieldOther: 'Other metrics',
         rtAriaLabel: 'Watch trend: this work retention from {current} to end, similar works end {similar}, {valleys} valley ranges',
-        rtTabRetention: 'Retention', rtTabBounce: 'Bounce',
+        rtTabRetention: 'Retention', rtTabBounce: 'Bounce', rtHoverRetention: 'Retention', rtHoverBounce: 'Bounce rate',
         rtBounceLabel: 'Bounce rate', rtLegendBounce: 'This work bounce', rtLegendBounceSimilar: 'Similar works bounce',
         rtBounceAriaLabel: 'Bounce analysis: this work first-second bounce {current}, similar works {similar}',
         colLike: 'Likes', colComment: 'Comments', colShare: 'Shares', colBounce2s: '2s bounce', colCompletion5s: '5s completion',
         colCompletion: 'Completion', colDuration: 'Avg watch time', colProportion: 'Avg view share',
         detail: 'Work detail', gender: 'Gender', age: 'Age', province: 'Region', cityLevel: 'City tier',
         trafficSource: 'Traffic source', progressCurve: 'Progress', searchKeywords: 'Search keywords', hotwords: 'Comment hotwords',
-        watchTrend: 'Watch trend', rtLegendCurrent: 'This work', rtLegendSimilar: 'Similar works', rtLegendValley: 'Valley ranges',
+        watchTrend: 'Watch trend', rtLegendCurrent: 'This work', rtLegendSimilar: 'Similar works', rtLegendValley: 'Valley ranges', rtValleyBadge: 'Valley',
         rtNoData: 'No watch-trend data for this work', rtNotReady: 'Published less than 24h ago; data not ready',
         rtNotExposed: 'Watch trend not provided this time', rtRequestFailed: 'Watch trend request failed, please retry later',
         dragBack: 'Drag back', dragForward: 'Drag forward', engagement: 'Engagement',
@@ -7115,6 +7120,9 @@ window.__ModuleLoader__.load({
       const [rtWrapRef, rtWidth] = useMeasuredWidth(960)
       // 视图切换（1104 V2，对齐创作者中心后台）：留存 analysis_type=1 / 跳出 analysis_type=7。
       const [activeTab, setActiveTab] = useState('retention')
+      // 悬停浮层（1104 优化点 2，对齐后台）：hoverIndex=吸附的最近采样点索引，null=未悬停。
+      // hooks 必须在早退 return 之前无条件调用（Rules of Hooks）。
+      const [hoverIndex, setHoverIndex] = useState(null)
       // 数据取自主表列：retention_trend（留存）+ retention_bounce（跳出）——结构相同，
       // 数值含义不同（留存=还剩多少在看，跳出=该秒离开的比例）。
       const { status, key: statusKey } = retentionStatusKey(retention && retention.retention_trend ? retention.retention_trend : null, work)
@@ -7197,19 +7205,31 @@ window.__ModuleLoader__.load({
       const gridYs = isBounceTab
         ? [bounceMax, bounceMax / 2, 0].map(value => bounceYOf(value))
         : [100, 75, 50, 25].map(percent => yOf(percent))
-      const valleyBands = valleys.map((valley, index) => eh('g', { key: `valley-${index}` },
-        eh('rect', {
-          x: xOfSeconds(valley.start), y: plotTop,
-          width: Math.max(2, xOfSeconds(valley.end) - xOfSeconds(valley.start)),
-          height: plotBottom - plotTop,
-          fill: 'color-mix(in srgb, var(--dsw-alias-state-error-primary) 12%, transparent)',
-        }),
-        eh('text', {
-          x: (xOfSeconds(valley.start) + xOfSeconds(valley.end)) / 2,
-          y: TREND_VIEW_HEIGHT - 12,
-          className: 'ydo-an-axis-text',
-          fill: 'color-mix(in srgb, var(--dsw-alias-state-error-primary) 60%, var(--dsw-alias-label-primary))',
-        }, `${t('rtLegendValley')}${index + 1}`)))
+      // 低谷标记（1104 优化点 1，对齐后台）：半透明红带 + 轴下方「红底白字」徽标。
+      // 红底白字为双主题安全配色（红/白对比度不随主题翻转），无需深色单独色值。
+      const valleyBands = valleys.map((valley, index) => {
+        const bandLeft = xOfSeconds(valley.start)
+        const bandRight = xOfSeconds(valley.end)
+        const centerX = Math.round((bandLeft + bandRight) / 2)
+        return eh('g', { key: `valley-${index}` },
+          eh('rect', {
+            x: bandLeft, y: plotTop,
+            width: Math.max(2, bandRight - bandLeft),
+            height: plotBottom - plotTop,
+            fill: 'color-mix(in srgb, var(--dsw-alias-state-error-primary) 20%, transparent)',
+          }),
+          eh('g', { className: 'ydo-rt-valley-badge' },
+            eh('rect', {
+              x: centerX - 24, y: TREND_VIEW_HEIGHT - TREND_PAD_BOTTOM + 2,
+              width: 48, height: 18, rx: 3,
+              fill: 'var(--dsw-alias-state-error-primary)',
+            }),
+            eh('text', {
+              x: centerX, y: TREND_VIEW_HEIGHT - TREND_PAD_BOTTOM + 15,
+              'text-anchor': 'middle',
+              className: 'ydo-rt-valley-badge-text',
+            }, `${t('rtValleyBadge')}${index + 1}`)))
+      })
       const xTickCount = 5
       // 单点曲线：只渲染一个端点刻度（review P3-6：5 个重复刻度是视觉噪声）。
       const tickIndexes = current.length === 1
@@ -7241,6 +7261,77 @@ window.__ModuleLoader__.load({
       const bounceLine = isBounceTab && bounceCurrent.length
         ? eh('polyline', { points: bounceLinePoints, fill: 'none', className: 'ydo-an-seg' })
         : null
+      // ---- 悬停浮层（1104 优化点 2）：鼠标 X 吸附最近采样点；十字线 + 圆点 + 浮层。 ----
+      // 同类数值按时间 key 就近匹配（similar 与 current 步长/长度可能不一致）。
+      const hoverSource = isBounceTab ? bounceCurrent : current
+      const hoverSimilarSource = isBounceTab ? bounceSimilar : similar
+      const hoverXOf = index => (isBounceTab ? xOf(index) : xOf(index))
+      const hoverYOf = value => (isBounceTab ? bounceYOf(value, bounceMax || 1) : yOf(value))
+      const onRtMouseMove = event => {
+        if (!hoverSource.length) return
+        const svgNode = event.currentTarget
+        const rect = svgNode.getBoundingClientRect()
+        const relX = ((event.clientX - rect.left) / rect.width) * width
+        const scale = (width - TREND_PAD_X * 2) / Math.max(1, hoverSource.length - 1)
+        const index = Math.max(0, Math.min(hoverSource.length - 1, Math.round((relX - TREND_PAD_X) / scale)))
+        setHoverIndex(index)
+      }
+      const hoverVisible = hoverIndex !== null && hoverIndex < hoverSource.length
+      const hoverPoint = hoverVisible ? hoverSource[hoverIndex] : null
+      const hoverX = hoverPoint ? hoverXOf(hoverIndex) : 0
+      // 就近匹配同类点：按时间秒差最小者（key 无法解析则退化为同索引）。
+      let hoverSimilarPoint = null
+      if (hoverPoint && hoverSimilarSource.length) {
+        const targetSec = toSeconds(hoverPoint.key)
+        hoverSimilarPoint = [...hoverSimilarSource].sort((a, b) =>
+          Math.abs(toSeconds(a.key) - targetSec) - Math.abs(toSeconds(b.key) - targetSec))[0] || null
+      }
+      // 浮层几何：宽约 132px、高 74px，跟随吸附点，右缘自动翻转防出界。
+      const tipWidth = 132
+      const tipHeight = 74
+      const tipX = hoverVisible
+        ? (hoverX + tipWidth + 12 > width - TREND_PAD_X ? Math.max(TREND_PAD_X, hoverX - tipWidth - 12) : hoverX + 12)
+        : 0
+      const tipY = hoverVisible ? Math.max(TREND_PAD_TOP, plotTop + 8) : 0
+      const hoverRowLabel = isBounceTab ? t('rtHoverBounce') : t('rtHoverRetention')
+      const hoverSimilarLabel = t('rtLegendSimilar')
+      const hoverValueText = hoverPoint ? formatPercent(hoverPoint.value) : '—'
+      const hoverSimilarText = hoverSimilarPoint ? formatPercent(hoverSimilarPoint.value) : '—'
+      const hoverTimeText = hoverPoint
+        ? (isBounceTab && hoverIndex + 1 < hoverSource.length
+            ? `${hoverPoint.key}-${hoverSource[hoverIndex + 1].key}`
+            : hoverPoint.key)
+        : ''
+      const hoverLayer = hoverVisible && hoverPoint
+        ? [
+            eh('line', {
+              key: 'hover-cross',
+              x1: hoverX, y1: plotTop, x2: hoverX, y2: plotBottom,
+              className: 'ydo-rt-hover-line',
+            }),
+            eh('circle', {
+              key: 'hover-dot-current', cx: hoverX, cy: hoverYOf(hoverPoint.value), r: 4,
+              className: 'ydo-rt-hover-dot',
+            }),
+            hoverSimilarPoint ? eh('circle', {
+              key: 'hover-dot-similar', cx: xOfKey(hoverSimilarPoint.key), cy: hoverYOf(hoverSimilarPoint.value), r: 3.5,
+              className: 'ydo-rt-hover-dot-similar',
+            }) : null,
+            eh('g', { key: 'hover-tip', className: 'ydo-rt-tooltip' },
+              eh('rect', {
+                x: tipX, y: tipY, width: tipWidth, height: tipHeight, rx: 8,
+                className: 'ydo-rt-tooltip-box',
+              }),
+              eh('text', { key: 'tip-time', x: tipX + 12, y: tipY + 22, className: 'ydo-rt-tooltip-time' }, hoverTimeText),
+              eh('circle', { key: 'tip-dot-cur', cx: tipX + 16, cy: tipY + 40, r: 4, className: 'ydo-rt-hover-dot' }),
+              eh('text', { key: 'tip-label-cur', x: tipX + 26, y: tipY + 44, className: 'ydo-rt-tooltip-label' }, hoverRowLabel),
+              eh('text', { key: 'tip-value-cur', x: tipX + tipWidth - 12, y: tipY + 44, 'text-anchor': 'end', className: 'ydo-rt-tooltip-value' }, hoverValueText),
+              hoverSimilarPoint ? eh('circle', { key: 'tip-dot-sim', cx: tipX + 16, cy: tipY + 60, r: 4, className: 'ydo-rt-hover-dot-similar' }) : null,
+              hoverSimilarPoint ? eh('text', { key: 'tip-label-sim', x: tipX + 26, y: tipY + 64, className: 'ydo-rt-tooltip-label' }, hoverSimilarLabel) : null,
+              hoverSimilarPoint ? eh('text', { key: 'tip-value-sim', x: tipX + tipWidth - 12, y: tipY + 64, 'text-anchor': 'end', className: 'ydo-rt-tooltip-value' }, hoverSimilarText) : null,
+            ),
+          ]
+        : []
       const last = current[current.length - 1]
       const first = current[0]
       const similarLast = similar.length ? similar[similar.length - 1].value : null
@@ -7269,6 +7360,8 @@ window.__ModuleLoader__.load({
           viewBox: `0 0 ${width} ${TREND_VIEW_HEIGHT}`,
           role: 'img',
           'aria-label': ariaLabel,
+          onMouseMove: onRtMouseMove,
+          onMouseLeave: () => setHoverIndex(null),
         },
         ...gridYs.map((gy, index) => eh('line', { key: `grid-${index}`, x1: TREND_PAD_X, y1: gy, x2: width - TREND_PAD_X, y2: gy, className: 'ydo-an-grid-line' })),
         ...valleyBands,
@@ -7278,7 +7371,8 @@ window.__ModuleLoader__.load({
         bounceLine,
         !isBounceTab ? eh('polyline', { points: linePoints, fill: 'none', className: 'ydo-an-seg' }) : bounceLine,
         ...xTicks,
-        ...yTicks),
+        ...yTicks,
+        ...hoverLayer),
         h('ul', { className: 'ydo-rt-legend' },
           isBounceTab
             ? [
@@ -10116,7 +10210,7 @@ window.__ModuleLoader__.load({
     .ydo-an-axis-minor{display:none}
     @container ydo-panel (min-width:640px){.ydo-an-axis-minor{display:block}}
     .ydo-an-gap-text{fill:var(--dsw-alias-label-tertiary,#737d8c);font-size:10px;text-anchor:middle}
-    .ydo-rt-tabs{display:inline-flex;gap:0;margin:0 0 8px;border:1px solid var(--dsw-alias-border-l1);border-radius:6px;overflow:hidden;background:var(--dsw-alias-bg-layer-1)}.ydo-rt-tab{min-height:26px;padding:0 12px;border:0;background:transparent;color:var(--dsw-alias-label-secondary);font:inherit;font-size:var(--dsh-content-font-size-secondary,13px);cursor:pointer}.ydo-rt-tab+.ydo-rt-tab{border-left:1px solid var(--dsw-alias-border-l1)}.ydo-rt-tab:hover{color:var(--dsw-alias-label-primary)}.ydo-rt-tab-active{background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary);font-weight:600}.ydo-rt-legend{display:flex;flex-wrap:wrap;gap:14px;margin:8px 0 0;padding:0;list-style:none;color:var(--dsw-alias-label-secondary);font-size:var(--dsh-content-font-size-secondary,13px)}.ydo-rt-legend li{display:flex;align-items:center;gap:6px}.ydo-rt-swatch-current{width:16px;height:0;border-top:2px solid var(--dsw-alias-label-primary)}.ydo-rt-swatch-similar{width:16px;height:0;border-top:2px dashed var(--dsw-alias-label-primary);opacity:.75}.ydo-rt-swatch-valley{width:12px;height:10px;border-radius:2px;background:color-mix(in srgb,var(--dsw-alias-state-error-primary) 12%,transparent);border:1px solid color-mix(in srgb,var(--dsw-alias-state-error-primary) 35%,transparent)}
+    .ydo-rt-tabs{display:inline-flex;gap:0;margin:0 0 8px;border:1px solid var(--dsw-alias-border-l1);border-radius:6px;overflow:hidden;background:var(--dsw-alias-bg-layer-1)}.ydo-rt-tab{min-height:26px;padding:0 12px;border:0;background:transparent;color:var(--dsw-alias-label-secondary);font:inherit;font-size:var(--dsh-content-font-size-secondary,13px);cursor:pointer}.ydo-rt-tab+.ydo-rt-tab{border-left:1px solid var(--dsw-alias-border-l1)}.ydo-rt-tab:hover{color:var(--dsw-alias-label-primary)}.ydo-rt-tab-active{background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary);font-weight:600}.ydo-rt-valley-badge{cursor:default}.ydo-rt-valley-badge text{fill:#ffffff;font-size:10px;font-weight:600;font-family:inherit}.ydo-rt-hover-line{stroke:var(--dsw-alias-border-l2,#8b949e);stroke-width:1;stroke-dasharray:0}.ydo-rt-hover-dot{fill:var(--dsw-alias-label-primary);stroke:var(--dsw-alias-bg-layer-1);stroke-width:2}.ydo-rt-hover-dot-similar{fill:var(--dsw-alias-label-tertiary,#737d8c);stroke:var(--dsw-alias-bg-layer-1);stroke-width:2}.ydo-rt-tooltip-box{fill:var(--dsw-alias-bg-layer-1);stroke:var(--dsw-alias-border-l1);stroke-width:1;filter:drop-shadow(0 2px 6px rgba(0,0,0,.12))}.ydo-rt-tooltip-time{fill:var(--dsw-alias-label-primary);font-size:12px;font-weight:600;font-family:inherit}.ydo-rt-tooltip-label{fill:var(--dsw-alias-label-secondary);font-size:11px;font-family:inherit}.ydo-rt-tooltip-value{fill:var(--dsw-alias-label-primary);font-size:11px;font-weight:600;font-variant-numeric:tabular-nums;font-family:inherit}.ydo-rt-legend{display:flex;flex-wrap:wrap;gap:14px;margin:8px 0 0;padding:0;list-style:none;color:var(--dsw-alias-label-secondary);font-size:var(--dsh-content-font-size-secondary,13px)}.ydo-rt-legend li{display:flex;align-items:center;gap:6px}.ydo-rt-swatch-current{width:16px;height:0;border-top:2px solid var(--dsw-alias-label-primary)}.ydo-rt-swatch-similar{width:16px;height:0;border-top:2px dashed var(--dsw-alias-label-primary);opacity:.75}.ydo-rt-swatch-valley{width:12px;height:10px;border-radius:2px;background:color-mix(in srgb,var(--dsw-alias-state-error-primary) 12%,transparent);border:1px solid color-mix(in srgb,var(--dsw-alias-state-error-primary) 35%,transparent)}
     .ydo-an-revised-text{fill:var(--dsw-alias-state-warn-primary,#9a6700);font-size:10px;text-anchor:start}/* 内容指标（UI 优化方案 v2 §5.2）：指标名、主值、状态三段结构，指标卡两列标签布局、数值列对齐；观众与流量四块 2×2 网格（v2 §5.3）。 */
     .ydo-an-metrics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}.ydo-an-metric-card{display:flex;flex-direction:column;gap:6px;min-width:0;padding:12px 14px;border-radius:8px;background:var(--dsw-alias-bg-base)}.ydo-an-metric-head{display:flex;align-items:center;justify-content:space-between;gap:8px;min-width:0}.ydo-an-metric-label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--dsw-alias-label-secondary);font-size:12px}.ydo-an-metric-note{flex:none;padding:1px 8px;border-radius:999px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-secondary);font-size:11px}.ydo-an-metric-value{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:20px;line-height:1.2;font-weight:700;font-variant-numeric:tabular-nums}.ydo-an-audience{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.ydo-an-audience-block{display:grid;gap:8px;padding:10px;border:1px solid var(--dsw-alias-border-l1);border-radius:6px;background:var(--dsw-alias-bg-base)}.ydo-an-audience-block h4{margin:0;font-size:var(--dsh-content-font-size,14px)}@media(max-width:720px){.ydo-an-metrics{grid-template-columns:1fr}.ydo-an-audience{grid-template-columns:1fr}}.ydo-work-cover{position:relative;display:inline-flex;align-items:center;justify-content:center;flex:none;width:64px;height:40px;border-radius:5px;overflow:hidden;background:var(--dsw-alias-bg-layer-2)}.ydo-work-cover-large{width:112px;height:70px;border-radius:7px}.ydo-work-cover-img{width:100%;height:100%;object-fit:cover;display:block}.ydo-work-cover-fallback-text{color:var(--dsw-alias-label-secondary);font-size:11px}.ydo-work-cover-duration{position:absolute;right:2px;bottom:2px;padding:0 4px;border-radius:3px;background:rgba(0,0,0,.65);color:#fff;font-size:10px;line-height:16px;font-variant-numeric:tabular-nums;pointer-events:none}.ydo-cell-work{display:flex;align-items:center;gap:8px;min-width:0}.ydo-cell-work-title{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}.ydo-delta-up{color:var(--dsw-alias-state-success-primary)}.ydo-delta-down{color:var(--dsw-alias-state-error-primary)}.ydo-delta-flat{color:var(--dsw-alias-label-secondary)}/* 粉丝域着色（用户 2026-10-16，行情语义：红涨绿跌）：净增/吸粉正数红、掉粉绿。fan-up 挂红色、fan-down 挂绿色是有意反转，非常规 up=绿，勿当笔误改回。 */.ydo-delta-fan-up{color:var(--dsw-alias-state-error-primary)}.ydo-delta-fan-down{color:var(--dsw-alias-state-success-primary)}.ydo-delta-fan-flat{color:var(--dsw-alias-label-secondary)}.ydo-modal-sec-title{margin:0 0 10px;font-size:13.5px;font-weight:700;color:var(--dsw-alias-label-primary)}.ydo-modal-panel-full{padding-top:2px}.ydo-modal-head-cover{align-items:flex-start}.ydo-modal-head-text{min-width:0;flex:1;display:grid;gap:4px}.ydo-modal-title{margin:0;font-size:var(--dsw-font-base-16-font-size,16px);line-height:1.35;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}.ydo-modal-grid-2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.ydo-modal-grid-audience{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px}.ydo-modal-core-metrics{grid-template-columns:repeat(4,minmax(0,1fr))}@media(max-width:720px){.ydo-modal-grid-2,.ydo-modal-core-metrics{grid-template-columns:1fr}.ydo-modal-grid-audience{grid-template-columns:1fr}}/* 1015 弹框分组：核心指标 4 列、流量与留存/词组两列并排、受众画像 auto-fit。 *//* 窄屏表格重排（二审 P2）：面板内容宽度不足以容纳固定列轨道（<940px）时，隐藏表头、行改「字段名 + 值」卡片，内容完整可读——不是仅隐藏横向溢出。字段名来自各单元格的 data-label；文本类单元格（账号名/标题/爆款依据）保持块流，避免多子节点被二维网格错误排位。 */
     @container ydo-panel (max-width:940px){.ydo-ov-table{overflow:visible;max-height:none}.ydo-ov-tr.ydo-ov-head{display:none}.ydo-ov-tr{display:block;min-width:0;padding:10px 0}.ydo-ov-tr>[role=cell]{display:grid;grid-template-columns:minmax(76px,auto) 1fr;gap:2px 12px;align-items:baseline;padding:2px 0}.ydo-ov-tr>[role=cell]::before{content:attr(data-label);color:var(--dsw-alias-label-secondary);font-size:12px}.ydo-ov-tr>[role=cell].ydo-ov-num{text-align:right}.ydo-ov-tr>.ydo-ov-account-name,.ydo-ov-tr>.ydo-ov-hot-title,.ydo-ov-tr>.ydo-ov-basis{display:block}.ydo-ov-tr>.ydo-ov-account-name::before,.ydo-ov-tr>.ydo-ov-hot-title::before,.ydo-ov-tr>.ydo-ov-basis::before{display:block;margin-bottom:4px}}@media(max-width:1120px){.ydo-body{display:block;overflow:auto}.ydo-accounts{border-right:0;border-bottom:1px solid var(--dsw-alias-border-l1)}.ydo-right{overflow:visible}.ydo-table-wrap{max-height:60vh}}

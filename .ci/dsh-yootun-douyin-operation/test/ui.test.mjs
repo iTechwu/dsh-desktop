@@ -116,6 +116,7 @@ const labels = {
   progressCurve: '进度分析',
   watchTrend: '观看趋势', rtLegendCurrent: '当前作品', rtLegendSimilar: '同类作品', rtLegendValley: '低谷区间',
   rtTabRetention: '留存分析', rtTabBounce: '跳出分析', rtBounceLabel: '跳出率',
+  rtHoverRetention: '留存', rtHoverBounce: '跳出率',
   rtLegendBounce: '当前作品跳出率', rtLegendBounceSimilar: '同类作品跳出率',
   rtNoData: '该作品暂无观看趋势数据', rtNotReady: '发布未满 24 小时，数据未就绪',
   rtNotExposed: '本次接口未提供观看趋势数据', rtRequestFailed: '观看趋势请求失败，请稍后重试',
@@ -3015,7 +3016,8 @@ test('观看趋势图表结构：双系列/虚线/低谷带/图例/轴刻度，�
   const flatSvg = collectFlat(svg[0])
   const solid = flatSvg.filter(node => node.props?.className === 'ydo-an-seg')
   const dashed = flatSvg.filter(node => node.props?.className === 'ydo-an-seg ydo-an-seg-dashed')
-  const bands = flatSvg.filter(node => node.type === 'rect')
+  // 低谷带 rect = fill 含 20% 透明的红带（红底徽标 rect 在轴 pad 区、fill 为实体 error 色）
+  const bands = flatSvg.filter(node => node.type === 'rect' && typeof node.props.fill === 'string' && node.props.fill.includes('20%'))
   const legend = flatSvg.length >= 0
   assert.equal(solid.length, 1, '当前作品实线一条')
   assert.equal(dashed.length, 1, '同类作品虚线一条')
@@ -3036,7 +3038,8 @@ test('观看趋势图表结构：双系列/虚线/低谷带/图例/轴刻度，�
     valleys: [{ start: -20, end: -5 }],
   })
   const negSvg = svgOf(renderNode(moduleExports.WorkDetailModal({ accountId: 'a', workId: 'w', detail: negative, trend: null, loading: false, onClose: () => {}, t: tRender })))
-  const negBand = collectFlat(negSvg[0]).filter(node => node.type === 'rect')
+  // 负向低谷带 = 20% 红带；徽标 rect（error 实底）在同 g 内，只数带（fill 含 20%）
+  const negBand = collectFlat(negSvg[0]).filter(node => node.type === 'rect' && typeof node.props.fill === 'string' && node.props.fill.includes('20%'))
   assert.equal(negBand.length, 1)
   assert.ok(Number(negBand[0].props.x) >= 6, '负向区间 x 不小于绘图区左缘')
 
@@ -3108,4 +3111,46 @@ test('观看趋势切换：跳出 tab 渲染 bounce 曲线与图例，tab 按钮
   // 跳出视图需点击 tab——renderToStaticMarkup 不支持交互，这里直接验证
   // RetentionTrend 接受 bounce 数据（通过 retention_bounce 字段）和切换单测：
   // bounceStatusKey 独立判定已覆盖；节点级验证依赖交互测试（e2e 截图兜底）。
+})
+
+// 1104 优化点 1/2：低谷徽标（红底白字）与悬停浮层结构断言
+test('观看趋势低谷徽标与悬停层：渲染低谷1/低谷2徽标，悬停层键齐全（结构级）', async () => {
+  const { moduleExports } = await loadBundle()
+  const detail = {
+    work: {
+      title: '低谷与悬停样例',
+      publish_time: '2026-09-08T09:00:00.000Z',
+      retention_trend: {
+        current: [
+          { key: '00:00', value: 100 }, { key: '00:01', value: 50 },
+          { key: '00:02', value: 30 }, { key: '00:03', value: 20 },
+        ],
+        similar: [
+          { key: '00:00', value: 100 }, { key: '00:01', value: 60 },
+          { key: '00:02', value: 40 }, { key: '00:03', value: 25 },
+        ],
+        valleys: [{ start: 1, end: 2 }, { start: 2, end: 3 }],
+      },
+    },
+    audience: {},
+  }
+  const tree = renderNode(moduleExports.WorkDetailModal({ accountId: 'a', workId: 'w', detail, trend: null, loading: false, onClose: () => {}, t: tRender }))
+  const flat = collectFlat(tree)
+  const svg = flat.filter(node => node.props?.className === 'ydo-an-trend-svg')
+  assert.equal(svg.length, 1)
+  const svgChildren = collectFlat(svg[0])
+  // 低谷徽标：error 底 rect（非 plotTop 起点的 y=轴 pad 区）×2
+  const rects = svgChildren.filter(node => node.type === 'rect')
+  const bandRects = rects.filter(node => node.props.fill?.includes('20%'))
+  const badgeRects = rects.filter(node => node.props.fill === 'var(--dsw-alias-state-error-primary)')
+  assert.equal(bandRects.length, 2, '两条低谷带（透明度 20%）')
+  assert.equal(badgeRects.length, 2, '两个红底徽标')
+  // 悬停层默认不可见（hoverIndex=null）：无 hover-line / tooltip
+  assert.ok(!svgChildren.some(node => node.props?.className === 'ydo-rt-hover-line'), '初始不渲染悬停十字线')
+  assert.ok(!svgChildren.some(node => node.type === 'g' && node.props?.className === 'ydo-rt-tooltip'), '初始不渲染浮层')
+  // SVG 挂了鼠标事件（悬停交互入口）
+  assert.ok(svg[0].props.onMouseMove, 'SVG 挂 onMouseMove')
+  assert.ok(svg[0].props.onMouseLeave, 'SVG 挂 onMouseLeave')
+  // i18n key 齐（浮层文案走 t()）
+  assert.equal(t('rtHoverRetention'), '留存')
 })

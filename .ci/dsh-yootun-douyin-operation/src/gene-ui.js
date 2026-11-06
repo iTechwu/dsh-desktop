@@ -445,6 +445,8 @@ function EditPanel({ record, dimensions, saving, saveError, busy, onSave, t }) {
   // succeeded 态：标签/采纳/备注全部可编辑；非 succeeded（failed/pending）态：
   // 仅备注可编辑（GENE_NOT_READY 口径，P3-4/T7.7——保存只带 manualNotes 零冲突）
   const editable = record.geneStatus === 'succeeded'
+  // 提取进行中（pending/running）：整区禁用（提取完成会覆盖标签与依据，并发编辑无意义）
+  const inProgress = record.geneStatus === 'pending' || record.geneStatus === 'running'
   const initialAdoption =
     record.adoptionStatus === 'adopted' || record.adoptionStatus === 'revised'
       ? record.adoptionStatus
@@ -492,7 +494,7 @@ function EditPanel({ record, dimensions, saving, saveError, busy, onSave, t }) {
     setAddValue(prev => ({ ...prev, [dim]: '' }))
   }
   const save = () => {
-    if (saving) return
+    if (saving || inProgress) return
     if (!editable) {
       // 非 succeeded：只提交备注（不带 geneTags/adoptionStatus，服务端零冲突，T7.7）
       onSave(record.recordId, { manualNotes: notes })
@@ -520,12 +522,12 @@ function EditPanel({ record, dimensions, saving, saveError, busy, onSave, t }) {
           h('div', { className: 'ydo-gene-facet-chips' },
             labels.map(label => h('button', {
               key: label, type: 'button', className: 'ydo-gene-chip is-selected',
-              'data-h': dimHue(dim.id), disabled: !editable || busy,
+              'data-h': dimHue(dim.id), disabled: !editable || busy || inProgress,
               onClick: () => removeAt(dim.id, label),
               title: editable && !busy ? '点击移除' : undefined,
             }, label, editable ? h('span', { className: 'ydo-gene-chip-remove', 'aria-hidden': true }, '✕') : null)),
             labels.length === 0 ? h('span', { className: 'ydo-mat-hint' }, '无标签') : null),
-          editable && !busy
+          editable && !busy && !inProgress
             ? h('div', { className: 'ydo-gene-actions' },
               h('input', {
                 className: 'ydo-gene-input', type: 'text', value: addValue[dim.id] || '',
@@ -552,11 +554,14 @@ function EditPanel({ record, dimensions, saving, saveError, busy, onSave, t }) {
           h('button', {
             key: value, type: 'button',
             className: `ydo-report-seg-item${adoption === value ? ' is-active' : ''}`,
-            disabled: !editable || busy,
+            disabled: !editable || busy || inProgress,
             onClick: () => setAdoption(value),
           }, label))),
       h('p', { className: 'ydo-mat-hint' },
         'AI 草稿 = 提取完成未经人工处理；已采纳 = 人工确认可直接使用；已修正 = 人工编辑过标签或备注。')),
+    inProgress
+      ? h('p', { className: 'ydo-mat-hint' }, '基因提取进行中，完成后即可修正与采纳；完成后页面自动刷新。')
+      : null,
     saveError ? h('p', { className: 'ydo-error', role: 'alert' }, geneErrorCopy(saveError)) : null,
     h('div', { className: 'ydo-gene-actions', style: { marginTop: 12 } },
       h('button', {
