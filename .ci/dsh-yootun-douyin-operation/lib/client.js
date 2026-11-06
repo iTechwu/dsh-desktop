@@ -5659,6 +5659,10 @@ window.__ModuleLoader__.load({
       React.useEffect(() => {
         setConfirmRegenerate(false)
       }, [record && record.recordId])
+      // regenerate 受理成功（状态回 pending）后收起确认组，防重复受理（与验证页同款修复）
+      React.useEffect(() => {
+        if (record && record.geneStatus === 'pending') setConfirmRegenerate(false)
+      }, [record && record.geneStatus])
       if (!detail) return null
       const failed = record && record.geneStatus === 'failed'
       return h('div', { className: 'ydo-ai-modal-overlay is-open', onClick: event => { if (event.target === event.currentTarget) onClose() } },
