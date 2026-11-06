@@ -9012,7 +9012,7 @@ window.__ModuleLoader__.load({
           const args = { offset, limit: 20 }
           if (effective.query.trim()) args.query = effective.query.trim()
           if (effective.category) args.category = effective.category
-          if (effective.adoption) args.adoption = effective.adoption
+          if (effective.adoption) args.adoptionStatus = effective.adoption
           const dims = {}
           for (const [dim, labels] of Object.entries(effective.dims || {})) {
             if (Array.isArray(labels) && labels.length) dims[dim] = labels
