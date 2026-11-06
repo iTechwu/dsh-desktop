@@ -5300,6 +5300,8 @@ window.__ModuleLoader__.load({
       return map
     }
 
+    const douyinVideoUrl = awemeId => (typeof awemeId === 'string' && /^\d{4,32}$/.test(awemeId) ? `https://www.douyin.com/video/${awemeId}` : null)
+
     function GeneCard({ record, dimensions, actions }) {
       const [pillClass, pillText] = statusPill(record)
       const metrics = record.metrics || {}
@@ -5308,7 +5310,13 @@ window.__ModuleLoader__.load({
         h('div', { className: 'ydo-gene-card-head' },
           CoverImage({ record }),
           h('div', { className: 'ydo-gene-card-main' },
-            h('h3', { className: 'ydo-gene-card-title' }, geneText(record.title)),
+            h('h3', { className: 'ydo-gene-card-title' },
+              douyinVideoUrl(record.awemeId)
+                ? h('a', {
+                  href: douyinVideoUrl(record.awemeId), target: '_blank', rel: 'noreferrer',
+                  style: { color: 'inherit', textDecoration: 'none' },
+                }, geneText(record.title))
+                : geneText(record.title)),
             h('div', { className: 'ydo-gene-card-meta' },
               h('span', null, geneText(record.authorName)),
               h('span', null, geneDate(record.publishedAt)),
@@ -5485,7 +5493,7 @@ window.__ModuleLoader__.load({
 
     /** 人工修正表单（detail 弹窗内；内部 state，保存经 actions.onSaveEdit 上抛）。
      * gene_status 非 succeeded 时仅备注可编辑（GENE_NOT_READY 口径，P3-4）。 */
-    function EditPanel({ record, dimensions, saving, saveError, onSave, t }) {
+    function EditPanel({ record, dimensions, saving, saveError, busy, onSave, t }) {
       // succeeded 态：标签/采纳/备注全部可编辑；非 succeeded（failed/pending）态：
       // 仅备注可编辑（GENE_NOT_READY 口径，P3-4/T7.7——保存只带 manualNotes 零冲突）
       const editable = record.geneStatus === 'succeeded'
@@ -5564,12 +5572,12 @@ window.__ModuleLoader__.load({
               h('div', { className: 'ydo-gene-facet-chips' },
                 labels.map(label => h('button', {
                   key: label, type: 'button', className: 'ydo-gene-chip is-selected',
-                  'data-h': dimHue(dim.id), disabled: !editable,
+                  'data-h': dimHue(dim.id), disabled: !editable || busy,
                   onClick: () => removeAt(dim.id, label),
-                  title: editable ? '点击移除' : undefined,
+                  title: editable && !busy ? '点击移除' : undefined,
                 }, label, editable ? h('span', { className: 'ydo-gene-chip-remove', 'aria-hidden': true }, '✕') : null)),
                 labels.length === 0 ? h('span', { className: 'ydo-mat-hint' }, '无标签') : null),
-              editable
+              editable && !busy
                 ? h('div', { className: 'ydo-gene-actions' },
                   h('input', {
                     className: 'ydo-gene-input', type: 'text', value: addValue[dim.id] || '',
@@ -5596,7 +5604,7 @@ window.__ModuleLoader__.load({
               h('button', {
                 key: value, type: 'button',
                 className: `ydo-report-seg-item${adoption === value ? ' is-active' : ''}`,
-                disabled: !editable,
+                disabled: !editable || busy,
                 onClick: () => setAdoption(value),
               }, label))),
           h('p', { className: 'ydo-mat-hint' },
@@ -5697,7 +5705,7 @@ window.__ModuleLoader__.load({
                     h('section', { key: 'edit', className: 'ydo-panel' },
                       h('h4', { className: 'ydo-modal-sec-title' }, '人工修正'),
                       EditPanel({
-                        record, dimensions, saving, saveError, t,
+                        record, dimensions, saving, saveError, busy: confirmRegenerate || !!retryingId, t,
                         onSave: actions.onSaveEdit,
                       }),
                       h('div', { className: 'ydo-gene-actions', style: { marginTop: 12 } },
@@ -5741,6 +5749,13 @@ window.__ModuleLoader__.load({
       const dimNames = dimensionsNameMap(dimensions)
       const [facetsOpen, setFacetsOpen] = React.useState(true)
       const [expandedDims, setExpandedDims] = React.useState({})
+      // 查询词变更自动检索（debounce 400ms；下拉框 change 走 onFilterApply 已即时）
+      const queryTimer = React.useRef(null)
+      const onQueryChange = event => {
+        actions.onFilterChange({ query: event.target.value })
+        clearTimeout(queryTimer.current)
+        queryTimer.current = setTimeout(() => actions.onSearch(), 400)
+      }
       const toggleDim = dim => setExpandedDims(prev => ({ ...prev, [dim]: !prev[dim] }))
       const selectedEntries = Object.entries(filters.dims || {}).flatMap(([dim, labels]) =>
         labels.map(label => ({ dim, label })))
@@ -5766,8 +5781,7 @@ window.__ModuleLoader__.load({
             h('input', {
               type: 'text', value: filters.query,
               placeholder: '搜索标题 / 拆解报告 / 标签 / 备注', 'aria-label': '关键词全文检索',
-              onChange: event => actions.onFilterChange({ query: event.target.value }),
-              onKeyDown: event => { if (event.key === 'Enter') actions.onSearch() },
+              onChange: onQueryChange,
             }),
             h('select', {
               value: filters.category, 'aria-label': '品类筛选',
@@ -5784,7 +5798,6 @@ window.__ModuleLoader__.load({
             h('option', { value: 'ai_draft' }, 'AI 草稿'),
             h('option', { value: 'adopted' }, '已采纳'),
             h('option', { value: 'revised' }, '已修正')),
-            h('button', { type: 'button', className: 'ydo-primary', style: { minHeight: 36 }, onClick: actions.onSearch }, '搜索'),
             h('button', { type: 'button', className: 'ydo-secondary', onClick: actions.onReset }, '重置'))),
         // KPI 四卡（stats 唯一数据源，P1-4）
         Kpis({ stats, statsError: records ? records.statsError : false, onOpenFailed: actions.onOpenFailed }),
