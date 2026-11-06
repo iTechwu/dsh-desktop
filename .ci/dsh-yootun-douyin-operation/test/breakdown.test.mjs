@@ -61,6 +61,10 @@ function recordingReact() {
       return node
     },
     useState: value => [typeof value === 'function' ? value() : value, () => {}],
+    // BreakdownNewPage 外部预填聚焦（RQ-2026-010 AC-01）新增 useRef/useEffect
+    useRef: value => ({ current: value }),
+    useEffect: () => {},
+    useMemo: factory => factory(),
   }
   return { stub, calls }
 }
@@ -86,6 +90,10 @@ function rerenderableReact() {
       if (slots[index] === undefined) slots[index] = typeof initial === 'function' ? initial() : initial
       return [slots[index], next => { slots[index] = typeof next === 'function' ? next(slots[index]) : next }]
     },
+    // BreakdownNewPage 外部预填聚焦（RQ-2026-010 AC-01）新增 useRef/useEffect
+    useRef: value => ({ current: value }),
+    useEffect: () => {},
+    useMemo: factory => factory(),
   }
   const beginRender = () => { slotIndex = 0; calls.length = 0 }
   return { stub, beginRender, calls }
@@ -838,8 +846,11 @@ test('client.js 接线：Tab 顺序、body-full、Esc 链、轮询守卫、弹�
   // Tab 顺序：总览 → 视频数据 → 爆款拆解。
   assert.ok(clientSource.indexOf("t('tabOverview')") < clientSource.indexOf("t('tabVideos')"))
   assert.ok(clientSource.indexOf("t('tabVideos')") < clientSource.indexOf("t('tabBreakdown')"), '爆款拆解是第三个 Tab')
+  // RQ-2026-010（用户 2026-11-06 指示）：基因库置于 AI 报表之前（D9⑤ 末位作废）
+  assert.ok(clientSource.indexOf("t('tabBreakdown')") < clientSource.indexOf("t('tabGene')"))
+  assert.ok(clientSource.indexOf("t('tabGene')") < clientSource.indexOf("t('tabReport')"), '基因库在 AI 报表之前')
   // 拆解 Tab 与总览共用单列完整宽度内容区。
-  assert.match(clientSource, /tab === 'overview' \|\| tab === 'breakdown' \|\| tab === 'report' \|\| tab === 'material' \? ' ydo-body-full'/u)
+  assert.match(clientSource, /tab === 'overview' \|\| tab === 'breakdown' \|\| tab === 'material' \|\| tab === 'gene' \|\| tab === 'report' \? ' ydo-body-full'/u)
   // Esc 链：下载弹窗与改写弹框都在 AI 弹框之后、overlay 之前。
   assert.ok(
     clientSource.indexOf("else if (aiModalOpen) setAiModalOpen(false)") < clientSource.indexOf("else if (bdRewriteOpen) setBdRewriteOpen(false)")

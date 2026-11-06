@@ -359,7 +359,7 @@ export function MaterialFilterBar({ filters, facets, onChange }) {
 // 候选看板表（demo boardRow 口径：封面/视频信息/评分/指标五列/发布/来源/操作）
 // ---------------------------------------------------------------------------
 
-function BoardRow({ row, seedAccounts, onOpenReason }) {
+function BoardRow({ row, seedAccounts, onOpenReason, onStartBreakdown }) {
   const tags = Array.isArray(row.tags) && row.tags.length ? row.tags : null
   const matches = Array.isArray(row.sourceMatches) ? row.sourceMatches : []
   const seen = new Set()
@@ -420,10 +420,19 @@ function BoardRow({ row, seedAccounts, onOpenReason }) {
     h('td', null, typeof row.publishedAt === 'string' && row.publishedAt ? row.publishedAt.slice(0, 10) : DASH),
     h('td', null, h('div', { className: 'ydo-mat-source' }, sourceLines.length ? sourceLines : h('span', { className: 'ydo-mat-source-tag' }, DASH))),
     h('td', null, h('div', { className: 'ydo-mat-actions' },
-      h('button', { type: 'button', className: 'ydo-mat-primary', onClick: () => onOpenReason(row) }, '评分理由'))))
+      h('button', { type: 'button', className: 'ydo-mat-primary', onClick: () => onOpenReason(row) }, '评分理由'),
+      // 去拆解（RQ-2026-010 AC-01/D7）：有 share_url 切爆款拆解 Tab 预填聚焦，
+      // 不自动开始；缺链接置灰 + 提示（T8.1/T8.2）
+      h('button', {
+        type: 'button',
+        className: 'ydo-mat-mini',
+        disabled: !row.shareUrl,
+        title: row.shareUrl ? '切到爆款拆解并预填链接' : '该作品缺少可解析链接',
+        onClick: () => onStartBreakdown(row),
+      }, '去拆解'))))
 }
 
-export function MaterialBoardTable({ board, seedAccounts, onOpenReason, onPage }) {
+export function MaterialBoardTable({ board, seedAccounts, onOpenReason, onPage, onStartBreakdown }) {
   const rows = board && Array.isArray(board.rows) ? board.rows : []
   const total = board && typeof board.total === 'number' ? board.total : null
   const offset = board ? board.offset || 0 : 0
@@ -444,7 +453,7 @@ export function MaterialBoardTable({ board, seedAccounts, onOpenReason, onPage }
             h('th', { className: 'num' }, '分享'), h('th', { className: 'num' }, '互动率'),
             h('th', null, '发布日期'), h('th', null, '命中来源'), h('th', null, '操作'))),
         h('tbody', null, rows.length
-          ? rows.map((row, index) => h(BoardRow, { key: row.candidateId || row.awemeId || `row:${index}`, row, seedAccounts, onOpenReason }))
+          ? rows.map((row, index) => h(BoardRow, { key: row.candidateId || row.awemeId || `row:${index}`, row, seedAccounts, onOpenReason, onStartBreakdown }))
           : h('tr', null,
             h('td', { colSpan: 12 },
               h('p', { className: 'ydo-mat-empty' }, board && board.loaded && !board.loading
@@ -907,6 +916,7 @@ export function MaterialPage({
         h(MaterialKpiCards, { key: 'kpi', kpi }),
         h(MaterialBoardTable, {
           key: 'board', board, seedAccounts, onOpenReason: actions.onOpenReason, onPage: actions.onBoardPage,
+          onStartBreakdown: actions.onStartBreakdown,
         }),
       ]
       : null,

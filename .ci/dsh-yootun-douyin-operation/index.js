@@ -167,6 +167,16 @@ export function apply(ctx, overrides = {}) {
               return send(res, 200, await handleMaterialRunsList(deps, toolCtx, body))
             case 'material.facets':
               return send(res, 200, await handleMaterialFacets(deps, toolCtx))
+            case 'gene.search':
+              return send(res, 200, await handleGeneSearch(deps, toolCtx, body))
+            case 'gene.get':
+              return send(res, 200, await handleGeneGet(deps, toolCtx, body))
+            case 'gene.update':
+              return send(res, 200, await handleGeneUpdate(deps, toolCtx, body))
+            case 'gene.regenerate':
+              return send(res, 200, await handleGeneRegenerate(deps, toolCtx, body))
+            case 'gene.list':
+              return send(res, 200, await handleGeneList(deps, toolCtx, body))
             default:
               return send(res, 400, { status: 'error', reason: 'unknown_action' })
           }
@@ -1187,6 +1197,120 @@ async function handleReportRegenerate(deps, ctx, body) {
 }
 
 // ---------------------------------------------------------------------------
+// 爆款基因知识库（RQ-2026-010 §8.1）：search/get/list 只读；update/regenerate 写
+// （幂等键必需，键由页面生成并经模板前缀校验 douyin:vv_gene_upd/reg:{recordId}:{uuid}，
+// 与 tools 服务端 require_viral_video_knowledge_*_key 同口径）。响应统一
+// {status:'ready'|'error', ...}——错误只回稳定码，不透传传输错误或原始报文。
+// ---------------------------------------------------------------------------
+
+const GENE_UPDATE_KEY_PATTERN = /^douyin:vv_gene_upd:.+:.+$/
+const GENE_REGENERATE_KEY_PATTERN = /^douyin:vv_gene_reg:.+:.+$/
+const GENE_ADOPTION_STATUSES = new Set(['ai_draft', 'adopted', 'revised'])
+const GENE_LIST_STATUSES = new Set(['pending', 'running', 'succeeded', 'failed'])
+
+/** geneTags 白名单清洗：维度键/标签均为字符串，维度 ≤64 字、标签 ≤20 个/维度。
+ * 非对象或全空返回 null（不透传脏结构）。 */
+function cleanGeneTags(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+  const geneTags = {}
+  for (const [dim, labels] of Object.entries(value)) {
+    if (!Array.isArray(labels)) continue
+    const clean = labels
+      .filter((label) => typeof label === 'string' && label.trim())
+      .map((label) => label.trim())
+      .slice(0, 20)
+    if (clean.length) geneTags[String(dim).trim().slice(0, 64)] = clean
+  }
+  return Object.keys(geneTags).length ? geneTags : null
+}
+
+async function handleGeneSearch(deps, ctx, body) {
+  const args = {}
+  const query = cleanString(body.query, 128)
+  if (query) args.query = query
+  const category = cleanString(body.category, 64)
+  if (category) args.category = category
+  const geneTags = cleanGeneTags(body.geneTags)
+  if (geneTags) args.geneTags = geneTags
+  const adoptionStatus = cleanString(body.adoptionStatus, 16)
+  if (adoptionStatus) {
+    if (!GENE_ADOPTION_STATUSES.has(adoptionStatus)) {
+      return { status: 'error', reason: 'VALIDATION_ERROR' }
+    }
+    args.adoptionStatus = adoptionStatus
+  }
+  const offset = Number(body.offset)
+  if (Number.isFinite(offset)) args.offset = Math.max(0, Math.trunc(offset))
+  const limit = Number(body.limit)
+  if (Number.isFinite(limit)) args.limit = Math.min(Math.max(Math.trunc(limit), 1), 50)
+  const payload = await callTool(ctx, 'viral_video_knowledge_search', args)
+  return { status: 'ready', data: payload }
+}
+
+async function handleGeneGet(deps, ctx, body) {
+  const recordId = cleanString(body.recordId, MAX_ID)
+  if (!recordId) return { status: 'error', reason: 'VALIDATION_ERROR' }
+  const payload = await callTool(ctx, 'viral_video_knowledge_get', { recordId })
+  return { status: 'ready', data: payload }
+}
+
+async function handleGeneUpdate(deps, ctx, body) {
+  const recordId = cleanString(body.recordId, MAX_ID)
+  if (!recordId) return { status: 'error', reason: 'VALIDATION_ERROR' }
+  const idempotencyKey = cleanString(body.idempotencyKey, 128)
+  if (!idempotencyKey) return { status: 'error', reason: 'idempotency_key_required' }
+  if (!GENE_UPDATE_KEY_PATTERN.test(idempotencyKey)) {
+    return { status: 'error', reason: 'INVALID_IDEMPOTENCY_KEY' }
+  }
+  const args = { recordId, idempotencyKey }
+  // update 允许空对象=整体清空全部标签（服务端规范化后全空即清除）；
+  // search 处仍走 cleanGeneTags（空过滤=不过滤）
+  if (body.geneTags && typeof body.geneTags === 'object' && !Array.isArray(body.geneTags)) {
+    const geneTags = cleanGeneTags(body.geneTags)
+    args.geneTags = geneTags || {}
+  }
+  if (typeof body.manualNotes === 'string') args.manualNotes = body.manualNotes.slice(0, 2000)
+  const adoptionStatus = cleanString(body.adoptionStatus, 16)
+  if (adoptionStatus) {
+    if (!GENE_ADOPTION_STATUSES.has(adoptionStatus)) {
+      return { status: 'error', reason: 'VALIDATION_ERROR' }
+    }
+    args.adoptionStatus = adoptionStatus
+  }
+  const payload = await callTool(ctx, 'viral_video_knowledge_update', args)
+  return { status: 'ready', data: payload }
+}
+
+async function handleGeneRegenerate(deps, ctx, body) {
+  const recordId = cleanString(body.recordId, MAX_ID)
+  if (!recordId) return { status: 'error', reason: 'VALIDATION_ERROR' }
+  const idempotencyKey = cleanString(body.idempotencyKey, 128)
+  if (!idempotencyKey) return { status: 'error', reason: 'idempotency_key_required' }
+  if (!GENE_REGENERATE_KEY_PATTERN.test(idempotencyKey)) {
+    return { status: 'error', reason: 'INVALID_IDEMPOTENCY_KEY' }
+  }
+  const payload = await callTool(ctx, 'viral_video_knowledge_regenerate', { recordId, idempotencyKey })
+  return { status: 'ready', data: payload }
+}
+
+async function handleGeneList(deps, ctx, body) {
+  const args = {}
+  const geneStatus = cleanString(body.geneStatus, 16)
+  if (geneStatus) {
+    if (!GENE_LIST_STATUSES.has(geneStatus)) {
+      return { status: 'error', reason: 'VALIDATION_ERROR' }
+    }
+    args.geneStatus = geneStatus
+  }
+  const offset = Number(body.offset)
+  if (Number.isFinite(offset)) args.offset = Math.max(0, Math.trunc(offset))
+  const limit = Number(body.limit)
+  if (Number.isFinite(limit)) args.limit = Math.min(Math.max(Math.trunc(limit), 1), 200)
+  const payload = await callTool(ctx, 'viral_video_knowledge_list', args)
+  return { status: 'ready', data: payload }
+}
+
+// ---------------------------------------------------------------------------
 // 负责人与投流（RQ-2026-009 §5.1）：两个同步写 Host action，页面与 MCP 客户端
 // 走到同一 tools 工具。Host 不缓存负责人/投流数据；数值字段缺失与非法分开报
 // （PROMOTION_FIELD_REQUIRED / PROMOTION_VALUE_INVALID），金额与时长是十进制
@@ -1585,4 +1709,15 @@ function send(res, status, body) {
 
 // handler 导出仅侧行为级测试直接调用（P2-5）：注册仍在 apply() 的 action 分发
 // switch 内，导出不改变运行时路径。
-export { projectAccounts, projectLogin, handleAccountOwnerSet, handleWorkPromotionSave, handleOverviewExport }
+export {
+  projectAccounts,
+  projectLogin,
+  handleAccountOwnerSet,
+  handleWorkPromotionSave,
+  handleOverviewExport,
+  handleGeneSearch,
+  handleGeneGet,
+  handleGeneUpdate,
+  handleGeneRegenerate,
+  handleGeneList,
+}

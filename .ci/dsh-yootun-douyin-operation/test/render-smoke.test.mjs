@@ -68,6 +68,27 @@ test('built client factory renders the overlay with real React without throwing'
     // 不抛错即通过：渲染输出长度不作为断言（overlay 初始为关闭态，输出可为空）。
     renderToString(React.createElement(overlay, { t: key => key }))
 
+    // RQ-2026-010（review P3-4）：GenePage 独立真渲染——基因库 Tab 组件走
+    // module.exports 导出（与截图脚本同通道），渲染期崩溃在此兜底。
+    const geneHtml = renderToString(React.createElement(plugin.GenePage, {
+      t: key => key,
+      records: {
+        results: [], total: 0, hasMore: false,
+        facets: { category: [{ label: '车衣', count: 3 }] },
+        facetsError: false,
+        stats: { total: 0, last7d: 0, adoptedRatio: null, failedCount: 0 },
+        statsError: false,
+        dimensions: [{ id: 'category', name: '品类', maxLabels: 1 }],
+        loading: false, errorReason: null,
+      },
+      filters: { query: '', category: '', adoption: '', dims: {} },
+      detail: null, failed: null,
+      saving: false, saveError: null, retryingId: null, retryError: null,
+      actions: new Proxy({}, { get: () => () => {} }),
+    }))
+    assert.ok(geneHtml.includes('ydo-mat-kpis'), 'GenePage KPI 区渲染')
+    assert.ok(geneHtml.includes('ydo-gene-facet-body'), 'GenePage facets 区渲染')
+
     // BatchPanel 三态真实渲染（批量 collecting / probing / 终态 partial）：关闭态
     // Overlay 中 batch 为 null，该组件分支不被上面那条覆盖，这里直接渲染补盲区。
     const accounts = [{ accountId: 'acc-1', nickname: '账号一' }]

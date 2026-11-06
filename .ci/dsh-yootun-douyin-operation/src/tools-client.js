@@ -63,6 +63,13 @@ export const TOOL_NAMES = [
   'viral_video_seed_search_submit',
   'viral_video_dashboard_get',
   'viral_video_runs_list',
+  // 爆款基因知识库（RQ-2026-010 阶段 3）：search/get/list 只读；
+  // update/regenerate 同步写（幂等键，零副作用拒绝可同键重试）
+  'viral_video_knowledge_search',
+  'viral_video_knowledge_get',
+  'viral_video_knowledge_update',
+  'viral_video_knowledge_regenerate',
+  'viral_video_knowledge_list',
 ]
 
 const ALLOWED_ERROR_CODES = new Set([
@@ -169,6 +176,20 @@ const ALLOWED_ERROR_CODES = new Set([
   'PROMOTION_NOT_FOUND',
   'PROMOTION_FIELD_REQUIRED',
   'PROMOTION_VALUE_INVALID',
+  // 爆款基因知识库（RQ-2026-010 §6.4）稳定码：与 tools 侧 mcp/domains/common.py
+  // 的 ValueError 哨兵映射一一对应（GENE_NOT_READY / GENE_EXTRACT_RUNNING 是零副作用
+  // 受理拒绝可同键重试；GENE_EXTRACT_* 终态码由 GENE_ERROR_REASON_COPY 映射文案）。
+  // 通用码（INVALID_ARGUMENT/INVALID_IDEMPOTENCY_KEY/IDEMPOTENCY_CONFLICT 等）沿用上方白名单。
+  'KNOWLEDGE_NOT_FOUND',
+  'GENE_NOT_READY',
+  'GENE_EXTRACT_RUNNING',
+  'GENE_INPUT_MISSING',
+  'GENE_EXTRACT_MODEL_FAILED',
+  'GENE_EXTRACT_TIMEOUT',
+  'GENE_EXTRACT_PARSE_FAILED',
+  'GENE_EXTRACT_QUALITY_FAILED',
+  'GENE_EXTRACT_LEASE_EXPIRED',
+  'GENE_EXTRACT_DISABLED',
 ])
 
 export class ToolsUnavailableError extends Error {
@@ -385,6 +406,14 @@ export const aiAnalysisIdempotencyKey = requestUuid => `douyin:ai_analysis:${req
 // reportId 与参数 reportId 不一致统一收敛 IDEMPOTENCY_CONFLICT（stable_request_hash）。
 export const reportRegenerateIdempotencyKey = (reportId, attemptUuid) =>
   `douyin:report_regenerate:${reportId}:${attemptUuid}`
+
+// 爆款基因知识库（RQ-2026-010 §8.1）：update/regenerate 幂等键模板
+// douyin:vv_gene_upd/reg:{recordId}:{attemptUuid}——与宿主 index.js
+// GENE_*_KEY_PATTERN 和 tools 服务端 require_viral_video_knowledge_*_key 三处一致。
+export const viralVideoKnowledgeUpdateIdempotencyKey = (recordId, attemptUuid) =>
+  `douyin:vv_gene_upd:${recordId}:${attemptUuid}`
+export const viralVideoKnowledgeRegenerateIdempotencyKey = (recordId, attemptUuid) =>
+  `douyin:vv_gene_reg:${recordId}:${attemptUuid}`
 // 爆款拆解受理键（0922 方案）：每次点击生成全新 UUID，页面内不跨点击复用。
 // 服务端 viral_video 域对键只做 1–128 长度约束、无模板校验；前缀沿用 douyin 域
 // 风格标识来源。归档 runId 由服务端从键摘要派生（mcp-vv-archive-{sha256[:24]}），

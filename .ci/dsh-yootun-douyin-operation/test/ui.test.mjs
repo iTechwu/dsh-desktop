@@ -1539,7 +1539,7 @@ test('Tab 激活态：只有当前 Tab 有底部指示线；左侧账号栏只�
   // 左侧账号管理栏只在视频数据 Tab 渲染；总览/单账号分析与爆款拆解（0922）与
   // 素材看板（RQ-2026-008）占满整行。
   assert.match(source, /tab === 'videos' \? left : null/u)
-  assert.match(source, /className: `ydo-body\$\{tab === 'overview' \|\| tab === 'breakdown' \|\| tab === 'report' \|\| tab === 'material' \? ' ydo-body-full' : ''\}`/u)
+  assert.match(source, /className: `ydo-body\$\{tab === 'overview' \|\| tab === 'breakdown' \|\| tab === 'material' \|\| tab === 'gene' \|\| tab === 'report' \? ' ydo-body-full' : ''\}`/u)
   // 素材看板 Tab（RQ-2026-008）：第 5 个 nav 按钮 + i18n 双语
   assert.match(source, /'aria-current': tab === 'material' \|\| undefined/u)
   assert.match(source, /tabMaterial: '爆款素材看板'/u)

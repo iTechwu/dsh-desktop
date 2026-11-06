@@ -898,7 +898,7 @@ test('client.js 接线：Tab/i18n/全宽 body/轮询守卫/幂等键模板', () 
     clientSource.indexOf("'aria-current': tab === 'material'") < clientSource.indexOf("'aria-current': tab === 'breakdown'"),
     '素材看板页签应排在爆款拆解之前')
   // 素材 Tab 使用全宽内容区
-  assert.match(clientSource, /tab === 'overview' \|\| tab === 'breakdown' \|\| tab === 'report' \|\| tab === 'material' \? ' ydo-body-full'/u)
+  assert.match(clientSource, /tab === 'overview' \|\| tab === 'breakdown' \|\| tab === 'material' \|\| tab === 'gene' \|\| tab === 'report' \? ' ydo-body-full'/u)
   // 采集轮询：隐藏页签暂停（§6.4）
   assert.match(clientSource, /if \(typeof document !== 'undefined' && document\.hidden\) return/u)
   // 轮询恢复：Tab 进入与手动刷新共用 resumeMaterialPollingFromRows

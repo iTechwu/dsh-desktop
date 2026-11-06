@@ -31,6 +31,7 @@ import {
   serializeReportHtml,
 } from './report-ui.js'
 import { MATERIAL_CSS_TEXT, MaterialConfirmDialog, MaterialPage } from './material-ui.js'
+import { GENE_CSS_TEXT, GenePage } from './gene-ui.js'
 import { TREND_PAD_BOTTOM, TREND_PAD_TOP, TREND_PAD_X, TREND_VIEW_HEIGHT, TrendChart, trendLayout, useMeasuredWidth } from './trend-chart.js'
 
 const React = require('react')
@@ -70,6 +71,12 @@ const vvAccountUpsertIdempotencyKey = () => `douyin:vv_account_upsert:${newAiAna
 // tools-client.js——不在 lib 构建拼接白名单内（同 reportRegenerateIdempotencyKey 先例）。
 const accountOwnerSetIdempotencyKey = () => `douyin:account_owner_set:${newAiAnalysisRequestUuid()}`
 const workPromotionSaveIdempotencyKey = () => `douyin:work_promotion_save:${newAiAnalysisRequestUuid()}`
+// 爆款基因知识库受理键（RQ-2026-010 §8.1）：与 index.js GENE_*_KEY_PATTERN、
+// tools 服务端 require_viral_video_knowledge_*_key 模板一致；每次点击生成全新
+// UUID，键内嵌 recordId 不嵌 attempt 之外的自由文本。不 import tools-client.js
+//（不在 lib 构建拼接白名单内，同 65-72 行先例）。
+const geneUpdateIdempotencyKey = (recordId, attemptUuid) => `douyin:vv_gene_upd:${recordId}:${attemptUuid}`
+const geneRegenerateIdempotencyKey = (recordId, attemptUuid) => `douyin:vv_gene_reg:${recordId}:${attemptUuid}`
 const MATERIAL_BOARD_PAGE_SIZE = 20
 const MATERIAL_RUNS_PAGE_LIMIT = 50
 // 采集受理轮询固定 3s（受理响应 nextAction=poll_status 后启动；隐藏页签暂停）。
@@ -315,6 +322,8 @@ const copy = {
     tabBreakdown: '爆款拆解',
     tabReport: 'AI 报表',
     tabMaterial: '爆款素材看板',
+    tabGene: '爆款基因库',
+    geneTitle: '爆款基因库',
     bdNewTitle: '发起拆解',
     bdShareLabel: '抖音分享链接', bdSharePlaceholder: '粘贴抖音视频分享链接，如 https://v.douyin.com/xxxx/',
     bdStartButton: '开始拆解', bdSubmitting: '提交中…',
@@ -553,6 +562,8 @@ const copy = {
     tabBreakdown: 'Viral breakdown',
     tabReport: 'AI reports',
     tabMaterial: 'Hot Materials',
+    tabGene: 'Gene Library',
+    geneTitle: 'Gene Library',
     bdNewTitle: 'Start a breakdown',
     bdShareLabel: 'Douyin share link', bdSharePlaceholder: 'Paste a Douyin video share link, e.g. https://v.douyin.com/xxxx/',
     bdStartButton: 'Start breakdown', bdSubmitting: 'Submitting…',
@@ -2422,6 +2433,15 @@ function Overlay({ t }) {
   // 独立降级；filters 是 UI 状态，materialQueryRef 始终同步维护最新查询条件
   // （loadMaterialBoard 只读 ref，避免 setState 后闭包读到旧值）。
   // ---------------------------------------------------------------------------
+  // 素材看板「去拆解」预填（AC-01/D7）：候选行带入 share_url 切爆款拆解 Tab，
+  // 预填并聚焦，不自动开始（防误触模型费用）；缺链接的行按钮置灰。
+  const [materialBreakdownPrefill, setMaterialBreakdownPrefill] = useState(null)
+  const startBreakdownFromMaterial = useCallback(row => {
+    if (!row || !row.shareUrl) return
+    setMaterialBreakdownPrefill(String(row.shareUrl))
+    setAiModalOpen(false)
+    setTab('breakdown')
+  }, [])
   const [materialBoard, setMaterialBoard] = useState({
     rows: [], total: null, offset: 0, limit: MATERIAL_BOARD_PAGE_SIZE,
     loading: false, errorReason: null, loaded: false,
@@ -3040,6 +3060,205 @@ function Overlay({ t }) {
   }, [tab, visible])
 
   // ---------------------------------------------------------------------------
+  // 爆款基因知识库（RQ-2026-010 §8.3）：检索/facets/KPI/详情/失败列表。数据动作
+  // 全部在 client（幂等键生成与重试复用在这里，页面组件只做展示与表单）；
+  // facets/stats 独立降级由 tools 出参自带，前端不自行估算（P1-4）。
+  // ---------------------------------------------------------------------------
+  const [geneFilters, setGeneFilters] = useState({ query: '', category: '', adoption: '', dims: {} })
+  const geneFiltersRef = useRef(geneFilters)
+  geneFiltersRef.current = geneFilters
+  const [geneRecords, setGeneRecords] = useState({
+    results: [], total: 0, hasMore: false, facets: null, stats: null, dimensions: [],
+    loading: false, errorReason: null,
+  })
+  const geneOffsetRef = useRef(0)
+  const [geneDetail, setGeneDetail] = useState(null)
+  const [geneFailed, setGeneFailed] = useState(null)
+  const [geneSaving, setGeneSaving] = useState(false)
+  const [geneSaveError, setGeneSaveError] = useState(null)
+  const [geneRetryId, setGeneRetryId] = useState(null)
+  const [geneRetryError, setGeneRetryError] = useState(null)
+  const geneRegenAttemptRef = useRef(null)
+
+  const geneSeqRef = useRef(0)
+  const loadGeneRecords = useCallback(async ({ more = false, filters = null } = {}) => {
+    // 乱序守卫（materialSeqRef 同法）：chip 连点/搜索连发时先发后至的旧响应不得覆盖新结果
+    const seq = ++geneSeqRef.current
+    const effective = filters || geneFiltersRef.current
+    const offset = more ? geneOffsetRef.current : 0
+    setGeneRecords(prev => ({ ...prev, loading: true, errorReason: more ? prev.errorReason : null }))
+    try {
+      const args = { offset, limit: 20 }
+      if (effective.query.trim()) args.query = effective.query.trim()
+      if (effective.category) args.category = effective.category
+      if (effective.adoption) args.adoption = effective.adoption
+      const dims = {}
+      for (const [dim, labels] of Object.entries(effective.dims || {})) {
+        if (Array.isArray(labels) && labels.length) dims[dim] = labels
+      }
+      if (Object.keys(dims).length) args.geneTags = dims
+      const result = await post({ action: 'gene.search', ...args })
+      if (seq !== geneSeqRef.current) return
+      if (result.status !== 'ready') {
+        if (seq !== geneSeqRef.current) return
+        setGeneRecords(prev => ({ ...prev, loading: false, errorReason: result.reason || null }))
+        return
+      }
+      const data = result.data || {}
+      const rows = Array.isArray(data.results) ? data.results : []
+      if (seq !== geneSeqRef.current) return
+      setGeneRecords(prev => ({
+        results: more ? [...(prev.results || []), ...rows] : rows,
+        total: typeof data.total === 'number' ? data.total : rows.length,
+        hasMore: !!data.hasMore,
+        facets: data.facets || null,
+        // P1-4：降级布尔原样透传（facets/stats 独立降级 null+*Error:true）
+        facetsError: !!data.facetsError,
+        stats: data.stats || null,
+        statsError: !!data.statsError,
+        dimensions: Array.isArray(data.dimensions) ? data.dimensions : prev.dimensions,
+        loading: false,
+        errorReason: null,
+      }))
+      geneOffsetRef.current = offset + rows.length
+    } catch (error) {
+      console.warn('[douyin-operation] gene.search failed', error)
+      // 网络异常不静默（review P2-1，对齐 loadMaterialBoard 先例）
+      if (seq !== geneSeqRef.current) return
+      setGeneRecords(prev => ({ ...prev, loading: false, errorReason: 'douyin_operation_request_failed' }))
+    }
+  }, [])
+
+  // 检索条件即时生效类动作：同步推进 ref + state 后带显式 filters 检索（避免读旧 ref）。
+  const applyGeneFilters = useCallback((next, { search = true } = {}) => {
+    geneFiltersRef.current = next
+    setGeneFilters(next)
+    if (search) {
+      geneOffsetRef.current = 0
+      loadGeneRecords({ filters: next }).catch(() => {})
+    }
+  }, [loadGeneRecords])
+  const changeGeneFilters = useCallback(patch => {
+    // 文本输入：只改 state（搜索按钮 / Enter 触发），不逐键请求。
+    setGeneFilters(prev => ({ ...prev, ...patch }))
+  }, [])
+  const searchGene = useCallback(() => {
+    geneOffsetRef.current = 0
+    loadGeneRecords({ filters: geneFiltersRef.current }).catch(() => {})
+  }, [loadGeneRecords])
+  const resetGeneFilters = useCallback(() => {
+    applyGeneFilters({ query: '', category: '', adoption: '', dims: {} })
+  }, [applyGeneFilters])
+  const applyGeneFilterPatch = useCallback(patch => {
+    applyGeneFilters({ ...geneFiltersRef.current, ...patch })
+  }, [applyGeneFilters])
+  const toggleGeneTag = useCallback((dim, label) => {
+    const prev = geneFiltersRef.current
+    const dims = { ...(prev.dims || {}) }
+    const labels = new Set(dims[dim] || [])
+    if (labels.has(label)) labels.delete(label); else labels.add(label)
+    if (labels.size) dims[dim] = [...labels]; else delete dims[dim]
+    applyGeneFilters({ ...prev, dims })
+  }, [applyGeneFilters])
+  const removeGeneTag = useCallback((dim, label) => toggleGeneTag(dim, label), [toggleGeneTag])
+  const clearGeneTags = useCallback(() => {
+    applyGeneFilters({ ...geneFiltersRef.current, dims: {} })
+  }, [applyGeneFilters])
+
+  const openGeneDetail = useCallback(async recordId => {
+    if (!recordId) return
+    setGeneDetail({ record: null, loading: true, errorReason: null })
+    try {
+      const result = await post({ action: 'gene.get', recordId })
+      if (result.status !== 'ready') {
+        setGeneDetail({ record: null, loading: false, errorReason: result.reason || null })
+        return
+      }
+      setGeneDetail({ record: result.data || null, loading: false, errorReason: null })
+    } catch (error) {
+      console.warn('[douyin-operation] gene.get failed', error)
+      setGeneDetail({ record: null, loading: false, errorReason: 'douyin_operation_request_failed' })
+    }
+  }, [])
+  const closeGeneDetail = useCallback(() => setGeneDetail(null), [])
+
+  const openGeneFailed = useCallback(async () => {
+    setGeneFailed({ items: [], loading: true, errorReason: null })
+    try {
+      const result = await post({ action: 'gene.list', geneStatus: 'failed', limit: 100 })
+      if (result.status !== 'ready') {
+        setGeneFailed({ items: [], loading: false, errorReason: result.reason || null })
+        return
+      }
+      setGeneFailed({ items: (result.data && result.data.items) || [], loading: false, errorReason: null })
+    } catch (error) {
+      console.warn('[douyin-operation] gene.list failed', error)
+      setGeneFailed({ items: [], loading: false, errorReason: 'douyin_operation_request_failed' })
+    }
+  }, [])
+  const closeGeneFailed = useCallback(() => setGeneFailed(null), [])
+
+  const saveGeneEdit = useCallback(async (recordId, payload) => {
+    // 幂等键每次点击新 UUID：保存非轮询驱动，跨点击不复用（服务端同键同参才重放）。
+    const key = geneUpdateIdempotencyKey(recordId, newAiAnalysisRequestUuid())
+    setGeneSaving(true)
+    setGeneSaveError(null)
+    try {
+      const result = await post({ action: 'gene.update', recordId, idempotencyKey: key, ...payload })
+      if (result.status !== 'ready') {
+        setGeneSaveError(result.reason || null)
+        return
+      }
+      // 保存成功：刷新详情（editedBy/adoption）与列表（facets 按新标签收敛）
+      await openGeneDetail(recordId)
+      loadGeneRecords({ filters: geneFiltersRef.current }).catch(() => {})
+    } catch (error) {
+      console.warn('[douyin-operation] gene.update failed', error)
+      setGeneSaveError('douyin_operation_request_failed')
+    } finally {
+      setGeneSaving(false)
+    }
+  }, [openGeneDetail, loadGeneRecords])
+
+  const regenerateGene = useCallback(async recordId => {
+    // 重试复用同一键（reportAttemptRef 先例）：同一次点击的重试不重复计费；
+    // 新点击（recordId 变化或成功终态后）生成全新 UUID。
+    if (!geneRegenAttemptRef.current || geneRegenAttemptRef.current.recordId !== recordId) {
+      geneRegenAttemptRef.current = { recordId, uuid: newAiAnalysisRequestUuid() }
+    }
+    const key = geneRegenerateIdempotencyKey(recordId, geneRegenAttemptRef.current.uuid)
+    setGeneRetryId(recordId)
+    setGeneRetryError(null)
+    try {
+      const result = await post({ action: 'gene.regenerate', recordId, idempotencyKey: key })
+      if (result.status !== 'ready') {
+        // 不静默吞错（2026-10-27 真机教训）：错误留在详情/失败列表上下文展示。
+        setGeneRetryError(result.reason || null)
+        return
+      }
+      geneRegenAttemptRef.current = null
+      setGeneDetail(prev => (prev && prev.record && prev.record.recordId === recordId
+        ? { ...prev, record: { ...prev.record, geneStatus: 'pending' } }
+        : prev))
+      loadGeneRecords({ filters: geneFiltersRef.current }).catch(() => {})
+    } catch (error) {
+      console.warn('[douyin-operation] gene.regenerate failed', error)
+      setGeneRetryError('douyin_operation_request_failed')
+    } finally {
+      setGeneRetryId(null)
+    }
+  }, [loadGeneRecords])
+
+  // Tab 进入预取（report/material 同法）：离开 Tab 不轮询（基因无轮询态），
+  // 重进 Tab 重拉最新。
+  useEffect(() => {
+    if (tab !== 'gene') return
+    geneOffsetRef.current = 0
+    loadGeneRecords().catch(() => {})
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab])
+
+  // ---------------------------------------------------------------------------
   // 爆款拆解（0922 方案 §4.2/§5）：归档受理 → 3s 轮询 → 自动 workflow 受理 →
   // 5s（或 retryAfterSeconds）轮询 → 详情双源拉取。轮询都带归属守卫（runId/
   // workflowId 不匹配的响应丢弃）与离开清理；错误一律收敛为
@@ -3624,13 +3843,21 @@ function Overlay({ t }) {
           onClick: () => { setTab('breakdown'); setAiModalOpen(false) },
         }, t('tabBreakdown')),
         h('button', {
+          type: 'button', 'aria-current': tab === 'gene' || undefined,
+          // 进入基因库 Tab 收起 AI 弹框（跨 Tab 不残留弹层）。Tab 顺序（用户
+          // 2026-11-06 指示）：基因库置于 AI 报表之前（D9⑤「末位」作废）：
+          // 账号总览/账号作品/素材看板/爆款拆解/爆款基因库/AI 报表。
+          onClick: () => { setTab('gene'); setAiModalOpen(false) },
+        }, t('tabGene')),
+        h('button', {
           type: 'button', 'aria-current': tab === 'report' || undefined,
           // 进入报表 Tab 收起 AI 弹框（跨 Tab 不残留弹层）；离开 Tab 停详情轮询。
           onClick: () => { setTab('report'); setAiModalOpen(false) },
         }, t('tabReport'))),
       // 左侧账号管理栏只在「视频数据」Tab 显示（UI 优化方案 §3.1）；
-      // 账号总览/单账号分析与爆款拆解使用完整宽度内容区（ydo-body-full 单列）。
-      h('div', { className: `ydo-body${tab === 'overview' || tab === 'breakdown' || tab === 'report' || tab === 'material' ? ' ydo-body-full' : ''}` },
+      // 账号总览/单账号分析与爆款拆解/基因库使用完整宽度内容区（ydo-body-full 单列）；
+      // 顺位与 nav 一致（基因库在 AI 报表之前，用户 2026-11-06 指示）。
+      h('div', { className: `ydo-body${tab === 'overview' || tab === 'breakdown' || tab === 'material' || tab === 'gene' || tab === 'report' ? ' ydo-body-full' : ''}` },
         tab === 'videos' ? left : null,
         tab === 'overview' && analysisAccountId
           ? h('section', { className: 'ydo-right', 'aria-label': t('accountHotWorks') },
@@ -3756,6 +3983,9 @@ function Overlay({ t }) {
               : h('div', { className: 'ydo-bd-main' },
                 h(BreakdownNewPage, {
                   rules: bdRules,
+                  // 素材看板「去拆解」预填（AC-01/D7）：带入链接并聚焦，不自动开始
+                  prefill: materialBreakdownPrefill,
+                  onPrefillConsumed: () => setMaterialBreakdownPrefill(null),
                   rulesError: bdRulesError,
                   onRetryRules: () => loadBdRules().catch(() => {}),
                   submitting: bdSubmitting,
@@ -3857,6 +4087,36 @@ function Overlay({ t }) {
                 onCloseFailure: () => setMaterialFailure(null),
                 onRefreshRuns: refreshMaterialRuns,
                 onViewRunBoard: viewMaterialRunBoard,
+                onStartBreakdown: startBreakdownFromMaterial,
+              },
+            }))
+          : tab === 'gene'
+          ? h('section', { className: 'ydo-right', 'aria-label': t('tabGene') },
+            h(GenePage, {
+              t,
+              records: geneRecords,
+              filters: geneFilters,
+              detail: geneDetail,
+              failed: geneFailed,
+              saving: geneSaving,
+              saveError: geneSaveError,
+              retryingId: geneRetryId,
+              retryError: geneRetryError,
+              actions: {
+                onFilterChange: changeGeneFilters,
+                onFilterApply: applyGeneFilterPatch,
+                onSearch: searchGene,
+                onReset: resetGeneFilters,
+                onLoadMore: () => loadGeneRecords({ more: true, filters: geneFiltersRef.current }).catch(() => {}),
+                onToggleTag: toggleGeneTag,
+                onRemoveTag: removeGeneTag,
+                onClearTags: clearGeneTags,
+                onOpenDetail: openGeneDetail,
+                onCloseDetail: closeGeneDetail,
+                onOpenFailed: openGeneFailed,
+                onCloseFailed: closeGeneFailed,
+                onSaveEdit: saveGeneEdit,
+                onRegenerate: regenerateGene,
               },
             }))
           : h('section', { className: 'ydo-right', 'aria-label': t('data') },
@@ -4290,7 +4550,7 @@ const css = `.ydo-button{display:flex;width:36px;height:36px;align-items:center;
 /* 总览爆款行 / 分析页爆款表（2026-11-04 同方案）：行级背景 + 左竖条（非 sticky 表格）。 */
 .ydo-ov-hot-row-promoted{background:color-mix(in srgb,#d83931 6%,transparent);box-shadow:inset 3px 0 0 #d83931}
 .ydo-ov-hot-title .ydo-promo-pill{margin-left:6px}
-${REPORT_CSS_TEXT}${MATERIAL_CSS_TEXT}`;
+${REPORT_CSS_TEXT}${MATERIAL_CSS_TEXT}${GENE_CSS_TEXT}`;
 function apply(ctx) {
   ctx.effect(() => ctx.locale.register(NS, copy), 'dofe-yootun-douyin-operation: dictionaries')
   ctx.effect(() => { window.addEventListener(OVERLAY_EVENT, closeOtherOverlay); return () => window.removeEventListener(OVERLAY_EVENT, closeOtherOverlay) }, 'dofe-yootun-douyin-operation: exclusive-overlay')
@@ -4302,4 +4562,4 @@ function apply(ctx) {
 
 // 1015 验收：css/copy/页面组件导出供截图脚本（scripts/screenshot.mjs）SSR 渲染
 // 与样式内联使用；运行时行为零改动。1025 追加素材看板组件（screenshot-material.mjs）。
-module.exports = { apply, inject: ['slots', 'locale'], downloadWorkbook, formatCell, formatCount, formatPercent, gapReasonText, hasGap, progressText, validatePromotionForm, BatchPanel, WorkTable, WorkDetailModal, OverviewPage, AnalysisPage, ReportListView, ReportDetailView, css, copy, OwnerModal, PromotionModal, MaterialPage, MaterialKpiCards, MaterialFilterBar, MaterialBoardTable, MaterialReasonDrawer, MaterialKeywordsTable, MaterialAccountsTable, MaterialSeedModal, MaterialRunsTable, MaterialCollectModal, MaterialConfirmDialog, MaterialFailureModal }
+module.exports = { apply, inject: ['slots', 'locale'], downloadWorkbook, formatCell, formatCount, formatPercent, gapReasonText, hasGap, progressText, validatePromotionForm, BatchPanel, WorkTable, WorkDetailModal, OverviewPage, AnalysisPage, ReportListView, ReportDetailView, css, copy, OwnerModal, PromotionModal, MaterialPage, MaterialKpiCards, MaterialFilterBar, MaterialBoardTable, MaterialReasonDrawer, MaterialKeywordsTable, MaterialAccountsTable, MaterialSeedModal, MaterialRunsTable, MaterialCollectModal, MaterialConfirmDialog, MaterialFailureModal, GenePage }

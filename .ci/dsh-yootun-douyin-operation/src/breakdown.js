@@ -386,10 +386,24 @@ export function BreakdownRulePicker({ rules, value, onChange, disabled, t }) {
 export function BreakdownNewPage({
   rules, rulesError, onRetryRules, submitting, archiveTask, startError, onStart,
   downloading, downloadError, onDownload, t,
+  // 素材看板「去拆解」外部预填（RQ-2026-010 AC-01/D7）：带入链接并聚焦，
+  // 不自动开始；消费后回调清空宿主侧 prefill 状态
+  prefill, onPrefillConsumed,
 }) {
   const [shareUrl, setShareUrl] = React.useState('')
   const [ruleId, setRuleId] = React.useState(null)
   const [downloadValidationError, setDownloadValidationError] = React.useState(null)
+  const shareInputRef = React.useRef(null)
+  // 外部预填：同步进受控输入并聚焦；同一 prefill 只消费一次
+  React.useEffect(() => {
+    if (typeof prefill !== 'string' || !prefill.trim()) return
+    setShareUrl(prefill.trim())
+    if (shareInputRef.current && typeof shareInputRef.current.focus === 'function') {
+      shareInputRef.current.focus()
+    }
+    if (typeof onPrefillConsumed === 'function') onPrefillConsumed()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prefill])
   const submit = () => {
     const value = shareUrl.trim()
     if (!value || submitting) return
@@ -413,6 +427,7 @@ export function BreakdownNewPage({
     h('div', { className: 'ydo-bd-new' },
       h('input', {
         className: 'ydo-date-input ydo-bd-input',
+        ref: shareInputRef,
         type: 'text',
         value: shareUrl,
         placeholder: t('bdSharePlaceholder'),
