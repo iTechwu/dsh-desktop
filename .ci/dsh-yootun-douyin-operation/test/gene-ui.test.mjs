@@ -334,6 +334,44 @@ test('维度色板（v3）：data-h 与维度一一对应', () => {
   assert.ok(html.includes('data-h="24"'), 'hook 橙')
 })
 
+function detailFor(geneStatus) {
+  return {
+    loading: false,
+    errorReason: null,
+    record: {
+      recordId: 'vvk_rec_ok',
+      title: '贴车衣避坑指南',
+      coverUrl: null, shareUrl: null,
+      authorName: '膜界老张', publishedAt: '2026-10-28T00:00:00+00:00',
+      durationSeconds: null,
+      metrics: { playCount: 1, likeCount: 2, commentCount: 3, shareCount: 4, collectCount: 5 },
+      geneTags: { category: ['车衣'], audience: ['新车车主'] },
+      geneEvidenceJson: {},
+      manualNotes: null,
+      adoptionStatus: 'ai_draft', geneStatus,
+      genePromptVersion: 'gene-v1', geneModel: 'minimax-m3',
+      geneAttemptCount: 2, geneErrorCode: null, geneErrorSummary: null,
+      editedBy: 'system', editedAt: '2026-11-06T00:00:00+00:00',
+      createdAt: '2026-11-06T00:00:00+00:00', updatedAt: '2026-11-06T00:00:00+00:00',
+      reportJson: { summary: '摘要', hook: '钩子', rhythm: '节奏', audience: '受众', sellingPoints: [], rewriteHints: [], audienceInsight: null, bgmStyle: null, segmentCount: 0, segments: [] },
+    },
+  }
+}
+
+test('提取中禁用矩阵：running 时保存/重新提取按钮禁用并显示进行中提示', () => {
+  const html = renderGenePage({ records: baseRecords(), detail: detailFor('running') })
+  assert.ok(html.includes('基因提取进行中'), '进行中提示存在')
+  assert.ok(/disabled=""[^>]*>重新提取基因/.test(html), '重新提取触发按钮禁用')
+  assert.ok(/disabled=""[^>]*>保存修正/.test(html), '保存修正按钮禁用')
+})
+
+test('提取中禁用矩阵：succeeded 时保存/重新提取按钮可用', () => {
+  const html = renderGenePage({ records: baseRecords(), detail: detailFor('succeeded') })
+  assert.ok(!html.includes('基因提取进行中'), '无进行中提示')
+  assert.ok(/>重新提取基因</.test(html) && !/disabled=""[^>]*>重新提取基因/.test(html), '重新提取触发按钮可用')
+  assert.ok(/>保存修正</.test(html) && !/disabled=""[^>]*>保存修正/.test(html), '保存修正按钮可用')
+})
+
 test('样式契约（C7）：新增 className 仅 ydo-gene-* 前缀或白名单复用类', () => {
   // 扫 gene-ui 源码的 className 字符串与 CSS 选择器
   const classNames = new Set()

@@ -5606,12 +5606,12 @@ window.__ModuleLoader__.load({
           h('p', { className: 'ydo-mat-hint' },
             'AI 草稿 = 提取完成未经人工处理；已采纳 = 人工确认可直接使用；已修正 = 人工编辑过标签或备注。')),
         inProgress
-          ? h('p', { className: 'ydo-mat-hint' }, '基因提取进行中，完成后即可修正与采纳；完成后页面自动刷新。')
+          ? h('p', { className: 'ydo-mat-hint' }, '基因提取进行中，完成后即可修正与采纳；完成后请关闭详情重新打开查看结果。')
           : null,
         saveError ? h('p', { className: 'ydo-error', role: 'alert' }, geneErrorCopy(saveError)) : null,
         h('div', { className: 'ydo-gene-actions', style: { marginTop: 12 } },
           h('button', {
-            type: 'button', className: 'ydo-primary', disabled: saving,
+            type: 'button', className: 'ydo-primary', disabled: saving || inProgress,
             onClick: save,
           }, saving ? '保存中…' : '保存修正'),
           h('p', { className: 'ydo-mat-hint' },
@@ -5659,9 +5659,9 @@ window.__ModuleLoader__.load({
       React.useEffect(() => {
         setConfirmRegenerate(false)
       }, [record && record.recordId])
-      // regenerate 受理成功（状态回 pending）后收起确认组，防重复受理（与验证页同款修复）
+      // regenerate 受理成功（状态回 pending/running）后收起确认组，防重复受理（与验证页同款修复）
       React.useEffect(() => {
-        if (record && record.geneStatus === 'pending') setConfirmRegenerate(false)
+        if (record && (record.geneStatus === 'pending' || record.geneStatus === 'running')) setConfirmRegenerate(false)
       }, [record && record.geneStatus])
       if (!detail) return null
       const failed = record && record.geneStatus === 'failed'
@@ -5725,6 +5725,7 @@ window.__ModuleLoader__.load({
                           ]
                           : h('button', {
                             type: 'button', className: 'ydo-secondary',
+                            disabled: !!(record && (record.geneStatus === 'pending' || record.geneStatus === 'running')),
                             onClick: () => setConfirmRegenerate(true),
                           }, failed ? '重试提取' : '重新提取基因')),
                       failed && record.geneErrorCode
