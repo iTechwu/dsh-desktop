@@ -5230,6 +5230,7 @@ window.__ModuleLoader__.load({
     .ydo-gene-card-metrics{display:grid;grid-template-columns:repeat(3,1fr);gap:4px;margin:0}
     .ydo-gene-card-metrics dt{color:var(--dsw-alias-label-secondary);font-size:11px}
     .ydo-gene-card-metrics dd{margin:0;font-size:14px;font-weight:650;font-variant-numeric:tabular-nums}
+    .ydo-gene-metric{display:grid;gap:2px;justify-items:start}
     .ydo-gene-card-foot{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
     .ydo-gene-cover-fallback{width:100%;height:100%;display:grid;place-items:center;font-size:11px;color:var(--dsw-alias-label-secondary);background:linear-gradient(135deg,var(--dsw-alias-bg-layer-2),color-mix(in srgb,var(--dsw-alias-brand-primary) 6%,var(--dsw-alias-bg-layer-2)))}
     .ydo-gene-detail-head{display:flex;gap:14px;align-items:flex-start;padding:4px 44px 0 4px}
@@ -5315,9 +5316,9 @@ window.__ModuleLoader__.load({
         CardTags({ record, dimensions }),
         failed ? h('p', { className: 'ydo-mat-hint ydo-mat-danger' }, '基因提取失败；拆解结果不受影响，可重试') : null,
         h('dl', { className: 'ydo-gene-card-metrics' },
-          h('dt', null, '播放'), h('dd', null, geneWan(metrics.playCount)),
-          h('dt', null, '点赞'), h('dd', null, geneWan(metrics.likeCount)),
-          h('dt', null, '收藏'), h('dd', null, geneWan(metrics.collectCount))),
+          h('div', { className: 'ydo-gene-metric' }, h('dt', null, '播放'), h('dd', null, geneWan(metrics.playCount))),
+          h('div', { className: 'ydo-gene-metric' }, h('dt', null, '点赞'), h('dd', null, geneWan(metrics.likeCount))),
+          h('div', { className: 'ydo-gene-metric' }, h('dt', null, '收藏'), h('dd', null, geneWan(metrics.collectCount)))),
         h('div', { className: 'ydo-gene-card-foot' },
           failed
             ? h('button', {
@@ -5326,8 +5327,7 @@ window.__ModuleLoader__.load({
             : null,
           h('button', {
             type: 'button', className: 'ydo-mat-mini', onClick: () => actions.onOpenDetail(record.recordId),
-          }, '查看详情'),
-          h('span', { className: 'ydo-mat-hint' }, `${geneText(record.genePromptVersion)} · ${editorDisplay(record.editedBy)}`)))
+          }, '查看详情')))
     }
 
     function FacetGroup({ dimId, dimName, entries, selected, expanded, onToggleTag, onToggleDim }) {
