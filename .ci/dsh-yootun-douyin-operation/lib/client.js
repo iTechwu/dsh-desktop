@@ -4245,6 +4245,14 @@ window.__ModuleLoader__.load({
     .ydo-mat-board-table td{white-space:nowrap}
     .ydo-mat-board-table th:first-child,.ydo-mat-board-table td:first-child{width:80px}
     .ydo-mat-board-table td:first-child{padding:0}
+    /* 操作列钉右（2026-11-06 真机反馈 OB-2）：12 列单行表总需求宽超过容器（页宽
+       上限 1440px）时操作列落入横向滚动区，「评分理由」被 wrap 右缘裁掉一半，
+       且 Windows overlay 滚动条平时不可见、用户无从发现可以横向滚动。sticky 让
+       操作列钉在 wrap 右缘永远完整可点，其余列横向滚动查看。sticky 单元格背景
+       必须不透明（否则滚动时相邻列文字从下方透出）：表头沿用 th 既有灰底、行内
+       补 wrap 同款 layer-1 底；左缘内投影提示左侧还有列可横向滚动。 */
+    .ydo-mat-board-table th:last-child,.ydo-mat-board-table td:last-child{position:sticky;right:0;z-index:1}
+    .ydo-mat-board-table td:last-child{background:var(--dsw-alias-bg-layer-1,#fff);box-shadow:-10px 0 10px -10px rgba(15,17,21,.3)}
     .ydo-mat-table tr:last-child td{border-bottom:0}
     .ydo-mat-table td.num,.ydo-mat-table th.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
     .ydo-mat-seed-input{margin:0;overflow:hidden;overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
@@ -7162,9 +7170,12 @@ window.__ModuleLoader__.load({
           h('p', { className, role: 'status' }, t(key)))
       }
       const width = Math.max(320, rtWidth)
-      const plotTop = TREND_PAD_TOP + 4
+      // 徽标排版（用户 2026-11-06 反馈：徽标与 X 轴时间文字重叠 → 移到时间刻度
+      // 下方，且卡片总高度必须与其他卡一致）：绘图区上收 8px、时间刻度上移，
+      // 徽标嵌在底部留白内，SVG 总高保持 168px 不变（不影响播放量趋势锁定）。
+      const plotTop = TREND_PAD_TOP
+      const plotBottom = TREND_VIEW_HEIGHT - TREND_PAD_BOTTOM - 8
       // 底部留白复用共享常量（review P3-7：规格对齐，轴文字画在 pad 区内）。
-      const plotBottom = TREND_VIEW_HEIGHT - TREND_PAD_BOTTOM - 2
       const plotHeight = plotBottom - plotTop
       const xOf = index => Math.round((TREND_PAD_X + (index / Math.max(1, current.length - 1)) * (width - TREND_PAD_X * 2)) * 100) / 100
       const yOf = value => {
@@ -7228,12 +7239,12 @@ window.__ModuleLoader__.load({
           }),
           eh('g', { className: 'ydo-rt-valley-badge' },
             eh('rect', {
-              x: centerX - 24, y: TREND_VIEW_HEIGHT - TREND_PAD_BOTTOM + 2,
-              width: 48, height: 18, rx: 3,
+              x: centerX - 24, y: 146,
+              width: 48, height: 16, rx: 3,
               fill: 'var(--dsw-alias-state-error-primary)',
             }),
             eh('text', {
-              x: centerX, y: TREND_VIEW_HEIGHT - TREND_PAD_BOTTOM + 15,
+              x: centerX, y: 158,
               'text-anchor': 'middle',
               className: 'ydo-rt-valley-badge-text',
             }, `${t('rtValleyBadge')}${index + 1}`)))
@@ -7247,7 +7258,7 @@ window.__ModuleLoader__.load({
         return eh('text', {
           key: `x-${tickIndex}`,
           x: xOf(index),
-          y: TREND_VIEW_HEIGHT - 12,
+          y: TREND_VIEW_HEIGHT - 26,
           className: `ydo-an-axis-label ydo-an-axis-${tickIndex === 0 ? 'start' : tickIndex === tickIndexes.length - 1 ? 'end' : 'middle'}`,
         }, current[index].key)
       })

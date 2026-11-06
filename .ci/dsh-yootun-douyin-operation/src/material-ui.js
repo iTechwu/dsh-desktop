@@ -171,6 +171,14 @@ export const MATERIAL_CSS_TEXT = `
 .ydo-mat-board-table td{white-space:nowrap}
 .ydo-mat-board-table th:first-child,.ydo-mat-board-table td:first-child{width:80px}
 .ydo-mat-board-table td:first-child{padding:0}
+/* 操作列钉右（2026-11-06 真机反馈 OB-2）：12 列单行表总需求宽超过容器（页宽
+   上限 1440px）时操作列落入横向滚动区，「评分理由」被 wrap 右缘裁掉一半，
+   且 Windows overlay 滚动条平时不可见、用户无从发现可以横向滚动。sticky 让
+   操作列钉在 wrap 右缘永远完整可点，其余列横向滚动查看。sticky 单元格背景
+   必须不透明（否则滚动时相邻列文字从下方透出）：表头沿用 th 既有灰底、行内
+   补 wrap 同款 layer-1 底；左缘内投影提示左侧还有列可横向滚动。 */
+.ydo-mat-board-table th:last-child,.ydo-mat-board-table td:last-child{position:sticky;right:0;z-index:1}
+.ydo-mat-board-table td:last-child{background:var(--dsw-alias-bg-layer-1,#fff);box-shadow:-10px 0 10px -10px rgba(15,17,21,.3)}
 .ydo-mat-table tr:last-child td{border-bottom:0}
 .ydo-mat-table td.num,.ydo-mat-table th.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
 .ydo-mat-seed-input{margin:0;overflow:hidden;overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}

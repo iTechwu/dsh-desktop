@@ -1328,9 +1328,12 @@ function RetentionTrend({ retention, work, t }) {
       h('p', { className, role: 'status' }, t(key)))
   }
   const width = Math.max(320, rtWidth)
-  const plotTop = TREND_PAD_TOP + 4
+  // 徽标排版（用户 2026-11-06 反馈：徽标与 X 轴时间文字重叠 → 移到时间刻度
+  // 下方，且卡片总高度必须与其他卡一致）：绘图区上收 8px、时间刻度上移，
+  // 徽标嵌在底部留白内，SVG 总高保持 168px 不变（不影响播放量趋势锁定）。
+  const plotTop = TREND_PAD_TOP
+  const plotBottom = TREND_VIEW_HEIGHT - TREND_PAD_BOTTOM - 8
   // 底部留白复用共享常量（review P3-7：规格对齐，轴文字画在 pad 区内）。
-  const plotBottom = TREND_VIEW_HEIGHT - TREND_PAD_BOTTOM - 2
   const plotHeight = plotBottom - plotTop
   const xOf = index => Math.round((TREND_PAD_X + (index / Math.max(1, current.length - 1)) * (width - TREND_PAD_X * 2)) * 100) / 100
   const yOf = value => {
@@ -1394,12 +1397,12 @@ function RetentionTrend({ retention, work, t }) {
       }),
       eh('g', { className: 'ydo-rt-valley-badge' },
         eh('rect', {
-          x: centerX - 24, y: TREND_VIEW_HEIGHT - TREND_PAD_BOTTOM + 2,
-          width: 48, height: 18, rx: 3,
+          x: centerX - 24, y: 146,
+          width: 48, height: 16, rx: 3,
           fill: 'var(--dsw-alias-state-error-primary)',
         }),
         eh('text', {
-          x: centerX, y: TREND_VIEW_HEIGHT - TREND_PAD_BOTTOM + 15,
+          x: centerX, y: 158,
           'text-anchor': 'middle',
           className: 'ydo-rt-valley-badge-text',
         }, `${t('rtValleyBadge')}${index + 1}`)))
@@ -1413,7 +1416,7 @@ function RetentionTrend({ retention, work, t }) {
     return eh('text', {
       key: `x-${tickIndex}`,
       x: xOf(index),
-      y: TREND_VIEW_HEIGHT - 12,
+      y: TREND_VIEW_HEIGHT - 26,
       className: `ydo-an-axis-label ydo-an-axis-${tickIndex === 0 ? 'start' : tickIndex === tickIndexes.length - 1 ? 'end' : 'middle'}`,
     }, current[index].key)
   })

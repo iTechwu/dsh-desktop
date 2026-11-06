@@ -853,6 +853,10 @@ test('MATERIAL_CSS_TEXT：核心类与按钮规格齐备', () => {
   assert.match(MATERIAL_CSS_TEXT, /\.ydo-mat-board-table td:first-child\{padding:0\}/u)
   assert.match(MATERIAL_CSS_TEXT, /\.ydo-mat-cover\{width:80px;height:80px;object-fit:cover/u)
   assert.match(MATERIAL_CSS_TEXT, /\.ydo-mat-cover-placeholder\{width:80px;height:80px/u)
+  // 操作列钉右（2026-11-06 真机反馈 OB-2）：表格溢出容器时操作列 sticky 钉在
+  // wrap 右缘，「评分理由」按钮永远完整可点；单元格不透明底防相邻列文字透出。
+  assert.match(MATERIAL_CSS_TEXT, /\.ydo-mat-board-table th:last-child,\.ydo-mat-board-table td:last-child\{position:sticky;right:0;z-index:1\}/u)
+  assert.match(MATERIAL_CSS_TEXT, /\.ydo-mat-board-table td:last-child\{background:var\(--dsw-alias-bg-layer-1,#fff\);box-shadow:/u)
   assert.ok(!MATERIAL_CSS_TEXT.includes('.ydo-mat-table td{padding:10px 12px;border-bottom:1px solid var(--dsw-alias-border-l2,#f0f1f3);vertical-align:top;white-space:nowrap}'), '共用基类 td 不得再带全局 nowrap（压垮失败明细/账号输入列）')
   assert.match(MATERIAL_CSS_TEXT, /\.ydo-mat-video-title\{margin:0;font-weight:650;max-width:420px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis\}/u)
   assert.match(MATERIAL_CSS_TEXT, /button\.ydo-mat-video-title\{[^}]*font-weight:650/u)
