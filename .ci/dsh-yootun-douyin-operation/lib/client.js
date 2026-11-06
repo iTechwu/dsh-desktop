@@ -5167,12 +5167,6 @@ window.__ModuleLoader__.load({
       return adoptionPill(record.adoptionStatus)
     }
 
-    /** 编辑人展示（§6.2/C5）：服务端本期恒写 system，渲染为「系统」；未来返回真实编辑人时原样展示。 */
-    function editorDisplay(value) {
-      const text = geneText(value)
-      return text === 'system' ? '系统' : text
-    }
-
     function dimHue(dimId) {
       return GENE_DIM_HUES[dimId] || '221'
     }
@@ -5693,9 +5687,7 @@ window.__ModuleLoader__.load({
                           (() => {
                             const [pillClass, pillText] = statusPill(record)
                             return h('span', { className: pillClass }, pillText)
-                          })(),
-                          h('span', { className: 'ydo-mat-hint' },
-                            `${geneText(record.genePromptVersion)} · 拆解 breakdown-v2 · 编辑：${editorDisplay(record.editedBy)}`)))),
+                          })()))),
                     h('section', { key: 'dims', className: 'ydo-panel' },
                       h('h4', { className: 'ydo-modal-sec-title' }, '基因标签与依据'),
                       GeneDimsView({ record, dimensions })),

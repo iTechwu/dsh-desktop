@@ -320,8 +320,12 @@ test('详情报告未采集（T5.4）：audienceInsight/bgmStyle 缺失渲染「
   assert.ok(html.includes('未采集'), '缺字段渲染未采集')
   assert.ok(html.includes('受众画像（AI 推断）'))
   assert.ok(html.includes('依据：内容推断'), 'evidence 依据行渲染')
-  assert.ok(html.includes('编辑：系统'), 'C5：editedBy=system 渲染「系统」')
+  // 用户 2026-11-06 指示：详情头部「gene-v1 · 拆解 breakdown-v2 · 编辑：系统」行移除；
+  // C5 的「系统」口径改由修正区编辑记录说明承载
+  // t 为键直传：说明位存在即渲染（运行时由 i18n 字典输出「系统」口径文案）
+  assert.ok(html.includes('geneEditNote'), 'C5：编辑记录说明位渲染')
   assert.ok(!html.includes('编辑：system'), '不得原样输出 system')
+  assert.ok(!html.includes('拆解 breakdown-v2 · 编辑'), '头部版本/编辑人行已移除')
 })
 
 test('维度色板（v3）：data-h 与维度一一对应', () => {
