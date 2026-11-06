@@ -1306,8 +1306,11 @@ function RetentionTrend({ retention, work, t }) {
     return h('p', { className, role: 'status' }, t(copy[statusKey] || statusKey))
   }
   const data = retention.retention_trend
-  const current = Array.isArray(data.current) ? data.current : []
-  const similar = Array.isArray(data.similar) ? data.similar : []
+  // 渲染前 normalize：剔除 null/非对象/非法 value 元素（review P2，防渲染崩溃）
+  const validPoint = point => point && typeof point === 'object'
+    && typeof point.key === 'string' && Number.isFinite(Number(point.value))
+  const current = Array.isArray(data.current) ? data.current.filter(validPoint) : []
+  const similar = Array.isArray(data.similar) ? data.similar.filter(validPoint) : []
   const valleys = Array.isArray(data.valleys) ? data.valleys : []
   // 跳出数据：可选。请求失败时切换按钮仍可用，但展示跳出的失败文案（独立状态）。
   const bounceData = retention.retention_bounce
@@ -1320,8 +1323,8 @@ function RetentionTrend({ retention, work, t }) {
     const className = bStatus === 'request_failed' ? 'ydo-error' : key === 'rbNotReady' ? 'ydo-warn' : 'ydo-hint'
     return h('div', null,
       h('div', { className: 'ydo-rt-tabs' },
-        h('button', { type: 'button', className: 'ydo-rt-tab', onClick: () => setActiveTab('retention') }, t('rtTabRetention')),
-        h('button', { type: 'button', className: 'ydo-rt-tab ydo-rt-tab-active', onClick: () => setActiveTab('bounce') }, t('rtTabBounce'))),
+        h('button', { type: 'button', className: 'ydo-rt-tab', onClick: () => { setActiveTab('retention'); setHoverIndex(null) } }, t('rtTabRetention')),
+        h('button', { type: 'button', className: 'ydo-rt-tab ydo-rt-tab-active', onClick: () => { setActiveTab('bounce'); setHoverIndex(null) } }, t('rtTabBounce'))),
       h('p', { className, role: 'status' }, t(key)))
   }
   const width = Math.max(320, rtWidth)
@@ -1352,7 +1355,7 @@ function RetentionTrend({ retention, work, t }) {
   }
   const linePoints = current.map((point, index) => `${xOf(index)},${yOf(point.value)}`).join(' ')
   // 同类曲线按自身时间 key 定位（review P2：按 current 索引 min-clamp 会把超长
-  // 点全部堆到端点成"伪曲线"）；key 无法解析的点位剔除，绝不错位投影。
+  // 点全部堆到端点成"伪曲线"）；key 非 MM:SS 格式的点位直接剔除，绝不错位投影。
   const similarPoints = similar
     .filter(point => /^(\d{1,2}):(\d{2})$/.test(String(point.key)))
     .map(point => `${xOfKey(point.key)},${yOf(point.value)}`)
@@ -1519,12 +1522,12 @@ function RetentionTrend({ retention, work, t }) {
       h('button', {
         type: 'button',
         className: `ydo-rt-tab${activeTab === 'retention' ? ' ydo-rt-tab-active' : ''}`,
-        onClick: () => setActiveTab('retention'),
+        onClick: () => { setActiveTab('retention'); setHoverIndex(null) },
       }, t('rtTabRetention')),
       h('button', {
         type: 'button',
         className: `ydo-rt-tab${isBounceTab ? ' ydo-rt-tab-active' : ''}`,
-        onClick: () => setActiveTab('bounce'),
+        onClick: () => { setActiveTab('bounce'); setHoverIndex(null) },
       }, t('rtTabBounce'))),
     eh('svg', {
       className: 'ydo-an-trend-svg',

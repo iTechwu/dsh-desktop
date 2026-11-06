@@ -115,6 +115,7 @@ const labels = {
   genderMale: '男', genderFemale: '女', genderOther: '其他', gapFieldOther: '其他指标',
   progressCurve: '进度分析',
   watchTrend: '观看趋势', rtLegendCurrent: '当前作品', rtLegendSimilar: '同类作品', rtLegendValley: '低谷区间',
+  rtValleyBadge: '低谷',
   rtTabRetention: '留存分析', rtTabBounce: '跳出分析', rtBounceLabel: '跳出率',
   rtHoverRetention: '留存', rtHoverBounce: '跳出率',
   rtLegendBounce: '当前作品跳出率', rtLegendBounceSimilar: '同类作品跳出率',
@@ -3153,4 +3154,33 @@ test('观看趋势低谷徽标与悬停层：渲染低谷1/低谷2徽标，悬�
   assert.ok(svg[0].props.onMouseLeave, 'SVG 挂 onMouseLeave')
   // i18n key 齐（浮层文案走 t()）
   assert.equal(t('rtHoverRetention'), '留存')
+})
+
+// review P1：动态悬停行为锁定（hover 后浮层出现 / leave 后消失）+ 徽标文案
+test('观看趋势悬停交互：低层级模拟事件不可行（静态渲染），锁定事件挂载与徽标文案键', async () => {
+  const { moduleExports } = await loadBundle()
+  const detail = {
+    work: {
+      title: '悬停锁定样例',
+      publish_time: '2026-09-08T09:00:00.000Z',
+      retention_trend: {
+        current: [{ key: '00:00', value: 100 }, { key: '00:01', value: 50 }],
+        similar: [{ key: '00:00', value: 100 }, { key: '00:01', value: 60 }],
+        valleys: [{ start: 1, end: 2 }],
+      },
+    },
+    audience: {},
+  }
+  const tree = renderNode(moduleExports.WorkDetailModal({ accountId: 'a', workId: 'w', detail, trend: null, loading: false, onClose: () => {}, t: tRender }))
+  const flat = collectFlat(tree)
+  const svg = flat.filter(node => node.props?.className === 'ydo-an-trend-svg')
+  assert.equal(svg.length, 1)
+  // 事件挂载锁定（动态行为由 Playwright 交互截图 ui-rt-hover-*.png 验证）
+  assert.equal(typeof svg[0].props.onMouseMove, 'function', 'onMouseMove 挂载')
+  assert.equal(typeof svg[0].props.onMouseLeave, 'function', 'onMouseLeave 挂载')
+  // 徽标文案 key 锁定（低谷1/低谷2 而非 低谷区间1）
+  assert.equal(t('rtValleyBadge'), '低谷')
+  // 浮层文案 key 存在（留存/跳出行标签）
+  assert.equal(t('rtHoverRetention'), '留存')
+  assert.equal(t('rtHoverBounce'), '跳出率')
 })
