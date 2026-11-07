@@ -169,6 +169,10 @@ export const MATERIAL_CSS_TEXT = `
    .ydo-mat-table 还被评分明细/关键词/对标账号/采集记录/失败明细五张表共用，
    全局 nowrap 会压垮失败明细长串与账号输入列的 line-clamp（review 发现）。 */
 .ydo-mat-board-table td{white-space:nowrap}
+/* 看板表列距 12→10（2026-11-07 二次反馈「所有列完整显示」）：12 列单行表在
+   1440 页宽内零溢出预算的一部分；只覆盖看板表，共用 .ydo-mat-table 的其余
+   五张表密度不变。首列 padding:0 的既有规则特异性更高不受影响。 */
+.ydo-mat-board-table td,.ydo-mat-board-table th{padding-left:10px;padding-right:10px}
 .ydo-mat-board-table th:first-child,.ydo-mat-board-table td:first-child{width:80px}
 .ydo-mat-board-table td:first-child{padding:0}
 /* 操作列钉右（2026-11-06 真机反馈 OB-2）：12 列单行表总需求宽超过容器（页宽
@@ -190,10 +194,15 @@ export const MATERIAL_CSS_TEXT = `
 /* 视频列标题带链接（2026-10-29 真机验收）：无链接时仍是纯文本；有 shareUrl
    时整行可点，行为同评分抽屉的「视频链接」——window.open 走宿主 windowOpen
    handler 转系统浏览器。 */
-.ydo-mat-video-title{margin:0;font-weight:650;max-width:360px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ydo-mat-video-title{margin:0;font-weight:650;max-width:280px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 button.ydo-mat-video-title{border:0;padding:0;background:transparent;color:inherit;font:inherit;font-weight:650;text-align:left;cursor:pointer}
 button.ydo-mat-video-title:hover{color:var(--dsw-alias-brand-primary,#0f1115);text-decoration:underline}
-.ydo-mat-tags{display:flex;gap:4px;flex-wrap:nowrap;overflow:hidden;margin-top:6px}
+/* 标签行同步限宽（2026-11-07 二次反馈）：flex-nowrap+overflow:hidden 不改变
+   固有 max-content，5 枚 chip 会把视频列撑到标题限宽之外——限宽必须同时落在
+   标题块与标签行上，列宽才真正受控（真机「命中来源被操作列遮挡」的隐藏推手）。
+   280 是 1440 页宽零溢出实测值（headless Chrome 最坏数据行：最长标题+5 chip+
+   最长来源名）再留真机微软雅黑渲染宽度余量。 */
+.ydo-mat-tags{display:flex;gap:4px;flex-wrap:nowrap;overflow:hidden;margin-top:6px;max-width:280px}
 /* chip 底色不能用 bg-layer-2：宿主浅色主题 layer-1/2/3 恒纯白（harness
    design-platform.css，2026-10-30 真机反馈「标签没有浅灰底」根因），白底
    chip 不可见。改用文字色 12% 混页面底色：浅色呈浅灰、深色呈深灰微亮，

@@ -860,8 +860,12 @@ test('MATERIAL_CSS_TEXT：核心类与按钮规格齐备', () => {
   assert.match(MATERIAL_CSS_TEXT, /\.ydo-mat-board-table th:last-child,\.ydo-mat-board-table td:last-child\{position:sticky;right:0;z-index:1\}/u)
   assert.match(MATERIAL_CSS_TEXT, /\.ydo-mat-board-table td:last-child\{background:var\(--dsw-alias-bg-layer-1,#fff\);box-shadow:/u)
   assert.ok(!MATERIAL_CSS_TEXT.includes('.ydo-mat-table td{padding:10px 12px;border-bottom:1px solid var(--dsw-alias-border-l2,#f0f1f3);vertical-align:top;white-space:nowrap}'), '共用基类 td 不得再带全局 nowrap（压垮失败明细/账号输入列）')
-  // 2026-11-07 OB-2 追加：标题列 420→360 缩宽，为操作列双 mini 横排腾空间。
-  assert.match(MATERIAL_CSS_TEXT, /\.ydo-mat-video-title\{margin:0;font-weight:650;max-width:360px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis\}/u)
+  // 2026-11-07 OB-2 二次反馈「视频列缩宽确保后面所有列完整显示」：标题与标签行
+  // 同步限宽 280（标签行 flex-nowrap 不限宽会撑破列宽）、看板表列距 12→10——
+  // 1440 页宽零溢出实测预算，命中来源列不再被 sticky 操作列遮挡。
+  assert.match(MATERIAL_CSS_TEXT, /\.ydo-mat-video-title\{margin:0;font-weight:650;max-width:280px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis\}/u)
+  assert.match(MATERIAL_CSS_TEXT, /\.ydo-mat-tags\{display:flex;gap:4px;flex-wrap:nowrap;overflow:hidden;margin-top:6px;max-width:280px\}/u)
+  assert.match(MATERIAL_CSS_TEXT, /\.ydo-mat-board-table td,\.ydo-mat-board-table th\{padding-left:10px;padding-right:10px\}/u)
   // 行内操作容器专有 nowrap（共用 .ydo-mat-actions 的 wrap 会把两按钮挤成竖排）；
   // 「评分理由/去拆解」对齐车衣看板「查看详情/过滤」双 mini 款（实底+灰底）横排。
   assert.match(MATERIAL_CSS_TEXT, /\.ydo-mat-row-actions\{display:flex;gap:8px;align-items:center;flex-wrap:nowrap\}/u)
@@ -871,7 +875,7 @@ test('MATERIAL_CSS_TEXT：核心类与按钮规格齐备', () => {
   assert.match(boardActionsBlock[0], /className: 'ydo-mat-mini ydo-mat-mini-secondary'/u, '去拆解须为灰底 mini 款')
   assert.doesNotMatch(boardActionsBlock[0], /ydo-mat-primary'/u, '行内不得再用 40px 大按钮（页头/弹层主按钮仍可用）')
   assert.match(MATERIAL_CSS_TEXT, /button\.ydo-mat-video-title\{[^}]*font-weight:650/u)
-  assert.match(MATERIAL_CSS_TEXT, /\.ydo-mat-tags\{display:flex;gap:4px;flex-wrap:nowrap;overflow:hidden;margin-top:6px\}/u)
+  assert.match(MATERIAL_CSS_TEXT, /\.ydo-mat-tags\{display:flex;gap:4px;flex-wrap:nowrap;overflow:hidden;margin-top:6px;max-width:280px\}/u)
   // 第三轮：标签 chip 对齐车衣素材看板（.yxh-hb-tag：2px 8px / 4px 圆角 / 12px，变量深色适配）
   // chip 底色禁用 bg-layer-2（宿主浅色 layer-1/2/3 恒纯白，白底不可见——
   // 2026-10-30 真机反馈根因）：锁定 color-mix 文字色 12% 混页面底色。
