@@ -4264,7 +4264,7 @@ window.__ModuleLoader__.load({
     /* 视频列标题带链接（2026-10-29 真机验收）：无链接时仍是纯文本；有 shareUrl
        时整行可点，行为同评分抽屉的「视频链接」——window.open 走宿主 windowOpen
        handler 转系统浏览器。 */
-    .ydo-mat-video-title{margin:0;font-weight:650;max-width:420px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .ydo-mat-video-title{margin:0;font-weight:650;max-width:360px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
     button.ydo-mat-video-title{border:0;padding:0;background:transparent;color:inherit;font:inherit;font-weight:650;text-align:left;cursor:pointer}
     button.ydo-mat-video-title:hover{color:var(--dsw-alias-brand-primary,#0f1115);text-decoration:underline}
     .ydo-mat-tags{display:flex;gap:4px;flex-wrap:nowrap;overflow:hidden;margin-top:6px}
@@ -4287,6 +4287,10 @@ window.__ModuleLoader__.load({
     .ydo-mat-source{display:flex;flex-direction:column;gap:2px;font-size:12px}
     .ydo-mat-actions{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
     .ydo-mat-actions-col{display:flex;flex-direction:column;gap:4px;align-items:flex-start}
+    /* 看板行内操作按钮容器（2026-11-07 用户反馈 OB-2 追加）：共用 .ydo-mat-actions
+       的 wrap 在列宽被压时把「评分理由/去拆解」挤成上下竖排，观感差。行内专有
+       nowrap 容器强制横排（分页区等大按钮场景仍用 .ydo-mat-actions wrap）。 */
+    .ydo-mat-row-actions{display:flex;gap:8px;align-items:center;flex-wrap:nowrap}
     /* 状态徽标：实色底白字（报表 pill-ok/warn/err 同款口径），深浅主题通用——
        旧淡底深字固定色在深色背景下是刺眼亮块。 */
     .ydo-mat-status{display:inline-block;padding:2px 10px;border-radius:999px;font-size:11px;white-space:nowrap}
@@ -4501,13 +4505,16 @@ window.__ModuleLoader__.load({
         h('td', { className: 'num' }, matRate(row.interactionRate)),
         h('td', null, typeof row.publishedAt === 'string' && row.publishedAt ? row.publishedAt.slice(0, 10) : DASH),
         h('td', null, h('div', { className: 'ydo-mat-source' }, sourceLines.length ? sourceLines : h('span', { className: 'ydo-mat-source-tag' }, DASH))),
-        h('td', null, h('div', { className: 'ydo-mat-actions' },
-          h('button', { type: 'button', className: 'ydo-mat-primary', onClick: () => onOpenReason(row) }, '评分理由'),
+        h('td', null, h('div', { className: 'ydo-mat-row-actions' },
+          // 行内操作双 mini 款横排（2026-11-07 用户反馈：对齐车衣爆款看板操作列
+          // 「查看详情/过滤」——实底款 + 灰底款，同 28px 高度；原 40px primary +
+          // 28px mini 竖排混搭观感差，容器也换 ydo-mat-row-actions 强制 nowrap）。
+          h('button', { type: 'button', className: 'ydo-mat-mini ydo-mat-mini-primary', onClick: () => onOpenReason(row) }, '评分理由'),
           // 去拆解（RQ-2026-010 AC-01/D7）：有 share_url 切爆款拆解 Tab 预填聚焦，
           // 不自动开始；缺链接置灰 + 提示（T8.1/T8.2）
           h('button', {
             type: 'button',
-            className: 'ydo-mat-mini',
+            className: 'ydo-mat-mini ydo-mat-mini-secondary',
             disabled: !row.shareUrl,
             title: row.shareUrl ? '切到爆款拆解并预填链接' : '该作品缺少可解析链接',
             onClick: () => onStartBreakdown(row),

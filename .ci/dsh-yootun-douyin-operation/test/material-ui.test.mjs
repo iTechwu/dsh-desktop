@@ -14,6 +14,8 @@ import vm from 'node:vm'
 const materialSource = (await readFile(new URL('../src/material-ui.js', import.meta.url), 'utf8'))
   .replace(/^export /gm, '')
 const clientSource = await readFile(new URL('../src/client.js', import.meta.url), 'utf8')
+// material-ui 模块源码（构建时内联进 lib/client.js；源码级结构断言用）
+const materialUiSource = await readFile(new URL('../src/material-ui.js', import.meta.url), 'utf8')
 const indexSource = await readFile(new URL('../index.js', import.meta.url), 'utf8')
 
 const context = {
@@ -858,7 +860,16 @@ test('MATERIAL_CSS_TEXT：核心类与按钮规格齐备', () => {
   assert.match(MATERIAL_CSS_TEXT, /\.ydo-mat-board-table th:last-child,\.ydo-mat-board-table td:last-child\{position:sticky;right:0;z-index:1\}/u)
   assert.match(MATERIAL_CSS_TEXT, /\.ydo-mat-board-table td:last-child\{background:var\(--dsw-alias-bg-layer-1,#fff\);box-shadow:/u)
   assert.ok(!MATERIAL_CSS_TEXT.includes('.ydo-mat-table td{padding:10px 12px;border-bottom:1px solid var(--dsw-alias-border-l2,#f0f1f3);vertical-align:top;white-space:nowrap}'), '共用基类 td 不得再带全局 nowrap（压垮失败明细/账号输入列）')
-  assert.match(MATERIAL_CSS_TEXT, /\.ydo-mat-video-title\{margin:0;font-weight:650;max-width:420px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis\}/u)
+  // 2026-11-07 OB-2 追加：标题列 420→360 缩宽，为操作列双 mini 横排腾空间。
+  assert.match(MATERIAL_CSS_TEXT, /\.ydo-mat-video-title\{margin:0;font-weight:650;max-width:360px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis\}/u)
+  // 行内操作容器专有 nowrap（共用 .ydo-mat-actions 的 wrap 会把两按钮挤成竖排）；
+  // 「评分理由/去拆解」对齐车衣看板「查看详情/过滤」双 mini 款（实底+灰底）横排。
+  assert.match(MATERIAL_CSS_TEXT, /\.ydo-mat-row-actions\{display:flex;gap:8px;align-items:center;flex-wrap:nowrap\}/u)
+  const boardActionsBlock = materialUiSource.match(/className: 'ydo-mat-row-actions'[\s\S]*?\}, '去拆解'\)\)\)/u)
+  assert.ok(boardActionsBlock, 'BoardRow 行内操作块存在')
+  assert.match(boardActionsBlock[0], /className: 'ydo-mat-mini ydo-mat-mini-primary', onClick: \(\) => onOpenReason\(row\)/u, '评分理由须为实底 mini 款')
+  assert.match(boardActionsBlock[0], /className: 'ydo-mat-mini ydo-mat-mini-secondary'/u, '去拆解须为灰底 mini 款')
+  assert.doesNotMatch(boardActionsBlock[0], /ydo-mat-primary'/u, '行内不得再用 40px 大按钮（页头/弹层主按钮仍可用）')
   assert.match(MATERIAL_CSS_TEXT, /button\.ydo-mat-video-title\{[^}]*font-weight:650/u)
   assert.match(MATERIAL_CSS_TEXT, /\.ydo-mat-tags\{display:flex;gap:4px;flex-wrap:nowrap;overflow:hidden;margin-top:6px\}/u)
   // 第三轮：标签 chip 对齐车衣素材看板（.yxh-hb-tag：2px 8px / 4px 圆角 / 12px，变量深色适配）
