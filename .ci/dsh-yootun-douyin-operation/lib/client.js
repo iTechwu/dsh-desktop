@@ -6004,7 +6004,7 @@ window.__ModuleLoader__.load({
 
     const copy = {
       zh: {
-        open: '抖音运营', title: '抖音运营', subtitle: '扫码登录抖音创作者账号，采集并查看作品经营数据',
+        open: '抖音工作台', title: '抖音工作台', subtitle: '扫码登录抖音创作者账号，采集并查看作品经营数据',
         close: '关闭', tabVideos: '账号作品', accounts: '账号管理', data: '数据展示区',
         addAccount: '添加账号', scanning: '等待扫码…', scanHint: '请用抖音 App 扫描弹出的窗口完成登录',
         loginTimeout: '扫码超时，请重试', loginFailed: '登录失败，请重试',
@@ -6261,7 +6261,7 @@ window.__ModuleLoader__.load({
         completionRate: '完播率', bounceRate2s: '2秒跳出率',
       },
       en: {
-        open: 'Douyin ops', title: 'Douyin ops', subtitle: 'Scan to sign in to a Douyin creator account, collect and review work metrics',
+        open: 'Douyin workbench', title: 'Douyin workbench', subtitle: 'Scan to sign in to a Douyin creator account, collect and review work metrics',
         close: 'Close', tabVideos: 'Account works', accounts: 'Accounts', data: 'Data',
         addAccount: 'Add account', scanning: 'Waiting for scan…', scanHint: 'Scan the window with the Douyin app to sign in',
         loginTimeout: 'Scan timed out, retry', loginFailed: 'Sign-in failed, retry',

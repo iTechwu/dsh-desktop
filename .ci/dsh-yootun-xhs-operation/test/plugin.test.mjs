@@ -28,7 +28,7 @@ test('registers menu at order 41 and renders the three-region overlay', async ()
     '/_dsh/uploader/uploadStart',
     '/_dsh/uploader/uploadStatus',
     '/_dsh/uploader/media',
-    '小红书运营',
+    '小红书工作台',
     '爆款仿写',
     'yxh-page-tabs',
     '开始生成',

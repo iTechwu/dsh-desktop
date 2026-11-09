@@ -656,7 +656,7 @@ const renderLabels = {
   none: '暂无数据', noSearch: '暂无搜索词', noHotword: '暂无热词', seconds: '秒',
   lastCollected: '上次采集', privateBadge: '已设为私密', detail: '作品详情', close: '关闭',
   trendCount: '该作品已采集 {count} 次', collectAll: '采集本账号全部', tabVideos: '账号作品',
-  data: '数据展示区', accounts: '账号管理', title: '抖音运营', subtitle: '', open: '抖音运营',
+  data: '数据展示区', accounts: '账号管理', title: '抖音工作台', subtitle: '', open: '抖音工作台',
   sortDefault: '取消排序', sortDesc: '倒序', sortAsc: '顺序',
   // 1015 UI 升级新词条（与 src/client.js 中文文案保持一致）
   kpiNetFans: '净增粉丝', kpiCompletion5s: '5秒完播率', kpiPlayWeighted: '按播放加权',

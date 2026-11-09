@@ -21,7 +21,7 @@ const MAX_IMAGES = 9
 
 const copy = {
   zh: {
-    open: '小红书运营', title: '小红书运营', subtitle: '小红书平台运营，包括内容创作、运营数据汇总与分析等常用功能',
+    open: '小红书工作台', title: '小红书工作台', subtitle: '小红书平台运营，包括内容创作、运营数据汇总与分析等常用功能',
     pageTabRewrite: '爆款仿写', pageTabAccounts: '账号管理',
     close: '关闭', material: '素材区', reference: '对标区', result: '文案内容区',
     tabImages: '图片', tabVideo: '视频', theme: '主题', themePlaceholder: '可选，图片与视频共用',
@@ -151,7 +151,7 @@ const copy = {
     hbCreateLabel: '新增标签', hbDateFrom: '扩词开始日期', hbDateTo: '扩词结束日期',
   },
   en: {
-    open: 'XHS operation', title: 'XHS operation', subtitle: 'XHS platform operations: content creation, performance data aggregation and analysis',
+    open: 'XHS workbench', title: 'XHS workbench', subtitle: 'XHS platform operations: content creation, performance data aggregation and analysis',
     pageTabRewrite: 'Viral rewrite', pageTabAccounts: 'Accounts',
     close: 'Close', material: 'Media', reference: 'References', result: 'Copy',
     tabImages: 'Images', tabVideo: 'Video', theme: 'Theme', themePlaceholder: 'Optional, shared by images and video',
