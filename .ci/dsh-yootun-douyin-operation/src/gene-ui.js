@@ -369,11 +369,24 @@ function Kpis({ stats, statsError, onOpenFailed }) {
       h('p', { className: 'ydo-mat-kpi-foot' }, failed && failed > 0 ? '失败不影响拆解结果，点击查看' : '暂无异常')))
 }
 
-function ReportGrid({ report }) {
+function ReportGrid({ report, record }) {
   const rows = []
   const addRow = (label, value) => {
     const text = reportText(value)
     rows.push([label, text === null ? '未采集' : text])
+  }
+  // 受众画像 / BGM 采集状态（RQ-2026-010 修复方案 §4.1/§4.2，服务端 detail 投影
+  // audienceInsightState/bgmStyleState 下发）：区分旧快照待刷新、拆解升级失败、
+  // 模型未输出、信息不足——不再一律显示「未采集」
+  const fieldStateCopy = {
+    legacy_snapshot: '旧快照待刷新（执行数据修复后更新）',
+    parse_failed: '拆解升级失败（重试回填后更新）',
+    not_exposed: '模型未输出',
+    unknown: '信息不足，无法判断',
+  }
+  const stateValue = (stateKey, content) => {
+    const state = record ? record[stateKey] : null
+    return (state && fieldStateCopy[state]) || content
   }
   const insight = report && typeof report.audienceInsight === 'object' && report.audienceInsight !== null
     ? report.audienceInsight
@@ -388,24 +401,24 @@ function ReportGrid({ report }) {
   addRow('改写提示', report ? joinList(report.rewriteHints) : null)
   addRow(
     '受众画像（AI 推断）',
-    insight
+    stateValue('audienceInsightState', insight
       ? [
         joinList(insight.targetGroups) && `人群：${joinList(insight.targetGroups)}`,
         joinList(insight.scenes) && `场景：${joinList(insight.scenes)}`,
         joinList(insight.painPoints) && `痛点：${joinList(insight.painPoints)}`,
       ].filter(Boolean).join('；') || null
-      : null,
+      : null),
   )
   addRow(
     'BGM 风格',
-    bgm
+    stateValue('bgmStyleState', bgm
       ? [
         reportText(bgm.style) && `风格：${reportText(bgm.style)}`,
         reportText(bgm.tempo) && `节奏：${reportText(bgm.tempo)}`,
         reportText(bgm.mood) && `情绪：${reportText(bgm.mood)}`,
         reportText(bgm.usage) && `配合：${reportText(bgm.usage)}`,
       ].filter(Boolean).join('；') || null
-      : null,
+      : null),
   )
   addRow('分镜段数', report && typeof report.segmentCount === 'number' ? `${report.segmentCount} 段` : null)
   return h('div', { className: 'ydo-mat-failure-grid' },
@@ -656,7 +669,7 @@ function DetailModal({ detail, dimensions, saving, saveError, retryingId, retryE
                   h(GeneDimsView, { record, dimensions })),
                 h('section', { key: 'report', className: 'ydo-panel' },
                   h('h4', { className: 'ydo-modal-sec-title' }, '完整拆解报告（breakdown-v2）'),
-                  h(ReportGrid, { report: record.reportJson })),
+                  h(ReportGrid, { report: record.reportJson, record })),
                 h('section', { key: 'edit', className: 'ydo-panel' },
                   h('h4', { className: 'ydo-modal-sec-title' }, '人工修正'),
                   // 必须以 h() 元素调用：EditPanel 含 6 个 hooks，普通函数调用会把

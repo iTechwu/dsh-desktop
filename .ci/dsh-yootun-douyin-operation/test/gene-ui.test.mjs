@@ -470,3 +470,34 @@ test('去拆解（T8.1/T8.2）：有 share_url 可点；无 share_url 置灰 + �
   enabled.props.onClick()
   assert.equal(clicked.candidateId, 'c1')
 })
+
+test('受众画像/BGM 采集状态区分（RQ-2026-010 修复方案 §4.1/§4.2）：四态文案渲染', () => {
+  // 旧快照待刷新 / 拆解升级失败 / 模型未输出 / 信息不足——不再一律「未采集」
+  const withStates = overrides => {
+    const detail = detailFor('succeeded')
+    Object.assign(detail.record, {
+      reportJson: { summary: '摘要', hook: '钩子', rhythm: '节奏', audience: '受众', sellingPoints: [], rewriteHints: [], audienceInsight: null, bgmStyle: null, segmentCount: 0, segments: [] },
+      ...overrides,
+    })
+    return renderGenePage({ records: baseRecords(), detail })
+  }
+  const legacy = withStates({ audienceInsightState: 'legacy_snapshot', bgmStyleState: 'parse_failed' })
+  assert.ok(legacy.includes('旧快照待刷新（执行数据修复后更新）'), '受众画像旧快照文案')
+  assert.ok(legacy.includes('拆解升级失败（重试回填后更新）'), 'BGM 拆解升级失败文案')
+
+  const notExposed = withStates({ audienceInsightState: 'not_exposed', bgmStyleState: 'unknown' })
+  assert.ok(notExposed.includes('模型未输出'), '受众画像模型未输出文案')
+  assert.ok(notExposed.includes('信息不足，无法判断'), 'BGM 无法判断文案')
+
+  // collected：字段值照常渲染（人群行出现）
+  const collected = withStates({
+    audienceInsightState: 'collected',
+    bgmStyleState: 'collected',
+    reportJson: { summary: '摘要', hook: '钩子', rhythm: '节奏', audience: '受众', sellingPoints: [], rewriteHints: [], audienceInsight: { targetGroups: ['新车车主'], scenes: [], painPoints: [] }, bgmStyle: { style: '电子鼓点', tempo: '', mood: '', usage: '' }, segmentCount: 0, segments: [] },
+  })
+  assert.ok(collected.includes('人群：新车车主'), 'collected 渲染字段内容')
+
+  // 缺省（旧服务端无状态字段）：保持既有「未采集」兜底，不抛错
+  const noState = renderGenePage({ records: baseRecords(), detail: detailFor('succeeded') })
+  assert.ok(noState.includes('未采集'), '无状态字段回退未采集文案')
+})
