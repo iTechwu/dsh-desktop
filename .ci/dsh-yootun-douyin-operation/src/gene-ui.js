@@ -653,13 +653,16 @@ function DetailModal({ detail, dimensions, saving, saveError, retryingId, retryE
                       })()))),
                 h('section', { key: 'dims', className: 'ydo-panel' },
                   h('h4', { className: 'ydo-modal-sec-title' }, '基因标签与依据'),
-                  GeneDimsView({ record, dimensions })),
+                  h(GeneDimsView, { record, dimensions })),
                 h('section', { key: 'report', className: 'ydo-panel' },
                   h('h4', { className: 'ydo-modal-sec-title' }, '完整拆解报告（breakdown-v2）'),
-                  ReportGrid({ report: record.reportJson })),
+                  h(ReportGrid, { report: record.reportJson })),
                 h('section', { key: 'edit', className: 'ydo-panel' },
                   h('h4', { className: 'ydo-modal-sec-title' }, '人工修正'),
-                  EditPanel({
+                  // 必须以 h() 元素调用：EditPanel 含 6 个 hooks，普通函数调用会把
+                  // hooks 注册到 DetailModal 的 fiber，弹窗从「加载中」切「数据」时
+                  // 父组件 hooks 数跳变触发 React #310 闪退（2026-11-09 真机实证）
+                  h(EditPanel, {
                     record, dimensions, saving, saveError, busy: confirmRegenerate || !!retryingId, t,
                     onSave: actions.onSaveEdit,
                   }),
