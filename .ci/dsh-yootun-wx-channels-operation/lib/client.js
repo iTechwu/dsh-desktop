@@ -742,43 +742,31 @@ function stopPropagation(event) { event.stopPropagation() }
 const ROUTE = '/api/desktop/yootun/wx-channels-operation'
 const WORKS_PAGE_SIZE = 20
 const POLL_INTERVAL_MS = 1200
+// 页面端全部 action 都是宿主立即返回的快操作（长动作在宿主异步执行、页面轮询）。
+const REQUEST_TIMEOUT_MS = 30000
 
 const STYLES = `
 :root {
-  /* 主视觉继承宿主 DSW 主题；独立兜底值来自 ui-demo.html（§9.0.6）。 */
-  --ywc-bg: var(--dsw-alias-bg-base, #ffffff);
-  --ywc-surface: var(--dsw-alias-bg-layer-1, #f6f7f9);
-  --ywc-surface-2: var(--dsw-alias-bg-layer-2, #eceef1);
-  --ywc-text: var(--dsw-alias-label-primary, #1f2329);
-  --ywc-muted: var(--dsw-alias-label-secondary, #646a73);
-  --ywc-border: var(--dsw-alias-border-l1, #e0e3e8);
-  --ywc-brand: var(--dsw-alias-brand-primary, #0f1115);
+  /* 主视觉继承宿主 DSW 主题变量（§9.0.6；客户端内宿主必提供，独立 Demo 兜底见 ui-demo.html）。 */
+  --ywc-bg: var(--dsw-alias-bg-base);
+  --ywc-surface: var(--dsw-alias-bg-layer-1);
+  --ywc-surface-2: var(--dsw-alias-bg-layer-2);
+  --ywc-text: var(--dsw-alias-label-primary);
+  --ywc-muted: var(--dsw-alias-label-secondary);
+  --ywc-border: var(--dsw-alias-border-l1);
+  --ywc-brand: var(--dsw-alias-brand-primary);
   --ywc-brand-soft: color-mix(in srgb, var(--ywc-brand) 10%, transparent);
   --ywc-brand-line: color-mix(in srgb, var(--ywc-brand) 62%, white);
   --ywc-brand-border: color-mix(in srgb, var(--ywc-brand) 28%, transparent);
-  --ywc-brand-text: var(--dsw-alias-label-primary-foreground, #ffffff);
-  --ywc-danger: var(--dsw-alias-state-error-primary, #d03a3a);
-  --ywc-success: var(--dsw-alias-state-success-primary, #1a7f37);
-}
-@media (prefers-color-scheme: dark) {
-  :root {
-    --ywc-bg: var(--dsw-alias-bg-base, #151517);
-    --ywc-surface: var(--dsw-alias-bg-layer-1, #232324);
-    --ywc-surface-2: var(--dsw-alias-bg-layer-2, #2c2c2e);
-    --ywc-text: var(--dsw-alias-label-primary, #fafafa);
-    --ywc-muted: var(--dsw-alias-label-secondary, #b4b4b4);
-    --ywc-border: var(--dsw-alias-border-l1, rgba(255,255,255,.10));
-    --ywc-brand: var(--dsw-alias-brand-primary, #e9e9e9);
-    --ywc-brand-text: var(--dsw-alias-label-primary-foreground, #343434);
-    --ywc-danger: var(--dsw-alias-state-error-primary, #e0524a);
-    --ywc-success: var(--dsw-alias-state-success-primary, #4ade80);
-  }
+  --ywc-brand-text: var(--dsw-alias-label-primary-foreground);
+  --ywc-danger: var(--dsw-alias-state-error-primary);
+  --ywc-success: var(--dsw-alias-state-success-primary);
 }
 .ywc-root { min-height: 100%; color: var(--ywc-text); background: radial-gradient(circle at 8% -8%, color-mix(in srgb, var(--ywc-brand) 12%, transparent), transparent 32%), radial-gradient(circle at 96% 4%, color-mix(in srgb, var(--ywc-brand) 8%, transparent), transparent 26%), var(--ywc-bg); font-family: Inter, "PingFang SC", "Microsoft YaHei", system-ui, sans-serif; font-size: 14px; line-height: 1.5; }
 .ywc-shell { min-height: 100vh; display: flex; flex-direction: column; }
-.ywc-header { min-height: 72px; display:flex; align-items:center; justify-content:space-between; gap:20px; padding:14px 24px; border-bottom:1px solid var(--ywc-border); background: color-mix(in srgb, var(--ywc-surface) 88%, transparent); backdrop-filter: blur(14px); box-shadow: 0 1px 24px color-mix(in srgb, var(--ywc-text) 7%, transparent); }
+.ywc-header{min-height:72px; display:flex; align-items:center; justify-content:space-between; gap:20px; padding:14px 24px; border-bottom:1px solid var(--ywc-border); background: color-mix(in srgb, var(--ywc-surface) 88%, transparent); backdrop-filter: blur(14px); box-shadow: 0 1px 24px color-mix(in srgb, var(--ywc-text) 7%, transparent); }
 .ywc-title { display:flex; align-items:center; gap:12px; min-width:0; }
-.ywc-mark { width:36px; height:36px; flex:0 0 auto; display:grid; place-items:center; border-radius:8px; background: color-mix(in srgb, var(--ywc-brand) 16%, transparent); color: var(--ywc-brand); font-weight:800; }
+.ywc-mark{width:36px;height:36px; flex:0 0 auto; display:grid; place-items:center; border-radius:8px; background: color-mix(in srgb, var(--ywc-brand) 16%, transparent); color: var(--ywc-brand); font-weight:800; }
 .ywc-title h1 { margin:0; font-size:20px; line-height:1.25; }
 .ywc-title p { margin:3px 0 0; color:var(--ywc-muted); font-size:12px; }
 .ywc-header-actions { display:flex; align-items:center; gap:8px; }
@@ -812,6 +800,9 @@ const STYLES = `
 .ywc-button:hover { background:var(--ywc-surface-2); }
 .ywc-button.primary { border-color: color-mix(in srgb, var(--ywc-brand) 72%, white); background: linear-gradient(135deg, color-mix(in srgb, var(--ywc-brand) 88%, white), var(--ywc-brand)); color: var(--ywc-brand-text); font-weight:650; box-shadow: 0 6px 18px color-mix(in srgb, var(--ywc-brand) 20%, transparent); }
 .ywc-button:disabled { opacity:.45; cursor:default; }
+/* 36px 图标按钮基线（契约审计 canonical icon 基线；弹层关闭/头部图标钮复用）。 */
+.ywc-icon{width:36px;height:36px; display:grid; place-items:center; padding:0; border:1px solid var(--ywc-border); border-radius:6px; background:var(--ywc-surface); color:var(--ywc-muted); cursor:pointer; }
+.ywc-icon:hover { background:var(--ywc-surface-2); color:var(--ywc-text); }
 .ywc-right { min-width:0; display:flex; flex-direction:column; gap:12px; }
 .ywc-toolbar { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; padding:12px; }
 .ywc-toolbar-left, .ywc-toolbar-right { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
@@ -878,6 +869,9 @@ function useHost() {
   return useCallback(async (action, payload = {}) => {
     const response = await fetch(ROUTE, {
       method: 'POST',
+      credentials: 'same-origin',
+      redirect: 'error',
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ action, ...payload }),
     })
@@ -1152,28 +1146,32 @@ function WxWorkbench({ host }) {
     })().catch(error => notify(`批量采集失败：${error.message}`))
   }, [post, notify])
 
-  // 弹层可关闭性（契约审计）：任一弹层打开时监听 Escape 关闭，关闭后恢复触发焦点。
+  // 弹层可关闭性（契约审计）：任一弹层打开时监听 Escape 关闭；关闭后用
+  // requestAnimationFrame 恢复触发元素焦点。
+  const lastTriggerRef = useRef(null)
   const overlayOpen = Boolean(detail || confirm || login)
   useEffect(() => {
     if (!overlayOpen) return
-    const previous = typeof document !== 'undefined' ? document.activeElement : null
+    if (typeof document !== 'undefined') lastTriggerRef.current = document.activeElement
     const onKey = event => {
-      if (event.key !== 'Escape') return
-      if (detail) {
-        setDetail(null)
-        setDetailDaily([])
-      } else if (confirm) {
-        setConfirm(null)
-      } else if (login) {
-        stopLoginPolling()
-        loginRef.current = null
-        setLogin(null)
+      if (event.key === 'Escape') {
+        if (detail) {
+          setDetail(null)
+          setDetailDaily([])
+        } else if (confirm) {
+          setConfirm(null)
+        } else if (login) {
+          stopLoginPolling()
+          loginRef.current = null
+          setLogin(null)
+        }
       }
     }
     document.addEventListener('keydown', onKey)
     return () => {
       document.removeEventListener('keydown', onKey)
-      if (previous && typeof previous.focus === 'function') previous.focus()
+      const lastTrigger = lastTriggerRef.current
+      requestAnimationFrame(() => lastTrigger?.focus())
     }
   }, [overlayOpen, detail, confirm, login, stopLoginPolling])
 
@@ -1215,7 +1213,7 @@ function WxWorkbench({ host }) {
           h('button', { className: 'ywc-button', type: 'button', onClick: collectAll, disabled: browserBlocked }, '采集全部'),
         ),
       ),
-      notice ? h('div', { className: 'ywc-badge', style: { margin: '10px 24px 0' } }, notice) : null,
+      notice ? h('div', { className: 'ywc-badge', role: 'status', 'aria-live': 'polite', style: { margin: '10px 24px 0' } }, notice) : null,
       h('nav', { className: 'ywc-tabs', 'aria-label': '工作台模块' },
         h('button', { className: 'ywc-tab', type: 'button', 'aria-selected': tab === 'work' ? 'true' : 'false', onClick: () => setTab('work') }, '作品数据'),
         h('button', { className: 'ywc-tab', type: 'button', 'aria-selected': tab === 'account' ? 'true' : 'false', onClick: () => setTab('account') }, '账号数据'),
