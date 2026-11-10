@@ -584,7 +584,7 @@ function AccountTab({
           style: { minWidth: 220 },
         },
           usable.map(item => h('option', { value: item.accountId, key: item.accountId },
-            `${item.nickname || item.accountId}（${item.sessionStatus === 'ok' ? '登录有效' : item.sessionStatus === 'expired' ? '已过期' : '状态未知'}）`,
+            item.nickname || item.accountId,
           )),
         ),
       )
