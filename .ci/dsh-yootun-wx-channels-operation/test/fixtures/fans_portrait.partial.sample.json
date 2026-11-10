@@ -1,0 +1,7 @@
+{
+  "errCode": 0,
+  "errMsg": "request successful",
+  "data": {
+    "respJson": "{\"metric_info_list\":[{\"name\":\"age_list\",\"value\":[{\"dim\":\"fage_18_24\",\"value\":12},{\"dim\":\"fage_30_39\",\"value\":24}]},{\"name\":\"sex_list\",\"value\":[{\"dim\":\"1\",\"value\":37},{\"dim\":\"2\",\"value\":31}]}]}"
+  }
+}

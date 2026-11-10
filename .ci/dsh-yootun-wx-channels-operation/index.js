@@ -1,0 +1,469 @@
+// 视频号工作台 host endpoint：页面只访问本地同源路由 /api/desktop/yootun/wx-channels-operation，
+// 宿主负责设备端浏览器（系统 Chrome + Playwright 驱动）、本地会话与 tools MCP 调用。
+//
+// 凭证边界（开发实施文档 §4.1）：
+// - Cookie / storage_state 只留设备端，绝不进入响应体、日志或 tools；
+// - tools 只收到 `sessionRef`（vault:// 不透明引用）与设备探测得到的会话状态；
+// - 页面不读取 MODELS_API_KEY，不直连公网 MCP，也不接收内部地址或原始传输错误。
+
+import { browserStatus } from './src/chrome.js'
+import {
+  DEFAULT_MAX_PAGES,
+  checkCollectionReadiness,
+  createBatchCollectController,
+  runCollection,
+} from './src/runner.js'
+import {
+  isPendingAccountId,
+  loginWithQrCode,
+  promotePendingAccount,
+  refreshSessionState,
+  removeLocalAccount,
+} from './src/session.js'
+import { getAccount, hasStorageState, paths, readAccounts, stateRoot } from './src/state.js'
+import {
+  accountRemoveIdempotencyKey,
+  accountSaveIdempotencyKey,
+  callTool,
+  safeErrorCode,
+  sessionIdempotencyKey,
+} from './src/tools-client.js'
+
+export const PATH = '/api/desktop/yootun/wx-channels-operation'
+export const inject = ['webServer', 'tools']
+
+const MAX_BODY_BYTES = 64 * 1024
+const MAX_ID = 128
+const LOGIN_TIMEOUT_MS = 5 * 60 * 1000
+
+// 登录是长动作（等人扫码）：状态保存在宿主进程内，页面轮询查询进度（§18.1 状态机）。
+const loginRuns = new Map()
+
+export function apply(ctx, overrides = {}) {
+  const deps = {
+    root: overrides.root || stateRoot(),
+    browserStatus: overrides.browserStatus || browserStatus,
+    login: overrides.login || loginWithQrCode,
+    refreshSessionState: overrides.refreshSessionState || refreshSessionState,
+    promotePendingAccount: overrides.promotePendingAccount || promotePendingAccount,
+    removeLocalAccount: overrides.removeLocalAccount || removeLocalAccount,
+    readAccounts: overrides.readAccounts || readAccounts,
+    getAccount: overrides.getAccount || getAccount,
+    hasStorageState: overrides.hasStorageState || hasStorageState,
+    runCollection: overrides.runCollection || runCollection,
+    collectBusy: false,
+    tools: overrides.tools || null,
+  }
+  // 批量控制器：collect 注入单账号采集（互斥位由 deps.collectBusy 守卫）。
+  const batchController = overrides.batchController || createBatchCollectController({
+    probe: async accountId => {
+      const state = await deps.refreshSessionState({ accountId, root: deps.root })
+      await reportSessionStatus(deps.tools || ctx, deps, accountId, state)
+      return { sessionStatus: state.sessionStatus, reason: state.reason || null }
+    },
+    collect: async ({ accountId, onProgress }) => {
+      if (deps.collectBusy) return { status: 'failed', reason: 'collect_busy', runId: null }
+      deps.collectBusy = true
+      try {
+        return await deps.runCollection({
+          ctx: deps.tools || ctx,
+          accountId,
+          root: deps.root,
+          onProgress,
+          logger: ctx.logger,
+        })
+      } finally {
+        deps.collectBusy = false
+      }
+    },
+    logger: ctx.logger,
+  })
+  deps.batchController = batchController
+
+  return ctx.effect(() => {
+    const dispose = ctx.webServer.register({
+      kind: 'exact',
+      path: PATH,
+      async handler(req, res) {
+        if (req.method !== 'POST') return send(res, 405, { status: 'error', reason: 'method_not_allowed' })
+        try {
+          const body = await readBody(req)
+          const action = cleanString(body.action, 64)
+          const toolCtx = deps.tools || ctx
+          switch (action) {
+            case 'browser.status':
+              return send(res, 200, await handleBrowserStatus(deps))
+            case 'accounts.list':
+              return send(res, 200, await handleAccountsList(deps, toolCtx))
+            case 'account.beginLogin':
+              return send(res, 200, await handleBeginLogin(deps, cleanId(body.accountId)))
+            case 'account.loginStatus':
+              return send(res, 200, handleLoginStatus(cleanId(body.accountId)))
+            case 'account.refreshLoginQr':
+              return send(res, 200, handleRefreshLoginQr(deps, cleanId(body.accountId)))
+            case 'account.probe': {
+              const probe = await deps.refreshSessionState({ accountId: cleanId(body.accountId), root: deps.root })
+              const reported = await reportSessionStatus(toolCtx, deps, cleanId(body.accountId), probe)
+              // 白名单投影：页面只需状态与判定时间，不回显 seq/vaultRef/本地记录（review P3-1）。
+              return send(res, 200, {
+                status: 'ok',
+                sessionStatus: probe.sessionStatus,
+                reason: probe.reason || null,
+                checkedAt: probe.checkedAt,
+                reported: reported.ok,
+              })
+            }
+            case 'account.promote':
+              return send(res, 200, await deps.promotePendingAccount({ accountId: cleanId(body.accountId), root: deps.root }))
+            case 'account.removeLocal':
+              return send(res, 200, await deps.removeLocalAccount({ accountId: cleanId(body.accountId), root: deps.root }))
+            case 'account.removeRemote':
+              return send(res, 200, await handleRemoveRemote(deps, toolCtx, cleanId(body.accountId)))
+            case 'collect.start':
+              return send(res, 200, await handleCollectStart(deps, toolCtx, cleanId(body.accountId), body.newAttempt === true))
+            case 'collect.status':
+              return send(res, 200, { status: 'ok', busy: deps.collectBusy })
+            case 'collectAll.start':
+              return send(res, 200, await handleCollectAllStart(deps, toolCtx))
+            case 'collectAll.status':
+              return send(res, 200, { status: 'ok', ...deps.batchController.status })
+            case 'run.get':
+              return send(res, 200, await handleRunGet(toolCtx, cleanId(body.runId)))
+            case 'works.list':
+              return send(res, 200, await callToolCompat(toolCtx, 'wx_channels_work_list', {
+                accountId: cleanId(body.accountId),
+                ...(body.sort ? { sort: String(body.sort).slice(0, 32) } : {}),
+                ...(body.order ? { order: String(body.order).slice(0, 8) } : {}),
+              }))
+            case 'work.get':
+              return send(res, 200, await callToolCompat(toolCtx, 'wx_channels_work_get', {
+                accountId: cleanId(body.accountId),
+                workId: cleanId(body.workId),
+              }))
+            case 'work.trend':
+              return send(res, 200, await callToolCompat(toolCtx, 'wx_channels_work_trend', {
+                accountId: cleanId(body.accountId),
+                workId: cleanId(body.workId),
+              }))
+            case 'account.overview':
+              return send(res, 200, await callToolCompat(toolCtx, 'wx_channels_account_overview', {
+                accountId: cleanId(body.accountId),
+                ...(body.window ? { window: String(body.window).slice(0, 16) } : {}),
+              }))
+            case 'fans.profile.get':
+              return send(res, 200, await callToolCompat(toolCtx, 'wx_channels_fans_profile_get', {
+                accountId: cleanId(body.accountId),
+              }))
+            default:
+              return send(res, 400, { status: 'error', reason: 'unknown_action' })
+          }
+        } catch (error) {
+          // 统一收敛：稳定码白名单外的原始错误不透传（§9.5）。
+          return send(res, 200, { status: 'error', reason: safeErrorCode(error) })
+        }
+      },
+    })
+    return () => dispose()
+  })
+}
+
+// ---------------------------------------------------------------------------
+// handlers
+// ---------------------------------------------------------------------------
+
+async function handleBrowserStatus(deps) {
+  return { status: 'ok', ...(await deps.browserStatus()) }
+}
+
+async function handleAccountsList(deps, toolCtx) {
+  const local = await deps.readAccounts(deps.root)
+  const locals = Object.values(local.accounts)
+  let remote = []
+  let remoteOk = true
+  try {
+    const result = await callTool(toolCtx, 'wx_channels_account_list', {})
+    remote = Array.isArray(result && result.accounts) ? result.accounts : []
+  } catch {
+    remoteOk = false // 远端失败不遮蔽本地账号列表（独立降级）。
+  }
+  const accounts = []
+  for (const record of locals) {
+    const row = remote.find(item => item.account_id === record.accountId) || null
+    accounts.push({
+      accountId: record.accountId,
+      nickname: record.nickname || (row && row.nickname) || null,
+      avatar: record.avatar || (row && row.avatar) || null,
+      // 作品总数（官方 feedsCount）：§9.2 第一张摘要卡数据源（review P0-4）。
+      feedCount: record.feedCount ?? (row && row.feed_count) ?? null,
+      followerTotalCount: record.followerTotalCount ?? (row && row.follower_total_count) ?? null,
+      sessionStatus: record.sessionStatus || 'unknown',
+      sessionCheckedAt: record.sessionCheckedAt || null,
+      lastCollectedAt: (row && row.last_collected_at) || null,
+      deleteState: (row && row.delete_state) || 'none',
+      isPending: isPendingAccountId(record.accountId),
+      hasStorageState: await deps.hasStorageState(record.accountId, deps.root),
+    })
+  }
+  return { status: 'ok', accounts, remoteOk }
+}
+
+/** 开始扫码登录：有头系统 Chrome；状态保存在宿主进程内，页面轮询 account.loginStatus。 */
+function handleBeginLogin(deps, accountId) {
+  const key = accountId || `pending-${Date.now()}`
+  if (loginRuns.has(key) && loginRuns.get(key).state !== 'finished') {
+    return { status: 'ok', loginKey: key, state: loginRuns.get(key).state }
+  }
+  const run = { state: 'waiting_qr', accountId: null, profile: null, startedAt: new Date().toISOString(), updatedAt: null, reason: null }
+  loginRuns.set(key, run)
+  void deps.login({
+    accountId: key,
+    root: deps.root,
+    timeoutMs: LOGIN_TIMEOUT_MS,
+    onPage: async () => {
+      run.state = 'waiting_confirm'
+      run.updatedAt = new Date().toISOString()
+    },
+  }).then(result => {
+    run.updatedAt = new Date().toISOString()
+    if (result.status === 'ok') {
+      run.state = 'ok'
+      run.accountId = result.accountId
+      run.profile = result.profile || null
+      // 登录成功即上报账号资料（upsert；只带 vault:// 引用，不带任何凭证）。
+      void (async () => {
+        try {
+          const toolCtx = deps.tools || null
+          if (!toolCtx) return
+          const profile = result.profile || {}
+          await callTool(toolCtx, 'wx_channels_account_save', {
+            accountId: result.accountId,
+            ...(profile.nickname ? { nickname: profile.nickname } : {}),
+            ...(profile.avatar ? { avatar: profile.avatar } : {}),
+            ...(Number.isFinite(profile.fansCount) ? { followerTotalCount: profile.fansCount } : {}),
+            ...(Number.isFinite(profile.feedsCount) ? { feedCount: profile.feedsCount } : {}),
+            ...(profile.isMasterFinder !== null && profile.isMasterFinder !== undefined
+              ? { isMasterFinder: profile.isMasterFinder }
+              : {}),
+            sessionRef: paths(deps.root).vaultRef(result.accountId),
+            idempotencyKey: accountSaveIdempotencyKey(result.accountId),
+          })
+          const seq = Number((await deps.getAccount(result.accountId, deps.root))?.sessionSeq || 0)
+          if (seq > 0) {
+            await callTool(toolCtx, 'wx_channels_session_status_report', {
+              accountId: result.accountId,
+              sessionStatus: 'ok',
+              sessionSeq: seq,
+              checkedAt: new Date().toISOString(),
+              sessionRef: paths(deps.root).vaultRef(result.accountId),
+              idempotencyKey: sessionIdempotencyKey(result.accountId, seq),
+            })
+          }
+        } catch (error) {
+          run.reason = safeErrorCode(error) // 上报失败不阻断本地登录成功。
+        }
+      })()
+    } else if (result.status === 'timeout') {
+      run.state = 'timeout'
+      run.reason = 'login_timeout'
+    } else {
+      run.state = 'failed'
+      run.reason = result.reason || 'login_failed'
+    }
+  }).catch(error => {
+    run.state = 'failed'
+    run.reason = safeErrorCode(error)
+  })
+  return { status: 'ok', loginKey: key, state: run.state }
+}
+
+function handleLoginStatus(accountId) {
+  const run = loginRuns.get(accountId)
+  if (!run) return { status: 'ok', state: 'idle' }
+  return {
+    status: 'ok',
+    state: run.state,
+    accountId: run.accountId,
+    profile: run.profile
+      ? { nickname: run.profile.nickname, avatar: run.profile.avatar, feedsCount: run.profile.feedsCount }
+      : null,
+    reason: run.reason,
+    startedAt: run.startedAt,
+    updatedAt: run.updatedAt,
+  }
+}
+
+/** 二维码刷新（§18.2）：仅进行中/已结束的登录可刷新——重启真实登录流程（关闭旧
+ *  上下文由旧 promise 收尾），同一 loginKey 让 UI 保持同一弹层只替换提示与状态。 */
+function handleRefreshLoginQr(deps, accountId) {
+  const run = loginRuns.get(accountId)
+  if (!run || run.state === 'ok') {
+    return { status: 'error', reason: 'refresh_not_allowed', state: run ? run.state : 'idle' }
+  }
+  // 重启登录：新扫码页 + 新等待循环；loginRuns 同键覆盖，页面轮询看新状态。
+  run.state = 'waiting_qr'
+  run.reason = null
+  run.updatedAt = new Date().toISOString()
+  void deps.login({
+    accountId,
+    root: deps.root,
+    timeoutMs: LOGIN_TIMEOUT_MS,
+    onPage: async () => {
+      run.state = 'waiting_confirm'
+      run.updatedAt = new Date().toISOString()
+    },
+  }).then(result => {
+    run.updatedAt = new Date().toISOString()
+    if (result.status === 'ok') {
+      run.state = 'ok'
+      run.accountId = result.accountId
+      run.profile = result.profile || null
+    } else if (result.status === 'timeout') {
+      run.state = 'timeout'
+      run.reason = 'login_timeout'
+    } else {
+      run.state = 'failed'
+      run.reason = result.reason || 'login_failed'
+    }
+  }).catch(error => {
+    run.state = 'failed'
+    run.reason = safeErrorCode(error)
+  })
+  return { status: 'ok', loginKey: accountId, state: run.state }
+}
+
+/** 删除流程第 2 步（§16.2）：本地清理成功后才允许远端删除；宿主先验证本地凭证
+ *  确已清理（storage_state 仍存在 → 拒绝，防止页面跳步把远端数据清掉而本地残留）。 */
+async function handleRemoveRemote(deps, toolCtx, accountId) {
+  if (await deps.hasStorageState(accountId, deps.root)) {
+    return { status: 'error', reason: 'LOCAL_CLEARED_REQUIRED' }
+  }
+  const result = await callTool(toolCtx, 'wx_channels_account_remove', {
+    accountId,
+    confirm: true,
+    localCleared: true,
+    idempotencyKey: accountRemoveIdempotencyKey(accountId),
+  })
+  return { status: 'ok', ...result }
+}
+
+async function handleCollectStart(deps, toolCtx, accountId, newAttempt) {
+  // 互斥（§8.5 生命周期 3）：与一键采集全部互斥；检查与置位在同一段同步代码内
+  // 完成前的并发请求由 collectBusy 同步守卫拒绝（TOCTOU 缺口修复，review P1-2）。
+  if (deps.collectBusy || deps.batchController.running) {
+    return { status: 'ok', started: false, reason: 'collect_busy' }
+  }
+  deps.collectBusy = true
+  try {
+    return await startCollectLocked(deps, toolCtx, accountId, newAttempt)
+  } finally {
+    if (!collectLeaseHeld) deps.collectBusy = false
+  }
+}
+
+// collect 成功受理后互斥位由 runCollection 的 finally 释放；受理失败立即释放。
+let collectLeaseHeld = false
+
+async function startCollectLocked(deps, toolCtx, accountId, newAttempt) {
+  const readiness = await checkCollectionReadiness({ accountId, root: deps.root, busy: false })
+  if (!readiness.ready) {
+    return { status: 'ok', started: false, reason: readiness.reason }
+  }
+  // 会话先实测并上报（失败/过期不启动采集）。
+  const session = await deps.refreshSessionState({ accountId, root: deps.root })
+  await reportSessionStatus(toolCtx, deps, accountId, session)
+  if (session.sessionStatus !== 'ok') {
+    return { status: 'ok', started: false, reason: session.sessionStatus === 'expired' ? 'session_required' : 'probe_failed' }
+  }
+  // 异步执行：页面轮询 collect.status（阶段 3 挂进度投影）；互斥位由 finally 释放。
+  collectLeaseHeld = true
+  void deps.runCollection({
+    ctx: toolCtx,
+    accountId,
+    root: deps.root,
+    newAttempt: newAttempt !== false,
+    logger: null,
+  }).catch(() => {}).finally(() => {
+    deps.collectBusy = false
+    collectLeaseHeld = false
+  })
+  return { status: 'ok', started: true }
+}
+
+async function handleCollectAllStart(deps, toolCtx) {
+  // 与单账号采集互斥（review P1-2 反向缺口）。
+  if (deps.batchController.running || deps.collectBusy) {
+    return { status: 'ok', started: false, reason: 'collect_busy' }
+  }
+  const local = await deps.readAccounts(deps.root)
+  const accountIds = Object.values(local.accounts)
+    .filter(record => !isPendingAccountId(record.accountId))
+    .map(record => record.accountId)
+  const started = await deps.batchController.start({ accountIds })
+  if (!started.started) return { status: 'ok', started: false, reason: started.reason }
+  return { status: 'ok', started: true, batchId: started.batchId, accounts: accountIds.length }
+}
+
+async function handleRunGet(toolCtx, runId) {
+  const result = await callTool(toolCtx, 'wx_channels_collect_run_get', { runId })
+  return { status: 'ok', ...result }
+}
+
+/** 远端查询兼容包装：ToolsCallError → { status:'error', reason: 稳定码 }。 */
+async function callToolCompat(toolCtx, name, args) {
+  try {
+    const result = await callTool(toolCtx, name, args)
+    return { status: 'ok', ...result }
+  } catch (error) {
+    return { status: 'error', reason: safeErrorCode(error) }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 会话上报 + 传输工具
+// ---------------------------------------------------------------------------
+
+async function reportSessionStatus(toolCtx, deps, accountId, state) {
+  try {
+    await callTool(toolCtx, 'wx_channels_session_status_report', {
+      accountId,
+      sessionStatus: state.sessionStatus,
+      sessionSeq: state.sessionSeq,
+      checkedAt: state.checkedAt,
+      sessionRef: state.vaultRef,
+      idempotencyKey: sessionIdempotencyKey(accountId, state.sessionSeq),
+    })
+    return { ok: true }
+  } catch (error) {
+    return { ok: false, reason: safeErrorCode(error) }
+  }
+}
+
+async function readBody(req) {
+  const chunks = []
+  let size = 0
+  for await (const chunk of req) {
+    size += chunk.length
+    if (size > MAX_BODY_BYTES) throw new Error('payload_too_large')
+    chunks.push(chunk)
+  }
+  try {
+    return JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}')
+  } catch {
+    return {}
+  }
+}
+
+function cleanString(value, max) {
+  const text = String(value === undefined || value === null ? '' : value).trim()
+  return text.slice(0, max)
+}
+
+function cleanId(value) {
+  return cleanString(value, MAX_ID)
+}
+
+function send(res, code, payload) {
+  res.statusCode = code
+  res.setHeader('content-type', 'application/json; charset=utf-8')
+  res.end(JSON.stringify(payload))
+}

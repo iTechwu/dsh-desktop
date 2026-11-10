@@ -1,0 +1,23 @@
+{
+  "errCode": 0,
+  "errMsg": "request successful",
+  "data": {
+    "finderUser": {
+      "finderUsername": "v2_wx_channels_example@finder",
+      "nickname": "示例视频号",
+      "headImgUrl": "https://example.invalid/avatar.jpg",
+      "coverImgUrl": "https://example.invalid/cover.jpg",
+      "spamFlag": 0,
+      "acctType": 1,
+      "authIconType": 2,
+      "adminNickname": "示例管理员",
+      "authImgUrl": "https://example.invalid/auth.jpg",
+      "feedsCount": 15,
+      "fansCount": 1234,
+      "categoryFlag": "example",
+      "uniqId": "wx_channels_001",
+      "isMasterFinder": true,
+      "authCompanyName": "示例企业"
+    }
+  }
+}

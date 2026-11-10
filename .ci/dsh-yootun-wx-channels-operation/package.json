@@ -1,0 +1,45 @@
+{
+  "name": "@dofe/dsh-yootun-wx-channels-operation",
+  "version": "0.1.0",
+  "description": "Yootun 视频号工作台：设备端扫码登录、视频号助手数据采集（RQ-2026-012 一期）",
+  "type": "module",
+  "main": "./index.js",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./lib/client.js",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-ui-primitives",
+        "@deepseek-ai/dsh-client-ui-sidebar"
+      ]
+    }
+  },
+  "dependencies": {
+    "playwright-core": "^1.62.0"
+  },
+  "devDependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "files": [
+    "cordis.patch.yml",
+    "index.js",
+    "lib",
+    "src"
+  ],
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "test": "node --test",
+    "check": "npm run build && npm test"
+  },
+  "license": "MIT",
+  "private": true
+}

@@ -1,0 +1,7 @@
+{
+  "errCode": 0,
+  "errMsg": "request successful",
+  "data": {
+    "respJson": "{\"metric_info_list\":[{\"name\":\"age_list\",\"value\":[{\"dim\":\"fage_01_17\",\"value\":3},{\"dim\":\"fage_18_24\",\"value\":12},{\"dim\":\"fage_25_29\",\"value\":18},{\"dim\":\"fage_30_39\",\"value\":24},{\"dim\":\"fage_40_49\",\"value\":8},{\"dim\":\"fage_50_+\",\"value\":3},{\"dim\":\"unknow\",\"value\":2}]},{\"name\":\"sex_list\",\"value\":[{\"dim\":\"unknow\",\"value\":2},{\"dim\":\"2\",\"value\":31},{\"dim\":\"1\",\"value\":37}]},{\"name\":\"province_list\",\"value\":[{\"dim\":\"示例省一\",\"value\":31},{\"dim\":\"示例省二\",\"value\":14},{\"dim\":\"示例省三\",\"value\":9},{\"dim\":\"示例省四\",\"value\":7},{\"dim\":\"示例省五\",\"value\":5}]},{\"name\":\"city_list\",\"value\":[{\"dim\":\"示例城市一\",\"value\":27},{\"dim\":\"示例城市二\",\"value\":8},{\"dim\":\"示例城市三\",\"value\":6},{\"dim\":\"示例城市四\",\"value\":4}]},{\"name\":\"device_list\",\"value\":[{\"dim\":\"1\",\"value\":58},{\"dim\":\"2\",\"value\":10},{\"dim\":\"unknow\",\"value\":2}]}]}"
+  }
+}

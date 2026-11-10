@@ -1,0 +1,39 @@
+{
+  "errCode": 0,
+  "errMsg": "request successful",
+  "data": {
+    "items": [
+      {
+        "sec": 0,
+        "rate": 0.08
+      },
+      {
+        "sec": 3,
+        "rate": 0.19
+      },
+      {
+        "sec": 6,
+        "rate": 0.3
+      },
+      {
+        "sec": 9,
+        "rate": 0.41
+      },
+      {
+        "sec": 12,
+        "rate": 0.52
+      },
+      {
+        "sec": 15,
+        "rate": 0.63
+      }
+    ],
+    "baseResp": {
+      "errcode": 0,
+      "errmsg": ""
+    },
+    "mediaType": 4,
+    "videoLen": 16,
+    "maxLostRateSec": 15
+  }
+}

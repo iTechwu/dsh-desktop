@@ -1,0 +1,8 @@
+{
+  "errCode": 0,
+  "errMsg": "request successful",
+  "data": {
+    "list": [],
+    "totalCount": 0
+  }
+}

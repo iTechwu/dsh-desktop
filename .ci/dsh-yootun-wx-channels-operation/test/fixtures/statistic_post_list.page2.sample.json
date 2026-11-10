@@ -1,0 +1,122 @@
+{
+  "errCode": 0,
+  "errMsg": "request successful",
+  "data": {
+    "list": [
+      {
+        "commentList": [],
+        "objectId": "wx-work-page-0003",
+        "createTime": 1793972230,
+        "likeCount": 7,
+        "commentCount": 7,
+        "readCount": 315,
+        "forwardCount": 9,
+        "favCount": 7,
+        "commentClose": 0,
+        "visibleType": 1,
+        "status": 1,
+        "desc": {
+          "media": [
+            {
+              "spec": [],
+              "url": "https://example.invalid/video.mp4",
+              "thumbUrl": "https://example.invalid/thumb.jpg",
+              "mediaType": 4,
+              "videoPlayLen": 16,
+              "width": 1080,
+              "height": 1920,
+              "md5sum": "redacted-md5-1",
+              "fileSize": "7120082",
+              "bitrate": 3558400,
+              "coverUrl": "https://example.invalid/cover.jpg",
+              "fullThumbUrl": "https://example.invalid/full-thumb.jpg",
+              "fullUrl": "https://example.invalid/full.mp4",
+              "fullWidth": 0,
+              "fullHeight": 0,
+              "fullMd5sum": "redacted-full-md5-1",
+              "fullFileSize": "0",
+              "fullBitrate": 0,
+              "halfRect": {},
+              "fullCoverUrl": "https://example.invalid/full-cover.jpg",
+              "cardShowStyle": 0,
+              "shareCoverUrl": "https://example.invalid/share-cover.jpg",
+              "shareCoverShowStyle": 0
+            }
+          ],
+          "mentionedMusics": [],
+          "shortTitle": [
+            {
+              "shortTitle": "示例分页作品三"
+            }
+          ],
+          "description": "示例分页作品三",
+          "mediaType": 4,
+          "location": {
+            "longitude": 0,
+            "latitude": 0,
+            "city": "示例城市",
+            "poiName": "示例地点",
+            "poiAddress": "示例地址",
+            "poiClassifyId": ""
+          },
+          "extReading": {},
+          "topic": {},
+          "feedLocation": {
+            "longitude": 0,
+            "latitude": 0
+          },
+          "event": {
+            "eventTopicId": "",
+            "eventName": "",
+            "eventCreatorNickname": "示例用户",
+            "eventAttendCount": 0
+          },
+          "audio": {},
+          "member": {},
+          "finderNewlifeDesc": {},
+          "modFeedInfo": {
+            "history": [],
+            "modifyButtonStatus": 1,
+            "buttonTipsWording": "发表超过24小时后无法修改"
+          }
+        },
+        "objectType": 0,
+        "flag": 64,
+        "objectNonce": "nonce-wx-work-page-0003",
+        "permissionFlag": 0,
+        "canSetOriginalsoundTitle": true,
+        "fullPlayRate": 0.077,
+        "avgPlayTimeSec": 6.2,
+        "disableInfo": {
+          "isDisabled": false
+        },
+        "showOriginal": false,
+        "exportId": "export/wx-work-page-0003",
+        "ringsetCount": 0,
+        "snscoverCount": 0,
+        "statusrefCount": 0,
+        "forwardAggregationCount": 2,
+        "originalInfo": {
+          "auditOriginalFlag": 0,
+          "isDeclared": 0,
+          "isOriginalUpgrad": 0
+        },
+        "followCount": 2,
+        "fastFlipRate": 0.58,
+        "forwardSnsCount": 1,
+        "forwardAllChatCount": 0,
+        "argsInfo": {
+          "poiCheckSum": "d6e263aed08d6ef101e274e8bd620f29"
+        },
+        "yesterdayReadCount": 0,
+        "wecomLinkClickCount": 0,
+        "wecomContactAddCount": 0,
+        "wecomLinkClickUv": 0,
+        "wecomContactAddUv": 0,
+        "objBulletCommentCount": "0",
+        "cancelFollowCount": "0"
+      }
+    ],
+    "totalCount": 3
+  }
+}

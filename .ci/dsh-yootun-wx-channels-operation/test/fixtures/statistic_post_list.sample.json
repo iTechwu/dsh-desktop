@@ -1,0 +1,235 @@
+{
+  "errCode": 0,
+  "errMsg": "request successful",
+  "data": {
+    "list": [
+      {
+        "commentList": [],
+        "objectId": "wx-work-0001",
+        "createTime": 1794145030,
+        "likeCount": 3,
+        "commentCount": 0,
+        "readCount": 205,
+        "forwardCount": 1,
+        "favCount": 2,
+        "commentClose": 0,
+        "visibleType": 1,
+        "status": 1,
+        "desc": {
+          "media": [
+            {
+              "spec": [],
+              "url": "https://example.invalid/video.mp4",
+              "thumbUrl": "https://example.invalid/thumb.jpg",
+              "mediaType": 4,
+              "videoPlayLen": 16,
+              "width": 1080,
+              "height": 1920,
+              "md5sum": "redacted-md5-1",
+              "fileSize": "7120082",
+              "bitrate": 3558400,
+              "coverUrl": "https://example.invalid/cover.jpg",
+              "fullThumbUrl": "https://example.invalid/full-thumb.jpg",
+              "fullUrl": "https://example.invalid/full.mp4",
+              "fullWidth": 0,
+              "fullHeight": 0,
+              "fullMd5sum": "redacted-full-md5-1",
+              "fullFileSize": "0",
+              "fullBitrate": 0,
+              "halfRect": {},
+              "fullCoverUrl": "https://example.invalid/full-cover.jpg",
+              "cardShowStyle": 0,
+              "shareCoverUrl": "https://example.invalid/share-cover.jpg",
+              "shareCoverShowStyle": 0
+            }
+          ],
+          "mentionedMusics": [],
+          "shortTitle": [
+            {
+              "shortTitle": "示例作品标题 1"
+            }
+          ],
+          "description": "示例视频号作品 1：用于解析回归，不含真实内容。",
+          "mediaType": 4,
+          "location": {
+            "longitude": 0,
+            "latitude": 0,
+            "city": "示例城市",
+            "poiName": "示例地点",
+            "poiAddress": "示例地址",
+            "poiClassifyId": ""
+          },
+          "extReading": {},
+          "topic": {},
+          "feedLocation": {
+            "longitude": 0,
+            "latitude": 0
+          },
+          "event": {
+            "eventTopicId": "",
+            "eventName": "",
+            "eventCreatorNickname": "示例用户",
+            "eventAttendCount": 0
+          },
+          "audio": {},
+          "member": {},
+          "finderNewlifeDesc": {},
+          "modFeedInfo": {
+            "history": [],
+            "modifyButtonStatus": 1,
+            "buttonTipsWording": "发表超过24小时后无法修改"
+          }
+        },
+        "objectType": 0,
+        "flag": 64,
+        "objectNonce": "wx-nonce-0001",
+        "permissionFlag": 0,
+        "canSetOriginalsoundTitle": true,
+        "fullPlayRate": 0.0829,
+        "avgPlayTimeSec": 7.4,
+        "disableInfo": {
+          "isDisabled": false
+        },
+        "showOriginal": false,
+        "exportId": "export/wx-work-0001",
+        "ringsetCount": 0,
+        "snscoverCount": 0,
+        "statusrefCount": 0,
+        "forwardAggregationCount": 1,
+        "originalInfo": {
+          "auditOriginalFlag": 0,
+          "isDeclared": 0,
+          "isOriginalUpgrad": 0
+        },
+        "followCount": 0,
+        "fastFlipRate": 0.6409,
+        "forwardSnsCount": 1,
+        "forwardAllChatCount": 0,
+        "argsInfo": {
+          "poiCheckSum": "d6e263aed08d6ef101e274e8bd620f29"
+        },
+        "yesterdayReadCount": 50,
+        "wecomLinkClickCount": 0,
+        "wecomContactAddCount": 0,
+        "wecomLinkClickUv": 0,
+        "wecomContactAddUv": 0,
+        "objBulletCommentCount": "0",
+        "cancelFollowCount": "0"
+      },
+      {
+        "commentList": [],
+        "objectId": "wx-work-0002",
+        "createTime": 1794058630,
+        "likeCount": 4,
+        "commentCount": 1,
+        "readCount": 242,
+        "forwardCount": 2,
+        "favCount": 3,
+        "commentClose": 0,
+        "visibleType": 1,
+        "status": 1,
+        "desc": {
+          "media": [
+            {
+              "spec": [],
+              "url": "https://example.invalid/video.mp4",
+              "thumbUrl": "https://example.invalid/thumb.jpg",
+              "mediaType": 4,
+              "videoPlayLen": 17,
+              "width": 1080,
+              "height": 1920,
+              "md5sum": "redacted-md5-2",
+              "fileSize": "7120083",
+              "bitrate": 15628288,
+              "coverUrl": "https://example.invalid/cover.jpg",
+              "fullThumbUrl": "https://example.invalid/full-thumb.jpg",
+              "fullUrl": "https://example.invalid/full.mp4",
+              "fullWidth": 0,
+              "fullHeight": 0,
+              "fullMd5sum": "redacted-full-md5-2",
+              "fullFileSize": "0",
+              "fullBitrate": 0,
+              "halfRect": {},
+              "fullCoverUrl": "https://example.invalid/full-cover.jpg",
+              "cardShowStyle": 0,
+              "shareCoverUrl": "https://example.invalid/share-cover.jpg",
+              "shareCoverShowStyle": 0
+            }
+          ],
+          "mentionedMusics": [],
+          "shortTitle": [
+            {
+              "shortTitle": "示例作品标题 2"
+            }
+          ],
+          "description": "示例视频号作品 2：用于解析回归，不含真实内容。",
+          "mediaType": 4,
+          "location": {
+            "longitude": 0,
+            "latitude": 0,
+            "city": "示例城市",
+            "poiName": "示例地点",
+            "poiAddress": "示例地址",
+            "poiClassifyId": ""
+          },
+          "extReading": {},
+          "topic": {},
+          "feedLocation": {
+            "longitude": 0,
+            "latitude": 0
+          },
+          "event": {
+            "eventTopicId": "",
+            "eventName": "",
+            "eventCreatorNickname": "示例用户",
+            "eventAttendCount": 0
+          },
+          "audio": {},
+          "member": {},
+          "finderNewlifeDesc": {},
+          "modFeedInfo": {
+            "history": [],
+            "modifyButtonStatus": 1,
+            "buttonTipsWording": "发表超过24小时后无法修改"
+          }
+        },
+        "objectType": 0,
+        "flag": 96,
+        "objectNonce": "wx-nonce-0002",
+        "permissionFlag": 0,
+        "canSetOriginalsoundTitle": true,
+        "fullPlayRate": 0.0949,
+        "avgPlayTimeSec": 8.200000000000001,
+        "disableInfo": {
+          "isDisabled": false
+        },
+        "showOriginal": false,
+        "exportId": "export/wx-work-0002",
+        "ringsetCount": 1,
+        "snscoverCount": 1,
+        "statusrefCount": 0,
+        "forwardAggregationCount": 2,
+        "originalInfo": {
+          "auditOriginalFlag": 0,
+          "isDeclared": 0,
+          "isOriginalUpgrad": 0
+        },
+        "followCount": 1,
+        "fastFlipRate": 0.5909,
+        "forwardSnsCount": 2,
+        "forwardAllChatCount": 1,
+        "argsInfo": {
+          "poiCheckSum": "d6e263aed08d6ef101e274e8bd620f29"
+        },
+        "yesterdayReadCount": 51,
+        "wecomLinkClickCount": 0,
+        "wecomContactAddCount": 0,
+        "wecomLinkClickUv": 0,
+        "wecomContactAddUv": 0,
+        "objBulletCommentCount": "1",
+        "cancelFollowCount": "1"
+      }
+    ],
+    "totalCount": 2
+  }
+}
