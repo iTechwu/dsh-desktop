@@ -18,11 +18,9 @@ source = stripBlock(source, uiFormatImport, 'ui-format')
 source = stripBlock(source, workUiImport, 'work-ui')
 source = stripBlock(source, accountUiImport, 'account-ui')
 
-// client.js 顶部宿主注入的 React require 由工厂模板统一提供，源码行剥除。
-source = source
-  .replace(/^const React = require\('react'\)\n/m, '')
-  .replace(/^const \{ createElement: h \} = React\n/m, '')
-  .replace(/^const \{ useState, useEffect, useMemo, useRef, useCallback, useSyncExternalStore \} = React\n/m, '')
+// client.js 本体顶部的 React require 与解构保留（同 xhs 约定）：factory 内
+// require('react') 与 require('@deepseek-ai/dsh-client-ui-primitives') 由宿主
+// 加载器解析，不剥源码行。
 
 const strip = text => text.replace(/^export (?=(function|const|let))/gm, '').trimEnd()
 
@@ -48,23 +46,24 @@ const uiFormat = await loadModule('ui-format.js', 'ui-format')
 const workUi = await loadModule('work-ui.js', 'work-ui')
 const accountUi = await loadModule('account-ui.js', 'account-ui')
 
-const body = strip(source)
-
-const output = `// 构建产物（scripts/build.mjs 生成）：请勿手改。
-__ModuleLoader__.register('@dofe/dsh-yootun-wx-channels-operation/client', function (require, module, exports) {
-const React = require('react')
-const { createElement: h, useState, useEffect, useMemo, useRef, useCallback, useSyncExternalStore } = React
-${uiFormat}
-
-${workUi}
-
-${accountUi}
-
-${body}
-module.exports = { renderWxWorkbench, SidebarButton }
-})
-`
+// 内联顺序：ui-format → work-ui → account-ui → client.js（先于引用者，
+// 同一工厂作用域；React/h 由 client.js 顶部声明提供）。
+const body = [uiFormat, workUi, accountUi, strip(source)].join('\n\n')
 
 await mkdir(new URL('lib/', root), { recursive: true })
-await writeFile(new URL('lib/client.js', root), output, 'utf8')
+// 产物 API 对齐当前桌面端加载器（同 xhs/douyin 插件）：__ModuleLoader__.load({ id, factory })，
+// id 不带 /client 后缀；factory 内自建 module/exports 兼容 CJS 风格源码，
+// return module.exports 即插件导出面。
+await writeFile(new URL('lib/client.js', root), [
+  'window.__ModuleLoader__.load({',
+  '  id: "@dofe/dsh-yootun-wx-channels-operation",',
+  '  factory: (require) => {',
+  '    var module = { exports: {} };',
+  '    var exports = module.exports;',
+  body.split('\n').map(line => line === '' ? '' : `    ${line}`).join('\n'),
+  '    return module.exports;',
+  '  },',
+  '});',
+  '',
+].join('\n'))
 console.log('build: lib/client.js written')

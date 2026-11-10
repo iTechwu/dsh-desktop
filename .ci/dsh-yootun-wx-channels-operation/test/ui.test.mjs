@@ -109,11 +109,12 @@ test('render smoke：构建产物工厂在真 React 下渲染不抛错（含 5 �
 
   const source = await readFile(new URL('../lib/client.js', import.meta.url), 'utf8')
   let factory = null
-  // 产物顶层直接引用 __ModuleLoader__ 裸标识符：挂 globalThis。
-  const loaderStub = {
-    register(name, fn) { factory = fn },
+  // 产物顶层调用 window.__ModuleLoader__.load({ id, factory })：stub 捕获工厂。
+  const windowStub = {
+    __ModuleLoader__: {
+      load(mod) { factory = mod.factory },
+    },
   }
-  globalThis.__ModuleLoader__ = loaderStub
   const requireStub = name => {
     if (name === 'react') return React
     if (name === '@deepseek-ai/dsh-client-ui-primitives') {
@@ -125,20 +126,15 @@ test('render smoke：构建产物工厂在真 React 下渲染不抛错（含 5 �
     }
     throw new Error(`unexpected require: ${name}`)
   }
-  try {
-    // 执行产物：注册工厂。
-    new Function('globalThis', source)(globalThis)
-    assert.ok(typeof factory === 'function')
-  } finally {
-    delete globalThis.__ModuleLoader__
-  }
+  // 执行产物：捕获工厂（factory (require) => …，返回 module.exports）。
+  new Function('window', source)(windowStub)
+  assert.ok(typeof factory === 'function')
 
-  const module_ = { exports: {} }
-  factory(requireStub, module_, module_.exports)
-  assert.equal(typeof module_.exports.renderWxWorkbench, 'function')
+  const module_ = factory(requireStub)
+  assert.equal(typeof module_.renderWxWorkbench, 'function')
 
   const noop = async () => ({ accounts: [], works: [] })
-  const html = renderToString(module_.exports.renderWxWorkbench({ host: noop }))
+  const html = renderToString(module_.renderWxWorkbench({ host: noop }))
   // 关键结构断言（§9.1 布局 + §9.2 摘要卡 + 15 列表头）。
   assert.ok(html.includes('视频号工作台'))
   assert.ok(html.includes('作品数据'))

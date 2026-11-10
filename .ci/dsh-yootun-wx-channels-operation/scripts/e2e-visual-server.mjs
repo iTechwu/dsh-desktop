@@ -7,6 +7,7 @@
 // 配套截图：scripts/e2e-screenshots.mjs
 
 import { readFile } from 'node:fs/promises'
+import { existsSync, realpathSync } from 'node:fs'
 import { createServer } from 'node:http'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -18,7 +19,7 @@ function argValue(flag, fallback) {
   return index >= 0 ? process.argv[index + 1] : fallback
 }
 const PORT = Number(argValue('--port', '8791'))
-const MCP = argValue('--mcp', 'http://127.0.0.1:8000')
+const MCP = argValue('--mcp', 'http://127.0.0.1:8000/mcp')
 const DOMAIN = 'wx_channels_operation'
 
 let rpcId = 0
@@ -44,9 +45,40 @@ async function rpc(method, params) {
 }
 
 async function callTool(name, args) {
+  await initializeOnce()
   const result = await rpc('tools/call', { name, arguments: args })
+  if (!result) throw new Error('tools/call 无 result')
   if (result.isError) throw new Error('tool isError')
   return result.structuredContent || {}
+}
+
+/** MCP streamable HTTP 必须先 initialize 握手拿会话（同 e2e-screenshots.mjs）。 */
+let initialized = null
+function initializeOnce() {
+  if (!initialized) {
+    initialized = (async () => {
+      await rpc('initialize', {
+        protocolVersion: '2024-11-05',
+        capabilities: {},
+        clientInfo: { name: 'wx-visual-harness', version: '0' },
+      })
+      // JSON-RPC 通知：202 空体，不解析。
+      const response = await fetch(`${MCP}/${DOMAIN}`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          accept: 'application/json, text/event-stream',
+          ...(sessionId ? { 'mcp-session-id': sessionId } : {}),
+        },
+        body: JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' }),
+      })
+      await response.arrayBuffer().catch(() => {})
+    })().catch(error => {
+      initialized = null
+      throw error
+    })
+  }
+  return initialized
 }
 
 /** 与插件 index.js 一致的投影：服务端 canonical snake_case → 宿主端点形状。 */
@@ -141,10 +173,11 @@ const HARNESS_HTML = `<!doctype html>
 <body>
 <div id="root"></div>
 <script>
-  // 宿主最小 stub：__ModuleLoader__ 捕获工厂，require 提供 react。
+  // 宿主最小 stub：__ModuleLoader__.load 捕获插件工厂；require 提供 react 与
+  // @deepseek-ai/dsh-client-ui-primitives 桩（同 e2e-screenshots.mjs 约定）。
   window.__ModuleLoader__ = {
-    register(name, factory) {
-      window.__loadedPlugin = { name, factory }
+    load(mod) {
+      window.__loadedPlugin = { id: mod.id, factory: mod.factory }
     },
   }
 </script>
@@ -152,14 +185,22 @@ const HARNESS_HTML = `<!doctype html>
 <script>
   (async () => {
     const react = await import('/node_modules/react/index.js').catch(() => null)
-    const module_ = { exports: {} }
-    window.__loadedPlugin.factory(name => {
-      if (name === 'react') return react
+    window.__wxReactDefault = react?.default ?? null
+    const scheduler = await import('/node_modules/scheduler/index.js').catch(() => null)
+    window.__wxSchedulerDefault = scheduler?.default ?? null
+    const module_ = window.__loadedPlugin.factory(name => {
+      if (name === 'react') return react?.default ?? null
+      if (name === '@deepseek-ai/dsh-client-ui-primitives') {
+        return {
+          IconSparkleRegular: () => null,
+          Tooltip: props => props.children,
+        }
+      }
       throw new Error('unexpected require: ' + name)
-    }, module_, module_.exports)
+    })
     const client = await import('/node_modules/react-dom/client.js')
-    const root = client.createRoot(document.getElementById('root'))
-    root.render(module_.exports.renderWxWorkbench({ host: window.__hostBridge }))
+    const root = client.default.createRoot(document.getElementById('root'))
+    root.render(module_.renderWxWorkbench({ host: window.__hostBridge }))
   })()
 </script>
 </body>
@@ -193,44 +234,66 @@ const server = createServer(async (req, res) => {
       return
     }
     if (req.url && req.url.startsWith('/node_modules/')) {
-      // ESM 裸链：react/react-dom 的 ESM 入口（开发机 node_modules 由 pnpm 布局）。
+      // 浏览器无法直接 import CJS 文件：把 react/react-dom 的 UMD/CJS 源码包装成
+      // ESM（process shim + module/exports 桥接），react-dom 侧 require('react')
+      // 从 window.__wxReactDefault 取（页面先 import react 并挂载）。
       const target = req.url.slice('/node_modules/'.length)
+      const base = join(root, 'node_modules')
+      const processShim = 'var process = { env: { NODE_ENV: "development" } };'
+      const cjsBridge = 'var module = { exports: {} };\nvar exports = module.exports;'
       const map = {
-        'react/index.js': 'react/index.js',
-        'react-dom/client.js': 'react-dom/client.js',
-        'react-dom/cjs/react-dom-client.development.js': 'react-dom/cjs/react-dom-client.development.js',
+        'react/index.js': async () => {
+          const entry = realpathSync(join(base, 'react', 'index.js'))
+          const src = await readFile(join(dirname(entry), 'cjs', 'react.development.js'), 'utf8')
+          return [processShim, cjsBridge, src, 'export default module.exports;'].join('\n')
+        },
+        'scheduler/index.js': async () => {
+          const entry = realpathSync(join(base, 'scheduler', 'index.js'))
+          const src = await readFile(join(dirname(entry), 'cjs', 'scheduler.development.js'), 'utf8')
+          return [processShim, cjsBridge, src, 'export default module.exports;'].join('\n')
+        },
+        'react-dom/client.js': async () => {
+          // client.js 只是薄壳 require('react-dom')：直接包装完整实现
+          // cjs/react-dom.development.js（内部 require('react'/'scheduler') 由 require 桥接）。
+          const entry = realpathSync(join(base, 'react-dom', 'index.js'))
+          const src = await readFile(join(dirname(entry), 'cjs', 'react-dom.development.js'), 'utf8')
+          return [
+            'const React = window.__wxReactDefault;',
+            'const Scheduler = window.__wxSchedulerDefault;',
+            processShim,
+            cjsBridge,
+            'var require = (name) => name === "react" ? React : name === "scheduler" ? Scheduler : undefined;',
+            src,
+            'export default module.exports;',
+          ].join('\n')
+        },
       }
-      const rel = map[target]
-      if (!rel) {
+      const build = map[target]
+      if (!build) {
         res.writeHead(404)
         res.end()
         return
       }
-      const base = join(root, 'node_modules')
-      const candidates = [
-        join(base, rel.replace('react-dom/client.js', 'react-dom/client.js')),
-        join(base, '.pnpm/react-dom@18.3.1_react@18.3.1/node_modules/', rel),
-      ]
-      for (const candidate of candidates) {
-        if (existsSync(candidate)) {
-          res.writeHead(200, { 'content-type': 'application/javascript' })
-          res.end(await readFile(candidate))
-          return
-        }
+      if (!existsSync(join(base, target))) {
+        res.writeHead(404)
+        res.end()
+        return
       }
-      res.writeHead(404)
-      res.end()
+      res.writeHead(200, { 'content-type': 'application/javascript' })
+      res.end(await build())
       return
     }
     res.writeHead(404)
     res.end()
   } catch (error) {
-    res.writeHead(200, { 'content-type': 'application/json' })
-    res.end(JSON.stringify({ status: 'error', reason: String(error && error.message ? error.message : error).slice(0, 120) }))
+    console.error('[harness] handler error:', error)
+    if (!res.headersSent) {
+      res.writeHead(200, { 'content-type': 'application/json' })
+    }
+    res.end(JSON.stringify({ status: 'error', reason: String(error && error.message ? error.message : error).slice(0, 300) }))
   }
 })
 
-import { existsSync } from 'node:fs'
 server.listen(PORT, '127.0.0.1', () => {
   console.log(`[harness] http://127.0.0.1:${PORT}/ （action → ${MCP}/${DOMAIN}）`)
 })

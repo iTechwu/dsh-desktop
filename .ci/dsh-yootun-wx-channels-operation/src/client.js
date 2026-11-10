@@ -338,8 +338,10 @@ function WxWorkbench({ host, initial = null }) {
   const refreshOverview = useCallback(async (accountId, window) => {
     if (!accountId) { setOverview(null); setSummaryOverview(null); setProfile(null); return }
     // 摘要卡固定 last_7d 拉取（与账号 Tab 窗口互不影响，review P0-3）。
+    // summary 声明提到 try 外：窗口同为 last_7d 时直接复用，避免重复请求。
+    let summary = null
     try {
-      const summary = await post('account.overview', { accountId, window: 'last_7d' })
+      summary = await post('account.overview', { accountId, window: 'last_7d' })
       setSummaryOverview(summary)
     } catch {
       setSummaryOverview(null)

@@ -126,11 +126,9 @@ const { createElement: h } = React
 
 const source = await readFile(new URL('../lib/client.js', import.meta.url), 'utf8')
 let factory = null
-globalThis.__ModuleLoader__ = { register(name, fn) { factory = fn } }
-new Function('globalThis', source)(globalThis)
-delete globalThis.__ModuleLoader__
-const module_ = { exports: {} }
-factory(name => {
+const windowStub = { __ModuleLoader__: { load(mod) { factory = mod.factory } } }
+new Function('window', source)(windowStub)
+const module_ = factory(name => {
   if (name === 'react') return React
   if (name === '@deepseek-ai/dsh-client-ui-primitives') {
     return {
@@ -139,7 +137,7 @@ factory(name => {
     }
   }
   throw new Error('unexpected require: ' + name)
-}, module_, module_.exports)
+})
 
 const host = async () => ({ status: 'ok' }) // renderToString 不执行 effect，host 不会被调用
 
@@ -220,7 +218,7 @@ const browser = await playwright.chromium.launch({
 
 let bad = 0
 for (const variant of variants) {
-  const html = pageHtml(variant.shell, renderToString(h(module_.exports.renderWxWorkbench, { host, initial: variant.initial })))
+  const html = pageHtml(variant.shell, renderToString(h(module_.renderWxWorkbench, { host, initial: variant.initial })))
   const file = `${OUT}/${variant.name}.html`
   await writeFile(file, html)
   const context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, colorScheme: variant.name.includes('dark') ? 'dark' : 'light' })

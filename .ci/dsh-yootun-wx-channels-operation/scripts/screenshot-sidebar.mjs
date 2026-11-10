@@ -24,11 +24,9 @@ const { createElement: h } = React
 
 const source = await readFile(new URL('../lib/client.js', import.meta.url), 'utf8')
 let factory = null
-globalThis.__ModuleLoader__ = { register(name, fn) { factory = fn } }
-new Function('globalThis', source)(globalThis)
-delete globalThis.__ModuleLoader__
-const module_ = { exports: {} }
-factory(name => {
+const windowStub = { __ModuleLoader__: { load(mod) { factory = mod.factory } } }
+new Function('window', source)(windowStub)
+const module_ = factory(name => {
   if (name === 'react') return React
   if (name === '@deepseek-ai/dsh-client-ui-primitives') {
     return {
@@ -40,7 +38,7 @@ factory(name => {
     }
   }
   throw new Error('unexpected require: ' + name)
-}, module_, module_.exports)
+})
 
 // 模拟其他插件的侧栏按钮（对照排序）：内容指令 40 / 抖音 43 / 日报 50。
 function FakeButton({ icon, label }) {
@@ -60,7 +58,7 @@ const ClockIcon = ({ size }) => h('svg', {
   stroke: 'currentColor', strokeWidth: '1.5', 'aria-hidden': 'true',
 }, h('circle', { cx: 12, cy: 12, r: 9 }), h('path', { d: 'M12 7v5l3 3' }))
 
-const SidebarButton = module_.exports.SidebarButton || null
+const SidebarButton = module_.SidebarButton || null
 // 构建产物可能只导出 apply/renderWxWorkbench——SidebarButton 若未导出，从 Overlay 内部
 // 无法直接取用；此处直接以真实组件渲染（若未导出则用产物整体渲染的侧栏元素截取）。
 const entries = []
