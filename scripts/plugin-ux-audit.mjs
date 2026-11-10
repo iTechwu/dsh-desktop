@@ -399,8 +399,8 @@ for (const name of clientPlugins) {
   const restoresTriggerFocus = /requestAnimationFrame\(\(\)\s*=>\s*lastTrigger\?\.focus/.test(source)
   const themeAliasCount = (source.match(/var\(--dsw-alias-[^)]+\)/g) || []).length
   const hasThemeAliases = themeAliasCount >= 4
-    && /var\(--dsw-alias-bg-base\)/.test(source)
-    && /var\(--dsw-alias-label-primary\)/.test(source)
+    && /var\(--dsw-alias-bg-base[,)]/.test(source)
+    && /var\(--dsw-alias-label-primary[,)]/.test(source)
   const fetchCount = (source.match(/\bfetch\s*\(/g) || []).length
   const sameOriginCount = (source.match(/credentials:\s*['"]same-origin['"]/g) || []).length
   const rejectRedirectCount = (source.match(/redirect:\s*['"]error['"]/g) || []).length
