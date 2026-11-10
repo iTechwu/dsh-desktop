@@ -576,7 +576,7 @@ function AccountTab({
   const usable = (Array.isArray(accounts) ? accounts : []).filter(item => item.deleteState !== 'remote_deleted')
   return h('div', { className: 'ywc-account-page' },
     usable.length > 1
-      ? h('div', { className: 'ywc-field', style: { justifyContent: 'flex-end', gap: 8 } },
+      ? h('div', { className: 'ywc-field', style: { justifyContent: 'flex-start', gap: 8 } },
         '当前账号',
         h('select', {
           className: 'ywc-select', value: selectedId || '',
