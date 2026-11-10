@@ -1,7 +1,7 @@
 // 构建产物（scripts/build.mjs 生成）：请勿手改。
 __ModuleLoader__.register('@dofe/dsh-yootun-wx-channels-operation/client', function (require, module, exports) {
 const React = require('react')
-const { createElement: h, useState, useEffect, useMemo, useRef, useCallback } = React
+const { createElement: h, useState, useEffect, useMemo, useRef, useCallback, useSyncExternalStore } = React
 // 视频号工作台 UI 纯格式化函数（client.js 构建时内联；无 React/DOM 依赖）。
 // 视觉与交互基准：docs/1109/wx/ui-demo.html（§9.0 Demo 是一期 UI 冻结基准）。
 
@@ -749,11 +749,39 @@ function stopPropagation(event) { event.stopPropagation() }
 // 不读取 MODELS_API_KEY、不直连公网 MCP、不接收 Cookie/内部地址/原始传输错误。
 // 采集由宿主设备端执行；这里只做编排（登录/采集/批量）与展示。
 
+const { IconSparkleRegular, Tooltip } = require('@deepseek-ai/dsh-client-ui-primitives')
 
 
 const ROUTE = '/api/desktop/yootun/wx-channels-operation'
 const WORKS_PAGE_SIZE = 20
 const POLL_INTERVAL_MS = 1200
+
+// 左下角侧栏入口 + 整页 overlay（对齐抖音 yootun 系插件机制）：
+// OVERLAY_EVENT 为 Yootun overlay 共享互斥事件（打开自身时通知其他 overlay 关闭）。
+const OVERLAY_ID = '@dofe/dsh-yootun-wx-channels-operation'
+const OVERLAY_EVENT = 'dofe:yootun-overlay:open'
+
+let opened = false
+const openListeners = new Set()
+const subscribeOpen = listener => {
+  openListeners.add(listener)
+  return () => openListeners.delete(listener)
+}
+const snapshotOpen = () => opened
+function setOpened(next) {
+  opened = next
+  for (const listener of openListeners) listener(next)
+}
+function openOverlay(event) {
+  // 记录触发元素，关闭后恢复焦点。
+  overlayTrigger = event?.currentTarget || document.activeElement
+  window.dispatchEvent(new CustomEvent(OVERLAY_EVENT))
+  setOpened(true)
+}
+function closeOtherOverlay() {
+  if (opened) setOpened(false)
+}
+let overlayTrigger = null
 // 页面端全部 action 都是宿主立即返回的快操作（长动作在宿主异步执行、页面轮询）。
 const REQUEST_TIMEOUT_MS = 30000
 
@@ -775,6 +803,9 @@ const STYLES = `
   --ywc-success: var(--dsw-alias-state-success-primary);
 }
 .ywc-root { height:100vh; color:var(--ywc-text); }
+.ywc-overlay { position:fixed; inset:0; z-index:520; background:var(--ywc-bg); color:var(--ywc-text); overflow:hidden; }
+.ywc-sidebar-button { display:flex; width:36px; height:36px; align-items:center; justify-content:center; gap:8px; border:0; border-radius:6px; background:transparent; color:var(--dsw-alias-label-secondary); cursor:pointer; }
+.ywc-sidebar-button:hover { background:var(--dsw-alias-bg-layer-2); color:var(--dsw-alias-label-primary); }
 .ywc-shell { height:100vh; display:flex; flex-direction:column; overflow:hidden; }
 .ywc-header{min-height:72px; display:flex; align-items:center; justify-content:space-between; gap:20px; padding:14px 24px; border-bottom:1px solid var(--ywc-border); background: color-mix(in srgb, var(--ywc-surface) 88%, transparent); backdrop-filter: blur(14px); box-shadow: 0 1px 24px color-mix(in srgb, var(--ywc-text) 7%, transparent); }
 .ywc-title { display:flex; align-items:center; gap:12px; min-width:0; }
@@ -908,6 +939,57 @@ function useHost() {
     }
     return payloadJson
   }, [])
+}
+
+/** 侧栏入口按钮（左下角菜单；wide 模式带文字，对齐抖音 Button）。 */
+function SidebarButton({ wide }) {
+  return h(Tooltip, { label: '打开视频号工作台', disabled: wide },
+    h('button', {
+      type: 'button',
+      className: `ywc-sidebar-button${wide ? ' ywc-wide' : ''}`,
+      'aria-label': '打开视频号工作台',
+      onClick: openOverlay,
+    },
+      h(IconSparkleRegular, { size: wide ? 14 : 18 }),
+      wide ? h('span', null, '视频号工作台') : null,
+    ))
+}
+
+/** 整页 overlay：可见时渲染工作台；关闭后恢复触发焦点。 */
+function Overlay() {
+  const visible = useSyncExternalStore(subscribeOpen, snapshotOpen, snapshotOpen)
+  useEffect(() => {
+    if (!visible) return
+    const previous = typeof document !== 'undefined' ? document.activeElement : null
+    return () => {
+      const lastTrigger = overlayTrigger
+      if (lastTrigger && typeof lastTrigger.focus === 'function') {
+        requestAnimationFrame(() => lastTrigger.focus())
+      } else if (previous && typeof previous.focus === 'function') {
+        previous.focus()
+      }
+    }
+  }, [visible])
+  if (!visible) return null
+  return h('div', { className: 'ywc-overlay' }, h(WxWorkbench, { host: null }))
+}
+
+/** 宿主 client 接线：字典跳过（文案硬编码中文）、样式与侧栏/overlay 槽位注册。 */
+function apply(ctx) {
+  ctx.effect(() => {
+    const style = document.createElement('style')
+    style.dataset.plugin = OVERLAY_ID
+    style.textContent = STYLES
+    document.head.appendChild(style)
+    return () => style.remove()
+  }, 'dofe-yootun-wx-channels-operation: styles')
+  ctx.slots.inject('sidebar.footer.action', () => ctx.slots.register({ name: 'sidebar.footer.action', id: OVERLAY_ID, order: 44, inject: () => ({}) }, SidebarButton))
+  ctx.slots.inject('shell.overlay', () => ctx.slots.register({ name: 'shell.overlay', id: OVERLAY_ID, order: 44, inject: () => ({}) }, Overlay))
+  // 共享互斥契约：其他 yootun overlay 打开时关闭自身。
+  ctx.effect(() => {
+    window.addEventListener(OVERLAY_EVENT, closeOtherOverlay)
+    return () => window.removeEventListener(OVERLAY_EVENT, closeOtherOverlay)
+  }, 'dofe-yootun-wx-channels-operation: exclusive-overlay')
 }
 
 /** 渲染工作台。`initial` 供静态渲染/截图/测试注入首屏真实数据
@@ -1352,5 +1434,7 @@ function reasonText(reason) {
   }
   return map[reason] || reason || '未知'
 }
+
+module.exports = { apply, inject: ['slots'], renderWxWorkbench, css: STYLES }
 module.exports = { renderWxWorkbench }
 })

@@ -22,7 +22,7 @@ source = stripBlock(source, accountUiImport, 'account-ui')
 source = source
   .replace(/^const React = require\('react'\)\n/m, '')
   .replace(/^const \{ createElement: h \} = React\n/m, '')
-  .replace(/^const \{ useState, useEffect, useMemo, useRef, useCallback \} = React\n/m, '')
+  .replace(/^const \{ useState, useEffect, useMemo, useRef, useCallback, useSyncExternalStore \} = React\n/m, '')
 
 const strip = text => text.replace(/^export (?=(function|const|let))/gm, '').trimEnd()
 
@@ -35,7 +35,11 @@ const loadModule = async (file, label) => {
     .replace(/^import \{ createElement as h \} from 'react'\n/m, '')
     .replace(/^const React = require\('react'\)\n/m, '')
     .replace(/^const \{ createElement: h \} = React\n/m, '')
-  if (/require\(/.test(text)) throw new Error(`build: unexpected require in ${label}`)
+  // @deepseek-ai/dsh-client-ui-primitives 的 require 保留（宿主运行时注入器解析，
+  // 与抖音构建约定一致）。
+  if (/require\((?!'@deepseek-ai\/dsh-client-ui-primitives')/.test(text)) {
+    throw new Error(`build: unexpected require in ${label}`)
+  }
   if (/^\s*import\s/m.test(text)) throw new Error(`build: unexpected import in ${label}`)
   return strip(text)
 }
@@ -49,7 +53,7 @@ const body = strip(source)
 const output = `// 构建产物（scripts/build.mjs 生成）：请勿手改。
 __ModuleLoader__.register('@dofe/dsh-yootun-wx-channels-operation/client', function (require, module, exports) {
 const React = require('react')
-const { createElement: h, useState, useEffect, useMemo, useRef, useCallback } = React
+const { createElement: h, useState, useEffect, useMemo, useRef, useCallback, useSyncExternalStore } = React
 ${uiFormat}
 
 ${workUi}

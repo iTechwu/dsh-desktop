@@ -116,6 +116,13 @@ test('render smoke：构建产物工厂在真 React 下渲染不抛错（含 5 �
   globalThis.__ModuleLoader__ = loaderStub
   const requireStub = name => {
     if (name === 'react') return React
+    if (name === '@deepseek-ai/dsh-client-ui-primitives') {
+      // 侧栏入口图标/Tooltip 桩：静态渲染仅需可调用元素。
+      return {
+        IconSparkleRegular: () => null,
+        Tooltip: props => props.children,
+      }
+    }
     throw new Error(`unexpected require: ${name}`)
   }
   try {

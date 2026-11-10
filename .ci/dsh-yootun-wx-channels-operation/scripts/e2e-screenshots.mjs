@@ -130,7 +130,16 @@ globalThis.__ModuleLoader__ = { register(name, fn) { factory = fn } }
 new Function('globalThis', source)(globalThis)
 delete globalThis.__ModuleLoader__
 const module_ = { exports: {} }
-factory(name => (name === 'react' ? React : (() => { throw new Error('unexpected require: ' + name) })()), module_, module_.exports)
+factory(name => {
+  if (name === 'react') return React
+  if (name === '@deepseek-ai/dsh-client-ui-primitives') {
+    return {
+      IconSparkleRegular: () => null,
+      Tooltip: props => props.children,
+    }
+  }
+  throw new Error('unexpected require: ' + name)
+}, module_, module_.exports)
 
 const host = async () => ({ status: 'ok' }) // renderToString 不执行 effect，host 不会被调用
 
