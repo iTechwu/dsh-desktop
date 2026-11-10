@@ -3,6 +3,7 @@
 
 import { createElement as h } from 'react'
 import {
+  DEFAULT_SORT_STATE,
   EMPTY,
   fmt,
   fmtCount,
@@ -16,22 +17,23 @@ import {
   weightedCompletionRate,
 } from './ui-format.js'
 
+/** 表格列定义（对齐抖音 COLUMNS 单一来源）：sortable 列在表头渲染排序按钮。 */
 const TABLE_COLUMNS = [
-  '作品',
-  '发布时间',
-  '完播率',
-  '平均播放时长',
-  '播放',
-  '喜欢',
-  '收藏',
-  '评论',
-  '分享',
-  '转发聊天和朋友圈',
-  '关注量',
-  '企微链接点击',
-  '添加通讯录',
-  '最近采集',
-  '操作',
+  { label: '作品' },
+  { label: '发布时间', key: 'publish_time', sortable: true },
+  { label: '完播率', key: 'completion_rate_pct', sortable: true },
+  { label: '平均播放时长', key: 'avg_play_duration_s', sortable: true },
+  { label: '播放', key: 'play_count', sortable: true },
+  { label: '喜欢', key: 'like_count', sortable: true },
+  { label: '收藏', key: 'favorite_count', sortable: true },
+  { label: '评论', key: 'comment_count', sortable: true },
+  { label: '分享', key: 'share_count', sortable: true },
+  { label: '转发聊天和朋友圈', key: 'forward_count', sortable: true },
+  { label: '关注量', key: 'follow_count', sortable: true },
+  { label: '企微链接点击' },
+  { label: '添加通讯录' },
+  { label: '最近采集' },
+  { label: '操作' },
 ]
 
 /** 顶部摘要卡（§9.2 固定 5 张，不随筛选/排序/分页变化）。
@@ -58,72 +60,51 @@ export function WorkSummaryCards({ works, summaryOverview, account }) {
   )
 }
 
-/** 工具栏（采集本账号全部 / 刷新 / 发布时间范围 / 排序）。 */
-export function WorkToolbar({ onCollect, onRefresh, range, onRange, customFrom, customTo, onCustomRange, sort, onSort, disabled }) {
+/** 工具栏（采集本账号全部 / 刷新）。筛选与排序在表头完成（对齐抖音工作台）。 */
+export function WorkToolbar({ onCollect, onRefresh, disabled }) {
   return h('div', { className: 'ywc-toolbar' },
     h('div', { className: 'ywc-toolbar-left' },
       h('button', { className: 'ywc-button primary', type: 'button', onClick: onCollect, disabled }, '采集本账号全部'),
       h('button', { className: 'ywc-button', type: 'button', onClick: onRefresh, disabled }, '刷新'),
     ),
-    h('div', { className: 'ywc-toolbar-right' },
-      h('label', { className: 'ywc-field' }, '发布时间',
-        h('select', {
-          className: 'ywc-select', value: range, disabled,
-          onChange: event => onRange(event.target.value), 'aria-label': '发布时间范围',
-        },
-          h('option', { value: 'all' }, '全部'),
-          h('option', { value: '7d' }, '近7天'),
-          h('option', { value: '30d' }, '近30天'),
-          h('option', { value: 'custom' }, '自定义'),
-        ),
-      ),
-      range === 'custom'
-        ? h('label', { className: 'ywc-field' }, '范围',
-          h('input', { className: 'ywc-input', type: 'date', value: customFrom || '', 'aria-label': '发布起始日', onChange: event => onCustomRange(event.target.value, customTo || '') }),
-          '–',
-          h('input', { className: 'ywc-input', type: 'date', value: customTo || '', 'aria-label': '发布结束日', onChange: event => onCustomRange(customFrom || '', event.target.value) }),
-        )
-        : null,
-      h('label', { className: 'ywc-field' }, '排序',
-        h('select', {
-          className: 'ywc-select', value: sort, disabled,
-          onChange: event => onSort(event.target.value), 'aria-label': '作品排序',
-        },
-          h('option', { value: 'publish_time' }, '发布时间'),
-          h('option', { value: 'play_count' }, '播放'),
-          h('option', { value: 'like_count' }, '喜欢'),
-          h('option', { value: 'favorite_count' }, '收藏'),
-          h('option', { value: 'comment_count' }, '评论'),
-          h('option', { value: 'share_count' }, '分享'),
-          h('option', { value: 'follow_count' }, '关注量'),
-        ),
-      ),
-    ),
   )
 }
 
-/** 作品表格 + 本地分页（每页 20 条 / 加载更多 / 筛选排序后重置，§9.2）。 */
-export function WorkTable({ rows, displayedCount, total, onLoadMore, onOpenDetail }) {
-  const visible = rows.slice(0, displayedCount)
-  const body = visible.length
-    ? visible.map(work => h('tr', { key: work.work_id }, workRowCells(work, onOpenDetail)))
-    : [h('tr', { key: 'empty' }, h('td', { colSpan: TABLE_COLUMNS.length, className: 'ywc-empty' }, '当前账号暂无已入库作品，先执行采集'))]
-  return h('div', { key: 'work-table' },
-    h('div', { className: 'ywc-table-wrap' },
-      h('table', { className: 'ywc-table', 'aria-label': '视频号作品列表' },
-        h('thead', null, h('tr', null, TABLE_COLUMNS.map(column => h('th', { key: column }, column)))),
-        h('tbody', null, body),
-      ),
-    ),
-    h('div', { className: 'ywc-table-footer' },
-      // total 缺失（未加载账号时 feedCount 未知）回退 rows.length，不显示 NaN。
-      h('span', null, `已展示 ${Math.min(displayedCount ?? rows.length, rows.length)} / ${total ?? rows.length} 条已入库作品`),
-      h('button', {
-        className: 'ywc-button', type: 'button',
-        disabled: displayedCount >= rows.length, onClick: onLoadMore,
-      }, '加载更多'),
-    ),
+/** 作品表格（对齐抖音 WorkTable 交互）：
+ * - 无数据不渲染表格框架，只显示居中空态提示（ydo-state 同款）；
+ * - 可排序列表头为按钮：点击 desc → asc → 默认循环，箭头 ↕/↓/↑ + aria-sort；
+ * - 全量渲染已入库作品，固定高度区域内部滚动（无「加载更多」分页）。 */
+export function WorkTable({ rows, sort = DEFAULT_SORT_STATE, onSortChange, onOpenDetail }) {
+  if (!rows.length) {
+    return h('div', { className: 'ywc-table-state', role: 'status' },
+      h('p', null, '当前账号暂无已入库作品，先执行「采集本账号全部」'),
     )
+  }
+  const headCells = TABLE_COLUMNS.map(column => {
+    if (!column.sortable) return h('th', { key: column.label, scope: 'col' }, column.label)
+    const direction = sort && sort.key === column.key && sort.direction !== 'default' ? sort.direction : 'default'
+    const arrow = direction === 'desc' ? '↓' : direction === 'asc' ? '↑' : '↕'
+    return h('th', {
+      key: column.label, scope: 'col',
+      'aria-sort': direction === 'desc' ? 'descending' : direction === 'asc' ? 'ascending' : 'none',
+    },
+      h('button', {
+        type: 'button',
+        className: `ywc-sort${direction !== 'default' ? ' ywc-sort-active' : ''}`,
+        onClick: () => onSortChange && onSortChange(column.key),
+        'aria-label': `${column.label}：${direction === 'desc' ? '降序' : direction === 'asc' ? '升序' : '默认排序'}`,
+      },
+        h('span', { className: 'ywc-sort-text' }, column.label),
+        h('span', { className: 'ywc-sort-arrow', 'aria-hidden': true }, arrow),
+      ),
+    )
+  })
+  return h('div', { className: 'ywc-table-wrap' },
+    h('table', { className: 'ywc-table', 'aria-label': '视频号作品列表' },
+      h('thead', null, h('tr', null, headCells)),
+      h('tbody', null, rows.map(work => h('tr', { key: work.work_id }, workRowCells(work, onOpenDetail)))),
+    ),
+  )
 }
 
 function workRowCells(work, onOpenDetail) {

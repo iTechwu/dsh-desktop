@@ -6,14 +6,13 @@
 const React = require('react')
 const { createElement: h } = React
 const { useState, useEffect, useMemo, useRef, useCallback, useSyncExternalStore } = React
-const { IconSparkleRegular, Tooltip } = require('@deepseek-ai/dsh-client-ui-primitives')
+const { IconCloseOutlineRegular, IconSparkleRegular, Tooltip } = require('@deepseek-ai/dsh-client-ui-primitives')
 
-import { filterWorksByRange, sortWorks } from './ui-format.js'
+import { DEFAULT_SORT_STATE, nextSortState, sortWorks } from './ui-format.js'
 import { WorkDetailDialog, WorkSummaryCards, WorkTable, WorkToolbar } from './work-ui.js'
-import { AccountList, AccountTab, LoginDialog } from './account-ui.js'
+import { AccountList, AccountTab } from './account-ui.js'
 
 const ROUTE = '/api/desktop/yootun/wx-channels-operation'
-const WORKS_PAGE_SIZE = 20
 const POLL_INTERVAL_MS = 1200
 
 // 左下角侧栏入口 + 整页 overlay（对齐抖音 yootun 系插件机制）：
@@ -79,19 +78,21 @@ const STYLES = `
     --ywc-success: var(--dsw-alias-state-success-primary, #4ade80);
   }
 }
-.ywc-root { height:100vh; color:var(--ywc-text); }
-.ywc-overlay { position:fixed; inset:0; z-index:520; background:var(--ywc-bg); color:var(--ywc-text); overflow:hidden; }
+/* 字体体系对齐抖音工作台：基线 14px / 次级 13px / 页标题 20px / 面板标题 16px，
+   一律用宿主字体变量（真机缺失时回退同值字面量），不自行创造字号。 */
+.ywc-root { height:100vh; color:var(--ywc-text); font-size:var(--dsh-content-font-size,14px); }
+.ywc-overlay { position:fixed; inset:0; z-index:520; background:var(--ywc-bg); color:var(--ywc-text); overflow:hidden; font-size:var(--dsh-content-font-size,14px); }
 .ywc-sidebar-button { display:flex; width:36px; height:36px; align-items:center; justify-content:center; gap:8px; border:0; border-radius:6px; background:transparent; color:var(--dsw-alias-label-secondary); cursor:pointer; }
 .ywc-sidebar-button:hover { background:var(--dsw-alias-bg-layer-2); color:var(--dsw-alias-label-primary); }
 .ywc-shell { height:100vh; display:flex; flex-direction:column; overflow:hidden; }
 .ywc-header{min-height:72px; display:flex; align-items:center; justify-content:space-between; gap:20px; padding:14px 24px; border-bottom:1px solid var(--ywc-border); background: color-mix(in srgb, var(--ywc-surface) 88%, transparent); backdrop-filter: blur(14px); box-shadow: 0 1px 24px color-mix(in srgb, var(--ywc-text) 7%, transparent); }
 .ywc-title { display:flex; align-items:center; gap:12px; min-width:0; }
 .ywc-mark{width:36px;height:36px; flex:0 0 auto; display:grid; place-items:center; border-radius:8px; background: color-mix(in srgb, var(--ywc-brand) 16%, transparent); color: var(--ywc-brand); font-weight:800; }
-.ywc-title h1 { margin:0; font-size:20px; line-height:1.25; }
-.ywc-title p { margin:3px 0 0; color:var(--ywc-muted); font-size:12px; }
+.ywc-title h1 { margin:0; font-size:var(--dsw-font-l-20-font-size,20px); line-height:1.25; }
+.ywc-title p { margin:6px 0 0; color:var(--ywc-muted); font-size:var(--dsh-content-font-size-secondary,13px); }
 .ywc-header-actions { display:flex; align-items:center; gap:8px; }
 .ywc-tabs { display:flex; gap:4px; padding:0 24px; background: color-mix(in srgb, var(--ywc-surface) 86%, transparent); backdrop-filter: blur(12px); border-bottom:1px solid var(--ywc-border); overflow-x:auto; }
-.ywc-tab { height:44px; padding:0 18px; border:0; border-bottom:3px solid transparent; background:transparent; color:var(--ywc-muted); font-weight:650; white-space:nowrap; }
+.ywc-tab { height:44px; padding:0 18px; border:0; border-bottom:3px solid transparent; background:transparent; color:var(--ywc-muted); font:inherit; font-size:var(--dsh-content-font-size,14px); font-weight:650; white-space:nowrap; }
 .ywc-tab:hover { color: var(--ywc-text); }
 .ywc-tab[aria-selected="true"] { color:var(--ywc-text); border-bottom-color: var(--ywc-brand-line); background: linear-gradient(180deg, transparent 68%, color-mix(in srgb, var(--ywc-brand) 9%, transparent)); }
 .ywc-body { flex:1; min-height:0; display:grid; grid-template-columns:280px minmax(0,1fr); gap:16px; padding:16px 24px 24px;  overflow:hidden; }
@@ -100,7 +101,7 @@ const STYLES = `
 .ywc-accounts { display:flex; flex-direction:column; gap:10px; min-width:0; }
 .ywc-panel { border:1px solid var(--ywc-border); border-radius:8px; background: color-mix(in srgb, var(--ywc-surface) 92%, transparent); backdrop-filter: blur(12px); box-shadow: 0 10px 34px color-mix(in srgb, var(--ywc-text) 6%, transparent); }
 .ywc-side-head { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:12px 12px 0; }
-.ywc-side-head h2 { margin:0; font-size:14px; }
+.ywc-side-head h2 { margin:0; font-size:var(--dsw-font-base-16-font-size,16px); }
 .ywc-account-list { display:flex; flex-direction:column; gap:8px; padding:10px 12px 12px; }
 .ywc-card { border:1px solid var(--ywc-border); border-radius:8px; background: color-mix(in srgb, var(--ywc-surface) 94%, transparent); text-align:left; padding:0; overflow:hidden; }
 .ywc-card[aria-current="true"] { border-color: color-mix(in srgb, var(--ywc-brand) 60%, var(--ywc-border)); }
@@ -108,14 +109,14 @@ const STYLES = `
 .ywc-card-main { width:100%; display:grid; grid-template-columns:36px minmax(0,1fr); gap:10px; align-items:center; border:0; background:transparent; padding:10px; text-align:left; color:inherit; }
 .ywc-card-main:hover { background: var(--ywc-surface-2); }
 .ywc-avatar { width:36px; height:36px; display:grid; place-items:center; border-radius:50%; background: color-mix(in srgb, var(--ywc-brand) 18%, var(--ywc-surface-2)); color:var(--ywc-brand); font-weight:700; }
-.ywc-card-name { display:block; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:650; }
-.ywc-card-meta { display:block; margin-top:2px; color:var(--ywc-muted); font-size:12px; }
-.ywc-state { display:inline-flex; align-items:center; gap:5px; margin-top:5px; font-size:12px; color:var(--ywc-muted); }
+.ywc-card-name { display:block; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:600; }
+.ywc-card-meta { display:block; margin-top:2px; color:var(--ywc-muted); font-size:var(--dsh-content-font-size-secondary,13px); }
+.ywc-state { display:inline-flex; align-items:center; gap:5px; margin-top:5px; font-size:var(--dsh-content-font-size-secondary,13px); color:var(--ywc-muted); }
 .ywc-state::before { content:""; width:6px; height:6px; border-radius:50%; background:currentColor; }
 .ywc-state[data-state="ok"] { color:var(--ywc-success); }
 .ywc-state[data-state="expired"] { color:var(--ywc-danger); }
 .ywc-card-actions { display:flex; border-top:1px solid var(--ywc-border); background:var(--ywc-surface); }
-.ywc-mini-button { flex:1; min-height:30px; border:0; background:transparent; color:var(--ywc-muted); font-size:12px; }
+.ywc-mini-button { flex:1; min-height:30px; border:0; background:transparent; color:var(--ywc-muted); font-size:var(--dsh-content-font-size-secondary,13px); }
 .ywc-mini-button:hover { background:var(--ywc-surface-2); color:var(--ywc-text); }
 .ywc-mini-button.danger:hover { color:var(--ywc-danger); }
 .ywc-button { min-height:34px; display:inline-flex; align-items:center; justify-content:center; gap:6px; padding:0 12px; border:1px solid var(--ywc-border); border-radius:6px; background:var(--ywc-surface); color:var(--ywc-text); white-space:nowrap; }
@@ -126,12 +127,12 @@ const STYLES = `
 .ywc-primary:disabled { opacity:.45; cursor:default; }
 .ywc-wide { width:100%; }
 .ywc-batch-panel { display:grid; gap:4px; padding:10px 12px; border:1px solid var(--ywc-border); border-radius:8px; background:var(--ywc-surface-2); min-width:0; }
-.ywc-batch-panel p { margin:0; font-size:12px; color:var(--ywc-text); }
-.ywc-hint { margin:0; color:var(--ywc-muted); font-size:12px; line-height:1.5; }
-.ywc-ok { margin:0; color:var(--ywc-success); font-size:12px; }
-.ywc-error { margin:0; color:var(--ywc-danger); font-size:12px; }
-.ywc-warn { margin:0; color:var(--ywc-muted); font-size:12px; }
-/* 36px 图标按钮基线（契约审计 canonical icon 基线；弹层关闭/头部图标钮复用）。 */
+.ywc-batch-panel p { margin:0; font-size:var(--dsh-content-font-size-secondary,13px); color:var(--ywc-text); }
+.ywc-hint { margin:0; color:var(--ywc-muted); font-size:var(--dsh-content-font-size-secondary,13px); line-height:1.5; }
+.ywc-ok { margin:0; color:var(--ywc-success); font-size:var(--dsh-content-font-size-secondary,13px); }
+.ywc-error { margin:0; color:var(--ywc-danger); font-size:var(--dsh-content-font-size-secondary,13px); }
+.ywc-warn { margin:0; color:var(--ywc-muted); font-size:var(--dsh-content-font-size-secondary,13px); }
+/* 36px 图标按钮基线（契约审计 canonical icon 基线；弹层关闭/头部关闭钮复用，对齐 ydo-header-buttons）。 */
 .ywc-icon{width:36px;height:36px; display:grid; place-items:center; padding:0; border:1px solid var(--ywc-border); border-radius:6px; background:var(--ywc-surface); color:var(--ywc-muted); cursor:pointer; }
 .ywc-icon:hover { background:var(--ywc-surface-2); color:var(--ywc-text); }
 .ywc-right { min-width:0; min-height:0; display:flex; flex-direction:column; gap:12px; overflow:hidden; }
@@ -140,45 +141,53 @@ const STYLES = `
 .ywc-right .ywc-account-page { flex:1; min-height:0; overflow:auto; }
 .ywc-toolbar { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; padding:12px; }
 .ywc-toolbar-left, .ywc-toolbar-right { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
-.ywc-field { display:inline-flex; align-items:center; gap:6px; color:var(--ywc-muted); font-size:12px; }
-.ywc-input, .ywc-select { min-height:32px; padding:0 8px; border:1px solid var(--ywc-border); border-radius:6px; background:var(--ywc-surface); color:var(--ywc-text); }
+.ywc-field { display:inline-flex; align-items:center; gap:6px; color:var(--ywc-muted); font-size:var(--dsh-content-font-size-secondary,13px); }
+.ywc-input, .ywc-select { min-height:36px; padding:0 10px; border:1px solid var(--ywc-border); border-radius:6px; background:var(--ywc-surface); color:var(--ywc-text); font:inherit; font-size:var(--dsh-content-font-size-secondary,13px); }
 .ywc-summary-grid, .ywc-kpi-grid { display:grid; grid-template-columns:repeat(5, minmax(0,1fr)); gap:10px; padding:12px; }
 .ywc-kpi { min-height:78px; padding:10px; border:1px solid var(--ywc-border); border-radius:8px; position:relative; overflow:hidden; background: linear-gradient(160deg, color-mix(in srgb, var(--ywc-brand) 4%, var(--ywc-surface)), var(--ywc-surface) 62%); }
 .ywc-kpi::after { content:""; position:absolute; inset:0 0 auto; height:2px; background: linear-gradient(90deg, transparent, var(--ywc-brand-line), transparent); opacity:.55; }
-.ywc-kpi-label { color:var(--ywc-muted); font-size:12px; }
-.ywc-kpi-value { margin-top:8px; font-size:20px; font-weight:750; font-variant-numeric: tabular-nums; letter-spacing:-.02em; }
-.ywc-kpi-hint { margin-top:3px; color:var(--ywc-muted); font-size:11px; }
+.ywc-kpi-label { color:var(--ywc-muted); font-size:var(--dsh-content-font-size-secondary,13px); }
+.ywc-kpi-value { margin-top:8px; font-size:20px; font-weight:650; font-variant-numeric: tabular-nums; letter-spacing:-.02em; }
+.ywc-kpi-hint { margin-top:3px; color:var(--ywc-muted); font-size:12px; }
 .ywc-table-wrap { overflow:auto; min-height:0; border-top:1px solid var(--ywc-border); }
-.ywc-table-footer { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:10px 12px; border-top:1px solid var(--ywc-border); color:var(--ywc-muted); font-size:12px; }
+/* 表头排序按钮（对齐 ydo-sort）：整格可点击，箭头 ↕/↓/↑，激活列高亮。 */
+.ywc-sort { display:flex; width:100%; align-items:center; gap:4px; min-width:0; padding:0; border:0; background:transparent; color:inherit; font:inherit; text-align:left; cursor:pointer; }
+.ywc-sort-text { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.ywc-sort-arrow { flex:none; min-width:12px; color:var(--ywc-muted); }
+.ywc-sort-active { color:var(--ywc-text); }
+.ywc-sort-active .ywc-sort-arrow { color:var(--ywc-brand); }
+/* 空态（对齐 ydo-state）：无数据时不渲染表格框架，只显示居中提示。 */
+.ywc-table-state { display:grid; min-height:200px; flex:1; place-items:center; align-content:center; gap:10px; color:var(--ywc-muted); font-size:var(--dsh-content-font-size,14px); text-align:center; }
+.ywc-table-state p { margin:0; max-width:640px; line-height:1.6; }
 .ywc-table { min-width:1720px; width:100%; border-collapse:collapse; }
-.ywc-table th, .ywc-table td { padding:10px; border-bottom:1px solid var(--ywc-border); text-align:left; white-space:nowrap; }
-.ywc-table th { position:sticky; top:0; z-index:1; background: color-mix(in srgb, var(--ywc-brand) 5%, var(--ywc-surface-2)); color:var(--ywc-muted); font-size:12px; font-weight:650; }
+.ywc-table th, .ywc-table td { padding:10px; border-bottom:1px solid var(--ywc-border); text-align:left; white-space:nowrap; font-size:var(--dsh-content-font-size-secondary,13px); }
+.ywc-table th { position:sticky; top:0; z-index:1; background: color-mix(in srgb, var(--ywc-brand) 5%, var(--ywc-surface-2)); color:var(--ywc-muted); font-weight:600; }
 .ywc-table tbody tr:hover { background: color-mix(in srgb, var(--ywc-brand) 6%, transparent); }
 .ywc-work-cell { display:grid; grid-template-columns:54px minmax(220px,320px); gap:10px; align-items:center; }
-.ywc-cover { position:relative; width:54px; height:72px; display:grid; place-items:center; border-radius:5px; overflow:hidden; background:var(--ywc-surface-2); color:var(--ywc-muted); font-size:11px; text-align:center; }
+.ywc-cover { position:relative; width:54px; height:72px; display:grid; place-items:center; border-radius:5px; overflow:hidden; background:var(--ywc-surface-2); color:var(--ywc-muted); font-size:12px; text-align:center; }
 .ywc-cover span { position:absolute; right:3px; bottom:3px; padding:1px 4px; border-radius:3px; background:rgba(0,0,0,.65); color:#fff; }
 .ywc-work-title { min-width:0; max-width:320px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:650; }
-.ywc-work-sub { margin-top:3px; color:var(--ywc-muted); font-size:11px; }
+.ywc-work-sub { margin-top:3px; color:var(--ywc-muted); font-size:12px; }
 .ywc-link { border:0; background:transparent; color:var(--ywc-brand); font-weight:650; padding:0; }
-.ywc-empty { color:var(--ywc-muted); }
+.ywc-empty { color:var(--ywc-muted); font-size:var(--dsh-content-font-size-secondary,13px); }
 .ywc-account-page { display:flex; flex-direction:column; gap:12px; }
 .ywc-section-title { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:12px 12px 0; }
-.ywc-section-title h3 { margin:0; font-size:14px; }
+.ywc-section-title h3 { margin:0; font-size:var(--dsh-content-font-size,14px); }
 .ywc-window-group { display:inline-flex; border:1px solid var(--ywc-border); border-radius:6px; overflow:hidden; }
-.ywc-window-group button { min-height:30px; padding:0 10px; border:0; background:var(--ywc-surface); color:var(--ywc-muted); font-size:12px; }
+.ywc-window-group button { min-height:30px; padding:0 10px; border:0; background:var(--ywc-surface); color:var(--ywc-muted); font-size:var(--dsh-content-font-size-secondary,13px); }
 .ywc-window-group button[aria-selected="true"] { background: color-mix(in srgb, var(--ywc-brand) 12%, var(--ywc-surface)); color:var(--ywc-brand); font-weight:700; box-shadow: inset 0 -2px 0 var(--ywc-brand-line); }
 .ywc-two-column { display:grid; grid-template-columns:minmax(0,1.4fr) minmax(280px,.8fr); gap:12px; }
 .ywc-chart-body { padding:12px; }
-.ywc-chart-legend { display:flex; gap:12px; flex-wrap:wrap; margin-bottom:8px; color:var(--ywc-muted); font-size:12px; }
+.ywc-chart-legend { display:flex; gap:12px; flex-wrap:wrap; margin-bottom:8px; color:var(--ywc-muted); font-size:var(--dsh-content-font-size-secondary,13px); }
 .ywc-chart-legend i { display:inline-block; width:10px; height:3px; margin-right:5px; vertical-align:middle; background:var(--ywc-brand); }
 .ywc-svg { display:block; width:100%; height:180px; }
 .ywc-bars { display:grid; gap:8px; padding:12px; }
-.ywc-bar-row { display:grid; grid-template-columns:84px minmax(0,1fr) 62px; gap:8px; align-items:center; font-size:12px; }
+.ywc-bar-row { display:grid; grid-template-columns:84px minmax(0,1fr) 62px; gap:8px; align-items:center; font-size:var(--dsh-content-font-size-secondary,13px); }
 .ywc-bar-track { height:8px; border-radius:4px; background:var(--ywc-surface-2); overflow:hidden; }
 .ywc-bar-fill { height:100%; border-radius:4px; background: linear-gradient(90deg, color-mix(in srgb, var(--ywc-brand) 62%, transparent), var(--ywc-brand-line)); box-shadow: 0 0 12px color-mix(in srgb, var(--ywc-brand) 18%, transparent); }
 .ywc-bar-value { text-align:right; color:var(--ywc-muted); }
 .ywc-profile-tabs { display:flex; gap:4px; padding:10px 12px 0; border-bottom:1px solid var(--ywc-border); overflow-x:auto; }
-.ywc-profile-tabs button { border:0; border-bottom:2px solid transparent; padding:8px 9px; background:transparent; color:var(--ywc-muted); font-size:12px; white-space:nowrap; }
+.ywc-profile-tabs button { border:0; border-bottom:2px solid transparent; padding:8px 9px; background:transparent; color:var(--ywc-muted); font-size:var(--dsh-content-font-size-secondary,13px); white-space:nowrap; }
 .ywc-profile-tabs button[aria-selected="true"] { border-bottom-color:var(--ywc-brand-line); color:var(--ywc-brand); font-weight:650; }
 .ywc-modal { position:fixed; inset:0; z-index:20; display:none; place-items:center; padding:24px; background:rgba(31,35,41,.42); backdrop-filter:blur(8px); }
 .ywc-modal.open { display:grid; }
@@ -190,12 +199,12 @@ const STYLES = `
 .ywc-detail-cover { width:150px; height:200px; display:grid; place-items:center; border-radius:7px; background:var(--ywc-surface-2); color:var(--ywc-muted); }
 .ywc-metric-grid { display:grid; grid-template-columns:repeat(4, minmax(0,1fr)); gap:8px; }
 .ywc-detail-section { border-top:1px dashed var(--ywc-border); padding-top:10px; }
-.ywc-detail-section h4 { margin:0 0 8px; font-size:13px; }
+.ywc-detail-section h4 { margin:0 0 8px; font-size:var(--dsh-content-font-size,14px); }
 .ywc-close { width:32px; height:32px; border:1px solid var(--ywc-border); border-radius:6px; background:var(--ywc-surface); color:var(--ywc-muted); }
-.ywc-qr { width:210px; height:210px; margin:12px auto; display:grid; place-items:center; border:1px dashed var(--ywc-brand); border-radius:8px; color:var(--ywc-muted); text-align:center; }
-.ywc-note { padding:0 16px 16px; color:var(--ywc-muted); font-size:12px; line-height:1.7; }
-.ywc-badge { display:inline-flex; align-items:center; min-height:22px; padding:0 7px; border-radius:4px; background:var(--ywc-surface-2); color:var(--ywc-muted); font-size:12px; }
-@media (max-width:1080px) { .ywc-body { grid-template-columns:1fr; } .ywc-summary-grid, .ywc-kpi-grid { grid-template-columns:repeat(3,minmax(0,1fr)); } .ywc-two-column { grid-template-columns:1fr; } .ywc-dialog-grid { grid-template-columns:1fr; } .ywc-detail-cover { width:100%; height:180px; } }
+.ywc-note { padding:0 16px 16px; color:var(--ywc-muted); font-size:var(--dsh-content-font-size-secondary,13px); line-height:1.7; }
+.ywc-badge { display:inline-flex; align-items:center; min-height:22px; padding:0 7px; border-radius:4px; background:var(--ywc-surface-2); color:var(--ywc-muted); font-size:var(--dsh-content-font-size-secondary,13px); }
+/* 窄屏（对齐抖音 1120 断点行为）：body 纵向滚动，表格区域固定 60vh 内滚。 */
+@media (max-width:1080px) { .ywc-body { display:block; overflow:auto; } .ywc-right { overflow:visible; } .ywc-right .ywc-work-panel .ywc-table-wrap { max-height:60vh; } .ywc-summary-grid, .ywc-kpi-grid { grid-template-columns:repeat(3,minmax(0,1fr)); } .ywc-two-column { grid-template-columns:1fr; } .ywc-dialog-grid { grid-template-columns:1fr; } .ywc-detail-cover { width:100%; height:180px; } }
 @media (max-width:680px) { .ywc-header, .ywc-body, .ywc-tabs { padding-left:12px; padding-right:12px; } .ywc-summary-grid, .ywc-kpi-grid, .ywc-metric-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } .ywc-title p { display:none; } }
 `
 
@@ -241,9 +250,9 @@ function Overlay() {
     return () => {
       const lastTrigger = overlayTrigger
       if (lastTrigger && typeof lastTrigger.focus === 'function') {
-        requestAnimationFrame(() => lastTrigger.focus())
+        requestAnimationFrame(() => lastTrigger?.focus?.())
       } else if (previous && typeof previous.focus === 'function') {
-        previous.focus()
+        previous?.focus?.()
       }
     }
   }, [visible])
@@ -294,14 +303,11 @@ function WxWorkbench({ host, initial = null }) {
   const [profile, setProfile] = useState((initial && initial.profile) || null)
   const [profileKey, setProfileKey] = useState((initial && initial.profileKey) || 'gender')
   const [windowKey, setWindowKey] = useState((initial && initial.windowKey) || 'last_7d')
-  const [range, setRange] = useState('all')
-  const [customFrom, setCustomFrom] = useState('')
-  const [customTo, setCustomTo] = useState('')
-  const [sort, setSort] = useState('publish_time')
-  const [order] = useState('desc')
-  const [displayCount, setDisplayCount] = useState(WORKS_PAGE_SIZE)
+  // 表头排序（对齐抖音）：{key, direction} 三态循环，客户端排序只作用于已入库数据。
+  const [sort, setSort] = useState(DEFAULT_SORT_STATE)
   const [detail, setDetail] = useState((initial && initial.detail) || null)
   const [detailDaily, setDetailDaily] = useState((initial && initial.detailDaily) || [])
+  // 登录进行中状态（不再渲染二维码弹层）：驱动「添加账号」按钮的禁用与文案。
   const [login, setLogin] = useState(null)
   const [batch, setBatch] = useState(null)
   const [notice, setNotice] = useState(null)
@@ -310,13 +316,12 @@ function WxWorkbench({ host, initial = null }) {
   // 确认后远端删除执行中 = confirmed_pending_adapter（§16.2 删除状态机）。
   const [deleteLifecycle, setDeleteLifecycle] = useState(null)
   const [collectBusy, setCollectBusy] = useState(false)
-  const loginRef = useRef(null)
 
   const selected = useMemo(
     () => accounts.find(account => account.accountId === selectedId) || null,
     [accounts, selectedId],
   )
-  const visibleWorks = useMemo(() => sortWorks(works, sort, order), [works, sort, order])
+  const visibleWorks = useMemo(() => sortWorks(works, sort), [works, sort])
 
   const noticeTimer = useRef(null)
   const notify = useCallback(message => {
@@ -337,20 +342,16 @@ function WxWorkbench({ host, initial = null }) {
     return rows
   }, [post])
 
-  const refreshWorks = useCallback(async (accountId, rangeOverride = null, from = null, to = null) => {
+  const refreshWorks = useCallback(async accountId => {
     if (!accountId) { setWorks([]); return }
-    const activeRange = rangeOverride || range
-    const extra = activeRange === 'custom' && from && to
-      ? { publishedFrom: from, publishedTo: to }
-      : {}
     try {
-      const result = await post('works.list', { accountId, ...extra })
+      const result = await post('works.list', { accountId })
       setWorks(Array.isArray(result.works) ? result.works : [])
     } catch (error) {
       setWorks([])
       notify(`作品列表加载失败：${error.message}`)
     }
-  }, [post, notify, range])
+  }, [post, notify])
 
   const refreshOverview = useCallback(async (accountId, window) => {
     if (!accountId) { setOverview(null); setSummaryOverview(null); setProfile(null); return }
@@ -393,7 +394,7 @@ function WxWorkbench({ host, initial = null }) {
     return () => { cancelled = true }
   }, [post, refreshAccounts])
 
-  // 切换账号 / 排序窗口变化 → 刷新作品与账号数据（排序筛选只查库，不触发采集）。
+  // 切换账号 / 窗口变化 → 刷新作品与账号数据（查询只读库，不触发采集）。
   useEffect(() => {
     if (selectedId) {
       void refreshWorks(selectedId)
@@ -404,7 +405,6 @@ function WxWorkbench({ host, initial = null }) {
       setSummaryOverview(null)
       setProfile(null)
     }
-    setDisplayCount(WORKS_PAGE_SIZE)
   }, [selectedId, windowKey, refreshWorks, refreshOverview])
 
   // 批量进度轮询。
@@ -418,10 +418,11 @@ function WxWorkbench({ host, initial = null }) {
     return () => clearInterval(timer)
   }, [post])
 
+  // 添加账号（对齐抖音 onAddAccount）：点击直接由宿主打开系统 Chrome 进入官方
+  // 视频号助手扫码；无二维码弹层，进行中状态由左栏按钮文案承载。
   const beginLogin = useCallback(() => {
     void (async () => {
       const result = await post('account.beginLogin', {})
-      loginRef.current = result.loginKey
       setLogin({ loginKey: result.loginKey, state: result.state })
       pollLogin(result.loginKey)
     })().catch(error => notify(`登录发起失败：${error.message}`))
@@ -449,26 +450,23 @@ function WxWorkbench({ host, initial = null }) {
         const status = await post('account.loginStatus', { accountId: loginKey })
         if (status.state === 'ok') {
           stopLoginPolling()
-          setLogin({ loginKey, state: 'ok' })
+          setLogin(null)
+          notify('登录成功')
           await refreshAccounts()
-          setTimeout(() => setLogin(null), 1200)
         } else if (status.state === 'idle') {
           stopLoginPolling()
           setLogin(null)
+        } else if (status.state === 'timeout' || status.state === 'failed') {
+          // 终态必须停轮询并恢复按钮，否则「添加账号」永远禁用。
+          stopLoginPolling()
+          setLogin(null)
+          notify(status.state === 'timeout' ? '登录未完成，可重试' : '登录失败，可重试')
         } else {
           setLogin({ loginKey, state: status.state, reason: status.reason })
         }
       } catch { /* 轮询失败下轮重试 */ }
     }, POLL_INTERVAL_MS)
-  }, [post, refreshAccounts, stopLoginPolling])
-
-  const refreshQr = useCallback(() => {
-    const loginKey = loginRef.current
-    if (!loginKey) return
-    void post('account.refreshLoginQr', { accountId: loginKey })
-      .then(status => setLogin({ loginKey, state: status.state }))
-      .catch(error => notify(`刷新失败：${error.message}`))
-  }, [post, notify])
+  }, [post, notify, refreshAccounts, stopLoginPolling])
 
   const probeAccount = useCallback(accountId => {
     void (async () => {
@@ -498,12 +496,6 @@ function WxWorkbench({ host, initial = null }) {
       },
     })
   }, [post, notify, refreshAccounts])
-
-  const confirmRemoval = accountId => {
-    // 保留原实现体为内部函数（被 confirm 弹层 onConfirm 引用）。
-  }
-
-
 
   const collectAccount = useCallback(accountId => {
     void (async () => {
@@ -546,13 +538,9 @@ function WxWorkbench({ host, initial = null }) {
     })().catch(error => notify(`批量采集失败：${error.message}`))
   }, [post, notify])
 
-  // 弹层可关闭性（契约审计）：任一弹层打开时监听 Escape 关闭；关闭后用
-  // requestAnimationFrame 恢复触发元素焦点。
-  const lastTriggerRef = useRef(null)
-  const overlayOpen = Boolean(detail || confirm || login)
+  // Esc 逐层关闭（对齐抖音 keydown 链）：详情弹层 → 确认弹层 → 工作台 overlay；
+  // overlay 关闭时组件卸载，登录/采集轮询由卸载清理统一停止。
   useEffect(() => {
-    if (!overlayOpen) return
-    if (typeof document !== 'undefined') lastTriggerRef.current = document.activeElement
     const onKey = event => {
       if (event.key === 'Escape') {
         if (detail) {
@@ -560,20 +548,26 @@ function WxWorkbench({ host, initial = null }) {
           setDetailDaily([])
         } else if (confirm) {
           setConfirm(null)
-        } else if (login) {
-          stopLoginPolling()
-          loginRef.current = null
-          setLogin(null)
+        } else {
+          setOpened(false)
         }
       }
     }
     document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [detail, confirm])
+
+  // 弹层（详情/确认）关闭后恢复打开前焦点（契约审计可关闭性要求）。
+  const lastDialogTriggerRef = useRef(null)
+  const dialogOpen = Boolean(detail || confirm)
+  useEffect(() => {
+    if (!dialogOpen) return
+    if (typeof document !== 'undefined') lastDialogTriggerRef.current = document.activeElement
     return () => {
-      document.removeEventListener('keydown', onKey)
-      const lastTrigger = lastTriggerRef.current
-      requestAnimationFrame(() => lastTrigger?.focus())
+      const trigger = lastDialogTriggerRef.current
+      requestAnimationFrame(() => trigger?.focus?.())
     }
-  }, [overlayOpen, detail, confirm, login, stopLoginPolling])
+  }, [dialogOpen])
 
   // 批量结束后刷新当前账号数据。
   useEffect(() => {
@@ -609,7 +603,15 @@ function WxWorkbench({ host, initial = null }) {
             h('p', null, '扫码登录视频号助手，采集账号全部作品、账号数据与关注者数据'),
           ),
         ),
-        h('div', { className: 'ywc-header-actions' }),
+        // 右上角关闭按钮（对齐抖音 ydo-header-buttons）：关闭整页工作台。
+        h('div', { className: 'ywc-header-actions' },
+          h(Tooltip, { label: '关闭' },
+            h('button', {
+              className: 'ywc-icon', type: 'button',
+              'aria-label': '关闭视频号工作台', onClick: () => setOpened(false),
+            }, h(IconCloseOutlineRegular, { size: 16 })),
+          ),
+        ),
       ),
       notice ? h('div', { className: 'ywc-badge', role: 'status', 'aria-live': 'polite', style: { margin: '10px 24px 0' } }, notice) : null,
       h('nav', { className: 'ywc-tabs', 'aria-label': '工作台模块' },
@@ -622,7 +624,8 @@ function WxWorkbench({ host, initial = null }) {
             accounts, selectedId, busy: collectBusy,
             browserBlocked,
             batch,
-            onSelect: accountId => { setSelectedId(accountId); setDisplayCount(WORKS_PAGE_SIZE) },
+            loginActive: Boolean(login),
+            onSelect: accountId => setSelectedId(accountId),
             onProbe: probeAccount,
             onRemove: removeAccount,
             onBeginLogin: beginLogin,
@@ -635,32 +638,17 @@ function WxWorkbench({ host, initial = null }) {
         ),
         h('main', { className: 'ywc-right' },
           tab === 'work'
-            ? h('section', { className: 'ywc-panel' },
+            ? h('section', { className: 'ywc-panel ywc-work-panel' },
               h(WorkToolbar, {
                 onCollect: () => selectedId && collectAccount(selectedId),
                 onRefresh: () => selectedId && (refreshWorks(selectedId), refreshOverview(selectedId, windowKey)),
-                range, onRange: value => {
-                  setRange(value)
-                  setDisplayCount(WORKS_PAGE_SIZE)
-                  // 自定义范围由服务端 publishedFrom/To 过滤（§7.3）；切换非 custom 即重查全量。
-                  if (value !== 'custom' && selectedId) void refreshWorks(selectedId, value)
-                },
-                customFrom, customTo,
-                onCustomRange: (from, to) => {
-                  setCustomFrom(from)
-                  setCustomTo(to)
-                  setDisplayCount(WORKS_PAGE_SIZE)
-                  if (from && to && selectedId) void refreshWorks(selectedId, 'custom', from, to)
-                },
-                sort, onSort: value => { setSort(value); setDisplayCount(WORKS_PAGE_SIZE) },
                 disabled: !selectedId || collectBusy,
               }),
               h(WorkSummaryCards, { works, summaryOverview, account: selected }),
               h(WorkTable, {
-                rows: range === "custom" ? visibleWorks : filterWorksByRange(visibleWorks, range),
-                displayCount,
-                total: (range === "custom" ? visibleWorks : filterWorksByRange(visibleWorks, range)).length,
-                onLoadMore: () => setDisplayCount(count => count + WORKS_PAGE_SIZE),
+                rows: visibleWorks,
+                sort,
+                onSortChange: columnKey => setSort(currentSort => nextSortState(currentSort, columnKey)),
                 onOpenDetail: openDetail,
               }),
             )
@@ -668,7 +656,7 @@ function WxWorkbench({ host, initial = null }) {
               window: windowKey, onWindow: setWindowKey,
               overview, profile, profileKey, onProfileKey: setProfileKey,
               accounts, selectedId,
-              onSelectAccount: accountId => { setSelectedId(accountId); setDisplayCount(WORKS_PAGE_SIZE) },
+              onSelectAccount: accountId => setSelectedId(accountId),
             }),
         ),
       ),
@@ -699,11 +687,6 @@ function WxWorkbench({ host, initial = null }) {
         ),
       ),
     ) : null,
-    login ? h(LoginDialog, { login, onRefreshQr: refreshQr, onClose: () => {
-      stopLoginPolling()
-      loginRef.current = null
-      setLogin(null)
-    } }) : null,
   )
 }
 

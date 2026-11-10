@@ -76,32 +76,44 @@ window.__ModuleLoader__.load({
       return (Array.isArray(works) ? works : []).filter(work => work && work.data_gap && Object.keys(work.data_gap).length > 0).length
     }
 
-    /** 作品发布时间范围过滤（本地、只基于已入库数据）。range: 'all'|'7d'|'30d'。 */
-    function filterWorksByRange(works, range, now = new Date()) {
-      const cutoffDays = range === '7d' ? 7 : range === '30d' ? 30 : null
-      if (!cutoffDays) return Array.isArray(works) ? [...works] : []
-      const cutoff = now.getTime() - cutoffDays * 86400_000
-      return (Array.isArray(works) ? works : []).filter(work => {
-        const publish = work && work.publish_time ? new Date(work.publish_time).getTime() : Number.NaN
-        return Number.isFinite(publish) && publish >= cutoff
-      })
+    /** 表头排序默认态：发布时间降序（进入页面即最近发布在前）。
+     * 与抖音 DEFAULT_SORT_STATE（接口原序）不同：视频号现有默认体验是发布时间倒序，保留。 */
+    const DEFAULT_SORT_STATE = { key: 'publish_time', direction: 'desc' }
+
+    /** 表头排序三态状态机（对齐抖音 nextSortState）：点击新列 → desc；
+     * 同列 desc → asc；asc → 回默认态（发布时间降序）。 */
+    function nextSortState(currentState, columnKey) {
+      if (!currentState || currentState.key !== columnKey || currentState.direction === 'default') {
+        return { key: columnKey, direction: 'desc' }
+      }
+      if (currentState.direction === 'desc') return { key: columnKey, direction: 'asc' }
+      return { ...DEFAULT_SORT_STATE }
     }
 
-    /** 作品排序（服务端字段名，本地排序同样只查已入库数据）。 */
-    function sortWorks(works, sort, order) {
-      const key = sort || 'publish_time'
-      const direction = order === 'asc' ? 1 : -1
-      return [...(Array.isArray(works) ? works : [])].sort((a, b) => {
-        const av = a ? a[key] : undefined
-        const bv = b ? b[key] : undefined
-        if (av === bv) return 0
-        if (av === null || av === undefined) return 1
-        if (bv === null || bv === undefined) return -1
-        if (typeof av === 'string' || typeof bv === 'string') {
-          return String(av).localeCompare(String(bv)) * direction
-        }
-        return (av - bv) * direction
-      })
+    /** 作品排序（表头排序态 {key, direction}；本地排序只查已入库数据）：
+     * 缺失值恒沉底且不参与方向翻转；稳定排序保持接口原序。 */
+    function sortWorks(works, sortState) {
+      const rows = Array.isArray(works) ? [...works] : []
+      if (!sortState || !sortState.key || sortState.direction === 'default') return rows
+      const { key, direction } = sortState
+      const sign = direction === 'asc' ? 1 : -1
+      return rows
+        .map((work, index) => ({ work, index }))
+        .sort((left, right) => {
+          const av = left.work ? left.work[key] : undefined
+          const bv = right.work ? right.work[key] : undefined
+          const aMissing = av === null || av === undefined
+          const bMissing = bv === null || bv === undefined
+          if (aMissing && bMissing) return left.index - right.index
+          if (aMissing) return 1
+          if (bMissing) return -1
+          if (av === bv) return left.index - right.index
+          if (typeof av === 'string' || typeof bv === 'string') {
+            return String(av).localeCompare(String(bv)) * sign
+          }
+          return (av - bv) * sign
+        })
+        .map(entry => entry.work)
     }
 
     /** 来源分布行规范化：trafficSource JSON（§17.3）→ [{name, value}]，排除「全部」。 */
@@ -183,22 +195,23 @@ window.__ModuleLoader__.load({
     // 纯展示组件：数据由 client.js 传入；排序/筛选/分页只作用于已入库数据。
 
 
+    /** 表格列定义（对齐抖音 COLUMNS 单一来源）：sortable 列在表头渲染排序按钮。 */
     const TABLE_COLUMNS = [
-      '作品',
-      '发布时间',
-      '完播率',
-      '平均播放时长',
-      '播放',
-      '喜欢',
-      '收藏',
-      '评论',
-      '分享',
-      '转发聊天和朋友圈',
-      '关注量',
-      '企微链接点击',
-      '添加通讯录',
-      '最近采集',
-      '操作',
+      { label: '作品' },
+      { label: '发布时间', key: 'publish_time', sortable: true },
+      { label: '完播率', key: 'completion_rate_pct', sortable: true },
+      { label: '平均播放时长', key: 'avg_play_duration_s', sortable: true },
+      { label: '播放', key: 'play_count', sortable: true },
+      { label: '喜欢', key: 'like_count', sortable: true },
+      { label: '收藏', key: 'favorite_count', sortable: true },
+      { label: '评论', key: 'comment_count', sortable: true },
+      { label: '分享', key: 'share_count', sortable: true },
+      { label: '转发聊天和朋友圈', key: 'forward_count', sortable: true },
+      { label: '关注量', key: 'follow_count', sortable: true },
+      { label: '企微链接点击' },
+      { label: '添加通讯录' },
+      { label: '最近采集' },
+      { label: '操作' },
     ]
 
     /** 顶部摘要卡（§9.2 固定 5 张，不随筛选/排序/分页变化）。
@@ -225,72 +238,51 @@ window.__ModuleLoader__.load({
       )
     }
 
-    /** 工具栏（采集本账号全部 / 刷新 / 发布时间范围 / 排序）。 */
-    function WorkToolbar({ onCollect, onRefresh, range, onRange, customFrom, customTo, onCustomRange, sort, onSort, disabled }) {
+    /** 工具栏（采集本账号全部 / 刷新）。筛选与排序在表头完成（对齐抖音工作台）。 */
+    function WorkToolbar({ onCollect, onRefresh, disabled }) {
       return h('div', { className: 'ywc-toolbar' },
         h('div', { className: 'ywc-toolbar-left' },
           h('button', { className: 'ywc-button primary', type: 'button', onClick: onCollect, disabled }, '采集本账号全部'),
           h('button', { className: 'ywc-button', type: 'button', onClick: onRefresh, disabled }, '刷新'),
         ),
-        h('div', { className: 'ywc-toolbar-right' },
-          h('label', { className: 'ywc-field' }, '发布时间',
-            h('select', {
-              className: 'ywc-select', value: range, disabled,
-              onChange: event => onRange(event.target.value), 'aria-label': '发布时间范围',
-            },
-              h('option', { value: 'all' }, '全部'),
-              h('option', { value: '7d' }, '近7天'),
-              h('option', { value: '30d' }, '近30天'),
-              h('option', { value: 'custom' }, '自定义'),
-            ),
-          ),
-          range === 'custom'
-            ? h('label', { className: 'ywc-field' }, '范围',
-              h('input', { className: 'ywc-input', type: 'date', value: customFrom || '', 'aria-label': '发布起始日', onChange: event => onCustomRange(event.target.value, customTo || '') }),
-              '–',
-              h('input', { className: 'ywc-input', type: 'date', value: customTo || '', 'aria-label': '发布结束日', onChange: event => onCustomRange(customFrom || '', event.target.value) }),
-            )
-            : null,
-          h('label', { className: 'ywc-field' }, '排序',
-            h('select', {
-              className: 'ywc-select', value: sort, disabled,
-              onChange: event => onSort(event.target.value), 'aria-label': '作品排序',
-            },
-              h('option', { value: 'publish_time' }, '发布时间'),
-              h('option', { value: 'play_count' }, '播放'),
-              h('option', { value: 'like_count' }, '喜欢'),
-              h('option', { value: 'favorite_count' }, '收藏'),
-              h('option', { value: 'comment_count' }, '评论'),
-              h('option', { value: 'share_count' }, '分享'),
-              h('option', { value: 'follow_count' }, '关注量'),
-            ),
-          ),
-        ),
       )
     }
 
-    /** 作品表格 + 本地分页（每页 20 条 / 加载更多 / 筛选排序后重置，§9.2）。 */
-    function WorkTable({ rows, displayedCount, total, onLoadMore, onOpenDetail }) {
-      const visible = rows.slice(0, displayedCount)
-      const body = visible.length
-        ? visible.map(work => h('tr', { key: work.work_id }, workRowCells(work, onOpenDetail)))
-        : [h('tr', { key: 'empty' }, h('td', { colSpan: TABLE_COLUMNS.length, className: 'ywc-empty' }, '当前账号暂无已入库作品，先执行采集'))]
-      return h('div', { key: 'work-table' },
-        h('div', { className: 'ywc-table-wrap' },
-          h('table', { className: 'ywc-table', 'aria-label': '视频号作品列表' },
-            h('thead', null, h('tr', null, TABLE_COLUMNS.map(column => h('th', { key: column }, column)))),
-            h('tbody', null, body),
-          ),
-        ),
-        h('div', { className: 'ywc-table-footer' },
-          // total 缺失（未加载账号时 feedCount 未知）回退 rows.length，不显示 NaN。
-          h('span', null, `已展示 ${Math.min(displayedCount ?? rows.length, rows.length)} / ${total ?? rows.length} 条已入库作品`),
-          h('button', {
-            className: 'ywc-button', type: 'button',
-            disabled: displayedCount >= rows.length, onClick: onLoadMore,
-          }, '加载更多'),
-        ),
+    /** 作品表格（对齐抖音 WorkTable 交互）：
+     * - 无数据不渲染表格框架，只显示居中空态提示（ydo-state 同款）；
+     * - 可排序列表头为按钮：点击 desc → asc → 默认循环，箭头 ↕/↓/↑ + aria-sort；
+     * - 全量渲染已入库作品，固定高度区域内部滚动（无「加载更多」分页）。 */
+    function WorkTable({ rows, sort = DEFAULT_SORT_STATE, onSortChange, onOpenDetail }) {
+      if (!rows.length) {
+        return h('div', { className: 'ywc-table-state', role: 'status' },
+          h('p', null, '当前账号暂无已入库作品，先执行「采集本账号全部」'),
         )
+      }
+      const headCells = TABLE_COLUMNS.map(column => {
+        if (!column.sortable) return h('th', { key: column.label, scope: 'col' }, column.label)
+        const direction = sort && sort.key === column.key && sort.direction !== 'default' ? sort.direction : 'default'
+        const arrow = direction === 'desc' ? '↓' : direction === 'asc' ? '↑' : '↕'
+        return h('th', {
+          key: column.label, scope: 'col',
+          'aria-sort': direction === 'desc' ? 'descending' : direction === 'asc' ? 'ascending' : 'none',
+        },
+          h('button', {
+            type: 'button',
+            className: `ywc-sort${direction !== 'default' ? ' ywc-sort-active' : ''}`,
+            onClick: () => onSortChange && onSortChange(column.key),
+            'aria-label': `${column.label}：${direction === 'desc' ? '降序' : direction === 'asc' ? '升序' : '默认排序'}`,
+          },
+            h('span', { className: 'ywc-sort-text' }, column.label),
+            h('span', { className: 'ywc-sort-arrow', 'aria-hidden': true }, arrow),
+          ),
+        )
+      })
+      return h('div', { className: 'ywc-table-wrap' },
+        h('table', { className: 'ywc-table', 'aria-label': '视频号作品列表' },
+          h('thead', null, h('tr', null, headCells)),
+          h('tbody', null, rows.map(work => h('tr', { key: work.work_id }, workRowCells(work, onOpenDetail)))),
+        ),
+      )
     }
 
     function workRowCells(work, onOpenDetail) {
@@ -503,10 +495,10 @@ window.__ModuleLoader__.load({
 
     /** 左侧账号管理栏（仅作品数据 Tab 显示；对齐抖音 ydo-accounts 结构）：
      * 标题行「账号管理 + 采集全部」→ 批量文本面板（仅批量运行/有结果时渲染）→
-     * 账号卡列表 → 底部「添加账号」宽主按钮。 */
+     * 账号卡列表 → 底部「添加账号」宽主按钮（登录进行中显示扫码提示并禁用）。 */
     function AccountList({
       accounts, selectedId, onSelect, onProbe, onRemove, onBeginLogin,
-      batch, onCollectAll, busy, browserBlocked,
+      batch, onCollectAll, busy, browserBlocked, loginActive,
     }) {
       const collectable = accounts.some(item => item.deleteState !== 'remote_deleted' && item.sessionStatus === 'ok')
       const running = batch && batch.phase && batch.phase !== 'finished'
@@ -560,16 +552,13 @@ window.__ModuleLoader__.load({
               ),
             )),
         ),
-        h('button', {
-          className: 'ywc-primary ywc-wide', type: 'button',
-          disabled: browserBlocked, onClick: onBeginLogin,
-        }, '添加账号'),
+        h(LoginStatusButton, { loginActive, browserBlocked, onBeginLogin }),
       )
     }
 
     /** 账号数据 Tab（§9.4 三段：全部视频指标 / 关注者增长 / 关注者画像）。
-     * 全宽独占布局：页内自带账号选择器（对齐抖音账号总览的账号下拉），切换后
-     * 三段数据随之刷新。 */
+     * 全宽独占布局：页内自带账号选择器（对齐抖音总览的账号下拉：有账号即显示，
+     * 不因单账号隐藏），切换后三段数据随之刷新。 */
     function AccountTab({
       window: windowKey, onWindow, overview, profile, profileKey, onProfileKey,
       accounts, selectedId, onSelectAccount,
@@ -577,7 +566,7 @@ window.__ModuleLoader__.load({
       const availability = (overview && overview.availability) || {}
       const usable = (Array.isArray(accounts) ? accounts : []).filter(item => item.deleteState !== 'remote_deleted')
       return h('div', { className: 'ywc-account-page' },
-        usable.length > 1
+        usable.length > 0
           ? h('div', { className: 'ywc-field', style: { justifyContent: 'flex-start', gap: 8 } },
             '当前账号',
             h('select', {
@@ -689,62 +678,26 @@ window.__ModuleLoader__.load({
         paths.push(h('path', {
           key: `p${index}`,
           d: `M${points[index - 1].x},${points[index - 1].y}L${points[index].x},${points[index].y}`,
-          stroke: 'var(--ywc-brand)', 'stroke-width': '3', fill: 'none',
+          stroke: 'var(--ywc-brand)', 'strokeWidth': 3, fill: 'none',
         }))
       }
       for (const point of points) {
         paths.push(h('circle', {
           key: `c${point.x}-${point.y}`, cx: point.x, cy: point.y, r: 4,
-          fill: 'var(--ywc-surface)', stroke: 'var(--ywc-brand)', 'stroke-width': '2',
+          fill: 'var(--ywc-surface)', stroke: 'var(--ywc-brand)', 'strokeWidth': 2,
         }, h('title', null, String(point.value))))
       }
       return paths
     }
 
-    /** 登录弹层（§18.2：状态机 + 刷新二维码；不展示/不保存真实二维码）。 */
-    function LoginDialog({ login, onRefreshQr, onClose }) {
-      const stateText = {
-        waiting_qr: '等待扫码',
-        waiting_confirm: '已扫码，请在手机确认',
-        qr_expired: '二维码已过期',
-        ok: '登录成功',
-        timeout: '登录未完成，可重试',
-        failed: '登录失败，可重试',
-        idle: '准备中…',
-      }
-      return h('div', { className: 'ywc-modal open', role: 'dialog', 'aria-modal': 'true', onClick: backdropClose(onClose) },
-        h('div', { className: 'ywc-dialog', style: { width: 'min(430px,100%)' }, onClick: stopPropagation },
-          h('header', { className: 'ywc-dialog-header' },
-            h('h2', null, '添加视频号账号'),
-            h('button', { className: 'ywc-close', type: 'button', 'aria-label': '关闭登录弹层', onClick: onClose }, '×'),
-          ),
-          h('div', { className: 'ywc-dialog-body' },
-            h('p', { className: 'ywc-card-meta' }, '系统 Chrome 将打开官方视频号助手，请使用微信扫码并在手机确认。'),
-            h('div', { className: 'ywc-qr' }, '官方二维码占位', h('br'), '不截存二维码'),
-            h('div', { style: { display: 'flex', justifyContent: 'center' } },
-              h('button', { className: 'ywc-button', type: 'button', onClick: onRefreshQr }, '刷新二维码'),
-            ),
-            h('div', { className: 'ywc-metric-grid', style: { gridTemplateColumns: '1fr 1fr' } },
-              h('div', { className: 'ywc-kpi' },
-                h('div', { className: 'ywc-kpi-label' }, '状态'),
-                h('div', { className: 'ywc-kpi-value' }, login && login.state ? stateText[login.state] || login.state : stateText.idle),
-              ),
-              h('div', { className: 'ywc-kpi' },
-                h('div', { className: 'ywc-kpi-label' }, '登录态'),
-                h('div', { className: 'ywc-kpi-value' }, '仅本机'),
-              ),
-            ),
-          ),
-          h('p', { className: 'ywc-note' }, '二维码过期后可重新发起扫码；未读出稳定账号 ID 前不保存正式账号。'),
-        ),
-      )
+    /** 登录交互（对齐抖音）：点击「添加账号」由宿主直接打开系统 Chrome 进入官方
+     * 视频号助手扫码，不再渲染二维码占位弹层；进行中状态由左栏按钮文案承载。 */
+    function LoginStatusButton({ loginActive, browserBlocked, onBeginLogin }) {
+      return h('button', {
+        className: 'ywc-primary ywc-wide', type: 'button',
+        disabled: browserBlocked || loginActive, onClick: onBeginLogin,
+      }, loginActive ? '浏览器已打开，请在窗口中扫码…' : '添加账号')
     }
-
-    function backdropClose(onClose) {
-      return event => { if (event.target === event.currentTarget) onClose() }
-    }
-
-    function stopPropagation(event) { event.stopPropagation() }
 
     // 视频号工作台页面侧（视觉与交互基准：docs/1109/wx/ui-demo.html，§9.0）。
     // 页面只访问本地同源路由 /api/desktop/yootun/wx-channels-operation（§4.1）：
@@ -754,11 +707,10 @@ window.__ModuleLoader__.load({
     const React = require('react')
     const { createElement: h } = React
     const { useState, useEffect, useMemo, useRef, useCallback, useSyncExternalStore } = React
-    const { IconSparkleRegular, Tooltip } = require('@deepseek-ai/dsh-client-ui-primitives')
+    const { IconCloseOutlineRegular, IconSparkleRegular, Tooltip } = require('@deepseek-ai/dsh-client-ui-primitives')
 
 
     const ROUTE = '/api/desktop/yootun/wx-channels-operation'
-    const WORKS_PAGE_SIZE = 20
     const POLL_INTERVAL_MS = 1200
 
     // 左下角侧栏入口 + 整页 overlay（对齐抖音 yootun 系插件机制）：
@@ -824,19 +776,21 @@ window.__ModuleLoader__.load({
         --ywc-success: var(--dsw-alias-state-success-primary, #4ade80);
       }
     }
-    .ywc-root { height:100vh; color:var(--ywc-text); }
-    .ywc-overlay { position:fixed; inset:0; z-index:520; background:var(--ywc-bg); color:var(--ywc-text); overflow:hidden; }
+    /* 字体体系对齐抖音工作台：基线 14px / 次级 13px / 页标题 20px / 面板标题 16px，
+       一律用宿主字体变量（真机缺失时回退同值字面量），不自行创造字号。 */
+    .ywc-root { height:100vh; color:var(--ywc-text); font-size:var(--dsh-content-font-size,14px); }
+    .ywc-overlay { position:fixed; inset:0; z-index:520; background:var(--ywc-bg); color:var(--ywc-text); overflow:hidden; font-size:var(--dsh-content-font-size,14px); }
     .ywc-sidebar-button { display:flex; width:36px; height:36px; align-items:center; justify-content:center; gap:8px; border:0; border-radius:6px; background:transparent; color:var(--dsw-alias-label-secondary); cursor:pointer; }
     .ywc-sidebar-button:hover { background:var(--dsw-alias-bg-layer-2); color:var(--dsw-alias-label-primary); }
     .ywc-shell { height:100vh; display:flex; flex-direction:column; overflow:hidden; }
     .ywc-header{min-height:72px; display:flex; align-items:center; justify-content:space-between; gap:20px; padding:14px 24px; border-bottom:1px solid var(--ywc-border); background: color-mix(in srgb, var(--ywc-surface) 88%, transparent); backdrop-filter: blur(14px); box-shadow: 0 1px 24px color-mix(in srgb, var(--ywc-text) 7%, transparent); }
     .ywc-title { display:flex; align-items:center; gap:12px; min-width:0; }
     .ywc-mark{width:36px;height:36px; flex:0 0 auto; display:grid; place-items:center; border-radius:8px; background: color-mix(in srgb, var(--ywc-brand) 16%, transparent); color: var(--ywc-brand); font-weight:800; }
-    .ywc-title h1 { margin:0; font-size:20px; line-height:1.25; }
-    .ywc-title p { margin:3px 0 0; color:var(--ywc-muted); font-size:12px; }
+    .ywc-title h1 { margin:0; font-size:var(--dsw-font-l-20-font-size,20px); line-height:1.25; }
+    .ywc-title p { margin:6px 0 0; color:var(--ywc-muted); font-size:var(--dsh-content-font-size-secondary,13px); }
     .ywc-header-actions { display:flex; align-items:center; gap:8px; }
     .ywc-tabs { display:flex; gap:4px; padding:0 24px; background: color-mix(in srgb, var(--ywc-surface) 86%, transparent); backdrop-filter: blur(12px); border-bottom:1px solid var(--ywc-border); overflow-x:auto; }
-    .ywc-tab { height:44px; padding:0 18px; border:0; border-bottom:3px solid transparent; background:transparent; color:var(--ywc-muted); font-weight:650; white-space:nowrap; }
+    .ywc-tab { height:44px; padding:0 18px; border:0; border-bottom:3px solid transparent; background:transparent; color:var(--ywc-muted); font:inherit; font-size:var(--dsh-content-font-size,14px); font-weight:650; white-space:nowrap; }
     .ywc-tab:hover { color: var(--ywc-text); }
     .ywc-tab[aria-selected="true"] { color:var(--ywc-text); border-bottom-color: var(--ywc-brand-line); background: linear-gradient(180deg, transparent 68%, color-mix(in srgb, var(--ywc-brand) 9%, transparent)); }
     .ywc-body { flex:1; min-height:0; display:grid; grid-template-columns:280px minmax(0,1fr); gap:16px; padding:16px 24px 24px;  overflow:hidden; }
@@ -845,7 +799,7 @@ window.__ModuleLoader__.load({
     .ywc-accounts { display:flex; flex-direction:column; gap:10px; min-width:0; }
     .ywc-panel { border:1px solid var(--ywc-border); border-radius:8px; background: color-mix(in srgb, var(--ywc-surface) 92%, transparent); backdrop-filter: blur(12px); box-shadow: 0 10px 34px color-mix(in srgb, var(--ywc-text) 6%, transparent); }
     .ywc-side-head { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:12px 12px 0; }
-    .ywc-side-head h2 { margin:0; font-size:14px; }
+    .ywc-side-head h2 { margin:0; font-size:var(--dsw-font-base-16-font-size,16px); }
     .ywc-account-list { display:flex; flex-direction:column; gap:8px; padding:10px 12px 12px; }
     .ywc-card { border:1px solid var(--ywc-border); border-radius:8px; background: color-mix(in srgb, var(--ywc-surface) 94%, transparent); text-align:left; padding:0; overflow:hidden; }
     .ywc-card[aria-current="true"] { border-color: color-mix(in srgb, var(--ywc-brand) 60%, var(--ywc-border)); }
@@ -853,14 +807,14 @@ window.__ModuleLoader__.load({
     .ywc-card-main { width:100%; display:grid; grid-template-columns:36px minmax(0,1fr); gap:10px; align-items:center; border:0; background:transparent; padding:10px; text-align:left; color:inherit; }
     .ywc-card-main:hover { background: var(--ywc-surface-2); }
     .ywc-avatar { width:36px; height:36px; display:grid; place-items:center; border-radius:50%; background: color-mix(in srgb, var(--ywc-brand) 18%, var(--ywc-surface-2)); color:var(--ywc-brand); font-weight:700; }
-    .ywc-card-name { display:block; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:650; }
-    .ywc-card-meta { display:block; margin-top:2px; color:var(--ywc-muted); font-size:12px; }
-    .ywc-state { display:inline-flex; align-items:center; gap:5px; margin-top:5px; font-size:12px; color:var(--ywc-muted); }
+    .ywc-card-name { display:block; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:600; }
+    .ywc-card-meta { display:block; margin-top:2px; color:var(--ywc-muted); font-size:var(--dsh-content-font-size-secondary,13px); }
+    .ywc-state { display:inline-flex; align-items:center; gap:5px; margin-top:5px; font-size:var(--dsh-content-font-size-secondary,13px); color:var(--ywc-muted); }
     .ywc-state::before { content:""; width:6px; height:6px; border-radius:50%; background:currentColor; }
     .ywc-state[data-state="ok"] { color:var(--ywc-success); }
     .ywc-state[data-state="expired"] { color:var(--ywc-danger); }
     .ywc-card-actions { display:flex; border-top:1px solid var(--ywc-border); background:var(--ywc-surface); }
-    .ywc-mini-button { flex:1; min-height:30px; border:0; background:transparent; color:var(--ywc-muted); font-size:12px; }
+    .ywc-mini-button { flex:1; min-height:30px; border:0; background:transparent; color:var(--ywc-muted); font-size:var(--dsh-content-font-size-secondary,13px); }
     .ywc-mini-button:hover { background:var(--ywc-surface-2); color:var(--ywc-text); }
     .ywc-mini-button.danger:hover { color:var(--ywc-danger); }
     .ywc-button { min-height:34px; display:inline-flex; align-items:center; justify-content:center; gap:6px; padding:0 12px; border:1px solid var(--ywc-border); border-radius:6px; background:var(--ywc-surface); color:var(--ywc-text); white-space:nowrap; }
@@ -871,12 +825,12 @@ window.__ModuleLoader__.load({
     .ywc-primary:disabled { opacity:.45; cursor:default; }
     .ywc-wide { width:100%; }
     .ywc-batch-panel { display:grid; gap:4px; padding:10px 12px; border:1px solid var(--ywc-border); border-radius:8px; background:var(--ywc-surface-2); min-width:0; }
-    .ywc-batch-panel p { margin:0; font-size:12px; color:var(--ywc-text); }
-    .ywc-hint { margin:0; color:var(--ywc-muted); font-size:12px; line-height:1.5; }
-    .ywc-ok { margin:0; color:var(--ywc-success); font-size:12px; }
-    .ywc-error { margin:0; color:var(--ywc-danger); font-size:12px; }
-    .ywc-warn { margin:0; color:var(--ywc-muted); font-size:12px; }
-    /* 36px 图标按钮基线（契约审计 canonical icon 基线；弹层关闭/头部图标钮复用）。 */
+    .ywc-batch-panel p { margin:0; font-size:var(--dsh-content-font-size-secondary,13px); color:var(--ywc-text); }
+    .ywc-hint { margin:0; color:var(--ywc-muted); font-size:var(--dsh-content-font-size-secondary,13px); line-height:1.5; }
+    .ywc-ok { margin:0; color:var(--ywc-success); font-size:var(--dsh-content-font-size-secondary,13px); }
+    .ywc-error { margin:0; color:var(--ywc-danger); font-size:var(--dsh-content-font-size-secondary,13px); }
+    .ywc-warn { margin:0; color:var(--ywc-muted); font-size:var(--dsh-content-font-size-secondary,13px); }
+    /* 36px 图标按钮基线（契约审计 canonical icon 基线；弹层关闭/头部关闭钮复用，对齐 ydo-header-buttons）。 */
     .ywc-icon{width:36px;height:36px; display:grid; place-items:center; padding:0; border:1px solid var(--ywc-border); border-radius:6px; background:var(--ywc-surface); color:var(--ywc-muted); cursor:pointer; }
     .ywc-icon:hover { background:var(--ywc-surface-2); color:var(--ywc-text); }
     .ywc-right { min-width:0; min-height:0; display:flex; flex-direction:column; gap:12px; overflow:hidden; }
@@ -885,45 +839,53 @@ window.__ModuleLoader__.load({
     .ywc-right .ywc-account-page { flex:1; min-height:0; overflow:auto; }
     .ywc-toolbar { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; padding:12px; }
     .ywc-toolbar-left, .ywc-toolbar-right { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
-    .ywc-field { display:inline-flex; align-items:center; gap:6px; color:var(--ywc-muted); font-size:12px; }
-    .ywc-input, .ywc-select { min-height:32px; padding:0 8px; border:1px solid var(--ywc-border); border-radius:6px; background:var(--ywc-surface); color:var(--ywc-text); }
+    .ywc-field { display:inline-flex; align-items:center; gap:6px; color:var(--ywc-muted); font-size:var(--dsh-content-font-size-secondary,13px); }
+    .ywc-input, .ywc-select { min-height:36px; padding:0 10px; border:1px solid var(--ywc-border); border-radius:6px; background:var(--ywc-surface); color:var(--ywc-text); font:inherit; font-size:var(--dsh-content-font-size-secondary,13px); }
     .ywc-summary-grid, .ywc-kpi-grid { display:grid; grid-template-columns:repeat(5, minmax(0,1fr)); gap:10px; padding:12px; }
     .ywc-kpi { min-height:78px; padding:10px; border:1px solid var(--ywc-border); border-radius:8px; position:relative; overflow:hidden; background: linear-gradient(160deg, color-mix(in srgb, var(--ywc-brand) 4%, var(--ywc-surface)), var(--ywc-surface) 62%); }
     .ywc-kpi::after { content:""; position:absolute; inset:0 0 auto; height:2px; background: linear-gradient(90deg, transparent, var(--ywc-brand-line), transparent); opacity:.55; }
-    .ywc-kpi-label { color:var(--ywc-muted); font-size:12px; }
-    .ywc-kpi-value { margin-top:8px; font-size:20px; font-weight:750; font-variant-numeric: tabular-nums; letter-spacing:-.02em; }
-    .ywc-kpi-hint { margin-top:3px; color:var(--ywc-muted); font-size:11px; }
+    .ywc-kpi-label { color:var(--ywc-muted); font-size:var(--dsh-content-font-size-secondary,13px); }
+    .ywc-kpi-value { margin-top:8px; font-size:20px; font-weight:650; font-variant-numeric: tabular-nums; letter-spacing:-.02em; }
+    .ywc-kpi-hint { margin-top:3px; color:var(--ywc-muted); font-size:12px; }
     .ywc-table-wrap { overflow:auto; min-height:0; border-top:1px solid var(--ywc-border); }
-    .ywc-table-footer { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:10px 12px; border-top:1px solid var(--ywc-border); color:var(--ywc-muted); font-size:12px; }
+    /* 表头排序按钮（对齐 ydo-sort）：整格可点击，箭头 ↕/↓/↑，激活列高亮。 */
+    .ywc-sort { display:flex; width:100%; align-items:center; gap:4px; min-width:0; padding:0; border:0; background:transparent; color:inherit; font:inherit; text-align:left; cursor:pointer; }
+    .ywc-sort-text { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .ywc-sort-arrow { flex:none; min-width:12px; color:var(--ywc-muted); }
+    .ywc-sort-active { color:var(--ywc-text); }
+    .ywc-sort-active .ywc-sort-arrow { color:var(--ywc-brand); }
+    /* 空态（对齐 ydo-state）：无数据时不渲染表格框架，只显示居中提示。 */
+    .ywc-table-state { display:grid; min-height:200px; flex:1; place-items:center; align-content:center; gap:10px; color:var(--ywc-muted); font-size:var(--dsh-content-font-size,14px); text-align:center; }
+    .ywc-table-state p { margin:0; max-width:640px; line-height:1.6; }
     .ywc-table { min-width:1720px; width:100%; border-collapse:collapse; }
-    .ywc-table th, .ywc-table td { padding:10px; border-bottom:1px solid var(--ywc-border); text-align:left; white-space:nowrap; }
-    .ywc-table th { position:sticky; top:0; z-index:1; background: color-mix(in srgb, var(--ywc-brand) 5%, var(--ywc-surface-2)); color:var(--ywc-muted); font-size:12px; font-weight:650; }
+    .ywc-table th, .ywc-table td { padding:10px; border-bottom:1px solid var(--ywc-border); text-align:left; white-space:nowrap; font-size:var(--dsh-content-font-size-secondary,13px); }
+    .ywc-table th { position:sticky; top:0; z-index:1; background: color-mix(in srgb, var(--ywc-brand) 5%, var(--ywc-surface-2)); color:var(--ywc-muted); font-weight:600; }
     .ywc-table tbody tr:hover { background: color-mix(in srgb, var(--ywc-brand) 6%, transparent); }
     .ywc-work-cell { display:grid; grid-template-columns:54px minmax(220px,320px); gap:10px; align-items:center; }
-    .ywc-cover { position:relative; width:54px; height:72px; display:grid; place-items:center; border-radius:5px; overflow:hidden; background:var(--ywc-surface-2); color:var(--ywc-muted); font-size:11px; text-align:center; }
+    .ywc-cover { position:relative; width:54px; height:72px; display:grid; place-items:center; border-radius:5px; overflow:hidden; background:var(--ywc-surface-2); color:var(--ywc-muted); font-size:12px; text-align:center; }
     .ywc-cover span { position:absolute; right:3px; bottom:3px; padding:1px 4px; border-radius:3px; background:rgba(0,0,0,.65); color:#fff; }
     .ywc-work-title { min-width:0; max-width:320px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:650; }
-    .ywc-work-sub { margin-top:3px; color:var(--ywc-muted); font-size:11px; }
+    .ywc-work-sub { margin-top:3px; color:var(--ywc-muted); font-size:12px; }
     .ywc-link { border:0; background:transparent; color:var(--ywc-brand); font-weight:650; padding:0; }
-    .ywc-empty { color:var(--ywc-muted); }
+    .ywc-empty { color:var(--ywc-muted); font-size:var(--dsh-content-font-size-secondary,13px); }
     .ywc-account-page { display:flex; flex-direction:column; gap:12px; }
     .ywc-section-title { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:12px 12px 0; }
-    .ywc-section-title h3 { margin:0; font-size:14px; }
+    .ywc-section-title h3 { margin:0; font-size:var(--dsh-content-font-size,14px); }
     .ywc-window-group { display:inline-flex; border:1px solid var(--ywc-border); border-radius:6px; overflow:hidden; }
-    .ywc-window-group button { min-height:30px; padding:0 10px; border:0; background:var(--ywc-surface); color:var(--ywc-muted); font-size:12px; }
+    .ywc-window-group button { min-height:30px; padding:0 10px; border:0; background:var(--ywc-surface); color:var(--ywc-muted); font-size:var(--dsh-content-font-size-secondary,13px); }
     .ywc-window-group button[aria-selected="true"] { background: color-mix(in srgb, var(--ywc-brand) 12%, var(--ywc-surface)); color:var(--ywc-brand); font-weight:700; box-shadow: inset 0 -2px 0 var(--ywc-brand-line); }
     .ywc-two-column { display:grid; grid-template-columns:minmax(0,1.4fr) minmax(280px,.8fr); gap:12px; }
     .ywc-chart-body { padding:12px; }
-    .ywc-chart-legend { display:flex; gap:12px; flex-wrap:wrap; margin-bottom:8px; color:var(--ywc-muted); font-size:12px; }
+    .ywc-chart-legend { display:flex; gap:12px; flex-wrap:wrap; margin-bottom:8px; color:var(--ywc-muted); font-size:var(--dsh-content-font-size-secondary,13px); }
     .ywc-chart-legend i { display:inline-block; width:10px; height:3px; margin-right:5px; vertical-align:middle; background:var(--ywc-brand); }
     .ywc-svg { display:block; width:100%; height:180px; }
     .ywc-bars { display:grid; gap:8px; padding:12px; }
-    .ywc-bar-row { display:grid; grid-template-columns:84px minmax(0,1fr) 62px; gap:8px; align-items:center; font-size:12px; }
+    .ywc-bar-row { display:grid; grid-template-columns:84px minmax(0,1fr) 62px; gap:8px; align-items:center; font-size:var(--dsh-content-font-size-secondary,13px); }
     .ywc-bar-track { height:8px; border-radius:4px; background:var(--ywc-surface-2); overflow:hidden; }
     .ywc-bar-fill { height:100%; border-radius:4px; background: linear-gradient(90deg, color-mix(in srgb, var(--ywc-brand) 62%, transparent), var(--ywc-brand-line)); box-shadow: 0 0 12px color-mix(in srgb, var(--ywc-brand) 18%, transparent); }
     .ywc-bar-value { text-align:right; color:var(--ywc-muted); }
     .ywc-profile-tabs { display:flex; gap:4px; padding:10px 12px 0; border-bottom:1px solid var(--ywc-border); overflow-x:auto; }
-    .ywc-profile-tabs button { border:0; border-bottom:2px solid transparent; padding:8px 9px; background:transparent; color:var(--ywc-muted); font-size:12px; white-space:nowrap; }
+    .ywc-profile-tabs button { border:0; border-bottom:2px solid transparent; padding:8px 9px; background:transparent; color:var(--ywc-muted); font-size:var(--dsh-content-font-size-secondary,13px); white-space:nowrap; }
     .ywc-profile-tabs button[aria-selected="true"] { border-bottom-color:var(--ywc-brand-line); color:var(--ywc-brand); font-weight:650; }
     .ywc-modal { position:fixed; inset:0; z-index:20; display:none; place-items:center; padding:24px; background:rgba(31,35,41,.42); backdrop-filter:blur(8px); }
     .ywc-modal.open { display:grid; }
@@ -935,12 +897,12 @@ window.__ModuleLoader__.load({
     .ywc-detail-cover { width:150px; height:200px; display:grid; place-items:center; border-radius:7px; background:var(--ywc-surface-2); color:var(--ywc-muted); }
     .ywc-metric-grid { display:grid; grid-template-columns:repeat(4, minmax(0,1fr)); gap:8px; }
     .ywc-detail-section { border-top:1px dashed var(--ywc-border); padding-top:10px; }
-    .ywc-detail-section h4 { margin:0 0 8px; font-size:13px; }
+    .ywc-detail-section h4 { margin:0 0 8px; font-size:var(--dsh-content-font-size,14px); }
     .ywc-close { width:32px; height:32px; border:1px solid var(--ywc-border); border-radius:6px; background:var(--ywc-surface); color:var(--ywc-muted); }
-    .ywc-qr { width:210px; height:210px; margin:12px auto; display:grid; place-items:center; border:1px dashed var(--ywc-brand); border-radius:8px; color:var(--ywc-muted); text-align:center; }
-    .ywc-note { padding:0 16px 16px; color:var(--ywc-muted); font-size:12px; line-height:1.7; }
-    .ywc-badge { display:inline-flex; align-items:center; min-height:22px; padding:0 7px; border-radius:4px; background:var(--ywc-surface-2); color:var(--ywc-muted); font-size:12px; }
-    @media (max-width:1080px) { .ywc-body { grid-template-columns:1fr; } .ywc-summary-grid, .ywc-kpi-grid { grid-template-columns:repeat(3,minmax(0,1fr)); } .ywc-two-column { grid-template-columns:1fr; } .ywc-dialog-grid { grid-template-columns:1fr; } .ywc-detail-cover { width:100%; height:180px; } }
+    .ywc-note { padding:0 16px 16px; color:var(--ywc-muted); font-size:var(--dsh-content-font-size-secondary,13px); line-height:1.7; }
+    .ywc-badge { display:inline-flex; align-items:center; min-height:22px; padding:0 7px; border-radius:4px; background:var(--ywc-surface-2); color:var(--ywc-muted); font-size:var(--dsh-content-font-size-secondary,13px); }
+    /* 窄屏（对齐抖音 1120 断点行为）：body 纵向滚动，表格区域固定 60vh 内滚。 */
+    @media (max-width:1080px) { .ywc-body { display:block; overflow:auto; } .ywc-right { overflow:visible; } .ywc-right .ywc-work-panel .ywc-table-wrap { max-height:60vh; } .ywc-summary-grid, .ywc-kpi-grid { grid-template-columns:repeat(3,minmax(0,1fr)); } .ywc-two-column { grid-template-columns:1fr; } .ywc-dialog-grid { grid-template-columns:1fr; } .ywc-detail-cover { width:100%; height:180px; } }
     @media (max-width:680px) { .ywc-header, .ywc-body, .ywc-tabs { padding-left:12px; padding-right:12px; } .ywc-summary-grid, .ywc-kpi-grid, .ywc-metric-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } .ywc-title p { display:none; } }
     `
 
@@ -986,9 +948,9 @@ window.__ModuleLoader__.load({
         return () => {
           const lastTrigger = overlayTrigger
           if (lastTrigger && typeof lastTrigger.focus === 'function') {
-            requestAnimationFrame(() => lastTrigger.focus())
+            requestAnimationFrame(() => lastTrigger?.focus?.())
           } else if (previous && typeof previous.focus === 'function') {
-            previous.focus()
+            previous?.focus?.()
           }
         }
       }, [visible])
@@ -1039,14 +1001,11 @@ window.__ModuleLoader__.load({
       const [profile, setProfile] = useState((initial && initial.profile) || null)
       const [profileKey, setProfileKey] = useState((initial && initial.profileKey) || 'gender')
       const [windowKey, setWindowKey] = useState((initial && initial.windowKey) || 'last_7d')
-      const [range, setRange] = useState('all')
-      const [customFrom, setCustomFrom] = useState('')
-      const [customTo, setCustomTo] = useState('')
-      const [sort, setSort] = useState('publish_time')
-      const [order] = useState('desc')
-      const [displayCount, setDisplayCount] = useState(WORKS_PAGE_SIZE)
+      // 表头排序（对齐抖音）：{key, direction} 三态循环，客户端排序只作用于已入库数据。
+      const [sort, setSort] = useState(DEFAULT_SORT_STATE)
       const [detail, setDetail] = useState((initial && initial.detail) || null)
       const [detailDaily, setDetailDaily] = useState((initial && initial.detailDaily) || [])
+      // 登录进行中状态（不再渲染二维码弹层）：驱动「添加账号」按钮的禁用与文案。
       const [login, setLogin] = useState(null)
       const [batch, setBatch] = useState(null)
       const [notice, setNotice] = useState(null)
@@ -1055,13 +1014,12 @@ window.__ModuleLoader__.load({
       // 确认后远端删除执行中 = confirmed_pending_adapter（§16.2 删除状态机）。
       const [deleteLifecycle, setDeleteLifecycle] = useState(null)
       const [collectBusy, setCollectBusy] = useState(false)
-      const loginRef = useRef(null)
 
       const selected = useMemo(
         () => accounts.find(account => account.accountId === selectedId) || null,
         [accounts, selectedId],
       )
-      const visibleWorks = useMemo(() => sortWorks(works, sort, order), [works, sort, order])
+      const visibleWorks = useMemo(() => sortWorks(works, sort), [works, sort])
 
       const noticeTimer = useRef(null)
       const notify = useCallback(message => {
@@ -1082,20 +1040,16 @@ window.__ModuleLoader__.load({
         return rows
       }, [post])
 
-      const refreshWorks = useCallback(async (accountId, rangeOverride = null, from = null, to = null) => {
+      const refreshWorks = useCallback(async accountId => {
         if (!accountId) { setWorks([]); return }
-        const activeRange = rangeOverride || range
-        const extra = activeRange === 'custom' && from && to
-          ? { publishedFrom: from, publishedTo: to }
-          : {}
         try {
-          const result = await post('works.list', { accountId, ...extra })
+          const result = await post('works.list', { accountId })
           setWorks(Array.isArray(result.works) ? result.works : [])
         } catch (error) {
           setWorks([])
           notify(`作品列表加载失败：${error.message}`)
         }
-      }, [post, notify, range])
+      }, [post, notify])
 
       const refreshOverview = useCallback(async (accountId, window) => {
         if (!accountId) { setOverview(null); setSummaryOverview(null); setProfile(null); return }
@@ -1138,7 +1092,7 @@ window.__ModuleLoader__.load({
         return () => { cancelled = true }
       }, [post, refreshAccounts])
 
-      // 切换账号 / 排序窗口变化 → 刷新作品与账号数据（排序筛选只查库，不触发采集）。
+      // 切换账号 / 窗口变化 → 刷新作品与账号数据（查询只读库，不触发采集）。
       useEffect(() => {
         if (selectedId) {
           void refreshWorks(selectedId)
@@ -1149,7 +1103,6 @@ window.__ModuleLoader__.load({
           setSummaryOverview(null)
           setProfile(null)
         }
-        setDisplayCount(WORKS_PAGE_SIZE)
       }, [selectedId, windowKey, refreshWorks, refreshOverview])
 
       // 批量进度轮询。
@@ -1163,10 +1116,11 @@ window.__ModuleLoader__.load({
         return () => clearInterval(timer)
       }, [post])
 
+      // 添加账号（对齐抖音 onAddAccount）：点击直接由宿主打开系统 Chrome 进入官方
+      // 视频号助手扫码；无二维码弹层，进行中状态由左栏按钮文案承载。
       const beginLogin = useCallback(() => {
         void (async () => {
           const result = await post('account.beginLogin', {})
-          loginRef.current = result.loginKey
           setLogin({ loginKey: result.loginKey, state: result.state })
           pollLogin(result.loginKey)
         })().catch(error => notify(`登录发起失败：${error.message}`))
@@ -1194,26 +1148,23 @@ window.__ModuleLoader__.load({
             const status = await post('account.loginStatus', { accountId: loginKey })
             if (status.state === 'ok') {
               stopLoginPolling()
-              setLogin({ loginKey, state: 'ok' })
+              setLogin(null)
+              notify('登录成功')
               await refreshAccounts()
-              setTimeout(() => setLogin(null), 1200)
             } else if (status.state === 'idle') {
               stopLoginPolling()
               setLogin(null)
+            } else if (status.state === 'timeout' || status.state === 'failed') {
+              // 终态必须停轮询并恢复按钮，否则「添加账号」永远禁用。
+              stopLoginPolling()
+              setLogin(null)
+              notify(status.state === 'timeout' ? '登录未完成，可重试' : '登录失败，可重试')
             } else {
               setLogin({ loginKey, state: status.state, reason: status.reason })
             }
           } catch { /* 轮询失败下轮重试 */ }
         }, POLL_INTERVAL_MS)
-      }, [post, refreshAccounts, stopLoginPolling])
-
-      const refreshQr = useCallback(() => {
-        const loginKey = loginRef.current
-        if (!loginKey) return
-        void post('account.refreshLoginQr', { accountId: loginKey })
-          .then(status => setLogin({ loginKey, state: status.state }))
-          .catch(error => notify(`刷新失败：${error.message}`))
-      }, [post, notify])
+      }, [post, notify, refreshAccounts, stopLoginPolling])
 
       const probeAccount = useCallback(accountId => {
         void (async () => {
@@ -1243,12 +1194,6 @@ window.__ModuleLoader__.load({
           },
         })
       }, [post, notify, refreshAccounts])
-
-      const confirmRemoval = accountId => {
-        // 保留原实现体为内部函数（被 confirm 弹层 onConfirm 引用）。
-      }
-
-
 
       const collectAccount = useCallback(accountId => {
         void (async () => {
@@ -1291,13 +1236,9 @@ window.__ModuleLoader__.load({
         })().catch(error => notify(`批量采集失败：${error.message}`))
       }, [post, notify])
 
-      // 弹层可关闭性（契约审计）：任一弹层打开时监听 Escape 关闭；关闭后用
-      // requestAnimationFrame 恢复触发元素焦点。
-      const lastTriggerRef = useRef(null)
-      const overlayOpen = Boolean(detail || confirm || login)
+      // Esc 逐层关闭（对齐抖音 keydown 链）：详情弹层 → 确认弹层 → 工作台 overlay；
+      // overlay 关闭时组件卸载，登录/采集轮询由卸载清理统一停止。
       useEffect(() => {
-        if (!overlayOpen) return
-        if (typeof document !== 'undefined') lastTriggerRef.current = document.activeElement
         const onKey = event => {
           if (event.key === 'Escape') {
             if (detail) {
@@ -1305,20 +1246,26 @@ window.__ModuleLoader__.load({
               setDetailDaily([])
             } else if (confirm) {
               setConfirm(null)
-            } else if (login) {
-              stopLoginPolling()
-              loginRef.current = null
-              setLogin(null)
+            } else {
+              setOpened(false)
             }
           }
         }
         document.addEventListener('keydown', onKey)
+        return () => document.removeEventListener('keydown', onKey)
+      }, [detail, confirm])
+
+      // 弹层（详情/确认）关闭后恢复打开前焦点（契约审计可关闭性要求）。
+      const lastDialogTriggerRef = useRef(null)
+      const dialogOpen = Boolean(detail || confirm)
+      useEffect(() => {
+        if (!dialogOpen) return
+        if (typeof document !== 'undefined') lastDialogTriggerRef.current = document.activeElement
         return () => {
-          document.removeEventListener('keydown', onKey)
-          const lastTrigger = lastTriggerRef.current
-          requestAnimationFrame(() => lastTrigger?.focus())
+          const trigger = lastDialogTriggerRef.current
+          requestAnimationFrame(() => trigger?.focus?.())
         }
-      }, [overlayOpen, detail, confirm, login, stopLoginPolling])
+      }, [dialogOpen])
 
       // 批量结束后刷新当前账号数据。
       useEffect(() => {
@@ -1354,7 +1301,15 @@ window.__ModuleLoader__.load({
                 h('p', null, '扫码登录视频号助手，采集账号全部作品、账号数据与关注者数据'),
               ),
             ),
-            h('div', { className: 'ywc-header-actions' }),
+            // 右上角关闭按钮（对齐抖音 ydo-header-buttons）：关闭整页工作台。
+            h('div', { className: 'ywc-header-actions' },
+              h(Tooltip, { label: '关闭' },
+                h('button', {
+                  className: 'ywc-icon', type: 'button',
+                  'aria-label': '关闭视频号工作台', onClick: () => setOpened(false),
+                }, h(IconCloseOutlineRegular, { size: 16 })),
+              ),
+            ),
           ),
           notice ? h('div', { className: 'ywc-badge', role: 'status', 'aria-live': 'polite', style: { margin: '10px 24px 0' } }, notice) : null,
           h('nav', { className: 'ywc-tabs', 'aria-label': '工作台模块' },
@@ -1367,7 +1322,8 @@ window.__ModuleLoader__.load({
                 accounts, selectedId, busy: collectBusy,
                 browserBlocked,
                 batch,
-                onSelect: accountId => { setSelectedId(accountId); setDisplayCount(WORKS_PAGE_SIZE) },
+                loginActive: Boolean(login),
+                onSelect: accountId => setSelectedId(accountId),
                 onProbe: probeAccount,
                 onRemove: removeAccount,
                 onBeginLogin: beginLogin,
@@ -1380,32 +1336,17 @@ window.__ModuleLoader__.load({
             ),
             h('main', { className: 'ywc-right' },
               tab === 'work'
-                ? h('section', { className: 'ywc-panel' },
+                ? h('section', { className: 'ywc-panel ywc-work-panel' },
                   h(WorkToolbar, {
                     onCollect: () => selectedId && collectAccount(selectedId),
                     onRefresh: () => selectedId && (refreshWorks(selectedId), refreshOverview(selectedId, windowKey)),
-                    range, onRange: value => {
-                      setRange(value)
-                      setDisplayCount(WORKS_PAGE_SIZE)
-                      // 自定义范围由服务端 publishedFrom/To 过滤（§7.3）；切换非 custom 即重查全量。
-                      if (value !== 'custom' && selectedId) void refreshWorks(selectedId, value)
-                    },
-                    customFrom, customTo,
-                    onCustomRange: (from, to) => {
-                      setCustomFrom(from)
-                      setCustomTo(to)
-                      setDisplayCount(WORKS_PAGE_SIZE)
-                      if (from && to && selectedId) void refreshWorks(selectedId, 'custom', from, to)
-                    },
-                    sort, onSort: value => { setSort(value); setDisplayCount(WORKS_PAGE_SIZE) },
                     disabled: !selectedId || collectBusy,
                   }),
                   h(WorkSummaryCards, { works, summaryOverview, account: selected }),
                   h(WorkTable, {
-                    rows: range === "custom" ? visibleWorks : filterWorksByRange(visibleWorks, range),
-                    displayCount,
-                    total: (range === "custom" ? visibleWorks : filterWorksByRange(visibleWorks, range)).length,
-                    onLoadMore: () => setDisplayCount(count => count + WORKS_PAGE_SIZE),
+                    rows: visibleWorks,
+                    sort,
+                    onSortChange: columnKey => setSort(currentSort => nextSortState(currentSort, columnKey)),
                     onOpenDetail: openDetail,
                   }),
                 )
@@ -1413,7 +1354,7 @@ window.__ModuleLoader__.load({
                   window: windowKey, onWindow: setWindowKey,
                   overview, profile, profileKey, onProfileKey: setProfileKey,
                   accounts, selectedId,
-                  onSelectAccount: accountId => { setSelectedId(accountId); setDisplayCount(WORKS_PAGE_SIZE) },
+                  onSelectAccount: accountId => setSelectedId(accountId),
                 }),
             ),
           ),
@@ -1444,11 +1385,6 @@ window.__ModuleLoader__.load({
             ),
           ),
         ) : null,
-        login ? h(LoginDialog, { login, onRefreshQr: refreshQr, onClose: () => {
-          stopLoginPolling()
-          loginRef.current = null
-          setLogin(null)
-        } }) : null,
       )
     }
 

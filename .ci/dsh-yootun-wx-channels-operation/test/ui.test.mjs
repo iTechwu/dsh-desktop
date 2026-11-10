@@ -4,18 +4,17 @@ import { readFile } from 'node:fs/promises'
 import { test } from 'node:test'
 
 import {
+  DEFAULT_SORT_STATE,
   EMPTY,
-  filterWorksByRange,
   fmtPair,
   gapWorkCount,
+  nextSortState,
   normalizeTrafficRows,
   sortWorks,
   summarizeAccountMetrics,
   summarizeFansTrend,
   weightedCompletionRate,
 } from '../src/ui-format.js'
-
-const NOW = new Date('2026-11-09T12:00:00+08:00')
 
 function makeWork(overrides = {}) {
   return {
@@ -52,21 +51,27 @@ test('缺口作品数：data_gap 非空对象计数', () => {
   assert.equal(gapWorkCount(works), 1)
 })
 
-test('发布时间范围过滤与排序（本地、只基于已入库数据）', () => {
+test('表头排序状态机与排序（本地、只基于已入库数据）', () => {
   const works = [
     makeWork({ work_id: 'a', publish_time: '2026-11-08T10:00:00+08:00', play_count: 100 }),
     makeWork({ work_id: 'b', publish_time: '2026-11-01T10:00:00+08:00', play_count: 500 }),
     makeWork({ work_id: 'c', publish_time: '2026-10-20T10:00:00+08:00', play_count: 300 }),
   ]
-  assert.equal(filterWorksByRange(works, '7d', NOW).length, 1) // 只有 a
-  assert.equal(filterWorksByRange(works, '30d', NOW).length, 3) // 10-20 也在 30 天内
-  assert.equal(filterWorksByRange(works, 'all', NOW).length, 3)
-  const sorted = sortWorks(works, 'play_count', 'desc')
+  // 三态循环（对齐抖音）：新列 desc → 同列 asc → 回默认态（发布时间降序）。
+  assert.deepEqual(nextSortState(DEFAULT_SORT_STATE, 'play_count'), { key: 'play_count', direction: 'desc' })
+  assert.deepEqual(nextSortState({ key: 'play_count', direction: 'desc' }, 'play_count'), { key: 'play_count', direction: 'asc' })
+  assert.deepEqual(nextSortState({ key: 'play_count', direction: 'asc' }, 'play_count'), DEFAULT_SORT_STATE)
+  const sorted = sortWorks(works, { key: 'play_count', direction: 'desc' })
   assert.deepEqual(sorted.map(work => work.work_id), ['b', 'c', 'a'])
-  // 缺失排序值沉底（Demo 语义）。
+  assert.deepEqual(sortWorks(works, { key: 'play_count', direction: 'asc' }).map(work => work.work_id), ['a', 'c', 'b'])
+  // 缺失排序值恒沉底，与方向无关（对齐抖音 compareNullableNumbers 语义）。
   const withNull = [...works, makeWork({ work_id: 'd', play_count: null })]
-  const desc = sortWorks(withNull, 'play_count', 'desc')
+  const desc = sortWorks(withNull, { key: 'play_count', direction: 'desc' })
   assert.equal(desc[desc.length - 1].work_id, 'd')
+  const asc = sortWorks(withNull, { key: 'play_count', direction: 'asc' })
+  assert.equal(asc[asc.length - 1].work_id, 'd')
+  // 默认态即发布时间降序。
+  assert.deepEqual(sortWorks(works, DEFAULT_SORT_STATE).map(work => work.work_id), ['a', 'b', 'c'])
 })
 
 test('来源分布规范化：排除 999「全部」，行名取官方名', () => {
@@ -120,6 +125,7 @@ test('render smoke：构建产物工厂在真 React 下渲染不抛错（含 5 �
     if (name === '@deepseek-ai/dsh-client-ui-primitives') {
       // 侧栏入口图标/Tooltip 桩：静态渲染仅需可调用元素。
       return {
+        IconCloseOutlineRegular: () => null,
         IconSparkleRegular: () => null,
         Tooltip: props => props.children,
       }
@@ -135,15 +141,20 @@ test('render smoke：构建产物工厂在真 React 下渲染不抛错（含 5 �
 
   const noop = async () => ({ accounts: [], works: [] })
   const html = renderToString(module_.renderWxWorkbench({ host: noop }))
-  // 关键结构断言（§9.1 布局 + §9.2 摘要卡 + 15 列表头）。
+  // 关键结构断言（§9.1 布局 + §9.2 摘要卡 + 右上角关闭按钮）。
   assert.ok(html.includes('视频号工作台'))
   assert.ok(html.includes('作品数据'))
   assert.ok(html.includes('账号数据'))
   assert.ok(html.includes('按播放加权计算'))
   assert.ok(html.includes('非净关注'))
   assert.ok(html.includes('缺口作品'))
-  assert.ok(html.includes('转发聊天和朋友圈'))
-  assert.ok(html.includes('加载更多'))
+  // 右上角关闭按钮（对齐抖音 ydo-header-buttons）与 Esc 兜底关闭。
+  assert.ok(html.includes('关闭视频号工作台'))
+  // 空数据不渲染表格框架，只渲染居中空态（对齐抖音 ydo-state）。
+  assert.ok(html.includes('当前账号暂无已入库作品'))
+  assert.ok(!html.includes('加载更多'))
+  // 二维码占位弹层已移除：点击添加账号直接打开浏览器。
+  assert.ok(!html.includes('官方二维码占位'))
 })
 
 

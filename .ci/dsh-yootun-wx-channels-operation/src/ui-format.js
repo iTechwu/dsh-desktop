@@ -71,32 +71,44 @@ export function gapWorkCount(works) {
   return (Array.isArray(works) ? works : []).filter(work => work && work.data_gap && Object.keys(work.data_gap).length > 0).length
 }
 
-/** 作品发布时间范围过滤（本地、只基于已入库数据）。range: 'all'|'7d'|'30d'。 */
-export function filterWorksByRange(works, range, now = new Date()) {
-  const cutoffDays = range === '7d' ? 7 : range === '30d' ? 30 : null
-  if (!cutoffDays) return Array.isArray(works) ? [...works] : []
-  const cutoff = now.getTime() - cutoffDays * 86400_000
-  return (Array.isArray(works) ? works : []).filter(work => {
-    const publish = work && work.publish_time ? new Date(work.publish_time).getTime() : Number.NaN
-    return Number.isFinite(publish) && publish >= cutoff
-  })
+/** 表头排序默认态：发布时间降序（进入页面即最近发布在前）。
+ * 与抖音 DEFAULT_SORT_STATE（接口原序）不同：视频号现有默认体验是发布时间倒序，保留。 */
+export const DEFAULT_SORT_STATE = { key: 'publish_time', direction: 'desc' }
+
+/** 表头排序三态状态机（对齐抖音 nextSortState）：点击新列 → desc；
+ * 同列 desc → asc；asc → 回默认态（发布时间降序）。 */
+export function nextSortState(currentState, columnKey) {
+  if (!currentState || currentState.key !== columnKey || currentState.direction === 'default') {
+    return { key: columnKey, direction: 'desc' }
+  }
+  if (currentState.direction === 'desc') return { key: columnKey, direction: 'asc' }
+  return { ...DEFAULT_SORT_STATE }
 }
 
-/** 作品排序（服务端字段名，本地排序同样只查已入库数据）。 */
-export function sortWorks(works, sort, order) {
-  const key = sort || 'publish_time'
-  const direction = order === 'asc' ? 1 : -1
-  return [...(Array.isArray(works) ? works : [])].sort((a, b) => {
-    const av = a ? a[key] : undefined
-    const bv = b ? b[key] : undefined
-    if (av === bv) return 0
-    if (av === null || av === undefined) return 1
-    if (bv === null || bv === undefined) return -1
-    if (typeof av === 'string' || typeof bv === 'string') {
-      return String(av).localeCompare(String(bv)) * direction
-    }
-    return (av - bv) * direction
-  })
+/** 作品排序（表头排序态 {key, direction}；本地排序只查已入库数据）：
+ * 缺失值恒沉底且不参与方向翻转；稳定排序保持接口原序。 */
+export function sortWorks(works, sortState) {
+  const rows = Array.isArray(works) ? [...works] : []
+  if (!sortState || !sortState.key || sortState.direction === 'default') return rows
+  const { key, direction } = sortState
+  const sign = direction === 'asc' ? 1 : -1
+  return rows
+    .map((work, index) => ({ work, index }))
+    .sort((left, right) => {
+      const av = left.work ? left.work[key] : undefined
+      const bv = right.work ? right.work[key] : undefined
+      const aMissing = av === null || av === undefined
+      const bMissing = bv === null || bv === undefined
+      if (aMissing && bMissing) return left.index - right.index
+      if (aMissing) return 1
+      if (bMissing) return -1
+      if (av === bv) return left.index - right.index
+      if (typeof av === 'string' || typeof bv === 'string') {
+        return String(av).localeCompare(String(bv)) * sign
+      }
+      return (av - bv) * sign
+    })
+    .map(entry => entry.work)
 }
 
 /** 来源分布行规范化：trafficSource JSON（§17.3）→ [{name, value}]，排除「全部」。 */

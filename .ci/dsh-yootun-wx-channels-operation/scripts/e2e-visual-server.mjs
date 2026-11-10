@@ -192,6 +192,7 @@ const HARNESS_HTML = `<!doctype html>
       if (name === 'react') return react?.default ?? null
       if (name === '@deepseek-ai/dsh-client-ui-primitives') {
         return {
+          IconCloseOutlineRegular: () => null,
           IconSparkleRegular: () => null,
           Tooltip: props => props.children,
         }

@@ -2,7 +2,6 @@
 
 import { createElement as h } from 'react'
 import {
-  EMPTY,
   fmtCount,
   fmtDateTime,
   normalizeProfileRows,
@@ -33,10 +32,10 @@ function stateLine(account) {
 
 /** 左侧账号管理栏（仅作品数据 Tab 显示；对齐抖音 ydo-accounts 结构）：
  * 标题行「账号管理 + 采集全部」→ 批量文本面板（仅批量运行/有结果时渲染）→
- * 账号卡列表 → 底部「添加账号」宽主按钮。 */
+ * 账号卡列表 → 底部「添加账号」宽主按钮（登录进行中显示扫码提示并禁用）。 */
 export function AccountList({
   accounts, selectedId, onSelect, onProbe, onRemove, onBeginLogin,
-  batch, onCollectAll, busy, browserBlocked,
+  batch, onCollectAll, busy, browserBlocked, loginActive,
 }) {
   const collectable = accounts.some(item => item.deleteState !== 'remote_deleted' && item.sessionStatus === 'ok')
   const running = batch && batch.phase && batch.phase !== 'finished'
@@ -90,16 +89,13 @@ export function AccountList({
           ),
         )),
     ),
-    h('button', {
-      className: 'ywc-primary ywc-wide', type: 'button',
-      disabled: browserBlocked, onClick: onBeginLogin,
-    }, '添加账号'),
+    h(LoginStatusButton, { loginActive, browserBlocked, onBeginLogin }),
   )
 }
 
 /** 账号数据 Tab（§9.4 三段：全部视频指标 / 关注者增长 / 关注者画像）。
- * 全宽独占布局：页内自带账号选择器（对齐抖音账号总览的账号下拉），切换后
- * 三段数据随之刷新。 */
+ * 全宽独占布局：页内自带账号选择器（对齐抖音总览的账号下拉：有账号即显示，
+ * 不因单账号隐藏），切换后三段数据随之刷新。 */
 export function AccountTab({
   window: windowKey, onWindow, overview, profile, profileKey, onProfileKey,
   accounts, selectedId, onSelectAccount,
@@ -107,7 +103,7 @@ export function AccountTab({
   const availability = (overview && overview.availability) || {}
   const usable = (Array.isArray(accounts) ? accounts : []).filter(item => item.deleteState !== 'remote_deleted')
   return h('div', { className: 'ywc-account-page' },
-    usable.length > 1
+    usable.length > 0
       ? h('div', { className: 'ywc-field', style: { justifyContent: 'flex-start', gap: 8 } },
         '当前账号',
         h('select', {
@@ -219,59 +215,23 @@ export function fansChartSeries(overview) {
     paths.push(h('path', {
       key: `p${index}`,
       d: `M${points[index - 1].x},${points[index - 1].y}L${points[index].x},${points[index].y}`,
-      stroke: 'var(--ywc-brand)', 'stroke-width': '3', fill: 'none',
+      stroke: 'var(--ywc-brand)', 'strokeWidth': 3, fill: 'none',
     }))
   }
   for (const point of points) {
     paths.push(h('circle', {
       key: `c${point.x}-${point.y}`, cx: point.x, cy: point.y, r: 4,
-      fill: 'var(--ywc-surface)', stroke: 'var(--ywc-brand)', 'stroke-width': '2',
+      fill: 'var(--ywc-surface)', stroke: 'var(--ywc-brand)', 'strokeWidth': 2,
     }, h('title', null, String(point.value))))
   }
   return paths
 }
 
-/** 登录弹层（§18.2：状态机 + 刷新二维码；不展示/不保存真实二维码）。 */
-export function LoginDialog({ login, onRefreshQr, onClose }) {
-  const stateText = {
-    waiting_qr: '等待扫码',
-    waiting_confirm: '已扫码，请在手机确认',
-    qr_expired: '二维码已过期',
-    ok: '登录成功',
-    timeout: '登录未完成，可重试',
-    failed: '登录失败，可重试',
-    idle: '准备中…',
-  }
-  return h('div', { className: 'ywc-modal open', role: 'dialog', 'aria-modal': 'true', onClick: backdropClose(onClose) },
-    h('div', { className: 'ywc-dialog', style: { width: 'min(430px,100%)' }, onClick: stopPropagation },
-      h('header', { className: 'ywc-dialog-header' },
-        h('h2', null, '添加视频号账号'),
-        h('button', { className: 'ywc-close', type: 'button', 'aria-label': '关闭登录弹层', onClick: onClose }, '×'),
-      ),
-      h('div', { className: 'ywc-dialog-body' },
-        h('p', { className: 'ywc-card-meta' }, '系统 Chrome 将打开官方视频号助手，请使用微信扫码并在手机确认。'),
-        h('div', { className: 'ywc-qr' }, '官方二维码占位', h('br'), '不截存二维码'),
-        h('div', { style: { display: 'flex', justifyContent: 'center' } },
-          h('button', { className: 'ywc-button', type: 'button', onClick: onRefreshQr }, '刷新二维码'),
-        ),
-        h('div', { className: 'ywc-metric-grid', style: { gridTemplateColumns: '1fr 1fr' } },
-          h('div', { className: 'ywc-kpi' },
-            h('div', { className: 'ywc-kpi-label' }, '状态'),
-            h('div', { className: 'ywc-kpi-value' }, login && login.state ? stateText[login.state] || login.state : stateText.idle),
-          ),
-          h('div', { className: 'ywc-kpi' },
-            h('div', { className: 'ywc-kpi-label' }, '登录态'),
-            h('div', { className: 'ywc-kpi-value' }, '仅本机'),
-          ),
-        ),
-      ),
-      h('p', { className: 'ywc-note' }, '二维码过期后可重新发起扫码；未读出稳定账号 ID 前不保存正式账号。'),
-    ),
-  )
+/** 登录交互（对齐抖音）：点击「添加账号」由宿主直接打开系统 Chrome 进入官方
+ * 视频号助手扫码，不再渲染二维码占位弹层；进行中状态由左栏按钮文案承载。 */
+export function LoginStatusButton({ loginActive, browserBlocked, onBeginLogin }) {
+  return h('button', {
+    className: 'ywc-primary ywc-wide', type: 'button',
+    disabled: browserBlocked || loginActive, onClick: onBeginLogin,
+  }, loginActive ? '浏览器已打开，请在窗口中扫码…' : '添加账号')
 }
-
-function backdropClose(onClose) {
-  return event => { if (event.target === event.currentTarget) onClose() }
-}
-
-function stopPropagation(event) { event.stopPropagation() }
