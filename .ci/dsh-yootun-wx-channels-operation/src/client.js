@@ -156,31 +156,39 @@ function useHost() {
   }, [])
 }
 
-export function renderWxWorkbench({ host }) {
-  return h(WxWorkbench, { host })
+/** 渲染工作台。`initial` 供静态渲染/截图/测试注入首屏真实数据
+ * （renderToString 不执行 useEffect，宿主运行时不传 initial 走正常加载）。 */
+export function renderWxWorkbench({ host, initial }) {
+  return h(WxWorkbench, { host, initial })
 }
 
-function WxWorkbench({ host }) {
+function WxWorkbench({ host, initial = null }) {
   const post = host || useHost()
   const [browserReady, setBrowserReady] = useState({ chrome: true, driver: true })
-  const [accounts, setAccounts] = useState([])
-  const [selectedId, setSelectedId] = useState(null)
-  const [tab, setTab] = useState('work')
-  const [works, setWorks] = useState([])
-  const [overview, setOverview] = useState(null)
+  const [accounts, setAccounts] = useState((initial && initial.accounts) || [])
+  const [selectedId, setSelectedId] = useState(
+    (initial && initial.selectedId) ||
+      ((initial && initial.accounts || []).find(item => item.deleteState !== 'remote_deleted') || {}).accountId ||
+      null,
+  )
+  const [tab, setTab] = useState((initial && initial.tab) || 'work')
+  const [works, setWorks] = useState((initial && initial.works) || [])
+  const [overview, setOverview] = useState((initial && initial.overview) || null)
   // 摘要卡独立快照：固定 last_7d（§9.2 摘要卡口径不随账号 Tab 窗口切换变化）。
-  const [summaryOverview, setSummaryOverview] = useState(null)
-  const [profile, setProfile] = useState(null)
-  const [profileKey, setProfileKey] = useState('gender')
-  const [windowKey, setWindowKey] = useState('last_7d')
+  const [summaryOverview, setSummaryOverview] = useState(
+    initial && initial.summaryOverview !== undefined ? initial.summaryOverview : initial ? initial.overview : null,
+  )
+  const [profile, setProfile] = useState((initial && initial.profile) || null)
+  const [profileKey, setProfileKey] = useState((initial && initial.profileKey) || 'gender')
+  const [windowKey, setWindowKey] = useState((initial && initial.windowKey) || 'last_7d')
   const [range, setRange] = useState('all')
   const [customFrom, setCustomFrom] = useState('')
   const [customTo, setCustomTo] = useState('')
   const [sort, setSort] = useState('publish_time')
   const [order] = useState('desc')
   const [displayCount, setDisplayCount] = useState(WORKS_PAGE_SIZE)
-  const [detail, setDetail] = useState(null)
-  const [detailDaily, setDetailDaily] = useState([])
+  const [detail, setDetail] = useState((initial && initial.detail) || null)
+  const [detailDaily, setDetailDaily] = useState((initial && initial.detailDaily) || [])
   const [login, setLogin] = useState(null)
   const [batch, setBatch] = useState(null)
   const [notice, setNotice] = useState(null)

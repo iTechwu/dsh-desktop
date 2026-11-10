@@ -132,7 +132,7 @@ function fansCards(overview) {
 
 function profileBars(profile, profileKey) {
   const dimension = profile ? profile[profileKey] : null
-  const rows = normalizeProfileRows(dimension)
+  const rows = normalizeProfileRows(dimension, profileKey)
   if (!rows.length) return h('p', { className: 'ywc-empty', style: { padding: '0 12px 12px' } }, '该画像维度本次未提供')
   const max = Math.max(1, ...rows.map(([, value]) => value))
   return rows.map(([name, value]) => h('div', { className: 'ywc-bar-row', key: name },

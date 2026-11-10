@@ -119,11 +119,27 @@ function normalizeRetentionPoints(retentionTrend) {
     .map(point => ({ s: Number(point.second), v: Math.round(Number(point.rate_pct ?? 0)) }))
 }
 
-/** 画像维度行规范化：[{key,label,count}] → [[label, count]]。 */
-function normalizeProfileRows(rows) {
+// 画像维度标签映射（真机 dim 驱动，2026-11-10；不臆造官方未暴露语义）。
+const PROFILE_LABEL_MAPS = {
+  gender: { 1: '男', 2: '女', unknow: '未知' },
+  age: row => String(row.key || '').replace(/^fage_/, '').replace(/_/g, '-') + '岁',
+  device: row => `设备 ${row.key}`,
+}
+
+/** 画像维度行规范化：[{key,label,count}] → [[label, count]]。
+ * `@_all` 是官方"全部"汇总行（count=总数），不属于分布条目，排除；gender 的
+ * 1/2 与 age 的 fage_* 按真机编码映射为友好标签；device 仅暴露 1/2 编码，
+ * 显示"设备 1/2"不臆造语义；province/city 官方直接给中文名。 */
+function normalizeProfileRows(rows, dimension) {
+  const map = dimension ? PROFILE_LABEL_MAPS[dimension] : null
   return (Array.isArray(rows) ? rows : [])
-    .filter(row => row && row.label)
-    .map(row => [String(row.label), Number(row.count) || 0])
+    .filter(row => row && row.key && row.key !== '@_all' && row.key !== '@_all')
+    .map(row => {
+      let label = row.label || row.key
+      if (typeof map === 'function') label = map(row)
+      else if (map && map[String(row.key)] !== undefined) label = map[String(row.key)]
+      return [label, Number(row.count) || 0]
+    })
 }
 
 /** 关注者增长窗口聚合 → 指标卡四项（净增/新增/取消/总数）。 */
@@ -584,7 +600,7 @@ function fansCards(overview) {
 
 function profileBars(profile, profileKey) {
   const dimension = profile ? profile[profileKey] : null
-  const rows = normalizeProfileRows(dimension)
+  const rows = normalizeProfileRows(dimension, profileKey)
   if (!rows.length) return h('p', { className: 'ywc-empty', style: { padding: '0 12px 12px' } }, '该画像维度本次未提供')
   const max = Math.max(1, ...rows.map(([, value]) => value))
   return rows.map(([name, value]) => h('div', { className: 'ywc-bar-row', key: name },
@@ -884,31 +900,39 @@ function useHost() {
   }, [])
 }
 
-function renderWxWorkbench({ host }) {
-  return h(WxWorkbench, { host })
+/** 渲染工作台。`initial` 供静态渲染/截图/测试注入首屏真实数据
+ * （renderToString 不执行 useEffect，宿主运行时不传 initial 走正常加载）。 */
+function renderWxWorkbench({ host, initial }) {
+  return h(WxWorkbench, { host, initial })
 }
 
-function WxWorkbench({ host }) {
+function WxWorkbench({ host, initial = null }) {
   const post = host || useHost()
   const [browserReady, setBrowserReady] = useState({ chrome: true, driver: true })
-  const [accounts, setAccounts] = useState([])
-  const [selectedId, setSelectedId] = useState(null)
-  const [tab, setTab] = useState('work')
-  const [works, setWorks] = useState([])
-  const [overview, setOverview] = useState(null)
+  const [accounts, setAccounts] = useState((initial && initial.accounts) || [])
+  const [selectedId, setSelectedId] = useState(
+    (initial && initial.selectedId) ||
+      ((initial && initial.accounts || []).find(item => item.deleteState !== 'remote_deleted') || {}).accountId ||
+      null,
+  )
+  const [tab, setTab] = useState((initial && initial.tab) || 'work')
+  const [works, setWorks] = useState((initial && initial.works) || [])
+  const [overview, setOverview] = useState((initial && initial.overview) || null)
   // 摘要卡独立快照：固定 last_7d（§9.2 摘要卡口径不随账号 Tab 窗口切换变化）。
-  const [summaryOverview, setSummaryOverview] = useState(null)
-  const [profile, setProfile] = useState(null)
-  const [profileKey, setProfileKey] = useState('gender')
-  const [windowKey, setWindowKey] = useState('last_7d')
+  const [summaryOverview, setSummaryOverview] = useState(
+    initial && initial.summaryOverview !== undefined ? initial.summaryOverview : initial ? initial.overview : null,
+  )
+  const [profile, setProfile] = useState((initial && initial.profile) || null)
+  const [profileKey, setProfileKey] = useState((initial && initial.profileKey) || 'gender')
+  const [windowKey, setWindowKey] = useState((initial && initial.windowKey) || 'last_7d')
   const [range, setRange] = useState('all')
   const [customFrom, setCustomFrom] = useState('')
   const [customTo, setCustomTo] = useState('')
   const [sort, setSort] = useState('publish_time')
   const [order] = useState('desc')
   const [displayCount, setDisplayCount] = useState(WORKS_PAGE_SIZE)
-  const [detail, setDetail] = useState(null)
-  const [detailDaily, setDetailDaily] = useState([])
+  const [detail, setDetail] = useState((initial && initial.detail) || null)
+  const [detailDaily, setDetailDaily] = useState((initial && initial.detailDaily) || [])
   const [login, setLogin] = useState(null)
   const [batch, setBatch] = useState(null)
   const [notice, setNotice] = useState(null)

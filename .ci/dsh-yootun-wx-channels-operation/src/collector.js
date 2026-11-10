@@ -63,7 +63,8 @@ export async function postJson(page, url, body) {
       return { status: 0, text: '', error: String(error && error.message ? error.message : error) }
     }
   }, { url, body })
-  if (!raw || typeof raw !== 'object' || raw.status !== 200) {
+  // 官方 CGI 成功语义含 200/201（auth_data 实测 201，阶段0-真机采集记录 §1.2）。
+  if (!raw || typeof raw !== 'object' || (raw.status !== 200 && raw.status !== 201)) {
     return { ok: false, status: raw ? raw.status : 0, json: null }
   }
   const json = parseJsonPreservingIds(raw.text)

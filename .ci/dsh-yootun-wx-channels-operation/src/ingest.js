@@ -403,9 +403,9 @@ export async function ingestCollectedData({
         emit({ phase: 'segment_gap', segment: 'account_metrics', reason: safeCode(error) })
       }
     }
-    if (fansTrend && Array.isArray(fansTrend.rows) && fansTrend.rows.length) {
+    if (fansTrend && Array.isArray(fansTrend.daily) && fansTrend.daily.length) {
       try {
-        await client.ingestFansTrend({ startDay: fansTrend.startDay, endDay: fansTrend.endDay, rows: fansTrend.rows })
+        await client.ingestFansTrend({ startDay: fansTrend.startDay, endDay: fansTrend.endDay, rows: fansTrend.daily })
         segmentStatus.fansTrendStatus = 'completed'
       } catch (error) {
         segmentStatus.fansTrendStatus = 'failed'

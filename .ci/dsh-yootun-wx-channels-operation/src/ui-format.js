@@ -115,11 +115,27 @@ export function normalizeRetentionPoints(retentionTrend) {
     .map(point => ({ s: Number(point.second), v: Math.round(Number(point.rate_pct ?? 0)) }))
 }
 
-/** 画像维度行规范化：[{key,label,count}] → [[label, count]]。 */
-export function normalizeProfileRows(rows) {
+// 画像维度标签映射（真机 dim 驱动，2026-11-10；不臆造官方未暴露语义）。
+const PROFILE_LABEL_MAPS = {
+  gender: { 1: '男', 2: '女', unknow: '未知' },
+  age: row => String(row.key || '').replace(/^fage_/, '').replace(/_/g, '-') + '岁',
+  device: row => `设备 ${row.key}`,
+}
+
+/** 画像维度行规范化：[{key,label,count}] → [[label, count]]。
+ * `@_all` 是官方"全部"汇总行（count=总数），不属于分布条目，排除；gender 的
+ * 1/2 与 age 的 fage_* 按真机编码映射为友好标签；device 仅暴露 1/2 编码，
+ * 显示"设备 1/2"不臆造语义；province/city 官方直接给中文名。 */
+export function normalizeProfileRows(rows, dimension) {
+  const map = dimension ? PROFILE_LABEL_MAPS[dimension] : null
   return (Array.isArray(rows) ? rows : [])
-    .filter(row => row && row.label)
-    .map(row => [String(row.label), Number(row.count) || 0])
+    .filter(row => row && row.key && row.key !== '@_all' && row.key !== '@_all')
+    .map(row => {
+      let label = row.label || row.key
+      if (typeof map === 'function') label = map(row)
+      else if (map && map[String(row.key)] !== undefined) label = map[String(row.key)]
+      return [label, Number(row.count) || 0]
+    })
 }
 
 /** 关注者增长窗口聚合 → 指标卡四项（净增/新增/取消/总数）。 */

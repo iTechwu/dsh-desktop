@@ -76,7 +76,7 @@ test('入库编排：start → list_meta → works 分批 → 账号级三类 �
     expectedWorkCount: 45,
     accountLevel: {
       accountMetrics: { startDay: '2026-11-08', endDay: '2026-11-09', rows: [{ day: '2026-11-08', daily_play_count: 10 }] },
-      fansTrend: { startDay: '2026-11-08', endDay: '2026-11-09', rows: [{ day: '2026-11-08', follower_net_count: 1 }] },
+      fansTrend: { startDay: '2026-11-08', endDay: '2026-11-09', daily: [{ day: '2026-11-08', follower_net_count: 1 }] },
       fansProfile: { day: '2026-11-08', gender: [{ key: 'male', label: '男', count: 1 }] },
     },
   })
@@ -111,7 +111,7 @@ test('账号级失败：段落记 failed，不影响作品链路 clientStatus（
     expectedWorkCount: 1,
     accountLevel: {
       accountMetrics: null,
-      fansTrend: { startDay: '2026-11-08', endDay: '2026-11-09', rows: [{ day: '2026-11-08' }] },
+      fansTrend: { startDay: '2026-11-08', endDay: '2026-11-09', daily: [{ day: '2026-11-08' }] },
       fansProfile: null,
     },
   })
