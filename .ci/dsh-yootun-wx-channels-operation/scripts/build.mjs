@@ -61,7 +61,7 @@ ${workUi}
 ${accountUi}
 
 ${body}
-module.exports = { renderWxWorkbench }
+module.exports = { renderWxWorkbench, SidebarButton }
 })
 `
 

@@ -695,4 +695,4 @@ function reasonText(reason) {
   return map[reason] || reason || '未知'
 }
 
-module.exports = { apply, inject: ['slots'], renderWxWorkbench, css: STYLES }
+module.exports = { apply, inject: ['slots'], renderWxWorkbench, SidebarButton, css: STYLES }
