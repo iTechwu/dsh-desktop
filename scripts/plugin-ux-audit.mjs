@@ -125,6 +125,7 @@ const actionLifecyclePlugins = new Set([
   'dsh-yootun-supply-watch',
   'dsh-yootun-xhs-operation',
   'dsh-yootun-douyin-operation',
+  'dsh-yootun-wx-channels-operation',
 ])
 
 const pluginClassPrefixes = {
@@ -133,6 +134,7 @@ const pluginClassPrefixes = {
   'dsh-yootun-daily-report': 'ydr-',
   'dsh-yootun-dashboard': 'yd-',
   'dsh-yootun-douyin-operation': 'ydo-',
+  'dsh-yootun-wx-channels-operation': 'ywc-',
   'dsh-yootun-finops': 'yf-',
   'dsh-yootun-knowledge': 'yk-',
   'dsh-yootun-lead-discovery': 'yl-',
@@ -172,6 +174,7 @@ const localToolSources = await Promise.all([
     `../.ci/${name}/tool.js`,
   ]),
   '../.ci/dsh-yootun-douyin-operation/src/tools-client.js',
+  '../.ci/dsh-yootun-wx-channels-operation/src/tools-client.js',
 ].map(async path => {
   try {
     return await readFile(new URL(path, import.meta.url), 'utf8')

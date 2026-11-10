@@ -47,6 +47,10 @@
     # docker-helm 插件与 tools.dofe.ai 域所有，Desktop 侧只做登记与发行打包。
     - id: dofe-yootun-douyin-operation
       name: '@dofe/dsh-yootun-douyin-operation'
+    # RQ-2026-012 视频号工作台：设备端系统 Chrome 采集，tools 同步入库；
+    # 页面只访问本地同源路由，Cookie/storage_state 永不离开设备。
+    - id: dofe-yootun-wx-channels-operation
+      name: '@dofe/dsh-yootun-wx-channels-operation'
     # Yootun 通用媒体上传能力（纯宿主插件，无客户端半）。凭证与 TOS 拓扑不写进
     # 本文件：上传授权由 dofe-managed 注册的 tools-tos-upload MCP 工具下发，
     # 凭证走 credential store 的 MODELS_API_KEY，装完即用。

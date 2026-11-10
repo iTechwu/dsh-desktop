@@ -6,7 +6,7 @@ import { resolve } from 'node:path'
 const root = resolve(import.meta.dirname, '..')
 const plugins = [
   'dsh-yootun-knowledge', 'dsh-yootun-finops', 'dsh-yootun-ui', 'dsh-yootun-dashboard', 'dsh-yootun-audit', 'dsh-yootun-recruiter',
-  'dsh-yootun-xhs-operation', 'dsh-yootun-douyin-operation',
+  'dsh-yootun-xhs-operation', 'dsh-yootun-douyin-operation', 'dsh-yootun-wx-channels-operation',
 ]
 for (const name of plugins) {
   const plugin = resolve(root, `../docker-helm.dofe.ai/plugins/${name}`)

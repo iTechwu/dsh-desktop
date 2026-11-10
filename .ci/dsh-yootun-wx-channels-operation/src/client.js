@@ -289,6 +289,9 @@ function WxWorkbench({ host, initial = null }) {
   const [batch, setBatch] = useState(null)
   const [notice, setNotice] = useState(null)
   const [confirm, setConfirm] = useState(null)
+  // 删除生命周期（对齐抖音 DELETE_LIFECYCLE 语义）：弹确认 = awaiting_confirmation；
+  // 确认后远端删除执行中 = confirmed_pending_adapter（§16.2 删除状态机）。
+  const [deleteLifecycle, setDeleteLifecycle] = useState(null)
   const [collectBusy, setCollectBusy] = useState(false)
   const loginRef = useRef(null)
 
@@ -461,7 +464,9 @@ function WxWorkbench({ host, initial = null }) {
     setConfirm({
       title: '删除账号',
       message: '删除该账号将清理本机登录态并删除远端业务数据（保留审计账本），确定？',
+      lifecycle: 'awaiting_confirmation',
       onConfirm: () => {
+        setDeleteLifecycle('confirmed_pending_adapter')
         void (async () => {
           const local = await post('account.removeLocal', { accountId })
           if (!local.cleared || !(local.cleared.profile && local.cleared.storageState)) {

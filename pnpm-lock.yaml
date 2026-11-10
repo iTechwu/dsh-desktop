@@ -1644,6 +1644,9 @@ importers:
       '@dofe/dsh-yootun-ui':
         specifier: file:../../docker-helm.dofe.ai/plugins/dsh-yootun-ui
         version: file:../docker-helm.dofe.ai/plugins/dsh-yootun-ui
+      '@dofe/dsh-yootun-wx-channels-operation':
+        specifier: file:../../docker-helm.dofe.ai/plugins/dsh-yootun-wx-channels-operation
+        version: file:../docker-helm.dofe.ai/plugins/dsh-yootun-wx-channels-operation
       '@dofe/dsh-yootun-xhs-operation':
         specifier: file:../../docker-helm.dofe.ai/plugins/dsh-yootun-xhs-operation
         version: file:../docker-helm.dofe.ai/plugins/dsh-yootun-xhs-operation
@@ -1754,7 +1757,7 @@ importers:
         version: 18.3.1
       resolve.exports:
         specifier: ^2.0.3
-        version: 2.0.3
+        version: 2.0.4
       selfsigned:
         specifier: 5.5.0
         version: 5.5.0
@@ -2641,6 +2644,9 @@ packages:
 
   '@dofe/dsh-yootun-ui@file:../docker-helm.dofe.ai/plugins/dsh-yootun-ui':
     resolution: {directory: ../docker-helm.dofe.ai/plugins/dsh-yootun-ui, type: directory}
+
+  '@dofe/dsh-yootun-wx-channels-operation@file:../docker-helm.dofe.ai/plugins/dsh-yootun-wx-channels-operation':
+    resolution: {directory: ../docker-helm.dofe.ai/plugins/dsh-yootun-wx-channels-operation, type: directory}
 
   '@dofe/dsh-yootun-xhs-operation@file:../docker-helm.dofe.ai/plugins/dsh-yootun-xhs-operation':
     resolution: {directory: ../docker-helm.dofe.ai/plugins/dsh-yootun-xhs-operation, type: directory}
@@ -6409,8 +6415,8 @@ packages:
   resolve-pkg-maps@1.0.0:
     resolution: {integrity: sha512-seS2Tj26TBVOC2NIc2rOe2y2ZO7efxITtLZcGSOnHHNOQ7CkiUBfw0Iw2ck6xkIhPwLhKNLS8BO+hEpngQlqzw==}
 
-  resolve.exports@2.0.3:
-    resolution: {integrity: sha512-OcXjMsGdhL4XnbShKpAcSqPMzQoYkYyhbEaeSko47MjRP9NfEQMhZkXL1DoFlt9LWQn4YttrdnV6X2OiyzBi+A==}
+  resolve.exports@2.0.4:
+    resolution: {integrity: sha512-zepuGL0ulf+nt+XaFrlKeaiTJeyPFPLLY62+ncq1/VTHBdt3HsfXOH60priZ6tnXQozdGcDeIF5JVTanvIcYWQ==}
     engines: {node: '>=10'}
 
   restore-cursor@5.1.0:
@@ -6850,6 +6856,9 @@ packages:
 
   tslib@2.8.1:
     resolution: {integrity: sha512-oJFu94HQb+KVduSUQL7wnpmqnfmLsOA/nAh6b6EH0wCEoK0/mPeXU6c3wKDV83MkOuHPRHtSXKKU99IBazS/2w==}
+
+  tslib@2.9.1:
+    resolution: {integrity: sha512-a4Ux9VKuIMHsOS7ENbEq6hK2ZGYIT27Rtl0E4eD9KqwxhKiQeMZE/9xb3IdYwWaSOyIBQLExhQgXDTYoiCxnWA==}
 
   tsx@4.23.12:
     resolution: {integrity: sha512-FDf4L4sYzKtzWYhU/Xm0AQFdTjdIxNo9ElTf2mxXM6k8YMHXzYUe4yODVaXP4V9uMFbVg8c0qyBccK2OOxb45Q==}
@@ -8062,6 +8071,10 @@ snapshots:
 
   '@dofe/dsh-yootun-ui@file:../docker-helm.dofe.ai/plugins/dsh-yootun-ui': {}
 
+  '@dofe/dsh-yootun-wx-channels-operation@file:../docker-helm.dofe.ai/plugins/dsh-yootun-wx-channels-operation':
+    dependencies:
+      playwright-core: 1.63.0
+
   '@dofe/dsh-yootun-xhs-operation@file:../docker-helm.dofe.ai/plugins/dsh-yootun-xhs-operation':
     dependencies:
       playwright-core: 1.63.0
@@ -9079,18 +9092,18 @@ snapshots:
 
   '@peculiar/json-schema@1.1.12':
     dependencies:
-      tslib: 2.8.1
+      tslib: 2.9.1
 
   '@peculiar/utils@2.0.3':
     dependencies:
-      tslib: 2.8.1
+      tslib: 2.9.1
 
   '@peculiar/webcrypto@1.7.1':
     dependencies:
       '@peculiar/asn1-schema': 2.9.4
       '@peculiar/json-schema': 1.1.12
       '@peculiar/utils': 2.0.3
-      tslib: 2.8.1
+      tslib: 2.9.1
       webcrypto-core: 1.9.2
 
   '@peculiar/x509@1.14.3':
@@ -9748,7 +9761,7 @@ snapshots:
     dependencies:
       pvtsutils: 1.3.6
       pvutils: 1.2.0
-      tslib: 2.8.1
+      tslib: 2.9.1
 
   assertion-error@2.0.1: {}
 
@@ -11800,7 +11813,7 @@ snapshots:
 
   resolve-pkg-maps@1.0.0: {}
 
-  resolve.exports@2.0.3: {}
+  resolve.exports@2.0.4: {}
 
   restore-cursor@5.1.0:
     dependencies:
@@ -12308,6 +12321,8 @@ snapshots:
 
   tslib@2.8.1: {}
 
+  tslib@2.9.1: {}
+
   tsx@4.23.12:
     dependencies:
       esbuild: 0.28.2
@@ -12445,7 +12460,7 @@ snapshots:
       '@peculiar/json-schema': 1.1.12
       '@peculiar/utils': 2.0.3
       asn1js: 3.0.10
-      tslib: 2.8.1
+      tslib: 2.9.1
 
   webidl-conversions@8.0.1: {}
 
