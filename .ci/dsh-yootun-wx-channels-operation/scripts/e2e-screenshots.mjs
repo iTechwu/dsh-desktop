@@ -177,7 +177,8 @@ function pageHtml(shell, rendered) {
 <meta charset="utf-8">
 <title>视频号工作台 · 视觉验证</title>
 <style>${shell}
-body { margin: 0; font-family: Inter, "PingFang SC", "Microsoft YaHei", system-ui, sans-serif; }
+html, body { margin: 0; background: var(--dsw-alias-bg-base); }
+body { font-family: Inter, "PingFang SC", "Microsoft YaHei", system-ui, sans-serif; }
 </style>
 </head>
 <body>

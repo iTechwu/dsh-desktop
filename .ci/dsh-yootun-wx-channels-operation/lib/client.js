@@ -488,37 +488,6 @@ const PROFILE_TABS = [
 
 const WINDOWS = [['yesterday', '昨日'], ['last_7d', '近7天'], ['last_30d', '近30天']]
 
-/** 左侧账号卡（§9.2 账号卡片：头像/昵称/登录态/最近同步 + 检测/重扫/删除）。 */
-function AccountList({ accounts, selectedId, onSelect, onProbe, onRemove, busy }) {
-  return h('div', { className: 'ywc-account-list' },
-    accounts.length === 0
-      ? h('p', { className: 'ywc-empty', style: { padding: '0 2px 6px' } }, '还没有账号，点击「添加账号」扫码登录')
-      : accounts.map(account => h('article', {
-        className: 'ywc-card', key: account.accountId,
-        'aria-current': account.accountId === selectedId ? 'true' : 'false',
-      },
-        h('button', { className: 'ywc-card-main', type: 'button', onClick: () => onSelect(account.accountId) },
-          h('span', { className: 'ywc-avatar' }, avatarText(account)),
-          h('span', null,
-            h('span', { className: 'ywc-card-name' }, account.nickname || account.accountId),
-            h('span', { className: 'ywc-card-meta' }, `关注者 ${fmtCount(account.follower_total_count)} · 最近同步 ${fmtDateTime(account.lastCollectedAt || account.sessionCheckedAt)}`),
-            stateLine(account),
-          ),
-        ),
-        h('div', { className: 'ywc-card-actions' },
-          h('button', {
-            className: 'ywc-mini-button', type: 'button', disabled: busy,
-            onClick: () => onProbe(account.accountId),
-          }, account.sessionStatus === 'ok' ? '检测会话' : '重新扫码'),
-          h('button', {
-            className: 'ywc-mini-button danger', type: 'button', disabled: busy,
-            onClick: () => onRemove(account.accountId),
-          }, '删除账号'),
-        ),
-      )),
-  )
-}
-
 function avatarText(account) {
   const name = account.nickname || account.accountId || '视'
   return name.slice(0, 2)
@@ -530,10 +499,96 @@ function stateLine(account) {
   return h('span', { className: 'ywc-state', 'data-state': account.sessionStatus }, label)
 }
 
-/** 账号数据 Tab（§9.4 三段：全部视频指标 / 关注者增长 / 关注者画像）。 */
-function AccountTab({ window: windowKey, onWindow, overview, profile, profileKey, onProfileKey }) {
+/** 左侧账号管理栏（仅作品数据 Tab 显示；对齐抖音 ydo-accounts 结构）：
+ * 标题行「账号管理 + 采集全部」→ 批量文本面板（仅批量运行/有结果时渲染）→
+ * 账号卡列表 → 底部「添加账号」宽主按钮。 */
+function AccountList({
+  accounts, selectedId, onSelect, onProbe, onRemove, onBeginLogin,
+  batch, onCollectAll, busy, browserBlocked,
+}) {
+  const collectable = accounts.some(item => item.deleteState !== 'remote_deleted' && item.sessionStatus === 'ok')
+  const running = batch && batch.phase && batch.phase !== 'finished'
+  return h('section', { className: 'ywc-panel' },
+    h('div', { className: 'ywc-side-head' },
+      h('h2', null, '账号管理'),
+      h('button', {
+        className: 'ywc-primary', type: 'button',
+        disabled: busy || running || browserBlocked || !collectable,
+        title: collectable ? undefined : '没有可采集账号（需登录有效）',
+        onClick: onCollectAll,
+      }, running ? '采集中' : '采集全部'),
+    ),
+    batch && (running || (batch.summary && (batch.summary.failed > 0 || batch.summary.skipped > 0)))
+      ? h('div', { className: 'ywc-batch-panel', role: running ? 'status' : undefined, 'aria-live': running ? 'polite' : undefined },
+        running
+          ? [
+            h('p', { key: 'phase' }, batch.phase === 'probing' ? '正在探测账号会话…' : '正在采集…'),
+            h('p', { className: 'ywc-hint', key: 'cur' }, `当前账号 ${Math.min((batch.currentAccountIndex || 0) + 1, (batch.items || []).length)}/${(batch.items || []).length}`),
+          ]
+          : [
+            h('p', { className: batch.summary.status === 'completed' ? 'ywc-ok' : batch.summary.status === 'failed' ? 'ywc-error' : 'ywc-warn', key: 'sum' },
+              `批量结束：成功 ${batch.summary.completed}、失败 ${batch.summary.failed}、跳过 ${batch.summary.skipped}`),
+          ],
+      )
+      : null,
+    h('div', { className: 'ywc-account-list' },
+      accounts.length === 0
+        ? h('p', { className: 'ywc-empty', style: { padding: '0 2px 6px' } }, '还没有账号，点击下方「添加账号」扫码登录')
+        : accounts.map(account => h('article', {
+          className: 'ywc-card', key: account.accountId,
+          'aria-current': account.accountId === selectedId ? 'true' : 'false',
+        },
+          h('button', { className: 'ywc-card-main', type: 'button', onClick: () => onSelect(account.accountId) },
+            h('span', { className: 'ywc-avatar' }, avatarText(account)),
+            h('span', null,
+              h('span', { className: 'ywc-card-name' }, account.nickname || account.accountId),
+              h('span', { className: 'ywc-card-meta' }, `关注者 ${fmtCount(account.followerTotalCount)} · 最近同步 ${fmtDateTime(account.lastCollectedAt || account.sessionCheckedAt)}`),
+              stateLine(account),
+            ),
+          ),
+          h('div', { className: 'ywc-card-actions' },
+            h('button', {
+              className: 'ywc-mini-button', type: 'button', disabled: busy || running,
+              onClick: () => onProbe(account.accountId),
+            }, account.sessionStatus === 'ok' ? '检测会话' : '重新扫码'),
+            h('button', {
+              className: 'ywc-mini-button danger', type: 'button', disabled: busy || running,
+              onClick: () => onRemove(account.accountId),
+            }, '删除账号'),
+          ),
+        )),
+    ),
+    h('button', {
+      className: 'ywc-primary ywc-wide', type: 'button',
+      disabled: browserBlocked, onClick: onBeginLogin,
+    }, '添加账号'),
+  )
+}
+
+/** 账号数据 Tab（§9.4 三段：全部视频指标 / 关注者增长 / 关注者画像）。
+ * 全宽独占布局：页内自带账号选择器（对齐抖音账号总览的账号下拉），切换后
+ * 三段数据随之刷新。 */
+function AccountTab({
+  window: windowKey, onWindow, overview, profile, profileKey, onProfileKey,
+  accounts, selectedId, onSelectAccount,
+}) {
   const availability = (overview && overview.availability) || {}
+  const usable = (Array.isArray(accounts) ? accounts : []).filter(item => item.deleteState !== 'remote_deleted')
   return h('div', { className: 'ywc-account-page' },
+    usable.length > 1
+      ? h('div', { className: 'ywc-field', style: { justifyContent: 'flex-end', gap: 8 } },
+        '当前账号',
+        h('select', {
+          className: 'ywc-select', value: selectedId || '',
+          onChange: event => onSelectAccount(event.target.value), 'aria-label': '切换账号',
+          style: { minWidth: 220 },
+        },
+          usable.map(item => h('option', { value: item.accountId, key: item.accountId },
+            `${item.nickname || item.accountId}（${item.sessionStatus === 'ok' ? '登录有效' : item.sessionStatus === 'expired' ? '已过期' : '状态未知'}）`,
+          )),
+        ),
+      )
+      : null,
     h('section', { className: 'ywc-panel' },
       h('div', { className: 'ywc-section-title' },
         h('h3', null, '全部视频指标'),
@@ -683,65 +738,6 @@ function LoginDialog({ login, onRefreshQr, onClose }) {
   )
 }
 
-/** 批量采集进度（§8.5：当前账号 / 总进度 / 未完成明细）。 */
-function BatchPanel({ batch, onCollectAll, busy }) {
-  const status = batch || { phase: 'ready' }
-  const items = Array.isArray(status.items) ? status.items : []
-  const done = items.filter(item => item.status === 'completed' || item.status === 'failed' || item.status === 'skipped').length
-  const total = items.length
-  const summary = status.summary
-  const stateLabel = status.phase === 'ready' ? 'Idle' : status.phase === 'finished' ? labelOf(summary && summary.status) : 'Running'
-  return h('section', { className: 'ywc-panel' },
-    h('div', { className: 'ywc-side-head' },
-      h('h2', null, '采集状态'),
-      h('button', { className: 'ywc-button primary', type: 'button', disabled: busy, onClick: onCollectAll }, '采集全部'),
-      h('span', { className: 'ywc-badge' }, stateLabel),
-    ),
-    h('div', { className: 'ywc-bars' },
-      bar('当前账号', total ? `${Math.min(done + 1, total)}/${total}` : '—', total ? Math.round(((done + (status.phase === 'finished' ? 0 : 1)) / total) * 100) : 0),
-      bar('总体进度', total ? `${done}/${total}` : '0/0', total ? Math.round((done / total) * 100) : 0),
-    ),
-    summary && (summary.failed > 0 || summary.skipped > 0)
-      ? h('div', { style: { padding: '0 12px 12px', display: 'flex', gap: 6, flexWrap: 'wrap' } },
-        items.filter(item => item.status !== 'completed' || item.reason === 'partial').map(item => h('span', { className: 'ywc-badge', key: item.accountId },
-          item.reason === 'partial'
-            ? `${shortId(item.accountId)} · 部分成功（run partial）`
-            : `${shortId(item.accountId)} · ${item.status === 'skipped' ? `跳过（${reasonText(item.reason)}）` : `失败（${reasonText(item.reason)}）`}`,
-        )),
-      )
-      : null,
-  )
-}
-
-function bar(label, valueText, percent) {
-  return h('div', { className: 'ywc-bar-row', key: label },
-    h('span', null, label),
-    h('div', { className: 'ywc-bar-track' }, h('div', { className: 'ywc-bar-fill', style: { width: `${Math.min(100, Math.max(0, percent))}%` } })),
-    h('span', { className: 'ywc-bar-value' }, valueText),
-  )
-}
-
-function labelOf(status) {
-  return status === 'completed' ? 'Completed' : status === 'partial' ? 'Partial' : status === 'failed' ? 'Failed' : 'Idle'
-}
-
-function reasonText(reason) {
-  const map = {
-    session_required: '会话失效',
-    probe_failed: '探测失败',
-    storage_state_missing: '缺登录态',
-    pending_account: '待升级账号',
-    collect_busy: '采集互斥',
-    session_expired: '会话失效',
-  }
-  return map[reason] || reason || '未知'
-}
-
-function shortId(accountId) {
-  const name = String(accountId || '')
-  return name.length > 10 ? `${name.slice(0, 8)}…` : name
-}
-
 function backdropClose(onClose) {
   return event => { if (event.target === event.currentTarget) onClose() }
 }
@@ -818,6 +814,15 @@ const STYLES = `
 .ywc-button:hover { background:var(--ywc-surface-2); }
 .ywc-button.primary { border-color: color-mix(in srgb, var(--ywc-brand) 72%, white); background: linear-gradient(135deg, color-mix(in srgb, var(--ywc-brand) 88%, white), var(--ywc-brand)); color: var(--ywc-brand-text); font-weight:650; box-shadow: 0 6px 18px color-mix(in srgb, var(--ywc-brand) 20%, transparent); }
 .ywc-button:disabled { opacity:.45; cursor:default; }
+.ywc-primary { min-height:40px; padding:0 16px; border:0; border-radius:6px; background:var(--ywc-brand); color:var(--ywc-brand-text); font-weight:600; }
+.ywc-primary:disabled { opacity:.45; cursor:default; }
+.ywc-wide { width:100%; }
+.ywc-batch-panel { display:grid; gap:4px; padding:10px 12px; border:1px solid var(--ywc-border); border-radius:8px; background:var(--ywc-surface-2); min-width:0; }
+.ywc-batch-panel p { margin:0; font-size:12px; color:var(--ywc-text); }
+.ywc-hint { margin:0; color:var(--ywc-muted); font-size:12px; line-height:1.5; }
+.ywc-ok { margin:0; color:var(--ywc-success); font-size:12px; }
+.ywc-error { margin:0; color:var(--ywc-danger); font-size:12px; }
+.ywc-warn { margin:0; color:var(--ywc-muted); font-size:12px; }
 /* 36px 图标按钮基线（契约审计 canonical icon 基线；弹层关闭/头部图标钮复用）。 */
 .ywc-icon{width:36px;height:36px; display:grid; place-items:center; padding:0; border:1px solid var(--ywc-border); border-radius:6px; background:var(--ywc-surface); color:var(--ywc-muted); cursor:pointer; }
 .ywc-icon:hover { background:var(--ywc-surface-2); color:var(--ywc-text); }
@@ -1238,9 +1243,7 @@ function WxWorkbench({ host, initial = null }) {
             h('p', null, '扫码登录视频号助手，采集账号全部作品、账号数据与关注者数据'),
           ),
         ),
-        h('div', { className: 'ywc-header-actions' },
-          h('button', { className: 'ywc-button', type: 'button', onClick: collectAll, disabled: browserBlocked }, '采集全部'),
-        ),
+        h('div', { className: 'ywc-header-actions' }),
       ),
       notice ? h('div', { className: 'ywc-badge', role: 'status', 'aria-live': 'polite', style: { margin: '10px 24px 0' } }, notice) : null,
       h('nav', { className: 'ywc-tabs', 'aria-label': '工作台模块' },
@@ -1249,22 +1252,16 @@ function WxWorkbench({ host, initial = null }) {
       ),
       h('div', { className: 'ywc-body' },
         h('aside', { className: 'ywc-accounts', 'aria-label': '账号管理' },
-          h('section', { className: 'ywc-panel ywc-work-panel' },
-            h('div', { className: 'ywc-side-head' },
-              h('h2', null, '账号管理'),
-              h('button', {
-                className: 'ywc-button primary', type: 'button',
-                disabled: browserBlocked, onClick: beginLogin,
-              }, '添加账号'),
-            ),
-            h(AccountList, {
-              accounts, selectedId, busy: collectBusy,
-              onSelect: setSelectedId,
-              onProbe: probeAccount,
-              onRemove: removeAccount,
-            }),
-          ),
-          h(BatchPanel, { batch, onCollectAll: collectAll, busy: collectBusy }),
+          h(AccountList, {
+            accounts, selectedId, busy: collectBusy,
+            browserBlocked,
+            batch,
+            onSelect: accountId => { setSelectedId(accountId); setDisplayCount(WORKS_PAGE_SIZE) },
+            onProbe: probeAccount,
+            onRemove: removeAccount,
+            onBeginLogin: beginLogin,
+            onCollectAll: collectAll,
+          }),
           browserBlocked
             ? h('p', { className: 'ywc-empty', style: { padding: '0 2px' } },
               `需要系统 Google Chrome${browserReady.chrome ? ' 与 Playwright 驱动' : ''}（当前缺失），采集功能不可用`)
@@ -1304,6 +1301,8 @@ function WxWorkbench({ host, initial = null }) {
             : h(AccountTab, {
               window: windowKey, onWindow: setWindowKey,
               overview, profile, profileKey, onProfileKey: setProfileKey,
+              accounts, selectedId,
+              onSelectAccount: accountId => { setSelectedId(accountId); setDisplayCount(WORKS_PAGE_SIZE) },
             }),
         ),
       ),

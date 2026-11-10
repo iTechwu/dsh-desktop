@@ -9,7 +9,7 @@ const { useState, useEffect, useMemo, useRef, useCallback } = React
 
 import { filterWorksByRange, sortWorks } from './ui-format.js'
 import { WorkDetailDialog, WorkSummaryCards, WorkTable, WorkToolbar } from './work-ui.js'
-import { AccountList, AccountTab, BatchPanel, LoginDialog } from './account-ui.js'
+import { AccountList, AccountTab, LoginDialog } from './account-ui.js'
 
 const ROUTE = '/api/desktop/yootun/wx-channels-operation'
 const WORKS_PAGE_SIZE = 20
@@ -74,6 +74,15 @@ const STYLES = `
 .ywc-button:hover { background:var(--ywc-surface-2); }
 .ywc-button.primary { border-color: color-mix(in srgb, var(--ywc-brand) 72%, white); background: linear-gradient(135deg, color-mix(in srgb, var(--ywc-brand) 88%, white), var(--ywc-brand)); color: var(--ywc-brand-text); font-weight:650; box-shadow: 0 6px 18px color-mix(in srgb, var(--ywc-brand) 20%, transparent); }
 .ywc-button:disabled { opacity:.45; cursor:default; }
+.ywc-primary { min-height:40px; padding:0 16px; border:0; border-radius:6px; background:var(--ywc-brand); color:var(--ywc-brand-text); font-weight:600; }
+.ywc-primary:disabled { opacity:.45; cursor:default; }
+.ywc-wide { width:100%; }
+.ywc-batch-panel { display:grid; gap:4px; padding:10px 12px; border:1px solid var(--ywc-border); border-radius:8px; background:var(--ywc-surface-2); min-width:0; }
+.ywc-batch-panel p { margin:0; font-size:12px; color:var(--ywc-text); }
+.ywc-hint { margin:0; color:var(--ywc-muted); font-size:12px; line-height:1.5; }
+.ywc-ok { margin:0; color:var(--ywc-success); font-size:12px; }
+.ywc-error { margin:0; color:var(--ywc-danger); font-size:12px; }
+.ywc-warn { margin:0; color:var(--ywc-muted); font-size:12px; }
 /* 36px 图标按钮基线（契约审计 canonical icon 基线；弹层关闭/头部图标钮复用）。 */
 .ywc-icon{width:36px;height:36px; display:grid; place-items:center; padding:0; border:1px solid var(--ywc-border); border-radius:6px; background:var(--ywc-surface); color:var(--ywc-muted); cursor:pointer; }
 .ywc-icon:hover { background:var(--ywc-surface-2); color:var(--ywc-text); }
@@ -494,9 +503,7 @@ function WxWorkbench({ host, initial = null }) {
             h('p', null, '扫码登录视频号助手，采集账号全部作品、账号数据与关注者数据'),
           ),
         ),
-        h('div', { className: 'ywc-header-actions' },
-          h('button', { className: 'ywc-button', type: 'button', onClick: collectAll, disabled: browserBlocked }, '采集全部'),
-        ),
+        h('div', { className: 'ywc-header-actions' }),
       ),
       notice ? h('div', { className: 'ywc-badge', role: 'status', 'aria-live': 'polite', style: { margin: '10px 24px 0' } }, notice) : null,
       h('nav', { className: 'ywc-tabs', 'aria-label': '工作台模块' },
@@ -505,22 +512,16 @@ function WxWorkbench({ host, initial = null }) {
       ),
       h('div', { className: 'ywc-body' },
         h('aside', { className: 'ywc-accounts', 'aria-label': '账号管理' },
-          h('section', { className: 'ywc-panel ywc-work-panel' },
-            h('div', { className: 'ywc-side-head' },
-              h('h2', null, '账号管理'),
-              h('button', {
-                className: 'ywc-button primary', type: 'button',
-                disabled: browserBlocked, onClick: beginLogin,
-              }, '添加账号'),
-            ),
-            h(AccountList, {
-              accounts, selectedId, busy: collectBusy,
-              onSelect: setSelectedId,
-              onProbe: probeAccount,
-              onRemove: removeAccount,
-            }),
-          ),
-          h(BatchPanel, { batch, onCollectAll: collectAll, busy: collectBusy }),
+          h(AccountList, {
+            accounts, selectedId, busy: collectBusy,
+            browserBlocked,
+            batch,
+            onSelect: accountId => { setSelectedId(accountId); setDisplayCount(WORKS_PAGE_SIZE) },
+            onProbe: probeAccount,
+            onRemove: removeAccount,
+            onBeginLogin: beginLogin,
+            onCollectAll: collectAll,
+          }),
           browserBlocked
             ? h('p', { className: 'ywc-empty', style: { padding: '0 2px' } },
               `需要系统 Google Chrome${browserReady.chrome ? ' 与 Playwright 驱动' : ''}（当前缺失），采集功能不可用`)
@@ -560,6 +561,8 @@ function WxWorkbench({ host, initial = null }) {
             : h(AccountTab, {
               window: windowKey, onWindow: setWindowKey,
               overview, profile, profileKey, onProfileKey: setProfileKey,
+              accounts, selectedId,
+              onSelectAccount: accountId => { setSelectedId(accountId); setDisplayCount(WORKS_PAGE_SIZE) },
             }),
         ),
       ),

@@ -135,7 +135,7 @@ const HARNESS_HTML = `<!doctype html>
       --dsw-alias-state-success-primary: #4ade80;
     }
   }
-  body { margin: 0; }
+  html, body { margin: 0; background: var(--dsw-alias-bg-base); }
 </style>
 </head>
 <body>
