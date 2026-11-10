@@ -283,7 +283,8 @@ window.__ModuleLoader__.load({
           ),
         ),
         h('div', { className: 'ywc-table-footer' },
-          h('span', null, `已展示 ${Math.min(displayedCount, rows.length)} / ${total} 条已入库作品`),
+          // total 缺失（未加载账号时 feedCount 未知）回退 rows.length，不显示 NaN。
+          h('span', null, `已展示 ${Math.min(displayedCount ?? rows.length, rows.length)} / ${total ?? rows.length} 条已入库作品`),
           h('button', {
             className: 'ywc-button', type: 'button',
             disabled: displayedCount >= rows.length, onClick: onLoadMore,
@@ -790,21 +791,38 @@ window.__ModuleLoader__.load({
     const REQUEST_TIMEOUT_MS = 30000
 
     const STYLES = `
-    :root {
-      /* 主视觉继承宿主 DSW 主题变量（§9.0.6；客户端内宿主必提供，独立 Demo 兜底见 ui-demo.html）。 */
-      --ywc-bg: var(--dsw-alias-bg-base);
-      --ywc-surface: var(--dsw-alias-bg-layer-1);
-      --ywc-surface-2: var(--dsw-alias-bg-layer-2);
-      --ywc-text: var(--dsw-alias-label-primary);
-      --ywc-muted: var(--dsw-alias-label-secondary);
-      --ywc-border: var(--dsw-alias-border-l1);
-      --ywc-brand: var(--dsw-alias-brand-primary);
+    /* 变量映射挂在插件根节点（.ywc-overlay/.ywc-root），不能放 :root：
+       真机宿主把 --dsw-alias-* 定义在应用容器上而非 html，:root 处求值
+       拿不到会让全部 --ywc-* 失效（2026-11-10 真机样式散架根因）。
+       兜底值与 ui-demo.html 一致（浅色默认 + prefers-color-scheme 深色）。 */
+    .ywc-overlay, .ywc-root {
+      --ywc-bg: var(--dsw-alias-bg-base, #ffffff);
+      --ywc-surface: var(--dsw-alias-bg-layer-1, #f6f7f9);
+      --ywc-surface-2: var(--dsw-alias-bg-layer-2, #eceef1);
+      --ywc-text: var(--dsw-alias-label-primary, #1f2329);
+      --ywc-muted: var(--dsw-alias-label-secondary, #646a73);
+      --ywc-border: var(--dsw-alias-border-l1, #e0e3e8);
+      --ywc-brand: var(--dsw-alias-brand-primary, #0f1115);
       --ywc-brand-soft: color-mix(in srgb, var(--ywc-brand) 10%, transparent);
       --ywc-brand-line: color-mix(in srgb, var(--ywc-brand) 62%, white);
       --ywc-brand-border: color-mix(in srgb, var(--ywc-brand) 28%, transparent);
-      --ywc-brand-text: var(--dsw-alias-label-primary-foreground);
-      --ywc-danger: var(--dsw-alias-state-error-primary);
-      --ywc-success: var(--dsw-alias-state-success-primary);
+      --ywc-brand-text: var(--dsw-alias-label-primary-foreground, #ffffff);
+      --ywc-danger: var(--dsw-alias-state-error-primary, #d03a3a);
+      --ywc-success: var(--dsw-alias-state-success-primary, #1a7f37);
+    }
+    @media (prefers-color-scheme: dark) {
+      .ywc-overlay, .ywc-root {
+        --ywc-bg: var(--dsw-alias-bg-base, #151517);
+        --ywc-surface: var(--dsw-alias-bg-layer-1, #232324);
+        --ywc-surface-2: var(--dsw-alias-bg-layer-2, #2c2c2e);
+        --ywc-text: var(--dsw-alias-label-primary, #fafafa);
+        --ywc-muted: var(--dsw-alias-label-secondary, #b4b4b4);
+        --ywc-border: var(--dsw-alias-border-l1, rgba(255,255,255,.10));
+        --ywc-brand: var(--dsw-alias-brand-primary, #e9e9e9);
+        --ywc-brand-text: var(--dsw-alias-label-primary-foreground, #343434);
+        --ywc-danger: var(--dsw-alias-state-error-primary, #e0524a);
+        --ywc-success: var(--dsw-alias-state-success-primary, #4ade80);
+      }
     }
     .ywc-root { height:100vh; color:var(--ywc-text); }
     .ywc-overlay { position:fixed; inset:0; z-index:520; background:var(--ywc-bg); color:var(--ywc-text); overflow:hidden; }

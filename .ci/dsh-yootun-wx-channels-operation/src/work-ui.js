@@ -116,7 +116,8 @@ export function WorkTable({ rows, displayedCount, total, onLoadMore, onOpenDetai
       ),
     ),
     h('div', { className: 'ywc-table-footer' },
-      h('span', null, `已展示 ${Math.min(displayedCount, rows.length)} / ${total} 条已入库作品`),
+      // total 缺失（未加载账号时 feedCount 未知）回退 rows.length，不显示 NaN。
+      h('span', null, `已展示 ${Math.min(displayedCount ?? rows.length, rows.length)} / ${total ?? rows.length} 条已入库作品`),
       h('button', {
         className: 'ywc-button', type: 'button',
         disabled: displayedCount >= rows.length, onClick: onLoadMore,
