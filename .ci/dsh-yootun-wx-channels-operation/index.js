@@ -214,11 +214,22 @@ async function handleAccountsList(deps, toolCtx) {
 }
 
 /** 开始扫码登录：有头系统 Chrome；状态保存在宿主进程内，页面轮询 account.loginStatus。 */
+// 只有「进行中」的登录才复用；ok/timeout/failed 都是终态，必须允许重新发起——
+// 否则同一账号扫码超时或会话再次失效后，「重新扫码」会直接返回旧终态，浏览器
+// 根本不再打开（2026-11-11 review P0：早退条件写成 state !== 'finished'，而全仓
+// 没有任何代码把 state 置为 'finished'）。
+const ACTIVE_LOGIN_STATES = new Set(['waiting_qr', 'waiting_confirm'])
+
 function handleBeginLogin(ctx, deps, accountId) {
   const key = accountId || `pending-${Date.now()}`
-  if (loginRuns.has(key) && loginRuns.get(key).state !== 'finished') {
-    return { status: 'ok', loginKey: key, state: loginRuns.get(key).state }
+  const existing = loginRuns.get(key)
+  if (existing && ACTIVE_LOGIN_STATES.has(existing.state)) {
+    return { status: 'ok', loginKey: key, state: existing.state }
   }
+  // 终态记录不复用；「重新扫码」复用同一 key 时顺带释放旧记录。注意：「添加账号」
+  // 走 pending-<ts> 每次都是新 key，其终态记录仍会留在 loginRuns 里（数量很小，
+  // 无 TTL；若后续出现频繁添加场景再补容量上限）。
+  if (existing) loginRuns.delete(key)
   const run = { state: 'waiting_qr', accountId: null, profile: null, startedAt: new Date().toISOString(), updatedAt: null, reason: null }
   loginRuns.set(key, run)
   void deps.login({

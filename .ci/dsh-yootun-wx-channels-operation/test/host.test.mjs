@@ -213,3 +213,63 @@ test('登录 save 失败：本地登录态保留（state ok）且原因透出到
   assert.equal(status.state, 'ok', 'save 失败不回滚本地登录成功')
   assert.equal(status.reason, 'ACCOUNT_NOT_FOUND')
 })
+
+test('重新扫码：同一 accountId 终态后可再次发起登录（review P0：终态被永久缓存导致浏览器不再打开）', async () => {
+  const logins = []
+  const ctx = makeCtx()
+  const overrides = {
+    ...baseOverrides('wx-host-relogin-root'),
+    login: async ({ accountId }) => {
+      logins.push(accountId)
+      // 第一次超时，第二次成功：模拟用户扫码超时后重试。
+      return logins.length === 1
+        ? { status: 'timeout', reason: 'login_timeout' }
+        : { status: 'ok', accountId, profile: { nickname: '重试号' } }
+    },
+    getAccount: async () => ({ sessionSeq: 0 }),
+  }
+  apply(ctx, overrides)
+
+  await callAction(ctx, { action: 'account.beginLogin', accountId: 'acc-retry' })
+  let first = null
+  for (let i = 0; i < 50; i += 1) {
+    await new Promise(resolve => setTimeout(resolve, 10))
+    first = await callAction(ctx, { action: 'account.loginStatus', accountId: 'acc-retry' })
+    if (first.state !== 'waiting_qr' && first.state !== 'waiting_confirm') break
+  }
+  assert.equal(first.state, 'timeout')
+  assert.equal(logins.length, 1)
+
+  // 终态后再次点击「重新扫码」必须真的重新调用 login（而不是返回旧的 timeout）。
+  const second = await callAction(ctx, { action: 'account.beginLogin', accountId: 'acc-retry' })
+  assert.equal(second.state, 'waiting_qr', '终态后应重新发起登录')
+  for (let i = 0; i < 50 && logins.length < 2; i += 1) await new Promise(resolve => setTimeout(resolve, 10))
+  assert.equal(logins.length, 2, '第二次 beginLogin 必须再次打开浏览器')
+  let status = null
+  for (let i = 0; i < 50; i += 1) {
+    await new Promise(resolve => setTimeout(resolve, 10))
+    status = await callAction(ctx, { action: 'account.loginStatus', accountId: 'acc-retry' })
+    if (status.state === 'ok') break
+  }
+  assert.equal(status.state, 'ok')
+})
+
+test('重新扫码：登录进行中重复点击复用同一登录（不重复打开浏览器）', async () => {
+  const logins = []
+  const ctx = makeCtx()
+  const overrides = {
+    ...baseOverrides('wx-host-login-dedupe-root'),
+    login: async ({ accountId }) => {
+      logins.push(accountId)
+      await new Promise(resolve => setTimeout(resolve, 50))
+      return { status: 'ok', accountId, profile: {} }
+    },
+    getAccount: async () => ({ sessionSeq: 0 }),
+  }
+  apply(ctx, overrides)
+  const a = await callAction(ctx, { action: 'account.beginLogin', accountId: 'acc-active' })
+  const b = await callAction(ctx, { action: 'account.beginLogin', accountId: 'acc-active' })
+  assert.equal(a.state, 'waiting_qr')
+  assert.equal(b.state, 'waiting_qr')
+  assert.equal(logins.length, 1, '进行中的登录应复用，不应再开一个浏览器')
+})

@@ -116,12 +116,15 @@ test('WorkDetailDialog：留存渲染真实百分比；缺失显示「—」不�
   const react = await import('react')
   const { createElement: h } = react
   const { renderToString } = await import('react-dom/server')
-  const { WorkDetailDialog } = await import('../src/work-ui.js')
+  const { WorkDetailDialog, recentDays } = await import('../src/work-ui.js')
+  // 趋势图 x 轴固定最近 7 个自然日，测试数据必须落在该窗口内。
+  const [dayA, dayB, dayC] = recentDays(7).slice(0, 3)
   const work = {
     work_id: 'w-ret',
     description: '留存口径',
     cover_url: null,
-    publish_time: '2026-11-08T10:00:00+08:00',
+    // 发布日设为窗口首日：后续缺失属「发布后未采到」，应断线而非补 0。
+    publish_time: `${dayA}T10:00:00+08:00`,
     latest_collected_at: '2026-11-09T11:00:00+08:00',
     play_count: 100,
   }
@@ -133,9 +136,9 @@ test('WorkDetailDialog：留存渲染真实百分比；缺失显示「—」不�
       traffic_source: { rows: [{ sourceKey: 'recommend', name: '推荐', playCount: 173 }] },
     },
     dailyMetrics: [
-      { day: '2026-11-01', daily_play_count: 10 },
-      { day: '2026-11-02', daily_play_count: null },
-      { day: '2026-11-03', daily_play_count: 30 },
+      { day: dayA, daily_play_count: 10 },
+      { day: dayB, daily_play_count: null },
+      { day: dayC, daily_play_count: 30 },
     ],
     onClose: () => {},
   }))
@@ -449,10 +452,12 @@ test('normalizeProfileRows：age/device 的 unknow 显示「未知」，年龄�
     { key: 'fage_50_+', count: 3 },
     { key: 'unknow', count: 2 },
   ], 'age'), [['1-17岁', 3], ['50岁+', 3], ['未知', 2]])
+  // 设备编码按官方后台口径：1=iOS、2=安卓（2026-11-11 真机比例交叉验证）。
   assert.deepEqual(normalizeProfileRows([
     { key: '1', count: 58 },
+    { key: '2', count: 10 },
     { key: 'unknow', count: 2 },
-  ], 'device'), [['设备 1', 58], ['未知', 2]])
+  ], 'device'), [['iOS', 58], ['安卓', 10], ['未知', 2]])
   // 省份/城市等无标签映射的维度同样不得透出 unknow。
   assert.deepEqual(normalizeProfileRows([
     { key: '示例省一', count: 31 },
@@ -532,7 +537,7 @@ test('WorkDetailDialog（2026-11-11 真机反馈）：头部封面+元信息、K
   const react = await import('react')
   const { createElement: h } = react
   const { renderToString } = await import('react-dom/server')
-  const { WorkDetailDialog } = await import('../src/work-ui.js')
+  const { WorkDetailDialog, recentDays } = await import('../src/work-ui.js')
   const work = {
     work_id: 'wx-work-0002',
     title: '系统短标题',
@@ -546,13 +551,18 @@ test('WorkDetailDialog（2026-11-11 真机反馈）：头部封面+元信息、K
     traffic_source: { rows: [{ sourceType: 4, sourceKey: 'recommend', name: '推荐', playCount: 180 }] },
     retention_trend: { points: [{ second: 3, rate_pct: 71.2 }] },
   }
-  // 8 天按日数据：趋势线只显示最近 7 天（最旧一天不出现）。
-  const daily = Array.from({ length: 8 }, (_, i) => ({
-    day: `2026-10-${25 + i}`,
-    daily_play_count: 10 + i,
-    daily_like_count: 1,
-    daily_follow_count: i,
-  }))
+  // x 轴固定最近 7 个自然日：窗口内有数据的日期正常出线，窗口外数据不出现。
+  const windowDays = recentDays(7)
+  const outOfWindowDay = recentDays(8)[0]
+  const daily = [
+    { day: outOfWindowDay, daily_play_count: 999 },
+    ...windowDays.map((day, i) => ({
+      day,
+      daily_play_count: 10 + i,
+      daily_like_count: 1,
+      daily_follow_count: i,
+    })),
+  ]
   const html = renderToString(h(WorkDetailDialog, {
     work,
     detail: { traffic_source: work.traffic_source, retention_trend: work.retention_trend },
@@ -572,7 +582,7 @@ test('WorkDetailDialog（2026-11-11 真机反馈）：头部封面+元信息、K
   assert.ok(html.includes('按日数据（近 7 天）'), '按日趋势段标题缺失')
   assert.ok(html.includes('aria-label="按日数据近 7 天趋势"'), '趋势 svg 缺失')
   assert.ok(html.includes('关注量'), '趋势图例缺失')
-  assert.ok(!html.includes('10-25'), '趋势线应只显示最近 7 天（最旧日 10-25 不得出现）')
+  assert.ok(!html.includes(outOfWindowDay.slice(5)), '趋势线应只显示最近 7 天（窗口外日期不得出现）')
   assert.ok(!html.includes('日期'), '明细表表头不应再渲染')
 })
 
@@ -627,4 +637,225 @@ test('WorkCover：加载失败回退占位、size=large、非 http 源不发请�
   const bad = renderToString(h(WorkCover, { coverUrl: 'data:image/png;base64,x' }))
   assert.ok(bad.includes('ywc-cover-fallback'), '非 http 源应回退占位')
   assert.ok(!bad.includes('<img'), '非 http 源不得渲染 img')
+})
+
+test('TrendChart（2026-11-11 真机反馈）：固定 7 天 x 轴、真实 y 轴刻度、缺失断线', async () => {
+  const react = await import('react')
+  const { createElement: h } = react
+  const { renderToString } = await import('react-dom/server')
+  const { TrendChart, recentDays } = await import('../src/work-ui.js')
+  const days = recentDays(7)
+  const rows = days.map((day, index) => ({
+    day,
+    a: index === 0 || index === 1 ? null : index * 10, // 前两天空 → 断线
+    b: 5,
+  }))
+  const html = renderToString(h(TrendChart, { rows, series: [
+    { key: 'a', label: '播放', color: '#000' },
+    { key: 'b', label: '喜欢', color: '#4ea6ff' },
+  ] }))
+  // x 轴：7 个自然日标签齐全（缺数据的日期也要有刻度）。
+  for (const day of days) assert.ok(html.includes(day.slice(5)), `x 轴缺日期 ${day}`)
+  // y 轴：5 条刻度标签（0 / 25% / 50% / 75% / 100% 位置），按真实数量而非相对百分比。
+  const yLabels = [...html.matchAll(/text-anchor="end"[^>]*>([^<]+)<\/text>/g)].map(match => match[1])
+  assert.equal(yLabels.length, 5, `y 轴刻度数量应为 5，实际 ${yLabels.length}`)
+  // y 轴取真实数据范围（对齐官方：不从 0 强行起算），底部=最小值 5、顶部=最大值 60。
+  assert.equal(yLabels[0], '5', 'y 轴底部应为数据最小值')
+  assert.equal(yLabels[yLabels.length - 1], '60', 'y 轴顶部应为数据最大值')
+  // 断线：播放序列前两天空缺，路径应从第 3 个点开始（只有 1 段）。
+  const paths = [...html.matchAll(/<path d="([^"]+)"/g)].map(match => match[1])
+  const playPath = paths.find(path => path.startsWith('M')) || ''
+  assert.ok(playPath.length > 0, '播放序列路径缺失')
+  assert.equal((playPath.match(/M/g) || []).length, 1, '连续 5 天数据应只有 1 段路径')
+  // 悬停浮层容器常驻（内容随 hover 渲染），宽度自适应不应撑破布局。
+  assert.ok(html.includes('ywc-chart-wrap'), '趋势图容器缺失')
+})
+
+test('profileBarsCard 省份/城市：按人数降序取前 5', async () => {
+  const react = await import('react')
+  const { createElement: h } = react
+  const { renderToString } = await import('react-dom/server')
+  const { AccountTab } = await import('../src/account-ui.js')
+  const profile = {
+    day: '2026-11-10',
+    province: [
+      { key: '湖南省', count: 48 }, { key: '广东省', count: 4 }, { key: '浙江省', count: 5 },
+      { key: '江西省', count: 3 }, { key: '江苏省', count: 1 }, { key: '湖北省', count: 1 },
+      { key: '上海市', count: 1 },
+    ],
+    city: [{ key: '长沙市', count: 41 }, { key: '岳阳市', count: 3 }, { key: '湖州市', count: 2 }],
+  }
+  const html = renderToString(h(AccountTab, {
+    window: 'last_7d', onWindow: () => {},
+    overview: { metrics: { totals: {} }, availability: {}, fans_trend: null },
+    profile,
+    accounts: [{ accountId: 'a1', nickname: '账号一', deleteState: 'none' }],
+    selectedId: 'a1', onSelectAccount: () => {},
+  }))
+  const provinceCard = html.slice(html.indexOf('省份分布'), html.indexOf('城市分布'))
+  const names = [...provinceCard.matchAll(/<span>([^<]+)<\/span>/g)].map(match => match[1]).filter(name => name !== '省份分布')
+  // 前 4 名按人数降序确定；第 5 名落在并列 count=1 的集合内（同数量的顺序无关）。
+  assert.deepEqual(names.slice(0, 4), ['湖南省', '浙江省', '广东省', '江西省'], '省份应按人数降序取前 5')
+  assert.equal(names.length, 5, '省份只展示前 5 条')
+  assert.ok(['江苏省', '上海市'].includes(names[4]), '第 5 名应为并列 count=1 的省份')
+  assert.ok(!provinceCard.includes('湖北省'), '第 6 名及以后不应展示')
+})
+
+test('详情页数据缺口：只展示核心字段，is_original 等静默过滤', async () => {
+  const react = await import('react')
+  const { createElement: h } = react
+  const { renderToString } = await import('react-dom/server')
+  const { WorkDetailDialog } = await import('../src/work-ui.js')
+  const work = {
+    work_id: 'w-gap', description: '缺口口径',
+    publish_time: '2026-11-08T10:00:00+08:00', latest_collected_at: '2026-11-09T11:00:00+08:00',
+    data_gap: {
+      is_original: { at: '2026-11-11T07:00:00+00:00', reason: 'not_exposed' },
+      retention_trend: { at: '2026-11-11T07:00:00+00:00', reason: 'not_exposed' },
+    },
+  }
+  const html = renderToString(h(WorkDetailDialog, {
+    work, detail: {}, dailyMetrics: [], onClose: () => {},
+  }))
+  assert.ok(!html.includes('is_original'), '非核心缺口不应展示')
+  assert.ok(html.includes('观众留存'), '核心缺口应展示')
+})
+
+test('sessionActionFor：会话有效只探活，过期/未知走重新扫码登录', async () => {
+  const { sessionActionFor } = await import('../src/account-ui.js')
+  assert.equal(sessionActionFor({ sessionStatus: 'ok' }), 'probe')
+  assert.equal(sessionActionFor({ sessionStatus: 'expired' }), 'relogin')
+  assert.equal(sessionActionFor({ sessionStatus: 'unknown' }), 'relogin')
+  assert.equal(sessionActionFor({}), 'relogin')
+  assert.equal(sessionActionFor(null), 'relogin')
+})
+
+test('按日趋势图：作品发布日之前的日期按 0 处理（不是空白断线）', async () => {
+  const react = await import('react')
+  const { createElement: h } = react
+  const { renderToString } = await import('react-dom/server')
+  const { WorkDetailDialog, recentDays } = await import('../src/work-ui.js')
+  const days = recentDays(7)
+  const publishDay = days[4] // 第 5 天发布
+  const work = {
+    work_id: 'w-pre',
+    description: '发布前补 0',
+    publish_time: `${publishDay}T10:00:00+08:00`,
+    latest_collected_at: `${days[6]}T11:00:00+08:00`,
+    play_count: 100,
+  }
+  const html = renderToString(h(WorkDetailDialog, {
+    work,
+    detail: {},
+    // 只给发布日之后的数据；发布前的 4 天应由 UI 补 0。
+    dailyMetrics: days.slice(4).map((day, index) => ({ day, daily_play_count: 10 + index })),
+    onClose: () => {},
+  }))
+  // 补 0 后播放线从第一个点连续到最后一个点：整条路径只有 1 段（无断点）。
+  const playPath = (html.match(/d="([^"]*)" stroke="var\(--ywc-brand\)"/) || [])[1] || ''
+  assert.ok(playPath.length > 0, '播放路径缺失')
+  assert.equal((playPath.match(/M/g) || []).length, 1, `发布前应补 0 连续，实际路径：${playPath}`)
+  // y 轴底部因补 0 而回到 0。
+  const yLabels = [...html.matchAll(/text-anchor="end"[^>]*>([^<]+)<\/text>/g)].map(match => match[1])
+  assert.equal(yLabels[0], '0', '发布前补 0 后 y 轴应从 0 开始')
+})
+
+test('gapWorkCount：与详情页同口径，只统计核心缺口（is_original 不计）', async () => {
+  const { gapWorkCount } = await import('../src/ui-format.js')
+  const works = [
+    { work_id: 'a', data_gap: { is_original: { reason: 'not_exposed' } } },
+    { work_id: 'b', data_gap: { retention_trend: { reason: 'not_exposed' } } },
+    { work_id: 'c', data_gap: null },
+  ]
+  assert.equal(gapWorkCount(works), 1, '只有 is_original 缺口不算缺口作品')
+})
+
+test('TrendChart y 轴：大数值用万/亿压缩（避免被左侧裁剪），小跨度不出现重复刻度', async () => {
+  const react = await import('react')
+  const { createElement: h } = react
+  const { renderToString } = await import('react-dom/server')
+  const { TrendChart, recentDays } = await import('../src/work-ui.js')
+  const days = recentDays(7)
+  const bigRows = days.map((day, index) => ({ day, plays: 1200000 + index * 500000 }))
+  const bigHtml = renderToString(h(TrendChart, { rows: bigRows, series: [{ key: 'plays', label: '播放', color: '#000' }] }))
+  const bigLabels = [...bigHtml.matchAll(/text-anchor="end"[^>]*>([^<]+)<\/text>/g)].map(match => match[1])
+  assert.equal(bigLabels.length, 5)
+  assert.ok(bigLabels.every(label => label.length <= 8), `y 轴标签过长会被裁剪：${bigLabels.join(',')}`)
+  assert.ok(bigLabels.some(label => label.endsWith('万')), '大数值应使用万/亿紧凑格式')
+
+  // 小跨度（63~66）：标签不得重复。
+  const smallRows = days.map((day, index) => ({ day, total: 63 + index * 0.5 }))
+  const smallHtml = renderToString(h(TrendChart, { rows: smallRows, series: [{ key: 'total', label: '总数', color: '#000' }] }))
+  const smallLabels = [...smallHtml.matchAll(/text-anchor="end"[^>]*>([^<]+)<\/text>/g)].map(match => match[1])
+  assert.equal(new Set(smallLabels).size, smallLabels.length, `小跨度刻度不应重复：${smallLabels.join(',')}`)
+})
+
+test('TrendChart：无任何有效值时渲染空态，不画伪坐标轴', async () => {
+  const react = await import('react')
+  const { createElement: h } = react
+  const { renderToString } = await import('react-dom/server')
+  const { TrendChart, recentDays } = await import('../src/work-ui.js')
+  const days = recentDays(7)
+  const html = renderToString(h(TrendChart, {
+    rows: days.map(day => ({ day, total: null })),
+    series: [{ key: 'total', label: '总数', color: '#000' }],
+  }))
+  assert.ok(html.includes('暂无可展示的趋势数据'), '无数据应显示空态')
+  assert.ok(!html.includes('<svg'), '无数据不应渲染坐标轴')
+})
+
+test('AccountTab：窗口切到「昨日」时，关注者增长图仍按 trendOverview 画满 7 天轴', async () => {
+  const react = await import('react')
+  const { createElement: h } = react
+  const { renderToString } = await import('react-dom/server')
+  const { AccountTab } = await import('../src/account-ui.js')
+  const { recentDays } = await import('../src/work-ui.js')
+  const days = recentDays(7)
+  // 当前窗口（昨日）只有 2 天数据；trendOverview（last_7d）有完整 7 天。
+  const yesterday = { metrics: { totals: {} }, availability: {}, fans_trend: { daily: [
+    { day: days[5], follower_total_count: 66 },
+    { day: days[6], follower_total_count: 67 },
+  ] } }
+  const week = { metrics: { totals: {} }, availability: {}, fans_trend: { daily: days.map((day, i) => ({ day, follower_total_count: 60 + i })) } }
+  const html = renderToString(h(AccountTab, {
+    window: 'yesterday', onWindow: () => {},
+    overview: yesterday, trendOverview: week, profile: null,
+    accounts: [{ accountId: 'a1', nickname: '账号一', deleteState: 'none' }],
+    selectedId: 'a1', onSelectAccount: () => {},
+  }))
+  for (const day of days) assert.ok(html.includes(day.slice(5)), `趋势图应显示满 7 天，缺 ${day}`)
+  // 关键：折线必须真的画出 7 个点（横轴标签本来就是 7 个，只看标签区分不出来）。
+  const path = (html.match(/<path d="(M[^"]+)" stroke="var\(--ywc-brand\)"/) || [])[1] || ''
+  assert.ok(path.length > 0, '关注者增长折线缺失')
+  assert.ok((path.match(/L/g) || []).length >= 6, `应画出 7 个数据点，实际路径：${path}`)
+})
+
+test('账号卡按钮：登录进行中与墓碑账号时「重新扫码」禁用', async () => {
+  const react = await import('react')
+  const { createElement: h } = react
+  const { renderToString } = await import('react-dom/server')
+  const { AccountList } = await import('../src/account-ui.js')
+  const accounts = [
+    { accountId: 'a-expired', nickname: '过期号', sessionStatus: 'expired', deleteState: 'none' },
+    { accountId: 'a-deleted', nickname: '墓碑号', sessionStatus: 'expired', deleteState: 'remote_deleted' },
+  ]
+  const normal = renderToString(h(AccountList, {
+    accounts, selectedId: null, busy: false, running: false,
+    loginActive: false, browserBlocked: false,
+    onSelect: () => {}, onProbe: () => {}, onRemove: () => {}, onBeginLogin: () => {}, onCollectAll: () => {},
+  }))
+  // 普通过期账号：按钮可用（可点重新扫码）。
+  const expiredButton = normal.match(/<button[^>]*>重新扫码<\/button>/g) || []
+  assert.equal(expiredButton.length, 2, '过期账号应显示两个「重新扫码」')
+  assert.ok(expiredButton[0].includes('class="ywc-mini-button"'), '首个非墓碑按钮应为启用态（无 disabled）')
+  assert.ok(!expiredButton[0].includes('disabled'), '普通过期账号的重新扫码应可点击')
+  assert.ok(expiredButton[1].includes('disabled'), '墓碑账号的重新扫码应禁用')
+
+  const busyLogin = renderToString(h(AccountList, {
+    accounts, selectedId: null, busy: false, running: false,
+    loginActive: true, browserBlocked: false,
+    onSelect: () => {}, onProbe: () => {}, onRemove: () => {}, onBeginLogin: () => {}, onCollectAll: () => {},
+  }))
+  const busyButtons = busyLogin.match(/<button[^>]*>重新扫码<\/button>/g) || []
+  assert.ok(busyButtons.every(button => button.includes('disabled')), '登录进行中所有「重新扫码」应禁用')
 })

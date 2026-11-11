@@ -67,8 +67,35 @@ export function weightedCompletionRate(works) {
 }
 
 /** 缺口作品数：当前值存在至少一个字段缺口的作品数（§9.2）。 */
+// 详情页与摘要卡共用的「核心缺口」白名单：只统计影响分析的字段缺失，
+// is_original（原创声明）等官方可选字段不计，避免摘要卡说「50 个有缺口」、
+// 详情页却说「无缺口」的自相矛盾（2026-11-11 review P2-3）。
+export const CORE_GAP_FIELDS = new Set([
+  'traffic_source',
+  'retention_trend',
+  'daily_metrics',
+  'play_count',
+  'like_count',
+  'favorite_count',
+  'comment_count',
+  'share_count',
+  'forward_count',
+  'follow_count',
+  'completion_rate_pct',
+  'avg_play_duration_s',
+  'cover_url',
+  'publish_time',
+  'duration_s',
+])
+
+export function hasCoreGap(work) {
+  const gap = work && work.data_gap
+  if (!gap || typeof gap !== 'object') return false
+  return Object.keys(gap).some(field => CORE_GAP_FIELDS.has(field))
+}
+
 export function gapWorkCount(works) {
-  return (Array.isArray(works) ? works : []).filter(work => work && work.data_gap && Object.keys(work.data_gap).length > 0).length
+  return (Array.isArray(works) ? works : []).filter(work => hasCoreGap(work)).length
 }
 
 /** 表头排序默认态：发布时间降序（进入页面即最近发布在前）。
@@ -166,13 +193,22 @@ const PROFILE_LABEL_MAPS = {
     if (range.endsWith('_+')) return `${range.slice(0, -2).replace(/^0+/, '')}岁+`
     return `${range.split('_').map(part => part.replace(/^0+(?=\d)/, '')).join('-')}岁`
   },
-  device: row => (isUnknownKey(row.key) ? '未知' : `设备 ${row.key}`),
+  // 设备编码按官方后台口径映射（2026-11-11 真机交叉验证：官方 iOS 35.82% /
+  // 安卓 59.7% 与本地 dim=1 的 36%、dim=2 的 60% 完全吻合）。未知编码仍显示未知。
+  device: row => {
+    if (isUnknownKey(row.key)) return '未知'
+    const device = String(row.key).trim()
+    if (device === '1') return 'iOS'
+    if (device === '2') return '安卓'
+    return `设备 ${device}`
+  },
 }
 
 /** 画像维度行规范化：[{key,label,count}] → [[label, count]]。
  * `@_all` 是官方"全部"汇总行（count=总数），不属于分布条目，排除；gender 的
  * 1/2 与 age 的 fage_* 按真机编码映射为友好标签；device 仅暴露 1/2 编码，
- * 显示"设备 1/2"不臆造语义；province/city 官方直接给中文名。 */
+ * 显示 iOS/安卓（按官方后台比例交叉验证），未知编码统一「未知」；province/city
+ * 官方直接给中文名。 */
 export function normalizeProfileRows(rows, dimension) {
   const map = dimension ? PROFILE_LABEL_MAPS[dimension] : null
   return (Array.isArray(rows) ? rows : [])
@@ -185,6 +221,17 @@ export function normalizeProfileRows(rows, dimension) {
       else if (map && map[String(row.key)] !== undefined) label = map[String(row.key)]
       return [label, Number(row.count) || 0]
     })
+}
+
+/**
+ * ISO 时间戳 → 上海语义日（YYYY-MM-DD）。趋势图判定「发布日之前」用：
+ * 直接 slice(0,10) 会按 UTC 截断，跨零点的作品会算早一天。
+ */
+export function shanghaiDayOf(isoValue) {
+  if (typeof isoValue !== 'string' || !isoValue) return null
+  const time = Date.parse(isoValue)
+  if (!Number.isFinite(time)) return null
+  return new Date(time + 8 * 3600 * 1000).toISOString().slice(0, 10)
 }
 
 /**

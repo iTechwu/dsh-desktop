@@ -30,6 +30,8 @@ const loadModule = async (file, label) => {
   let text = await readFile(new URL(`src/${file}`, root), 'utf8')
   text = text
     .replace(/^import \{[\s\S]*?\} from '\.\/ui-format\.js'\n/m, '')
+    // account-ui 复用 work-ui 的 TrendChart/recentDays（内联顺序 work-ui 在前）。
+    .replace(/^import \{[\s\S]*?\} from '\.\/work-ui\.js'\n/m, '')
     .replace(/^import \{[\s\S]*?\} from 'react'\n/m, '')
     .replace(/^const React = require\('react'\)\n/m, '')
     .replace(/^const \{ createElement: h \} = React\n/m, '')

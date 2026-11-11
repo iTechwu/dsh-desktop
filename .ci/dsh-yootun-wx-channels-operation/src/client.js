@@ -192,8 +192,18 @@ a.ywc-work-title:hover { text-decoration:underline; color:var(--ywc-brand); }
 .ywc-window-group button[aria-selected="true"] { background: color-mix(in srgb, var(--ywc-brand) 12%, var(--ywc-surface)); color:var(--ywc-brand); font-weight:700; box-shadow: inset 0 -2px 0 var(--ywc-brand-line); }
 .ywc-two-column { display:grid; grid-template-columns:minmax(0,1.4fr) minmax(280px,.8fr); gap:12px; }
 .ywc-chart-body { padding:12px; }
-.ywc-chart-legend { display:flex; gap:12px; flex-wrap:wrap; margin-bottom:8px; color:var(--ywc-muted); font-size:var(--dsh-content-font-size-secondary,13px); }
+.ywc-chart-legend { display:flex; gap:10px; flex-wrap:wrap; margin-bottom:6px; color:var(--ywc-muted); font-size:12px; }
 .ywc-chart-legend i { display:inline-block; width:10px; height:3px; margin-right:5px; vertical-align:middle; background:var(--ywc-brand); }
+/* 趋势图容器与 hover 浮层（2026-11-11 真机反馈：参考官方后台，鼠标移动显示各指标数值）。 */
+.ywc-chart-wrap { position:relative; }
+.ywc-chart-tooltip { position:absolute; top:8px; transform:translateX(-50%); min-width:132px; padding:8px 10px; border-radius:8px;
+  background:var(--ywc-surface); border:1px solid var(--ywc-border); box-shadow:0 6px 20px rgba(15,23,42,.12);
+  pointer-events:none; font-size:12px; color:var(--ywc-text); z-index:2; }
+.ywc-chart-tooltip-day { margin-bottom:4px; color:var(--ywc-muted); font-size:11px; }
+.ywc-chart-tooltip-row { display:flex; align-items:center; gap:6px; line-height:18px; }
+.ywc-chart-tooltip-row i { display:inline-block; width:7px; height:7px; border-radius:50%; flex:none; }
+.ywc-chart-tooltip-name { flex:1; }
+.ywc-chart-tooltip-value { font-variant-numeric:tabular-nums; font-weight:600; }
 /* height:auto 让 SVG 按 viewBox 比例自适应：固定 height 会让宽视口下的图形被
    「信箱化」缩小并水平居中（2026-11-11 review）。 */
 .ywc-svg { display:block; width:100%; height:auto; }
@@ -457,9 +467,11 @@ function WxWorkbench({ host, initial = null }) {
 
   // 添加账号（对齐抖音 onAddAccount）：点击直接由宿主打开系统 Chrome 进入官方
   // 视频号助手扫码；无二维码弹层，进行中状态由左栏按钮文案承载。
-  const beginLogin = useCallback(() => {
+  // accountId 可选：会话过期后点「重新扫码」时复用该账号的浏览器 Profile，
+  // 而不是另起一个 pending 登录；「添加账号」不传即新建。
+  const beginLogin = useCallback(accountId => {
     void (async () => {
-      const result = await post('account.beginLogin', {})
+      const result = await post('account.beginLogin', accountId ? { accountId } : {})
       setLogin({ loginKey: result.loginKey, state: result.state })
       pollLogin(result.loginKey)
     })().catch(error => notify(`登录发起失败：${error.message}`))
@@ -713,6 +725,9 @@ function WxWorkbench({ host, initial = null }) {
             : h(AccountTab, {
               window: windowKey, onWindow: setWindowKey,
               overview, profile,
+              // 关注者增长趋势图固定用 last_7d（「昨日」窗口只有 2 天数据，
+              // 会把 7 天横轴截断成 2 个点）。
+              trendOverview: summaryOverview,
               accounts, selectedId,
               onSelectAccount: accountId => setSelectedId(accountId),
             }),

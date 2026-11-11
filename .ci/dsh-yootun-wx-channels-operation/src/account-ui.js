@@ -1,6 +1,7 @@
 // 账号数据 Tab / 账号区 / 登录弹层（视觉基准：docs/1109/wx/ui-demo.html，§9.1/§9.4）。
 
 import { createElement as h } from 'react'
+import { TrendChart, recentDays } from './work-ui.js'
 import {
   batchProgressText,
   batchReasonText,
@@ -111,9 +112,17 @@ export function AccountList({
           ),
           h('div', { className: 'ywc-card-actions' },
             h('button', {
-              className: 'ywc-mini-button', type: 'button', disabled: busy || running,
-              onClick: () => onProbe(account.accountId),
-            }, account.sessionStatus === 'ok' ? '检测会话' : '重新扫码'),
+              // 登录进行中禁用（否则会在已有浏览器窗口上再开一个，并抢走轮询）；
+              // 墓碑账号（云端已删）不允许重新登录，避免把已删除账号又拉回来。
+              className: 'ywc-mini-button', type: 'button',
+              disabled: busy || running || loginActive || browserBlocked
+                || account.deleteState === 'remote_deleted',
+              // 会话有效 → 只探活；会话已过期 → 直接打开浏览器重新扫码（2026-11-11
+              // 真机反馈：原先两种状态都绑 onProbe，点「重新扫码」没有任何反应）。
+              onClick: () => (sessionActionFor(account) === 'probe'
+                ? onProbe(account.accountId)
+                : onBeginLogin(account.accountId)),
+            }, sessionActionFor(account) === 'probe' ? '检测会话' : '重新扫码'),
             h('button', {
               className: 'ywc-mini-button danger', type: 'button', disabled: busy || running,
               onClick: () => onRemove(account.accountId),
@@ -133,6 +142,7 @@ export function AccountList({
  * 省份/城市=横向条形两列卡片（对齐官方后台截图布局）。 */
 export function AccountTab({
   window: windowKey, onWindow, overview, profile,
+  trendOverview = null,
   accounts, selectedId, onSelectAccount,
 }) {
   const availability = (overview && overview.availability) || {}
@@ -167,8 +177,12 @@ export function AccountTab({
         h('div', { className: 'ywc-section-title' }, h('h3', null, '关注者增长'), h('span', { className: 'ywc-badge' }, '账号级')),
         h('div', { className: 'ywc-chart-body' },
           h('div', { className: 'ywc-chart-legend' }, h('span', null, h('i', null), '关注者总数'), h('span', null, '净增 / 新增 / 取消关注见指标卡')),
-          h('svg', { className: 'ywc-svg', viewBox: '0 0 680 180', role: 'img', 'aria-label': '关注者总数趋势' },
-            fansChartSeries(overview)),
+          h(TrendChart, {
+            // 固定 7 天口径：优先用 last_7d 概览（「昨日」窗口只有 2 天数据）。
+            rows: fansTrendRows(trendOverview || overview),
+            series: FANS_SERIES,
+            ariaLabel: '关注者总数趋势（近 7 天）',
+          }),
         ),
       ),
       h('section', { className: 'ywc-panel' },
@@ -219,8 +233,9 @@ function fansCards(overview) {
 }
 
 /** 画像卡片组（2026-11-11 真机反馈，对齐官方后台）：
- * 环形图调色板参考官方风格（男蓝/女粉）；「未知」统一灰色；设备编码语义官方
- * 未暴露（不臆造），显示「设备 1/2」。占比一律 count/sum 计算，总数 0 显示「—」。 */
+ * 环形图调色板参考官方风格（男蓝/女粉）；「未知」统一灰色；设备编码按官方后台
+ * 口径映射（1=iOS、2=安卓，见 ui-format 的 device 映射）。占比一律 count/sum
+ * 计算，总数 0 显示「—」。 */
 const DONUT_PALETTE = ['#4ea6ff', '#f47fb0', '#8b5cf6', '#f08a3c', '#2f9e44', '#d9a400', '#e0524a']
 const DONUT_UNKNOWN_COLOR = '#c0c6cf'
 
@@ -284,7 +299,11 @@ function profileAgeCard(profile) {
 }
 
 function profileBarsCard(title, profile, dimension) {
+  // 省份/城市为长尾分布（2026-11-11 真机反馈）：按人数从大到小排序后只取前 5，
+  // 避免几十条列表把页面撑成滚动地狱；性别/年龄/设备是定长维度，不走这里。
   const rows = normalizeProfileRows(profile ? profile[dimension] : null, dimension)
+    .sort((left, right) => right[1] - left[1] || String(left[0]).localeCompare(String(right[0])))
+    .slice(0, 5)
   const max = Math.max(1, ...rows.map(([, value]) => value))
   return h('div', { className: 'ywc-profile-card' },
     h('div', { className: 'ywc-profile-card-title' }, title),
@@ -299,38 +318,30 @@ function profileBarsCard(title, profile, dimension) {
   )
 }
 
-/** 关注者总数折线（Demo 同款 SVG 折线）。 */
-export function fansChartSeries(overview) {
-  const rows = overview && overview.fans_trend && Array.isArray(overview.fans_trend.daily)
-    ? overview.fans_trend.daily.filter(row => row.follower_total_count !== null && row.follower_total_count !== undefined)
+/**
+ * 关注者总数趋势（2026-11-11 真机反馈，对齐官方后台）：x 轴固定最近 7 个自然日，
+ * 带 y 轴刻度，鼠标移动显示浮层。
+ */
+export function fansTrendRows(overview) {
+  const daily = overview && overview.fans_trend && Array.isArray(overview.fans_trend.daily)
+    ? overview.fans_trend.daily
     : []
-  if (rows.length === 0) return null
-  const values = rows.map(row => Number(row.follower_total_count))
-  const width = 680
-  const height = 180
-  const padding = 28
-  const min = Math.min(...values)
-  const max = Math.max(...values)
-  const points = values.map((value, index) => {
-    const x = padding + index * ((width - padding * 2) / Math.max(1, values.length - 1))
-    const y = height - padding - ((value - min) / Math.max(1, max - min)) * (height - padding * 2)
-    return { x, y, value }
-  })
-  const paths = []
-  for (let index = 1; index < points.length; index += 1) {
-    paths.push(h('path', {
-      key: `p${index}`,
-      d: `M${points[index - 1].x},${points[index - 1].y}L${points[index].x},${points[index].y}`,
-      stroke: 'var(--ywc-brand)', 'strokeWidth': 3, fill: 'none',
-    }))
+  const byDay = new Map()
+  for (const row of daily) {
+    if (row && row.day) byDay.set(String(row.day), row)
   }
-  for (const point of points) {
-    paths.push(h('circle', {
-      key: `c${point.x}-${point.y}`, cx: point.x, cy: point.y, r: 4,
-      fill: 'var(--ywc-surface)', stroke: 'var(--ywc-brand)', 'strokeWidth': 2,
-    }, h('title', null, String(point.value))))
-  }
-  return paths
+  return recentDays(7).map(day => ({ day, follower_total_count: (byDay.get(day) || {}).follower_total_count ?? null }))
+}
+
+const FANS_SERIES = [{ key: 'follower_total_count', label: '关注者总数', color: 'var(--ywc-brand)' }]
+
+/**
+ * 账号卡片主按钮的行为判定（2026-11-11 真机反馈「会话过期点重新扫码没反应」）：
+ * 会话有效 → `probe`（只探活）；过期/未知 → `relogin`（打开浏览器重新扫码登录）。
+ * 抽成纯函数便于回归测试，避免再次退化成两种状态都只探活。
+ */
+export function sessionActionFor(account) {
+  return account && account.sessionStatus === 'ok' ? 'probe' : 'relogin'
 }
 
 /** 登录交互（对齐抖音）：点击「添加账号」由宿主直接打开系统 Chrome 进入官方
@@ -338,6 +349,8 @@ export function fansChartSeries(overview) {
 export function LoginStatusButton({ loginActive, browserBlocked, onBeginLogin }) {
   return h('button', {
     className: 'ywc-primary ywc-wide', type: 'button',
-    disabled: browserBlocked || loginActive, onClick: onBeginLogin,
+    // 不能直接绑 onBeginLogin：React 会把事件对象当第一个实参传进去，
+    // 而 beginLogin(accountId) 会把事件当账号 ID 发给宿主。
+    disabled: browserBlocked || loginActive, onClick: () => onBeginLogin(),
   }, loginActive ? '浏览器已打开，请在窗口中扫码…' : '添加账号')
 }

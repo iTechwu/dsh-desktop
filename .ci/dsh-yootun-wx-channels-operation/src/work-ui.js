@@ -3,6 +3,7 @@
 
 import { createElement as h, useState } from 'react'
 import {
+  CORE_GAP_FIELDS,
   DEFAULT_SORT_STATE,
   EMPTY,
   fmt,
@@ -17,6 +18,7 @@ import {
   progressText,
   safeAvatarSrc,
   safeWorkUrl,
+  shanghaiDayOf,
   weightedCompletionRate,
   workTitle,
 } from './ui-format.js'
@@ -53,7 +55,7 @@ export function WorkSummaryCards({ works, summaryOverview, account }) {
     { label: '近7日播放', value: fmtCount(totals.daily_play_count), hint: '账号级官方聚合' },
     { label: '近7日关注量', value: fmtCount(totals.daily_follow_count), hint: '非净关注' },
     { label: '作品完播率', value: fmtPct(weightedCompletionRate(works)), hint: '按播放加权计算' },
-    { label: '缺口作品', value: fmtCount(gapWorkCount(works)), hint: '至少 1 个字段缺失' },
+    { label: '缺口作品', value: fmtCount(gapWorkCount(works)), hint: '至少 1 个核心字段缺失' },
   ]
   return h('div', { className: 'ywc-summary-grid' },
     cells.map(cell => h('div', { className: 'ywc-kpi', key: cell.label },
@@ -253,11 +255,11 @@ export function WorkDetailDialog({ work, detail, dailyMetrics, onClose }) {
             : h('p', { className: 'ywc-empty' }, '本次接口未提供观众留存数据')),
         ),
         section('按日数据（近 7 天）', daily.length
-          ? dailyTrendChart(daily)
+          ? dailyTrendChart(daily, work.publish_time)
           : h('p', { className: 'ywc-empty' }, '该作品暂无按日数据')),
         section('数据缺口', gaps.length
           ? h('div', { className: 'ywc-bars' }, gaps.map(([name, gap]) => h('span', { className: 'ywc-badge', key: name }, `${name} · ${gapReasonText(gap)}`)))
-          : h('span', { className: 'ywc-badge' }, '本次采集无字段缺口')),
+          : h('span', { className: 'ywc-badge' }, '本次采集无核心字段缺口')),
       ),
     ),
   )
@@ -294,70 +296,211 @@ const DAILY_SERIES = [
   { key: 'daily_follow_count', label: '关注量', color: '#2f9e44' },
 ]
 
-/** 按日数据趋势线（2026-11-11：替代原 7 列明细表，对齐官方后台趋势图）：
- * 只显示最近 7 天；各指标独立 min-max 归一（量级悬殊，统一坐标会压平小指标，
- * 官方同款）；缺失值断线不造 0；hover 圆点显示「日期 指标 数值」。 */
-function dailyTrendChart(daily) {
-  const rows = (Array.isArray(daily) ? daily : [])
-    .filter(row => row && row.day)
-    .sort((left, right) => String(left.day).localeCompare(String(right.day)))
-    .slice(-7)
-  if (!rows.length) return h('p', { className: 'ywc-empty' }, '该作品暂无按日数据')
+/**
+ * 最近 N 个上海语义日（含 endDay，默认「昨天」——当天数据未收盘不入日表）。
+ * 2026-11-11 真机反馈：趋势图 x 轴要固定 7 天并从当天往前推，缺数据的日期留空。
+ */
+export function recentDays(count = 7, endDayIso = null) {
+  const isDay = value => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)
+  let base = isDay(endDayIso) ? endDayIso : null
+  if (!base) {
+    const shanghaiNow = new Date(Date.now() + 8 * 3600 * 1000)
+    shanghaiNow.setUTCDate(shanghaiNow.getUTCDate() - 1)
+    base = shanghaiNow.toISOString().slice(0, 10)
+  }
+  const end = Date.parse(`${base}T00:00:00Z`)
+  return Array.from({ length: count }, (_, index) =>
+    new Date(end - (count - 1 - index) * 86400000).toISOString().slice(0, 10))
+}
+
+function trendNumber(value) {
+  if (value === null || value === undefined) return null
+  const numeric = Number(value)
+  return Number.isFinite(numeric) ? numeric : null
+}
+
+/** y 轴标签格式：大数值用万/亿压缩（否则七位数字会超出左侧留白被 SVG 裁掉），
+ * 小跨度保留一位小数（否则 63~66 会被四舍五入成重复刻度）。 */
+function fmtAxis(value, span) {
+  const numeric = Number(value) || 0
+  const abs = Math.abs(numeric)
+  if (abs >= 100000000) return `${(numeric / 100000000).toFixed(1).replace(/\.0$/, '')}亿`
+  if (abs >= 10000) return `${(numeric / 10000).toFixed(1).replace(/\.0$/, '')}万`
+  if (span < 10) return numeric.toFixed(1).replace(/\.0$/, '')
+  return fmtCount(Math.round(numeric))
+}
+
+/** y 轴刻度：把 [min,max] 切成 4 段（5 条网格线），标签取整。 */
+function yAxisTicks(min, max) {
+  const span = max - min
+  const ticks = []
+  for (let index = 0; index <= 4; index += 1) {
+    const value = min + (span * index) / 4
+    ticks.push({ value, ratio: index / 4 })
+  }
+  return ticks
+}
+
+/**
+ * 通用趋势图（2026-11-11 真机反馈，对齐官方后台）：
+ * - 统一真实 y 轴刻度（所有系列共用），带网格线与数值标签；
+ * - x 轴固定 rows 给出的自然日（调用方用 `recentDays(7)` 补齐）；
+ * - 缺失值断线（不跨缺口连线、不造 0）；
+ * - 鼠标移动时显示浮层，列出该日期下所有系列的值。
+ */
+export function TrendChart({ rows, series, ariaLabel = '趋势图', height = 210 }) {
+  const [hoverIndex, setHoverIndex] = useState(null)
+  const days = Array.isArray(rows) ? rows : []
+  const lines = Array.isArray(series) ? series : []
   const width = 680
-  // 与账号趋势图同口径（viewBox 680×180 + CSS height:auto），避免固定高宽比
-  // 不一致导致的信箱化缩放。
-  const height = 180
-  const padX = 18
-  const padTop = 14
-  const padBottom = 30
-  const xAt = index => padX + index * ((width - padX * 2) / Math.max(1, rows.length - 1))
-  const elements = [
-    h('line', {
-      key: 'axis', x1: padX, y1: height - padBottom, x2: width - padX, y2: height - padBottom,
-      style: { stroke: 'var(--ywc-border)', strokeWidth: 1 },
-    }),
+  const padLeft = 46
+  const padRight = 16
+  const padTop = 12
+  const padBottom = 26
+  const plotWidth = width - padLeft - padRight
+  const plotHeight = height - padTop - padBottom
+  const stepX = days.length > 1 ? plotWidth / (days.length - 1) : 0
+  const xAt = index => padLeft + index * stepX
+
+  const values = []
+  for (const line of lines) {
+    for (const row of days) {
+      const value = trendNumber(row && row[line.key])
+      if (value !== null) values.push(value)
+    }
+  }
+  // 没有任何有效值时不画伪坐标轴（否则会渲染 0/0/1/1/1 这样的空图）。
+  if (!values.length) {
+    return h('p', { className: 'ywc-empty' }, '暂无可展示的趋势数据')
+  }
+  const rawMin = Math.min(...values)
+  const rawMax = Math.max(...values)
+  const yMin = rawMin === rawMax ? Math.max(0, rawMin - 1) : rawMin
+  const yMax = rawMin === rawMax ? rawMax + 1 : rawMax
+  const yAt = value => padTop + plotHeight - ((Number(value) - yMin) / (yMax - yMin || 1)) * plotHeight
+  const ticks = yAxisTicks(yMin, yMax)
+
+  const handleMove = event => {
+    if (!days.length) return
+    const rect = event.currentTarget.getBoundingClientRect()
+    if (!rect || !rect.width) return
+    const ratio = (event.clientX - rect.left) / rect.width
+    const svgX = ratio * width
+    const raw = stepX > 0 ? Math.round((svgX - padLeft) / stepX) : 0
+    const index = Math.min(days.length - 1, Math.max(0, raw))
+    if (index !== hoverIndex) setHoverIndex(index)
+  }
+
+  const grid = [
+    ...ticks.map((tick, index) => h('g', { key: `tick-${index}` },
+      h('line', {
+        x1: padLeft, y1: yAt(tick.value).toFixed(1), x2: width - padRight, y2: yAt(tick.value).toFixed(1),
+        style: { stroke: 'var(--ywc-border)', strokeWidth: 1 },
+      }),
+      h('text', {
+        x: padLeft - 8, y: (yAt(tick.value) + 3).toFixed(1), textAnchor: 'end',
+        style: { fill: 'var(--ywc-muted)', fontSize: 10 },
+      }, fmtAxis(tick.value, yMax - yMin)),
+    )),
   ]
-  for (const series of DAILY_SERIES) {
-    const nums = rows.map(row => row[series.key]).filter(v => v !== null && v !== undefined)
-    if (!nums.length) continue
-    const min = Math.min(...nums)
-    const max = Math.max(...nums)
-    const yAt = value => max === min
-      ? height - padBottom - (height - padTop - padBottom) / 2
-      : height - padBottom - ((Number(value) - min) / (max - min)) * (height - padTop - padBottom)
-    // 缺失值必须断线：跳过该点后下一个有效点用 `M` 重新起笔，不能跨过缺失日
-    // 用 `L` 直接连线（否则等于把缺口当成连续趋势，2026-11-11 review）。
+
+  const paths = []
+  // 绘制顺序反转：第一条 series（主指标，如播放量）最后画、压在最上层——多条线
+  // 在 0 附近重叠时，主指标不能被后画的线盖住看不见（2026-11-11 真机反馈）。
+  for (const line of [...lines].reverse()) {
     let d = ''
     let segmentOpen = false
-    rows.forEach((row, index) => {
-      const value = row[series.key]
-      if (value === null || value === undefined) {
+    days.forEach((row, index) => {
+      const value = trendNumber(row && row[line.key])
+      if (value === null) {
         segmentOpen = false
         return
       }
       d += `${segmentOpen ? 'L' : 'M'}${xAt(index).toFixed(1)},${yAt(value).toFixed(1)}`
       segmentOpen = true
     })
-    elements.push(h('path', { key: series.key, d, stroke: series.color, strokeWidth: 2, fill: 'none' }))
-    rows.forEach((row, index) => {
-      const value = row[series.key]
-      if (value === null || value === undefined) return
-      elements.push(h('circle', {
-        key: `${series.key}-${index}`, cx: xAt(index).toFixed(1), cy: yAt(value).toFixed(1), r: 2.5,
-        style: { fill: 'var(--ywc-surface)', stroke: series.color, strokeWidth: 1.5 },
-      }, h('title', null, `${row.day} ${series.label} ${fmtCount(value)}`)))
-    })
+    if (d) paths.push(h('path', { key: line.key, d, stroke: line.color, strokeWidth: 2, fill: 'none' }))
   }
-  const labels = rows.map((row, index) => h('text', {
+
+  const labels = days.map((row, index) => h('text', {
     key: `x-${index}`, x: xAt(index).toFixed(1), y: height - 8,
-    textAnchor: 'middle', style: { fill: 'var(--ywc-muted)', fontSize: 11 },
-  }, String(row.day).slice(5)))
+    textAnchor: 'middle', style: { fill: 'var(--ywc-muted)', fontSize: 10 },
+  }, String(row && row.day || '').slice(5)))
+
+  const hoverRow = hoverIndex !== null && hoverIndex >= 0 && hoverIndex < days.length ? days[hoverIndex] : null
+  const hoverLeft = hoverRow ? Math.min(88, Math.max(12, (xAt(hoverIndex) / width) * 100)) : 0
+  const tooltip = hoverRow ? h('div', {
+    className: 'ywc-chart-tooltip',
+    style: { left: `${hoverLeft}%` },
+  },
+  h('div', { className: 'ywc-chart-tooltip-day' }, String(hoverRow.day || '')),
+  lines.map(line => {
+    const value = trendNumber(hoverRow[line.key])
+    return h('div', { className: 'ywc-chart-tooltip-row', key: line.key },
+      h('i', { style: { background: line.color } }),
+      h('span', { className: 'ywc-chart-tooltip-name' }, line.label),
+      h('span', { className: 'ywc-chart-tooltip-value' }, value === null ? EMPTY : fmtCount(value)),
+    )
+  })) : null
+
+  return h('div', { className: 'ywc-chart-wrap' },
+    h('svg', {
+      className: 'ywc-svg', viewBox: `0 0 ${width} ${height}`, role: 'img', 'aria-label': ariaLabel,
+      onMouseMove: handleMove,
+      onMouseLeave: () => setHoverIndex(null),
+    },
+    grid,
+    hoverRow ? h('line', {
+      className: 'ywc-chart-cursor',
+      x1: xAt(hoverIndex).toFixed(1), y1: padTop, x2: xAt(hoverIndex).toFixed(1), y2: padTop + plotHeight,
+      style: { stroke: 'var(--ywc-muted)', strokeWidth: 1, strokeDasharray: '3 3' },
+    }) : null,
+    paths,
+    hoverRow ? lines.map(line => {
+      const value = trendNumber(hoverRow[line.key])
+      if (value === null) return null
+      return h('circle', {
+        key: `dot-${line.key}`, cx: xAt(hoverIndex).toFixed(1), cy: yAt(value).toFixed(1), r: 3,
+        style: { fill: 'var(--ywc-surface)', stroke: line.color, strokeWidth: 2 },
+      })
+    }) : null,
+    h('line', {
+      x1: padLeft, y1: padTop + plotHeight, x2: width - padRight, y2: padTop + plotHeight,
+      style: { stroke: 'var(--ywc-border)', strokeWidth: 1 },
+    }),
+    labels),
+    tooltip,
+  )
+}
+
+/** 按日数据趋势线（2026-11-11：替代原 7 列明细表，对齐官方后台趋势图）：
+ * x 轴固定最近 7 个自然日、统一真实 y 轴刻度；**发布日之前按 0 处理**（作品尚不
+ * 存在，确定性为 0），发布日之后的缺失才断线（可能采集中断，不能造 0）。 */
+function dailyTrendChart(daily, publishTime) {
+  const byDay = new Map()
+  for (const row of Array.isArray(daily) ? daily : []) {
+    if (row && row.day) byDay.set(String(row.day), row)
+  }
+  const publishDay = shanghaiDayOf(publishTime)
+  const rows = recentDays(7).map(day => {
+    // 发布前的日期：作品还没发，各项指标确定是 0（2026-11-11 真机反馈）。
+    // 必须优先于 byDay 判定——官方聚合可能对这些天返回 null 行，若先取 found
+    // 就会保留 null 变成断线（实测 11-04~11-06 仍然空白）。
+    if (publishDay && day < publishDay) {
+      const zeros = {}
+      for (const line of DAILY_SERIES) zeros[line.key] = 0
+      return { day, ...zeros }
+    }
+    const found = byDay.get(day)
+    return found ? { day, ...found } : { day }
+  })
+  const hasAny = rows.some(row => DAILY_SERIES.some(line => trendNumber(row[line.key]) !== null))
+  if (!hasAny) return h('p', { className: 'ywc-empty' }, '该作品暂无按日数据')
   return h('div', null,
     h('div', { className: 'ywc-chart-legend' },
-      DAILY_SERIES.map(series => h('span', { key: series.key },
-        h('i', { style: { background: series.color } }), series.label))),
-    h('svg', { className: 'ywc-svg', viewBox: `0 0 ${width} ${height}`, role: 'img', 'aria-label': '按日数据近 7 天趋势' },
-      elements, labels),
+      DAILY_SERIES.map(line => h('span', { key: line.key },
+        h('i', { style: { background: line.color } }), line.label))),
+    h(TrendChart, { rows, series: DAILY_SERIES, ariaLabel: '按日数据近 7 天趋势' }),
   )
 }
 
@@ -381,9 +524,13 @@ function barRows(rows, valueOf = row => Number(row[1])) {
   ))
 }
 
+// 详情页只展示影响分析的缺口（白名单与摘要卡共用，见 ui-format 的 CORE_GAP_FIELDS）；
+// 原创声明等非核心字段缺失时静默过滤，避免被误读为采集失败（2026-11-11 真机反馈）。
 function dataGapEntries(dataGap) {
   if (!dataGap || typeof dataGap !== 'object') return []
-  return Object.entries(dataGap).map(([field, gap]) => [FIELD_NAMES[field] || field, gap])
+  return Object.entries(dataGap)
+    .filter(([field]) => CORE_GAP_FIELDS.has(field))
+    .map(([field, gap]) => [FIELD_NAMES[field] || field, gap])
 }
 
 function gapReasonText(gap) {
@@ -396,6 +543,9 @@ function gapReasonText(gap) {
 }
 
 const FIELD_NAMES = {
+  cover_url: '作品封面',
+  publish_time: '发布时间',
+  duration_s: '视频时长',
   play_count: '播放',
   like_count: '喜欢',
   favorite_count: '收藏',
