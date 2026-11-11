@@ -2,9 +2,12 @@
 
 import { createElement as h } from 'react'
 import {
+  batchProgressText,
+  batchReasonText,
   fmtCount,
   fmtDateTime,
   normalizeProfileRows,
+  progressText,
   summarizeAccountMetrics,
   summarizeFansTrend,
 } from './ui-format.js'
@@ -31,14 +34,25 @@ function stateLine(account) {
 }
 
 /** 左侧账号管理栏（仅作品数据 Tab 显示；对齐抖音 ydo-accounts 结构）：
- * 标题行「账号管理 + 采集全部」→ 批量文本面板（仅批量运行/有结果时渲染）→
- * 账号卡列表 → 底部「添加账号」宽主按钮（登录进行中显示扫码提示并禁用）。 */
+ * 标题行「账号管理 + 采集全部」→ 批量进度面板（仅批量运行/有结果时渲染；布局契约
+ * 对齐抖音 BatchPanel：面板挂在标题行下方、账号列表上方，侧栏 grid 流内自然占一行，
+ * 不进右侧工具栏）→ 账号卡列表 → 底部「添加账号」宽主按钮（登录进行中显示扫码提示并禁用）。
+ * 运行中：spinner + 总进度（检查会话 / 第 i/n 个账号）+ 当前账号名 · 细粒度进度
+ * （batch.currentProgress，宿主随 collectAll.status 投影，无需第二路轮询）+ 实时计数；
+ * 终态：三态汇总（部分失败绝不伪装成整体成功）+ 失败/跳过账号逐行稳定原因。 */
 export function AccountList({
   accounts, selectedId, onSelect, onProbe, onRemove, onBeginLogin,
   batch, onCollectAll, busy, browserBlocked, loginActive,
 }) {
   const collectable = accounts.some(item => item.deleteState !== 'remote_deleted' && item.sessionStatus === 'ok')
-  const running = batch && batch.phase && batch.phase !== 'finished'
+  const running = Boolean(batch && batch.phase && batch.phase !== 'finished')
+  const nameOf = accountId => {
+    const account = (accounts || []).find(item => item.accountId === accountId)
+    return (account && account.nickname) || accountId || ''
+  }
+  const unfinished = running || !batch
+    ? []
+    : (batch.items || []).filter(item => item.status === 'failed' || item.status === 'skipped')
   return h('section', { className: 'ywc-panel' },
     h('div', { className: 'ywc-side-head' },
       h('h2', null, '账号管理'),
@@ -49,16 +63,42 @@ export function AccountList({
         onClick: onCollectAll,
       }, running ? '采集中' : '采集全部'),
     ),
-    batch && (running || (batch.summary && (batch.summary.failed > 0 || batch.summary.skipped > 0)))
-      ? h('div', { className: 'ywc-batch-panel', role: running ? 'status' : undefined, 'aria-live': running ? 'polite' : undefined },
+    batch && (running || batch.summary)
+      ? h('div', {
+        className: 'ywc-batch-panel',
+        role: running ? 'status' : undefined,
+        'aria-live': running ? 'polite' : undefined,
+        'aria-busy': running || undefined,
+      },
         running
           ? [
-            h('p', { key: 'phase' }, batch.phase === 'probing' ? '正在探测账号会话…' : '正在采集…'),
-            h('p', { className: 'ywc-hint', key: 'cur' }, `当前账号 ${Math.min((batch.currentAccountIndex || 0) + 1, (batch.items || []).length)}/${(batch.items || []).length}`),
+            h('div', { className: 'ywc-progress', key: 'prog' },
+              h('span', { className: 'ywc-spinner', 'aria-hidden': true }),
+              h('span', null, batchProgressText(batch) || '正在采集…'),
+            ),
+            batch.currentAccountId
+              ? h('p', { className: 'ywc-hint', key: 'cur' },
+                `当前账号 ${nameOf(batch.currentAccountId)}`,
+                batch.currentProgress ? ` · ${progressText(batch.currentProgress)}` : '',
+              )
+              : null,
+            h('p', { className: 'ywc-hint', key: 'cnt' },
+              `成功 ${batch.completedCount || 0} · 失败 ${batch.failedCount || 0} · 跳过 ${batch.skippedCount || 0}`),
           ]
           : [
-            h('p', { className: batch.summary.status === 'completed' ? 'ywc-ok' : batch.summary.status === 'failed' ? 'ywc-error' : 'ywc-warn', key: 'sum' },
+            h('p', {
+              className: batch.summary.status === 'completed' ? 'ywc-ok' : batch.summary.status === 'failed' ? 'ywc-error' : 'ywc-warn',
+              key: 'sum',
+            },
               `批量结束：成功 ${batch.summary.completed}、失败 ${batch.summary.failed}、跳过 ${batch.summary.skipped}`),
+            unfinished.length
+              ? h('div', { className: 'ywc-batch-detail', key: 'detail' },
+                ...unfinished.map(item => h('p', { key: item.accountId, className: 'ywc-batch-item' },
+                  h('span', { className: 'ywc-batch-item-name' }, nameOf(item.accountId)),
+                  h('span', { className: 'ywc-batch-item-reason' }, batchReasonText(item.reason)),
+                )),
+              )
+              : null,
           ],
       )
       : null,

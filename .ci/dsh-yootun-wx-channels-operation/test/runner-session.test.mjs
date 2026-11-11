@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 
-import { checkCollectionReadiness, createBatchCollectController } from '../src/runner.js'
+import { checkCollectionReadiness, createBatchCollectController, progressFromEvent } from '../src/runner.js'
 import { loginWithQrCode, probeSession } from '../src/session.js'
 
 const sleepImmediate = async () => {}
@@ -115,6 +115,64 @@ test('批量控制器 currentRunId 投影当前账号 runId（§8.5）', async (
   // finished 后 currentRunId 清空（无正在运行的 run）。
   assert.equal(controller.status.currentRunId, null)
   assert.equal(controller.status.summary.status, 'completed')
+})
+
+test('progressFromEvent：关键事件映射进度投影，非关键事件返回 null（保持上一进度）', () => {
+  assert.deepEqual(progressFromEvent({ phase: 'probing' }), { phase: 'probing' })
+  assert.deepEqual(progressFromEvent({ phase: 'list' }), { phase: 'list' })
+  assert.deepEqual(
+    progressFromEvent({ phase: 'list_page', pageNumber: 2, rawCount: 100, added: 60, collected: 160 }),
+    { phase: 'list', page: 2, collected: 160 },
+  )
+  assert.deepEqual(
+    progressFromEvent({ phase: 'details_progress', done: 12, total: 30, detailFailed: 1 }),
+    { phase: 'work', index: 12, total: 30 },
+  )
+  assert.deepEqual(progressFromEvent({ phase: 'account_level' }), { phase: 'account_level' })
+  assert.deepEqual(
+    progressFromEvent({ phase: 'batch_done', batchNo: 2, totalBatches: 3, succeeded: 40, failed: 0, expected: 45 }),
+    { phase: 'batch_done', batchNo: 2, totalBatches: 3, succeeded: 40, failed: 0, expected: 45 },
+  )
+  // batch_failed 同形状投影（进度行仍推进到该批次号）。
+  assert.equal(progressFromEvent({ phase: 'batch_failed', batchNo: 1, totalBatches: 3 }).phase, 'batch_done')
+  // 非关键事件：detail_gap / segment_gap / run_* / finished / 未知 / 空。
+  assert.equal(progressFromEvent({ phase: 'detail_gap', workId: 'w1' }), null)
+  assert.equal(progressFromEvent({ phase: 'segment_gap', segment: 'fans_trend' }), null)
+  assert.equal(progressFromEvent({ phase: 'run_started', runId: 'r1' }), null)
+  assert.equal(progressFromEvent({ phase: 'finished' }), null)
+  assert.equal(progressFromEvent({ phase: 'unknown_phase' }), null)
+  assert.equal(progressFromEvent(null), null)
+})
+
+test('批量控制器细粒度进度：运行中投影 currentAccountId/currentProgress，结束清空并给出计数', async () => {
+  let release = null
+  const gate = new Promise(resolve => { release = resolve })
+  const controller = createBatchCollectController({
+    probe: async () => ({ sessionStatus: 'ok' }),
+    collect: async ({ accountId, onProgress }) => {
+      // 运行中：当前账号与作品级进度均已投影（collectAll.status 单轮询可读）。
+      assert.equal(controller.status.currentAccountId, accountId)
+      onProgress({ phase: 'details_progress', done: 3, total: 10, detailFailed: 0 })
+      assert.deepEqual(controller.status.currentProgress, { phase: 'work', index: 3, total: 10 })
+      // 非关键事件（detail_gap）不覆盖上一个进度。
+      onProgress({ phase: 'detail_gap', workId: 'w9' })
+      assert.deepEqual(controller.status.currentProgress, { phase: 'work', index: 3, total: 10 })
+      await gate
+      return { status: 'completed', runId: `run-${accountId}`, works: 10 }
+    },
+  })
+  await controller.start({ accountIds: ['acc-1', 'acc-2'] })
+  for (let i = 0; i < 200 && controller.status.phase !== 'collecting'; i += 1) await sleepImmediate()
+  assert.equal(controller.status.phase, 'collecting')
+  assert.equal(controller.status.total, 2)
+  release()
+  for (let i = 0; i < 200 && controller.status.phase !== 'finished'; i += 1) await sleepImmediate()
+  // 结束后当前账号与细粒度进度清空，实时计数行可读（对齐抖音 projectBatch）。
+  assert.equal(controller.status.currentAccountId, null)
+  assert.equal(controller.status.currentProgress, null)
+  assert.equal(controller.status.completedCount, 2)
+  assert.equal(controller.status.failedCount, 0)
+  assert.equal(controller.status.skippedCount, 0)
 })
 
 test('扫码登录：mock chromeFactory 下读出 finderUsername 即保存并迁移 Profile', async () => {

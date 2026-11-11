@@ -11,6 +11,7 @@ import {
   DEFAULT_MAX_PAGES,
   checkCollectionReadiness,
   createBatchCollectController,
+  progressFromEvent,
   runCollection,
 } from './src/runner.js'
 import {
@@ -52,6 +53,9 @@ export function apply(ctx, overrides = {}) {
     hasStorageState: overrides.hasStorageState || hasStorageState,
     runCollection: overrides.runCollection || runCollection,
     collectBusy: false,
+    // 单账号采集状态投影（单槽——互斥保证同时只有一个采集）：collect.status 随
+    // busy 一起返回，页面工具栏进度行（对齐抖音）与终态判断共用这一份数据。
+    collectRecord: null,
     tools: overrides.tools || null,
   }
   // 批量控制器：collect 注入单账号采集（互斥位由 deps.collectBusy 守卫）。
@@ -122,7 +126,9 @@ export function apply(ctx, overrides = {}) {
             case 'collect.start':
               return send(res, 200, await handleCollectStart(deps, toolCtx, cleanId(body.accountId), body.newAttempt === true))
             case 'collect.status':
-              return send(res, 200, { status: 'ok', busy: deps.collectBusy })
+              // collect 为白名单形状投影（accountId/status/startedAt/finishedAt/
+              // error/progress/result），无任何凭证或原始错误信息（§9.5）。
+              return send(res, 200, { status: 'ok', busy: deps.collectBusy, collect: deps.collectRecord })
             case 'collectAll.start':
               return send(res, 200, await handleCollectAllStart(deps, toolCtx))
             case 'collectAll.status':
@@ -374,15 +380,40 @@ async function startCollectLocked(deps, toolCtx, accountId, newAttempt) {
   if (session.sessionStatus !== 'ok') {
     return { status: 'ok', started: false, reason: session.sessionStatus === 'expired' ? 'session_required' : 'probe_failed' }
   }
-  // 异步执行：页面轮询 collect.status（阶段 3 挂进度投影）；互斥位由 finally 释放。
+  // 异步执行：页面轮询 collect.status 读进度投影（对齐抖音 collect 投影，§8.5）；
+  // 互斥位由 finally 释放。
   collectLeaseHeld = true
+  const record = {
+    accountId,
+    status: 'running',
+    startedAt: new Date().toISOString(),
+    finishedAt: null,
+    error: null,
+    progress: { phase: 'probing' },
+    result: null,
+  }
+  deps.collectRecord = record
   void deps.runCollection({
     ctx: toolCtx,
     accountId,
     root: deps.root,
     newAttempt: newAttempt !== false,
+    onProgress: event => {
+      // 作品级进度（details_progress / batch_done 等关键事件）；非关键事件保持上一进度。
+      const progress = progressFromEvent(event)
+      if (progress) record.progress = progress
+    },
     logger: null,
-  }).catch(() => {}).finally(() => {
+  }).then(result => {
+    record.status = result.status === 'completed' || result.status === 'partial' ? result.status : 'failed'
+    record.error = record.status === 'failed' ? (result.reason || 'collect_failed') : null
+    record.result = { runId: result.runId || null, works: result.works || 0 }
+    record.finishedAt = new Date().toISOString()
+  }).catch(error => {
+    record.status = 'failed'
+    record.error = safeErrorCode(error)
+    record.finishedAt = new Date().toISOString()
+  }).finally(() => {
     deps.collectBusy = false
     collectLeaseHeld = false
   })
@@ -400,7 +431,9 @@ async function handleCollectAllStart(deps, toolCtx) {
     .map(record => record.accountId)
   const started = await deps.batchController.start({ accountIds })
   if (!started.started) return { status: 'ok', started: false, reason: started.reason }
-  return { status: 'ok', started: true, batchId: started.batchId, accounts: accountIds.length }
+  // 立即回批量投影（对齐抖音 started.batch）：页面 setBatch 后左栏批量面板即时
+  // 显示「正在检查会话…」，不必等下一轮 collectAll.status 轮询。
+  return { status: 'ok', started: true, batchId: started.batchId, accounts: accountIds.length, batch: deps.batchController.status }
 }
 
 async function handleRunGet(toolCtx, runId) {

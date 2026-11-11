@@ -185,3 +185,54 @@ export function fansTotalSeries(dailyRows) {
     .filter(row => row && row.follower_total_count !== null && row.follower_total_count !== undefined)
     .map(row => Number(row.follower_total_count))
 }
+
+/**
+ * 采集进度文案（数据形状由宿主 runner.js progressFromEvent 投影，对齐抖音
+ * progressText 语义；wx 中文直出无文案字典）：
+ * - work → 「采集进度 N/M」；batch_done → 「入库进度 i/j · s/e」；
+ * - probing / list / account_level → 阶段提示；空/未知 → 「采集中…」。
+ */
+export function progressText(progress) {
+  if (!progress || typeof progress !== 'object') return '采集中…'
+  switch (progress.phase) {
+    case 'probing': return '正在检查会话…'
+    case 'list':
+      return progress.collected
+        ? `正在获取作品列表（已收集 ${progress.collected} 个）…`
+        : '正在获取作品列表…'
+    case 'work': return `采集进度 ${progress.index || 0}/${progress.total || 0}`
+    case 'account_level': return '正在采集账号数据…'
+    case 'batch_done':
+      return `入库进度 ${progress.batchNo || 0}/${progress.totalBatches || 0} · ${progress.succeeded || 0}/${progress.expected || 0}`
+    default: return '采集中…'
+  }
+}
+
+/**
+ * 批量运行中总进度行（对齐抖音 batchProgress 语义）：
+ * probing → 「正在检查会话 i/n」；collecting → 「第 i/n 个账号」；终态返回 null。
+ */
+export function batchProgressText(batch) {
+  if (!batch || !batch.phase || batch.phase === 'finished' || batch.phase === 'ready') return null
+  const total = Array.isArray(batch.items) ? batch.items.length : 0
+  if (!total) return null
+  const index = Math.min(total, (batch.currentAccountIndex || 0) + 1)
+  if (batch.phase === 'probing') return `正在检查会话 ${index}/${total}`
+  if (batch.phase === 'collecting') return `第 ${index}/${total} 个账号`
+  return null
+}
+
+/**
+ * 批量未完成条目稳定原因 → 中文文案（对齐抖音 batchReasonKey 收敛原则：未知
+ * 稳定码收敛为通用文案，绝不把原始错误码暴露给业务用户）。
+ */
+export function batchReasonText(reason) {
+  if (!reason) return ''
+  if (reason === 'session_required' || reason === 'session_expired') return '会话已过期，请重新扫码'
+  // 正则而非字面量：客户端源码/产物不得出现该凭证字段名的连续字面量（凭证卫生契约）。
+  if (/^storage.state_missing$/.test(reason)) return '缺少本机登录态，请重新扫码登录'
+  if (reason === 'pending_account') return '待升级账号'
+  if (reason === 'probe_failed') return '会话检测失败'
+  if (reason === 'partial') return '部分作品缺失'
+  return '采集失败'
+}

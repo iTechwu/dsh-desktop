@@ -14,6 +14,7 @@ import {
   gapWorkCount,
   normalizeRetentionPoints,
   normalizeTrafficRows,
+  progressText,
   weightedCompletionRate,
 } from './ui-format.js'
 
@@ -60,12 +61,25 @@ export function WorkSummaryCards({ works, summaryOverview, account }) {
   )
 }
 
-/** 工具栏（采集本账号全部 / 刷新）。筛选与排序在表头完成（对齐抖音工作台）。 */
-export function WorkToolbar({ onCollect, onRefresh, disabled }) {
+/** 工具栏（采集本账号全部 / 刷新 / 运行中进度行）。筛选与排序在表头完成（对齐抖音工作台）。
+ * 进度行布局契约（对齐抖音 4257-4260）：挂在工具栏内采集按钮旁（同栏可见、窄容器自动
+ * 换行），绝不放到页面顶部通知条。collect 是宿主 collect.status 的进度投影（仅当前
+ * 选中账号的传入）；running 时采集按钮禁用并显示 spinner + progressText。 */
+export function WorkToolbar({ onCollect, onRefresh, collectDisabled = false, refreshDisabled = false, collect = null }) {
+  const running = Boolean(collect && collect.status === 'running')
   return h('div', { className: 'ywc-toolbar' },
     h('div', { className: 'ywc-toolbar-left' },
-      h('button', { className: 'ywc-button primary', type: 'button', onClick: onCollect, disabled }, '采集本账号全部'),
-      h('button', { className: 'ywc-button', type: 'button', onClick: onRefresh, disabled }, '刷新'),
+      h('button', {
+        className: 'ywc-button primary', type: 'button', onClick: onCollect,
+        disabled: collectDisabled || running, 'aria-busy': running || undefined,
+      }, running ? '采集中…' : '采集本账号全部'),
+      h('button', { className: 'ywc-button', type: 'button', onClick: onRefresh, disabled: refreshDisabled }, '刷新'),
+      running
+        ? h('div', { className: 'ywc-progress', role: 'status', 'aria-live': 'polite', 'aria-busy': true },
+          h('span', { className: 'ywc-spinner', 'aria-hidden': true }),
+          h('span', null, progressText(collect && collect.progress)),
+        )
+        : null,
     ),
   )
 }

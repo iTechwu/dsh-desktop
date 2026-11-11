@@ -6,10 +6,13 @@ import { test } from 'node:test'
 import {
   DEFAULT_SORT_STATE,
   EMPTY,
+  batchProgressText,
+  batchReasonText,
   fmtPair,
   gapWorkCount,
   nextSortState,
   normalizeTrafficRows,
+  progressText,
   sortWorks,
   summarizeAccountMetrics,
   summarizeFansTrend,
@@ -49,6 +52,98 @@ test('缺口作品数：data_gap 非空对象计数', () => {
     makeWork({}),
   ]
   assert.equal(gapWorkCount(works), 1)
+})
+
+test('进度文案：work/batch_done 对齐抖音语义，阶段提示与兜底', () => {
+  assert.equal(progressText(null), '采集中…')
+  assert.equal(progressText({}), '采集中…')
+  assert.equal(progressText({ phase: 'probing' }), '正在检查会话…')
+  assert.equal(progressText({ phase: 'list' }), '正在获取作品列表…')
+  assert.equal(progressText({ phase: 'list', collected: 160 }), '正在获取作品列表（已收集 160 个）…')
+  assert.equal(progressText({ phase: 'work', index: 12, total: 30 }), '采集进度 12/30')
+  assert.equal(progressText({ phase: 'account_level' }), '正在采集账号数据…')
+  assert.equal(progressText({ phase: 'batch_done', batchNo: 2, totalBatches: 3, succeeded: 40, expected: 45 }), '入库进度 2/3 · 40/45')
+  assert.equal(progressText({ phase: 'unknown' }), '采集中…')
+})
+
+test('批量总进度行与未完成原因文案（probing/collecting/终态收敛）', () => {
+  assert.equal(batchProgressText(null), null)
+  assert.equal(batchProgressText({ phase: 'finished', items: [{}, {}] }), null)
+  assert.equal(batchProgressText({ phase: 'probing', currentAccountIndex: 1, items: [{}, {}, {}] }), '正在检查会话 2/3')
+  assert.equal(batchProgressText({ phase: 'collecting', currentAccountIndex: 0, items: [{}, {}] }), '第 1/2 个账号')
+  assert.equal(batchReasonText('session_required'), '会话已过期，请重新扫码')
+  assert.equal(batchReasonText('session_expired'), '会话已过期，请重新扫码')
+  // 正则匹配保持语义精确，客户端产物不出现 storage_state 连续字面量。
+  assert.equal(batchReasonText('storage_state_missing'), '缺少本机登录态，请重新扫码登录')
+  assert.equal(batchReasonText('pending_account'), '待升级账号')
+  assert.equal(batchReasonText('probe_failed'), '会话检测失败')
+  assert.equal(batchReasonText('partial'), '部分作品缺失')
+  assert.equal(batchReasonText('SOMETHING_ELSE'), '采集失败')
+  assert.equal(batchReasonText(null), '')
+})
+
+test('WorkToolbar：运行中在工具栏内渲染进度行（绝不放页面顶部），空闲不渲染', async () => {
+  const react = await import('react')
+  const { createElement: h } = react
+  const { renderToString } = await import('react-dom/server')
+  const { WorkToolbar } = await import('../src/work-ui.js')
+  const running = renderToString(h(WorkToolbar, {
+    onCollect: () => {}, onRefresh: () => {},
+    collectDisabled: true, refreshDisabled: false,
+    collect: { accountId: 'a1', status: 'running', progress: { phase: 'work', index: 3, total: 10 } },
+  }))
+  assert.ok(running.includes('采集中…'), '运行中按钮文案缺失')
+  assert.ok(running.includes('采集进度 3/10'), '进度文案缺失')
+  assert.ok(running.includes('ywc-spinner'), 'spinner 缺失')
+  assert.ok(running.includes('aria-busy'), 'aria-busy 缺失')
+  assert.ok(running.includes('role="status"'), '进度行 role=status 缺失')
+  const idle = renderToString(h(WorkToolbar, { onCollect: () => {}, onRefresh: () => {} }))
+  assert.ok(idle.includes('采集本账号全部'))
+  assert.ok(!idle.includes('ywc-progress'), '空闲态不得渲染进度行')
+})
+
+test('AccountList 批量面板：运行中总进度+当前账号·细粒度+计数；终态未完成明细', async () => {
+  const react = await import('react')
+  const { createElement: h } = react
+  const { renderToString } = await import('react-dom/server')
+  const { AccountList } = await import('../src/account-ui.js')
+  const base = {
+    accounts: [
+      { accountId: 'a1', nickname: '账号一', sessionStatus: 'ok', deleteState: 'none' },
+      { accountId: 'a2', nickname: '账号二', sessionStatus: 'ok', deleteState: 'none' },
+    ],
+    selectedId: 'a1', onSelect: () => {}, onProbe: () => {}, onRemove: () => {}, onBeginLogin: () => {},
+    onCollectAll: () => {}, busy: false, browserBlocked: false, loginActive: false,
+  }
+  const running = renderToString(h(AccountList, {
+    ...base,
+    batch: {
+      phase: 'collecting', items: [{ accountId: 'a1' }, { accountId: 'a2' }],
+      currentAccountIndex: 1, currentAccountId: 'a2',
+      currentProgress: { phase: 'work', index: 5, total: 20 },
+      completedCount: 1, failedCount: 0, skippedCount: 0,
+    },
+  }))
+  assert.ok(running.includes('第 2/2 个账号'), '总进度行缺失')
+  assert.ok(running.includes('当前账号 账号二'), '当前账号名缺失')
+  assert.ok(running.includes('采集进度 5/20'), '细粒度进度缺失')
+  assert.ok(running.includes('成功 1 · 失败 0 · 跳过 0'), '实时计数行缺失')
+  assert.ok(running.includes('ywc-spinner'), '运行中 spinner 缺失')
+  const done = renderToString(h(AccountList, {
+    ...base,
+    batch: {
+      phase: 'finished', items: [
+        { accountId: 'a1', status: 'completed' },
+        { accountId: 'a2', status: 'skipped', reason: 'session_required' },
+      ],
+      currentAccountIndex: 1, currentAccountId: null, currentProgress: null,
+      summary: { completed: 1, failed: 0, skipped: 1, eligible: 1, status: 'partial' },
+      completedCount: 1, failedCount: 0, skippedCount: 1,
+    },
+  }))
+  assert.ok(done.includes('批量结束：成功 1、失败 0、跳过 1'), '终态汇总缺失')
+  assert.ok(done.includes('账号二'), '未完成账号名缺失')
+  assert.ok(done.includes('会话已过期，请重新扫码'), '未完成原因文案缺失')
 })
 
 test('表头排序状态机与排序（本地、只基于已入库数据）', () => {
@@ -153,6 +248,10 @@ test('render smoke：构建产物工厂在真 React 下渲染不抛错（含 5 �
   // 空数据不渲染表格框架，只渲染居中空态（对齐抖音 ydo-state）。
   assert.ok(html.includes('当前账号暂无已入库作品'))
   assert.ok(!html.includes('加载更多'))
+  // 空闲态不渲染采集进度行（进度行只在工作栏/批量面板运行时出现，不在页面顶部）；
+  // 断言 DOM 元素而非类名字符串——内联 STYLES 的规则文本本身含 .ywc-progress。
+  assert.ok(!html.includes('class="ywc-spinner"'))
+  assert.ok(!html.includes('正在采集'))
   // 二维码占位弹层已移除：点击添加账号直接打开浏览器。
   assert.ok(!html.includes('官方二维码占位'))
 })

@@ -128,6 +128,13 @@ const STYLES = `
 .ywc-wide { width:100%; }
 .ywc-batch-panel { display:grid; gap:4px; padding:10px 12px; border:1px solid var(--ywc-border); border-radius:8px; background:var(--ywc-surface-2); min-width:0; }
 .ywc-batch-panel p { margin:0; font-size:var(--dsh-content-font-size-secondary,13px); color:var(--ywc-text); }
+.ywc-batch-detail { display:grid; gap:2px; padding-top:4px; border-top:1px solid var(--ywc-border); }
+.ywc-batch-item { display:flex; justify-content:space-between; gap:12px; font-size:var(--dsh-content-font-size-secondary,13px); }
+.ywc-batch-item-name { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.ywc-batch-item-reason { flex:none; color:var(--ywc-muted); }
+.ywc-progress { display:flex; align-items:center; gap:8px; color:var(--ywc-muted); font-size:var(--dsh-content-font-size-secondary,13px); }
+.ywc-spinner { width:16px; height:16px; flex:none; border:2px solid var(--ywc-border); border-top-color:var(--ywc-brand); border-radius:50%; animation:ywc-spin .8s linear infinite; }
+@keyframes ywc-spin { to { transform:rotate(360deg); } }
 .ywc-hint { margin:0; color:var(--ywc-muted); font-size:var(--dsh-content-font-size-secondary,13px); line-height:1.5; }
 .ywc-ok { margin:0; color:var(--ywc-success); font-size:var(--dsh-content-font-size-secondary,13px); }
 .ywc-error { margin:0; color:var(--ywc-danger); font-size:var(--dsh-content-font-size-secondary,13px); }
@@ -316,6 +323,10 @@ function WxWorkbench({ host, initial = null }) {
   // 确认后远端删除执行中 = confirmed_pending_adapter（§16.2 删除状态机）。
   const [deleteLifecycle, setDeleteLifecycle] = useState(null)
   const [collectBusy, setCollectBusy] = useState(false)
+  // 单账号采集状态投影（宿主 collect.status 的 collect 字段）：工具栏进度行数据源
+  // （对齐抖音 collect 投影）。单槽——互斥保证同时只有一个采集；渲染时按 accountId
+  // 比对，切走账号不显示他人进度。
+  const [collect, setCollect] = useState(null)
 
   const selected = useMemo(
     () => accounts.find(account => account.accountId === selectedId) || null,
@@ -505,18 +516,28 @@ function WxWorkbench({ host, initial = null }) {
         return
       }
       setCollectBusy(true)
-      notify('采集已启动，完成后刷新查看数据')
-      // 单账号采集无独立进度端点：轮询 collect.status 直到空闲（ref 持表，卸载清理）。
+      // 立即挂运行中投影：工具栏进度行（对齐抖音 4257-4260）随轮询逐步细化为
+      // 「采集进度 N/M / 入库进度 i/j · s/e」，不再用顶部通知条承载采集反馈。
+      setCollect({ accountId, status: 'running', progress: null })
       collectTimerRef.current = setInterval(async () => {
         try {
           const status = await post('collect.status')
+          if (status.collect) setCollect(status.collect)
           if (!status.busy) {
             stopCollectPolling()
             setCollectBusy(false)
+            const final = status.collect || null
+            if (!final) {
+              // 宿主重启/插件重载会丢 collectRecord：busy=false 且无投影时清掉本地
+              // 乐观 running 态，避免「采集中…」spinner 与禁用按钮永不清除（review P2）。
+              setCollect(null)
+              notify('采集状态丢失，可重试')
+            } else if (final.status === 'failed') {
+              notify(final.error ? `采集失败：${reasonText(final.error)}` : '采集失败，可重试')
+            }
             await refreshWorks(accountId)
             await refreshOverview(accountId, windowKey)
             await refreshAccounts()
-            notify('采集结束')
           }
         } catch { /* 轮询失败下轮重试 */ }
       }, POLL_INTERVAL_MS)
@@ -534,7 +555,9 @@ function WxWorkbench({ host, initial = null }) {
         notify(`批量采集未启动：${reasonText(result.reason)}`)
         return
       }
-      notify(`批量采集已启动（${result.accounts} 个账号，串行执行）`)
+      // 立即挂批量投影（宿主 start 随回执返回）：左栏批量面板即时显示
+      // 「正在检查会话…」，后续细粒度进度随 collectAll.status 轮询更新。
+      setBatch(result.batch || null)
     })().catch(error => notify(`批量采集失败：${error.message}`))
   }, [post, notify])
 
@@ -591,6 +614,7 @@ function WxWorkbench({ host, initial = null }) {
   }, [post, selectedId])
 
   const browserBlocked = !browserReady.chrome || !browserReady.driver
+  const batchRunning = Boolean(batch && batch.phase && batch.phase !== 'finished')
 
   return h('div', { className: 'ywc-root' },
     h('style', { dangerouslySetInnerHTML: { __html: STYLES } }),
@@ -642,7 +666,11 @@ function WxWorkbench({ host, initial = null }) {
               h(WorkToolbar, {
                 onCollect: () => selectedId && collectAccount(selectedId),
                 onRefresh: () => selectedId && (refreshWorks(selectedId), refreshOverview(selectedId, windowKey)),
-                disabled: !selectedId || collectBusy,
+                // 采集按钮：批量运行中一并禁用（宿主互斥会拒绝，提前禁用给稳定反馈）；
+                // 刷新是只读查询，批量运行中保持可用（对齐抖音 busy 语义）。
+                collectDisabled: !selectedId || collectBusy || batchRunning,
+                refreshDisabled: !selectedId || collectBusy,
+                collect: collect && collect.accountId === selectedId ? collect : null,
               }),
               h(WorkSummaryCards, { works, summaryOverview, account: selected }),
               h(WorkTable, {
@@ -699,7 +727,8 @@ function reasonText(reason) {
     collect_busy: '采集互斥',
     session_expired: '会话失效',
   }
-  return map[reason] || reason || '未知'
+  // 未知稳定码收敛为通用文案（对齐 batchReasonText），不把原始错误码透给业务用户。
+  return map[reason] || '原因未知'
 }
 
 module.exports = { apply, inject: ['slots'], renderWxWorkbench, SidebarButton, css: STYLES }

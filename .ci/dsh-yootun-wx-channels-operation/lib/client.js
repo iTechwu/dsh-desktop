@@ -191,6 +191,57 @@ window.__ModuleLoader__.load({
         .map(row => Number(row.follower_total_count))
     }
 
+    /**
+     * 采集进度文案（数据形状由宿主 runner.js progressFromEvent 投影，对齐抖音
+     * progressText 语义；wx 中文直出无文案字典）：
+     * - work → 「采集进度 N/M」；batch_done → 「入库进度 i/j · s/e」；
+     * - probing / list / account_level → 阶段提示；空/未知 → 「采集中…」。
+     */
+    function progressText(progress) {
+      if (!progress || typeof progress !== 'object') return '采集中…'
+      switch (progress.phase) {
+        case 'probing': return '正在检查会话…'
+        case 'list':
+          return progress.collected
+            ? `正在获取作品列表（已收集 ${progress.collected} 个）…`
+            : '正在获取作品列表…'
+        case 'work': return `采集进度 ${progress.index || 0}/${progress.total || 0}`
+        case 'account_level': return '正在采集账号数据…'
+        case 'batch_done':
+          return `入库进度 ${progress.batchNo || 0}/${progress.totalBatches || 0} · ${progress.succeeded || 0}/${progress.expected || 0}`
+        default: return '采集中…'
+      }
+    }
+
+    /**
+     * 批量运行中总进度行（对齐抖音 batchProgress 语义）：
+     * probing → 「正在检查会话 i/n」；collecting → 「第 i/n 个账号」；终态返回 null。
+     */
+    function batchProgressText(batch) {
+      if (!batch || !batch.phase || batch.phase === 'finished' || batch.phase === 'ready') return null
+      const total = Array.isArray(batch.items) ? batch.items.length : 0
+      if (!total) return null
+      const index = Math.min(total, (batch.currentAccountIndex || 0) + 1)
+      if (batch.phase === 'probing') return `正在检查会话 ${index}/${total}`
+      if (batch.phase === 'collecting') return `第 ${index}/${total} 个账号`
+      return null
+    }
+
+    /**
+     * 批量未完成条目稳定原因 → 中文文案（对齐抖音 batchReasonKey 收敛原则：未知
+     * 稳定码收敛为通用文案，绝不把原始错误码暴露给业务用户）。
+     */
+    function batchReasonText(reason) {
+      if (!reason) return ''
+      if (reason === 'session_required' || reason === 'session_expired') return '会话已过期，请重新扫码'
+      // 正则而非字面量：客户端源码/产物不得出现该凭证字段名的连续字面量（凭证卫生契约）。
+      if (/^storage.state_missing$/.test(reason)) return '缺少本机登录态，请重新扫码登录'
+      if (reason === 'pending_account') return '待升级账号'
+      if (reason === 'probe_failed') return '会话检测失败'
+      if (reason === 'partial') return '部分作品缺失'
+      return '采集失败'
+    }
+
     // 作品数据 Tab（视觉与交互基准：docs/1109/wx/ui-demo.html，§9.0/§9.2/§9.3）。
     // 纯展示组件：数据由 client.js 传入；排序/筛选/分页只作用于已入库数据。
 
@@ -238,12 +289,25 @@ window.__ModuleLoader__.load({
       )
     }
 
-    /** 工具栏（采集本账号全部 / 刷新）。筛选与排序在表头完成（对齐抖音工作台）。 */
-    function WorkToolbar({ onCollect, onRefresh, disabled }) {
+    /** 工具栏（采集本账号全部 / 刷新 / 运行中进度行）。筛选与排序在表头完成（对齐抖音工作台）。
+     * 进度行布局契约（对齐抖音 4257-4260）：挂在工具栏内采集按钮旁（同栏可见、窄容器自动
+     * 换行），绝不放到页面顶部通知条。collect 是宿主 collect.status 的进度投影（仅当前
+     * 选中账号的传入）；running 时采集按钮禁用并显示 spinner + progressText。 */
+    function WorkToolbar({ onCollect, onRefresh, collectDisabled = false, refreshDisabled = false, collect = null }) {
+      const running = Boolean(collect && collect.status === 'running')
       return h('div', { className: 'ywc-toolbar' },
         h('div', { className: 'ywc-toolbar-left' },
-          h('button', { className: 'ywc-button primary', type: 'button', onClick: onCollect, disabled }, '采集本账号全部'),
-          h('button', { className: 'ywc-button', type: 'button', onClick: onRefresh, disabled }, '刷新'),
+          h('button', {
+            className: 'ywc-button primary', type: 'button', onClick: onCollect,
+            disabled: collectDisabled || running, 'aria-busy': running || undefined,
+          }, running ? '采集中…' : '采集本账号全部'),
+          h('button', { className: 'ywc-button', type: 'button', onClick: onRefresh, disabled: refreshDisabled }, '刷新'),
+          running
+            ? h('div', { className: 'ywc-progress', role: 'status', 'aria-live': 'polite', 'aria-busy': true },
+              h('span', { className: 'ywc-spinner', 'aria-hidden': true }),
+              h('span', null, progressText(collect && collect.progress)),
+            )
+            : null,
         ),
       )
     }
@@ -494,14 +558,25 @@ window.__ModuleLoader__.load({
     }
 
     /** 左侧账号管理栏（仅作品数据 Tab 显示；对齐抖音 ydo-accounts 结构）：
-     * 标题行「账号管理 + 采集全部」→ 批量文本面板（仅批量运行/有结果时渲染）→
-     * 账号卡列表 → 底部「添加账号」宽主按钮（登录进行中显示扫码提示并禁用）。 */
+     * 标题行「账号管理 + 采集全部」→ 批量进度面板（仅批量运行/有结果时渲染；布局契约
+     * 对齐抖音 BatchPanel：面板挂在标题行下方、账号列表上方，侧栏 grid 流内自然占一行，
+     * 不进右侧工具栏）→ 账号卡列表 → 底部「添加账号」宽主按钮（登录进行中显示扫码提示并禁用）。
+     * 运行中：spinner + 总进度（检查会话 / 第 i/n 个账号）+ 当前账号名 · 细粒度进度
+     * （batch.currentProgress，宿主随 collectAll.status 投影，无需第二路轮询）+ 实时计数；
+     * 终态：三态汇总（部分失败绝不伪装成整体成功）+ 失败/跳过账号逐行稳定原因。 */
     function AccountList({
       accounts, selectedId, onSelect, onProbe, onRemove, onBeginLogin,
       batch, onCollectAll, busy, browserBlocked, loginActive,
     }) {
       const collectable = accounts.some(item => item.deleteState !== 'remote_deleted' && item.sessionStatus === 'ok')
-      const running = batch && batch.phase && batch.phase !== 'finished'
+      const running = Boolean(batch && batch.phase && batch.phase !== 'finished')
+      const nameOf = accountId => {
+        const account = (accounts || []).find(item => item.accountId === accountId)
+        return (account && account.nickname) || accountId || ''
+      }
+      const unfinished = running || !batch
+        ? []
+        : (batch.items || []).filter(item => item.status === 'failed' || item.status === 'skipped')
       return h('section', { className: 'ywc-panel' },
         h('div', { className: 'ywc-side-head' },
           h('h2', null, '账号管理'),
@@ -512,16 +587,42 @@ window.__ModuleLoader__.load({
             onClick: onCollectAll,
           }, running ? '采集中' : '采集全部'),
         ),
-        batch && (running || (batch.summary && (batch.summary.failed > 0 || batch.summary.skipped > 0)))
-          ? h('div', { className: 'ywc-batch-panel', role: running ? 'status' : undefined, 'aria-live': running ? 'polite' : undefined },
+        batch && (running || batch.summary)
+          ? h('div', {
+            className: 'ywc-batch-panel',
+            role: running ? 'status' : undefined,
+            'aria-live': running ? 'polite' : undefined,
+            'aria-busy': running || undefined,
+          },
             running
               ? [
-                h('p', { key: 'phase' }, batch.phase === 'probing' ? '正在探测账号会话…' : '正在采集…'),
-                h('p', { className: 'ywc-hint', key: 'cur' }, `当前账号 ${Math.min((batch.currentAccountIndex || 0) + 1, (batch.items || []).length)}/${(batch.items || []).length}`),
+                h('div', { className: 'ywc-progress', key: 'prog' },
+                  h('span', { className: 'ywc-spinner', 'aria-hidden': true }),
+                  h('span', null, batchProgressText(batch) || '正在采集…'),
+                ),
+                batch.currentAccountId
+                  ? h('p', { className: 'ywc-hint', key: 'cur' },
+                    `当前账号 ${nameOf(batch.currentAccountId)}`,
+                    batch.currentProgress ? ` · ${progressText(batch.currentProgress)}` : '',
+                  )
+                  : null,
+                h('p', { className: 'ywc-hint', key: 'cnt' },
+                  `成功 ${batch.completedCount || 0} · 失败 ${batch.failedCount || 0} · 跳过 ${batch.skippedCount || 0}`),
               ]
               : [
-                h('p', { className: batch.summary.status === 'completed' ? 'ywc-ok' : batch.summary.status === 'failed' ? 'ywc-error' : 'ywc-warn', key: 'sum' },
+                h('p', {
+                  className: batch.summary.status === 'completed' ? 'ywc-ok' : batch.summary.status === 'failed' ? 'ywc-error' : 'ywc-warn',
+                  key: 'sum',
+                },
                   `批量结束：成功 ${batch.summary.completed}、失败 ${batch.summary.failed}、跳过 ${batch.summary.skipped}`),
+                unfinished.length
+                  ? h('div', { className: 'ywc-batch-detail', key: 'detail' },
+                    ...unfinished.map(item => h('p', { key: item.accountId, className: 'ywc-batch-item' },
+                      h('span', { className: 'ywc-batch-item-name' }, nameOf(item.accountId)),
+                      h('span', { className: 'ywc-batch-item-reason' }, batchReasonText(item.reason)),
+                    )),
+                  )
+                  : null,
               ],
           )
           : null,
@@ -826,6 +927,13 @@ window.__ModuleLoader__.load({
     .ywc-wide { width:100%; }
     .ywc-batch-panel { display:grid; gap:4px; padding:10px 12px; border:1px solid var(--ywc-border); border-radius:8px; background:var(--ywc-surface-2); min-width:0; }
     .ywc-batch-panel p { margin:0; font-size:var(--dsh-content-font-size-secondary,13px); color:var(--ywc-text); }
+    .ywc-batch-detail { display:grid; gap:2px; padding-top:4px; border-top:1px solid var(--ywc-border); }
+    .ywc-batch-item { display:flex; justify-content:space-between; gap:12px; font-size:var(--dsh-content-font-size-secondary,13px); }
+    .ywc-batch-item-name { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .ywc-batch-item-reason { flex:none; color:var(--ywc-muted); }
+    .ywc-progress { display:flex; align-items:center; gap:8px; color:var(--ywc-muted); font-size:var(--dsh-content-font-size-secondary,13px); }
+    .ywc-spinner { width:16px; height:16px; flex:none; border:2px solid var(--ywc-border); border-top-color:var(--ywc-brand); border-radius:50%; animation:ywc-spin .8s linear infinite; }
+    @keyframes ywc-spin { to { transform:rotate(360deg); } }
     .ywc-hint { margin:0; color:var(--ywc-muted); font-size:var(--dsh-content-font-size-secondary,13px); line-height:1.5; }
     .ywc-ok { margin:0; color:var(--ywc-success); font-size:var(--dsh-content-font-size-secondary,13px); }
     .ywc-error { margin:0; color:var(--ywc-danger); font-size:var(--dsh-content-font-size-secondary,13px); }
@@ -1014,6 +1122,10 @@ window.__ModuleLoader__.load({
       // 确认后远端删除执行中 = confirmed_pending_adapter（§16.2 删除状态机）。
       const [deleteLifecycle, setDeleteLifecycle] = useState(null)
       const [collectBusy, setCollectBusy] = useState(false)
+      // 单账号采集状态投影（宿主 collect.status 的 collect 字段）：工具栏进度行数据源
+      // （对齐抖音 collect 投影）。单槽——互斥保证同时只有一个采集；渲染时按 accountId
+      // 比对，切走账号不显示他人进度。
+      const [collect, setCollect] = useState(null)
 
       const selected = useMemo(
         () => accounts.find(account => account.accountId === selectedId) || null,
@@ -1203,18 +1315,28 @@ window.__ModuleLoader__.load({
             return
           }
           setCollectBusy(true)
-          notify('采集已启动，完成后刷新查看数据')
-          // 单账号采集无独立进度端点：轮询 collect.status 直到空闲（ref 持表，卸载清理）。
+          // 立即挂运行中投影：工具栏进度行（对齐抖音 4257-4260）随轮询逐步细化为
+          // 「采集进度 N/M / 入库进度 i/j · s/e」，不再用顶部通知条承载采集反馈。
+          setCollect({ accountId, status: 'running', progress: null })
           collectTimerRef.current = setInterval(async () => {
             try {
               const status = await post('collect.status')
+              if (status.collect) setCollect(status.collect)
               if (!status.busy) {
                 stopCollectPolling()
                 setCollectBusy(false)
+                const final = status.collect || null
+                if (!final) {
+                  // 宿主重启/插件重载会丢 collectRecord：busy=false 且无投影时清掉本地
+                  // 乐观 running 态，避免「采集中…」spinner 与禁用按钮永不清除（review P2）。
+                  setCollect(null)
+                  notify('采集状态丢失，可重试')
+                } else if (final.status === 'failed') {
+                  notify(final.error ? `采集失败：${reasonText(final.error)}` : '采集失败，可重试')
+                }
                 await refreshWorks(accountId)
                 await refreshOverview(accountId, windowKey)
                 await refreshAccounts()
-                notify('采集结束')
               }
             } catch { /* 轮询失败下轮重试 */ }
           }, POLL_INTERVAL_MS)
@@ -1232,7 +1354,9 @@ window.__ModuleLoader__.load({
             notify(`批量采集未启动：${reasonText(result.reason)}`)
             return
           }
-          notify(`批量采集已启动（${result.accounts} 个账号，串行执行）`)
+          // 立即挂批量投影（宿主 start 随回执返回）：左栏批量面板即时显示
+          // 「正在检查会话…」，后续细粒度进度随 collectAll.status 轮询更新。
+          setBatch(result.batch || null)
         })().catch(error => notify(`批量采集失败：${error.message}`))
       }, [post, notify])
 
@@ -1289,6 +1413,7 @@ window.__ModuleLoader__.load({
       }, [post, selectedId])
 
       const browserBlocked = !browserReady.chrome || !browserReady.driver
+      const batchRunning = Boolean(batch && batch.phase && batch.phase !== 'finished')
 
       return h('div', { className: 'ywc-root' },
         h('style', { dangerouslySetInnerHTML: { __html: STYLES } }),
@@ -1340,7 +1465,11 @@ window.__ModuleLoader__.load({
                   h(WorkToolbar, {
                     onCollect: () => selectedId && collectAccount(selectedId),
                     onRefresh: () => selectedId && (refreshWorks(selectedId), refreshOverview(selectedId, windowKey)),
-                    disabled: !selectedId || collectBusy,
+                    // 采集按钮：批量运行中一并禁用（宿主互斥会拒绝，提前禁用给稳定反馈）；
+                    // 刷新是只读查询，批量运行中保持可用（对齐抖音 busy 语义）。
+                    collectDisabled: !selectedId || collectBusy || batchRunning,
+                    refreshDisabled: !selectedId || collectBusy,
+                    collect: collect && collect.accountId === selectedId ? collect : null,
                   }),
                   h(WorkSummaryCards, { works, summaryOverview, account: selected }),
                   h(WorkTable, {
@@ -1397,7 +1526,8 @@ window.__ModuleLoader__.load({
         collect_busy: '采集互斥',
         session_expired: '会话失效',
       }
-      return map[reason] || reason || '未知'
+      // 未知稳定码收敛为通用文案（对齐 batchReasonText），不把原始错误码透给业务用户。
+      return map[reason] || '原因未知'
     }
 
     module.exports = { apply, inject: ['slots'], renderWxWorkbench, SidebarButton, css: STYLES }

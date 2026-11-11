@@ -135,14 +135,13 @@ export async function runCollection({
         detailFailed += 1
         emit({ phase: 'detail_gap', workId: work.workId, reason: safeReason(error) })
       }
-      if ((index + 1) % 5 === 0) {
-        emit({
-          phase: 'details_progress',
-          done: index + 1,
-          total: list.works.length,
-          detailFailed,
-        })
-      }
+      // 逐作品进度事件（对齐抖音「采集进度 N/M」逐个推进；纯内存回调零成本）。
+      emit({
+        phase: 'details_progress',
+        done: index + 1,
+        total: list.works.length,
+        detailFailed,
+      })
     }
     if (detailFailed) {
       emit({ phase: 'details_failed_summary', detailFailed, ingested: enriched.length })
@@ -274,6 +273,42 @@ async function reportSessionStatus(ctx, accountId, state) {
 }
 
 /**
+ * 采集事件 → 进度投影（形状对齐抖音 progressText 数据源）：
+ * - probing / list / list_page / account_level → 阶段提示；
+ * - details_progress → work（「采集进度 N/M」）；
+ * - batch_done / batch_failed → batch_done（「入库进度 i/j · s/e」）。
+ * 其余事件（detail_gap / segment_gap / run_* / finished 等）返回 null：
+ * 调用方保持上一个进度，不覆盖。
+ */
+export function progressFromEvent(event) {
+  if (!event || typeof event.phase !== 'string') return null
+  switch (event.phase) {
+    case 'probing':
+      return { phase: 'probing' }
+    case 'list':
+      return { phase: 'list' }
+    case 'list_page':
+      return { phase: 'list', page: event.pageNumber || null, collected: event.collected || 0 }
+    case 'details_progress':
+      return { phase: 'work', index: event.done || 0, total: event.total || 0 }
+    case 'account_level':
+      return { phase: 'account_level' }
+    case 'batch_done':
+    case 'batch_failed':
+      return {
+        phase: 'batch_done',
+        batchNo: event.batchNo || 0,
+        totalBatches: event.totalBatches || 0,
+        succeeded: event.succeeded || 0,
+        failed: event.failed || 0,
+        expected: event.expected || 0,
+      }
+    default:
+      return null
+  }
+}
+
+/**
  * 一键采集全部（§8.5）：资格过滤 → 账号间严格串行 → 单账号失败继续 → 汇总。
  * 状态仅存宿主进程内；与单账号采集互斥。
  */
@@ -288,15 +323,26 @@ export function createBatchCollectController({ collect, probe, logger = null } =
   return {
     get status() {
       if (!state) return { ready: true, phase: 'ready' }
+      // 实时计数（对齐抖音 projectBatch：批量面板计数行数据源；summary 是终态汇总）。
+      const counts = { completed: 0, failed: 0, skipped: 0, running: 0, probing: 0, ready: 0 }
+      for (const item of state.items) counts[item.status] = (counts[item.status] || 0) + 1
       return {
         ready: false,
         phase: state.phase,
         batchId: state.batchId,
         items: state.items,
+        total: state.items.length,
         currentAccountIndex: state.currentAccountIndex,
+        currentAccountId: state.currentAccountId,
+        // 当前账号细粒度进度（作品级）：页面 collectAll.status 单轮询即可渲染
+        // 「当前账号名 · 采集进度 N/M」，无需第二个轮询循环。
+        currentProgress: state.currentProgress,
         currentRunId: state.currentRunId,
         startedAt: state.startedAt,
         finishedAt: state.finishedAt,
+        completedCount: counts.completed,
+        failedCount: counts.failed,
+        skippedCount: counts.skipped,
         summary: state.summary,
       }
     },
@@ -313,6 +359,8 @@ export function createBatchCollectController({ collect, probe, logger = null } =
           accountId, status: 'ready', reason: null, runId: null, startedAt: null, finishedAt: null,
         })),
         currentAccountIndex: -1,
+        currentAccountId: null,
+        currentProgress: null,
         currentRunId: null,
         startedAt: new Date().toISOString(),
         finishedAt: null,
@@ -328,6 +376,7 @@ export function createBatchCollectController({ collect, probe, logger = null } =
       for (let index = 0; index < state.items.length; index += 1) {
         const item = state.items[index]
         state.currentAccountIndex = index
+        state.currentAccountId = item.accountId
         phase('probing')
         item.status = 'probing'
         item.startedAt = new Date().toISOString()
@@ -341,6 +390,7 @@ export function createBatchCollectController({ collect, probe, logger = null } =
           item.status = 'skipped'
           item.reason = 'session_required'
           counts.skipped += 1
+          state.currentAccountId = null
           state.onProgress?.({ phase: 'item_skipped', item: { ...item } })
           continue
         }
@@ -348,15 +398,22 @@ export function createBatchCollectController({ collect, probe, logger = null } =
           item.status = 'skipped'
           item.reason = 'probe_failed'
           counts.skipped += 1
+          state.currentAccountId = null
           state.onProgress?.({ phase: 'item_skipped', item: { ...item } })
           continue
         }
         phase('collecting')
         item.status = 'running'
         state.currentRunId = null
+        state.currentProgress = null
         const result = await collect({
           accountId: item.accountId,
-          onProgress: event => state.onProgress?.({ phase: 'item_progress', accountId: item.accountId, ...event }),
+          onProgress: event => {
+            // 细粒度进度（作品级）随 collectAll.status 一起投影；非关键事件保持上一进度。
+            const progress = progressFromEvent(event)
+            if (progress) state.currentProgress = progress
+            state.onProgress?.({ phase: 'item_progress', accountId: item.accountId, ...event })
+          },
         })
         item.finishedAt = new Date().toISOString()
         item.runId = result.runId || null
@@ -373,10 +430,14 @@ export function createBatchCollectController({ collect, probe, logger = null } =
           item.reason = result.reason || 'collect_failed'
           counts.failed += 1
         }
+        state.currentProgress = null
+        state.currentAccountId = null
         state.onProgress?.({ phase: 'item_done', item: { ...item } })
       }
       state.finishedAt = new Date().toISOString()
       state.currentRunId = null
+      state.currentAccountId = null
+      state.currentProgress = null
       phase('finished')
       const eligible = counts.completed + counts.failed
       state.summary = {
