@@ -859,3 +859,23 @@ test('账号卡按钮：登录进行中与墓碑账号时「重新扫码」禁�
   const busyButtons = busyLogin.match(/<button[^>]*>重新扫码<\/button>/g) || []
   assert.ok(busyButtons.every(button => button.includes('disabled')), '登录进行中所有「重新扫码」应禁用')
 })
+
+test('批量采集乐观投影：空 items 的 probing 形状可安全渲染（点击即反馈）', async () => {
+  const { batchProgressText } = await import('../src/ui-format.js')
+  const { createElement: h } = await import('react')
+  const { renderToString } = await import('react-dom/server')
+  const { AccountList } = await import('../src/account-ui.js')
+  const optimistic = { phase: 'probing', items: [], currentAccountIndex: 0 }
+  assert.equal(batchProgressText(optimistic), null, '空 items 时进度文案回退到默认')
+
+  const html = renderToString(h(AccountList, {
+    accounts: [{ accountId: 'a1', nickname: '账号一', sessionStatus: 'ok', deleteState: 'none' }],
+    selectedId: 'a1', busy: false, running: false,
+    loginActive: false, browserBlocked: false,
+    batch: optimistic, onCollectAll: () => {},
+    onSelect: () => {}, onProbe: () => {}, onRemove: () => {}, onBeginLogin: () => {},
+  }))
+  assert.ok(html.includes('正在采集…'), '乐观态应立刻显示采集 spinner 文案')
+  assert.ok(html.includes('ywc-spinner'), '乐观态应有 spinner')
+  assert.ok(html.includes('成功 0 · 失败 0 · 跳过 0'), '计数需安全兜底为 0')
+})

@@ -1839,16 +1839,21 @@ window.__ModuleLoader__.load({
       }, [post, notify, refreshAccounts])
 
       const collectAccount = useCallback(accountId => {
+        // 乐观投影（2026-11-11 真机反馈）：点击瞬间就进入「采集中… / 正在检查会话…」。
+        // 宿主启动链路在返回前同步执行浏览器检查、会话实测与账号自愈（实测 2-3 秒），
+        // 等它返回再更新会让用户点完毫无反馈；抖音是点击即置运行态。
+        setCollectBusy(true)
+        setCollect({ accountId, status: 'running', progress: null })
         void (async () => {
           const result = await post('collect.start', { accountId, newAttempt: true })
           if (!result.started) {
+            setCollectBusy(false)
+            setCollect(null)
             notify(`采集未启动：${reasonText(result.reason)}`)
             return
           }
-          setCollectBusy(true)
-          // 立即挂运行中投影：工具栏进度行（对齐抖音 4257-4260）随轮询逐步细化为
-          // 「采集进度 N/M / 入库进度 i/j · s/e」，不再用顶部通知条承载采集反馈。
-          setCollect({ accountId, status: 'running', progress: null })
+          // 工具栏进度行随轮询逐步细化为「采集进度 N/M / 入库进度 i/j · s/e」，
+          // 不再用顶部通知条承载采集反馈。
           collectTimerRef.current = setInterval(async () => {
             try {
               const status = await post('collect.status')
@@ -1874,21 +1879,30 @@ window.__ModuleLoader__.load({
         })().catch(error => {
           stopCollectPolling()
           setCollectBusy(false)
+          setCollect(null)
           notify(`采集失败：${error.message}`)
         })
       }, [post, notify, refreshWorks, refreshOverview, refreshAccounts, windowKey, stopCollectPolling])
 
       const collectAll = useCallback(() => {
+        // 与单账号采集同理：点击瞬间先挂最小运行投影，批量面板立刻显示 spinner，
+        // 不等宿主逐个账号探测完才反馈（2026-11-11 真机反馈的一致性修复）。
+        setBatch({ phase: 'probing', items: [], currentAccountIndex: 0 })
         void (async () => {
           const result = await post('collectAll.start', {})
           if (!result.started) {
+            setBatch(null)
             notify(`批量采集未启动：${reasonText(result.reason)}`)
             return
           }
-          // 立即挂批量投影（宿主 start 随回执返回）：左栏批量面板即时显示
-          // 「正在检查会话…」，后续细粒度进度随 collectAll.status 轮询更新。
+          // 宿主回执带完整批量投影，直接覆盖乐观值；后续随 collectAll.status 轮询细化。
           setBatch(result.batch || null)
-        })().catch(error => notify(`批量采集失败：${error.message}`))
+        })().catch(error => {
+          // 任何异步失败都必须清掉乐观投影，否则面板停在「采集中」且宿主无批量状态
+          // 可纠正（client.js 的轮询只认 phase !== 'ready'）。
+          setBatch(null)
+          notify(`批量采集失败：${error.message}`)
+        })
       }, [post, notify])
 
       // Esc 逐层关闭（对齐抖音 keydown 链）：详情弹层 → 确认弹层 → 工作台 overlay；
