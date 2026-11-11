@@ -50,6 +50,13 @@ const ROUTES: readonly ManagedMcpRoute[] = [
   // 匹配永远失败（候选「接受」unavailable 的根因）。tools-xhs 下全名 55 字符干净注册，
   // 且保持 mcp__tools-* 统一引导；MCP 端点仍由 path 定位（tools/xhs-operation），不受影响。
   { plugin: 'tools' as const, serverName: 'tools-xhs', path: 'tools/xhs-operation', timeoutMs: 60_000 },
+  // wx 域单列同样用短 serverName（tools-xhs 先例）：wx 最长工具名
+  // wx_channels_collect_ingest_account_metrics（42 字符）拼 mcp__tools-wx-channels-operation__
+  // 前缀后 76 字符超 harness 64 上限被截断+hash，宿主插件按原始工具名 endsWith 匹配
+  // 永远失败 → 全部调用 WX_TOOL_UNAVAILABLE（2026-11-11 真机「采集全部/采集本账号全部」
+  // 双失败的根因：托管清单漏登记 wx 域 server，与 CI 网关无关）。tools-wx 下最长
+  // 全名 57 字符干净注册；MCP 端点仍由 path 定位（tools/wx-channels-operation），不受影响。
+  { plugin: 'tools' as const, serverName: 'tools-wx', path: 'tools/wx-channels-operation', timeoutMs: 60_000 },
   ...[
     'platform', 'supply-chain', 'talent-discovery', 'lead-discovery', 'lead-monitor',
     'hotspot-discovery', 'custom-car-monitoring', 'viral-video', 'browser-intelligence', 'tos-upload',

@@ -36,9 +36,10 @@ export const DOFE_PLUGIN_CATALOG = [
       'tools-platform', 'tools-supply-chain', 'tools-talent-discovery', 'tools-lead-discovery',
       'tools-lead-monitor', 'tools-hotspot-discovery', 'tools-custom-car-monitoring',
       'tools-viral-video', 'tools-browser-intelligence', 'tools-tos-upload',
-      // xhs 域用短 serverName（须与 dofe-managed ROUTES 一致）：`tools-xhs-operation`
-      // 前缀下最长工具名拼公开名超 64 字符被截断+hash，插件按原名匹配失败。
-      'tools-xhs', 'tools-douyin-operation',
+      // xhs/wx 域用短 serverName（须与 dofe-managed ROUTES 一致）：长 serverName 下
+      // 最长工具名拼公开名超 64 字符被截断+hash，插件按原名匹配失败（wx 域漏登记
+      // tools-wx 曾致真机采集全部 WX_TOOL_UNAVAILABLE，2026-11-11 修复）。
+      'tools-xhs', 'tools-douyin-operation', 'tools-wx',
     ],
     builtIn: false,
   },
