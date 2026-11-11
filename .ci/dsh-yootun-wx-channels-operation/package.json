@@ -1,7 +1,7 @@
 {
   "name": "@dofe/dsh-yootun-wx-channels-operation",
   "version": "0.1.0",
-  "description": "Yootun 视频号工作台：设备端扫码登录、视频号助手数据采集（RQ-2026-012 一期）",
+  "description": "视频号工作台：设备端扫码登录、视频号助手数据采集（RQ-2026-012 一期）",
   "type": "module",
   "main": "./index.js",
   "exports": {

@@ -818,7 +818,7 @@ window.__ModuleLoader__.load({
     const POLL_INTERVAL_MS = 1200
 
     // 左下角侧栏入口 + 整页 overlay（对齐抖音 yootun 系插件机制）：
-    // OVERLAY_EVENT 为 Yootun overlay 共享互斥事件（打开自身时通知其他 overlay 关闭）。
+    // OVERLAY_EVENT 为宿主 overlay 共享互斥事件（打开自身时通知其他 overlay 关闭）。
     const OVERLAY_ID = '@dofe/dsh-yootun-wx-channels-operation'
     const OVERLAY_EVENT = 'dofe:yootun-overlay:open'
 
