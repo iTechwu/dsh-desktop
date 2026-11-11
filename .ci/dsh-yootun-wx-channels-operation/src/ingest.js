@@ -404,13 +404,25 @@ export async function ingestCollectedData({
       }
     }
     if (fansTrend && Array.isArray(fansTrend.daily) && fansTrend.daily.length) {
-      try {
-        await client.ingestFansTrend({ startDay: fansTrend.startDay, endDay: fansTrend.endDay, rows: fansTrend.daily })
-        segmentStatus.fansTrendStatus = 'completed'
-      } catch (error) {
-        segmentStatus.fansTrendStatus = 'failed'
-        emit({ phase: 'segment_gap', segment: 'fans_trend', reason: safeCode(error) })
+      // 全量回填（2020 起可达两千余行）按 30 行/块分块上报（MCP daily 上限 31），
+      // 每块幂等键含块窗口，失败只标该块并继续后续块（局部重跑不重传已成功块）。
+      const rowsByDay = [...fansTrend.daily].sort((a, b) => (a.day < b.day ? -1 : a.day > b.day ? 1 : 0))
+      const chunkSize = 30
+      let failedChunks = 0
+      for (let offset = 0; offset < rowsByDay.length; offset += chunkSize) {
+        const chunk = rowsByDay.slice(offset, offset + chunkSize)
+        try {
+          await client.ingestFansTrend({
+            startDay: chunk[0].day,
+            endDay: chunk[chunk.length - 1].day,
+            rows: chunk,
+          })
+        } catch (error) {
+          failedChunks += 1
+          emit({ phase: 'segment_gap', segment: 'fans_trend', reason: safeCode(error) })
+        }
       }
+      segmentStatus.fansTrendStatus = failedChunks ? 'failed' : 'completed'
     }
     if (fansProfile && fansProfile.day) {
       try {

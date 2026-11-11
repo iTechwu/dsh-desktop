@@ -215,7 +215,8 @@ async function collectFansTrendWindowed(page, { finderId, blockDays = 180, now =
   const { latestCompletedDay, shanghaiDayFromTs, shanghaiDayStartTs } = await import('./parse.js')
   const endDay = latestCompletedDay(now)
   const startDay = '2020-08-19' // 平台历史起点（开发实施文档 §15.5.1 实测）
-  const rows = []
+  // 合并日行用 daily 键（与单块 collectFansTrend、ingest 消费端、E2E fixture 同一形状）。
+  const daily = []
   const sourceTrendRows = []
   const sourceTrendByType = new Map()
   let cursorDay = startDay
@@ -229,7 +230,7 @@ async function collectFansTrendWindowed(page, { finderId, blockDays = 180, now =
     )
     const blockEnd = shanghaiDayFromTs(blockEndTs)
     const chunk = await collectFansTrend(page, { finderId, startDay: cursorDay, endDay: blockEnd, now })
-    rows.push(...chunk.daily)
+    daily.push(...chunk.daily)
     // 跨块来源趋势按 sourceType 合并（P3-6：同 sourceType 不重复 push）。
     if (chunk.sourceTrend && Array.isArray(chunk.sourceTrend.rows)) {
       for (const row of chunk.sourceTrend.rows) {
@@ -250,7 +251,7 @@ async function collectFansTrendWindowed(page, { finderId, blockDays = 180, now =
   return {
     startDay,
     endDay,
-    rows,
+    daily,
     sourceTrend: mergedSourceTrend,
   }
 }

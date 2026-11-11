@@ -121,6 +121,81 @@ test('账号级失败：段落记 failed，不影响作品链路 clientStatus（
   assert.equal(finishCall.args.accountMetricStatus, 'not_collected')
 })
 
+test('fans_trend 全量回填分块上报：35 行乱序 → 30+5 两块（按 day 排序切窗）', async () => {
+  const log = []
+  const root = await tempRoot()
+  await updateAccount('acc-1', {}, root)
+  const client = createIngestClient({ callTool: makeCallTool(log), accountId: 'acc-1', root })
+  // 乱序构造 35 天日行（2026-10-01 起），验证按 day 排序后 30+5 切块与块窗口。
+  const days = Array.from({ length: 35 }, (_, index) => {
+    const d = new Date(Date.UTC(2026, 9, 1) + index * 86400_000)
+    return d.toISOString().slice(0, 10)
+  })
+  const shuffled = [...days].reverse()
+  const result = await ingestCollectedData({
+    client,
+    works: [{ workId: 'w1', publishTime: null, dailyMetrics: [] }],
+    listComplete: true,
+    expectedWorkCount: 1,
+    accountLevel: {
+      accountMetrics: null,
+      fansTrend: { startDay: days[0], endDay: days[34], daily: shuffled.map(day => ({ day, follower_net_count: 1 })) },
+      fansProfile: null,
+    },
+  })
+  assert.equal(result.error, null)
+  const trendCalls = log.filter(entry => entry.name === 'wx_channels_collect_ingest_fans_trend')
+  assert.equal(trendCalls.length, 2)
+  assert.equal(trendCalls[0].args.startDay, days[0])
+  assert.equal(trendCalls[0].args.endDay, days[29])
+  assert.equal(trendCalls[0].args.daily.length, 30)
+  assert.equal(trendCalls[1].args.startDay, days[30])
+  assert.equal(trendCalls[1].args.endDay, days[34])
+  assert.equal(trendCalls[1].args.daily.length, 5)
+  const finishCall = log.find(entry => entry.name === 'wx_channels_collect_run_finish')
+  assert.equal(finishCall.args.fansTrendStatus, 'completed')
+})
+
+test('fans_trend 分块部分失败：失败块记 gap，后续块继续上报，状态 failed', async () => {
+  const log = []
+  const root = await tempRoot()
+  await updateAccount('acc-2', {}, root)
+  const base = makeCallTool(log)
+  let trendCalls = 0
+  const callTool = async (name, args) => {
+    if (name === 'wx_channels_collect_ingest_fans_trend') {
+      trendCalls += 1
+      // 确定性错误不经 withRetry 重试/恢复，模拟「该块真实失败」。
+      if (trendCalls === 1) throw new ToolsCallError(name, 'INVALID_IDEMPOTENCY_KEY')
+    }
+    return base(name, args)
+  }
+  const client = createIngestClient({ callTool, accountId: 'acc-2', root })
+  const days = Array.from({ length: 35 }, (_, index) => {
+    const d = new Date(Date.UTC(2026, 9, 1) + index * 86400_000)
+    return d.toISOString().slice(0, 10)
+  })
+  const result = await ingestCollectedData({
+    client,
+    works: [{ workId: 'w1', publishTime: null, dailyMetrics: [] }],
+    listComplete: true,
+    expectedWorkCount: 1,
+    accountLevel: {
+      accountMetrics: null,
+      fansTrend: { startDay: days[0], endDay: days[34], daily: days.map(day => ({ day })) },
+      fansProfile: null,
+    },
+  })
+  assert.equal(result.error, null)
+  // 失败块在 stub 记录前抛出（不进 log）；成功进 log 的只有第二块。
+  const trendCallsLog = log.filter(entry => entry.name === 'wx_channels_collect_ingest_fans_trend')
+  assert.equal(trendCallsLog.length, 1)
+  assert.equal(trendCallsLog[0].args.startDay, days[30])
+  assert.equal(trendCallsLog[0].args.endDay, days[34])
+  const finishCall = log.find(entry => entry.name === 'wx_channels_collect_run_finish')
+  assert.equal(finishCall.args.fansTrendStatus, 'failed')
+})
+
 test('RUN_NOT_RUNNING 恢复：重建 run 并重发 list_meta 后续采', async () => {
   const log = []
   const root = await tempRoot()
