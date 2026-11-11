@@ -879,3 +879,92 @@ test('批量采集乐观投影：空 items 的 probing 形状可安全渲染（�
   assert.ok(html.includes('ywc-spinner'), '乐观态应有 spinner')
   assert.ok(html.includes('成功 0 · 失败 0 · 跳过 0'), '计数需安全兜底为 0')
 })
+
+test('按钮交互样式：所有可点击元素都有 cursor:pointer 与 hover 效果', async () => {
+  const { readFile } = await import('node:fs/promises')
+  const css = await readFile(new URL('../src/client.js', import.meta.url), 'utf8')
+  // 抽取样式块（STYLES 常量的模板字符串）。
+  const styles = css.slice(css.indexOf('const STYLES'), css.indexOf('const STYLES') + 40000)
+  const required = [
+    '.ywc-button',
+    '.ywc-primary',
+    '.ywc-mini-button',
+    '.ywc-tab',
+    '.ywc-window-group button',
+    '.ywc-select',
+    // 账号卡主按钮（切账号入口）与弹层关闭按钮——漏这两处等于修复没做完（review P1-1）。
+    '.ywc-card-main',
+    '.ywc-close',
+  ]
+  for (const selector of required) {
+    // 选择器后必须紧跟 '{'，避免 `.ywc-tab` 误匹配到 `.ywc-tabs`。
+    // 同一选择器可能出现在组合规则里（如 `.ywc-input, .ywc-select {`），因此扫描
+    // 全部出现位置，只要有一处声明了 cursor:pointer 即可。
+    const needle = `${selector} {`
+    const blocks = []
+    let from = 0
+    for (;;) {
+      const index = styles.indexOf(needle, from)
+      if (index < 0) break
+      blocks.push(styles.slice(index, styles.indexOf('}', index)))
+      from = index + needle.length
+    }
+    assert.ok(blocks.length > 0, `样式缺少 ${selector}`)
+    assert.ok(
+      blocks.some(block => block.includes('cursor:pointer')),
+      `${selector} 缺少 cursor:pointer（鼠标不显示手型）`,
+    )
+  }
+  // 主按钮与添加账号按钮必须有 hover 态。
+  assert.ok(/\.ywc-button\.primary:hover/.test(styles), '主按钮缺少 hover 态')
+  assert.ok(/\.ywc-primary:hover/.test(styles), '添加账号按钮缺少 hover 态')
+  assert.ok(/\.ywc-mini-button:hover/.test(styles), '账号卡按钮缺少 hover 态')
+  // 禁用态必须不因 hover 变色（review P2-1）。
+  assert.ok(/\.ywc-mini-button:disabled:hover/.test(styles), '禁用的账号卡按钮 hover 不应变色')
+  assert.ok(/\.ywc-mini-button\.danger:disabled:hover/.test(styles), '禁用的删除按钮 hover 不应变红')
+  assert.ok(/\.ywc-button:disabled:hover/.test(styles), '禁用的按钮 hover 不应变色')
+  // 文本框用 text 光标，不能是 pointer（review P2-3）。
+  assert.ok(/\.ywc-input \{[^}]*cursor:text/.test(styles), '输入框应使用 text 光标')
+  // hover 色按主题定义，浅色主题不能靠混黑（review P2-2）。
+  assert.ok(/--ywc-brand-hover/.test(styles), '缺少按主题定义的 --ywc-brand-hover')
+})
+
+test('WorkToolbar：刷新按钮在刷新中显示「刷新中…」并禁用', async () => {
+  const react = await import('react')
+  const { createElement: h } = react
+  const { renderToString } = await import('react-dom/server')
+  const { WorkToolbar } = await import('../src/work-ui.js')
+  const idle = renderToString(h(WorkToolbar, { onCollect: () => {}, onRefresh: () => {} }))
+  assert.ok(idle.includes('>刷新<'), '空闲态显示「刷新」')
+  assert.ok(!idle.includes('刷新中'), '空闲态不应显示「刷新中…」')
+
+  const busy = renderToString(h(WorkToolbar, { onCollect: () => {}, onRefresh: () => {}, refreshing: true }))
+  assert.ok(busy.includes('刷新中…'), '刷新中应显示「刷新中…」')
+  assert.ok(/<button[^>]*aria-busy="true"[^>]*>刷新中…/.test(busy) || /aria-busy="true"[^>]*>刷新中…/.test(busy), '刷新中按钮应有 aria-busy')
+})
+
+test('shouldApplyResponse：序号最新 + 账号仍是当前选中才落屏（review P1-4）', async () => {
+  const { shouldApplyResponse } = await import('../src/ui-format.js')
+  const base = { requestId: 2, currentRequestId: 2, responseAccountId: 'a1', currentAccountId: 'a1' }
+  assert.equal(shouldApplyResponse(base), true, '同账号、序号最新应落屏')
+  // 序号过期：同账号并发时后到的旧响应不得覆盖。
+  assert.equal(shouldApplyResponse({ ...base, requestId: 1 }), false)
+  // 账号已切换：采集回调按采集账号刷新，旧账号响应不得写进新账号视图。
+  assert.equal(shouldApplyResponse({ ...base, responseAccountId: 'a2' }), false)
+  assert.equal(shouldApplyResponse({ ...base, currentAccountId: 'a2' }), false)
+})
+
+test('refreshResultLabel：部分失败要明确指出失败路（review P1-2）', async () => {
+  const { refreshResultLabel } = await import('../src/ui-format.js')
+  assert.equal(refreshResultLabel({ works: true, overview: true, accounts: true }), '已刷新')
+  assert.equal(
+    refreshResultLabel({ works: false, overview: true, accounts: true }),
+    '部分刷新失败：作品列表',
+  )
+  assert.equal(
+    refreshResultLabel({ works: true, overview: false, accounts: false }),
+    '部分刷新失败：账号总览、账号列表',
+  )
+  // 未知状态（未显式 false）按成功处理，不误报失败。
+  assert.equal(refreshResultLabel({}), '已刷新')
+})

@@ -344,6 +344,36 @@ export function progressText(progress) {
  * 批量运行中总进度行（对齐抖音 batchProgress 语义）：
  * probing → 「正在检查会话 i/n」；collecting → 「第 i/n 个账号」；终态返回 null。
  */
+/**
+ * 作品/总览异步响应的落屏守卫（2026-11-11 review P1-4）：
+ * 1. 请求序号必须最新——同账号并发时后到的旧响应不得覆盖新响应；
+ * 2. 响应所属账号必须仍是当前选中账号——采集完成后按「采集账号」刷新，与当前
+ *    选中无关，若不比对账号会把旧账号的数据写进新账号视图。
+ * 抽成纯函数便于单测（渲染层无法直接覆盖 useEffect 内的时序）。
+ */
+export function shouldApplyResponse({
+  requestId,
+  currentRequestId,
+  responseAccountId,
+  currentAccountId,
+}) {
+  if (requestId !== currentRequestId) return false
+  return responseAccountId === currentAccountId
+}
+
+/**
+ * 「刷新」结果聚合文案（2026-11-11 review P1-2）：三路查询各自返回成功标志，
+ * 全部成功才报「已刷新」，否则明确指出哪几路失败（内部 Promise 吞错，直接
+ * await 几乎不会 reject，靠 reject 判断会把失败报成成功）。
+ */
+export function refreshResultLabel(results = {}) {
+  const failed = []
+  if (results.works === false) failed.push('作品列表')
+  if (results.overview === false) failed.push('账号总览')
+  if (results.accounts === false) failed.push('账号列表')
+  return failed.length ? `部分刷新失败：${failed.join('、')}` : '已刷新'
+}
+
 export function batchProgressText(batch) {
   if (!batch || !batch.phase || batch.phase === 'finished' || batch.phase === 'ready') return null
   const total = Array.isArray(batch.items) ? batch.items.length : 0

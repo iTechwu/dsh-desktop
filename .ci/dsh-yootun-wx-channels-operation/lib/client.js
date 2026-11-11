@@ -349,6 +349,36 @@ window.__ModuleLoader__.load({
      * 批量运行中总进度行（对齐抖音 batchProgress 语义）：
      * probing → 「正在检查会话 i/n」；collecting → 「第 i/n 个账号」；终态返回 null。
      */
+    /**
+     * 作品/总览异步响应的落屏守卫（2026-11-11 review P1-4）：
+     * 1. 请求序号必须最新——同账号并发时后到的旧响应不得覆盖新响应；
+     * 2. 响应所属账号必须仍是当前选中账号——采集完成后按「采集账号」刷新，与当前
+     *    选中无关，若不比对账号会把旧账号的数据写进新账号视图。
+     * 抽成纯函数便于单测（渲染层无法直接覆盖 useEffect 内的时序）。
+     */
+    function shouldApplyResponse({
+      requestId,
+      currentRequestId,
+      responseAccountId,
+      currentAccountId,
+    }) {
+      if (requestId !== currentRequestId) return false
+      return responseAccountId === currentAccountId
+    }
+
+    /**
+     * 「刷新」结果聚合文案（2026-11-11 review P1-2）：三路查询各自返回成功标志，
+     * 全部成功才报「已刷新」，否则明确指出哪几路失败（内部 Promise 吞错，直接
+     * await 几乎不会 reject，靠 reject 判断会把失败报成成功）。
+     */
+    function refreshResultLabel(results = {}) {
+      const failed = []
+      if (results.works === false) failed.push('作品列表')
+      if (results.overview === false) failed.push('账号总览')
+      if (results.accounts === false) failed.push('账号列表')
+      return failed.length ? `部分刷新失败：${failed.join('、')}` : '已刷新'
+    }
+
     function batchProgressText(batch) {
       if (!batch || !batch.phase || batch.phase === 'finished' || batch.phase === 'ready') return null
       const total = Array.isArray(batch.items) ? batch.items.length : 0
@@ -429,7 +459,7 @@ window.__ModuleLoader__.load({
      * （工具栏纵向布局：第一行按钮组、第二行进度），绝不放到页面顶部通知条。collect 是
      * 宿主 collect.status 的进度投影（仅当前选中账号的传入）；running 时采集按钮禁用
      * 并显示 spinner + progressText。 */
-    function WorkToolbar({ onCollect, onRefresh, collectDisabled = false, refreshDisabled = false, collect = null }) {
+    function WorkToolbar({ onCollect, onRefresh, collectDisabled = false, refreshDisabled = false, refreshing = false, collect = null }) {
       const running = Boolean(collect && collect.status === 'running')
       return h('div', { className: 'ywc-toolbar' },
         h('div', { className: 'ywc-toolbar-left' },
@@ -437,7 +467,12 @@ window.__ModuleLoader__.load({
             className: 'ywc-button primary', type: 'button', onClick: onCollect,
             disabled: collectDisabled || running, 'aria-busy': running || undefined,
           }, running ? '采集中…' : '采集本账号全部'),
-          h('button', { className: 'ywc-button', type: 'button', onClick: onRefresh, disabled: refreshDisabled }, '刷新'),
+          // 刷新按钮：执行期间显示「刷新中…」并禁用，避免用户以为点击没生效
+          // （2026-11-11 真机反馈）。
+          h('button', {
+            className: 'ywc-button', type: 'button', onClick: onRefresh,
+            disabled: refreshDisabled || refreshing, 'aria-busy': refreshing || undefined,
+          }, refreshing ? '刷新中…' : '刷新'),
         ),
         running
           ? h('div', { className: 'ywc-progress', role: 'status', 'aria-live': 'polite', 'aria-busy': true },
@@ -1345,6 +1380,8 @@ window.__ModuleLoader__.load({
       --ywc-muted: var(--dsw-alias-label-secondary, #646a73);
       --ywc-border: var(--dsw-alias-border-l1, #e0e3e8);
       --ywc-brand: var(--dsw-alias-brand-primary, #0f1115);
+      /* hover 色按主题显式定义：浅色主题 brand 近黑，混黑看不出变化（review P2-2）。 */
+      --ywc-brand-hover: color-mix(in srgb, var(--ywc-brand) 82%, white);
       --ywc-brand-soft: color-mix(in srgb, var(--ywc-brand) 10%, transparent);
       --ywc-brand-line: color-mix(in srgb, var(--ywc-brand) 62%, white);
       --ywc-brand-border: color-mix(in srgb, var(--ywc-brand) 28%, transparent);
@@ -1361,6 +1398,8 @@ window.__ModuleLoader__.load({
         --ywc-muted: var(--dsw-alias-label-secondary, #b4b4b4);
         --ywc-border: var(--dsw-alias-border-l1, rgba(255,255,255,.10));
         --ywc-brand: var(--dsw-alias-brand-primary, #e9e9e9);
+        /* 深色主题 brand 近白，hover 压暗。 */
+        --ywc-brand-hover: color-mix(in srgb, var(--ywc-brand) 88%, black);
         --ywc-brand-text: var(--dsw-alias-label-primary-foreground, #343434);
         --ywc-danger: var(--dsw-alias-state-error-primary, #e0524a);
         --ywc-success: var(--dsw-alias-state-success-primary, #4ade80);
@@ -1380,7 +1419,7 @@ window.__ModuleLoader__.load({
     .ywc-title p { margin:6px 0 0; color:var(--ywc-muted); font-size:var(--dsh-content-font-size-secondary,13px); }
     .ywc-header-actions { display:flex; align-items:center; gap:8px; }
     .ywc-tabs { display:flex; gap:4px; padding:0 24px; background: color-mix(in srgb, var(--ywc-surface) 86%, transparent); backdrop-filter: blur(12px); border-bottom:1px solid var(--ywc-border); overflow-x:auto; }
-    .ywc-tab { height:44px; padding:0 18px; border:0; border-bottom:3px solid transparent; background:transparent; color:var(--ywc-muted); font:inherit; font-size:var(--dsh-content-font-size,14px); font-weight:650; white-space:nowrap; }
+    .ywc-tab { height:44px; padding:0 18px; border:0; border-bottom:3px solid transparent; background:transparent; color:var(--ywc-muted); font:inherit; font-size:var(--dsh-content-font-size,14px); font-weight:650; white-space:nowrap; cursor:pointer; }
     .ywc-tab:hover { color: var(--ywc-text); }
     .ywc-tab[aria-selected="true"] { color:var(--ywc-text); border-bottom-color: var(--ywc-brand-line); background: linear-gradient(180deg, transparent 68%, color-mix(in srgb, var(--ywc-brand) 9%, transparent)); }
     .ywc-body { flex:1; min-height:0; display:grid; grid-template-columns:280px minmax(0,1fr); gap:16px; padding:16px 24px 24px;  overflow:hidden; }
@@ -1394,7 +1433,7 @@ window.__ModuleLoader__.load({
     .ywc-card { border:1px solid var(--ywc-border); border-radius:8px; background: color-mix(in srgb, var(--ywc-surface) 94%, transparent); text-align:left; padding:0; overflow:hidden; }
     .ywc-card[aria-current="true"] { border-color: color-mix(in srgb, var(--ywc-brand) 60%, var(--ywc-border)); }
     .ywc-card[aria-current="true"] .ywc-card-main { background: linear-gradient(135deg, color-mix(in srgb, var(--ywc-brand) 8%, transparent), transparent 68%); }
-    .ywc-card-main { width:100%; display:grid; grid-template-columns:36px minmax(0,1fr); gap:10px; align-items:center; border:0; background:transparent; padding:10px; text-align:left; color:inherit; }
+    .ywc-card-main { width:100%; display:grid; grid-template-columns:36px minmax(0,1fr); gap:10px; align-items:center; border:0; background:transparent; padding:10px; text-align:left; color:inherit; cursor:pointer; }
     .ywc-card-main:hover { background: var(--ywc-surface-2); }
     .ywc-avatar { width:36px; height:36px; display:grid; place-items:center; border-radius:50%; background: color-mix(in srgb, var(--ywc-brand) 18%, var(--ywc-surface-2)); color:var(--ywc-brand); font-weight:700; }
     .ywc-card-name { display:block; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:600; }
@@ -1404,15 +1443,23 @@ window.__ModuleLoader__.load({
     .ywc-state[data-state="ok"] { color:var(--ywc-success); }
     .ywc-state[data-state="expired"] { color:var(--ywc-danger); }
     .ywc-card-actions { display:flex; border-top:1px solid var(--ywc-border); background:var(--ywc-surface); }
-    .ywc-mini-button { flex:1; min-height:30px; border:0; background:transparent; color:var(--ywc-muted); font-size:var(--dsh-content-font-size-secondary,13px); }
+    .ywc-mini-button { flex:1; min-height:30px; border:0; background:transparent; color:var(--ywc-muted); font-size:var(--dsh-content-font-size-secondary,13px); cursor:pointer; }
     .ywc-mini-button:hover { background:var(--ywc-surface-2); color:var(--ywc-text); }
+    .ywc-mini-button:disabled { opacity:.5; cursor:default; }
+    .ywc-mini-button:disabled:hover { background:transparent; color:var(--ywc-muted); }
     .ywc-mini-button.danger:hover { color:var(--ywc-danger); }
-    .ywc-button { min-height:34px; display:inline-flex; align-items:center; justify-content:center; gap:6px; padding:0 12px; border:1px solid var(--ywc-border); border-radius:6px; background:var(--ywc-surface); color:var(--ywc-text); white-space:nowrap; }
+    .ywc-mini-button.danger:disabled:hover { color:var(--ywc-muted); }
+    .ywc-button { min-height:34px; display:inline-flex; align-items:center; justify-content:center; gap:6px; padding:0 12px; border:1px solid var(--ywc-border); border-radius:6px; background:var(--ywc-surface); color:var(--ywc-text); white-space:nowrap; cursor:pointer; }
     .ywc-button:hover { background:var(--ywc-surface-2); }
     .ywc-button.primary { border-color: color-mix(in srgb, var(--ywc-brand) 72%, white); background: linear-gradient(135deg, color-mix(in srgb, var(--ywc-brand) 88%, white), var(--ywc-brand)); color: var(--ywc-brand-text); font-weight:650; box-shadow: 0 6px 18px color-mix(in srgb, var(--ywc-brand) 20%, transparent); }
+    .ywc-button.primary:hover { background: linear-gradient(135deg, color-mix(in srgb, var(--ywc-brand) 78%, white), color-mix(in srgb, var(--ywc-brand) 92%, black)); }
     .ywc-button:disabled { opacity:.45; cursor:default; }
-    .ywc-primary { min-height:40px; padding:0 16px; border:0; border-radius:6px; background:var(--ywc-brand); color:var(--ywc-brand-text); font-weight:600; }
+    .ywc-button:disabled:hover { background:var(--ywc-surface); }
+    .ywc-button.primary:disabled:hover { background: linear-gradient(135deg, color-mix(in srgb, var(--ywc-brand) 88%, white), var(--ywc-brand)); }
+    .ywc-primary { min-height:40px; padding:0 16px; border:0; border-radius:6px; background:var(--ywc-brand); color:var(--ywc-brand-text); font-weight:600; cursor:pointer; }
+    .ywc-primary:hover { background: var(--ywc-brand-hover); }
     .ywc-primary:disabled { opacity:.45; cursor:default; }
+    .ywc-primary:disabled:hover { background:var(--ywc-brand); }
     .ywc-wide { width:100%; }
     .ywc-batch-panel { display:grid; gap:4px; padding:10px 12px; border:1px solid var(--ywc-border); border-radius:8px; background:var(--ywc-surface-2); min-width:0; }
     .ywc-batch-panel p { margin:0; font-size:var(--dsh-content-font-size-secondary,13px); color:var(--ywc-text); }
@@ -1439,6 +1486,8 @@ window.__ModuleLoader__.load({
     .ywc-toolbar-left, .ywc-toolbar-right { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
     .ywc-field { display:inline-flex; align-items:center; gap:6px; color:var(--ywc-muted); font-size:var(--dsh-content-font-size-secondary,13px); }
     .ywc-input, .ywc-select { min-height:36px; padding:0 10px; border:1px solid var(--ywc-border); border-radius:6px; background:var(--ywc-surface); color:var(--ywc-text); font:inherit; font-size:var(--dsh-content-font-size-secondary,13px); }
+    .ywc-select { cursor:pointer; }
+    .ywc-input { cursor:text; }
     .ywc-summary-grid, .ywc-kpi-grid { display:grid; grid-template-columns:repeat(5, minmax(0,1fr)); gap:10px; padding:12px; }
     .ywc-kpi { min-height:78px; padding:10px; border:1px solid var(--ywc-border); border-radius:8px; position:relative; overflow:hidden; background: linear-gradient(160deg, color-mix(in srgb, var(--ywc-brand) 4%, var(--ywc-surface)), var(--ywc-surface) 62%); }
     .ywc-kpi::after { content:""; position:absolute; inset:0 0 auto; height:2px; background: linear-gradient(90deg, transparent, var(--ywc-brand-line), transparent); opacity:.55; }
@@ -1476,7 +1525,8 @@ window.__ModuleLoader__.load({
     .ywc-section-title { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:12px 12px 0; }
     .ywc-section-title h3 { margin:0; font-size:var(--dsh-content-font-size,14px); }
     .ywc-window-group { display:inline-flex; border:1px solid var(--ywc-border); border-radius:6px; overflow:hidden; }
-    .ywc-window-group button { min-height:30px; padding:0 10px; border:0; background:var(--ywc-surface); color:var(--ywc-muted); font-size:var(--dsh-content-font-size-secondary,13px); }
+    .ywc-window-group button { min-height:30px; padding:0 10px; border:0; background:var(--ywc-surface); color:var(--ywc-muted); font-size:var(--dsh-content-font-size-secondary,13px); cursor:pointer; }
+    .ywc-window-group button:hover { background:var(--ywc-surface-2); color:var(--ywc-text); }
     .ywc-window-group button[aria-selected="true"] { background: color-mix(in srgb, var(--ywc-brand) 12%, var(--ywc-surface)); color:var(--ywc-brand); font-weight:700; box-shadow: inset 0 -2px 0 var(--ywc-brand-line); }
     .ywc-two-column { display:grid; grid-template-columns:minmax(0,1.4fr) minmax(280px,.8fr); gap:12px; }
     .ywc-chart-body { padding:12px; }
@@ -1532,7 +1582,8 @@ window.__ModuleLoader__.load({
     .ywc-metric-grid { display:grid; grid-template-columns:repeat(4, minmax(0,1fr)); gap:8px; }
     .ywc-detail-section { border-top:1px dashed var(--ywc-border); padding-top:10px; }
     .ywc-detail-section h4 { margin:0 0 8px; font-size:var(--dsh-content-font-size,14px); }
-    .ywc-close { width:32px; height:32px; border:1px solid var(--ywc-border); border-radius:6px; background:var(--ywc-surface); color:var(--ywc-muted); }
+    .ywc-close { width:32px; height:32px; border:1px solid var(--ywc-border); border-radius:6px; background:var(--ywc-surface); color:var(--ywc-muted); cursor:pointer; }
+    .ywc-close:hover { background:var(--ywc-surface-2); color:var(--ywc-text); }
     .ywc-note { padding:0 16px 16px; color:var(--ywc-muted); font-size:var(--dsh-content-font-size-secondary,13px); line-height:1.7; }
     .ywc-badge { display:inline-flex; align-items:center; min-height:22px; padding:0 7px; border-radius:4px; background:var(--ywc-surface-2); color:var(--ywc-muted); font-size:var(--dsh-content-font-size-secondary,13px); }
     /* 窄屏（对齐抖音 1120 断点行为）：body 纵向滚动，表格区域固定 60vh 内滚。 */
@@ -1647,6 +1698,7 @@ window.__ModuleLoader__.load({
       // 确认后远端删除执行中 = confirmed_pending_adapter（§16.2 删除状态机）。
       const [deleteLifecycle, setDeleteLifecycle] = useState(null)
       const [collectBusy, setCollectBusy] = useState(false)
+      const [refreshing, setRefreshing] = useState(false)
       // 单账号采集状态投影（宿主 collect.status 的 collect 字段）：工具栏进度行数据源
       // （对齐抖音 collect 投影）。单槽——互斥保证同时只有一个采集；渲染时按 accountId
       // 比对，切走账号不显示他人进度。
@@ -1677,54 +1729,108 @@ window.__ModuleLoader__.load({
         return rows
       }, [post])
 
+      // 会话内作品列表缓存（SWR，对齐抖音 worksCacheRef）：同一账号再次进入先渲染
+      // 缓存（秒开），后台刷新覆盖；刷新失败保留旧数据不打断浏览。
+      const worksCacheRef = useRef(new Map())
+      const worksRequestRef = useRef(0)
+      const overviewRequestRef = useRef(0)
+      // 当前选中账号快照：响应回来时用它判断「这个账号还是当前账号」。
+      // 仅有请求序号不够——采集完成后按采集账号刷新（与当前选中无关），序号最新却属于
+      // 旧账号，会把旧账号的作品行写进新账号视图（review P1-4）。
+      const selectedIdRef = useRef(selectedId)
+      useEffect(() => { selectedIdRef.current = selectedId }, [selectedId])
+
       const refreshWorks = useCallback(async accountId => {
-        if (!accountId) { setWorks([]); return }
+        if (!accountId) { setWorks([]); return false }
+        // 命中缓存先渲染（秒开）；无缓存必须清空，否则切账号瞬间仍显示上一个账号的行
+        // （review P1-3）。
+        const cached = worksCacheRef.current.get(accountId)
+        setWorks(cached || [])
+        // 请求序号守卫：同账号并发时后到的旧响应不得覆盖新响应。
+        const requestId = ++worksRequestRef.current
         try {
           const result = await post('works.list', { accountId })
-          setWorks(Array.isArray(result.works) ? result.works : [])
+          const rows = Array.isArray(result.works) ? result.works : []
+          // 缓存无条件写：被序号淘汰的响应也是有效数据，写缓存才能让切回时秒开。
+          worksCacheRef.current.set(accountId, rows)
+          // 守卫：序号最新 + 账号仍是当前选中账号（review P1-4）。
+          if (!shouldApplyResponse({
+            requestId,
+            currentRequestId: worksRequestRef.current,
+            responseAccountId: accountId,
+            currentAccountId: selectedIdRef.current,
+          })) return true
+          setWorks(rows)
+          return true
         } catch (error) {
-          setWorks([])
+          if (requestId !== worksRequestRef.current) return false
+          if (selectedIdRef.current !== accountId) return false
+          if (!cached) setWorks([])
           notify(`作品列表加载失败：${error.message}`)
+          return false
         }
       }, [post, notify])
 
       const refreshOverview = useCallback(async (accountId, window) => {
-        if (!accountId) { setOverview(null); setSummaryOverview(null); setProfile(null); return }
+        if (!accountId) { setOverview(null); setSummaryOverview(null); setProfile(null); return false }
+        // 切账号瞬间清空上一账号的总览/画像，避免新账号下显示旧账号指标（review P1-3）。
+        setOverview(null)
+        setSummaryOverview(null)
+        setProfile(null)
+        const requestId = ++overviewRequestRef.current
+        let ok = true
         // 摘要卡固定 last_7d 拉取（与账号 Tab 窗口互不影响，review P0-3）。
         // summary 声明提到 try 外：窗口同为 last_7d 时直接复用，避免重复请求。
         let summary = null
         try {
           summary = await post('account.overview', { accountId, window: 'last_7d' })
-          setSummaryOverview(summary)
         } catch {
-          setSummaryOverview(null)
+          ok = false
         }
+        let overview = null
         if (window === 'last_7d') {
-          setOverview(summary)
+          overview = summary
         } else {
           try {
-            const result = await post('account.overview', { accountId, window })
-            setOverview(result)
+            overview = await post('account.overview', { accountId, window })
           } catch {
-            setOverview(null)
+            ok = false
           }
         }
+        let profile = null
         try {
           const profileResult = await post('fans.profile.get', { accountId })
-          setProfile(profileResult.fans_profile)
+          profile = profileResult.fans_profile
         } catch {
-          setProfile(null)
+          ok = false
         }
+        // 守卫：序号最新 + 账号仍是当前选中账号（review P1-4）。否则旧账号的总览/画像
+        // 会被写进当前视图（采集回调按采集账号刷新，与当前选中无关）。
+        if (!shouldApplyResponse({
+          requestId,
+          currentRequestId: overviewRequestRef.current,
+          responseAccountId: accountId,
+          currentAccountId: selectedIdRef.current,
+        })) return ok
+        setOverview(overview)
+        if (summary) setSummaryOverview(summary)
+        setProfile(profile)
+        return ok
       }, [post])
 
       useEffect(() => {
         let cancelled = false
         void (async () => {
-          try {
-            const status = await post('browser.status')
-            if (!cancelled) setBrowserReady({ chrome: status.chromeAvailable, driver: status.driverAvailable })
-          } catch { /* 浏览器自检失败不阻断首屏 */ }
-          if (!cancelled) await refreshAccounts()
+          // 首屏并行：浏览器自检只用于无 Chrome 时的提示条，不该阻塞账号列表
+          // （对齐抖音 refresh() 的 Promise.all 编排）。
+          const statusPromise = post('browser.status')
+            .then(status => {
+              if (!cancelled) setBrowserReady({ chrome: status.chromeAvailable, driver: status.driverAvailable })
+            })
+            .catch(() => { /* 浏览器自检失败不阻断首屏 */ })
+          // accounts.list 失败必须被吞掉：`void` 不会吞异常，否则 Electron 渲染进程会打
+          // Uncaught (in promise)（review P2-4）。
+          await Promise.all([statusPromise, refreshAccounts().catch(() => null)])
         })()
         return () => { cancelled = true }
       }, [post, refreshAccounts])
@@ -1884,6 +1990,33 @@ window.__ModuleLoader__.load({
         })
       }, [post, notify, refreshWorks, refreshOverview, refreshAccounts, windowKey, stopCollectPolling])
 
+      /**
+       * 「刷新」按钮（2026-11-11 真机反馈：点击看起来没作用）：
+       * 原来只是并发触发两个查询且没有任何反馈，数据没变化时用户完全看不出发生过什么。
+       * 现在：刷新期间按钮显示「刷新中…」并禁用，完成后给出提示；同时连带刷新账号列表
+       * （账号卡片的「最近同步」时间与会话状态随之更新）。
+       *
+       * 结果聚合（review P1-2）：refreshWorks/refreshOverview 内部会吞掉错误，三路
+       * Promise 几乎不会 reject——若只看 Promise 结果，失败也会被报成「已刷新」。改为
+       * 各自返回成功标志后聚合，部分失败要明确说出来。
+       */
+      const refreshAll = useCallback(accountId => {
+        if (!accountId) return
+        setRefreshing(true)
+        void (async () => {
+          try {
+            const [worksOk, overviewOk, accountsOk] = await Promise.all([
+              refreshWorks(accountId).catch(() => false),
+              refreshOverview(accountId, windowKey).catch(() => false),
+              refreshAccounts().then(() => true).catch(() => false),
+            ])
+            notify(refreshResultLabel({ works: worksOk, overview: overviewOk, accounts: accountsOk }))
+          } finally {
+            setRefreshing(false)
+          }
+        })()
+      }, [notify, refreshWorks, refreshOverview, refreshAccounts, windowKey])
+
       const collectAll = useCallback(() => {
         // 与单账号采集同理：点击瞬间先挂最小运行投影，批量面板立刻显示 spinner，
         // 不等宿主逐个账号探测完才反馈（2026-11-11 真机反馈的一致性修复）。
@@ -2009,11 +2142,13 @@ window.__ModuleLoader__.load({
                 ? h('section', { className: 'ywc-panel ywc-work-panel' },
                   h(WorkToolbar, {
                     onCollect: () => selectedId && collectAccount(selectedId),
-                    onRefresh: () => selectedId && (refreshWorks(selectedId), refreshOverview(selectedId, windowKey)),
+                    onRefresh: () => selectedId && refreshAll(selectedId),
                     // 采集按钮：批量运行中一并禁用（宿主互斥会拒绝，提前禁用给稳定反馈）；
-                    // 刷新是只读查询，批量运行中保持可用（对齐抖音 busy 语义）。
+                    // 刷新是只读查询，批量运行中保持可用，但单账号采集期间禁用（采集会
+                    // 改写同一批数据，同时刷新会读到中间态）。
                     collectDisabled: !selectedId || collectBusy || batchRunning,
-                    refreshDisabled: !selectedId || collectBusy,
+                    refreshDisabled: !selectedId || collectBusy || refreshing,
+                    refreshing,
                     collect: collect && collect.accountId === selectedId ? collect : null,
                   }),
                   h(WorkSummaryCards, { works, summaryOverview, account: selected }),

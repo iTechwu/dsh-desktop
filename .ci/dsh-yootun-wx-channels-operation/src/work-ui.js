@@ -71,7 +71,7 @@ export function WorkSummaryCards({ works, summaryOverview, account }) {
  * （工具栏纵向布局：第一行按钮组、第二行进度），绝不放到页面顶部通知条。collect 是
  * 宿主 collect.status 的进度投影（仅当前选中账号的传入）；running 时采集按钮禁用
  * 并显示 spinner + progressText。 */
-export function WorkToolbar({ onCollect, onRefresh, collectDisabled = false, refreshDisabled = false, collect = null }) {
+export function WorkToolbar({ onCollect, onRefresh, collectDisabled = false, refreshDisabled = false, refreshing = false, collect = null }) {
   const running = Boolean(collect && collect.status === 'running')
   return h('div', { className: 'ywc-toolbar' },
     h('div', { className: 'ywc-toolbar-left' },
@@ -79,7 +79,12 @@ export function WorkToolbar({ onCollect, onRefresh, collectDisabled = false, ref
         className: 'ywc-button primary', type: 'button', onClick: onCollect,
         disabled: collectDisabled || running, 'aria-busy': running || undefined,
       }, running ? '采集中…' : '采集本账号全部'),
-      h('button', { className: 'ywc-button', type: 'button', onClick: onRefresh, disabled: refreshDisabled }, '刷新'),
+      // 刷新按钮：执行期间显示「刷新中…」并禁用，避免用户以为点击没生效
+      // （2026-11-11 真机反馈）。
+      h('button', {
+        className: 'ywc-button', type: 'button', onClick: onRefresh,
+        disabled: refreshDisabled || refreshing, 'aria-busy': refreshing || undefined,
+      }, refreshing ? '刷新中…' : '刷新'),
     ),
     running
       ? h('div', { className: 'ywc-progress', role: 'status', 'aria-live': 'polite', 'aria-busy': true },
