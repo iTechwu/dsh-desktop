@@ -119,9 +119,11 @@ export function AccountList({
                 || account.deleteState === 'remote_deleted',
               // 会话有效 → 只探活；会话已过期 → 直接打开浏览器重新扫码（2026-11-11
               // 真机反馈：原先两种状态都绑 onProbe，点「重新扫码」没有任何反应）。
+              // 重新扫码不传账号 ID：登录用全新临时 Profile，避免扫码得到另一个视频号
+              // 身份时把本账号的 Profile 目录迁移走（同一微信多视频号场景）。
               onClick: () => (sessionActionFor(account) === 'probe'
                 ? onProbe(account.accountId)
-                : onBeginLogin(account.accountId)),
+                : onBeginLogin()),
             }, sessionActionFor(account) === 'probe' ? '检测会话' : '重新扫码'),
             h('button', {
               className: 'ywc-mini-button danger', type: 'button', disabled: busy || running,

@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import { test } from 'node:test'
 
 import { checkCollectionReadiness, createBatchCollectController, ensureRemoteAccount, progressFromEvent } from '../src/runner.js'
-import { loginWithQrCode, probeSession } from '../src/session.js'
+import { loginWithQrCode, probeSession, waitStableIdentity } from '../src/session.js'
 
 const sleepImmediate = async () => {}
 
@@ -324,4 +324,77 @@ test('ensureRemoteAccount：null 指标不得折算 0 上报（NULL ≠ 0，revi
   assert.ok(!('feedCount' in calls[0].args), 'feedCount 为 null 时不得上报')
   assert.equal(calls[0].args.nickname, '测试号')
   await rm(root, { recursive: true, force: true })
+})
+
+test('waitStableIdentity：身份变化时以新身份为准（同一微信多视频号，扫码后官方页面才有身份选择）', async () => {
+  // 模拟官方 auth_data 依次返回：默认身份 → 用户切换后的身份 → 稳定的新身份。
+  const sequence = [
+    { accountId: 'v2_default', nickname: '默认身份' },
+    { accountId: 'v2_chosen', nickname: '用户选择的身份' },
+    { accountId: 'v2_chosen', nickname: '用户选择的身份' },
+    { accountId: 'v2_chosen', nickname: '用户选择的身份' },
+  ]
+  let index = 0
+  const fakePage = {
+    evaluate: async () => {
+      // firstProfile 已代表第一次读取，这里从下一项开始（与真实时序一致）。
+      index += 1
+      const current = sequence[Math.min(index, sequence.length - 1)]
+      return {
+        status: 200,
+        text: JSON.stringify({
+          errCode: 0,
+          data: { finderUser: { finderUsername: current.accountId, nickname: current.nickname, fansCount: 0, feedsCount: 1 } },
+        }),
+      }
+    },
+  }
+  const stable = await waitStableIdentity(fakePage, sequence[0], { attempts: 6, intervalMs: 1, required: 2 })
+  assert.equal(stable.accountId, 'v2_chosen', '应取用户切换后的身份，而不是默认身份')
+})
+
+test('waitStableIdentity：身份稳定时返回该身份（单视频号场景）', async () => {
+  let calls = 0
+  const fakePage = {
+    evaluate: async () => {
+      calls += 1
+      return {
+        status: 200,
+        text: JSON.stringify({
+          errCode: 0,
+          data: { finderUser: { finderUsername: 'v2_only', nickname: '唯一身份', fansCount: 1, feedsCount: 1 } },
+        }),
+      }
+    },
+  }
+  const stable = await waitStableIdentity(
+    fakePage,
+    { accountId: 'v2_only', nickname: '唯一身份' },
+    { attempts: 4, intervalMs: 1, required: 2 },
+  )
+  assert.equal(stable.accountId, 'v2_only')
+  assert.ok(calls >= 1, '至少复核一次才算稳定')
+})
+
+test('waitStableIdentity：读取失败不算身份变化，继续等待', async () => {
+  let calls = 0
+  const fakePage = {
+    evaluate: async () => {
+      calls += 1
+      if (calls === 1) throw new Error('network down')
+      return {
+        status: 200,
+        text: JSON.stringify({
+          errCode: 0,
+          data: { finderUser: { finderUsername: 'v2_ok', nickname: '稳定', fansCount: 0, feedsCount: 1 } },
+        }),
+      }
+    },
+  }
+  const stable = await waitStableIdentity(
+    fakePage,
+    { accountId: 'v2_ok', nickname: '稳定' },
+    { attempts: 4, intervalMs: 1, required: 2 },
+  )
+  assert.equal(stable.accountId, 'v2_ok')
 })

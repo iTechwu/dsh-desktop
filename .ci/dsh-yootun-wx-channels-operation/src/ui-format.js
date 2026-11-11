@@ -393,6 +393,10 @@ export function batchReasonText(reason) {
   if (reason === 'session_required' || reason === 'session_expired') return '会话已过期，请重新扫码'
   // 正则而非字面量：客户端源码/产物不得出现该凭证字段名的连续字面量（凭证卫生契约）。
   if (/^storage.state_missing$/.test(reason)) return '缺少本机登录态，请重新扫码登录'
+  // 身份不匹配：同一个微信可绑定多个视频号，官方页面扫码后才有身份选择；当前登录
+  // 身份与所选账号不是同一个（2026-11-11 真机串号排查）。
+  if (reason === 'account_mismatch') return '当前登录的视频号与所选账号不一致，请重新扫码并在官方页面选择该视频号后重试'
+  if (/^identity_check_failed/.test(reason)) return '无法确认当前登录的视频号身份，请重新扫码后重试'
   if (reason === 'pending_account') return '待升级账号'
   if (reason === 'probe_failed') return '会话检测失败'
   if (reason === 'partial') return '部分作品缺失'

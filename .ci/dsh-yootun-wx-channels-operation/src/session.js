@@ -29,6 +29,12 @@ export const SESSION_COOKIE_NAMES = ['sessionid', 'wxuin']
 const LOGIN_TIMEOUT_MS = 5 * 60 * 1000
 const COOKIE_POLL_INTERVAL_MS = 2000
 const PROBE_TIMEOUT_MS = 45_000
+// 身份稳定等待：同一微信多视频号时，扫码后官方页面才出现身份选择；连续读到同一
+// 身份才算用户选完（2026-11-11 真机串号根因）。需要连续 3 次相同（约 6 秒窗口），
+// 留足用户在官方页面上点击选择的时间。
+const IDENTITY_STABLE_ATTEMPTS = 8
+const IDENTITY_STABLE_INTERVAL_MS = 2000
+const IDENTITY_STABLE_REQUIRED = 3
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms))
 
@@ -64,8 +70,51 @@ export async function waitForSessionCookie(context, {
   }
 }
 
-/** 登录瞬间读取账号资料失败时的短间隔重试（对齐抖音 pending 账号教训）。 */
-export async function readAccountProfileWithRetry(page, { attempts = 4, delayMs = 1200, sleepFn = sleep, finderId = '' } = {}) {
+/**
+ * 等待官方页面上的视频号身份选择稳定（2026-11-11 真机串号根因）：
+ *
+ * 实测结论——同一个微信可绑定多个视频号，扫码后官方页面才出现身份选择；身份**不在
+ * cookie 里**（cookie 只有微信级 sessionid/wxuin），由服务端按微信记住，页面切换一次
+ * 即生效。auth_data 首次可读时返回的是默认/上次选择的身份，用户手动选择后才会变。
+ *
+ * 因此登录不能在 auth_data 首次可读时就结束：连续读到同一身份才认为「用户已选完」；
+ * 身份发生变化则改用新身份并重新计数（用户还在选）。
+ *
+ * @param {object} page 官方页面
+ * @param {object|null} firstProfile 首次读到的身份
+ * @returns {Promise<object>} 稳定后的身份（至少含 accountId）
+ */
+export async function waitStableIdentity(page, firstProfile, {
+  attempts = IDENTITY_STABLE_ATTEMPTS,
+  intervalMs = IDENTITY_STABLE_INTERVAL_MS,
+  required = IDENTITY_STABLE_REQUIRED,
+} = {}) {
+  let current = firstProfile && firstProfile.accountId ? firstProfile : null
+  if (!current) return firstProfile
+  let stableCount = 1
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    await sleep(intervalMs)
+    let next = null
+    try {
+      next = await fetchAuthData(page, { finderId: '' })
+    } catch {
+      continue // 读不到不算「身份变了」，继续等
+    }
+    if (!next || !next.accountId) continue
+    if (next.accountId === current.accountId) {
+      stableCount += 1
+      // 连续多次读到同一身份 → 视为用户已完成选择。
+      if (stableCount >= required) return next
+    } else {
+      // 身份变了（用户刚在官方页面选了另一个视频号）：以新身份为准，重新计数。
+      current = next
+      stableCount = 1
+    }
+  }
+  return current
+}
+
+/** 登录瞬间读取账号资料失败时的短间隔重试（对齐抖音 pending 账号教训）。 */export async function readAccountProfileWithRetry(page, { attempts = 4, delayMs = 1200, sleepFn = sleep, finderId = '' } = {}) {
   let last = null
   for (let attempt = 0; attempt < attempts; attempt += 1) {
     try {
@@ -115,7 +164,16 @@ export async function loginWithQrCode({
       await context.close().catch(() => {})
       return { status: 'timeout' }
     }
-    const profile = waited.profile || (await readAccountProfileWithRetry(page))
+    const firstProfile = waited.profile || (await readAccountProfileWithRetry(page))
+    // 身份稳定等待（2026-11-11 真机串号根因，实测结论）：
+    // 同一个微信可绑定多个视频号，**扫码后官方页面才出现身份选择**；视频号身份不在
+    // cookie 里（cookie 只有微信级的 sessionid/wxuin），由服务端按微信记住——官方页面
+    // 切换一次即生效。auth_data 首次可读时返回的是**默认/上次选择的身份**，用户手动
+    // 选择后才会变。若登录流程在首次可读时就结束，建立的是错误账号；之后采集另一个
+    // 账号时官方按当前身份返回数据 → 串号。
+    //
+    // 因此：连续读到同一身份才认为「用户已选完」，身份发生变化则以新身份为准重新计数。
+    const profile = await waitStableIdentity(page, firstProfile)
     const resolvedId = profile && profile.accountId ? profile.accountId : tempId
     await saveStorageState(resolvedId, context, root)
     await context.close()

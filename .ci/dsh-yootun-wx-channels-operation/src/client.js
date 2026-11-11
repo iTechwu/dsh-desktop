@@ -546,9 +546,14 @@ function WxWorkbench({ host, initial = null }) {
   // 视频号助手扫码；无二维码弹层，进行中状态由左栏按钮文案承载。
   // accountId 可选：会话过期后点「重新扫码」时复用该账号的浏览器 Profile，
   // 而不是另起一个 pending 登录；「添加账号」不传即新建。
-  const beginLogin = useCallback(accountId => {
+  // 登录一律用**新的临时 Profile**（不传 accountId）：
+  // 宿主登录流程会用 key 作为 Profile 目录名，登录成功后把该目录迁移到扫码得到的
+  // 身份 ID。若这里传已有账号 ID，而扫码得到的是另一个视频号身份（同一微信绑定
+  // 多个视频号时很常见），迁移会把**那个已有账号的 Profile 目录搬走**，其登录态
+  // 随之丢失（2026-11-11 真机串号排查连带发现）。
+  const beginLogin = useCallback(() => {
     void (async () => {
-      const result = await post('account.beginLogin', accountId ? { accountId } : {})
+      const result = await post('account.beginLogin', {})
       setLogin({ loginKey: result.loginKey, state: result.state })
       pollLogin(result.loginKey)
     })().catch(error => notify(`登录发起失败：${error.message}`))
@@ -818,6 +823,12 @@ function WxWorkbench({ host, initial = null }) {
           browserBlocked
             ? h('p', { className: 'ywc-empty', style: { padding: '0 2px' } },
               `需要系统 Google Chrome${browserReady.chrome ? ' 与 Playwright 驱动' : ''}（当前缺失），采集功能不可用`)
+            : null,
+          // 登录进行中：同一微信可绑定多个视频号，扫码后官方页面才出现身份选择；
+          // 插件会等身份稳定后再建账号（2026-11-11 真机串号根因）。
+          login
+            ? h('p', { className: 'ywc-hint', style: { padding: '6px 2px 0' }, role: 'status' },
+              '浏览器已打开，请扫码登录；若该微信绑定了多个视频号，请在官方页面选择要采集的那一个，插件会等您选完再建账号。')
             : null,
         ),
         h('main', { className: 'ywc-right' },

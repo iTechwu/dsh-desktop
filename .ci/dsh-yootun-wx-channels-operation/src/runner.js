@@ -29,6 +29,9 @@ import { accountSaveIdempotencyKey, callTool, sessionIdempotencyKey, safeErrorCo
 
 export const DEFAULT_MAX_PAGES = 50
 const OPEN_TIMEOUT_MS = 60_000
+// 采集前的身份复核重试（官方 SPA 未就绪时会短暂失败）。
+const IDENTITY_CHECK_ATTEMPTS = 3
+const IDENTITY_CHECK_INTERVAL_MS = 800
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms))
 
@@ -152,17 +155,31 @@ export async function runCollection({
     const page = context.pages()[0] || (await context.newPage())
     await page.goto(ASSISTANT_ORIGIN, { waitUntil: 'domcontentloaded', timeout: OPEN_TIMEOUT_MS })
     // 页面上下文 auth_data 复核会话（浏览器内登录态可能与 storage_state 文件不同步）。
+    //
+    // 身份校验必须「读不到就中止」，绝不能放行（2026-11-11 真机串号根因）：同一个
+    // 微信可绑定多个视频号，官方页面扫码后才有身份选择；此时 Profile 里的 cookie 是
+    // 微信级的，账号身份由官方页面的选择态决定。若 auth_data 因 HTTP/网络错误读不到
+    // 身份而按目标 accountId 放行，官方会按 cookie 里的登录身份返回数据——扫码那个
+    // 视频号的数据就会被写进所选账号（用户报「选了另一个账号，采到的还是扫码那个」）。
     const finderId = await (async () => {
-      try {
-        const profile = await fetchAuthData(page, { finderId: '' })
-        return profile.accountId
-      } catch (error) {
-        if (error instanceof SessionInvalidError) throw error
-        return accountId
+      let lastError = null
+      // 页面刚 goto 完时官方 SPA 可能尚未就绪，短暂失败重试几次。
+      for (let attempt = 1; attempt <= IDENTITY_CHECK_ATTEMPTS; attempt += 1) {
+        try {
+          const profile = await fetchAuthData(page, { finderId: '' })
+          return profile.accountId
+        } catch (error) {
+          if (error instanceof SessionInvalidError) throw error
+          lastError = error
+          if (attempt < IDENTITY_CHECK_ATTEMPTS) await sleep(IDENTITY_CHECK_INTERVAL_MS)
+        }
       }
+      // 读不到身份 = 无法证明一致，必须中止采集。
+      throw new SessionInvalidError(`identity_check_failed:${lastError && lastError.message ? String(lastError.message).slice(0, 40) : 'unknown'}`)
     })()
     if (finderId !== accountId) {
-      // 登录态与账号不匹配（storage_state 串号）：按会话失效处理，绝不写错账号。
+      // 登录态与账号不匹配（同一微信的另一个视频号身份 / storage_state 串号）：
+      // 按会话失效处理，绝不写错账号。
       throw new SessionInvalidError('account_mismatch')
     }
 

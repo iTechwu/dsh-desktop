@@ -398,6 +398,10 @@ window.__ModuleLoader__.load({
       if (reason === 'session_required' || reason === 'session_expired') return '会话已过期，请重新扫码'
       // 正则而非字面量：客户端源码/产物不得出现该凭证字段名的连续字面量（凭证卫生契约）。
       if (/^storage.state_missing$/.test(reason)) return '缺少本机登录态，请重新扫码登录'
+      // 身份不匹配：同一个微信可绑定多个视频号，官方页面扫码后才有身份选择；当前登录
+      // 身份与所选账号不是同一个（2026-11-11 真机串号排查）。
+      if (reason === 'account_mismatch') return '当前登录的视频号与所选账号不一致，请重新扫码并在官方页面选择该视频号后重试'
+      if (/^identity_check_failed/.test(reason)) return '无法确认当前登录的视频号身份，请重新扫码后重试'
       if (reason === 'pending_account') return '待升级账号'
       if (reason === 'probe_failed') return '会话检测失败'
       if (reason === 'partial') return '部分作品缺失'
@@ -1088,9 +1092,11 @@ window.__ModuleLoader__.load({
                     || account.deleteState === 'remote_deleted',
                   // 会话有效 → 只探活；会话已过期 → 直接打开浏览器重新扫码（2026-11-11
                   // 真机反馈：原先两种状态都绑 onProbe，点「重新扫码」没有任何反应）。
+                  // 重新扫码不传账号 ID：登录用全新临时 Profile，避免扫码得到另一个视频号
+                  // 身份时把本账号的 Profile 目录迁移走（同一微信多视频号场景）。
                   onClick: () => (sessionActionFor(account) === 'probe'
                     ? onProbe(account.accountId)
-                    : onBeginLogin(account.accountId)),
+                    : onBeginLogin()),
                 }, sessionActionFor(account) === 'probe' ? '检测会话' : '重新扫码'),
                 h('button', {
                   className: 'ywc-mini-button danger', type: 'button', disabled: busy || running,
@@ -1863,9 +1869,14 @@ window.__ModuleLoader__.load({
       // 视频号助手扫码；无二维码弹层，进行中状态由左栏按钮文案承载。
       // accountId 可选：会话过期后点「重新扫码」时复用该账号的浏览器 Profile，
       // 而不是另起一个 pending 登录；「添加账号」不传即新建。
-      const beginLogin = useCallback(accountId => {
+      // 登录一律用**新的临时 Profile**（不传 accountId）：
+      // 宿主登录流程会用 key 作为 Profile 目录名，登录成功后把该目录迁移到扫码得到的
+      // 身份 ID。若这里传已有账号 ID，而扫码得到的是另一个视频号身份（同一微信绑定
+      // 多个视频号时很常见），迁移会把**那个已有账号的 Profile 目录搬走**，其登录态
+      // 随之丢失（2026-11-11 真机串号排查连带发现）。
+      const beginLogin = useCallback(() => {
         void (async () => {
-          const result = await post('account.beginLogin', accountId ? { accountId } : {})
+          const result = await post('account.beginLogin', {})
           setLogin({ loginKey: result.loginKey, state: result.state })
           pollLogin(result.loginKey)
         })().catch(error => notify(`登录发起失败：${error.message}`))
@@ -2135,6 +2146,12 @@ window.__ModuleLoader__.load({
               browserBlocked
                 ? h('p', { className: 'ywc-empty', style: { padding: '0 2px' } },
                   `需要系统 Google Chrome${browserReady.chrome ? ' 与 Playwright 驱动' : ''}（当前缺失），采集功能不可用`)
+                : null,
+              // 登录进行中：同一微信可绑定多个视频号，扫码后官方页面才出现身份选择；
+              // 插件会等身份稳定后再建账号（2026-11-11 真机串号根因）。
+              login
+                ? h('p', { className: 'ywc-hint', style: { padding: '6px 2px 0' }, role: 'status' },
+                  '浏览器已打开，请扫码登录；若该微信绑定了多个视频号，请在官方页面选择要采集的那一个，插件会等您选完再建账号。')
                 : null,
             ),
             h('main', { className: 'ywc-right' },
