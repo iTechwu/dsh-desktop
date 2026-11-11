@@ -116,27 +116,62 @@ window.__ModuleLoader__.load({
         .map(entry => entry.work)
     }
 
-    /** 来源分布行规范化：trafficSource JSON（§17.3）→ [{name, value}]，排除「全部」。 */
+    /** 来源分布行规范化：trafficSource JSON（§17.3）→ [{name, value}]，排除「全部」。
+     * 缺失播放量保留 null（渲染「—」），不折算 0。 */
     function normalizeTrafficRows(trafficSource) {
       const rows = trafficSource && Array.isArray(trafficSource.rows) ? trafficSource.rows : []
       return rows
         .filter(row => row && row.sourceType !== 999)
-        .map(row => ({ name: String(row.name || row.sourceKey), value: Number(row.playCount) || 0 }))
+        .map(row => {
+          const value = row.playCount
+          return {
+            name: String(row.name || row.sourceKey),
+            value: value === null || value === undefined || !Number.isFinite(Number(value))
+              ? null
+              : Number(value),
+          }
+        })
     }
 
-    /** 留存行规范化：retention_trend（§17.3）→ [{s, v}]。 */
+    /** 留存行规范化：retention_trend（§17.3）→ [{s, v}]。
+     *
+     * 键名兼容：`parse.js` 历史产出 `ratePct`，文档 §5.4 口径为 `rate_pct`；服务端
+     * `retention_trend` 是原样 JSON 存取（不做 key 转换），两种形状都可能出现在库里。
+     * 2026-11-11 review：只读 `rate_pct` 导致真机留存恒 0%。缺失值保留 null 显示「—」。
+     */
     function normalizeRetentionPoints(retentionTrend) {
       const points = retentionTrend && Array.isArray(retentionTrend.points) ? retentionTrend.points : []
       return points
         .filter(point => point && Number.isFinite(Number(point.second)))
-        .map(point => ({ s: Number(point.second), v: Math.round(Number(point.rate_pct ?? 0)) }))
+        .map(point => {
+          const raw = point.rate_pct ?? point.ratePct
+          const numeric = raw === null || raw === undefined ? null : Number(raw)
+          return {
+            s: Number(point.second),
+            v: numeric === null || !Number.isFinite(numeric) ? null : Math.round(numeric),
+          }
+        })
     }
 
     // 画像维度标签映射（真机 dim 驱动，2026-11-10；不臆造官方未暴露语义）。
+    // 未知项官方编码为 `unknow`（少一个 w），历史/兼容口径也见过 `unknown`，两者都
+    // 显示「未知」，不能让英文编码透出到界面（2026-11-11 真机反馈）。
+    const UNKNOWN_LABELS = new Set(['unknow', 'unknown'])
+    function isUnknownKey(key) {
+      return UNKNOWN_LABELS.has(String(key || '').trim().toLowerCase())
+    }
+
     const PROFILE_LABEL_MAPS = {
-      gender: { 1: '男', 2: '女', unknow: '未知' },
-      age: row => String(row.key || '').replace(/^fage_/, '').replace(/_/g, '-') + '岁',
-      device: row => `设备 ${row.key}`,
+      gender: { 1: '男', 2: '女', unknow: '未知', unknown: '未知' },
+      age: row => {
+        const key = String(row.key || '')
+        if (isUnknownKey(key)) return '未知'
+        const range = key.replace(/^fage_/, '')
+        // `fage_50_+` → `50+'；`fage_01_17` → `1-17岁`（去前导零）。
+        if (range.endsWith('_+')) return `${range.slice(0, -2).replace(/^0+/, '')}岁+`
+        return `${range.split('_').map(part => part.replace(/^0+(?=\d)/, '')).join('-')}岁`
+      },
+      device: row => (isUnknownKey(row.key) ? '未知' : `设备 ${row.key}`),
     }
 
     /** 画像维度行规范化：[{key,label,count}] → [[label, count]]。
@@ -146,13 +181,63 @@ window.__ModuleLoader__.load({
     function normalizeProfileRows(rows, dimension) {
       const map = dimension ? PROFILE_LABEL_MAPS[dimension] : null
       return (Array.isArray(rows) ? rows : [])
-        .filter(row => row && row.key && row.key !== '@_all' && row.key !== '@_all')
+        .filter(row => row && row.key && row.key !== '@_all')
         .map(row => {
+          // 未知编码在任一维度（含 province/city）都必须显示「未知」，不能透出英文。
+          if (isUnknownKey(row.key)) return ['未知', Number(row.count) || 0]
           let label = row.label || row.key
           if (typeof map === 'function') label = map(row)
           else if (map && map[String(row.key)] !== undefined) label = map[String(row.key)]
           return [label, Number(row.count) || 0]
         })
+    }
+
+    /**
+     * 作品标题口径（2026-11-11 真机反馈）：官方后台列表显示的标题是发布文案
+     * （parse 的 description），系统短标题（title，desc.shortTitle）仅部分作品
+     * 有值且与后台展示不一致；部分作品两者皆缺 → 「—」。
+     */
+    function workTitle(work) {
+      if (!work || typeof work !== 'object') return null
+      const description = typeof work.description === 'string' ? work.description.trim() : ''
+      if (description) return description
+      const title = typeof work.title === 'string' ? work.title.trim() : ''
+      return title || null
+    }
+
+    /** 封面/头像 URL 防御：仅 http(s)，解析失败返回 null（对齐抖音 safeAvatarSrc）。 */
+    function safeAvatarSrc(value) {
+      if (typeof value !== 'string') return null
+      const trimmed = value.trim()
+      if (!trimmed) return null
+      try {
+        const url = new URL(trimmed)
+        return url.protocol === 'http:' || url.protocol === 'https:' ? trimmed : null
+      } catch {
+        return null
+      }
+    }
+
+    /**
+     * 作品原始链接域名白名单（对齐抖音 safeWorkUrl）：仅 http(s) + 视频号官方域
+     * （channels.weixin.qq.com / weixin.qq.com）。不满足返回 null，标题按纯文本展示。
+     * 注意：官方列表接口（statistic/post_list）不提供公开观看 URL，objectId 无法
+     * 构造公开页（exportId 是会过期的加密 ID，分享链 weixin.qq.com/sph/* 需官方分享
+     * 动作获取）——当前 works.list 无 url 字段，本机制就位，待采集侧补分享链后生效。
+     */
+    function safeWorkUrl(value) {
+      if (typeof value !== 'string') return null
+      const trimmed = value.trim()
+      if (!trimmed) return null
+      let url
+      try {
+        url = new URL(trimmed)
+      } catch {
+        return null
+      }
+      if (url.protocol !== 'https:' && url.protocol !== 'http:') return null
+      if (url.hostname !== 'channels.weixin.qq.com' && url.hostname !== 'weixin.qq.com') return null
+      return trimmed
     }
 
     /** 关注者增长窗口聚合 → 指标卡四项（净增/新增/取消/总数）。 */
@@ -249,7 +334,8 @@ window.__ModuleLoader__.load({
     // 纯展示组件：数据由 client.js 传入；排序/筛选/分页只作用于已入库数据。
 
 
-    /** 表格列定义（对齐抖音 COLUMNS 单一来源）：sortable 列在表头渲染排序按钮。 */
+    /** 表格列定义（对齐抖音 COLUMNS 单一来源）：sortable 列在表头渲染排序按钮。
+     * 2026-11-11 真机反馈：去掉「操作」列（双击整行打开详情），作品列不再显示 ID 副行。 */
     const TABLE_COLUMNS = [
       { label: '作品' },
       { label: '发布时间', key: 'publish_time', sortable: true },
@@ -265,7 +351,6 @@ window.__ModuleLoader__.load({
       { label: '企微链接点击' },
       { label: '添加通讯录' },
       { label: '最近采集' },
-      { label: '操作' },
     ]
 
     /** 顶部摘要卡（§9.2 固定 5 张，不随筛选/排序/分页变化）。
@@ -293,9 +378,10 @@ window.__ModuleLoader__.load({
     }
 
     /** 工具栏（采集本账号全部 / 刷新 / 运行中进度行）。筛选与排序在表头完成（对齐抖音工作台）。
-     * 进度行布局契约（对齐抖音 4257-4260）：挂在工具栏内采集按钮旁（同栏可见、窄容器自动
-     * 换行），绝不放到页面顶部通知条。collect 是宿主 collect.status 的进度投影（仅当前
-     * 选中账号的传入）；running 时采集按钮禁用并显示 spinner + progressText。 */
+     * 进度行布局契约（2026-11-11 真机反馈）：进度行固定在采集按钮**下方**独占一行
+     * （工具栏纵向布局：第一行按钮组、第二行进度），绝不放到页面顶部通知条。collect 是
+     * 宿主 collect.status 的进度投影（仅当前选中账号的传入）；running 时采集按钮禁用
+     * 并显示 spinner + progressText。 */
     function WorkToolbar({ onCollect, onRefresh, collectDisabled = false, refreshDisabled = false, collect = null }) {
       const running = Boolean(collect && collect.status === 'running')
       return h('div', { className: 'ywc-toolbar' },
@@ -305,20 +391,22 @@ window.__ModuleLoader__.load({
             disabled: collectDisabled || running, 'aria-busy': running || undefined,
           }, running ? '采集中…' : '采集本账号全部'),
           h('button', { className: 'ywc-button', type: 'button', onClick: onRefresh, disabled: refreshDisabled }, '刷新'),
-          running
-            ? h('div', { className: 'ywc-progress', role: 'status', 'aria-live': 'polite', 'aria-busy': true },
-              h('span', { className: 'ywc-spinner', 'aria-hidden': true }),
-              h('span', null, progressText(collect && collect.progress)),
-            )
-            : null,
         ),
+        running
+          ? h('div', { className: 'ywc-progress', role: 'status', 'aria-live': 'polite', 'aria-busy': true },
+            h('span', { className: 'ywc-spinner', 'aria-hidden': true }),
+            h('span', null, progressText(collect && collect.progress)),
+          )
+          : null,
       )
     }
 
     /** 作品表格（对齐抖音 WorkTable 交互）：
      * - 无数据不渲染表格框架，只显示居中空态提示（ydo-state 同款）；
      * - 可排序列表头为按钮：点击 desc → asc → 默认循环，箭头 ↕/↓/↑ + aria-sort；
-     * - 全量渲染已入库作品，固定高度区域内部滚动（无「加载更多」分页）。 */
+     * - 全量渲染已入库作品，固定高度区域内部滚动（无「加载更多」分页）；
+     * - 2026-11-11 真机反馈：无「操作」列——双击整行（或行内回车）打开详情；
+     *   作品列 = 封面缩略图 + 标题（官方发布文案口径），不再显示 ID 副行。 */
     function WorkTable({ rows, sort = DEFAULT_SORT_STATE, onSortChange, onOpenDetail }) {
       if (!rows.length) {
         return h('div', { className: 'ywc-table-state', role: 'status' },
@@ -347,19 +435,66 @@ window.__ModuleLoader__.load({
       return h('div', { className: 'ywc-table-wrap' },
         h('table', { className: 'ywc-table', 'aria-label': '视频号作品列表' },
           h('thead', null, h('tr', null, headCells)),
-          h('tbody', null, rows.map(work => h('tr', { key: work.work_id }, workRowCells(work, onOpenDetail)))),
+          h('tbody', null, rows.map(work => h('tr', {
+            key: work.work_id,
+            tabIndex: 0,
+            title: '双击查看作品详情',
+            // 读屏用户无法感知 title 提示：显式 aria-label 说明行内可执行的动作。
+            'aria-label': `${workTitle(work) || '未命名作品'}，回车或双击查看详情`,
+            // React 的合法事件名是 onDoubleClick；onDblClick 会被忽略、导致双击无响应。
+            onDoubleClick: () => onOpenDetail && onOpenDetail(work),
+            onKeyDown: event => { if (event.key === 'Enter') onOpenDetail && onOpenDetail(work) },
+          }, workRowCells(work)))),
         ),
       )
     }
 
-    function workRowCells(work, onOpenDetail) {
+    /** 作品封面（对齐抖音 WorkCover）：缩略图 + 右下角时长角标；加载失败/缺失 →
+     * 占位块（浅灰底 + 居中「封面」小字），不隐藏作品行。coverUrl 为 null 不发请求。
+     * size='large'（详情头部 110×146）复用同一结构。URL 只接受 http(s)（safeAvatarSrc 防御）。 */
+    function WorkCover({ coverUrl, durationText, size = 'small' }) {
+      const [failed, setFailed] = useState(false)
+      const safeSrc = safeAvatarSrc(coverUrl)
+      const boxClass = `ywc-cover${size === 'large' ? ' ywc-cover-large' : ''}${!safeSrc || failed ? ' ywc-cover-fallback' : ''}`
+      return h('span', { className: boxClass },
+        safeSrc && !failed
+          ? h('img', {
+            className: 'ywc-cover-img',
+            src: safeSrc,
+            alt: '',
+            loading: 'lazy',
+            referrerPolicy: 'no-referrer',
+            onError: () => setFailed(true),
+          })
+          : h('span', { className: 'ywc-cover-fallback-text', 'aria-hidden': true }, '封面'),
+        durationText && !(!safeSrc || failed) ? h('span', { className: 'ywc-cover-duration' }, durationText) : null)
+    }
+
+    function workRowCells(work) {
+      // 原始链接机制（2026-11-11）：标题带链接需数据源提供 url（官方列表接口不提供，
+      // 见 ui-format.safeWorkUrl 注释）——当前 works.list 无该字段，标题按纯文本渲染。
+      const linkHref = safeWorkUrl(work.url)
+      const title = workTitle(work) || EMPTY
       const cells = [
         h('td', { key: 'work' }, h('div', { className: 'ywc-work-cell' },
-          h('div', { className: 'ywc-cover' }, work.cover_url ? '封面' : EMPTY, work.duration_s ? h('span', null, `${work.duration_s}s`) : null),
-          h('div', null,
-            h('div', { className: 'ywc-work-title', title: work.title || EMPTY }, work.title || EMPTY),
-            h('div', { className: 'ywc-work-sub' }, `ID：${work.work_id}`),
-          ),
+          // key 绑定封面地址：同一行/同一弹层的数据刷新后若 URL 变化，强制重挂载，
+          // 避免沿用上一次加载失败留下的 failed 态而不再尝试新地址。
+          h(WorkCover, {
+            key: `cover:${work.work_id}:${work.cover_url || ''}`,
+            coverUrl: work.cover_url,
+            durationText: work.duration_s ? `${work.duration_s}s` : null,
+          }),
+          linkHref
+            // `noreferrer` 已隐含 noopener；点击/双击不得冒泡到行（否则同时开浏览器+详情）。
+            ? h('a', {
+              className: 'ywc-work-title',
+              href: linkHref, target: '_blank', rel: 'noreferrer',
+              title,
+              onClick: event => event.stopPropagation(),
+              onDoubleClick: event => event.stopPropagation(),
+              onKeyDown: event => event.stopPropagation(),
+            }, title)
+            : h('div', { className: 'ywc-work-title', title }, title),
         )),
         h('td', { key: 'publish' }, fmtDateTime(work.publish_time)),
         h('td', { key: 'completion' }, fmtPct(work.completion_rate_pct)),
@@ -374,14 +509,14 @@ window.__ModuleLoader__.load({
         h('td', { key: 'wecom' }, fmtPair(work.wecom_link_click_count, work.wecom_link_click_uv)),
         h('td', { key: 'contact' }, fmtPair(work.wecom_contact_add_count, work.wecom_contact_add_uv)),
         h('td', { key: 'collected' }, fmtDateTime(work.latest_collected_at)),
-        h('td', { key: 'action' },
-          h('button', { className: 'ywc-link', type: 'button', onClick: () => onOpenDetail(work) }, '详情'),
-        ),
       ]
       return cells
     }
 
-    /** 作品详情弹层内容（§9.3 六组：基础/核心指标/留存/来源/按日/缺口）。 */
+    /** 作品详情弹层内容（2026-11-11 真机反馈重排）：
+     * 头部一行 = 封面 + 元信息（标题/ID/发布时间/最近采集）→ KPI 卡片横向铺满 →
+     * 来源分布与观众留存左右双卡片（对齐抖音单作品详情）→ 按日数据近 7 天多指标
+     * 趋势线（播放用主题色，其余参考官方后台配色）→ 数据缺口。 */
     function WorkDetailDialog({ work, detail, dailyMetrics, onClose }) {
       if (!work) return null
       const trafficRows = normalizeTrafficRows(detail && detail.traffic_source || work.traffic_source)
@@ -392,34 +527,46 @@ window.__ModuleLoader__.load({
         h('div', { className: 'ywc-dialog', onClick: stopPropagation },
           h('header', { className: 'ywc-dialog-header' },
             h('div', null,
-              h('h2', null, work.title || EMPTY),
+              h('h2', null, workTitle(work) || EMPTY),
               h('p', { className: 'ywc-card-meta' }, '基础信息 · 核心指标 · 来源分布 · 观众留存'),
             ),
             h('button', { className: 'ywc-close', type: 'button', 'aria-label': '关闭作品详情', onClick: onClose }, '×'),
           ),
           h('div', { className: 'ywc-dialog-body' },
+            // 头部信息行：封面 + 元信息（2026-11-11：KPI 移出头部、铺满下方整行）。
             h('div', { className: 'ywc-dialog-grid' },
-              h('div', { className: 'ywc-detail-cover' }, work.cover_url ? '封面' : EMPTY),
-              h('div', null,
+              h(WorkCover, {
+                key: `detail-cover:${work.work_id}:${work.cover_url || ''}`,
+                coverUrl: work.cover_url, size: 'large',
+                durationText: work.duration_s ? `${work.duration_s}s` : null,
+              }),
+              h('div', { className: 'ywc-dialog-meta' },
                 h('p', { className: 'ywc-card-meta' }, `ID：${work.work_id}`),
                 h('p', { className: 'ywc-card-meta' }, `发布时间：${fmtDateTime(work.publish_time)}`),
                 h('p', { className: 'ywc-card-meta' }, `最近采集：${fmtDateTime(work.latest_collected_at)}`),
-                h('div', { className: 'ywc-metric-grid' },
-                  metricCells(work).map(([label, value]) => h('div', { className: 'ywc-kpi', key: label },
-                    h('div', { className: 'ywc-kpi-label' }, label),
-                    h('div', { className: 'ywc-kpi-value' }, fmt(value)),
-                  )),
-                ),
               ),
             ),
-            section('来源分布（不限）', trafficRows.length
-              ? h('div', { className: 'ywc-bars' }, barRows(trafficRows.map(row => [row.name, row.value])))
-              : h('p', { className: 'ywc-empty' }, '本次接口未提供来源数据')),
-            section('观众留存趋势', retention.length
-              ? h('div', { className: 'ywc-bars' }, barRows(retention.map(point => [`${point.s}s`, `${point.v}%`], row => Number(String(row[1]).replace('%', '')))))
-              : h('p', { className: 'ywc-empty' }, '本次接口未提供观众留存数据')),
-            section('按日数据', daily.length
-              ? h('div', { className: 'ywc-bars' }, dailyRowLines(daily))
+            h('div', { className: 'ywc-metric-grid' },
+              metricCells(work).map(([label, value]) => h('div', { className: 'ywc-kpi', key: label },
+                h('div', { className: 'ywc-kpi-label' }, label),
+                h('div', { className: 'ywc-kpi-value' }, fmt(value)),
+              )),
+            ),
+            h('div', { className: 'ywc-two-column' },
+              section('来源分布（不限）', trafficRows.length
+                ? h('div', { className: 'ywc-bars' }, barRows(
+                  trafficRows.map(row => [row.name, row.value === null ? EMPTY : row.value]),
+                ))
+                : h('p', { className: 'ywc-empty' }, '本次接口未提供来源数据')),
+              section('观众留存趋势', retention.length
+                ? h('div', { className: 'ywc-bars' }, barRows(
+                  retention.map(point => [`${point.s}s`, point.v === null ? EMPTY : `${point.v}%`]),
+                  row => Number(String(row[1]).replace('%', '')),
+                ))
+                : h('p', { className: 'ywc-empty' }, '本次接口未提供观众留存数据')),
+            ),
+            section('按日数据（近 7 天）', daily.length
+              ? dailyTrendChart(daily)
               : h('p', { className: 'ywc-empty' }, '该作品暂无按日数据')),
             section('数据缺口', gaps.length
               ? h('div', { className: 'ywc-bars' }, gaps.map(([name, gap]) => h('span', { className: 'ywc-badge', key: name }, `${name} · ${gapReasonText(gap)}`)))
@@ -447,16 +594,84 @@ window.__ModuleLoader__.load({
       ]
     }
 
-    function dailyRowLines(daily) {
-      const header = ['日期', '播放', '喜欢', '收藏', '评论', '分享', '转发', '关注量']
-      const lines = [h('div', { className: 'ywc-bar-row', key: 'header', style: { gridTemplateColumns: DAILY_GRID } },
-        header.map(name => h('span', { className: 'ywc-bar-value', key: name }, name)),
-      )]
-      return lines.concat(daily.map(row => h('div', { className: 'ywc-bar-row', key: row.day, style: { gridTemplateColumns: DAILY_GRID } },
-        h('span', null, row.day),
-        ['daily_play_count', 'daily_like_count', 'daily_favorite_count', 'daily_comment_count', 'daily_share_count', 'daily_forward_count', 'daily_follow_count']
-          .map(field => h('span', { className: 'ywc-bar-value', key: field }, fmtCount(row[field]))),
-      )))
+    /** 按日趋势线指标与配色（2026-11-11 真机反馈）：播放用主题色（用户指定），
+     * 其余参考官方后台趋势线配色（喜欢浅蓝/评论红/分享黄/关注绿，紫/橙借官方色系
+     * 给收藏/转发，保证 7 条线可分）。 */
+    const DAILY_SERIES = [
+      { key: 'daily_play_count', label: '播放', color: 'var(--ywc-brand)' },
+      { key: 'daily_like_count', label: '喜欢', color: '#4ea6ff' },
+      { key: 'daily_favorite_count', label: '收藏', color: '#8b5cf6' },
+      { key: 'daily_comment_count', label: '评论', color: '#e0524a' },
+      { key: 'daily_share_count', label: '分享', color: '#d9a400' },
+      { key: 'daily_forward_count', label: '转发', color: '#f08a3c' },
+      { key: 'daily_follow_count', label: '关注量', color: '#2f9e44' },
+    ]
+
+    /** 按日数据趋势线（2026-11-11：替代原 7 列明细表，对齐官方后台趋势图）：
+     * 只显示最近 7 天；各指标独立 min-max 归一（量级悬殊，统一坐标会压平小指标，
+     * 官方同款）；缺失值断线不造 0；hover 圆点显示「日期 指标 数值」。 */
+    function dailyTrendChart(daily) {
+      const rows = (Array.isArray(daily) ? daily : [])
+        .filter(row => row && row.day)
+        .sort((left, right) => String(left.day).localeCompare(String(right.day)))
+        .slice(-7)
+      if (!rows.length) return h('p', { className: 'ywc-empty' }, '该作品暂无按日数据')
+      const width = 680
+      // 与账号趋势图同口径（viewBox 680×180 + CSS height:auto），避免固定高宽比
+      // 不一致导致的信箱化缩放。
+      const height = 180
+      const padX = 18
+      const padTop = 14
+      const padBottom = 30
+      const xAt = index => padX + index * ((width - padX * 2) / Math.max(1, rows.length - 1))
+      const elements = [
+        h('line', {
+          key: 'axis', x1: padX, y1: height - padBottom, x2: width - padX, y2: height - padBottom,
+          style: { stroke: 'var(--ywc-border)', strokeWidth: 1 },
+        }),
+      ]
+      for (const series of DAILY_SERIES) {
+        const nums = rows.map(row => row[series.key]).filter(v => v !== null && v !== undefined)
+        if (!nums.length) continue
+        const min = Math.min(...nums)
+        const max = Math.max(...nums)
+        const yAt = value => max === min
+          ? height - padBottom - (height - padTop - padBottom) / 2
+          : height - padBottom - ((Number(value) - min) / (max - min)) * (height - padTop - padBottom)
+        // 缺失值必须断线：跳过该点后下一个有效点用 `M` 重新起笔，不能跨过缺失日
+        // 用 `L` 直接连线（否则等于把缺口当成连续趋势，2026-11-11 review）。
+        let d = ''
+        let segmentOpen = false
+        rows.forEach((row, index) => {
+          const value = row[series.key]
+          if (value === null || value === undefined) {
+            segmentOpen = false
+            return
+          }
+          d += `${segmentOpen ? 'L' : 'M'}${xAt(index).toFixed(1)},${yAt(value).toFixed(1)}`
+          segmentOpen = true
+        })
+        elements.push(h('path', { key: series.key, d, stroke: series.color, strokeWidth: 2, fill: 'none' }))
+        rows.forEach((row, index) => {
+          const value = row[series.key]
+          if (value === null || value === undefined) return
+          elements.push(h('circle', {
+            key: `${series.key}-${index}`, cx: xAt(index).toFixed(1), cy: yAt(value).toFixed(1), r: 2.5,
+            style: { fill: 'var(--ywc-surface)', stroke: series.color, strokeWidth: 1.5 },
+          }, h('title', null, `${row.day} ${series.label} ${fmtCount(value)}`)))
+        })
+      }
+      const labels = rows.map((row, index) => h('text', {
+        key: `x-${index}`, x: xAt(index).toFixed(1), y: height - 8,
+        textAnchor: 'middle', style: { fill: 'var(--ywc-muted)', fontSize: 11 },
+      }, String(row.day).slice(5)))
+      return h('div', null,
+        h('div', { className: 'ywc-chart-legend' },
+          DAILY_SERIES.map(series => h('span', { key: series.key },
+            h('i', { style: { background: series.color } }), series.label))),
+        h('svg', { className: 'ywc-svg', viewBox: `0 0 ${width} ${height}`, role: 'img', 'aria-label': '按日数据近 7 天趋势' },
+          elements, labels),
+      )
     }
 
     function section(title, content) {
@@ -528,8 +743,6 @@ window.__ModuleLoader__.load({
       observed_fast_flip_rate_pct: '按日划走率',
     }
 
-    const DAILY_GRID = '90px repeat(7, minmax(48px, 1fr))'
-
     function backdropClose(onClose) {
       return event => { if (event.target === event.currentTarget) onClose() }
     }
@@ -538,14 +751,6 @@ window.__ModuleLoader__.load({
 
     // 账号数据 Tab / 账号区 / 登录弹层（视觉基准：docs/1109/wx/ui-demo.html，§9.1/§9.4）。
 
-
-    const PROFILE_TABS = [
-      ['gender', '性别'],
-      ['device', '访问设备'],
-      ['age', '年龄分布'],
-      ['province', '省份分布'],
-      ['city', '城市分布'],
-    ]
 
     const WINDOWS = [['yesterday', '昨日'], ['last_7d', '近7天'], ['last_30d', '近30天']]
 
@@ -662,9 +867,12 @@ window.__ModuleLoader__.load({
 
     /** 账号数据 Tab（§9.4 三段：全部视频指标 / 关注者增长 / 关注者画像）。
      * 全宽独占布局：页内自带账号选择器（对齐抖音总览的账号下拉：有账号即显示，
-     * 不因单账号隐藏），切换后三段数据随之刷新。 */
+     * 不因单账号隐藏），切换后三段数据随之刷新。
+     * 关注者画像（2026-11-11 真机反馈）：去掉维度 Tab 切换，改为 KPI 卡片组同屏展示——
+     * 性别/访问设备=环形图（中心总人数）+图例，年龄分布=柱状图带百分比标签，
+     * 省份/城市=横向条形两列卡片（对齐官方后台截图布局）。 */
     function AccountTab({
-      window: windowKey, onWindow, overview, profile, profileKey, onProfileKey,
+      window: windowKey, onWindow, overview, profile,
       accounts, selectedId, onSelectAccount,
     }) {
       const availability = (overview && overview.availability) || {}
@@ -713,13 +921,15 @@ window.__ModuleLoader__.load({
             h('h3', null, '关注者画像'),
             h('span', { className: 'ywc-badge' }, profile && profile.day ? `截止 ${profile.day}` : '当前截止昨日'),
           ),
-          h('div', { className: 'ywc-profile-tabs', role: 'tablist', 'aria-label': '画像维度' },
-            PROFILE_TABS.map(([key, label]) => h('button', {
-              key: key, type: 'button', 'aria-selected': key === profileKey ? 'true' : 'false',
-              onClick: () => onProfileKey(key),
-            }, label)),
+          h('div', { className: 'ywc-profile-grid' },
+            profileDonutCard('性别分布', profile, 'gender'),
+            profileDonutCard('访问设备分布', profile, 'device'),
+            profileAgeCard(profile),
           ),
-          h('div', { className: 'ywc-bars' }, profileBars(profile, profileKey)),
+          h('div', { className: 'ywc-profile-grid ywc-profile-grid-2' },
+            profileBarsCard('省份分布', profile, 'province'),
+            profileBarsCard('城市分布', profile, 'city'),
+          ),
         ),
       )
     }
@@ -748,16 +958,85 @@ window.__ModuleLoader__.load({
       ))
     }
 
-    function profileBars(profile, profileKey) {
-      const dimension = profile ? profile[profileKey] : null
-      const rows = normalizeProfileRows(dimension, profileKey)
-      if (!rows.length) return h('p', { className: 'ywc-empty', style: { padding: '0 12px 12px' } }, '该画像维度本次未提供')
+    /** 画像卡片组（2026-11-11 真机反馈，对齐官方后台）：
+     * 环形图调色板参考官方风格（男蓝/女粉）；「未知」统一灰色；设备编码语义官方
+     * 未暴露（不臆造），显示「设备 1/2」。占比一律 count/sum 计算，总数 0 显示「—」。 */
+    const DONUT_PALETTE = ['#4ea6ff', '#f47fb0', '#8b5cf6', '#f08a3c', '#2f9e44', '#d9a400', '#e0524a']
+    const DONUT_UNKNOWN_COLOR = '#c0c6cf'
+
+    function donutColor(name, index) {
+      return name === '未知' ? DONUT_UNKNOWN_COLOR : DONUT_PALETTE[index % DONUT_PALETTE.length]
+    }
+
+    function profileDonutCard(title, profile, dimension) {
+      const rows = normalizeProfileRows(profile ? profile[dimension] : null, dimension)
+      const total = rows.reduce((sum, [, value]) => sum + value, 0)
+      let acc = 0
+      const stops = rows.map(([name, value], index) => {
+        const start = total > 0 ? (acc / total) * 100 : 0
+        acc += value
+        const end = total > 0 ? (acc / total) * 100 : 0
+        return `${donutColor(name, index)} ${start.toFixed(2)}% ${end.toFixed(2)}%`
+      })
+      const background = total > 0 && stops.length
+        ? `conic-gradient(${stops.join(',')})`
+        : `conic-gradient(${DONUT_UNKNOWN_COLOR} 0% 100%)`
+      return h('div', { className: 'ywc-profile-card' },
+        h('div', { className: 'ywc-profile-card-title' }, title),
+        rows.length
+          ? h('div', { className: 'ywc-donut-row' },
+            h('div', {
+              className: 'ywc-donut', style: { background },
+              role: 'img', 'aria-label': `${title}：共 ${fmtCount(total)} 人`,
+            },
+              h('span', { className: 'ywc-donut-hole' },
+                h('b', null, fmtCount(total)),
+                h('i', null, '总人数'),
+              )),
+            h('ul', { className: 'ywc-donut-legend' },
+              rows.map(([name, value], index) => h('li', { key: name },
+                h('span', { className: 'ywc-donut-dot', style: { background: donutColor(name, index) }, 'aria-hidden': true }),
+                `${name} ${fmtCount(value)}人${total > 0 ? ` · ${Math.round(value / total * 100)}%` : ''}`,
+              ))))
+          : h('p', { className: 'ywc-empty', style: { padding: '0 4px 4px' } }, '该画像维度本次未提供'),
+      )
+    }
+
+    function profileAgeCard(profile) {
+      const rows = normalizeProfileRows(profile ? profile.age : null, 'age')
+      const total = rows.reduce((sum, [, value]) => sum + value, 0)
       const max = Math.max(1, ...rows.map(([, value]) => value))
-      return rows.map(([name, value]) => h('div', { className: 'ywc-bar-row', key: name },
-        h('span', null, name),
-        h('div', { className: 'ywc-bar-track' }, h('div', { className: 'ywc-bar-fill', style: { width: `${Math.round(value / max * 100)}%` } })),
-        h('span', { className: 'ywc-bar-value' }, `${value} 人`),
-      ))
+      return h('div', { className: 'ywc-profile-card' },
+        h('div', { className: 'ywc-profile-card-title' }, '年龄分布'),
+        rows.length
+          ? h('div', { className: 'ywc-col-chart', role: 'img', 'aria-label': `年龄分布：共 ${fmtCount(total)} 人` },
+            rows.map(([name, value]) => h('div', { className: 'ywc-col', key: name },
+              h('span', { className: 'ywc-col-value' }, total > 0 ? `${Math.round(value / total * 100)}%` : '—'),
+              h('div', {
+                className: 'ywc-col-bar',
+                style: { height: `${Math.max(4, Math.round(value / max * 100))}%` },
+                title: `${name} ${fmtCount(value)}人`,
+              }),
+              h('span', { className: 'ywc-col-label' }, name),
+            )))
+          : h('p', { className: 'ywc-empty', style: { padding: '0 4px 4px' } }, '该画像维度本次未提供'),
+      )
+    }
+
+    function profileBarsCard(title, profile, dimension) {
+      const rows = normalizeProfileRows(profile ? profile[dimension] : null, dimension)
+      const max = Math.max(1, ...rows.map(([, value]) => value))
+      return h('div', { className: 'ywc-profile-card' },
+        h('div', { className: 'ywc-profile-card-title' }, title),
+        rows.length
+          ? h('div', { className: 'ywc-bars', style: { padding: '0 4px 4px' } }, rows.map(([name, value]) =>
+            h('div', { className: 'ywc-bar-row', key: name },
+              h('span', null, name),
+              h('div', { className: 'ywc-bar-track' }, h('div', { className: 'ywc-bar-fill', style: { width: `${Math.round(value / max * 100)}%` } })),
+              h('span', { className: 'ywc-bar-value' }, fmtCount(value)),
+            )))
+          : h('p', { className: 'ywc-empty', style: { padding: '0 4px 4px' } }, '该画像维度本次未提供'),
+      )
     }
 
     /** 关注者总数折线（Demo 同款 SVG 折线）。 */
@@ -948,7 +1227,8 @@ window.__ModuleLoader__.load({
     .ywc-right .ywc-work-panel { flex:1; min-height:0; display:flex; flex-direction:column; }
     .ywc-right .ywc-work-panel .ywc-table-wrap { flex:1; }
     .ywc-right .ywc-account-page { flex:1; min-height:0; overflow:auto; }
-    .ywc-toolbar { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; padding:12px; }
+    /* 工具栏纵向布局（2026-11-11 真机反馈）：第一行按钮组、第二行采集进度行（按钮下方）。 */
+    .ywc-toolbar { display:flex; flex-direction:column; align-items:stretch; gap:8px; padding:12px; }
     .ywc-toolbar-left, .ywc-toolbar-right { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
     .ywc-field { display:inline-flex; align-items:center; gap:6px; color:var(--ywc-muted); font-size:var(--dsh-content-font-size-secondary,13px); }
     .ywc-input, .ywc-select { min-height:36px; padding:0 10px; border:1px solid var(--ywc-border); border-radius:6px; background:var(--ywc-surface); color:var(--ywc-text); font:inherit; font-size:var(--dsh-content-font-size-secondary,13px); }
@@ -968,16 +1248,22 @@ window.__ModuleLoader__.load({
     /* 空态（对齐 ydo-state）：无数据时不渲染表格框架，只显示居中提示。 */
     .ywc-table-state { display:grid; min-height:200px; flex:1; place-items:center; align-content:center; gap:10px; color:var(--ywc-muted); font-size:var(--dsh-content-font-size,14px); text-align:center; }
     .ywc-table-state p { margin:0; max-width:640px; line-height:1.6; }
-    .ywc-table { min-width:1720px; width:100%; border-collapse:collapse; }
-    .ywc-table th, .ywc-table td { padding:10px; border-bottom:1px solid var(--ywc-border); text-align:left; white-space:nowrap; font-size:var(--dsh-content-font-size-secondary,13px); }
+    /* 作品列表（2026-11-11 真机反馈）：无操作列（双击行开详情）、无 ID 副行，列宽收紧
+     * 但单元格保持 nowrap 不换行；整行 cursor:pointer 提示可双击。 */
+    .ywc-table { min-width:1480px; width:100%; border-collapse:collapse; }
+    .ywc-table th, .ywc-table td { padding:9px 10px; border-bottom:1px solid var(--ywc-border); text-align:left; white-space:nowrap; font-size:var(--dsh-content-font-size-secondary,13px); }
     .ywc-table th { position:sticky; top:0; z-index:1; background: color-mix(in srgb, var(--ywc-brand) 5%, var(--ywc-surface-2)); color:var(--ywc-muted); font-weight:600; }
+    .ywc-table tbody tr { cursor:pointer; }
     .ywc-table tbody tr:hover { background: color-mix(in srgb, var(--ywc-brand) 6%, transparent); }
-    .ywc-work-cell { display:grid; grid-template-columns:54px minmax(220px,320px); gap:10px; align-items:center; }
-    .ywc-cover { position:relative; width:54px; height:72px; display:grid; place-items:center; border-radius:5px; overflow:hidden; background:var(--ywc-surface-2); color:var(--ywc-muted); font-size:12px; text-align:center; }
-    .ywc-cover span { position:absolute; right:3px; bottom:3px; padding:1px 4px; border-radius:3px; background:rgba(0,0,0,.65); color:#fff; }
-    .ywc-work-title { min-width:0; max-width:320px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:650; }
-    .ywc-work-sub { margin-top:3px; color:var(--ywc-muted); font-size:12px; }
-    .ywc-link { border:0; background:transparent; color:var(--ywc-brand); font-weight:650; padding:0; }
+    .ywc-work-cell { display:grid; grid-template-columns:54px minmax(180px,240px); gap:10px; align-items:center; }
+    /* 封面（对齐抖音 WorkCover）：img 铺满 + 右下角时长角标；失败/缺失占位「封面」。 */
+    .ywc-cover { position:relative; width:54px; height:72px; display:grid; place-items:center; border-radius:5px; overflow:hidden; background:var(--ywc-surface-2); color:var(--ywc-muted); font-size:12px; text-align:center; flex:none; }
+    .ywc-cover-large { width:110px; height:146px; border-radius:7px; }
+    .ywc-cover-img { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; display:block; }
+    .ywc-cover-fallback-text { padding:0 4px; }
+    .ywc-cover-duration { position:absolute; right:3px; bottom:3px; padding:1px 4px; border-radius:3px; background:rgba(0,0,0,.65); color:#fff; font-size:12px; }
+    .ywc-work-title { min-width:0; max-width:240px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:650; color:inherit; text-decoration:none; }
+    a.ywc-work-title:hover { text-decoration:underline; color:var(--ywc-brand); }
     .ywc-empty { color:var(--ywc-muted); font-size:var(--dsh-content-font-size-secondary,13px); }
     .ywc-account-page { display:flex; flex-direction:column; gap:12px; }
     .ywc-section-title { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:12px 12px 0; }
@@ -989,23 +1275,43 @@ window.__ModuleLoader__.load({
     .ywc-chart-body { padding:12px; }
     .ywc-chart-legend { display:flex; gap:12px; flex-wrap:wrap; margin-bottom:8px; color:var(--ywc-muted); font-size:var(--dsh-content-font-size-secondary,13px); }
     .ywc-chart-legend i { display:inline-block; width:10px; height:3px; margin-right:5px; vertical-align:middle; background:var(--ywc-brand); }
-    .ywc-svg { display:block; width:100%; height:180px; }
+    /* height:auto 让 SVG 按 viewBox 比例自适应：固定 height 会让宽视口下的图形被
+       「信箱化」缩小并水平居中（2026-11-11 review）。 */
+    .ywc-svg { display:block; width:100%; height:auto; }
     .ywc-bars { display:grid; gap:8px; padding:12px; }
     .ywc-bar-row { display:grid; grid-template-columns:84px minmax(0,1fr) 62px; gap:8px; align-items:center; font-size:var(--dsh-content-font-size-secondary,13px); }
     .ywc-bar-track { height:8px; border-radius:4px; background:var(--ywc-surface-2); overflow:hidden; }
     .ywc-bar-fill { height:100%; border-radius:4px; background: linear-gradient(90deg, color-mix(in srgb, var(--ywc-brand) 62%, transparent), var(--ywc-brand-line)); box-shadow: 0 0 12px color-mix(in srgb, var(--ywc-brand) 18%, transparent); }
     .ywc-bar-value { text-align:right; color:var(--ywc-muted); }
-    .ywc-profile-tabs { display:flex; gap:4px; padding:10px 12px 0; border-bottom:1px solid var(--ywc-border); overflow-x:auto; }
-    .ywc-profile-tabs button { border:0; border-bottom:2px solid transparent; padding:8px 9px; background:transparent; color:var(--ywc-muted); font-size:var(--dsh-content-font-size-secondary,13px); white-space:nowrap; }
-    .ywc-profile-tabs button[aria-selected="true"] { border-bottom-color:var(--ywc-brand-line); color:var(--ywc-brand); font-weight:650; }
+    /* 关注者画像卡片组（2026-11-11 真机反馈）：去 Tab 切换，同屏卡片布局——
+     * 性别/设备环形图（中心总人数）+图例、年龄柱状图（柱顶百分比）、省市横向条形两列卡。 */
+    .ywc-profile-grid { display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:10px; padding:12px; }
+    .ywc-profile-grid-2 { grid-template-columns:repeat(2, minmax(0,1fr)); }
+    .ywc-profile-card { min-width:0; padding:12px; border:1px solid var(--ywc-border); border-radius:8px; background: color-mix(in srgb, var(--ywc-surface) 94%, transparent); }
+    .ywc-profile-card-title { margin-bottom:10px; color:var(--ywc-muted); font-size:var(--dsh-content-font-size-secondary,13px); }
+    .ywc-donut-row { display:flex; align-items:center; gap:14px; }
+    .ywc-donut { position:relative; width:112px; height:112px; flex:none; border-radius:50%; }
+    .ywc-donut-hole { position:absolute; inset:20px; display:grid; place-content:center; justify-items:center; gap:1px; border-radius:50%; background:var(--ywc-surface); text-align:center; }
+    .ywc-donut-hole b { font-size:16px; font-weight:650; font-variant-numeric: tabular-nums; }
+    .ywc-donut-hole i { font-style:normal; color:var(--ywc-muted); font-size:12px; }
+    .ywc-donut-legend { display:grid; gap:6px; margin:0; padding:0; list-style:none; color:var(--ywc-text); font-size:var(--dsh-content-font-size-secondary,13px); min-width:0; }
+    .ywc-donut-dot { display:inline-block; width:8px; height:8px; margin-right:6px; border-radius:2px; vertical-align:middle; }
+    .ywc-col-chart { display:flex; align-items:stretch; gap:8px; height:150px; padding-top:4px; }
+    .ywc-col { flex:1; min-width:0; height:100%; display:flex; flex-direction:column; align-items:center; justify-content:flex-end; gap:4px; }
+    .ywc-col-value { color:var(--ywc-text); font-size:12px; font-variant-numeric:tabular-nums; }
+    .ywc-col-bar { width:56%; min-height:4px; border-radius:3px 3px 0 0; background: linear-gradient(180deg, color-mix(in srgb, var(--ywc-brand) 62%, transparent), var(--ywc-brand-line)); }
+    .ywc-col-label { color:var(--ywc-muted); font-size:12px; white-space:nowrap; }
     .ywc-modal { position:fixed; inset:0; z-index:20; display:none; place-items:center; padding:24px; background:rgba(31,35,41,.42); backdrop-filter:blur(8px); }
     .ywc-modal.open { display:grid; }
     .ywc-dialog { width:min(1080px,100%); max-height:calc(100vh - 48px); overflow:auto; border:1px solid var(--ywc-border); border-radius:8px; background:var(--ywc-surface); box-shadow:0 24px 72px rgba(0,0,0,.22); }
     .ywc-dialog-header { position:sticky; top:0; z-index:2; display:flex; align-items:flex-start; justify-content:space-between; gap:12px; padding:14px 16px; border-bottom:1px solid var(--ywc-border); background:var(--ywc-surface); }
     .ywc-dialog-header h2, .ywc-dialog-header h3 { margin:0; }
     .ywc-dialog-body { display:grid; gap:12px; padding:14px 16px 18px; }
-    .ywc-dialog-grid { display:grid; grid-template-columns:150px minmax(0,1fr); gap:14px; }
-    .ywc-detail-cover { width:150px; height:200px; display:grid; place-items:center; border-radius:7px; background:var(--ywc-surface-2); color:var(--ywc-muted); }
+    /* 详情头部（2026-11-11 真机反馈）：封面 + 元信息一行，KPI 卡片移出头部、
+     * 以 ywc-metric-grid 铺满整行（左右填满）。 */
+    .ywc-dialog-grid { display:grid; grid-template-columns:110px minmax(0,1fr); gap:14px; align-items:center; }
+    .ywc-dialog-meta { min-width:0; display:grid; gap:6px; }
+    .ywc-dialog-meta p { margin:0; }
     .ywc-metric-grid { display:grid; grid-template-columns:repeat(4, minmax(0,1fr)); gap:8px; }
     .ywc-detail-section { border-top:1px dashed var(--ywc-border); padding-top:10px; }
     .ywc-detail-section h4 { margin:0 0 8px; font-size:var(--dsh-content-font-size,14px); }
@@ -1013,8 +1319,8 @@ window.__ModuleLoader__.load({
     .ywc-note { padding:0 16px 16px; color:var(--ywc-muted); font-size:var(--dsh-content-font-size-secondary,13px); line-height:1.7; }
     .ywc-badge { display:inline-flex; align-items:center; min-height:22px; padding:0 7px; border-radius:4px; background:var(--ywc-surface-2); color:var(--ywc-muted); font-size:var(--dsh-content-font-size-secondary,13px); }
     /* 窄屏（对齐抖音 1120 断点行为）：body 纵向滚动，表格区域固定 60vh 内滚。 */
-    @media (max-width:1080px) { .ywc-body { display:block; overflow:auto; } .ywc-right { overflow:visible; } .ywc-right .ywc-work-panel .ywc-table-wrap { max-height:60vh; } .ywc-summary-grid, .ywc-kpi-grid { grid-template-columns:repeat(3,minmax(0,1fr)); } .ywc-two-column { grid-template-columns:1fr; } .ywc-dialog-grid { grid-template-columns:1fr; } .ywc-detail-cover { width:100%; height:180px; } }
-    @media (max-width:680px) { .ywc-header, .ywc-body, .ywc-tabs { padding-left:12px; padding-right:12px; } .ywc-summary-grid, .ywc-kpi-grid, .ywc-metric-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } .ywc-title p { display:none; } }
+    @media (max-width:1080px) { .ywc-body { display:block; overflow:auto; } .ywc-right { overflow:visible; } .ywc-right .ywc-work-panel .ywc-table-wrap { max-height:60vh; } .ywc-summary-grid, .ywc-kpi-grid { grid-template-columns:repeat(3,minmax(0,1fr)); } .ywc-two-column { grid-template-columns:1fr; } .ywc-dialog-grid { grid-template-columns:1fr; } .ywc-profile-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+    @media (max-width:680px) { .ywc-header, .ywc-body, .ywc-tabs { padding-left:12px; padding-right:12px; } .ywc-summary-grid, .ywc-kpi-grid, .ywc-metric-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } .ywc-profile-grid { grid-template-columns:1fr; } .ywc-title p { display:none; } }
     `
 
     function useHost() {
@@ -1110,7 +1416,6 @@ window.__ModuleLoader__.load({
         initial && initial.summaryOverview !== undefined ? initial.summaryOverview : initial ? initial.overview : null,
       )
       const [profile, setProfile] = useState((initial && initial.profile) || null)
-      const [profileKey, setProfileKey] = useState((initial && initial.profileKey) || 'gender')
       const [windowKey, setWindowKey] = useState((initial && initial.windowKey) || 'last_7d')
       // 表头排序（对齐抖音）：{key, direction} 三态循环，客户端排序只作用于已入库数据。
       const [sort, setSort] = useState(DEFAULT_SORT_STATE)
@@ -1488,7 +1793,7 @@ window.__ModuleLoader__.load({
                 )
                 : h(AccountTab, {
                   window: windowKey, onWindow: setWindowKey,
-                  overview, profile, profileKey, onProfileKey: setProfileKey,
+                  overview, profile,
                   accounts, selectedId,
                   onSelectAccount: accountId => setSelectedId(accountId),
                 }),

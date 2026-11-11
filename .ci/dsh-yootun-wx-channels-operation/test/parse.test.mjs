@@ -85,6 +85,31 @@ test('post_list cancelFollowCount 字符串数字兼容（fixture 类型形态�
   assert.ok(page.works.every(work => typeof work.workId === 'string'))
 })
 
+test('post_list cover_url 只收 http(s)：官方错误文本不落库', () => {
+  const build = coverUrl => ({
+    objectId: 'wx-cover-1',
+    desc: {
+      media: [{ coverUrl, mediaType: 4, videoPlayLen: 10 }],
+      description: '封面口径',
+    },
+  })
+
+  // 2026-11-11 真机：官方该字段返回 "Operation failed."，不能当 URL 入库。
+  assert.equal(parsePostListItem(build('Operation failed.')).coverUrl, null)
+  assert.equal(parsePostListItem(build('')).coverUrl, null)
+  assert.equal(parsePostListItem(build(undefined)).coverUrl, null)
+  assert.equal(parsePostListItem(build('ftp://cdn.example/a.jpg')).coverUrl, null)
+  const good = 'https://finder.video.qq.com/251/20304/stodownload?encfilekey=a&token=b'
+  assert.equal(parsePostListItem(build(good)).coverUrl, good)
+  // 头像（auth_data）同样只收 http(s)。
+  const authPayload = headImgUrl => ({
+    errCode: 0,
+    data: { finderUser: { finderUsername: 'v2_finder', headImgUrl } },
+  })
+  assert.equal(parseAuthData(authPayload('Operation failed.')).avatar, null)
+  assert.equal(parseAuthData(authPayload('https://wx.qlogo.cn/a.jpg')).avatar, 'https://wx.qlogo.cn/a.jpg')
+})
+
 test('post_list 空列表样本：totalCount=0 空态', async () => {
   const page = parsePostListPage(await fixture('statistic_post_list.empty.sample.json'))
   assert.equal(page.totalCount, 0)

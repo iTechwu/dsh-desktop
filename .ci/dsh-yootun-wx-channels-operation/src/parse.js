@@ -118,7 +118,7 @@ export function parseAuthData(payload) {
   return {
     accountId: String(user.finderUsername),
     nickname: textOrNull(user.nickname),
-    avatar: textOrNull(user.headImgUrl),
+    avatar: urlOrNull(user.headImgUrl),
     fansCount: intOrNull(user.fansCount),
     feedsCount: intOrNull(user.feedsCount),
     isMasterFinder: typeof user.isMasterFinder === 'boolean' ? user.isMasterFinder : null,
@@ -144,7 +144,9 @@ export function parsePostListItem(item) {
     exportId: textOrNull(item.exportId),
     title: textOrNull(shortTitle),
     description: textOrNull(item.desc && item.desc.description),
-    coverUrl: textOrNull(media.coverUrl),
+    // 封面只收 http(s) URL：官方该字段在部分账号上返回错误文本（真机 2026-11-11
+    // 实测 49/50 为 "Operation failed."），非 URL 一律置 null，不把脏文本入库。
+    coverUrl: urlOrNull(media.coverUrl),
     publishTime: Number.isFinite(createTime) && createTime > 0 ? new Date(createTime * 1000).toISOString() : null,
     mediaType: intOrNull(media.mediaType),
     durationS: intOrNull(media.videoPlayLen),
@@ -550,6 +552,18 @@ function textOrNull(value) {
   if (value === null || value === undefined) return null
   const text = String(value).trim()
   return text ? text : null
+}
+
+/** URL 字段：仅接受 http(s) 绝对地址（官方部分账号把封面字段填错误文本，不入库）。 */
+export function urlOrNull(value) {
+  const text = textOrNull(value)
+  if (!text) return null
+  try {
+    const url = new URL(text)
+    return url.protocol === 'http:' || url.protocol === 'https:' ? text : null
+  } catch {
+    return null
+  }
 }
 
 function boolOrNull(value) {

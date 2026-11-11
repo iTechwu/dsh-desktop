@@ -12,14 +12,6 @@ import {
   summarizeFansTrend,
 } from './ui-format.js'
 
-const PROFILE_TABS = [
-  ['gender', '性别'],
-  ['device', '访问设备'],
-  ['age', '年龄分布'],
-  ['province', '省份分布'],
-  ['city', '城市分布'],
-]
-
 const WINDOWS = [['yesterday', '昨日'], ['last_7d', '近7天'], ['last_30d', '近30天']]
 
 function avatarText(account) {
@@ -135,9 +127,12 @@ export function AccountList({
 
 /** 账号数据 Tab（§9.4 三段：全部视频指标 / 关注者增长 / 关注者画像）。
  * 全宽独占布局：页内自带账号选择器（对齐抖音总览的账号下拉：有账号即显示，
- * 不因单账号隐藏），切换后三段数据随之刷新。 */
+ * 不因单账号隐藏），切换后三段数据随之刷新。
+ * 关注者画像（2026-11-11 真机反馈）：去掉维度 Tab 切换，改为 KPI 卡片组同屏展示——
+ * 性别/访问设备=环形图（中心总人数）+图例，年龄分布=柱状图带百分比标签，
+ * 省份/城市=横向条形两列卡片（对齐官方后台截图布局）。 */
 export function AccountTab({
-  window: windowKey, onWindow, overview, profile, profileKey, onProfileKey,
+  window: windowKey, onWindow, overview, profile,
   accounts, selectedId, onSelectAccount,
 }) {
   const availability = (overview && overview.availability) || {}
@@ -186,13 +181,15 @@ export function AccountTab({
         h('h3', null, '关注者画像'),
         h('span', { className: 'ywc-badge' }, profile && profile.day ? `截止 ${profile.day}` : '当前截止昨日'),
       ),
-      h('div', { className: 'ywc-profile-tabs', role: 'tablist', 'aria-label': '画像维度' },
-        PROFILE_TABS.map(([key, label]) => h('button', {
-          key: key, type: 'button', 'aria-selected': key === profileKey ? 'true' : 'false',
-          onClick: () => onProfileKey(key),
-        }, label)),
+      h('div', { className: 'ywc-profile-grid' },
+        profileDonutCard('性别分布', profile, 'gender'),
+        profileDonutCard('访问设备分布', profile, 'device'),
+        profileAgeCard(profile),
       ),
-      h('div', { className: 'ywc-bars' }, profileBars(profile, profileKey)),
+      h('div', { className: 'ywc-profile-grid ywc-profile-grid-2' },
+        profileBarsCard('省份分布', profile, 'province'),
+        profileBarsCard('城市分布', profile, 'city'),
+      ),
     ),
   )
 }
@@ -221,16 +218,85 @@ function fansCards(overview) {
   ))
 }
 
-function profileBars(profile, profileKey) {
-  const dimension = profile ? profile[profileKey] : null
-  const rows = normalizeProfileRows(dimension, profileKey)
-  if (!rows.length) return h('p', { className: 'ywc-empty', style: { padding: '0 12px 12px' } }, '该画像维度本次未提供')
+/** 画像卡片组（2026-11-11 真机反馈，对齐官方后台）：
+ * 环形图调色板参考官方风格（男蓝/女粉）；「未知」统一灰色；设备编码语义官方
+ * 未暴露（不臆造），显示「设备 1/2」。占比一律 count/sum 计算，总数 0 显示「—」。 */
+const DONUT_PALETTE = ['#4ea6ff', '#f47fb0', '#8b5cf6', '#f08a3c', '#2f9e44', '#d9a400', '#e0524a']
+const DONUT_UNKNOWN_COLOR = '#c0c6cf'
+
+function donutColor(name, index) {
+  return name === '未知' ? DONUT_UNKNOWN_COLOR : DONUT_PALETTE[index % DONUT_PALETTE.length]
+}
+
+function profileDonutCard(title, profile, dimension) {
+  const rows = normalizeProfileRows(profile ? profile[dimension] : null, dimension)
+  const total = rows.reduce((sum, [, value]) => sum + value, 0)
+  let acc = 0
+  const stops = rows.map(([name, value], index) => {
+    const start = total > 0 ? (acc / total) * 100 : 0
+    acc += value
+    const end = total > 0 ? (acc / total) * 100 : 0
+    return `${donutColor(name, index)} ${start.toFixed(2)}% ${end.toFixed(2)}%`
+  })
+  const background = total > 0 && stops.length
+    ? `conic-gradient(${stops.join(',')})`
+    : `conic-gradient(${DONUT_UNKNOWN_COLOR} 0% 100%)`
+  return h('div', { className: 'ywc-profile-card' },
+    h('div', { className: 'ywc-profile-card-title' }, title),
+    rows.length
+      ? h('div', { className: 'ywc-donut-row' },
+        h('div', {
+          className: 'ywc-donut', style: { background },
+          role: 'img', 'aria-label': `${title}：共 ${fmtCount(total)} 人`,
+        },
+          h('span', { className: 'ywc-donut-hole' },
+            h('b', null, fmtCount(total)),
+            h('i', null, '总人数'),
+          )),
+        h('ul', { className: 'ywc-donut-legend' },
+          rows.map(([name, value], index) => h('li', { key: name },
+            h('span', { className: 'ywc-donut-dot', style: { background: donutColor(name, index) }, 'aria-hidden': true }),
+            `${name} ${fmtCount(value)}人${total > 0 ? ` · ${Math.round(value / total * 100)}%` : ''}`,
+          ))))
+      : h('p', { className: 'ywc-empty', style: { padding: '0 4px 4px' } }, '该画像维度本次未提供'),
+  )
+}
+
+function profileAgeCard(profile) {
+  const rows = normalizeProfileRows(profile ? profile.age : null, 'age')
+  const total = rows.reduce((sum, [, value]) => sum + value, 0)
   const max = Math.max(1, ...rows.map(([, value]) => value))
-  return rows.map(([name, value]) => h('div', { className: 'ywc-bar-row', key: name },
-    h('span', null, name),
-    h('div', { className: 'ywc-bar-track' }, h('div', { className: 'ywc-bar-fill', style: { width: `${Math.round(value / max * 100)}%` } })),
-    h('span', { className: 'ywc-bar-value' }, `${value} 人`),
-  ))
+  return h('div', { className: 'ywc-profile-card' },
+    h('div', { className: 'ywc-profile-card-title' }, '年龄分布'),
+    rows.length
+      ? h('div', { className: 'ywc-col-chart', role: 'img', 'aria-label': `年龄分布：共 ${fmtCount(total)} 人` },
+        rows.map(([name, value]) => h('div', { className: 'ywc-col', key: name },
+          h('span', { className: 'ywc-col-value' }, total > 0 ? `${Math.round(value / total * 100)}%` : '—'),
+          h('div', {
+            className: 'ywc-col-bar',
+            style: { height: `${Math.max(4, Math.round(value / max * 100))}%` },
+            title: `${name} ${fmtCount(value)}人`,
+          }),
+          h('span', { className: 'ywc-col-label' }, name),
+        )))
+      : h('p', { className: 'ywc-empty', style: { padding: '0 4px 4px' } }, '该画像维度本次未提供'),
+  )
+}
+
+function profileBarsCard(title, profile, dimension) {
+  const rows = normalizeProfileRows(profile ? profile[dimension] : null, dimension)
+  const max = Math.max(1, ...rows.map(([, value]) => value))
+  return h('div', { className: 'ywc-profile-card' },
+    h('div', { className: 'ywc-profile-card-title' }, title),
+    rows.length
+      ? h('div', { className: 'ywc-bars', style: { padding: '0 4px 4px' } }, rows.map(([name, value]) =>
+        h('div', { className: 'ywc-bar-row', key: name },
+          h('span', null, name),
+          h('div', { className: 'ywc-bar-track' }, h('div', { className: 'ywc-bar-fill', style: { width: `${Math.round(value / max * 100)}%` } })),
+          h('span', { className: 'ywc-bar-value' }, fmtCount(value)),
+        )))
+      : h('p', { className: 'ywc-empty', style: { padding: '0 4px 4px' } }, '该画像维度本次未提供'),
+  )
 }
 
 /** 关注者总数折线（Demo 同款 SVG 折线）。 */

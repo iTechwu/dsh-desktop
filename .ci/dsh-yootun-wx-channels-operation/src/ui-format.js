@@ -111,27 +111,62 @@ export function sortWorks(works, sortState) {
     .map(entry => entry.work)
 }
 
-/** 来源分布行规范化：trafficSource JSON（§17.3）→ [{name, value}]，排除「全部」。 */
+/** 来源分布行规范化：trafficSource JSON（§17.3）→ [{name, value}]，排除「全部」。
+ * 缺失播放量保留 null（渲染「—」），不折算 0。 */
 export function normalizeTrafficRows(trafficSource) {
   const rows = trafficSource && Array.isArray(trafficSource.rows) ? trafficSource.rows : []
   return rows
     .filter(row => row && row.sourceType !== 999)
-    .map(row => ({ name: String(row.name || row.sourceKey), value: Number(row.playCount) || 0 }))
+    .map(row => {
+      const value = row.playCount
+      return {
+        name: String(row.name || row.sourceKey),
+        value: value === null || value === undefined || !Number.isFinite(Number(value))
+          ? null
+          : Number(value),
+      }
+    })
 }
 
-/** 留存行规范化：retention_trend（§17.3）→ [{s, v}]。 */
+/** 留存行规范化：retention_trend（§17.3）→ [{s, v}]。
+ *
+ * 键名兼容：`parse.js` 历史产出 `ratePct`，文档 §5.4 口径为 `rate_pct`；服务端
+ * `retention_trend` 是原样 JSON 存取（不做 key 转换），两种形状都可能出现在库里。
+ * 2026-11-11 review：只读 `rate_pct` 导致真机留存恒 0%。缺失值保留 null 显示「—」。
+ */
 export function normalizeRetentionPoints(retentionTrend) {
   const points = retentionTrend && Array.isArray(retentionTrend.points) ? retentionTrend.points : []
   return points
     .filter(point => point && Number.isFinite(Number(point.second)))
-    .map(point => ({ s: Number(point.second), v: Math.round(Number(point.rate_pct ?? 0)) }))
+    .map(point => {
+      const raw = point.rate_pct ?? point.ratePct
+      const numeric = raw === null || raw === undefined ? null : Number(raw)
+      return {
+        s: Number(point.second),
+        v: numeric === null || !Number.isFinite(numeric) ? null : Math.round(numeric),
+      }
+    })
 }
 
 // 画像维度标签映射（真机 dim 驱动，2026-11-10；不臆造官方未暴露语义）。
+// 未知项官方编码为 `unknow`（少一个 w），历史/兼容口径也见过 `unknown`，两者都
+// 显示「未知」，不能让英文编码透出到界面（2026-11-11 真机反馈）。
+const UNKNOWN_LABELS = new Set(['unknow', 'unknown'])
+function isUnknownKey(key) {
+  return UNKNOWN_LABELS.has(String(key || '').trim().toLowerCase())
+}
+
 const PROFILE_LABEL_MAPS = {
-  gender: { 1: '男', 2: '女', unknow: '未知' },
-  age: row => String(row.key || '').replace(/^fage_/, '').replace(/_/g, '-') + '岁',
-  device: row => `设备 ${row.key}`,
+  gender: { 1: '男', 2: '女', unknow: '未知', unknown: '未知' },
+  age: row => {
+    const key = String(row.key || '')
+    if (isUnknownKey(key)) return '未知'
+    const range = key.replace(/^fage_/, '')
+    // `fage_50_+` → `50+'；`fage_01_17` → `1-17岁`（去前导零）。
+    if (range.endsWith('_+')) return `${range.slice(0, -2).replace(/^0+/, '')}岁+`
+    return `${range.split('_').map(part => part.replace(/^0+(?=\d)/, '')).join('-')}岁`
+  },
+  device: row => (isUnknownKey(row.key) ? '未知' : `设备 ${row.key}`),
 }
 
 /** 画像维度行规范化：[{key,label,count}] → [[label, count]]。
@@ -141,13 +176,63 @@ const PROFILE_LABEL_MAPS = {
 export function normalizeProfileRows(rows, dimension) {
   const map = dimension ? PROFILE_LABEL_MAPS[dimension] : null
   return (Array.isArray(rows) ? rows : [])
-    .filter(row => row && row.key && row.key !== '@_all' && row.key !== '@_all')
+    .filter(row => row && row.key && row.key !== '@_all')
     .map(row => {
+      // 未知编码在任一维度（含 province/city）都必须显示「未知」，不能透出英文。
+      if (isUnknownKey(row.key)) return ['未知', Number(row.count) || 0]
       let label = row.label || row.key
       if (typeof map === 'function') label = map(row)
       else if (map && map[String(row.key)] !== undefined) label = map[String(row.key)]
       return [label, Number(row.count) || 0]
     })
+}
+
+/**
+ * 作品标题口径（2026-11-11 真机反馈）：官方后台列表显示的标题是发布文案
+ * （parse 的 description），系统短标题（title，desc.shortTitle）仅部分作品
+ * 有值且与后台展示不一致；部分作品两者皆缺 → 「—」。
+ */
+export function workTitle(work) {
+  if (!work || typeof work !== 'object') return null
+  const description = typeof work.description === 'string' ? work.description.trim() : ''
+  if (description) return description
+  const title = typeof work.title === 'string' ? work.title.trim() : ''
+  return title || null
+}
+
+/** 封面/头像 URL 防御：仅 http(s)，解析失败返回 null（对齐抖音 safeAvatarSrc）。 */
+export function safeAvatarSrc(value) {
+  if (typeof value !== 'string') return null
+  const trimmed = value.trim()
+  if (!trimmed) return null
+  try {
+    const url = new URL(trimmed)
+    return url.protocol === 'http:' || url.protocol === 'https:' ? trimmed : null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * 作品原始链接域名白名单（对齐抖音 safeWorkUrl）：仅 http(s) + 视频号官方域
+ * （channels.weixin.qq.com / weixin.qq.com）。不满足返回 null，标题按纯文本展示。
+ * 注意：官方列表接口（statistic/post_list）不提供公开观看 URL，objectId 无法
+ * 构造公开页（exportId 是会过期的加密 ID，分享链 weixin.qq.com/sph/* 需官方分享
+ * 动作获取）——当前 works.list 无 url 字段，本机制就位，待采集侧补分享链后生效。
+ */
+export function safeWorkUrl(value) {
+  if (typeof value !== 'string') return null
+  const trimmed = value.trim()
+  if (!trimmed) return null
+  let url
+  try {
+    url = new URL(trimmed)
+  } catch {
+    return null
+  }
+  if (url.protocol !== 'https:' && url.protocol !== 'http:') return null
+  if (url.hostname !== 'channels.weixin.qq.com' && url.hostname !== 'weixin.qq.com') return null
+  return trimmed
 }
 
 /** 关注者增长窗口聚合 → 指标卡四项（净增/新增/取消/总数）。 */

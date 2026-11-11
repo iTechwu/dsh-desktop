@@ -146,7 +146,8 @@ const STYLES = `
 .ywc-right .ywc-work-panel { flex:1; min-height:0; display:flex; flex-direction:column; }
 .ywc-right .ywc-work-panel .ywc-table-wrap { flex:1; }
 .ywc-right .ywc-account-page { flex:1; min-height:0; overflow:auto; }
-.ywc-toolbar { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; padding:12px; }
+/* 工具栏纵向布局（2026-11-11 真机反馈）：第一行按钮组、第二行采集进度行（按钮下方）。 */
+.ywc-toolbar { display:flex; flex-direction:column; align-items:stretch; gap:8px; padding:12px; }
 .ywc-toolbar-left, .ywc-toolbar-right { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
 .ywc-field { display:inline-flex; align-items:center; gap:6px; color:var(--ywc-muted); font-size:var(--dsh-content-font-size-secondary,13px); }
 .ywc-input, .ywc-select { min-height:36px; padding:0 10px; border:1px solid var(--ywc-border); border-radius:6px; background:var(--ywc-surface); color:var(--ywc-text); font:inherit; font-size:var(--dsh-content-font-size-secondary,13px); }
@@ -166,16 +167,22 @@ const STYLES = `
 /* 空态（对齐 ydo-state）：无数据时不渲染表格框架，只显示居中提示。 */
 .ywc-table-state { display:grid; min-height:200px; flex:1; place-items:center; align-content:center; gap:10px; color:var(--ywc-muted); font-size:var(--dsh-content-font-size,14px); text-align:center; }
 .ywc-table-state p { margin:0; max-width:640px; line-height:1.6; }
-.ywc-table { min-width:1720px; width:100%; border-collapse:collapse; }
-.ywc-table th, .ywc-table td { padding:10px; border-bottom:1px solid var(--ywc-border); text-align:left; white-space:nowrap; font-size:var(--dsh-content-font-size-secondary,13px); }
+/* 作品列表（2026-11-11 真机反馈）：无操作列（双击行开详情）、无 ID 副行，列宽收紧
+ * 但单元格保持 nowrap 不换行；整行 cursor:pointer 提示可双击。 */
+.ywc-table { min-width:1480px; width:100%; border-collapse:collapse; }
+.ywc-table th, .ywc-table td { padding:9px 10px; border-bottom:1px solid var(--ywc-border); text-align:left; white-space:nowrap; font-size:var(--dsh-content-font-size-secondary,13px); }
 .ywc-table th { position:sticky; top:0; z-index:1; background: color-mix(in srgb, var(--ywc-brand) 5%, var(--ywc-surface-2)); color:var(--ywc-muted); font-weight:600; }
+.ywc-table tbody tr { cursor:pointer; }
 .ywc-table tbody tr:hover { background: color-mix(in srgb, var(--ywc-brand) 6%, transparent); }
-.ywc-work-cell { display:grid; grid-template-columns:54px minmax(220px,320px); gap:10px; align-items:center; }
-.ywc-cover { position:relative; width:54px; height:72px; display:grid; place-items:center; border-radius:5px; overflow:hidden; background:var(--ywc-surface-2); color:var(--ywc-muted); font-size:12px; text-align:center; }
-.ywc-cover span { position:absolute; right:3px; bottom:3px; padding:1px 4px; border-radius:3px; background:rgba(0,0,0,.65); color:#fff; }
-.ywc-work-title { min-width:0; max-width:320px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:650; }
-.ywc-work-sub { margin-top:3px; color:var(--ywc-muted); font-size:12px; }
-.ywc-link { border:0; background:transparent; color:var(--ywc-brand); font-weight:650; padding:0; }
+.ywc-work-cell { display:grid; grid-template-columns:54px minmax(180px,240px); gap:10px; align-items:center; }
+/* 封面（对齐抖音 WorkCover）：img 铺满 + 右下角时长角标；失败/缺失占位「封面」。 */
+.ywc-cover { position:relative; width:54px; height:72px; display:grid; place-items:center; border-radius:5px; overflow:hidden; background:var(--ywc-surface-2); color:var(--ywc-muted); font-size:12px; text-align:center; flex:none; }
+.ywc-cover-large { width:110px; height:146px; border-radius:7px; }
+.ywc-cover-img { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; display:block; }
+.ywc-cover-fallback-text { padding:0 4px; }
+.ywc-cover-duration { position:absolute; right:3px; bottom:3px; padding:1px 4px; border-radius:3px; background:rgba(0,0,0,.65); color:#fff; font-size:12px; }
+.ywc-work-title { min-width:0; max-width:240px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:650; color:inherit; text-decoration:none; }
+a.ywc-work-title:hover { text-decoration:underline; color:var(--ywc-brand); }
 .ywc-empty { color:var(--ywc-muted); font-size:var(--dsh-content-font-size-secondary,13px); }
 .ywc-account-page { display:flex; flex-direction:column; gap:12px; }
 .ywc-section-title { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:12px 12px 0; }
@@ -187,23 +194,43 @@ const STYLES = `
 .ywc-chart-body { padding:12px; }
 .ywc-chart-legend { display:flex; gap:12px; flex-wrap:wrap; margin-bottom:8px; color:var(--ywc-muted); font-size:var(--dsh-content-font-size-secondary,13px); }
 .ywc-chart-legend i { display:inline-block; width:10px; height:3px; margin-right:5px; vertical-align:middle; background:var(--ywc-brand); }
-.ywc-svg { display:block; width:100%; height:180px; }
+/* height:auto 让 SVG 按 viewBox 比例自适应：固定 height 会让宽视口下的图形被
+   「信箱化」缩小并水平居中（2026-11-11 review）。 */
+.ywc-svg { display:block; width:100%; height:auto; }
 .ywc-bars { display:grid; gap:8px; padding:12px; }
 .ywc-bar-row { display:grid; grid-template-columns:84px minmax(0,1fr) 62px; gap:8px; align-items:center; font-size:var(--dsh-content-font-size-secondary,13px); }
 .ywc-bar-track { height:8px; border-radius:4px; background:var(--ywc-surface-2); overflow:hidden; }
 .ywc-bar-fill { height:100%; border-radius:4px; background: linear-gradient(90deg, color-mix(in srgb, var(--ywc-brand) 62%, transparent), var(--ywc-brand-line)); box-shadow: 0 0 12px color-mix(in srgb, var(--ywc-brand) 18%, transparent); }
 .ywc-bar-value { text-align:right; color:var(--ywc-muted); }
-.ywc-profile-tabs { display:flex; gap:4px; padding:10px 12px 0; border-bottom:1px solid var(--ywc-border); overflow-x:auto; }
-.ywc-profile-tabs button { border:0; border-bottom:2px solid transparent; padding:8px 9px; background:transparent; color:var(--ywc-muted); font-size:var(--dsh-content-font-size-secondary,13px); white-space:nowrap; }
-.ywc-profile-tabs button[aria-selected="true"] { border-bottom-color:var(--ywc-brand-line); color:var(--ywc-brand); font-weight:650; }
+/* 关注者画像卡片组（2026-11-11 真机反馈）：去 Tab 切换，同屏卡片布局——
+ * 性别/设备环形图（中心总人数）+图例、年龄柱状图（柱顶百分比）、省市横向条形两列卡。 */
+.ywc-profile-grid { display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:10px; padding:12px; }
+.ywc-profile-grid-2 { grid-template-columns:repeat(2, minmax(0,1fr)); }
+.ywc-profile-card { min-width:0; padding:12px; border:1px solid var(--ywc-border); border-radius:8px; background: color-mix(in srgb, var(--ywc-surface) 94%, transparent); }
+.ywc-profile-card-title { margin-bottom:10px; color:var(--ywc-muted); font-size:var(--dsh-content-font-size-secondary,13px); }
+.ywc-donut-row { display:flex; align-items:center; gap:14px; }
+.ywc-donut { position:relative; width:112px; height:112px; flex:none; border-radius:50%; }
+.ywc-donut-hole { position:absolute; inset:20px; display:grid; place-content:center; justify-items:center; gap:1px; border-radius:50%; background:var(--ywc-surface); text-align:center; }
+.ywc-donut-hole b { font-size:16px; font-weight:650; font-variant-numeric: tabular-nums; }
+.ywc-donut-hole i { font-style:normal; color:var(--ywc-muted); font-size:12px; }
+.ywc-donut-legend { display:grid; gap:6px; margin:0; padding:0; list-style:none; color:var(--ywc-text); font-size:var(--dsh-content-font-size-secondary,13px); min-width:0; }
+.ywc-donut-dot { display:inline-block; width:8px; height:8px; margin-right:6px; border-radius:2px; vertical-align:middle; }
+.ywc-col-chart { display:flex; align-items:stretch; gap:8px; height:150px; padding-top:4px; }
+.ywc-col { flex:1; min-width:0; height:100%; display:flex; flex-direction:column; align-items:center; justify-content:flex-end; gap:4px; }
+.ywc-col-value { color:var(--ywc-text); font-size:12px; font-variant-numeric:tabular-nums; }
+.ywc-col-bar { width:56%; min-height:4px; border-radius:3px 3px 0 0; background: linear-gradient(180deg, color-mix(in srgb, var(--ywc-brand) 62%, transparent), var(--ywc-brand-line)); }
+.ywc-col-label { color:var(--ywc-muted); font-size:12px; white-space:nowrap; }
 .ywc-modal { position:fixed; inset:0; z-index:20; display:none; place-items:center; padding:24px; background:rgba(31,35,41,.42); backdrop-filter:blur(8px); }
 .ywc-modal.open { display:grid; }
 .ywc-dialog { width:min(1080px,100%); max-height:calc(100vh - 48px); overflow:auto; border:1px solid var(--ywc-border); border-radius:8px; background:var(--ywc-surface); box-shadow:0 24px 72px rgba(0,0,0,.22); }
 .ywc-dialog-header { position:sticky; top:0; z-index:2; display:flex; align-items:flex-start; justify-content:space-between; gap:12px; padding:14px 16px; border-bottom:1px solid var(--ywc-border); background:var(--ywc-surface); }
 .ywc-dialog-header h2, .ywc-dialog-header h3 { margin:0; }
 .ywc-dialog-body { display:grid; gap:12px; padding:14px 16px 18px; }
-.ywc-dialog-grid { display:grid; grid-template-columns:150px minmax(0,1fr); gap:14px; }
-.ywc-detail-cover { width:150px; height:200px; display:grid; place-items:center; border-radius:7px; background:var(--ywc-surface-2); color:var(--ywc-muted); }
+/* 详情头部（2026-11-11 真机反馈）：封面 + 元信息一行，KPI 卡片移出头部、
+ * 以 ywc-metric-grid 铺满整行（左右填满）。 */
+.ywc-dialog-grid { display:grid; grid-template-columns:110px minmax(0,1fr); gap:14px; align-items:center; }
+.ywc-dialog-meta { min-width:0; display:grid; gap:6px; }
+.ywc-dialog-meta p { margin:0; }
 .ywc-metric-grid { display:grid; grid-template-columns:repeat(4, minmax(0,1fr)); gap:8px; }
 .ywc-detail-section { border-top:1px dashed var(--ywc-border); padding-top:10px; }
 .ywc-detail-section h4 { margin:0 0 8px; font-size:var(--dsh-content-font-size,14px); }
@@ -211,8 +238,8 @@ const STYLES = `
 .ywc-note { padding:0 16px 16px; color:var(--ywc-muted); font-size:var(--dsh-content-font-size-secondary,13px); line-height:1.7; }
 .ywc-badge { display:inline-flex; align-items:center; min-height:22px; padding:0 7px; border-radius:4px; background:var(--ywc-surface-2); color:var(--ywc-muted); font-size:var(--dsh-content-font-size-secondary,13px); }
 /* 窄屏（对齐抖音 1120 断点行为）：body 纵向滚动，表格区域固定 60vh 内滚。 */
-@media (max-width:1080px) { .ywc-body { display:block; overflow:auto; } .ywc-right { overflow:visible; } .ywc-right .ywc-work-panel .ywc-table-wrap { max-height:60vh; } .ywc-summary-grid, .ywc-kpi-grid { grid-template-columns:repeat(3,minmax(0,1fr)); } .ywc-two-column { grid-template-columns:1fr; } .ywc-dialog-grid { grid-template-columns:1fr; } .ywc-detail-cover { width:100%; height:180px; } }
-@media (max-width:680px) { .ywc-header, .ywc-body, .ywc-tabs { padding-left:12px; padding-right:12px; } .ywc-summary-grid, .ywc-kpi-grid, .ywc-metric-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } .ywc-title p { display:none; } }
+@media (max-width:1080px) { .ywc-body { display:block; overflow:auto; } .ywc-right { overflow:visible; } .ywc-right .ywc-work-panel .ywc-table-wrap { max-height:60vh; } .ywc-summary-grid, .ywc-kpi-grid { grid-template-columns:repeat(3,minmax(0,1fr)); } .ywc-two-column { grid-template-columns:1fr; } .ywc-dialog-grid { grid-template-columns:1fr; } .ywc-profile-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+@media (max-width:680px) { .ywc-header, .ywc-body, .ywc-tabs { padding-left:12px; padding-right:12px; } .ywc-summary-grid, .ywc-kpi-grid, .ywc-metric-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } .ywc-profile-grid { grid-template-columns:1fr; } .ywc-title p { display:none; } }
 `
 
 function useHost() {
@@ -308,7 +335,6 @@ function WxWorkbench({ host, initial = null }) {
     initial && initial.summaryOverview !== undefined ? initial.summaryOverview : initial ? initial.overview : null,
   )
   const [profile, setProfile] = useState((initial && initial.profile) || null)
-  const [profileKey, setProfileKey] = useState((initial && initial.profileKey) || 'gender')
   const [windowKey, setWindowKey] = useState((initial && initial.windowKey) || 'last_7d')
   // 表头排序（对齐抖音）：{key, direction} 三态循环，客户端排序只作用于已入库数据。
   const [sort, setSort] = useState(DEFAULT_SORT_STATE)
@@ -686,7 +712,7 @@ function WxWorkbench({ host, initial = null }) {
             )
             : h(AccountTab, {
               window: windowKey, onWindow: setWindowKey,
-              overview, profile, profileKey, onProfileKey: setProfileKey,
+              overview, profile,
               accounts, selectedId,
               onSelectAccount: accountId => setSelectedId(accountId),
             }),

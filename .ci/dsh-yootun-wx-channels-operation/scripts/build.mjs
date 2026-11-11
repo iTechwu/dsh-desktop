@@ -30,7 +30,7 @@ const loadModule = async (file, label) => {
   let text = await readFile(new URL(`src/${file}`, root), 'utf8')
   text = text
     .replace(/^import \{[\s\S]*?\} from '\.\/ui-format\.js'\n/m, '')
-    .replace(/^import \{ createElement as h \} from 'react'\n/m, '')
+    .replace(/^import \{[\s\S]*?\} from 'react'\n/m, '')
     .replace(/^const React = require\('react'\)\n/m, '')
     .replace(/^const \{ createElement: h \} = React\n/m, '')
   // @deepseek-ai/dsh-client-ui-primitives 的 require 保留（宿主运行时注入器解析，
