@@ -308,3 +308,12 @@ test('render smoke（真实形状）：详情弹层含来源/留存/缺口不崩
   // 加权完播率提示保留（§9.2 规范）。
   assert.ok(summaryCards.includes('按播放加权计算'))
 })
+
+test('batchReasonText：服务端确定性业务错误给可行动文案（2026-11-11 真机链路排查）', () => {
+  assert.equal(batchReasonText('ACCOUNT_NOT_FOUND'), '云端缺少账号记录，请重新扫码登录后重试')
+  assert.equal(batchReasonText('WX_TOOL_UNAVAILABLE'), '桌面未接通视频号工具通道，请升级客户端后重试')
+  // 既有映射不回归；未知稳定码仍收敛通用文案。
+  assert.equal(batchReasonText('session_expired'), '会话已过期，请重新扫码')
+  assert.equal(batchReasonText('SOMETHING_ELSE'), '采集失败')
+  assert.equal(batchReasonText(''), '')
+})

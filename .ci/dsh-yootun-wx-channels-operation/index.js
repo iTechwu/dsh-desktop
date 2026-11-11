@@ -100,7 +100,7 @@ export function apply(ctx, overrides = {}) {
             case 'accounts.list':
               return send(res, 200, await handleAccountsList(deps, toolCtx))
             case 'account.beginLogin':
-              return send(res, 200, await handleBeginLogin(deps, cleanId(body.accountId)))
+              return send(res, 200, await handleBeginLogin(ctx, deps, cleanId(body.accountId)))
             case 'account.loginStatus':
               return send(res, 200, handleLoginStatus(cleanId(body.accountId)))
             case 'account.refreshLoginQr':
@@ -214,7 +214,7 @@ async function handleAccountsList(deps, toolCtx) {
 }
 
 /** 开始扫码登录：有头系统 Chrome；状态保存在宿主进程内，页面轮询 account.loginStatus。 */
-function handleBeginLogin(deps, accountId) {
+function handleBeginLogin(ctx, deps, accountId) {
   const key = accountId || `pending-${Date.now()}`
   if (loginRuns.has(key) && loginRuns.get(key).state !== 'finished') {
     return { status: 'ok', loginKey: key, state: loginRuns.get(key).state }
@@ -229,45 +229,52 @@ function handleBeginLogin(deps, accountId) {
       run.state = 'waiting_confirm'
       run.updatedAt = new Date().toISOString()
     },
-  }).then(result => {
+  }).then(async result => {
     run.updatedAt = new Date().toISOString()
     if (result.status === 'ok') {
-      run.state = 'ok'
       run.accountId = result.accountId
       run.profile = result.profile || null
       // 登录成功即上报账号资料（upsert；只带 vault:// 引用，不带任何凭证）。
-      void (async () => {
-        try {
-          const toolCtx = deps.tools || null
-          if (!toolCtx) return
-          const profile = result.profile || {}
-          await callTool(toolCtx, 'wx_channels_account_save', {
+      // 工具上下文与路由层同一兜底（deps.tools 仅测试注入，生产恒为 null）：这里曾
+      // 写成 `deps.tools || null` + 静默 return，生产环境每次登录的 account_save 都被
+      // 跳过——云端永无账号行，后续 run_start 必然 ACCOUNT_NOT_FOUND（表象：采集
+      // N/N 完成后失败，服务端 account_list 为空、save 零调用）。
+      // 顺序对齐抖音 reportAccountSave：先完成 save 再把状态翻 ok——页面在首个非
+      // waiting 轮询即停，若先翻 ok，save 失败原因永远来不及出现在 loginStatus 里。
+      try {
+        const toolCtx = deps.tools || ctx
+        const profile = result.profile || {}
+        await callTool(toolCtx, 'wx_channels_account_save', {
+          accountId: result.accountId,
+          ...(profile.nickname ? { nickname: profile.nickname } : {}),
+          ...(profile.avatar ? { avatar: profile.avatar } : {}),
+          ...(Number.isFinite(profile.fansCount) ? { followerTotalCount: profile.fansCount } : {}),
+          ...(Number.isFinite(profile.feedsCount) ? { feedCount: profile.feedsCount } : {}),
+          ...(profile.isMasterFinder !== null && profile.isMasterFinder !== undefined
+            ? { isMasterFinder: profile.isMasterFinder }
+            : {}),
+          sessionRef: paths(deps.root).vaultRef(result.accountId),
+          idempotencyKey: accountSaveIdempotencyKey(result.accountId),
+        })
+        const seq = Number((await deps.getAccount(result.accountId, deps.root))?.sessionSeq || 0)
+        if (seq > 0) {
+          await callTool(toolCtx, 'wx_channels_session_status_report', {
             accountId: result.accountId,
-            ...(profile.nickname ? { nickname: profile.nickname } : {}),
-            ...(profile.avatar ? { avatar: profile.avatar } : {}),
-            ...(Number.isFinite(profile.fansCount) ? { followerTotalCount: profile.fansCount } : {}),
-            ...(Number.isFinite(profile.feedsCount) ? { feedCount: profile.feedsCount } : {}),
-            ...(profile.isMasterFinder !== null && profile.isMasterFinder !== undefined
-              ? { isMasterFinder: profile.isMasterFinder }
-              : {}),
+            sessionStatus: 'ok',
+            sessionSeq: seq,
+            checkedAt: new Date().toISOString(),
             sessionRef: paths(deps.root).vaultRef(result.accountId),
-            idempotencyKey: accountSaveIdempotencyKey(result.accountId),
+            idempotencyKey: sessionIdempotencyKey(result.accountId, seq),
           })
-          const seq = Number((await deps.getAccount(result.accountId, deps.root))?.sessionSeq || 0)
-          if (seq > 0) {
-            await callTool(toolCtx, 'wx_channels_session_status_report', {
-              accountId: result.accountId,
-              sessionStatus: 'ok',
-              sessionSeq: seq,
-              checkedAt: new Date().toISOString(),
-              sessionRef: paths(deps.root).vaultRef(result.accountId),
-              idempotencyKey: sessionIdempotencyKey(result.accountId, seq),
-            })
-          }
-        } catch (error) {
-          run.reason = safeErrorCode(error) // 上报失败不阻断本地登录成功。
         }
-      })()
+        run.reason = null
+      } catch (error) {
+        // save 失败不回滚本地登录（本地登录态已有效），但必须记录并透出：
+        // 静默吞掉会让「本地已登录、远端无账号」的漂移既无法察觉也无法诊断
+        // （采集前 ensureRemoteAccount 仍会补一次 upsert 自愈）。
+        run.reason = safeErrorCode(error)
+      }
+      run.state = 'ok'
     } else if (result.status === 'timeout') {
       run.state = 'timeout'
       run.reason = 'login_timeout'

@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 
-import { checkCollectionReadiness, createBatchCollectController, progressFromEvent } from '../src/runner.js'
+import { checkCollectionReadiness, createBatchCollectController, ensureRemoteAccount, progressFromEvent } from '../src/runner.js'
 import { loginWithQrCode, probeSession } from '../src/session.js'
 
 const sleepImmediate = async () => {}
@@ -239,5 +239,89 @@ test('probeSession：无 storage_state → expired；假 driver 读出资料 →
   const missing = await probeSession({ accountId: 'ghost', root, driver: { chromium: { launch: async () => { throw new Error('should not launch') } } } })
   assert.equal(missing.status, 'expired')
   assert.equal(missing.reason, 'storage_state_missing')
+  await rm(root, { recursive: true, force: true })
+})
+
+test('ensureRemoteAccount：无本地记录时只发三元组 upsert（字段缺值不带，绝无 undefined）', async () => {
+  const root = await tempRoot()
+  const calls = []
+  const events = []
+  const outcome = await ensureRemoteAccount(async (name, args) => { calls.push({ name, args }) }, 'acc-heal', {
+    root,
+    onProgress: event => events.push(event),
+  })
+  assert.equal(outcome.ok, true)
+  assert.equal(outcome.error, null)
+  assert.deepEqual(events, [{ phase: 'account_sync' }])
+  assert.equal(calls.length, 1)
+  assert.equal(calls[0].name, 'wx_channels_account_save')
+  assert.deepEqual(Object.keys(calls[0].args).sort(), ['accountId', 'idempotencyKey', 'sessionRef'])
+  assert.equal(calls[0].args.accountId, 'acc-heal')
+  assert.ok(String(calls[0].args.sessionRef).startsWith('vault://wx-channels/'))
+  await rm(root, { recursive: true, force: true })
+})
+
+test('ensureRemoteAccount：本地记录字段带齐；save 失败只记 account_sync_failed 不抛出', async () => {
+  const root = await tempRoot()
+  await writeFile(join(root, 'accounts.json'), JSON.stringify({
+    version: 1,
+    accounts: {
+      'acc-heal2': {
+        accountId: 'acc-heal2',
+        nickname: '测试号',
+        avatar: 'https://example.com/a.jpg',
+        followerTotalCount: 10,
+        feedCount: 25,
+      },
+    },
+  }))
+  const calls = []
+  const outcome = await ensureRemoteAccount(async (name, args) => { calls.push({ name, args }) }, 'acc-heal2', { root })
+  assert.equal(outcome.ok, true)
+  assert.deepEqual(calls[0].args, {
+    accountId: 'acc-heal2',
+    sessionRef: 'vault://wx-channels/acc-heal2',
+    idempotencyKey: calls[0].args.idempotencyKey,
+    nickname: '测试号',
+    avatar: 'https://example.com/a.jpg',
+    followerTotalCount: 10,
+    feedCount: 25,
+  })
+
+  const events = []
+  const failure = await ensureRemoteAccount(async () => {
+    const error = new Error('{"error":{"code":"ACCOUNT_NOT_FOUND"}}')
+    error.code = 'ACCOUNT_NOT_FOUND'
+    throw error
+  }, 'acc-heal2', { root, onProgress: event => events.push(event) })
+  assert.equal(failure.ok, false)
+  assert.equal(failure.error, 'ACCOUNT_NOT_FOUND')
+  assert.deepEqual(events, [
+    { phase: 'account_sync' },
+    { phase: 'account_sync_failed', error: 'ACCOUNT_NOT_FOUND' },
+  ])
+  await rm(root, { recursive: true, force: true })
+})
+
+test('ensureRemoteAccount：null 指标不得折算 0 上报（NULL ≠ 0，review P1）', async () => {
+  const root = await tempRoot()
+  await writeFile(join(root, 'accounts.json'), JSON.stringify({
+    version: 1,
+    accounts: {
+      'acc-null-metrics': {
+        accountId: 'acc-null-metrics',
+        nickname: '测试号',
+        followerTotalCount: null,
+        feedCount: null,
+      },
+    },
+  }))
+  const calls = []
+  const outcome = await ensureRemoteAccount(async (name, args) => { calls.push({ name, args }) }, 'acc-null-metrics', { root })
+  assert.equal(outcome.ok, true)
+  // null 若被 Number() 折算成 0，幂等 upsert 会把云端真实指标覆盖为 0。
+  assert.ok(!('followerTotalCount' in calls[0].args), 'followerTotalCount 为 null 时不得上报')
+  assert.ok(!('feedCount' in calls[0].args), 'feedCount 为 null 时不得上报')
+  assert.equal(calls[0].args.nickname, '测试号')
   await rm(root, { recursive: true, force: true })
 })

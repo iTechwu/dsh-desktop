@@ -462,7 +462,11 @@ function WxWorkbench({ host, initial = null }) {
         if (status.state === 'ok') {
           stopLoginPolling()
           setLogin(null)
-          notify('登录成功')
+          // 本地登录成功但远端账号上报失败时透出原因（对齐抖音 saveError 消费）：
+          // 采集前 ensureRemoteAccount 会自动补报，这里只提示不阻断。
+          notify(status.reason
+            ? `登录成功，但云端账号上报失败（采集时会自动补报）：${reasonText(status.reason)}`
+            : '登录成功')
           await refreshAccounts()
         } else if (status.state === 'idle') {
           stopLoginPolling()
@@ -726,6 +730,9 @@ function reasonText(reason) {
     pending_account: '待升级账号',
     collect_busy: '采集互斥',
     session_expired: '会话失效',
+    // 服务端确定性业务错误（2026-11-11 真机链路排查）：给可行动文案而非「原因未知」。
+    ACCOUNT_NOT_FOUND: '云端缺少账号记录，请重新扫码登录后重试',
+    WX_TOOL_UNAVAILABLE: '桌面未接通视频号工具通道，请升级客户端后重试',
   }
   // 未知稳定码收敛为通用文案（对齐 batchReasonText），不把原始错误码透给业务用户。
   return map[reason] || '原因未知'

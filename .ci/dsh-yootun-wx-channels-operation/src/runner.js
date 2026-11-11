@@ -24,8 +24,8 @@ import {
 import { createIngestClient, ingestCollectedData, resolveClientStatus } from './ingest.js'
 import { SessionInvalidError } from './session-errors.js'
 import { markSessionExpired, markSessionOk, probeSession, refreshSessionState } from './session.js'
-import { getAccount, hasStorageState } from './state.js'
-import { callTool, sessionIdempotencyKey, safeErrorCode } from './tools-client.js'
+import { getAccount, hasStorageState, paths, stateRoot } from './state.js'
+import { accountSaveIdempotencyKey, callTool, sessionIdempotencyKey, safeErrorCode } from './tools-client.js'
 
 export const DEFAULT_MAX_PAGES = 50
 const OPEN_TIMEOUT_MS = 60_000
@@ -43,6 +43,55 @@ export async function checkCollectionReadiness({ accountId, root, busy = false }
   if (!(await hasStorageState(accountId, root))) return { ready: false, reason: 'storage_state_missing' }
   if (busy) return { ready: false, reason: 'collect_busy' }
   return { ready: true, reason: null, record }
+}
+
+/**
+ * 远端账号自愈（镜像抖音 ensureRemoteAccount）：登录时的 account_save 可能失败
+ * （MCP 尚未就绪、路由未生效、瞬时故障，或 2026-11-11 前宿主 `deps.tools || null`
+ * 接线缺陷直接静默跳过），此时本地登录态照常有效而服务端缺账号行，后续 run_start
+ * 会被 ACCOUNT_NOT_FOUND 确定性拒绝（表象：采集 N/N 完成后失败）。account_save 是
+ * 幂等 upsert 且只带 vault:// 不透明引用，采集前补一次是安全的；失败**不阻断**采集
+ * ——账号已在远端时照常采集，真缺失时由 run_start 给出确定错误（结果经 account_sync
+ * 事件可诊断）。
+ *
+ * @returns {Promise<{ ok: boolean, error: string | null }>}
+ */
+export async function ensureRemoteAccount(call, accountId, { root = stateRoot(), onProgress = null } = {}) {
+  const emit = event => { if (onProgress) onProgress(event) }
+  emit({ phase: 'account_sync' })
+  try {
+    const record = await getAccount(accountId, root).catch(() => null)
+    // 与登录侧 account_save 同一约束：字段缺值就不带，绝不发 undefined 属性
+    // （宿主 snapshot 校验会整调用拒绝，而不是忽略该字段）。
+    const payload = {
+      accountId,
+      sessionRef: paths(root).vaultRef(accountId),
+      idempotencyKey: accountSaveIdempotencyKey(accountId),
+    }
+    const nickname = record && record.nickname
+    if (typeof nickname === 'string' && nickname) payload.nickname = nickname
+    const avatar = record && record.avatar
+    if (typeof avatar === 'string' && avatar) payload.avatar = avatar
+    // record 缺失时 Number(null) === 0 会把 0 值误当有效指标，只有记录存在才取数；
+    // 且解析规范「缺失字段一律 null（NULL ≠ 0）」：null 不得折算成 0 上报，
+    // 否则幂等 upsert 会把云端真实指标覆盖为 0（review P1）。
+    if (record) {
+      if (record.followerTotalCount != null) {
+        const followerTotalCount = Number(record.followerTotalCount)
+        if (Number.isFinite(followerTotalCount)) payload.followerTotalCount = followerTotalCount
+      }
+      if (record.feedCount != null) {
+        const feedCount = Number(record.feedCount)
+        if (Number.isFinite(feedCount)) payload.feedCount = feedCount
+      }
+    }
+    await call('wx_channels_account_save', payload)
+    return { ok: true, error: null }
+  } catch (error) {
+    const reason = safeReason(error)
+    emit({ phase: 'account_sync_failed', error: reason })
+    return { ok: false, error: reason }
+  }
 }
 
 /**
@@ -89,6 +138,10 @@ export async function runCollection({
   if (session.sessionStatus !== 'ok') {
     return { status: 'failed', runId: null, reason: session.sessionStatus === 'expired' ? 'session_expired' : 'probe_failed' }
   }
+
+  // 1.5) 远端账号自愈（幂等 upsert，失败不阻断）：登录期的 account_save 可能失败，
+  // 这里补一次；账号真缺失时由 run_start 返回确定性 ACCOUNT_NOT_FOUND 收尾。
+  await ensureRemoteAccount(call, accountId, { root, onProgress: emit })
 
   // 2) 打开无头系统 Chrome（独立 Profile + storage_state）。
   const profileDir = (await import('./state.js')).paths(root || (await import('./state.js')).stateRoot()).profileDir(accountId)

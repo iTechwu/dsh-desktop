@@ -234,5 +234,8 @@ export function batchReasonText(reason) {
   if (reason === 'pending_account') return '待升级账号'
   if (reason === 'probe_failed') return '会话检测失败'
   if (reason === 'partial') return '部分作品缺失'
+  // 服务端确定性业务错误（2026-11-11 真机链路排查）：给可行动文案而非通用失败。
+  if (reason === 'ACCOUNT_NOT_FOUND') return '云端缺少账号记录，请重新扫码登录后重试'
+  if (reason === 'WX_TOOL_UNAVAILABLE') return '桌面未接通视频号工具通道，请升级客户端后重试'
   return '采集失败'
 }

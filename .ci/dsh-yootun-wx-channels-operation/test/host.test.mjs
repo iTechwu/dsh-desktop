@@ -151,3 +151,65 @@ test('collectAll.start 回执携带批量投影：页面即时渲染「正在检
   assert.equal(result.batch.phase, 'probing')
   assert.equal(result.batch.currentAccountId, 'a')
 })
+
+test('登录成功后 account_save 走 deps.tools || ctx 兜底（2026-11-11 前接线缺陷：静默跳过致云端永无账号行）', async () => {
+  const calls = []
+  const ctx = makeCtx()
+  // 生产形态：deps.tools 为 null（仅测试注入才有值），工具必须兜底到宿主 ctx 解析。
+  ctx.tools = {
+    schemas: () => [{ name: 'wx_channels_account_save' }, { name: 'wx_channels_session_status_report' }],
+    execute: async ({ name, arguments: args }) => {
+      calls.push({ name, args })
+      return { structuredContent: { status: 'ok' } }
+    },
+  }
+  const overrides = {
+    ...baseOverrides('wx-host-login-root'),
+    tools: null,
+    login: async () => ({ status: 'ok', accountId: 'acc-login', profile: { nickname: '测试号', fansCount: 10 } }),
+    getAccount: async () => ({ sessionSeq: 0 }),
+  }
+  apply(ctx, overrides)
+  const started = await callAction(ctx, { action: 'account.beginLogin', accountId: 'acc-login' })
+  assert.equal(started.state, 'waiting_qr')
+  // 等 login promise 链（then 内先 await save 再翻 ok）落定。
+  for (let i = 0; i < 50 && calls.length === 0; i += 1) await new Promise(resolve => setTimeout(resolve, 10))
+  assert.deepEqual(calls.map(item => item.name), ['wx_channels_account_save'])
+  const save = calls[0].args
+  assert.equal(save.accountId, 'acc-login')
+  assert.equal(save.nickname, '测试号')
+  assert.equal(save.followerTotalCount, 10)
+  assert.ok(String(save.sessionRef).startsWith('vault://wx-channels/'))
+  assert.ok(save.idempotencyKey)
+  const status = await callAction(ctx, { action: 'account.loginStatus', accountId: 'acc-login' })
+  assert.equal(status.state, 'ok')
+  assert.equal(status.reason, null)
+})
+
+test('登录 save 失败：本地登录态保留（state ok）且原因透出到 loginStatus（不再静默）', async () => {
+  const ctx = makeCtx()
+  ctx.tools = {
+    schemas: () => [{ name: 'wx_channels_account_save' }],
+    execute: async () => {
+      const error = new Error('{"error":{"code":"ACCOUNT_NOT_FOUND"}}')
+      error.code = 'ACCOUNT_NOT_FOUND'
+      throw error
+    },
+  }
+  const overrides = {
+    ...baseOverrides('wx-host-login-root'),
+    tools: null,
+    login: async () => ({ status: 'ok', accountId: 'acc-save-fail', profile: {} }),
+    getAccount: async () => ({ sessionSeq: 0 }),
+  }
+  apply(ctx, overrides)
+  await callAction(ctx, { action: 'account.beginLogin', accountId: 'acc-save-fail' })
+  let status = null
+  for (let i = 0; i < 50; i += 1) {
+    await new Promise(resolve => setTimeout(resolve, 10))
+    status = await callAction(ctx, { action: 'account.loginStatus', accountId: 'acc-save-fail' })
+    if (status.state === 'ok') break
+  }
+  assert.equal(status.state, 'ok', 'save 失败不回滚本地登录成功')
+  assert.equal(status.reason, 'ACCOUNT_NOT_FOUND')
+})
