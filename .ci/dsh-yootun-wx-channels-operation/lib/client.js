@@ -442,12 +442,18 @@ window.__ModuleLoader__.load({
     function WorkSummaryCards({ works, summaryOverview, account }) {
       const totals = summaryOverview && summaryOverview.metrics && summaryOverview.metrics.totals
         ? summaryOverview.metrics.totals : {}
+      const gapCount = gapWorkCount(works)
       const cells = [
         { label: '作品总数', value: fmtCount(account && account.feedCount), hint: '官方 totalCount' },
         { label: '近7日播放', value: fmtCount(totals.daily_play_count), hint: '账号级官方聚合' },
         { label: '近7日关注量', value: fmtCount(totals.daily_follow_count), hint: '非净关注' },
         { label: '作品完播率', value: fmtPct(weightedCompletionRate(works)), hint: '按播放加权计算' },
-        { label: '缺口作品', value: fmtCount(gapWorkCount(works)), hint: '至少 1 个核心字段缺失' },
+        {
+          label: '缺口作品',
+          value: fmtCount(gapCount),
+          // 计数为 0 时不该挂「至少 1 个字段缺失」的提示（会读成有缺口）。
+          hint: gapCount > 0 ? '至少 1 个核心字段缺失' : '核心字段完整',
+        },
       ]
       return h('div', { className: 'ywc-summary-grid' },
         cells.map(cell => h('div', { className: 'ywc-kpi', key: cell.label },
@@ -463,8 +469,16 @@ window.__ModuleLoader__.load({
      * （工具栏纵向布局：第一行按钮组、第二行进度），绝不放到页面顶部通知条。collect 是
      * 宿主 collect.status 的进度投影（仅当前选中账号的传入）；running 时采集按钮禁用
      * 并显示 spinner + progressText。 */
-    function WorkToolbar({ onCollect, onRefresh, collectDisabled = false, refreshDisabled = false, refreshing = false, collect = null }) {
+    function WorkToolbar({
+      onCollect, onRefresh, collectDisabled = false, refreshDisabled = false,
+      refreshing = false, refreshMessage = null, collect = null,
+    }) {
       const running = Boolean(collect && collect.status === 'running')
+      // 状态行统一在采集按钮下方：采集进度优先，其次是刷新结果提示
+      // （2026-11-11 真机反馈：提示就地显示，不要顶部通知条）。
+      const statusText = running
+        ? progressText(collect && collect.progress)
+        : (refreshMessage || null)
       return h('div', { className: 'ywc-toolbar' },
         h('div', { className: 'ywc-toolbar-left' },
           h('button', {
@@ -478,10 +492,13 @@ window.__ModuleLoader__.load({
             disabled: refreshDisabled || refreshing, 'aria-busy': refreshing || undefined,
           }, refreshing ? '刷新中…' : '刷新'),
         ),
-        running
-          ? h('div', { className: 'ywc-progress', role: 'status', 'aria-live': 'polite', 'aria-busy': true },
-            h('span', { className: 'ywc-spinner', 'aria-hidden': true }),
-            h('span', null, progressText(collect && collect.progress)),
+        statusText
+          ? h('div', {
+            className: 'ywc-progress', role: 'status', 'aria-live': 'polite',
+            'aria-busy': running || undefined,
+          },
+          running ? h('span', { className: 'ywc-spinner', 'aria-hidden': true }) : null,
+          h('span', null, statusText),
           )
           : null,
       )
@@ -1705,6 +1722,9 @@ window.__ModuleLoader__.load({
       const [deleteLifecycle, setDeleteLifecycle] = useState(null)
       const [collectBusy, setCollectBusy] = useState(false)
       const [refreshing, setRefreshing] = useState(false)
+      // 刷新提示就地显示在工具栏（采集按钮下方，与进度行同一位置），不进顶部通知条
+      // （2026-11-11 真机反馈）。
+      const [refreshMessage, setRefreshMessage] = useState(null)
       // 单账号采集状态投影（宿主 collect.status 的 collect 字段）：工具栏进度行数据源
       // （对齐抖音 collect 投影）。单槽——互斥保证同时只有一个采集；渲染时按 accountId
       // 比对，切走账号不显示他人进度。
@@ -2004,16 +2024,18 @@ window.__ModuleLoader__.load({
       /**
        * 「刷新」按钮（2026-11-11 真机反馈：点击看起来没作用）：
        * 原来只是并发触发两个查询且没有任何反馈，数据没变化时用户完全看不出发生过什么。
-       * 现在：刷新期间按钮显示「刷新中…」并禁用，完成后给出提示；同时连带刷新账号列表
-       * （账号卡片的「最近同步」时间与会话状态随之更新）。
+       * 现在：刷新期间按钮显示「刷新中…」并禁用，完成后按钮自行恢复——**成功不再弹顶部
+       * 提示**（按钮状态变化已是足够反馈，顶部长提示反而多余）；仅失败时提示具体失败项。
+       * 同时连带刷新账号列表（账号卡片的「最近同步」时间与会话状态随之更新）。
        *
        * 结果聚合（review P1-2）：refreshWorks/refreshOverview 内部会吞掉错误，三路
-       * Promise 几乎不会 reject——若只看 Promise 结果，失败也会被报成「已刷新」。改为
-       * 各自返回成功标志后聚合，部分失败要明确说出来。
+       * Promise 几乎不会 reject——若只看 Promise 结果，失败也会被报成成功。改为各自
+       * 返回成功标志后聚合，部分失败要明确说出来。
        */
       const refreshAll = useCallback(accountId => {
         if (!accountId) return
         setRefreshing(true)
+        setRefreshMessage(null)
         void (async () => {
           try {
             const [worksOk, overviewOk, accountsOk] = await Promise.all([
@@ -2021,7 +2043,11 @@ window.__ModuleLoader__.load({
               refreshOverview(accountId, windowKey).catch(() => false),
               refreshAccounts().then(() => true).catch(() => false),
             ])
-            notify(refreshResultLabel({ works: worksOk, overview: overviewOk, accounts: accountsOk }))
+            // 提示就地显示在刷新按钮旁（2026-11-11 真机反馈：不要顶部通知条）。
+            // 成功不提示（按钮由「刷新中…」恢复即足够反馈）；只有失败才说明白。
+            if (!worksOk || !overviewOk || !accountsOk) {
+              setRefreshMessage(refreshResultLabel({ works: worksOk, overview: overviewOk, accounts: accountsOk }))
+            }
           } finally {
             setRefreshing(false)
           }
@@ -2166,6 +2192,7 @@ window.__ModuleLoader__.load({
                     collectDisabled: !selectedId || collectBusy || batchRunning,
                     refreshDisabled: !selectedId || collectBusy || refreshing,
                     refreshing,
+                    refreshMessage,
                     collect: collect && collect.accountId === selectedId ? collect : null,
                   }),
                   h(WorkSummaryCards, { works, summaryOverview, account: selected }),

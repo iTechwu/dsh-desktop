@@ -382,6 +382,9 @@ function WxWorkbench({ host, initial = null }) {
   const [deleteLifecycle, setDeleteLifecycle] = useState(null)
   const [collectBusy, setCollectBusy] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
+  // 刷新提示就地显示在工具栏（采集按钮下方，与进度行同一位置），不进顶部通知条
+  // （2026-11-11 真机反馈）。
+  const [refreshMessage, setRefreshMessage] = useState(null)
   // 单账号采集状态投影（宿主 collect.status 的 collect 字段）：工具栏进度行数据源
   // （对齐抖音 collect 投影）。单槽——互斥保证同时只有一个采集；渲染时按 accountId
   // 比对，切走账号不显示他人进度。
@@ -681,16 +684,18 @@ function WxWorkbench({ host, initial = null }) {
   /**
    * 「刷新」按钮（2026-11-11 真机反馈：点击看起来没作用）：
    * 原来只是并发触发两个查询且没有任何反馈，数据没变化时用户完全看不出发生过什么。
-   * 现在：刷新期间按钮显示「刷新中…」并禁用，完成后给出提示；同时连带刷新账号列表
-   * （账号卡片的「最近同步」时间与会话状态随之更新）。
+   * 现在：刷新期间按钮显示「刷新中…」并禁用，完成后按钮自行恢复——**成功不再弹顶部
+   * 提示**（按钮状态变化已是足够反馈，顶部长提示反而多余）；仅失败时提示具体失败项。
+   * 同时连带刷新账号列表（账号卡片的「最近同步」时间与会话状态随之更新）。
    *
    * 结果聚合（review P1-2）：refreshWorks/refreshOverview 内部会吞掉错误，三路
-   * Promise 几乎不会 reject——若只看 Promise 结果，失败也会被报成「已刷新」。改为
-   * 各自返回成功标志后聚合，部分失败要明确说出来。
+   * Promise 几乎不会 reject——若只看 Promise 结果，失败也会被报成成功。改为各自
+   * 返回成功标志后聚合，部分失败要明确说出来。
    */
   const refreshAll = useCallback(accountId => {
     if (!accountId) return
     setRefreshing(true)
+    setRefreshMessage(null)
     void (async () => {
       try {
         const [worksOk, overviewOk, accountsOk] = await Promise.all([
@@ -698,7 +703,11 @@ function WxWorkbench({ host, initial = null }) {
           refreshOverview(accountId, windowKey).catch(() => false),
           refreshAccounts().then(() => true).catch(() => false),
         ])
-        notify(refreshResultLabel({ works: worksOk, overview: overviewOk, accounts: accountsOk }))
+        // 提示就地显示在刷新按钮旁（2026-11-11 真机反馈：不要顶部通知条）。
+        // 成功不提示（按钮由「刷新中…」恢复即足够反馈）；只有失败才说明白。
+        if (!worksOk || !overviewOk || !accountsOk) {
+          setRefreshMessage(refreshResultLabel({ works: worksOk, overview: overviewOk, accounts: accountsOk }))
+        }
       } finally {
         setRefreshing(false)
       }
@@ -843,6 +852,7 @@ function WxWorkbench({ host, initial = null }) {
                 collectDisabled: !selectedId || collectBusy || batchRunning,
                 refreshDisabled: !selectedId || collectBusy || refreshing,
                 refreshing,
+                refreshMessage,
                 collect: collect && collect.accountId === selectedId ? collect : null,
               }),
               h(WorkSummaryCards, { works, summaryOverview, account: selected }),

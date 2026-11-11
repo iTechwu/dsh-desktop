@@ -968,3 +968,33 @@ test('refreshResultLabel：部分失败要明确指出失败路（review P1-2）
   // 未知状态（未显式 false）按成功处理，不误报失败。
   assert.equal(refreshResultLabel({}), '已刷新')
 })
+
+test('WorkToolbar：刷新提示就地显示在按钮下方（统一状态行），不进顶部通知', async () => {
+  const react = await import('react')
+  const { createElement: h } = react
+  const { renderToString } = await import('react-dom/server')
+  const { WorkToolbar } = await import('../src/work-ui.js')
+
+  // 失败提示：显示在状态行（采集按钮下方），与进度行同一容器。
+  const withMessage = renderToString(h(WorkToolbar, {
+    onCollect: () => {}, onRefresh: () => {}, refreshMessage: '部分刷新失败：作品列表',
+  }))
+  assert.ok(withMessage.includes('部分刷新失败：作品列表'), '刷新提示应显示在工具栏状态行')
+  assert.ok(withMessage.includes('ywc-progress'), '提示应复用进度行容器（按钮下方）')
+  // 提示在按钮组之后（DOM 顺序 = 视觉顺序）。
+  const toolbarIndex = withMessage.indexOf('ywc-toolbar-left')
+  const statusIndex = withMessage.indexOf('ywc-progress')
+  assert.ok(toolbarIndex >= 0 && statusIndex > toolbarIndex, '状态行必须在按钮组之后')
+
+  // 采集进行中：进度优先于刷新提示。
+  const running = renderToString(h(WorkToolbar, {
+    onCollect: () => {}, onRefresh: () => {}, refreshMessage: '部分刷新失败：作品列表',
+    collect: { accountId: 'a1', status: 'running', progress: { phase: 'work', index: 3, total: 10 } },
+  }))
+  assert.ok(running.includes('采集进度 3/10'), '采集进度优先')
+  assert.ok(!running.includes('部分刷新失败'), '采集中不显示刷新提示')
+
+  // 无状态：状态行不渲染。
+  const idle = renderToString(h(WorkToolbar, { onCollect: () => {}, onRefresh: () => {} }))
+  assert.ok(!idle.includes('ywc-progress'), '空闲态不渲染状态行')
+})

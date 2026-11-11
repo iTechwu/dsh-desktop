@@ -50,12 +50,18 @@ const TABLE_COLUMNS = [
 export function WorkSummaryCards({ works, summaryOverview, account }) {
   const totals = summaryOverview && summaryOverview.metrics && summaryOverview.metrics.totals
     ? summaryOverview.metrics.totals : {}
+  const gapCount = gapWorkCount(works)
   const cells = [
     { label: '作品总数', value: fmtCount(account && account.feedCount), hint: '官方 totalCount' },
     { label: '近7日播放', value: fmtCount(totals.daily_play_count), hint: '账号级官方聚合' },
     { label: '近7日关注量', value: fmtCount(totals.daily_follow_count), hint: '非净关注' },
     { label: '作品完播率', value: fmtPct(weightedCompletionRate(works)), hint: '按播放加权计算' },
-    { label: '缺口作品', value: fmtCount(gapWorkCount(works)), hint: '至少 1 个核心字段缺失' },
+    {
+      label: '缺口作品',
+      value: fmtCount(gapCount),
+      // 计数为 0 时不该挂「至少 1 个字段缺失」的提示（会读成有缺口）。
+      hint: gapCount > 0 ? '至少 1 个核心字段缺失' : '核心字段完整',
+    },
   ]
   return h('div', { className: 'ywc-summary-grid' },
     cells.map(cell => h('div', { className: 'ywc-kpi', key: cell.label },
@@ -71,8 +77,16 @@ export function WorkSummaryCards({ works, summaryOverview, account }) {
  * （工具栏纵向布局：第一行按钮组、第二行进度），绝不放到页面顶部通知条。collect 是
  * 宿主 collect.status 的进度投影（仅当前选中账号的传入）；running 时采集按钮禁用
  * 并显示 spinner + progressText。 */
-export function WorkToolbar({ onCollect, onRefresh, collectDisabled = false, refreshDisabled = false, refreshing = false, collect = null }) {
+export function WorkToolbar({
+  onCollect, onRefresh, collectDisabled = false, refreshDisabled = false,
+  refreshing = false, refreshMessage = null, collect = null,
+}) {
   const running = Boolean(collect && collect.status === 'running')
+  // 状态行统一在采集按钮下方：采集进度优先，其次是刷新结果提示
+  // （2026-11-11 真机反馈：提示就地显示，不要顶部通知条）。
+  const statusText = running
+    ? progressText(collect && collect.progress)
+    : (refreshMessage || null)
   return h('div', { className: 'ywc-toolbar' },
     h('div', { className: 'ywc-toolbar-left' },
       h('button', {
@@ -86,10 +100,13 @@ export function WorkToolbar({ onCollect, onRefresh, collectDisabled = false, ref
         disabled: refreshDisabled || refreshing, 'aria-busy': refreshing || undefined,
       }, refreshing ? '刷新中…' : '刷新'),
     ),
-    running
-      ? h('div', { className: 'ywc-progress', role: 'status', 'aria-live': 'polite', 'aria-busy': true },
-        h('span', { className: 'ywc-spinner', 'aria-hidden': true }),
-        h('span', null, progressText(collect && collect.progress)),
+    statusText
+      ? h('div', {
+        className: 'ywc-progress', role: 'status', 'aria-live': 'polite',
+        'aria-busy': running || undefined,
+      },
+      running ? h('span', { className: 'ywc-spinner', 'aria-hidden': true }) : null,
+      h('span', null, statusText),
       )
       : null,
   )
