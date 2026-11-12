@@ -3,7 +3,8 @@
 // 关键约束（开发实施文档 §5/§8.4/§15）：
 // - 所有接口都在**页面上下文**通过同源 fetch 调用（浏览器自动携带登录态）；CI/tools
 //   侧绝不直连视频号；
-// - 全量列表固定 startTime=0 + endTime=最新完整日零点（§5.3），pageSize=100；
+// - 作品列表按产品口径自 COLLECT_SINCE_DAY（2026-01-01）起，startTime=该日上海零点
+//   秒级时间戳 + endTime=最新完整日零点（§5.3），pageSize=100；
 // - 完整性以 totalCount + objectId 去重判定：唯一作品数等于 totalCount 才
 //   listComplete=true；某页无新增 objectId 时停止（超页返回首批数据的防御，§1.3）；
 // - 单作品详情串行（get_feed_lost_rate + feed_aggreagate），失败只记该作品缺口；
@@ -35,6 +36,9 @@ export const NEW_POST_TOTAL_PATH = '/micro/statistic/cgi-bin/mmfinderassistant-b
 export const FANS_TREND_PATH = '/micro/statistic/cgi-bin/mmfinderassistant-bin/statistic/fans_trend'
 export const FANS_PORTRAIT_PATH = '/micro/statistic/cgi-bin/mmfinderassistant-bin/statistic/fans_portrait'
 
+// 采集起点（产品口径，2026-11-12 拍板）：作品列表与 fans_trend 均自该日起采集，
+// 不再回填平台历史全量。collector 与 runner 共用同一常量，避免两处日期漂移。
+export const COLLECT_SINCE_DAY = '2026-01-01'
 export const PAGE_SIZE = 100
 export const MAX_PAGES = 50
 export const PAGE_INTERVAL_MS = 600
@@ -83,7 +87,12 @@ export async function fetchAuthData(page, { finderId = '', now = Date.now } = {}
 }
 
 /**
- * 全量作品列表采集（§5.3 完整性规则）。
+ * 窗口内作品列表采集（§5.3 完整性规则）。
+ *
+ * 窗口起点固定为 COLLECT_SINCE_DAY（2026-01-01 上海零点）。实测确认 `totalCount`
+ * 是**窗口内计数**（近 30 天窗口明显小于全量窗口），因此窗口收窄后
+ * 「唯一作品数 == totalCount」的完整性判据、expectedWorkCount 与 run 结算语义
+ * 均保持原样，无需改动。
  *
  * @returns {Promise<{works: object[], totalCount: number|null, listComplete: boolean,
  *   reason: string|null}>}
@@ -91,6 +100,7 @@ export async function fetchAuthData(page, { finderId = '', now = Date.now } = {}
 export async function collectWorkList(page, {
   finderId,
   pageSize = PAGE_SIZE,
+  startDay = COLLECT_SINCE_DAY,
   maxPages = MAX_PAGES,
   intervalMs = PAGE_INTERVAL_MS,
   retries = 2,
@@ -100,6 +110,7 @@ export async function collectWorkList(page, {
 } = {}) {
   const endDay = latestCompletedDay(now)
   const endTs = shanghaiDayStartTs(endDay)
+  const startTs = shanghaiDayStartTs(startDay)
   const collected = []
   const seen = new Set()
   let totalCount = null
@@ -113,7 +124,7 @@ export async function collectWorkList(page, {
       currentPage: pageNumber,
       sort: 0,
       order: 0,
-      startTime: 0,
+      startTime: startTs,
       endTime: endTs,
       ...commonRequestFields({ finderId, now }),
     }
@@ -290,7 +301,7 @@ export async function collectAccountMetrics(page, {
   return { startDay: resolvedStart, endDay: resolvedEnd, ...parsed }
 }
 
-/** 账号级关注者增长（§5.7：按平台保留历史全量回填，超长窗口由调用方分块）。 */
+/** 账号级关注者增长（§5.7：按产品口径自 COLLECT_SINCE_DAY 起回填，超长窗口由调用方分块）。 */
 export async function collectFansTrend(page, {
   finderId,
   startDay,
@@ -315,6 +326,40 @@ export async function collectFansTrend(page, {
   }
   const parsed = parseFansTrend(result.json, { startTs, endTs })
   return { startDay, endDay, ...parsed }
+}
+
+/**
+ * fans_trend 回填窗口分块计划（§15.5：闭区间、相邻块不重叠）。
+ *
+ * 起点固定 COLLECT_SINCE_DAY，按 blockDays=180 自然日切块；每块 [Dn, Dn+179]，
+ * 下一块从 Dn+180 起。起点晚于终点（极端时钟场景）时返回空计划。
+ *
+ * @returns {Array<{startDay: string, endDay: string}>}
+ */
+export function planFansTrendWindow({
+  startDay = COLLECT_SINCE_DAY,
+  endDay,
+  blockDays = DETAIL_BLOCK_DAYS,
+  maxBlocks = 200,
+} = {}) {
+  if (!endDay) throw new Error('planFansTrendWindow_endDay_required')
+  if (startDay > endDay) return []
+  const blocks = []
+  let cursorDay = startDay
+  let guard = 0
+  while (cursorDay <= endDay) {
+    guard += 1
+    if (guard > maxBlocks) throw new Error('fans_trend_window_loop_guard')
+    const blockEndTs = Math.min(
+      shanghaiDayStartTs(cursorDay) + (blockDays - 1) * 86400,
+      shanghaiDayStartTs(endDay),
+    )
+    const blockEnd = shanghaiDayFromTs(blockEndTs)
+    blocks.push({ startDay: cursorDay, endDay: blockEnd })
+    if (blockEnd >= endDay) break
+    cursorDay = shanghaiDayFromTs(blockEndTs + 86400)
+  }
+  return blocks
 }
 
 /** 账号级关注者画像（§5.8：当前时点快照，day=latestCompletedDay）。 */

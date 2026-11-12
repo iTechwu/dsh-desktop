@@ -5,10 +5,13 @@ import { test } from 'node:test'
 import {
   collectWorkList,
   fetchAuthData,
+  planFansTrendWindow,
   splitIngestBatches,
+  COLLECT_SINCE_DAY,
   MAX_BATCH_DAILY_ROWS,
   MAX_BATCH_WORKS,
 } from '../src/collector.js'
+import { shanghaiDayStartTs } from '../src/parse.js'
 import { SessionInvalidError } from '../src/session-errors.js'
 
 
@@ -71,7 +74,73 @@ test('auth_data 正常：fetchAuthData 读出 finderUsername', async () => {
   assert.equal(profile.feedsCount, 5)
 })
 
-test('全量分页：totalCount 达标即停、objectId 去重、listComplete=true', async () => {
+test('作品列表请求窗口：startTime 固定为 COLLECT_SINCE_DAY（2026-01-01 上海零点）', async () => {
+  let captured = null
+  const page = fakePage([
+    {
+      match: 'statistic/post_list',
+      reply: body => {
+        captured = body
+        return postListPayload({ items: [makeItem('w1')], totalCount: 1 })
+      },
+    },
+  ])
+  const result = await collectWorkList(page, {
+    finderId: 'f1',
+    pageSize: 100,
+    intervalMs: 0,
+    sleep: sleepImmediate,
+    now: () => Date.parse('2026-11-12T12:00:00+08:00'),
+  })
+  // totalCount 是窗口内计数（探针实测近 30 天窗口明显小于全量），因此窗口收窄后
+  // 完整性判据不变：唯一作品数 == totalCount 即 listComplete。
+  assert.equal(captured.startTime, shanghaiDayStartTs(COLLECT_SINCE_DAY))
+  assert.equal(captured.startTime, 1767196800)
+  assert.equal(captured.endTime, shanghaiDayStartTs('2026-11-11'))
+  assert.equal(result.totalCount, 1)
+  assert.equal(result.listComplete, true)
+})
+
+test('窗口内无作品：totalCount=0 且空列表 → listComplete=true，不误判 LIST_INCOMPLETE', async () => {
+  let call = 0
+  const page = fakePage([
+    {
+      match: 'statistic/post_list',
+      reply: () => {
+        call += 1
+        return postListPayload({ items: [], totalCount: 0 })
+      },
+    },
+  ])
+  const result = await collectWorkList(page, {
+    finderId: 'f1',
+    pageSize: 100,
+    intervalMs: 0,
+    sleep: sleepImmediate,
+    now: () => Date.parse('2026-11-12T12:00:00+08:00'),
+  })
+  assert.equal(call, 1) // 空页即停，不再翻页
+  assert.equal(result.works.length, 0)
+  assert.equal(result.totalCount, 0)
+  assert.equal(result.listComplete, true)
+  assert.equal(result.reason, null)
+})
+
+test('fans_trend 窗口计划：2026-01-01 起、180 天一块、相邻块不重叠', () => {
+  const blocks = planFansTrendWindow({ startDay: '2026-01-01', endDay: '2026-11-11' })
+  assert.deepEqual(blocks, [
+    { startDay: '2026-01-01', endDay: '2026-06-29' },
+    { startDay: '2026-06-30', endDay: '2026-11-11' },
+  ])
+  // 315 天窗口 → 2 块（180 + 135），不再是 2020 起的 13 块。
+  assert.equal(blocks.length, 2)
+  // 默认起点即 COLLECT_SINCE_DAY，不依赖调用方传参。
+  assert.equal(planFansTrendWindow({ endDay: '2026-11-11' })[0].startDay, COLLECT_SINCE_DAY)
+  // 起点晚于终点（极端时钟）→ 空计划，不抛错、不死循环。
+  assert.deepEqual(planFansTrendWindow({ startDay: '2026-11-12', endDay: '2026-11-11' }), [])
+})
+
+test('窗口内分页：totalCount 达标即停、objectId 去重、listComplete=true', async () => {
   const items = Array.from({ length: 30 }, (_, index) => makeItem(`w${String(index + 1).padStart(3, '0')}`))
   const pages = [items.slice(0, 100)]
   const page = fakePage([
@@ -166,9 +235,9 @@ test('批次切分（§15.1.2）：≤20 作品、≤3000 日行、发布日从�
   assert.equal(batches[0].works[0].workId, 'w0')
 })
 
-test('批次切分：老作品超长序列防御性拆分（>2300 行）', () => {
+test('批次切分：超长序列防御性拆分（>2300 行，2026 起点后正常不可达）', () => {
   const longDaily = Array.from({ length: 2400 }, (_, day) => ({ day: `d${day}`, daily_play_count: 1 }))
-  const work = { workId: 'old', publishTime: '2020-08-19T00:00:00+08:00', dailyMetrics: longDaily }
+  const work = { workId: 'old', publishTime: '2026-01-01T00:00:00+08:00', dailyMetrics: longDaily }
   const batches = splitIngestBatches([work])
   assert.ok(batches.length >= 2)
   assert.ok(batches.every(batch => batch.totalDailyMetricRows <= MAX_BATCH_DAILY_ROWS))

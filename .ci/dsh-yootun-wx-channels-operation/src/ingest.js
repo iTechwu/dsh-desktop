@@ -404,8 +404,9 @@ export async function ingestCollectedData({
       }
     }
     if (fansTrend && Array.isArray(fansTrend.daily) && fansTrend.daily.length) {
-      // 全量回填（2020 起可达两千余行）按 30 行/块分块上报（MCP daily 上限 31），
-      // 每块幂等键含块窗口，失败只标该块并继续后续块（局部重跑不重传已成功块）。
+      // 按 30 行/块分块上报（MCP daily 上限 31），每块幂等键含块窗口，
+      // 失败只标该块并继续后续块（局部重跑不重传已成功块）。采集起点为 2026-01-01
+      // 后单账号约 315 行，分块逻辑保留为窗口变长时的防御。
       const rowsByDay = [...fansTrend.daily].sort((a, b) => (a.day < b.day ? -1 : a.day > b.day ? 1 : 0))
       const chunkSize = 30
       let failedChunks = 0

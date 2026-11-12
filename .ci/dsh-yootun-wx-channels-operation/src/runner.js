@@ -1,8 +1,8 @@
 // 采集编排（设备端）：单账号全流程 + 一键采集全部（账号间严格串行，§8.4/§8.5）。
 //
-// 单账号流程（§8.4）：auth_data 探活 → statistic/post_list 全量 → 逐作品串行详情
-// （get_feed_lost_rate + feed_aggreagate，发布日零点起）→ new_post_total_data →
-// fans_trend → fans_portrait → 分批 ingest → run_finish。
+// 单账号流程（§8.4）：auth_data 探活 → statistic/post_list（2026-01-01 起窗口）→
+// 逐作品串行详情（get_feed_lost_rate + feed_aggreagate，发布日零点起）→
+// new_post_total_data → fans_trend（2026-01-01 起）→ fans_portrait → 分批 ingest → run_finish。
 //
 // 关键规则（§8.4）：作品列表必须达到 totalCount；单作品详情失败只影响该作品；账号
 // 级数据失败记段落缺口；会话失效（SessionInvalidError）标记 expired 并走过期收尾
@@ -14,12 +14,14 @@
 import { browserStatus } from './chrome.js'
 import {
   ASSISTANT_ORIGIN,
+  COLLECT_SINCE_DAY,
   collectAccountMetrics,
   collectFansPortrait,
   collectFansTrend,
   collectWorkDetail,
   collectWorkList,
   fetchAuthData,
+  planFansTrendWindow,
 } from './collector.js'
 import { createIngestClient, ingestCollectedData, resolveClientStatus } from './ingest.js'
 import { SessionInvalidError } from './session-errors.js'
@@ -183,7 +185,7 @@ export async function runCollection({
       throw new SessionInvalidError('account_mismatch')
     }
 
-    // 3) 全量作品列表（startTime=0）。
+    // 3) 作品列表（窗口起点 COLLECT_SINCE_DAY=2026-01-01，totalCount 为窗口内计数）。
     emit({ phase: 'list', accountId })
     const list = await collectWorkList(page, { finderId: accountId, maxPages, onPage: event => emit({ phase: 'list_page', ...event }) })
 
@@ -226,7 +228,7 @@ export async function runCollection({
       emit({ phase: 'segment_gap', segment: 'account_metrics_collect', reason: safeReason(error) })
     }
     try {
-      // 增长序列按平台保留历史全量回填；超长窗口按 180 天分块（§15.5）。
+      // 增长序列按产品口径自 2026-01-01 起回填；超长窗口按 180 天分块（§15.5）。
       accountLevel.fansTrend = await collectFansTrendWindowed(page, { finderId: accountId })
     } catch (error) {
       emit({ phase: 'segment_gap', segment: 'fans_trend_collect', reason: safeReason(error) })
@@ -274,31 +276,26 @@ export async function runCollection({
   }
 }
 
-/** fans_trend 全量回填：平台历史起点（实测 2020-08-19）至今按 180 天块串行拉取。
+/** fans_trend 回填：按产品口径自 COLLECT_SINCE_DAY（2026-01-01）至今按 180 天块串行拉取。
  *
- * 全程用上海语义日字符串推算（shanghaiDayStartTs/shanghaiDayFromTs），禁止
- * `new Date(ms).toISOString()` 直取日——上海零点的 UTC 时刻 toISOString 会提前
- * 一天（review P0-3 死循环教训）。
+ * 分块计划由 planFansTrendWindow 产出（全程用上海语义日字符串推算，
+ * shanghaiDayStartTs/shanghaiDayFromTs），禁止 `new Date(ms).toISOString()` 直取日——
+ * 上海零点的 UTC 时刻 toISOString 会提前一天（review P0-3 死循环教训）。
  */
 async function collectFansTrendWindowed(page, { finderId, blockDays = 180, now = Date.now }) {
-  const { latestCompletedDay, shanghaiDayFromTs, shanghaiDayStartTs } = await import('./parse.js')
+  const { latestCompletedDay } = await import('./parse.js')
   const endDay = latestCompletedDay(now)
-  const startDay = '2020-08-19' // 平台历史起点（开发实施文档 §15.5.1 实测）
+  const startDay = COLLECT_SINCE_DAY
   // 合并日行用 daily 键（与单块 collectFansTrend、ingest 消费端、E2E fixture 同一形状）。
   const daily = []
-  const sourceTrendRows = []
   const sourceTrendByType = new Map()
-  let cursorDay = startDay
-  let guard = 0
-  while (cursorDay <= endDay) {
-    guard += 1
-    if (guard > 200) throw new Error('fans_trend_window_loop_guard')
-    const blockEndTs = Math.min(
-      shanghaiDayStartTs(cursorDay) + (blockDays - 1) * 86400,
-      shanghaiDayStartTs(endDay),
-    )
-    const blockEnd = shanghaiDayFromTs(blockEndTs)
-    const chunk = await collectFansTrend(page, { finderId, startDay: cursorDay, endDay: blockEnd, now })
+  for (const block of planFansTrendWindow({ startDay, endDay, blockDays })) {
+    const chunk = await collectFansTrend(page, {
+      finderId,
+      startDay: block.startDay,
+      endDay: block.endDay,
+      now,
+    })
     daily.push(...chunk.daily)
     // 跨块来源趋势按 sourceType 合并（P3-6：同 sourceType 不重复 push）。
     if (chunk.sourceTrend && Array.isArray(chunk.sourceTrend.rows)) {
@@ -311,8 +308,6 @@ async function collectFansTrendWindowed(page, { finderId, blockDays = 180, now =
         }
       }
     }
-    if (blockEnd >= endDay) break
-    cursorDay = shanghaiDayFromTs(blockEndTs + 86400)
   }
   const mergedSourceTrend = sourceTrendByType.size
     ? { rows: [...sourceTrendByType.values()] }
