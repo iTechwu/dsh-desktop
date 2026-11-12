@@ -533,6 +533,21 @@ test('WorkTable（2026-11-11 真机反馈）：无操作列/无 ID 副行、双�
   assert.ok(fallback.includes(EMPTY), '标题双缺应显示「—」')
 })
 
+test('WorkTable（2026-11-12 真机反馈）：首屏加载态与「暂无作品」空态必须可区分', async () => {
+  const react = await import('react')
+  const { createElement: h } = react
+  const { renderToString } = await import('react-dom/server')
+  const { WorkTable } = await import('../src/work-ui.js')
+  const loading = renderToString(h(WorkTable, { rows: [], loading: true }))
+  assert.ok(loading.includes('正在加载作品'), '加载中应显示专属文案')
+  assert.ok(loading.includes('ywc-spinner'), '加载中应显示 spinner')
+  assert.ok(loading.includes('aria-busy="true"'), '加载中应标记 aria-busy')
+  assert.ok(!loading.includes('当前账号暂无已入库作品'), '加载中不得显示空态文案')
+  const empty = renderToString(h(WorkTable, { rows: [] }))
+  assert.ok(empty.includes('当前账号暂无已入库作品'), '未加载时应保留原空态')
+  assert.ok(!empty.includes('正在加载作品'), '空态不得显示加载文案')
+})
+
 test('WorkDetailDialog（2026-11-11 真机反馈）：头部封面+元信息、KPI 铺满、来源/留存左右卡、按日 7 天趋势线', async () => {
   const react = await import('react')
   const { createElement: h } = react

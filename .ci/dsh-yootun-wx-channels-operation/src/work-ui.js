@@ -118,7 +118,15 @@ export function WorkToolbar({
  * - 全量渲染已入库作品，固定高度区域内部滚动（无「加载更多」分页）；
  * - 2026-11-11 真机反馈：无「操作」列——双击整行（或行内回车）打开详情；
  *   作品列 = 封面缩略图 + 标题（官方发布文案口径），不再显示 ID 副行。 */
-export function WorkTable({ rows, sort = DEFAULT_SORT_STATE, onSortChange, onOpenDetail }) {
+export function WorkTable({ rows, sort = DEFAULT_SORT_STATE, onSortChange, onOpenDetail, loading = false }) {
+  // 首屏加载中与「确实没有作品」必须区分：两者外观一致时，2-3 秒等待看起来像卡死
+  // （2026-11-12 真机反馈）。
+  if (!rows.length && loading) {
+    return h('div', { className: 'ywc-table-state', role: 'status', 'aria-busy': 'true' },
+      h('span', { className: 'ywc-spinner', 'aria-hidden': true }),
+      h('p', null, '正在加载作品…'),
+    )
+  }
   if (!rows.length) {
     return h('div', { className: 'ywc-table-state', role: 'status' },
       h('p', null, '当前账号暂无已入库作品，先执行「采集本账号全部」'),

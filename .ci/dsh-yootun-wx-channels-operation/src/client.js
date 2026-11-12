@@ -382,6 +382,10 @@ function WxWorkbench({ host, initial = null }) {
   const [deleteLifecycle, setDeleteLifecycle] = useState(null)
   const [collectBusy, setCollectBusy] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
+  // 首屏加载态（2026-11-12 真机反馈）：账号列表与首次作品查询期间显示加载中，
+  // 不再用「暂无已入库作品」空态冒充加载中（两者外观一致，用户以为卡住）。
+  const [accountsLoading, setAccountsLoading] = useState(false)
+  const [worksLoading, setWorksLoading] = useState(false)
   // 刷新提示就地显示在工具栏（采集按钮下方，与进度行同一位置），不进顶部通知条
   // （2026-11-11 真机反馈）。
   const [refreshMessage, setRefreshMessage] = useState(null)
@@ -427,11 +431,14 @@ function WxWorkbench({ host, initial = null }) {
   useEffect(() => { selectedIdRef.current = selectedId }, [selectedId])
 
   const refreshWorks = useCallback(async accountId => {
-    if (!accountId) { setWorks([]); return false }
+    if (!accountId) { setWorks([]); setWorksLoading(false); return false }
     // 命中缓存先渲染（秒开）；无缓存必须清空，否则切账号瞬间仍显示上一个账号的行
     // （review P1-3）。
     const cached = worksCacheRef.current.get(accountId)
     setWorks(cached || [])
+    // 2026-11-12 真机反馈：首次进入有 2-3 秒无作品列表的空窗，而空态文案与真正
+    // 「没采集过」完全一致，看起来像卡住。无缓存时置加载态，命中缓存直接渲染不加。
+    setWorksLoading(!cached)
     // 请求序号守卫：同账号并发时后到的旧响应不得覆盖新响应。
     const requestId = ++worksRequestRef.current
     try {
@@ -447,11 +454,13 @@ function WxWorkbench({ host, initial = null }) {
         currentAccountId: selectedIdRef.current,
       })) return true
       setWorks(rows)
+      setWorksLoading(false)
       return true
     } catch (error) {
       if (requestId !== worksRequestRef.current) return false
       if (selectedIdRef.current !== accountId) return false
       if (!cached) setWorks([])
+      setWorksLoading(false)
       notify(`作品列表加载失败：${error.message}`)
       return false
     }
@@ -506,6 +515,7 @@ function WxWorkbench({ host, initial = null }) {
 
   useEffect(() => {
     let cancelled = false
+    setAccountsLoading(true)
     void (async () => {
       // 首屏并行：浏览器自检只用于无 Chrome 时的提示条，不该阻塞账号列表
       // （对齐抖音 refresh() 的 Promise.all 编排）。
@@ -517,21 +527,36 @@ function WxWorkbench({ host, initial = null }) {
       // accounts.list 失败必须被吞掉：`void` 不会吞异常，否则 Electron 渲染进程会打
       // Uncaught (in promise)（review P2-4）。
       await Promise.all([statusPromise, refreshAccounts().catch(() => null)])
+      if (!cancelled) setAccountsLoading(false)
     })()
     return () => { cancelled = true }
   }, [post, refreshAccounts])
 
   // 切换账号 / 窗口变化 → 刷新作品与账号数据（查询只读库，不触发采集）。
+  //
+  // 首屏顺序（2026-11-12 真机反馈，对齐抖音首屏只拉作品列表）：
+  // 原来 works.list 与 account.overview / fans.profile.get 并发发出，而总览内部
+  // 还是两个串行请求——同一插件通道被总量更大的账号数据占住，作品列表被挤到
+  // 2-3 秒后才出现。现在先等 works.list 落地，总览随后再拉。
   useEffect(() => {
-    if (selectedId) {
-      void refreshWorks(selectedId)
-      void refreshOverview(selectedId, windowKey)
-    } else {
+    if (!selectedId) {
       setWorks([])
+      setWorksLoading(false)
       setOverview(null)
       setSummaryOverview(null)
       setProfile(null)
+      return
     }
+    // 切账号瞬间先清空上一账号的账号数据，避免等作品期间显示旧账号指标（review P1-3）。
+    setOverview(null)
+    setSummaryOverview(null)
+    setProfile(null)
+    void (async () => {
+      await refreshWorks(selectedId)
+      // 作品已落地（或已失败）后再拉总览；期间用户若已切走，跳过。
+      if (selectedIdRef.current !== selectedId) return
+      void refreshOverview(selectedId, windowKey)
+    })()
   }, [selectedId, windowKey, refreshWorks, refreshOverview])
 
   // 批量进度轮询。
@@ -858,6 +883,9 @@ function WxWorkbench({ host, initial = null }) {
               h(WorkSummaryCards, { works, summaryOverview, account: selected }),
               h(WorkTable, {
                 rows: visibleWorks,
+                // 首屏账号列表未就绪 / 首次作品查询无缓存时显示加载态，
+                // 不用「暂无已入库作品」空态冒充（2026-11-12 真机反馈）。
+                loading: worksLoading || (accountsLoading && !selectedId),
                 sort,
                 onSortChange: columnKey => setSort(currentSort => nextSortState(currentSort, columnKey)),
                 onOpenDetail: openDetail,
