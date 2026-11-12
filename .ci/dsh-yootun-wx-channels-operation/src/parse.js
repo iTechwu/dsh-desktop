@@ -329,18 +329,19 @@ export function parseDailySeries(payload, { startTs, endTs }) {
   const rows = tabs.map(parseSourceRow).filter(Boolean)
   if (!rows.length) throw new Error('TIME_SERIES_LENGTH_MISMATCH')
 
-  // 基础指标分级校验：任一来源行的基础指标缺失/长度异常 → 整窗拒绝（§15.1.1）。
-  for (const row of rows) {
-    for (const metric of CORE_METRICS) {
-      const series = row.series[metric]
-      if (!series || series.length !== length) {
-        throw new Error('TIME_SERIES_LENGTH_MISMATCH')
-      }
+  // 2006-11-12 审查 P2-9：基础指标强校验只施加于**实际入表**的来源行（「全部」999）；
+  // 冷门来源少返 1 天不应把整窗判废（它们的序列只用于来源分布求和，按点跳过即可）。
+  const allTab = rows.find(row => row.tabType === 999)
+  const missingAllTab = !allTab
+  const usedTab = allTab || rows[0]
+  for (const metric of CORE_METRICS) {
+    const series = usedTab.series[metric]
+    if (!series || series.length !== length) {
+      throw new Error('TIME_SERIES_LENGTH_MISMATCH')
     }
   }
 
   const unknownSources = []
-  const allTab = rows.find(row => row.tabType === 999) || rows[0]
   const days = []
   for (let index = 0; index < length; index += 1) {
     const dayTs = Number(startTs) + index * 86400
@@ -349,7 +350,7 @@ export function parseDailySeries(payload, { startTs, endTs }) {
     const dataGap = {}
     for (const [metric, field] of Object.entries(METRIC_FIELD_MAP)) {
       const isCore = CORE_METRICS.includes(metric)
-      const series = allTab.series[metric]
+      const series = usedTab.series[metric]
       if (!isCore && (!series || series.length !== length)) {
         // 扩展指标字段级缺口：缺失/空 = not_exposed；长度不匹配 = FIELD_LENGTH_MISMATCH。
         dataGap[field] = {
@@ -380,7 +381,8 @@ export function parseDailySeries(payload, { startTs, endTs }) {
     const series = row.series.browse
     for (let index = 0; index < length; index += 1) {
       const value = intOrNull(typeof series[index] === 'string' ? series[index].trim() : series[index])
-      total += value === null ? 0 : value
+      // 缺失点跳过，不按 0 计入基数（审查 P2-16）。
+      if (value !== null) total += value
     }
     sourceRows.push({
       sourceType: row.tabType,
@@ -394,9 +396,16 @@ export function parseDailySeries(payload, { startTs, endTs }) {
     window: { startDay: shanghaiDayFromTs(Number(startTs)), endDay: shanghaiDayFromTs(Number(endTs)) },
     rows: sourceRows,
   }
-  if (unknownSources.length) {
-    trafficSource.dataGap = { unknown_source_type: unknownSources.map(Number) }
+  const trafficGap = {}
+  if (missingAllTab) {
+    // 官方响应缺「全部(999)」分组：日指标只能退化为首个来源，必须留缺口告警，
+    // 不得静默（2026-11-12 审查 P2-27）。
+    trafficGap.source_tab_missing = { reason: 'not_exposed', usedTabType: usedTab.tabType }
   }
+  if (unknownSources.length) {
+    trafficGap.unknown_source_type = unknownSources.map(Number)
+  }
+  if (Object.keys(trafficGap).length) trafficSource.dataGap = trafficGap
   return { rows: days, trafficSource }
 }
 
@@ -446,8 +455,12 @@ export function parseFansTrend(payload, { startTs, endTs }) {
     const tabType = intOrNull(tab.tabType)
     if (tabType === null) continue
     const dailyRows = []
-    const tabData = tab.data && typeof tab.data === 'object' ? tab.data : {}
-    const add = Array.isArray(tabData.add) ? tabData.add : []
+    // 官方真实响应是**平铺**结构（fansDataByTabtype[].add），阶段 0 fixture 为
+    // ``tab.data.add`` 包装；两种形态都接受，否则来源趋势恒为空（审查 P2-2）。
+    const tabData = tab.data && typeof tab.data === 'object' ? tab.data : null
+    const add = Array.isArray(tab.add)
+      ? tab.add
+      : (Array.isArray(tabData && tabData.add) ? tabData.add : [])
     for (let index = 0; index < Math.min(add.length, length); index += 1) {
       const value = intOrNull(String(add[index] ?? '').trim() || null)
       if (value === null) continue

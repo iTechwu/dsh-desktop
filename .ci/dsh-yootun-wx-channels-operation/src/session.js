@@ -82,7 +82,8 @@ export async function waitForSessionCookie(context, {
  *
  * @param {object} page 官方页面
  * @param {object|null} firstProfile 首次读到的身份
- * @returns {Promise<object>} 稳定后的身份（至少含 accountId）
+ * @returns {Promise<{profile: object|null, stable: boolean}>} ``stable=false`` 表示
+ *   轮询耗尽仍未确认用户选完身份——调用方**不得**据此建号（审查 P1-7）。
  */
 export async function waitStableIdentity(page, firstProfile, {
   attempts = IDENTITY_STABLE_ATTEMPTS,
@@ -90,7 +91,7 @@ export async function waitStableIdentity(page, firstProfile, {
   required = IDENTITY_STABLE_REQUIRED,
 } = {}) {
   let current = firstProfile && firstProfile.accountId ? firstProfile : null
-  if (!current) return firstProfile
+  if (!current) return { profile: firstProfile, stable: false }
   let stableCount = 1
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
     await sleep(intervalMs)
@@ -104,14 +105,14 @@ export async function waitStableIdentity(page, firstProfile, {
     if (next.accountId === current.accountId) {
       stableCount += 1
       // 连续多次读到同一身份 → 视为用户已完成选择。
-      if (stableCount >= required) return next
+      if (stableCount >= required) return { profile: next, stable: true }
     } else {
       // 身份变了（用户刚在官方页面选了另一个视频号）：以新身份为准，重新计数。
       current = next
       stableCount = 1
     }
   }
-  return current
+  return { profile: current, stable: false }
 }
 
 /** 登录瞬间读取账号资料失败时的短间隔重试（对齐抖音 pending 账号教训）。 */export async function readAccountProfileWithRetry(page, { attempts = 4, delayMs = 1200, sleepFn = sleep, finderId = '' } = {}) {
@@ -145,7 +146,10 @@ export async function loginWithQrCode({
   chromeFactory = launchChrome,
   onPage = null,
 } = {}) {
-  const tempId = accountId || `pending-${Date.now()}`
+  // 登录一律先写**临时** Profile：即使调用方传了真实 accountId（历史 action 仍允许），
+  // 也不会把登录态直接写进正式账号目录、更不会在 moveProfile 时 rm 掉其它账号的
+  // Profile（2026-11-12 审查 P2-11）。
+  const tempId = `pending-${Date.now()}`
   const profileDir = await ensureProfileDir(tempId, root)
   let context = null
   try {
@@ -173,7 +177,16 @@ export async function loginWithQrCode({
     // 账号时官方按当前身份返回数据 → 串号。
     //
     // 因此：连续读到同一身份才认为「用户已选完」，身份发生变化则以新身份为准重新计数。
-    const profile = await waitStableIdentity(page, firstProfile)
+    const stableIdentity = await waitStableIdentity(page, firstProfile)
+    if (!stableIdentity.stable) {
+      // 轮询耗尽仍未确认身份：绝不能把「最后一次读到的身份」（很可能是默认身份）
+      // 建成账号，否则后续采集会稳定采到别人的数据（审查 P1-7）。
+      await context.close().catch(() => {})
+      // 清理临时 Profile 与登录态文件，避免遗留（正式账号未被创建）。
+      await clearLocalCredentials(tempId, root).catch(() => {})
+      return { status: 'failed', reason: 'identity_not_stable' }
+    }
+    const profile = stableIdentity.profile
     const resolvedId = profile && profile.accountId ? profile.accountId : tempId
     await saveStorageState(resolvedId, context, root)
     await context.close()

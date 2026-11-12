@@ -16,6 +16,7 @@
 import { randomUUID } from 'node:crypto'
 
 import { splitIngestBatches } from './collector.js'
+import { stableErrorCode } from './tools-client.js'
 import { getAccount, updateAccount } from './state.js'
 import {
   heartbeatIdempotencyKey,
@@ -30,6 +31,8 @@ import {
 } from './tools-client.js'
 
 export const DEFAULT_RETRIES = 3
+// 带失败对象的批次同号重投次数（§16.4；服务端删旧行真实重做）。
+export const FAILED_BATCH_RETRIES = 2
 
 // 不退避重试的确定性错误（重试也不会变好，反而放大）。
 const DETERMINISTIC_ERRORS = new Set([
@@ -187,13 +190,38 @@ export function createIngestClient({
           { onRecover: recoverRun, label: `batch ${batchNo}` },
         )
       } catch (error) {
-        // 批次最终失败：记录并把该批作品计入 failed（不中断其余批次）。
-        for (const work of batch.works) failed.add(work.workId)
+        // 批次级传输失败：该批在服务端**没有账本行**，不能计入客户端 failed——
+        // finish 会按账本重算并与声明比对，多报会变成 RUN_COUNT_MISMATCH 把 run
+        // 永远卡在 running（2026-11-12 审查 P1-4）。服务端会因 succeeded < expected
+        // 自然结算 partial，语义正确。
         batchResults.push({ batchNo, status: 'failed', error: safeCode(error) })
         emit({ phase: 'batch_failed', batchNo, totalBatches: batches.length, error: safeCode(error) })
         continue
       }
-      const payload = result && result.batch ? result.batch : {}
+      let payload = result && result.batch ? result.batch : {}
+      // 带失败对象的批次：同 batchNo 重投，幂等键加 ``:retry{n}`` 后缀开启新收据，
+      // 服务端删除旧失败账本行后真实重做（§15.1.2.6 / §16.4；审查 P1-3）。
+      for (let attempt = 1; attempt <= FAILED_BATCH_RETRIES; attempt += 1) {
+        const failedNow = Array.isArray(payload.failed_objects) ? payload.failed_objects.length : 0
+        if (!failedNow) break
+        emit({ phase: 'batch_retry', batchNo, attempt, failedObjects: failedNow })
+        try {
+          result = await withRetry(
+            () => callTool('wx_channels_collect_ingest_works', {
+              runId,
+              batchNo,
+              works: batch.works,
+              totalDailyMetricRows: batch.totalDailyMetricRows,
+              idempotencyKey: `${ingestWorksIdempotencyKey(runId, batchNo)}:retry${attempt}`,
+            }),
+            { onRecover: recoverRun, label: `batch ${batchNo} retry ${attempt}` },
+          )
+          payload = result && result.batch ? result.batch : {}
+        } catch (retryError) {
+          emit({ phase: 'batch_retry_failed', batchNo, attempt, error: safeCode(retryError) })
+          break
+        }
+      }
       for (const workId of payload.succeeded_objects || []) { succeeded.add(workId); failed.delete(workId) }
       for (const workId of payload.failed_objects || []) failed.add(workId)
       batchResults.push({
@@ -221,36 +249,52 @@ export function createIngestClient({
     }
   }
 
-  /** 账号级全部视频聚合入库（批次号服务端分配；幂等键嵌窗口）。 */
-  async function ingestAccountMetrics({ startDay, endDay, rows }) {
+  /** 账号级全部视频聚合入库（批次号服务端分配；幂等键嵌窗口）。
+   *
+   * ``trafficSource`` 是窗口聚合（官方只给整窗分布）：挂到窗口末日行，其余行为 NULL
+   *（此前只发 rows，导致 ``wx_channels_account_metric_daily.traffic_source`` 恒为空，
+   * 2026-11-12 审查 P2-28）。
+   */
+  async function ingestAccountMetrics({ startDay, endDay, rows, trafficSource = null }) {
     if (!runId) throw new Error('run_not_started')
     if (!Array.isArray(rows) || rows.length === 0) {
       return { replayed: false, skipped: 'no_rows' }
+    }
+    let metrics = rows
+    if (trafficSource && trafficSource.rows) {
+      metrics = rows.map((row, index) => (
+        index === rows.length - 1 ? { ...row, trafficSource } : row
+      ))
     }
     return withRetry(
       () => callTool('wx_channels_collect_ingest_account_metrics', {
         runId,
         startDay,
         endDay,
-        metrics: rows,
+        metrics,
         idempotencyKey: ingestAccountMetricsIdempotencyKey(runId, startDay, endDay),
       }),
       { onRecover: recoverRun, label: 'ingest_account_metrics' },
     )
   }
 
-  /** 账号级关注者增长入库。 */
-  async function ingestFansTrend({ startDay, endDay, rows }) {
+  /** 账号级关注者增长入库；``sourceTrend`` 按日挂载到 ``daily[].source_trend``。
+   *
+   * 此前只发 daily、从不发来源趋势，``wx_channels_fans_daily.source_trend`` 永远为
+   * NULL（2026-11-12 审查 P2-2）。
+   */
+  async function ingestFansTrend({ startDay, endDay, rows, sourceTrend = null }) {
     if (!runId) throw new Error('run_not_started')
     if (!Array.isArray(rows) || rows.length === 0) {
       return { replayed: false, skipped: 'no_rows' }
     }
+    const daily = attachFansSourceTrend(rows, sourceTrend)
     return withRetry(
       () => callTool('wx_channels_collect_ingest_fans_trend', {
         runId,
         startDay,
         endDay,
-        daily: rows,
+        daily,
         idempotencyKey: ingestFansTrendIdempotencyKey(runId, startDay, endDay),
       }),
       { onRecover: recoverRun, label: 'ingest_fans_trend' },
@@ -381,6 +425,7 @@ export async function ingestCollectedData({
   const started = await client.startRun({ newAttempt })
   const runId = started.run.run_id
   try {
+  try {
     await client.publishListMeta({ expectedWorkCount, listComplete })
   } catch (error) {
     emit({ phase: 'list_meta_failed', error: safeCode(error) })
@@ -396,7 +441,12 @@ export async function ingestCollectedData({
     const { accountMetrics, fansTrend, fansProfile } = accountLevel
     if (accountMetrics && Array.isArray(accountMetrics.rows) && accountMetrics.rows.length) {
       try {
-        await client.ingestAccountMetrics({ startDay: accountMetrics.startDay, endDay: accountMetrics.endDay, rows: accountMetrics.rows })
+        await client.ingestAccountMetrics({
+          startDay: accountMetrics.startDay,
+          endDay: accountMetrics.endDay,
+          rows: accountMetrics.rows,
+          trafficSource: accountMetrics.trafficSource || null,
+        })
         segmentStatus.accountMetricStatus = 'completed'
       } catch (error) {
         segmentStatus.accountMetricStatus = 'failed'
@@ -417,6 +467,7 @@ export async function ingestCollectedData({
             startDay: chunk[0].day,
             endDay: chunk[chunk.length - 1].day,
             rows: chunk,
+            sourceTrend: fansTrend.sourceTrend || null,
           })
         } catch (error) {
           failedChunks += 1
@@ -447,6 +498,12 @@ export async function ingestCollectedData({
     ...segmentStatus,
   })
   return { runId, ingest, finish, error: null }
+  } catch (error) {
+    // 异常兜底：把 run 显式取消，避免停在 running 等 120s 租约过期（审查 P2-14）。
+    emit({ phase: 'run_cancel_on_error', error: safeCode(error) })
+    try { await client.cancel() } catch { /* best-effort：取消失败仍上抛原始异常 */ }
+    throw error
+  }
 }
 
 /** 客户端上报状态仅作参考：服务端以账本重算并复核计数，冲突时以服务端为准。 */
@@ -458,8 +515,33 @@ export function resolveClientStatus({ listComplete, expected, ingest }) {
   return 'partial'
 }
 
+/** 把聚合来源趋势（rows[].daily[]）按日挂到 ``daily[].source_trend``（P2-2）。 */
+function attachFansSourceTrend(rows, sourceTrend) {
+  const trendRows = sourceTrend && Array.isArray(sourceTrend.rows) ? sourceTrend.rows : []
+  if (!trendRows.length) return rows
+  const byDay = new Map()
+  for (const row of trendRows) {
+    for (const point of Array.isArray(row.daily) ? row.daily : []) {
+      if (!point || !point.day) continue
+      const list = byDay.get(point.day) || []
+      list.push({
+        sourceType: row.sourceType,
+        sourceKey: row.sourceKey,
+        name: row.name,
+        add: point.add,
+      })
+      byDay.set(point.day, list)
+    }
+  }
+  return rows.map(row => {
+    const items = byDay.get(row.day)
+    return items && items.length ? { ...row, sourceTrend: { rows: items } } : row
+  })
+}
+
 function safeCode(error) {
-  if (error && typeof error.code === 'string' && error.code) return error.code
+  const stable = stableErrorCode(error)
+  if (stable) return stable
   if (error && typeof error.name === 'string') return error.name.slice(0, 64)
   return 'wx_channels_operation_request_failed'
 }

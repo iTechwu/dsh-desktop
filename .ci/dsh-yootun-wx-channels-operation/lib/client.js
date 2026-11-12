@@ -252,13 +252,15 @@ window.__ModuleLoader__.load({
       const map = dimension ? PROFILE_LABEL_MAPS[dimension] : null
       return (Array.isArray(rows) ? rows : [])
         .filter(row => row && row.key && row.key !== '@_all')
+        // 计数缺失/非数字的行直接跳过，不折算 0（「缺失不补 0」口径，审查 P2-16）。
+        .filter(row => row.count !== null && row.count !== undefined && Number.isFinite(Number(row.count)))
         .map(row => {
           // 未知编码在任一维度（含 province/city）都必须显示「未知」，不能透出英文。
-          if (isUnknownKey(row.key)) return ['未知', Number(row.count) || 0]
+          if (isUnknownKey(row.key)) return ['未知', Number(row.count)]
           let label = row.label || row.key
           if (typeof map === 'function') label = map(row)
           else if (map && map[String(row.key)] !== undefined) label = map[String(row.key)]
-          return [label, Number(row.count) || 0]
+          return [label, Number(row.count)]
         })
     }
 
@@ -436,6 +438,8 @@ window.__ModuleLoader__.load({
       // 身份与所选账号不是同一个（2026-11-11 真机串号排查）。
       if (reason === 'account_mismatch') return '当前登录的视频号与所选账号不一致，请重新扫码并在官方页面选择该视频号后重试'
       if (/^identity_check_failed/.test(reason)) return '无法确认当前登录的视频号身份，请重新扫码后重试'
+      if (reason === 'identity_not_stable') return '未确认视频号身份（可能还在官方页面选择中），请重新扫码并在官方页面选完后确认'
+      if (reason === 'account_mismatch') return '当前登录的视频号与所选账号不一致，请重新扫码并选择该视频号'
       if (reason === 'pending_account') return '待升级账号'
       if (reason === 'probe_failed') return '会话检测失败'
       if (reason === 'partial') return '部分作品缺失'
@@ -1078,9 +1082,13 @@ window.__ModuleLoader__.load({
         const account = (accounts || []).find(item => item.accountId === accountId)
         return (account && account.nickname) || accountId || ''
       }
+      // 未完成明细必须包含 partial（部分作品缺失）——否则汇总显示「成功 N、失败 0」，
+      // 部分失败账号却不出现在明细里（审查 P2-15）。
       const unfinished = running || !batch
         ? []
-        : (batch.items || []).filter(item => item.status === 'failed' || item.status === 'skipped')
+        : (batch.items || []).filter(
+          item => item.status === 'failed' || item.status === 'skipped' || item.status === 'partial',
+        )
       return h('section', { className: 'ywc-panel' },
         h('div', { className: 'ywc-side-head' },
           h('h2', null, '账号管理'),
@@ -1111,14 +1119,16 @@ window.__ModuleLoader__.load({
                   )
                   : null,
                 h('p', { className: 'ywc-hint', key: 'cnt' },
-                  `成功 ${batch.completedCount || 0} · 失败 ${batch.failedCount || 0} · 跳过 ${batch.skippedCount || 0}`),
+                  `成功 ${batch.completedCount || 0} · 部分完成 ${batch.partialCount || 0} · `
+                  + `失败 ${batch.failedCount || 0} · 跳过 ${batch.skippedCount || 0}`),
               ]
               : [
                 h('p', {
                   className: batch.summary.status === 'completed' ? 'ywc-ok' : batch.summary.status === 'failed' ? 'ywc-error' : 'ywc-warn',
                   key: 'sum',
                 },
-                  `批量结束：成功 ${batch.summary.completed}、失败 ${batch.summary.failed}、跳过 ${batch.summary.skipped}`),
+                  `批量结束：成功 ${batch.summary.completed}、部分完成 ${batch.summary.partial || 0}、`
+                  + `失败 ${batch.summary.failed}、跳过 ${batch.summary.skipped}`),
                 unfinished.length
                   ? h('div', { className: 'ywc-batch-detail', key: 'detail' },
                     ...unfinished.map(item => h('p', { key: item.accountId, className: 'ywc-batch-item' },
@@ -2187,12 +2197,24 @@ window.__ModuleLoader__.load({
         // eslint-disable-next-line react-hooks/exhaustive-deps
       }, [batch && batch.phase])
 
+      // 详情请求序号 + 账号双维度守卫（审查 P2-5）：快速点开 A→B→A 时，A 的旧响应
+      // 后到不得覆盖 B 的弹层内容。
+      const detailRequestRef = useRef(0)
       const openDetail = useCallback(work => {
         setDetail(work)
         setDetailDaily([])
+        detailRequestRef.current += 1
+        const requestId = detailRequestRef.current
+        const accountId = work.account_id || selectedId
         void (async () => {
           try {
-            const result = await post('work.get', { accountId: work.account_id || selectedId, workId: work.work_id })
+            const result = await post('work.get', { accountId, workId: work.work_id })
+            if (!shouldApplyResponse({
+              requestId,
+              currentRequestId: detailRequestRef.current,
+              responseAccountId: accountId,
+              currentAccountId: selectedId,
+            })) return
             setDetail(result.work || work)
             setDetailDaily(Array.isArray(result.daily_metrics) ? result.daily_metrics : [])
           } catch { /* 详情查询失败保留行内数据展示 */ }

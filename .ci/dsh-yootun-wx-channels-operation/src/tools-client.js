@@ -40,6 +40,7 @@ const ALLOWED_ERROR_CODES = new Set([
   'RUN_NOT_RUNNING',
   'RUN_STILL_ACTIVE',
   'RUN_LIST_META_REQUIRED',
+  'RUN_COUNT_MISMATCH',
   'LIST_INCOMPLETE',
   'TIME_SERIES_LENGTH_MISMATCH',
   'FIELD_LENGTH_MISMATCH',
@@ -56,6 +57,21 @@ const ALLOWED_ERROR_CODES = new Set([
   'IDEMPOTENCY_OUTCOME_UNKNOWN',
   'IDEMPOTENCY_KEY_REQUIRED',
 ])
+
+/** 稳定错误码形态：全大写 + 下划线（采集侧 `throw new Error('CODE')` 的口径）。 */
+const STABLE_CODE_RE = /^[A-Z][A-Z0-9_]{2,63}$/
+
+/** 从任意异常提取稳定码：优先 error.code，其次 message 中的稳定码形态，
+ *  最后回退 name（2026-11-12 审查 P2-1：采集侧只抛 message 时曾统一显示「采集失败」）。
+ */
+export function stableErrorCode(error) {
+  if (!error) return null
+  if (typeof error.code === 'string' && error.code) return error.code
+  const message = typeof error.message === 'string' ? error.message.trim() : ''
+  if (STABLE_CODE_RE.test(message)) return message
+  if (/^identity_check_failed/.test(message)) return message.slice(0, 64)
+  return null
+}
 
 export class ToolsUnavailableError extends Error {
   constructor(tool) {

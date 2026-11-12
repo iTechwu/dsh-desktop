@@ -247,13 +247,15 @@ export function normalizeProfileRows(rows, dimension) {
   const map = dimension ? PROFILE_LABEL_MAPS[dimension] : null
   return (Array.isArray(rows) ? rows : [])
     .filter(row => row && row.key && row.key !== '@_all')
+    // 计数缺失/非数字的行直接跳过，不折算 0（「缺失不补 0」口径，审查 P2-16）。
+    .filter(row => row.count !== null && row.count !== undefined && Number.isFinite(Number(row.count)))
     .map(row => {
       // 未知编码在任一维度（含 province/city）都必须显示「未知」，不能透出英文。
-      if (isUnknownKey(row.key)) return ['未知', Number(row.count) || 0]
+      if (isUnknownKey(row.key)) return ['未知', Number(row.count)]
       let label = row.label || row.key
       if (typeof map === 'function') label = map(row)
       else if (map && map[String(row.key)] !== undefined) label = map[String(row.key)]
-      return [label, Number(row.count) || 0]
+      return [label, Number(row.count)]
     })
 }
 
@@ -431,6 +433,8 @@ export function batchReasonText(reason) {
   // 身份与所选账号不是同一个（2026-11-11 真机串号排查）。
   if (reason === 'account_mismatch') return '当前登录的视频号与所选账号不一致，请重新扫码并在官方页面选择该视频号后重试'
   if (/^identity_check_failed/.test(reason)) return '无法确认当前登录的视频号身份，请重新扫码后重试'
+  if (reason === 'identity_not_stable') return '未确认视频号身份（可能还在官方页面选择中），请重新扫码并在官方页面选完后确认'
+  if (reason === 'account_mismatch') return '当前登录的视频号与所选账号不一致，请重新扫码并选择该视频号'
   if (reason === 'pending_account') return '待升级账号'
   if (reason === 'probe_failed') return '会话检测失败'
   if (reason === 'partial') return '部分作品缺失'

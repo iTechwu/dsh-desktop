@@ -178,7 +178,7 @@ test('AccountList 批量面板：运行中总进度+当前账号·细粒度+计�
   assert.ok(running.includes('第 2/2 个账号'), '总进度行缺失')
   assert.ok(running.includes('当前账号 账号二'), '当前账号名缺失')
   assert.ok(running.includes('采集进度 5/20'), '细粒度进度缺失')
-  assert.ok(running.includes('成功 1 · 失败 0 · 跳过 0'), '实时计数行缺失')
+  assert.ok(running.includes('成功 1 · 部分完成 0 · 失败 0 · 跳过 0'), '实时计数行缺失')
   assert.ok(running.includes('ywc-spinner'), '运行中 spinner 缺失')
   const done = renderToString(h(AccountList, {
     ...base,
@@ -192,7 +192,7 @@ test('AccountList 批量面板：运行中总进度+当前账号·细粒度+计�
       completedCount: 1, failedCount: 0, skippedCount: 1,
     },
   }))
-  assert.ok(done.includes('批量结束：成功 1、失败 0、跳过 1'), '终态汇总缺失')
+  assert.ok(done.includes('批量结束：成功 1、部分完成 0、失败 0、跳过 1'), '终态汇总缺失')
   assert.ok(done.includes('账号二'), '未完成账号名缺失')
   assert.ok(done.includes('会话已过期，请重新扫码'), '未完成原因文案缺失')
 })
@@ -893,7 +893,7 @@ test('批量采集乐观投影：空 items 的 probing 形状可安全渲染（�
   }))
   assert.ok(html.includes('正在采集…'), '乐观态应立刻显示采集 spinner 文案')
   assert.ok(html.includes('ywc-spinner'), '乐观态应有 spinner')
-  assert.ok(html.includes('成功 0 · 失败 0 · 跳过 0'), '计数需安全兜底为 0')
+  assert.ok(html.includes('成功 0 · 部分完成 0 · 失败 0 · 跳过 0'), '计数需安全兜底为 0')
 })
 
 test('按钮交互样式：所有可点击元素都有 cursor:pointer 与 hover 效果', async () => {

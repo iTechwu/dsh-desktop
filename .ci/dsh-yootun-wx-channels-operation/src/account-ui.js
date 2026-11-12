@@ -43,9 +43,13 @@ export function AccountList({
     const account = (accounts || []).find(item => item.accountId === accountId)
     return (account && account.nickname) || accountId || ''
   }
+  // 未完成明细必须包含 partial（部分作品缺失）——否则汇总显示「成功 N、失败 0」，
+  // 部分失败账号却不出现在明细里（审查 P2-15）。
   const unfinished = running || !batch
     ? []
-    : (batch.items || []).filter(item => item.status === 'failed' || item.status === 'skipped')
+    : (batch.items || []).filter(
+      item => item.status === 'failed' || item.status === 'skipped' || item.status === 'partial',
+    )
   return h('section', { className: 'ywc-panel' },
     h('div', { className: 'ywc-side-head' },
       h('h2', null, '账号管理'),
@@ -76,14 +80,16 @@ export function AccountList({
               )
               : null,
             h('p', { className: 'ywc-hint', key: 'cnt' },
-              `成功 ${batch.completedCount || 0} · 失败 ${batch.failedCount || 0} · 跳过 ${batch.skippedCount || 0}`),
+              `成功 ${batch.completedCount || 0} · 部分完成 ${batch.partialCount || 0} · `
+              + `失败 ${batch.failedCount || 0} · 跳过 ${batch.skippedCount || 0}`),
           ]
           : [
             h('p', {
               className: batch.summary.status === 'completed' ? 'ywc-ok' : batch.summary.status === 'failed' ? 'ywc-error' : 'ywc-warn',
               key: 'sum',
             },
-              `批量结束：成功 ${batch.summary.completed}、失败 ${batch.summary.failed}、跳过 ${batch.summary.skipped}`),
+              `批量结束：成功 ${batch.summary.completed}、部分完成 ${batch.summary.partial || 0}、`
+              + `失败 ${batch.summary.failed}、跳过 ${batch.summary.skipped}`),
             unfinished.length
               ? h('div', { className: 'ywc-batch-detail', key: 'detail' },
                 ...unfinished.map(item => h('p', { key: item.accountId, className: 'ywc-batch-item' },

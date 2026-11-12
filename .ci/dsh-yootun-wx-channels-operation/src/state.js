@@ -61,7 +61,23 @@ function emptyState() {
   return { version: STATE_VERSION, accounts: {} }
 }
 
+// accounts.json 的读-改-写按 root 串行化（2026-11-12 审查 P2-8）：并发心跳/会话上报
+// 与登录建号同时改同一文件时，后写覆盖前写会让 sessionSeq 回退，服务端因此拒绝乱序。
+const rootQueues = new Map()
+
+function withRootLock(root, task) {
+  const previous = rootQueues.get(root) || Promise.resolve()
+  const current = previous.then(task, task)
+  // 推进队列时吞掉自身异常，避免一次失败卡死后续写入。
+  rootQueues.set(root, current.catch(() => {}))
+  return current
+}
+
 export async function writeAccounts(state, root = stateRoot()) {
+  return withRootLock(root, () => writeAccountsUnlocked(state, root))
+}
+
+async function writeAccountsUnlocked(state, root) {
   await ensureDir(root)
   const file = paths(root).accountsFile
   const tmp = `${file}.tmp`
@@ -82,12 +98,14 @@ export async function getAccount(accountId, root = stateRoot()) {
 
 /** upsert 账号本地记录；patch 为空对象时仅保证记录存在。 */
 export async function updateAccount(accountId, patch = {}, root = stateRoot()) {
-  const state = await readAccounts(root)
-  const current = state.accounts[accountId] || { accountId, sessionSeq: 0, sessionStatus: 'unknown' }
-  const next = { ...current, ...patch, accountId }
-  state.accounts[accountId] = next
-  await writeAccounts(state, root)
-  return next
+  return withRootLock(root, async () => {
+    const state = await readAccounts(root)
+    const current = state.accounts[accountId] || { accountId, sessionSeq: 0, sessionStatus: 'unknown' }
+    const next = { ...current, ...patch, accountId }
+    state.accounts[accountId] = next
+    await writeAccountsUnlocked(state, root)
+    return next
+  })
 }
 
 /**
@@ -96,12 +114,14 @@ export async function updateAccount(accountId, patch = {}, root = stateRoot()) {
  * 序号只增不减：上报给 tools 的 `sessionSeq` 因此天然拒绝乱序覆盖。
  */
 export async function nextSessionSeq(accountId, root = stateRoot()) {
-  const state = await readAccounts(root)
-  const current = state.accounts[accountId] || { accountId, sessionSeq: 0 }
-  const seq = Number(current.sessionSeq || 0) + 1
-  state.accounts[accountId] = { ...current, accountId, sessionSeq: seq }
-  await writeAccounts(state, root)
-  return seq
+  return withRootLock(root, async () => {
+    const state = await readAccounts(root)
+    const current = state.accounts[accountId] || { accountId, sessionSeq: 0 }
+    const seq = Number(current.sessionSeq || 0) + 1
+    state.accounts[accountId] = { ...current, accountId, sessionSeq: seq }
+    await writeAccountsUnlocked(state, root)
+    return seq
+  })
 }
 
 /** 账号的本地 Profile 目录（按需创建，权限 0700）。 */
@@ -117,14 +137,28 @@ export async function moveProfile(fromAccountId, toAccountId, root = stateRoot()
   const from = paths(root).profileDir(fromAccountId)
   const to = paths(root).profileDir(toAccountId)
   if (from === to) return to
-  await rm(to, { recursive: true, force: true })
+  // 旧实现先 rm(to) 再 rename：rename 失败会直接丢掉目标账号的原 Profile
+  //（2026-11-12 审查 P3-24）。改为「备份 → 迁移 → 清理」，失败时回滚。
+  const backup = `${to}.bak-${Date.now()}`
+  let hadTarget = false
+  try {
+    await rename(to, backup)
+    hadTarget = true
+  } catch (error) {
+    hadTarget = false
+  }
   try {
     await rename(from, to)
   } catch (error) {
     // 源目录不存在（如占位账号的 Profile 已被清理）不阻断升级：登录态以 storage_state 为准。
-    if (error && error.code === 'ENOENT') return to
+    if (error && error.code === 'ENOENT') {
+      if (hadTarget) await rename(backup, to).catch(() => {})
+      return to
+    }
+    if (hadTarget) await rename(backup, to).catch(() => {})
     throw error
   }
+  if (hadTarget) await rm(backup, { recursive: true, force: true }).catch(() => {})
   return to
 }
 
@@ -190,7 +224,7 @@ export async function clearLocalCredentials(accountId, root = stateRoot()) {
   const state = await readAccounts(root)
   if (state.accounts[accountId]) {
     delete state.accounts[accountId]
-    await writeAccounts(state, root)
+    await withRootLock(root, () => writeAccountsUnlocked(state, root))
   }
   return removed
 }

@@ -220,6 +220,17 @@ test('fans_trend：四指标核心校验 + 日期映射 + 跨月窗口', async (
   )
 })
 
+test('fans_trend：官方平铺 fansDataByTabtype[].add 也解析出来源趋势（P2-2）', async () => {
+  const startTs = shanghaiDayStartTs('2026-10-28')
+  const endTs = shanghaiDayStartTs('2026-11-03')
+  const parsed = parseFansTrend(await fixture('fans_trend.sample.json'), { startTs, endTs })
+  // 阶段 0 fixture 是平铺结构（tab.add），旧实现读 tab.data.add 恒为空。
+  assert.ok(parsed.sourceTrend, '来源趋势不应恒为 null')
+  assert.ok(parsed.sourceTrend.rows.length > 0)
+  assert.ok(parsed.sourceTrend.rows[0].daily.length > 0)
+  assert.equal(parsed.sourceTrend.rows[0].daily[0].day, '2026-10-28')
+})
+
 test('fans_trend.cross-month：跨月窗口日期映射', async () => {
   const startTs = shanghaiDayStartTs('2026-10-30')
   const endTs = shanghaiDayStartTs('2026-11-02')
@@ -247,6 +258,44 @@ test('fans_portrait.partial：部分维度缺失保持 null', async () => {
   function dimensions() {
     return ['age', 'gender', 'province', 'city', 'device']
   }
+})
+
+test('new_post_total_data：缺「全部(999)」分组时记录 trafficSource 缺口（P2-27）', async () => {
+  const payload = await fixture('new_post_total_data.sample.json')
+  for (const group of payload.data.dataByFanstype) {
+    if (group.fansType === 1) {
+      group.dataByTabtype = group.dataByTabtype.filter(tab => tab.tabType !== 999)
+    }
+  }
+  const startTs = shanghaiDayStartTs('2026-11-03')
+  const endTs = shanghaiDayStartTs('2026-11-09')
+  const parsed = parseDailySeries(payload, { startTs, endTs })
+  assert.equal(parsed.rows.length, 7)
+  // 回落首个来源，但必须留缺口告警，不能静默。
+  assert.ok(parsed.trafficSource.dataGap, '缺 999 时必须记数据缺口')
+  assert.ok(parsed.trafficSource.dataGap.source_tab_missing)
+  assert.notEqual(parsed.trafficSource.dataGap.source_tab_missing.usedTabType, 999)
+})
+
+test('new_post_total_data：非入表来源少返一天不再整窗拒绝（P2-9）', async () => {
+  const payload = await fixture('new_post_total_data.sample.json')
+  for (const group of payload.data.dataByFanstype) {
+    if (group.fansType !== 1) continue
+    // 仓内 fixture 本身缺 999（见 P2-27），这里显式构造一个完整的「全部」行，
+    // 再让某个非入表来源少 1 天，验证校验范围只覆盖入表来源。
+    const first = group.dataByTabtype[0]
+    const allTab = JSON.parse(JSON.stringify(first))
+    allTab.tabType = 999
+    group.dataByTabtype = [allTab, ...group.dataByTabtype]
+    const other = group.dataByTabtype[1]
+    if (other && other.data && Array.isArray(other.data.browse)) {
+      other.data.browse = other.data.browse.slice(0, 6) // 少 1 天
+    }
+  }
+  const startTs = shanghaiDayStartTs('2026-11-03')
+  const endTs = shanghaiDayStartTs('2026-11-09')
+  const parsed = parseDailySeries(payload, { startTs, endTs })
+  assert.equal(parsed.rows.length, 7, '入表来源（999）完整，窗口不应因其它来源缺一天被拒')
 })
 
 test('new_post_total_data：与 feed_aggregate 同一解析路径（fansType=1，7 点窗口）', async () => {

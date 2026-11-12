@@ -65,7 +65,7 @@ test('批量控制器：串行执行、过期跳过、单账号失败继续、co
   }
   const status = controller.status
   assert.equal(status.phase, 'finished')
-  assert.deepEqual(status.summary, { completed: 2, failed: 1, skipped: 2, eligible: 3, status: 'partial' })
+  assert.deepEqual(status.summary, { completed: 2, partial: 0, failed: 1, skipped: 2, eligible: 3, status: 'partial' })
   assert.equal(status.items.find(item => item.accountId === 'acc-expired').reason, 'session_required')
   assert.equal(status.items.find(item => item.accountId === 'acc-unknown').reason, 'probe_failed')
   assert.equal(status.items.find(item => item.accountId === 'acc-fail').status, 'failed')
@@ -350,7 +350,8 @@ test('waitStableIdentity：身份变化时以新身份为准（同一微信多�
     },
   }
   const stable = await waitStableIdentity(fakePage, sequence[0], { attempts: 6, intervalMs: 1, required: 2 })
-  assert.equal(stable.accountId, 'v2_chosen', '应取用户切换后的身份，而不是默认身份')
+  assert.equal(stable.stable, true)
+  assert.equal(stable.profile.accountId, 'v2_chosen', '应取用户切换后的身份，而不是默认身份')
 })
 
 test('waitStableIdentity：身份稳定时返回该身份（单视频号场景）', async () => {
@@ -372,7 +373,8 @@ test('waitStableIdentity：身份稳定时返回该身份（单视频号场景�
     { accountId: 'v2_only', nickname: '唯一身份' },
     { attempts: 4, intervalMs: 1, required: 2 },
   )
-  assert.equal(stable.accountId, 'v2_only')
+  assert.equal(stable.stable, true)
+  assert.equal(stable.profile.accountId, 'v2_only')
   assert.ok(calls >= 1, '至少复核一次才算稳定')
 })
 
@@ -396,5 +398,62 @@ test('waitStableIdentity：读取失败不算身份变化，继续等待', async
     { accountId: 'v2_ok', nickname: '稳定' },
     { attempts: 4, intervalMs: 1, required: 2 },
   )
-  assert.equal(stable.accountId, 'v2_ok')
+  assert.equal(stable.stable, true)
+  assert.equal(stable.profile.accountId, 'v2_ok')
+})
+
+
+test('批量控制器异常隔离：collect 抛错 → 该账号 failed、后续继续、终态落定（P1-5）', async () => {
+  const calls = []
+  const controller = createBatchCollectController({
+    probe: async () => ({ sessionStatus: 'ok' }),
+    collect: async ({ accountId }) => {
+      calls.push(`collect:${accountId}`)
+      if (accountId === 'acc-throw') throw new Error('disk_full')
+      if (accountId === 'acc-partial') return { status: 'partial', reason: 'partial', runId: 'run-p' }
+      return { status: 'completed', runId: `run-${accountId}` }
+    },
+    logger: null,
+  })
+  const started = await controller.start({ accountIds: ['acc-throw', 'acc-partial', 'acc-ok'] })
+  assert.equal(started.started, true)
+  for (let i = 0; i < 200 && controller.status.phase !== 'finished'; i += 1) {
+    await sleepImmediate()
+  }
+  const status = controller.status
+  assert.equal(status.phase, 'finished', '抛错后批量必须落定终态，不能永久 running')
+  assert.equal(controller.running, false)
+  // partial 单列，不并入 completed（P2-15）。
+  assert.deepEqual(status.summary, {
+    completed: 1, partial: 1, failed: 1, skipped: 0, eligible: 3, status: 'partial',
+  })
+  assert.equal(status.items.find(item => item.accountId === 'acc-throw').status, 'failed')
+  assert.equal(status.items.find(item => item.accountId === 'acc-throw').reason, 'Error')
+  assert.equal(status.items.find(item => item.accountId === 'acc-partial').status, 'partial')
+  assert.ok(calls.includes('collect:acc-ok'), '抛错后仍应继续下一个账号')
+})
+
+
+test('waitStableIdentity：轮询耗尽仍未稳定 → stable=false（不得据此建号，P1-7）', async () => {
+  // 每次都返回不同身份（用户一直在官方页面来回切换）。
+  let index = 0
+  const fakePage = {
+    evaluate: async () => {
+      index += 1
+      return {
+        status: 200,
+        text: JSON.stringify({
+          errCode: 0,
+          data: { finderUser: { finderUsername: `v2_flip_${index}`, nickname: `身份${index}`, fansCount: 0, feedsCount: 1 } },
+        }),
+      }
+    },
+  }
+  const result = await waitStableIdentity(
+    fakePage,
+    { accountId: 'v2_flip_0', nickname: '默认身份' },
+    { attempts: 3, intervalMs: 1, required: 2 },
+  )
+  assert.equal(result.stable, false, '未达 required 次连续相同身份必须判未稳定')
+  assert.ok(result.profile && result.profile.accountId, '仍返回最后读到的身份供排障，但不作为建号依据')
 })

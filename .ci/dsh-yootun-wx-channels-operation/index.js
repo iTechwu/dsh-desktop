@@ -53,6 +53,11 @@ export function apply(ctx, overrides = {}) {
     hasStorageState: overrides.hasStorageState || hasStorageState,
     runCollection: overrides.runCollection || runCollection,
     collectBusy: false,
+    // 单账号采集受理后的租约位（per-instance，审查 P2-7：模块级全局会在多实例
+    // 下互踩）。
+    collectLeaseHeld: false,
+    // 一键采集全部在异步预留账号列表期间的互斥位（审查 P2-6 TOCTOU）。
+    batchReserved: false,
     // 单账号采集状态投影（单槽——互斥保证同时只有一个采集）：collect.status 随
     // busy 一起返回，页面工具栏进度行（对齐抖音）与终态判断共用这一份数据。
     collectRecord: null,
@@ -373,19 +378,16 @@ async function handleRemoveRemote(deps, toolCtx, accountId) {
 async function handleCollectStart(deps, toolCtx, accountId, newAttempt) {
   // 互斥（§8.5 生命周期 3）：与一键采集全部互斥；检查与置位在同一段同步代码内
   // 完成前的并发请求由 collectBusy 同步守卫拒绝（TOCTOU 缺口修复，review P1-2）。
-  if (deps.collectBusy || deps.batchController.running) {
+  if (deps.collectBusy || deps.batchController.running || deps.batchReserved) {
     return { status: 'ok', started: false, reason: 'collect_busy' }
   }
   deps.collectBusy = true
   try {
     return await startCollectLocked(deps, toolCtx, accountId, newAttempt)
   } finally {
-    if (!collectLeaseHeld) deps.collectBusy = false
+    if (!deps.collectLeaseHeld) deps.collectBusy = false
   }
 }
-
-// collect 成功受理后互斥位由 runCollection 的 finally 释放；受理失败立即释放。
-let collectLeaseHeld = false
 
 async function startCollectLocked(deps, toolCtx, accountId, newAttempt) {
   const readiness = await checkCollectionReadiness({ accountId, root: deps.root, busy: false })
@@ -400,7 +402,7 @@ async function startCollectLocked(deps, toolCtx, accountId, newAttempt) {
   }
   // 异步执行：页面轮询 collect.status 读进度投影（对齐抖音 collect 投影，§8.5）；
   // 互斥位由 finally 释放。
-  collectLeaseHeld = true
+  deps.collectLeaseHeld = true
   const record = {
     accountId,
     status: 'running',
@@ -433,25 +435,40 @@ async function startCollectLocked(deps, toolCtx, accountId, newAttempt) {
     record.finishedAt = new Date().toISOString()
   }).finally(() => {
     deps.collectBusy = false
-    collectLeaseHeld = false
+    deps.collectLeaseHeld = false
   })
   return { status: 'ok', started: true }
 }
 
 async function handleCollectAllStart(deps, toolCtx) {
   // 与单账号采集互斥（review P1-2 反向缺口）。
-  if (deps.batchController.running || deps.collectBusy) {
+  if (deps.batchController.running || deps.collectBusy || deps.batchReserved) {
     return { status: 'ok', started: false, reason: 'collect_busy' }
   }
-  const local = await deps.readAccounts(deps.root)
-  const accountIds = Object.values(local.accounts)
-    .filter(record => !isPendingAccountId(record.accountId))
-    .map(record => record.accountId)
-  const started = await deps.batchController.start({ accountIds })
+  // 先同步预留互斥位，再读账号列表：否则 await 期间单账号采集可置 collectBusy，
+  // 批量虽被受理但每个账号都以 collect_busy 失败（审查 P2-6 TOCTOU）。
+  deps.batchReserved = true
+  let started = null
+  try {
+    const local = await deps.readAccounts(deps.root)
+    const accountIds = Object.values(local.accounts)
+      .filter(record => !isPendingAccountId(record.accountId))
+      .map(record => record.accountId)
+    started = await deps.batchController.start({ accountIds })
+  } finally {
+    // 批量进入 running 后由 batchController.running 守卫；预留位随即释放。
+    deps.batchReserved = false
+  }
   if (!started.started) return { status: 'ok', started: false, reason: started.reason }
   // 立即回批量投影（对齐抖音 started.batch）：页面 setBatch 后左栏批量面板即时
   // 显示「正在检查会话…」，不必等下一轮 collectAll.status 轮询。
-  return { status: 'ok', started: true, batchId: started.batchId, accounts: accountIds.length, batch: deps.batchController.status }
+  return {
+    status: 'ok',
+    started: true,
+    batchId: started.batchId,
+    accounts: started.accounts,
+    batch: deps.batchController.status,
+  }
 }
 
 async function handleRunGet(toolCtx, runId) {

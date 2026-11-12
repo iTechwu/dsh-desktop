@@ -242,8 +242,11 @@ test('确定性错误不重试：PAYLOAD_TOO_LARGE 直接失败该批并继续�
   // batch1 抛错不进 mock base 的 log（确定性错误零重试）；batch2 正常调用一次。
   assert.equal(attempts.length, 1)
   assert.equal(attempts[0].args.batchNo, 2)
-  assert.equal(ingest.failedWorkIds.length, 20)
+  // 传输失败批次在服务端没有账本行：客户端不得把它计入 failed，否则 finish 的
+  // clientCounts 与账本不一致 → RUN_COUNT_MISMATCH → run 永远卡 running（P1-4）。
+  assert.equal(ingest.failedWorkIds.length, 0)
   assert.equal(ingest.succeededWorkIds.length, 20)
+  assert.equal(ingest.batches.find(entry => entry.batchNo === 1).status, 'failed')
 })
 
 test('resolveClientStatus：列表不完整 → partial；全失败 → failed', () => {
@@ -251,4 +254,114 @@ test('resolveClientStatus：列表不完整 → partial；全失败 → failed',
   assert.equal(resolveClientStatus({ listComplete: true, expected: 2, ingest: { succeededWorkIds: [], failedWorkIds: ['a', 'b'] } }), 'failed')
   assert.equal(resolveClientStatus({ listComplete: true, expected: 2, ingest: { succeededWorkIds: ['a'], failedWorkIds: [] } }), 'partial')
   assert.equal(resolveClientStatus({ listComplete: true, expected: 0, ingest: { succeededWorkIds: [], failedWorkIds: [] } }), 'completed')
+})
+
+
+test('失败对象批次：同 batchNo 换 :retry{n} 键重投，重投后全成功（P1-3）', async () => {
+  const log = []
+  const root = await tempRoot()
+  await updateAccount('acc-retry', {}, root)
+  const base = makeCallTool(log)
+  let workCalls = 0
+  const callTool = async (name, args) => {
+    if (name !== 'wx_channels_collect_ingest_works') return base(name, args)
+    workCalls += 1
+    const result = await base(name, args)
+    if (workCalls === 1) {
+      // 首投：模拟服务端单作品失败（账本行带 failed_objects）。
+      return { ...result, batch: { ...result.batch, succeeded_objects: ['w0'], failed_objects: ['w1'] } }
+    }
+    return result
+  }
+  const client = createIngestClient({ callTool, accountId: 'acc-retry', root })
+  await client.startRun({ newAttempt: true })
+  const ingest = await client.ingestAll([
+    { workId: 'w0', publishTime: null, dailyMetrics: [] },
+    { workId: 'w1', publishTime: null, dailyMetrics: [] },
+  ])
+  const workLog = log.filter(entry => entry.name === 'wx_channels_collect_ingest_works')
+  assert.equal(workLog.length, 2, '应恰好重投一次')
+  assert.equal(workLog[0].args.batchNo, 1)
+  assert.equal(workLog[1].args.batchNo, 1, '重投必须复用同一 batchNo')
+  assert.match(workLog[1].args.idempotencyKey, /:retry1$/)
+  assert.deepEqual(ingest.failedWorkIds, [])
+  assert.equal(ingest.succeededWorkIds.length, 2)
+})
+
+test('异常兜底：编排抛错时调用 run_cancel，避免 run 停在 running（P2-14）', async () => {
+  const log = []
+  const root = await tempRoot()
+  await updateAccount('acc-cancel', {}, root)
+  const base = makeCallTool(log)
+  const callTool = async (name, args) => {
+    // finish 失败（如 RUN_COUNT_MISMATCH）会让编排抛出，是 run_cancel 兜底的典型路径。
+    if (name === 'wx_channels_collect_run_finish') throw new ToolsCallError(name, 'RUN_COUNT_MISMATCH')
+    return base(name, args)
+  }
+  const client = createIngestClient({ callTool, accountId: 'acc-cancel', root })
+  await assert.rejects(
+    () => ingestCollectedData({
+      client,
+      works: [{ workId: 'w0', publishTime: null, dailyMetrics: [] }],
+      listComplete: true,
+      expectedWorkCount: 1,
+    }),
+  )
+  const cancels = log.filter(entry => entry.name === 'wx_channels_collect_run_cancel')
+  assert.equal(cancels.length, 1, '异常路径应调用一次 run_cancel')
+})
+
+test('stableErrorCode：采集侧 `throw new Error(CODE)` 必须还原稳定码（P2-1）', async () => {
+  const { stableErrorCode } = await import('../src/tools-client.js')
+  assert.equal(stableErrorCode(new Error('TIME_SERIES_LENGTH_MISMATCH')), 'TIME_SERIES_LENGTH_MISMATCH')
+  assert.equal(stableErrorCode(Object.assign(new Error('x'), { code: 'PAYLOAD_TOO_LARGE' })), 'PAYLOAD_TOO_LARGE')
+  assert.equal(stableErrorCode(new Error('identity_check_failed:timeout')), 'identity_check_failed:timeout')
+  assert.equal(stableErrorCode(new Error('disk full')), null)
+  assert.equal(stableErrorCode(null), null)
+})
+
+test('账号级来源趋势与 trafficSource 随行入库（P2-2 / P2-28）', async () => {
+  const log = []
+  const root = await tempRoot()
+  await updateAccount('acc-src', {}, root)
+  const client = createIngestClient({ callTool: makeCallTool(log), accountId: 'acc-src', root })
+  await client.startRun({ newAttempt: true })
+  await client.ingestFansTrend({
+    startDay: '2026-11-08',
+    endDay: '2026-11-09',
+    rows: [
+      { day: '2026-11-08', follower_add_count: 1 },
+      { day: '2026-11-09', follower_add_count: 2 },
+    ],
+    sourceTrend: { rows: [
+      { sourceType: 20, sourceKey: 'homepage', name: '主页', daily: [{ day: '2026-11-09', add: 2 }] },
+    ] },
+  })
+  const trendCall = log.find(entry => entry.name === 'wx_channels_collect_ingest_fans_trend')
+  assert.deepEqual(trendCall.args.daily[1].sourceTrend, {
+    rows: [{ sourceType: 20, sourceKey: 'homepage', name: '主页', add: 2 }],
+  })
+  assert.equal(trendCall.args.daily[0].sourceTrend, undefined, '无该日来源点位时不写')
+
+  await client.ingestAccountMetrics({
+    startDay: '2026-11-08',
+    endDay: '2026-11-09',
+    rows: [{ day: '2026-11-08', daily_play_count: 10 }, { day: '2026-11-09', daily_play_count: 20 }],
+    trafficSource: { window: { startDay: '2026-11-08', endDay: '2026-11-09' }, rows: [{ sourceType: 4, playCount: 30 }] },
+  })
+  const metricCall = log.find(entry => entry.name === 'wx_channels_collect_ingest_account_metrics')
+  assert.ok(metricCall.args.metrics.at(-1).trafficSource, '窗口聚合来源挂在末日行')
+  assert.equal(metricCall.args.metrics[0].trafficSource, undefined, '其余日为 NULL')
+})
+
+test('nextSessionSeq 并发：同一 root 串行化，序号唯一且单调（P2-8）', async () => {
+  const { nextSessionSeq, readAccounts } = await import('../src/state.js')
+  const root = await tempRoot()
+  const results = await Promise.all(
+    Array.from({ length: 10 }, () => nextSessionSeq('acc-seq', root)),
+  )
+  const seqs = results.sort((a, b) => a - b)
+  assert.deepEqual(seqs, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10], '并发分配不得重复或回退')
+  const state = await readAccounts(root)
+  assert.equal(state.accounts['acc-seq'].sessionSeq, 10)
 })

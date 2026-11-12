@@ -803,12 +803,24 @@ function WxWorkbench({ host, initial = null }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [batch && batch.phase])
 
+  // 详情请求序号 + 账号双维度守卫（审查 P2-5）：快速点开 A→B→A 时，A 的旧响应
+  // 后到不得覆盖 B 的弹层内容。
+  const detailRequestRef = useRef(0)
   const openDetail = useCallback(work => {
     setDetail(work)
     setDetailDaily([])
+    detailRequestRef.current += 1
+    const requestId = detailRequestRef.current
+    const accountId = work.account_id || selectedId
     void (async () => {
       try {
-        const result = await post('work.get', { accountId: work.account_id || selectedId, workId: work.work_id })
+        const result = await post('work.get', { accountId, workId: work.work_id })
+        if (!shouldApplyResponse({
+          requestId,
+          currentRequestId: detailRequestRef.current,
+          responseAccountId: accountId,
+          currentAccountId: selectedId,
+        })) return
         setDetail(result.work || work)
         setDetailDaily(Array.isArray(result.daily_metrics) ? result.daily_metrics : [])
       } catch { /* 详情查询失败保留行内数据展示 */ }

@@ -24,6 +24,7 @@ import {
   planFansTrendWindow,
 } from './collector.js'
 import { createIngestClient, ingestCollectedData, resolveClientStatus } from './ingest.js'
+import { stableErrorCode } from './tools-client.js'
 import { SessionInvalidError } from './session-errors.js'
 import { markSessionExpired, markSessionOk, probeSession, refreshSessionState } from './session.js'
 import { getAccount, hasStorageState, paths, stateRoot } from './state.js'
@@ -187,7 +188,28 @@ export async function runCollection({
 
     // 3) 作品列表（窗口起点 COLLECT_SINCE_DAY=2026-01-01，totalCount 为窗口内计数）。
     emit({ phase: 'list', accountId })
-    const list = await collectWorkList(page, { finderId: accountId, maxPages, onPage: event => emit({ phase: 'list_page', ...event }) })
+    let list = null
+    try {
+      list = await collectWorkList(page, { finderId: accountId, maxPages, onPage: event => emit({ phase: 'list_page', ...event }) })
+    } catch (error) {
+      // 翻页中途会话失效：已采集作品照常入库并结算 partial，不把成果丢掉
+      //（2026-11-12 审查 P2-4）。
+      if (
+        error instanceof SessionInvalidError
+        && Array.isArray(error.partialListWorks)
+        && error.partialListWorks.length
+      ) {
+        emit({ phase: 'list_partial_session_expired', works: error.partialListWorks.length })
+        list = {
+          works: error.partialListWorks,
+          totalCount: null,
+          listComplete: false,
+          reason: (error.reason || 'session_expired'),
+        }
+      } else {
+        throw error
+      }
+    }
 
     // 4) 逐作品串行详情。详情**完全失败**的作品本次不入库（§阶段0 采集策略 5：
     // 列表成功但详情失败 → run 允许 partial；服务端账本 succeeded < expected
@@ -267,7 +289,9 @@ export async function runCollection({
     if (error instanceof SessionInvalidError) {
       const expired = await markSessionExpired({ accountId, root, reason: error.reason })
       await reportSessionStatus(ctx, accountId, expired)
-      return { status: 'failed', runId: null, reason: 'session_expired' }
+      // 保留 SessionInvalidError 的细分原因（account_mismatch 等），不要统一改写为
+      // session_expired，否则串号专项的可行动文案不可达（审查 P2-3）。
+      return { status: 'failed', runId: null, reason: error.reason || 'session_expired' }
     }
     logger?.warn?.(`wx collect ${accountId}: ${safeReason(error)}`)
     return { status: 'failed', runId: null, reason: safeReason(error) }
@@ -408,6 +432,7 @@ export function createBatchCollectController({ collect, probe, logger = null } =
         startedAt: state.startedAt,
         finishedAt: state.finishedAt,
         completedCount: counts.completed,
+        partialCount: counts.partial,
         failedCount: counts.failed,
         skippedCount: counts.skipped,
         summary: state.summary,
@@ -436,10 +461,12 @@ export function createBatchCollectController({ collect, probe, logger = null } =
       }
       // 异步执行（页面轮询 collectAll.status）；并发 start 被 running 守卫拒绝。
       void this._run()
-      return { started: true, batchId: state.batchId }
+      return { started: true, batchId: state.batchId, accounts: accountIds.length }
     },
     async _run() {
-      const counts = { completed: 0, failed: 0, skipped: 0 }
+      // 三态汇总（§8.5）：partial 单列一类，不再并入 completed（审查 P2-15）。
+      const counts = { completed: 0, partial: 0, failed: 0, skipped: 0 }
+      try {
       for (let index = 0; index < state.items.length; index += 1) {
         const item = state.items[index]
         state.currentAccountIndex = index
@@ -473,15 +500,29 @@ export function createBatchCollectController({ collect, probe, logger = null } =
         item.status = 'running'
         state.currentRunId = null
         state.currentProgress = null
-        const result = await collect({
-          accountId: item.accountId,
-          onProgress: event => {
-            // 细粒度进度（作品级）随 collectAll.status 一起投影；非关键事件保持上一进度。
-            const progress = progressFromEvent(event)
-            if (progress) state.currentProgress = progress
-            state.onProgress?.({ phase: 'item_progress', accountId: item.accountId, ...event })
-          },
-        })
+        let result = null
+        try {
+          result = await collect({
+            accountId: item.accountId,
+            onProgress: event => {
+              // 细粒度进度（作品级）随 collectAll.status 一起投影；非关键事件保持上一进度。
+              const progress = progressFromEvent(event)
+              if (progress) state.currentProgress = progress
+              state.onProgress?.({ phase: 'item_progress', accountId: item.accountId, ...event })
+            },
+          })
+        } catch (error) {
+          // 单账号采集抛错绝不能让整个批量永久卡在 running（审查 P1-5）：
+          // 该账号记 failed，继续下一个；finally 负责终态落定。
+          item.status = 'failed'
+          item.reason = safeReason(error)
+          item.finishedAt = new Date().toISOString()
+          counts.failed += 1
+          state.currentProgress = null
+          state.currentAccountId = null
+          state.onProgress?.({ phase: 'item_done', item: { ...item } })
+          continue
+        }
         item.finishedAt = new Date().toISOString()
         item.runId = result.runId || null
         state.currentRunId = item.runId
@@ -489,9 +530,10 @@ export function createBatchCollectController({ collect, probe, logger = null } =
           item.status = 'completed'
           counts.completed += 1
         } else if (result.status === 'partial') {
-          item.status = 'completed'
+          // partial 独立计数，不伪装成 completed（审查 P2-15）。
+          item.status = 'partial'
           item.reason = 'partial'
-          counts.completed += 1
+          counts.partial += 1
         } else {
           item.status = 'failed'
           item.reason = result.reason || 'collect_failed'
@@ -501,26 +543,39 @@ export function createBatchCollectController({ collect, probe, logger = null } =
         state.currentAccountId = null
         state.onProgress?.({ phase: 'item_done', item: { ...item } })
       }
-      state.finishedAt = new Date().toISOString()
-      state.currentRunId = null
-      state.currentAccountId = null
-      state.currentProgress = null
-      phase('finished')
-      const eligible = counts.completed + counts.failed
-      state.summary = {
-        ...counts,
-        eligible,
-        status: eligible === 0 ? 'failed' : counts.failed === 0 ? 'completed' : 'partial',
+      } finally {
+        // 无论循环如何退出都落定终态（审查 P1-5）：未处理项记 skipped，避免
+        // batchController.running 永久为 true 而锁死所有采集入口。
+        for (const item of state.items) {
+          if (!['completed', 'partial', 'failed', 'skipped'].includes(item.status)) {
+            item.status = 'skipped'
+            item.reason = 'batch_aborted'
+            counts.skipped += 1
+          }
+        }
+        state.finishedAt = new Date().toISOString()
+        state.currentRunId = null
+        state.currentAccountId = null
+        state.currentProgress = null
+        phase('finished')
+        const eligible = counts.completed + counts.partial + counts.failed
+        state.summary = {
+          ...counts,
+          eligible,
+          status: eligible === 0
+            ? 'failed'
+            : counts.failed === 0 && counts.partial === 0 ? 'completed' : 'partial',
+        }
+        state.onProgress?.({ phase: 'batch_finished', summary: state.summary })
+        logger?.warn?.(`wx batch ${state.batchId}: ${JSON.stringify(state.summary)}`)
       }
-      state.onProgress?.({ phase: 'batch_finished', summary: state.summary })
-      logger?.warn?.(`wx batch ${state.batchId}: ${JSON.stringify(state.summary)}`)
     },
   }
 }
 
 function safeReason(error) {
-  const code = error && typeof error.code === 'string' ? error.code : null
-  if (code) return code
+  const stable = stableErrorCode(error)
+  if (stable) return stable
   const name = error && typeof error.name === 'string' ? error.name : 'collect_error'
   return name.slice(0, 64)
 }
