@@ -243,3 +243,35 @@ test('批次切分：超长序列防御性拆分（>2300 行，2026 起点后正
   assert.ok(batches.every(batch => batch.totalDailyMetricRows <= MAX_BATCH_DAILY_ROWS))
   assert.equal(batches.reduce((sum, batch) => sum + batch.works.reduce((acc, item) => acc + item.dailyMetrics.length, 0), 0), 2400)
 })
+
+test('批次切分边界：恰好 20 作品一批、20 作品+3000 日行仍为一批（§15.1.2）', () => {
+  const makeWorks = (count, rowsEach) => Array.from({ length: count }, (_, index) => ({
+    workId: `w${index}`,
+    publishTime: '2026-11-08T10:00:00+08:00',
+    dailyMetrics: Array.from({ length: rowsEach }, (_, day) => ({
+      day: `2026-11-${String((day % 28) + 1).padStart(2, '0')}`,
+      daily_play_count: 1,
+    })),
+  }))
+
+  // 恰好 20 作品 → 单批（不拆）。
+  const exactly20 = splitIngestBatches(makeWorks(20, 0))
+  assert.equal(exactly20.length, 1)
+  assert.equal(exactly20[0].works.length, 20)
+
+  // 21 作品 → 拆成 20 + 1。
+  const twentyOne = splitIngestBatches(makeWorks(21, 0))
+  assert.equal(twentyOne.length, 2)
+  assert.equal(twentyOne[0].works.length, 20)
+  assert.equal(twentyOne[1].works.length, 1)
+
+  // 20 作品 × 150 日行 = 3000 日行 → 仍为一批（等于上限不拆）。
+  const atLimit = splitIngestBatches(makeWorks(20, 150))
+  assert.equal(atLimit.length, 1)
+  assert.equal(atLimit[0].totalDailyMetricRows, 3000)
+
+  // 超上限即拆批，且每批不超过 3000 日行。
+  const overLimit = splitIngestBatches(makeWorks(20, 151))
+  assert.ok(overLimit.length > 1)
+  assert.ok(overLimit.every(batch => batch.totalDailyMetricRows <= 3000))
+})

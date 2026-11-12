@@ -122,6 +122,8 @@ export function apply(ctx, overrides = {}) {
                 reported: reported.ok,
               })
             }
+            // 宿主/调试预留接口：页面（client.js）当前不调用，但保留本地路由面以免
+            // 宿主已有调用被静默打断（审查 P3-25⑥：已注册但 UI 不调用的 action）。
             case 'account.promote':
               return send(res, 200, await deps.promotePendingAccount({ accountId: cleanId(body.accountId), root: deps.root }))
             case 'account.removeLocal':
@@ -138,6 +140,7 @@ export function apply(ctx, overrides = {}) {
               return send(res, 200, await handleCollectAllStart(deps, toolCtx))
             case 'collectAll.status':
               return send(res, 200, { status: 'ok', ...deps.batchController.status })
+            // 宿主/调试预留接口（页面当前不调用，见 P3-25⑥）。
             case 'run.get':
               return send(res, 200, await handleRunGet(toolCtx, cleanId(body.runId)))
             case 'works.list':
@@ -151,6 +154,7 @@ export function apply(ctx, overrides = {}) {
                 accountId: cleanId(body.accountId),
                 workId: cleanId(body.workId),
               }))
+            // 宿主/调试预留接口（页面当前不调用，见 P3-25⑥）。
             case 'work.trend':
               return send(res, 200, await callToolCompat(toolCtx, 'wx_channels_work_trend', {
                 accountId: cleanId(body.accountId),

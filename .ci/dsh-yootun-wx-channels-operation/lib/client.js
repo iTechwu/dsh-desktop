@@ -439,9 +439,12 @@ window.__ModuleLoader__.load({
       if (reason === 'account_mismatch') return '当前登录的视频号与所选账号不一致，请重新扫码并在官方页面选择该视频号后重试'
       if (/^identity_check_failed/.test(reason)) return '无法确认当前登录的视频号身份，请重新扫码后重试'
       if (reason === 'identity_not_stable') return '未确认视频号身份（可能还在官方页面选择中），请重新扫码并在官方页面选完后确认'
-      if (reason === 'account_mismatch') return '当前登录的视频号与所选账号不一致，请重新扫码并选择该视频号'
       if (reason === 'pending_account') return '待升级账号'
       if (reason === 'probe_failed') return '会话检测失败'
+      // 探测阶段的具体失效原因（批量跳过不再折叠，审查 P3-25⑤）。
+      if (reason === 'no_session_cookie') return '官方页面未返回会话 Cookie，请重新扫码登录'
+      if (reason === 'auth_data_unavailable') return '官方账号资料不可读，请重新扫码登录'
+      if (reason === 'collect_busy') return '有采集任务进行中，请稍后重试'
       if (reason === 'partial') return '部分作品缺失'
       // 服务端确定性业务错误（2026-11-11 真机链路排查）：给可行动文案而非通用失败。
       if (reason === 'ACCOUNT_NOT_FOUND') return '云端缺少账号记录，请重新扫码登录后重试'

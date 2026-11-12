@@ -457,3 +457,73 @@ test('waitStableIdentity：轮询耗尽仍未稳定 → stable=false（不得据
   assert.equal(result.stable, false, '未达 required 次连续相同身份必须判未稳定')
   assert.ok(result.profile && result.profile.accountId, '仍返回最后读到的身份供排障，但不作为建号依据')
 })
+
+test('批量控制器跳过原因透出：storage_state_missing 不折叠成 session_required（P3-25⑤）', async () => {
+  const controller = createBatchCollectController({
+    probe: async accountId => (
+      accountId === 'acc-nostate'
+        ? { sessionStatus: 'expired', reason: 'storage_state_missing' }
+        : { sessionStatus: 'expired', reason: 'session_required' }
+    ),
+    collect: async () => ({ status: 'completed', runId: 'r' }),
+    logger: null,
+  })
+  await controller.start({ accountIds: ['acc-nostate', 'acc-plain'] })
+  for (let i = 0; i < 200 && controller.status.phase !== 'finished'; i += 1) {
+    await sleepImmediate()
+  }
+  const status = controller.status
+  assert.equal(status.items.find(item => item.accountId === 'acc-nostate').reason, 'storage_state_missing')
+  assert.equal(status.items.find(item => item.accountId === 'acc-plain').reason, 'session_required')
+  assert.equal(status.summary.skipped, 2)
+})
+
+// ---------------------------------------------------------------------------
+// 身份复核回归（审查报告 §5）：本仓最贵的一次串号事故必须有测试锁死。
+// ---------------------------------------------------------------------------
+
+function authPage(accountId) {
+  return {
+    async evaluate() {
+      return {
+        status: 200,
+        text: JSON.stringify({
+          errCode: 0,
+          errMsg: 'request successful',
+          data: { finderUser: { finderUsername: accountId, nickname: '测试号', fansCount: 1, feedsCount: 1 } },
+        }),
+      }
+    },
+  }
+}
+
+test('身份复核：auth_data 恒读失败 → identity_check_failed，绝不按目标账号放行', async () => {
+  const { verifyCollectorIdentity } = await import('../src/runner.js')
+  const { SessionInvalidError } = await import('../src/session-errors.js')
+  const page = {
+    async evaluate() {
+      throw new Error('network down')
+    },
+  }
+  await assert.rejects(
+    () => verifyCollectorIdentity(page, 'acc-target', { attempts: 3, intervalMs: 1, sleepImpl: async () => {} }),
+    error => error instanceof SessionInvalidError && /^identity_check_failed/.test(error.reason || ''),
+  )
+})
+
+test('身份复核：读到其它视频号身份 → account_mismatch，绝不放行', async () => {
+  const { verifyCollectorIdentity } = await import('../src/runner.js')
+  const { SessionInvalidError } = await import('../src/session-errors.js')
+  await assert.rejects(
+    () => verifyCollectorIdentity(authPage('v2_other'), 'acc-target', { attempts: 3, intervalMs: 1, sleepImpl: async () => {} }),
+    error => error instanceof SessionInvalidError && error.reason === 'account_mismatch',
+  )
+})
+
+test('身份复核：身份一致才放行（不抛错）', async () => {
+  const { verifyCollectorIdentity } = await import('../src/runner.js')
+  const resolved = await verifyCollectorIdentity(authPage('acc-target'), 'acc-target', {
+    attempts: 3, intervalMs: 1, sleepImpl: async () => {},
+  })
+  assert.equal(resolved, 'acc-target')
+})

@@ -30,6 +30,19 @@ import { markSessionExpired, markSessionOk, probeSession, refreshSessionState } 
 import { getAccount, hasStorageState, paths, stateRoot } from './state.js'
 import { accountSaveIdempotencyKey, callTool, sessionIdempotencyKey, safeErrorCode } from './tools-client.js'
 
+// 批量 skipped 的合法原因（§8.5）：只有这些原因可原样透出，其它一律归为
+// session_required（审查 P3-25⑤）。
+const BATCH_SKIP_REASONS = new Set([
+  'session_required',
+  'storage_state_missing',
+  'pending_account',
+  'probe_failed',
+  'collect_busy',
+  'no_session_cookie',
+  'auth_data_unavailable',
+  'account_mismatch',
+])
+
 export const DEFAULT_MAX_PAGES = 50
 const OPEN_TIMEOUT_MS = 60_000
 // 采集前的身份复核重试（官方 SPA 未就绪时会短暂失败）。
@@ -112,6 +125,46 @@ export async function ensureRemoteAccount(call, accountId, { root = stateRoot(),
  * @returns {Promise<{ status: 'completed'|'partial'|'failed', runId: string|null,
  *   reason?: string, finish?: object, works?: number }>}
  */
+/**
+ * 采集前的身份复核：**读不到就中止**，绝不按目标账号放行。
+ *
+ * 同一个微信可绑定多个视频号，官方页面扫码后才有身份选择；此时 Profile 里的 cookie
+ * 是微信级的，账号身份由官方页面的选择态决定。若 auth_data 因 HTTP/网络错误读不到
+ * 身份而按目标 accountId 放行，官方会按 cookie 里的登录身份返回数据——扫码那个
+ * 视频号的数据就会被写进所选账号（2026-11-11 真机串号根因，P0）。
+ *
+ * 抽出为独立函数是为了让「读失败绝不放行」这条契约有回归测试（审查报告 §5）。
+ *
+ * @throws {SessionInvalidError} `identity_check_failed:*`（读不到）或 `account_mismatch`（身份不符）
+ */
+export async function verifyCollectorIdentity(page, accountId, {
+  attempts = IDENTITY_CHECK_ATTEMPTS,
+  intervalMs = IDENTITY_CHECK_INTERVAL_MS,
+  sleepImpl = sleep,
+} = {}) {
+  let lastError = null
+  // 页面刚 goto 完时官方 SPA 可能尚未就绪，短暂失败重试几次。
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      const profile = await fetchAuthData(page, { finderId: '' })
+      if (profile.accountId !== accountId) {
+        // 登录态与账号不匹配（同一微信的另一个视频号身份 / storage_state 串号）：
+        // 按会话失效处理，绝不写错账号。
+        throw new SessionInvalidError('account_mismatch')
+      }
+      return profile.accountId
+    } catch (error) {
+      if (error instanceof SessionInvalidError) throw error
+      lastError = error
+      if (attempt < attempts) await sleepImpl(intervalMs)
+    }
+  }
+  // 读不到身份 = 无法证明一致，必须中止采集。
+  throw new SessionInvalidError(
+    `identity_check_failed:${lastError && lastError.message ? String(lastError.message).slice(0, 40) : 'unknown'}`,
+  )
+}
+
 export async function runCollection({
   ctx,
   accountId,
@@ -164,27 +217,7 @@ export async function runCollection({
     // 微信级的，账号身份由官方页面的选择态决定。若 auth_data 因 HTTP/网络错误读不到
     // 身份而按目标 accountId 放行，官方会按 cookie 里的登录身份返回数据——扫码那个
     // 视频号的数据就会被写进所选账号（用户报「选了另一个账号，采到的还是扫码那个」）。
-    const finderId = await (async () => {
-      let lastError = null
-      // 页面刚 goto 完时官方 SPA 可能尚未就绪，短暂失败重试几次。
-      for (let attempt = 1; attempt <= IDENTITY_CHECK_ATTEMPTS; attempt += 1) {
-        try {
-          const profile = await fetchAuthData(page, { finderId: '' })
-          return profile.accountId
-        } catch (error) {
-          if (error instanceof SessionInvalidError) throw error
-          lastError = error
-          if (attempt < IDENTITY_CHECK_ATTEMPTS) await sleep(IDENTITY_CHECK_INTERVAL_MS)
-        }
-      }
-      // 读不到身份 = 无法证明一致，必须中止采集。
-      throw new SessionInvalidError(`identity_check_failed:${lastError && lastError.message ? String(lastError.message).slice(0, 40) : 'unknown'}`)
-    })()
-    if (finderId !== accountId) {
-      // 登录态与账号不匹配（同一微信的另一个视频号身份 / storage_state 串号）：
-      // 按会话失效处理，绝不写错账号。
-      throw new SessionInvalidError('account_mismatch')
-    }
+    const finderId = await verifyCollectorIdentity(page, accountId)
 
     // 3) 作品列表（窗口起点 COLLECT_SINCE_DAY=2026-01-01，totalCount 为窗口内计数）。
     emit({ phase: 'list', accountId })
@@ -482,7 +515,12 @@ export function createBatchCollectController({ collect, probe, logger = null } =
         }
         if (probeResult.sessionStatus === 'expired') {
           item.status = 'skipped'
-          item.reason = 'session_required'
+          // 保留探测给出的**具体**原因（storage_state_missing / no_session_cookie /
+          // auth_data_unavailable / account_mismatch …），不再一律折叠成
+          // session_required（§8.5 列了 5 种跳过原因，审查 P3-25⑤）。
+          item.reason = BATCH_SKIP_REASONS.has(probeResult.reason)
+            ? probeResult.reason
+            : 'session_required'
           counts.skipped += 1
           state.currentAccountId = null
           state.onProgress?.({ phase: 'item_skipped', item: { ...item } })

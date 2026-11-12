@@ -311,3 +311,33 @@ test('parseDailySeries：缺「不限(fansType=1)」分组 → SOURCE_GROUP_MISS
   const endTs = shanghaiDayStartTs('2026-11-09')
   assert.throws(() => parseDailySeries(payload, { startTs, endTs }), /SOURCE_GROUP_MISSING/)
 })
+
+test('长度校验边界：期望+1 与缺指标数组都整窗拒绝（§15，审查 §5）', async () => {
+  const startTs = shanghaiDayStartTs('2026-10-28')
+  const endTs = shanghaiDayStartTs('2026-11-03')
+  const payload = await fixture('fans_trend.sample.json')
+
+  // 比期望多 1 点 → 整窗拒绝。
+  const longer = JSON.parse(JSON.stringify(payload))
+  for (const metric of ['add', 'reduce', 'netAdd', 'total']) {
+    longer.data[metric] = [...longer.data[metric], 1]
+  }
+  assert.throws(
+    () => parseFansTrend(longer, { startTs, endTs }),
+    /TIME_SERIES_LENGTH_MISMATCH/,
+  )
+
+  // fans_trend 缺一个指标数组 → 整窗拒绝（不是按缺口降级）。
+  const missing = JSON.parse(JSON.stringify(payload))
+  delete missing.data.netAdd
+  assert.throws(
+    () => parseFansTrend(missing, { startTs, endTs }),
+    /TIME_SERIES_LENGTH_MISMATCH/,
+  )
+})
+
+test('expectedSeriesLength：180 天闭区间块长度恰为 180（§15.5 分块）', async () => {
+  const startTs = shanghaiDayStartTs('2026-01-01')
+  assert.equal(expectedSeriesLength(startTs, shanghaiDayStartTs('2026-06-29')), 180)
+  assert.equal(expectedSeriesLength(startTs, shanghaiDayStartTs('2026-06-30')), 181)
+})

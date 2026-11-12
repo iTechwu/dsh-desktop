@@ -376,3 +376,28 @@ test('ingestAll：批次载荷带 observedCount（§16.4，P3-37）', async () =
   const call = log.find(entry => entry.name === 'wx_channels_collect_ingest_works')
   assert.equal(call.args.observedCount, 50, 'observedCount 必须随批次上报')
 })
+
+test('幂等键模板断言：与 tools 服务端 constants.py 一一对应（§16.3）', async () => {
+  const {
+    ingestWorksIdempotencyKey,
+    runStartIdempotencyKey,
+    listMetaIdempotencyKey,
+    sessionIdempotencyKey,
+    ingestAccountMetricsIdempotencyKey,
+    ingestFansTrendIdempotencyKey,
+    accountSaveIdempotencyKey,
+  } = await import('../src/tools-client.js')
+  assert.equal(ingestWorksIdempotencyKey('run-1', 3), 'wx_channels:ingest_works:run-1:3')
+  assert.equal(runStartIdempotencyKey('run-1'), 'wx_channels:run_start:run-1')
+  assert.equal(listMetaIdempotencyKey('run-1'), 'wx_channels:run_meta:run-1')
+  assert.equal(sessionIdempotencyKey('acc-1', 7), 'wx_channels:session:acc-1:7')
+  assert.equal(
+    ingestAccountMetricsIdempotencyKey('run-1', '2026-11-08', '2026-11-09'),
+    'wx_channels:ingest_account_metrics:run-1:2026-11-08:2026-11-09',
+  )
+  assert.equal(
+    ingestFansTrendIdempotencyKey('run-1', '2026-11-08', '2026-11-09'),
+    'wx_channels:ingest_fans_trend:run-1:2026-11-08:2026-11-09',
+  )
+  assert.match(accountSaveIdempotencyKey('acc-1', 1700000000000), /^wx_channels:account_save:acc-1:\d+$/)
+})

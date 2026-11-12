@@ -115,7 +115,8 @@ export async function waitStableIdentity(page, firstProfile, {
   return { profile: current, stable: false }
 }
 
-/** 登录瞬间读取账号资料失败时的短间隔重试（对齐抖音 pending 账号教训）。 */export async function readAccountProfileWithRetry(page, { attempts = 4, delayMs = 1200, sleepFn = sleep, finderId = '' } = {}) {
+/** 登录瞬间读取账号资料失败时的短间隔重试（对齐抖音 pending 账号教训）。 */
+export async function readAccountProfileWithRetry(page, { attempts = 4, delayMs = 1200, sleepFn = sleep, finderId = '' } = {}) {
   let last = null
   for (let attempt = 0; attempt < attempts; attempt += 1) {
     try {
