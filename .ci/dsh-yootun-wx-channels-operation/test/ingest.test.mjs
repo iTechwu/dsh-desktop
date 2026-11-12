@@ -284,6 +284,8 @@ test('失败对象批次：同 batchNo 换 :retry{n} 键重投，重投后全成
   assert.equal(workLog[0].args.batchNo, 1)
   assert.equal(workLog[1].args.batchNo, 1, '重投必须复用同一 batchNo')
   assert.match(workLog[1].args.idempotencyKey, /:retry1$/)
+  // 重投也必须带 observedCount，否则该批次审计行 observed_count 记 0（审查 P3-31 补）。
+  assert.equal(workLog[1].args.observedCount, 2)
   assert.deepEqual(ingest.failedWorkIds, [])
   assert.equal(ingest.succeededWorkIds.length, 2)
 })
@@ -502,4 +504,27 @@ test('ingestCollectedData：列表元信息失败必须取消 run，不留 runni
   })
   assert.equal(result.error, 'RUN_LIST_META_REQUIRED', '稳定码必须保留')
   assert.ok(events.includes('cancel'), '失败分支必须先取消 run')
+})
+
+
+test('finish 的 RUN_COUNT_MISMATCH 是确定性拒绝：只调用一次、不退避重试（P2-18 补）', async () => {
+  const log = []
+  const root = await tempRoot()
+  await updateAccount('acc-deterministic', {}, root)
+  const base = makeCallTool(log)
+  let finishCalls = 0
+  const callTool = async (name, args) => {
+    if (name === 'wx_channels_collect_run_finish') {
+      finishCalls += 1
+      throw new ToolsCallError(name, 'RUN_COUNT_MISMATCH')
+    }
+    return base(name, args)
+  }
+  const client = createIngestClient({ callTool, accountId: 'acc-deterministic', root })
+  await client.startRun({ newAttempt: true })
+  await assert.rejects(
+    () => client.finish({ clientStatus: 'completed', clientCounts: {} }),
+    /RUN_COUNT_MISMATCH/,
+  )
+  assert.equal(finishCalls, 1, '确定性拒绝不得重试（此前会退避 4 次）')
 })

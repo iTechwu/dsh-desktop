@@ -48,6 +48,9 @@ const DETERMINISTIC_ERRORS = new Set([
   'UNAUTHORIZED',
   'PAYLOAD_TOO_LARGE',
   'INVALID_DAY_RANGE',
+  // 计数与账本不一致是确定性拒绝（§16.7：不重试）。此前缺失该码，finish 会被
+  // 退避重试 4 次（幂等无害但每次多等约 3.5s）。
+  'RUN_COUNT_MISMATCH',
   'WX_TOOL_UNAVAILABLE',
 ])
 
@@ -215,6 +218,8 @@ export function createIngestClient({
               batchNo,
               works: batch.works,
               totalDailyMetricRows: batch.totalDailyMetricRows,
+              // 重投同样携带 observedCount：否则该批次审计行记 0，追溯失真（审查 P3-31 补）。
+              observedCount,
               idempotencyKey: `${ingestWorksIdempotencyKey(runId, batchNo)}:retry${attempt}`,
             }),
             { onRecover: recoverRun, label: `batch ${batchNo} retry ${attempt}` },
@@ -428,22 +433,25 @@ export async function ingestCollectedData({
   const started = await client.startRun({ newAttempt })
   const runId = started.run.run_id
   try {
-  try {
-    await client.publishListMeta({ expectedWorkCount, listComplete })
-  } catch (error) {
-    emit({ phase: 'list_meta_failed', error: safeCode(error) })
-    // 列表元信息失败是**提前 return**，不会进入外层 catch，必须在此显式取消 run；
-    // 否则 run 停在 running 等 120s 租约，期间该账号无法再开新 run（审查 N5）。
+    // 内层 try 只负责「列表元信息失败 → 取消并返回」；外层 try 负责任何异常都取消 run
+    //（审查 P2-14/N5）。两层职责不同，不是重复。
     try {
-      await client.cancel()
-    } catch {
-      // best-effort：取消失败不覆盖原始错误原因。
+      await client.publishListMeta({ expectedWorkCount, listComplete })
+    } catch (error) {
+      emit({ phase: 'list_meta_failed', error: safeCode(error) })
+      // 列表元信息失败是**提前 return**，不会进入外层 catch，必须在此显式取消 run；
+      // 否则 run 停在 running 等 120s 租约，期间该账号无法再开新 run（审查 N5）。
+      try {
+        await client.cancel()
+      } catch {
+        // best-effort：取消失败不覆盖原始错误原因。
+      }
+      return { runId, ingest: null, finish: null, error: safeCode(error) }
     }
-    return { runId, ingest: null, finish: null, error: safeCode(error) }
-  }
-  const ingest = works.length
-    ? await client.ingestAll(works, { observedCount: expectedWorkCount })
-    : { runId, batches: [], succeededWorkIds: [], failedWorkIds: [] }
+
+    const ingest = works.length
+      ? await client.ingestAll(works, { observedCount: expectedWorkCount })
+      : { runId, batches: [], succeededWorkIds: [], failedWorkIds: [] }
 
   // 账号级三类（尽力而为；失败 emit segment_gap，绝不覆盖已有数据为空白，§8.4）。
   const segmentStatus = { accountMetricStatus: 'not_collected', fansTrendStatus: 'not_collected', fansProfileStatus: 'not_collected' }

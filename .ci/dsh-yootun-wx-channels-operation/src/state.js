@@ -80,7 +80,9 @@ export async function writeAccounts(state, root = stateRoot()) {
 async function writeAccountsUnlocked(state, root) {
   await ensureDir(root)
   const file = paths(root).accountsFile
-  const tmp = `${file}.tmp`
+  // 临时文件名带进程号与随机后缀：固定 ``accounts.json.tmp`` 在同机多实例
+  // （桌面 + CLI 各跑一份）并发写时会被交错覆盖，实测能写坏 JSON（审查 P3-1）。
+  const tmp = `${file}.tmp-${process.pid}-${Math.random().toString(36).slice(2, 8)}`
   await writeFile(tmp, `${JSON.stringify({ version: STATE_VERSION, accounts: state.accounts }, null, 2)}\n`, { mode: 0o600 })
   await rename(tmp, file)
   try {
