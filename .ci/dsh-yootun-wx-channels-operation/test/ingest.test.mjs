@@ -121,7 +121,7 @@ test('账号级失败：段落记 failed，不影响作品链路 clientStatus（
   assert.equal(finishCall.args.accountMetricStatus, 'not_collected')
 })
 
-test('fans_trend 全量回填分块上报：35 行乱序 → 30+5 两块（按 day 排序切窗）', async () => {
+test('fans_trend 回填分块上报：35 行乱序 → 30+5 两块（按 day 排序切窗）', async () => {
   const log = []
   const root = await tempRoot()
   await updateAccount('acc-1', {}, root)

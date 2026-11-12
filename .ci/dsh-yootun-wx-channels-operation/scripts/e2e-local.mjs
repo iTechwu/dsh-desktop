@@ -219,7 +219,7 @@ try {
   const list = await collectWorkList(page, { finderId: accountId, onPage: null })
   TIMING.listMs = Date.now() - listStart
   check(
-    '全量列表：唯一作品数 == totalCount',
+    '窗口内列表：唯一作品数 == totalCount',
     list.listComplete && list.totalCount !== null && list.works.length === list.totalCount,
     `works=${list.works.length} totalCount=${list.totalCount} reason=${list.reason}`,
   )

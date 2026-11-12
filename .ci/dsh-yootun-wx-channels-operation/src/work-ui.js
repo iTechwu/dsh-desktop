@@ -52,7 +52,7 @@ export function WorkSummaryCards({ works, summaryOverview, account }) {
     ? summaryOverview.metrics.totals : {}
   const gapCount = gapWorkCount(works)
   const cells = [
-    { label: '作品总数', value: fmtCount(account && account.feedCount), hint: '官方 totalCount' },
+    { label: '作品总数', value: fmtCount(account && account.feedCount), hint: '官方账号作品总数' },
     { label: '近7日播放', value: fmtCount(totals.daily_play_count), hint: '账号级官方聚合' },
     { label: '近7日关注量', value: fmtCount(totals.daily_follow_count), hint: '非净关注' },
     { label: '作品完播率', value: fmtPct(weightedCompletionRate(works)), hint: '按播放加权计算' },

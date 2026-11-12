@@ -281,8 +281,10 @@ export async function runCollection({
  * 分块计划由 planFansTrendWindow 产出（全程用上海语义日字符串推算，
  * shanghaiDayStartTs/shanghaiDayFromTs），禁止 `new Date(ms).toISOString()` 直取日——
  * 上海零点的 UTC 时刻 toISOString 会提前一天（review P0-3 死循环教训）。
+ *
+ * 导出仅用于单元测试锁定起点与分块边界（生产调用点只有 runCollection）。
  */
-async function collectFansTrendWindowed(page, { finderId, blockDays = 180, now = Date.now }) {
+export async function collectFansTrendWindowed(page, { finderId, blockDays = 180, now = Date.now }) {
   const { latestCompletedDay } = await import('./parse.js')
   const endDay = latestCompletedDay(now)
   const startDay = COLLECT_SINCE_DAY

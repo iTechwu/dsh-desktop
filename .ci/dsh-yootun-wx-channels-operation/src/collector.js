@@ -265,7 +265,7 @@ export async function collectWorkDetail(page, {
     }
   }
   // 日行级来源只挂最后一块的最后一行（snapshot 末日行携带最新块窗口，避免
-  // 2274 行重复大 JSON；§16.4 dailyMetrics.trafficSource 契约保留）。
+  // 约 315 行重复大 JSON；§16.4 dailyMetrics.trafficSource 契约保留）。
   if (dailyMetrics.length && blockSources.length) {
     dailyMetrics[dailyMetrics.length - 1].trafficSource = blockSources[blockSources.length - 1]
   }
