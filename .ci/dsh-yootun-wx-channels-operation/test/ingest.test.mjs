@@ -401,3 +401,105 @@ test('幂等键模板断言：与 tools 服务端 constants.py 一一对应（§
   )
   assert.match(accountSaveIdempotencyKey('acc-1', 1700000000000), /^wx_channels:account_save:acc-1:\d+$/)
 })
+
+test('stableErrorCode：采集侧小写稳定码必须还原（P2-1）；非本域大写码不得透出（N7）', async () => {
+  const { stableErrorCode, isKnownStableCode } = await import('../src/tools-client.js')
+  // 采集侧真实抛出的小写码（此前只认全大写，全部退化成 error.name = "Error"）。
+  for (const code of [
+    'auth_data_http_401',
+    'aggregate_http_500',
+    'account_metrics_http_403',
+    'fans_trend_http_502',
+    'fans_portrait_http_500',
+    'post_list_err_1001',
+    'run_not_started',
+    'aggregate_request_failed',
+    'fans_trend_window_loop_guard',
+    'planFansTrendWindow_endDay_required',
+    'invalid_day:2026-13-01',
+    'http_404',
+  ]) {
+    assert.equal(stableErrorCode(new Error(code)), code, `${code} 必须被识别为稳定码`)
+  }
+  // 白名单外的文本（含无关大写 message）不得当成稳定码透出。
+  for (const text of ['SOME_OTHER_MODULE_ERROR', 'Random failure text', 'disk full']) {
+    assert.equal(isKnownStableCode(text), false, `${text} 不是本域稳定码`)
+    assert.equal(stableErrorCode(new Error(text)), null)
+  }
+  assert.equal(stableErrorCode(new Error('identity_check_failed:timeout')), 'identity_check_failed:timeout')
+  assert.equal(stableErrorCode(null), null)
+})
+
+test('bumpSessionSeq：定序与 patch 同一次 RMW，序号单调且 patch 不得回退（P2-8）', async () => {
+  const { bumpSessionSeq, readAccounts } = await import('../src/state.js')
+  const root = await tempRoot()
+  const results = await Promise.all(
+    Array.from({ length: 10 }, (_, index) => bumpSessionSeq(
+      'acc-bump',
+      { sessionStatus: index % 2 ? 'ok' : 'expired' },
+      { root },
+    )),
+  )
+  const seqs = results.map(item => item.seq).sort((a, b) => a - b)
+  assert.deepEqual(seqs, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10], '并发定序不得重复或回退')
+  const state = await readAccounts(root)
+  assert.equal(state.accounts['acc-bump'].sessionSeq, 10)
+
+  // patch 里夹带的 sessionSeq 必须被忽略（旧实现的回退根因）。
+  const { seq, record } = await bumpSessionSeq('acc-bump', { sessionSeq: 3, nickname: 'N' }, { root })
+  assert.equal(seq, 11)
+  assert.equal(record.sessionSeq, 11)
+  assert.equal(record.nickname, 'N')
+})
+
+test('bumpSessionSeq：floor 对齐远端下限（另一设备已推高 seq）', async () => {
+  const { bumpSessionSeq } = await import('../src/state.js')
+  const root = await tempRoot()
+  const { seq } = await bumpSessionSeq('acc-floor', {}, { floor: 42, root })
+  assert.equal(seq, 43)
+})
+
+test('clearLocalCredentials：删除一个账号不得回滚其它账号的并发更新（P2-8）', async () => {
+  const { clearLocalCredentials, readAccounts, updateAccount } = await import('../src/state.js')
+  const root = await tempRoot()
+  await updateAccount('acc-keep', { nickname: 'keep-1' }, root)
+  await updateAccount('acc-drop', { nickname: 'drop' }, root)
+  await Promise.all([
+    clearLocalCredentials('acc-drop', root),
+    updateAccount('acc-keep', { nickname: 'keep-2' }, root),
+  ])
+  const state = await readAccounts(root)
+  assert.equal(state.accounts['acc-drop'], undefined)
+  assert.equal(state.accounts['acc-keep'].nickname, 'keep-2', '其它账号的更新不得被覆盖')
+})
+
+test('moveStorageState：源缺失不得删除目标登录态（P3-24 原子迁移）', async () => {
+  const { existsSync } = await import('node:fs')
+  const { mkdir, writeFile } = await import('node:fs/promises')
+  const { moveStorageState, paths } = await import('../src/state.js')
+  const root = await tempRoot()
+  await mkdir(paths(root).storageStateDir, { recursive: true })
+  const target = paths(root).storageStatePath('acc-target')
+  await writeFile(target, '{"cookies":[]}', 'utf8')
+  await moveStorageState('acc-missing', 'acc-target', root)
+  assert.ok(existsSync(target), '源不存在时目标登录态必须保留（旧实现先 rm 再 rename 会丢掉）')
+})
+
+test('ingestCollectedData：列表元信息失败必须取消 run，不留 running（N5）', async () => {
+  const events = []
+  const client = {
+    setProgress() {},
+    async startRun() { return { run: { run_id: 'run-n5' } } },
+    async publishListMeta() { throw new Error('RUN_LIST_META_REQUIRED') },
+    async cancel() { events.push('cancel') },
+  }
+  const result = await ingestCollectedData({
+    client,
+    works: [],
+    listComplete: true,
+    expectedWorkCount: 0,
+    onProgress: event => events.push(event.phase),
+  })
+  assert.equal(result.error, 'RUN_LIST_META_REQUIRED', '稳定码必须保留')
+  assert.ok(events.includes('cancel'), '失败分支必须先取消 run')
+})

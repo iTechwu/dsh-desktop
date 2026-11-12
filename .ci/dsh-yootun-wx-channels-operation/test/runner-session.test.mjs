@@ -428,7 +428,11 @@ test('批量控制器异常隔离：collect 抛错 → 该账号 failed、后续
     completed: 1, partial: 1, failed: 1, skipped: 0, eligible: 3, status: 'partial',
   })
   assert.equal(status.items.find(item => item.accountId === 'acc-throw').status, 'failed')
-  assert.equal(status.items.find(item => item.accountId === 'acc-throw').reason, 'Error')
+  // 兜底必须是本域稳定码，而不是 error.name 的字面量 "Error"（审查 P2-1/N4）。
+  assert.equal(
+    status.items.find(item => item.accountId === 'acc-throw').reason,
+    'wx_channels_operation_request_failed',
+  )
   assert.equal(status.items.find(item => item.accountId === 'acc-partial').status, 'partial')
   assert.ok(calls.includes('collect:acc-ok'), '抛错后仍应继续下一个账号')
 })

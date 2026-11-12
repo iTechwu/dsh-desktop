@@ -59,18 +59,58 @@ const ALLOWED_ERROR_CODES = new Set([
   'IDEMPOTENCY_KEY_REQUIRED',
 ])
 
-/** 稳定错误码形态：全大写 + 下划线（采集侧 `throw new Error('CODE')` 的口径）。 */
-const STABLE_CODE_RE = /^[A-Z][A-Z0-9_]{2,63}$/
-
-/** 从任意异常提取稳定码：优先 error.code，其次 message 中的稳定码形态，
- *  最后回退 name（2026-11-12 审查 P2-1：采集侧只抛 message 时曾统一显示「采集失败」）。
+/**
+ * 采集侧固定稳定码（`throw new Error('CODE')` 的口径）。
+ *
+ * 采集侧同时存在**小写 snake_case**（`auth_data_http_401`、`post_list_err_*`、
+ * `run_not_started` …）与**全大写**（`TIME_SERIES_LENGTH_MISMATCH` …）两类码。
+ * 此前正则只认全大写，小写码全部退化为 `error.name`（字面量 `"Error"`），UI 只能
+ * 显示「采集失败」（2026-11-12 审查 P2-1）。
  */
+const COLLECTOR_FIXED_CODES = new Set([
+  'GOOGLE_CHROME_MISSING',
+  'PLAYWRIGHT_DRIVER_MISSING',
+  'WX_SESSION_INVALID',
+  'WX_TOOL_UNAVAILABLE',
+  'SOURCE_GROUP_MISSING',
+  'run_not_started',
+  'aggregate_request_failed',
+  'account_metrics_request_failed',
+  'fans_trend_request_failed',
+  'fans_portrait_request_failed',
+  'request_failed',
+  'planFansTrendWindow_endDay_required',
+  'fans_trend_window_loop_guard',
+  'wx_channels_operation_request_failed',
+])
+
+/** 采集侧带动态后缀的稳定码形态（HTTP 状态码 / 平台错误码 / 日期）。 */
+const COLLECTOR_CODE_PATTERNS = [
+  /^(?:auth_data|aggregate|account_metrics|fans_trend|fans_portrait)_http_\d{3}$/,
+  /^http_\d{3}$/,
+  /^post_list_err_[A-Za-z0-9_]+$/,
+  /^invalid_day:\d{4}-\d{2}-\d{2}$/,
+  /^identity_check_failed[:_A-Za-z0-9-]{0,48}$/,
+]
+
+/**
+ * 稳定码白名单判定（审查 P2-1 + N7）：只有本域已知码才允许作为 reason 透出。
+ *
+ * 非白名单的大写 message（如其它模块的 `SOME_OTHER_ERROR`）不再被当成稳定码，
+ * 避免把无关文本当成本域原因展示。
+ */
+export function isKnownStableCode(value) {
+  if (typeof value !== 'string' || !value) return false
+  if (ALLOWED_ERROR_CODES.has(value) || COLLECTOR_FIXED_CODES.has(value)) return true
+  return COLLECTOR_CODE_PATTERNS.some(pattern => pattern.test(value))
+}
+
+/** 从任意异常提取稳定码：优先 error.code，其次 message（白名单内），否则 null。 */
 export function stableErrorCode(error) {
   if (!error) return null
-  if (typeof error.code === 'string' && error.code) return error.code
+  if (typeof error.code === 'string' && isKnownStableCode(error.code)) return error.code
   const message = typeof error.message === 'string' ? error.message.trim() : ''
-  if (STABLE_CODE_RE.test(message)) return message
-  if (/^identity_check_failed/.test(message)) return message.slice(0, 64)
+  if (isKnownStableCode(message)) return message.slice(0, 64)
   return null
 }
 

@@ -109,19 +109,42 @@ export async function updateAccount(accountId, patch = {}, root = stateRoot()) {
 }
 
 /**
+ * 一次原子 RMW 内「定序 + 应用 patch」：分配下一个单调递增会话序号并写入其它字段。
+ *
+ * 此前的 `nextSessionSeq()` + `updateAccount({sessionSeq})` 是两次独立 RMW：并发时
+ * 后者的 patch 会把序号写回旧值（服务端判乱序、会话状态卡在旧 seq —— 审查 P2-8）。
+ * patch 里的 `sessionSeq` 一律忽略，序号只由本函数单调推进；`floor` 用于对齐远端
+ * 下限（另一台设备可能已推高 seq）。
+ */
+export async function bumpSessionSeq(
+  accountId,
+  patch = {},
+  { floor = null, root = stateRoot() } = {},
+) {
+  return withRootLock(root, async () => {
+    const state = await readAccounts(root)
+    const current = state.accounts[accountId]
+      || { accountId, sessionSeq: 0, sessionStatus: 'unknown' }
+    const base = Number(current.sessionSeq || 0)
+    const floorValue = Number(floor)
+    const lowerBound = Number.isFinite(floorValue) ? Math.max(base, floorValue) : base
+    const seq = lowerBound + 1
+    const { sessionSeq: _ignoredSeq, ...applied } = patch || {}
+    const next = { ...current, ...applied, accountId, sessionSeq: seq }
+    state.accounts[accountId] = next
+    await writeAccountsUnlocked(state, root)
+    return { seq, record: next }
+  })
+}
+
+/**
  * 分配下一个单调递增的会话序号（设备端每账号持久化）。
  *
  * 序号只增不减：上报给 tools 的 `sessionSeq` 因此天然拒绝乱序覆盖。
  */
 export async function nextSessionSeq(accountId, root = stateRoot()) {
-  return withRootLock(root, async () => {
-    const state = await readAccounts(root)
-    const current = state.accounts[accountId] || { accountId, sessionSeq: 0 }
-    const seq = Number(current.sessionSeq || 0) + 1
-    state.accounts[accountId] = { ...current, accountId, sessionSeq: seq }
-    await writeAccountsUnlocked(state, root)
-    return seq
-  })
+  const { seq } = await bumpSessionSeq(accountId, {}, { root })
+  return seq
 }
 
 /** 账号的本地 Profile 目录（按需创建，权限 0700）。 */
@@ -167,14 +190,28 @@ export async function moveStorageState(fromAccountId, toAccountId, root = stateR
   const from = paths(root).storageStatePath(fromAccountId)
   const to = paths(root).storageStatePath(toAccountId)
   if (from === to) return to
-  await rm(to, { recursive: true, force: true })
+  // 旧实现先 rm(to) 再 rename：rename 失败会直接丢掉目标账号原有登录态
+  // （2026-11-12 审查 P3-24）。改为「备份 → 迁移 → 清理」，失败时回滚。
+  const backup = `${to}.bak-${Date.now()}`
+  let hadTarget = false
+  try {
+    await rename(to, backup)
+    hadTarget = true
+  } catch {
+    hadTarget = false
+  }
   try {
     await rename(from, to)
   } catch (error) {
     // 源文件不存在（该账号从未落过登录态）视为已迁移，不阻断升级。
-    if (error && error.code === 'ENOENT') return to
+    if (error && error.code === 'ENOENT') {
+      if (hadTarget) await rename(backup, to).catch(() => {})
+      return to
+    }
+    if (hadTarget) await rename(backup, to).catch(() => {})
     throw error
   }
+  if (hadTarget) await rm(backup, { force: true }).catch(() => {})
   try {
     await chmod(to, 0o600)
   } catch {
@@ -230,10 +267,14 @@ export async function clearLocalCredentials(accountId, root = stateRoot()) {
   } catch {
     removed.storageState = false
   }
-  const state = await readAccounts(root)
-  if (state.accounts[accountId]) {
-    delete state.accounts[accountId]
-    await withRootLock(root, () => writeAccountsUnlocked(state, root))
-  }
+  // 读取与写入必须在同一把锁内：锁外读到的快照会把其它账号并发写入的更新回滚
+  // （2026-11-12 审查 P2-8）。
+  await withRootLock(root, async () => {
+    const state = await readAccounts(root)
+    if (state.accounts[accountId]) {
+      delete state.accounts[accountId]
+      await writeAccountsUnlocked(state, root)
+    }
+  })
   return removed
 }

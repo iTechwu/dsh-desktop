@@ -13,11 +13,10 @@ import {
   hasStorageState,
   moveProfile,
   moveStorageState,
-  nextSessionSeq,
+  bumpSessionSeq,
   paths,
   saveStorageState,
   stateRoot,
-  updateAccount,
 } from './state.js'
 import { SessionInvalidError } from './session-errors.js'
 import { fetchAuthData } from './collector.js'
@@ -193,9 +192,8 @@ export async function loginWithQrCode({
     await context.close()
     if (resolvedId !== tempId) await moveProfile(tempId, resolvedId, root)
     // 登录成功取新单调 seq：服务端会话状态不因旧 seq 停留在历史值（review P3-5）。
-    const loginSeq = await nextSessionSeq(resolvedId, root)
-    await updateAccount(resolvedId, {
-      sessionSeq: loginSeq,
+    // 定序与资料写入必须在同一把锁内（审查 P2-8：两次 RMW 会让 seq 回退）。
+    const { seq: loginSeq } = await bumpSessionSeq(resolvedId, {
       nickname: profile ? profile.nickname : null,
       avatar: profile ? profile.avatar : null,
       followerTotalCount: profile ? profile.fansCount : null,
@@ -205,7 +203,7 @@ export async function loginWithQrCode({
       sessionCheckedAt: new Date().toISOString(),
       lastLoginAt: new Date().toISOString(),
       vaultRef: paths(root).vaultRef(resolvedId),
-    }, root)
+    }, { root })
     return { status: 'ok', accountId: resolvedId, profile }
   } catch (error) {
     if (context) await context.close().catch(() => {})
@@ -257,9 +255,10 @@ export async function promotePendingAccount({ accountId, root = stateRoot(), pro
   if (previous && previous.lastLoginAt) patch.lastLoginAt = previous.lastLoginAt
   const previousSeq = Number((previous && previous.sessionSeq) || 0)
   const existingSeq = Number((existing && existing.sessionSeq) || 0)
-  if (previousSeq > 0 || existingSeq > 0) patch.sessionSeq = Math.max(previousSeq, existingSeq)
+  const floorSeq = Math.max(previousSeq, existingSeq)
 
-  const record = await updateAccount(realId, patch, root)
+  // 升级也要单调定序（审查 P2-8）：不能把旧账号的 seq 直接覆盖到目标账号上。
+  const { record } = await bumpSessionSeq(realId, patch, { floor: floorSeq, root })
   await clearLocalCredentials(accountId, root)
   return { promoted: true, accountId: realId, fromAccountId: accountId, profile, record }
 }
@@ -315,16 +314,14 @@ export async function refreshSessionState({ accountId, root = stateRoot(), probe
   const result = await probe({ accountId, root, ...deps })
   const checkedAt = new Date().toISOString()
   const status = result.status === 'ok' ? 'ok' : result.status === 'expired' ? 'expired' : 'unknown'
-  const seq = await nextSessionSeq(accountId, root)
-  const record = await updateAccount(accountId, {
+  const { seq, record } = await bumpSessionSeq(accountId, {
     sessionStatus: status,
     sessionCheckedAt: checkedAt,
-    sessionSeq: seq,
     vaultRef: paths(root).vaultRef(accountId),
     ...(result.profile && result.profile.nickname ? { nickname: result.profile.nickname } : {}),
     ...(result.profile && Number.isFinite(result.profile.fansCount) ? { followerTotalCount: result.profile.fansCount } : {}),
     ...(result.profile && Number.isFinite(result.profile.feedsCount) ? { feedCount: result.profile.feedsCount } : {}),
-  }, root)
+  }, { root })
   return {
     sessionStatus: status,
     sessionSeq: seq,
@@ -340,13 +337,11 @@ export async function refreshSessionState({ accountId, root = stateRoot(), probe
  */
 export async function markSessionExpired({ accountId, root = stateRoot(), reason = 'session_invalid' } = {}) {
   const checkedAt = new Date().toISOString()
-  const seq = await nextSessionSeq(accountId, root)
-  const record = await updateAccount(accountId, {
+  const { seq, record } = await bumpSessionSeq(accountId, {
     sessionStatus: 'expired',
     sessionCheckedAt: checkedAt,
-    sessionSeq: seq,
     vaultRef: paths(root).vaultRef(accountId),
-  }, root)
+  }, { root })
   return {
     sessionStatus: 'expired',
     sessionSeq: seq,
@@ -368,18 +363,12 @@ export async function markSessionOk({
   reason = 'collect_success',
 } = {}) {
   const checkedAt = new Date().toISOString()
-  const current = await getAccount(accountId, root)
-  const floor = Number(floorSessionSeq)
-  if (Number.isFinite(floor) && floor > Number(current?.sessionSeq || 0)) {
-    await updateAccount(accountId, { sessionSeq: floor }, root)
-  }
-  const seq = await nextSessionSeq(accountId, root)
-  const record = await updateAccount(accountId, {
+  // floor 与定序同一次 RMW：先抬到远端下限再 +1，避免两步之间被并发写回退。
+  const { seq, record } = await bumpSessionSeq(accountId, {
     sessionStatus: 'ok',
     sessionCheckedAt: checkedAt,
-    sessionSeq: seq,
     vaultRef: paths(root).vaultRef(accountId),
-  }, root)
+  }, { floor: floorSessionSeq, root })
   return {
     sessionStatus: 'ok',
     sessionSeq: seq,

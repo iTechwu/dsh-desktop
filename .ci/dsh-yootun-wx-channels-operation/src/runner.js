@@ -493,7 +493,22 @@ export function createBatchCollectController({ collect, probe, logger = null } =
         onProgress: null,
       }
       // 异步执行（页面轮询 collectAll.status）；并发 start 被 running 守卫拒绝。
-      void this._run()
+      // 必须挂 catch：未捕获的 rejection 会让批量停在非终态（审查 N8）。
+      void this._run().catch(error => {
+        const reason = safeReason(error)
+        logger?.warn?.(`wx batch ${state?.batchId}: unhandled ${reason}`)
+        for (const item of state?.items || []) {
+          if (item.status === 'ready' || item.status === 'probing' || item.status === 'running') {
+            item.status = 'failed'
+            item.reason = reason
+            item.finishedAt = new Date().toISOString()
+          }
+        }
+        if (state && state.phase !== 'finished') {
+          phase('finished')
+          state.finishedAt = new Date().toISOString()
+        }
+      })
       return { started: true, batchId: state.batchId, accounts: accountIds.length }
     },
     async _run() {
@@ -614,8 +629,7 @@ export function createBatchCollectController({ collect, probe, logger = null } =
 function safeReason(error) {
   const stable = stableErrorCode(error)
   if (stable) return stable
-  const name = error && typeof error.name === 'string' ? error.name : 'collect_error'
-  return name.slice(0, 64)
+  return 'wx_channels_operation_request_failed'
 }
 
 export { browserStatus, sleep }

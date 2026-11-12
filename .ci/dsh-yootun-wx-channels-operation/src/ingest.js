@@ -432,6 +432,13 @@ export async function ingestCollectedData({
     await client.publishListMeta({ expectedWorkCount, listComplete })
   } catch (error) {
     emit({ phase: 'list_meta_failed', error: safeCode(error) })
+    // 列表元信息失败是**提前 return**，不会进入外层 catch，必须在此显式取消 run；
+    // 否则 run 停在 running 等 120s 租约，期间该账号无法再开新 run（审查 N5）。
+    try {
+      await client.cancel()
+    } catch {
+      // best-effort：取消失败不覆盖原始错误原因。
+    }
     return { runId, ingest: null, finish: null, error: safeCode(error) }
   }
   const ingest = works.length
@@ -545,6 +552,7 @@ function attachFansSourceTrend(rows, sourceTrend) {
 function safeCode(error) {
   const stable = stableErrorCode(error)
   if (stable) return stable
-  if (error && typeof error.name === 'string') return error.name.slice(0, 64)
+  // 兜底必须是**本域稳定码**，不再回退 error.name（字面量 "Error" 会被当成 reason
+  // 透出，UI 只能显示「采集失败」，且非本域文本会伪装成稳定码 —— P2-1/N4）。
   return 'wx_channels_operation_request_failed'
 }
