@@ -391,7 +391,14 @@ export function splitIngestBatches(works, {
   maxRows = MAX_BATCH_DAILY_ROWS,
   maxSingle = MAX_SINGLE_WORK_DAILY_ROWS,
 } = {}) {
-  const sorted = [...works].sort((a, b) => (a.publishTime || '') < (b.publishTime || '') ? -1 : 1)
+  // 比较器必须满足反对称性（相等返回 0），否则排序结果随实现不稳定（审查 P3-25）。
+  const sorted = [...works].sort((a, b) => {
+    const av = a.publishTime || ''
+    const bv = b.publishTime || ''
+    if (av < bv) return -1
+    if (av > bv) return 1
+    return 0
+  })
   const batches = []
   let current = []
   let currentRows = 0

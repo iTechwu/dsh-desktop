@@ -26,8 +26,9 @@ export const TOOL_NAMES = [
   'wx_channels_fans_profile_get',
 ]
 
-// 与 tools 服务端 §16.7 稳定错误码全集一一对应（tools mcp/domains/common.py
-// ValueError 哨兵映射 + BusinessError error_code）。
+// 服务端稳定错误码**超集**（tools mcp/domains/common.py 的 ValueError 哨兵映射 +
+// BusinessError error_code + 幂等层产出）；比 §16.7 文档多 IDEMPOTENCY_* 等条目，
+// 文档侧已同步补登（审查 P3-5/P3-36）。
 const ALLOWED_ERROR_CODES = new Set([
   'ACCOUNT_NOT_FOUND',
   'ACCOUNT_NOT_ACCESSIBLE',

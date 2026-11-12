@@ -187,7 +187,16 @@ export async function moveStorageState(fromAccountId, toAccountId, root = stateR
 export async function saveStorageState(accountId, context, root = stateRoot()) {
   const target = paths(root).storageStatePath(accountId)
   await ensureDir(dirname(target))
-  await context.storageState({ path: target })
+  // 先写 0600 临时文件再原子 rename（审查 P3-24）：Playwright 直接以默认 umask
+  // 落盘会留下毫秒级「凭证文件世界可读」窗口。
+  const temp = `${target}.tmp-${Date.now()}`
+  await context.storageState({ path: temp })
+  try {
+    await chmod(temp, 0o600)
+  } catch {
+    // Windows 忽略。
+  }
+  await rename(temp, target)
   try {
     await chmod(target, 0o600)
   } catch {

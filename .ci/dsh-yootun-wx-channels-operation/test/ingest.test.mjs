@@ -365,3 +365,14 @@ test('nextSessionSeq 并发：同一 root 串行化，序号唯一且单调（P2
   const state = await readAccounts(root)
   assert.equal(state.accounts['acc-seq'].sessionSeq, 10)
 })
+
+test('ingestAll：批次载荷带 observedCount（§16.4，P3-37）', async () => {
+  const log = []
+  const root = await tempRoot()
+  await updateAccount('acc-obs', {}, root)
+  const client = createIngestClient({ callTool: makeCallTool(log), accountId: 'acc-obs', root })
+  await client.startRun({ newAttempt: true })
+  await client.ingestAll([{ workId: 'w0', publishTime: null, dailyMetrics: [] }], { observedCount: 50 })
+  const call = log.find(entry => entry.name === 'wx_channels_collect_ingest_works')
+  assert.equal(call.args.observedCount, 50, 'observedCount 必须随批次上报')
+})

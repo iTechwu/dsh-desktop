@@ -281,15 +281,12 @@ test('new_post_total_data：非入表来源少返一天不再整窗拒绝（P2-9
   const payload = await fixture('new_post_total_data.sample.json')
   for (const group of payload.data.dataByFanstype) {
     if (group.fansType !== 1) continue
-    // 仓内 fixture 本身缺 999（见 P2-27），这里显式构造一个完整的「全部」行，
-    // 再让某个非入表来源少 1 天，验证校验范围只覆盖入表来源。
-    const first = group.dataByTabtype[0]
-    const allTab = JSON.parse(JSON.stringify(first))
-    allTab.tabType = 999
-    group.dataByTabtype = [allTab, ...group.dataByTabtype]
-    const other = group.dataByTabtype[1]
+    // fixture 已补「全部(999)」分组（2026-11-12 P2-27）；这里只让某个**非入表**
+    // 来源少 1 天，验证强校验范围只覆盖入表来源。
+    const other = group.dataByTabtype.find(tab => tab.tabType !== 999)
     if (other && other.data && Array.isArray(other.data.browse)) {
-      other.data.browse = other.data.browse.slice(0, 6) // 少 1 天
+      const copy = JSON.parse(JSON.stringify(other.data))
+      other.data.browse = copy.browse.slice(0, 6) // 少 1 天
     }
   }
   const startTs = shanghaiDayStartTs('2026-11-03')
@@ -306,4 +303,11 @@ test('new_post_total_data：与 feed_aggregate 同一解析路径（fansType=1�
   assert.equal(parsed.rows.length, 7)
   assert.equal(parsed.rows[6].day, '2026-11-09')
   assert.ok(Number.isFinite(parsed.rows[6].daily_play_count))
+})
+
+test('parseDailySeries：缺「不限(fansType=1)」分组 → SOURCE_GROUP_MISSING（P3-23）', async () => {
+  const payload = { errCode: 0, data: { dataByFanstype: [{ fansType: 2, dataByTabtype: [] }] } }
+  const startTs = shanghaiDayStartTs('2026-11-03')
+  const endTs = shanghaiDayStartTs('2026-11-09')
+  assert.throws(() => parseDailySeries(payload, { startTs, endTs }), /SOURCE_GROUP_MISSING/)
 })

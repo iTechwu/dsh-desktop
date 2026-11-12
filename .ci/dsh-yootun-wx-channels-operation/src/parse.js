@@ -322,7 +322,9 @@ function parseSourceRow(tab) {
  */
 export function parseDailySeries(payload, { startTs, endTs }) {
   const tabs = pickDefaultFanstypeGroup(payload)
-  if (!tabs) throw new Error('TIME_SERIES_LENGTH_MISMATCH')
+  // 「不限(fansType=1)」分组缺失是**响应缺结构**，不是长度不符；用独立稳定码，
+  // 避免排障时误导（审查 P3-23）。
+  if (!tabs) throw new Error('SOURCE_GROUP_MISSING')
   const length = expectedSeriesLength(startTs, endTs)
   if (length < 1) throw new Error('INVALID_DAY_RANGE')
 

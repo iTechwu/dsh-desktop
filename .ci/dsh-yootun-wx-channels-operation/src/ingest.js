@@ -185,6 +185,9 @@ export function createIngestClient({
             batchNo,
             works: batch.works,
             totalDailyMetricRows: batch.totalDailyMetricRows,
+            // §16.4 的 observedCount（本次窗口观测到的官方 totalCount）；此前未上报，
+            // 服务端只能记 0（审查 P3-37）。
+            observedCount,
             idempotencyKey: ingestWorksIdempotencyKey(runId, batchNo),
           }),
           { onRecover: recoverRun, label: `batch ${batchNo}` },

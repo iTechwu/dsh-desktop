@@ -235,17 +235,41 @@ function handleBeginLogin(ctx, deps, accountId) {
   // 走 pending-<ts> 每次都是新 key，其终态记录仍会留在 loginRuns 里（数量很小，
   // 无 TTL；若后续出现频繁添加场景再补容量上限）。
   if (existing) loginRuns.delete(key)
-  const run = { state: 'waiting_qr', accountId: null, profile: null, startedAt: new Date().toISOString(), updatedAt: null, reason: null }
+  // 终态记录 TTL 清理（审查 P3-25）：避免频繁「添加账号」把 Map 无限撑大。
+  const nowMs = Date.now()
+  for (const [runKey, entry] of loginRuns) {
+    if (
+      !ACTIVE_LOGIN_STATES.has(entry.state)
+      && nowMs - Date.parse(entry.startedAt || 0) > 30 * 60 * 1000
+    ) {
+      loginRuns.delete(runKey)
+    }
+  }
+  const attemptId = 0
+  const run = {
+    state: 'waiting_qr',
+    accountId: null,
+    profile: null,
+    startedAt: new Date().toISOString(),
+    updatedAt: null,
+    reason: null,
+    attemptId,
+    page: null,
+  }
   loginRuns.set(key, run)
   void deps.login({
     accountId: key,
     root: deps.root,
     timeoutMs: LOGIN_TIMEOUT_MS,
-    onPage: async () => {
+    onPage: async page => {
+      if (run.attemptId !== attemptId) return
+      run.page = page
       run.state = 'waiting_confirm'
       run.updatedAt = new Date().toISOString()
     },
   }).then(async result => {
+    // 已被「刷新二维码」取代的旧流程不得回写状态（审查 P2-12）。
+    if (run.attemptId !== attemptId) return
     run.updatedAt = new Date().toISOString()
     if (result.status === 'ok') {
       run.accountId = result.accountId
@@ -299,6 +323,7 @@ function handleBeginLogin(ctx, deps, accountId) {
       run.reason = result.reason || 'login_failed'
     }
   }).catch(error => {
+    if (run.attemptId !== attemptId) return
     run.state = 'failed'
     run.reason = safeErrorCode(error)
   })
@@ -321,26 +346,43 @@ function handleLoginStatus(accountId) {
   }
 }
 
-/** 二维码刷新（§18.2）：仅进行中/已结束的登录可刷新——重启真实登录流程（关闭旧
- *  上下文由旧 promise 收尾），同一 loginKey 让 UI 保持同一弹层只替换提示与状态。 */
+/** 二维码刷新（§18.2）：重启真实登录流程，并**关闭旧上下文**、作废旧流程回写。
+ *
+ * 旧实现只改状态就再起一个登录，旧扫码页滞留且旧 promise 仍会回写 run.state
+ * （审查 P2-12）。现在用 attemptId 区分代次：旧流程的 onPage/then/catch 全部
+ * 因代次不匹配而直接返回。
+ */
 function handleRefreshLoginQr(deps, accountId) {
   const run = loginRuns.get(accountId)
   if (!run || run.state === 'ok') {
     return { status: 'error', reason: 'refresh_not_allowed', state: run ? run.state : 'idle' }
   }
-  // 重启登录：新扫码页 + 新等待循环；loginRuns 同键覆盖，页面轮询看新状态。
+  const attemptId = (run.attemptId || 0) + 1
+  run.attemptId = attemptId
   run.state = 'waiting_qr'
   run.reason = null
   run.updatedAt = new Date().toISOString()
+  // 关闭旧扫码上下文（§18.2）：旧 promise 随之失败，但代次守卫会忽略其回写。
+  const oldPage = run.page
+  run.page = null
+  if (oldPage) {
+    void Promise.resolve()
+      .then(() => oldPage.context())
+      .then(context => context && context.close && context.close())
+      .catch(() => {})
+  }
   void deps.login({
     accountId,
     root: deps.root,
     timeoutMs: LOGIN_TIMEOUT_MS,
-    onPage: async () => {
+    onPage: async page => {
+      if (run.attemptId !== attemptId) return
+      run.page = page
       run.state = 'waiting_confirm'
       run.updatedAt = new Date().toISOString()
     },
   }).then(result => {
+    if (run.attemptId !== attemptId) return
     run.updatedAt = new Date().toISOString()
     if (result.status === 'ok') {
       run.state = 'ok'
@@ -354,6 +396,7 @@ function handleRefreshLoginQr(deps, accountId) {
       run.reason = result.reason || 'login_failed'
     }
   }).catch(error => {
+    if (run.attemptId !== attemptId) return
     run.state = 'failed'
     run.reason = safeErrorCode(error)
   })
