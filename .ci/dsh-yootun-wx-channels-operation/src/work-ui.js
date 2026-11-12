@@ -19,6 +19,7 @@ import {
   safeAvatarSrc,
   safeWorkUrl,
   shanghaiDayOf,
+  sortTrafficRowsByValue,
   weightedCompletionRate,
   workTitle,
 } from './ui-format.js'
@@ -39,7 +40,6 @@ const TABLE_COLUMNS = [
   { label: '关注量', key: 'follow_count', sortable: true },
   { label: '企微链接点击' },
   { label: '添加通讯录' },
-  { label: '最近采集' },
 ]
 
 /** 顶部摘要卡（§9.2 固定 5 张，不随筛选/排序/分页变化）。
@@ -79,7 +79,7 @@ export function WorkSummaryCards({ works, summaryOverview, account }) {
  * 并显示 spinner + progressText。 */
 export function WorkToolbar({
   onCollect, onRefresh, collectDisabled = false, refreshDisabled = false,
-  refreshing = false, refreshMessage = null, collect = null,
+  refreshing = false, refreshMessage = null, collect = null, latestCollectedAt = null,
 }) {
   const running = Boolean(collect && collect.status === 'running')
   // 状态行统一在采集按钮下方：采集进度优先，其次是刷新结果提示
@@ -99,6 +99,9 @@ export function WorkToolbar({
         className: 'ywc-button', type: 'button', onClick: onRefresh,
         disabled: refreshDisabled || refreshing, 'aria-busy': refreshing || undefined,
       }, refreshing ? '刷新中…' : '刷新'),
+      // 最近采集时间（2026-11-12 真机反馈）：原为表格最后一列，改为刷新按钮后的
+      // 单值展示；无数据时显示「—」，不隐藏以免布局跳动。
+      h('span', { className: 'ywc-toolbar-note' }, `最近采集时间：${fmtDateTime(latestCollectedAt)}`),
     ),
     statusText
       ? h('div', {
@@ -227,7 +230,6 @@ function workRowCells(work) {
     h('td', { key: 'follow' }, fmtCount(work.follow_count)),
     h('td', { key: 'wecom' }, fmtPair(work.wecom_link_click_count, work.wecom_link_click_uv)),
     h('td', { key: 'contact' }, fmtPair(work.wecom_contact_add_count, work.wecom_contact_add_uv)),
-    h('td', { key: 'collected' }, fmtDateTime(work.latest_collected_at)),
   ]
   return cells
 }
@@ -238,7 +240,9 @@ function workRowCells(work) {
  * 趋势线（播放用主题色，其余参考官方后台配色）→ 数据缺口。 */
 export function WorkDetailDialog({ work, detail, dailyMetrics, onClose }) {
   if (!work) return null
-  const trafficRows = normalizeTrafficRows(detail && detail.traffic_source || work.traffic_source)
+  const trafficRows = sortTrafficRowsByValue(
+    normalizeTrafficRows(detail && detail.traffic_source || work.traffic_source),
+  )
   const retention = normalizeRetentionPoints(detail && detail.retention_trend || work.retention_trend)
   const daily = Array.isArray(dailyMetrics) ? dailyMetrics : []
   const gaps = dataGapEntries(work.data_gap)

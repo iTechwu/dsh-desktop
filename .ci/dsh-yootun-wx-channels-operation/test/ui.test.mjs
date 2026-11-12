@@ -513,6 +513,7 @@ test('WorkTable（2026-11-11 真机反馈）：无操作列/无 ID 副行、双�
   }))
   // 操作列与详情按钮移除；ID 副行不再显示。
   assert.ok(!html.includes('>操作<'), '不应再有操作列')
+  assert.ok(!html.includes('最近采集'), '表格不应再有「最近采集」列（2026-11-12 真机反馈）')
   assert.ok(!html.includes('>详情<'), '不应再有详情按钮')
   assert.ok(!html.includes('ID：15050379357367110280'), '作品列不再显示 ID 副行')
   // 行级双击打开详情：行 title 提示 + tabIndex 可聚焦（键盘 Enter 同效）。
@@ -1012,4 +1013,79 @@ test('WorkToolbar：刷新提示就地显示在按钮下方（统一状态行）
   // 无状态：状态行不渲染。
   const idle = renderToString(h(WorkToolbar, { onCollect: () => {}, onRefresh: () => {} }))
   assert.ok(!idle.includes('ywc-progress'), '空闲态不渲染状态行')
+})
+
+test('latestCollectedAt（2026-11-12 真机反馈）：取最新采集时刻，忽略空/非法值', async () => {
+  const { latestCollectedAt } = await import('../src/ui-format.js')
+  const rows = [
+    { work_id: 'a', latest_collected_at: '2026-11-12T13:10:00+08:00' },
+    { work_id: 'b', latest_collected_at: '2026-11-12T12:50:00+08:00' },
+    { work_id: 'c', latest_collected_at: null },
+    { work_id: 'd', latest_collected_at: 'not-a-date' },
+  ]
+  assert.equal(latestCollectedAt(rows), '2026-11-12T13:10:00+08:00')
+  assert.equal(latestCollectedAt([]), null)
+  assert.equal(latestCollectedAt(null), null)
+})
+
+test('WorkToolbar（2026-11-12 真机反馈）：刷新按钮后显示最近采集时间', async () => {
+  const react = await import('react')
+  const { createElement: h } = react
+  const { renderToString } = await import('react-dom/server')
+  const { WorkToolbar } = await import('../src/work-ui.js')
+  const html = renderToString(h(WorkToolbar, {
+    onCollect: () => {}, onRefresh: () => {},
+    latestCollectedAt: '2026-11-12T13:10:00+08:00',
+  }))
+  assert.ok(html.includes('最近采集时间：2026-11-12 13:10'), '应显示最近采集时间')
+  // 位置契约：提示在「刷新」按钮之后（同一按钮行内），不占表格列。
+  assert.ok(html.indexOf('刷新') < html.indexOf('最近采集时间'), '最近采集时间应在刷新按钮之后')
+  assert.ok(html.includes('ywc-toolbar-note'), '应使用工具栏提示样式类')
+  // 无数据时显示「—」，不隐藏（避免布局跳动）。
+  const empty = renderToString(h(WorkToolbar, { onCollect: () => {}, onRefresh: () => {} }))
+  assert.ok(empty.includes('最近采集时间：—'), '无数据应显示「—」')
+})
+
+test('sortTrafficRowsByValue（2026-11-12 真机反馈）：按播放量降序，缺失值沉底', async () => {
+  const { sortTrafficRowsByValue } = await import('../src/ui-format.js')
+  const sorted = sortTrafficRowsByValue([
+    { name: '关注', value: 0 },
+    { name: '推荐', value: 174 },
+    { name: '朋友', value: 22 },
+    { name: '未知', value: null },
+  ])
+  assert.deepEqual(sorted.map(row => row.name), ['推荐', '朋友', '关注', '未知'])
+  assert.deepEqual(sortTrafficRowsByValue([]), [])
+})
+
+test('WorkDetailDialog（2026-11-12 真机反馈）：来源分布按播放量从大到小渲染', async () => {
+  const react = await import('react')
+  const { createElement: h } = react
+  const { renderToString } = await import('react-dom/server')
+  const { WorkDetailDialog, recentDays } = await import('../src/work-ui.js')
+  const day = recentDays(7)[0]
+  const work = {
+    work_id: 'w-traffic',
+    description: '来源排序',
+    cover_url: null,
+    publish_time: `${day}T10:00:00+08:00`,
+    latest_collected_at: '2026-11-12T13:10:00+08:00',
+    play_count: 100,
+  }
+  const html = renderToString(h(WorkDetailDialog, {
+    work,
+    // 官方行序（升序）传入，渲染必须按数值降序：甲(5) 乙(40) 丙(174)。
+    detail: { traffic_source: { rows: [
+      { sourceKey: 'a', name: '甲', playCount: 5 },
+      { sourceKey: 'b', name: '乙', playCount: 40 },
+      { sourceKey: 'c', name: '丙', playCount: 174 },
+    ] } },
+    dailyMetrics: [],
+    onClose: () => {},
+  }))
+  const iA = html.indexOf('甲')
+  const iB = html.indexOf('乙')
+  const iC = html.indexOf('丙')
+  assert.ok(iC >= 0 && iB >= 0 && iA >= 0, '来源行缺失')
+  assert.ok(iC < iB && iB < iA, `来源分布未按降序渲染（丙174 → 乙40 → 甲5），实际顺序索引 ${iC}/${iB}/${iA}`)
 })

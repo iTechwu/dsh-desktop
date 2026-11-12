@@ -160,6 +160,40 @@ window.__ModuleLoader__.load({
         })
     }
 
+    /** 作品列表「最近采集时间」：取所有行 `latest_collected_at` 的最大值，无有效值返回 null。
+     *
+     * 2026-11-12 真机反馈：该值原为表格最后一列，现改为工具栏刷新按钮后的单值展示，
+     * 表格不再为它保留一列。 */
+    function latestCollectedAt(works) {
+      let latest = null
+      for (const work of Array.isArray(works) ? works : []) {
+        const raw = work && work.latest_collected_at
+        if (!raw) continue
+        const time = Date.parse(raw)
+        if (Number.isNaN(time)) continue
+        if (latest === null || time > latest.time) latest = { time, raw }
+      }
+      return latest ? latest.raw : null
+    }
+
+    /** 来源分布按播放量从大到小排序（最多的在最上方），缺失值沉底、不折算 0。
+     *
+     * 2026-11-12 真机反馈：详情页来源分布此前按官方行序展示，需按数值降序。 */
+    function sortTrafficRowsByValue(rows) {
+      const numeric = row => {
+        const raw = row && row.value
+        return raw === null || raw === undefined || !Number.isFinite(Number(raw)) ? null : Number(raw)
+      }
+      return [...(Array.isArray(rows) ? rows : [])].sort((a, b) => {
+        const av = numeric(a)
+        const bv = numeric(b)
+        if (av === null && bv === null) return 0
+        if (av === null) return 1
+        if (bv === null) return -1
+        return bv - av
+      })
+    }
+
     /** 留存行规范化：retention_trend（§17.3）→ [{s, v}]。
      *
      * 键名兼容：`parse.js` 历史产出 `ratePct`，文档 §5.4 口径为 `rate_pct`；服务端
@@ -431,7 +465,6 @@ window.__ModuleLoader__.load({
       { label: '关注量', key: 'follow_count', sortable: true },
       { label: '企微链接点击' },
       { label: '添加通讯录' },
-      { label: '最近采集' },
     ]
 
     /** 顶部摘要卡（§9.2 固定 5 张，不随筛选/排序/分页变化）。
@@ -471,7 +504,7 @@ window.__ModuleLoader__.load({
      * 并显示 spinner + progressText。 */
     function WorkToolbar({
       onCollect, onRefresh, collectDisabled = false, refreshDisabled = false,
-      refreshing = false, refreshMessage = null, collect = null,
+      refreshing = false, refreshMessage = null, collect = null, latestCollectedAt = null,
     }) {
       const running = Boolean(collect && collect.status === 'running')
       // 状态行统一在采集按钮下方：采集进度优先，其次是刷新结果提示
@@ -491,6 +524,9 @@ window.__ModuleLoader__.load({
             className: 'ywc-button', type: 'button', onClick: onRefresh,
             disabled: refreshDisabled || refreshing, 'aria-busy': refreshing || undefined,
           }, refreshing ? '刷新中…' : '刷新'),
+          // 最近采集时间（2026-11-12 真机反馈）：原为表格最后一列，改为刷新按钮后的
+          // 单值展示；无数据时显示「—」，不隐藏以免布局跳动。
+          h('span', { className: 'ywc-toolbar-note' }, `最近采集时间：${fmtDateTime(latestCollectedAt)}`),
         ),
         statusText
           ? h('div', {
@@ -619,7 +655,6 @@ window.__ModuleLoader__.load({
         h('td', { key: 'follow' }, fmtCount(work.follow_count)),
         h('td', { key: 'wecom' }, fmtPair(work.wecom_link_click_count, work.wecom_link_click_uv)),
         h('td', { key: 'contact' }, fmtPair(work.wecom_contact_add_count, work.wecom_contact_add_uv)),
-        h('td', { key: 'collected' }, fmtDateTime(work.latest_collected_at)),
       ]
       return cells
     }
@@ -630,7 +665,9 @@ window.__ModuleLoader__.load({
      * 趋势线（播放用主题色，其余参考官方后台配色）→ 数据缺口。 */
     function WorkDetailDialog({ work, detail, dailyMetrics, onClose }) {
       if (!work) return null
-      const trafficRows = normalizeTrafficRows(detail && detail.traffic_source || work.traffic_source)
+      const trafficRows = sortTrafficRowsByValue(
+        normalizeTrafficRows(detail && detail.traffic_source || work.traffic_source),
+      )
       const retention = normalizeRetentionPoints(detail && detail.retention_trend || work.retention_trend)
       const daily = Array.isArray(dailyMetrics) ? dailyMetrics : []
       const gaps = dataGapEntries(work.data_gap)
@@ -1515,6 +1552,8 @@ window.__ModuleLoader__.load({
     /* 工具栏纵向布局（2026-11-11 真机反馈）：第一行按钮组、第二行采集进度行（按钮下方）。 */
     .ywc-toolbar { display:flex; flex-direction:column; align-items:stretch; gap:8px; padding:12px; }
     .ywc-toolbar-left, .ywc-toolbar-right { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+    /* 最近采集时间（2026-11-12 真机反馈）：刷新按钮后的单值提示，不占表格列。 */
+    .ywc-toolbar-note { color:var(--ywc-muted); font-size:var(--dsh-content-font-size-secondary,13px); white-space:nowrap; }
     .ywc-field { display:inline-flex; align-items:center; gap:6px; color:var(--ywc-muted); font-size:var(--dsh-content-font-size-secondary,13px); }
     .ywc-input, .ywc-select { min-height:36px; padding:0 10px; border:1px solid var(--ywc-border); border-radius:6px; background:var(--ywc-surface); color:var(--ywc-text); font:inherit; font-size:var(--dsh-content-font-size-secondary,13px); }
     .ywc-select { cursor:pointer; }
@@ -1537,7 +1576,7 @@ window.__ModuleLoader__.load({
     .ywc-table-state p { margin:0; max-width:640px; line-height:1.6; }
     /* 作品列表（2026-11-11 真机反馈）：无操作列（双击行开详情）、无 ID 副行，列宽收紧
      * 但单元格保持 nowrap 不换行；整行 cursor:pointer 提示可双击。 */
-    .ywc-table { min-width:1480px; width:100%; border-collapse:collapse; }
+    .ywc-table { min-width:1360px; width:100%; border-collapse:collapse; }
     .ywc-table th, .ywc-table td { padding:9px 10px; border-bottom:1px solid var(--ywc-border); text-align:left; white-space:nowrap; font-size:var(--dsh-content-font-size-secondary,13px); }
     .ywc-table th { position:sticky; top:0; z-index:1; background: color-mix(in srgb, var(--ywc-brand) 5%, var(--ywc-surface-2)); color:var(--ywc-muted); font-weight:600; }
     .ywc-table tbody tr { cursor:pointer; }
@@ -2226,6 +2265,9 @@ window.__ModuleLoader__.load({
                     refreshDisabled: !selectedId || collectBusy || refreshing,
                     refreshing,
                     refreshMessage,
+                    // 最近采集时间（2026-11-12 真机反馈）：取已入库作品的最近采集时刻，
+                    // 展示在刷新按钮后，不再占用表格一列。
+                    latestCollectedAt: latestCollectedAt(works),
                     collect: collect && collect.accountId === selectedId ? collect : null,
                   }),
                   h(WorkSummaryCards, { works, summaryOverview, account: selected }),

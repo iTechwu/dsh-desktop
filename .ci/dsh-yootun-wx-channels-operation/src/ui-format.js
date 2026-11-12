@@ -155,6 +155,40 @@ export function normalizeTrafficRows(trafficSource) {
     })
 }
 
+/** 作品列表「最近采集时间」：取所有行 `latest_collected_at` 的最大值，无有效值返回 null。
+ *
+ * 2026-11-12 真机反馈：该值原为表格最后一列，现改为工具栏刷新按钮后的单值展示，
+ * 表格不再为它保留一列。 */
+export function latestCollectedAt(works) {
+  let latest = null
+  for (const work of Array.isArray(works) ? works : []) {
+    const raw = work && work.latest_collected_at
+    if (!raw) continue
+    const time = Date.parse(raw)
+    if (Number.isNaN(time)) continue
+    if (latest === null || time > latest.time) latest = { time, raw }
+  }
+  return latest ? latest.raw : null
+}
+
+/** 来源分布按播放量从大到小排序（最多的在最上方），缺失值沉底、不折算 0。
+ *
+ * 2026-11-12 真机反馈：详情页来源分布此前按官方行序展示，需按数值降序。 */
+export function sortTrafficRowsByValue(rows) {
+  const numeric = row => {
+    const raw = row && row.value
+    return raw === null || raw === undefined || !Number.isFinite(Number(raw)) ? null : Number(raw)
+  }
+  return [...(Array.isArray(rows) ? rows : [])].sort((a, b) => {
+    const av = numeric(a)
+    const bv = numeric(b)
+    if (av === null && bv === null) return 0
+    if (av === null) return 1
+    if (bv === null) return -1
+    return bv - av
+  })
+}
+
 /** 留存行规范化：retention_trend（§17.3）→ [{s, v}]。
  *
  * 键名兼容：`parse.js` 历史产出 `ratePct`，文档 §5.4 口径为 `rate_pct`；服务端

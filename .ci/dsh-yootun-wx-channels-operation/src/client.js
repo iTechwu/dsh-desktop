@@ -10,6 +10,7 @@ const { IconCloseOutlineRegular, IconSparkleRegular, Tooltip } = require('@deeps
 
 import {
   DEFAULT_SORT_STATE,
+  latestCollectedAt,
   nextSortState,
   refreshResultLabel,
   shouldApplyResponse,
@@ -167,6 +168,8 @@ const STYLES = `
 /* 工具栏纵向布局（2026-11-11 真机反馈）：第一行按钮组、第二行采集进度行（按钮下方）。 */
 .ywc-toolbar { display:flex; flex-direction:column; align-items:stretch; gap:8px; padding:12px; }
 .ywc-toolbar-left, .ywc-toolbar-right { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+/* 最近采集时间（2026-11-12 真机反馈）：刷新按钮后的单值提示，不占表格列。 */
+.ywc-toolbar-note { color:var(--ywc-muted); font-size:var(--dsh-content-font-size-secondary,13px); white-space:nowrap; }
 .ywc-field { display:inline-flex; align-items:center; gap:6px; color:var(--ywc-muted); font-size:var(--dsh-content-font-size-secondary,13px); }
 .ywc-input, .ywc-select { min-height:36px; padding:0 10px; border:1px solid var(--ywc-border); border-radius:6px; background:var(--ywc-surface); color:var(--ywc-text); font:inherit; font-size:var(--dsh-content-font-size-secondary,13px); }
 .ywc-select { cursor:pointer; }
@@ -189,7 +192,7 @@ const STYLES = `
 .ywc-table-state p { margin:0; max-width:640px; line-height:1.6; }
 /* 作品列表（2026-11-11 真机反馈）：无操作列（双击行开详情）、无 ID 副行，列宽收紧
  * 但单元格保持 nowrap 不换行；整行 cursor:pointer 提示可双击。 */
-.ywc-table { min-width:1480px; width:100%; border-collapse:collapse; }
+.ywc-table { min-width:1360px; width:100%; border-collapse:collapse; }
 .ywc-table th, .ywc-table td { padding:9px 10px; border-bottom:1px solid var(--ywc-border); text-align:left; white-space:nowrap; font-size:var(--dsh-content-font-size-secondary,13px); }
 .ywc-table th { position:sticky; top:0; z-index:1; background: color-mix(in srgb, var(--ywc-brand) 5%, var(--ywc-surface-2)); color:var(--ywc-muted); font-weight:600; }
 .ywc-table tbody tr { cursor:pointer; }
@@ -878,6 +881,9 @@ function WxWorkbench({ host, initial = null }) {
                 refreshDisabled: !selectedId || collectBusy || refreshing,
                 refreshing,
                 refreshMessage,
+                // 最近采集时间（2026-11-12 真机反馈）：取已入库作品的最近采集时刻，
+                // 展示在刷新按钮后，不再占用表格一列。
+                latestCollectedAt: latestCollectedAt(works),
                 collect: collect && collect.accountId === selectedId ? collect : null,
               }),
               h(WorkSummaryCards, { works, summaryOverview, account: selected }),
