@@ -1056,6 +1056,7 @@ window.__ModuleLoader__.load({
     // （视觉基准：docs/1109/wx/ui-demo.html，§9.1/§9.4）。
 
 
+    // 窗口常量导出供 client.js 清理总览缓存键使用（键 `${accountId}:${window}`）。
     const WINDOWS = [['yesterday', '昨日'], ['last_7d', '近7天'], ['last_30d', '近30天']]
 
     function avatarText(account) {
@@ -1705,6 +1706,34 @@ window.__ModuleLoader__.load({
       }, [])
     }
 
+    // 跨会话持久化（2026-11-13 首屏性能）：localStorage 存「上次选中账号 + 各账号作品
+    // 列表」，下次打开工作台首屏 0 往返渲染上次数据、后台并行刷新覆盖。只存页面本就
+    // 展示的业务数据，不触碰 Cookie/凭据/内部地址（§4.1 安全边界）。SSR/静态渲染无
+    // localStorage 直接跳过（测试环境行为不变）。
+    const STORAGE = typeof localStorage !== 'undefined' ? localStorage : null
+    const storageGet = key => {
+      if (!STORAGE) return null
+      try { return STORAGE.getItem(key) } catch { return null }
+    }
+    const storageSet = (key, value) => {
+      if (!STORAGE) return
+      try { STORAGE.setItem(key, value) } catch { /* 配额满静默跳过：缓存属增强，不是功能依赖 */ }
+    }
+    const storageRemove = key => {
+      if (!STORAGE) return
+      try { STORAGE.removeItem(key) } catch { /* 同上 */ }
+    }
+    const worksStorageKey = accountId => `ywc:works:${accountId}`
+    const loadPersistedWorks = accountId => {
+      const raw = storageGet(worksStorageKey(accountId))
+      if (!raw) return null
+      try {
+        const rows = JSON.parse(raw)
+        return Array.isArray(rows) ? rows : null
+      } catch { return null }
+    }
+    const loadLastAccountId = () => storageGet('ywc:last-account-id')
+
     /** 侧栏入口按钮（左下角菜单；wide 模式带文字，对齐抖音 Button）。 */
     function SidebarButton({ wide }) {
       return h(Tooltip, { label: '打开视频号工作台', disabled: wide },
@@ -1769,7 +1798,10 @@ window.__ModuleLoader__.load({
       const [selectedId, setSelectedId] = useState(
         (initial && initial.selectedId) ||
           ((initial && initial.accounts || []).find(item => item.deleteState !== 'remote_deleted') || {}).accountId ||
-          null,
+          // 无 initial（宿主真实运行）时沿用上次会话选中的账号：works 请求可立即发出、
+          // 与 accounts.list 并行，不必等账号列表回来再串行一段（2026-11-13 首屏性能）。
+          // 账号若已删除，accounts.list 回来后 refreshAccounts 的校验会自动切到列表第一个。
+          (initial ? null : loadLastAccountId()),
       )
       const [tab, setTab] = useState((initial && initial.tab) || 'work')
       const [works, setWorks] = useState((initial && initial.works) || [])
@@ -1838,7 +1870,17 @@ window.__ModuleLoader__.load({
 
       // 会话内作品列表缓存（SWR，对齐抖音 worksCacheRef）：同一账号再次进入先渲染
       // 缓存（秒开），后台刷新覆盖；刷新失败保留旧数据不打断浏览。
-      const worksCacheRef = useRef(new Map())
+      const worksCacheRef = useRef(null)
+      if (!worksCacheRef.current) {
+        worksCacheRef.current = new Map()
+        // 上次账号的作品列表预热进会话缓存：首屏 refreshWorks 命中即渲染（0 往返），
+        // 后台刷新覆盖。仅宿主运行时（无 initial 注入）生效（2026-11-13 首屏性能）。
+        if (!initial) {
+          const lastId = loadLastAccountId()
+          const persisted = lastId ? loadPersistedWorks(lastId) : null
+          if (lastId && persisted) worksCacheRef.current.set(lastId, persisted)
+        }
+      }
       const worksRequestRef = useRef(0)
       const overviewRequestRef = useRef(0)
       // 总览会话内缓存（2026-11-13 性能优化）：键 `${accountId}:${window}`，值
@@ -1849,6 +1891,11 @@ window.__ModuleLoader__.load({
       // 旧账号，会把旧账号的作品行写进新账号视图（review P1-4）。
       const selectedIdRef = useRef(selectedId)
       useEffect(() => { selectedIdRef.current = selectedId }, [selectedId])
+      // 记住上次选中账号（2026-11-13 首屏性能）：下次打开直接沿用，配合 works 持久化
+      // 实现首屏 0 往返渲染；删除/切换账号会自然覆盖。
+      useEffect(() => {
+        if (selectedId) storageSet('ywc:last-account-id', selectedId)
+      }, [selectedId])
 
       const refreshWorks = useCallback(async accountId => {
         if (!accountId) { setWorks([]); setWorksLoading(false); return false }
@@ -1867,6 +1914,8 @@ window.__ModuleLoader__.load({
           const rows = Array.isArray(result.works) ? result.works : []
           // 缓存无条件写：被序号淘汰的响应也是有效数据，写缓存才能让切回时秒开。
           worksCacheRef.current.set(accountId, rows)
+          // 跨会话持久化（2026-11-13）：下次打开工作台首屏 0 往返渲染上次列表。
+          storageSet(worksStorageKey(accountId), JSON.stringify(rows))
           // 守卫：序号最新 + 账号仍是当前选中账号（review P1-4）。
           if (!shouldApplyResponse({
             requestId,
@@ -2084,6 +2133,12 @@ window.__ModuleLoader__.load({
           lifecycle: 'awaiting_confirmation',
           onConfirm: () => {
             setDeleteLifecycle('confirmed_pending_adapter')
+            // 同步清掉该账号的本地缓存（会话 Map + localStorage 跨会话持久化）：
+            // 不清的话删除后同 id 重新登录会先闪旧作品列表（SWR 命中），且持久化
+            // 数据在账号删除后属于残留（2026-11-13 首屏持久化连带修复）。
+            worksCacheRef.current.delete(accountId)
+            for (const [windowKey] of WINDOWS) overviewCacheRef.current.delete(`${accountId}:${windowKey}`)
+            storageRemove(worksStorageKey(accountId))
             void (async () => {
               const local = await post('account.removeLocal', { accountId })
               if (!local.cleared || !(local.cleared.profile && local.cleared.storageState)) {

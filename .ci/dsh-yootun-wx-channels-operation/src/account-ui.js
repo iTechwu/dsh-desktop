@@ -14,7 +14,8 @@ import {
   summarizeFansTrend,
 } from './ui-format.js'
 
-const WINDOWS = [['yesterday', '昨日'], ['last_7d', '近7天'], ['last_30d', '近30天']]
+// 窗口常量导出供 client.js 清理总览缓存键使用（键 `${accountId}:${window}`）。
+export const WINDOWS = [['yesterday', '昨日'], ['last_7d', '近7天'], ['last_30d', '近30天']]
 
 function avatarText(account) {
   const name = account.nickname || account.accountId || '视'

@@ -1145,3 +1145,17 @@ test('首屏按 Tab 分派（2026-11-13 性能排查）：账号页不拉 works�
   assert.ok(source.includes('[yootun-wx] overview'), 'overview 埋点缺失')
   assert.ok(source.includes('[yootun-wx] accounts.list'), 'accounts 埋点缺失')
 })
+
+test('首屏跨会话持久化（2026-11-13 性能）：localStorage 预热上次账号与作品列表——源码契约防回退', async () => {
+  const source = await readFile(new URL('../src/client.js', import.meta.url), 'utf8')
+  assert.match(source, /ywc:last-account-id/, '上次选中账号持久化键缺失')
+  assert.match(source, /ywc:works:\$\{accountId\}/, '作品列表持久化键缺失')
+  assert.match(source, /loadPersistedWorks/, '持久化读取缺失')
+  assert.match(source, /typeof localStorage !== 'undefined'/, 'SSR/测试环境守卫缺失（renderToString 无 localStorage）')
+  assert.ok(source.includes('storageSet(worksStorageKey(accountId), JSON.stringify(rows))'), 'works.list 响应未持久化')
+  // 持久化预热只在宿主运行时生效（有 initial 注入的静态渲染不读 localStorage）。
+  assert.ok(source.includes('if (!initial) {'), '预热缺少 initial 守卫')
+  // 删除账号必须同步清理会话缓存与跨会话持久化（防 SWR 闪旧数据与残留）。
+  assert.ok(source.includes('storageRemove(worksStorageKey(accountId))'), '删除账号未清理持久化')
+  assert.ok(source.includes('for (const [windowKey] of WINDOWS) overviewCacheRef.current.delete'), '删除账号未清理总览缓存')
+})
