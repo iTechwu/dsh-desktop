@@ -414,7 +414,9 @@ function WxWorkbench({ host, initial = null }) {
   }, [])
 
   const refreshAccounts = useCallback(async () => {
+    const startedAt = Date.now()
     const result = await post('accounts.list')
+    console.info(`[yootun-wx] accounts.list ${Date.now() - startedAt}ms`)
     const rows = Array.isArray(result.accounts) ? result.accounts : []
     setAccounts(rows)
     setSelectedId(current => {
@@ -430,6 +432,9 @@ function WxWorkbench({ host, initial = null }) {
   const worksCacheRef = useRef(new Map())
   const worksRequestRef = useRef(0)
   const overviewRequestRef = useRef(0)
+  // 总览会话内缓存（2026-11-13 性能优化）：键 `${accountId}:${window}`，值
+  // {summary, overview, profile}；账号页来回切换命中即秒开（SWR）。overlay 卸载随组件丢弃。
+  const overviewCacheRef = useRef(new Map())
   // 当前选中账号快照：响应回来时用它判断「这个账号还是当前账号」。
   // 仅有请求序号不够——采集完成后按采集账号刷新（与当前选中无关），序号最新却属于
   // 旧账号，会把旧账号的作品行写进新账号视图（review P1-4）。
@@ -447,6 +452,7 @@ function WxWorkbench({ host, initial = null }) {
     setWorksLoading(!cached)
     // 请求序号守卫：同账号并发时后到的旧响应不得覆盖新响应。
     const requestId = ++worksRequestRef.current
+    const startedAt = Date.now()
     try {
       const result = await post('works.list', { accountId })
       const rows = Array.isArray(result.works) ? result.works : []
@@ -469,45 +475,48 @@ function WxWorkbench({ host, initial = null }) {
       setWorksLoading(false)
       notify(`作品列表加载失败：${error.message}`)
       return false
+    } finally {
+      // 耗时埋点（2026-11-13 性能排查，对齐抖音 `[yootun-douyin]`）：真机 devtools
+      // 控制台可读单次调用耗时——CI 链路本地探针实测 work_list(50) ≈ 280ms，
+      // 若真机此处仍在秒级，慢在设备端网络（代理/链路），不是服务端。
+      if (requestId === worksRequestRef.current) {
+        console.info(`[yootun-wx] works.list ${accountId} ${Date.now() - startedAt}ms`)
+      }
     }
   }, [post, notify])
 
   const refreshOverview = useCallback(async (accountId, window) => {
     if (!accountId) { setOverview(null); setSummaryOverview(null); setProfile(null); setOverviewLoading(false); return false }
-    // 切账号瞬间清空上一账号的总览/画像，避免新账号下显示旧账号指标（review P1-3）。
-    setOverview(null)
-    setSummaryOverview(null)
-    setProfile(null)
-    // 加载蒙板（2026-11-13 真机反馈）：置位后只有「最新请求 + 账号未切走」的完成
-    // 路径才复位；被序号/账号守卫淘汰的旧响应不得提前关闭新请求的蒙板。
-    setOverviewLoading(true)
+    // 总览会话内缓存（SWR，2026-11-13 性能优化，对齐 worksCacheRef）：同账号同窗口
+    // 来回切换先渲染缓存（秒开、不加蒙板），后台刷新无感覆盖；键含窗口（各窗口独立）。
+    const cacheKey = `${accountId}:${window}`
+    const cached = overviewCacheRef.current.get(cacheKey)
+    // 无缓存时清空 + 蒙板（避免旧账号数据串台，review P1-3）；命中缓存直接渲染。
+    setOverview(cached ? cached.overview : null)
+    setSummaryOverview(cached ? cached.summary : null)
+    setProfile(cached ? cached.profile : null)
+    setOverviewLoading(!cached)
     const requestId = ++overviewRequestRef.current
+    const startedAt = Date.now()
+    // 三路并行（2026-11-13 性能排查）：原先 summary → profile 串行两段公网往返，
+    // 每段在真机是秒级；并行后账号页首拉只需一段往返。last_7d 窗口复用 summary，
+    // 不重复请求（review P0-3）。
+    const [summaryRes, profileRes, windowRes] = await Promise.all([
+      post('account.overview', { accountId, window: 'last_7d' }).catch(() => null),
+      post('fans.profile.get', { accountId }).catch(() => null),
+      window === 'last_7d'
+        ? Promise.resolve(null)
+        : post('account.overview', { accountId, window }).catch(() => null),
+    ])
+    console.info(`[yootun-wx] overview ${accountId} ${window} ${Date.now() - startedAt}ms`)
     let ok = true
-    // 摘要卡固定 last_7d 拉取（与账号 Tab 窗口互不影响，review P0-3）。
-    // summary 声明提到 try 外：窗口同为 last_7d 时直接复用，避免重复请求。
-    let summary = null
-    try {
-      summary = await post('account.overview', { accountId, window: 'last_7d' })
-    } catch {
-      ok = false
-    }
-    let overview = null
-    if (window === 'last_7d') {
-      overview = summary
-    } else {
-      try {
-        overview = await post('account.overview', { accountId, window })
-      } catch {
-        ok = false
-      }
-    }
-    let profile = null
-    try {
-      const profileResult = await post('fans.profile.get', { accountId })
-      profile = profileResult.fans_profile
-    } catch {
-      ok = false
-    }
+    const summary = summaryRes
+    const profile = profileRes && profileRes.fans_profile ? profileRes.fans_profile : null
+    const overview = window === 'last_7d' ? summary : (windowRes ?? null)
+    if (!summary || !profileRes) ok = false
+    if (window !== 'last_7d' && !windowRes) ok = false
+    // 整体成功才写缓存：部分失败的快照不缓存（下次重拉完整数据）。
+    if (ok) overviewCacheRef.current.set(cacheKey, { summary, overview, profile })
     // 守卫：序号最新 + 账号仍是当前选中账号（review P1-4）。否则旧账号的总览/画像
     // 会被写进当前视图（采集回调按采集账号刷新，与当前选中无关）。
     if (!shouldApplyResponse({
@@ -542,12 +551,14 @@ function WxWorkbench({ host, initial = null }) {
     return () => { cancelled = true }
   }, [post, refreshAccounts])
 
-  // 切换账号 / 窗口变化 → 刷新作品与账号数据（查询只读库，不触发采集）。
+  // 切换账号 / 窗口 / Tab → 按当前 Tab 分派查询（查询只读库，不触发采集）。
   //
-  // 首屏顺序（2026-11-12 真机反馈，对齐抖音首屏只拉作品列表）：
-  // 原来 works.list 与 account.overview / fans.profile.get 并发发出，而总览内部
-  // 还是两个串行请求——同一插件通道被总量更大的账号数据占住，作品列表被挤到
-  // 2-3 秒后才出现。现在先等 works.list 落地，总览随后再拉。
+  // 2026-11-13 性能排查：真机每次 MCP 公网往返秒级，页面延迟 = 往返次数 × 单次成本。
+  // 首屏若同时拉 works + overview + profile（总览内部还串行），账号页被 works 挡住
+  // （账号页根本不显示作品）、作品页被总览挤占。现在按 Tab 只拉当前页需要的数据：
+  // - 作品 Tab：works 先落地（SWR 缓存秒开），再后台补拉 overview 预热摘要卡；
+  // - 账号 Tab：只拉 overview+profile（refreshOverview 内部三路并行，一段往返），
+  //   不再拉 works。切 Tab 时各自数据按需拉取（works 有缓存秒开、总览有缓存秒开）。
   useEffect(() => {
     if (!selectedId) {
       setWorks([])
@@ -558,19 +569,23 @@ function WxWorkbench({ host, initial = null }) {
       setOverviewLoading(false)
       return
     }
-    // 切账号瞬间先清空上一账号的账号数据，避免等作品期间显示旧账号指标（review P1-3）；
-    // 同时立即置账号总览加载态——等作品落地期间账号页就显示蒙板，而不是空卡闪一下。
-    setOverview(null)
-    setSummaryOverview(null)
-    setProfile(null)
-    setOverviewLoading(true)
+    if (tab === 'account') {
+      // 账号页：清空旧账号数据（防串台，review P1-3）后直接拉总览；
+      // refreshOverview 内部会按缓存命中与否决定蒙板。
+      setOverview(null)
+      setSummaryOverview(null)
+      setProfile(null)
+      void refreshOverview(selectedId, windowKey)
+      return
+    }
+    // 作品页：works 先落地；完成后补拉总览（摘要卡与关注者增长预热，账号页切换即用）。
     void (async () => {
       await refreshWorks(selectedId)
-      // 作品已落地（或已失败）后再拉总览；期间用户若已切走，跳过。
+      // 作品已落地（或已失败）后再拉总览；期间用户若已切走/切 Tab，跳过。
       if (selectedIdRef.current !== selectedId) return
       void refreshOverview(selectedId, windowKey)
     })()
-  }, [selectedId, windowKey, refreshWorks, refreshOverview])
+  }, [selectedId, windowKey, tab, refreshWorks, refreshOverview])
 
   // 批量进度轮询。
   useEffect(() => {

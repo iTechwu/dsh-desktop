@@ -1121,3 +1121,27 @@ test('WorkDetailDialog（2026-11-12 真机反馈）：来源分布按播放量�
   assert.ok(iC >= 0 && iB >= 0 && iA >= 0, '来源行缺失')
   assert.ok(iC < iB && iB < iA, `来源分布未按降序渲染（丙174 → 乙40 → 甲5），实际顺序索引 ${iC}/${iB}/${iA}`)
 })
+
+test('首屏按 Tab 分派（2026-11-13 性能排查）：账号页不拉 works、overview 三路并行、SWR 缓存——源码契约防回退', async () => {
+  const source = await readFile(new URL('../src/client.js', import.meta.url), 'utf8')
+  // effect 依赖必须含 tab：切 Tab 才会按当前页分派查询。
+  assert.ok(
+    source.includes('}, [selectedId, windowKey, tab, refreshWorks, refreshOverview])'),
+    '分派 effect 依赖缺 tab',
+  )
+  // 账号 Tab 分支不得拉取作品列表（真机每段往返秒级，works 在账号页纯属挡路）。
+  const branchStart = source.indexOf("if (tab === 'account') {")
+  assert.ok(branchStart >= 0, '未找到账号 Tab 分派分支')
+  const branchEnd = source.indexOf('return\n    }', branchStart)
+  const accountBranch = source.slice(branchStart, branchEnd)
+  assert.ok(!accountBranch.includes('refreshWorks('), '账号 Tab 分支不得调用 refreshWorks')
+  assert.ok(accountBranch.includes('refreshOverview('), '账号 Tab 分支应拉取总览')
+  // overview 三路并行（summary 与 profile 同一 Promise.all，一段往返）。
+  assert.match(source, /Promise\.all\(\[\s*post\('account\.overview'/, 'overview 未并行化')
+  // 总览会话内 SWR 缓存（来回切账号秒开）。
+  assert.match(source, /overviewCacheRef/, 'overview 缓存缺失')
+  // 耗时埋点（对齐抖音 [yootun-douyin]）。
+  assert.ok(source.includes('[yootun-wx] works.list'), 'works 埋点缺失')
+  assert.ok(source.includes('[yootun-wx] overview'), 'overview 埋点缺失')
+  assert.ok(source.includes('[yootun-wx] accounts.list'), 'accounts 埋点缺失')
+})
