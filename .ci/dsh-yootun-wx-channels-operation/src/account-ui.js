@@ -1,4 +1,5 @@
-// 账号数据 Tab / 账号区 / 登录弹层（视觉基准：docs/1109/wx/ui-demo.html，§9.1/§9.4）。
+// 账号总览 Tab（Tab 显示名 2026-11-13 由「账号数据」更名）/ 账号区 / 登录弹层
+// （视觉基准：docs/1109/wx/ui-demo.html，§9.1/§9.4）。
 
 import { createElement as h } from 'react'
 import { TrendChart, recentDays } from './work-ui.js'
@@ -142,7 +143,7 @@ export function AccountList({
   )
 }
 
-/** 账号数据 Tab（§9.4 三段：全部视频指标 / 关注者增长 / 关注者画像）。
+/** 账号总览 Tab（§9.4 三段：全部视频指标 / 关注者增长 / 关注者画像）。
  * 全宽独占布局：页内自带账号选择器（对齐抖音总览的账号下拉：有账号即显示，
  * 不因单账号隐藏），切换后三段数据随之刷新。
  * 关注者画像（2026-11-11 真机反馈）：去掉维度 Tab 切换，改为 KPI 卡片组同屏展示——
@@ -152,25 +153,19 @@ export function AccountTab({
   window: windowKey, onWindow, overview, profile,
   trendOverview = null,
   accounts, selectedId, onSelectAccount,
+  loading = false,
 }) {
   const availability = (overview && overview.availability) || {}
   const usable = (Array.isArray(accounts) ? accounts : []).filter(item => item.deleteState !== 'remote_deleted')
-  return h('div', { className: 'ywc-account-page' },
-    usable.length > 0
-      ? h('div', { className: 'ywc-field', style: { justifyContent: 'flex-start', gap: 8 } },
-        '当前账号',
-        h('select', {
-          className: 'ywc-select', value: selectedId || '',
-          onChange: event => onSelectAccount(event.target.value), 'aria-label': '切换账号',
-          style: { minWidth: 220 },
-        },
-          usable.map(item => h('option', { value: item.accountId, key: item.accountId },
-            item.nickname || item.accountId,
-          )),
-        ),
-      )
-      : null,
-    h('section', { className: 'ywc-panel' },
+  // 加载蒙板（2026-11-13 真机反馈）：切账号 / 切窗口期间账号选择器保留（不打断操作），
+  // 三段数据区整体替换为「正在加载数据…」，样式与作品数据页加载态一致（ywc-table-state）。
+  const sections = loading
+    ? h('div', { className: 'ywc-table-state', role: 'status', 'aria-busy': 'true' },
+      h('span', { className: 'ywc-spinner', 'aria-hidden': true }),
+      h('p', null, '正在加载数据…'),
+    )
+    : [
+      h('section', { className: 'ywc-panel' },
       h('div', { className: 'ywc-section-title' },
         h('h3', null, '全部视频指标'),
         windowGroup(WINDOWS, windowKey, onWindow),
@@ -213,6 +208,23 @@ export function AccountTab({
         profileBarsCard('城市分布', profile, 'city'),
       ),
     ),
+    ]
+  return h('div', { className: 'ywc-account-page' },
+    usable.length > 0
+      ? h('div', { className: 'ywc-field', style: { justifyContent: 'flex-start', gap: 8 } },
+        '当前账号',
+        h('select', {
+          className: 'ywc-select', value: selectedId || '',
+          onChange: event => onSelectAccount(event.target.value), 'aria-label': '切换账号',
+          style: { minWidth: 220 },
+        },
+          usable.map(item => h('option', { value: item.accountId, key: item.accountId },
+            item.nickname || item.accountId,
+          )),
+        ),
+      )
+      : null,
+    sections,
   )
 }
 

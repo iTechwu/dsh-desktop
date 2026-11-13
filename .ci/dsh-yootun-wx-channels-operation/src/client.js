@@ -389,6 +389,9 @@ function WxWorkbench({ host, initial = null }) {
   // 不再用「暂无已入库作品」空态冒充加载中（两者外观一致，用户以为卡住）。
   const [accountsLoading, setAccountsLoading] = useState(false)
   const [worksLoading, setWorksLoading] = useState(false)
+  // 账号总览页加载态（2026-11-13 真机反馈）：切账号 / 切窗口期间数据被清空，
+  // 数据区显示「正在加载数据…」蒙板（对齐作品数据页加载态），不闪空卡。
+  const [overviewLoading, setOverviewLoading] = useState(false)
   // 刷新提示就地显示在工具栏（采集按钮下方，与进度行同一位置），不进顶部通知条
   // （2026-11-11 真机反馈）。
   const [refreshMessage, setRefreshMessage] = useState(null)
@@ -470,11 +473,14 @@ function WxWorkbench({ host, initial = null }) {
   }, [post, notify])
 
   const refreshOverview = useCallback(async (accountId, window) => {
-    if (!accountId) { setOverview(null); setSummaryOverview(null); setProfile(null); return false }
+    if (!accountId) { setOverview(null); setSummaryOverview(null); setProfile(null); setOverviewLoading(false); return false }
     // 切账号瞬间清空上一账号的总览/画像，避免新账号下显示旧账号指标（review P1-3）。
     setOverview(null)
     setSummaryOverview(null)
     setProfile(null)
+    // 加载蒙板（2026-11-13 真机反馈）：置位后只有「最新请求 + 账号未切走」的完成
+    // 路径才复位；被序号/账号守卫淘汰的旧响应不得提前关闭新请求的蒙板。
+    setOverviewLoading(true)
     const requestId = ++overviewRequestRef.current
     let ok = true
     // 摘要卡固定 last_7d 拉取（与账号 Tab 窗口互不影响，review P0-3）。
@@ -513,6 +519,7 @@ function WxWorkbench({ host, initial = null }) {
     setOverview(overview)
     if (summary) setSummaryOverview(summary)
     setProfile(profile)
+    setOverviewLoading(false)
     return ok
   }, [post])
 
@@ -548,12 +555,15 @@ function WxWorkbench({ host, initial = null }) {
       setOverview(null)
       setSummaryOverview(null)
       setProfile(null)
+      setOverviewLoading(false)
       return
     }
-    // 切账号瞬间先清空上一账号的账号数据，避免等作品期间显示旧账号指标（review P1-3）。
+    // 切账号瞬间先清空上一账号的账号数据，避免等作品期间显示旧账号指标（review P1-3）；
+    // 同时立即置账号总览加载态——等作品落地期间账号页就显示蒙板，而不是空卡闪一下。
     setOverview(null)
     setSummaryOverview(null)
     setProfile(null)
+    setOverviewLoading(true)
     void (async () => {
       await refreshWorks(selectedId)
       // 作品已落地（或已失败）后再拉总览；期间用户若已切走，跳过。
@@ -854,7 +864,7 @@ function WxWorkbench({ host, initial = null }) {
       notice ? h('div', { className: 'ywc-badge', role: 'status', 'aria-live': 'polite', style: { margin: '10px 24px 0' } }, notice) : null,
       h('nav', { className: 'ywc-tabs', 'aria-label': '工作台模块' },
         h('button', { className: 'ywc-tab', type: 'button', 'aria-selected': tab === 'work' ? 'true' : 'false', onClick: () => setTab('work') }, '作品数据'),
-        h('button', { className: 'ywc-tab', type: 'button', 'aria-selected': tab === 'account' ? 'true' : 'false', onClick: () => setTab('account') }, '账号数据'),
+        h('button', { className: 'ywc-tab', type: 'button', 'aria-selected': tab === 'account' ? 'true' : 'false', onClick: () => setTab('account') }, '账号总览'),
       ),
       h('div', { className: 'ywc-body' },
         h('aside', { className: 'ywc-accounts', 'aria-label': '账号管理' },
@@ -912,6 +922,9 @@ function WxWorkbench({ host, initial = null }) {
             : h(AccountTab, {
               window: windowKey, onWindow: setWindowKey,
               overview, profile,
+              // 加载蒙板（2026-11-13 真机反馈）：切账号 / 切窗口期间数据区显示
+              // 「正在加载数据…」，口径与作品数据页加载态一致。
+              loading: overviewLoading || (accountsLoading && !selectedId),
               // 关注者增长趋势图固定用 last_7d（「昨日」窗口只有 2 天数据，
               // 会把 7 天横轴截断成 2 个点）。
               trendOverview: summaryOverview,

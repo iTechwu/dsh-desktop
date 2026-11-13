@@ -290,7 +290,10 @@ test('render smoke：构建产物工厂在真 React 下渲染不抛错（含 5 �
   // 关键结构断言（§9.1 布局 + §9.2 摘要卡 + 右上角关闭按钮）。
   assert.ok(html.includes('视频号工作台'))
   assert.ok(html.includes('作品数据'))
-  assert.ok(html.includes('账号数据'))
+  // Tab 显示名（2026-11-13 真机反馈）：「账号数据」→「账号总览」。断言 Tab 文本本身，
+  // 注意 header 副标题也含「账号数据」字样，不能再用它判定 Tab。
+  assert.ok(html.includes('>账号总览</button>'))
+  assert.ok(!html.includes('>账号数据</button>'))
   assert.ok(html.includes('按播放加权计算'))
   assert.ok(html.includes('非净关注'))
   assert.ok(html.includes('缺口作品'))
@@ -345,6 +348,35 @@ test('render smoke：构建产物工厂在真 React 下渲染不抛错（含 5 �
   assert.ok(accountHtml.includes('conic-gradient'), '环形图缺失')
   assert.ok(accountHtml.includes('总人数'), '环形图中心总人数缺失')
   assert.ok(!accountHtml.includes('unknown'), '英文 unknown 不应透出')
+})
+
+test('AccountTab（2026-11-13 真机反馈）：切账号期间显示「正在加载数据…」蒙板，账号选择器保留', async () => {
+  const react = await import('react')
+  const { createElement: h } = react
+  const { renderToString } = await import('react-dom/server')
+  const { AccountTab } = await import('../src/account-ui.js')
+  const accounts = [{ accountId: 'a1', nickname: '账号一', deleteState: 'none' }]
+  const loading = renderToString(h(AccountTab, {
+    window: 'last_7d', onWindow: () => {},
+    overview: null, profile: null, trendOverview: null,
+    accounts, selectedId: 'a1', onSelectAccount: () => {},
+    loading: true,
+  }))
+  assert.ok(loading.includes('正在加载数据…'), '加载蒙板文案缺失')
+  assert.ok(loading.includes('ywc-spinner'), '加载蒙板 spinner 缺失')
+  assert.ok(loading.includes('aria-busy="true"'), '加载蒙板应标记 aria-busy')
+  // 账号选择器必须保留：蒙板期间用户仍能看到/操作账号下拉。
+  assert.ok(loading.includes('当前账号'), '蒙板期间账号选择器不应消失')
+  assert.ok(loading.includes('账号一'), '蒙板期间账号昵称不应消失')
+  // 加载中不渲染数据区（避免空卡与蒙板并存闪烁）。
+  assert.ok(!loading.includes('全部视频指标'), '加载中不应渲染数据区')
+  const idle = renderToString(h(AccountTab, {
+    window: 'last_7d', onWindow: () => {},
+    overview: null, profile: null, trendOverview: null,
+    accounts, selectedId: 'a1', onSelectAccount: () => {},
+  }))
+  assert.ok(idle.includes('全部视频指标'), '非加载态应正常渲染数据区')
+  assert.ok(!idle.includes('正在加载数据…'), '非加载态不应显示蒙板')
 })
 
 
