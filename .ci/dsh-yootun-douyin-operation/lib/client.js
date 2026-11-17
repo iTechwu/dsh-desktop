@@ -11604,7 +11604,7 @@ window.__ModuleLoader__.load({
     .ydo-schedule-cell-input:focus,.ydo-schedule-cell-textarea:focus{border-color:var(--dsw-alias-brand-primary);background:var(--dsw-alias-bg-layer-1);outline:0;box-shadow:0 0 0 2px color-mix(in srgb,var(--dsw-alias-brand-primary) 22%,transparent)}
     .ydo-schedule-cell-input:disabled,.ydo-schedule-cell-textarea:disabled{opacity:.6;cursor:not-allowed}
     input[type="date"].ydo-schedule-cell-input{min-width:112px}
-    .ydo-schedule-checkbox{display:inline-grid;width:15px;height:15px;place-items:center}
+    .ydo-schedule-checkbox{text-align:center}/* td 保持 table-cell 语义：绝不能在此类上写 display/width/height——inline-grid 会让 td 脱离表格列布局，两个复选框格被并进一个匿名单元格（真机错位根因）；尺寸只作用于 input。 */
     .ydo-schedule-checkbox input,.ydo-schedule-platform-group input{width:15px;height:15px;margin:0;accent-color:var(--dsw-alias-brand-primary);cursor:pointer}
     .ydo-schedule-checkbox input:disabled,.ydo-schedule-platform-group input:disabled{cursor:not-allowed;opacity:.6}
     .ydo-schedule-checkbox-label{display:inline-flex;align-items:center;gap:4px;white-space:nowrap}

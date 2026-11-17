@@ -614,6 +614,26 @@ test('受控输入契约：ScheduleRow 所有 value 输入必须带 onChange（P
   assert.ok(moduleSource.includes('onPlatformToggle(row.rowId, item.value, event.target.checked)'))
 })
 
+test('复选框列 td 保持 table-cell 语义（真机错位回归锚）', async () => {
+  // td.ydo-schedule-checkbox 若被 CSS 写成 display:inline-grid + width/height，
+  // td 脱离表格列布局，两个复选框格并进一个匿名单元格（真机截图错位根因）。
+  const source = await readFile(new URL('../src/client.js', import.meta.url), 'utf8')
+  const rule = source.match(/\.ydo-schedule-checkbox\{[^}]*\}/u)
+  assert.ok(rule, '存在 .ydo-schedule-checkbox 规则')
+  assert.ok(!/display:\s*inline-grid|width:\s*\d|height:\s*\d/.test(rule[0]),
+    `td 类不得覆盖 display/width/height：${rule[0]}`)
+  assert.ok(rule[0].includes('text-align:center'), '复选框列居中')
+  // input 自身尺寸保留（与平台组共用规则）
+  assert.ok(
+    source.includes('.ydo-schedule-checkbox input,.ydo-schedule-platform-group input{width:15px;height:15px;margin:0;accent-color:var(--dsw-alias-brand-primary);cursor:pointer}'),
+    'input 15px 尺寸规则保留')
+  // 标记结构：两个业务复选框各自独占 td.ydo-schedule-checkbox
+  const moduleSource = await readFile(new URL('../src/schedule-ui.js', import.meta.url), 'utf8')
+  assert.equal(
+    (moduleSource.match(/className: 'ydo-schedule-checkbox'/gu) || []).length, 2,
+    '两个复选框 td 使用该类')
+})
+
 test('delete 在途整行只读；save 在途可继续编辑入队（P2-2 修复，§9.4 第 9 条）', () => {
   assert.equal(rowStatusMeta({ status: 'saving', operation: 'delete' }).locked, true, 'delete 在途锁定行编辑')
   assert.equal(rowStatusMeta({ status: 'saving', operation: 'delete' }).rowClass, 'ydo-schedule-row-saving')
