@@ -371,19 +371,15 @@ test('刷新阻塞 saving/queued/dirty 行，不阻塞 unknown/conflict 的无 d
   assert.ok(refreshBody.includes('refreshScheduleBlocked(scheduleRowStatesRef.current, scheduleDeleteBusy)'))
 })
 
-test('真机修复：按钮左置、勾选白色、删除提示与切号清焦（2026-11-17）', () => {
+test('真机修复：按钮左置、勾选统一样式、删除提示与切号清焦（2026-11-17）', () => {
   assert.ok(clientSource.includes('.ydo-schedule-actions{margin-right:auto;margin-left:0'))
   assert.ok(
-    clientSource.includes('.ydo-schedule-checkbox input:checked::after{\n  border-color:#fff;\n}'),
-    '拍摄情况/是否发布选中勾使用白色',
+    clientSource.includes('.ydo-schedule-checkbox input,.ydo-schedule-platform-group input{width:15px;height:15px;margin:0;accent-color:var(--dsw-alias-brand-primary);cursor:pointer}'),
+    '拍摄情况/是否发布与发布平台复选框样式一致',
   )
   assert.ok(
-    clientSource.includes('.ydo-schedule-platform-group input{width:15px;height:15px;margin:0;accent-color:var(--dsw-alias-brand-primary);cursor:pointer}'),
-    '发布平台复选框保持原生样式',
-  )
-  assert.ok(
-    !clientSource.includes('.ydo-schedule-checkbox input:checked::after,.ydo-schedule-platform-group input:checked::after'),
-    '白色勾选样式不得影响发布平台',
+    !clientSource.includes('.ydo-schedule-checkbox input:checked::after{\n  border-color:#fff;\n}'),
+    '不再使用自绘白色勾',
   )
   assert.ok(scheduleSource.includes('确认删除：'), '删除弹框确认文案前缀正确')
   assert.ok(scheduleSource.includes('deleteTargetContent'), '删除弹框显示视频内容')
