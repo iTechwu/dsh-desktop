@@ -262,25 +262,6 @@ export function rowStatusMeta(state) {
   }
 }
 
-/** 负责人 datalist 建议（§5.6）：账号 owner_name + 当前账号历史排期负责人。 */
-export function collectOwnerSuggestions(accounts, rows) {
-  const seen = new Set()
-  const suggestions = []
-  const push = value => {
-    const name = typeof value === 'string' ? value.trim() : ''
-    if (name && !seen.has(name)) {
-      seen.add(name)
-      suggestions.push(name)
-    }
-  }
-  for (const account of accounts || []) push(account && account.ownerName)
-  for (const row of rows || []) {
-    push(row && row.shootingOwner)
-    push(row && row.editingOwner)
-  }
-  return suggestions
-}
-
 // ---------------------------------------------------------------------------
 // 页面组件
 // ---------------------------------------------------------------------------
@@ -398,9 +379,9 @@ function ScheduleRow({ row, state, deleteInFlight, focusRowId, actions }) {
         onChange: event => actions.onBlurCell(row.rowId, 'publishDate', event.target.value) })),
     h('td', null, h(PlatformGroup, { row, disabled, onPlatformToggle: actions.onPlatformToggle })),
     h('td', null,
-      h('input', { ...inputProps('shootingOwner'), type: 'text', value: row.shootingOwner, list: 'ydo-schedule-owner-options', 'aria-label': '拍摄负责人' })),
+      h('input', { ...inputProps('shootingOwner'), type: 'text', value: row.shootingOwner, 'aria-label': '拍摄负责人' })),
     h('td', null,
-      h('input', { ...inputProps('editingOwner'), type: 'text', value: row.editingOwner, list: 'ydo-schedule-owner-options', 'aria-label': '剪辑负责人' })),
+      h('input', { ...inputProps('editingOwner'), type: 'text', value: row.editingOwner, 'aria-label': '剪辑负责人' })),
     h('td', { className: 'ydo-schedule-delete-cell' },
       h(DeleteButton, { row, state, deleteInFlight, onDelete: actions.onDelete }),
       ...(statusActions || []),
@@ -426,7 +407,6 @@ export function SchedulePage({
   deleteBusy,
   deleteTargetSequence,
   hint,
-  ownerSuggestions,
   focusRowId,
   renderAvatar,
   actions,
@@ -434,6 +414,8 @@ export function SchedulePage({
   // loading/error 时也要保持 shell，不得把初始加载或账号列表失败冒充“无账号”。
   const initialUnavailable = Boolean((loading || errorReason) && !(accounts || []).length)
   const hasAccounts = Boolean((accounts || []).length)
+  const deleteTargetRow = rows.find(row => row.rowId === deleteTarget)
+  const deleteTargetContent = (deleteTargetRow?.videoContent || '').trim() || '未填写视频内容'
   const tableBody = loading
     ? h('tr', { className: 'ydo-schedule-empty' },
       h('td', { colSpan: 12 }, '加载中…'))
@@ -460,8 +442,6 @@ export function SchedulePage({
   }
 
   return h('section', { className: 'ydo-right ydo-schedule-page', 'aria-label': '发布排期看板' },
-    h('datalist', { id: 'ydo-schedule-owner-options' },
-      ...(ownerSuggestions || []).map(name => h('option', { key: name, value: name }))),
     h('div', { className: 'ydo-toolbar' },
       hint ? h('div', { className: 'ydo-hint', role: hint.tone === 'error' ? 'alert' : 'status', 'aria-live': 'polite' }, hint.text) : null,
       h('div', { className: 'ydo-schedule-actions' },
@@ -471,14 +451,14 @@ export function SchedulePage({
           disabled: creating || !hasAccounts,
           'aria-busy': creating || undefined,
           onClick: actions.onCreate,
-        }, creating ? '新增中…' : '新增行')),
-      h('button', {
-        type: 'button',
-        className: 'ydo-secondary',
-        disabled: loading || creating || deleteBusy || undefined,
-        'aria-busy': loading || creating || deleteBusy || undefined,
-        onClick: actions.onBoardRetry,
-      }, loading ? '刷新中…' : '刷新')),
+        }, creating ? '新增中…' : '新增行'),
+        h('button', {
+          type: 'button',
+          className: 'ydo-secondary',
+          disabled: loading || creating || deleteBusy || undefined,
+          'aria-busy': loading || creating || deleteBusy || undefined,
+          onClick: actions.onBoardRetry,
+        }, loading ? '刷新中…' : '刷新'))),
     h('div', { className: 'ydo-table-wrap' },
       h('table', { className: 'ydo-schedule-table', 'aria-label': '发布排期' },
         h('colgroup', null,
@@ -524,10 +504,10 @@ export function SchedulePage({
         h('div', { className: 'ydo-mat-modal' },
           h('form', { className: 'ydo-mat-form', onSubmit: event => event.preventDefault() },
             h('p', { id: 'ydo-schedule-delete-title', className: 'ydo-mat-field' },
-              '确认删除序号为 ',
-              h('span', null, deleteTargetSequence || deleteTarget),
+              '确认删除：',
+              h('span', null, deleteTargetContent),
               ' 的排期行？'),
-            h('p', { className: 'ydo-hint' }, '删除后数据库记录同步删除，刷新后不会恢复。'),
+            h('p', { className: 'ydo-hint' }, '删除后数据不可恢复。'),
             h('div', { className: 'ydo-mat-modal-actions' },
               h('button', { type: 'button', className: 'ydo-secondary', disabled: deleteBusy, onClick: actions.onCancelDelete }, '取消'),
               h('button', { type: 'button', className: 'ydo-primary', disabled: deleteBusy, 'aria-busy': deleteBusy || undefined, onClick: actions.onConfirmDelete }, deleteBusy ? '删除中…' : '删除')))))

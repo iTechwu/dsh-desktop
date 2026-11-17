@@ -31,7 +31,6 @@ const {
   SchedulePage,
   buildServerSnapshot,
   canSwitchAccount,
-  collectOwnerSuggestions,
   compareRowId,
   createRowState,
   deleteAllowed,
@@ -47,7 +46,7 @@ const {
   toUiRow,
 } = vm.runInContext('({ ' + [
   'SCHEDULE_BUSINESS_HEADERS', 'SCHEDULE_ERROR_REASON_COPY', 'SCHEDULE_PLATFORMS', 'SchedulePage',
-  'buildServerSnapshot', 'canSwitchAccount', 'collectOwnerSuggestions', 'compareRowId',
+  'buildServerSnapshot', 'canSwitchAccount', 'compareRowId',
   'createRowState', 'deleteAllowed', 'dirtyResubmitNeeded', 'mergeDirtyPatch',
   'rowHasPendingWork', 'rowStatusMeta', 'rowStatusOnFailure', 'restoreUiRowFromServerSnapshot',
   'refreshScheduleBlocked',
@@ -372,6 +371,23 @@ test('刷新阻塞 saving/queued/dirty 行，不阻塞 unknown/conflict 的无 d
   assert.ok(refreshBody.includes('refreshScheduleBlocked(scheduleRowStatesRef.current, scheduleDeleteBusy)'))
 })
 
+test('真机修复：按钮左置、勾选白色、删除提示与切号清焦（2026-11-17）', () => {
+  assert.ok(clientSource.includes('.ydo-schedule-actions{margin-right:auto;margin-left:0'))
+  assert.ok(
+    clientSource.includes('.ydo-schedule-checkbox input:checked::after,.ydo-schedule-platform-group input:checked::after{\n  border-color:#fff;\n}'),
+    '选中勾使用白色',
+  )
+  assert.ok(scheduleSource.includes('确认删除：'), '删除弹框确认文案前缀正确')
+  assert.ok(scheduleSource.includes('deleteTargetContent'), '删除弹框显示视频内容')
+  assert.ok(scheduleSource.includes('未填写视频内容'), '空视频内容有兜底文案')
+  assert.ok(scheduleSource.includes('删除后数据不可恢复。'), '删除风险文案已更新')
+  assert.ok(!scheduleSource.includes('删除后数据库记录同步删除'))
+
+  const switchIdx = clientSource.indexOf('const switchScheduleAccount')
+  const switchBody = clientSource.slice(switchIdx, clientSource.indexOf('const createScheduleRow', switchIdx))
+  assert.ok(switchBody.includes('setScheduleFocusRowId(null)'), '切换账号清除默认聚焦')
+})
+
 test('加载失败展示错误态与重试（§5.3 空态表）', () => {
   const html = SchedulePage({
     loading: false, errorReason: 'SCHEDULE_ROW_CONFLICT', accounts: ACCOUNTS, activeAccountId: 'acc-b',
@@ -400,14 +416,19 @@ test('加载失败展示错误态与重试（§5.3 空态表）', () => {
   }
 })
 
-test('负责人 datalist 建议来自账号 owner_name 与历史排期（§5.6）', () => {
-  const rows = [
-    sampleRow({ shooting_owner: '阿泽', editing_owner: '保罗' }),
-    sampleRow({ rowId: '3', shooting_owner: '包姐', editing_owner: '  ' }),
-  ]
-  const suggestions = [...collectOwnerSuggestions(ACCOUNTS, rows)]
-  assert.deepEqual(suggestions, ['包姐', '阿泽', '保罗'])
-  // 注：collectOwnerSuggestions 的 vm realm 数组已拷贝到宿主 realm 后比较
+test('负责人输入不复用已有数据建议，由用户手填（真机验收 4）', () => {
+  const html = SchedulePage({
+    loading: false, errorReason: null, accounts: ACCOUNTS, activeAccountId: 'acc-b',
+    rows: [sampleRow({ shooting_owner: '阿泽', editing_owner: '保罗' })], rowStates: {}, hint: null,
+    creating: false, deleteTarget: null, deleteBusy: false, deleteTargetSequence: null,
+    ownerSuggestions: [], focusRowId: null, renderAvatar: noop, actions: baseActions,
+  })
+  const text = collectStrings(html).join('')
+  assert.ok(!text.includes('ydo-schedule-owner-options'))
+  assert.ok(!scheduleSource.includes("list: 'ydo-schedule-owner-options'"), '拍摄/剪辑负责人不得绑定 datalist')
+  assert.ok(!scheduleSource.includes('collectOwnerSuggestions'))
+  assert.ok(!clientSource.includes('collectOwnerSuggestions'))
+  assert.ok(!clientSource.includes('ownerSuggestions: collectOwnerSuggestions'))
 })
 
 // ---------------------------------------------------------------------------
@@ -552,8 +573,9 @@ test('样式白名单：新增 className 严格限定 ydo-schedule-* 清单，�
     assert.ok(scheduleCss.includes(`.${name}`), `.${name} 应在共享 CSS 中定义`)
   }
   assert.ok(!scheduleCss.includes('ydo-schedule-demo-note'), '生产 CSS 不含 demo-note')
-  const offendingColors = scheduleCss.match(/#[0-9a-fA-F]{3,8}\b/g) || []
-  assert.deepEqual(offendingColors, [], '排期 CSS 不写死十六进制颜色，一律主题变量')
+  const offendingColors = (scheduleCss.match(/#[0-9a-fA-F]{3,8}\b/g) || [])
+    .filter(color => color.toLowerCase() !== '#fff')
+  assert.deepEqual(offendingColors, [], '排期 CSS 只允许白色勾选固定色，其余使用主题变量')
   assert.ok(scheduleCss.includes('grid-template-rows:auto minmax(0,1fr) auto'), '表格区占满剩余高度，账号栏固定底部')
   assert.ok(scheduleCss.includes('min-width:2230px'), '表格按内容放宽并支持横向滚动')
   assert.ok(scheduleCss.includes('table-layout:fixed'), '列宽由 colgroup 控制')

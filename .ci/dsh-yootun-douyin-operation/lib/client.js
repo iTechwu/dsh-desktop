@@ -6161,25 +6161,6 @@ window.__ModuleLoader__.load({
       }
     }
 
-    /** 负责人 datalist 建议（§5.6）：账号 owner_name + 当前账号历史排期负责人。 */
-    function collectOwnerSuggestions(accounts, rows) {
-      const seen = new Set()
-      const suggestions = []
-      const push = value => {
-        const name = typeof value === 'string' ? value.trim() : ''
-        if (name && !seen.has(name)) {
-          seen.add(name)
-          suggestions.push(name)
-        }
-      }
-      for (const account of accounts || []) push(account && account.ownerName)
-      for (const row of rows || []) {
-        push(row && row.shootingOwner)
-        push(row && row.editingOwner)
-      }
-      return suggestions
-    }
-
     // ---------------------------------------------------------------------------
     // 页面组件
     // ---------------------------------------------------------------------------
@@ -6297,9 +6278,9 @@ window.__ModuleLoader__.load({
             onChange: event => actions.onBlurCell(row.rowId, 'publishDate', event.target.value) })),
         h('td', null, h(PlatformGroup, { row, disabled, onPlatformToggle: actions.onPlatformToggle })),
         h('td', null,
-          h('input', { ...inputProps('shootingOwner'), type: 'text', value: row.shootingOwner, list: 'ydo-schedule-owner-options', 'aria-label': '拍摄负责人' })),
+          h('input', { ...inputProps('shootingOwner'), type: 'text', value: row.shootingOwner, 'aria-label': '拍摄负责人' })),
         h('td', null,
-          h('input', { ...inputProps('editingOwner'), type: 'text', value: row.editingOwner, list: 'ydo-schedule-owner-options', 'aria-label': '剪辑负责人' })),
+          h('input', { ...inputProps('editingOwner'), type: 'text', value: row.editingOwner, 'aria-label': '剪辑负责人' })),
         h('td', { className: 'ydo-schedule-delete-cell' },
           h(DeleteButton, { row, state, deleteInFlight, onDelete: actions.onDelete }),
           ...(statusActions || []),
@@ -6325,7 +6306,6 @@ window.__ModuleLoader__.load({
       deleteBusy,
       deleteTargetSequence,
       hint,
-      ownerSuggestions,
       focusRowId,
       renderAvatar,
       actions,
@@ -6333,6 +6313,8 @@ window.__ModuleLoader__.load({
       // loading/error 时也要保持 shell，不得把初始加载或账号列表失败冒充“无账号”。
       const initialUnavailable = Boolean((loading || errorReason) && !(accounts || []).length)
       const hasAccounts = Boolean((accounts || []).length)
+      const deleteTargetRow = rows.find(row => row.rowId === deleteTarget)
+      const deleteTargetContent = (deleteTargetRow?.videoContent || '').trim() || '未填写视频内容'
       const tableBody = loading
         ? h('tr', { className: 'ydo-schedule-empty' },
           h('td', { colSpan: 12 }, '加载中…'))
@@ -6359,8 +6341,6 @@ window.__ModuleLoader__.load({
       }
 
       return h('section', { className: 'ydo-right ydo-schedule-page', 'aria-label': '发布排期看板' },
-        h('datalist', { id: 'ydo-schedule-owner-options' },
-          ...(ownerSuggestions || []).map(name => h('option', { key: name, value: name }))),
         h('div', { className: 'ydo-toolbar' },
           hint ? h('div', { className: 'ydo-hint', role: hint.tone === 'error' ? 'alert' : 'status', 'aria-live': 'polite' }, hint.text) : null,
           h('div', { className: 'ydo-schedule-actions' },
@@ -6370,14 +6350,14 @@ window.__ModuleLoader__.load({
               disabled: creating || !hasAccounts,
               'aria-busy': creating || undefined,
               onClick: actions.onCreate,
-            }, creating ? '新增中…' : '新增行')),
-          h('button', {
-            type: 'button',
-            className: 'ydo-secondary',
-            disabled: loading || creating || deleteBusy || undefined,
-            'aria-busy': loading || creating || deleteBusy || undefined,
-            onClick: actions.onBoardRetry,
-          }, loading ? '刷新中…' : '刷新')),
+            }, creating ? '新增中…' : '新增行'),
+            h('button', {
+              type: 'button',
+              className: 'ydo-secondary',
+              disabled: loading || creating || deleteBusy || undefined,
+              'aria-busy': loading || creating || deleteBusy || undefined,
+              onClick: actions.onBoardRetry,
+            }, loading ? '刷新中…' : '刷新'))),
         h('div', { className: 'ydo-table-wrap' },
           h('table', { className: 'ydo-schedule-table', 'aria-label': '发布排期' },
             h('colgroup', null,
@@ -6423,10 +6403,10 @@ window.__ModuleLoader__.load({
             h('div', { className: 'ydo-mat-modal' },
               h('form', { className: 'ydo-mat-form', onSubmit: event => event.preventDefault() },
                 h('p', { id: 'ydo-schedule-delete-title', className: 'ydo-mat-field' },
-                  '确认删除序号为 ',
-                  h('span', null, deleteTargetSequence || deleteTarget),
+                  '确认删除：',
+                  h('span', null, deleteTargetContent),
                   ' 的排期行？'),
-                h('p', { className: 'ydo-hint' }, '删除后数据库记录同步删除，刷新后不会恢复。'),
+                h('p', { className: 'ydo-hint' }, '删除后数据不可恢复。'),
                 h('div', { className: 'ydo-mat-modal-actions' },
                   h('button', { type: 'button', className: 'ydo-secondary', disabled: deleteBusy, onClick: actions.onCancelDelete }, '取消'),
                   h('button', { type: 'button', className: 'ydo-primary', disabled: deleteBusy, 'aria-busy': deleteBusy || undefined, onClick: actions.onConfirmDelete }, deleteBusy ? '删除中…' : '删除')))))
@@ -10026,6 +10006,10 @@ window.__ModuleLoader__.load({
         }
         scheduleAccountIdRef.current = accountId
         setScheduleAccountId(accountId)
+        // 真机反馈：切号后不默认聚焦任何输入框。
+        setScheduleFocusRowId(null)
+        // 真机反馈：切号后不保留旧账号的删除确认弹框。
+        setScheduleDeleteTarget(null)
         // 切换即清空旧账号行（review P3-4）：避免加载期间旧账号数据瞬时残留。
         applyScheduleRows([])
         applyScheduleRowStates({})
@@ -11041,7 +11025,6 @@ window.__ModuleLoader__.load({
                 deleteTarget: scheduleDeleteTarget,
                 deleteBusy: scheduleDeleteBusy,
                 deleteTargetSequence: scheduleDeleteTarget,
-                ownerSuggestions: collectOwnerSuggestions(scheduleAccounts, scheduleRows),
                 focusRowId: scheduleFocusRowId,
                 // 账号栏头像复用既有 AccountAvatar（§9.2 第 5 条：真实 avatar，空回退首字）。
                 renderAvatar: account => h(AccountAvatar, { account }),
@@ -11607,7 +11590,7 @@ window.__ModuleLoader__.load({
        深浅色主题自适应由变量承载。 */
     .ydo-schedule-page{display:grid;grid-template-rows:auto minmax(0,1fr) auto;min-height:0;gap:12px}
     .ydo-schedule-page .ydo-table-wrap{min-height:0;overflow:auto}
-    .ydo-schedule-actions{margin-left:auto;display:flex;align-items:center;gap:8px}
+    .ydo-schedule-actions{margin-right:auto;margin-left:0;display:flex;align-items:center;gap:8px}
     .ydo-schedule-table{width:100%;min-width:2230px;border-collapse:separate;border-spacing:0;table-layout:fixed}
     .ydo-schedule-table th,.ydo-schedule-table td{padding:8px 10px;border-right:1px solid var(--dsw-alias-border-l1);border-bottom:1px solid var(--dsw-alias-border-l1);vertical-align:middle;text-align:left;font-size:var(--dsh-content-font-size-secondary,13px)}
     .ydo-schedule-table th:last-child,.ydo-schedule-table td:last-child{border-right:0}
@@ -11629,13 +11612,41 @@ window.__ModuleLoader__.load({
     .ydo-schedule-cell-input:disabled,.ydo-schedule-cell-textarea:disabled{opacity:.6;cursor:not-allowed}
     input[type="date"].ydo-schedule-cell-input{min-width:112px}
     .ydo-schedule-checkbox{display:inline-grid;width:22px;height:22px;place-items:center}
-    .ydo-schedule-checkbox input{width:18px;height:18px;margin:0;accent-color:var(--dsw-alias-state-success-primary);cursor:pointer}
-    .ydo-schedule-checkbox input:disabled{cursor:not-allowed}
+    .ydo-schedule-checkbox input,.ydo-schedule-platform-group input{
+      appearance:none;
+      -webkit-appearance:none;
+      margin:0;
+      border:1px solid var(--dsw-alias-border-l1);
+      border-radius:4px;
+      background:var(--dsw-alias-bg-layer-1);
+      display:grid;
+      place-items:center;
+      cursor:pointer;
+    }
+    .ydo-schedule-checkbox input{width:18px;height:18px}
+    .ydo-schedule-platform-group input{width:15px;height:15px;border-radius:3px}
+    .ydo-schedule-checkbox input::after,.ydo-schedule-platform-group input::after{
+      content:"";
+      width:44%;
+      height:26%;
+      border-left:2px solid transparent;
+      border-bottom:2px solid transparent;
+      transform:rotate(-45deg) translate(4%, -8%);
+    }
+    .ydo-schedule-checkbox input:checked,.ydo-schedule-platform-group input:checked{
+      border-color:var(--dsw-alias-state-success-primary);
+      background:var(--dsw-alias-state-success-primary);
+    }
+    .ydo-schedule-checkbox input:checked::after,.ydo-schedule-platform-group input:checked::after{
+      border-color:#fff;
+    }
+    .ydo-schedule-checkbox input:disabled,.ydo-schedule-platform-group input:disabled{
+      cursor:not-allowed;
+      opacity:.6;
+    }
     .ydo-schedule-checkbox-label{display:inline-flex;align-items:center;gap:5px;white-space:nowrap}
     .ydo-schedule-platform-group{display:grid;gap:4px;min-width:118px;color:var(--dsw-alias-label-primary)}
     .ydo-schedule-platform-group label{display:inline-flex;align-items:center;gap:5px;font-size:13px;white-space:nowrap}
-    .ydo-schedule-platform-group input{width:15px;height:15px;margin:0;accent-color:var(--dsw-alias-brand-primary);cursor:pointer}
-    .ydo-schedule-platform-group input:disabled{cursor:not-allowed}
     .ydo-schedule-empty td{padding:40px 16px;color:var(--dsw-alias-label-secondary);text-align:center}
     .ydo-schedule-account-bar{display:flex;align-items:center;gap:10px;padding:12px;overflow-x:auto;border:1px solid var(--dsw-alias-border-l1);border-radius:8px;background:var(--dsw-alias-bg-layer-1)}
     .ydo-schedule-account-bar-label{flex:none;margin-right:2px;color:var(--dsw-alias-label-secondary);font-size:var(--dsh-content-font-size-secondary,13px);white-space:nowrap}

@@ -39,7 +39,6 @@ import {
   SchedulePage,
   buildServerSnapshot,
   canSwitchAccount,
-  collectOwnerSuggestions,
   dirtyResubmitNeeded,
   compareRowId,
   createRowState,
@@ -3636,6 +3635,10 @@ function Overlay({ t }) {
     }
     scheduleAccountIdRef.current = accountId
     setScheduleAccountId(accountId)
+    // 真机反馈：切号后不默认聚焦任何输入框。
+    setScheduleFocusRowId(null)
+    // 真机反馈：切号后不保留旧账号的删除确认弹框。
+    setScheduleDeleteTarget(null)
     // 切换即清空旧账号行（review P3-4）：避免加载期间旧账号数据瞬时残留。
     applyScheduleRows([])
     applyScheduleRowStates({})
@@ -4651,7 +4654,6 @@ function Overlay({ t }) {
             deleteTarget: scheduleDeleteTarget,
             deleteBusy: scheduleDeleteBusy,
             deleteTargetSequence: scheduleDeleteTarget,
-            ownerSuggestions: collectOwnerSuggestions(scheduleAccounts, scheduleRows),
             focusRowId: scheduleFocusRowId,
             // 账号栏头像复用既有 AccountAvatar（§9.2 第 5 条：真实 avatar，空回退首字）。
             renderAvatar: account => h(AccountAvatar, { account }),
@@ -5217,7 +5219,7 @@ ${REPORT_CSS_TEXT}${MATERIAL_CSS_TEXT}${GENE_CSS_TEXT}
    深浅色主题自适应由变量承载。 */
 .ydo-schedule-page{display:grid;grid-template-rows:auto minmax(0,1fr) auto;min-height:0;gap:12px}
 .ydo-schedule-page .ydo-table-wrap{min-height:0;overflow:auto}
-.ydo-schedule-actions{margin-left:auto;display:flex;align-items:center;gap:8px}
+.ydo-schedule-actions{margin-right:auto;margin-left:0;display:flex;align-items:center;gap:8px}
 .ydo-schedule-table{width:100%;min-width:2230px;border-collapse:separate;border-spacing:0;table-layout:fixed}
 .ydo-schedule-table th,.ydo-schedule-table td{padding:8px 10px;border-right:1px solid var(--dsw-alias-border-l1);border-bottom:1px solid var(--dsw-alias-border-l1);vertical-align:middle;text-align:left;font-size:var(--dsh-content-font-size-secondary,13px)}
 .ydo-schedule-table th:last-child,.ydo-schedule-table td:last-child{border-right:0}
@@ -5239,13 +5241,41 @@ thead .ydo-schedule-sequence-cell,thead .ydo-schedule-delete-cell{z-index:4;back
 .ydo-schedule-cell-input:disabled,.ydo-schedule-cell-textarea:disabled{opacity:.6;cursor:not-allowed}
 input[type="date"].ydo-schedule-cell-input{min-width:112px}
 .ydo-schedule-checkbox{display:inline-grid;width:22px;height:22px;place-items:center}
-.ydo-schedule-checkbox input{width:18px;height:18px;margin:0;accent-color:var(--dsw-alias-state-success-primary);cursor:pointer}
-.ydo-schedule-checkbox input:disabled{cursor:not-allowed}
+.ydo-schedule-checkbox input,.ydo-schedule-platform-group input{
+  appearance:none;
+  -webkit-appearance:none;
+  margin:0;
+  border:1px solid var(--dsw-alias-border-l1);
+  border-radius:4px;
+  background:var(--dsw-alias-bg-layer-1);
+  display:grid;
+  place-items:center;
+  cursor:pointer;
+}
+.ydo-schedule-checkbox input{width:18px;height:18px}
+.ydo-schedule-platform-group input{width:15px;height:15px;border-radius:3px}
+.ydo-schedule-checkbox input::after,.ydo-schedule-platform-group input::after{
+  content:"";
+  width:44%;
+  height:26%;
+  border-left:2px solid transparent;
+  border-bottom:2px solid transparent;
+  transform:rotate(-45deg) translate(4%, -8%);
+}
+.ydo-schedule-checkbox input:checked,.ydo-schedule-platform-group input:checked{
+  border-color:var(--dsw-alias-state-success-primary);
+  background:var(--dsw-alias-state-success-primary);
+}
+.ydo-schedule-checkbox input:checked::after,.ydo-schedule-platform-group input:checked::after{
+  border-color:#fff;
+}
+.ydo-schedule-checkbox input:disabled,.ydo-schedule-platform-group input:disabled{
+  cursor:not-allowed;
+  opacity:.6;
+}
 .ydo-schedule-checkbox-label{display:inline-flex;align-items:center;gap:5px;white-space:nowrap}
 .ydo-schedule-platform-group{display:grid;gap:4px;min-width:118px;color:var(--dsw-alias-label-primary)}
 .ydo-schedule-platform-group label{display:inline-flex;align-items:center;gap:5px;font-size:13px;white-space:nowrap}
-.ydo-schedule-platform-group input{width:15px;height:15px;margin:0;accent-color:var(--dsw-alias-brand-primary);cursor:pointer}
-.ydo-schedule-platform-group input:disabled{cursor:not-allowed}
 .ydo-schedule-empty td{padding:40px 16px;color:var(--dsw-alias-label-secondary);text-align:center}
 .ydo-schedule-account-bar{display:flex;align-items:center;gap:10px;padding:12px;overflow-x:auto;border:1px solid var(--dsw-alias-border-l1);border-radius:8px;background:var(--dsw-alias-bg-layer-1)}
 .ydo-schedule-account-bar-label{flex:none;margin-right:2px;color:var(--dsw-alias-label-secondary);font-size:var(--dsh-content-font-size-secondary,13px);white-space:nowrap}
