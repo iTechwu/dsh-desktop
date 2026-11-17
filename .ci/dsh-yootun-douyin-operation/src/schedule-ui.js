@@ -352,24 +352,18 @@ function ScheduleRow({ row, state, deleteInFlight, focusRowId, actions }) {
         onChange: event => actions.onBlurCell(row.rowId, 'shootingDate', event.target.value) })),
     h('td', null,
       h('textarea', { ...inputProps('videoContent', 'textarea'), rows: 1, value: row.videoContent, 'aria-label': '视频内容' })),
-    h('td', null,
-      h('label', { className: 'ydo-schedule-checkbox-label' },
-        h('span', { className: 'ydo-schedule-checkbox' },
-          h('input', {
-            type: 'checkbox', checked: row.shootingStatus, disabled,
-            onChange: event => actions.onCheckbox(row.rowId, 'shootingStatus', event.target.checked),
-            'aria-label': '拍摄完成',
-          })),
-        h('span', null, '拍摄完成'))),
-    h('td', null,
-      h('label', { className: 'ydo-schedule-checkbox-label' },
-        h('span', { className: 'ydo-schedule-checkbox' },
-          h('input', {
-            type: 'checkbox', checked: row.published, disabled,
-            onChange: event => actions.onCheckbox(row.rowId, 'published', event.target.checked),
-            'aria-label': '已发布',
-          })),
-        h('span', null, '已发布'))),
+    h('td', { className: 'ydo-schedule-checkbox' },
+      h('input', {
+        type: 'checkbox', checked: row.shootingStatus, disabled,
+        onChange: event => actions.onCheckbox(row.rowId, 'shootingStatus', event.target.checked),
+        'aria-label': '拍摄完成',
+      })),
+    h('td', { className: 'ydo-schedule-checkbox' },
+      h('input', {
+        type: 'checkbox', checked: row.published, disabled,
+        onChange: event => actions.onCheckbox(row.rowId, 'published', event.target.checked),
+        'aria-label': '已发布',
+      })),
     h('td', null,
       h('input', { ...inputProps('assetLink'), type: 'url', value: row.assetLink, placeholder: '网盘链接', 'aria-label': '成片/封面网盘链接' })),
     h('td', null,
@@ -411,11 +405,11 @@ export function SchedulePage({
   renderAvatar,
   actions,
 }) {
-  // loading/error 时也要保持 shell，不得把初始加载或账号列表失败冒充“无账号”。
   const initialUnavailable = Boolean((loading || errorReason) && !(accounts || []).length)
   const hasAccounts = Boolean((accounts || []).length)
   const deleteTargetRow = rows.find(row => row.rowId === deleteTarget)
   const deleteTargetContent = (deleteTargetRow?.videoContent || '').trim() || '未填写视频内容'
+
   const tableBody = loading
     ? h('tr', { className: 'ydo-schedule-empty' },
       h('td', { colSpan: 12 }, '加载中…'))
@@ -443,7 +437,6 @@ export function SchedulePage({
 
   return h('section', { className: 'ydo-right ydo-schedule-page', 'aria-label': '发布排期看板' },
     h('div', { className: 'ydo-toolbar' },
-      hint ? h('div', { className: 'ydo-hint', role: hint.tone === 'error' ? 'alert' : 'status', 'aria-live': 'polite' }, hint.text) : null,
       h('div', { className: 'ydo-schedule-actions' },
         h('button', {
           type: 'button',
@@ -458,11 +451,11 @@ export function SchedulePage({
           disabled: loading || creating || deleteBusy || undefined,
           'aria-busy': loading || creating || deleteBusy || undefined,
           onClick: actions.onBoardRetry,
-        }, loading ? '刷新中…' : '刷新'))),
+        }, loading ? '刷新中…' : '刷新')),
+      hint ? h('div', { className: 'ydo-hint', role: hint.tone === 'error' ? 'alert' : 'status', 'aria-live': 'polite' }, hint.text) : null),
     h('div', { className: 'ydo-table-wrap' },
       h('table', { className: 'ydo-schedule-table', 'aria-label': '发布排期' },
         h('colgroup', null,
-          // 用 <col width> 属性而非内联 style（§10.2：JSX 不写内联 style）。
           ...SCHEDULE_COLUMN_WIDTHS.map((width, index) => h('col', { key: index, width }))),
         h('thead', null,
           h('tr', null,
