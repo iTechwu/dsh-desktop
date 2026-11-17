@@ -94,6 +94,9 @@ const ALLOWED_ERROR_CODES = new Set([
   'IDEMPOTENCY_OUTCOME_UNKNOWN',
   'UNAUTHORIZED',
   'PAYLOAD_TOO_LARGE',
+  // 采集范围收敛（1117 方案）：publishSince 与服务端固定字面量不一致的
+  // 零副作用受理拒绝码（服务端不烧幂等键，同键重试等于全新受理）。
+  'PUBLISH_SINCE_MISMATCH',
   // 导出超过 Tools 侧三重上限（原始 1MB / 序列化 1.8MB / 进度表 12,000 行）的稳定业务码。
   'DOUYIN_EXPORT_TOO_LARGE',
   // 账号总览（0914 方案阶段 1）新增的只读聚合稳定业务码：不可达整体拒绝 /

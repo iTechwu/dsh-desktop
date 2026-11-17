@@ -92,8 +92,51 @@ export const PAGE_INTERVAL_MS = 1000
 // 超限会在 `run_set_list_meta` 处被确定性拒绝（属 DETERMINISTIC_ERRORS，不重试）。
 // 默认分页上限 1000 页 × 12 条 = 12000 条，**理论上可达**，因此这里在列表阶段就拦截：
 // 直接以稳定码失败，而不是先跑完所有详情再被服务端拒绝。
+// 1117 方案（采集范围收敛）后 expectedWorkCount 是**范围内**数量，该检查相应
+// 后移到过滤之后（范围内超限才是不可能诚实结算完成的场景）。
 export const MAX_EXPECTED_WORK_COUNT = 10_000
 export const ITEM_GENRES = [1, 2, 3, 4, 5, 8]
+
+// 1117 方案 §4.1：作品采集范围起点。必须显式携带 +08:00，绝不依赖设备本地时区；
+// 服务端 set_list_meta 固定受理的等值字面量是 UTC 形态（WORK_PUBLISH_SINCE_REPORT），
+// 两者是同一时刻——过滤用上海语义、上报用服务端钉死的字面量。
+export const WORK_PUBLISH_SINCE_ISO = '2026-06-01T00:00:00+08:00'
+export const WORK_PUBLISH_SINCE_REPORT = '2026-05-31T16:00:00Z'
+const WORK_PUBLISH_SINCE_MS = Date.parse(WORK_PUBLISH_SINCE_ISO)
+
+/**
+ * 采集范围过滤（1117 方案 §4.2/§4.4）：在 `work_list` 解析出 `publish_time` 之后、
+ * 进入逐作品详情采集之前执行——6 月前作品绝不触发详情页打开、item_compare、
+ * play/source、观众画像、搜索词、进度分析、metrics_trend、留存跳出、item
+ * mget/summarize、评论热词或 ingest_batch。
+ *
+ * `publish_time` 缺失的作品：不静默丢弃、不猜测日期、不入库——调用方必须把本轮
+ * `listComplete` 置 false（原因 `publish_time_missing`），避免把无法判定发布时间的
+ * 作品误判为范围外造成假成功。
+ *
+ * @param {object[]} works 已 normalizeWork 的作品（publish_time 为 ISO 字符串或 null）
+ * @param {{ sinceMs?: number }} [options]
+ * @returns {{ works: object[], skippedBeforePublishSince: number, publishTimeMissing: number }}
+ */
+export function filterWorksByPublishSince(works, { sinceMs = WORK_PUBLISH_SINCE_MS } = {}) {
+  const kept = []
+  let skippedBeforePublishSince = 0
+  let publishTimeMissing = 0
+  for (const work of Array.isArray(works) ? works : []) {
+    const raw = work && typeof work.publish_time === 'string' ? work.publish_time : null
+    const ms = raw ? Date.parse(raw) : Number.NaN
+    if (Number.isNaN(ms)) {
+      publishTimeMissing += 1
+      continue
+    }
+    if (ms < sinceMs) {
+      skippedBeforePublishSince += 1
+      continue
+    }
+    kept.push(work)
+  }
+  return { works: kept, skippedBeforePublishSince, publishTimeMissing }
+}
 
 
 // 页面内同源 fetch（浏览器自动补签名）；返回文本以便精度安全解析。
@@ -515,10 +558,17 @@ function safeParseReason(error) {
 }
 
 /**
- * 采集账号全部作品（列表 + 逐作品分析），产出可直接入库的载荷。
+ * 采集账号范围内作品（列表 + 逐作品分析），产出可直接入库的载荷。
+ *
+ * 1117 方案 §4：完整扫描 `work_list` 分页后、进入逐作品详情采集**之前**按
+ * `WORK_PUBLISH_SINCE_ISO` 过滤——6 月前作品不再触发任何详情请求与入库；
+ * `expectedWorkCount`/进度/部分成果均只统计范围内作品。`publish_time` 缺失
+ * 的作品不入库且本轮 `listComplete=false`（原因 `publish_time_missing`）。
  *
  * @returns {Promise<{works: object[], listComplete: boolean, expectedWorkCount: number,
- *   failures: object[], pages: object[], listReason: string|null}>}
+ *   failures: object[], pages: object[], listReason: string|null,
+ *   publishSince: string, skippedBeforePublishSince: number,
+ *   profile: object|null, dashboard: object}>}
  */
 export async function collectAccountWorks(page, {
   maxPages = MAX_PAGES_LIMIT,
@@ -534,22 +584,37 @@ export async function collectAccountWorks(page, {
     list = await collectWorkList(page, { maxPages, ...workListOptions })
   } catch (error) {
     // 翻页中途会话失效：前几页已采集作品不能丢——正规化为入库载荷挂错误上（审查 O5）。
+    // 1117 方案 §4.5：部分成果只保留范围内作品（缺失 publish_time 同样不保留）。
     if (error instanceof SessionInvalidError && Array.isArray(error.partialListWorks)
         && error.partialListWorks.length) {
+      const partialScoped = filterWorksByPublishSince(error.partialListWorks)
+      error.partialListWorks = partialScoped.works
       error.partialCollected = {
-        works: error.partialListWorks.map(work => buildWorkPayload({
+        works: partialScoped.works.map(work => buildWorkPayload({
           work, performance: null, compare: null, source: null, portrait: null,
           search: null, progress: null, retention: null, retentionGap: null, bounce: null, bounceGap: null, mget: null, summarize: null, hotword: null, observedAt,
         })),
         listComplete: false,
-        expectedWorkCount: error.partialListWorks.length,
+        expectedWorkCount: partialScoped.works.length,
+        publishSince: WORK_PUBLISH_SINCE_REPORT,
       }
     }
     throw error
   }
-  if (list.works.length > MAX_EXPECTED_WORK_COUNT) {
-    // 超出 tools 侧 expectedWorkCount 上限：此时无论怎么采集都不可能诚实结算完成，
-    // 因此在展开逐稿详情（耗时最长的一段）之前就中止。
+  // 范围过滤（§4.2）：发生在任何详情采集之前；混合新旧作品页只保留范围内作品。
+  const scoped = filterWorksByPublishSince(list.works)
+  // §4.4：publish_time 缺失 → 本轮列表完整性不可证明，绝不按 listComplete=true 结算。
+  // listReason 语义：缺失只把"本会健康完成"的轮次（原 listComplete=true）改为
+  // publish_time_missing（表达完整性为何被推翻）；翻页本就失败时保留更关键的
+  // 既有根因（如 page_request_failed），不丢失诊断共因（复审 P2-2）。
+  const publishTimeMissing = scoped.publishTimeMissing > 0
+  const listComplete = publishTimeMissing ? false : list.listComplete
+  const listReason = publishTimeMissing
+    ? (list.listComplete ? 'publish_time_missing' : (list.reason ?? 'publish_time_missing'))
+    : list.reason
+  if (scoped.works.length > MAX_EXPECTED_WORK_COUNT) {
+    // 超出 tools 侧 expectedWorkCount 上限（范围内数量）：此时无论怎么采集都不可能
+    // 诚实结算完成，因此在展开逐稿详情（耗时最长的一段）之前就中止。
     throw new Error('expected_work_count_out_of_range')
   }
   let profile = null
@@ -560,12 +625,13 @@ export async function collectAccountWorks(page, {
     // runner 的过期收尾据此入库保留（0914 方案 §3.6 / 实施说明 §4"保留已采集批次"）。
     if (error instanceof SessionInvalidError) {
       error.partialCollected = {
-        works: list.works.map(work => buildWorkPayload({
+        works: scoped.works.map(work => buildWorkPayload({
           work, performance: null, compare: null, source: null, portrait: null,
           search: null, progress: null, retention: null, retentionGap: null, bounce: null, bounceGap: null, mget: null, summarize: null, hotword: null, observedAt,
         })),
-        listComplete: list.listComplete,
-        expectedWorkCount: list.works.length,
+        listComplete,
+        expectedWorkCount: scoped.works.length,
+        publishSince: WORK_PUBLISH_SINCE_REPORT,
       }
     }
     throw error
@@ -580,12 +646,13 @@ export async function collectAccountWorks(page, {
     // 防止“status_code=8 后继续逐稿采集”或丢弃已采集列表造成假成功/数据丢失。
     if (error instanceof SessionInvalidError) {
       error.partialCollected = {
-        works: list.works.map(work => buildWorkPayload({
+        works: scoped.works.map(work => buildWorkPayload({
           work, performance: null, compare: null, source: null, portrait: null,
           search: null, progress: null, retention: null, retentionGap: null, bounce: null, bounceGap: null, mget: null, summarize: null, hotword: null, observedAt,
         })),
-        listComplete: list.listComplete,
-        expectedWorkCount: list.works.length,
+        listComplete,
+        expectedWorkCount: scoped.works.length,
+        publishSince: WORK_PUBLISH_SINCE_REPORT,
       }
       throw error
     }
@@ -595,9 +662,9 @@ export async function collectAccountWorks(page, {
   const payloads = []
   const failures = []
   let index = 0
-  for (const work of list.works) {
+  for (const work of scoped.works) {
     index += 1
-    if (onProgress) onProgress({ workId: work.work_id, index, total: list.works.length })
+    if (onProgress) onProgress({ workId: work.work_id, index, total: scoped.works.length })
     try {
       const detail = await collectWorkDetail(page, work.work_id, detailOptions)
       const hotword = await collectHotword(page, work.work_id)
@@ -626,8 +693,9 @@ export async function collectAccountWorks(page, {
       if (error instanceof SessionInvalidError) {
         error.partialCollected = {
           works: payloads,
-          listComplete: list.listComplete,
-          expectedWorkCount: list.works.length,
+          listComplete,
+          expectedWorkCount: scoped.works.length,
+          publishSince: WORK_PUBLISH_SINCE_REPORT,
         }
         throw error
       }
@@ -646,8 +714,9 @@ export async function collectAccountWorks(page, {
     if (error instanceof SessionInvalidError) {
       error.partialCollected = {
         works: payloads,
-        listComplete: list.listComplete,
-        expectedWorkCount: list.works.length,
+        listComplete,
+        expectedWorkCount: scoped.works.length,
+        publishSince: WORK_PUBLISH_SINCE_REPORT,
       }
       throw error
     }
@@ -658,9 +727,14 @@ export async function collectAccountWorks(page, {
     works: payloads,
     failures,
     pages: list.pages,
-    listComplete: list.listComplete,
-    listReason: list.reason,
-    expectedWorkCount: list.works.length,
+    listComplete,
+    listReason,
+    expectedWorkCount: scoped.works.length,
+    // 诊断性范围信息（§4.6）：只含范围起点与纯计数（范围外跳过数、publish_time
+    // 缺失数，复审 P2-8），绝不含范围外作品 ID、标题或其他原始列表内容。
+    publishSince: WORK_PUBLISH_SINCE_REPORT,
+    skippedBeforePublishSince: scoped.skippedBeforePublishSince,
+    publishTimeMissing: scoped.publishTimeMissing,
     profile,
     dashboard,
   }

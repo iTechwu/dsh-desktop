@@ -309,3 +309,7 @@ test('发布排期看板（RQ-2026-013）：幂等键模板与 tools 服务端 r
   const longest = publishScheduleUpdateIdempotencyKey('9'.repeat(20), 'u'.repeat(36))
   assert.ok(longest.length <= 128)
 })
+
+test('采集范围收敛（1117 方案）：PUBLISH_SINCE_MISMATCH 进入错误码白名单', () => {
+  assert.equal(safeErrorCode('PUBLISH_SINCE_MISMATCH'), 'PUBLISH_SINCE_MISMATCH')
+})

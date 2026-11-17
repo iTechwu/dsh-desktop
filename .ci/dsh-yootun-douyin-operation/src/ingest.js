@@ -34,6 +34,8 @@ export const MAX_BATCH_NO = 100000
 export const DEFAULT_RETRIES = 3
 
 // 不退避重试的确定性错误（重试也不会变好，反而放大）。
+// PUBLISH_SINCE_MISMATCH（1117 方案 §5.2）：服务端固定字面量校验失败——零副作用
+// 拒绝且不烧幂等键，重试同值仍会被拒，说明客户端与服务端范围契约不一致，属确定性失败。
 const DETERMINISTIC_ERRORS = new Set([
   'RUN_ACCOUNT_MISMATCH',
   'RUN_LIST_META_REQUIRED',
@@ -45,6 +47,7 @@ const DETERMINISTIC_ERRORS = new Set([
   'UNAUTHORIZED',
   'PAYLOAD_TOO_LARGE',
   'DOUYIN_TOOL_UNAVAILABLE',
+  'PUBLISH_SINCE_MISMATCH',
 ])
 
 // 需要重建运行的错误：租约过期/被回收/运行不存在。
@@ -122,17 +125,26 @@ export function createIngestClient({
     return { run, reused: Boolean(result && result.reused), reclaimedRunId: (result && result.reclaimedRunId) || null }
   }
 
-  /** 分页结束后写入列表元信息（幂等键固定为 runId）。 */
-  async function publishListMeta({ expectedWorkCount, listComplete }) {
+  /**
+   * 分页结束后写入列表元信息（幂等键固定为 runId）。
+   *
+   * `publishSince`（1117 方案 §4）：采集范围起点，必须与服务端固定受理字面量一致；
+   * 缺省不带字段（undefined 属性会被宿主 snapshot 校验整调用拒绝）。缓存进
+   * `listMeta`——run 恢复（recoverRun）重发时必须携带同值才能命中幂等收据，
+   * 缺失会被服务端按"同键不同 payload"以 IDEMPOTENCY_CONFLICT 拒绝。
+   */
+  async function publishListMeta({ expectedWorkCount, listComplete, publishSince = null }) {
     if (!runId) throw new Error('run_not_started')
-    const result = await callTool('douyin_collect_run_set_list_meta', {
+    const payload = {
       runId,
       expectedWorkCount,
       listComplete,
       idempotencyKey: listMetaIdempotencyKey(runId),
-    })
-    listMeta = { expectedWorkCount, listComplete }
-    emit({ phase: 'list_meta', expectedWorkCount, listComplete })
+    }
+    if (publishSince) payload.publishSince = publishSince
+    const result = await callTool('douyin_collect_run_set_list_meta', payload)
+    listMeta = { expectedWorkCount, listComplete, publishSince: publishSince || null }
+    emit({ phase: 'list_meta', expectedWorkCount, listComplete, publishSince: publishSince || null })
     return result
   }
 
@@ -337,8 +349,10 @@ export function createIngestClient({
  *
  * 1015 方案 §6.3：作品批次完成后投递账号日度数据（dashboard），失败只记
  * `dashboard_gap` 事件，绝不改变 run 结算（失败隔离，结算不依赖 daily）。
+ * 1117 方案 §4：`publishSince` 透传给 set_list_meta（范围内采集声明）。
  *
  * @param {{ works: object[], listComplete: boolean, expectedWorkCount?: number,
+ *   publishSince?: string|null,
  *   dashboard?: { dashboardRows: object[], dashboardFansRows: object[], fansProfile: object|null } }} collected
  * @returns {Promise<{ runId: string, ingest: object, finish: object|null, error: string|null }>}
  */
@@ -347,6 +361,7 @@ export async function ingestCollectedWorks({
   works,
   listComplete,
   expectedWorkCount = works.length,
+  publishSince = null,
   newAttempt = true,
   onProgress = null,
   dashboard = null,
@@ -357,7 +372,7 @@ export async function ingestCollectedWorks({
   const started = await client.startRun({ newAttempt })
   const runId = started.run.run_id
   try {
-    await client.publishListMeta({ expectedWorkCount, listComplete })
+    await client.publishListMeta({ expectedWorkCount, listComplete, publishSince })
   } catch (error) {
     // 列表元信息写入失败：不得进入结算（服务端也会以 RUN_LIST_META_REQUIRED 拒绝）。
     emit({ phase: 'list_meta_failed', error: safeCode(error) })

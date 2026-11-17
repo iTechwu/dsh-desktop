@@ -152,6 +152,10 @@ export async function runAccountCollection({
       expectedWorkCount: collected.expectedWorkCount,
       listReason: collected.listReason,
       failures: collected.failures.length,
+      // 诊断性范围信息（1117 方案 §4.6 / 复审 P2-7）：只含起点字面量与纯计数。
+      publishSince: collected.publishSince || null,
+      skippedBeforePublishSince: collected.skippedBeforePublishSince ?? null,
+      publishTimeMissing: collected.publishTimeMissing ?? null,
     })
   } catch (error) {
     // 会话失效（HTTP 200 + status_code:8，0914 方案 §3.6 前置门禁）：确定性失败——
@@ -168,6 +172,8 @@ export async function runAccountCollection({
           works: partial.works,
           listComplete: partial.listComplete,
           expectedWorkCount: partial.expectedWorkCount,
+          // 1117 方案 §4.5：部分成果同样按范围内语义上报（服务端范围化结算依赖它）。
+          publishSince: partial.publishSince || null,
         }
         : null
       const outcome = await finishExpiredSession({
@@ -221,11 +227,24 @@ export async function runAccountCollection({
   }
 
   try {
+    // 1117 方案不变量（复审 P2-11）：凡发生过范围过滤（范围外跳过或缺失计数 > 0），
+    // 本轮入库**必须**声明 publishSince——漏声明时服务端按 NULL 范围做全量结算，
+    // 会把 6 月前存量 active 作品误标 not_in_list（方案 §6 的核心事故）。当前
+    // collectAccountWorks 恒返回常量；此防御把不变量钉死在设备端，未来新增入口
+    // 的遗漏在这里确定性爆掉，而不是在服务端静默误标记存量。
+    if (
+      (collected.skippedBeforePublishSince > 0 || collected.publishTimeMissing > 0)
+      && !collected.publishSince
+    ) {
+      return { status: 'collect_failed', reason: 'publish_since_required', heartbeatSeq: client.heartbeatSeq }
+    }
     const ingested = await ingestCollectedWorks({
       client,
       works: collected.works,
       listComplete: collected.listComplete,
       expectedWorkCount: collected.expectedWorkCount,
+      // 1117 方案 §4：范围内采集声明（服务端固定字面量校验）。
+      publishSince: collected.publishSince || null,
       newAttempt,
       onProgress,
       // 1015 方案 §6.3：账号大盘三连结果（collectAccountWorks 已在页面关闭前
@@ -241,6 +260,10 @@ export async function runAccountCollection({
       listComplete: collected.listComplete,
       listReason: collected.listReason,
       expectedWorkCount: collected.expectedWorkCount,
+      // 诊断性范围信息（1117 方案 §4.6）：范围起点与范围外跳过计数，
+      // 不含范围外作品 ID/标题等原始内容。
+      publishSince: collected.publishSince || null,
+      skippedBeforePublishSince: collected.skippedBeforePublishSince ?? null,
       succeededWorkCount: ingested.ingest.succeededWorkIds.length,
       failedWorkCount: ingested.ingest.failedWorkIds.length,
       workFailures: collected.failures,
@@ -310,6 +333,8 @@ export async function finishExpiredSession({ accountId, callTool, client, collec
         expectedWorkCount: collected.expectedWorkCount,
         // 被会话中断的采集绝不声明列表完整：保证服务端结算为非健康终态（partial）。
         listComplete: false,
+        // 1117 方案 §4.5：部分成果按范围内语义上报。
+        publishSince: collected.publishSince || null,
       })
       const ingested = await client.ingestAll(works)
       const finish = await client.finish({
@@ -335,6 +360,12 @@ export async function finishExpiredSession({ accountId, callTool, client, collec
     runStatus,
     listComplete: collected ? collected.listComplete : null,
     expectedWorkCount: collected ? collected.expectedWorkCount : null,
+    // 诊断性范围信息（复审 P2-7）：与 ready 终态同口径透出。
+    publishSince: (collected && collected.publishSince) || null,
+    skippedBeforePublishSince:
+      collected && collected.skippedBeforePublishSince !== undefined
+        ? collected.skippedBeforePublishSince
+        : null,
     succeededWorkCount,
     failedWorkCount,
     sessionReported,
@@ -517,6 +548,11 @@ function project(record) {
         runStatus: record.result.runStatus || null,
         listComplete: record.result.listComplete,
         expectedWorkCount: record.result.expectedWorkCount,
+        publishSince: record.result.publishSince || null,
+        skippedBeforePublishSince:
+          record.result.skippedBeforePublishSince === undefined
+            ? null
+            : record.result.skippedBeforePublishSince,
         succeededWorkCount: record.result.succeededWorkCount,
         failedWorkCount: record.result.failedWorkCount,
       }
@@ -708,6 +744,12 @@ function projectItems(items) {
                 runStatus: item.collect.result.runStatus || null,
                 listComplete: item.collect.result.listComplete ?? null,
                 expectedWorkCount: item.collect.result.expectedWorkCount ?? null,
+                // 1117 方案 §4.6：批量项同样透出诊断性范围信息。
+                publishSince: item.collect.result.publishSince || null,
+                skippedBeforePublishSince:
+                  item.collect.result.skippedBeforePublishSince === undefined
+                    ? null
+                    : item.collect.result.skippedBeforePublishSince,
                 succeededWorkCount: item.collect.result.succeededWorkCount ?? null,
                 failedWorkCount: item.collect.result.failedWorkCount ?? null,
               },
