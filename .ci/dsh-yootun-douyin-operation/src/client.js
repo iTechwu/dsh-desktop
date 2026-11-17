@@ -5240,7 +5240,7 @@ thead .ydo-schedule-sequence-cell,thead .ydo-schedule-delete-cell{z-index:4;back
 .ydo-schedule-cell-input:focus,.ydo-schedule-cell-textarea:focus{border-color:var(--dsw-alias-brand-primary);background:var(--dsw-alias-bg-layer-1);outline:0;box-shadow:0 0 0 2px color-mix(in srgb,var(--dsw-alias-brand-primary) 22%,transparent)}
 .ydo-schedule-cell-input:disabled,.ydo-schedule-cell-textarea:disabled{opacity:.6;cursor:not-allowed}
 input[type="date"].ydo-schedule-cell-input{min-width:112px}
-.ydo-schedule-checkbox{display:inline-grid;width:16px;height:16px;place-items:center}
+.ydo-schedule-checkbox{display:inline-grid;width:12px;height:12px;place-items:center}
 .ydo-schedule-checkbox input{
   appearance:none;
   -webkit-appearance:none;
@@ -5252,13 +5252,13 @@ input[type="date"].ydo-schedule-cell-input{min-width:112px}
   place-items:center;
   cursor:pointer;
 }
-.ydo-schedule-checkbox input{width:16px;height:16px}
+.ydo-schedule-checkbox input{width:12px;height:12px;border-radius:3px}
 .ydo-schedule-checkbox input::after{
   content:"";
-  width:44%;
-  height:26%;
-  border-left:2px solid transparent;
-  border-bottom:2px solid transparent;
+  width:48%;
+  height:30%;
+  border-left:1.6px solid transparent;
+  border-bottom:1.6px solid transparent;
   transform:rotate(-45deg) translate(4%, -8%);
 }
 .ydo-schedule-checkbox input:checked{
@@ -5274,7 +5274,7 @@ input[type="date"].ydo-schedule-cell-input{min-width:112px}
 }
 .ydo-schedule-platform-group input{width:15px;height:15px;margin:0;accent-color:var(--dsw-alias-brand-primary);cursor:pointer}
 .ydo-schedule-platform-group input:disabled{cursor:not-allowed;opacity:.6}
-.ydo-schedule-checkbox-label{display:inline-flex;align-items:center;gap:5px;white-space:nowrap}
+.ydo-schedule-checkbox-label{display:inline-flex;align-items:center;gap:4px;white-space:nowrap}
 .ydo-schedule-platform-group{display:grid;gap:4px;min-width:118px;color:var(--dsw-alias-label-primary)}
 .ydo-schedule-platform-group label{display:inline-flex;align-items:center;gap:5px;font-size:13px;white-space:nowrap}
 .ydo-schedule-empty td{padding:40px 16px;color:var(--dsw-alias-label-secondary);text-align:center}
