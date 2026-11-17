@@ -40,13 +40,17 @@ const {
   rowHasPendingWork,
   rowStatusMeta,
   rowStatusOnFailure,
+  restoreUiRowFromServerSnapshot,
+  savedSnapshotChanged,
   scheduleErrorCopy,
   toUiRow,
 } = vm.runInContext('({ ' + [
   'SCHEDULE_BUSINESS_HEADERS', 'SCHEDULE_ERROR_REASON_COPY', 'SCHEDULE_PLATFORMS', 'SchedulePage',
   'buildServerSnapshot', 'canSwitchAccount', 'collectOwnerSuggestions', 'compareRowId',
   'createRowState', 'deleteAllowed', 'dirtyResubmitNeeded', 'mergeDirtyPatch',
-  'rowHasPendingWork', 'rowStatusMeta', 'rowStatusOnFailure', 'scheduleErrorCopy', 'toUiRow',
+  'rowHasPendingWork', 'rowStatusMeta', 'rowStatusOnFailure', 'restoreUiRowFromServerSnapshot',
+  'savedSnapshotChanged',
+  'scheduleErrorCopy', 'toUiRow',
 ].join(', ') + ' })', context)
 
 // 递归收集元素树中的字符串与 className。
@@ -213,7 +217,10 @@ test('成功落库后：版本被覆盖为服务器 row_version，仍有差异�
   const mergedDiff = { ...serverRow, videoContent: '保存期间又改了' }
   assert.equal(dirtyResubmitNeeded(serverRow, mergedDiff), true)
   // 源码契约：成功路径用服务器 rowVersion 重建行状态（§9.4 第 1 条）
-  assert.ok(clientSource.includes('createRowState(serverRow.rowVersion)'), '成功后应以服务器版本重建行状态')
+  assert.ok(
+    clientSource.includes('createRowState(serverRow.rowVersion, buildServerSnapshot(serverRow))'),
+    '成功后应以服务器版本和最新保存快照重建行状态',
+  )
 })
 
 test('保存与删除互斥：非 idle 行禁删；delete 在途禁删（P3-U23）', () => {
@@ -282,6 +289,7 @@ test('空排期展示引导文案；账号栏 chip 选中态可区分（P3-U08/A
   assert.ok(text.includes('暂无排期，点击新增行开始录入'))
   assert.ok(text.includes('当前账号：') && text.includes('包姐'))
   assert.ok(text.includes('保罗'))
+  assert.ok(text.includes('刷新'), '工具栏应提供常驻刷新入口（放弃修改刷新失败可达）')
   // aria-pressed 区分选中态（渲染树 props 断言）
   const pressed = []
   ;(function walk(node) {
@@ -293,6 +301,26 @@ test('空排期展示引导文案；账号栏 chip 选中态可区分（P3-U08/A
   })(html)
   assert.ok(pressed.includes(true), '选中 chip 应有 aria-pressed=true')
   assert.ok(pressed.includes(undefined) || pressed.includes(false), '未选中 chip 无选中态')
+})
+
+test('工具栏常驻刷新按钮在 loading/creating 时禁用（P3-015 回归）', () => {
+  const buildPage = ({ loading, creating }) => SchedulePage({
+    loading, errorReason: null, accounts: ACCOUNTS, activeAccountId: 'acc-b',
+    rows: [sampleRow()], rowStates: {}, hint: null, creating, deleteTarget: null,
+    deleteBusy: false, deleteTargetSequence: null, ownerSuggestions: [], focusRowId: null,
+    renderAvatar: noop, actions: baseActions,
+  })
+  const actionsIdx = scheduleSource.indexOf("className: 'ydo-schedule-actions'")
+  const actionsBody = scheduleSource.slice(actionsIdx, actionsIdx + 900)
+  assert.ok(actionsBody.includes("onClick: actions.onBoardRetry"), '刷新按钮应绑定 onBoardRetry')
+  assert.ok(
+    actionsBody.includes('disabled: loading || creating || undefined'),
+    '刷新按钮在 loading 或 creating 时禁用',
+  )
+  assert.ok(actionsBody.includes("'刷新'"), '工具栏刷新入口存在')
+  const loadingHtml = collectStrings(buildPage({ loading: true, creating: false })).join('')
+  const idleHtml = collectStrings(buildPage({ loading: false, creating: false })).join('')
+  assert.ok(loadingHtml.includes('刷新中…') && idleHtml.includes('刷新'), '刷新入口随 loading 状态切换')
 })
 
 test('加载失败展示错误态与重试（§5.3 空态表）', () => {
@@ -321,7 +349,7 @@ test('负责人 datalist 建议来自账号 owner_name 与历史排期（§5.6�
 // client.js 源码契约（创建/编辑/删除/账号切换编排）
 // ---------------------------------------------------------------------------
 
-test('创建流：服务端成功才 append，失败不插伪行；unknown 保留 create 键重试（P3-U09/U10）', () => {
+test('创建流：服务端成功才 append，失败不插伪行；unknown 按账号保留 create 键重试（P3-U09/U10/P3-016）', () => {
   // append 在 result.status === 'ready' 之后
   const createFn = clientSource.slice(
     clientSource.indexOf('const createScheduleRow'),
@@ -332,7 +360,18 @@ test('创建流：服务端成功才 append，失败不插伪行；unknown 保�
     createFn.indexOf("result.status !== 'ready'") > -1,
     'create 失败路径存在且不调用 applyScheduleRows',
   )
-  assert.ok(createFn.includes('scheduleCreateRetryKeyRef.current = key'), 'unknown 保留 create 键')
+  assert.ok(
+    createFn.includes('scheduleCreateRetryKeysRef.current[accountId] = key'),
+    'unknown 保留当前账号 create 键',
+  )
+  assert.ok(
+    createFn.includes('delete scheduleCreateRetryKeysRef.current[accountId]'),
+    '发起时先摘除旧键，成功/确定性失败后不复用',
+  )
+  assert.ok(
+    createFn.includes('createRowState(row.rowVersion, buildServerSnapshot(row))'),
+    'create 成功后新行状态必须初始化 lastSavedSnapshot（P3-011/P1-1）',
+  )
 })
 
 test('失焦/勾选/平台三入口都在 idle 时发起整行保存（P3-U11/U14/U15）', () => {
@@ -346,6 +385,51 @@ test('失焦/勾选/平台三入口都在 idle 时发起整行保存（P3-U11/U1
   const toggleIdx = clientSource.indexOf('const handleSchedulePlatformToggle')
   const toggleBody = clientSource.slice(toggleIdx, clientSource.indexOf('}, [', toggleIdx))
   assert.ok(toggleBody.includes('SCHEDULE_PLATFORMS.map'), '平台顺序由 SCHEDULE_PLATFORMS 固定序承载')
+})
+
+test('no-op 失焦不发送保存、不递增版本；内容变化才保存（P3-011）', () => {
+  const row = sampleRow()
+  const saved = buildServerSnapshot(row)
+  const state = createRowState(row.rowVersion, saved)
+  assert.equal(savedSnapshotChanged(row, state), false)
+  assert.equal(savedSnapshotChanged({ ...row, note: '新增备注' }, state), true)
+  // trim/空串归一后相等也视为 no-op。
+  assert.equal(savedSnapshotChanged({ ...row, note: '  ' }, state), false)
+  const saveFn = clientSource.slice(
+    clientSource.indexOf('const performScheduleSave'),
+    clientSource.indexOf('const handleScheduleBlur'),
+  )
+  assert.ok(saveFn.includes('!savedSnapshotChanged(row, state)'), 'idle no-op 应直接 return')
+})
+
+test('放弃修改先还原最近服务端快照，再刷新（P2-1）', () => {
+  const discardIdx = clientSource.indexOf('const discardScheduleRow')
+  const discardHead = clientSource.slice(discardIdx, clientSource.indexOf('const row =', discardIdx))
+  assert.ok(discardHead.includes('if (scheduleCreatingRef.current)'), '放弃修改共用 create 在途守卫')
+  assert.ok(discardHead.includes('正在新增行，请等待完成后再操作'), 'create 在途时放弃修改被拒绝')
+  const row = sampleRow({ note: '未保存修改' })
+  const snapshot = buildServerSnapshot(sampleRow())
+  const restored = restoreUiRowFromServerSnapshot(row, snapshot)
+  assert.equal(restored.note, '')
+  assert.equal(restored.videoContent, sampleRow().videoContent)
+  assert.deepEqual(buildServerSnapshot(restored), snapshot)
+
+  const discardFn = clientSource.slice(
+    clientSource.indexOf('const discardScheduleRow'),
+    clientSource.indexOf('const switchScheduleAccount'),
+  )
+  assert.ok(discardFn.includes('restoreUiRowFromServerSnapshot(item, savedSnapshot)'), '先还原行内容')
+  assert.ok(discardFn.includes('createRowState((prev[rowId] || {}).expectedVersion || \'1\', savedSnapshot)'), '状态保留 saved snapshot')
+  assert.ok(discardFn.includes('await loadScheduleRows(accountId)'), '等待刷新结果并反馈')
+})
+
+test('create 在途阻止页面误关闭/刷新（P3-015）', () => {
+  assert.ok(clientSource.includes('if (!scheduleCreating) return undefined'), 'create 在途才挂 beforeunload')
+  assert.ok(clientSource.includes("window.addEventListener('beforeunload', beforeUnload)"), '注册 beforeunload')
+  const refreshIdx = clientSource.indexOf('const refreshScheduleBoard')
+  const refreshBody = clientSource.slice(refreshIdx, clientSource.indexOf('const editScheduleCell', refreshIdx))
+  assert.ok(refreshBody.includes('if (scheduleCreatingRef.current)'), '行级/工具栏刷新共用 create 在途守卫')
+  assert.ok(refreshBody.includes('正在新增行，请等待完成后再刷新'), '刷新被守卫时给出可读提示')
 })
 
 test('删除确认：只在 idle 打开，确认后带 confirm/expectedVersion/新键调用（P3-U21）', () => {

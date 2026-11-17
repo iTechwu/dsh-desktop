@@ -140,14 +140,31 @@ export function buildServerSnapshot(uiRow) {
   }
 }
 
+/** 用最近服务端快照恢复 UI 行（放弃修改时立刻清掉未提交内容，P2-1）。 */
+export function restoreUiRowFromServerSnapshot(row, snapshot) {
+  if (!snapshot) return row
+  return {
+    ...row,
+    ...snapshot,
+    shootingDate: snapshot.shootingDate || '',
+    videoContent: snapshot.videoContent || '',
+    assetLink: snapshot.assetLink || '',
+    note: snapshot.note || '',
+    publishDate: snapshot.publishDate || '',
+    shootingOwner: snapshot.shootingOwner || '',
+    editingOwner: snapshot.editingOwner || '',
+  }
+}
+
 /** 新行的行级状态（§9.4）：idle、版本字符串、无在途键。 */
-export function createRowState(expectedVersion) {
+export function createRowState(expectedVersion, savedSnapshot = null) {
   return {
     status: 'idle', // idle | saving | queued | failed | conflict | unknown
     operation: null, // 'save' | 'delete'（同键重试时区分）
     expectedVersion: String(expectedVersion ?? '1'),
     idempotencyKey: null,
     dirtySnapshot: null,
+    lastSavedSnapshot: savedSnapshot,
     lastServerError: null,
   }
 }
@@ -194,6 +211,17 @@ export function mergeDirtyPatch(state, field, value) {
 /** 成功落库后是否需用新键补提交一次：dirty 合并行与服务器行存在业务差异。 */
 export function dirtyResubmitNeeded(serverRow, mergedRow) {
   return JSON.stringify(buildServerSnapshot(mergedRow)) !== JSON.stringify(buildServerSnapshot(serverRow))
+}
+
+/**
+ * no-op 保存判定（P3-011）：idle 行当前业务快照与最近一次服务端快照一致时，
+ * 失焦不发送整行更新、不递增 row_version。所有快照都先 buildServerSnapshot，
+ * 因此空串/平台顺序/布尔形态在比较前归一。
+ */
+export function savedSnapshotChanged(row, state) {
+  const saved = state && state.lastSavedSnapshot
+  if (!saved) return true
+  return JSON.stringify(buildServerSnapshot(row)) !== JSON.stringify(saved)
 }
 
 /** 行渲染所需派生：状态类（白名单两枚）与只读判定。 */
@@ -308,6 +336,13 @@ function RowStatusActions({ rowId, state, onRetry, onDiscard, onRefresh }) {
 function ScheduleRow({ row, state, deleteInFlight, focusRowId, actions }) {
   const meta = rowStatusMeta(state)
   const disabled = meta.locked
+  const statusActions = RowStatusActions({
+    rowId: row.rowId,
+    state,
+    onRetry: actions.onRetry,
+    onDiscard: actions.onDiscard,
+    onRefresh: actions.onRefresh,
+  })
   // 受控输入契约：value 必须配 onChange（React 对「value 无 onChange」的输入会在
   // 每次键入后把 DOM 还原为 props.value——P0-1 教训）。onChange 只更新本地行值
   // （onEditCell），失焦才保存（onBlurCell）；日期输入的 change 直接保存
@@ -360,7 +395,7 @@ function ScheduleRow({ row, state, deleteInFlight, focusRowId, actions }) {
       h('input', { ...inputProps('editingOwner'), type: 'text', value: row.editingOwner, list: 'ydo-schedule-owner-options', 'aria-label': '剪辑负责人' })),
     h('td', { className: 'ydo-schedule-delete-cell' },
       h(DeleteButton, { row, state, deleteInFlight, onDelete: actions.onDelete }),
-      ...RowStatusActions({ rowId: row.rowId, state, onRetry: actions.onRetry, onDiscard: actions.onDiscard, onRefresh: actions.onRefresh }),
+      ...(statusActions || []),
       state && state.lastServerError
         ? h('p', { className: 'ydo-error', role: 'alert' }, scheduleErrorCopy(state.lastServerError))
         : null),
@@ -420,7 +455,14 @@ export function SchedulePage({
           disabled: creating || !(accounts || []).length,
           'aria-busy': creating || undefined,
           onClick: actions.onCreate,
-        }, creating ? '新增中…' : '新增行'))),
+        }, creating ? '新增中…' : '新增行')),
+      h('button', {
+        type: 'button',
+        className: 'ydo-secondary',
+        disabled: loading || creating || undefined,
+        'aria-busy': loading || creating || undefined,
+        onClick: actions.onBoardRetry,
+      }, loading ? '刷新中…' : '刷新')),
     h('div', { className: 'ydo-table-wrap' },
       h('table', { className: 'ydo-schedule-table' },
         h('caption', { className: 'ydo-hint' },

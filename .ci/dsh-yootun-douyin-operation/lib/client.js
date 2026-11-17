@@ -6039,14 +6039,31 @@ window.__ModuleLoader__.load({
       }
     }
 
+    /** 用最近服务端快照恢复 UI 行（放弃修改时立刻清掉未提交内容，P2-1）。 */
+    function restoreUiRowFromServerSnapshot(row, snapshot) {
+      if (!snapshot) return row
+      return {
+        ...row,
+        ...snapshot,
+        shootingDate: snapshot.shootingDate || '',
+        videoContent: snapshot.videoContent || '',
+        assetLink: snapshot.assetLink || '',
+        note: snapshot.note || '',
+        publishDate: snapshot.publishDate || '',
+        shootingOwner: snapshot.shootingOwner || '',
+        editingOwner: snapshot.editingOwner || '',
+      }
+    }
+
     /** 新行的行级状态（§9.4）：idle、版本字符串、无在途键。 */
-    function createRowState(expectedVersion) {
+    function createRowState(expectedVersion, savedSnapshot = null) {
       return {
         status: 'idle', // idle | saving | queued | failed | conflict | unknown
         operation: null, // 'save' | 'delete'（同键重试时区分）
         expectedVersion: String(expectedVersion ?? '1'),
         idempotencyKey: null,
         dirtySnapshot: null,
+        lastSavedSnapshot: savedSnapshot,
         lastServerError: null,
       }
     }
@@ -6093,6 +6110,17 @@ window.__ModuleLoader__.load({
     /** 成功落库后是否需用新键补提交一次：dirty 合并行与服务器行存在业务差异。 */
     function dirtyResubmitNeeded(serverRow, mergedRow) {
       return JSON.stringify(buildServerSnapshot(mergedRow)) !== JSON.stringify(buildServerSnapshot(serverRow))
+    }
+
+    /**
+     * no-op 保存判定（P3-011）：idle 行当前业务快照与最近一次服务端快照一致时，
+     * 失焦不发送整行更新、不递增 row_version。所有快照都先 buildServerSnapshot，
+     * 因此空串/平台顺序/布尔形态在比较前归一。
+     */
+    function savedSnapshotChanged(row, state) {
+      const saved = state && state.lastSavedSnapshot
+      if (!saved) return true
+      return JSON.stringify(buildServerSnapshot(row)) !== JSON.stringify(saved)
     }
 
     /** 行渲染所需派生：状态类（白名单两枚）与只读判定。 */
@@ -6207,6 +6235,13 @@ window.__ModuleLoader__.load({
     function ScheduleRow({ row, state, deleteInFlight, focusRowId, actions }) {
       const meta = rowStatusMeta(state)
       const disabled = meta.locked
+      const statusActions = RowStatusActions({
+        rowId: row.rowId,
+        state,
+        onRetry: actions.onRetry,
+        onDiscard: actions.onDiscard,
+        onRefresh: actions.onRefresh,
+      })
       // 受控输入契约：value 必须配 onChange（React 对「value 无 onChange」的输入会在
       // 每次键入后把 DOM 还原为 props.value——P0-1 教训）。onChange 只更新本地行值
       // （onEditCell），失焦才保存（onBlurCell）；日期输入的 change 直接保存
@@ -6259,7 +6294,7 @@ window.__ModuleLoader__.load({
           h('input', { ...inputProps('editingOwner'), type: 'text', value: row.editingOwner, list: 'ydo-schedule-owner-options', 'aria-label': '剪辑负责人' })),
         h('td', { className: 'ydo-schedule-delete-cell' },
           h(DeleteButton, { row, state, deleteInFlight, onDelete: actions.onDelete }),
-          ...RowStatusActions({ rowId: row.rowId, state, onRetry: actions.onRetry, onDiscard: actions.onDiscard, onRefresh: actions.onRefresh }),
+          ...(statusActions || []),
           state && state.lastServerError
             ? h('p', { className: 'ydo-error', role: 'alert' }, scheduleErrorCopy(state.lastServerError))
             : null),
@@ -6319,7 +6354,14 @@ window.__ModuleLoader__.load({
               disabled: creating || !(accounts || []).length,
               'aria-busy': creating || undefined,
               onClick: actions.onCreate,
-            }, creating ? '新增中…' : '新增行'))),
+            }, creating ? '新增中…' : '新增行')),
+          h('button', {
+            type: 'button',
+            className: 'ydo-secondary',
+            disabled: loading || creating || undefined,
+            'aria-busy': loading || creating || undefined,
+            onClick: actions.onBoardRetry,
+          }, loading ? '刷新中…' : '刷新')),
         h('div', { className: 'ydo-table-wrap' },
           h('table', { className: 'ydo-schedule-table' },
             h('caption', { className: 'ydo-hint' },
@@ -9573,7 +9615,9 @@ window.__ModuleLoader__.load({
       const scheduleAccountIdRef = useRef(null)
       const scheduleLoadedRef = useRef(false)
       const scheduleHintTimerRef = useRef(null)
-      const scheduleCreateRetryKeyRef = useRef(null)
+      // create 超时/unknown 的重试键按账号隔离：防止同键跨账号冲突，也保留同账号
+      // outcome unknown 的同键重试语义（P3-016）。
+      const scheduleCreateRetryKeysRef = useRef({})
       const scheduleCreatingRef = useRef(false)
       const performScheduleSaveRef = useRef(() => {})
       const scheduleFocusRef = useCallback(node => {
@@ -9601,7 +9645,7 @@ window.__ModuleLoader__.load({
       }, [])
 
       const loadScheduleRows = useCallback(async (accountId) => {
-        if (!accountId) return
+        if (!accountId) return false
         const seq = ++scheduleSeqRef.current
         setScheduleLoading(true)
         setScheduleError(null)
@@ -9611,20 +9655,24 @@ window.__ModuleLoader__.load({
           if (result.status !== 'ready') {
             setScheduleLoading(false)
             setScheduleError(result.reason || 'douyin_operation_request_failed')
-            return
+            return false
           }
           const data = result.data || {}
           const rawRows = Array.isArray(data.rows) ? data.rows : []
           const uiRows = rawRows.map(toUiRow).filter(Boolean).sort((a, b) => compareRowId(a.rowId, b.rowId))
           applyScheduleRows(uiRows)
           const states = {}
-          for (const row of uiRows) states[row.rowId] = createRowState(row.rowVersion)
+          for (const row of uiRows) {
+            states[row.rowId] = createRowState(row.rowVersion, buildServerSnapshot(row))
+          }
           applyScheduleRowStates(states)
           setScheduleLoading(false)
+          return true
         } catch (error) {
           if (seq !== scheduleSeqRef.current) return
           setScheduleLoading(false)
           setScheduleError('douyin_operation_request_failed')
+          return false
         }
       }, [applyScheduleRows, applyScheduleRowStates])
 
@@ -9669,7 +9717,24 @@ window.__ModuleLoader__.load({
         }
       }, [tab, loadScheduleBoard])
 
+      useEffect(() => {
+        // P3-015：新增在途时阻止误刷新/关闭；切号已被 switch 守卫禁止。
+        if (!scheduleCreating) return undefined
+        const beforeUnload = event => {
+          event.preventDefault()
+          event.returnValue = ''
+          return event.returnValue
+        }
+        window.addEventListener('beforeunload', beforeUnload)
+        return () => window.removeEventListener('beforeunload', beforeUnload)
+      }, [scheduleCreating])
+
       const refreshScheduleBoard = useCallback(() => {
+        // 集中守卫：create 在途时禁止工具栏和行级刷新推进 seq，避免成功/unknown 响应被丢弃。
+        if (scheduleCreatingRef.current) {
+          flashScheduleHint('正在新增行，请等待完成后再刷新', 'error')
+          return
+        }
         // 行级「刷新」按钮：重拉当前账号列表（failed/conflict/unknown 的解除路径）。
         if (scheduleAccountIdRef.current) loadScheduleRows(scheduleAccountIdRef.current).catch(() => {})
         else loadScheduleBoard().catch(() => {})
@@ -9696,6 +9761,7 @@ window.__ModuleLoader__.load({
         if (!row || !state) return
         if (state.status === 'saving' || state.status === 'queued' || state.status === 'conflict' || state.status === 'unknown') return
         if (state.status === 'failed' && !reuseKey) return
+        if (!reuseKey && state.status === 'idle' && !savedSnapshotChanged(row, state)) return
         const key = reuseKey && state.idempotencyKey ? state.idempotencyKey : scheduleUpdateIdempotencyKey(rowId)
         applyScheduleRowStates(prev => ({
           ...prev,
@@ -9704,6 +9770,7 @@ window.__ModuleLoader__.load({
             status: 'saving',
             operation: 'save',
             idempotencyKey: key,
+            lastSavedSnapshot: state.lastSavedSnapshot,
             dirtySnapshot: prev[rowId] ? prev[rowId].dirtySnapshot : null,
             lastServerError: null,
           },
@@ -9765,7 +9832,10 @@ window.__ModuleLoader__.load({
           // 队列快照（§9.4 第 3 条）：合并到最新服务器行；仍有差异则用新键提交一次。
           const merged = { ...serverRow, ...dirty }
           applyScheduleRows(prev => prev.map(item => (item.rowId === rowId ? merged : item)))
-          applyScheduleRowStates(prev => ({ ...prev, [rowId]: createRowState(serverRow.rowVersion) }))
+          applyScheduleRowStates(prev => ({
+            ...prev,
+            [rowId]: createRowState(serverRow.rowVersion, buildServerSnapshot(serverRow)),
+          }))
           if (dirtyResubmitNeeded(serverRow, merged)) {
             performScheduleSaveRef.current(rowId)
           } else {
@@ -9774,7 +9844,10 @@ window.__ModuleLoader__.load({
           return
         }
         applyScheduleRows(prev => prev.map(item => (item.rowId === rowId ? serverRow : item)))
-        applyScheduleRowStates(prev => ({ ...prev, [rowId]: createRowState(serverRow.rowVersion) }))
+        applyScheduleRowStates(prev => ({
+          ...prev,
+          [rowId]: createRowState(serverRow.rowVersion, buildServerSnapshot(serverRow)),
+        }))
         flashScheduleHint('已保存', 'ok')
       }, [applyScheduleRows, applyScheduleRowStates, flashScheduleHint])
       performScheduleSaveRef.current = performScheduleSave
@@ -9899,11 +9972,31 @@ window.__ModuleLoader__.load({
         }
       }, [performScheduleDelete])
 
-      const discardScheduleRow = useCallback((rowId) => {
-        // 显式放弃修改（§9.4 第 5 条）：以服务器为准重拉整行。
-        applyScheduleRowStates(prev => ({ ...prev, [rowId]: createRowState((prev[rowId] || {}).expectedVersion || '1') }))
-        refreshScheduleBoard()
-      }, [applyScheduleRowStates, refreshScheduleBoard])
+      const discardScheduleRow = useCallback(async (rowId) => {
+        if (scheduleCreatingRef.current) {
+          flashScheduleHint('正在新增行，请等待完成后再操作', 'error')
+          return
+        }
+        const row = scheduleRowsRef.current.find(item => item.rowId === rowId)
+        const state = scheduleRowStatesRef.current[rowId]
+        if (!row || !state) return
+        const savedSnapshot = state.lastSavedSnapshot
+        const accountId = row.accountId
+        // 先用最近服务端快照还原本地行，消除“放弃后又在刷新前把 dirty 保存回去”的竞态。
+        if (savedSnapshot) {
+          applyScheduleRows(prev => prev.map(item => (
+            item.rowId === rowId ? restoreUiRowFromServerSnapshot(item, savedSnapshot) : item
+          )))
+        }
+        applyScheduleRowStates(prev => ({
+          ...prev,
+          [rowId]: createRowState((prev[rowId] || {}).expectedVersion || '1', savedSnapshot),
+        }))
+        flashScheduleHint('已放弃修改，正在刷新服务器数据…', 'saving')
+        const ok = await loadScheduleRows(accountId)
+        if (!ok) flashScheduleHint('放弃修改完成，但刷新失败；请点击刷新重试', 'error')
+        else flashScheduleHint('已放弃修改', 'ok')
+      }, [applyScheduleRows, applyScheduleRowStates, flashScheduleHint, loadScheduleRows])
 
       const switchScheduleAccount = useCallback((accountId) => {
         if (!accountId || accountId === scheduleAccountIdRef.current) return
@@ -9934,8 +10027,8 @@ window.__ModuleLoader__.load({
         scheduleCreatingRef.current = true
         setScheduleCreating(true)
         // 超时/unknown 保留 create 键，重试复用（§9.5 第 5 条）；否则每次点击新键。
-        const key = scheduleCreateRetryKeyRef.current || scheduleCreateIdempotencyKey()
-        scheduleCreateRetryKeyRef.current = null
+        const key = scheduleCreateRetryKeysRef.current[accountId] || scheduleCreateIdempotencyKey()
+        delete scheduleCreateRetryKeysRef.current[accountId]
         let result
         try {
           result = await post({
@@ -9945,7 +10038,9 @@ window.__ModuleLoader__.load({
             idempotencyKey: key,
           })
         } catch (error) {
-          if (Boolean(error) && error.name === 'TimeoutError') scheduleCreateRetryKeyRef.current = key
+          if (Boolean(error) && error.name === 'TimeoutError') {
+            scheduleCreateRetryKeysRef.current[accountId] = key
+          }
           flashScheduleHint(scheduleErrorCopy('douyin_operation_request_failed'), 'error')
           scheduleCreatingRef.current = false
           setScheduleCreating(false)
@@ -9960,7 +10055,9 @@ window.__ModuleLoader__.load({
         }
         if (result.status !== 'ready') {
           const reason = result.reason || 'douyin_operation_request_failed'
-          if (reason === 'IDEMPOTENCY_OUTCOME_UNKNOWN') scheduleCreateRetryKeyRef.current = key
+          if (reason === 'IDEMPOTENCY_OUTCOME_UNKNOWN') {
+            scheduleCreateRetryKeysRef.current[accountId] = key
+          }
           flashScheduleHint(scheduleErrorCopy(reason), 'error')
           return
         }
@@ -9971,7 +10068,10 @@ window.__ModuleLoader__.load({
         }
         // 服务端成功才插入本地表格（§9.5 第 4 条：失败不插入伪行）；追加到列表末尾。
         applyScheduleRows(prev => [...prev, row])
-        applyScheduleRowStates(prev => ({ ...prev, [row.rowId]: createRowState(row.rowVersion) }))
+        applyScheduleRowStates(prev => ({
+          ...prev,
+          [row.rowId]: createRowState(row.rowVersion, buildServerSnapshot(row)),
+        }))
         setScheduleFocusRowId(row.rowId)
         flashScheduleHint('已新增行，可直接录入', 'ok')
       }, [applyScheduleRows, applyScheduleRowStates, flashScheduleHint])
@@ -11543,7 +11643,7 @@ window.__ModuleLoader__.load({
 
     // 1015 验收：css/copy/页面组件导出供截图脚本（scripts/screenshot.mjs）SSR 渲染
     // 与样式内联使用；运行时行为零改动。1025 追加素材看板组件（screenshot-material.mjs）。
-    module.exports = { apply, inject: ['slots', 'locale'], downloadWorkbook, formatCell, formatCount, formatPercent, gapReasonText, hasGap, progressText, validatePromotionForm, BatchPanel, WorkTable, WorkDetailModal, OverviewPage, AnalysisPage, ReportListView, ReportDetailView, css, copy, OwnerModal, PromotionModal, MaterialPage, MaterialKpiCards, MaterialFilterBar, MaterialBoardTable, MaterialReasonDrawer, MaterialKeywordsTable, MaterialAccountsTable, MaterialSeedModal, MaterialRunsTable, MaterialCollectModal, MaterialConfirmDialog, MaterialFailureModal, GenePage }
+    module.exports = { apply, inject: ['slots', 'locale'], downloadWorkbook, formatCell, formatCount, formatPercent, gapReasonText, hasGap, progressText, validatePromotionForm, BatchPanel, WorkTable, WorkDetailModal, OverviewPage, AnalysisPage, ReportListView, ReportDetailView, css, copy, OwnerModal, PromotionModal, MaterialPage, MaterialKpiCards, MaterialFilterBar, MaterialBoardTable, MaterialReasonDrawer, MaterialKeywordsTable, MaterialAccountsTable, MaterialSeedModal, MaterialRunsTable, MaterialCollectModal, MaterialConfirmDialog, MaterialFailureModal, GenePage, SchedulePage }
     return module.exports;
   },
 });

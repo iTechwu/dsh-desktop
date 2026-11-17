@@ -89,6 +89,30 @@ test('built client factory renders the overlay with real React without throwing'
     assert.ok(geneHtml.includes('ydo-mat-kpis'), 'GenePage KPI 区渲染')
     assert.ok(geneHtml.includes('ydo-gene-facet-body'), 'GenePage facets 区渲染')
 
+    // RQ-2026-013（P3-014）：SchedulePage 独立真渲染，兜住排期表格渲染期崩溃。
+    const scheduleHtml = renderToString(React.createElement(plugin.SchedulePage, {
+      loading: false,
+      errorReason: null,
+      accounts: [
+        { accountId: 'acc-a', nickname: '示例账号', avatar: null, fanCount: 1, ownerName: null },
+      ],
+      activeAccountId: 'acc-a',
+      rows: [{
+        rowId: '1', accountId: 'acc-a', shootingDate: '2026-11-18', videoContent: '示例',
+        shootingStatus: false, published: false, assetLink: '', note: '', publishDate: '',
+        publishPlatforms: ['douyin'], shootingOwner: '', editingOwner: '', rowVersion: '1',
+      }],
+      rowStates: {},
+      hint: null, creating: false, deleteTarget: null, deleteBusy: false,
+      deleteTargetSequence: null, ownerSuggestions: [], focusRowId: null,
+      renderAvatar: account => React.createElement('span', null, account.nickname),
+      actions: new Proxy({}, { get: () => () => {} }),
+    }))
+    assert.ok(scheduleHtml.includes('ydo-schedule-table'), 'SchedulePage 表格渲染')
+    assert.ok(scheduleHtml.includes('发布排期看板'), 'SchedulePage 标题渲染')
+    assert.ok(scheduleHtml.includes('剪辑负责人'), '10 业务列表头渲染')
+    assert.ok(scheduleHtml.includes('示例账号'), '底部账号栏渲染')
+
     // BatchPanel 三态真实渲染（批量 collecting / probing / 终态 partial）：关闭态
     // Overlay 中 batch 为 null，该组件分支不被上面那条覆盖，这里直接渲染补盲区。
     const accounts = [{ accountId: 'acc-1', nickname: '账号一' }]
