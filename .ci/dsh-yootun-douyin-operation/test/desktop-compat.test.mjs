@@ -50,6 +50,8 @@ test('宿主注册本地同源路由，且只经 ctx.tools 调用公共 MCP 网�
     'account.analysis', 'account.trend', 'accountAnalysis.export',
     // 一键采集全部（批量顺序采集）
     'collectAll.start', 'collectAll.status',
+    // 发布排期看板（RQ-2026-013）：4 个同步读/写 action
+    'schedule.list', 'schedule.rowCreate', 'schedule.rowUpdate', 'schedule.rowDelete',
   ]) {
     assert.ok(hostSource.includes(`case '${action}':`), `宿主缺少 action ${action}`)
   }

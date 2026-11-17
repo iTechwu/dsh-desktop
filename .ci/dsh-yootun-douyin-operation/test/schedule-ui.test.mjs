@@ -1,0 +1,472 @@
+// 发布排期看板 UI 测试（RQ-2026-013 开发文档 §13.3 / 验收 P3-U 系列）。
+//
+// 渲染方式与 material-ui.test.mjs 同法：剥离 export 后在 vm 上下文求值，
+// createElement 返回普通对象树，递归断言（SchedulePage 为无 hooks 纯函数）。
+// 状态机行为经纯决策函数（canSwitchAccount/deleteAllowed/rowStatusOnFailure/
+// mergeDirtyPatch/dirtyResubmitNeeded/compareRowId/buildServerSnapshot）真实
+// 测试；异步编排（client.js）以源码契约断言锚定（构建产物真渲染由
+// render-smoke.test.mjs 兜底）。
+import assert from 'node:assert/strict'
+import { readFile } from 'node:fs/promises'
+import { test } from 'node:test'
+import vm from 'node:vm'
+
+const scheduleSource = (await readFile(new URL('../src/schedule-ui.js', import.meta.url), 'utf8'))
+  .replace(/^export /gm, '')
+const clientSource = await readFile(new URL('../src/client.js', import.meta.url), 'utf8')
+const indexSource = await readFile(new URL('../index.js', import.meta.url), 'utf8')
+
+const context = {
+  require: name => {
+    assert.equal(name, 'react')
+    return { createElement: (type, props, ...children) => ({ type, props, children: children.flat() }) }
+  },
+}
+vm.createContext(context)
+vm.runInContext(scheduleSource, context)
+const {
+  SCHEDULE_BUSINESS_HEADERS,
+  SCHEDULE_ERROR_REASON_COPY,
+  SCHEDULE_PLATFORMS,
+  SchedulePage,
+  buildServerSnapshot,
+  canSwitchAccount,
+  collectOwnerSuggestions,
+  compareRowId,
+  createRowState,
+  deleteAllowed,
+  dirtyResubmitNeeded,
+  mergeDirtyPatch,
+  rowHasPendingWork,
+  rowStatusMeta,
+  rowStatusOnFailure,
+  scheduleErrorCopy,
+  toUiRow,
+} = vm.runInContext('({ ' + [
+  'SCHEDULE_BUSINESS_HEADERS', 'SCHEDULE_ERROR_REASON_COPY', 'SCHEDULE_PLATFORMS', 'SchedulePage',
+  'buildServerSnapshot', 'canSwitchAccount', 'collectOwnerSuggestions', 'compareRowId',
+  'createRowState', 'deleteAllowed', 'dirtyResubmitNeeded', 'mergeDirtyPatch',
+  'rowHasPendingWork', 'rowStatusMeta', 'rowStatusOnFailure', 'scheduleErrorCopy', 'toUiRow',
+].join(', ') + ' })', context)
+
+// 递归收集元素树中的字符串与 className。
+function collectStrings(node, out = []) {
+  if (typeof node === 'string') out.push(node)
+  else if (Array.isArray(node)) node.forEach(item => collectStrings(item, out))
+  else if (node && typeof node === 'object') {
+    if (node.props) {
+      for (const value of Object.values(node.props || {})) collectStrings(value, out)
+    }
+    if (node.children) collectStrings(node.children, out)
+  }
+  return out
+}
+
+function collectClasses(node, out = []) {
+  if (Array.isArray(node)) {
+    node.forEach(item => collectClasses(item, out))
+  } else if (node && typeof node === 'object') {
+    const cls = node.props && node.props.className
+    if (typeof cls === 'string') out.push(...cls.split(' '))
+    if (node.children) collectClasses(node.children, out)
+  }
+  return out
+}
+
+const noop = () => {}
+const baseActions = {
+  onBoardRetry: noop, onCreate: noop, onBlurCell: noop, onCheckbox: noop,
+  onPlatformToggle: noop, onDelete: noop, onConfirmDelete: noop, onCancelDelete: noop,
+  onSwitchAccount: noop, onRetry: noop, onDiscard: noop, onRefresh: noop, focusRef: noop,
+}
+
+const ACCOUNTS = [
+  { accountId: 'acc-b', nickname: '包姐', deleteState: 'none', fanCount: 120, ownerName: '包姐' },
+  { accountId: 'acc-p', nickname: '保罗', deleteState: 'none', fanCount: null, ownerName: null },
+]
+
+function sampleRow(overrides = {}) {
+  return toUiRow({
+    id: '2',
+    account_id: 'acc-b',
+    shooting_date: '2026-11-18',
+    video_content: '踏板好物分享',
+    shooting_status: true,
+    published: false,
+    asset_link: 'https://pan.example.com/s/abc',
+    note: null,
+    publish_date: '2026-11-20',
+    publish_platforms: ['douyin'],
+    shooting_owner: '包姐',
+    editing_owner: null,
+    row_version: 3,
+    created_by: 'member-a',
+    updated_by: 'member-b',
+    ...overrides,
+  })
+}
+
+// ---------------------------------------------------------------------------
+// 投影与表头契约（P3-U02/P3-U03/§8.3）
+// ---------------------------------------------------------------------------
+
+test('表格视觉列 = 序号 + 10 业务列 + 操作，共 12 个（P3-U02/U03）', () => {
+  assert.equal(SCHEDULE_BUSINESS_HEADERS.length, 10)
+  const html = collectStrings(
+    SchedulePage({
+      loading: false, errorReason: null, accounts: ACCOUNTS, activeAccountId: 'acc-b',
+      rows: [], rowStates: {}, hint: null, creating: false, deleteTarget: null,
+      deleteBusy: false, deleteTargetSequence: null, ownerSuggestions: [], focusRowId: null,
+      renderAvatar: noop, actions: baseActions,
+    }),
+  )
+  for (const header of ['序号', ...SCHEDULE_BUSINESS_HEADERS.map(item => item.label), '操作']) {
+    assert.ok(html.includes(header), `missing header ${header}`)
+  }
+  // 业务列顺序完全一致（AC-02：文案与顺序不可变）；vm realm 数组拷回宿主后比较
+  const labels = [...SCHEDULE_BUSINESS_HEADERS].map(item => item.label)
+  assert.deepEqual(labels, [
+    '拍摄日期', '视频内容', '拍摄情况', '是否发布', '成片/封面网盘链接',
+    '备注', '发布日期', '发布平台', '拍摄负责人', '剪辑负责人',
+  ])
+  assert.equal(SCHEDULE_BUSINESS_HEADERS[2].sub, '（需要补拍或配音在下方补充）')
+  assert.equal(SCHEDULE_BUSINESS_HEADERS[4].sub, '（编导和账号主理人确认）')
+})
+
+test('toUiRow 投影为 UI camelCase 并丢弃 created_by/updated_by（§8.3/§12）', () => {
+  const row = sampleRow()
+  assert.equal(row.rowId, '2')
+  assert.equal(row.rowVersion, '3')
+  assert.equal(row.publishPlatforms.join(','), 'douyin')
+  const text = JSON.stringify(row)
+  assert.ok(!text.includes('created_by') && !text.includes('createdBy'))
+  assert.ok(!text.includes('updated_by') && !text.includes('updatedBy'))
+  // 非 http(s) 平台值不出现在 UI 投影（防御性过滤）
+  const filtered = toUiRow({ id: '9', publish_platforms: ['douyin', 'tiktok'] })
+  assert.equal(JSON.stringify(filtered.publishPlatforms), JSON.stringify(['douyin']))
+})
+
+test('rowId 十进制字符串比较不走 Number（§9.3 / §13.3 第 19 项）', () => {
+  const bigA = (Number.MAX_SAFE_INTEGER + 1).toString() // 9007199254740992
+  const bigB = '9007199254740993'
+  assert.equal(compareRowId(bigA, bigB), -1) // Number 化会相等，字符串比较正确区分
+  assert.equal(compareRowId('9', '10'), -1)  // 长度优先：9 < 10
+  assert.equal(compareRowId('42', '42'), 0)
+  assert.equal(compareRowId('100', '99'), 1)
+})
+
+test('buildServerSnapshot：strip 空转 null、平台白名单重读去重固定顺序（§9.6）', () => {
+  const snapshot = buildServerSnapshot(sampleRow({
+    video_content: '  内容  ', note: '   ', asset_link: ' https://pan.example.com/x ',
+    shooting_owner: ' 包姐 ', editing_owner: '',
+    publish_platforms: ['wx_channels', 'douyin', 'xhs', 'douyin', 'tiktok'],
+  }))
+  assert.equal(snapshot.videoContent, '内容')
+  assert.equal(snapshot.note, null)
+  assert.equal(snapshot.assetLink, 'https://pan.example.com/x')
+  assert.equal(snapshot.shootingOwner, '包姐')
+  assert.equal(snapshot.editingOwner, null)
+  assert.equal(snapshot.shootingDate, '2026-11-18')
+  assert.equal(JSON.stringify(snapshot.publishPlatforms), JSON.stringify(['xhs', 'douyin', 'wx_channels']))
+  const empty = buildServerSnapshot(sampleRow({ shooting_date: '', publish_date: '' }))
+  assert.equal(empty.shootingDate, null)
+  assert.equal(empty.publishDate, null)
+})
+
+// ---------------------------------------------------------------------------
+// 行状态机纯决策（P3-U13~U16/U18/U23/U24）
+// ---------------------------------------------------------------------------
+
+test('失败原因 → 行状态映射（unknown/conflict/failed，§9.4 第 5-7 条）', () => {
+  assert.equal(rowStatusOnFailure('IDEMPOTENCY_OUTCOME_UNKNOWN'), 'unknown')
+  assert.equal(rowStatusOnFailure('SCHEDULE_ROW_CONFLICT'), 'conflict')
+  assert.equal(rowStatusOnFailure('SCHEDULE_VALIDATION_ERROR'), 'failed')
+  assert.equal(rowStatusOnFailure('douyin_operation_request_failed'), 'failed')
+})
+
+test('conflict/unknown 行输入只读；saving 行显示 saving 类（P3-U18/U19）', () => {
+  assert.equal(rowStatusMeta(createRowState('1')).locked, false)
+  assert.equal(rowStatusMeta({ ...createRowState('1'), status: 'conflict' }).locked, true)
+  assert.equal(rowStatusMeta({ ...createRowState('1'), status: 'unknown' }).locked, true)
+  const savingMeta = rowStatusMeta({ ...createRowState('1'), status: 'saving' })
+  assert.equal(savingMeta.rowClass, 'ydo-schedule-row-saving')
+  assert.equal(rowStatusMeta({ ...createRowState('1'), status: 'failed' }).rowClass, 'ydo-schedule-row-error')
+})
+
+test('dirty 队列：saving 中编辑合并进待提交快照，不产生第二个请求载体（P3-U16）', () => {
+  let state = { ...createRowState('2'), status: 'saving', idempotencyKey: 'k1' }
+  state = { ...state, dirtySnapshot: mergeDirtyPatch(state, 'videoContent', '第二次编辑') }
+  state = { ...state, dirtySnapshot: mergeDirtyPatch(state, 'note', '补充') }
+  // vm realm 对象用 JSON 比较避免跨 realm 原型差异
+  assert.equal(JSON.stringify(state.dirtySnapshot), JSON.stringify({ videoContent: '第二次编辑', note: '补充' }))
+  // idle 编辑不产生 dirty（空补丁对象）
+  assert.deepEqual({ ...mergeDirtyPatch({ ...createRowState('1'), status: 'idle' }, 'note', 'x') }, { note: 'x' })
+})
+
+test('成功落库后：版本被覆盖为服务器 row_version，仍有差异才用新键补提交（P3-U17）', () => {
+  const serverRow = sampleRow({ row_version: 4 }) // toUiRow → '4'
+  assert.equal(serverRow.rowVersion, '4')
+  // dirty 与服务器行一致 → 不补提交
+  const mergedSame = { ...serverRow, videoContent: serverRow.videoContent }
+  assert.equal(dirtyResubmitNeeded(serverRow, mergedSame), false)
+  // dirty 与服务器行不一致 → 用新键提交一次
+  const mergedDiff = { ...serverRow, videoContent: '保存期间又改了' }
+  assert.equal(dirtyResubmitNeeded(serverRow, mergedDiff), true)
+  // 源码契约：成功路径用服务器 rowVersion 重建行状态（§9.4 第 1 条）
+  assert.ok(clientSource.includes('createRowState(serverRow.rowVersion)'), '成功后应以服务器版本重建行状态')
+})
+
+test('保存与删除互斥：非 idle 行禁删；delete 在途禁删（P3-U23）', () => {
+  const idle = createRowState('1')
+  assert.equal(deleteAllowed(idle, false), true)
+  assert.equal(deleteAllowed(idle, true), false)
+  for (const status of ['saving', 'queued', 'unknown', 'conflict', 'failed']) {
+    assert.equal(deleteAllowed({ ...idle, status }, false), false, status)
+  }
+  // 源码契约：删除在途时整表按钮禁用（deleteInFlight 由 deleteBusy 驱动）
+  assert.ok(clientSource.includes('setScheduleDeleteBusy(true)'), '删除在途应有 busy 标记')
+})
+
+test('账号切换互斥：saving/queued/unknown 禁止；failed/conflict 持 dirty 禁止（P3-U24）', () => {
+  const idle = createRowState('1')
+  assert.equal(canSwitchAccount({ a: idle }), true)
+  for (const status of ['saving', 'queued', 'unknown']) {
+    assert.equal(canSwitchAccount({ a: { ...idle, status } }), false, status)
+  }
+  // failed/conflict 但无未提交修改 → 允许切换
+  assert.equal(canSwitchAccount({ a: { ...idle, status: 'failed', dirtySnapshot: null } }), true)
+  assert.equal(canSwitchAccount({ a: { ...idle, status: 'conflict', dirtySnapshot: null } }), true)
+  // failed/conflict 持有 dirty → 禁止
+  assert.equal(canSwitchAccount({ a: { ...idle, status: 'failed', dirtySnapshot: { note: 'x' } } }), false)
+  assert.equal(canSwitchAccount({ a: { ...idle, status: 'conflict', dirtySnapshot: { note: 'x' } } }), false)
+  assert.equal(rowHasPendingWork({ ...idle, status: 'saving' }), true)
+  // 源码契约：切换前调用 canSwitchAccount
+  assert.ok(clientSource.includes('canSwitchAccount(scheduleRowStatesRef.current)'), '切换账号应检查行状态互斥')
+})
+
+test('错误码 → 中文文案（P3-U25 copy 项）', () => {
+  assert.equal(scheduleErrorCopy('SCHEDULE_ROW_CONFLICT'), '数据已被更新，请刷新后重新编辑')
+  assert.equal(scheduleErrorCopy('SCHEDULE_ROW_NOT_FOUND'), '排期行不存在或已被删除，请刷新列表')
+  assert.equal(scheduleErrorCopy('SCHEDULE_VALIDATION_ERROR'), SCHEDULE_ERROR_REASON_COPY.SCHEDULE_VALIDATION_ERROR)
+  assert.equal(scheduleErrorCopy('IDEMPOTENCY_OUTCOME_UNKNOWN'), SCHEDULE_ERROR_REASON_COPY.IDEMPOTENCY_OUTCOME_UNKNOWN)
+  assert.equal(scheduleErrorCopy('ACCOUNT_NOT_ACCESSIBLE'), SCHEDULE_ERROR_REASON_COPY.ACCOUNT_NOT_ACCESSIBLE)
+  assert.equal(scheduleErrorCopy('random_code'), '操作失败，请稍后重试')
+})
+
+// ---------------------------------------------------------------------------
+// 页面渲染（P3-U07/U08 空态、账号栏、删除确认）
+// ---------------------------------------------------------------------------
+
+test('无有效账号：只展示空态，隐藏表格与新增入口（P3-U07）', () => {
+  const html = SchedulePage({
+    loading: false, errorReason: null, accounts: [], activeAccountId: null,
+    rows: [], rowStates: {}, hint: null, creating: false, deleteTarget: null,
+    deleteBusy: false, deleteTargetSequence: null, ownerSuggestions: [], focusRowId: null,
+    renderAvatar: noop, actions: baseActions,
+  })
+  const text = collectStrings(html).join('')
+  assert.ok(text.includes('暂无抖音账号，请先在抖音工作台中添加账号'))
+  const classes = collectClasses(html)
+  assert.ok(!classes.includes('ydo-schedule-table'), '空账号态不得渲染表格')
+  assert.ok(!classes.includes('ydo-schedule-actions'), '空账号态不得渲染新增入口')
+})
+
+test('空排期展示引导文案；账号栏 chip 选中态可区分（P3-U08/AC-03）', () => {
+  const html = SchedulePage({
+    loading: false, errorReason: null, accounts: ACCOUNTS, activeAccountId: 'acc-b',
+    rows: [], rowStates: {}, hint: null, creating: false, deleteTarget: null,
+    deleteBusy: false, deleteTargetSequence: null, ownerSuggestions: [], focusRowId: null,
+    renderAvatar: noop, actions: baseActions,
+  })
+  const text = collectStrings(html).join('')
+  assert.ok(text.includes('暂无排期，点击新增行开始录入'))
+  assert.ok(text.includes('当前账号：') && text.includes('包姐'))
+  assert.ok(text.includes('保罗'))
+  // aria-pressed 区分选中态（渲染树 props 断言）
+  const pressed = []
+  ;(function walk(node) {
+    if (Array.isArray(node)) return node.forEach(walk)
+    if (node && typeof node === 'object') {
+      if (node.props && 'aria-pressed' in node.props) pressed.push(node.props['aria-pressed'])
+      if (node.children) walk(node.children)
+    }
+  })(html)
+  assert.ok(pressed.includes(true), '选中 chip 应有 aria-pressed=true')
+  assert.ok(pressed.includes(undefined) || pressed.includes(false), '未选中 chip 无选中态')
+})
+
+test('加载失败展示错误态与重试（§5.3 空态表）', () => {
+  const html = SchedulePage({
+    loading: false, errorReason: 'SCHEDULE_ROW_CONFLICT', accounts: [], activeAccountId: null,
+    rows: [], rowStates: {}, hint: null, creating: false, deleteTarget: null,
+    deleteBusy: false, deleteTargetSequence: null, ownerSuggestions: [], focusRowId: null,
+    renderAvatar: noop, actions: baseActions,
+  })
+  const text = collectStrings(html).join('')
+  assert.ok(text.includes('数据已被更新，请刷新后重新编辑'))
+  assert.ok(text.includes('重试'))
+})
+
+test('负责人 datalist 建议来自账号 owner_name 与历史排期（§5.6）', () => {
+  const rows = [
+    sampleRow({ shooting_owner: '阿泽', editing_owner: '保罗' }),
+    sampleRow({ rowId: '3', shooting_owner: '包姐', editing_owner: '  ' }),
+  ]
+  const suggestions = [...collectOwnerSuggestions(ACCOUNTS, rows)]
+  assert.deepEqual(suggestions, ['包姐', '阿泽', '保罗'])
+  // 注：collectOwnerSuggestions 的 vm realm 数组已拷贝到宿主 realm 后比较
+})
+
+// ---------------------------------------------------------------------------
+// client.js 源码契约（创建/编辑/删除/账号切换编排）
+// ---------------------------------------------------------------------------
+
+test('创建流：服务端成功才 append，失败不插伪行；unknown 保留 create 键重试（P3-U09/U10）', () => {
+  // append 在 result.status === 'ready' 之后
+  const createFn = clientSource.slice(
+    clientSource.indexOf('const createScheduleRow'),
+    clientSource.indexOf('const createScheduleRow') + 4600,
+  )
+  assert.ok(createFn.includes("applyScheduleRows(prev => [...prev, row])"), '成功才追加本地行')
+  assert.ok(
+    createFn.indexOf("result.status !== 'ready'") > -1,
+    'create 失败路径存在且不调用 applyScheduleRows',
+  )
+  assert.ok(createFn.includes('scheduleCreateRetryKeyRef.current = key'), 'unknown 保留 create 键')
+})
+
+test('失焦/勾选/平台三入口都在 idle 时发起整行保存（P3-U11/U14/U15）', () => {
+  for (const fn of ['handleScheduleBlur', 'handleScheduleCheckbox', 'handleSchedulePlatformToggle']) {
+    const idx = clientSource.indexOf(`const ${fn}`)
+    assert.ok(idx > -1, fn)
+    const body = clientSource.slice(idx, clientSource.indexOf('}, [', idx))
+    assert.ok(body.includes("performScheduleSaveRef.current(rowId)"), `${fn} idle 应发起保存`)
+  }
+  // 平台切换固定顺序重排（与 tools DTO 同口径）
+  const toggleIdx = clientSource.indexOf('const handleSchedulePlatformToggle')
+  const toggleBody = clientSource.slice(toggleIdx, clientSource.indexOf('}, [', toggleIdx))
+  assert.ok(toggleBody.includes('SCHEDULE_PLATFORMS.map'), '平台顺序由 SCHEDULE_PLATFORMS 固定序承载')
+})
+
+test('删除确认：只在 idle 打开，确认后带 confirm/expectedVersion/新键调用（P3-U21）', () => {
+  assert.ok(clientSource.includes("state.status !== 'idle'"), '非 idle 打开删除被拒绝')
+  const delIdx = clientSource.indexOf('const performScheduleDelete')
+  const delBody = clientSource.slice(delIdx, clientSource.indexOf('}, [', delIdx))
+  assert.ok(delBody.includes("action: 'schedule.rowDelete'"))
+  assert.ok(delBody.includes('confirm: true'))
+  assert.ok(delBody.includes('expectedVersion: Number(state.expectedVersion)'))
+  // 成功后直接清除行与状态，不复用旧 version（§9.4 第 4 条）
+  assert.ok(delBody.includes('delete next[rowId]'))
+})
+
+test('账号栏数据源：只保留 deleteState none，默认选中过滤后第一个（P3-U04/U05）', () => {
+  assert.ok(clientSource.includes("account.deleteState === 'none'"), '墓碑过滤')
+  assert.ok(clientSource.includes('const preferred = active.find'), '优先保留当前选中账号')
+  assert.ok(clientSource.includes('const first = preferred || active[0]'), '默认第一个有效账号')
+  // Host accounts.list 已过滤 remote_deleted 墓碑，client 再过滤其余 delete_state
+  assert.ok(indexSource.includes("cleanString(item.delete_state, 24) === 'remote_deleted'"), 'Host 过滤 remote_deleted')
+})
+
+test('样式白名单：新增 className 严格限定 ydo-schedule-* 清单，无 demo-note、无内联样式（P3-U26）', async () => {
+  const scheduleModuleSource = await readFile(new URL('../src/schedule-ui.js', import.meta.url), 'utf8')
+  const WHITELIST = new Set([
+    'ydo-schedule-page', 'ydo-schedule-toolbar-main', 'ydo-schedule-current-account',
+    'ydo-schedule-actions', 'ydo-schedule-table', 'ydo-schedule-sequence-cell',
+    'ydo-schedule-cell-input', 'ydo-schedule-cell-textarea', 'ydo-schedule-checkbox',
+    'ydo-schedule-checkbox-label', 'ydo-schedule-platform-group', 'ydo-schedule-empty',
+    'ydo-schedule-account-bar', 'ydo-schedule-account-bar-label', 'ydo-schedule-account-chip',
+    'ydo-schedule-account-text', 'ydo-schedule-account-name', 'ydo-schedule-account-meta',
+    'ydo-schedule-delete-cell', 'ydo-schedule-delete-button', 'ydo-schedule-row-saving',
+    'ydo-schedule-row-error',
+  ])
+  for (const [name, source] of [['schedule-ui.js', scheduleModuleSource], ['client.js 排期样式段', clientSource]]) {
+    const found = [...source.matchAll(/className:\s*[`'"]([^`'"]+)[`'"]/g)]
+      .flatMap(match => match[1].split(/\s+/))
+      .filter(name => name.startsWith('ydo-schedule'))
+    const unknown = [...new Set(found)].filter(name => !WHITELIST.has(name))
+    assert.deepEqual(unknown, [], `${name} 出现白名单外 ydo-schedule-* 类`)
+  }
+  // demo 专属类不得进入生产
+  assert.ok(!scheduleModuleSource.includes('ydo-schedule-demo-note'))
+  assert.ok(!clientSource.includes('ydo-schedule-demo-note'))
+  // 排期 JSX 无内联 style（col 用 width 属性而非 style）
+  for (const line of scheduleModuleSource.split('\n')) {
+    if (line.includes('ydo-schedule') || line.includes('ScheduleRow') || line.includes('SchedulePage')) {
+      assert.ok(!/\bstyle:\s*[`'"{]/.test(line), `排期 JSX 无内联 style：${line.trim().slice(0, 60)}`)
+    }
+  }
+  // 白名单中每个类都在共享 CSS 中定义；CSS 只用 --dsw-*/--dsh-* 变量
+  const cssStart = clientSource.indexOf('/* 发布排期看板（RQ-2026-013 §10）')
+  const cssEnd = clientSource.indexOf('`;')
+  const scheduleCss = clientSource.slice(cssStart, cssEnd > cssStart ? cssEnd : undefined)
+  for (const name of WHITELIST) {
+    assert.ok(scheduleCss.includes(`.${name}`), `.${name} 应在共享 CSS 中定义`)
+  }
+  assert.ok(!scheduleCss.includes('ydo-schedule-demo-note'), '生产 CSS 不含 demo-note')
+  const offendingColors = scheduleCss.match(/#[0-9a-fA-F]{3,8}\b/g) || []
+  assert.deepEqual(offendingColors, [], '排期 CSS 不写死十六进制颜色，一律主题变量')
+})
+
+// ---------------------------------------------------------------------------
+// P3 review 修复回归锚（2026-11-17 review P0-1/P1-1/P2-2）
+// ---------------------------------------------------------------------------
+
+test('受控输入契约：ScheduleRow 所有 value 输入必须带 onChange（P0-1 回归锚）', async () => {
+  // React 对「value 无 onChange」的受控输入，每次键入都会把 DOM 还原为 props.value
+  // （react-dom restoreStateIfNeeded + updateWrapper 强制回写）——5 个文本列曾因此
+  // 完全无法录入。真实浏览器键入探针属 P5/真机验证；这里以源码契约锁定结构：
+  // inputProps 必须同时携带 onChange（只更新行值）与 onBlur（失焦保存）。
+  const moduleSource = await readFile(new URL('../src/schedule-ui.js', import.meta.url), 'utf8')
+  const inputPropsStart = moduleSource.indexOf('const inputProps = (field, extra) => ({')
+  assert.ok(inputPropsStart > -1, '存在 inputProps 工厂')
+  const inputPropsBody = moduleSource.slice(inputPropsStart, moduleSource.indexOf('})', inputPropsStart))
+  assert.ok(inputPropsBody.includes('onChange: event => actions.onEditCell('), 'inputProps 必须带 onChange（onEditCell）')
+  assert.ok(inputPropsBody.includes('onBlur: event => actions.onBlurCell('), 'inputProps 必须带 onBlur（失焦保存）')
+  // 5 个文本列全部经 inputProps 受控
+  for (const field of ['videoContent', 'assetLink', 'note', 'shootingOwner', 'editingOwner']) {
+    assert.ok(moduleSource.includes(`inputProps('${field}'`), `${field} 走受控 inputProps`)
+  }
+  // 日期列：inputProps + 显式 change 即保存（§9.6 第 2 条）
+  assert.ok(moduleSource.includes("onChange: event => actions.onBlurCell(row.rowId, 'shootingDate'"), '拍摄日期 change 即保存')
+  assert.ok(moduleSource.includes("onChange: event => actions.onBlurCell(row.rowId, 'publishDate'"), '发布日期 change 即保存')
+  // 复选框：checked 必须配 onChange
+  const checkboxCount = (moduleSource.match(/onChange: event => actions\.onCheckbox\(/gu) || []).length
+  assert.equal(checkboxCount, 2, '两个业务复选框都带 onChange')
+  // 平台复选由 PlatformGroup 的 onChange 驱动
+  assert.ok(moduleSource.includes('onPlatformToggle(row.rowId, item.value, event.target.checked)'))
+})
+
+test('delete 在途整行只读；save 在途可继续编辑入队（P2-2 修复，§9.4 第 9 条）', () => {
+  assert.equal(rowStatusMeta({ status: 'saving', operation: 'delete' }).locked, true, 'delete 在途锁定行编辑')
+  assert.equal(rowStatusMeta({ status: 'saving', operation: 'delete' }).rowClass, 'ydo-schedule-row-saving')
+  assert.equal(rowStatusMeta({ status: 'saving', operation: 'save' }).locked, false, 'save 在途允许继续编辑（dirty 队列）')
+  assert.equal(rowStatusMeta({ status: 'conflict' }).locked, true)
+  assert.equal(rowStatusMeta({ status: 'unknown' }).locked, true)
+  assert.equal(rowStatusMeta(createRowState('1')).locked, false)
+  // client：performScheduleDelete 在途置 operation='delete'
+  assert.ok(clientSource.includes("operation: 'delete',\n        idempotencyKey: key,") || clientSource.includes("operation: 'delete'"), 'delete 在途标记 operation')
+})
+
+test('create 在途禁止切换账号；迟到响应不跨账号串板（P1-1 修复）', () => {
+  // 切换互斥：scheduleCreatingRef 在途直接拒绝
+  const switchIdx = clientSource.indexOf('const switchScheduleAccount')
+  const switchBody = clientSource.slice(switchIdx, clientSource.indexOf('}, [', switchIdx))
+  assert.ok(switchBody.includes('scheduleCreatingRef.current'), '切换账号检查 create 在途')
+  assert.ok(switchBody.includes('正在新增行，请等待完成后再切换账号'))
+  assert.ok(switchBody.includes('applyScheduleRows([])'), '切换即清空旧账号行（防瞬时残留）')
+  // create 响应守卫：seq 推进（切账号/重拉列表）后丢弃迟到响应
+  const createIdx = clientSource.indexOf('const createScheduleRow')
+  const createBody = clientSource.slice(createIdx, createIdx + 4800)
+  assert.ok(createBody.includes('const seq = scheduleSeqRef.current'), 'create 捕获发起时序号')
+  assert.ok(createBody.includes('if (seq !== scheduleSeqRef.current)'), '迟到响应按 seq 丢弃')
+  assert.ok(createBody.includes('row.accountId !== accountId'), '响应行账号必须匹配发起账号')
+  // 双守卫镜像：scheduleCreatingRef 与 state 同步置位/复位
+  const count = (clientSource.match(/scheduleCreatingRef\.current = /gu) || []).length
+  assert.ok(count >= 3, `creating ref 置位/复位完整（实际 ${count} 处）`)
+})
+
+test('accounts.list 失败给错误态而非空账号态（review P3-5）', () => {
+  const boardIdx = clientSource.indexOf('const loadScheduleBoard')
+  const boardBody = clientSource.slice(boardIdx, clientSource.indexOf('}, [', boardIdx))
+  assert.ok(boardBody.includes("setScheduleError((result && result.reason) || 'douyin_operation_request_failed')"), '账号列表失败走错误态')
+})

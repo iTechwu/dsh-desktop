@@ -5899,6 +5899,493 @@ window.__ModuleLoader__.load({
           : null)
     }
 
+    // 发布排期看板 UI 模块（RQ-2026-013 开发文档 §9/§10）：排期表格、账号栏、行状态
+    // 机的**纯辅助函数**与页面组件。UI 基准为 docs/1116/douyin/RQ-2026-013_UI-demo.html
+    // （静态示意稿），生产实现只使用宿主主题 `--dsw-*` 变量（§6.2 第 8 条：不照抄
+    // Demo 兜底固定色）；新增 className 严格限定实施文档 §6.2 白名单 `ydo-schedule-*`。
+    //
+    // 文案口径与 report-ui/material-ui 一致：模块内中文硬编码，仅 Tab 按钮文案
+    // tabSchedule 走 client.js 的 i18n。构建脚本把本模块内联进 lib/client.js（与
+    // report-ui/material-ui 同法）：顶部 CommonJS require 由构建剥离，React/h 由
+    // client.js 顶部声明提供；hooks 以 React.xxx 形式使用（与 breakdown.js 同款）。
+    //
+    // 数据流：Host action 返回 tools 的 canonical snake_case 行投影（§8.3），本模块
+    // toUiRow 投影为 UI camelCase 并**丢弃** created_by/updated_by（§12：不进 UI）。
+    // 行状态机转移的异步编排在 client.js，本文件只提供纯判定函数（可单测）。
+
+
+    // ---------------------------------------------------------------------------
+    // 常量与错误文案（宿主 reason + tools 稳定码一一对应）
+    // ---------------------------------------------------------------------------
+
+    const SCHEDULE_PLATFORMS = [
+      { value: 'xhs', label: '小红书' },
+      { value: 'douyin', label: '抖音' },
+      { value: 'wx_channels', label: '视频号' },
+    ]
+
+    const PLATFORM_VALUES = new Set(SCHEDULE_PLATFORMS.map(item => item.value))
+
+    const SCHEDULE_ERROR_REASON_COPY = {
+      // 宿主校验 reason（index.js schedule.* handler）
+      account_id_required: '缺少账号，请刷新后重试',
+      row_id_invalid: '排期行序号不合法，请刷新后重试',
+      version_invalid: '行版本不合法，请刷新后重试',
+      VALIDATION_ERROR: '提交的参数不完整或不合法，请检查后重试',
+      idempotency_key_required: '缺少幂等键，请重试',
+      INVALID_IDEMPOTENCY_KEY: '幂等键格式不正确，请重新发起',
+      CONFIRMATION_REQUIRED: '缺少确认标记，请重新提交',
+      // tools 稳定码（tools-client ALLOWED_ERROR_CODES 白名单内）
+      ACCOUNT_NOT_FOUND: '云端还没有该账号的数据，请先完成一次采集',
+      ACCOUNT_NOT_ACCESSIBLE: '该账号已删除或不可访问，请先在账号管理中重新扫码',
+      SCHEDULE_ROW_NOT_FOUND: '排期行不存在或已被删除，请刷新列表',
+      SCHEDULE_ROW_CONFLICT: '数据已被更新，请刷新后重新编辑',
+      SCHEDULE_VALIDATION_ERROR: '保存的内容不合法（如链接格式/长度超限），请检查后重试',
+      IDEMPOTENCY_CONFLICT: '请求与该幂等键的历史记录不一致，请刷新后重试',
+      IDEMPOTENCY_IN_PROGRESS: '同一请求正在处理中，请稍后查看结果',
+      IDEMPOTENCY_OUTCOME_UNKNOWN: '保存结果未知，请重试同一操作或刷新列表确认',
+      UNAUTHORIZED: '登录状态已失效，请重新打开工作台',
+      PAYLOAD_TOO_LARGE: '提交内容过大，请精简后重试',
+      douyin_operation_request_failed: '请求失败，请检查网络后重试',
+    }
+
+    function scheduleErrorCopy(reason) {
+      return SCHEDULE_ERROR_REASON_COPY[reason] || '操作失败，请稍后重试'
+    }
+
+    // 表头契约（§13.3 第 2 项）：10 个业务列的标题与顺序；带 small 副标的列以
+    // sub 字段表达（§5.2 表格视觉列 12 = 序号 + 10 业务 + 操作）。
+    const SCHEDULE_BUSINESS_HEADERS = [
+      { key: 'shootingDate', label: '拍摄日期' },
+      { key: 'videoContent', label: '视频内容' },
+      { key: 'shootingStatus', label: '拍摄情况', sub: '（需要补拍或配音在下方补充）' },
+      { key: 'published', label: '是否发布' },
+      { key: 'assetLink', label: '成片/封面网盘链接', sub: '（编导和账号主理人确认）' },
+      { key: 'note', label: '备注' },
+      { key: 'publishDate', label: '发布日期' },
+      { key: 'publishPlatforms', label: '发布平台' },
+      { key: 'shootingOwner', label: '拍摄负责人' },
+      { key: 'editingOwner', label: '剪辑负责人' },
+    ]
+
+    // ---------------------------------------------------------------------------
+    // 纯投影与状态机辅助（§13.3 可单测项的锚点）
+    // ---------------------------------------------------------------------------
+
+    /** 服务端 snake_case 行 → UI camelCase；丢弃 created_by/updated_by（§8.3/§12）。 */
+    function toUiRow(raw) {
+      if (!raw || typeof raw !== 'object') return null
+      const id = raw.id
+      if (id === null || id === undefined || id === '') return null
+      return {
+        rowId: String(id),
+        accountId: typeof raw.account_id === 'string' ? raw.account_id : '',
+        shootingDate: raw.shooting_date || '',
+        videoContent: raw.video_content || '',
+        shootingStatus: Boolean(raw.shooting_status),
+        published: Boolean(raw.published),
+        assetLink: raw.asset_link || '',
+        note: raw.note || '',
+        publishDate: raw.publish_date || '',
+        publishPlatforms: Array.isArray(raw.publish_platforms)
+          ? raw.publish_platforms.filter(value => PLATFORM_VALUES.has(value))
+          : [],
+        shootingOwner: raw.shooting_owner || '',
+        editingOwner: raw.editing_owner || '',
+        rowVersion: String(raw.row_version ?? '1'),
+      }
+    }
+
+    /**
+     * 十进制字符串安全比较（§9.3）：不得先转 Number，避免超过 Number.MAX_SAFE_INTEGER
+     * 后精度丢失；长度优先、等长逐位比较。
+     */
+    function compareRowId(a, b) {
+      const sa = String(a)
+      const sb = String(b)
+      if (sa.length !== sb.length) return sa.length - sb.length
+      if (sa === sb) return 0
+      return sa < sb ? -1 : 1
+    }
+
+    const trimToNull = value => {
+      if (typeof value !== 'string') return null
+      const trimmed = value.trim()
+      return trimmed === '' ? null : trimmed
+    }
+
+    /**
+     * UI 行 → 服务端整行业务字段（§9.6 第 5/6 条）：空 string 归 null、布尔显式、
+     * 平台白名单重读 + 去重 + 固定顺序（与 tools DTO 同口径，Host 侧兜底）。
+     */
+    function buildServerSnapshot(uiRow) {
+      const seen = new Set()
+      for (const value of Array.isArray(uiRow.publishPlatforms) ? uiRow.publishPlatforms : []) {
+        if (PLATFORM_VALUES.has(value)) seen.add(value)
+      }
+      // 与 tools DTO 同口径：白名单重读 + 去重 + 固定顺序 xhs -> douyin -> wx_channels。
+      const platforms = SCHEDULE_PLATFORMS.map(item => item.value).filter(value => seen.has(value))
+      return {
+        shootingDate: trimToNull(uiRow.shootingDate),
+        videoContent: trimToNull(uiRow.videoContent),
+        shootingStatus: Boolean(uiRow.shootingStatus),
+        published: Boolean(uiRow.published),
+        assetLink: trimToNull(uiRow.assetLink),
+        note: trimToNull(uiRow.note),
+        publishDate: trimToNull(uiRow.publishDate),
+        publishPlatforms: platforms,
+        shootingOwner: trimToNull(uiRow.shootingOwner),
+        editingOwner: trimToNull(uiRow.editingOwner),
+      }
+    }
+
+    /** 新行的行级状态（§9.4）：idle、版本字符串、无在途键。 */
+    function createRowState(expectedVersion) {
+      return {
+        status: 'idle', // idle | saving | queued | failed | conflict | unknown
+        operation: null, // 'save' | 'delete'（同键重试时区分）
+        expectedVersion: String(expectedVersion ?? '1'),
+        idempotencyKey: null,
+        dirtySnapshot: null,
+        lastServerError: null,
+      }
+    }
+
+    const LOCKED_STATUSES = new Set(['saving', 'queued', 'unknown'])
+    const BLOCKING_STATUSES = new Set(['failed', 'conflict'])
+
+    /** 该行是否持有未提交修改（failed/conflict 行带 dirty 也阻塞账号切换，§9.4 第 8 条）。 */
+    function rowHasPendingWork(state) {
+      if (!state) return false
+      if (LOCKED_STATUSES.has(state.status)) return true
+      return BLOCKING_STATUSES.has(state.status) && state.dirtySnapshot !== null
+    }
+
+    /**
+     * 账号切换互斥（§9.4 第 8 条 / §5.3）：任一行 saving/queued/unknown，或
+     * failed/conflict 且持有未提交修改 → 禁止切换。
+     */
+    function canSwitchAccount(rowStates) {
+      return !Object.values(rowStates || {}).some(rowHasPendingWork)
+    }
+
+    /** 非 idle 行禁用删除；delete 在途时禁用编辑保存（§9.4 第 9 条）。 */
+    function deleteAllowed(state, deleteInFlight) {
+      return !deleteInFlight && (!state || state.status === 'idle')
+    }
+
+    /**
+     * 失败原因 → 行状态（§9.4 第 5-7 条）：IDEMPOTENCY_OUTCOME_UNKNOWN → unknown
+     * （只允许同键重试/刷新）；SCHEDULE_ROW_CONFLICT → conflict（只读）；其余确定性
+     * 业务失败 → failed（保留输入，同键重试/刷新/显式放弃）。
+     */
+    function rowStatusOnFailure(reason) {
+      if (reason === 'IDEMPOTENCY_OUTCOME_UNKNOWN') return 'unknown'
+      if (reason === 'SCHEDULE_ROW_CONFLICT') return 'conflict'
+      return 'failed'
+    }
+
+    /** saving/failed 期间编辑：返回合并后的 dirty 字段补丁（queued 语义的载体）。 */
+    function mergeDirtyPatch(state, field, value) {
+      return { ...((state && state.dirtySnapshot) || {}), [field]: value }
+    }
+
+    /** 成功落库后是否需用新键补提交一次：dirty 合并行与服务器行存在业务差异。 */
+    function dirtyResubmitNeeded(serverRow, mergedRow) {
+      return JSON.stringify(buildServerSnapshot(mergedRow)) !== JSON.stringify(buildServerSnapshot(serverRow))
+    }
+
+    /** 行渲染所需派生：状态类（白名单两枚）与只读判定。 */
+    function rowStatusMeta(state) {
+      const status = state && state.status ? state.status : 'idle'
+      // conflict/unknown 输入只读（§9.4 第 6/7 条）；delete 在途整行只读
+      // （§9.4 第 9 条：删除中禁用编辑与保存）。
+      const locked =
+        status === 'conflict' ||
+        status === 'unknown' ||
+        (status === 'saving' && state.operation === 'delete')
+      return {
+        status,
+        locked,
+        rowClass:
+          status === 'saving' || status === 'queued'
+            ? 'ydo-schedule-row-saving'
+            : status === 'failed' || status === 'conflict' || status === 'unknown'
+              ? 'ydo-schedule-row-error'
+              : '',
+      }
+    }
+
+    /** 负责人 datalist 建议（§5.6）：账号 owner_name + 当前账号历史排期负责人。 */
+    function collectOwnerSuggestions(accounts, rows) {
+      const seen = new Set()
+      const suggestions = []
+      const push = value => {
+        const name = typeof value === 'string' ? value.trim() : ''
+        if (name && !seen.has(name)) {
+          seen.add(name)
+          suggestions.push(name)
+        }
+      }
+      for (const account of accounts || []) push(account && account.ownerName)
+      for (const row of rows || []) {
+        push(row && row.shootingOwner)
+        push(row && row.editingOwner)
+      }
+      return suggestions
+    }
+
+    // ---------------------------------------------------------------------------
+    // 页面组件
+    // ---------------------------------------------------------------------------
+
+    function ToolbarHint({ hint }) {
+      if (!hint || !hint.text) {
+        return h('span', { className: 'ydo-hint', 'aria-live': 'polite' }, '就绪')
+      }
+      const toneClass =
+        hint.tone === 'error' ? 'ydo-error' : hint.tone === 'ok' ? 'ydo-ok' : 'ydo-hint'
+      return h('span', { className: toneClass, role: hint.tone === 'error' ? 'alert' : 'status', 'aria-live': 'polite' }, hint.text)
+    }
+
+    function PlatformGroup({ row, disabled, onPlatformToggle }) {
+      return h(
+        'div',
+        { className: 'ydo-schedule-platform-group' },
+        ...SCHEDULE_PLATFORMS.map(item =>
+          h('label', { key: item.value },
+            h('input', {
+              type: 'checkbox',
+              checked: row.publishPlatforms.includes(item.value),
+              disabled,
+              onChange: event => onPlatformToggle(row.rowId, item.value, event.target.checked),
+              'aria-label': `发布平台 ${item.label}`,
+            }),
+            h('span', null, item.label))),
+      )
+    }
+
+    function DeleteButton({ row, state, deleteInFlight, onDelete }) {
+      const allowed = deleteAllowed(state, deleteInFlight)
+      return h('button', {
+        type: 'button',
+        className: 'ydo-schedule-delete-button',
+        disabled: !allowed,
+        onClick: () => onDelete(row.rowId),
+        'aria-label': `删除序号 ${row.rowId}`,
+        title: allowed ? undefined : '存在未完成的保存或删除，完成后才能删除',
+      },
+      h('svg', { width: 16, height: 16, viewBox: '0 0 24 24', fill: 'none', 'aria-hidden': true },
+        h('path', { d: 'M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13', stroke: 'currentColor', strokeWidth: 1.7, strokeLinecap: 'round' })))
+    }
+
+    function RowStatusActions({ rowId, state, onRetry, onDiscard, onRefresh }) {
+      if (!state || state.status === 'idle' || state.status === 'saving' || state.status === 'queued') {
+        return null
+      }
+      const buttons = []
+      if (state.status === 'failed' || state.status === 'unknown') {
+        buttons.push(h('button', {
+          key: 'retry', type: 'button', className: 'ydo-secondary',
+          onClick: () => onRetry(rowId),
+        }, state.operation === 'delete' ? '重试删除' : '同键重试'))
+      }
+      if (state.status === 'failed') {
+        buttons.push(h('button', {
+          key: 'discard', type: 'button', className: 'ydo-secondary',
+          onClick: () => onDiscard(rowId),
+        }, '放弃修改'))
+      }
+      buttons.push(h('button', {
+        key: 'refresh', type: 'button', className: 'ydo-secondary',
+        onClick: () => onRefresh(),
+      }, '刷新'))
+      // 注意：白名单（实施文档 §6.2）没有状态操作区包装类，按钮直接进操作列。
+      return buttons
+    }
+
+    function ScheduleRow({ row, state, deleteInFlight, focusRowId, actions }) {
+      const meta = rowStatusMeta(state)
+      const disabled = meta.locked
+      // 受控输入契约：value 必须配 onChange（React 对「value 无 onChange」的输入会在
+      // 每次键入后把 DOM 还原为 props.value——P0-1 教训）。onChange 只更新本地行值
+      // （onEditCell），失焦才保存（onBlurCell）；日期输入的 change 直接保存
+      // （§9.6 第 2 条：原生选择器关闭后 blur 不一定触发）。
+      const inputProps = (field, extra) => ({
+        className: extra === 'textarea' ? 'ydo-schedule-cell-textarea' : 'ydo-schedule-cell-input',
+        disabled,
+        onChange: event => actions.onEditCell(row.rowId, field, event.target.value),
+        onBlur: event => actions.onBlurCell(row.rowId, field, event.target.value),
+        'data-row-id': row.rowId,
+        'data-field': field,
+        ref: focusRowId === row.rowId && field === 'videoContent' ? actions.focusRef : undefined,
+      })
+      return h('tr', { className: meta.rowClass || undefined, 'data-row-id': row.rowId },
+        h('td', { className: 'ydo-schedule-sequence-cell', title: '系统生成的排期行主键' }, row.rowId),
+        h('td', null,
+          h('input', { ...inputProps('shootingDate'), type: 'date', value: row.shootingDate, 'aria-label': '拍摄日期',
+            onChange: event => actions.onBlurCell(row.rowId, 'shootingDate', event.target.value) })),
+        h('td', null,
+          h('textarea', { ...inputProps('videoContent', 'textarea'), rows: 1, value: row.videoContent, 'aria-label': '视频内容' })),
+        h('td', null,
+          h('label', { className: 'ydo-schedule-checkbox-label' },
+            h('span', { className: 'ydo-schedule-checkbox' },
+              h('input', {
+                type: 'checkbox', checked: row.shootingStatus, disabled,
+                onChange: event => actions.onCheckbox(row.rowId, 'shootingStatus', event.target.checked),
+                'aria-label': '拍摄完成',
+              })),
+            h('span', null, '拍摄完成'))),
+        h('td', null,
+          h('label', { className: 'ydo-schedule-checkbox-label' },
+            h('span', { className: 'ydo-schedule-checkbox' },
+              h('input', {
+                type: 'checkbox', checked: row.published, disabled,
+                onChange: event => actions.onCheckbox(row.rowId, 'published', event.target.checked),
+                'aria-label': '已发布',
+              })),
+            h('span', null, '已发布'))),
+        h('td', null,
+          h('input', { ...inputProps('assetLink'), type: 'url', value: row.assetLink, placeholder: '网盘链接', 'aria-label': '成片/封面网盘链接' })),
+        h('td', null,
+          h('textarea', { ...inputProps('note', 'textarea'), rows: 1, value: row.note, 'aria-label': '备注' })),
+        h('td', null,
+          h('input', { ...inputProps('publishDate'), type: 'date', value: row.publishDate, 'aria-label': '发布日期',
+            onChange: event => actions.onBlurCell(row.rowId, 'publishDate', event.target.value) })),
+        h('td', null, h(PlatformGroup, { row, disabled, onPlatformToggle: actions.onPlatformToggle })),
+        h('td', null,
+          h('input', { ...inputProps('shootingOwner'), type: 'text', value: row.shootingOwner, list: 'ydo-schedule-owner-options', 'aria-label': '拍摄负责人' })),
+        h('td', null,
+          h('input', { ...inputProps('editingOwner'), type: 'text', value: row.editingOwner, list: 'ydo-schedule-owner-options', 'aria-label': '剪辑负责人' })),
+        h('td', { className: 'ydo-schedule-delete-cell' },
+          h(DeleteButton, { row, state, deleteInFlight, onDelete: actions.onDelete }),
+          ...RowStatusActions({ rowId: row.rowId, state, onRetry: actions.onRetry, onDiscard: actions.onDiscard, onRefresh: actions.onRefresh }),
+          state && state.lastServerError
+            ? h('p', { className: 'ydo-error', role: 'alert' }, scheduleErrorCopy(state.lastServerError))
+            : null),
+      )
+    }
+
+    /**
+     * 发布排期看板页（工具栏 + 12 视觉列表格 + 底部账号栏 + 删除确认弹框）。
+     * 全部数据与回调来自 props（状态机在 client.js），本组件不做业务判断。
+     */
+    function SchedulePage({
+      loading,
+      errorReason,
+      accounts,
+      activeAccountId,
+      rows,
+      rowStates,
+      hint,
+      creating,
+      deleteTarget,
+      deleteBusy,
+      deleteTargetSequence,
+      ownerSuggestions,
+      focusRowId,
+      renderAvatar,
+      actions,
+    }) {
+      if (loading && !rows.length && !errorReason) {
+        return h('section', { className: 'ydo-right', 'aria-label': '发布排期看板' },
+          h('p', { className: 'ydo-hint' }, '加载中…'))
+      }
+      if (errorReason && !rows.length) {
+        return h('section', { className: 'ydo-right', 'aria-label': '发布排期看板' },
+          h('p', { className: 'ydo-error', role: 'alert' }, scheduleErrorCopy(errorReason)),
+          h('button', { type: 'button', className: 'ydo-secondary', onClick: actions.onBoardRetry }, '重试'))
+      }
+      if (!(accounts || []).length) {
+        // 无有效账号（§9.2 第 4 条 / §5.3 空态）：隐藏表格与新增入口，只展示空态。
+        return h('section', { className: 'ydo-right', 'aria-label': '发布排期看板' },
+          h('p', { className: 'ydo-state', role: 'status' }, '暂无抖音账号，请先在抖音工作台中添加账号'))
+      }
+      const activeAccount = (accounts || []).find(account => account.accountId === activeAccountId) || null
+      return h('section', { className: 'ydo-right ydo-schedule-page', 'aria-label': '发布排期看板' },
+        h('datalist', { id: 'ydo-schedule-owner-options' },
+          ...(ownerSuggestions || []).map(name => h('option', { key: name, value: name }))),
+        h('div', { className: 'ydo-toolbar' },
+          h('div', { className: 'ydo-schedule-toolbar-main' },
+            h('h2', { className: 'ydo-panel-title' }, '发布排期看板'),
+            h('span', { className: 'ydo-schedule-current-account' },
+              '当前账号：',
+              h('strong', null, activeAccount ? (activeAccount.nickname || activeAccount.accountId) : '未选择')),
+            h(ToolbarHint, { hint })),
+          h('div', { className: 'ydo-schedule-actions' },
+            h('button', {
+              type: 'button',
+              className: 'ydo-primary',
+              disabled: creating || !(accounts || []).length,
+              'aria-busy': creating || undefined,
+              onClick: actions.onCreate,
+            }, creating ? '新增中…' : '新增行'))),
+        h('div', { className: 'ydo-table-wrap' },
+          h('table', { className: 'ydo-schedule-table' },
+            h('caption', { className: 'ydo-hint' },
+              '除序号由系统生成外，其余业务字段均允许为空；拍摄情况勾选表示拍摄完成。'),
+            h('colgroup', null,
+              // 用 <col width> 属性而非内联 style（§10.2：JSX 不写内联样式）。
+              ...[58, 122, 140, 160, 92, 160, 110, 120, 116, 100, 100, 56].map((width, index) =>
+                h('col', { key: index, width })),
+            ),
+            h('thead', null,
+              h('tr', null,
+                h('th', { className: 'ydo-schedule-sequence-cell', scope: 'col' }, '序号'),
+                ...SCHEDULE_BUSINESS_HEADERS.map(item =>
+                  h('th', { key: item.key, scope: 'col' },
+                    item.label,
+                    item.sub ? h('small', null, item.sub) : null)),
+                h('th', { className: 'ydo-schedule-delete-cell', scope: 'col' }, '操作'))),
+            h('tbody', null,
+              rows.length
+                ? rows.map(row => h(ScheduleRow, {
+                  key: row.rowId,
+                  row,
+                  state: rowStates[row.rowId] || null,
+                  deleteInFlight: deleteBusy,
+                  focusRowId,
+                  actions,
+                }))
+                : h('tr', { className: 'ydo-schedule-empty' },
+                  h('td', { colSpan: 12 }, '暂无排期，点击新增行开始录入'))))),
+        h('div', { className: 'ydo-schedule-account-bar', 'aria-label': '抖音账号切换栏' },
+          h('span', { className: 'ydo-schedule-account-bar-label' }, '抖音账号'),
+          (accounts || []).length
+            ? accounts.map(account =>
+              h('button', {
+                key: account.accountId,
+                type: 'button',
+                className: 'ydo-schedule-account-chip',
+                'aria-pressed': account.accountId === activeAccountId || undefined,
+                onClick: () => actions.onSwitchAccount(account.accountId),
+              },
+                renderAvatar
+                  ? renderAvatar(account)
+                  : h('span', { className: 'ydo-avatar ydo-avatar-fallback', 'aria-hidden': true },
+                    (account.nickname || account.accountId || '·').slice(0, 1)),
+                h('span', { className: 'ydo-schedule-account-text' },
+                  h('span', { className: 'ydo-schedule-account-name' },
+                    account.nickname || account.accountId),
+                  h('span', { className: 'ydo-schedule-account-meta' },
+                    account.fanCount != null ? `粉丝 ${account.fanCount}` : '有效账号'))))
+            : h('span', { className: 'ydo-schedule-account-meta' }, '暂无抖音账号，请先在抖音工作台中添加账号')),
+        deleteTarget
+          ? h('div', { className: 'ydo-mat-modal-overlay', role: 'dialog', 'aria-modal': true, 'aria-labelledby': 'ydo-schedule-delete-title' },
+            h('div', { className: 'ydo-mat-modal' },
+              h('form', { className: 'ydo-mat-form', onSubmit: event => event.preventDefault() },
+                h('p', { id: 'ydo-schedule-delete-title', className: 'ydo-mat-field' },
+                  '确认删除序号为 ',
+                  h('span', null, deleteTargetSequence || deleteTarget),
+                  ' 的排期行？'),
+                h('p', { className: 'ydo-hint' }, '删除后数据库记录同步删除，刷新后不会恢复。'),
+                h('div', { className: 'ydo-mat-modal-actions' },
+                  h('button', { type: 'button', className: 'ydo-secondary', disabled: deleteBusy, onClick: actions.onCancelDelete }, '取消'),
+                  h('button', { type: 'button', className: 'ydo-primary', disabled: deleteBusy, 'aria-busy': deleteBusy || undefined, onClick: actions.onConfirmDelete }, deleteBusy ? '删除中…' : '删除')))))
+          : null,
+      )
+    }
+
     // 抖音运营客户端：左下角菜单入口 + 整页 overlay（左侧账号管理区 + 右侧作品数据区）。
     //
     // 数据来源：本地同源路由 /api/desktop/yootun/douyin-operation（宿主再经公共网关调 tools）。
@@ -5945,6 +6432,13 @@ window.__ModuleLoader__.load({
     // tools-client.js——不在 lib 构建拼接白名单内（同 reportRegenerateIdempotencyKey 先例）。
     const accountOwnerSetIdempotencyKey = () => `douyin:account_owner_set:${newAiAnalysisRequestUuid()}`
     const workPromotionSaveIdempotencyKey = () => `douyin:work_promotion_save:${newAiAnalysisRequestUuid()}`
+    // 发布排期看板受理键（RQ-2026-013 §4）：与 index.js SCHEDULE_*_KEY_PATTERN、
+    // tools 服务端 require_schedule_*_idempotency_key 模板一致。create 键不嵌行号；
+    // update/delete 键内嵌 rowId（服务端强制键内 rowId 与参数行一致）。attemptUuid
+    // 由页面生成，同一次点击重试复用同一 UUID（unknown/failed 同键恢复）。
+    const scheduleCreateIdempotencyKey = () => `douyin:publish_schedule_create:${newAiAnalysisRequestUuid()}`
+    const scheduleUpdateIdempotencyKey = rowId => `douyin:publish_schedule_update:${rowId}:${newAiAnalysisRequestUuid()}`
+    const scheduleDeleteIdempotencyKey = rowId => `douyin:publish_schedule_delete:${rowId}:${newAiAnalysisRequestUuid()}`
     // 爆款基因知识库受理键（RQ-2026-010 §8.1）：与 index.js GENE_*_KEY_PATTERN、
     // tools 服务端 require_viral_video_knowledge_*_key 模板一致；每次点击生成全新
     // UUID，键内嵌 recordId 不嵌 attempt 之外的自由文本。不 import tools-client.js
@@ -6197,6 +6691,8 @@ window.__ModuleLoader__.load({
         tabReport: 'AI 报表',
         tabMaterial: '爆款素材看板',
         tabGene: '爆款基因库',
+        // 发布排期看板 Tab（RQ-2026-013）：置于账号作品之后、素材看板之前。
+        tabSchedule: '发布排期看板',
         geneTitle: '爆款基因库',
         bdNewTitle: '发起拆解',
         bdShareLabel: '抖音分享链接', bdSharePlaceholder: '粘贴抖音视频分享链接，如 https://v.douyin.com/xxxx/',
@@ -6437,6 +6933,8 @@ window.__ModuleLoader__.load({
         tabReport: 'AI reports',
         tabMaterial: 'Hot Materials',
         tabGene: 'Gene Library',
+        // Publish schedule board tab (RQ-2026-013): after account works, before materials.
+        tabSchedule: 'Publish schedule',
         geneTitle: 'Gene Library',
         bdNewTitle: 'Start a breakdown',
         bdShareLabel: 'Douyin share link', bdSharePlaceholder: 'Paste a Douyin video share link, e.g. https://v.douyin.com/xxxx/',
@@ -9049,6 +9547,435 @@ window.__ModuleLoader__.load({
       const [geneRetryError, setGeneRetryError] = useState(null)
       const geneRegenAttemptRef = useRef(null)
 
+      // ---------------------------------------------------------------------------
+      // 发布排期看板（RQ-2026-013 §9）：状态机编排。行值存 scheduleRows（UI camelCase，
+      // schedule-ui.toUiRow 投影），行状态存 scheduleRowStates；异步回调经 ref 镜像读
+      // 最新值。转移规则（§9.4）：saving 期间编辑只合并 dirtySnapshot（queued 语义），
+      // 成功后与服务器行比对差异决定是否用新键补提交一次；SCHEDULE_ROW_CONFLICT →
+      // conflict 只读；超时/IDEMPOTENCY_OUTCOME_UNKNOWN → unknown 只允许同键重试或
+      // 刷新；确定性失败 → failed 保留输入（同键重试/刷新/显式放弃）。保存与删除互斥；
+      // 账号切换在任一行 saving/queued/unknown、或 failed/conflict 持有未提交修改时禁止。
+      // ---------------------------------------------------------------------------
+      const [scheduleAccounts, setScheduleAccounts] = useState([])
+      const [scheduleAccountId, setScheduleAccountId] = useState(null)
+      const [scheduleRows, setScheduleRows] = useState([])
+      const [scheduleRowStates, setScheduleRowStates] = useState({})
+      const [scheduleLoading, setScheduleLoading] = useState(false)
+      const [scheduleError, setScheduleError] = useState(null)
+      const [scheduleHint, setScheduleHint] = useState(null)
+      const [scheduleCreating, setScheduleCreating] = useState(false)
+      const [scheduleDeleteTarget, setScheduleDeleteTarget] = useState(null)
+      const [scheduleDeleteBusy, setScheduleDeleteBusy] = useState(false)
+      const [scheduleFocusRowId, setScheduleFocusRowId] = useState(null)
+      const scheduleSeqRef = useRef(0)
+      const scheduleRowsRef = useRef([])
+      const scheduleRowStatesRef = useRef({})
+      const scheduleAccountIdRef = useRef(null)
+      const scheduleLoadedRef = useRef(false)
+      const scheduleHintTimerRef = useRef(null)
+      const scheduleCreateRetryKeyRef = useRef(null)
+      const scheduleCreatingRef = useRef(false)
+      const performScheduleSaveRef = useRef(() => {})
+      const scheduleFocusRef = useCallback(node => {
+        if (node) node.focus()
+      }, [])
+
+      const applyScheduleRows = useCallback(updater => {
+        const next = typeof updater === 'function' ? updater(scheduleRowsRef.current) : updater
+        scheduleRowsRef.current = next
+        setScheduleRows(next)
+      }, [])
+      const applyScheduleRowStates = useCallback(updater => {
+        const next = typeof updater === 'function' ? updater(scheduleRowStatesRef.current) : updater
+        scheduleRowStatesRef.current = next
+        setScheduleRowStates(next)
+      }, [])
+
+      const flashScheduleHint = useCallback((text, tone = '') => {
+        setScheduleHint(text ? { text, tone } : null)
+        window.clearTimeout(scheduleHintTimerRef.current)
+        // 错误提示常驻到下一次动作；ok/saving 类提示自动回落。
+        if (text && tone !== 'error') {
+          scheduleHintTimerRef.current = window.setTimeout(() => setScheduleHint(null), 2600)
+        }
+      }, [])
+
+      const loadScheduleRows = useCallback(async (accountId) => {
+        if (!accountId) return
+        const seq = ++scheduleSeqRef.current
+        setScheduleLoading(true)
+        setScheduleError(null)
+        try {
+          const result = await post({ action: 'schedule.list', accountId })
+          if (seq !== scheduleSeqRef.current) return
+          if (result.status !== 'ready') {
+            setScheduleLoading(false)
+            setScheduleError(result.reason || 'douyin_operation_request_failed')
+            return
+          }
+          const data = result.data || {}
+          const rawRows = Array.isArray(data.rows) ? data.rows : []
+          const uiRows = rawRows.map(toUiRow).filter(Boolean).sort((a, b) => compareRowId(a.rowId, b.rowId))
+          applyScheduleRows(uiRows)
+          const states = {}
+          for (const row of uiRows) states[row.rowId] = createRowState(row.rowVersion)
+          applyScheduleRowStates(states)
+          setScheduleLoading(false)
+        } catch (error) {
+          if (seq !== scheduleSeqRef.current) return
+          setScheduleLoading(false)
+          setScheduleError('douyin_operation_request_failed')
+        }
+      }, [applyScheduleRows, applyScheduleRowStates])
+
+      const loadScheduleBoard = useCallback(async () => {
+        scheduleLoadedRef.current = true
+        setScheduleLoading(true)
+        setScheduleError(null)
+        try {
+          const result = await post({ action: 'accounts.list' })
+          if (!result || result.status !== 'ready') {
+            // 账号列表失败给错误态 + 重试（§5.3 空态表），不冒充「暂无抖音账号」（review P3-5）。
+            setScheduleLoading(false)
+            setScheduleError((result && result.reason) || 'douyin_operation_request_failed')
+            return
+          }
+          const merged = Array.isArray(result.accounts) ? result.accounts : []
+          // 墓碑账号不进看板（§9.2 第 2 条）：只保留 deleteState === 'none'。
+          const active = merged.filter(account => account.deleteState === 'none')
+          setScheduleAccounts(active)
+          if (!active.length) {
+            applyScheduleRows([])
+            applyScheduleRowStates({})
+            scheduleAccountIdRef.current = null
+            setScheduleAccountId(null)
+            setScheduleLoading(false)
+            return
+          }
+          const preferred = active.find(item => item.accountId === scheduleAccountIdRef.current)
+          const first = preferred || active[0]
+          scheduleAccountIdRef.current = first.accountId
+          setScheduleAccountId(first.accountId)
+          await loadScheduleRows(first.accountId)
+        } catch (error) {
+          setScheduleLoading(false)
+          setScheduleError('douyin_operation_request_failed')
+        }
+      }, [applyScheduleRows, applyScheduleRowStates, loadScheduleRows])
+
+      useEffect(() => {
+        if (tab === 'schedule' && !scheduleLoadedRef.current) {
+          loadScheduleBoard().catch(() => {})
+        }
+      }, [tab, loadScheduleBoard])
+
+      const refreshScheduleBoard = useCallback(() => {
+        // 行级「刷新」按钮：重拉当前账号列表（failed/conflict/unknown 的解除路径）。
+        if (scheduleAccountIdRef.current) loadScheduleRows(scheduleAccountIdRef.current).catch(() => {})
+        else loadScheduleBoard().catch(() => {})
+      }, [loadScheduleRows, loadScheduleBoard])
+
+      const editScheduleCell = useCallback((rowId, field, value) => {
+        applyScheduleRows(prev => prev.map(item => (item.rowId === rowId ? { ...item, [field]: value } : item)))
+        const state = scheduleRowStatesRef.current[rowId]
+        if (!state) return
+        if (state.status === 'saving' || state.status === 'failed') {
+          // queued 语义（§9.4 第 2 条）：saving 中只合并待提交快照不发送第二个请求；
+          // failed 保留用户输入（§9.4 第 5 条），同键重试时随快照一起提交。
+          applyScheduleRowStates(prev => ({
+            ...prev,
+            [rowId]: { ...prev[rowId], dirtySnapshot: mergeDirtyPatch(prev[rowId], field, value) },
+          }))
+        }
+        // conflict/unknown 行输入只读，事件不会到达。
+      }, [applyScheduleRows, applyScheduleRowStates])
+
+      const performScheduleSave = useCallback(async (rowId, reuseKey = false) => {
+        const row = scheduleRowsRef.current.find(item => item.rowId === rowId)
+        const state = scheduleRowStatesRef.current[rowId]
+        if (!row || !state) return
+        if (state.status === 'saving' || state.status === 'queued' || state.status === 'conflict' || state.status === 'unknown') return
+        if (state.status === 'failed' && !reuseKey) return
+        const key = reuseKey && state.idempotencyKey ? state.idempotencyKey : scheduleUpdateIdempotencyKey(rowId)
+        applyScheduleRowStates(prev => ({
+          ...prev,
+          [rowId]: {
+            ...createRowState(state.expectedVersion),
+            status: 'saving',
+            operation: 'save',
+            idempotencyKey: key,
+            dirtySnapshot: prev[rowId] ? prev[rowId].dirtySnapshot : null,
+            lastServerError: null,
+          },
+        }))
+        flashScheduleHint('保存中…', 'saving')
+        let result
+        try {
+          result = await post({
+            action: 'schedule.rowUpdate',
+            accountId: row.accountId,
+            rowId,
+            expectedVersion: Number(state.expectedVersion),
+            confirm: true,
+            idempotencyKey: key,
+            ...buildServerSnapshot(row),
+          })
+        } catch (error) {
+          const timedOut = Boolean(error) && error.name === 'TimeoutError'
+          applyScheduleRowStates(prev => ({
+            ...prev,
+            [rowId]: {
+              ...(prev[rowId] || createRowState(state.expectedVersion)),
+              status: timedOut ? 'unknown' : 'failed',
+              operation: 'save',
+              idempotencyKey: key,
+              lastServerError: timedOut ? null : 'douyin_operation_request_failed',
+            },
+          }))
+          flashScheduleHint(scheduleErrorCopy(timedOut ? 'IDEMPOTENCY_OUTCOME_UNKNOWN' : 'douyin_operation_request_failed'), 'error')
+          return
+        }
+        if (result.status !== 'ready') {
+          const reason = result.reason || 'douyin_operation_request_failed'
+          const nextStatus = rowStatusOnFailure(reason)
+          applyScheduleRowStates(prev => ({
+            ...prev,
+            [rowId]: {
+              ...(prev[rowId] || createRowState(state.expectedVersion)),
+              status: nextStatus,
+              operation: 'save',
+              idempotencyKey: key,
+              lastServerError: reason,
+            },
+          }))
+          flashScheduleHint(scheduleErrorCopy(reason), 'error')
+          return
+        }
+        const serverRow = toUiRow(result.data && result.data.row)
+        if (!serverRow) {
+          applyScheduleRowStates(prev => ({
+            ...prev,
+            [rowId]: { ...(prev[rowId] || createRowState(state.expectedVersion)), status: 'failed', operation: 'save', idempotencyKey: key, lastServerError: 'douyin_operation_request_failed' },
+          }))
+          flashScheduleHint(scheduleErrorCopy('douyin_operation_request_failed'), 'error')
+          return
+        }
+        const dirty = scheduleRowStatesRef.current[rowId] && scheduleRowStatesRef.current[rowId].dirtySnapshot
+        if (dirty) {
+          // 队列快照（§9.4 第 3 条）：合并到最新服务器行；仍有差异则用新键提交一次。
+          const merged = { ...serverRow, ...dirty }
+          applyScheduleRows(prev => prev.map(item => (item.rowId === rowId ? merged : item)))
+          applyScheduleRowStates(prev => ({ ...prev, [rowId]: createRowState(serverRow.rowVersion) }))
+          if (dirtyResubmitNeeded(serverRow, merged)) {
+            performScheduleSaveRef.current(rowId)
+          } else {
+            flashScheduleHint('已保存', 'ok')
+          }
+          return
+        }
+        applyScheduleRows(prev => prev.map(item => (item.rowId === rowId ? serverRow : item)))
+        applyScheduleRowStates(prev => ({ ...prev, [rowId]: createRowState(serverRow.rowVersion) }))
+        flashScheduleHint('已保存', 'ok')
+      }, [applyScheduleRows, applyScheduleRowStates, flashScheduleHint])
+      performScheduleSaveRef.current = performScheduleSave
+
+      const handleScheduleBlur = useCallback((rowId, field, value) => {
+        editScheduleCell(rowId, field, value)
+        const state = scheduleRowStatesRef.current[rowId]
+        // 失焦保存（§9.6 第 1 条）；saving 中自动走队列；failed 保持锁定等显式重试。
+        if (!state || state.status === 'idle') performScheduleSaveRef.current(rowId)
+      }, [editScheduleCell])
+
+      const handleScheduleCheckbox = useCallback((rowId, field, checked) => {
+        editScheduleCell(rowId, field, checked)
+        const state = scheduleRowStatesRef.current[rowId]
+        if (!state || state.status === 'idle') performScheduleSaveRef.current(rowId)
+      }, [editScheduleCell])
+
+      const handleSchedulePlatformToggle = useCallback((rowId, platformValue, checked) => {
+        const row = scheduleRowsRef.current.find(item => item.rowId === rowId)
+        if (!row) return
+        const current = Array.isArray(row.publishPlatforms) ? row.publishPlatforms : []
+        const nextSet = checked
+          ? Array.from(new Set([...current, platformValue]))
+          : current.filter(value => value !== platformValue)
+        // 与 tools DTO 同口径：白名单重读 + 去重 + 固定顺序。
+        const ordered = SCHEDULE_PLATFORMS.map(item => item.value).filter(value => nextSet.includes(value))
+        editScheduleCell(rowId, 'publishPlatforms', ordered)
+        const state = scheduleRowStatesRef.current[rowId]
+        if (!state || state.status === 'idle') performScheduleSaveRef.current(rowId)
+      }, [editScheduleCell])
+
+      const performScheduleDelete = useCallback(async (rowId, reuseKey = null) => {
+        const row = scheduleRowsRef.current.find(item => item.rowId === rowId)
+        const state = scheduleRowStatesRef.current[rowId]
+        if (!row || !state) return
+        const key = reuseKey || scheduleDeleteIdempotencyKey(rowId)
+        setScheduleDeleteBusy(true)
+        applyScheduleRowStates(prev => ({
+          ...prev,
+          [rowId]: {
+            ...createRowState(state.expectedVersion),
+            status: 'saving',
+            operation: 'delete',
+            idempotencyKey: key,
+            lastServerError: null,
+          },
+        }))
+        let result
+        try {
+          result = await post({
+            action: 'schedule.rowDelete',
+            accountId: row.accountId,
+            rowId,
+            expectedVersion: Number(state.expectedVersion),
+            confirm: true,
+            idempotencyKey: key,
+          })
+        } catch (error) {
+          const timedOut = Boolean(error) && error.name === 'TimeoutError'
+          setScheduleDeleteBusy(false)
+          setScheduleDeleteTarget(null)
+          if (timedOut) {
+            applyScheduleRowStates(prev => ({
+              ...prev,
+              [rowId]: { ...(prev[rowId] || createRowState(state.expectedVersion)), status: 'unknown', operation: 'delete', idempotencyKey: key },
+            }))
+            flashScheduleHint(scheduleErrorCopy('IDEMPOTENCY_OUTCOME_UNKNOWN'), 'error')
+          } else {
+            applyScheduleRowStates(prev => ({ ...prev, [rowId]: createRowState(state.expectedVersion) }))
+            flashScheduleHint(scheduleErrorCopy('douyin_operation_request_failed'), 'error')
+          }
+          return
+        }
+        setScheduleDeleteBusy(false)
+        setScheduleDeleteTarget(null)
+        if (result.status !== 'ready') {
+          const reason = result.reason || 'douyin_operation_request_failed'
+          if (reason === 'IDEMPOTENCY_OUTCOME_UNKNOWN') {
+            applyScheduleRowStates(prev => ({
+              ...prev,
+              [rowId]: { ...(prev[rowId] || createRowState(state.expectedVersion)), status: 'unknown', operation: 'delete', idempotencyKey: key },
+            }))
+          } else if (reason === 'SCHEDULE_ROW_CONFLICT') {
+            applyScheduleRowStates(prev => ({
+              ...prev,
+              [rowId]: { ...(prev[rowId] || createRowState(state.expectedVersion)), status: 'conflict', operation: 'delete', idempotencyKey: null },
+            }))
+          } else {
+            // SCHEDULE_ROW_NOT_FOUND 等确定性失败：行回到 idle，提示刷新。
+            applyScheduleRowStates(prev => ({ ...prev, [rowId]: createRowState(state.expectedVersion) }))
+          }
+          flashScheduleHint(scheduleErrorCopy(reason), 'error')
+          return
+        }
+        // 删除成功：直接清除本地行与行级状态，不读取/不复用旧 row_version（§9.4 第 4 条）。
+        applyScheduleRows(prev => prev.filter(item => item.rowId !== rowId))
+        applyScheduleRowStates(prev => {
+          const next = { ...prev }
+          delete next[rowId]
+          return next
+        })
+        flashScheduleHint('已删除', 'ok')
+      }, [applyScheduleRows, applyScheduleRowStates, flashScheduleHint])
+
+      const openScheduleDelete = useCallback((rowId) => {
+        const state = scheduleRowStatesRef.current[rowId]
+        // 非 idle 行禁删（§9.4 第 9 条）；删除确认框只在 idle 打开。
+        if (state && state.status !== 'idle') {
+          flashScheduleHint('该行存在未完成的保存或删除，完成后才能删除', 'error')
+          return
+        }
+        setScheduleDeleteTarget(rowId)
+      }, [flashScheduleHint])
+
+      const retryScheduleRow = useCallback((rowId) => {
+        const state = scheduleRowStatesRef.current[rowId]
+        if (!state || !state.idempotencyKey) return
+        if (state.operation === 'delete') {
+          performScheduleDelete(rowId, state.idempotencyKey)
+        } else {
+          performScheduleSaveRef.current(rowId, true)
+        }
+      }, [performScheduleDelete])
+
+      const discardScheduleRow = useCallback((rowId) => {
+        // 显式放弃修改（§9.4 第 5 条）：以服务器为准重拉整行。
+        applyScheduleRowStates(prev => ({ ...prev, [rowId]: createRowState((prev[rowId] || {}).expectedVersion || '1') }))
+        refreshScheduleBoard()
+      }, [applyScheduleRowStates, refreshScheduleBoard])
+
+      const switchScheduleAccount = useCallback((accountId) => {
+        if (!accountId || accountId === scheduleAccountIdRef.current) return
+        if (scheduleCreatingRef.current) {
+          // 新增行在途禁止切换（review P1-1）：在途 create 的响应归属发起账号。
+          flashScheduleHint('正在新增行，请等待完成后再切换账号', 'error')
+          return
+        }
+        if (!canSwitchAccount(scheduleRowStatesRef.current)) {
+          flashScheduleHint('有未完成的保存，请先完成、刷新或放弃修改', 'error')
+          return
+        }
+        scheduleAccountIdRef.current = accountId
+        setScheduleAccountId(accountId)
+        // 切换即清空旧账号行（review P3-4）：避免加载期间旧账号数据瞬时残留。
+        applyScheduleRows([])
+        applyScheduleRowStates({})
+        loadScheduleRows(accountId).catch(() => {})
+      }, [applyScheduleRows, applyScheduleRowStates, flashScheduleHint, loadScheduleRows])
+
+      const createScheduleRow = useCallback(async () => {
+        if (scheduleCreatingRef.current) return
+        const accountId = scheduleAccountIdRef.current
+        if (!accountId) return
+        // 发起时刻的列表序号与账号：切换账号会推进 seq（loadScheduleRows），
+        // 在途 create 的迟到响应据此丢弃——绝不把 A 账号的新行 append 进 B 的看板。
+        const seq = scheduleSeqRef.current
+        scheduleCreatingRef.current = true
+        setScheduleCreating(true)
+        // 超时/unknown 保留 create 键，重试复用（§9.5 第 5 条）；否则每次点击新键。
+        const key = scheduleCreateRetryKeyRef.current || scheduleCreateIdempotencyKey()
+        scheduleCreateRetryKeyRef.current = null
+        let result
+        try {
+          result = await post({
+            action: 'schedule.rowCreate',
+            accountId,
+            confirm: true,
+            idempotencyKey: key,
+          })
+        } catch (error) {
+          if (Boolean(error) && error.name === 'TimeoutError') scheduleCreateRetryKeyRef.current = key
+          flashScheduleHint(scheduleErrorCopy('douyin_operation_request_failed'), 'error')
+          scheduleCreatingRef.current = false
+          setScheduleCreating(false)
+          return
+        }
+        scheduleCreatingRef.current = false
+        setScheduleCreating(false)
+        if (seq !== scheduleSeqRef.current) {
+          // 发起后已切换账号/重拉列表：新行已落库但属发起账号，刷新后自然可见；
+          // 迟到响应不插入当前看板（review P1-1：防跨账号串板）。
+          return
+        }
+        if (result.status !== 'ready') {
+          const reason = result.reason || 'douyin_operation_request_failed'
+          if (reason === 'IDEMPOTENCY_OUTCOME_UNKNOWN') scheduleCreateRetryKeyRef.current = key
+          flashScheduleHint(scheduleErrorCopy(reason), 'error')
+          return
+        }
+        const row = toUiRow(result.data && result.data.row)
+        if (!row || row.accountId !== accountId) {
+          flashScheduleHint(scheduleErrorCopy('douyin_operation_request_failed'), 'error')
+          return
+        }
+        // 服务端成功才插入本地表格（§9.5 第 4 条：失败不插入伪行）；追加到列表末尾。
+        applyScheduleRows(prev => [...prev, row])
+        applyScheduleRowStates(prev => ({ ...prev, [row.rowId]: createRowState(row.rowVersion) }))
+        setScheduleFocusRowId(row.rowId)
+        flashScheduleHint('已新增行，可直接录入', 'ok')
+      }, [applyScheduleRows, applyScheduleRowStates, flashScheduleHint])
+
       const geneSeqRef = useRef(0)
       const loadGeneRecords = useCallback(async ({ more = false, filters = null } = {}) => {
         // 乱序守卫（materialSeqRef 同法）：chip 连点/搜索连发时先发后至的旧响应不得覆盖新结果
@@ -9800,6 +10727,12 @@ window.__ModuleLoader__.load({
               onClick: () => { setTab('videos'); setAiModalOpen(false) },
             }, t('tabVideos')),
             h('button', {
+              type: 'button', 'aria-current': tab === 'schedule' || undefined,
+              // 发布排期看板（RQ-2026-013 §5.1）：账号作品之后、素材看板之前；进入
+              // 本 Tab 同样收起 AI 弹框（跨 Tab 不残留弹层）。
+              onClick: () => { setTab('schedule'); setAiModalOpen(false) },
+            }, t('tabSchedule')),
+            h('button', {
               type: 'button', 'aria-current': tab === 'material' || undefined,
               // 进入素材看板 Tab 收起 AI 弹框（跨 Tab 不残留弹层）；离开 Tab 停采集轮询。
               // 页签顺序（2026-10-29 真机验收定稿）：素材看板置于爆款拆解之前。
@@ -9826,7 +10759,7 @@ window.__ModuleLoader__.load({
           // 左侧账号管理栏只在「视频数据」Tab 显示（UI 优化方案 §3.1）；
           // 账号总览/单账号分析与爆款拆解/基因库使用完整宽度内容区（ydo-body-full 单列）；
           // 顺位与 nav 一致（基因库在 AI 报表之前，用户 2026-11-06 指示）。
-          h('div', { className: `ydo-body${tab === 'overview' || tab === 'breakdown' || tab === 'material' || tab === 'gene' || tab === 'report' ? ' ydo-body-full' : ''}` },
+          h('div', { className: `ydo-body${tab === 'overview' || tab === 'breakdown' || tab === 'material' || tab === 'gene' || tab === 'report' || tab === 'schedule' ? ' ydo-body-full' : ''}` },
             tab === 'videos' ? left : null,
             tab === 'overview' && analysisAccountId
               ? h('section', { className: 'ydo-right', 'aria-label': t('accountHotWorks') },
@@ -9980,6 +10913,40 @@ window.__ModuleLoader__.load({
                       onStatusFilterChange: setBdStatusFilter,
                       t,
                     })))
+              : tab === 'schedule'
+              ? h(SchedulePage, {
+                loading: scheduleLoading,
+                errorReason: scheduleError,
+                accounts: scheduleAccounts,
+                activeAccountId: scheduleAccountId,
+                rows: scheduleRows,
+                rowStates: scheduleRowStates,
+                hint: scheduleHint,
+                creating: scheduleCreating,
+                deleteTarget: scheduleDeleteTarget,
+                deleteBusy: scheduleDeleteBusy,
+                deleteTargetSequence: scheduleDeleteTarget,
+                ownerSuggestions: collectOwnerSuggestions(scheduleAccounts, scheduleRows),
+                focusRowId: scheduleFocusRowId,
+                // 账号栏头像复用既有 AccountAvatar（§9.2 第 5 条：真实 avatar，空回退首字）。
+                renderAvatar: account => h(AccountAvatar, { account }),
+                actions: {
+                  onBoardRetry: refreshScheduleBoard,
+                  onCreate: createScheduleRow,
+                  onEditCell: editScheduleCell,
+                  onBlurCell: handleScheduleBlur,
+                  onCheckbox: handleScheduleCheckbox,
+                  onPlatformToggle: handleSchedulePlatformToggle,
+                  onDelete: openScheduleDelete,
+                  onConfirmDelete: () => { performScheduleDelete(scheduleDeleteTarget).catch(() => {}) },
+                  onCancelDelete: () => { if (!scheduleDeleteBusy) setScheduleDeleteTarget(null) },
+                  onSwitchAccount: switchScheduleAccount,
+                  onRetry: retryScheduleRow,
+                  onDiscard: discardScheduleRow,
+                  onRefresh: refreshScheduleBoard,
+                  focusRef: scheduleFocusRef,
+                },
+              })
               : tab === 'report'
               ? h('section', { className: 'ydo-right ydo-report-page', 'aria-label': t('tabReport'), ref: reportSectionRef },
                 reportActionError
@@ -10519,7 +11486,52 @@ window.__ModuleLoader__.load({
     /* 总览爆款行 / 分析页爆款表（2026-11-04 同方案）：行级背景 + 左竖条（非 sticky 表格）。 */
     .ydo-ov-hot-row-promoted{background:color-mix(in srgb,#d83931 6%,transparent);box-shadow:inset 3px 0 0 #d83931}
     .ydo-ov-hot-title .ydo-promo-pill{margin-left:6px}
-    ${REPORT_CSS_TEXT}${MATERIAL_CSS_TEXT}${GENE_CSS_TEXT}`;
+    ${REPORT_CSS_TEXT}${MATERIAL_CSS_TEXT}${GENE_CSS_TEXT}
+    /* 发布排期看板（RQ-2026-013 §10）：新增样式严格限定 ydo-schedule-* 白名单
+       （实施文档 §6.2），颜色一律 --dsw-* 主题变量（不照抄 Demo 兜底固定色），
+       深浅色主题自适应由变量承载。 */
+    .ydo-schedule-page{gap:12px}
+    .ydo-schedule-toolbar-main{display:flex;align-items:center;gap:10px;min-width:0}
+    .ydo-schedule-current-account{display:inline-flex;align-items:center;gap:8px;min-width:0;padding:6px 10px;border:1px solid var(--dsw-alias-border-l1);border-radius:6px;background:var(--dsw-alias-bg-layer-1);font-size:var(--dsh-content-font-size-secondary,13px);color:var(--dsw-alias-label-secondary)}
+    .ydo-schedule-current-account strong{max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--dsw-alias-label-primary)}
+    .ydo-schedule-actions{margin-left:auto;display:flex;align-items:center;gap:8px}
+    .ydo-schedule-table{width:100%;min-width:1380px;border-collapse:separate;border-spacing:0;table-layout:auto}
+    .ydo-schedule-table th,.ydo-schedule-table td{padding:8px 10px;border-right:1px solid var(--dsw-alias-border-l1);border-bottom:1px solid var(--dsw-alias-border-l1);vertical-align:middle;text-align:left;font-size:var(--dsh-content-font-size-secondary,13px)}
+    .ydo-schedule-table th:last-child,.ydo-schedule-table td:last-child{border-right:0}
+    .ydo-schedule-table thead th{position:sticky;top:0;z-index:3;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary);font-weight:700;line-height:1.3}
+    .ydo-schedule-table thead th small{display:block;margin-top:3px;color:var(--dsw-alias-label-secondary);font-size:12px;font-weight:600}
+    .ydo-schedule-table tbody tr.ydo-schedule-row-saving{background:color-mix(in srgb,var(--dsw-alias-brand-primary) 8%,transparent)}
+    .ydo-schedule-table tbody tr.ydo-schedule-row-error{background:color-mix(in srgb,var(--dsw-alias-state-error-primary) 7%,transparent)}
+    .ydo-schedule-sequence-cell,.ydo-schedule-delete-cell{position:sticky;z-index:2;width:76px;min-width:76px;background:var(--dsw-alias-bg-layer-1);text-align:center;font-variant-numeric:tabular-nums;font-weight:650}
+    .ydo-schedule-sequence-cell{left:0}
+    .ydo-schedule-delete-cell{right:0}
+    thead .ydo-schedule-sequence-cell,thead .ydo-schedule-delete-cell{z-index:4;background:var(--dsw-alias-bg-layer-2)}
+    .ydo-schedule-delete-button{display:inline-grid;width:32px;height:32px;place-items:center;border:1px solid transparent;border-radius:6px;background:transparent;color:var(--dsw-alias-label-secondary);cursor:pointer}
+    .ydo-schedule-delete-button:hover{color:var(--dsw-alias-state-error-primary);background:color-mix(in srgb,var(--dsw-alias-state-error-primary) 9%,transparent)}
+    .ydo-schedule-delete-button:disabled{opacity:.45;cursor:default}
+    .ydo-schedule-cell-input,.ydo-schedule-cell-textarea{width:100%;min-height:34px;padding:6px 8px;border:1px solid transparent;border-radius:6px;background:transparent;color:inherit;font:inherit;font-size:var(--dsh-content-font-size-secondary,13px)}
+    .ydo-schedule-cell-textarea{min-width:128px;resize:none;line-height:1.45}
+    .ydo-schedule-cell-input:hover,.ydo-schedule-cell-textarea:hover{border-color:var(--dsw-alias-border-l2)}
+    .ydo-schedule-cell-input:focus,.ydo-schedule-cell-textarea:focus{border-color:var(--dsw-alias-brand-primary);background:var(--dsw-alias-bg-layer-1);outline:0;box-shadow:0 0 0 2px color-mix(in srgb,var(--dsw-alias-brand-primary) 22%,transparent)}
+    .ydo-schedule-cell-input:disabled,.ydo-schedule-cell-textarea:disabled{opacity:.6;cursor:not-allowed}
+    input[type="date"].ydo-schedule-cell-input{min-width:112px}
+    .ydo-schedule-checkbox{display:inline-grid;width:22px;height:22px;place-items:center}
+    .ydo-schedule-checkbox input{width:18px;height:18px;margin:0;accent-color:var(--dsw-alias-state-success-primary);cursor:pointer}
+    .ydo-schedule-checkbox input:disabled{cursor:not-allowed}
+    .ydo-schedule-checkbox-label{display:inline-flex;align-items:center;gap:5px;white-space:nowrap}
+    .ydo-schedule-platform-group{display:grid;gap:4px;min-width:118px;color:var(--dsw-alias-label-primary)}
+    .ydo-schedule-platform-group label{display:inline-flex;align-items:center;gap:5px;font-size:13px;white-space:nowrap}
+    .ydo-schedule-platform-group input{width:15px;height:15px;margin:0;accent-color:var(--dsw-alias-brand-primary);cursor:pointer}
+    .ydo-schedule-platform-group input:disabled{cursor:not-allowed}
+    .ydo-schedule-empty td{padding:40px 16px;color:var(--dsw-alias-label-secondary);text-align:center}
+    .ydo-schedule-account-bar{display:flex;align-items:center;gap:10px;padding:12px;overflow-x:auto;border:1px solid var(--dsw-alias-border-l1);border-radius:8px;background:var(--dsw-alias-bg-layer-1)}
+    .ydo-schedule-account-bar-label{flex:none;margin-right:2px;color:var(--dsw-alias-label-secondary);font-size:var(--dsh-content-font-size-secondary,13px);white-space:nowrap}
+    .ydo-schedule-account-chip{display:inline-flex;align-items:center;gap:8px;flex:none;min-width:132px;padding:7px 10px;border:1px solid var(--dsw-alias-border-l1);border-radius:8px;background:var(--dsw-alias-bg-layer-1);color:inherit;font:inherit;text-align:left;cursor:pointer}
+    .ydo-schedule-account-chip:hover{background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary)}
+    .ydo-schedule-account-chip[aria-pressed="true"]{border-color:var(--dsw-alias-brand-primary);background:color-mix(in srgb,var(--dsw-alias-brand-primary) 8%,transparent);color:var(--dsw-alias-label-primary);font-weight:650}
+    .ydo-schedule-account-text{display:grid;gap:2px;min-width:0}
+    .ydo-schedule-account-name{max-width:112px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .ydo-schedule-account-meta{color:var(--dsw-alias-label-secondary);font-size:12px}`;
     function apply(ctx) {
       ctx.effect(() => ctx.locale.register(NS, copy), 'dofe-yootun-douyin-operation: dictionaries')
       ctx.effect(() => { window.addEventListener(OVERLAY_EVENT, closeOtherOverlay); return () => window.removeEventListener(OVERLAY_EVENT, closeOtherOverlay) }, 'dofe-yootun-douyin-operation: exclusive-overlay')

@@ -14,6 +14,8 @@ const reportUiImport = /^import \{[\s\S]*?\} from '\.\/report-ui\.js'\n/m
 const materialUiImport = /^import \{[\s\S]*?\} from '\.\/material-ui\.js'\n/m
 // RQ-2026-010：gene-ui（爆款基因库 Tab）同法内联（先于引用它的 client.js）。
 const geneUiImport = /^import \{[\s\S]*?\} from '\.\/gene-ui\.js'\n/m
+// RQ-2026-013：schedule-ui（发布排期看板 Tab）同法内联（先于引用它的 client.js）。
+const scheduleUiImport = /^import \{[\s\S]*?\} from '\.\/schedule-ui\.js'\n/m
 // 1015 阶段 3：trend-chart 共享模块（作品详情弹框与 analysis-ui 复用同一趋势绘制），
 // 与 ui-format 同法内联（先于引用它的 analysis-ui / client.js）。
 const trendChartImport = /^import \{[^}]*\} from '\.\/trend-chart\.js'\n/m
@@ -34,6 +36,8 @@ if (!materialUiImport.test(source)) throw new Error('build: material-ui import n
 source = source.replace(materialUiImport, '')
 if (!geneUiImport.test(source)) throw new Error('build: gene-ui import not found in client.js')
 source = source.replace(geneUiImport, '')
+if (!scheduleUiImport.test(source)) throw new Error('build: schedule-ui import not found in client.js')
+source = source.replace(scheduleUiImport, '')
 if (!trendChartImport.test(source)) throw new Error('build: trend-chart import not found in client.js')
 source = source.replace(trendChartImport, '')
 const strip = text => text.replace(/^export (?=(function|const|let))/gm, '').trimEnd()
@@ -110,7 +114,16 @@ const geneUi = strip(
     ),
   ),
 )
-const body = [uiFormat, selectUi, trendChart, overviewUi, analysisUi, breakdownUi, reportUi, materialUi, geneUi, source.trimEnd()].join('\n\n')
+// schedule-ui 与 gene-ui 同法（顶部 const React + 解构 h；hooks 走 React.xxx；
+// 无 ui-format 依赖——排期看板的投影/状态机辅助函数自包含）。
+const scheduleUi = strip(
+  stripUiPrimitivesRequire(
+    stripOverviewStyleReact(
+      await readFile(new URL('src/schedule-ui.js', root), 'utf8'),
+    ),
+  ),
+)
+const body = [uiFormat, selectUi, trendChart, overviewUi, analysisUi, breakdownUi, reportUi, materialUi, geneUi, scheduleUi, source.trimEnd()].join('\n\n')
 
 await mkdir(new URL('lib/', root), { recursive: true })
 await writeFile(new URL('lib/client.js', root), ['window.__ModuleLoader__.load({', '  id: "@dofe/dsh-yootun-douyin-operation",', '  factory: (require) => {', '    var module = { exports: {} };', '    var exports = module.exports;', body.split('\n').map(line => line === '' ? '' : `    ${line}`).join('\n'), '    return module.exports;', '  },', '});', ''].join('\n'))

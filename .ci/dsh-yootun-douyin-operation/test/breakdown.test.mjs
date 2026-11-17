@@ -850,7 +850,7 @@ test('client.js 接线：Tab 顺序、body-full、Esc 链、轮询守卫、弹�
   assert.ok(clientSource.indexOf("t('tabBreakdown')") < clientSource.indexOf("t('tabGene')"))
   assert.ok(clientSource.indexOf("t('tabGene')") < clientSource.indexOf("t('tabReport')"), '基因库在 AI 报表之前')
   // 拆解 Tab 与总览共用单列完整宽度内容区。
-  assert.match(clientSource, /tab === 'overview' \|\| tab === 'breakdown' \|\| tab === 'material' \|\| tab === 'gene' \|\| tab === 'report' \? ' ydo-body-full'/u)
+  assert.match(clientSource, /tab === 'overview' \|\| tab === 'breakdown' \|\| tab === 'material' \|\| tab === 'gene' \|\| tab === 'report' \|\| tab === 'schedule' \? ' ydo-body-full'/u)
   // Esc 链：下载弹窗与改写弹框都在 AI 弹框之后、overlay 之前。
   assert.ok(
     clientSource.indexOf("else if (aiModalOpen) setAiModalOpen(false)") < clientSource.indexOf("else if (bdRewriteOpen) setBdRewriteOpen(false)")

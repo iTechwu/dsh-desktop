@@ -151,6 +151,14 @@ export function apply(ctx, overrides = {}) {
               return send(res, 200, await handleAccountOwnerSet(deps, toolCtx, body))
             case 'work.promotion.save':
               return send(res, 200, await handleWorkPromotionSave(deps, toolCtx, body))
+            case 'schedule.list':
+              return send(res, 200, await handleScheduleList(deps, toolCtx, body))
+            case 'schedule.rowCreate':
+              return send(res, 200, await handleScheduleRowCreate(deps, toolCtx, body))
+            case 'schedule.rowUpdate':
+              return send(res, 200, await handleScheduleRowUpdate(deps, toolCtx, body))
+            case 'schedule.rowDelete':
+              return send(res, 200, await handleScheduleRowDelete(deps, toolCtx, body))
             case 'material.seeds.list':
               return send(res, 200, await handleMaterialSeedsList(deps, toolCtx))
             case 'material.keyword.upsert':
@@ -1415,6 +1423,181 @@ async function handleWorkPromotionSave(deps, ctx, body) {
 }
 
 // ---------------------------------------------------------------------------
+// 发布排期看板（RQ-2026-013 开发文档 §8.2）：4 个 Host action 一一映射排期
+// MCP 工具。Host 只做参数白名单裁剪与稳定错误收敛，不做业务 SQL；文本字段
+// strip、空串转 null、超长显式拒绝（沿用 P2-7 教训，不静默截断）；rowId/
+// expectedVersion 用十进制数值并限正整数（§11.2 大整数边界：UI/Host 传十进制，
+// MCP 层再转整数校验 1..2^63-1）；幂等键模板含 rowId 段校验（与服务端
+// require_schedule_*_key 同口径，防跨行重放在 Host 即拦截）。日志只允许
+// action/工具名/稳定错误码/有界 ID（分发层 catch + safeErrorCode 已满足），
+// 不输出 content/note/asset_link/幂等键原文。
+// ---------------------------------------------------------------------------
+
+const SCHEDULE_CREATE_KEY_PATTERN = /^douyin:publish_schedule_create:.+$/
+const SCHEDULE_UPDATE_KEY_PATTERN = /^douyin:publish_schedule_update:(\d+):(.+)$/
+const SCHEDULE_DELETE_KEY_PATTERN = /^douyin:publish_schedule_delete:(\d+):(.+)$/
+const SCHEDULE_PLATFORM_VALUES = new Set(['xhs', 'douyin', 'wx_channels'])
+
+/** 文本字段：strip、空归 null、超长显式拒绝（非法类型同样拒绝）。 */
+function scheduleTextField(value, max) {
+  if (value === null || value === undefined) return { value: null }
+  if (typeof value !== 'string') return { reason: 'VALIDATION_ERROR' }
+  const trimmed = value.trim()
+  if (trimmed === '') return { value: null }
+  if (trimmed.length > max) return { reason: 'VALIDATION_ERROR' }
+  return { value: trimmed }
+}
+
+/** 日期字段：strip、空归 null、非 YYYY-MM-DD 形态显式拒绝（与 tools ISO date 对齐）。 */
+function scheduleDateField(value) {
+  const field = scheduleTextField(value, 10)
+  if (field.reason) return field
+  if (field.value !== null && !/^\d{4}-\d{2}-\d{2}$/.test(field.value)) {
+    return { reason: 'VALIDATION_ERROR' }
+  }
+  return field
+}
+
+/** rowId/expectedVersion：正整数（安全整数范围内；>2^53 的十进制串在此拒绝）。
+ * 边界口径（§11.2）：MCP 层校验 1..2^63-1；JS Number 安全整数上界 2^53 之外的
+ * rowId 在客户端已不可精确表达，故 Host 以 Number.MAX_SAFE_INTEGER 拒绝是
+ * 2^63 边界的客户端侧前移（实际 DB identity 序列远达不到）。 */
+function scheduleInteger(value) {
+  if (typeof value === 'number') {
+    if (!Number.isInteger(value) || value < 1 || value > Number.MAX_SAFE_INTEGER) {
+      return { reason: 'row_id_invalid' }
+    }
+    return { value }
+  }
+  if (typeof value === 'string' && value !== '') {
+    const num = Number(value)
+    if (Number.isInteger(num) && num >= 1 && num <= Number.MAX_SAFE_INTEGER) return { value: num }
+  }
+  return { reason: 'row_id_invalid' }
+}
+
+function schedulePlatforms(value) {
+  if (!Array.isArray(value)) return { reason: 'VALIDATION_ERROR' }
+  if (value.length > 3) return { reason: 'VALIDATION_ERROR' }
+  for (const item of value) {
+    if (!SCHEDULE_PLATFORM_VALUES.has(item)) return { reason: 'VALIDATION_ERROR' }
+  }
+  return { value }
+}
+
+async function handleScheduleList(deps, ctx, body) {
+  const accountId = cleanString(body.accountId, MAX_ID)
+  if (!accountId) return { status: 'error', reason: 'account_id_required' }
+  const payload = await callTool(ctx, 'douyin_publish_schedule_list', { accountId })
+  return { status: 'ready', data: payload }
+}
+
+function requireScheduleConfirm(body) {
+  return body.confirm === true ? null : { status: 'error', reason: 'CONFIRMATION_REQUIRED' }
+}
+
+function requireScheduleKey(body, pattern, rowId) {
+  const idempotencyKey = cleanString(body.idempotencyKey, 128)
+  if (!idempotencyKey) return { status: 'error', reason: 'idempotency_key_required' }
+  if (rowId === undefined) {
+    if (!pattern.test(idempotencyKey)) return { status: 'error', reason: 'INVALID_IDEMPOTENCY_KEY' }
+    return null
+  }
+  const match = pattern.exec(idempotencyKey)
+  // 键内 rowId 段必须与参数行一致（防跨行重放，与 tools require_schedule_*_key 同口径）。
+  if (!match || match[1] !== String(rowId)) {
+    return { status: 'error', reason: 'INVALID_IDEMPOTENCY_KEY' }
+  }
+  return null
+}
+
+async function handleScheduleRowCreate(deps, ctx, body) {
+  const accountId = cleanString(body.accountId, MAX_ID)
+  if (!accountId) return { status: 'error', reason: 'account_id_required' }
+  const confirmation = requireScheduleConfirm(body)
+  if (confirmation) return confirmation
+  const keyError = requireScheduleKey(body, SCHEDULE_CREATE_KEY_PATTERN)
+  if (keyError) return keyError
+  const payload = await callTool(ctx, 'douyin_publish_schedule_row_create', {
+    accountId,
+    confirm: true,
+    idempotencyKey: cleanString(body.idempotencyKey, 128),
+  })
+  return { status: 'ready', data: payload }
+}
+
+async function handleScheduleRowUpdate(deps, ctx, body) {
+  const accountId = cleanString(body.accountId, MAX_ID)
+  if (!accountId) return { status: 'error', reason: 'account_id_required' }
+  const rowId = scheduleInteger(body.rowId)
+  if (rowId.reason) return { status: 'error', reason: rowId.reason }
+  const expectedVersion = scheduleInteger(body.expectedVersion)
+  if (expectedVersion.reason) return { status: 'error', reason: 'version_invalid' }
+  const confirmation = requireScheduleConfirm(body)
+  if (confirmation) return confirmation
+  const keyError = requireScheduleKey(body, SCHEDULE_UPDATE_KEY_PATTERN, rowId.value)
+  if (keyError) return keyError
+  if (typeof body.shootingStatus !== 'boolean' || typeof body.published !== 'boolean') {
+    return { status: 'error', reason: 'VALIDATION_ERROR' }
+  }
+  const platforms = schedulePlatforms(body.publishPlatforms)
+  if (platforms.reason) return { status: 'error', reason: platforms.reason }
+  const videoContent = scheduleTextField(body.videoContent, 2000)
+  if (videoContent.reason) return { status: 'error', reason: videoContent.reason }
+  const note = scheduleTextField(body.note, 2000)
+  if (note.reason) return { status: 'error', reason: note.reason }
+  const assetLink = scheduleTextField(body.assetLink, 2048)
+  if (assetLink.reason) return { status: 'error', reason: assetLink.reason }
+  const shootingOwner = scheduleTextField(body.shootingOwner, 128)
+  if (shootingOwner.reason) return { status: 'error', reason: shootingOwner.reason }
+  const editingOwner = scheduleTextField(body.editingOwner, 128)
+  if (editingOwner.reason) return { status: 'error', reason: editingOwner.reason }
+  const shootingDate = scheduleDateField(body.shootingDate)
+  if (shootingDate.reason) return { status: 'error', reason: shootingDate.reason }
+  const publishDate = scheduleDateField(body.publishDate)
+  if (publishDate.reason) return { status: 'error', reason: publishDate.reason }
+  const payload = await callTool(ctx, 'douyin_publish_schedule_row_update', {
+    accountId,
+    rowId: rowId.value,
+    expectedVersion: expectedVersion.value,
+    shootingDate: shootingDate.value,
+    videoContent: videoContent.value,
+    shootingStatus: body.shootingStatus,
+    published: body.published,
+    assetLink: assetLink.value,
+    note: note.value,
+    publishDate: publishDate.value,
+    publishPlatforms: platforms.value,
+    shootingOwner: shootingOwner.value,
+    editingOwner: editingOwner.value,
+    confirm: true,
+    idempotencyKey: cleanString(body.idempotencyKey, 128),
+  })
+  return { status: 'ready', data: payload }
+}
+
+async function handleScheduleRowDelete(deps, ctx, body) {
+  const accountId = cleanString(body.accountId, MAX_ID)
+  if (!accountId) return { status: 'error', reason: 'account_id_required' }
+  const rowId = scheduleInteger(body.rowId)
+  if (rowId.reason) return { status: 'error', reason: rowId.reason }
+  const expectedVersion = scheduleInteger(body.expectedVersion)
+  if (expectedVersion.reason) return { status: 'error', reason: 'version_invalid' }
+  const confirmation = requireScheduleConfirm(body)
+  if (confirmation) return confirmation
+  const keyError = requireScheduleKey(body, SCHEDULE_DELETE_KEY_PATTERN, rowId.value)
+  if (keyError) return keyError
+  const payload = await callTool(ctx, 'douyin_publish_schedule_row_delete', {
+    accountId,
+    rowId: rowId.value,
+    expectedVersion: expectedVersion.value,
+    confirm: true,
+    idempotencyKey: cleanString(body.idempotencyKey, 128),
+  })
+  return { status: 'ready', data: payload }
+}
+
+// ---------------------------------------------------------------------------
 // 爆款素材看板（RQ-2026-008 开发文档 §6.2）：9 个 Host action 一一映射
 // viral_video MCP 工具，页面与 MCP 客户端走到的业务逻辑完全一致。
 // Host 要求（§6.2）：cleanString 限字段、clampInt 限分页与数值、只透传声明
@@ -1714,6 +1897,10 @@ export {
   projectLogin,
   handleAccountOwnerSet,
   handleWorkPromotionSave,
+  handleScheduleList,
+  handleScheduleRowCreate,
+  handleScheduleRowUpdate,
+  handleScheduleRowDelete,
   handleOverviewExport,
   handleGeneSearch,
   handleGeneGet,

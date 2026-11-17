@@ -19,6 +19,12 @@ export const TOOL_NAMES = [
   // 负责人与投流（RQ-2026-009）：同步写（幂等键），不调模型、不派生 Worker
   'douyin_account_owner_set',
   'douyin_work_promotion_save',
+  // 发布排期看板（RQ-2026-013）：list 只读；create/update/delete 同步写（幂等键，
+  // update/delete 键内嵌 rowId），不调模型、不派生 Worker
+  'douyin_publish_schedule_list',
+  'douyin_publish_schedule_row_create',
+  'douyin_publish_schedule_row_update',
+  'douyin_publish_schedule_row_delete',
   'douyin_account_list',
   'douyin_work_list',
   'douyin_work_get',
@@ -190,6 +196,13 @@ const ALLOWED_ERROR_CODES = new Set([
   'GENE_EXTRACT_QUALITY_FAILED',
   'GENE_EXTRACT_LEASE_EXPIRED',
   'GENE_EXTRACT_DISABLED',
+  // 发布排期看板（RQ-2026-013 §8.1）稳定码：行不存在/版本冲突/校验失败。
+  // 通用码（ACCOUNT_NOT_FOUND/ACCOUNT_NOT_ACCESSIBLE/CONFIRMATION_REQUIRED/
+  // INVALID_IDEMPOTENCY_KEY/IDEMPOTENCY_CONFLICT/IDEMPOTENCY_IN_PROGRESS/
+  // IDEMPOTENCY_OUTCOME_UNKNOWN/VALIDATION_ERROR）沿用上方白名单既有登记。
+  'SCHEDULE_ROW_NOT_FOUND',
+  'SCHEDULE_ROW_CONFLICT',
+  'SCHEDULE_VALIDATION_ERROR',
 ])
 
 export class ToolsUnavailableError extends Error {
@@ -427,6 +440,15 @@ export const accountOwnerSetIdempotencyKey = requestUuid => `douyin:account_owne
 // 投流保存键（RQ-2026-009 §5.2）：douyin:work_promotion_save:{requestUuid}，每次点击
 // 生成全新 UUID；同键重放返回首次落库结果，stale-add 冲突由服务端 fail-closed 兜底。
 export const workPromotionSaveIdempotencyKey = requestUuid => `douyin:work_promotion_save:${requestUuid}`
+// 发布排期看板键（RQ-2026-013 §4）：create 键不嵌行号；update/delete 键内嵌
+// rowId（服务端 require_schedule_update/delete_idempotency_key 强制键内 rowId
+// 与参数行一致，防跨行重放）。attemptUuid 由调用方生成（同一次点击重试复用）。
+export const publishScheduleCreateIdempotencyKey = attemptUuid =>
+  `douyin:publish_schedule_create:${attemptUuid}`
+export const publishScheduleUpdateIdempotencyKey = (rowId, attemptUuid) =>
+  `douyin:publish_schedule_update:${rowId}:${attemptUuid}`
+export const publishScheduleDeleteIdempotencyKey = (rowId, attemptUuid) =>
+  `douyin:publish_schedule_delete:${rowId}:${attemptUuid}`
 // 爆款素材看板受理键（RQ-2026-008 §6.3）：每次点击生成全新 UUID，页面内不跨点击
 // 复用；服务端对键只做 1–128 长度约束、无模板校验，前缀标识来源便于审计。
 // seed-search 三类受理拒绝（空池/互斥/越界）零副作用可同键重试，收据不烧键。

@@ -274,3 +274,38 @@ test('素材看板（RQ-2026-008）：3 个受理键模板与 index.js 校验一
   assert.ok(viralVideoKeywordUpsertIdempotencyKey('u'.repeat(36)).length <= 128)
   assert.ok(viralVideoAccountUpsertIdempotencyKey('u'.repeat(36)).length <= 128)
 })
+
+test('发布排期看板（RQ-2026-013）：4 个工具进入 TOOL_NAMES 白名单', async () => {
+  const { TOOL_NAMES } = await import('../src/tools-client.js')
+  for (const name of [
+    'douyin_publish_schedule_list',
+    'douyin_publish_schedule_row_create',
+    'douyin_publish_schedule_row_update',
+    'douyin_publish_schedule_row_delete',
+  ]) {
+    assert.ok(TOOL_NAMES.includes(name), `missing ${name}`)
+  }
+})
+
+test('发布排期看板（RQ-2026-013）：3 个新稳定码进入错误码白名单', () => {
+  for (const code of ['SCHEDULE_ROW_NOT_FOUND', 'SCHEDULE_ROW_CONFLICT', 'SCHEDULE_VALIDATION_ERROR']) {
+    assert.equal(safeErrorCode(code), code)
+  }
+  // 通用码沿用既有白名单；白名单外仍收敛兜底
+  assert.equal(safeErrorCode('ACCOUNT_NOT_ACCESSIBLE'), 'ACCOUNT_NOT_ACCESSIBLE')
+  assert.equal(safeErrorCode('SCHEDULE_INTERNAL_CODE'), 'douyin_operation_request_failed')
+})
+
+test('发布排期看板（RQ-2026-013）：幂等键模板与 tools 服务端 require_schedule_* 一致', async () => {
+  const {
+    publishScheduleCreateIdempotencyKey,
+    publishScheduleUpdateIdempotencyKey,
+    publishScheduleDeleteIdempotencyKey,
+  } = await import('../src/tools-client.js')
+  assert.equal(publishScheduleCreateIdempotencyKey('uuid-a'), 'douyin:publish_schedule_create:uuid-a')
+  assert.equal(publishScheduleUpdateIdempotencyKey('42', 'uuid-b'), 'douyin:publish_schedule_update:42:uuid-b')
+  assert.equal(publishScheduleDeleteIdempotencyKey('7', 'uuid-c'), 'douyin:publish_schedule_delete:7:uuid-c')
+  // 最长 64 位数字 rowId + 36 位 UUID 仍在服务端 1–128 约束内（31+20+1+36=88）
+  const longest = publishScheduleUpdateIdempotencyKey('9'.repeat(20), 'u'.repeat(36))
+  assert.ok(longest.length <= 128)
+})

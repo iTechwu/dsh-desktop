@@ -32,6 +32,22 @@ import {
 } from './report-ui.js'
 import { MATERIAL_CSS_TEXT, MaterialConfirmDialog, MaterialPage } from './material-ui.js'
 import { GENE_CSS_TEXT, GenePage } from './gene-ui.js'
+import {
+  SCHEDULE_BUSINESS_HEADERS,
+  SCHEDULE_ERROR_REASON_COPY,
+  SCHEDULE_PLATFORMS,
+  SchedulePage,
+  buildServerSnapshot,
+  canSwitchAccount,
+  collectOwnerSuggestions,
+  dirtyResubmitNeeded,
+  compareRowId,
+  createRowState,
+  mergeDirtyPatch,
+  rowStatusOnFailure,
+  scheduleErrorCopy,
+  toUiRow,
+} from './schedule-ui.js'
 import { TREND_PAD_BOTTOM, TREND_PAD_TOP, TREND_PAD_X, TREND_VIEW_HEIGHT, TrendChart, trendLayout, useMeasuredWidth } from './trend-chart.js'
 
 const React = require('react')
@@ -71,6 +87,13 @@ const vvAccountUpsertIdempotencyKey = () => `douyin:vv_account_upsert:${newAiAna
 // tools-client.js——不在 lib 构建拼接白名单内（同 reportRegenerateIdempotencyKey 先例）。
 const accountOwnerSetIdempotencyKey = () => `douyin:account_owner_set:${newAiAnalysisRequestUuid()}`
 const workPromotionSaveIdempotencyKey = () => `douyin:work_promotion_save:${newAiAnalysisRequestUuid()}`
+// 发布排期看板受理键（RQ-2026-013 §4）：与 index.js SCHEDULE_*_KEY_PATTERN、
+// tools 服务端 require_schedule_*_idempotency_key 模板一致。create 键不嵌行号；
+// update/delete 键内嵌 rowId（服务端强制键内 rowId 与参数行一致）。attemptUuid
+// 由页面生成，同一次点击重试复用同一 UUID（unknown/failed 同键恢复）。
+const scheduleCreateIdempotencyKey = () => `douyin:publish_schedule_create:${newAiAnalysisRequestUuid()}`
+const scheduleUpdateIdempotencyKey = rowId => `douyin:publish_schedule_update:${rowId}:${newAiAnalysisRequestUuid()}`
+const scheduleDeleteIdempotencyKey = rowId => `douyin:publish_schedule_delete:${rowId}:${newAiAnalysisRequestUuid()}`
 // 爆款基因知识库受理键（RQ-2026-010 §8.1）：与 index.js GENE_*_KEY_PATTERN、
 // tools 服务端 require_viral_video_knowledge_*_key 模板一致；每次点击生成全新
 // UUID，键内嵌 recordId 不嵌 attempt 之外的自由文本。不 import tools-client.js
@@ -323,6 +346,8 @@ const copy = {
     tabReport: 'AI 报表',
     tabMaterial: '爆款素材看板',
     tabGene: '爆款基因库',
+    // 发布排期看板 Tab（RQ-2026-013）：置于账号作品之后、素材看板之前。
+    tabSchedule: '发布排期看板',
     geneTitle: '爆款基因库',
     bdNewTitle: '发起拆解',
     bdShareLabel: '抖音分享链接', bdSharePlaceholder: '粘贴抖音视频分享链接，如 https://v.douyin.com/xxxx/',
@@ -563,6 +588,8 @@ const copy = {
     tabReport: 'AI reports',
     tabMaterial: 'Hot Materials',
     tabGene: 'Gene Library',
+    // Publish schedule board tab (RQ-2026-013): after account works, before materials.
+    tabSchedule: 'Publish schedule',
     geneTitle: 'Gene Library',
     bdNewTitle: 'Start a breakdown',
     bdShareLabel: 'Douyin share link', bdSharePlaceholder: 'Paste a Douyin video share link, e.g. https://v.douyin.com/xxxx/',
@@ -3175,6 +3202,435 @@ function Overlay({ t }) {
   const [geneRetryError, setGeneRetryError] = useState(null)
   const geneRegenAttemptRef = useRef(null)
 
+  // ---------------------------------------------------------------------------
+  // 发布排期看板（RQ-2026-013 §9）：状态机编排。行值存 scheduleRows（UI camelCase，
+  // schedule-ui.toUiRow 投影），行状态存 scheduleRowStates；异步回调经 ref 镜像读
+  // 最新值。转移规则（§9.4）：saving 期间编辑只合并 dirtySnapshot（queued 语义），
+  // 成功后与服务器行比对差异决定是否用新键补提交一次；SCHEDULE_ROW_CONFLICT →
+  // conflict 只读；超时/IDEMPOTENCY_OUTCOME_UNKNOWN → unknown 只允许同键重试或
+  // 刷新；确定性失败 → failed 保留输入（同键重试/刷新/显式放弃）。保存与删除互斥；
+  // 账号切换在任一行 saving/queued/unknown、或 failed/conflict 持有未提交修改时禁止。
+  // ---------------------------------------------------------------------------
+  const [scheduleAccounts, setScheduleAccounts] = useState([])
+  const [scheduleAccountId, setScheduleAccountId] = useState(null)
+  const [scheduleRows, setScheduleRows] = useState([])
+  const [scheduleRowStates, setScheduleRowStates] = useState({})
+  const [scheduleLoading, setScheduleLoading] = useState(false)
+  const [scheduleError, setScheduleError] = useState(null)
+  const [scheduleHint, setScheduleHint] = useState(null)
+  const [scheduleCreating, setScheduleCreating] = useState(false)
+  const [scheduleDeleteTarget, setScheduleDeleteTarget] = useState(null)
+  const [scheduleDeleteBusy, setScheduleDeleteBusy] = useState(false)
+  const [scheduleFocusRowId, setScheduleFocusRowId] = useState(null)
+  const scheduleSeqRef = useRef(0)
+  const scheduleRowsRef = useRef([])
+  const scheduleRowStatesRef = useRef({})
+  const scheduleAccountIdRef = useRef(null)
+  const scheduleLoadedRef = useRef(false)
+  const scheduleHintTimerRef = useRef(null)
+  const scheduleCreateRetryKeyRef = useRef(null)
+  const scheduleCreatingRef = useRef(false)
+  const performScheduleSaveRef = useRef(() => {})
+  const scheduleFocusRef = useCallback(node => {
+    if (node) node.focus()
+  }, [])
+
+  const applyScheduleRows = useCallback(updater => {
+    const next = typeof updater === 'function' ? updater(scheduleRowsRef.current) : updater
+    scheduleRowsRef.current = next
+    setScheduleRows(next)
+  }, [])
+  const applyScheduleRowStates = useCallback(updater => {
+    const next = typeof updater === 'function' ? updater(scheduleRowStatesRef.current) : updater
+    scheduleRowStatesRef.current = next
+    setScheduleRowStates(next)
+  }, [])
+
+  const flashScheduleHint = useCallback((text, tone = '') => {
+    setScheduleHint(text ? { text, tone } : null)
+    window.clearTimeout(scheduleHintTimerRef.current)
+    // 错误提示常驻到下一次动作；ok/saving 类提示自动回落。
+    if (text && tone !== 'error') {
+      scheduleHintTimerRef.current = window.setTimeout(() => setScheduleHint(null), 2600)
+    }
+  }, [])
+
+  const loadScheduleRows = useCallback(async (accountId) => {
+    if (!accountId) return
+    const seq = ++scheduleSeqRef.current
+    setScheduleLoading(true)
+    setScheduleError(null)
+    try {
+      const result = await post({ action: 'schedule.list', accountId })
+      if (seq !== scheduleSeqRef.current) return
+      if (result.status !== 'ready') {
+        setScheduleLoading(false)
+        setScheduleError(result.reason || 'douyin_operation_request_failed')
+        return
+      }
+      const data = result.data || {}
+      const rawRows = Array.isArray(data.rows) ? data.rows : []
+      const uiRows = rawRows.map(toUiRow).filter(Boolean).sort((a, b) => compareRowId(a.rowId, b.rowId))
+      applyScheduleRows(uiRows)
+      const states = {}
+      for (const row of uiRows) states[row.rowId] = createRowState(row.rowVersion)
+      applyScheduleRowStates(states)
+      setScheduleLoading(false)
+    } catch (error) {
+      if (seq !== scheduleSeqRef.current) return
+      setScheduleLoading(false)
+      setScheduleError('douyin_operation_request_failed')
+    }
+  }, [applyScheduleRows, applyScheduleRowStates])
+
+  const loadScheduleBoard = useCallback(async () => {
+    scheduleLoadedRef.current = true
+    setScheduleLoading(true)
+    setScheduleError(null)
+    try {
+      const result = await post({ action: 'accounts.list' })
+      if (!result || result.status !== 'ready') {
+        // 账号列表失败给错误态 + 重试（§5.3 空态表），不冒充「暂无抖音账号」（review P3-5）。
+        setScheduleLoading(false)
+        setScheduleError((result && result.reason) || 'douyin_operation_request_failed')
+        return
+      }
+      const merged = Array.isArray(result.accounts) ? result.accounts : []
+      // 墓碑账号不进看板（§9.2 第 2 条）：只保留 deleteState === 'none'。
+      const active = merged.filter(account => account.deleteState === 'none')
+      setScheduleAccounts(active)
+      if (!active.length) {
+        applyScheduleRows([])
+        applyScheduleRowStates({})
+        scheduleAccountIdRef.current = null
+        setScheduleAccountId(null)
+        setScheduleLoading(false)
+        return
+      }
+      const preferred = active.find(item => item.accountId === scheduleAccountIdRef.current)
+      const first = preferred || active[0]
+      scheduleAccountIdRef.current = first.accountId
+      setScheduleAccountId(first.accountId)
+      await loadScheduleRows(first.accountId)
+    } catch (error) {
+      setScheduleLoading(false)
+      setScheduleError('douyin_operation_request_failed')
+    }
+  }, [applyScheduleRows, applyScheduleRowStates, loadScheduleRows])
+
+  useEffect(() => {
+    if (tab === 'schedule' && !scheduleLoadedRef.current) {
+      loadScheduleBoard().catch(() => {})
+    }
+  }, [tab, loadScheduleBoard])
+
+  const refreshScheduleBoard = useCallback(() => {
+    // 行级「刷新」按钮：重拉当前账号列表（failed/conflict/unknown 的解除路径）。
+    if (scheduleAccountIdRef.current) loadScheduleRows(scheduleAccountIdRef.current).catch(() => {})
+    else loadScheduleBoard().catch(() => {})
+  }, [loadScheduleRows, loadScheduleBoard])
+
+  const editScheduleCell = useCallback((rowId, field, value) => {
+    applyScheduleRows(prev => prev.map(item => (item.rowId === rowId ? { ...item, [field]: value } : item)))
+    const state = scheduleRowStatesRef.current[rowId]
+    if (!state) return
+    if (state.status === 'saving' || state.status === 'failed') {
+      // queued 语义（§9.4 第 2 条）：saving 中只合并待提交快照不发送第二个请求；
+      // failed 保留用户输入（§9.4 第 5 条），同键重试时随快照一起提交。
+      applyScheduleRowStates(prev => ({
+        ...prev,
+        [rowId]: { ...prev[rowId], dirtySnapshot: mergeDirtyPatch(prev[rowId], field, value) },
+      }))
+    }
+    // conflict/unknown 行输入只读，事件不会到达。
+  }, [applyScheduleRows, applyScheduleRowStates])
+
+  const performScheduleSave = useCallback(async (rowId, reuseKey = false) => {
+    const row = scheduleRowsRef.current.find(item => item.rowId === rowId)
+    const state = scheduleRowStatesRef.current[rowId]
+    if (!row || !state) return
+    if (state.status === 'saving' || state.status === 'queued' || state.status === 'conflict' || state.status === 'unknown') return
+    if (state.status === 'failed' && !reuseKey) return
+    const key = reuseKey && state.idempotencyKey ? state.idempotencyKey : scheduleUpdateIdempotencyKey(rowId)
+    applyScheduleRowStates(prev => ({
+      ...prev,
+      [rowId]: {
+        ...createRowState(state.expectedVersion),
+        status: 'saving',
+        operation: 'save',
+        idempotencyKey: key,
+        dirtySnapshot: prev[rowId] ? prev[rowId].dirtySnapshot : null,
+        lastServerError: null,
+      },
+    }))
+    flashScheduleHint('保存中…', 'saving')
+    let result
+    try {
+      result = await post({
+        action: 'schedule.rowUpdate',
+        accountId: row.accountId,
+        rowId,
+        expectedVersion: Number(state.expectedVersion),
+        confirm: true,
+        idempotencyKey: key,
+        ...buildServerSnapshot(row),
+      })
+    } catch (error) {
+      const timedOut = Boolean(error) && error.name === 'TimeoutError'
+      applyScheduleRowStates(prev => ({
+        ...prev,
+        [rowId]: {
+          ...(prev[rowId] || createRowState(state.expectedVersion)),
+          status: timedOut ? 'unknown' : 'failed',
+          operation: 'save',
+          idempotencyKey: key,
+          lastServerError: timedOut ? null : 'douyin_operation_request_failed',
+        },
+      }))
+      flashScheduleHint(scheduleErrorCopy(timedOut ? 'IDEMPOTENCY_OUTCOME_UNKNOWN' : 'douyin_operation_request_failed'), 'error')
+      return
+    }
+    if (result.status !== 'ready') {
+      const reason = result.reason || 'douyin_operation_request_failed'
+      const nextStatus = rowStatusOnFailure(reason)
+      applyScheduleRowStates(prev => ({
+        ...prev,
+        [rowId]: {
+          ...(prev[rowId] || createRowState(state.expectedVersion)),
+          status: nextStatus,
+          operation: 'save',
+          idempotencyKey: key,
+          lastServerError: reason,
+        },
+      }))
+      flashScheduleHint(scheduleErrorCopy(reason), 'error')
+      return
+    }
+    const serverRow = toUiRow(result.data && result.data.row)
+    if (!serverRow) {
+      applyScheduleRowStates(prev => ({
+        ...prev,
+        [rowId]: { ...(prev[rowId] || createRowState(state.expectedVersion)), status: 'failed', operation: 'save', idempotencyKey: key, lastServerError: 'douyin_operation_request_failed' },
+      }))
+      flashScheduleHint(scheduleErrorCopy('douyin_operation_request_failed'), 'error')
+      return
+    }
+    const dirty = scheduleRowStatesRef.current[rowId] && scheduleRowStatesRef.current[rowId].dirtySnapshot
+    if (dirty) {
+      // 队列快照（§9.4 第 3 条）：合并到最新服务器行；仍有差异则用新键提交一次。
+      const merged = { ...serverRow, ...dirty }
+      applyScheduleRows(prev => prev.map(item => (item.rowId === rowId ? merged : item)))
+      applyScheduleRowStates(prev => ({ ...prev, [rowId]: createRowState(serverRow.rowVersion) }))
+      if (dirtyResubmitNeeded(serverRow, merged)) {
+        performScheduleSaveRef.current(rowId)
+      } else {
+        flashScheduleHint('已保存', 'ok')
+      }
+      return
+    }
+    applyScheduleRows(prev => prev.map(item => (item.rowId === rowId ? serverRow : item)))
+    applyScheduleRowStates(prev => ({ ...prev, [rowId]: createRowState(serverRow.rowVersion) }))
+    flashScheduleHint('已保存', 'ok')
+  }, [applyScheduleRows, applyScheduleRowStates, flashScheduleHint])
+  performScheduleSaveRef.current = performScheduleSave
+
+  const handleScheduleBlur = useCallback((rowId, field, value) => {
+    editScheduleCell(rowId, field, value)
+    const state = scheduleRowStatesRef.current[rowId]
+    // 失焦保存（§9.6 第 1 条）；saving 中自动走队列；failed 保持锁定等显式重试。
+    if (!state || state.status === 'idle') performScheduleSaveRef.current(rowId)
+  }, [editScheduleCell])
+
+  const handleScheduleCheckbox = useCallback((rowId, field, checked) => {
+    editScheduleCell(rowId, field, checked)
+    const state = scheduleRowStatesRef.current[rowId]
+    if (!state || state.status === 'idle') performScheduleSaveRef.current(rowId)
+  }, [editScheduleCell])
+
+  const handleSchedulePlatformToggle = useCallback((rowId, platformValue, checked) => {
+    const row = scheduleRowsRef.current.find(item => item.rowId === rowId)
+    if (!row) return
+    const current = Array.isArray(row.publishPlatforms) ? row.publishPlatforms : []
+    const nextSet = checked
+      ? Array.from(new Set([...current, platformValue]))
+      : current.filter(value => value !== platformValue)
+    // 与 tools DTO 同口径：白名单重读 + 去重 + 固定顺序。
+    const ordered = SCHEDULE_PLATFORMS.map(item => item.value).filter(value => nextSet.includes(value))
+    editScheduleCell(rowId, 'publishPlatforms', ordered)
+    const state = scheduleRowStatesRef.current[rowId]
+    if (!state || state.status === 'idle') performScheduleSaveRef.current(rowId)
+  }, [editScheduleCell])
+
+  const performScheduleDelete = useCallback(async (rowId, reuseKey = null) => {
+    const row = scheduleRowsRef.current.find(item => item.rowId === rowId)
+    const state = scheduleRowStatesRef.current[rowId]
+    if (!row || !state) return
+    const key = reuseKey || scheduleDeleteIdempotencyKey(rowId)
+    setScheduleDeleteBusy(true)
+    applyScheduleRowStates(prev => ({
+      ...prev,
+      [rowId]: {
+        ...createRowState(state.expectedVersion),
+        status: 'saving',
+        operation: 'delete',
+        idempotencyKey: key,
+        lastServerError: null,
+      },
+    }))
+    let result
+    try {
+      result = await post({
+        action: 'schedule.rowDelete',
+        accountId: row.accountId,
+        rowId,
+        expectedVersion: Number(state.expectedVersion),
+        confirm: true,
+        idempotencyKey: key,
+      })
+    } catch (error) {
+      const timedOut = Boolean(error) && error.name === 'TimeoutError'
+      setScheduleDeleteBusy(false)
+      setScheduleDeleteTarget(null)
+      if (timedOut) {
+        applyScheduleRowStates(prev => ({
+          ...prev,
+          [rowId]: { ...(prev[rowId] || createRowState(state.expectedVersion)), status: 'unknown', operation: 'delete', idempotencyKey: key },
+        }))
+        flashScheduleHint(scheduleErrorCopy('IDEMPOTENCY_OUTCOME_UNKNOWN'), 'error')
+      } else {
+        applyScheduleRowStates(prev => ({ ...prev, [rowId]: createRowState(state.expectedVersion) }))
+        flashScheduleHint(scheduleErrorCopy('douyin_operation_request_failed'), 'error')
+      }
+      return
+    }
+    setScheduleDeleteBusy(false)
+    setScheduleDeleteTarget(null)
+    if (result.status !== 'ready') {
+      const reason = result.reason || 'douyin_operation_request_failed'
+      if (reason === 'IDEMPOTENCY_OUTCOME_UNKNOWN') {
+        applyScheduleRowStates(prev => ({
+          ...prev,
+          [rowId]: { ...(prev[rowId] || createRowState(state.expectedVersion)), status: 'unknown', operation: 'delete', idempotencyKey: key },
+        }))
+      } else if (reason === 'SCHEDULE_ROW_CONFLICT') {
+        applyScheduleRowStates(prev => ({
+          ...prev,
+          [rowId]: { ...(prev[rowId] || createRowState(state.expectedVersion)), status: 'conflict', operation: 'delete', idempotencyKey: null },
+        }))
+      } else {
+        // SCHEDULE_ROW_NOT_FOUND 等确定性失败：行回到 idle，提示刷新。
+        applyScheduleRowStates(prev => ({ ...prev, [rowId]: createRowState(state.expectedVersion) }))
+      }
+      flashScheduleHint(scheduleErrorCopy(reason), 'error')
+      return
+    }
+    // 删除成功：直接清除本地行与行级状态，不读取/不复用旧 row_version（§9.4 第 4 条）。
+    applyScheduleRows(prev => prev.filter(item => item.rowId !== rowId))
+    applyScheduleRowStates(prev => {
+      const next = { ...prev }
+      delete next[rowId]
+      return next
+    })
+    flashScheduleHint('已删除', 'ok')
+  }, [applyScheduleRows, applyScheduleRowStates, flashScheduleHint])
+
+  const openScheduleDelete = useCallback((rowId) => {
+    const state = scheduleRowStatesRef.current[rowId]
+    // 非 idle 行禁删（§9.4 第 9 条）；删除确认框只在 idle 打开。
+    if (state && state.status !== 'idle') {
+      flashScheduleHint('该行存在未完成的保存或删除，完成后才能删除', 'error')
+      return
+    }
+    setScheduleDeleteTarget(rowId)
+  }, [flashScheduleHint])
+
+  const retryScheduleRow = useCallback((rowId) => {
+    const state = scheduleRowStatesRef.current[rowId]
+    if (!state || !state.idempotencyKey) return
+    if (state.operation === 'delete') {
+      performScheduleDelete(rowId, state.idempotencyKey)
+    } else {
+      performScheduleSaveRef.current(rowId, true)
+    }
+  }, [performScheduleDelete])
+
+  const discardScheduleRow = useCallback((rowId) => {
+    // 显式放弃修改（§9.4 第 5 条）：以服务器为准重拉整行。
+    applyScheduleRowStates(prev => ({ ...prev, [rowId]: createRowState((prev[rowId] || {}).expectedVersion || '1') }))
+    refreshScheduleBoard()
+  }, [applyScheduleRowStates, refreshScheduleBoard])
+
+  const switchScheduleAccount = useCallback((accountId) => {
+    if (!accountId || accountId === scheduleAccountIdRef.current) return
+    if (scheduleCreatingRef.current) {
+      // 新增行在途禁止切换（review P1-1）：在途 create 的响应归属发起账号。
+      flashScheduleHint('正在新增行，请等待完成后再切换账号', 'error')
+      return
+    }
+    if (!canSwitchAccount(scheduleRowStatesRef.current)) {
+      flashScheduleHint('有未完成的保存，请先完成、刷新或放弃修改', 'error')
+      return
+    }
+    scheduleAccountIdRef.current = accountId
+    setScheduleAccountId(accountId)
+    // 切换即清空旧账号行（review P3-4）：避免加载期间旧账号数据瞬时残留。
+    applyScheduleRows([])
+    applyScheduleRowStates({})
+    loadScheduleRows(accountId).catch(() => {})
+  }, [applyScheduleRows, applyScheduleRowStates, flashScheduleHint, loadScheduleRows])
+
+  const createScheduleRow = useCallback(async () => {
+    if (scheduleCreatingRef.current) return
+    const accountId = scheduleAccountIdRef.current
+    if (!accountId) return
+    // 发起时刻的列表序号与账号：切换账号会推进 seq（loadScheduleRows），
+    // 在途 create 的迟到响应据此丢弃——绝不把 A 账号的新行 append 进 B 的看板。
+    const seq = scheduleSeqRef.current
+    scheduleCreatingRef.current = true
+    setScheduleCreating(true)
+    // 超时/unknown 保留 create 键，重试复用（§9.5 第 5 条）；否则每次点击新键。
+    const key = scheduleCreateRetryKeyRef.current || scheduleCreateIdempotencyKey()
+    scheduleCreateRetryKeyRef.current = null
+    let result
+    try {
+      result = await post({
+        action: 'schedule.rowCreate',
+        accountId,
+        confirm: true,
+        idempotencyKey: key,
+      })
+    } catch (error) {
+      if (Boolean(error) && error.name === 'TimeoutError') scheduleCreateRetryKeyRef.current = key
+      flashScheduleHint(scheduleErrorCopy('douyin_operation_request_failed'), 'error')
+      scheduleCreatingRef.current = false
+      setScheduleCreating(false)
+      return
+    }
+    scheduleCreatingRef.current = false
+    setScheduleCreating(false)
+    if (seq !== scheduleSeqRef.current) {
+      // 发起后已切换账号/重拉列表：新行已落库但属发起账号，刷新后自然可见；
+      // 迟到响应不插入当前看板（review P1-1：防跨账号串板）。
+      return
+    }
+    if (result.status !== 'ready') {
+      const reason = result.reason || 'douyin_operation_request_failed'
+      if (reason === 'IDEMPOTENCY_OUTCOME_UNKNOWN') scheduleCreateRetryKeyRef.current = key
+      flashScheduleHint(scheduleErrorCopy(reason), 'error')
+      return
+    }
+    const row = toUiRow(result.data && result.data.row)
+    if (!row || row.accountId !== accountId) {
+      flashScheduleHint(scheduleErrorCopy('douyin_operation_request_failed'), 'error')
+      return
+    }
+    // 服务端成功才插入本地表格（§9.5 第 4 条：失败不插入伪行）；追加到列表末尾。
+    applyScheduleRows(prev => [...prev, row])
+    applyScheduleRowStates(prev => ({ ...prev, [row.rowId]: createRowState(row.rowVersion) }))
+    setScheduleFocusRowId(row.rowId)
+    flashScheduleHint('已新增行，可直接录入', 'ok')
+  }, [applyScheduleRows, applyScheduleRowStates, flashScheduleHint])
+
   const geneSeqRef = useRef(0)
   const loadGeneRecords = useCallback(async ({ more = false, filters = null } = {}) => {
     // 乱序守卫（materialSeqRef 同法）：chip 连点/搜索连发时先发后至的旧响应不得覆盖新结果
@@ -3926,6 +4382,12 @@ function Overlay({ t }) {
           onClick: () => { setTab('videos'); setAiModalOpen(false) },
         }, t('tabVideos')),
         h('button', {
+          type: 'button', 'aria-current': tab === 'schedule' || undefined,
+          // 发布排期看板（RQ-2026-013 §5.1）：账号作品之后、素材看板之前；进入
+          // 本 Tab 同样收起 AI 弹框（跨 Tab 不残留弹层）。
+          onClick: () => { setTab('schedule'); setAiModalOpen(false) },
+        }, t('tabSchedule')),
+        h('button', {
           type: 'button', 'aria-current': tab === 'material' || undefined,
           // 进入素材看板 Tab 收起 AI 弹框（跨 Tab 不残留弹层）；离开 Tab 停采集轮询。
           // 页签顺序（2026-10-29 真机验收定稿）：素材看板置于爆款拆解之前。
@@ -3952,7 +4414,7 @@ function Overlay({ t }) {
       // 左侧账号管理栏只在「视频数据」Tab 显示（UI 优化方案 §3.1）；
       // 账号总览/单账号分析与爆款拆解/基因库使用完整宽度内容区（ydo-body-full 单列）；
       // 顺位与 nav 一致（基因库在 AI 报表之前，用户 2026-11-06 指示）。
-      h('div', { className: `ydo-body${tab === 'overview' || tab === 'breakdown' || tab === 'material' || tab === 'gene' || tab === 'report' ? ' ydo-body-full' : ''}` },
+      h('div', { className: `ydo-body${tab === 'overview' || tab === 'breakdown' || tab === 'material' || tab === 'gene' || tab === 'report' || tab === 'schedule' ? ' ydo-body-full' : ''}` },
         tab === 'videos' ? left : null,
         tab === 'overview' && analysisAccountId
           ? h('section', { className: 'ydo-right', 'aria-label': t('accountHotWorks') },
@@ -4106,6 +4568,40 @@ function Overlay({ t }) {
                   onStatusFilterChange: setBdStatusFilter,
                   t,
                 })))
+          : tab === 'schedule'
+          ? h(SchedulePage, {
+            loading: scheduleLoading,
+            errorReason: scheduleError,
+            accounts: scheduleAccounts,
+            activeAccountId: scheduleAccountId,
+            rows: scheduleRows,
+            rowStates: scheduleRowStates,
+            hint: scheduleHint,
+            creating: scheduleCreating,
+            deleteTarget: scheduleDeleteTarget,
+            deleteBusy: scheduleDeleteBusy,
+            deleteTargetSequence: scheduleDeleteTarget,
+            ownerSuggestions: collectOwnerSuggestions(scheduleAccounts, scheduleRows),
+            focusRowId: scheduleFocusRowId,
+            // 账号栏头像复用既有 AccountAvatar（§9.2 第 5 条：真实 avatar，空回退首字）。
+            renderAvatar: account => h(AccountAvatar, { account }),
+            actions: {
+              onBoardRetry: refreshScheduleBoard,
+              onCreate: createScheduleRow,
+              onEditCell: editScheduleCell,
+              onBlurCell: handleScheduleBlur,
+              onCheckbox: handleScheduleCheckbox,
+              onPlatformToggle: handleSchedulePlatformToggle,
+              onDelete: openScheduleDelete,
+              onConfirmDelete: () => { performScheduleDelete(scheduleDeleteTarget).catch(() => {}) },
+              onCancelDelete: () => { if (!scheduleDeleteBusy) setScheduleDeleteTarget(null) },
+              onSwitchAccount: switchScheduleAccount,
+              onRetry: retryScheduleRow,
+              onDiscard: discardScheduleRow,
+              onRefresh: refreshScheduleBoard,
+              focusRef: scheduleFocusRef,
+            },
+          })
           : tab === 'report'
           ? h('section', { className: 'ydo-right ydo-report-page', 'aria-label': t('tabReport'), ref: reportSectionRef },
             reportActionError
@@ -4645,7 +5141,52 @@ const css = `.ydo-button{display:flex;width:36px;height:36px;align-items:center;
 /* 总览爆款行 / 分析页爆款表（2026-11-04 同方案）：行级背景 + 左竖条（非 sticky 表格）。 */
 .ydo-ov-hot-row-promoted{background:color-mix(in srgb,#d83931 6%,transparent);box-shadow:inset 3px 0 0 #d83931}
 .ydo-ov-hot-title .ydo-promo-pill{margin-left:6px}
-${REPORT_CSS_TEXT}${MATERIAL_CSS_TEXT}${GENE_CSS_TEXT}`;
+${REPORT_CSS_TEXT}${MATERIAL_CSS_TEXT}${GENE_CSS_TEXT}
+/* 发布排期看板（RQ-2026-013 §10）：新增样式严格限定 ydo-schedule-* 白名单
+   （实施文档 §6.2），颜色一律 --dsw-* 主题变量（不照抄 Demo 兜底固定色），
+   深浅色主题自适应由变量承载。 */
+.ydo-schedule-page{gap:12px}
+.ydo-schedule-toolbar-main{display:flex;align-items:center;gap:10px;min-width:0}
+.ydo-schedule-current-account{display:inline-flex;align-items:center;gap:8px;min-width:0;padding:6px 10px;border:1px solid var(--dsw-alias-border-l1);border-radius:6px;background:var(--dsw-alias-bg-layer-1);font-size:var(--dsh-content-font-size-secondary,13px);color:var(--dsw-alias-label-secondary)}
+.ydo-schedule-current-account strong{max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--dsw-alias-label-primary)}
+.ydo-schedule-actions{margin-left:auto;display:flex;align-items:center;gap:8px}
+.ydo-schedule-table{width:100%;min-width:1380px;border-collapse:separate;border-spacing:0;table-layout:auto}
+.ydo-schedule-table th,.ydo-schedule-table td{padding:8px 10px;border-right:1px solid var(--dsw-alias-border-l1);border-bottom:1px solid var(--dsw-alias-border-l1);vertical-align:middle;text-align:left;font-size:var(--dsh-content-font-size-secondary,13px)}
+.ydo-schedule-table th:last-child,.ydo-schedule-table td:last-child{border-right:0}
+.ydo-schedule-table thead th{position:sticky;top:0;z-index:3;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary);font-weight:700;line-height:1.3}
+.ydo-schedule-table thead th small{display:block;margin-top:3px;color:var(--dsw-alias-label-secondary);font-size:12px;font-weight:600}
+.ydo-schedule-table tbody tr.ydo-schedule-row-saving{background:color-mix(in srgb,var(--dsw-alias-brand-primary) 8%,transparent)}
+.ydo-schedule-table tbody tr.ydo-schedule-row-error{background:color-mix(in srgb,var(--dsw-alias-state-error-primary) 7%,transparent)}
+.ydo-schedule-sequence-cell,.ydo-schedule-delete-cell{position:sticky;z-index:2;width:76px;min-width:76px;background:var(--dsw-alias-bg-layer-1);text-align:center;font-variant-numeric:tabular-nums;font-weight:650}
+.ydo-schedule-sequence-cell{left:0}
+.ydo-schedule-delete-cell{right:0}
+thead .ydo-schedule-sequence-cell,thead .ydo-schedule-delete-cell{z-index:4;background:var(--dsw-alias-bg-layer-2)}
+.ydo-schedule-delete-button{display:inline-grid;width:32px;height:32px;place-items:center;border:1px solid transparent;border-radius:6px;background:transparent;color:var(--dsw-alias-label-secondary);cursor:pointer}
+.ydo-schedule-delete-button:hover{color:var(--dsw-alias-state-error-primary);background:color-mix(in srgb,var(--dsw-alias-state-error-primary) 9%,transparent)}
+.ydo-schedule-delete-button:disabled{opacity:.45;cursor:default}
+.ydo-schedule-cell-input,.ydo-schedule-cell-textarea{width:100%;min-height:34px;padding:6px 8px;border:1px solid transparent;border-radius:6px;background:transparent;color:inherit;font:inherit;font-size:var(--dsh-content-font-size-secondary,13px)}
+.ydo-schedule-cell-textarea{min-width:128px;resize:none;line-height:1.45}
+.ydo-schedule-cell-input:hover,.ydo-schedule-cell-textarea:hover{border-color:var(--dsw-alias-border-l2)}
+.ydo-schedule-cell-input:focus,.ydo-schedule-cell-textarea:focus{border-color:var(--dsw-alias-brand-primary);background:var(--dsw-alias-bg-layer-1);outline:0;box-shadow:0 0 0 2px color-mix(in srgb,var(--dsw-alias-brand-primary) 22%,transparent)}
+.ydo-schedule-cell-input:disabled,.ydo-schedule-cell-textarea:disabled{opacity:.6;cursor:not-allowed}
+input[type="date"].ydo-schedule-cell-input{min-width:112px}
+.ydo-schedule-checkbox{display:inline-grid;width:22px;height:22px;place-items:center}
+.ydo-schedule-checkbox input{width:18px;height:18px;margin:0;accent-color:var(--dsw-alias-state-success-primary);cursor:pointer}
+.ydo-schedule-checkbox input:disabled{cursor:not-allowed}
+.ydo-schedule-checkbox-label{display:inline-flex;align-items:center;gap:5px;white-space:nowrap}
+.ydo-schedule-platform-group{display:grid;gap:4px;min-width:118px;color:var(--dsw-alias-label-primary)}
+.ydo-schedule-platform-group label{display:inline-flex;align-items:center;gap:5px;font-size:13px;white-space:nowrap}
+.ydo-schedule-platform-group input{width:15px;height:15px;margin:0;accent-color:var(--dsw-alias-brand-primary);cursor:pointer}
+.ydo-schedule-platform-group input:disabled{cursor:not-allowed}
+.ydo-schedule-empty td{padding:40px 16px;color:var(--dsw-alias-label-secondary);text-align:center}
+.ydo-schedule-account-bar{display:flex;align-items:center;gap:10px;padding:12px;overflow-x:auto;border:1px solid var(--dsw-alias-border-l1);border-radius:8px;background:var(--dsw-alias-bg-layer-1)}
+.ydo-schedule-account-bar-label{flex:none;margin-right:2px;color:var(--dsw-alias-label-secondary);font-size:var(--dsh-content-font-size-secondary,13px);white-space:nowrap}
+.ydo-schedule-account-chip{display:inline-flex;align-items:center;gap:8px;flex:none;min-width:132px;padding:7px 10px;border:1px solid var(--dsw-alias-border-l1);border-radius:8px;background:var(--dsw-alias-bg-layer-1);color:inherit;font:inherit;text-align:left;cursor:pointer}
+.ydo-schedule-account-chip:hover{background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary)}
+.ydo-schedule-account-chip[aria-pressed="true"]{border-color:var(--dsw-alias-brand-primary);background:color-mix(in srgb,var(--dsw-alias-brand-primary) 8%,transparent);color:var(--dsw-alias-label-primary);font-weight:650}
+.ydo-schedule-account-text{display:grid;gap:2px;min-width:0}
+.ydo-schedule-account-name{max-width:112px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ydo-schedule-account-meta{color:var(--dsw-alias-label-secondary);font-size:12px}`;
 function apply(ctx) {
   ctx.effect(() => ctx.locale.register(NS, copy), 'dofe-yootun-douyin-operation: dictionaries')
   ctx.effect(() => { window.addEventListener(OVERLAY_EVENT, closeOtherOverlay); return () => window.removeEventListener(OVERLAY_EVENT, closeOtherOverlay) }, 'dofe-yootun-douyin-operation: exclusive-overlay')
