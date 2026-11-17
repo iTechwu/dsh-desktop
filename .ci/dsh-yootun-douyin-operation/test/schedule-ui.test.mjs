@@ -40,6 +40,7 @@ const {
   rowHasPendingWork,
   rowStatusMeta,
   rowStatusOnFailure,
+  refreshScheduleBlocked,
   restoreUiRowFromServerSnapshot,
   savedSnapshotChanged,
   scheduleErrorCopy,
@@ -49,6 +50,7 @@ const {
   'buildServerSnapshot', 'canSwitchAccount', 'collectOwnerSuggestions', 'compareRowId',
   'createRowState', 'deleteAllowed', 'dirtyResubmitNeeded', 'mergeDirtyPatch',
   'rowHasPendingWork', 'rowStatusMeta', 'rowStatusOnFailure', 'restoreUiRowFromServerSnapshot',
+  'refreshScheduleBlocked',
   'savedSnapshotChanged',
   'scheduleErrorCopy', 'toUiRow',
 ].join(', ') + ' })', context)
@@ -278,6 +280,23 @@ test('无有效账号：只展示空态，隐藏表格与新增入口（P3-U07�
   assert.ok(!classes.includes('ydo-schedule-actions'), '空账号态不得渲染新增入口')
 })
 
+test('初始加载/账号列表失败保持 shell，不冒充无账号（真机验收 d review P1-1）', () => {
+  const base = { errorReason: null, activeAccountId: null, rows: [], rowStates: {}, hint: null,
+    creating: false, deleteTarget: null, deleteBusy: false, deleteTargetSequence: null,
+    ownerSuggestions: [], focusRowId: null, renderAvatar: noop, actions: baseActions }
+  const loadingHtml = SchedulePage({ ...base, loading: true, accounts: [] })
+  const loadingText = collectStrings(loadingHtml).join('')
+  const loadingClasses = collectClasses(loadingHtml).join(' ')
+  assert.ok(!loadingText.includes('暂无抖音账号，请先'), 'loading 不得冒充无账号')
+  assert.ok(loadingText.includes('加载中…'))
+  assert.ok(loadingClasses.includes('ydo-schedule-actions') && loadingClasses.includes('ydo-schedule-table'))
+
+  const errorHtml = SchedulePage({ ...base, loading: false, accounts: [], errorReason: 'douyin_operation_request_failed' })
+  const errorText = collectStrings(errorHtml).join('')
+  assert.ok(!errorText.includes('暂无抖音账号，请先'), '账号列表失败不得冒充无账号')
+  assert.ok(errorText.includes('请求失败，请检查网络后重试') && errorText.includes('重试'))
+})
+
 test('空排期展示引导文案；账号栏 chip 选中态可区分（P3-U08/AC-03）', () => {
   const html = SchedulePage({
     loading: false, errorReason: null, accounts: ACCOUNTS, activeAccountId: 'acc-b',
@@ -287,7 +306,9 @@ test('空排期展示引导文案；账号栏 chip 选中态可区分（P3-U08/A
   })
   const text = collectStrings(html).join('')
   assert.ok(text.includes('暂无排期，点击新增行开始录入'))
-  assert.ok(text.includes('当前账号：') && text.includes('包姐'))
+  assert.ok(!text.includes('当前账号：'), '顶部不再重复当前账号')
+  assert.ok(!text.includes('就绪'), '顶部不再显示就绪占位')
+  assert.ok(!text.includes('除序号由系统生成外'), '表格上方说明文案已删除')
   assert.ok(text.includes('保罗'))
   assert.ok(text.includes('刷新'), '工具栏应提供常驻刷新入口（放弃修改刷新失败可达）')
   // aria-pressed 区分选中态（渲染树 props 断言）
@@ -314,7 +335,7 @@ test('工具栏常驻刷新按钮在 loading/creating 时禁用（P3-015 回归�
   const actionsBody = scheduleSource.slice(actionsIdx, actionsIdx + 900)
   assert.ok(actionsBody.includes("onClick: actions.onBoardRetry"), '刷新按钮应绑定 onBoardRetry')
   assert.ok(
-    actionsBody.includes('disabled: loading || creating || undefined'),
+    /disabled:\s*loading\s*\|\|\s*creating(\s*\|\|\s*deleteBusy)?\s*\|\|\s*undefined/.test(actionsBody),
     '刷新按钮在 loading 或 creating 时禁用',
   )
   assert.ok(actionsBody.includes("'刷新'"), '工具栏刷新入口存在')
@@ -323,9 +344,37 @@ test('工具栏常驻刷新按钮在 loading/creating 时禁用（P3-015 回归�
   assert.ok(loadingHtml.includes('刷新中…') && idleHtml.includes('刷新'), '刷新入口随 loading 状态切换')
 })
 
+test('刷新与切换账号使用同一表格刷新机制（真机验收 f）', () => {
+  const refreshIdx = clientSource.indexOf('const refreshScheduleBoard')
+  const refreshBody = clientSource.slice(refreshIdx, clientSource.indexOf('const editScheduleCell', refreshIdx))
+  assert.ok(refreshBody.includes('applyScheduleRows([])'), '刷新先清空表格旧数据')
+  assert.ok(refreshBody.includes('applyScheduleRowStates({})'), '刷新先清空表格行状态')
+  assert.ok(refreshBody.includes('loadScheduleRows(scheduleAccountIdRef.current)'), '刷新当前账号排期')
+  const switchIdx = clientSource.indexOf('const switchScheduleAccount')
+  const switchBody = clientSource.slice(switchIdx, clientSource.indexOf('const createScheduleRow', switchIdx))
+  assert.ok(switchBody.includes('applyScheduleRows([])') && switchBody.includes('applyScheduleRowStates({})'))
+  assert.ok(switchBody.includes('loadScheduleRows(accountId)'))
+})
+
+test('刷新阻塞 saving/queued/dirty 行，不阻塞 unknown/conflict 的无 dirty 恢复（review P1-2）', () => {
+  const idle = createRowState('1')
+  assert.equal(refreshScheduleBlocked({ a: idle }, false), false)
+  assert.equal(refreshScheduleBlocked({ a: { ...idle, status: 'unknown' } }, false), false)
+  assert.equal(refreshScheduleBlocked({ a: { ...idle, status: 'conflict' } }, false), false)
+  for (const status of ['saving', 'queued']) {
+    assert.equal(refreshScheduleBlocked({ a: { ...idle, status } }, false), true, status)
+  }
+  assert.equal(refreshScheduleBlocked({ a: { ...idle, status: 'failed', dirtySnapshot: { note: 'x' } } }, false), true)
+  assert.equal(refreshScheduleBlocked({ a: { ...idle, status: 'unknown', dirtySnapshot: { note: 'x' } } }, false), true)
+  assert.equal(refreshScheduleBlocked({}, true), true)
+  const refreshIdx = clientSource.indexOf('const refreshScheduleBoard')
+  const refreshBody = clientSource.slice(refreshIdx, clientSource.indexOf('const editScheduleCell', refreshIdx))
+  assert.ok(refreshBody.includes('refreshScheduleBlocked(scheduleRowStatesRef.current, scheduleDeleteBusy)'))
+})
+
 test('加载失败展示错误态与重试（§5.3 空态表）', () => {
   const html = SchedulePage({
-    loading: false, errorReason: 'SCHEDULE_ROW_CONFLICT', accounts: [], activeAccountId: null,
+    loading: false, errorReason: 'SCHEDULE_ROW_CONFLICT', accounts: ACCOUNTS, activeAccountId: 'acc-b',
     rows: [], rowStates: {}, hint: null, creating: false, deleteTarget: null,
     deleteBusy: false, deleteTargetSequence: null, ownerSuggestions: [], focusRowId: null,
     renderAvatar: noop, actions: baseActions,
@@ -333,6 +382,22 @@ test('加载失败展示错误态与重试（§5.3 空态表）', () => {
   const text = collectStrings(html).join('')
   assert.ok(text.includes('数据已被更新，请刷新后重新编辑'))
   assert.ok(text.includes('重试'))
+  const classes = collectClasses(html)
+  for (const className of ['ydo-schedule-actions', 'ydo-schedule-table', 'ydo-schedule-account-chip']) {
+    assert.ok(classes.includes(className), `加载/错误时保留 ${className}`)
+  }
+  const loadingHtml = SchedulePage({
+    loading: true, errorReason: null, accounts: ACCOUNTS, activeAccountId: 'acc-b',
+    rows: [], rowStates: {}, hint: null, creating: false, deleteTarget: null,
+    deleteBusy: false, deleteTargetSequence: null, ownerSuggestions: [], focusRowId: null,
+    renderAvatar: noop, actions: baseActions,
+  })
+  const loadingText = collectStrings(loadingHtml).join('')
+  const loadingClasses = collectClasses(loadingHtml)
+  assert.ok(loadingText.includes('加载中…'), '加载状态显示在表格区')
+  for (const className of ['ydo-schedule-actions', 'ydo-schedule-table', 'ydo-schedule-account-chip']) {
+    assert.ok(loadingClasses.includes(className), `加载状态保留 ${className}`)
+  }
 })
 
 test('负责人 datalist 建议来自账号 owner_name 与历史排期（§5.6）', () => {
@@ -454,7 +519,7 @@ test('账号栏数据源：只保留 deleteState none，默认选中过滤后第
 test('样式白名单：新增 className 严格限定 ydo-schedule-* 清单，无 demo-note、无内联样式（P3-U26）', async () => {
   const scheduleModuleSource = await readFile(new URL('../src/schedule-ui.js', import.meta.url), 'utf8')
   const WHITELIST = new Set([
-    'ydo-schedule-page', 'ydo-schedule-toolbar-main', 'ydo-schedule-current-account',
+    'ydo-schedule-page',
     'ydo-schedule-actions', 'ydo-schedule-table', 'ydo-schedule-sequence-cell',
     'ydo-schedule-cell-input', 'ydo-schedule-cell-textarea', 'ydo-schedule-checkbox',
     'ydo-schedule-checkbox-label', 'ydo-schedule-platform-group', 'ydo-schedule-empty',
@@ -489,6 +554,9 @@ test('样式白名单：新增 className 严格限定 ydo-schedule-* 清单，�
   assert.ok(!scheduleCss.includes('ydo-schedule-demo-note'), '生产 CSS 不含 demo-note')
   const offendingColors = scheduleCss.match(/#[0-9a-fA-F]{3,8}\b/g) || []
   assert.deepEqual(offendingColors, [], '排期 CSS 不写死十六进制颜色，一律主题变量')
+  assert.ok(scheduleCss.includes('grid-template-rows:auto minmax(0,1fr) auto'), '表格区占满剩余高度，账号栏固定底部')
+  assert.ok(scheduleCss.includes('min-width:2230px'), '表格按内容放宽并支持横向滚动')
+  assert.ok(scheduleCss.includes('table-layout:fixed'), '列宽由 colgroup 控制')
 })
 
 // ---------------------------------------------------------------------------

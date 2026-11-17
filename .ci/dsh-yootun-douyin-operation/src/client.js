@@ -45,6 +45,7 @@ import {
   createRowState,
   mergeDirtyPatch,
   rowStatusOnFailure,
+  refreshScheduleBlocked,
   restoreUiRowFromServerSnapshot,
   savedSnapshotChanged,
   scheduleErrorCopy,
@@ -3350,10 +3351,19 @@ function Overlay({ t }) {
       flashScheduleHint('正在新增行，请等待完成后再刷新', 'error')
       return
     }
-    // 行级「刷新」按钮：重拉当前账号列表（failed/conflict/unknown 的解除路径）。
-    if (scheduleAccountIdRef.current) loadScheduleRows(scheduleAccountIdRef.current).catch(() => {})
-    else loadScheduleBoard().catch(() => {})
-  }, [loadScheduleRows, loadScheduleBoard])
+    if (refreshScheduleBlocked(scheduleRowStatesRef.current, scheduleDeleteBusy)) {
+      flashScheduleHint('有保存或删除未完成，请等待完成后再刷新', 'error')
+      return
+    }
+    // 与切换账号同机制：先清空表格区，再加载当前账号；工具栏/表头/账号栏不整体刷新。
+    if (scheduleAccountIdRef.current) {
+      applyScheduleRows([])
+      applyScheduleRowStates({})
+      loadScheduleRows(scheduleAccountIdRef.current).catch(() => {})
+    } else {
+      loadScheduleBoard().catch(() => {})
+    }
+  }, [applyScheduleRows, applyScheduleRowStates, loadScheduleRows, loadScheduleBoard, scheduleDeleteBusy])
 
   const editScheduleCell = useCallback((rowId, field, value) => {
     applyScheduleRows(prev => prev.map(item => (item.rowId === rowId ? { ...item, [field]: value } : item)))
@@ -5205,12 +5215,10 @@ ${REPORT_CSS_TEXT}${MATERIAL_CSS_TEXT}${GENE_CSS_TEXT}
 /* 发布排期看板（RQ-2026-013 §10）：新增样式严格限定 ydo-schedule-* 白名单
    （实施文档 §6.2），颜色一律 --dsw-* 主题变量（不照抄 Demo 兜底固定色），
    深浅色主题自适应由变量承载。 */
-.ydo-schedule-page{gap:12px}
-.ydo-schedule-toolbar-main{display:flex;align-items:center;gap:10px;min-width:0}
-.ydo-schedule-current-account{display:inline-flex;align-items:center;gap:8px;min-width:0;padding:6px 10px;border:1px solid var(--dsw-alias-border-l1);border-radius:6px;background:var(--dsw-alias-bg-layer-1);font-size:var(--dsh-content-font-size-secondary,13px);color:var(--dsw-alias-label-secondary)}
-.ydo-schedule-current-account strong{max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--dsw-alias-label-primary)}
+.ydo-schedule-page{display:grid;grid-template-rows:auto minmax(0,1fr) auto;min-height:0;gap:12px}
+.ydo-schedule-page .ydo-table-wrap{min-height:0;overflow:auto}
 .ydo-schedule-actions{margin-left:auto;display:flex;align-items:center;gap:8px}
-.ydo-schedule-table{width:100%;min-width:1380px;border-collapse:separate;border-spacing:0;table-layout:auto}
+.ydo-schedule-table{width:100%;min-width:2230px;border-collapse:separate;border-spacing:0;table-layout:fixed}
 .ydo-schedule-table th,.ydo-schedule-table td{padding:8px 10px;border-right:1px solid var(--dsw-alias-border-l1);border-bottom:1px solid var(--dsw-alias-border-l1);vertical-align:middle;text-align:left;font-size:var(--dsh-content-font-size-secondary,13px)}
 .ydo-schedule-table th:last-child,.ydo-schedule-table td:last-child{border-right:0}
 .ydo-schedule-table thead th{position:sticky;top:0;z-index:3;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary);font-weight:700;line-height:1.3}

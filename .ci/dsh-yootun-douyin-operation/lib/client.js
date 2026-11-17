@@ -5968,6 +5968,9 @@ window.__ModuleLoader__.load({
       { key: 'editingOwner', label: '剪辑负责人' },
     ]
 
+    // 列宽按实际录入内容放宽；容器窄时由 table-wrap 提供横向滚动（真机验收 f/e）。
+    const SCHEDULE_COLUMN_WIDTHS = [80, 160, 300, 220, 140, 300, 240, 160, 200, 170, 170, 90]
+
     // ---------------------------------------------------------------------------
     // 纯投影与状态机辅助（§13.3 可单测项的锚点）
     // ---------------------------------------------------------------------------
@@ -6086,6 +6089,20 @@ window.__ModuleLoader__.load({
       return !Object.values(rowStates || {}).some(rowHasPendingWork)
     }
 
+    /**
+     * 表格刷新互斥（真机验收 d/f）：saving/queued 会携带未提交 queued 快照，必须等
+     * 保存结束；failed/conflict/unknown 若仍持有 dirty 也不得被刷新清空。unknown/conflict
+     * 在无 dirty 时允许刷新，这是行级“刷新”的恢复路径。
+     */
+    function refreshScheduleBlocked(rowStates, deleteBusy = false) {
+      if (deleteBusy) return true
+      return Object.values(rowStates || {}).some(state => {
+        if (!state) return false
+        if (state.status === 'saving' || state.status === 'queued') return true
+        return ['failed', 'conflict', 'unknown'].includes(state.status) && state.dirtySnapshot !== null
+      })
+    }
+
     /** 非 idle 行禁用删除；delete 在途时禁用编辑保存（§9.4 第 9 条）。 */
     function deleteAllowed(state, deleteInFlight) {
       return !deleteInFlight && (!state || state.status === 'idle')
@@ -6166,15 +6183,6 @@ window.__ModuleLoader__.load({
     // ---------------------------------------------------------------------------
     // 页面组件
     // ---------------------------------------------------------------------------
-
-    function ToolbarHint({ hint }) {
-      if (!hint || !hint.text) {
-        return h('span', { className: 'ydo-hint', 'aria-live': 'polite' }, '就绪')
-      }
-      const toneClass =
-        hint.tone === 'error' ? 'ydo-error' : hint.tone === 'ok' ? 'ydo-ok' : 'ydo-hint'
-      return h('span', { className: toneClass, role: hint.tone === 'error' ? 'alert' : 'status', 'aria-live': 'polite' }, hint.text)
-    }
 
     function PlatformGroup({ row, disabled, onPlatformToggle }) {
       return h(
@@ -6312,65 +6320,69 @@ window.__ModuleLoader__.load({
       activeAccountId,
       rows,
       rowStates,
-      hint,
       creating,
       deleteTarget,
       deleteBusy,
       deleteTargetSequence,
+      hint,
       ownerSuggestions,
       focusRowId,
       renderAvatar,
       actions,
     }) {
-      if (loading && !rows.length && !errorReason) {
-        return h('section', { className: 'ydo-right', 'aria-label': '发布排期看板' },
-          h('p', { className: 'ydo-hint' }, '加载中…'))
-      }
-      if (errorReason && !rows.length) {
-        return h('section', { className: 'ydo-right', 'aria-label': '发布排期看板' },
-          h('p', { className: 'ydo-error', role: 'alert' }, scheduleErrorCopy(errorReason)),
-          h('button', { type: 'button', className: 'ydo-secondary', onClick: actions.onBoardRetry }, '重试'))
-      }
-      if (!(accounts || []).length) {
-        // 无有效账号（§9.2 第 4 条 / §5.3 空态）：隐藏表格与新增入口，只展示空态。
+      // loading/error 时也要保持 shell，不得把初始加载或账号列表失败冒充“无账号”。
+      const initialUnavailable = Boolean((loading || errorReason) && !(accounts || []).length)
+      const hasAccounts = Boolean((accounts || []).length)
+      const tableBody = loading
+        ? h('tr', { className: 'ydo-schedule-empty' },
+          h('td', { colSpan: 12 }, '加载中…'))
+        : initialUnavailable || errorReason
+          ? h('tr', { className: 'ydo-schedule-empty' },
+            h('td', { colSpan: 12 },
+              h('span', { className: 'ydo-error', role: 'alert' }, scheduleErrorCopy(errorReason || 'douyin_operation_request_failed')),
+              h('button', { type: 'button', className: 'ydo-secondary', onClick: actions.onBoardRetry }, '重试')))
+          : rows.length
+            ? rows.map(row => h(ScheduleRow, {
+              key: row.rowId,
+              row,
+              state: rowStates[row.rowId] || null,
+              deleteInFlight: deleteBusy,
+              focusRowId,
+              actions,
+            }))
+            : h('tr', { className: 'ydo-schedule-empty' },
+              h('td', { colSpan: 12 }, '暂无排期，点击新增行开始录入'))
+
+      if (!hasAccounts && !initialUnavailable) {
         return h('section', { className: 'ydo-right', 'aria-label': '发布排期看板' },
           h('p', { className: 'ydo-state', role: 'status' }, '暂无抖音账号，请先在抖音工作台中添加账号'))
       }
-      const activeAccount = (accounts || []).find(account => account.accountId === activeAccountId) || null
+
       return h('section', { className: 'ydo-right ydo-schedule-page', 'aria-label': '发布排期看板' },
         h('datalist', { id: 'ydo-schedule-owner-options' },
           ...(ownerSuggestions || []).map(name => h('option', { key: name, value: name }))),
         h('div', { className: 'ydo-toolbar' },
-          h('div', { className: 'ydo-schedule-toolbar-main' },
-            h('h2', { className: 'ydo-panel-title' }, '发布排期看板'),
-            h('span', { className: 'ydo-schedule-current-account' },
-              '当前账号：',
-              h('strong', null, activeAccount ? (activeAccount.nickname || activeAccount.accountId) : '未选择')),
-            h(ToolbarHint, { hint })),
+          hint ? h('div', { className: 'ydo-hint', role: hint.tone === 'error' ? 'alert' : 'status', 'aria-live': 'polite' }, hint.text) : null,
           h('div', { className: 'ydo-schedule-actions' },
             h('button', {
               type: 'button',
               className: 'ydo-primary',
-              disabled: creating || !(accounts || []).length,
+              disabled: creating || !hasAccounts,
               'aria-busy': creating || undefined,
               onClick: actions.onCreate,
             }, creating ? '新增中…' : '新增行')),
           h('button', {
             type: 'button',
             className: 'ydo-secondary',
-            disabled: loading || creating || undefined,
-            'aria-busy': loading || creating || undefined,
+            disabled: loading || creating || deleteBusy || undefined,
+            'aria-busy': loading || creating || deleteBusy || undefined,
             onClick: actions.onBoardRetry,
           }, loading ? '刷新中…' : '刷新')),
         h('div', { className: 'ydo-table-wrap' },
-          h('table', { className: 'ydo-schedule-table' },
-            h('caption', { className: 'ydo-hint' },
-              '除序号由系统生成外，其余业务字段均允许为空；拍摄情况勾选表示拍摄完成。'),
+          h('table', { className: 'ydo-schedule-table', 'aria-label': '发布排期' },
             h('colgroup', null,
-              // 用 <col width> 属性而非内联 style（§10.2：JSX 不写内联样式）。
-              ...[58, 122, 140, 160, 92, 160, 110, 120, 116, 100, 100, 56].map((width, index) =>
-                h('col', { key: index, width })),
-            ),
+              // 用 <col width> 属性而非内联 style（§10.2：JSX 不写内联 style）。
+              ...SCHEDULE_COLUMN_WIDTHS.map((width, index) => h('col', { key: index, width }))),
             h('thead', null,
               h('tr', null,
                 h('th', { className: 'ydo-schedule-sequence-cell', scope: 'col' }, '序号'),
@@ -6379,21 +6391,10 @@ window.__ModuleLoader__.load({
                     item.label,
                     item.sub ? h('small', null, item.sub) : null)),
                 h('th', { className: 'ydo-schedule-delete-cell', scope: 'col' }, '操作'))),
-            h('tbody', null,
-              rows.length
-                ? rows.map(row => h(ScheduleRow, {
-                  key: row.rowId,
-                  row,
-                  state: rowStates[row.rowId] || null,
-                  deleteInFlight: deleteBusy,
-                  focusRowId,
-                  actions,
-                }))
-                : h('tr', { className: 'ydo-schedule-empty' },
-                  h('td', { colSpan: 12 }, '暂无排期，点击新增行开始录入'))))),
+            h('tbody', null, tableBody))),
         h('div', { className: 'ydo-schedule-account-bar', 'aria-label': '抖音账号切换栏' },
           h('span', { className: 'ydo-schedule-account-bar-label' }, '抖音账号'),
-          (accounts || []).length
+          hasAccounts
             ? accounts.map(account =>
               h('button', {
                 key: account.accountId,
@@ -6411,7 +6412,12 @@ window.__ModuleLoader__.load({
                     account.nickname || account.accountId),
                   h('span', { className: 'ydo-schedule-account-meta' },
                     account.fanCount != null ? `粉丝 ${account.fanCount}` : '有效账号'))))
-            : h('span', { className: 'ydo-schedule-account-meta' }, '暂无抖音账号，请先在抖音工作台中添加账号')),
+            : h('span', { className: 'ydo-schedule-account-meta' },
+              loading
+                ? '账号列表加载中…'
+                : errorReason
+                  ? '账号列表加载失败，请重试'
+                  : '暂无抖音账号，请先在抖音工作台中添加账号')),
         deleteTarget
           ? h('div', { className: 'ydo-mat-modal-overlay', role: 'dialog', 'aria-modal': true, 'aria-labelledby': 'ydo-schedule-delete-title' },
             h('div', { className: 'ydo-mat-modal' },
@@ -9735,10 +9741,19 @@ window.__ModuleLoader__.load({
           flashScheduleHint('正在新增行，请等待完成后再刷新', 'error')
           return
         }
-        // 行级「刷新」按钮：重拉当前账号列表（failed/conflict/unknown 的解除路径）。
-        if (scheduleAccountIdRef.current) loadScheduleRows(scheduleAccountIdRef.current).catch(() => {})
-        else loadScheduleBoard().catch(() => {})
-      }, [loadScheduleRows, loadScheduleBoard])
+        if (refreshScheduleBlocked(scheduleRowStatesRef.current, scheduleDeleteBusy)) {
+          flashScheduleHint('有保存或删除未完成，请等待完成后再刷新', 'error')
+          return
+        }
+        // 与切换账号同机制：先清空表格区，再加载当前账号；工具栏/表头/账号栏不整体刷新。
+        if (scheduleAccountIdRef.current) {
+          applyScheduleRows([])
+          applyScheduleRowStates({})
+          loadScheduleRows(scheduleAccountIdRef.current).catch(() => {})
+        } else {
+          loadScheduleBoard().catch(() => {})
+        }
+      }, [applyScheduleRows, applyScheduleRowStates, loadScheduleRows, loadScheduleBoard, scheduleDeleteBusy])
 
       const editScheduleCell = useCallback((rowId, field, value) => {
         applyScheduleRows(prev => prev.map(item => (item.rowId === rowId ? { ...item, [field]: value } : item)))
@@ -11590,12 +11605,10 @@ window.__ModuleLoader__.load({
     /* 发布排期看板（RQ-2026-013 §10）：新增样式严格限定 ydo-schedule-* 白名单
        （实施文档 §6.2），颜色一律 --dsw-* 主题变量（不照抄 Demo 兜底固定色），
        深浅色主题自适应由变量承载。 */
-    .ydo-schedule-page{gap:12px}
-    .ydo-schedule-toolbar-main{display:flex;align-items:center;gap:10px;min-width:0}
-    .ydo-schedule-current-account{display:inline-flex;align-items:center;gap:8px;min-width:0;padding:6px 10px;border:1px solid var(--dsw-alias-border-l1);border-radius:6px;background:var(--dsw-alias-bg-layer-1);font-size:var(--dsh-content-font-size-secondary,13px);color:var(--dsw-alias-label-secondary)}
-    .ydo-schedule-current-account strong{max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--dsw-alias-label-primary)}
+    .ydo-schedule-page{display:grid;grid-template-rows:auto minmax(0,1fr) auto;min-height:0;gap:12px}
+    .ydo-schedule-page .ydo-table-wrap{min-height:0;overflow:auto}
     .ydo-schedule-actions{margin-left:auto;display:flex;align-items:center;gap:8px}
-    .ydo-schedule-table{width:100%;min-width:1380px;border-collapse:separate;border-spacing:0;table-layout:auto}
+    .ydo-schedule-table{width:100%;min-width:2230px;border-collapse:separate;border-spacing:0;table-layout:fixed}
     .ydo-schedule-table th,.ydo-schedule-table td{padding:8px 10px;border-right:1px solid var(--dsw-alias-border-l1);border-bottom:1px solid var(--dsw-alias-border-l1);vertical-align:middle;text-align:left;font-size:var(--dsh-content-font-size-secondary,13px)}
     .ydo-schedule-table th:last-child,.ydo-schedule-table td:last-child{border-right:0}
     .ydo-schedule-table thead th{position:sticky;top:0;z-index:3;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary);font-weight:700;line-height:1.3}
