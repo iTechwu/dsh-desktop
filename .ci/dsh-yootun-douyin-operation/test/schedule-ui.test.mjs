@@ -44,6 +44,9 @@ const {
   savedSnapshotChanged,
   scheduleErrorCopy,
   toUiRow,
+  comparePublishDate,
+  partitionScheduleRows,
+  sortScheduleRows,
 } = vm.runInContext('({ ' + [
   'SCHEDULE_BUSINESS_HEADERS', 'SCHEDULE_ERROR_REASON_COPY', 'SCHEDULE_PLATFORMS', 'SchedulePage',
   'buildServerSnapshot', 'canSwitchAccount', 'compareRowId',
@@ -52,6 +55,7 @@ const {
   'refreshScheduleBlocked',
   'savedSnapshotChanged',
   'scheduleErrorCopy', 'toUiRow',
+  'comparePublishDate', 'partitionScheduleRows', 'sortScheduleRows',
 ].join(', ') + ' })', context)
 
 // 递归收集元素树中的字符串与 className。
@@ -551,7 +555,8 @@ test('样式白名单：新增 className 严格限定 ydo-schedule-* 清单，�
     'ydo-schedule-account-bar', 'ydo-schedule-account-bar-label', 'ydo-schedule-account-chip',
     'ydo-schedule-account-text', 'ydo-schedule-account-name', 'ydo-schedule-account-meta',
     'ydo-schedule-delete-cell', 'ydo-schedule-delete-button', 'ydo-schedule-row-saving',
-    'ydo-schedule-row-error',
+    'ydo-schedule-row-error', 'ydo-schedule-toggle-row', 'ydo-schedule-row-published',
+    'ydo-schedule-row-striped',
   ])
   for (const [name, source] of [['schedule-ui.js', scheduleModuleSource], ['client.js 排期样式段', clientSource]]) {
     const found = [...source.matchAll(/className:\s*[`'"]([^`'"]+)[`'"]/g)]
@@ -581,7 +586,7 @@ test('样式白名单：新增 className 严格限定 ydo-schedule-* 清单，�
     .filter(color => color.toLowerCase() !== '#fff')
   assert.deepEqual(offendingColors, [], '排期 CSS 只允许白色勾选固定色，其余使用主题变量')
   assert.ok(scheduleCss.includes('grid-template-rows:auto minmax(0,1fr) auto'), '表格区占满剩余高度，账号栏固定底部')
-  assert.ok(scheduleCss.includes('min-width:2230px'), '表格按内容放宽并支持横向滚动')
+  assert.ok(scheduleCss.includes('min-width:2250px'), '表格按内容放宽并支持横向滚动（发布平台列加宽至 220）')
   assert.ok(scheduleCss.includes('table-layout:fixed'), '列宽由 colgroup 控制')
 })
 
@@ -667,4 +672,155 @@ test('accounts.list 失败给错误态而非空账号态（review P3-5）', () =
   const boardIdx = clientSource.indexOf('const loadScheduleBoard')
   const boardBody = clientSource.slice(boardIdx, clientSource.indexOf('}, [', boardIdx))
   assert.ok(boardBody.includes("setScheduleError((result && result.reason) || 'douyin_operation_request_failed')"), '账号列表失败走错误态')
+})
+
+// ---------------------------------------------------------------------------
+// 业务优化迭代（2026-11-20）：已发布折叠 / 平台横排 / 发布日期排序 / 斑马纹 /
+// 已发布行专用底色 / sticky 列随行色
+// ---------------------------------------------------------------------------
+
+function mkUiRow(rowId, { published = false, publishDate = null } = {}) {
+  return { rowId, accountId: 'a', shootingDate: '', videoContent: '', shootingStatus: false, published, assetLink: '', note: '', publishDate, publishPlatforms: [], shootingOwner: '', editingOwner: '', rowVersion: '1' }
+}
+
+test('发布日期升序排序：无日期排最后，同日期按 rowId 稳定（迭代 3）', () => {
+  const list = [
+    mkUiRow('30', { publishDate: '2026-11-20' }),
+    mkUiRow('11', { publishDate: null }),
+    mkUiRow('22', { publishDate: '2026-11-18' }),
+    mkUiRow('12', { publishDate: null }),
+    mkUiRow('21', { publishDate: '2026-11-18' }),
+  ]
+  const sorted = [...sortScheduleRows(list)].map(row => row.rowId)
+  assert.deepEqual(sorted, ['21', '22', '30', '11', '12'])
+  // 不改传入数组
+  assert.equal(list.length, 5)
+})
+
+test('分组：仅「published 且 idle」进入已发布组；非 idle 已发布行留在未发布组保证反馈可见（迭代 1 保护）', () => {
+  const rows = [
+    mkUiRow('1', { published: true }),
+    mkUiRow('2', { published: true }),
+    mkUiRow('3', { published: false }),
+    mkUiRow('4', { published: true }),
+  ]
+  const states = {
+    '2': { ...createRowState('1'), status: 'saving' },
+    '4': { ...createRowState('1'), status: 'conflict' },
+  }
+  const { published, unpublished, foldedCount } = partitionScheduleRows(rows, states)
+  assert.deepEqual([...published].map(row => row.rowId), ['1'])
+  assert.deepEqual([...unpublished].map(row => row.rowId), ['2', '3', '4'])
+  assert.equal(foldedCount, 1)
+})
+
+test('渲染顺序：展开时已发布组在顶部，折叠行居交界；收起时折叠行在顶（迭代 1/用户拍板）', async () => {
+  // ScheduleRow 是函数组件，fake createElement 不展开——本测试用真 react-dom/server
+  // 渲染（render-smoke 同法），以 HTML 出现顺序断言分组次序。
+  const React = (await import('react')).default ?? (await import('react'))
+  const { renderToString } = await import('react-dom/server')
+  const scheduleSource = (await readFile(new URL('../src/schedule-ui.js', import.meta.url), 'utf8')).replace(/^export /gm, '')
+  const context2 = { require: name => { if (name !== 'react') throw new Error(name); return React } }
+  vm.createContext(context2)
+  vm.runInContext(scheduleSource, context2)
+  const { SchedulePage: RealSchedulePage, createRowState: RealCreateRowState } =
+    vm.runInContext('({ SchedulePage, createRowState })', context2)
+  const mkUiRow = (rowId, { published = false, publishDate = null, videoContent = '占位内容' } = {}) => ({
+    rowId, accountId: 'a', shootingDate: '', videoContent, shootingStatus: false, published,
+    assetLink: '', note: '', publishDate, publishPlatforms: [], shootingOwner: '', editingOwner: '', rowVersion: '1',
+  })
+  const rows = [
+    mkUiRow('2', { published: false, videoContent: '未发布占位' }),
+    mkUiRow('1', { published: true, publishDate: '2026-11-18', videoContent: '已发布占位' }),
+  ]
+  const states = { '1': RealCreateRowState('1'), '2': RealCreateRowState('1') }
+  const noop = () => {}
+  const htmlFor = expanded => renderToString(RealSchedulePage({
+    loading: false, errorReason: null, accounts: [{ accountId: 'a', nickname: '甲', deleteState: 'none', fanCount: 1 }],
+    activeAccountId: 'a', rows, rowStates: states, hint: null, creating: false, deleteTarget: null,
+    deleteBusy: false, deleteTargetSequence: null, ownerSuggestions: [], focusRowId: null,
+    renderAvatar: null, publishedExpanded: expanded,
+    actions: { onTogglePublished: noop },
+  }))
+  const collapsedHtml = htmlFor(false)
+  const expandedHtml = htmlFor(true)
+  const collapsedToggle = collapsedHtml.indexOf('ydo-schedule-toggle-row')
+  assert.ok(collapsedToggle > -1, '收起时存在折叠行')
+  assert.equal(collapsedHtml.includes('ydo-schedule-row-published'), false, '收起时已发布行不渲染')
+  const expandedToggle = expandedHtml.indexOf('ydo-schedule-toggle-row')
+  const expandedPublished = expandedHtml.indexOf('ydo-schedule-row-published')
+  assert.ok(expandedPublished > -1, '展开时渲染已发布行')
+  assert.ok(expandedPublished < expandedToggle, '已发布组在折叠行之前（表格顶部）')
+  assert.ok(expandedHtml.includes('已发布（1 条）'), '折叠行显示已发布计数')
+  assert.ok(expandedHtml.includes('点击收起'), '展开态提示收起')
+  assert.ok(collapsedHtml.includes('点击展开'), '收起态提示展开')
+  // 已发布组在顶部（其内容早于折叠行），未发布组在折叠行之后
+  assert.ok(expandedHtml.indexOf('已发布占位') > -1 && expandedHtml.indexOf('已发布占位') < expandedToggle, '已发布组位于顶部')
+  assert.ok(expandedHtml.indexOf('未发布占位') > expandedToggle, '未发布行位于折叠行之后')
+  // 全部已发布且收起：给出「所有排期均已发布」提示行
+  const allPublishedHtml = renderToString(RealSchedulePage({
+    loading: false, errorReason: null, accounts: [{ accountId: 'a', nickname: '甲', deleteState: 'none', fanCount: 1 }],
+    activeAccountId: 'a', rows: [mkUiRow('9', { published: true, publishDate: '2026-11-18' })],
+    rowStates: { '9': RealCreateRowState('1') }, hint: null, creating: false, deleteTarget: null,
+    deleteBusy: false, deleteTargetSequence: null, ownerSuggestions: [], focusRowId: null,
+    renderAvatar: null, publishedExpanded: false,
+    actions: { onTogglePublished: noop },
+  }))
+  assert.ok(allPublishedHtml.includes('所有排期均已发布'), '全部已发布且收起时给出提示行')
+})
+
+test('斑马纹：未发布组内按组内奇偶计算，已发布行不参与（迭代 4）', async () => {
+  const React = (await import('react')).default ?? (await import('react'))
+  const { renderToString } = await import('react-dom/server')
+  const scheduleSource = (await readFile(new URL('../src/schedule-ui.js', import.meta.url), 'utf8')).replace(/^export /gm, '')
+  const context2 = { require: name => { if (name !== 'react') throw new Error(name); return React } }
+  vm.createContext(context2)
+  vm.runInContext(scheduleSource, context2)
+  const { SchedulePage: RealSchedulePage, createRowState: RealCreateRowState } =
+    vm.runInContext('({ SchedulePage, createRowState })', context2)
+  const mkUiRow = (rowId, { published = false, publishDate = null } = {}) => ({
+    rowId, accountId: 'a', shootingDate: '', videoContent: '', shootingStatus: false, published,
+    assetLink: '', note: '', publishDate, publishPlatforms: [], shootingOwner: '', editingOwner: '', rowVersion: '1',
+  })
+  // 未发布 3 行：组内 index1（rowId 3）带 striped；已发布行不带
+  const rows = [
+    mkUiRow('1', { published: true, publishDate: '2026-11-18' }),
+    mkUiRow('2'), mkUiRow('3'), mkUiRow('4'),
+  ]
+  const states = { '1': RealCreateRowState('1'), '2': RealCreateRowState('1'), '3': RealCreateRowState('1'), '4': RealCreateRowState('1') }
+  const noop = () => {}
+  const html = renderToString(RealSchedulePage({
+    loading: false, errorReason: null, accounts: [{ accountId: 'a', nickname: '甲', deleteState: 'none', fanCount: 1 }],
+    activeAccountId: 'a', rows, rowStates: states, hint: null, creating: false, deleteTarget: null,
+    deleteBusy: false, deleteTargetSequence: null, ownerSuggestions: [], focusRowId: null,
+    renderAvatar: null, publishedExpanded: true,
+    actions: { onTogglePublished: noop },
+  }))
+  const stripedIds = [...html.matchAll(/class="[^"]*ydo-schedule-row-striped[^"]*" data-row-id="(\d+)"/gu)].map(m => m[1])
+  assert.deepEqual(stripedIds, ['3'], '未发布组内仅偶数序行（rowId 3）带斑马纹')
+  assert.ok(!/ydo-schedule-row-published[^"]*"[^>]*data-row-id="\d+"[^>]*ydo-schedule-row-striped/u.test(html), '已发布行不带斑马纹')
+})
+
+test('CSS：行底色体系/折叠行/平台横排/已发布专用色（迭代 2/4/5）', async () => {
+  const source = await readFile(new URL('../src/client.js', import.meta.url), 'utf8')
+  const cssStart = source.indexOf('/* 发布排期看板（RQ-2026-013 §10）')
+  const scheduleCss = source.slice(cssStart, source.indexOf('`;', cssStart))
+  // 行底色由 td 承载，sticky 序号/操作列不再写死背景
+  assert.ok(scheduleCss.includes('.ydo-schedule-table tbody td{background:var(--dsw-alias-bg-base)}'))
+  assert.ok(scheduleCss.includes('tr.ydo-schedule-row-striped td{background:var(--dsw-alias-bg-layer-1)}'))
+  assert.ok(
+    scheduleCss.includes('tr.ydo-schedule-row-published td{background:color-mix(in srgb,var(--dsw-alias-state-success-primary) 12%,var(--dsw-alias-bg-base))}'),
+    '已发布组使用主题成功色混合底色（深浅主题自适应）')
+  assert.ok(scheduleCss.includes('tr.ydo-schedule-row-saving td{'), '状态色迁移到 td 级（sticky 列同色）')
+  assert.ok(scheduleCss.includes('.ydo-schedule-toggle-row td{background:var(--dsw-alias-bg-layer-2)'), '折叠行样式')
+  // sticky 列规则不得再写死背景（跟随行色）
+  const stickyRule = scheduleCss.match(/\.ydo-schedule-sequence-cell,\.ydo-schedule-delete-cell\{[^}]*\}/u)
+  assert.ok(stickyRule && !stickyRule[0].includes('background:'), 'sticky 列不再写死背景')
+  // 平台横排
+  assert.ok(
+    scheduleCss.includes('.ydo-schedule-platform-group{display:flex;flex-wrap:wrap;gap:4px 12px'),
+    '发布平台横向排列')
+  // 发布平台列加宽
+  const moduleSource = await readFile(new URL('../src/schedule-ui.js', import.meta.url), 'utf8')
+  assert.ok(moduleSource.includes('[80, 160, 300, 220, 140, 300, 240, 160, 220, 170, 170, 90]'), '发布平台列宽 220')
 })

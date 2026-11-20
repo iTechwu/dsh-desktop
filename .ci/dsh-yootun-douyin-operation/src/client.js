@@ -3223,6 +3223,8 @@ function Overlay({ t }) {
   const [scheduleCreating, setScheduleCreating] = useState(false)
   const [scheduleDeleteTarget, setScheduleDeleteTarget] = useState(null)
   const [scheduleDeleteBusy, setScheduleDeleteBusy] = useState(false)
+  // 已发布组折叠状态：会话内保留（切账号/刷新不重置），重开工作台回到收起。
+  const [schedulePublishedExpanded, setSchedulePublishedExpanded] = useState(false)
   const [scheduleFocusRowId, setScheduleFocusRowId] = useState(null)
   const scheduleSeqRef = useRef(0)
   const scheduleRowsRef = useRef([])
@@ -4657,7 +4659,9 @@ function Overlay({ t }) {
             focusRowId: scheduleFocusRowId,
             // 账号栏头像复用既有 AccountAvatar（§9.2 第 5 条：真实 avatar，空回退首字）。
             renderAvatar: account => h(AccountAvatar, { account }),
+            publishedExpanded: schedulePublishedExpanded,
             actions: {
+              onTogglePublished: () => setSchedulePublishedExpanded(value => !value),
               onBoardRetry: refreshScheduleBoard,
               onCreate: createScheduleRow,
               onEditCell: editScheduleCell,
@@ -5220,17 +5224,27 @@ ${REPORT_CSS_TEXT}${MATERIAL_CSS_TEXT}${GENE_CSS_TEXT}
 .ydo-schedule-page{display:grid;grid-template-rows:auto minmax(0,1fr) auto;min-height:0;gap:12px}
 .ydo-schedule-page .ydo-table-wrap{min-height:0;overflow:auto}
 .ydo-schedule-actions{margin-right:auto;margin-left:0;display:flex;align-items:center;gap:8px}
-.ydo-schedule-table{width:100%;min-width:2230px;border-collapse:separate;border-spacing:0;table-layout:fixed}
+.ydo-schedule-table{width:100%;min-width:2250px;border-collapse:separate;border-spacing:0;table-layout:fixed}
 .ydo-schedule-table th,.ydo-schedule-table td{padding:8px 10px;border-right:1px solid var(--dsw-alias-border-l1);border-bottom:1px solid var(--dsw-alias-border-l1);vertical-align:middle;text-align:left;font-size:var(--dsh-content-font-size-secondary,13px)}
 .ydo-schedule-table th:last-child,.ydo-schedule-table td:last-child{border-right:0}
 .ydo-schedule-table thead th{position:sticky;top:0;z-index:3;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary);font-weight:700;line-height:1.3}
 .ydo-schedule-table thead th small{display:block;margin-top:3px;color:var(--dsw-alias-label-secondary);font-size:12px;font-weight:600}
-.ydo-schedule-table tbody tr.ydo-schedule-row-saving{background:color-mix(in srgb,var(--dsw-alias-brand-primary) 8%,transparent)}
-.ydo-schedule-table tbody tr.ydo-schedule-row-error{background:color-mix(in srgb,var(--dsw-alias-state-error-primary) 7%,transparent)}
-.ydo-schedule-sequence-cell,.ydo-schedule-delete-cell{position:sticky;z-index:2;width:76px;min-width:76px;background:var(--dsw-alias-bg-layer-1);text-align:center;font-variant-numeric:tabular-nums;font-weight:650}
+/* 行底色统一由 td 承载（sticky 序号/操作列随之同色，深浅主题一致）；
+   级联顺序：默认 < 斑马纹(未发布组内偶数行) < 已发布组色 < 状态色。 */
+.ydo-schedule-table tbody td{background:var(--dsw-alias-bg-base)}
+.ydo-schedule-table tbody tr.ydo-schedule-row-striped td{background:var(--dsw-alias-bg-layer-1)}
+.ydo-schedule-table tbody tr.ydo-schedule-row-published td{background:color-mix(in srgb,var(--dsw-alias-state-success-primary) 12%,var(--dsw-alias-bg-base))}
+.ydo-schedule-table tbody tr.ydo-schedule-row-saving td{background:color-mix(in srgb,var(--dsw-alias-brand-primary) 8%,var(--dsw-alias-bg-base))}
+.ydo-schedule-table tbody tr.ydo-schedule-row-error td{background:color-mix(in srgb,var(--dsw-alias-state-error-primary) 8%,var(--dsw-alias-bg-base))}
+.ydo-schedule-sequence-cell,.ydo-schedule-delete-cell{position:sticky;z-index:2;width:76px;min-width:76px;text-align:center;font-variant-numeric:tabular-nums;font-weight:650}
 .ydo-schedule-sequence-cell{left:0}
 .ydo-schedule-delete-cell{right:0}
 thead .ydo-schedule-sequence-cell,thead .ydo-schedule-delete-cell{z-index:4;background:var(--dsw-alias-bg-layer-2)}
+/* 折叠控制行：位于已发布组与未发布组交界，可点击展开/收起。 */
+.ydo-schedule-toggle-row{cursor:pointer}
+.ydo-schedule-toggle-row td{background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-secondary);font-weight:600;padding:6px 10px;user-select:none}
+.ydo-schedule-toggle-row:hover td{color:var(--dsw-alias-label-primary)}
+.ydo-schedule-toggle-row:focus-visible td{outline:1px solid var(--dsw-alias-brand-primary);outline-offset:-1px}
 .ydo-schedule-delete-button{display:inline-grid;width:32px;height:32px;place-items:center;border:1px solid transparent;border-radius:6px;background:transparent;color:var(--dsw-alias-label-secondary);cursor:pointer}
 .ydo-schedule-delete-button:hover{color:var(--dsw-alias-state-error-primary);background:color-mix(in srgb,var(--dsw-alias-state-error-primary) 9%,transparent)}
 .ydo-schedule-delete-button:disabled{opacity:.45;cursor:default}
@@ -5244,7 +5258,7 @@ input[type="date"].ydo-schedule-cell-input{min-width:112px}
 .ydo-schedule-checkbox input,.ydo-schedule-platform-group input{width:15px;height:15px;margin:0;accent-color:var(--dsw-alias-brand-primary);cursor:pointer}
 .ydo-schedule-checkbox input:disabled,.ydo-schedule-platform-group input:disabled{cursor:not-allowed;opacity:.6}
 .ydo-schedule-checkbox-label{display:inline-flex;align-items:center;gap:4px;white-space:nowrap}
-.ydo-schedule-platform-group{display:grid;gap:4px;min-width:118px;color:var(--dsw-alias-label-primary)}
+.ydo-schedule-platform-group{display:flex;flex-wrap:wrap;gap:4px 12px;color:var(--dsw-alias-label-primary)}
 .ydo-schedule-platform-group label{display:inline-flex;align-items:center;gap:5px;font-size:13px;white-space:nowrap}
 .ydo-schedule-empty td{padding:40px 16px;color:var(--dsw-alias-label-secondary);text-align:center}
 .ydo-schedule-account-bar{display:flex;align-items:center;gap:10px;padding:12px;overflow-x:auto;border:1px solid var(--dsw-alias-border-l1);border-radius:8px;background:var(--dsw-alias-bg-layer-1)}

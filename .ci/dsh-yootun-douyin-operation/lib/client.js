@@ -5969,7 +5969,7 @@ window.__ModuleLoader__.load({
     ]
 
     // 列宽按实际录入内容放宽；容器窄时由 table-wrap 提供横向滚动（真机验收 f/e）。
-    const SCHEDULE_COLUMN_WIDTHS = [80, 160, 300, 220, 140, 300, 240, 160, 200, 170, 170, 90]
+    const SCHEDULE_COLUMN_WIDTHS = [80, 160, 300, 220, 140, 300, 240, 160, 220, 170, 170, 90]
 
     // ---------------------------------------------------------------------------
     // 纯投影与状态机辅助（§13.3 可单测项的锚点）
@@ -6009,6 +6009,41 @@ window.__ModuleLoader__.load({
       if (sa.length !== sb.length) return sa.length - sb.length
       if (sa === sb) return 0
       return sa < sb ? -1 : 1
+    }
+
+    /**
+     * 发布日期升序比较（渲染层排序；YYYY-MM-DD 同形字符串可直接字典序比较），
+     * 无日期行排在组内最后；同日期按 rowId 十进制字符串次序稳定排序。
+     */
+    function comparePublishDate(a, b) {
+      const da = a && a.publishDate ? a.publishDate : null
+      const db = b && b.publishDate ? b.publishDate : null
+      if (da === db) return compareRowId(a ? a.rowId : '', b ? b.rowId : '')
+      if (!da) return 1
+      if (!db) return -1
+      return da < db ? -1 : 1
+    }
+
+    /**
+     * 渲染层分组（rows 状态本身保持服务端 (account_id,id) 序，不受影响）：
+     * 「已发布组」= published 且行处于 idle（无在途写/异常反馈）——刚勾选已发布但
+     * 保存未落定的行留在未发布组，保证 saving/conflict 反馈可见，落定后才进入
+     * 可折叠的已发布组（折叠计数 = publishedGroup.length）。
+     */
+    function partitionScheduleRows(rows, rowStates) {
+      const published = []
+      const unpublished = []
+      for (const row of rows || []) {
+        const state = rowStates ? rowStates[row.rowId] : null
+        if (row.published && (!state || state.status === 'idle')) published.push(row)
+        else unpublished.push(row)
+      }
+      return { published, unpublished, foldedCount: published.length }
+    }
+
+    /** 组内发布日期升序（不改传入数组）。 */
+    function sortScheduleRows(list) {
+      return [...(list || [])].sort(comparePublishDate)
     }
 
     const trimToNull = value => {
@@ -6221,7 +6256,7 @@ window.__ModuleLoader__.load({
       return buttons
     }
 
-    function ScheduleRow({ row, state, deleteInFlight, focusRowId, actions }) {
+    function ScheduleRow({ row, state, deleteInFlight, focusRowId, extraRowClass, actions }) {
       const meta = rowStatusMeta(state)
       const disabled = meta.locked
       const statusActions = RowStatusActions({
@@ -6244,7 +6279,8 @@ window.__ModuleLoader__.load({
         'data-field': field,
         ref: focusRowId === row.rowId && field === 'videoContent' ? actions.focusRef : undefined,
       })
-      return h('tr', { className: meta.rowClass || undefined, 'data-row-id': row.rowId },
+      const trClass = [meta.rowClass, extraRowClass].filter(Boolean).join(' ')
+      return h('tr', { className: trClass || undefined, 'data-row-id': row.rowId },
         h('td', { className: 'ydo-schedule-sequence-cell', title: '系统生成的排期行主键' }, row.rowId),
         h('td', null,
           h('input', { ...inputProps('shootingDate'), type: 'date', value: row.shootingDate, 'aria-label': '拍摄日期',
@@ -6291,6 +6327,7 @@ window.__ModuleLoader__.load({
     function SchedulePage({
       loading,
       errorReason,
+      publishedExpanded,
       accounts,
       activeAccountId,
       rows,
@@ -6309,6 +6346,55 @@ window.__ModuleLoader__.load({
       const deleteTargetRow = rows.find(row => row.rowId === deleteTarget)
       const deleteTargetContent = (deleteTargetRow?.videoContent || '').trim() || '未填写视频内容'
 
+      // 渲染层分组排序（rows 状态保持服务端序）：已发布组（含折叠行）在顶部，
+      // 未发布组按发布日期升序、无日期排最后；斑马纹在未发布组内按组内奇偶计算。
+      const { published: publishedGroup, unpublished: unpublishedGroup } = partitionScheduleRows(rows, rowStates)
+      const sortedPublished = sortScheduleRows(publishedGroup)
+      const sortedUnpublished = sortScheduleRows(unpublishedGroup)
+      const renderRow = (row, extraRowClass) => h(ScheduleRow, {
+        key: row.rowId,
+        row,
+        state: rowStates[row.rowId] || null,
+        deleteInFlight: deleteBusy,
+        focusRowId,
+        extraRowClass,
+        actions,
+      })
+      const toggleRow = publishedGroup.length
+        ? h('tr', {
+          key: 'published-toggle',
+          className: 'ydo-schedule-toggle-row',
+          role: 'button',
+          tabIndex: 0,
+          'aria-expanded': publishedExpanded || undefined,
+          'aria-label': publishedExpanded ? '收起已发布排期' : `展开${publishedGroup.length}条已发布排期`,
+          onClick: actions.onTogglePublished,
+          onKeyDown: event => {
+            if (event.key === 'Enter' || event.key === ' ') {
+              event.preventDefault()
+              actions.onTogglePublished()
+            }
+          },
+        }, h('td', { colSpan: 12 },
+          `${publishedExpanded ? '▾' : '▸'} 已发布（${publishedGroup.length} 条）· 点击${publishedExpanded ? '收起' : '展开'}`))
+        : null
+      const bodyRows = []
+      if (rows.length) {
+        if (publishedExpanded) {
+          for (const row of sortedPublished) bodyRows.push(renderRow(row, 'ydo-schedule-row-published'))
+        }
+        if (toggleRow) bodyRows.push(toggleRow)
+        sortedUnpublished.forEach((row, index) => {
+          bodyRows.push(renderRow(row, index % 2 === 1 ? 'ydo-schedule-row-striped' : null))
+        })
+        if (!sortedUnpublished.length && publishedGroup.length && !publishedExpanded) {
+          bodyRows.push(h('tr', { className: 'ydo-schedule-empty' },
+            h('td', { colSpan: 12 }, '所有排期均已发布')))
+        }
+      } else {
+        bodyRows.push(h('tr', { className: 'ydo-schedule-empty' },
+          h('td', { colSpan: 12 }, '暂无排期，点击新增行开始录入')))
+      }
       const tableBody = loading
         ? h('tr', { className: 'ydo-schedule-empty' },
           h('td', { colSpan: 12 }, '加载中…'))
@@ -6317,17 +6403,7 @@ window.__ModuleLoader__.load({
             h('td', { colSpan: 12 },
               h('span', { className: 'ydo-error', role: 'alert' }, scheduleErrorCopy(errorReason || 'douyin_operation_request_failed')),
               h('button', { type: 'button', className: 'ydo-secondary', onClick: actions.onBoardRetry }, '重试')))
-          : rows.length
-            ? rows.map(row => h(ScheduleRow, {
-              key: row.rowId,
-              row,
-              state: rowStates[row.rowId] || null,
-              deleteInFlight: deleteBusy,
-              focusRowId,
-              actions,
-            }))
-            : h('tr', { className: 'ydo-schedule-empty' },
-              h('td', { colSpan: 12 }, '暂无排期，点击新增行开始录入'))
+          : bodyRows
 
       if (!hasAccounts && !initialUnavailable) {
         return h('section', { className: 'ydo-right', 'aria-label': '发布排期看板' },
@@ -9587,6 +9663,8 @@ window.__ModuleLoader__.load({
       const [scheduleCreating, setScheduleCreating] = useState(false)
       const [scheduleDeleteTarget, setScheduleDeleteTarget] = useState(null)
       const [scheduleDeleteBusy, setScheduleDeleteBusy] = useState(false)
+      // 已发布组折叠状态：会话内保留（切账号/刷新不重置），重开工作台回到收起。
+      const [schedulePublishedExpanded, setSchedulePublishedExpanded] = useState(false)
       const [scheduleFocusRowId, setScheduleFocusRowId] = useState(null)
       const scheduleSeqRef = useRef(0)
       const scheduleRowsRef = useRef([])
@@ -11021,7 +11099,9 @@ window.__ModuleLoader__.load({
                 focusRowId: scheduleFocusRowId,
                 // 账号栏头像复用既有 AccountAvatar（§9.2 第 5 条：真实 avatar，空回退首字）。
                 renderAvatar: account => h(AccountAvatar, { account }),
+                publishedExpanded: schedulePublishedExpanded,
                 actions: {
+                  onTogglePublished: () => setSchedulePublishedExpanded(value => !value),
                   onBoardRetry: refreshScheduleBoard,
                   onCreate: createScheduleRow,
                   onEditCell: editScheduleCell,
@@ -11584,17 +11664,27 @@ window.__ModuleLoader__.load({
     .ydo-schedule-page{display:grid;grid-template-rows:auto minmax(0,1fr) auto;min-height:0;gap:12px}
     .ydo-schedule-page .ydo-table-wrap{min-height:0;overflow:auto}
     .ydo-schedule-actions{margin-right:auto;margin-left:0;display:flex;align-items:center;gap:8px}
-    .ydo-schedule-table{width:100%;min-width:2230px;border-collapse:separate;border-spacing:0;table-layout:fixed}
+    .ydo-schedule-table{width:100%;min-width:2250px;border-collapse:separate;border-spacing:0;table-layout:fixed}
     .ydo-schedule-table th,.ydo-schedule-table td{padding:8px 10px;border-right:1px solid var(--dsw-alias-border-l1);border-bottom:1px solid var(--dsw-alias-border-l1);vertical-align:middle;text-align:left;font-size:var(--dsh-content-font-size-secondary,13px)}
     .ydo-schedule-table th:last-child,.ydo-schedule-table td:last-child{border-right:0}
     .ydo-schedule-table thead th{position:sticky;top:0;z-index:3;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary);font-weight:700;line-height:1.3}
     .ydo-schedule-table thead th small{display:block;margin-top:3px;color:var(--dsw-alias-label-secondary);font-size:12px;font-weight:600}
-    .ydo-schedule-table tbody tr.ydo-schedule-row-saving{background:color-mix(in srgb,var(--dsw-alias-brand-primary) 8%,transparent)}
-    .ydo-schedule-table tbody tr.ydo-schedule-row-error{background:color-mix(in srgb,var(--dsw-alias-state-error-primary) 7%,transparent)}
-    .ydo-schedule-sequence-cell,.ydo-schedule-delete-cell{position:sticky;z-index:2;width:76px;min-width:76px;background:var(--dsw-alias-bg-layer-1);text-align:center;font-variant-numeric:tabular-nums;font-weight:650}
+    /* 行底色统一由 td 承载（sticky 序号/操作列随之同色，深浅主题一致）；
+       级联顺序：默认 < 斑马纹(未发布组内偶数行) < 已发布组色 < 状态色。 */
+    .ydo-schedule-table tbody td{background:var(--dsw-alias-bg-base)}
+    .ydo-schedule-table tbody tr.ydo-schedule-row-striped td{background:var(--dsw-alias-bg-layer-1)}
+    .ydo-schedule-table tbody tr.ydo-schedule-row-published td{background:color-mix(in srgb,var(--dsw-alias-state-success-primary) 12%,var(--dsw-alias-bg-base))}
+    .ydo-schedule-table tbody tr.ydo-schedule-row-saving td{background:color-mix(in srgb,var(--dsw-alias-brand-primary) 8%,var(--dsw-alias-bg-base))}
+    .ydo-schedule-table tbody tr.ydo-schedule-row-error td{background:color-mix(in srgb,var(--dsw-alias-state-error-primary) 8%,var(--dsw-alias-bg-base))}
+    .ydo-schedule-sequence-cell,.ydo-schedule-delete-cell{position:sticky;z-index:2;width:76px;min-width:76px;text-align:center;font-variant-numeric:tabular-nums;font-weight:650}
     .ydo-schedule-sequence-cell{left:0}
     .ydo-schedule-delete-cell{right:0}
     thead .ydo-schedule-sequence-cell,thead .ydo-schedule-delete-cell{z-index:4;background:var(--dsw-alias-bg-layer-2)}
+    /* 折叠控制行：位于已发布组与未发布组交界，可点击展开/收起。 */
+    .ydo-schedule-toggle-row{cursor:pointer}
+    .ydo-schedule-toggle-row td{background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-secondary);font-weight:600;padding:6px 10px;user-select:none}
+    .ydo-schedule-toggle-row:hover td{color:var(--dsw-alias-label-primary)}
+    .ydo-schedule-toggle-row:focus-visible td{outline:1px solid var(--dsw-alias-brand-primary);outline-offset:-1px}
     .ydo-schedule-delete-button{display:inline-grid;width:32px;height:32px;place-items:center;border:1px solid transparent;border-radius:6px;background:transparent;color:var(--dsw-alias-label-secondary);cursor:pointer}
     .ydo-schedule-delete-button:hover{color:var(--dsw-alias-state-error-primary);background:color-mix(in srgb,var(--dsw-alias-state-error-primary) 9%,transparent)}
     .ydo-schedule-delete-button:disabled{opacity:.45;cursor:default}
@@ -11608,7 +11698,7 @@ window.__ModuleLoader__.load({
     .ydo-schedule-checkbox input,.ydo-schedule-platform-group input{width:15px;height:15px;margin:0;accent-color:var(--dsw-alias-brand-primary);cursor:pointer}
     .ydo-schedule-checkbox input:disabled,.ydo-schedule-platform-group input:disabled{cursor:not-allowed;opacity:.6}
     .ydo-schedule-checkbox-label{display:inline-flex;align-items:center;gap:4px;white-space:nowrap}
-    .ydo-schedule-platform-group{display:grid;gap:4px;min-width:118px;color:var(--dsw-alias-label-primary)}
+    .ydo-schedule-platform-group{display:flex;flex-wrap:wrap;gap:4px 12px;color:var(--dsw-alias-label-primary)}
     .ydo-schedule-platform-group label{display:inline-flex;align-items:center;gap:5px;font-size:13px;white-space:nowrap}
     .ydo-schedule-empty td{padding:40px 16px;color:var(--dsw-alias-label-secondary);text-align:center}
     .ydo-schedule-account-bar{display:flex;align-items:center;gap:10px;padding:12px;overflow-x:auto;border:1px solid var(--dsw-alias-border-l1);border-radius:8px;background:var(--dsw-alias-bg-layer-1)}
