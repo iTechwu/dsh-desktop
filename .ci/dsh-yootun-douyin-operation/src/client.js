@@ -5232,7 +5232,7 @@ ${REPORT_CSS_TEXT}${MATERIAL_CSS_TEXT}${GENE_CSS_TEXT}
 /* 行底色统一由 td 承载（sticky 序号/操作列随之同色，深浅主题一致）；
    级联顺序：默认 < 斑马纹(未发布组内偶数行) < 已发布组色 < 状态色。 */
 .ydo-schedule-table tbody td{background:var(--dsw-alias-bg-base)}
-.ydo-schedule-table tbody tr.ydo-schedule-row-striped td{background:var(--dsw-alias-bg-layer-1)}
+.ydo-schedule-table tbody tr.ydo-schedule-row-striped td{background:color-mix(in srgb,var(--dsw-alias-label-primary) 5%,var(--dsw-alias-bg-base))}
 .ydo-schedule-table tbody tr.ydo-schedule-row-published td{background:color-mix(in srgb,var(--dsw-alias-state-success-primary) 12%,var(--dsw-alias-bg-base))}
 .ydo-schedule-table tbody tr.ydo-schedule-row-saving td{background:color-mix(in srgb,var(--dsw-alias-brand-primary) 8%,var(--dsw-alias-bg-base))}
 .ydo-schedule-table tbody tr.ydo-schedule-row-error td{background:color-mix(in srgb,var(--dsw-alias-state-error-primary) 8%,var(--dsw-alias-bg-base))}

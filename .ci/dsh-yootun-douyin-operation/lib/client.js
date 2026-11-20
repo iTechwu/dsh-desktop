@@ -6026,9 +6026,9 @@ window.__ModuleLoader__.load({
 
     /**
      * 渲染层分组（rows 状态本身保持服务端 (account_id,id) 序，不受影响）：
-     * 「已发布组」= published 且行处于 idle（无在途写/异常反馈）——刚勾选已发布但
-     * 保存未落定的行留在未发布组，保证 saving/conflict 反馈可见，落定后才进入
-     * 可折叠的已发布组（折叠计数 = publishedGroup.length）。
+     * 「已发布组」= published 且行已回到 idle——即「勾选已发布，保存成功后移入
+     * 已发布组」（2026-11-20 业务口径）；保存中/失败的行留在未发布组，以状态
+     * 底色与同键重试/放弃操作可见，落定后才移入顶部组。
      */
     function partitionScheduleRows(rows, rowStates) {
       const published = []
@@ -11672,7 +11672,7 @@ window.__ModuleLoader__.load({
     /* 行底色统一由 td 承载（sticky 序号/操作列随之同色，深浅主题一致）；
        级联顺序：默认 < 斑马纹(未发布组内偶数行) < 已发布组色 < 状态色。 */
     .ydo-schedule-table tbody td{background:var(--dsw-alias-bg-base)}
-    .ydo-schedule-table tbody tr.ydo-schedule-row-striped td{background:var(--dsw-alias-bg-layer-1)}
+    .ydo-schedule-table tbody tr.ydo-schedule-row-striped td{background:color-mix(in srgb,var(--dsw-alias-label-primary) 5%,var(--dsw-alias-bg-base))}
     .ydo-schedule-table tbody tr.ydo-schedule-row-published td{background:color-mix(in srgb,var(--dsw-alias-state-success-primary) 12%,var(--dsw-alias-bg-base))}
     .ydo-schedule-table tbody tr.ydo-schedule-row-saving td{background:color-mix(in srgb,var(--dsw-alias-brand-primary) 8%,var(--dsw-alias-bg-base))}
     .ydo-schedule-table tbody tr.ydo-schedule-row-error td{background:color-mix(in srgb,var(--dsw-alias-state-error-primary) 8%,var(--dsw-alias-bg-base))}

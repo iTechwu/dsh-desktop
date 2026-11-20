@@ -807,7 +807,9 @@ test('CSS：行底色体系/折叠行/平台横排/已发布专用色（迭代 2
   const scheduleCss = source.slice(cssStart, source.indexOf('`;', cssStart))
   // 行底色由 td 承载，sticky 序号/操作列不再写死背景
   assert.ok(scheduleCss.includes('.ydo-schedule-table tbody td{background:var(--dsw-alias-bg-base)}'))
-  assert.ok(scheduleCss.includes('tr.ydo-schedule-row-striped td{background:var(--dsw-alias-bg-layer-1)}'))
+  assert.ok(
+    scheduleCss.includes('tr.ydo-schedule-row-striped td{background:color-mix(in srgb,var(--dsw-alias-label-primary) 5%,var(--dsw-alias-bg-base))}'),
+    '斑马色=文字色 5% 混底（浅色主题可见，不依赖 layer 变量取值）')
   assert.ok(
     scheduleCss.includes('tr.ydo-schedule-row-published td{background:color-mix(in srgb,var(--dsw-alias-state-success-primary) 12%,var(--dsw-alias-bg-base))}'),
     '已发布组使用主题成功色混合底色（深浅主题自适应）')

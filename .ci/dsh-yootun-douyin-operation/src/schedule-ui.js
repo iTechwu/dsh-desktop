@@ -127,9 +127,9 @@ export function comparePublishDate(a, b) {
 
 /**
  * 渲染层分组（rows 状态本身保持服务端 (account_id,id) 序，不受影响）：
- * 「已发布组」= published 且行处于 idle（无在途写/异常反馈）——刚勾选已发布但
- * 保存未落定的行留在未发布组，保证 saving/conflict 反馈可见，落定后才进入
- * 可折叠的已发布组（折叠计数 = publishedGroup.length）。
+ * 「已发布组」= published 且行已回到 idle——即「勾选已发布，保存成功后移入
+ * 已发布组」（2026-11-20 业务口径）；保存中/失败的行留在未发布组，以状态
+ * 底色与同键重试/放弃操作可见，落定后才移入顶部组。
  */
 export function partitionScheduleRows(rows, rowStates) {
   const published = []
